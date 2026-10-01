@@ -337,6 +337,7 @@ class PaymentLinkClaimSession {
     this.fundingConfirmationCount = 0,
     this.waitingForFundingConfirmations = false,
     this.availability = PaymentLinkAvailability.unchecked,
+    this.isSetupClaim = false,
   });
 
   final VizorPaymentLink link;
@@ -351,6 +352,9 @@ class PaymentLinkClaimSession {
   final int fundingConfirmationCount;
   final bool waitingForFundingConfirmations;
   final PaymentLinkAvailability availability;
+
+  /// Setup claims stay with their saved account across active-account changes.
+  final bool isSetupClaim;
 
   bool get canClaim =>
       claimableZatoshi > BigInt.zero && !waitingForFundingConfirmations;
@@ -1359,6 +1363,44 @@ class PaymentLinkService
     bool allowLongSync = false,
   }) async {
     _requireWalletUnlocked();
+    final records = await _receivedStore.load();
+    final saved = records
+        .where(
+          (record) =>
+              record.address == link.knownAddress ||
+              record.claimLink?.hasSameCanonicalPayload(link) == true,
+        )
+        .firstOrNull;
+    _requireWalletUnlocked();
+    final setupAccountUuid = saved?.setupAccountUuid;
+    if (setupAccountUuid != null) {
+      link = await paymentLinkWithRetainedAddress(link, [saved!]);
+      return _ref
+          .read(paymentLinkClaimCoordinatorProvider)
+          .prepareSetupClaim(
+            link,
+            destinationAccountUuid: setupAccountUuid,
+            prepare: () async {
+              final inspection = await inspectClaim(
+                link,
+                allowLongSync: allowLongSync,
+              );
+              try {
+                return await bindClaimDestination(
+                  inspection,
+                  destinationAccountUuid: setupAccountUuid,
+                );
+              } catch (error, stackTrace) {
+                try {
+                  await discardClaimInspection(inspection);
+                } catch (_) {
+                  // Keep the binding error; the saved Card owns its claim wallet.
+                }
+                Error.throwWithStackTrace(error, stackTrace);
+              }
+            },
+          );
+    }
     final receiverAccountUuid = _ref
         .read(accountProvider)
         .value
@@ -1436,10 +1478,11 @@ class PaymentLinkService
       throw const PaymentLinkClaimDestinationChangedException();
     }
     await _requireShieldedAddress(destinationAddress);
-    if ((await _receivedStore.find(inspection.link.address))?.isClaimInFlight ??
-        false) {
+    final saved = await _receivedStore.find(inspection.link.address);
+    if (saved?.isClaimInFlight ?? false) {
       throw const PaymentLinkClaimInFlightException();
     }
+    _requireSetupClaimDestination(saved, destinationAccountUuid);
     // Intentionally do not resync here: account setup can outlast the preview,
     // but binding does not add another scan to that path. Re-estimation uses
     // the cached card state; submission can fail or still require confirmations.
@@ -1461,6 +1504,7 @@ class PaymentLinkService
         maxSpendableZatoshi: estimate?.amountZatoshi ?? BigInt.zero,
       ),
       feeZatoshi: estimate?.feeZatoshi ?? BigInt.zero,
+      isSetupClaim: saved?.setupAccountUuid != null,
     );
   }
 
@@ -1470,6 +1514,7 @@ class PaymentLinkService
     required String destinationAccountUuid,
     required BigInt claimableZatoshi,
     required BigInt feeZatoshi,
+    bool isSetupClaim = false,
   }) => PaymentLinkClaimSession(
     link: inspection.link,
     destinationAddress: destinationAddress,
@@ -1480,6 +1525,7 @@ class PaymentLinkService
     totalZatoshi: inspection.totalZatoshi,
     claimableZatoshi: claimableZatoshi,
     feeZatoshi: feeZatoshi,
+    isSetupClaim: isSetupClaim,
     fundingConfirmationCount: inspection.fundingConfirmationCount,
     waitingForFundingConfirmations: inspection.waitingForFundingConfirmations,
     availability: claimableZatoshi > BigInt.zero
@@ -1733,6 +1779,12 @@ class PaymentLinkService
     // Freeze the available preview price before the first await. Submission
     // never waits for pricing or changes its saved value after a late response.
     final claimFiatSnapshot = _availableClaimFiatSnapshot(session.link);
+    _requireWalletUnlocked();
+    _requireSetupClaimDestination(
+      await _receivedStore.find(session.link.address),
+      session.destinationAccountUuid,
+    );
+    _requireWalletUnlocked();
     // Checking a Gift Card is a read-only preview. Persist it only after the
     // user explicitly starts a claim, before any broadcast can occur, so an
     // interrupted submission remains recoverable without making previews look
@@ -1925,6 +1977,10 @@ class PaymentLinkService
   @override
   Future<void> discardClaimSession(PaymentLinkClaimSession session) async {
     await _claimWallet.cancelClaimSync(session.link);
+    if (_ref.read(appSecurityProvider).requiresUnlock) return;
+    final saved = await _receivedStore.find(session.link.address);
+    if (saved?.claimLink != null) return;
+    if (_ref.read(appSecurityProvider).requiresUnlock) return;
     await _claimWallet.deleteDb(session.directory);
   }
 
@@ -1962,6 +2018,9 @@ class PaymentLinkService
     // tracked so a wallet reset drains this write instead of racing it.
     return _ref.read(paymentLinkClaimCoordinatorProvider).trackRetention(
       () async {
+        final saved = await _receivedStore.find(session.link.address);
+        if (saved?.needsClaimRecovery == true) return;
+        _requireSetupClaimDestination(saved, session.destinationAccountUuid);
         await _claimWallet.cancelClaimSync(session.link);
         final record = await _receivedStore.saveReady(session.link);
         // A stale screen can request retention after six-confirmation cleanup.
@@ -1972,10 +2031,25 @@ class PaymentLinkService
         }
         await _receivedStore.setAvailability(
           session.link.address,
-          session.availability,
+          saved?.setupAccountUuid != null &&
+                  session.waitingForFundingConfirmations
+              ? PaymentLinkAvailability.checking
+              : session.availability,
         );
       },
+      scheduleReadySetupRecovery: session.isSetupClaim,
     );
+  }
+
+  void _requireSetupClaimDestination(
+    PaymentLinkReceivedRecord? saved,
+    String destinationAccountUuid,
+  ) {
+    final setupAccountUuid = saved?.setupAccountUuid;
+    if (setupAccountUuid != null &&
+        setupAccountUuid != destinationAccountUuid) {
+      throw const PaymentLinkClaimDestinationChangedException();
+    }
   }
 
   @override

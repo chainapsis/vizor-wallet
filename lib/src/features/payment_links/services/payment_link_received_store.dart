@@ -371,6 +371,13 @@ class PaymentLinkReceivedStore {
     return _runExclusive(() async {
       final records = await _loadUnlocked();
       final existing = _findByAddress(records, link.address);
+      if (setupAccountUuid != null &&
+          existing?.setupAccountUuid != null &&
+          existing!.setupAccountUuid != setupAccountUuid) {
+        throw StateError(
+          'The Gift Card already belongs to another setup account.',
+        );
+      }
       if (existing?.status == PaymentLinkReceivedStatus.received) {
         return existing!;
       }
@@ -435,6 +442,10 @@ class PaymentLinkReceivedStore {
       }
       final records = await _loadUnlocked();
       final existing = _findRequired(records, address);
+      if (existing.setupAccountUuid != null &&
+          existing.setupAccountUuid != destinationAccountUuid.trim()) {
+        throw StateError('The Gift Card must use its saved setup account.');
+      }
       if (expected != null &&
           (existing.status != expected.status ||
               existing.claimTxids != expected.claimTxids ||
@@ -501,6 +512,10 @@ class PaymentLinkReceivedStore {
       final existing = _findRequired(records, address);
       if (existing.status == PaymentLinkReceivedStatus.received) {
         return existing;
+      }
+      if (existing.setupAccountUuid != null &&
+          existing.setupAccountUuid != normalizedAccountUuid) {
+        throw StateError('The Gift Card must use its saved setup account.');
       }
       if (existing.status != PaymentLinkReceivedStatus.readyToClaim ||
           existing.claimLink == null) {

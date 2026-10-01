@@ -3,15 +3,18 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_claim_coordinator_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_claim_lifecycle_registry_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
+import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(() => FlutterSecureStorage.setMockInitialValues({}));
 
   test(
     'different claims submit concurrently while duplicate claims join',
@@ -55,6 +58,84 @@ void main() {
     },
   );
 
+  test('the screen and recovery share one setup Card preparation', () async {
+    final releasePreparation = Completer<void>();
+    var preparationCalls = 0;
+    final container = ProviderContainer(
+      overrides: [
+        appSecurityProvider.overrideWith(_UnlockedSecurityNotifier.new),
+        paymentLinkClaimRecoveryRunnerProvider.overrideWithValue(
+          () async => const [],
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    final coordinator = container.read(paymentLinkClaimCoordinatorProvider);
+    final link = _link('shared-setup-claim');
+
+    Future<PaymentLinkClaimSession> prepare() async {
+      preparationCalls++;
+      await releasePreparation.future;
+      return _session(link.address, destinationAccountUuid: 'setup-account');
+    }
+
+    final screenPreparation = coordinator.prepareSetupClaim(
+      link,
+      destinationAccountUuid: 'setup-account',
+      prepare: prepare,
+    );
+    final recoveryPreparation = coordinator.prepareSetupClaim(
+      link,
+      destinationAccountUuid: 'setup-account',
+      prepare: prepare,
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    expect(identical(screenPreparation, recoveryPreparation), isTrue);
+    expect(preparationCalls, 1);
+    expect(coordinator.activeSetupPreparationCount, 1);
+
+    releasePreparation.complete();
+    expect(await recoveryPreparation, await screenPreparation);
+    expect(coordinator.activeSetupPreparationCount, 0);
+  });
+
+  test('a setup Card preparation stays pinned to its first account', () async {
+    final releasePreparation = Completer<void>();
+    final container = ProviderContainer(
+      overrides: [
+        appSecurityProvider.overrideWith(_UnlockedSecurityNotifier.new),
+        paymentLinkClaimRecoveryRunnerProvider.overrideWithValue(
+          () async => const [],
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    final coordinator = container.read(paymentLinkClaimCoordinatorProvider);
+    final link = _link('pinned-setup-claim');
+    final first = coordinator.prepareSetupClaim(
+      link,
+      destinationAccountUuid: 'setup-account',
+      prepare: () async {
+        await releasePreparation.future;
+        return _session(link.address, destinationAccountUuid: 'setup-account');
+      },
+    );
+
+    await expectLater(
+      coordinator.prepareSetupClaim(
+        link,
+        destinationAccountUuid: 'other-account',
+        prepare: () async =>
+            _session(link.address, destinationAccountUuid: 'other-account'),
+      ),
+      throwsA(isA<PaymentLinkClaimDestinationChangedException>()),
+    );
+
+    releasePreparation.complete();
+    await first;
+  });
+
   test('submitting claims resume outside the Gift Card screen', () async {
     var recoveryCalls = 0;
     final secondCall = Completer<void>();
@@ -79,6 +160,235 @@ void main() {
 
     expect(recoveryCalls, 2);
   });
+
+  test(
+    'a ready setup Card automatically claims into its saved account',
+    () async {
+      final submitted = Completer<PaymentLinkClaimSession>();
+      final preparedDestinations = <String>[];
+      final container = ProviderContainer(
+        overrides: [
+          appSecurityProvider.overrideWith(_UnlockedSecurityNotifier.new),
+          accountProvider.overrideWith(_SetupAccountNotifier.new),
+          paymentLinkClaimRecoveryRetryDelayProvider.overrideWithValue(
+            const Duration(days: 1),
+          ),
+          paymentLinkClaimRecoveryRunnerProvider.overrideWithValue(
+            () async => [_readySetupRecord],
+          ),
+          paymentLinkSetupClaimPreparerProvider.overrideWithValue((
+            link, {
+            required destinationAccountUuid,
+          }) async {
+            preparedDestinations.add(destinationAccountUuid);
+            return _session(
+              link.address,
+              destinationAccountUuid: destinationAccountUuid,
+            );
+          }),
+          paymentLinkClaimSubmitterProvider.overrideWithValue((session) async {
+            if (!submitted.isCompleted) submitted.complete(session);
+            return _result('automatic-claim-txid');
+          }),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      container.read(paymentLinkClaimCoordinatorProvider);
+      final session = await submitted.future.timeout(
+        const Duration(seconds: 1),
+      );
+
+      expect(preparedDestinations, ['setup-account']);
+      expect(session.destinationAccountUuid, 'setup-account');
+    },
+  );
+
+  test(
+    'disposing during ready setup recovery does not reuse its Ref',
+    () async {
+      final recoveryStarted = Completer<void>();
+      final releaseRecovery = Completer<List<PaymentLinkReceivedRecord>>();
+      final container = ProviderContainer(
+        overrides: [
+          appSecurityProvider.overrideWith(_UnlockedSecurityNotifier.new),
+          accountProvider.overrideWith(_SetupAccountNotifier.new),
+          paymentLinkClaimRecoveryRunnerProvider.overrideWithValue(() {
+            if (!recoveryStarted.isCompleted) recoveryStarted.complete();
+            return releaseRecovery.future;
+          }),
+        ],
+      );
+      final coordinator = container.read(paymentLinkClaimCoordinatorProvider);
+      final recovery = coordinator.refresh();
+      await recoveryStarted.future.timeout(const Duration(seconds: 1));
+
+      container.dispose();
+      releaseRecovery.complete([_readySetupRecord]);
+
+      expect(await recovery, [_readySetupRecord]);
+    },
+  );
+
+  test(
+    'a newly retained setup Card retriggers an initially empty recovery',
+    () async {
+      final firstRecovery = Completer<void>();
+      final submitted = Completer<void>();
+      var includeSetupCard = false;
+      final container = ProviderContainer(
+        overrides: [
+          appSecurityProvider.overrideWith(_UnlockedSecurityNotifier.new),
+          accountProvider.overrideWith(_SetupAccountNotifier.new),
+          paymentLinkClaimRecoveryRetryDelayProvider.overrideWithValue(
+            const Duration(milliseconds: 1),
+          ),
+          paymentLinkClaimRecoveryRunnerProvider.overrideWithValue(() async {
+            if (!firstRecovery.isCompleted) firstRecovery.complete();
+            return includeSetupCard ? [_readySetupRecord] : const [];
+          }),
+          paymentLinkSetupClaimPreparerProvider.overrideWithValue(
+            (link, {required destinationAccountUuid}) async => _session(
+              link.address,
+              destinationAccountUuid: destinationAccountUuid,
+            ),
+          ),
+          paymentLinkClaimSubmitterProvider.overrideWithValue((session) async {
+            if (!submitted.isCompleted) submitted.complete();
+            return _result('retained-setup-txid');
+          }),
+        ],
+      );
+      addTearDown(container.dispose);
+      final coordinator = container.read(paymentLinkClaimCoordinatorProvider);
+      await firstRecovery.future.timeout(const Duration(seconds: 1));
+
+      includeSetupCard = true;
+      await coordinator.trackRetention(
+        () async {},
+        scheduleReadySetupRecovery: true,
+      );
+      await submitted.future.timeout(const Duration(seconds: 1));
+    },
+  );
+
+  test('ordinary ready Cards are not automatically claimed', () async {
+    var prepareCalls = 0;
+    final recovered = Completer<void>();
+    final container = ProviderContainer(
+      overrides: [
+        appSecurityProvider.overrideWith(_UnlockedSecurityNotifier.new),
+        accountProvider.overrideWith(_SetupAccountNotifier.new),
+        paymentLinkClaimRecoveryRunnerProvider.overrideWithValue(() async {
+          if (!recovered.isCompleted) recovered.complete();
+          return [_readySetupRecordWithoutAccount];
+        }),
+        paymentLinkSetupClaimPreparerProvider.overrideWithValue((
+          link, {
+          required destinationAccountUuid,
+        }) async {
+          prepareCalls++;
+          return _session(link.address);
+        }),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    container.read(paymentLinkClaimCoordinatorProvider);
+    await recovered.future.timeout(const Duration(seconds: 1));
+    await Future<void>.delayed(Duration.zero);
+
+    expect(prepareCalls, 0);
+  });
+
+  test(
+    'password setup enables recovery after its journal has cleared',
+    () async {
+      final security = _PasswordSetupSecurityNotifier();
+      final submitted = Completer<void>();
+      var recoveryCalls = 0;
+      final container = ProviderContainer(
+        overrides: [
+          appSecurityProvider.overrideWith(() => security),
+          accountProvider.overrideWith(_SetupAccountNotifier.new),
+          paymentLinkClaimRecoveryRetryDelayProvider.overrideWithValue(
+            const Duration(milliseconds: 1),
+          ),
+          paymentLinkClaimRecoveryRunnerProvider.overrideWithValue(() async {
+            recoveryCalls++;
+            return [_readySetupRecord];
+          }),
+          paymentLinkSetupClaimPreparerProvider.overrideWithValue(
+            (link, {required destinationAccountUuid}) async => _session(
+              link.address,
+              destinationAccountUuid: destinationAccountUuid,
+            ),
+          ),
+          paymentLinkClaimSubmitterProvider.overrideWithValue((session) async {
+            if (!submitted.isCompleted) submitted.complete();
+            return _result('post-setup-txid');
+          }),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      container.read(paymentLinkClaimCoordinatorProvider);
+      await Future<void>.delayed(Duration.zero);
+      expect(recoveryCalls, 0);
+
+      security.commitForTest();
+      await submitted.future.timeout(const Duration(seconds: 1));
+      expect(recoveryCalls, 1);
+    },
+  );
+
+  test(
+    'reset drains preparation and prevents its automatic submission',
+    () async {
+      final preparationStarted = Completer<void>();
+      final releasePreparation = Completer<void>();
+      var submissionCalls = 0;
+      final container = ProviderContainer(
+        overrides: [
+          appSecurityProvider.overrideWith(_UnlockedSecurityNotifier.new),
+          accountProvider.overrideWith(_SetupAccountNotifier.new),
+          paymentLinkClaimRecoveryRunnerProvider.overrideWithValue(
+            () async => [_readySetupRecord],
+          ),
+          paymentLinkSetupClaimPreparerProvider.overrideWithValue((
+            link, {
+            required destinationAccountUuid,
+          }) async {
+            if (!preparationStarted.isCompleted) preparationStarted.complete();
+            await releasePreparation.future;
+            return _session(
+              link.address,
+              destinationAccountUuid: destinationAccountUuid,
+            );
+          }),
+          paymentLinkClaimSubmitterProvider.overrideWithValue((session) async {
+            submissionCalls++;
+            return _result('must-not-submit');
+          }),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.read(paymentLinkClaimCoordinatorProvider);
+      final lifecycle = container.read(
+        paymentLinkClaimLifecycleRegistryProvider,
+      );
+      await preparationStarted.future.timeout(const Duration(seconds: 1));
+
+      var drained = false;
+      final drain = lifecycle.quiesceAndDrain().then((_) => drained = true);
+      await Future<void>.delayed(Duration.zero);
+      expect(drained, isFalse);
+
+      releasePreparation.complete();
+      await drain;
+      expect(submissionCalls, 0);
+    },
+  );
 
   test(
     'a completed receipt keeps recovering until its retained secret is cleared',
@@ -283,12 +593,16 @@ void main() {
   );
 }
 
-PaymentLinkClaimSession _session(String address) {
+PaymentLinkClaimSession _session(
+  String address, {
+  String? destinationAccountUuid,
+}) {
   final link = _link(address);
   return PaymentLinkClaimSession(
     link: link,
     destinationAddress: 'destination-$address',
-    destinationAccountUuid: 'destination-account-$address',
+    destinationAccountUuid:
+        destinationAccountUuid ?? 'destination-account-$address',
     directory: Directory('/tmp/$address'),
     dbPath: '/tmp/$address/zcash_wallet.db',
     accountUuid: 'claim-account-$address',
@@ -338,6 +652,35 @@ final _receivedRecord = _receivingRecord.copyWith(
   claimLink: null,
 );
 
+final _readySetupRecord = PaymentLinkReceivedRecord(
+  network: 'main',
+  address: 'waiting-setup-claim',
+  amountZatoshi: BigInt.from(100000),
+  createdAt: DateTime.utc(2026, 9, 23),
+  artworkId: null,
+  status: PaymentLinkReceivedStatus.readyToClaim,
+  claimLink: _link('waiting-setup-claim'),
+  destinationAccountUuid: null,
+  claimTxids: null,
+  updatedAt: DateTime.utc(2026, 9, 23),
+  availability: PaymentLinkAvailability.checking,
+  setupAccountUuid: 'setup-account',
+);
+
+final _readySetupRecordWithoutAccount = PaymentLinkReceivedRecord(
+  network: 'main',
+  address: 'ordinary-ready-claim',
+  amountZatoshi: BigInt.from(100000),
+  createdAt: DateTime.utc(2026, 9, 23),
+  artworkId: null,
+  status: PaymentLinkReceivedStatus.readyToClaim,
+  claimLink: _link('ordinary-ready-claim'),
+  destinationAccountUuid: null,
+  claimTxids: null,
+  updatedAt: DateTime.utc(2026, 9, 23),
+  availability: PaymentLinkAvailability.noBalance,
+);
+
 class _UnlockedSecurityNotifier extends AppSecurityNotifier {
   @override
   AppSecurityState build() =>
@@ -359,4 +702,29 @@ class _MutableSecurityNotifier extends AppSecurityNotifier {
       isUnlocked: true,
     );
   }
+}
+
+class _PasswordSetupSecurityNotifier extends AppSecurityNotifier {
+  @override
+  AppSecurityState build() =>
+      const AppSecurityState(isPasswordConfigured: false, isUnlocked: true);
+
+  void commitForTest() {
+    state = const AppSecurityState(
+      isPasswordConfigured: true,
+      isUnlocked: true,
+    );
+  }
+}
+
+class _SetupAccountNotifier extends AccountNotifier {
+  @override
+  AccountState build() => const AccountState(
+    accounts: [
+      AccountInfo(uuid: 'setup-account', name: 'Gift', order: 0),
+      AccountInfo(uuid: 'other-account', name: 'Other', order: 1),
+    ],
+    activeAccountUuid: 'other-account',
+    activeAddress: 'u1otheraccount',
+  );
 }

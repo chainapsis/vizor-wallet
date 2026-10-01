@@ -44,6 +44,7 @@ void main() {
   late _FailingStorage storage;
   late AppSecureStore store;
   late PaymentLinkReceivedStore cards;
+  late _GiftReceivedStorage receivedStorage;
 
   setUp(() async {
     _rust.reset();
@@ -55,7 +56,8 @@ void main() {
       enforceSessionGeneration: false,
     );
     _rust.store = store;
-    cards = PaymentLinkReceivedStore(_GiftReceivedStorage());
+    receivedStorage = _GiftReceivedStorage();
+    cards = PaymentLinkReceivedStore(receivedStorage);
     final support = await Directory.systemTemp.createTemp('vizor-gift-acct-');
     addTearDown(() => support.delete(recursive: true));
     const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
@@ -413,7 +415,10 @@ void main() {
       profilePictureId: _profile,
       link: incomingLink,
     );
-    await cards.saveReady(incomingLink, setupAccountUuid: 'other');
+    // Model inconsistent persisted data; saveReady now rejects reassignment.
+    final payload = jsonDecode(receivedStorage.value!) as Map<String, dynamic>;
+    (payload['records'] as List).single['setupAccountUuid'] = 'other';
+    receivedStorage.value = jsonEncode(payload);
     _rust.accountForMnemonic = uuid;
     await expectLater(
       accounts().recoverPendingAccountMnemonic(),

@@ -83,6 +83,43 @@ void main() {
     },
   );
 
+  test(
+    'setup account binding cannot be overwritten or submitted elsewhere',
+    () async {
+      final store = PaymentLinkReceivedStore(_FakePaymentLinkReceivedStorage());
+      final link = _link();
+      await store.saveReady(link, setupAccountUuid: 'gift-wallet');
+      await expectLater(
+        store.saveReady(link, setupAccountUuid: 'other-wallet'),
+        throwsStateError,
+      );
+      await expectLater(
+        store.markClaimStarted(
+          address: link.address,
+          destinationAccountUuid: 'other-wallet',
+        ),
+        throwsStateError,
+      );
+      final record = (await store.load()).single;
+      expect(record.setupAccountUuid, 'gift-wallet');
+      expect(record.status, PaymentLinkReceivedStatus.readyToClaim);
+      expect(record.destinationAccountUuid, isNull);
+      await store.markClaimStarted(
+        address: link.address,
+        destinationAccountUuid: 'gift-wallet',
+      );
+      await expectLater(
+        store.markReceiving(
+          address: link.address,
+          destinationAccountUuid: 'other-wallet',
+          claimTxids: 'claim-tx',
+        ),
+        throwsStateError,
+      );
+      expect((await store.load()).single.destinationAccountUuid, 'gift-wallet');
+    },
+  );
+
   test('old records without provenance preserve their date', () async {
     final storage = _FakePaymentLinkReceivedStorage();
     final store = PaymentLinkReceivedStore(storage);

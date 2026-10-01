@@ -279,6 +279,89 @@ void main() {
       expect(receivedStorage.value, isNull);
     });
 
+    test(
+      'saved setup claims use their account even with an address-free link',
+      () async {
+        final store = container.read(paymentLinkReceivedStoreProvider);
+        await store.saveReady(_link(), setupAccountUuid: 'receiver');
+        accounts.select('other-account', 'u1otheraddress');
+        final addressFree = VizorPaymentLink.parse(_link().toUri().toString());
+        expect(addressFree.knownAddress, isNull);
+        final session = await service.prepareClaim(addressFree);
+        expect(session.destinationAccountUuid, 'receiver');
+        expect(session.destinationAddress, 'u1receiveraddress');
+        expect(session.isSetupClaim, isTrue);
+        expect(
+          container.read(accountProvider).value!.activeAccountUuid,
+          'other-account',
+        );
+        expect(api.syncCalls, 1);
+      },
+    );
+
+    test(
+      'binding cannot redirect a saved setup claim to another account',
+      () async {
+        final inspection = await service.inspectClaim(_link());
+        await container
+            .read(paymentLinkReceivedStoreProvider)
+            .saveReady(inspection.link, setupAccountUuid: 'receiver');
+        await expectLater(
+          service.bindClaimDestination(
+            inspection,
+            destinationAccountUuid: 'other-account',
+          ),
+          throwsA(isA<PaymentLinkClaimDestinationChangedException>()),
+        );
+        expect(api.estimateDestinations, [_link().address]);
+      },
+    );
+
+    test(
+      'a previously prepared session cannot submit to another setup account',
+      () async {
+        accounts.select('receiver', 'u1receiveraddress');
+        final session = await service.prepareClaim(_link());
+        await container
+            .read(paymentLinkReceivedStoreProvider)
+            .saveReady(session.link, setupAccountUuid: 'other-account');
+        await expectLater(
+          service.claimPreparedLink(session),
+          throwsA(isA<PaymentLinkClaimDestinationChangedException>()),
+        );
+        expect(
+          (await container.read(paymentLinkReceivedStoreProvider).load())
+              .single
+              .status,
+          PaymentLinkReceivedStatus.readyToClaim,
+        );
+      },
+    );
+
+    test(
+      'waiting setup cards stay retryable and keep their inspected wallet',
+      () async {
+        api.maxClaimable = null;
+        api.fundingHeight = api.tipHeight;
+        final inspection = await service.inspectClaim(_link());
+        final store = container.read(paymentLinkReceivedStoreProvider);
+        await store.saveReady(inspection.link, setupAccountUuid: 'receiver');
+        final session = await service.bindClaimDestination(
+          inspection,
+          destinationAccountUuid: 'receiver',
+        );
+        expect(session.waitingForFundingConfirmations, isTrue);
+        await service.retainPendingClaim(session);
+        expect(
+          (await store.load()).single.availability,
+          PaymentLinkAvailability.checking,
+        );
+        await service.discardClaimSession(session);
+        expect(await File(session.dbPath).exists(), isTrue);
+        expect((await store.load()).single.setupAccountUuid, 'receiver');
+      },
+    );
+
     test('discard preserves a saved card and its cached wallet', () async {
       final inspection = await service.inspectClaim(_link());
       await container
@@ -318,10 +401,9 @@ void main() {
       });
     }
 
-    for (final existingAccount in [false, true]) {
+    for (final cleanup in ['inspection', 'retention', 'session']) {
       test(
-        'completed card cache is removed by '
-        '${existingAccount ? 'existing-account retention' : 'inspection cleanup'}',
+        'completed card cache is removed by $cleanup cleanup',
         () async {
           final first = await service.inspectClaim(_link());
           final store = container.read(paymentLinkReceivedStoreProvider);
@@ -353,12 +435,16 @@ void main() {
 
           api.total = BigInt.zero;
           api.maxClaimable = null;
-          if (existingAccount) {
+          if (cleanup != 'inspection') {
             accounts.select('receiver', 'u1receiveraddress');
             final reopened = await service.prepareClaim(first.link);
             expect(await File(reopened.dbPath).exists(), isTrue);
-            // A stale screen may still choose retention for a completed receipt.
-            await service.retainPendingClaim(reopened);
+            if (cleanup == 'retention') {
+              // A stale screen may choose retention for a completed receipt.
+              await service.retainPendingClaim(reopened);
+            } else {
+              await service.discardClaimSession(reopened);
+            }
           } else {
             final reopened = await service.inspectClaim(first.link);
             expect(await File(reopened.dbPath).exists(), isTrue);

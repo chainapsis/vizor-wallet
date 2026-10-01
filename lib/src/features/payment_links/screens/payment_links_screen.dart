@@ -1029,7 +1029,11 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
   /// reopened for the account now in front of the user.
   void _handleClaimDestinationAccountChanged(String current) {
     final session = _receivedClaimSession;
-    if (session == null || session.destinationAccountUuid == current) return;
+    if (session == null ||
+        session.isSetupClaim ||
+        session.destinationAccountUuid == current) {
+      return;
+    }
     final link = _receivedLink;
     final keepCard = _shouldKeepCard(session);
     setState(() {
@@ -1704,6 +1708,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
           ?.activeAccountUuid;
       if (activeAccountUuid != null &&
           activeAccountUuid != session.destinationAccountUuid &&
+          !session.isSetupClaim &&
           (session.waitingForFundingConfirmations || session.canClaim)) {
         _receivedClaimSession = session;
         _receivedLink = session.link;
@@ -1984,7 +1989,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     final accountState = ref.read(accountProvider).value;
     final activeAccountUuid = accountState?.activeAccountUuid;
     if (accountState == null || activeAccountUuid == null) return;
-    if (accountState.accounts.length == 1) {
+    if (session.isSetupClaim || accountState.accounts.length == 1) {
       _claimReceivedLink();
       return;
     }

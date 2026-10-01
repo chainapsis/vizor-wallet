@@ -1010,6 +1010,37 @@ void main() {
   }
 
   testWidgets(
+    'setup card retry keeps its receiver when the active account changes',
+    (tester) async {
+      final accounts = SwitchablePaymentLinkAccountNotifier();
+      final operations = _SetupClaimOperations();
+      final router = await _openReceivedCard(
+        tester,
+        operations,
+        accountNotifier: accounts,
+      );
+      accounts.setActiveAccount('account-2');
+      await tester.pumpAndSettle();
+      expect(find.text('You’ve received a gift!'), findsOneWidget);
+      expect(find.textContaining('Active account changed.'), findsNothing);
+      await tester.tap(
+        find.byKey(const ValueKey('payment_link_mobile_claim_button')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('payment_link_claim_account_sheet')),
+        findsNothing,
+      );
+      expect(
+        operations.claimedSessions.single.destinationAccountUuid,
+        'account-1',
+      );
+      expect(accounts.current.activeAccountUuid, 'account-2');
+      expect(router.routerDelegate.currentConfiguration.uri.path, '/home');
+    },
+  );
+
+  testWidgets(
     'claim defaults to the active account and cancellation keeps it',
     (tester) async {
       final accounts = SwitchablePaymentLinkAccountNotifier(
@@ -1599,6 +1630,34 @@ void main() {
     );
     expect(find.text('Receiving…'), findsOneWidget);
   });
+}
+
+class _SetupClaimOperations extends FakePaymentLinkOperations {
+  _SetupClaimOperations() : super(readClaimDestination: () => twoAccountState);
+
+  @override
+  Future<PaymentLinkClaimSession> prepareClaim(
+    VizorPaymentLink link, {
+    bool allowLongSync = false,
+  }) async {
+    final session = await super.prepareClaim(
+      link,
+      allowLongSync: allowLongSync,
+    );
+    return PaymentLinkClaimSession(
+      link: session.link,
+      destinationAddress: session.destinationAddress,
+      destinationAccountUuid: session.destinationAccountUuid,
+      directory: session.directory,
+      dbPath: session.dbPath,
+      accountUuid: session.accountUuid,
+      totalZatoshi: session.totalZatoshi,
+      claimableZatoshi: session.claimableZatoshi,
+      feeZatoshi: session.feeZatoshi,
+      availability: session.availability,
+      isSetupClaim: true,
+    );
+  }
 }
 
 class _PendingCardPrice implements ZecMarketDataSource {
