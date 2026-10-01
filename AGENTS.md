@@ -149,7 +149,7 @@ Android and Dart: `--dart-define=VIZOR_DEEPLINK_BASE_URL` (default
 
 ## Mainnet Birthday Estimates
 
-Date-to-height imports and seed-phrase height-to-date displays use the eight
+Date-to-height imports and seed-phrase height-to-date displays use the sparse
 mainnet anchors in `rust/src/wallet/birthday.rs`. Never verify a birthday-derived
 height with lightwalletd on mainnet. Imports reuse the screen's tip metadata or
 fetch only the public tip; displays use the scanned block time where available.

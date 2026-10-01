@@ -1,4 +1,4 @@
-//! Mainnet birthday estimates from the existing eight block-time anchors.
+//! Mainnet birthday estimates from sparse block-time anchors.
 //!
 //! These conversions deliberately do not verify a wallet-derived height with
 //! lightwalletd. Date-based imports retain their 15-day safety margin in Dart.
@@ -14,7 +14,7 @@ pub(crate) struct BirthdayAnchor {
     pub(crate) time: u32,
 }
 
-pub(crate) const MAINNET_BIRTHDAY_ANCHORS: [BirthdayAnchor; 8] = [
+pub(crate) const MAINNET_BIRTHDAY_ANCHORS: [BirthdayAnchor; 9] = [
     BirthdayAnchor {
         height: 419_200,
         time: 1_540_779_337,
@@ -46,6 +46,13 @@ pub(crate) const MAINNET_BIRTHDAY_ANCHORS: [BirthdayAnchor; 8] = [
     BirthdayAnchor {
         height: 3_450_000,
         time: 1_786_894_060,
+    },
+    // Verified 2026-10-01 against us.zec.stardust.rest and zec.rocks;
+    // both reported tip 3,502,435 and this block's hash
+    // 0000000000a8af9f2280d24f1ddddbf4ceeb6467ff77066d43a18d140a881f9a.
+    BirthdayAnchor {
+        height: 3_501_000,
+        time: 1_790_738_270,
     },
 ];
 
@@ -157,8 +164,8 @@ mod tests {
 
     fn tip() -> BirthdayAnchor {
         BirthdayAnchor {
-            height: 3_498_200,
-            time: 1_790_527_223,
+            height: 3_502_435,
+            time: 1_790_846_257,
         }
     }
 
@@ -232,7 +239,7 @@ mod tests {
 
     #[test]
     fn newer_times_use_the_tip_and_scanned_block_as_endpoints() {
-        let last = MAINNET_BIRTHDAY_ANCHORS[7];
+        let last = *MAINNET_BIRTHDAY_ANCHORS.last().unwrap();
         let upper = BirthdayAnchor {
             height: last.height + 10_000,
             time: last.time + 1_000_000,
@@ -272,7 +279,7 @@ mod tests {
 
     #[test]
     fn independent_header_samples_stay_within_the_old_six_hour_tolerance() {
-        // Header times sampled independently of the eight interpolation anchors.
+        // Header times sampled independently of the interpolation anchors.
         // Includes both sides of Blossom and the worst height-error sample
         // from the 3,080-point offline comparison (1,757,200 -> 1,757,270).
         let samples = [
@@ -288,6 +295,7 @@ mod tests {
             (3_250_200, 1_771_836_427),
             (3_450_200, 1_786_909_712),
             (3_498_200, 1_790_527_223),
+            (3_502_435, 1_790_846_257),
         ];
         for (height, time) in samples {
             let estimate = mainnet_height_for_time(i64::from(time), tip()).unwrap();
@@ -297,11 +305,13 @@ mod tests {
                 estimate.abs_diff(height) * spacing < 6 * 60 * 60,
                 "height {height}: estimated {estimate}"
             );
-            let local_time = mainnet_time_for_height(height, Some(tip()));
-            assert!(
-                local_time.abs_diff(time) < 6 * 60 * 60,
-                "height {height}: time {local_time} vs {time}"
-            );
+            for scanned in [None, Some(tip())] {
+                let local_time = mainnet_time_for_height(height, scanned);
+                assert!(
+                    local_time.abs_diff(time) < 6 * 60 * 60,
+                    "height {height}: time {local_time} vs {time}"
+                );
+            }
         }
     }
 }

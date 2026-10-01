@@ -2131,15 +2131,19 @@ mod tests {
     #[cfg(not(ironwood_masquerade))]
     #[test]
     fn local_birthday_time_uses_highest_scanned_time_beyond_last_anchor() {
-        let last = birthday::MAINNET_BIRTHDAY_ANCHORS[7];
-        let db = birthday_blocks(&[(3_460_000, Some(last.time + 1_000_000)), (3_470_000, None)]);
+        let last = *birthday::MAINNET_BIRTHDAY_ANCHORS.last().unwrap();
+        let upper_height = u32::try_from(last.height + 10_000).unwrap();
+        let db = birthday_blocks(&[
+            (upper_height, Some(last.time + 1_000_000)),
+            (upper_height + 10_000, None),
+        ]);
         let path = db.path().to_str().unwrap();
         assert_eq!(
-            get_local_block_time(path, WalletNetwork::Main, 3_455_000).unwrap(),
+            get_local_block_time(path, WalletNetwork::Main, last.height + 5_000).unwrap(),
             Some(u64::from(last.time + 500_000))
         );
         assert_eq!(
-            get_local_block_time(path, WalletNetwork::Main, 3_460_010).unwrap(),
+            get_local_block_time(path, WalletNetwork::Main, last.height + 10_010).unwrap(),
             Some(u64::from(last.time + 1_000_750))
         );
         let empty = birthday_blocks(&[]);
@@ -2147,7 +2151,7 @@ mod tests {
             get_local_block_time(
                 empty.path().to_str().unwrap(),
                 WalletNetwork::Main,
-                3_455_000
+                last.height + 5_000
             )
             .unwrap(),
             Some(u64::from(last.time + 375_000))
