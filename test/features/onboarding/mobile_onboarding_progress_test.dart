@@ -13,12 +13,14 @@ void main() {
     expect(mobileCreateProgress(8), closeTo(8 / 9, 0.0001));
   });
 
-  test('import progress includes the review step', () {
-    expect(kMobileImportStepCount, 4);
-    expect(mobileImportProgress(1), closeTo(0.2, 0.0001));
-    expect(mobileImportProgress(2), closeTo(0.4, 0.0001));
-    expect(mobileImportProgress(3), closeTo(0.6, 0.0001));
-    expect(mobileImportProgress(4), closeTo(0.8, 0.0001));
+  // 0cd37abda added the customise-account step to the import track.
+  test('import progress includes the customise-account step', () {
+    expect(kMobileImportStepCount, 5);
+    expect(mobileImportProgress(1), closeTo(1 / 6, 0.0001));
+    expect(mobileImportProgress(2), closeTo(2 / 6, 0.0001));
+    expect(mobileImportProgress(3), closeTo(3 / 6, 0.0001));
+    expect(mobileImportProgress(4), closeTo(4 / 6, 0.0001));
+    expect(mobileImportProgress(5), closeTo(5 / 6, 0.0001));
   });
 
   test('keystone passcode progress stays on the existing fill', () {
