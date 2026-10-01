@@ -176,6 +176,7 @@ impl Chain {
              rpcuser={RPC_USER}\nrpcpassword={RPC_PASSWORD}\nrpcport=18232\n\
              rpcbind=0.0.0.0\nrpcallowip=0.0.0.0/0\n\
              allowdeprecated=z_getnewaddress\nallowdeprecated=getnewaddress\n\
+             allowdeprecated=z_getbalance\n\
              i-am-aware-zcashd-will-be-replaced-by-zebrad-and-zallet-in-2025=1\n\
              txunpaidactionlimit=50\n"
         );
@@ -315,15 +316,21 @@ impl Chain {
 
     /// Waits for an async z_* operation and returns its txid.
     pub fn wait_operation(&self, opid: &str) -> String {
+        self.try_wait_operation(opid)
+            .unwrap_or_else(|op| panic!("zcashd operation {opid} failed: {op}"))
+    }
+
+    /// Like [`Self::wait_operation`], returning the failed operation instead.
+    pub fn try_wait_operation(&self, opid: &str) -> Result<String, Value> {
         let deadline = Instant::now() + Duration::from_secs(600);
         loop {
             let result = self.rpc_ok("z_getoperationresult", json!([[opid]]));
             if let Some(op) = result.as_array().and_then(|a| a.first()) {
                 match op["status"].as_str() {
                     Some("success") => {
-                        return op["result"]["txid"].as_str().unwrap().to_string();
+                        return Ok(op["result"]["txid"].as_str().unwrap().to_string());
                     }
-                    Some("failed") => panic!("zcashd operation {opid} failed: {op}"),
+                    Some("failed") => return Err(op.clone()),
                     _ => {}
                 }
             }

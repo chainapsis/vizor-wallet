@@ -287,16 +287,28 @@ def activity(context):
     cases = context["cases"]
     checkpoint = context["checkpoint"]
     items = []
+    # A case whose variant has incomplete evidence (H13) asserts honesty over
+    # every transaction in the wallet; other cases assert their own txs.
+    incomplete = {
+        (case_id, variant)
+        for case_id, case in cases["cases"].items()
+        for variant in case["checkpoints"].get(checkpoint, [])
+        if variant_kind(cases, variant) != "complete"
+    }
     for record in cases["txs"]:
         case = cases["cases"][record["case"]]
-        variants = case["checkpoints"].get(checkpoint, [])
+        targets = [
+            (record["case"], v)
+            for v in case["checkpoints"].get(checkpoint, [])
+            if variant_kind(cases, v) == "complete"
+        ] + sorted(incomplete)
         facts = context["facts"][record["txid"]]
-        for variant in variants:
+        for case_id, variant in targets:
             kind = variant_kind(cases, variant)
             for account in context["alice_accounts"]:
                 effect = context["effects"][f"{record['txid']}:{account}"]
                 item = {
-                    "case": record["case"],
+                    "case": case_id,
                     "txid": record["txid"],
                     "intent": record["intent"],
                     "account": account,
@@ -361,6 +373,22 @@ def retained_vs_fresh(context):
                 if not effect["involved"] or not effect["spent"]:
                     continue
                 retained = variant in RETAINED
+                fees = [facts.get("fee")]
+                other = (record.get("links") or {}).get("other_leg")
+                if other:
+                    # H10 permits grouping a TEX operation: leg 1 may fold
+                    # into leg 2, whose fee may then be the combined fee.
+                    fees.append(facts.get("fee") + context["facts"][other].get("fee", 0))
+                constraints = [
+                    # Retained: the local creation fact survives.
+                    # Restored: nothing local is invented.
+                    {"name": "created_time", "present": retained},
+                    {"name": "known_fee_is_whole", "values": fees},
+                ]
+                if record["intent"] != "tex_leg1":
+                    constraints.append({"name": "row_present"})
+                if retained:
+                    constraints.append({"name": "fee_state_in", "values": ["known"]})
                 items.append(
                     {
                         "case": "H04",
@@ -370,14 +398,7 @@ def retained_vs_fresh(context):
                         "variant": variant,
                         "fee": facts.get("fee"),
                         "row_sets": None,
-                        "constraints": [
-                            {"name": "row_present"},
-                            # Retained: the local creation fact survives.
-                            # Restored: nothing local is invented.
-                            {"name": "created_time", "present": retained},
-                            {"name": "known_fee_is_whole", "values": [facts.get("fee")]},
-                        ]
-                        + ([{"name": "fee_state_in", "values": ["known"]}] if retained else []),
+                        "constraints": constraints,
                     }
                 )
     return items
@@ -476,7 +497,12 @@ def ui_rows(context):
                 record["intent"], facts, effect, record, account, context
             )
             internal = bytes.fromhex(record["txid"])[::-1].hex()
-            base = {"case": record["case"], "account": account, "txid": internal}
+            base = {
+                "case": record["case"],
+                "intent": record["intent"],
+                "account": account,
+                "txid": internal,
+            }
             if not row_sets or not any(row_sets):
                 # Constraint-only expectation (e.g. shared funding): a tappable
                 # row must exist; its amount is checked by the Rust layer.
