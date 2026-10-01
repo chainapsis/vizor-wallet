@@ -14,6 +14,33 @@ const BIP39_VECTOR_REGTEST_UA: &str =
     "uregtest1ykjd398elks624qyz0d0vffn6vpqkl6atp2wsr9795eql4kw47hwlffxyyfakv0l2twj635fpmxmeu3tzyrfhf5s9eg9ea8gsa0srdfwjudp3fs0qaaqxvkxr364a8vjy3y9vglm7lf8rs0vsev9p5mzky52rq4wkr5lhc842vuf5lhn";
 const BIP39_VECTOR_REGTEST_TADDR: &str = "tmPTcChwqcza88W1mydzwkZ25C9qQm3ugiM";
 
+/// The vector's ZIP 32 account 0 viewing key, derived from the mnemonic and
+/// passphrase with bip0039 and zcash_keys directly, not Vizor's key code.
+fn vector_ufvk() -> zcash_keys::keys::UnifiedFullViewingKey {
+    use rust_lib_zcash_wallet::wallet::network::WalletNetwork;
+    let mnemonic =
+        bip0039::Mnemonic::<bip0039::English>::from_phrase(BIP39_VECTOR_MNEMONIC).unwrap();
+    zcash_keys::keys::UnifiedSpendingKey::from_seed(
+        &WalletNetwork::Regtest,
+        &mnemonic.to_seed(BIP39_VECTOR_PASSPHRASE),
+        zip32::AccountId::ZERO,
+    )
+    .unwrap()
+    .to_unified_full_viewing_key()
+}
+
+/// The address a wallet issues for the vector's account since 4579a859c: the
+/// viewing key's default address for an Orchard-only receiver request. The
+/// default address takes the lowest diversifier index valid for every
+/// required receiver, so dropping Sapling also moves it to index 0.
+fn expected_orchard_only_address() -> String {
+    use rust_lib_zcash_wallet::wallet::network::WalletNetwork;
+    use zcash_keys::keys::{ReceiverRequirement::*, UnifiedAddressRequest};
+    let request = UnifiedAddressRequest::custom(Require, Omit, Omit).unwrap();
+    let (address, _) = vector_ufvk().default_address(request).unwrap();
+    address.encode(&WalletNetwork::Regtest)
+}
+
 #[test]
 #[ignore = "requires Dockerized zcashd/lightwalletd regtest services"]
 fn bip39_passphrase_import_recovers_funds_sent_to_independently_derived_address() {
@@ -35,7 +62,37 @@ fn bip39_passphrase_import_recovers_funds_sent_to_independently_derived_address(
     );
     let imported_db = imported_dir.path().join("zcash_wallet.db");
 
-    assert_eq!(imported_wallet.unified_address, BIP39_VECTOR_REGTEST_UA);
+    // Since 4579a859c the issued address is Orchard-only. It is the vector
+    // account's address, derived independently, exactly; and the
+    // independently derived reference UA (Sapling + Orchard + transparent),
+    // funded above, belongs to the same viewing key.
+    assert_eq!(
+        imported_wallet.unified_address,
+        expected_orchard_only_address()
+    );
+    let Some(zcash_keys::address::Address::Unified(reference)) =
+        zcash_keys::address::Address::decode(
+            &rust_lib_zcash_wallet::wallet::network::WalletNetwork::Regtest,
+            BIP39_VECTOR_REGTEST_UA,
+        )
+    else {
+        panic!("reference UA does not decode");
+    };
+    assert_eq!(
+        vector_ufvk()
+            .orchard()
+            .unwrap()
+            .scope_for_address(reference.orchard().unwrap()),
+        Some(orchard::keys::Scope::External)
+    );
+    // The same mnemonic and birthday always issue the same address.
+    let (_again_dir, again) = import_wallet_with_passphrase_and_birthday(
+        BIP39_VECTOR_MNEMONIC,
+        BIP39_VECTOR_PASSPHRASE,
+        "Independent BIP39 vector",
+        Some(historical_birthday),
+    );
+    assert_eq!(again.unified_address, imported_wallet.unified_address);
     let transparent_address = rust_lib_zcash_wallet::api::wallet::get_transparent_receive_address(
         imported_db.to_str().unwrap().to_string(),
         "regtest".to_string(),
