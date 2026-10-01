@@ -1934,6 +1934,10 @@ class PaymentLinkService
   ) async {
     await _claimWallet.cancelClaimSync(inspection.link);
     // Locked storage cannot establish whether a saved card owns this wallet.
+    // TODO(gift onboarding): When wiring callers that can discard while locked,
+    // retain cleanup intent and retry the ownership check after unlock before
+    // deleting unsaved wallets. These guards preserve the DB without scheduling
+    // a retry; the normal first-wallet handoff must keep the inspected wallet.
     if (_ref.read(appSecurityProvider).requiresUnlock) return;
     // A saved card owns its cached wallet and must remain recoverable.
     if (await _receivedStore.find(inspection.link.address) != null) return;
