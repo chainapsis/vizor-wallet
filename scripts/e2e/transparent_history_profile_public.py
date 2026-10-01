@@ -522,6 +522,11 @@ def ui_rows(context):
                 in_every_set = all(
                     any(r.get("tx_kind") == kind for r in rows_) for rows_ in row_sets
                 )
+                if record["intent"] == "tex_return":
+                    # The app checks used ephemeral addresses on its production
+                    # (about daily) schedule, so a fresh restore may not have
+                    # found the returned funds yet. The Rust layer asserts it.
+                    in_every_set = False
                 rows.append(
                     dict(
                         base,

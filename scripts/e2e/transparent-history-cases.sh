@@ -56,6 +56,10 @@ cleanup() {
     # shellcheck disable=SC1091
     source "$OUT/chain.env"
     docker rm -f "${TH_CHAIN_LWD:-}" "${TH_CHAIN_NODE:-}" >/dev/null 2>&1 || true
+    # A kept chain's data directory outlives the Rust layer; remove it too.
+    if [[ "${TH_CHAIN_DIR:-}" == /tmp/vizor-th-chain-* ]]; then
+      rm -rf "$TH_CHAIN_DIR" 2>/dev/null || true
+    fi
   fi
 }
 trap cleanup EXIT
