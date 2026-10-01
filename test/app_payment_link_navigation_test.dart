@@ -33,6 +33,8 @@ void main() {
       '/migration/private/status',
       '/voting/poll/round-1/review',
       '/settings/change-password',
+      '/setup/backup',
+      '/setup/backup/reveal',
     ]) {
       expect(
         paymentLinkEntryBlockedAtLocation(location),
@@ -77,6 +79,7 @@ void main() {
       '/accounts',
       '/settings',
       '/receive',
+      '/setup/backup-other',
     ]) {
       expect(
         paymentLinkEntryBlockedAtLocation(location),

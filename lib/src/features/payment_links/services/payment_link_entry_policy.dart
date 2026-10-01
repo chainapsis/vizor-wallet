@@ -56,6 +56,7 @@ String? paymentLinkEntryDeferredMessageAtLocation(
       isRouteOrChild(matchedLocation, '/voting/keystone/scan') ||
       isRouteOrChild(matchedLocation, '/settings/change-password') ||
       isRouteOrChild(matchedLocation, '/settings/secret-passphrase') ||
+      isRouteOrChild(matchedLocation, '/setup/backup') ||
       isRouteOrChild(matchedLocation, '/settings/viewing-key') ||
       isRouteOrChild(matchedLocation, '/settings/uninstall')) {
     return kPaymentLinkDeferredByActiveFlowMessage;

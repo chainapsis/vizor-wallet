@@ -1,6 +1,7 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/features/home/providers/backup_reminder_provider.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/storage/enhance_pir_preference_store.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
@@ -69,6 +70,53 @@ void main() {
   );
 
   test(
+    'bootstrap preserves pending, snoozed, and completed backups after relaunch',
+    () {
+      final now = DateTime.utc(2026, 10, 1);
+      const rustAccount = AccountInfo(
+        uuid: 'account-1',
+        name: 'Rust Name',
+        order: 0,
+      );
+      final pending = rustAccount.copyWith(setupPending: true);
+      final snoozed = pending.copyWith(
+        backupReminderSnoozedUntilUtc: now.add(const Duration(days: 14)),
+        backupReminderSnoozeCount: 2,
+      );
+      final completed = snoozed.copyWith(
+        setupPending: false,
+        clearBackupReminderSnooze: true,
+      );
+      for (final stored in [pending, snoozed, completed]) {
+        final merged = mergeBootstrappedAccountInfo(
+          rustAccount: rustAccount,
+          storedAccount: AccountInfo.fromJson(stored.toJson()),
+          order: 0,
+        );
+        expect(merged.setupPending, stored.setupPending);
+        expect(
+          merged.backupReminderSnoozedUntilUtc,
+          stored.backupReminderSnoozedUntilUtc,
+        );
+        expect(
+          merged.backupReminderSnoozeCount,
+          stored.backupReminderSnoozeCount,
+        );
+        expect(
+          shouldShowBackupReminder(merged, now),
+          identical(stored, pending),
+        );
+        if (identical(stored, snoozed)) {
+          expect(
+            shouldShowBackupReminder(merged, now.add(const Duration(days: 14))),
+            isTrue,
+          );
+        }
+      }
+    },
+  );
+
+  test(
     'mergeBootstrappedAccountInfo normalizes legacy profile picture ids',
     () {
       const rustAccount = AccountInfo(
@@ -111,6 +159,9 @@ void main() {
     expect(merged.order, 1);
     expect(merged.isHardware, isFalse);
     expect(merged.isSeedAnchor, isFalse);
+    expect(merged.setupPending, isFalse);
+    expect(merged.backupReminderSnoozedUntilUtc, isNull);
+    expect(merged.backupReminderSnoozeCount, 0);
   });
 
   test('mergeBootstrappedAccountInfo recovers Rust hardware metadata', () {

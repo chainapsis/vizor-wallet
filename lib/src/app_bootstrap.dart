@@ -505,6 +505,9 @@ AccountInfo mergeBootstrappedAccountInfo({
     ledgerDeviceId: storedAccount?.ledgerDeviceId,
     ledgerDeviceName: storedAccount?.ledgerDeviceName,
     ledgerDeviceModel: storedAccount?.ledgerDeviceModel,
+    setupPending: storedAccount?.setupPending ?? false,
+    backupReminderSnoozedUntilUtc: storedAccount?.backupReminderSnoozedUntilUtc,
+    backupReminderSnoozeCount: storedAccount?.backupReminderSnoozeCount ?? 0,
   );
 }
 
