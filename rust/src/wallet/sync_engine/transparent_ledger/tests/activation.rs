@@ -394,21 +394,32 @@ async fn hardware_authority_blocks_revocation_and_preserves_inputs_on_rejection(
     let before = snapshot_for_hardware(&wallet);
     let other = rusqlite::Connection::open(&wallet.path).unwrap();
     other.busy_timeout(Duration::ZERO).unwrap();
+    let other = &other;
     let result = crate::wallet::sync::hardware_authority::dispatch(
         &wallet.path,
         NETWORK,
         &tx,
         &[],
         TIP.into(),
-        async {
+        |dispatched| async move {
             // A concurrent policy/recovery/rewind writer cannot commit after
-            // authorization but before the bounded submission finishes.
+            // authorization but before the request has left.
             assert!(other
                 .execute(
                     "UPDATE tpir_meta SET policy_generation = policy_generation",
                     []
                 )
                 .is_err());
+            dispatched.fire();
+            tokio::task::yield_now().await;
+            // Once it has left, a later write cannot recall it, so writers
+            // no longer wait for the response.
+            other
+                .execute(
+                    "UPDATE tpir_meta SET policy_generation = policy_generation",
+                    [],
+                )
+                .unwrap();
             Err::<(), _>("definite rejection")
         },
     )
@@ -451,6 +462,7 @@ async fn hardware_authority_withholds_stale_or_withdrawn_inputs_before_dispatch(
     run_required(&mut wallet, &source).await;
     let tx = hardware_tx(vec![receive(1, external(&wallet, 0), VALUE, 150).outpoint]);
     let sent = std::cell::Cell::new(0);
+    let sent = &sent;
     wallet
         .db
         .update_chain_tip(BlockHeight::from_u32(TIP + 1))
@@ -461,7 +473,7 @@ async fn hardware_authority_withholds_stale_or_withdrawn_inputs_before_dispatch(
         &tx,
         &[],
         (TIP + 1).into(),
-        async {
+        move |_| async move {
             sent.set(sent.get() + 1);
         }
     )
@@ -479,7 +491,7 @@ async fn hardware_authority_withholds_stale_or_withdrawn_inputs_before_dispatch(
         &tx,
         &[],
         TIP.into(),
-        async {
+        move |_| async move {
             sent.set(sent.get() + 1);
         }
     )
@@ -495,13 +507,15 @@ async fn hardware_authority_cancellation_releases_writer_reservation() {
     let source = funded_source(&wallet);
     run_required(&mut wallet, &source).await;
     let tx = hardware_tx(vec![receive(1, external(&wallet, 0), VALUE, 150).outpoint]);
+    // The request never finishes leaving, so the reservation lasts until the
+    // attempt ends; here, until it is cancelled.
     let mut dispatch = Box::pin(crate::wallet::sync::hardware_authority::dispatch(
         &wallet.path,
         NETWORK,
         &tx,
         &[],
         TIP.into(),
-        std::future::pending::<()>(),
+        |_unsent| std::future::pending::<()>(),
     ));
     assert!(futures::poll!(&mut dispatch).is_pending());
     let other = rusqlite::Connection::open(&wallet.path).unwrap();
@@ -522,6 +536,36 @@ async fn hardware_authority_cancellation_releases_writer_reservation() {
 }
 
 #[tokio::test]
+async fn hardware_authority_releases_the_reservation_once_the_request_has_left() {
+    let mut wallet = wallet();
+    let _mode = activate(&mut wallet).await;
+    let source = funded_source(&wallet);
+    run_required(&mut wallet, &source).await;
+    let tx = hardware_tx(vec![receive(1, external(&wallet, 0), VALUE, 150).outpoint]);
+    let mut dispatch = Box::pin(crate::wallet::sync::hardware_authority::dispatch(
+        &wallet.path,
+        NETWORK,
+        &tx,
+        &[],
+        TIP.into(),
+        |dispatched| async move {
+            dispatched.fire();
+            std::future::pending::<()>().await
+        },
+    ));
+    assert!(futures::poll!(&mut dispatch).is_pending());
+    let other = rusqlite::Connection::open(&wallet.path).unwrap();
+    other.busy_timeout(Duration::ZERO).unwrap();
+    other
+        .execute(
+            "UPDATE tpir_meta SET policy_generation = policy_generation",
+            [],
+        )
+        .unwrap();
+    assert!(futures::poll!(&mut dispatch).is_pending());
+}
+
+#[tokio::test]
 async fn hardware_authority_admits_only_existing_chained_outputs() {
     let mut wallet = wallet();
     let _mode = activate(&mut wallet).await;
@@ -536,7 +580,7 @@ async fn hardware_authority_admits_only_existing_chained_outputs() {
             &child,
             &[&parent],
             TIP.into(),
-            async { true },
+            |_| async { true },
         )
         .await
         .unwrap(),
@@ -549,7 +593,7 @@ async fn hardware_authority_admits_only_existing_chained_outputs() {
         &invalid,
         &[&parent],
         TIP.into(),
-        async { panic!("withheld") },
+        |_| async { panic!("withheld") },
     )
     .await
     .is_err());
@@ -557,7 +601,7 @@ async fn hardware_authority_admits_only_existing_chained_outputs() {
 
 #[tokio::test]
 async fn hardware_authority_withholds_the_real_send_transaction_rpc_when_stale() {
-    use crate::wallet::sync_engine::{send_transaction_with_status, test_lwd::CapturingLwd};
+    use crate::wallet::sync_engine::{send_transaction_signalling, test_lwd::CapturingLwd};
     let mut wallet = wallet();
     let _mode = activate(&mut wallet).await;
     let source = funded_source(&wallet);
@@ -565,7 +609,7 @@ async fn hardware_authority_withholds_the_real_send_transaction_rpc_when_stale()
     let tx = hardware_tx(vec![receive(1, external(&wallet, 0), VALUE, 150).outpoint]);
     let mut raw = Vec::new();
     tx.write(&mut raw).unwrap();
-    let mut lwd = CapturingLwd::start(Vec::new()).await;
+    let lwd = CapturingLwd::start(Vec::new()).await;
     // The capturing service records transport requests; it does not relay or
     // validate the fixture's synthetic signatures. This checks the real RPC
     // future's polling boundary independently of PCZT proof/signature tests.
@@ -576,7 +620,7 @@ async fn hardware_authority_withholds_the_real_send_transaction_rpc_when_stale()
         &tx,
         &[],
         TIP.into(),
-        send_transaction_with_status(&mut lwd.client, &raw),
+        |dispatched| send_transaction_signalling(lwd.channel.clone(), &raw, dispatched),
     )
     .await
     .unwrap();
@@ -592,7 +636,7 @@ async fn hardware_authority_withholds_the_real_send_transaction_rpc_when_stale()
         &tx,
         &[],
         (TIP + 1).into(),
-        send_transaction_with_status(&mut lwd.client, &raw),
+        |dispatched| send_transaction_signalling(lwd.channel.clone(), &raw, dispatched),
     )
     .await
     .is_err());
@@ -601,6 +645,58 @@ async fn hardware_authority_withholds_the_real_send_transaction_rpc_when_stale()
         1,
         "stale authority never polls the RPC"
     );
+}
+
+#[tokio::test]
+async fn hardware_authority_lets_writers_commit_while_the_response_is_pending() {
+    use crate::wallet::{
+        db::{open_wallet_raw_conn_with_timeout, with_wallet_db_write_lock},
+        sync_engine::{send_transaction_signalling, test_lwd::CapturingLwd},
+    };
+    let mut wallet = wallet();
+    let _mode = activate(&mut wallet).await;
+    let source = funded_source(&wallet);
+    run_required(&mut wallet, &source).await;
+    let tx = hardware_tx(vec![receive(1, external(&wallet, 0), VALUE, 150).outpoint]);
+    let mut raw = Vec::new();
+    tx.write(&mut raw).unwrap();
+    let (lwd, gate) = CapturingLwd::start_for_held_broadcast(u64::from(TIP)).await;
+    let path = wallet.path.clone();
+    let channel = lwd.channel.clone();
+    let send = tokio::spawn(async move {
+        crate::wallet::sync::hardware_authority::dispatch(
+            &path,
+            NETWORK,
+            &tx,
+            &[],
+            TIP.into(),
+            |dispatched| send_transaction_signalling(channel, &raw, dispatched),
+        )
+        .await
+    });
+    while lwd.count("/SendTransaction") == 0 {
+        tokio::task::yield_now().await;
+    }
+    // The server holds its response. A sync-style writer, with sync's short
+    // busy timeout, commits through the in-process write lock meanwhile.
+    let path = wallet.path.clone();
+    tokio::task::spawn_blocking(move || {
+        with_wallet_db_write_lock("test.writer_during_broadcast", || {
+            let conn = open_wallet_raw_conn_with_timeout(&path, SYNC_DB_BUSY_TIMEOUT).unwrap();
+            conn.execute(
+                "UPDATE tpir_meta SET policy_generation = policy_generation",
+                [],
+            )
+            .unwrap();
+        })
+    })
+    .await
+    .unwrap();
+    assert!(!send.is_finished(), "the response is still held");
+    gate.notify_one();
+    let response = send.await.unwrap().unwrap().unwrap();
+    assert_eq!(response.error_code, 0);
+    assert_eq!(lwd.count("/SendTransaction"), 1);
 }
 
 /// History of projected activity: discovery found the effects, not the
@@ -667,7 +763,7 @@ async fn projected_history_shows_a_known_debit_with_change_as_provisional() {
 
 #[tokio::test]
 async fn public_hardware_retry_of_own_stored_spend_reaches_submission() {
-    use crate::wallet::sync_engine::{send_transaction_with_status, test_lwd::CapturingLwd};
+    use crate::wallet::sync_engine::{send_transaction_signalling, test_lwd::CapturingLwd};
     use transparent::bundle::TxOut;
     use zcash_client_backend::data_api::wallet::decrypt_and_store_transaction;
     use zcash_client_backend::wallet::WalletTransparentOutput;
@@ -691,14 +787,14 @@ async fn public_hardware_retry_of_own_stored_spend_reaches_submission() {
     let tx = hardware_tx(vec![funded]);
     let mut raw = Vec::new();
     tx.write(&mut raw).unwrap();
-    let mut lwd = CapturingLwd::start(Vec::new()).await;
+    let lwd = CapturingLwd::start(Vec::new()).await;
     let _ambiguous_send = crate::wallet::sync::hardware_authority::dispatch(
         &wallet.path,
         NETWORK,
         &tx,
         &[],
         TIP.into(),
-        send_transaction_with_status(&mut lwd.client, &raw),
+        |dispatched| send_transaction_signalling(lwd.channel.clone(), &raw, dispatched),
     )
     .await
     .unwrap();
@@ -717,7 +813,7 @@ async fn public_hardware_retry_of_own_stored_spend_reaches_submission() {
         &tx,
         &[],
         TIP.into(),
-        send_transaction_with_status(&mut lwd.client, &raw),
+        |dispatched| send_transaction_signalling(lwd.channel.clone(), &raw, dispatched),
     )
     .await;
     assert!(retry.is_ok(), "{retry:?}");

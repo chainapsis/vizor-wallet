@@ -41,6 +41,7 @@ use crate::wallet::{db::with_wallet_db_write_lock, network::WalletNetwork};
 use super::block_source::MemoryBlockSource;
 use super::{elapsed, SyncError, WalletDatabase};
 
+pub(super) mod dispatch_signal;
 pub(super) mod transparent_lookup;
 
 const LIGHTWALLETD_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -157,6 +158,14 @@ pub(crate) async fn open_isolated_lwd_channel(
     open_lwd_channel_for_route(lightwalletd_url, true, || false).await
 }
 
+/// The transport [`open_isolated_lwd_channel`] wraps, for broadcasts that
+/// layer [`send_transaction_signalling`] over it.
+pub(crate) async fn open_isolated_lwd_transport(
+    lightwalletd_url: &str,
+) -> Result<Channel, SyncError> {
+    open_lwd_transport_for_route(lightwalletd_url, true, || false).await
+}
+
 /// Opens a lightwalletd channel that is always direct, bypassing the
 /// process-wide route policy entirely.
 ///
@@ -202,6 +211,16 @@ async fn open_lwd_channel_for_route(
     isolated: bool,
     cancelled: impl Fn() -> bool,
 ) -> Result<CompactTxStreamerClient<Channel>, SyncError> {
+    open_lwd_transport_for_route(lightwalletd_url, isolated, cancelled)
+        .await
+        .map(CompactTxStreamerClient::new)
+}
+
+async fn open_lwd_transport_for_route(
+    lightwalletd_url: &str,
+    isolated: bool,
+    cancelled: impl Fn() -> bool,
+) -> Result<Channel, SyncError> {
     static RUSTLS_INIT: std::sync::Once = std::sync::Once::new();
     RUSTLS_INIT.call_once(|| {
         let _ = rustls::crypto::ring::default_provider().install_default();
@@ -216,7 +235,7 @@ async fn open_lwd_channel_for_route(
     {
         let allow_onion_services = endpoint_allows_onion_services(&endpoint);
         return tor_client
-            .connect_to_lightwalletd(endpoint.uri().clone(), allow_onion_services)
+            .connect_lightwalletd_channel(endpoint.uri().clone(), allow_onion_services)
             .await
             .map_err(|e| SyncError::net(format!("Tor gRPC connect failed: {e}")));
     }
@@ -227,11 +246,10 @@ async fn open_lwd_channel_for_route(
     } else {
         endpoint
     };
-    let channel = endpoint
+    endpoint
         .connect_with_connector(DirectRouteConnector::new())
         .await
-        .map_err(|e| SyncError::net(format!("gRPC connect failed: {e}")))?;
-    Ok(CompactTxStreamerClient::new(channel))
+        .map_err(|e| SyncError::net(format!("gRPC connect failed: {e}")))
 }
 
 #[derive(Clone)]
@@ -406,6 +424,30 @@ pub(crate) async fn send_transaction_with_status(
     client: &mut CompactTxStreamerClient<Channel>,
     data: &[u8],
 ) -> Result<SendResponse, Status> {
+    await_tonic_response(
+        "send_transaction",
+        LIGHTWALLETD_UNARY_RPC_TIMEOUT,
+        client.send_transaction(timed_request(
+            RawTransaction {
+                data: data.to_vec(),
+                height: 0,
+            },
+            LIGHTWALLETD_UNARY_RPC_TIMEOUT,
+        )),
+    )
+    .await
+}
+
+/// Like [`send_transaction_with_status`], over `transport`, firing
+/// `dispatched` once the request body has been handed to the connection.
+pub(crate) async fn send_transaction_signalling(
+    transport: Channel,
+    data: &[u8],
+    dispatched: dispatch_signal::Dispatched,
+) -> Result<SendResponse, Status> {
+    let mut client = CompactTxStreamerClient::new(dispatch_signal::DispatchSignalService::new(
+        transport, dispatched,
+    ));
     await_tonic_response(
         "send_transaction",
         LIGHTWALLETD_UNARY_RPC_TIMEOUT,

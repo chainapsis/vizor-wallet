@@ -6,7 +6,7 @@ use std::sync::{
 };
 
 use bytes::Bytes;
-use http_body_util::Full;
+use http_body_util::{BodyExt, Full};
 use hyper::service::service_fn;
 use prost::Message;
 use tonic::transport::Channel;
@@ -29,6 +29,8 @@ type OnRequest = Arc<dyn Fn(&str) + Send + Sync>;
 /// `tip_height`, and UTXO streams are empty.
 pub(crate) struct CapturingLwd {
     pub(crate) client: CompactTxStreamerClient<Channel>,
+    /// The transport `client` uses, for calls that layer services over it.
+    pub(crate) channel: Channel,
     pub(crate) url: String,
     requests: Arc<Mutex<Vec<String>>>,
     server: tokio::task::JoinHandle<()>,
@@ -47,12 +49,23 @@ impl CapturingLwd {
         tip_height: u64,
         on_request: impl Fn(&str) + Send + Sync + 'static,
     ) -> Self {
-        Self::start_inner(history_tx, tip_height, on_request, false).await
+        Self::start_inner(history_tx, tip_height, on_request, false, None).await
     }
 
     /// A real successful broadcast response for durable operation recovery tests.
     pub(crate) async fn start_for_broadcast(tip_height: u64) -> Self {
-        Self::start_inner(Vec::new(), tip_height, |_| {}, true).await
+        Self::start_inner(Vec::new(), tip_height, |_| {}, true, None).await
+    }
+
+    /// Like [`Self::start_for_broadcast`], but every `SendTransaction`
+    /// response waits for a permit on the returned gate after the request
+    /// has been received in full.
+    pub(crate) async fn start_for_held_broadcast(
+        tip_height: u64,
+    ) -> (Self, Arc<tokio::sync::Notify>) {
+        let gate = Arc::new(tokio::sync::Notify::new());
+        let lwd = Self::start_inner(Vec::new(), tip_height, |_| {}, true, Some(gate.clone())).await;
+        (lwd, gate)
     }
 
     async fn start_inner(
@@ -60,6 +73,7 @@ impl CapturingLwd {
         tip_height: u64,
         on_request: impl Fn(&str) + Send + Sync + 'static,
         accept_broadcast: bool,
+        send_gate: Option<Arc<tokio::sync::Notify>>,
     ) -> Self {
         let requests = Arc::new(Mutex::new(Vec::new()));
         let recorded = requests.clone();
@@ -72,6 +86,7 @@ impl CapturingLwd {
                 let recorded = recorded.clone();
                 let on_request = on_request.clone();
                 let history_tx = history_tx.clone();
+                let send_gate = send_gate.clone();
                 tokio::spawn(async move {
                     let service =
                         service_fn(move |request: hyper::Request<hyper::body::Incoming>| {
@@ -79,7 +94,16 @@ impl CapturingLwd {
                             recorded.lock().unwrap().push(path.clone());
                             on_request(&path);
                             let history_tx = history_tx.clone();
+                            let send_gate = send_gate.clone();
                             async move {
+                                if path.ends_with("/SendTransaction") {
+                                    if let Some(gate) = send_gate {
+                                        // Hold the response only after the
+                                        // whole request has arrived.
+                                        let _ = request.into_body().collect().await;
+                                        gate.notified().await;
+                                    }
+                                }
                                 let grpc = hyper::Response::builder()
                                     .header("content-type", "application/grpc");
                                 let response = if path.ends_with("/GetTaddressTxids")
@@ -132,7 +156,8 @@ impl CapturingLwd {
             .unwrap();
         let _ = rustls::crypto::ring::default_provider().install_default();
         Self {
-            client: CompactTxStreamerClient::new(channel),
+            client: CompactTxStreamerClient::new(channel.clone()),
+            channel,
             url,
             requests,
             server,
