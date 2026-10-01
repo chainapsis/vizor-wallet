@@ -94,9 +94,11 @@ void main() {
       tester.getSize(find.byType(ReceiveAddressInfoSheet)),
       const Size(361, 454),
     );
+    // #729 (72aeaeb36) made the modal's bottom margin equal its 16 px side
+    // margin: 852 - 454 - 16.
     expect(
       tester.getTopLeft(find.byType(ReceiveAddressInfoSheet)),
-      const Offset(16, 366),
+      const Offset(16, 382),
     );
     final firstItem = find.byKey(const ValueKey('receive_address_info_item_0'));
     final secondItem = find.byKey(
@@ -142,13 +144,16 @@ void main() {
     expect(find.text('Transparent address'), findsOneWidget);
     expect(find.text('Publicly visible'), findsOneWidget);
     expect(find.text('Close'), findsOneWidget);
+    // The address-rotation explanation (d1a929be7, wrapping since 2e93c0e13)
+    // makes the sheet taller; it sits 16 px above the bottom like every
+    // modal since #729: 852 - 612 - 16.
     expect(
       tester.getSize(find.byType(ReceiveAddressInfoSheet)),
-      const Size(361, 479),
+      const Size(361, 612),
     );
     expect(
       tester.getTopLeft(find.byType(ReceiveAddressInfoSheet)),
-      const Offset(16, 341),
+      const Offset(16, 224),
     );
   });
 }
