@@ -428,8 +428,13 @@ through the library's `test-dependencies` hook
   spend; the exception requires full serialized-byte equality and never permits
   a competing live or mined spender.
   A SQLite `BEGIN IMMEDIATE` reservation prevents policy, evidence, and rewind
-  writes through that bounded send attempt, then rolls back without storing the
-  transaction. It may delay other writers for the RPC timeout. Chained TEX inputs
+  writes from the check until the request body has been handed to the transport,
+  then rolls back without storing the transaction. A request that has left cannot
+  be recalled by a later write, so the reservation does not wait for the response;
+  it normally lasts milliseconds. HTTP/2 flow control can stretch it by about one
+  round trip for a body larger than the stream window. A body that never finishes
+  leaving keeps the reservation through the bounded RPC attempt, and holds of
+  250 ms or more are logged. Chained TEX inputs
   must name an existing output of an earlier finalized transaction in the batch.
   Definite rejection still persists nothing; accepted or ambiguous prefixes retain
   existing storage and recovery behavior. Cancellation drops the reservation.
