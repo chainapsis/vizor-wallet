@@ -159,6 +159,11 @@ abstract interface class PaymentLinkOperations {
   });
 
   /// Re-estimates a checked card for the explicitly selected receiving account.
+  ///
+  /// Uses the existing inspection database without another sync. Inspection
+  /// readiness is a snapshot, not a guarantee that a later claim will succeed.
+  /// See docs/plans/mobile-gift-claim-execution-policy.md for the onboarding
+  /// handoff and the existing Received-card failure/recovery surface.
   Future<PaymentLinkClaimSession> bindClaimDestination(
     PaymentLinkClaimInspection inspection, {
     required String destinationAccountUuid,
@@ -1435,6 +1440,11 @@ class PaymentLinkService
         false) {
       throw const PaymentLinkClaimInFlightException();
     }
+    // Intentionally do not resync here: account setup can outlast the preview,
+    // but binding does not add another scan to that path. Re-estimation uses
+    // the cached card state; submission can fail or still require confirmations.
+    // Once a claim is started, its saved card remains in My gift cards > Received
+    // for existing failure/recovery handling. Binding alone does not save it.
     final estimate = await _estimateClaim(
       dbPath: inspection.dbPath,
       network: inspection.link.network,
