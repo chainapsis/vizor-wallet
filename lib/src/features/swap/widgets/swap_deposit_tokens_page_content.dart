@@ -227,6 +227,7 @@ class _SwapDepositPageShell extends StatelessWidget {
 }
 
 /// Keeps the token and network beside the QR without moving the deposit rows.
+/// The warning wraps instead of truncating, so the network name stays whole.
 class _DepositNetworkGuidance extends StatelessWidget {
   const _DepositNetworkGuidance({required this.asset});
 
@@ -234,16 +235,18 @@ class _DepositNetworkGuidance extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
+    return ConstrainedBox(
       key: const ValueKey('swap_deposit_network_guidance'),
-      height: AppSpacing.lg,
-      child: Center(
-        child: Text(
-          'Send only ${asset.symbol} on ${asset.chainLabel}',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: AppTypography.labelMedium.copyWith(
-            color: context.colors.text.secondary,
+      constraints: const BoxConstraints(minHeight: AppSpacing.lg),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+        child: Center(
+          child: Text(
+            'Send only ${asset.symbol} on ${asset.chainLabel}',
+            textAlign: TextAlign.center,
+            style: AppTypography.labelMedium.copyWith(
+              color: context.colors.text.secondary,
+            ),
           ),
         ),
       ),
