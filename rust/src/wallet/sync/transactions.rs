@@ -1900,8 +1900,11 @@ fn classify_history_tx(
     // Discovery found this debit but not where the value went. The outputs it
     // knows of can only be change, so none of them is shown as a receive, and
     // the net debit less any recorded fee is all that can be shown of the
-    // payment: it is provisional, not a payment amount.
-    if base.history.provisional && base.account_balance_delta < 0 && summary.sent.amount == 0 {
+    // payment: it is provisional, not a payment amount. A visible sent output,
+    // even a zero-value memo-only one, is where the value went, and keeps its
+    // own row below.
+    if base.history.provisional && base.account_balance_delta < 0 && summary.sent.output_count == 0
+    {
         let fee = base.history.fee;
         let debit = base
             .account_balance_delta
@@ -2704,6 +2707,30 @@ mod tests {
         assert!(rows[0].info.provisional);
     }
 
+    /// A locally built memo-only send is provisional until scanning settles its
+    /// effects, but its zero-value payment is known: it keeps its sent row
+    /// instead of becoming a net debit.
+    #[test]
+    fn a_provisional_zero_value_send_keeps_its_sent_row() {
+        let (mut base, _) = provisional_debit();
+        base.account_balance_delta = -10_000;
+        base.total_received = 90_000;
+        base.history.details_complete = true;
+        base.history.fee = Fee::Known(10_000);
+        let mut summary = ActivitySummary::default();
+        summary.sent.output_count = 1;
+        summary.sent.has_shielded = true;
+
+        let rows = classify_history_tx(&base, &summary, Fee::NotApplicable);
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].info.tx_kind, "sent");
+        assert_eq!(rows[0].info.display_amount, 0);
+        assert_eq!(rows[0].info.display_pool, "shielded");
+        assert_eq!(rows[0].info.fee, 10_000);
+        assert!(rows[0].info.provisional);
+    }
+
     #[test]
     fn a_complete_debit_with_change_keeps_its_classification() {
         let (mut base, summary) = provisional_debit();
@@ -2750,6 +2777,7 @@ mod tests {
         base.attach_history(pending);
         let mut summary = ActivitySummary::default();
         summary.sent.amount = 50_000;
+        summary.sent.output_count = 1;
         let rows = classify_history_tx(&base, &summary, Fee::NotApplicable);
         assert_eq!(rows.len(), 1);
         assert!(rows[0].info.details_complete);
@@ -2854,6 +2882,7 @@ mod tests {
         base.history.fee = Fee::Unknown;
         let mut summary = ActivitySummary::default();
         summary.sent.amount = 5_000_000;
+        summary.sent.output_count = 1;
         summary.sent.has_shielded = true;
 
         let rows = classify_history_tx(&base, &summary, Fee::NotApplicable);
@@ -5265,7 +5294,7 @@ mod tests {
         txid: &[u8],
         tx_kind: &str,
     ) -> TransactionDetail {
-        get_transaction_detail(
+        detail_from_fixture(
             db.path().to_str().unwrap(),
             WalletNetwork::Test,
             &account.to_string(),
