@@ -566,15 +566,41 @@ public fallback. Foreground, migration recovery, and the versioned native ABI us
 the same routing contract. Mainnet private preference enables private status;
 there is no separate release gate.
 
-## Phase 4 dependency update
+## Library dependency
 
-The four patched library crates use main revision
-`3bbc469932446f23e564e0eecb7bdd00dbf48dbb`. Trusted qualification, rather than
-candidate observation, now authorizes provisional revision replacement. The
-replacement regression explicitly qualifies fixture revisions at that boundary.
-Reader version 6 state is not supported by version 5 rollback readers; this pin
-remains preparatory work, with production private activation and real-source
-verification deferred.
+The four patched library crates use wallet-libraries main revision
+`0497bc370f83d4e9277f07beecc467047daf9532` (the merge of #81, after #77, #78,
+and #79). Trusted qualification, rather than candidate observation, authorizes
+provisional revision replacement. The replacement regression explicitly
+qualifies fixture revisions at that boundary. Reader version 6 state is not
+supported by version 5 rollback readers; this pin remains preparatory work,
+with production private activation and real-source verification deferred.
+
+- **#77** adds source-bound transparent transaction metadata and the
+  `transaction_metadata`, `aggregate_payment`, and `account_movement` fields of
+  `TransactionHistoryDetails`. Activity does not read them yet: Public handles
+  have no recovery source that supplies them, and the account fee keeps its
+  `fee_state`. Two migrations add empty tables
+  (`tpir_transaction_metadata`, `tpir_shared_derivations`); writing either
+  raises the reader version, and neither changes policy, balances, or
+  authority.
+- **#78** keeps the ZIP 318 drop but adds an explicit public-only handover,
+  `prepare_legacy_rollback`, which restores `transactions.zip318_kind` for the
+  published rc5/rc7 writers. Without it those builds fail to store any
+  transaction in a wallet this build opened. Vizor's entry point is
+  `wallet::legacy_rollback::prepare_for_legacy_build`; nothing in production
+  calls it yet, because a running build cannot know an older one is next. The
+  way back needs no call: the migration gate's `init_wallet_db` reconciles the
+  older build's public writes into `tpir_output_origins` and
+  `tpir_spend_origins` and drops the column again. Initialization now also
+  refuses unknown migration IDs, so a database written by a newer library
+  fails to open instead of being misread.
+- **#79** adds `WalletDb::check_transparent_transaction_inputs` and
+  `SqlTransaction::new`, which hardware submission checks and account deletion
+  use (see "Operations" and "Account deletion" above).
+- **#81** exposes the Tor-routed lightwalletd channel, which the hardware
+  broadcast path wraps to release its reservation once the request leaves
+  ("Operations" above). It adds no migration.
 
 ### History refresh and batch receipt totals
 

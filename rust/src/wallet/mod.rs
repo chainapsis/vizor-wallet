@@ -8,6 +8,7 @@ pub(crate) mod gift_card_tracking;
 pub mod keys;
 pub mod keystone;
 pub mod ledger;
+pub mod legacy_rollback;
 pub mod network;
 pub mod secret_payload;
 pub mod secret_store;
