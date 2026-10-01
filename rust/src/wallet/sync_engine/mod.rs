@@ -12,6 +12,7 @@ use zcash_client_backend::data_api::{
     chain::{self, error::Error as ChainError, scan_cached_blocks},
     ll::LowLevelWalletWrite,
     scanning::{ScanPriority, ScanRange},
+    transparent_ledger::TransparentLedgerRead,
     wallet::ConfirmationsPolicy,
     WalletCommitmentTrees, WalletRead, WalletWrite,
 };
@@ -45,6 +46,7 @@ use {
     zcash_script::script,
 };
 
+pub(crate) mod address_discovery;
 mod address_history;
 mod block_source;
 mod claim_roots;
@@ -53,7 +55,6 @@ mod ephemeral_checks;
 #[cfg(test)]
 mod ephemeral_checks_tests;
 mod error;
-pub(crate) mod ledger_discovery;
 mod lwd;
 pub(crate) mod mempool;
 #[cfg(test)]
@@ -66,13 +67,13 @@ mod transparent_recovery_tests;
 use enhancement::{queue_stored_transactions, EnhancementPolicy, EnhancementSession};
 pub(crate) use error::SyncError;
 use error::{RecoveryStrategy, MAX_REWINDS_PER_RUN};
-use lwd::{download_blocks, download_subtree_roots, get_tree_state, get_tree_state_for_block};
 pub(crate) use lwd::{
     dispatch_signal::Dispatched, get_compact_block_hash, get_latest_block, next_stream_message,
     open_background_direct_lwd_channel, open_isolated_lwd_channel, open_isolated_lwd_transport,
     open_lwd_channel, open_lwd_channel_with_cancel, send_transaction, send_transaction_signalling,
     send_transaction_with_status, transparent_lookup::TransparentLookupGate,
 };
+use lwd::{download_blocks, download_subtree_roots, get_tree_state, get_tree_state_for_block};
 pub(crate) use tip_cache::{
     get_latest_block_recorded, latest_block_for_transaction,
     latest_block_for_transaction_with_client,
@@ -1296,7 +1297,7 @@ async fn repair_anchor_root_mismatch_if_needed(
         let attempt_result = with_wallet_db_write_lock(
             "sync_engine.truncate_to_chain_state.anchor_root_mismatch",
             || -> Result<Result<Vec<ScanRange>, String>, SyncError> {
-                ledger_discovery::invalidate_for_rewind(db_data_path, db, repair_height)
+                address_discovery::invalidate_for_rewind(db_data_path, db, repair_height)
                     .map_err(|e| SyncError::db(format!("invalidate transparent refresh: {e}")))?;
                 match db.truncate_to_chain_state(repair_chain_state.clone()) {
                     Ok(()) => {}
@@ -1751,11 +1752,18 @@ async fn refresh_utxos(
             store_then_mark_transparent_refreshes(
                 downloaded,
                 |downloaded| {
-                    store_transparent_outputs(db, downloaded)?;
-                    // Outputs already received are stored, but a group answered
-                    // after a transition does not advance refresh metadata, so
-                    // a later pass under the new policy re-covers it.
-                    completion_authorized.set(gate.permits()?);
+                    // A group answered after a transition neither reports its
+                    // result nor advances refresh metadata, so a later pass
+                    // under the new policy re-covers it.
+                    completion_authorized.set(store_transparent_refreshes(
+                        db,
+                        Some(UtxoReport {
+                            gate: &gate,
+                            network,
+                            tip: tip_height,
+                        }),
+                        downloaded,
+                    )?);
                     Ok(())
                 },
                 |downloaded| {
@@ -1980,6 +1988,7 @@ fn store_then_mark_transparent_refreshes<T, E>(
     Ok(())
 }
 
+#[cfg(test)]
 fn store_transparent_outputs(
     db: &mut WalletDatabase,
     downloaded: &[DownloadedTransparentRefresh],
@@ -1987,9 +1996,39 @@ fn store_transparent_outputs(
     if downloaded.iter().all(|batch| batch.outputs.is_empty()) {
         return Ok(());
     }
+    store_transparent_refreshes(db, None, downloaded).map(|_| ())
+}
 
+/// Who authorizes a refresh group's report, and what it observed against.
+struct UtxoReport<'a> {
+    gate: &'a TransparentLookupGate,
+    network: WalletNetwork,
+    tip: BlockHeight,
+}
+
+/// Stores a group of UTXO refreshes and reports each one's result to the
+/// library, in one SQLite transaction (gap 5a).
+///
+/// Every refresh is a complete query: no entry limit, and its stream ended
+/// without error. For each queried address it reports the outputs returned
+/// since the refresh's start height, as observed against `report.tip`, the
+/// chain tip read before the query was issued. A wallet output mined in that
+/// range that was not returned, and whose spend the wallet has not seen, then
+/// stops counting as spendable and its spend is searched for. The report is a
+/// completion write: it is made only while `report.gate` still authorizes the
+/// lookups, reading the durable policy in this transaction. Returns whether it
+/// was authorized.
+fn store_transparent_refreshes(
+    db: &mut WalletDatabase,
+    report: Option<UtxoReport<'_>>,
+    downloaded: &[DownloadedTransparentRefresh],
+) -> Result<bool, SyncError> {
+    let observations = match &report {
+        Some(report) => utxo_observations(report.network, report.tip, downloaded)?,
+        None => Vec::new(),
+    };
     with_wallet_db_write_lock("sync_engine.put_received_transparent_utxos", || {
-        db.transactionally(|tx_db| -> Result<(), SqliteClientError> {
+        db.transactionally(|tx_db| -> Result<bool, SqliteClientError> {
             for batch in downloaded {
                 for output in &batch.outputs {
                     tx_db.put_received_transparent_utxo(output)?;
@@ -2002,16 +2041,66 @@ fn store_transparent_outputs(
                     tx_db.queue_tx_retrieval(std::iter::once(*output.outpoint().txid()), None)?;
                 }
             }
-            Ok(())
+            let Some(report) = &report else {
+                return Ok(false);
+            };
+            // Outputs already received are stored, but a group answered after
+            // a transition reports nothing, so a later pass under the new
+            // policy observes the addresses again.
+            if !report
+                .gate
+                .permits_applied(TransparentLedgerRead::applied_transparent_policy(&*tx_db)?)
+            {
+                return Ok(false);
+            }
+            for (address, start_height, unspent) in &observations {
+                tx_db.notify_transparent_utxos_observed(
+                    address,
+                    *start_height,
+                    report.tip,
+                    unspent,
+                )?;
+            }
+            Ok(true)
         })
         .map_err(|e| SyncError::db(format!("put_received_transparent_utxos: {e}")))
     })
 }
 
+/// Each queried address of each refresh, with the refresh's start height and
+/// the outpoints it returned for that address. A refresh that starts above
+/// `tip` judged nothing and reports nothing.
+fn utxo_observations(
+    network: WalletNetwork,
+    tip: BlockHeight,
+    downloaded: &[DownloadedTransparentRefresh],
+) -> Result<Vec<(TransparentAddress, BlockHeight, Vec<OutPoint>)>, SyncError> {
+    let query_network = transparent_utxo_query_network(network);
+    let mut observations = Vec::new();
+    for batch in downloaded {
+        if batch.refresh.start_height > tip {
+            continue;
+        }
+        for address in &batch.refresh.addresses {
+            let address = TransparentAddress::decode(&query_network, address).map_err(|e| {
+                SyncError::parse(format!("refreshed transparent address {address}: {e}"))
+            })?;
+            let unspent = batch
+                .outputs
+                .iter()
+                .filter(|output| *output.recipient_address() == address)
+                .map(|output| output.outpoint().clone())
+                .collect();
+            observations.push((address, batch.refresh.start_height, unspent));
+        }
+    }
+    Ok(observations)
+}
+
 async fn download_transparent_outputs(
     mut client: CompactTxStreamerClient<Channel>,
     gate: TransparentLookupGate,
-    mut refresh: TransparentRefresh,
+    refresh: TransparentRefresh,
     should_exit: &impl Fn() -> bool,
 ) -> Result<Option<DownloadedTransparentRefresh>, SyncError> {
     if should_exit() {
@@ -2035,7 +2124,7 @@ async fn download_transparent_outputs(
         refresh.addresses.len(),
     );
 
-    let addresses = std::mem::take(&mut refresh.addresses);
+    let addresses = refresh.addresses.clone();
     let stream = tokio::select! {
         biased;
         _ = watch_for_exit(should_exit) => {
@@ -2268,7 +2357,7 @@ fn truncate_wallet_to_height(
     invalidate_transparent_checks_before_rewind(db_data_path)?;
     with_wallet_db_write_lock(operation, || {
         truncate_wallet_with(requested_height, fresh_tip_height, |height| {
-            ledger_discovery::truncate(db_data_path, db, height)
+            address_discovery::truncate(db_data_path, db, height)
         })
     })
 }
@@ -2862,7 +2951,7 @@ async fn run_payment_link_claim_sync_once(
                     let requested = confirmed_reorg_rewind_target(fresh_height)?;
                     invalidate_transparent_checks_before_rewind(db_data_path)?;
                     truncate_wallet_with(requested, fresh_height, |height| {
-                        ledger_discovery::truncate(db_data_path, &mut db, height)
+                        address_discovery::truncate(db_data_path, &mut db, height)
                     })?;
                     db.update_chain_tip(fresh_height).map_err(|error| {
                         SyncError::db(format!("payment-link update tip after reorg: {error}"))
@@ -2967,7 +3056,7 @@ async fn run_payment_link_claim_sync_once(
                     block_height_from_u64(current_tip_height, "payment-link scan rewind tip")?;
                 invalidate_transparent_checks_before_rewind(db_data_path)?;
                 truncate_wallet_with(requested, fresh_tip, |height| {
-                    ledger_discovery::truncate(db_data_path, &mut db, height)
+                    address_discovery::truncate(db_data_path, &mut db, height)
                 })?;
             }
         }
@@ -3128,12 +3217,14 @@ async fn run_sync_impl(
         return Ok(());
     }
 
-    // Recovery runs after import, under the existing sync lifetime. Once both
-    // scopes complete it performs no further address-history requests.
-    ledger_discovery::run(
+    // Every account's initial address-history discovery runs under the
+    // existing sync lifetime, before the UTXO refresh. Once both of an
+    // account's scopes complete it performs no further discovery requests.
+    address_discovery::run(
         &mut client,
         &mut db,
         db_data_path,
+        lightwalletd_url,
         network,
         tip_height,
         &should_exit,
@@ -4058,7 +4149,7 @@ async fn run_sync_impl(
                     let actual_rewind_height = with_wallet_db_write_lock(
                         "sync_engine.truncate_to_height",
                         || -> Result<BlockHeight, SyncError> {
-                            match ledger_discovery::truncate(db_data_path, &mut db, target) {
+                            match address_discovery::truncate(db_data_path, &mut db, target) {
                                 Ok(h) => Ok(h),
                                 Err(SqliteClientError::RequestedRewindInvalid {
                                     safe_rewind_height: Some(safe),
@@ -4069,7 +4160,7 @@ async fn run_sync_impl(
                                          below earliest checkpoint; retrying at safe_rewind_height={safe}",
                                         elapsed(),
                                     );
-                                    ledger_discovery::truncate(db_data_path, &mut db, safe).map_err(|e| {
+                                    address_discovery::truncate(db_data_path, &mut db, safe).map_err(|e| {
                                         if is_sqlite_lock_contention(&e) {
                                             SyncError::other(format!(
                                                 "truncate_to_height({safe}) retry: SQLite lock contention: {e}"
@@ -4523,17 +4614,50 @@ async fn run_sync_impl(
         }
     }
 
+    // A restore finds a TEX operation's first leg only now, through the
+    // shielded scan and its enhancement. Its second leg spends from an
+    // ephemeral address, so it is found here, by checking that address once,
+    // and the transactions it stores are enhanced before completion.
+    let tip_for_ephemeral = BlockHeight::from_u32(current_tip_height as u32);
+    if address_discovery::run_restored_ephemeral(
+        &mut client,
+        &mut db,
+        db_data_path,
+        lightwalletd_url,
+        network,
+        tip_for_ephemeral,
+        &should_exit,
+    )
+    .await?
+        && !should_exit()
+        && enhancement
+            .run_checkpoint(&mut db, &mut client, None, &should_exit)
+            .await?
+    {
+        log::info!(
+            "[{}] sync: exiting during restored ephemeral enhancement",
+            elapsed()
+        );
+        return Ok(());
+    }
+    if should_exit() {
+        return Ok(());
+    }
+
     let (final_scanned_height, final_tip_height) =
         ensure_complete_scan_state(&mut db, current_tip_height)?;
-    for id in db
-        .get_account_ids()
-        .map_err(|e| SyncError::db(e.to_string()))?
+    // Completion claims the transparent history is complete too: address
+    // discovery, restored ephemeral checks, and every spend search due at or
+    // below the tip. A failure that left any of it undone (an address-history
+    // stream cut, an address whose transactions failed to store) fails the
+    // sync, which retries, instead of reporting a synchronized wallet.
+    if let Some((account, coverage)) =
+        address_discovery::first_incomplete(&mut db, network).map_err(SyncError::db)?
     {
-        if !ledger_discovery::is_ready(db_data_path, id).map_err(SyncError::db)? {
-            return Err(SyncError::other(
-                "Ledger recovery was invalidated during sync; retrying",
-            ));
-        }
+        return Err(SyncError::other(format!(
+            "transparent history of account {} is incomplete ({coverage:?}); retrying",
+            account.expose_uuid()
+        )));
     }
     // Candidate transparent recovery runs at the fully scanned height, after
     // the shielded scan settles. It keeps its own progress in the library and

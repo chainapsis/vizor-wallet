@@ -180,8 +180,10 @@ void main() {
 
     expect(find.text('Step 2/2'), findsOneWidget);
     expect(find.text('Confirm with Keystone'), findsOneWidget);
+    // The preview uses the flow's default caption since 217f8a758 removed its
+    // send-specific override.
     expect(
-      find.text('Scan the QR code on your Keystone to finish sending'),
+      find.text('Scan the QR code on your Keystone to confirm'),
       findsOneWidget,
     );
     expect(

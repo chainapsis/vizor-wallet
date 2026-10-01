@@ -124,6 +124,7 @@ void main() {
       final softwareStarts = <String>[];
       final broadcasts = <String>[];
       final container = _container(
+        isIOS: true,
         statuses: statuses,
         softwareStarts: softwareStarts,
         broadcasts: broadcasts,
@@ -562,6 +563,7 @@ void main() {
     final recoveries = <String>[];
     final broadcasts = <String>[];
     final container = _container(
+      isIOS: true,
       statuses: statuses,
       softwareStarts: [],
       broadcasts: broadcasts,
@@ -615,6 +617,7 @@ void main() {
       final recoveries = <String>[];
       final broadcasts = <String>[];
       final container = _container(
+        isIOS: true,
         statuses: statuses,
         softwareStarts: [],
         broadcasts: broadcasts,
@@ -937,6 +940,7 @@ void main() {
       final outboxRecoveries = <String>[];
       final broadcasts = <String>[];
       final container = _container(
+        isIOS: true,
         statuses: statuses,
         softwareStarts: [],
         broadcasts: broadcasts,
@@ -990,6 +994,7 @@ void main() {
       };
       final recoveries = <String>[];
       final container = _container(
+        isIOS: true,
         statuses: statuses,
         softwareStarts: [],
         broadcasts: [],
@@ -1033,6 +1038,7 @@ void main() {
         _hardwareUuid: _status('complete', activeRunId: null),
       };
       final container = _container(
+        isIOS: true,
         statuses: statuses,
         softwareStarts: [],
         broadcasts: [],
@@ -1083,6 +1089,7 @@ void main() {
       };
       final recoveries = <String>[];
       final container = _container(
+        isIOS: true,
         statuses: statuses,
         softwareStarts: [],
         broadcasts: [],
@@ -1126,6 +1133,7 @@ void main() {
       };
       final recoveries = <String>[];
       final container = _container(
+        isIOS: true,
         statuses: statuses,
         softwareStarts: [],
         broadcasts: [],
@@ -1169,6 +1177,7 @@ void main() {
         _hardwareUuid: _status('complete', activeRunId: null),
       };
       final container = _container(
+        isIOS: true,
         statuses: statuses,
         softwareStarts: [],
         broadcasts: [],
@@ -1207,6 +1216,7 @@ void main() {
     };
     final recoveries = <String>[];
     final container = _container(
+      isIOS: true,
       statuses: statuses,
       softwareStarts: [],
       broadcasts: [],
@@ -1250,6 +1260,7 @@ void main() {
     };
     final recoveries = <String>[];
     final container = _container(
+      isIOS: true,
       statuses: statuses,
       softwareStarts: [],
       broadcasts: [],
@@ -1295,6 +1306,7 @@ void main() {
       };
       final recoveries = <String>[];
       final container = _container(
+        isIOS: true,
         statuses: statuses,
         softwareStarts: [],
         broadcasts: [],
@@ -1346,6 +1358,7 @@ void main() {
       };
       final recoveries = <String>[];
       final container = _container(
+        isIOS: true,
         statuses: statuses,
         softwareStarts: [],
         broadcasts: [],
@@ -1390,6 +1403,7 @@ void main() {
     };
     final recoveries = <String>[];
     final container = _container(
+      isIOS: true,
       statuses: statuses,
       softwareStarts: [],
       broadcasts: [],
@@ -1424,12 +1438,15 @@ void main() {
         .read(ironwoodMigrationCoordinatorProvider.notifier)
         .refreshNow();
 
-    expect(recoveries, [_softwareUuid, _softwareUuid]);
+    // Since 6e1176c24 a terminal outbox failure starts a retry window, so the
+    // five-second poll neither re-runs the recovery nor re-raises its error
+    // until the window ends.
+    expect(recoveries, [_softwareUuid]);
     expect(
       container
           .read(ironwoodMigrationCoordinatorProvider)
           .errors[_softwareUuid],
-      contains('not available in the background outbox'),
+      isNull,
     );
   });
 
@@ -1440,6 +1457,7 @@ void main() {
     };
     final broadcasts = <String>[];
     final container = _container(
+      isIOS: true,
       statuses: statuses,
       softwareStarts: [],
       broadcasts: broadcasts,
@@ -2322,6 +2340,17 @@ ProviderContainer _container({
   AppSecurityState? initialSecurityState,
   IronwoodMigrationStopper? stopMigrationRun,
 }) {
+  Future<rust_sync.IronwoodMigrationResult> handOff(String accountUuid) async {
+    broadcasts.add(accountUuid);
+    if (broadcast != null) return broadcast(accountUuid);
+    final current = statuses[accountUuid]!;
+    if (current.phase == 'broadcast_scheduled') {
+      statuses[accountUuid] = _status('waiting_migration_confirmations');
+      return _result('waiting_migration_confirmations');
+    }
+    return _result(current.phase);
+  }
+
   final service = IronwoodMigrationService(
     getWalletDbPath: () async => '/tmp/wallet.db',
     getStatus:
@@ -2380,16 +2409,32 @@ ProviderContainer _container({
           required password,
           required saltBase64,
           int? walletOpenTipHeight,
-        }) async {
-          broadcasts.add(accountUuid);
-          if (broadcast != null) return broadcast(accountUuid);
-          final current = statuses[accountUuid]!;
-          if (current.phase == 'broadcast_scheduled') {
-            statuses[accountUuid] = _status('waiting_migration_confirmations');
-            return _result('waiting_migration_confirmations');
-          }
-          return _result(current.phase);
-        },
+        }) async => handOff(accountUuid),
+    // The iOS native outbox (#361) starts empty: no receipts, attempts or
+    // staged batch to reconcile.
+    listMigrationOutboxReceipts: () async => const [],
+    listMigrationOutboxAttemptedTxids:
+        ({required network, required accountUuid, required runId}) async =>
+            const [],
+    exportMigrationOutbox:
+        ({
+          required dbPath,
+          required network,
+          required accountUuid,
+          required password,
+          required saltBase64,
+        }) async => null,
+    // On iOS (#361) a due transfer is handed to the native outbox instead of
+    // broadcast in the foreground; both lanes record the hand-off alike.
+    prepareMigrationOutbox:
+        ({
+          required dbPath,
+          required lightwalletdUrl,
+          required network,
+          required accountUuid,
+          required password,
+          required saltBase64,
+        }) async => handOff(accountUuid),
     startMacosSoftwareMigration:
         ({
           required dbPath,

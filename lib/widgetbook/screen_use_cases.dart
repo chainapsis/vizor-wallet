@@ -1413,7 +1413,70 @@ Widget _mobileZeroValueReceipt(String kind) {
   );
 }
 
-Widget _buildMobileZeroValueUseCase(Widget screen) {
+// Public discovery can find a debit before the payment it made: the row is
+// provisional, its fee unknown, and it says so with the Private queries
+// setting off (the default these previews use).
+rust_sync.TransactionInfo _incompleteHistoryTx() {
+  final seconds = BigInt.from(1800000030);
+  return rust_sync.TransactionInfo(
+    txidHex: 'preview-incomplete-history-sent',
+    minedHeight: BigInt.from(3001),
+    expiredUnmined: false,
+    accountBalanceDelta: -125010000,
+    fee: BigInt.zero,
+    feeState: rust_sync.TransactionFeeState.unknown,
+    detailsComplete: false,
+    provisional: true,
+    blockTime: seconds,
+    isTransparent: false,
+    txKind: 'sent',
+    displayAmount: BigInt.from(125010000),
+    displayPool: 'unknown',
+    createdTime: BigInt.zero,
+  );
+}
+
+List<rust_sync.TransactionInfo> _incompleteHistoryActivity() => [
+  _incompleteHistoryTx(),
+  _homeTx(3),
+];
+
+Widget buildMobileIncompleteHistoryActivityUseCase(BuildContext context) =>
+    _buildMobileZeroValueUseCase(
+      MobileActivityScreen(
+        historyLoader: (_) async => _incompleteHistoryActivity(),
+      ),
+      recentTransactions: _incompleteHistoryActivity(),
+    );
+
+Widget buildMobileIncompleteHistoryReceiptUseCase(BuildContext context) {
+  final tx = _incompleteHistoryTx();
+  final detail = rust_sync.TransactionDetail(
+    txidHex: tx.txidHex,
+    txKind: tx.txKind,
+    outputs: const [],
+    detailsComplete: false,
+    provisional: true,
+  );
+  return _buildMobileZeroValueUseCase(
+    MobileTransactionStatusScreen(
+      args: MobileTransactionStatusArgs(
+        txidHex: tx.txidHex,
+        txKind: tx.txKind,
+        initialTransaction: tx,
+        initialDetail: detail,
+      ),
+      historyLoader: (_) async => _incompleteHistoryActivity(),
+      detailLoader: (_, _) async => detail,
+    ),
+    recentTransactions: _incompleteHistoryActivity(),
+  );
+}
+
+Widget _buildMobileZeroValueUseCase(
+  Widget screen, {
+  List<rust_sync.TransactionInfo>? recentTransactions,
+}) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(
@@ -1427,7 +1490,7 @@ Widget _buildMobileZeroValueUseCase(Widget screen) {
           _accountsDesignState.activeAccountUuid,
           initialState: _homeSyncedState(
             orchardBalance: BigInt.from(14312000000),
-            recentTransactions: _zeroValueActivity(),
+            recentTransactions: recentTransactions ?? _zeroValueActivity(),
           ),
         ),
       ),

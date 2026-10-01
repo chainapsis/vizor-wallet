@@ -10,7 +10,11 @@ pub fn prepare_rollback(_db_path: &str) {
     unreachable!("prepare-rollback runs on the current build")
 }
 
-pub fn expected_current_api(_db_path: &str, _base: &ApiSnapshot) -> ApiSnapshot {
+pub fn expected_current_api(
+    _db_path: &str,
+    _base: &ApiSnapshot,
+    _old_build_send: Option<&super::OldBuildSend>,
+) -> ApiSnapshot {
     unreachable!("verify runs on the current build")
 }
 

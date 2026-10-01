@@ -18,7 +18,6 @@ void main() {
     BigInt? giftCardAmountZatoshi,
     int? giftCardBatchCount,
     bool giftCardClaimInFlight = false,
-    bool privateQueriesEnabled = false,
   }) async {
     late ActivityRowData row;
     await tester.pumpWidget(
@@ -29,7 +28,6 @@ void main() {
             row = buildTransactionActivityRow(
               context: context,
               transaction: transaction,
-              privateQueriesEnabled: privateQueriesEnabled,
               giftCardKind: giftCardKind,
               giftCardAmountZatoshi: giftCardAmountZatoshi,
               giftCardBatchCount: giftCardBatchCount,
@@ -299,9 +297,7 @@ void main() {
     expect(row.amountText, activityAmountTextForFormFactor('-12345.6789 ZEC'));
   });
 
-  testWidgets('an incomplete entry is marked, a complete one is not', (
-    tester,
-  ) async {
+  testWidgets('an incomplete entry is marked in any mode', (tester) async {
     final complete = await mapRow(tester, _transaction(txKind: 'sent'));
     expect(complete.amountSubtitle, isNull);
 
@@ -313,14 +309,12 @@ void main() {
         detailsComplete: false,
         provisional: true,
       ),
-      privateQueriesEnabled: true,
     );
     expect(provisional.amountSubtitle, kIncompleteDetailsText);
 
     final undiscoveredSelfReceipt = await mapRow(
       tester,
       _transaction(txKind: 'sent', provisional: true),
-      privateQueriesEnabled: true,
     );
     expect(undiscoveredSelfReceipt.amountSubtitle, kIncompleteDetailsText);
 
@@ -328,15 +322,16 @@ void main() {
     final missingDetails = await mapRow(
       tester,
       _transaction(txKind: 'received', detailsComplete: false),
-      privateQueriesEnabled: true,
     );
     expect(missingDetails.amountSubtitle, kIncompleteDetailsText);
 
+    // The marker follows the row's own completeness, not the Private
+    // queries setting: public discovery leaves rows incomplete too.
     final publicIncomplete = await mapRow(
       tester,
       _transaction(txKind: 'sent', detailsComplete: false, provisional: true),
     );
-    expect(publicIncomplete.amountSubtitle, isNull);
+    expect(publicIncomplete.amountSubtitle, kIncompleteDetailsText);
   });
 
   testWidgets('a failed entry keeps its refund note', (tester) async {

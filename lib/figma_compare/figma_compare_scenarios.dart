@@ -1607,6 +1607,24 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-activity-incomplete-history',
+    description:
+        'Mobile Activity with a provisional public-mode debit marked '
+        'Details incomplete',
+    builder: buildMobileIncompleteHistoryActivityUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-activity-incomplete-history-detail',
+    description:
+        'Mobile receipt for a provisional public-mode debit with an unknown '
+        'fee and incomplete details',
+    builder: buildMobileIncompleteHistoryReceiptUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-home-importing',
     description: 'Mobile home while the initial wallet import is syncing',
     builder: buildMobileHomeImportingResponsiveUseCase,

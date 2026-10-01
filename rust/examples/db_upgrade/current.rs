@@ -44,9 +44,84 @@ pub fn prepare_rollback(db_path: &str) {
 ///   effects are settled and `Unknown` before. Such a receive (a positive
 ///   account delta) may therefore lose the base's fee. Every other fee the
 ///   base showed must stay `Known` and equal.
-pub fn expected_current_api(db_path: &str, base: &ApiSnapshot) -> ApiSnapshot {
+///
+/// A third history rule (gap 1 and H09, fixed in this build) applies to the
+/// send the base build stored itself (`old_build_send`): older builds counted
+/// a send's movement once per receiving wallet account, and counted the
+/// funding account's own output as paid. The funding account's row is
+/// therefore the probe's own construction: its movement is
+/// `OLD_BUILD_PAYMENT_ZAT - MINED_VALUE_ZAT`, and when other accounts are
+/// paid its payment is `OLD_BUILD_PAYMENT_ZAT` to each of them (a lone
+/// account's self-transfer keeps showing its own output).
+///
+/// One documented balance rule applies too (`sync_engine/address_discovery.rs`,
+/// "Coverage"): a public account's transparent funds are current only once
+/// its address-history discovery has run. Upgrading never runs it; the first
+/// sync does. So every upgraded account reads its transparent funds as
+/// `LastKnown`, exactly the base build's transparent total, with nothing
+/// transparent spendable, locked, or pending. This function asserts that
+/// authority and amount, and expects the zeroed transparent fields.
+pub fn expected_current_api(
+    db_path: &str,
+    base: &ApiSnapshot,
+    old_build_send: Option<&super::OldBuildSend>,
+) -> ApiSnapshot {
     let mut expected = base.clone();
     for account in &mut expected.accounts {
+        if let Some(send) = old_build_send {
+            let movement = super::OLD_BUILD_PAYMENT_ZAT as i64 - super::MINED_VALUE_ZAT;
+            for row in &mut account.history {
+                if row.txid_hex == send.txid_hex && row.account_balance_delta < 0 {
+                    row.account_balance_delta = movement;
+                    // A self-transfer (one account) still shows its own
+                    // output; once others are paid, only they count.
+                    if row.tx_kind == "sent" && send.recipients > 1 {
+                        row.display_amount =
+                            super::OLD_BUILD_PAYMENT_ZAT * send.recipients.saturating_sub(1);
+                    }
+                }
+            }
+        }
+        let balance = sync::get_balance(
+            db_path.to_string(),
+            NETWORK.to_string(),
+            account.uuid.clone(),
+        )
+        .expect("read balance");
+        let base_total = account.balance.transparent
+            + account.balance.transparent_locked
+            + account.balance.transparent_pending;
+        assert!(
+            matches!(
+                balance.transparent_authority,
+                sync::TransparentBalanceAuthority::LastKnown
+            ),
+            "an upgraded public wallet reads transparent funds as current before discovery"
+        );
+        assert_eq!(
+            balance.transparent_last_known,
+            Some(base_total),
+            "upgrade changed the account's transparent total"
+        );
+        // The account totals carry no transparent funds while they are only
+        // last known.
+        account.balance.locked -= account.balance.transparent_locked;
+        account.balance.total -= base_total;
+        // Transparent pending value is change or value pending spendability;
+        // together those two account totals lose exactly that much.
+        let base_pending = account.balance.change_pending_confirmation
+            + account.balance.value_pending_spendability;
+        assert_eq!(
+            base_pending
+                - (balance.change_pending_confirmation + balance.value_pending_spendability),
+            account.balance.transparent_pending,
+            "pending totals changed by more than the transparent pending value"
+        );
+        account.balance.change_pending_confirmation = balance.change_pending_confirmation;
+        account.balance.value_pending_spendability = balance.value_pending_spendability;
+        account.balance.transparent = 0;
+        account.balance.transparent_locked = 0;
+        account.balance.transparent_pending = 0;
         let current = sync::get_transaction_history(
             db_path.to_string(),
             NETWORK.to_string(),
@@ -132,24 +207,10 @@ pub fn expected_current_api(db_path: &str, base: &ApiSnapshot) -> ApiSnapshot {
     expected
 }
 
-/// The fields older builds do not have. Upgraded public wallets have current
-/// transparent authority, and an unrecorded fee is unknown rather than zero.
+/// The fields older builds do not have: an unrecorded fee is unknown rather
+/// than zero. Transparent authority is checked by `expected_current_api`.
 pub fn assert_current_api(db_path: &str, api: &ApiSnapshot) {
     for account in &api.accounts {
-        let balance = sync::get_balance(
-            db_path.to_string(),
-            NETWORK.to_string(),
-            account.uuid.clone(),
-        )
-        .expect("read balance");
-        assert!(
-            matches!(
-                balance.transparent_authority,
-                sync::TransparentBalanceAuthority::Current
-            ),
-            "upgraded public wallet lost current transparent authority"
-        );
-        assert_eq!(balance.transparent_last_known, None);
         let history = sync::get_transaction_history(
             db_path.to_string(),
             NETWORK.to_string(),

@@ -244,7 +244,7 @@ void main() {
 
   for (final privateQueries in [false, true]) {
     testWidgets(
-      'batch unknown fees preserve public presentation, private=$privateQueries',
+      'batch unknown fees read Unknown in any mode, private=$privateQueries',
       (tester) async {
         await _pumpScreen(
           tester,
@@ -273,16 +273,11 @@ void main() {
               find.byType(GiftCardActivityDetailView),
             )
             .batch!;
-        if (privateQueries) {
-          expect(find.text('Unknown'), findsOneWidget);
-          expect(batch.breakdownText, contains('Network fee Unknown'));
-          expect(batch.breakdownText, isNot(contains('Network fee 0 ZEC')));
-          expect(find.text('2.002 ZEC'), findsNothing);
-        } else {
-          expect(find.text('Unknown'), findsNothing);
-          expect(find.text('2.002 ZEC'), findsOneWidget);
-          expect(batch.breakdownText, contains('Network fee 0 ZEC'));
-        }
+        // An unknown fee is never shown as 0, whatever the setting.
+        expect(find.text('Unknown'), findsOneWidget);
+        expect(batch.breakdownText, contains('Network fee Unknown'));
+        expect(batch.breakdownText, isNot(contains('Network fee 0 ZEC')));
+        expect(find.text('2.002 ZEC'), findsNothing);
       },
     );
   }
@@ -1166,7 +1161,7 @@ void main() {
   for (final kind in ['sent', 'received', 'shielded', 'migration']) {
     for (final privateQueriesEnabled in [false, true]) {
       testWidgets(
-        'feedback for $kind is private-only: $privateQueriesEnabled',
+        'feedback for $kind follows the row, private=$privateQueriesEnabled',
         (tester) async {
           await _pumpScreen(
             tester,
@@ -1188,22 +1183,17 @@ void main() {
             ),
           );
 
-          expect(
-            find.text('Incomplete'),
-            privateQueriesEnabled ? findsOneWidget : findsNothing,
-          );
+          expect(find.text('Incomplete'), findsOneWidget);
           expect(
             find.text(kUnknownFeeText),
-            privateQueriesEnabled && kind != 'received'
-                ? findsOneWidget
-                : findsNothing,
+            kind != 'received' ? findsOneWidget : findsNothing,
           );
         },
       );
     }
   }
 
-  testWidgets('an open receipt updates feedback when Private queries changes', (
+  testWidgets('an open receipt keeps feedback when Private queries changes', (
     tester,
   ) async {
     await _pumpScreen(
@@ -1226,12 +1216,9 @@ void main() {
     for (final enabled in [true, false]) {
       await container.read(enhancePirProvider.notifier).set(enabled);
       await tester.pump();
-      expect(find.text('Incomplete'), enabled ? findsOneWidget : findsNothing);
-      expect(
-        find.text(kUnknownFeeText),
-        enabled ? findsOneWidget : findsNothing,
-      );
-      expect(find.text('Tx fee'), enabled ? findsOneWidget : findsNothing);
+      expect(find.text('Incomplete'), findsOneWidget);
+      expect(find.text(kUnknownFeeText), findsOneWidget);
+      expect(find.text('Tx fee'), findsOneWidget);
     }
   });
 

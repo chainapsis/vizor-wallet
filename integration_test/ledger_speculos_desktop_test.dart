@@ -214,7 +214,9 @@ void main() {
         storedFirstAccounts.single.zip32AccountIndex,
         fixture.accountIndex,
       );
-      expect(storedFirstAccounts.single.birthdayHeight, 2500000);
+      // #779 rounds a mainnet restore's birthday to one past the highest
+      // 10,000-block grid point below it: 2,500,000 is stored as 2,490,001.
+      expect(storedFirstAccounts.single.birthdayHeight, 2490001);
 
       final lightwalletd = _AcceptingLightwalletd();
       await lightwalletd.start();

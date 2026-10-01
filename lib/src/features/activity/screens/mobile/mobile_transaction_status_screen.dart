@@ -21,7 +21,6 @@ import '../../../../core/widgets/mobile/mobile_address_verify_sheet.dart';
 import '../../../../core/widgets/mobile/mobile_review_row.dart';
 import '../../../../core/widgets/mobile/mobile_tx_fee_info_sheet.dart';
 import '../../../../providers/account_provider.dart';
-import '../../../../providers/enhance_pir_provider.dart';
 import '../../../../providers/privacy_mode_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/sync_provider.dart';
@@ -725,7 +724,7 @@ class _MobileTransactionStatusScreenState
                           privacyModeEnabled: privacyModeEnabled,
                         ),
                         detailsIncomplete:
-                            tx != null && _showIncompleteDetails(tx),
+                            tx != null && transactionDetailsIncomplete(tx),
                       ),
                       if (_error != null) ...[
                         const SizedBox(height: AppSpacing.sm),
@@ -775,13 +774,6 @@ class _MobileTransactionStatusScreenState
     );
   }
 
-  // Temporary integration feedback is scoped to the Private queries setting.
-  bool _showUnknownFee(rust_sync.TransactionInfo tx) =>
-      ref.watch(enhancePirProvider) && transactionFeeIsUnknown(tx);
-
-  bool _showIncompleteDetails(rust_sync.TransactionInfo tx) =>
-      ref.watch(enhancePirProvider) && transactionDetailsIncomplete(tx);
-
   String? _feeText(
     rust_sync.TransactionInfo? tx, {
     required bool privacyModeEnabled,
@@ -791,7 +783,7 @@ class _MobileTransactionStatusScreenState
     if (tx == null || tx.txKind == 'received' || tx.txKind == 'receiving') {
       return null;
     }
-    if (_showUnknownFee(tx)) return kUnknownFeeText;
+    if (transactionFeeIsUnknown(tx)) return kUnknownFeeText;
     if (tx.fee <= BigInt.zero) return null;
     final fee = giftCard == null ? tx.fee : giftCard.detailFeeZatoshi(tx.fee);
     if (privacyModeEnabled) {

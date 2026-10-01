@@ -136,6 +136,219 @@ fn pre_sapling_external_and_internal_outputs_survive_retry_and_track_external_sp
     }
 }
 
+/// Gap 5a (H12 R): an output that a complete UTXO query of its address no
+/// longer returns was spent by a transaction the wallet never saw. Reporting
+/// each refresh to the library stops counting it as spendable and queues the
+/// search for its spend; storing that spend then links it. A refresh answered
+/// after a policy transition reports nothing.
+#[test]
+fn a_utxo_refresh_reports_an_output_spent_by_an_unseen_transaction() {
+    use zcash_client_backend::data_api::transparent_ledger::{
+        TransparentLedgerMode, TransparentLedgerWrite,
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("wallet.db");
+    let path = path.to_str().unwrap();
+    let network = WalletNetwork::Main;
+    let seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
+    let (uuid, _) =
+        keys::init_db_and_create_account(path, network, &seed, Some(2_000_000), "absent").unwrap();
+    let account = keys::parse_account_uuid(&uuid).unwrap();
+    let encoded = keys::software_account_transparent_addresses(network, &seed, 0, 1).unwrap();
+    let address = TransparentAddress::decode(&network, &encoded[0]).unwrap();
+    let mut db = open_wallet_db_with_timeout(path, network, SYNC_DB_BUSY_TIMEOUT).unwrap();
+    let tip = BlockHeight::from_u32(2_000_100);
+    db.update_chain_tip(tip).unwrap();
+    let gate = TransparentLookupGate::for_wallet(
+        enhancement::EnhancementPolicy::current(network)
+            .public_transparent_lookups(&db)
+            .unwrap(),
+        path,
+        network,
+    )
+    .unwrap();
+    let refresh = |outputs: Vec<WalletTransparentOutput<AccountUuid>>| {
+        vec![DownloadedTransparentRefresh {
+            refresh: TransparentRefresh {
+                addresses: vec![encoded[0].clone()],
+                start_height: BlockHeight::from_u32(2_000_000),
+                label: "absence test".into(),
+                account_uuid: uuid.clone(),
+                completion: None,
+            },
+            outputs,
+        }]
+    };
+    let spendable = |db: &WalletDatabase| -> Zatoshis {
+        db.get_transparent_balances(account, (tip + 2).into(), ConfirmationsPolicy::MIN)
+            .unwrap()
+            .values()
+            .map(|balance| balance.1.spendable_value())
+            .sum::<Option<Zatoshis>>()
+            .unwrap()
+    };
+    let searched = |db: &WalletDatabase| {
+        db.transaction_data_requests()
+            .unwrap()
+            .iter()
+            .any(|request| {
+                matches!(request, TransactionDataRequest::TransactionsInvolvingAddress(r)
+                if r.address() == address && r.block_range_end().is_some())
+            })
+    };
+    let report = |gate, tip| UtxoReport { gate, network, tip };
+
+    // The output is returned while it is unspent.
+    let funding = legacy_transaction(OutPoint::new([9; 32], 0), address, 1_000_000);
+    let returned = downloaded(&uuid, &funding, 2_000_050).outputs;
+    assert!(
+        store_transparent_refreshes(&mut db, Some(report(&gate, tip)), &refresh(returned)).unwrap()
+    );
+    assert_eq!(spendable(&db), Zatoshis::const_from_u64(1_000_000));
+
+    // The next block arrives, and the output is no longer returned.
+    let later = tip + 1;
+    db.update_chain_tip(later).unwrap();
+
+    // Storing a refresh without reporting it, as before, keeps an absent
+    // output spendable: nothing tells the library it disappeared.
+    store_transparent_refreshes(&mut db, None, &refresh(Vec::new())).unwrap();
+    assert_eq!(spendable(&db), Zatoshis::const_from_u64(1_000_000));
+
+    // A refresh answered after a transition reports nothing either.
+    db.apply_transparent_policy(TransparentLedgerMode::PrivateShadow)
+        .unwrap();
+    assert!(!store_transparent_refreshes(
+        &mut db,
+        Some(report(&gate, later)),
+        &refresh(Vec::new())
+    )
+    .unwrap());
+    assert_eq!(spendable(&db), Zatoshis::const_from_u64(1_000_000));
+
+    // Reported under current authority, the absence stops the output
+    // counting and queues the search for its spend.
+    let renewed = TransparentLookupGate::for_wallet(
+        enhancement::EnhancementPolicy::current(network)
+            .public_transparent_lookups(&db)
+            .unwrap(),
+        path,
+        network,
+    )
+    .unwrap();
+    assert!(store_transparent_refreshes(
+        &mut db,
+        Some(report(&renewed, later)),
+        &refresh(Vec::new())
+    )
+    .unwrap());
+    assert_eq!(spendable(&db), Zatoshis::ZERO);
+    assert!(searched(&db), "the unseen spend is searched for");
+
+    // The search finds the spend; storing it links the output.
+    let outside = TransparentAddress::PublicKeyHash([77; 20]);
+    let spend = legacy_transaction(OutPoint::new(*funding.txid().as_ref(), 0), outside, 990_000);
+    decrypt_and_store_transaction(
+        &network,
+        &mut db,
+        &spend,
+        Some(BlockHeight::from_u32(2_000_060)),
+    )
+    .unwrap();
+    assert!(!searched(&db));
+    assert_eq!(spendable(&db), Zatoshis::ZERO);
+}
+
+/// A pre-Overwinter v1 transaction spending `prevout` to several transparent
+/// outputs, in order.
+fn legacy_transaction_to(prevout: OutPoint, outputs: &[(TransparentAddress, u64)]) -> Transaction {
+    let mut bytes = 1u32.to_le_bytes().to_vec();
+    bytes.push(1);
+    bytes.extend_from_slice(prevout.hash());
+    bytes.extend_from_slice(&prevout.n().to_le_bytes());
+    bytes.push(0);
+    bytes.extend_from_slice(&u32::MAX.to_le_bytes());
+    bytes.push(outputs.len() as u8);
+    for (recipient, value) in outputs {
+        bytes.extend_from_slice(&value.to_le_bytes());
+        let script: Script = recipient.script().into();
+        bytes.push(script.0 .0.len() as u8);
+        bytes.extend_from_slice(&script.0 .0);
+    }
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    Transaction::read(&bytes[..], BranchId::Sprout).unwrap()
+}
+
+/// A transparent send whose inputs the wallet knows records a sent note for
+/// every output, including transparent change to the wallet's own address,
+/// which `v_received_outputs` reports with `is_change = 0`. The movement of
+/// such a send must still be counted once: in H01/H02 (retained wallet) the
+/// suite saw it doubled, and with three sent-note groups in H05, tripled.
+#[test]
+fn transparent_send_with_own_transparent_change_counts_movement_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("wallet.db");
+    let path = path.to_str().unwrap();
+    let network = WalletNetwork::Main;
+    let seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
+    let (uuid, _) =
+        keys::init_db_and_create_account(path, network, &seed, Some(2_000_000), "movement")
+            .unwrap();
+    // [external 0, internal 0]
+    let addresses = keys::software_account_transparent_addresses(network, &seed, 0, 1).unwrap();
+    let external = TransparentAddress::decode(&network, &addresses[0]).unwrap();
+    let change = TransparentAddress::decode(&network, &addresses[1]).unwrap();
+    let mut db = open_wallet_db_with_timeout(path, network, SYNC_DB_BUSY_TIMEOUT).unwrap();
+    db.update_chain_tip(BlockHeight::from_u32(2_000_100))
+        .unwrap();
+
+    let funding = legacy_transaction(OutPoint::new([9; 32], 0), external, 1_000_000);
+    store_transparent_outputs(&mut db, &[downloaded(&uuid, &funding, 100)]).unwrap();
+    decrypt_and_store_transaction(
+        &network,
+        &mut db,
+        &funding,
+        Some(BlockHeight::from_u32(100)),
+    )
+    .unwrap();
+
+    // 1_000_000 in: 600_000 to an outside address, 390_000 back to the
+    // wallet's internal address, 10_000 fee.
+    let outside = TransparentAddress::PublicKeyHash([77; 20]);
+    let send = legacy_transaction_to(
+        OutPoint::new(*funding.txid().as_ref(), 0),
+        &[(outside, 600_000), (change, 390_000)],
+    );
+    decrypt_and_store_transaction(&network, &mut db, &send, Some(BlockHeight::from_u32(101)))
+        .unwrap();
+
+    let conn = rusqlite::Connection::open(path).unwrap();
+    let sent_notes: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sent_notes s JOIN transactions t ON t.id_tx = s.transaction_id
+             WHERE t.txid = ?1",
+            [send.txid().as_ref().to_vec()],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        sent_notes, 2,
+        "the fixture must record a sent note for the own transparent change too"
+    );
+
+    let rows = crate::wallet::sync::get_transaction_history(path, network, None, &uuid).unwrap();
+    let send_hex = hex::encode(send.txid().as_ref());
+    let send_rows: Vec<_> = rows.iter().filter(|r| r.txid_hex == send_hex).collect();
+    assert!(!send_rows.is_empty(), "the send has a history row");
+    for row in &send_rows {
+        assert_eq!(
+            row.account_balance_delta, -610_000,
+            "{} row counts the movement more than once",
+            row.tx_kind
+        );
+    }
+}
+
 #[test]
 fn rewind_invalidates_external_and_internal_completion_without_changing_birthday() {
     let dir = tempfile::tempdir().unwrap();

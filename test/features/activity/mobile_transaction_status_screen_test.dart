@@ -718,7 +718,7 @@ void main() {
   for (final kind in ['sent', 'received', 'shielded', 'migration']) {
     for (final privateQueriesEnabled in [false, true]) {
       testWidgets(
-        'feedback for $kind is private-only: $privateQueriesEnabled',
+        'feedback for $kind follows the row, private=$privateQueriesEnabled',
         (tester) async {
           await tester.pumpWidget(
             _app(
@@ -736,20 +736,18 @@ void main() {
 
           expect(
             find.byKey(const ValueKey('mobile_tx_status_details_incomplete')),
-            privateQueriesEnabled ? findsOneWidget : findsNothing,
+            findsOneWidget,
           );
           expect(
             find.text(kUnknownFeeText),
-            privateQueriesEnabled && kind != 'received'
-                ? findsOneWidget
-                : findsNothing,
+            kind != 'received' ? findsOneWidget : findsNothing,
           );
         },
       );
     }
   }
 
-  testWidgets('an open receipt updates feedback when Private queries changes', (
+  testWidgets('an open receipt keeps feedback when Private queries changes', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -770,13 +768,10 @@ void main() {
       await tester.pumpAndSettle();
       expect(
         find.byKey(const ValueKey('mobile_tx_status_details_incomplete')),
-        enabled ? findsOneWidget : findsNothing,
+        findsOneWidget,
       );
-      expect(
-        find.text(kUnknownFeeText),
-        enabled ? findsOneWidget : findsNothing,
-      );
-      expect(find.text('Tx fee'), enabled ? findsOneWidget : findsNothing);
+      expect(find.text(kUnknownFeeText), findsOneWidget);
+      expect(find.text('Tx fee'), findsOneWidget);
     }
   });
 
