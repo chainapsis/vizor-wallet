@@ -549,15 +549,17 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       kPendingAccountMnemonicStorageKey,
       requireUnlockedSession: true,
     );
-    if (pending == null) return;
-    final draft = jsonDecode(pending) as Map<String, dynamic>;
-    final card = await ref
-        .read(paymentLinkReceivedStoreProvider)
-        .find(draft['giftAddress'] as String);
-    if (card?.setupAccountUuid != accountUuid) {
-      throw StateError('Gift Card receiving account was not saved.');
+    if (pending != null) {
+      final draft = jsonDecode(pending) as Map<String, dynamic>;
+      final card = await ref
+          .read(paymentLinkReceivedStoreProvider)
+          .find(draft['giftAddress'] as String);
+      if (card?.setupAccountUuid != accountUuid) {
+        throw StateError('Gift Card receiving account was not saved.');
+      }
+      await _storage.delete(kPendingAccountMnemonicStorageKey);
     }
-    await _storage.delete(kPendingAccountMnemonicStorageKey);
+    await _storage.delete(kGiftWalletSetupStartedStorageKey);
   }
 
   AccountInfo _giftAccount(String uuid, String name, String profilePictureId) =>
@@ -717,6 +719,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     }
     requireCurrentSession();
     await _storage.delete(kPendingAccountMnemonicStorageKey);
+    await _storage.delete(kGiftWalletSetupStartedStorageKey);
   }
 
   /// Import a wallet from mnemonic.

@@ -35,6 +35,7 @@ void main() {
       _verifierKey: 'password-verifier',
       _verifierSaltKey: 'password-salt',
       kPendingAccountMnemonicStorageKey: _journal,
+      kGiftWalletSetupStartedStorageKey: 'true',
       kThemeModeKey: 'dark',
     });
     AppSecureStore.instance.clearSessionPassword();
@@ -62,6 +63,7 @@ void main() {
     );
     expect(await storage.readPlain(_verifierKey), 'password-verifier');
     expect(await storage.readPlain(_verifierSaltKey), 'password-salt');
+    expect(await storage.readPlain(kGiftWalletSetupStartedStorageKey), 'true');
   }
 
   Future<void> expectCleared(AppBootstrapState result) async {
@@ -73,6 +75,7 @@ void main() {
     expect(await storage.readPlain(kPendingAccountMnemonicStorageKey), isNull);
     expect(await storage.readPlain(_verifierKey), isNull);
     expect(await storage.readPlain(_verifierSaltKey), isNull);
+    expect(await storage.readPlain(kGiftWalletSetupStartedStorageKey), isNull);
     expect(await storage.readPlain(kThemeModeKey), 'dark');
   }
 
@@ -156,8 +159,9 @@ void main() {
     await expectPreserved();
   });
 
-  test('credentials without a Gift journal are left unchanged', () async {
+  test('credentials without Gift setup records are left unchanged', () async {
     await storage.delete(kPendingAccountMnemonicStorageKey);
+    await storage.delete(kGiftWalletSetupStartedStorageKey);
     final result = await bootstrap();
     expect(result.initialLocation, '/welcome');
     expect(result.isPasswordConfigured, isTrue);
@@ -165,7 +169,12 @@ void main() {
     expect(await storage.readPlain(_verifierSaltKey), 'password-salt');
   });
 
-  for (final key in [_verifierKey, kPendingAccountMnemonicStorageKey]) {
+  for (final key in [
+    _verifierSaltKey,
+    _verifierKey,
+    kPendingAccountMnemonicStorageKey,
+    kGiftWalletSetupStartedStorageKey,
+  ]) {
     test(
       'cleanup interrupted at $key is repeated on the next launch',
       () async {
@@ -173,10 +182,13 @@ void main() {
         final interrupted = await bootstrap();
         expect(interrupted.hasBlockingFailure, isTrue);
         expect(
-          await storage.readPlain(kPendingAccountMnemonicStorageKey),
-          _journal,
+          await storage.readPlain(kGiftWalletSetupStartedStorageKey),
+          'true',
         );
-        expect(await storage.readPlain(_verifierSaltKey), isNull);
+        expect(
+          await storage.readPlain(_verifierSaltKey),
+          key == _verifierSaltKey ? 'password-salt' : isNull,
+        );
         await expectCleared(await bootstrap());
       },
     );
@@ -187,6 +199,111 @@ void main() {
     expect((await bootstrap()).hasBlockingFailure, isTrue);
     await expectPreserved();
   });
+
+  for (final savedCredentialKeys in [
+    <String>[],
+    [_verifierSaltKey],
+    [_verifierSaltKey, _verifierKey],
+  ]) {
+    test(
+      'a start marker without a journal cleans interrupted password writes: $savedCredentialKeys',
+      () async {
+        await storage.delete(kPendingAccountMnemonicStorageKey);
+        for (final key in [_verifierSaltKey, _verifierKey]) {
+          if (!savedCredentialKeys.contains(key)) await storage.delete(key);
+        }
+        await expectCleared(await bootstrap());
+        await expectCleared(await bootstrap());
+      },
+    );
+  }
+
+  test(
+    'a start marker alone preserves credentials when DB inspection fails',
+    () async {
+      await storage.delete(kPendingAccountMnemonicStorageKey);
+      await database.writeAsString('unreadable wallet DB');
+      rust.listError = StateError('database read failed');
+      final result = await bootstrap();
+      expect(result.hasBlockingFailure, isTrue);
+      expect(
+        await storage.readPlain(kGiftWalletSetupStartedStorageKey),
+        'true',
+      );
+      expect(await storage.readPlain(_verifierKey), 'password-verifier');
+      expect(await storage.readPlain(_verifierSaltKey), 'password-salt');
+      expect(await database.readAsString(), 'unreadable wallet DB');
+    },
+  );
+
+  test(
+    'a durable account with only the start marker keeps its credentials',
+    () async {
+      await storage.delete(kPendingAccountMnemonicStorageKey);
+      await storage.writeString(
+        'zcash_accounts',
+        jsonEncode([
+          const AccountInfo(
+            uuid: 'saved-account',
+            name: 'Saved',
+            order: 0,
+          ).toJson(),
+        ]),
+      );
+      final result = await bootstrap();
+      expect(result.initialLocation, '/unlock');
+      expect(result.isPasswordConfigured, isTrue);
+      expect(result.initialAccountState.activeAccountUuid, 'saved-account');
+      expect(
+        await storage.readPlain(kGiftWalletSetupStartedStorageKey),
+        isNull,
+      );
+      expect(await storage.readPlain(_verifierKey), 'password-verifier');
+      expect(await storage.readPlain(_verifierSaltKey), 'password-salt');
+    },
+  );
+
+  test(
+    'a start marker read failure preserves setup and blocks startup',
+    () async {
+      backend.failNextReadFor = kGiftWalletSetupStartedStorageKey;
+      expect((await bootstrap()).hasBlockingFailure, isTrue);
+      await expectPreserved();
+    },
+  );
+
+  test(
+    'failed completed-marker cleanup keeps the account usable and retries',
+    () async {
+      await storage.delete(kPendingAccountMnemonicStorageKey);
+      await storage.writeString(
+        'zcash_accounts',
+        jsonEncode([
+          const AccountInfo(
+            uuid: 'saved-account',
+            name: 'Saved',
+            order: 0,
+          ).toJson(),
+        ]),
+      );
+      backend.failNextDeleteFor = kGiftWalletSetupStartedStorageKey;
+      final result = await bootstrap();
+      expect(result.hasBlockingFailure, isFalse);
+      expect(result.initialLocation, '/unlock');
+      expect(result.isPasswordConfigured, isTrue);
+      expect(
+        await storage.readPlain(kGiftWalletSetupStartedStorageKey),
+        'true',
+      );
+      expect(await storage.readPlain(_verifierKey), 'password-verifier');
+      expect(await storage.readPlain(_verifierSaltKey), 'password-salt');
+      expect((await bootstrap()).initialLocation, '/unlock');
+      expect(
+        await storage.readPlain(kGiftWalletSetupStartedStorageKey),
+        isNull,
+      );
+    },
+  );
 }
 
 class _BootstrapRustApi implements RustLibApi {

@@ -90,6 +90,7 @@ void main() {
   );
 
   test('the passphrase is pending before the account exists', () async {
+    await store.writePlain(kGiftWalletSetupStartedStorageKey, 'true');
     final uuid = await accounts().createGiftClaimAccount(
       name: _name,
       profilePictureId: _profile,
@@ -103,6 +104,7 @@ void main() {
     expect(await store.readAccountMnemonic(uuid), _mnemonic);
     await accounts().clearPendingGiftAccountSetup(accountUuid: 'uuid-1');
     expect(await pending(), isNull);
+    expect(await store.readPlain(kGiftWalletSetupStartedStorageKey), isNull);
     final account = container.read(accountProvider).value!.activeAccount!;
     expect(account.uuid, uuid);
     expect(account.name, _name);
@@ -212,6 +214,7 @@ void main() {
   );
 
   test('a save failure after the account exists publishes it', () async {
+    await store.writePlain(kGiftWalletSetupStartedStorageKey, 'true');
     _rust.lockAfterImport = true;
 
     await expectLater(
@@ -234,6 +237,7 @@ void main() {
 
     expect(await store.readAccountMnemonic('uuid-1'), _mnemonic);
     expect(await pending(), isNull);
+    expect(await store.readPlain(kGiftWalletSetupStartedStorageKey), isNull);
   });
 
   test(

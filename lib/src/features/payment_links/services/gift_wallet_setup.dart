@@ -18,7 +18,7 @@ Future<String> setUpGiftCardWallet(
 }) async {
   final security = ref.read(appSecurityProvider.notifier);
   final accounts = ref.read(accountProvider.notifier);
-  await security.preparePasswordSetup(passcode);
+  await security.prepareGiftWalletPasswordSetup(passcode);
   final String uuid;
   try {
     uuid = await runWithSyncPausedForAccountMutation(

@@ -35,6 +35,10 @@ const kPaymentLinkReceivedStorageKey = 'zcash_gift_card_received_v1';
 /// Encrypted creation journal written before a Gift wallet account exists.
 const kPendingAccountMnemonicStorageKey = 'zcash_pending_account_mnemonic_v1';
 
+/// Locked-readable setup marker written before preparing a Gift wallet password.
+/// Contains no recovery material or credentials.
+const kGiftWalletSetupStartedStorageKey = 'zcash_gift_wallet_setup_started_v1';
+
 /// Plain (locked-readable) count of Gift Card claims still in flight.
 const kPaymentLinkClaimsInFlightCountKey =
     'zcash_gift_card_claims_in_flight_v1';
@@ -773,6 +777,12 @@ class AppSecureStore {
       await _runStorageOperation(
         'delete pending account mnemonic',
         () => _storage.delete(key: kPendingAccountMnemonicStorageKey),
+      );
+      // Keep the start marker until all credential and journal deletes finish,
+      // so startup can repeat cleanup if the process exits during a delete.
+      await _runStorageOperation(
+        'delete gift wallet setup start marker',
+        () => _storage.delete(key: kGiftWalletSetupStartedStorageKey),
       );
       clearSessionPassword();
     });

@@ -290,8 +290,11 @@ Future<AppBootstrapState> loadAppBootstrap({
     final storedAccounts = await _readStoredAccounts(storage);
     // Only presence is needed while locked; never decrypt the setup journal
     // before the user unlocks an account that was actually created.
-    final hasPendingGiftSetup =
+    final hasPendingGiftMnemonic =
         await storage.readPlain(kPendingAccountMnemonicStorageKey) != null;
+    final hasStartedGiftSetup =
+        await storage.readPlain(kGiftWalletSetupStartedStorageKey) != null;
+    final hasPendingGiftSetup = hasStartedGiftSetup || hasPendingGiftMnemonic;
     final storedAccountsByUuid = {
       for (final account in storedAccounts) account.uuid: account,
     };
@@ -355,8 +358,8 @@ Future<AppBootstrapState> loadAppBootstrap({
         log('bootstrap: rust accounts=${rustAccounts.length}');
       } catch (e) {
         log('bootstrap: failed to list Rust accounts: $e');
-        // An unreadable DB is not an empty DB. Preserve the journal and stop
-        // startup rather than discard credentials or reopen onboarding.
+        // An unreadable DB is not an empty DB. Preserve the setup records and
+        // stop startup rather than discard credentials or reopen onboarding.
         if (hasPendingGiftSetup) rethrow;
       }
     }
@@ -377,12 +380,24 @@ Future<AppBootstrapState> loadAppBootstrap({
           );
         }
       }
-      // No account was created. Leave the journal until the credential deletes
+      // No account was created. Leave a setup record until credential deletes
       // finish so another interruption can repeat cleanup on the next launch.
       await storage.clearPasswordConfiguration();
       isPasswordConfigured = await storage.isPasswordConfigured();
       isUnlocked = storage.hasSessionPassword;
       log('bootstrap: discarded Gift setup before account creation');
+    } else if (hasStartedGiftSetup &&
+        !hasPendingGiftMnemonic &&
+        accounts.isNotEmpty) {
+      // The account is durable and journal cleanup already finished. Removing
+      // the remaining plain marker must not alter its password or account data.
+      try {
+        await storage.delete(kGiftWalletSetupStartedStorageKey);
+      } catch (error) {
+        // This marker contains no recovery material. Keep the usable account
+        // available and retry marker cleanup on a later launch.
+        log('bootstrap: completed Gift setup marker cleanup failed: $error');
+      }
     }
     final activeAccountUuid = _resolveActiveUuid(storedActiveUuid, accounts);
     final activeAddress = !isUnlocked || activeAccountUuid == null

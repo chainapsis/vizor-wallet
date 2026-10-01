@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -33,6 +34,7 @@ void main() {
   tearDownAll(RustLib.dispose);
   late File database;
   late AppSecureStore store;
+  late _SetupStorage backend;
   late WidgetRef widgetRef;
   late ProviderContainer container;
 
@@ -41,7 +43,8 @@ void main() {
     FlutterSecureStorage.setMockInitialValues({kWalletDbNameKey: _dbName});
     SharedPreferences.setMockInitialValues({});
     AppSecureStore.instance.clearSessionPassword();
-    store = AppSecureStore.testing(storage: const FlutterSecureStorage());
+    backend = _SetupStorage();
+    store = AppSecureStore.testing(storage: backend);
     addTearDown(store.clearSessionPassword);
     final support = await Directory.systemTemp.createTemp('vizor-gift-setup-');
     database = File('${support.path}/$_dbName');
@@ -58,6 +61,7 @@ void main() {
   Future<void> mount(
     WidgetTester tester, {
     AppBootstrapState? bootstrap,
+    Future<BigInt> Function()? loadBirthday,
   }) async {
     await tester.pumpWidget(
       ProviderScope(
@@ -73,7 +77,8 @@ void main() {
           ),
           syncProvider.overrideWith(_IdleSync.new),
           rpcEndpointFailoverLatestBlockHeightGetterProvider.overrideWithValue(
-            (_, _) async => BigInt.from(3000000),
+            (_, _) =>
+                loadBirthday?.call() ?? Future.value(BigInt.from(3000000)),
           ),
         ],
         child: Consumer(
@@ -112,6 +117,144 @@ void main() {
     expect(api.importCalls, 0);
   }
 
+  testWidgets('exit during the birthday request permits setup after restart', (
+    tester,
+  ) async {
+    late Completer<void> requested;
+    late Completer<BigInt> birthday;
+    await mount(
+      tester,
+      loadBirthday: () {
+        requested.complete();
+        return birthday.future;
+      },
+    );
+    await tester.runAsync(() async {
+      requested = Completer<void>();
+      birthday = Completer<BigInt>();
+      final setup = setUpWallet();
+      final stoppedSetup = expectLater(
+        setup,
+        throwsA(isA<WalletCreationCurrentBlockHeightException>()),
+      );
+      late AppBootstrapState restarted;
+      try {
+        await requested.future;
+        expect(backend.writeKeys.take(3), [
+          kGiftWalletSetupStartedStorageKey,
+          'zcash_password_verifier_salt',
+          'zcash_password_verifier',
+        ]);
+        expect(await store.isPasswordConfigured(), isTrue);
+        expect(
+          await store.readPlain(kGiftWalletSetupStartedStorageKey),
+          'true',
+        );
+        expect(
+          await store.readPlain(kPendingAccountMnemonicStorageKey),
+          isNull,
+        );
+        expect(api.generateCalls, 0);
+        expect(api.importCalls, 0);
+        // Reconstruct startup from the persisted state without the old session.
+        store.clearSessionPassword();
+        restarted = await loadAppBootstrap(secureStore: store);
+        expect(restarted.hasBlockingFailure, isFalse);
+        expect(restarted.initialLocation, '/welcome');
+        expect(restarted.isPasswordConfigured, isFalse);
+        expect(
+          await store.readPlain(kGiftWalletSetupStartedStorageKey),
+          isNull,
+        );
+      } finally {
+        // Dispose the suspended request after observing startup. A process exit
+        // would never execute this old helper's exception cleanup.
+        birthday.completeError(StateError('end the interrupted request'));
+        await stoppedSetup;
+      }
+      final next = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(restarted),
+          appSecurityProvider.overrideWith(
+            () => AppSecurityNotifier.testing(store: store),
+          ),
+        ],
+      );
+      addTearDown(next.dispose);
+      final security = next.read(appSecurityProvider.notifier);
+      await security.prepareGiftWalletPasswordSetup(_passcode);
+      expect(security.hasPreparedPasswordSetup, isTrue);
+      await security.rollbackPasswordSetup();
+    });
+  });
+
+  for (final key in [
+    kGiftWalletSetupStartedStorageKey,
+    'zcash_password_verifier_salt',
+    'zcash_password_verifier',
+  ]) {
+    testWidgets('an interrupted write at $key remains restartable', (
+      tester,
+    ) async {
+      await mount(tester);
+      await tester.runAsync(() async {
+        backend.failNextWriteFor = key;
+        await expectLater(setUpWallet(), throwsStateError);
+        expect(api.generateCalls, 0);
+        expect(api.importCalls, 0);
+        expect(
+          await store.readPlain(kPendingAccountMnemonicStorageKey),
+          isNull,
+        );
+        expect(backend.writeKeys.first, kGiftWalletSetupStartedStorageKey);
+        expect(
+          await store.readPlain(kGiftWalletSetupStartedStorageKey),
+          key == kGiftWalletSetupStartedStorageKey ? isNull : 'true',
+        );
+        store.clearSessionPassword();
+        final restarted = await loadAppBootstrap(secureStore: store);
+        expect(restarted.hasBlockingFailure, isFalse);
+        expect(restarted.initialLocation, '/welcome');
+        expect(restarted.isPasswordConfigured, isFalse);
+        expect(await store.readPlain('zcash_password_verifier_salt'), isNull);
+        expect(await store.readPlain('zcash_password_verifier'), isNull);
+        expect(
+          await store.readPlain(kGiftWalletSetupStartedStorageKey),
+          isNull,
+        );
+      });
+    });
+  }
+
+  testWidgets('ordinary password setup does not write a Gift marker', (
+    tester,
+  ) async {
+    await mount(tester);
+    await tester.runAsync(() async {
+      final security = container.read(appSecurityProvider.notifier);
+      await security.preparePasswordSetup(_passcode);
+      expect(await store.isPasswordConfigured(), isTrue);
+      expect(await store.readPlain(kGiftWalletSetupStartedStorageKey), isNull);
+      await security.rollbackPasswordSetup();
+    });
+  });
+
+  testWidgets('invalid Gift passcodes do not start durable setup', (
+    tester,
+  ) async {
+    await mount(tester);
+    await tester.runAsync(() async {
+      await expectLater(
+        container
+            .read(appSecurityProvider.notifier)
+            .prepareGiftWalletPasswordSetup(''),
+        throwsArgumentError,
+      );
+      expect(backend.writeKeys, isEmpty);
+      expect(await store.isPasswordConfigured(), isFalse);
+    });
+  });
+
   testWidgets(
     'a failed initial DB guard rolls back setup and permits passcode setup after restart',
     (tester) async {
@@ -132,6 +275,10 @@ void main() {
           isNull,
         );
         expect(store.hasSessionPassword, isFalse);
+        expect(
+          await store.readPlain(kGiftWalletSetupStartedStorageKey),
+          isNull,
+        );
         await expectExistingDataUntouched();
 
         store.clearSessionPassword();
@@ -222,6 +369,10 @@ void main() {
           kPendingAccountMnemonicStorageKey,
         );
         expect(journal, isNotNull);
+        expect(
+          await store.readPlain(kGiftWalletSetupStartedStorageKey),
+          'true',
+        );
         store.clearSessionPassword();
         final restarted = await loadAppBootstrap(secureStore: store);
         expect(restarted.hasBlockingFailure, isTrue);
@@ -231,6 +382,10 @@ void main() {
           journal,
         );
         expect(await store.isPasswordConfigured(), isTrue);
+        expect(
+          await store.readPlain(kGiftWalletSetupStartedStorageKey),
+          'true',
+        );
       });
     },
   );
@@ -239,6 +394,39 @@ void main() {
 class _IdleSync extends FakeSyncNotifier {
   @override
   bool needsPauseForWalletMutation() => false;
+}
+
+class _SetupStorage extends FlutterSecureStorage {
+  final writeKeys = <String>[];
+  String? failNextWriteFor;
+
+  @override
+  Future<void> write({
+    required String key,
+    required String? value,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) {
+    writeKeys.add(key);
+    if (key == failNextWriteFor) {
+      failNextWriteFor = null;
+      throw StateError('interrupted setup write');
+    }
+    return super.write(
+      key: key,
+      value: value,
+      iOptions: iOptions,
+      aOptions: aOptions,
+      lOptions: lOptions,
+      webOptions: webOptions,
+      mOptions: mOptions,
+      wOptions: wOptions,
+    );
+  }
 }
 
 class _SetupRustApi implements RustLibApi {

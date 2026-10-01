@@ -153,7 +153,17 @@ class AppSecurityNotifier extends Notifier<AppSecurityState> {
       .read(linuxKeyringCoordinatorProvider)
       .runMutation(() => _preparePasswordSetup(password));
 
-  Future<void> _preparePasswordSetup(String password) async {
+  /// Records first Gift wallet setup before any password writes can persist.
+  Future<void> prepareGiftWalletPasswordSetup(String password) => ref
+      .read(linuxKeyringCoordinatorProvider)
+      .runMutation(
+        () => _preparePasswordSetup(password, recordGiftSetupStart: true),
+      );
+
+  Future<void> _preparePasswordSetup(
+    String password, {
+    bool recordGiftSetupStart = false,
+  }) async {
     final lifecycleGeneration = _lifecycleGeneration;
     final requestGeneration = _unlockRequestGeneration;
     final sessionGeneration = _store.sessionGeneration;
@@ -166,6 +176,9 @@ class AppSecurityNotifier extends Notifier<AppSecurityState> {
     final error = validateRequiredWalletPassword(password);
     if (error != null) {
       throw ArgumentError(error);
+    }
+    if (recordGiftSetupStart) {
+      await _store.writePlain(kGiftWalletSetupStartedStorageKey, 'true');
     }
     // Persist the verifier and open the secure-storage session before account
     // creation/import writes the encrypted mnemonic. Publishing provider state
