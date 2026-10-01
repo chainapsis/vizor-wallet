@@ -750,14 +750,20 @@ class _MobileDetailRows extends StatelessWidget {
       hideSuccessAddressRows: hideSuccessAddressRows,
       compactTransactionDetails: compactTransactionDetails,
     );
-    final firstFeeIndex = visibleRows.indexWhere(_isMobileFeeDetailRow);
+    // Like desktop, a recorded refund starts the outcome group so its amount
+    // and fee stay together below the transaction metadata.
+    final refundIndex = visibleRows.indexWhere(
+      (row) => row.label == 'Refunded amount',
+    );
+    final dividerIndex = refundIndex > 0
+        ? refundIndex
+        : visibleRows.indexWhere(_isMobileFeeDetailRow);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         for (var i = 0; i < visibleRows.length; i++) ...[
-          if (i > 0 && i != firstFeeIndex)
-            const SizedBox(height: AppSpacing.xs),
-          if (i == firstFeeIndex) ...[
+          if (i > 0 && i != dividerIndex) const SizedBox(height: AppSpacing.xs),
+          if (i == dividerIndex) ...[
             const SizedBox(height: AppSpacing.sm),
             // Figma `border/neutral/default`.
             Container(height: 1, color: colors.border.regular),
@@ -869,60 +875,65 @@ class _MobileFinalDetailRow extends StatelessWidget {
         child: LayoutBuilder(
           builder: (context, constraints) => ConstrainedBox(
             constraints: const BoxConstraints(minHeight: 32),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Text(
-                    displayLabel,
-                    style:
-                        (paymentMode
-                                ? AppTypography.labelLarge
-                                : AppTypography.labelMedium)
-                            .copyWith(color: colors.text.secondary),
+            // The padding fits inside the default 32px row, so only wrapped
+            // labels gain separation from the neighbouring rows.
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      displayLabel,
+                      style:
+                          (paymentMode
+                                  ? AppTypography.labelLarge
+                                  : AppTypography.labelMedium)
+                              .copyWith(color: colors.text.secondary),
+                    ),
                   ),
-                ),
-                const SizedBox(width: AppSpacing.s),
-                ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxWidth: (constraints.maxWidth - AppSpacing.s) / 2,
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Flexible(
-                        child: _MobileScaledDetailValueText(
-                          value: displayValue,
-                          style: AppTypography.labelLarge.copyWith(
-                            color: colors.text.accent,
+                  const SizedBox(width: AppSpacing.s),
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: (constraints.maxWidth - AppSpacing.s) / 2,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: _MobileScaledDetailValueText(
+                            value: displayValue,
+                            style: AppTypography.labelLarge.copyWith(
+                              color: colors.text.accent,
+                            ),
                           ),
                         ),
-                      ),
-                      if (linkUri != null ||
-                          row.copyable ||
-                          row.help ||
-                          trailingIcon != null) ...[
-                        const SizedBox(width: AppSpacing.xxs),
-                        _MobileStatusDetailActionIcon(
-                          icon:
-                              trailingIcon ??
-                              (linkUri != null
-                                  ? AppIcons.arrowTopRight
-                                  : row.copyable
-                                  ? AppIcons.copy
-                                  : AppIcons.help),
-                          size: actionIconSize,
-                          color: actionIconColor,
-                          tooltipMessage: row.help
-                              ? row.helpTooltip ??
-                                    _mobileStatusHelpTooltip(row.label)
-                              : null,
-                        ),
+                        if (linkUri != null ||
+                            row.copyable ||
+                            row.help ||
+                            trailingIcon != null) ...[
+                          const SizedBox(width: AppSpacing.xxs),
+                          _MobileStatusDetailActionIcon(
+                            icon:
+                                trailingIcon ??
+                                (linkUri != null
+                                    ? AppIcons.arrowTopRight
+                                    : row.copyable
+                                    ? AppIcons.copy
+                                    : AppIcons.help),
+                            size: actionIconSize,
+                            color: actionIconColor,
+                            tooltipMessage: row.help
+                                ? row.helpTooltip ??
+                                      _mobileStatusHelpTooltip(row.label)
+                                : null,
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

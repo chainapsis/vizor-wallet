@@ -388,6 +388,62 @@ void main() {
     expect(find.text('Tx fee'), findsNothing);
   });
 
+  testWidgets('wrapped Pay outcome labels keep a gap to the next row', (
+    tester,
+  ) async {
+    final presentation = swapActivityStatusPresentationForIntent(
+      _state(),
+      _intent(
+        status: SwapIntentStatus.refunded,
+        depositTxHash: null,
+        originChainTxHash: 'provider-origin-txid',
+        providerRefundInfo: const SwapProviderRefundInfo(
+          depositedAmountText: '4.125 ZEC',
+          refundedAmountText: '4.1249 ZEC',
+          recordedRefundFeeText: '0.0001 ZEC',
+        ),
+      ).copyWith(oneClickRefundTo: 'u1refund-address'),
+    );
+
+    await tester.pumpWidget(
+      _harness(
+        MobileSwapStatusContent(
+          presentation: presentation,
+          paymentHeader: const MobilePayStatusHeader(
+            asset: SwapAsset.usdc,
+            amountText: '10 USDC',
+            fiatText: r'$10.00',
+            label: 'Amount',
+            recipientAddress: '0x1234567890123456789012345678901234567890',
+          ),
+          payHeaderRow: MobileSwapReviewHeaderRow(
+            label: presentation.payLabel,
+            amountText: presentation.payAmountText,
+            asset: presentation.payAsset,
+          ),
+          receiveHeaderRow: MobileSwapReviewHeaderRow(
+            label: presentation.receiveLabel,
+            amountText: presentation.receiveAmountText,
+            asset: presentation.receiveAsset,
+          ),
+          activeTab: SwapStatusTab.details,
+          detailsExpanded: false,
+          onTabChanged: (_) {},
+          onToggleDetails: () {},
+        ),
+        width: 320,
+        textScale: 1.3,
+      ),
+    );
+    await tester.pump();
+
+    final amount = tester.getRect(find.text('Refunded amount'));
+    final refundTo = tester.getRect(find.text('Refund to'));
+    final lineHeight = tester.getRect(find.text('Refund to')).height;
+    expect(amount.height, greaterThan(lineHeight * 1.5));
+    expect(refundTo.top - amount.bottom, greaterThanOrEqualTo(8));
+  });
+
   test(
     'mobile pay keeps the confirmed deposit fee separate from route fees',
     () {

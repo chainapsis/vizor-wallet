@@ -303,6 +303,41 @@ void main() {
     expect(find.text('2.2976 USDC'), findsOneWidget);
   });
 
+  testWidgets('refund amount and fee share the group below the divider', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _harness(
+        SingleChildScrollView(
+          child: _content(
+            showTabs: false,
+            badgeKind: SwapStatusBadgeKind.refunded,
+            details: const [
+              SwapStatusDetailRowData(
+                label: 'Timestamp',
+                value: 'May 20, 2026 13:20',
+              ),
+              SwapStatusDetailRowData(
+                label: 'Refunded amount',
+                value: '2.2976 USDC',
+              ),
+              SwapStatusDetailRowData(
+                label: 'Refund fee',
+                value: '0.0024 USDC',
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final timestamp = tester.getRect(find.text('Timestamp'));
+    final refunded = tester.getRect(find.text('Refunded amount'));
+    final fee = tester.getRect(find.text('Refund fee'));
+    // The divider sits before the refund amount, not between it and the fee.
+    expect(refunded.top - timestamp.top, greaterThan(fee.top - refunded.top));
+  });
+
   testWidgets('in-progress (details tab) omits the View on Near Intents link', (
     tester,
   ) async {
