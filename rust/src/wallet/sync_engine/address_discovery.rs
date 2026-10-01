@@ -1,19 +1,58 @@
-//! One-time, resumable transparent history recovery for imported Ledger accounts.
-//! Subsequent address growth belongs to the ordinary UTXO sync, not this pass.
+//! Public-mode transparent history discovery, shared by every account kind.
+//!
+//! Compact blocks carry no transparent data, so in public mode an account's
+//! transparent history comes from lightwalletd address queries. UTXO streams
+//! return only unspent outputs, and the library's spend searches cover only
+//! outputs it already knows, so neither finds an output that was received and
+//! spent before the wallet first looked, and what they find depends on the
+//! order in which transactions arrive. This component establishes an account's
+//! transparent history once, whatever its kind (software, Ledger, Keystone):
+//!
+//! 1. **Initial discovery** ([`run`], before the chain scan): every derived
+//!    external and internal address, by child index, over its whole mined
+//!    history, until the library's gap limit of unused addresses. An address
+//!    with any history, spent or not, is used. Progress is checkpointed per
+//!    scope against a block hash, so a pass resumes where it stopped and a
+//!    reorg restarts it.
+//! 2. **Restored TEX operations** ([`run_restored_ephemeral`], after the chain
+//!    scan): an ephemeral-address output the wallet learned from the chain
+//!    rather than built itself, such as a ZIP 320 first leg found by a restore,
+//!    is checked once, immediately, so its second leg and any returned funds
+//!    are found now rather than on the randomized ZIP 320 schedule, which
+//!    still applies afterwards ([`super::ephemeral_checks`]). Each such query
+//!    uses its own channel, like the scheduled checks.
+//!
+//! Afterwards the ordinary UTXO refresh and the library's spend searches keep
+//! the history current. [`Coverage`] reports whether an account's public
+//! history is complete: initial discovery done, no restored ephemeral output
+//! unchecked, and no spend search due at or below the tip. Balances report
+//! transparent funds as current, shielding spends them, and sync reports
+//! completion only when it is complete.
+//!
+//! Every request sends a wallet address to public lightwalletd, so it goes
+//! through [`TransparentLookupGate`]; every write that marks work done reads
+//! the durable policy in its own SQLite transaction. Under a private
+//! transparent policy nothing is queried, and the private ledger owns
+//! completeness instead.
 use futures::Stream;
 use futures::{stream, StreamExt, TryStreamExt};
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{params, params_from_iter, OptionalExtension};
 use std::pin::Pin;
 use tonic::transport::Channel;
+use transparent::address::TransparentAddress;
 use transparent::keys::TransparentKeyScope;
 use zcash_client_backend::{
     data_api::{
-        ll::LowLevelWalletWrite, transparent_ledger::TransparentLedgerRead,
-        wallet::decrypt_and_store_transaction, Account as _, WalletRead,
+        ll::LowLevelWalletWrite,
+        transparent_ledger::{TransparentAuthority, TransparentLedgerRead},
+        wallet::decrypt_and_store_transaction,
+        Account as _, OutputStatusFilter, TransactionDataRequest, TransactionStatusFilter,
+        WalletRead, WalletWrite,
     },
     proto::service::{compact_tx_streamer_client::CompactTxStreamerClient, RawTransaction},
 };
-use zcash_client_sqlite::{error::SqliteClientError, AccountUuid};
+use zcash_client_sqlite::{error::SqliteClientError, AccountUuid, ExtensionTransaction};
+use zcash_keys::encoding::{encode_transparent_address_p, AddressCodec as _};
 use zcash_keys::keys::{
     transparent::gap_limits::GapLimits, ReceiverRequirement::*, UnifiedAddressRequest,
 };
@@ -32,8 +71,28 @@ use crate::wallet::{
     network::WalletNetwork,
 };
 
+/// Per-scope checkpoints. The name predates other account kinds: released
+/// builds created it for Ledger imports, and keep reading it for them.
 const TABLE: &str = "ext_vizor_ledger_initial_discovery";
 const CONCURRENCY: usize = 4;
+
+/// An unspent ephemeral-address output that the wallet learned from the chain
+/// (its transaction was not built locally) and whose address has never been
+/// checked: no observation of it as unspent is recorded. Key scope 2 is
+/// `KeyScope::Ephemeral` as encoded in `addresses.key_scope`.
+const RESTORED_EPHEMERAL_OUTPUTS: &str = "
+    FROM transparent_received_outputs tro
+    JOIN addresses a ON a.id = tro.address_id
+    JOIN accounts acct ON acct.id = a.account_id
+    JOIN transactions t ON t.id_tx = tro.transaction_id
+    WHERE a.key_scope = 2
+      AND t.mined_height IS NOT NULL
+      AND t.created IS NULL
+      AND tro.max_observed_unspent_height IS NULL
+      AND NOT EXISTS (
+          SELECT 1 FROM transparent_received_output_spends s
+          WHERE s.transparent_received_output_id = tro.id
+      )";
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct Progress {
@@ -46,7 +105,7 @@ impl Progress {
             .next_index
             .checked_add(1)
             .filter(|i| *i <= 0x8000_0000)
-            .ok_or_else(|| SyncError::other("Ledger discovery exhausted transparent indices"))?;
+            .ok_or_else(|| SyncError::other("Address discovery exhausted transparent indices"))?;
         self.unused = if used { 0 } else { self.unused + 1 };
         Ok(())
     }
@@ -64,23 +123,53 @@ fn table_exists(conn: &rusqlite::Connection) -> Result<bool, String> {
     .map_err(|e| e.to_string())
 }
 
-/// Read-only gate: a missing checkpoint means a Ledger import still needs recovery.
-pub(crate) fn is_ready(db_path: &str, account_id: AccountUuid) -> Result<bool, String> {
+fn initial_discovery_complete_sql() -> String {
+    format!(
+        "SELECT COUNT(*)=2 FROM {TABLE} WHERE account_uuid=?1 AND complete=2 AND key_scope IN (0,1)"
+    )
+}
+
+/// Whether both derived scopes of `account_id` finished initial discovery and
+/// were published as one account. Says nothing about whether the account
+/// needs discovery at all; see [`Coverage`].
+pub(crate) fn initial_discovery_complete(
+    db_path: &str,
+    account_id: AccountUuid,
+) -> Result<bool, String> {
     let conn = open_readonly_conn_with_timeout(db_path, Some(SYNC_DB_BUSY_TIMEOUT))?;
-    let source: Option<String> = conn
-        .query_row(
-            "SELECT key_source FROM accounts WHERE uuid=?1",
-            [account_id.expose_uuid().as_bytes().as_slice()],
-            |r| r.get(0),
-        )
-        .map_err(|e| e.to_string())?;
-    if source.as_deref() != Some(keys::KEY_SOURCE_LEDGER) {
-        return Ok(true);
-    }
     if !table_exists(&conn)? {
         return Ok(false);
     }
-    conn.query_row(&format!("SELECT COUNT(*)=2 FROM {TABLE} WHERE account_uuid=?1 AND complete=2 AND key_scope IN (0,1)"), [account_id.expose_uuid().as_bytes().as_slice()], |r| r.get(0)).map_err(|e| e.to_string())
+    conn.query_row(
+        &initial_discovery_complete_sql(),
+        [account_id.expose_uuid().as_bytes().as_slice()],
+        |r| r.get(0),
+    )
+    .map_err(|e| e.to_string())
+}
+
+/// Records `account_id`'s initial discovery as complete at `tip`, as a sync
+/// that discovered both scopes would. For fixtures that build wallet state
+/// directly instead of syncing.
+#[cfg(test)]
+pub(crate) fn record_initial_discovery_for_test(db_path: &str, account_id: AccountUuid, tip: u32) {
+    ensure_table(db_path).unwrap();
+    let conn = open_wallet_raw_conn_with_timeout(db_path, SYNC_DB_BUSY_TIMEOUT).unwrap();
+    for scope in 0..2u32 {
+        conn.execute(
+            &upsert_checkpoint_sql(),
+            params![
+                account_id.expose_uuid().as_bytes().as_slice(),
+                scope,
+                0u32,
+                0u32,
+                tip,
+                [0u8; 32].as_slice(),
+                2
+            ],
+        )
+        .unwrap();
+    }
 }
 
 pub(crate) fn delete_account(conn: &rusqlite::Connection, uuid: &[u8]) -> Result<(), String> {
@@ -94,14 +183,13 @@ pub(crate) fn delete_account(conn: &rusqlite::Connection, uuid: &[u8]) -> Result
     Ok(())
 }
 
-/// Invalidate Ledger discovery before truncating. The caller first invalidates
-/// the shared UTXO cache and owns the wallet write lock.
+/// Invalidate address discovery before truncating. The caller first
+/// invalidates the shared UTXO cache and owns the wallet write lock.
 pub(crate) fn truncate(
     db_path: &str,
     db: &mut WalletDatabase,
     height: BlockHeight,
 ) -> Result<BlockHeight, zcash_client_sqlite::error::SqliteClientError> {
-    use zcash_client_backend::data_api::WalletWrite;
     invalidate_for_rewind(db_path, db, height)?;
     db.truncate_to_height(height)
 }
@@ -128,7 +216,7 @@ pub(super) fn invalidate_for_rewind(
 }
 
 fn ensure_table(db_path: &str) -> Result<(), SyncError> {
-    with_wallet_db_write_lock("ledger_discovery.schema", || {
+    with_wallet_db_write_lock("address_discovery.schema", || {
         let conn = open_wallet_raw_conn_with_timeout(db_path, SYNC_DB_BUSY_TIMEOUT)
             .map_err(SyncError::db)?;
         conn.execute_batch(&format!("CREATE TABLE IF NOT EXISTS {TABLE} (
@@ -166,7 +254,7 @@ fn save(
     hash: &[u8],
     complete: bool,
 ) -> Result<(), SyncError> {
-    with_wallet_db_write_lock("ledger_discovery.checkpoint", || {
+    with_wallet_db_write_lock("address_discovery.checkpoint", || {
         let conn = open_wallet_raw_conn_with_timeout(db_path, SYNC_DB_BUSY_TIMEOUT)
             .map_err(SyncError::db)?;
         conn.execute(
@@ -201,7 +289,7 @@ fn commit(
     hash: &[u8],
     complete: bool,
 ) -> Result<bool, SyncError> {
-    commit_extension(db, gate, "ledger_discovery.checkpoint", |ext| {
+    commit_extension(db, gate, "address_discovery.checkpoint", |ext| {
         ext.execute(
             &upsert_checkpoint_sql(),
             params![
@@ -241,8 +329,18 @@ type History = Pin<Box<dyn Stream<Item = Result<RawTransaction, SyncError>> + Se
 
 trait DiscoveryRpc: Clone {
     async fn block_hash(&mut self, height: u64) -> Result<BlockHash, SyncError>;
-    /// Opens `address`'s history through `gate`; `None` means withheld.
+    /// Opens `address`'s mined history through `gate` over the sync's channel;
+    /// `None` means withheld, and then nothing was sent.
     async fn history(
+        &mut self,
+        gate: &TransparentLookupGate,
+        address: String,
+        tip: u64,
+    ) -> Result<Option<History>, SyncError>;
+    /// Like [`Self::history`], over a channel of its own (an isolated circuit
+    /// when Tor is enabled), for an address that must not be linked to the
+    /// others by connection.
+    async fn isolated_history(
         &mut self,
         gate: &TransparentLookupGate,
         address: String,
@@ -250,9 +348,32 @@ trait DiscoveryRpc: Clone {
     ) -> Result<Option<History>, SyncError>;
 }
 
-impl DiscoveryRpc for CompactTxStreamerClient<Channel> {
+/// Production discovery transport: the sync's lightwalletd client, plus its
+/// endpoint for isolated channels.
+#[derive(Clone)]
+struct Lightwalletd {
+    client: CompactTxStreamerClient<Channel>,
+    url: String,
+}
+
+fn stream_history(
+    history: tonic::Streaming<RawTransaction>,
+    label: &'static str,
+    keep_alive: Option<CompactTxStreamerClient<Channel>>,
+) -> History {
+    Box::pin(stream::try_unfold(
+        (history, keep_alive),
+        move |(mut history, keep_alive)| async move {
+            next_stream_message(&mut history, label)
+                .await
+                .map(|raw| raw.map(|raw| (raw, (history, keep_alive))))
+        },
+    ))
+}
+
+impl DiscoveryRpc for Lightwalletd {
     async fn block_hash(&mut self, height: u64) -> Result<BlockHash, SyncError> {
-        super::get_compact_block_hash(self, height).await
+        super::get_compact_block_hash(&mut self.client, height).await
     }
     async fn history(
         &mut self,
@@ -260,18 +381,60 @@ impl DiscoveryRpc for CompactTxStreamerClient<Channel> {
         address: String,
         tip: u64,
     ) -> Result<Option<History>, SyncError> {
-        let Some(history) = gate.taddress_txids(self, address, 0, tip).await? else {
+        let Some(history) = gate
+            .taddress_txids(&mut self.client, address, 0, tip)
+            .await?
+        else {
             return Ok(None);
         };
-        Ok(Some(Box::pin(stream::try_unfold(
+        Ok(Some(stream_history(
             history,
-            |mut history| async move {
-                next_stream_message(&mut history, "ledger discovery history")
-                    .await
-                    .map(|raw| raw.map(|raw| (raw, history)))
-            },
-        ))))
+            "address discovery history",
+            None,
+        )))
     }
+    async fn isolated_history(
+        &mut self,
+        gate: &TransparentLookupGate,
+        address: String,
+        tip: u64,
+    ) -> Result<Option<History>, SyncError> {
+        let mut client = super::lwd::open_isolated_lwd_channel(&self.url).await?;
+        let Some(history) = gate.taddress_txids(&mut client, address, 0, tip).await? else {
+            return Ok(None);
+        };
+        // The client lives as long as its stream is read.
+        Ok(Some(stream_history(
+            history,
+            "restored ephemeral address history",
+            Some(client),
+        )))
+    }
+}
+
+/// The accounts whose derived addresses initial discovery covers: every
+/// account with a transparent viewing key, whatever its kind.
+fn discovery_accounts(db: &WalletDatabase) -> Result<Vec<AccountUuid>, SyncError> {
+    let mut accounts = Vec::new();
+    for id in db
+        .get_account_ids()
+        .map_err(|e| SyncError::db(e.to_string()))?
+    {
+        let account = db
+            .get_account(id)
+            .map_err(|e| SyncError::db(e.to_string()))?
+            .ok_or_else(|| SyncError::db("account disappeared during address discovery"))?;
+        if account.ufvk().and_then(|k| k.transparent()).is_some() {
+            accounts.push(id);
+        } else if keys::hardware_signer_kind(account.source()) == Some(HardwareSignerKind::Ledger) {
+            // A Ledger account is imported with its transparent key; one
+            // without it cannot be recovered or shielded.
+            return Err(SyncError::other(
+                "Ledger account has no transparent viewing key",
+            ));
+        }
+    }
+    Ok(accounts)
 }
 
 /// Called by sync before its normal UTXO refresh; shares sync's cancellation lifetime.
@@ -279,11 +442,16 @@ pub(super) async fn run(
     client: &mut CompactTxStreamerClient<Channel>,
     db: &mut WalletDatabase,
     db_path: &str,
+    lightwalletd_url: &str,
     network: WalletNetwork,
     tip: BlockHeight,
     should_exit: &impl Fn() -> bool,
 ) -> Result<(), SyncError> {
-    run_with(client, db, db_path, network, tip, should_exit).await
+    let mut rpc = Lightwalletd {
+        client: client.clone(),
+        url: lightwalletd_url.to_owned(),
+    };
+    run_with(&mut rpc, db, db_path, network, tip, should_exit).await
 }
 
 async fn run_with<R: DiscoveryRpc>(
@@ -303,33 +471,16 @@ async fn run_with<R: DiscoveryRpc>(
         network,
     )?;
     if !gate.is_allowed() {
-        log::info!("sync: transparent policy withholds Ledger address-history discovery");
+        log::info!("sync: transparent policy withholds address-history discovery");
         return Ok(());
     }
-    let mut accounts = Vec::new();
-    for id in db
-        .get_account_ids()
-        .map_err(|e| SyncError::db(e.to_string()))?
-    {
-        let account = db
-            .get_account(id)
-            .map_err(|e| SyncError::db(e.to_string()))?
-            .ok_or_else(|| SyncError::db("Ledger account disappeared"))?;
-        if keys::hardware_signer_kind(account.source()) == Some(HardwareSignerKind::Ledger) {
-            if account.ufvk().and_then(|k| k.transparent()).is_none() {
-                return Err(SyncError::other(
-                    "Ledger account has no transparent viewing key",
-                ));
-            }
-            accounts.push(id);
-        }
-    }
+    let accounts = discovery_accounts(db)?;
     if accounts.is_empty() || should_exit() {
         return Ok(());
     }
     ensure_table(db_path)?;
     for id in accounts {
-        if is_ready(db_path, id).map_err(SyncError::db)? {
+        if initial_discovery_complete(db_path, id).map_err(SyncError::db)? {
             continue;
         }
         for (scope_code, scope, gap) in [
@@ -369,7 +520,7 @@ async fn run_with<R: DiscoveryRpc>(
             save(db_path, id, scope_code, progress, scan_tip, &hash.0, false)?;
             let started = std::time::Instant::now();
             log::info!(
-                "ledger discovery: account={} scope={} resume_index={} tip={}",
+                "address discovery: account={} scope={} resume_index={} tip={}",
                 id.expose_uuid(),
                 scope_code,
                 progress.next_index,
@@ -379,7 +530,7 @@ async fn run_with<R: DiscoveryRpc>(
                 if should_exit() {
                     return Ok(());
                 }
-                with_wallet_db_write_lock("ledger_discovery.addresses", || {
+                with_wallet_db_write_lock("address_discovery.addresses", || {
                     db.transactionally(|tx| {
                         tx.generate_transparent_gap_addresses(
                             id,
@@ -399,7 +550,7 @@ async fn run_with<R: DiscoveryRpc>(
                 )?;
                 if candidates.first().map(|c| c.0) != Some(progress.next_index) {
                     return Err(SyncError::db(
-                        "Ledger discovery candidate range is incomplete",
+                        "Address discovery candidate range is incomplete",
                     ));
                 }
                 // Only stream headers are acquired concurrently. Bodies are drained and stored
@@ -419,10 +570,12 @@ async fn run_with<R: DiscoveryRpc>(
                 let streams = tokio::select! { biased; _ = watch_for_exit(should_exit) => return Ok(()), result = opening => result? };
                 for (index, history) in streams {
                     if index != progress.next_index {
-                        return Err(SyncError::db("Ledger discovery candidate index skipped"));
+                        return Err(SyncError::db("Address discovery candidate index skipped"));
                     }
                     let Some(mut history) = history else {
-                        log::info!("sync: transparent policy withholds remaining Ledger discovery");
+                        log::info!(
+                            "sync: transparent policy withholds remaining address discovery"
+                        );
                         return Ok(());
                     };
                     let Some(used) = store_history(
@@ -430,7 +583,10 @@ async fn run_with<R: DiscoveryRpc>(
                         db,
                         network,
                         scan_tip,
-                        (id, scope_code, index),
+                        &format!(
+                            "account={} scope={scope_code} index={index}",
+                            id.expose_uuid()
+                        ),
                         should_exit,
                     )
                     .await?
@@ -450,7 +606,7 @@ async fn run_with<R: DiscoveryRpc>(
                         return Ok(());
                     }
                     log::info!(
-                        "ledger discovery: account={} scope={} index={} used={} gap={}/{} elapsed_ms={}",
+                        "address discovery: account={} scope={} index={} used={} gap={}/{} elapsed_ms={}",
                         id.expose_uuid(),
                         scope_code,
                         index,
@@ -473,7 +629,9 @@ async fn run_with<R: DiscoveryRpc>(
                     &final_hash.0,
                     false,
                 )?;
-                return Err(SyncError::other("Ledger discovery chain changed; retrying"));
+                return Err(SyncError::other(
+                    "Address discovery chain changed; retrying",
+                ));
             }
             if should_exit() {
                 return Ok(());
@@ -484,20 +642,21 @@ async fn run_with<R: DiscoveryRpc>(
                 return Ok(());
             }
             log::info!(
-                "ledger discovery: account={} scope={} complete addresses={} elapsed_ms={}",
+                "address discovery: account={} scope={} complete addresses={} elapsed_ms={}",
                 id.expose_uuid(),
                 scope_code,
                 progress.next_index,
                 started.elapsed().as_millis()
             );
         }
-        // Publish account readiness only after both scopes agree with the chain.
-        // Scope-complete (1) is resumable; account-complete (2) opens shielding.
+        // Publish account completion only after both scopes agree with the
+        // chain. Scope-complete (1) is resumable; account-complete (2) is what
+        // coverage reads.
         for scope in 0..2 {
             let (_, height, hash, complete) = load(db_path, id, scope)?
-                .ok_or_else(|| SyncError::db("Ledger recovery checkpoint missing"))?;
+                .ok_or_else(|| SyncError::db("Address discovery checkpoint missing"))?;
             if !complete {
-                return Err(SyncError::db("Ledger recovery scope incomplete"));
+                return Err(SyncError::db("Address discovery scope incomplete"));
             }
             let actual = tokio::select! { biased; _ = watch_for_exit(should_exit) => return Ok(()), r = client.block_hash(u64::from(height)) => r? };
             if actual.0.as_slice() != hash {
@@ -514,14 +673,14 @@ async fn run_with<R: DiscoveryRpc>(
                     false,
                 )?;
                 return Err(SyncError::other(
-                    "Ledger recovery scope chain changed; retrying",
+                    "Address discovery scope chain changed; retrying",
                 ));
             }
         }
         if should_exit() {
             return Ok(());
         }
-        let ready = commit_extension(db, &gate, "ledger_discovery.complete", |ext| {
+        let ready = commit_extension(db, &gate, "address_discovery.complete", |ext| {
             ext.execute(
                 &format!("UPDATE {TABLE} SET complete=2 WHERE account_uuid=?1 AND complete=1"),
                 [id.expose_uuid().as_bytes().as_slice()],
@@ -532,6 +691,124 @@ async fn run_with<R: DiscoveryRpc>(
         }
     }
     Ok(())
+}
+
+/// Called by sync once the chain scan and its enhancement have stored what
+/// they found. Checks every restored ephemeral output's address once, and
+/// returns whether any transaction was stored.
+pub(super) async fn run_restored_ephemeral(
+    client: &mut CompactTxStreamerClient<Channel>,
+    db: &mut WalletDatabase,
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    tip: BlockHeight,
+    should_exit: &impl Fn() -> bool,
+) -> Result<bool, SyncError> {
+    let mut rpc = Lightwalletd {
+        client: client.clone(),
+        url: lightwalletd_url.to_owned(),
+    };
+    restored_ephemeral_with(&mut rpc, db, db_path, network, tip, should_exit).await
+}
+
+async fn restored_ephemeral_with<R: DiscoveryRpc>(
+    client: &mut R,
+    db: &mut WalletDatabase,
+    db_path: &str,
+    network: WalletNetwork,
+    tip: BlockHeight,
+    should_exit: &impl Fn() -> bool,
+) -> Result<bool, SyncError> {
+    let gate = TransparentLookupGate::for_wallet(
+        EnhancementPolicy::current(network).public_transparent_lookups(db)?,
+        db_path,
+        network,
+    )?;
+    if !gate.is_allowed() {
+        return Ok(false);
+    }
+    let mut stored = false;
+    for address in restored_ephemeral_addresses(db_path)? {
+        if should_exit() {
+            return Ok(stored);
+        }
+        let checked = TransparentAddress::decode(&network, &address)
+            .map_err(|e| SyncError::parse(format!("restored ephemeral address: {e}")))?;
+        let query = super::transparent_address_for_query(
+            &address,
+            network,
+            super::transparent_utxo_query_network(network),
+        )
+        .map_err(SyncError::parse)?;
+        let opening = client.isolated_history(&gate, query, u64::from(u32::from(tip)));
+        let history = tokio::select! { biased; _ = watch_for_exit(should_exit) => return Ok(stored), r = opening => r? };
+        let Some(mut history) = history else {
+            log::info!("sync: transparent policy withholds restored ephemeral discovery");
+            return Ok(stored);
+        };
+        let Some(used) = store_history(
+            &mut history,
+            db,
+            network,
+            u32::from(tip),
+            "restored ephemeral address",
+            should_exit,
+        )
+        .await?
+        else {
+            return Ok(stored);
+        };
+        stored |= used;
+        if should_exit() {
+            return Ok(stored);
+        }
+        // Record the address as checked through `tip`, under the policy that
+        // authorized the query. A transition withholds the record, so the
+        // address is checked again under the new policy.
+        let TransactionDataRequest::TransactionsInvolvingAddress(request) =
+            TransactionDataRequest::transactions_involving_address(
+                checked,
+                BlockHeight::from_u32(0),
+                Some(tip + 1),
+                None,
+                TransactionStatusFilter::Mined,
+                OutputStatusFilter::All,
+            );
+        let recorded = with_wallet_db_write_lock("address_discovery.ephemeral_checked", || {
+            db.transactionally(|tx| {
+                if !gate.permits_applied(tx.applied_transparent_policy()?) {
+                    return Ok(false);
+                }
+                tx.notify_address_checked(request, tip)?;
+                Ok::<_, SqliteClientError>(true)
+            })
+        })
+        .map_err(|e| SyncError::db(format!("restored ephemeral address checked: {e}")))?;
+        if !recorded {
+            return Ok(stored);
+        }
+    }
+    Ok(stored)
+}
+
+/// Addresses of every restored ephemeral output (see
+/// [`RESTORED_EPHEMERAL_OUTPUTS`]), each once.
+fn restored_ephemeral_addresses(db_path: &str) -> Result<Vec<String>, SyncError> {
+    let conn = open_readonly_conn_with_timeout(db_path, Some(SYNC_DB_BUSY_TIMEOUT))
+        .map_err(SyncError::db)?;
+    let mut stmt = conn
+        .prepare(&format!(
+            "SELECT DISTINCT a.cached_transparent_receiver_address {RESTORED_EPHEMERAL_OUTPUTS}
+               AND a.cached_transparent_receiver_address IS NOT NULL
+             ORDER BY a.cached_transparent_receiver_address"
+        ))
+        .map_err(|e| SyncError::db(e.to_string()))?;
+    let rows = stmt
+        .query_map([], |r| r.get::<_, String>(0))
+        .map_err(|e| SyncError::db(e.to_string()))?;
+    rows.collect::<Result<_, _>>()
+        .map_err(|e| SyncError::db(e.to_string()))
 }
 
 // Read only the next bounded child-index range, rather than decoding every
@@ -579,12 +856,14 @@ fn next_candidates(
     .collect()
 }
 
+/// Stores each mined transaction of `history` as it arrives. Returns whether
+/// the address has any history, or `None` on exit.
 async fn store_history(
     history: &mut History,
     db: &mut WalletDatabase,
     network: WalletNetwork,
     tip: u32,
-    context: (AccountUuid, u32, u32),
+    context: &str,
     should_exit: &impl Fn() -> bool,
 ) -> Result<Option<bool>, SyncError> {
     let started = std::time::Instant::now();
@@ -594,8 +873,8 @@ async fn store_history(
         let raw = tokio::select! { biased; _ = watch_for_exit(should_exit) => return Ok(None), r = history.next() => r.transpose()? };
         let Some(raw) = raw else {
             log::info!(
-                "ledger discovery history: account={} scope={} index={} rpc_count=1 transactions={} response_bytes={} elapsed_ms={}",
-                context.0.expose_uuid(), context.1, context.2, transactions,
+                "address discovery history: {context} rpc_count=1 transactions={} response_bytes={} elapsed_ms={}",
+                transactions,
                 response_bytes,
                 started.elapsed().as_millis()
             );
@@ -605,23 +884,171 @@ async fn store_history(
         let height = u32::try_from(raw.height)
             .ok()
             .filter(|h| *h > 0 && *h <= tip)
-            .ok_or_else(|| SyncError::parse("Ledger history returned an invalid mined height"))?;
+            .ok_or_else(|| SyncError::parse("Address history returned an invalid mined height"))?;
         let tx = Transaction::read(
             &raw.data[..],
             BranchId::for_height(&network, BlockHeight::from_u32(height)),
         )
-        .map_err(|e| SyncError::parse(format!("Ledger history transaction: {e}")))?;
+        .map_err(|e| SyncError::parse(format!("Address history transaction: {e}")))?;
         if should_exit() {
             return Ok(None);
         }
-        with_wallet_db_write_lock("ledger_discovery.transaction", || {
+        with_wallet_db_write_lock("address_discovery.transaction", || {
             decrypt_and_store_transaction(&network, db, &tx, Some(BlockHeight::from_u32(height)))
         })
-        .map_err(|e| SyncError::db(format!("Ledger history store: {e}")))?;
+        .map_err(|e| SyncError::db(format!("Address history store: {e}")))?;
         transactions += 1;
     }
 }
 
+/// Whether an account's public transparent history is complete, and if not,
+/// what is still missing. Read only where the account's transparent authority
+/// is public; a private ledger reports its own completeness.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Coverage {
+    Complete,
+    /// Initial discovery of the account's derived addresses has not finished.
+    InitialDiscovery,
+    /// A restored ephemeral output's address has not been checked yet.
+    RestoredEphemeral,
+    /// A spend search for one of the account's outputs is due at or below
+    /// the tip.
+    SpendSearch,
+}
+
+/// Reads [`Coverage`] from one database snapshot. The library's due spend
+/// searches are read once, for every account.
+pub(crate) struct CoverageRead {
+    /// Addresses with a spend search due at or below the tip.
+    due_spend_searches: Vec<String>,
+}
+
+impl CoverageRead {
+    pub(crate) fn new<W>(wdb: &W, network: WalletNetwork) -> Result<Self, SqliteClientError>
+    where
+        W: WalletRead<Error = SqliteClientError>,
+    {
+        let requests = wdb.transaction_data_requests()?;
+        let due_spend_searches = super::address_history::plan(&requests)
+            .iter()
+            .filter_map(|group| group.front())
+            .map(|request| encode_transparent_address_p(&network, &request.address()))
+            .collect();
+        Ok(Self { due_spend_searches })
+    }
+
+    pub(crate) fn account<W>(
+        &self,
+        wdb: &W,
+        ext: &ExtensionTransaction<'_>,
+        account: AccountUuid,
+    ) -> Result<Coverage, SqliteClientError>
+    where
+        W: WalletRead<AccountId = AccountUuid, Error = SqliteClientError>,
+    {
+        let uuid = account.expose_uuid().as_bytes().to_vec();
+        let has_transparent = wdb
+            .get_account(account)?
+            .is_some_and(|a| a.ufvk().and_then(|k| k.transparent()).is_some());
+        if has_transparent {
+            let table: bool = ext.query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1)",
+                [TABLE],
+                |r| r.get(0),
+            )?;
+            let complete =
+                table && ext.query_row(&initial_discovery_complete_sql(), [&uuid], |r| r.get(0))?;
+            if !complete {
+                return Ok(Coverage::InitialDiscovery);
+            }
+        }
+        let restored: bool = ext.query_row(
+            &format!("SELECT EXISTS(SELECT 1 {RESTORED_EPHEMERAL_OUTPUTS} AND acct.uuid = ?1)"),
+            [&uuid],
+            |r| r.get(0),
+        )?;
+        if restored {
+            return Ok(Coverage::RestoredEphemeral);
+        }
+        if !self.due_spend_searches.is_empty() {
+            let placeholders = vec!["?"; self.due_spend_searches.len()].join(",");
+            let due: bool = ext.query_row(
+                &format!(
+                    "SELECT EXISTS(SELECT 1 FROM addresses a
+                     JOIN accounts acct ON acct.id = a.account_id
+                     WHERE acct.uuid = ?1
+                       AND a.cached_transparent_receiver_address IN ({placeholders}))"
+                ),
+                params_from_iter(
+                    std::iter::once(rusqlite::types::Value::Blob(uuid.clone())).chain(
+                        self.due_spend_searches
+                            .iter()
+                            .cloned()
+                            .map(rusqlite::types::Value::Text),
+                    ),
+                ),
+                |r| r.get(0),
+            )?;
+            if due {
+                return Ok(Coverage::SpendSearch);
+            }
+        }
+        Ok(Coverage::Complete)
+    }
+}
+
+/// `account`'s coverage, or `None` when its transparent authority is not
+/// public, so that public discovery does not govern it.
+pub(crate) fn account_coverage(
+    db: &mut WalletDatabase,
+    network: WalletNetwork,
+    account: AccountUuid,
+) -> Result<Option<Coverage>, String> {
+    db.transactionally_with_extension(|wdb, ext| {
+        let snapshot =
+            wdb.transparent_ledger_snapshot(account, crate::wallet::confirmations_policy())?;
+        if snapshot.authority != TransparentAuthority::Public {
+            return Ok(None);
+        }
+        CoverageRead::new(wdb, network)?
+            .account(wdb, ext, account)
+            .map(Some)
+    })
+    .map_err(|e: SqliteClientError| format!("Failed to read transparent history coverage: {e}"))
+}
+
+/// The first account whose public transparent history is incomplete, if any.
+pub(crate) fn first_incomplete(
+    db: &mut WalletDatabase,
+    network: WalletNetwork,
+) -> Result<Option<(AccountUuid, Coverage)>, String> {
+    db.transactionally_with_extension(|wdb, ext| {
+        let read = CoverageRead::new(wdb, network)?;
+        for account in wdb.get_account_ids()? {
+            let snapshot =
+                wdb.transparent_ledger_snapshot(account, crate::wallet::confirmations_policy())?;
+            if snapshot.authority != TransparentAuthority::Public {
+                continue;
+            }
+            let coverage = read.account(wdb, ext, account)?;
+            if coverage != Coverage::Complete {
+                return Ok(Some((account, coverage)));
+            }
+        }
+        Ok(None)
+    })
+    .map_err(|e: SqliteClientError| format!("Failed to read transparent history coverage: {e}"))
+}
+
+/// Whether public discovery permits spending `account`'s transparent funds:
+/// its history is complete, or its authority is not public.
+pub(crate) fn permits_transparent_spend(
+    db: &mut WalletDatabase,
+    network: WalletNetwork,
+    account: AccountUuid,
+) -> Result<bool, String> {
+    Ok(account_coverage(db, network, account)?.is_none_or(|c| c == Coverage::Complete))
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -675,10 +1102,35 @@ mod tests {
             &mut self,
             gate: &TransparentLookupGate,
             address: String,
+            tip: u64,
+        ) -> Result<Option<History>, SyncError> {
+            self.answer(gate, address, false, tip).await
+        }
+        /// Recorded with an `isolated:` prefix, so tests see which channel
+        /// each address used.
+        async fn isolated_history(
+            &mut self,
+            gate: &TransparentLookupGate,
+            address: String,
+            tip: u64,
+        ) -> Result<Option<History>, SyncError> {
+            self.answer(gate, address, true, tip).await
+        }
+    }
+    impl FakeRpc {
+        async fn answer(
+            &self,
+            gate: &TransparentLookupGate,
+            address: String,
+            isolated: bool,
             _: u64,
         ) -> Result<Option<History>, SyncError> {
             gate.dispatch(async {
-                self.queries.lock().unwrap().push(address.clone());
+                self.queries.lock().unwrap().push(if isolated {
+                    format!("isolated:{address}")
+                } else {
+                    address.clone()
+                });
                 let mut items = self
                     .histories
                     .get(&address)
@@ -926,7 +1378,7 @@ mod tests {
             fail_address: None,
             hash: 1,
         };
-        assert!(!is_ready(&path, id).unwrap());
+        assert!(!initial_discovery_complete(&path, id).unwrap());
         run_with(
             &mut rpc,
             &mut db,
@@ -937,7 +1389,7 @@ mod tests {
         )
         .await
         .unwrap();
-        assert!(is_ready(&path, id).unwrap());
+        assert!(initial_discovery_complete(&path, id).unwrap());
         assert_eq!(
             load(&path, id, 0).unwrap().unwrap().0,
             Progress {
@@ -1009,7 +1461,7 @@ mod tests {
                 unused: 3
             }
         );
-        assert!(!is_ready(&path, id).unwrap());
+        assert!(!initial_discovery_complete(&path, id).unwrap());
         drop(db);
         let mut db = crate::wallet::db::open_wallet_db_with_timeout(
             &path,
@@ -1030,7 +1482,7 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(rpc.queries.lock().unwrap().len(), 12);
-        assert!(is_ready(&path, id).unwrap());
+        assert!(initial_discovery_complete(&path, id).unwrap());
     }
     #[tokio::test]
     async fn cancelled_discovery_does_not_create_checkpoints() {
@@ -1051,7 +1503,7 @@ mod tests {
         )
         .await
         .unwrap();
-        assert!(!is_ready(&path, id).unwrap());
+        assert!(!initial_discovery_complete(&path, id).unwrap());
         assert!(rpc.queries.lock().unwrap().is_empty());
     }
 
@@ -1097,10 +1549,10 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(rpc.queries.lock().unwrap().len(), 15);
-        assert!(is_ready(&path, id).unwrap());
+        assert!(initial_discovery_complete(&path, id).unwrap());
         // Invalidation precedes the truncate, including when the wallet cannot rewind.
         let _ = truncate(&path, &mut db, BlockHeight::from_u32(2_599_999));
-        assert!(!is_ready(&path, id).unwrap());
+        assert!(!initial_discovery_complete(&path, id).unwrap());
         let conn = rusqlite::Connection::open(&path).unwrap();
         delete_account(&conn, id.expose_uuid().as_bytes()).unwrap();
         assert!(load(&path, id, 0).unwrap().is_none());
@@ -1135,7 +1587,7 @@ mod tests {
         .await
         .is_err());
         assert!(load(&path, id, 0).unwrap().unwrap().3);
-        assert!(!is_ready(&path, id).unwrap());
+        assert!(!initial_discovery_complete(&path, id).unwrap());
         rpc.hash = 2;
         rpc.fail_address = None;
         rpc.queries.lock().unwrap().clear();
@@ -1150,7 +1602,7 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(rpc.queries.lock().unwrap().len(), 15);
-        assert!(is_ready(&path, id).unwrap());
+        assert!(initial_discovery_complete(&path, id).unwrap());
     }
 
     #[tokio::test]
@@ -1192,7 +1644,7 @@ mod tests {
 
         assert!(rpc.queries.lock().unwrap().is_empty());
         assert!(
-            !is_ready(&path, id).unwrap(),
+            !initial_discovery_complete(&path, id).unwrap(),
             "withheld scopes stay incomplete"
         );
     }
@@ -1235,6 +1687,417 @@ mod tests {
             Progress::default(),
             "answers after the transition are not checkpointed"
         );
-        assert!(!is_ready(&path, id).unwrap());
+        assert!(!initial_discovery_complete(&path, id).unwrap());
+    }
+
+    // ---- Every account kind, coverage, and restored TEX operations ----
+
+    const TIP: u32 = 2_600_000;
+    const BIRTHDAY: u32 = TIP - 10;
+
+    /// Marks the blocks from the birthday through the tip scanned, so the
+    /// library authorizes the account's transparent amounts.
+    fn mark_scanned(path: &str) {
+        let conn = rusqlite::Connection::open(path).unwrap();
+        for height in BIRTHDAY..=TIP {
+            conn.execute(
+                "INSERT OR REPLACE INTO blocks (height, hash, time, sapling_tree,
+                     sapling_commitment_tree_size, orchard_commitment_tree_size,
+                     ironwood_commitment_tree_size)
+                 VALUES (?1, ?2, 0, x'00', 0, 0, 0)",
+                rusqlite::params![height, height.to_le_bytes().repeat(8)],
+            )
+            .unwrap();
+        }
+        conn.execute_batch(&format!(
+            "DELETE FROM scan_queue;
+             INSERT INTO scan_queue (block_range_start, block_range_end, priority)
+             VALUES ({BIRTHDAY}, {}, 10);",
+            TIP + 1
+        ))
+        .unwrap();
+    }
+
+    /// A restored software (mnemonic) account, with nothing discovered yet.
+    fn software_fixture() -> (
+        tempfile::TempDir,
+        String,
+        AccountUuid,
+        WalletDatabase,
+        zcash_keys::keys::UnifiedFullViewingKey,
+    ) {
+        use secrecy::ExposeSecret;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db").to_str().unwrap().to_owned();
+        let seed=keys::mnemonic_to_seed("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about").unwrap();
+        let (uuid, _) = keys::init_db_and_create_account(
+            &path,
+            WalletNetwork::Main,
+            &seed,
+            Some(u64::from(BIRTHDAY)),
+            "restored",
+        )
+        .unwrap();
+        let ufvk = zcash_keys::keys::UnifiedSpendingKey::from_seed(
+            &WalletNetwork::Main,
+            seed.expose_secret(),
+            zip32::AccountId::ZERO,
+        )
+        .unwrap()
+        .to_unified_full_viewing_key();
+        let mut db = crate::wallet::db::open_wallet_db_with_timeout(
+            &path,
+            WalletNetwork::Main,
+            SYNC_DB_BUSY_TIMEOUT,
+        )
+        .unwrap();
+        {
+            use zcash_client_backend::data_api::WalletWrite;
+            db.update_chain_tip(BlockHeight::from_u32(TIP)).unwrap();
+        }
+        (
+            dir,
+            path,
+            keys::parse_account_uuid(&uuid).unwrap(),
+            db,
+            ufvk,
+        )
+    }
+
+    fn external_address(
+        ufvk: &zcash_keys::keys::UnifiedFullViewingKey,
+        index: u32,
+    ) -> transparent::address::TransparentAddress {
+        use transparent::keys::{IncomingViewingKey, NonHardenedChildIndex};
+        ufvk.transparent()
+            .unwrap()
+            .derive_external_ivk()
+            .unwrap()
+            .derive_address(NonHardenedChildIndex::from_index(index).unwrap())
+            .unwrap()
+    }
+
+    fn rpc(histories: std::collections::HashMap<String, Vec<RawTransaction>>) -> FakeRpc {
+        FakeRpc {
+            histories: std::sync::Arc::new(histories),
+            queries: Default::default(),
+            fail_address: None,
+            hash: 1,
+        }
+    }
+
+    fn spends(db: &str) -> i64 {
+        rusqlite::Connection::open(db)
+            .unwrap()
+            .query_row(
+                "SELECT COUNT(*) FROM transparent_received_output_spends",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap()
+    }
+
+    fn coverage_of(db: &mut WalletDatabase, id: AccountUuid) -> Option<Coverage> {
+        account_coverage(db, WalletNetwork::Main, id).unwrap()
+    }
+
+    fn authority(path: &str, id: AccountUuid) -> crate::wallet::sync::TransparentBalanceAuthority {
+        crate::wallet::sync::get_wallet_balance(
+            path,
+            WalletNetwork::Main,
+            &id.expose_uuid().to_string(),
+        )
+        .unwrap()
+        .transparent_authority
+    }
+
+    /// V4, gap 6: a restored software account gets the same gap-limit
+    /// history scan as a Ledger import. Outputs received and spent before the
+    /// restore, which no UTXO stream returns, are found, and a used address
+    /// beyond the initial gap extends it.
+    #[tokio::test]
+    async fn a_restored_software_account_discovers_received_then_spent_history() {
+        let (_dir, path, id, mut db, ufvk) = software_fixture();
+        let mut histories = std::collections::HashMap::new();
+        for (index, seed) in [(0u32, 1u8), (9, 2), (15, 3)] {
+            let address = external_address(&ufvk, index);
+            let (received, txid) = payment(
+                transparent::bundle::OutPoint::new([seed; 32], 0),
+                address,
+                TIP - 5,
+            );
+            let (spent, _) = payment(
+                transparent::bundle::OutPoint::new(*txid.as_ref(), 0),
+                transparent::address::TransparentAddress::PublicKeyHash([99; 20]),
+                TIP - 4,
+            );
+            histories.insert(address.encode(&WalletNetwork::Main), vec![received, spent]);
+        }
+        let mut rpc = rpc(histories);
+        assert!(!initial_discovery_complete(&path, id).unwrap());
+
+        run_with(
+            &mut rpc,
+            &mut db,
+            &path,
+            WalletNetwork::Main,
+            BlockHeight::from_u32(TIP),
+            &|| false,
+        )
+        .await
+        .unwrap();
+
+        assert!(initial_discovery_complete(&path, id).unwrap());
+        assert_eq!(spends(&path), 3, "each received-then-spent output is found");
+        let queried = rpc.queries.lock().unwrap().clone();
+        assert!(queried.contains(&external_address(&ufvk, 15).encode(&WalletNetwork::Main)));
+        assert_eq!(
+            load(&path, id, 0).unwrap().unwrap().0,
+            Progress {
+                next_index: 26,
+                unused: 10
+            },
+            "index 15 is reached through 9, and the gap follows it"
+        );
+        assert_eq!(coverage_of(&mut db, id), Some(Coverage::Complete));
+    }
+
+    /// V5: until discovery and every due spend search are done, a public
+    /// account's transparent funds are only last known, shielding waits, and
+    /// the wallet does not read as synchronized.
+    #[tokio::test]
+    async fn coverage_waits_for_discovery_and_due_spend_searches() {
+        use crate::wallet::sync::TransparentBalanceAuthority;
+        use zcash_client_backend::data_api::WalletWrite;
+        let (_dir, path, id, mut db, ufvk) = software_fixture();
+        mark_scanned(&path);
+        assert_eq!(coverage_of(&mut db, id), Some(Coverage::InitialDiscovery));
+        assert_eq!(authority(&path, id), TransparentBalanceAuthority::LastKnown);
+        assert_eq!(
+            first_incomplete(&mut db, WalletNetwork::Main).unwrap(),
+            Some((id, Coverage::InitialDiscovery))
+        );
+        assert!(!permits_transparent_spend(&mut db, WalletNetwork::Main, id).unwrap());
+
+        // Discovery finds an unspent receive. Its spend search is due until
+        // the address is checked through the tip.
+        let address = external_address(&ufvk, 0);
+        let (received, _) = payment(
+            transparent::bundle::OutPoint::new([7; 32], 0),
+            address,
+            TIP - 5,
+        );
+        let mut rpc = rpc(std::collections::HashMap::from([(
+            address.encode(&WalletNetwork::Main),
+            vec![received],
+        )]));
+        run_with(
+            &mut rpc,
+            &mut db,
+            &path,
+            WalletNetwork::Main,
+            BlockHeight::from_u32(TIP),
+            &|| false,
+        )
+        .await
+        .unwrap();
+        assert_eq!(coverage_of(&mut db, id), Some(Coverage::SpendSearch));
+        assert_eq!(authority(&path, id), TransparentBalanceAuthority::LastKnown);
+        let balance = crate::wallet::sync::get_wallet_balance(
+            &path,
+            WalletNetwork::Main,
+            &id.expose_uuid().to_string(),
+        )
+        .unwrap();
+        assert_eq!(balance.transparent, 0, "nothing is spendable");
+        assert_eq!(balance.transparent_last_known, Some(100_000));
+
+        let TransactionDataRequest::TransactionsInvolvingAddress(request) = db
+            .transaction_data_requests()
+            .unwrap()
+            .into_iter()
+            .find(|r| {
+                let TransactionDataRequest::TransactionsInvolvingAddress(r) = r;
+                r.address() == address && r.block_range_end().is_some()
+            })
+            .expect("a spend search for the receive");
+        let end = request.block_range_end().unwrap();
+        db.transactionally(|tx| tx.notify_address_checked(request, end - 1))
+            .unwrap();
+        assert_eq!(coverage_of(&mut db, id), Some(Coverage::Complete));
+        assert_eq!(authority(&path, id), TransparentBalanceAuthority::Current);
+        assert_eq!(
+            first_incomplete(&mut db, WalletNetwork::Main).unwrap(),
+            None
+        );
+        assert!(permits_transparent_spend(&mut db, WalletNetwork::Main, id).unwrap());
+    }
+
+    /// Gap 7 (H13 N_cut): a cut address-history stream fails discovery, and
+    /// the account's history stays incomplete rather than reading as current.
+    #[tokio::test]
+    async fn a_cut_history_stream_fails_discovery_and_leaves_history_incomplete() {
+        use crate::wallet::sync::TransparentBalanceAuthority;
+        let (_dir, path, id, mut db, ufvk) = software_fixture();
+        mark_scanned(&path);
+        let mut rpc = rpc(Default::default());
+        rpc.fail_address = Some(external_address(&ufvk, 2).encode(&WalletNetwork::Main));
+
+        let result = run_with(
+            &mut rpc,
+            &mut db,
+            &path,
+            WalletNetwork::Main,
+            BlockHeight::from_u32(TIP),
+            &|| false,
+        )
+        .await;
+
+        assert!(result.is_err(), "the failure surfaces to sync");
+        assert!(!initial_discovery_complete(&path, id).unwrap());
+        assert_eq!(
+            first_incomplete(&mut db, WalletNetwork::Main).unwrap(),
+            Some((id, Coverage::InitialDiscovery))
+        );
+        assert_eq!(authority(&path, id), TransparentBalanceAuthority::LastKnown);
+    }
+
+    /// Stores a ZIP 320 first leg the wallet did not build, as a restore's
+    /// scan finds it, paying the account's next ephemeral address.
+    fn restored_first_leg(
+        db: &mut WalletDatabase,
+        id: AccountUuid,
+    ) -> (
+        transparent::address::TransparentAddress,
+        RawTransaction,
+        zcash_primitives::transaction::TxId,
+    ) {
+        use zcash_client_backend::data_api::WalletWrite;
+        let (ephemeral, _) = db
+            .reserve_next_n_ephemeral_addresses(id, 1)
+            .unwrap()
+            .remove(0);
+        let (leg1, txid) = payment(
+            transparent::bundle::OutPoint::new([5; 32], 0),
+            ephemeral,
+            TIP - 5,
+        );
+        let tx = Transaction::read(&leg1.data[..], BranchId::Nu5).unwrap();
+        decrypt_and_store_transaction(
+            &WalletNetwork::Main,
+            db,
+            &tx,
+            Some(BlockHeight::from_u32(TIP - 5)),
+        )
+        .unwrap();
+        (ephemeral, leg1, txid)
+    }
+
+    /// TEX leg 2 after a restore: the restored first leg's ephemeral address
+    /// is checked once, immediately and over its own channel, so the second
+    /// leg is found without waiting for the daily ZIP 320 schedule.
+    #[tokio::test]
+    async fn a_restored_tex_first_leg_finds_its_second_leg_at_once() {
+        let (_dir, path, id, mut db, _) = software_fixture();
+        record_initial_discovery_for_test(&path, id, TIP);
+        let (ephemeral, leg1, txid) = restored_first_leg(&mut db, id);
+        assert_eq!(coverage_of(&mut db, id), Some(Coverage::RestoredEphemeral));
+
+        let (leg2, _) = payment(
+            transparent::bundle::OutPoint::new(*txid.as_ref(), 0),
+            transparent::address::TransparentAddress::PublicKeyHash([42; 20]),
+            TIP - 4,
+        );
+        let encoded = ephemeral.encode(&WalletNetwork::Main);
+        let mut rpc = rpc(std::collections::HashMap::from([(
+            encoded.clone(),
+            vec![leg1, leg2],
+        )]));
+        let stored = restored_ephemeral_with(
+            &mut rpc,
+            &mut db,
+            &path,
+            WalletNetwork::Main,
+            BlockHeight::from_u32(TIP),
+            &|| false,
+        )
+        .await
+        .unwrap();
+
+        assert!(stored);
+        assert_eq!(
+            *rpc.queries.lock().unwrap(),
+            vec![format!("isolated:{encoded}")]
+        );
+        assert_eq!(
+            spends(&path),
+            1,
+            "the second leg spends the first leg's output"
+        );
+        assert_eq!(coverage_of(&mut db, id), Some(Coverage::Complete));
+
+        // Once checked, the address is left to the ZIP 320 schedule.
+        restored_ephemeral_with(
+            &mut rpc,
+            &mut db,
+            &path,
+            WalletNetwork::Main,
+            BlockHeight::from_u32(TIP),
+            &|| false,
+        )
+        .await
+        .unwrap();
+        assert_eq!(rpc.queries.lock().unwrap().len(), 1);
+    }
+
+    /// A restored first leg whose second leg never reached the chain is
+    /// checked once too; the unspent output is then recorded as observed
+    /// through the tip.
+    #[tokio::test]
+    async fn a_restored_first_leg_without_a_second_leg_is_checked_once() {
+        let (_dir, path, id, mut db, _) = software_fixture();
+        record_initial_discovery_for_test(&path, id, TIP);
+        let (ephemeral, leg1, _) = restored_first_leg(&mut db, id);
+        let mut rpc = rpc(std::collections::HashMap::from([(
+            ephemeral.encode(&WalletNetwork::Main),
+            vec![leg1],
+        )]));
+        for _ in 0..2 {
+            restored_ephemeral_with(
+                &mut rpc,
+                &mut db,
+                &path,
+                WalletNetwork::Main,
+                BlockHeight::from_u32(TIP),
+                &|| false,
+            )
+            .await
+            .unwrap();
+        }
+        assert_eq!(rpc.queries.lock().unwrap().len(), 1);
+        assert_eq!(spends(&path), 0);
+        assert_eq!(coverage_of(&mut db, id), Some(Coverage::Complete));
+    }
+
+    /// A failed restored-ephemeral check fails the pass and leaves the
+    /// account incomplete, to be checked again.
+    #[tokio::test]
+    async fn a_failed_restored_ephemeral_check_is_retried() {
+        let (_dir, path, id, mut db, _) = software_fixture();
+        record_initial_discovery_for_test(&path, id, TIP);
+        let (ephemeral, _, _) = restored_first_leg(&mut db, id);
+        let mut rpc = rpc(Default::default());
+        rpc.fail_address = Some(ephemeral.encode(&WalletNetwork::Main));
+        assert!(restored_ephemeral_with(
+            &mut rpc,
+            &mut db,
+            &path,
+            WalletNetwork::Main,
+            BlockHeight::from_u32(TIP),
+            &|| false,
+        )
+        .await
+        .is_err());
+        assert_eq!(coverage_of(&mut db, id), Some(Coverage::RestoredEphemeral));
     }
 }

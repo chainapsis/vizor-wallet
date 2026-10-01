@@ -1160,12 +1160,12 @@ pub(crate) fn get_shield_transparent_status(
     let mut db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
 
-    if !sync_engine::ledger_discovery::is_ready(db_path, account_id)? {
+    if let Err(reason) = require_complete_transparent_history(&mut db, network, account_id) {
         return Ok(ShieldTransparentStatus {
             can_shield: false,
             fee_zatoshi: 0,
             shielded_zatoshi: 0,
-            reason: "Ledger transparent recovery is incomplete".into(),
+            reason,
         });
     }
 
@@ -1185,6 +1185,23 @@ pub(crate) fn get_shield_transparent_status(
     }
 }
 
+/// Shielding spends transparent outputs, so it waits until the account's
+/// public transparent history is complete: an output whose spend discovery has
+/// not yet found would make the transaction invalid. Every account kind is
+/// held to this; under a private transparent policy the private ledger decides
+/// instead.
+fn require_complete_transparent_history(
+    db: &mut WalletDatabase,
+    network: WalletNetwork,
+    account: AccountUuid,
+) -> Result<(), String> {
+    if sync_engine::address_discovery::permits_transparent_spend(db, network, account)? {
+        Ok(())
+    } else {
+        Err(TRANSPARENT_RECOVERY_INCOMPLETE.into())
+    }
+}
+
 /// Local-only progress for a Ledger shielding session. Errors remain errors:
 /// discovery/DB/proposal failures must never be interpreted as completion.
 #[derive(Debug)]
@@ -1201,9 +1218,7 @@ pub(crate) fn get_ledger_shielding_progress(
 ) -> Result<LedgerShieldingProgress, String> {
     let mut db = open_wallet_db_for_read(db_path, network)?;
     let id = parse_account_uuid(account_uuid)?;
-    if !sync_engine::ledger_discovery::is_ready(db_path, id)? {
-        return Err("Ledger transparent recovery is incomplete".into());
-    }
+    require_complete_transparent_history(&mut db, network, id)?;
     ledger_shielding_progress(&mut db, network, id)
 }
 
@@ -1293,9 +1308,7 @@ fn create_shield_transparent_pczt_with_expiry(
     with_wallet_db_write_lock("send.create_shield_transparent_pczt", || {
         let mut db = open_wallet_db(db_path, network)?;
         let account_id = parse_account_uuid(account_uuid)?;
-        if !sync_engine::ledger_discovery::is_ready(db_path, account_id)? {
-            return Err("Ledger transparent recovery is incomplete".into());
-        }
+        require_complete_transparent_history(&mut db, network, account_id)?;
         let (proposal, _) =
             build_shielding_proposal(&mut db, network, account_id, shielding_threshold)?;
         let fee_zatoshi = proposal_fee_zatoshi(&proposal);
@@ -1379,6 +1392,7 @@ pub(crate) async fn shield_transparent_balance(
                 .map_err(|e| format!("{e}"))?
                 .ok_or("Account not found")?;
 
+            require_complete_transparent_history(&mut db, network, account_id)?;
             let (proposal, _) =
                 build_shielding_proposal(&mut db, network, account_id, shielding_threshold)?;
             let fee_zatoshi = proposal_fee_zatoshi(&proposal);

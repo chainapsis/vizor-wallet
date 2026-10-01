@@ -1042,7 +1042,7 @@ fn delete_account_rows(
     }
 
     addresses::delete_account(&tx, account_uuid_bytes)?;
-    crate::wallet::sync_engine::ledger_discovery::delete_account(&tx, account_uuid_bytes)?;
+    crate::wallet::sync_engine::address_discovery::delete_account(&tx, account_uuid_bytes)?;
     crate::wallet::sync::delete_account_migration_rows_with_tx(&tx, &account_uuid_text)?;
     crate::wallet::ledger::delete_signed_operations_for_account_with_tx(
         &tx,

@@ -45,6 +45,7 @@ use {
     zcash_script::script,
 };
 
+pub(crate) mod address_discovery;
 mod address_history;
 mod block_source;
 mod claim_roots;
@@ -53,7 +54,6 @@ mod ephemeral_checks;
 #[cfg(test)]
 mod ephemeral_checks_tests;
 mod error;
-pub(crate) mod ledger_discovery;
 mod lwd;
 pub(crate) mod mempool;
 #[cfg(test)]
@@ -1296,7 +1296,7 @@ async fn repair_anchor_root_mismatch_if_needed(
         let attempt_result = with_wallet_db_write_lock(
             "sync_engine.truncate_to_chain_state.anchor_root_mismatch",
             || -> Result<Result<Vec<ScanRange>, String>, SyncError> {
-                ledger_discovery::invalidate_for_rewind(db_data_path, db, repair_height)
+                address_discovery::invalidate_for_rewind(db_data_path, db, repair_height)
                     .map_err(|e| SyncError::db(format!("invalidate transparent refresh: {e}")))?;
                 match db.truncate_to_chain_state(repair_chain_state.clone()) {
                     Ok(()) => {}
@@ -2268,7 +2268,7 @@ fn truncate_wallet_to_height(
     invalidate_transparent_checks_before_rewind(db_data_path)?;
     with_wallet_db_write_lock(operation, || {
         truncate_wallet_with(requested_height, fresh_tip_height, |height| {
-            ledger_discovery::truncate(db_data_path, db, height)
+            address_discovery::truncate(db_data_path, db, height)
         })
     })
 }
@@ -2862,7 +2862,7 @@ async fn run_payment_link_claim_sync_once(
                     let requested = confirmed_reorg_rewind_target(fresh_height)?;
                     invalidate_transparent_checks_before_rewind(db_data_path)?;
                     truncate_wallet_with(requested, fresh_height, |height| {
-                        ledger_discovery::truncate(db_data_path, &mut db, height)
+                        address_discovery::truncate(db_data_path, &mut db, height)
                     })?;
                     db.update_chain_tip(fresh_height).map_err(|error| {
                         SyncError::db(format!("payment-link update tip after reorg: {error}"))
@@ -2967,7 +2967,7 @@ async fn run_payment_link_claim_sync_once(
                     block_height_from_u64(current_tip_height, "payment-link scan rewind tip")?;
                 invalidate_transparent_checks_before_rewind(db_data_path)?;
                 truncate_wallet_with(requested, fresh_tip, |height| {
-                    ledger_discovery::truncate(db_data_path, &mut db, height)
+                    address_discovery::truncate(db_data_path, &mut db, height)
                 })?;
             }
         }
@@ -3128,12 +3128,14 @@ async fn run_sync_impl(
         return Ok(());
     }
 
-    // Recovery runs after import, under the existing sync lifetime. Once both
-    // scopes complete it performs no further address-history requests.
-    ledger_discovery::run(
+    // Every account's initial address-history discovery runs under the
+    // existing sync lifetime, before the UTXO refresh. Once both of an
+    // account's scopes complete it performs no further discovery requests.
+    address_discovery::run(
         &mut client,
         &mut db,
         db_data_path,
+        lightwalletd_url,
         network,
         tip_height,
         &should_exit,
@@ -4058,7 +4060,7 @@ async fn run_sync_impl(
                     let actual_rewind_height = with_wallet_db_write_lock(
                         "sync_engine.truncate_to_height",
                         || -> Result<BlockHeight, SyncError> {
-                            match ledger_discovery::truncate(db_data_path, &mut db, target) {
+                            match address_discovery::truncate(db_data_path, &mut db, target) {
                                 Ok(h) => Ok(h),
                                 Err(SqliteClientError::RequestedRewindInvalid {
                                     safe_rewind_height: Some(safe),
@@ -4069,7 +4071,7 @@ async fn run_sync_impl(
                                          below earliest checkpoint; retrying at safe_rewind_height={safe}",
                                         elapsed(),
                                     );
-                                    ledger_discovery::truncate(db_data_path, &mut db, safe).map_err(|e| {
+                                    address_discovery::truncate(db_data_path, &mut db, safe).map_err(|e| {
                                         if is_sqlite_lock_contention(&e) {
                                             SyncError::other(format!(
                                                 "truncate_to_height({safe}) retry: SQLite lock contention: {e}"
@@ -4523,17 +4525,50 @@ async fn run_sync_impl(
         }
     }
 
+    // A restore finds a TEX operation's first leg only now, through the
+    // shielded scan and its enhancement. Its second leg spends from an
+    // ephemeral address, so it is found here, by checking that address once,
+    // and the transactions it stores are enhanced before completion.
+    let tip_for_ephemeral = BlockHeight::from_u32(current_tip_height as u32);
+    if address_discovery::run_restored_ephemeral(
+        &mut client,
+        &mut db,
+        db_data_path,
+        lightwalletd_url,
+        network,
+        tip_for_ephemeral,
+        &should_exit,
+    )
+    .await?
+        && !should_exit()
+        && enhancement
+            .run_checkpoint(&mut db, &mut client, None, &should_exit)
+            .await?
+    {
+        log::info!(
+            "[{}] sync: exiting during restored ephemeral enhancement",
+            elapsed()
+        );
+        return Ok(());
+    }
+    if should_exit() {
+        return Ok(());
+    }
+
     let (final_scanned_height, final_tip_height) =
         ensure_complete_scan_state(&mut db, current_tip_height)?;
-    for id in db
-        .get_account_ids()
-        .map_err(|e| SyncError::db(e.to_string()))?
+    // Completion claims the transparent history is complete too: address
+    // discovery, restored ephemeral checks, and every spend search due at or
+    // below the tip. A failure that left any of it undone (an address-history
+    // stream cut, an address whose transactions failed to store) fails the
+    // sync, which retries, instead of reporting a synchronized wallet.
+    if let Some((account, coverage)) =
+        address_discovery::first_incomplete(&mut db, network).map_err(SyncError::db)?
     {
-        if !ledger_discovery::is_ready(db_data_path, id).map_err(SyncError::db)? {
-            return Err(SyncError::other(
-                "Ledger recovery was invalidated during sync; retrying",
-            ));
-        }
+        return Err(SyncError::other(format!(
+            "transparent history of account {} is incomplete ({coverage:?}); retrying",
+            account.expose_uuid()
+        )));
     }
     // Candidate transparent recovery runs at the fully scanned height, after
     // the shielded scan settles. It keeps its own progress in the library and
