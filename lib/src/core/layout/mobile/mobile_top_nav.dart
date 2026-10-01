@@ -4,8 +4,9 @@ import 'package:flutter/widgets.dart';
 
 import '../../theme/app_theme.dart';
 import '../../widgets/app_icon.dart';
+import '../minimum_visible_label.dart';
 
-/// Height of [MobileTopNav] — Figma `Mobile Top Nav` (node 4237:92733).
+/// Default height of [MobileTopNav] — Figma `Mobile Top Nav` (node 4237:92733).
 const double kMobileTopNavHeight = 72;
 
 /// Mobile top navigation bar with the three Figma variants:
@@ -150,19 +151,37 @@ class MobileTopNav extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: height,
-      child: switch (_variant) {
-        _MobileTopNavVariant.account => _buildAccount(context),
-        _MobileTopNavVariant.steps => _buildSteps(context),
-        _MobileTopNavVariant.back => _buildBack(context),
-      },
-    );
+    return switch (_variant) {
+      _MobileTopNavVariant.account => _buildAccount(context),
+      _MobileTopNavVariant.steps => SizedBox(
+        height: height,
+        child: _buildSteps(context),
+      ),
+      _MobileTopNavVariant.back => SizedBox(
+        height: height,
+        child: _buildBack(context),
+      ),
+    };
   }
 
   Widget _buildAccount(BuildContext context) {
     final colors = context.colors;
-    final account = GestureDetector(
+    final nameStyle = AppTypography.labelLarge.copyWith(
+      fontWeight: FontWeight.w600,
+      color: colors.text.accent,
+    );
+    double textWidth(String text, TextStyle style) {
+      final painter = TextPainter(
+        text: TextSpan(text: text, style: style),
+        textDirection: Directionality.of(context),
+        textScaler: MediaQuery.textScalerOf(context),
+      )..layout();
+      final width = painter.width;
+      painter.dispose();
+      return width;
+    }
+
+    Widget account({Widget? label}) => GestureDetector(
       key: const ValueKey('mobile_top_nav_account'),
       behavior: HitTestBehavior.opaque,
       onTap: onAccountTap,
@@ -173,6 +192,7 @@ class MobileTopNav extends StatelessWidget {
           const SizedBox(width: AppSpacing.s),
           Expanded(
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -180,22 +200,25 @@ class MobileTopNav extends StatelessWidget {
                   accountName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: AppTypography.labelLarge.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: colors.text.accent,
-                  ),
+                  style: nameStyle,
                 ),
                 if (balanceLabel != null) ...[
                   const SizedBox(height: AppSpacing.xxs),
                   Text(
                     balanceLabel!,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    maxLines: label == null ? 1 : null,
+                    overflow: label == null
+                        ? TextOverflow.ellipsis
+                        : TextOverflow.clip,
                     style: AppTypography.labelLarge.copyWith(
                       fontWeight: FontWeight.w400,
                       color: colors.text.secondary,
                     ),
                   ),
+                ],
+                if (label != null) ...[
+                  const SizedBox(height: AppSpacing.xxs),
+                  label,
                 ],
               ],
             ),
@@ -204,25 +227,56 @@ class MobileTopNav extends StatelessWidget {
       ),
     );
 
-    return Row(
-      children: [
-        const SizedBox(width: AppSpacing.sm),
-        Expanded(
-          child: Align(alignment: Alignment.centerLeft, child: account),
-        ),
-        if (syncLabel != null)
-          _SyncStatus(
-            label: syncLabel!,
-            baseColor: syncLabelColor ?? colors.sync.text,
-            highlightColor:
-                syncHighlightColor ?? syncLabelColor ?? colors.sync.text,
-            indicatorColor: syncIndicatorColor ?? colors.sync.glow,
-            indicatorSize: _syncIndicatorSize,
-            animated: syncAnimated,
-          )
-        else
-          const SizedBox(width: AppSpacing.sm),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // The name may ellipsize; the label moves below it only when it
+        // would hide the name's first word.
+        final nameSpace =
+            constraints.maxWidth -
+            AppSpacing.sm -
+            _avatarSize -
+            AppSpacing.s * 2 -
+            AppSpacing.xs -
+            _syncIndicatorSize.width;
+        final stackSync =
+            syncLabel != null &&
+            nameSpace - textWidth(syncLabel!, AppTypography.labelMedium) <
+                textWidth(minimumVisibleLabel(accountName), nameStyle);
+
+        Widget layout(Widget? label, Widget? indicator) => ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: kMobileTopNavHeight),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+            child: Row(
+              children: [
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(child: account(label: stackSync ? label : null)),
+                if (!stackSync && label != null) ...[
+                  const SizedBox(width: AppSpacing.xs),
+                  label,
+                ],
+                if (indicator != null) ...[
+                  const SizedBox(width: AppSpacing.s),
+                  indicator,
+                ] else
+                  const SizedBox(width: AppSpacing.sm),
+              ],
+            ),
+          ),
+        );
+
+        if (syncLabel == null) return layout(null, null);
+        return _SyncStatus(
+          label: syncLabel!,
+          baseColor: syncLabelColor ?? colors.sync.text,
+          highlightColor:
+              syncHighlightColor ?? syncLabelColor ?? colors.sync.text,
+          indicatorColor: syncIndicatorColor ?? colors.sync.glow,
+          indicatorSize: _syncIndicatorSize,
+          animated: syncAnimated,
+          builder: layout,
+        );
+      },
     );
   }
 
@@ -407,6 +461,7 @@ class _SyncStatus extends StatefulWidget {
     required this.indicatorColor,
     required this.indicatorSize,
     required this.animated,
+    required this.builder,
   });
 
   final String label;
@@ -415,6 +470,7 @@ class _SyncStatus extends StatefulWidget {
   final Color indicatorColor;
   final Size indicatorSize;
   final bool animated;
+  final Widget Function(Widget label, Widget indicator) builder;
 
   @override
   State<_SyncStatus> createState() => _SyncStatusState();
@@ -477,19 +533,15 @@ class _SyncStatusState extends State<_SyncStatus>
   @override
   Widget build(BuildContext context) {
     if (!_shouldAnimate) {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            widget.label,
-            style: AppTypography.labelMedium.copyWith(color: widget.baseColor),
-          ),
-          const SizedBox(width: AppSpacing.s),
-          _SyncEdgeIndicator(
-            size: widget.indicatorSize,
-            color: widget.indicatorColor,
-          ),
-        ],
+      return widget.builder(
+        Text(
+          widget.label,
+          style: AppTypography.labelMedium.copyWith(color: widget.baseColor),
+        ),
+        _SyncEdgeIndicator(
+          size: widget.indicatorSize,
+          color: widget.indicatorColor,
+        ),
       );
     }
 
@@ -498,23 +550,19 @@ class _SyncStatusState extends State<_SyncStatus>
       builder: (context, _) {
         final t = _activeController.value;
         final glow = _SyncStatusMotion.glowFor(t);
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _ShimmerLabel(
-              label: widget.label,
-              baseColor: widget.baseColor,
-              highlightColor: widget.highlightColor,
-              progress: t,
-            ),
-            const SizedBox(width: AppSpacing.s),
-            _SyncEdgeIndicator(
-              size: widget.indicatorSize,
-              color: widget.indicatorColor,
-              glowBlur: glow.blur,
-              glowAlpha: glow.alpha,
-            ),
-          ],
+        return widget.builder(
+          _ShimmerLabel(
+            label: widget.label,
+            baseColor: widget.baseColor,
+            highlightColor: widget.highlightColor,
+            progress: t,
+          ),
+          _SyncEdgeIndicator(
+            size: widget.indicatorSize,
+            color: widget.indicatorColor,
+            glowBlur: glow.blur,
+            glowAlpha: glow.alpha,
+          ),
         );
       },
     );

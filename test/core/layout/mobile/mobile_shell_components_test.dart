@@ -2,6 +2,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_shell.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
@@ -11,6 +12,68 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 
 void main() {
+  testWidgets(
+    'narrow account nav keeps enlarged name and sync status visible',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(320, 568);
+      addTearDown(tester.view.reset);
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      var taps = 0;
+      await tester.pumpWidget(
+        _harness(
+          MobileTopNav.account(
+            accountName: 'Zcash',
+            balanceLabel: '140.12 ZEC',
+            syncLabel: 'Vizor is synced',
+            onAccountTap: () => taps++,
+          ),
+        ),
+      );
+      for (final label in ['Zcash', '140.12 ZEC', 'Vizor is synced']) {
+        final paragraph = tester.renderObject<RenderParagraph>(
+          find.text(label),
+        );
+        expect(paragraph.didExceedMaxLines, isFalse, reason: label);
+      }
+      expect(
+        tester.getBottomLeft(find.text('Zcash')).dy,
+        lessThan(tester.getTopLeft(find.text('Vizor is synced')).dy),
+      );
+      await tester.tap(find.text('Zcash'));
+      expect(taps, 1);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('sync label stays beside a long name until it crowds it out', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(440, 800);
+    addTearDown(tester.view.reset);
+    for (final (label, inline) in [
+      ('Vizor is synced', true),
+      ('45% Syncing...', true),
+      ('Syncing failed. Wallet data error...', false),
+    ]) {
+      await tester.pumpWidget(
+        _harness(
+          MobileTopNav.account(
+            accountName: 'Savings for travel',
+            syncLabel: label,
+          ),
+        ),
+      );
+      final besideName =
+          tester.getTopLeft(find.text(label)).dy <
+          tester.getBottomLeft(find.text('Savings for travel')).dy;
+      expect(besideName, inline, reason: label);
+      expect(tester.getSize(find.byType(MobileTopNav)).height, 72);
+    }
+  });
+
   testWidgets('MobileTopNav.account shows name, balance, and sync label', (
     tester,
   ) async {

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import '../../../../providers/app_security_provider.dart';
 import '../../../../providers/voting/voting_participation_provider.dart';
@@ -1189,67 +1190,13 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
             ),
             const SizedBox(height: AppSpacing.s),
             if (hasBalance)
-              Row(
-                children: [
-                  Expanded(
-                    child: AppButton(
-                      key: const ValueKey('mobile_home_send'),
-                      expand: true,
-                      constrainContent: true,
-                      onPressed: sendDisabled
-                          ? null
-                          : () => _pushUsedScreen('/send'),
-                      leading: const _ButtonIcon(AppIcons.plane),
-                      height: _mobileHomeActionButtonHeight,
-                      child: const Text(
-                        'Send',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.xs),
-                  Expanded(
-                    child: AppButton(
-                      key: const ValueKey('mobile_home_receive'),
-                      expand: true,
-                      constrainContent: true,
-                      variant: AppButtonVariant.secondary,
-                      onPressed: () => _pushUsedScreen('/receive'),
-                      leading: const _ButtonIcon(AppIcons.arrowDownCircle),
-                      height: _mobileHomeActionButtonHeight,
-                      child: const Text(
-                        'Receive',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ),
-                  // The Pay entry follows the swap feature flag: pay
-                  // rides the swap engine, so a server-side swap disable
-                  // hides the button, mirroring desktop's `onPay == null`
-                  // gating.
-                  if (showPayEntry) ...[
-                    const SizedBox(width: AppSpacing.xs),
-                    SizedBox(
-                      width: _mobileHomeActionButtonHeight,
-                      height: _mobileHomeActionButtonHeight,
-                      child: Semantics(
-                        button: true,
-                        label: 'Pay',
-                        child: AppButton(
-                          key: const ValueKey('mobile_home_pay'),
-                          minWidth: _mobileHomeActionButtonHeight,
-                          height: _mobileHomeActionButtonHeight,
-                          contentPadding: EdgeInsets.zero,
-                          variant: AppButtonVariant.secondary,
-                          onPressed: () => duringAppReviewBusy(ref, _openPay),
-                          child: const _ButtonIcon(AppIcons.paid),
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
+              _MobileHomeActions(
+                onSend: sendDisabled ? null : () => _pushUsedScreen('/send'),
+                onReceive: () => _pushUsedScreen('/receive'),
+                // Pay shares the swap feature gate and engine.
+                onPay: showPayEntry
+                    ? () => duringAppReviewBusy(ref, _openPay)
+                    : null,
               )
             else
               AppButton(
@@ -1258,14 +1205,11 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                 key: const ValueKey('mobile_home_receive'),
                 expand: true,
                 constrainContent: true,
+                growWithContent: true,
                 onPressed: () => _pushUsedScreen('/receive'),
                 leading: const _ButtonIcon(AppIcons.addNew),
                 height: _mobileHomeActionButtonHeight,
-                child: const Text(
-                  'Receive your first ZEC',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
+                child: const Text('Receive your first ZEC'),
               ),
             const _MobileVotingEntry(),
             if (widget.ironwoodMigrationCta.visible) ...[
@@ -1673,7 +1617,8 @@ class _BalanceCard extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              height: 200,
+              constraints: const BoxConstraints(minHeight: 200),
+              padding: const EdgeInsets.all(AppSpacing.sm),
               decoration: BoxDecoration(
                 color: colors.background.homeCard,
                 borderRadius: cardRadius,
@@ -1682,109 +1627,92 @@ class _BalanceCard extends StatelessWidget {
                   width: 1.5,
                 ),
               ),
-              child: Stack(
-                fit: StackFit.expand,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Padding(
-                    padding: const EdgeInsets.all(AppSpacing.sm),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            if (ironwoodMigrationCta.mode ==
-                                IronwoodHomeMigrationCtaMode.start)
-                              Expanded(
-                                child: _MobileIronwoodMigrationPill(
-                                  onTap: onIronwoodMigrationTap,
-                                ),
-                              )
-                            else ...[
-                              AppIcon(
-                                AppIcons.shieldKeyhole,
-                                size: 20,
-                                color: cardText,
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          if (ironwoodMigrationCta.mode ==
+                              IronwoodHomeMigrationCtaMode.start)
+                            Expanded(
+                              child: _MobileIronwoodMigrationPill(
+                                onTap: onIronwoodMigrationTap,
                               ),
-                              const SizedBox(width: AppSpacing.s),
-                              Expanded(
-                                child: Text(
-                                  'Shielded balance',
-                                  style: _mobileHomeLabelMStyle.copyWith(
-                                    color: cardText,
-                                  ),
+                            )
+                          else ...[
+                            AppIcon(
+                              AppIcons.shieldKeyhole,
+                              size: 20,
+                              color: cardText,
+                            ),
+                            const SizedBox(width: AppSpacing.s),
+                            Expanded(
+                              child: Text(
+                                'Shielded balance',
+                                style: _mobileHomeLabelMStyle.copyWith(
+                                  color: cardText,
                                 ),
                               ),
-                            ],
-                            _PrivacyEyeButton(
-                              enabled: privacyModeEnabled,
-                              onTap: onTogglePrivacyMode,
                             ),
                           ],
-                        ),
-                        const Spacer(),
-                        if (fiatBalanceText != null) ...[
-                          Row(
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  fiatBalanceText!,
-                                  key: const ValueKey(
-                                    'mobile_home_balance_fiat_text',
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: _mobileHomeLabelMStyle.copyWith(
-                                    color: cardText.withValues(
-                                      alpha: balanceDisabled ? 0.4 : 0.8,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              if (priceChangeColor != null) ...[
-                                const SizedBox(width: AppSpacing.xs),
-                                Text(
-                                  formatZecPriceChange24hPct(
-                                    priceChange24hPct!,
-                                  ),
-                                  key: const ValueKey(
-                                    'mobile_home_balance_price_change_text',
-                                  ),
-                                  style: _mobileHomeLabelMStyle.copyWith(
-                                    color: priceChangeColor,
-                                  ),
-                                ),
-                              ],
-                            ],
+                          _PrivacyEyeButton(
+                            enabled: privacyModeEnabled,
+                            onTap: onTogglePrivacyMode,
                           ),
-                          const SizedBox(height: AppSpacing.xs),
                         ],
-                        Text.rich(
-                          key: const ValueKey('mobile_home_shielded_balance'),
-                          TextSpan(
-                            children: [
-                              TextSpan(
-                                text: '$balanceText ',
-                                style: _mobileHomeBalanceAmountStyle.copyWith(
-                                  color: cardText.withValues(
-                                    alpha: balanceDisabled ? 0.4 : 1,
-                                  ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (fiatBalanceText != null) ...[
+                        Wrap(
+                          spacing: AppSpacing.xs,
+                          runSpacing: AppSpacing.xxs,
+                          children: [
+                            Text(
+                              fiatBalanceText!,
+                              key: const ValueKey(
+                                'mobile_home_balance_fiat_text',
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: _mobileHomeLabelMStyle.copyWith(
+                                color: cardText.withValues(
+                                  alpha: balanceDisabled ? 0.4 : 0.8,
                                 ),
                               ),
-                              TextSpan(
-                                text: kZcashDefaultCurrencyTicker,
-                                style: _mobileHomeBalanceTickerStyle.copyWith(
-                                  color: cardText.withValues(
-                                    alpha: balanceDisabled ? 0.4 : 1,
-                                  ),
+                            ),
+                            if (priceChangeColor != null) ...[
+                              Text(
+                                formatZecPriceChange24hPct(priceChange24hPct!),
+                                key: const ValueKey(
+                                  'mobile_home_balance_price_change_text',
+                                ),
+                                style: _mobileHomeLabelMStyle.copyWith(
+                                  color: priceChangeColor,
                                 ),
                               ),
                             ],
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                          ],
                         ),
+                        const SizedBox(height: AppSpacing.xs),
                       ],
-                    ),
+                      _MobileBalanceAmount(
+                        balanceText: balanceText,
+                        color: cardText.withValues(
+                          alpha: balanceDisabled ? 0.4 : 1,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -2175,6 +2103,171 @@ class _PrivacyEyeButton extends StatelessWidget {
   }
 }
 
+/// Keeps the balance number on one line: the ticker may wrap below it, and a
+/// number wider than the card scales down instead of breaking mid-digit.
+class _MobileBalanceAmount extends StatelessWidget {
+  const _MobileBalanceAmount({required this.balanceText, required this.color});
+
+  final String balanceText;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final amountStyle = _mobileHomeBalanceAmountStyle.copyWith(color: color);
+    final painter = TextPainter(
+      text: TextSpan(text: balanceText, style: amountStyle),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+      maxLines: 1,
+    )..layout();
+    final numberWidth = painter.width;
+    painter.dispose();
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final fits = numberWidth <= constraints.maxWidth;
+        final text = Text.rich(
+          key: const ValueKey('mobile_home_shielded_balance'),
+          TextSpan(
+            children: [
+              TextSpan(text: '$balanceText ', style: amountStyle),
+              TextSpan(
+                text: kZcashDefaultCurrencyTicker,
+                style: _mobileHomeBalanceTickerStyle.copyWith(color: color),
+              ),
+            ],
+          ),
+          softWrap: fits,
+        );
+        if (fits) return text;
+        return FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: text,
+        );
+      },
+    );
+  }
+}
+
+class _MobileHomeActions extends StatelessWidget {
+  const _MobileHomeActions({
+    required this.onSend,
+    required this.onReceive,
+    this.onPay,
+  });
+
+  final VoidCallback? onSend;
+  final VoidCallback onReceive;
+  final VoidCallback? onPay;
+
+  Size _labelSize(BuildContext context, String label) {
+    final painter = TextPainter(
+      text: TextSpan(text: label, style: AppTypography.labelLarge),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout();
+    final size = painter.size;
+    painter.dispose();
+    return size;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final sendLabel = _labelSize(context, 'Send');
+    final receiveLabel = _labelSize(context, 'Receive');
+    // Match AppButton's large padding, label padding, icon and primary border.
+    const contentWidth = AppSpacing.sm * 2 + AppSpacing.xxs * 3 + 20;
+    final sendWidth = sendLabel.width + contentWidth + 3;
+    final receiveWidth = receiveLabel.width + contentWidth;
+    final height = math.max(
+      _mobileHomeActionButtonHeight,
+      math.max(sendLabel.height, receiveLabel.height) + AppSpacing.xs * 2 + 3,
+    );
+    final send = AppButton(
+      key: const ValueKey('mobile_home_send'),
+      expand: true,
+      constrainContent: true,
+      growWithContent: true,
+      height: height,
+      onPressed: onSend,
+      leading: const _ButtonIcon(AppIcons.plane),
+      child: const Text('Send'),
+    );
+    final receive = AppButton(
+      key: const ValueKey('mobile_home_receive'),
+      expand: true,
+      constrainContent: true,
+      growWithContent: true,
+      height: height,
+      variant: AppButtonVariant.secondary,
+      onPressed: onReceive,
+      leading: const _ButtonIcon(AppIcons.arrowDownCircle),
+      child: const Text('Receive'),
+    );
+    final pay = onPay == null
+        ? null
+        : SizedBox.square(
+            dimension: height,
+            child: Semantics(
+              button: true,
+              label: 'Pay',
+              child: AppButton(
+                key: const ValueKey('mobile_home_pay'),
+                minWidth: height,
+                height: height,
+                contentPadding: EdgeInsets.zero,
+                variant: AppButtonVariant.secondary,
+                onPressed: onPay,
+                child: const _ButtonIcon(AppIcons.paid),
+              ),
+            ),
+          );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final buttonsWidth =
+            constraints.maxWidth -
+            AppSpacing.xs -
+            (pay == null ? 0 : height + AppSpacing.xs);
+        if (sendWidth + receiveWidth > buttonsWidth) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              send,
+              const SizedBox(height: AppSpacing.xs),
+              Row(
+                children: [
+                  Expanded(child: receive),
+                  if (pay != null) ...[
+                    const SizedBox(width: AppSpacing.xs),
+                    pay,
+                  ],
+                ],
+              ),
+            ],
+          );
+        }
+        final equalWidths =
+            math.max(sendWidth, receiveWidth) <= buttonsWidth / 2;
+        final extraWidth = (buttonsWidth - sendWidth - receiveWidth) / 2;
+        return Row(
+          children: [
+            if (equalWidths)
+              Expanded(child: send)
+            else
+              SizedBox(width: sendWidth + extraWidth, child: send),
+            const SizedBox(width: AppSpacing.xs),
+            if (equalWidths)
+              Expanded(child: receive)
+            else
+              SizedBox(width: receiveWidth + extraWidth, child: receive),
+            if (pay != null) ...[const SizedBox(width: AppSpacing.xs), pay],
+          ],
+        );
+      },
+    );
+  }
+}
+
 class _ButtonIcon extends StatelessWidget {
   const _ButtonIcon(this.iconName);
 
@@ -2210,10 +2303,10 @@ class _RecentActivityHeader extends StatelessWidget {
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: onSeeAll,
-            child: SizedBox(
-              height: 24,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 24),
               child: Padding(
-                padding: const EdgeInsets.all(AppSpacing.xxs),
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [

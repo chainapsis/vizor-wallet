@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../../core/layout/app_form_factor.dart';
+import '../../../core/layout/minimum_visible_label.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../models/activity_row_data.dart';
@@ -818,32 +819,40 @@ class _ActivityFeedRowState extends State<ActivityFeedRow> {
       clipBehavior: Clip.none,
       children: [
         Container(
-          height: rowHeight,
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+          height: kAppFormFactor == AppFormFactor.mobile ? null : rowHeight,
+          constraints: BoxConstraints(minHeight: rowHeight),
+          padding: EdgeInsets.symmetric(
+            horizontal: AppSpacing.xxs,
+            vertical: kAppFormFactor == AppFormFactor.mobile
+                ? math.max(0, (rowHeight - AppAssetSize.size) / 2)
+                : 0,
+          ),
           decoration: BoxDecoration(
             color: isInteractive && _hovered
                 ? colors.state.hoverOpacity
                 : row.backgroundColor,
             borderRadius: BorderRadius.circular(AppRadii.small),
           ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Row(
+          child: kAppFormFactor == AppFormFactor.mobile
+              ? _MobileActivityRowContent(row: row, childRow: widget.childRow)
+              : Row(
                   children: [
-                    widget.childRow
-                        ? const _ActivityChildConnector()
-                        : _ActivityRowIcon(row: row),
-                    const SizedBox(width: AppSpacing.xs),
-                    Flexible(child: _ActivityRowTitle(row: row)),
+                    Expanded(
+                      child: Row(
+                        children: [
+                          widget.childRow
+                              ? const _ActivityChildConnector()
+                              : _ActivityRowIcon(row: row),
+                          const SizedBox(width: AppSpacing.xs),
+                          Flexible(child: _ActivityRowTitle(row: row)),
+                        ],
+                      ),
+                    ),
+                    // Content Line separates its left and right blocks by 10px.
+                    const SizedBox(width: 10),
+                    _ActivityRowAmount(row: row, childRow: widget.childRow),
                   ],
                 ),
-              ),
-              // Content Line separates its left and right blocks by 10px.
-              const SizedBox(width: 10),
-              _ActivityRowAmount(row: row, childRow: widget.childRow),
-            ],
-          ),
         ),
         if (showSelectedBorder || (isInteractive && _focused))
           Positioned(
@@ -893,10 +902,116 @@ class _ActivityFeedRowState extends State<ActivityFeedRow> {
   }
 }
 
-class _ActivityRowTitle extends StatelessWidget {
-  const _ActivityRowTitle({required this.row});
+class _MobileActivityRowContent extends StatelessWidget {
+  const _MobileActivityRowContent({required this.row, required this.childRow});
 
   final ActivityRowData row;
+  final bool childRow;
+
+  double _textWidth(BuildContext context, String text, TextStyle style) {
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+      maxLines: 1,
+    )..layout();
+    final width = painter.width;
+    painter.dispose();
+    return width;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final amount = _ActivityRowAmount(row: row, childRow: childRow);
+    final supporting = amount.supportingText;
+    final amountWidth =
+        (_textWidth(
+                  context,
+                  row.amountText,
+                  AppTypography.labelLarge.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ) +
+                (row.amountIconName == null ? 0 : 14 + AppSpacing.xxs))
+            .ceilToDouble();
+    final supportingIcon = row.amountSubtitle == supporting
+        ? row.amountSubtitleIconName
+        : row.statusText.trim() == supporting
+        ? row.statusIconName
+        : null;
+    final supportingWidth = supporting == null
+        ? 0.0
+        : (_textWidth(
+                    context,
+                    supporting,
+                    _activitySupportingStyle.copyWith(letterSpacing: 0),
+                  ) +
+                  (supportingIcon == null ? 0 : 12 + AppSpacing.xxs))
+              .ceilToDouble();
+    final amountWidthNeeded = math.max(amountWidth, supportingWidth);
+    // Titles and subtitles may ellipsize as on desktop; the row only stacks
+    // when the amount would hide the title's first word.
+    final minTitleWidth = _textWidth(
+      context,
+      minimumVisibleLabel(row.title),
+      AppTypography.labelLarge,
+    ).ceilToDouble();
+    final leading = childRow
+        ? const _ActivityChildConnector()
+        : _ActivityRowIcon(row: row);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final titleSpace =
+            constraints.maxWidth - AppAssetSize.size - AppSpacing.xs - 10;
+        final stacked = titleSpace - amountWidth < minTitleWidth;
+        final title = Row(
+          children: [
+            leading,
+            const SizedBox(width: AppSpacing.xs),
+            Flexible(
+              child: _ActivityRowTitle(row: row, allowWrap: stacked),
+            ),
+          ],
+        );
+        final value = _ActivityRowAmount(
+          row: row,
+          childRow: childRow,
+          maxWidth: stacked
+              ? constraints.maxWidth
+              : math.max(
+                  amountWidth,
+                  math.min(amountWidthNeeded, titleSpace - minTitleWidth),
+                ),
+          allowWrap: stacked,
+        );
+        if (stacked) {
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              title,
+              const SizedBox(height: AppSpacing.xs),
+              value,
+            ],
+          );
+        }
+        return Row(
+          children: [
+            Expanded(child: title),
+            const SizedBox(width: 10),
+            value,
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _ActivityRowTitle extends StatelessWidget {
+  const _ActivityRowTitle({required this.row, this.allowWrap = false});
+
+  final ActivityRowData row;
+  final bool allowWrap;
 
   @override
   Widget build(BuildContext context) {
@@ -907,8 +1022,8 @@ class _ActivityRowTitle extends StatelessWidget {
       children: [
         Text(
           row.title,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
+          maxLines: allowWrap ? null : 1,
+          overflow: allowWrap ? TextOverflow.clip : TextOverflow.ellipsis,
           style: AppTypography.labelLarge.copyWith(color: colors.text.accent),
         ),
         if (row.subtitle != null) ...[
@@ -918,6 +1033,7 @@ class _ActivityRowTitle extends StatelessWidget {
           _ActivityRowSubtitle(
             text: row.subtitle!,
             iconName: row.subtitleIconName,
+            allowWrap: allowWrap,
           ),
         ],
       ],
@@ -926,10 +1042,15 @@ class _ActivityRowTitle extends StatelessWidget {
 }
 
 class _ActivityRowSubtitle extends StatelessWidget {
-  const _ActivityRowSubtitle({required this.text, this.iconName});
+  const _ActivityRowSubtitle({
+    required this.text,
+    this.iconName,
+    this.allowWrap = false,
+  });
 
   final String text;
   final String? iconName;
+  final bool allowWrap;
 
   @override
   Widget build(BuildContext context) {
@@ -950,8 +1071,8 @@ class _ActivityRowSubtitle extends StatelessWidget {
         Flexible(
           child: Text(
             text,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+            maxLines: allowWrap ? null : 1,
+            overflow: allowWrap ? TextOverflow.clip : TextOverflow.ellipsis,
             style: _activityRowSubtitleStyle.copyWith(
               color: colors.text.secondary,
               fontWeight: FontWeight.w400,
@@ -964,30 +1085,42 @@ class _ActivityRowSubtitle extends StatelessWidget {
 }
 
 class _ActivityRowAmount extends StatelessWidget {
-  const _ActivityRowAmount({required this.row, required this.childRow});
+  const _ActivityRowAmount({
+    required this.row,
+    required this.childRow,
+    this.maxWidth = 128,
+    this.allowWrap = false,
+  });
 
   final ActivityRowData row;
   final bool childRow;
+  final double maxWidth;
+  final bool allowWrap;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final amountColor = row.amountColor ?? colors.text.primary;
-    final supporting = _supportingAmountText(row);
+    final supporting = supportingText;
     final supportingColor = _supportingAmountColor(row, colors);
     return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 128),
+      constraints: BoxConstraints(maxWidth: maxWidth),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          _ActivityAmountValue(row: row, color: amountColor),
+          _ActivityAmountValue(
+            row: row,
+            color: amountColor,
+            allowWrap: allowWrap,
+          ),
           if (supporting != null) ...[
             const SizedBox(height: _activityRowInnerLineGap),
             _ActivitySupportingAmountText(
               row: row,
               text: supporting,
               color: supportingColor,
+              allowWrap: allowWrap,
             ),
           ],
         ],
@@ -995,7 +1128,7 @@ class _ActivityRowAmount extends StatelessWidget {
     );
   }
 
-  String? _supportingAmountText(ActivityRowData row) {
+  String? get supportingText {
     if (childRow) return null;
     if (row.amountSubtitle != null) return row.amountSubtitle;
     final status = row.statusText.trim();
@@ -1009,7 +1142,7 @@ class _ActivityRowAmount extends StatelessWidget {
 
   Color _supportingAmountColor(ActivityRowData row, AppColors colors) {
     if (row.amountSubtitle != null) return colors.text.muted;
-    final supporting = _supportingAmountText(row);
+    final supporting = supportingText;
     if (supporting != null && supporting == row.statusText.trim()) {
       return row.statusColor ?? colors.text.secondary;
     }
@@ -1018,18 +1151,27 @@ class _ActivityRowAmount extends StatelessWidget {
 }
 
 class _ActivityAmountValue extends StatelessWidget {
-  const _ActivityAmountValue({required this.row, required this.color});
+  const _ActivityAmountValue({
+    required this.row,
+    required this.color,
+    this.allowWrap = false,
+  });
 
   final ActivityRowData row;
   final Color color;
+  final bool allowWrap;
 
   @override
   Widget build(BuildContext context) {
     final text = Text(
       row.amountText,
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
+      maxLines: allowWrap ? null : 1,
+      overflow: allowWrap ? TextOverflow.clip : TextOverflow.ellipsis,
       textAlign: TextAlign.end,
+      // Wrapped lines hug their text so a leading icon stays beside it.
+      textWidthBasis: allowWrap
+          ? TextWidthBasis.longestLine
+          : TextWidthBasis.parent,
       style: AppTypography.labelLarge.copyWith(
         color: color,
         fontWeight: FontWeight.w600,
@@ -1053,11 +1195,13 @@ class _ActivitySupportingAmountText extends StatelessWidget {
     required this.row,
     required this.text,
     required this.color,
+    this.allowWrap = false,
   });
 
   final ActivityRowData row;
   final String text;
   final Color color;
+  final bool allowWrap;
 
   @override
   Widget build(BuildContext context) {
@@ -1073,9 +1217,12 @@ class _ActivitySupportingAmountText extends StatelessWidget {
         : null;
     final label = Text(
       text,
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
+      maxLines: allowWrap ? null : 1,
+      overflow: allowWrap ? TextOverflow.clip : TextOverflow.ellipsis,
       textAlign: TextAlign.end,
+      textWidthBasis: allowWrap
+          ? TextWidthBasis.longestLine
+          : TextWidthBasis.parent,
       style: _activitySupportingStyle.copyWith(color: color, letterSpacing: 0),
     );
     if (iconName == null) return label;
