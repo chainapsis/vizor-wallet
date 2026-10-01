@@ -196,7 +196,7 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
         ? _payIntentShowsPaidCopy(intent)
               ? 'You paid'
               : 'You pay'
-        : intent.status == SwapIntentStatus.refunded
+        : _swapShowsTerminalFailureLabels(intent.status)
         ? 'Deposit amount'
         : "You're paying",
     receiveLabel: payMode
@@ -208,7 +208,7 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
             SwapIntentStatus.incompleteDeposit => 'Amount',
             _ => 'Recipient gets',
           }
-        : intent.status == SwapIntentStatus.refunded
+        : _swapShowsTerminalFailureLabels(intent.status)
         ? 'Expected to receive'
         : "You're receiving",
     payDetailText: payDetailText,
@@ -288,6 +288,10 @@ PayActivityStatusPresentation? _payActivityStatusPresentation(
         : null,
   );
 }
+
+/// Failed and refunded swaps label the quote instead of implying delivery.
+bool _swapShowsTerminalFailureLabels(SwapIntentStatus status) =>
+    status == SwapIntentStatus.failed || status == SwapIntentStatus.refunded;
 
 PayActivityStatusPhase? payActivityStatusPhaseFor(SwapIntentStatus status) {
   return switch (status) {

@@ -258,6 +258,8 @@ void main() {
 
     expect(presentation.payDetailText, contains('Refund to:'));
     expect(presentation.payDetailCopyText, '0xrefund-address');
+    expect(presentation.payLabel, 'Deposit amount');
+    expect(presentation.receiveLabel, 'Expected to receive');
     expect(
       _detailRow(presentation.details, 'Refund to').copyText,
       '0xrefund-address',
