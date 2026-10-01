@@ -36,6 +36,7 @@ import '../widgetbook/address_verify_use_cases.dart';
 import 'zip321_prefill_use_cases.dart';
 import 'gift_card_usage_use_cases.dart';
 import 'mobile_method_selection_capture.dart';
+import 'mobile_home_review_capture.dart';
 import 'ledger_recovery_capture.dart';
 
 typedef FigmaCompareScenarioBuilder = Widget Function(BuildContext context);
@@ -67,6 +68,27 @@ class FigmaCompareScenario {
 /// storage, network, wallet, and Rust state. Widgetbook fixtures are preferred
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
+  FigmaCompareScenario(
+    id: 'mobile-home-ten-transactions',
+    description: 'Ten recent transactions with actual viewport and safe areas',
+    builder: buildMobileHomeTenTransactionsCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-home-ten-swaps',
+    description: 'Ten settled swaps including their received-ZEC child rows',
+    builder: buildMobileHomeTenSwapsCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-home-ten-reported',
+    description: 'Reported Home state: masked balance and Ironwood receipts',
+    builder: buildMobileHomeReportedCapture,
+    desktop: false,
+    mobile: true,
+  ),
   FigmaCompareScenario(
     id: 'caps-lock-unlock',
     description: 'Unlock screen with Caps Lock warning',

@@ -37,6 +37,9 @@ import '../src/features/about/screens/about_screen.dart';
 import '../src/features/accounts/screens/mobile/mobile_accounts_screen.dart';
 import '../src/features/accounts/widgets/mobile/mobile_accounts_sheet.dart';
 import '../src/features/activity/swap_activity_row_items_provider.dart';
+import '../src/features/activity/swap_activity_row_mapper.dart';
+import '../src/features/swap/models/swap_models.dart';
+import '../src/features/swap/providers/swap_activity_store.dart';
 import '../src/features/activity/gift_card_activity_index.dart';
 import '../src/features/activity/screens/mobile/mobile_activity_screen.dart';
 import '../src/features/home/screens/home_screen.dart';
@@ -1270,6 +1273,102 @@ Widget buildMobileHomeDefaultUseCase(
   );
 }
 
+/// Eleven fixture entries exercise Home's ten-entry cap at the actual viewport.
+/// Unlike design-sized previews, this keeps the host's safe areas and text scale.
+Widget buildMobileHomeRecentActivityReviewUseCase(
+  BuildContext context, {
+  bool withSwapChildRows = false,
+  bool matchReportedScreenshot = false,
+}) {
+  final swaps = <SwapActivityRowItem>[
+    if (withSwapChildRows)
+      for (var index = 0; index < 11; index++)
+        SwapActivityRowItem(
+          intentId: 'home-review-swap-$index',
+          providerLabel: 'NEAR Intents',
+          sellAmountText: '101.23 USDC',
+          receiveEstimateText: '4.12 ZEC',
+          status: SwapIntentStatus.complete,
+          direction: SwapDirection.externalToZec,
+          externalAsset: SwapAsset.usdc,
+          activityTimestamp: DateTime.utc(2026, 9, 29, 12, index),
+        ),
+  ];
+  final accountState = matchReportedScreenshot
+      ? _accountsDesignState.copyWith(
+          accounts: [
+            for (final account in _accountsDesignState.accounts)
+              account.uuid == _accountsDesignState.activeAccountUuid
+                  ? account.copyWith(name: 'Zcash')
+                  : account,
+          ],
+        )
+      : _accountsDesignState;
+  return _buildMobileHomeUseCase(
+    accountState: accountState,
+    votingVisible: !matchReportedScreenshot,
+    privacyModeEnabled: matchReportedScreenshot,
+    marketData: ZecMarketData(
+      usdPrice: 70,
+      change24hPct: matchReportedScreenshot ? -0.70 : 13.12,
+    ),
+    syncState: _homeSyncedState(
+      orchardBalance: BigInt.from(14312000000),
+      recentTransactions: withSwapChildRows
+          ? const []
+          : [
+              for (var index = 1; index <= 11; index++)
+                if (matchReportedScreenshot)
+                  _homeReviewIronwoodTx(index)
+                else
+                  _homeTx(index),
+            ],
+    ),
+    swapActivityItems: swaps,
+    activityStore: const _HomeReviewActivityStore(),
+    networkPrivacyState: const NetworkPrivacyState.off(),
+    usePlatformInsets: true,
+  );
+}
+
+rust_sync.TransactionInfo _homeReviewIronwoodTx(int index) {
+  final seconds = BigInt.from(
+    DateTime.utc(2026, 9, index <= 3 ? 30 : 29, 12, 11 - index)
+            .millisecondsSinceEpoch ~/
+        1000,
+  );
+  return rust_sync.TransactionInfo(
+    txidHex: 'home-review-ironwood-$index',
+    minedHeight: BigInt.from(1000 + index),
+    expiredUnmined: false,
+    accountBalanceDelta: 0,
+    fee: BigInt.zero,
+    blockTime: seconds,
+    isTransparent: false,
+    txKind: 'received',
+    displayAmount: BigInt.from(index) * BigInt.from(100000000),
+    displayPool: 'ironwood',
+    createdTime: seconds,
+  );
+}
+
+class _HomeReviewActivityStore implements SwapActivityStore {
+  const _HomeReviewActivityStore();
+
+  @override
+  Future<List<SwapIntentRecord>> loadRecords({required String accountUuid}) async =>
+      const [];
+
+  @override
+  Future<void> saveRecords({
+    required String accountUuid,
+    required List<SwapIntentRecord> records,
+  }) async {}
+
+  @override
+  Future<void> deleteForAccount({required String accountUuid}) async {}
+}
+
 Widget buildMobileHomeGiftCardsUseCase(BuildContext context) {
   final transactions = _previewGiftCardActivityTransactions();
   return _buildMobileHomeUseCase(
@@ -2339,6 +2438,7 @@ Widget buildMobileHomeVotingHiddenUseCase(BuildContext context) =>
 
 Widget _buildMobileHomeUseCase({
   bool votingVisible = true,
+  bool privacyModeEnabled = false,
   required AccountState accountState,
   required SyncState syncState,
   bool openAccountsSheet = false,
@@ -2353,6 +2453,9 @@ Widget _buildMobileHomeUseCase({
   bool swapEnabled = true,
   bool showStaticIronwoodAnnouncement = false,
   bool constrainToPreviewFrame = true,
+  bool usePlatformInsets = false,
+  List<SwapActivityRowItem> swapActivityItems = const [],
+  SwapActivityStore? activityStore,
   GiftCardActivityIndex giftCardActivityIndex = GiftCardActivityIndex.empty,
   NetworkPrivacyState? networkPrivacyState,
 }) {
@@ -2368,7 +2471,9 @@ Widget _buildMobileHomeUseCase({
         networkPrivacyProvider.overrideWith(
           () => _PreviewNetworkPrivacyNotifier(networkPrivacyState),
         ),
-      appBootstrapProvider.overrideWithValue(_homeBootstrap(accountState)),
+      appBootstrapProvider.overrideWithValue(
+        _homeBootstrap(accountState, privacyModeEnabled: privacyModeEnabled),
+      ),
       accountProvider.overrideWith(() => _PreviewAccountNotifier(accountState)),
       receiveAddressServiceProvider.overrideWithValue(
         const _PreviewReceiveAddressService(),
@@ -2386,8 +2491,10 @@ Widget _buildMobileHomeUseCase({
       zecHomeUsdUnitPriceProvider.overrideWithValue(marketData.usdPrice),
       zecPriceChange24hPctProvider.overrideWithValue(marketData.change24hPct),
       swapFeatureEnabledProvider.overrideWithValue(swapEnabled),
+      if (activityStore != null)
+        swapActivityStoreProvider.overrideWithValue(activityStore),
       swapActivityRowItemsProvider.overrideWith((ref, accountUuid) async {
-        return const [];
+        return swapActivityItems;
       }),
       giftCardActivityIndexProvider.overrideWith(
         (ref, accountUuid) async => giftCardActivityIndex,
@@ -2400,10 +2507,12 @@ Widget _buildMobileHomeUseCase({
         return announcement;
       }),
     ],
-    child: _MobilePreviewFrame(
-      constrainToDesignSize: constrainToPreviewFrame,
-      child: harness,
-    ),
+    child: usePlatformInsets
+        ? harness
+        : _MobilePreviewFrame(
+            constrainToDesignSize: constrainToPreviewFrame,
+            child: harness,
+          ),
   );
 }
 
@@ -4051,7 +4160,10 @@ AppBootstrapState _utilityBootstrap(
   );
 }
 
-AppBootstrapState _homeBootstrap(AccountState accountState) {
+AppBootstrapState _homeBootstrap(
+  AccountState accountState, {
+  bool privacyModeEnabled = false,
+}) {
   return AppBootstrapState(
     initialLocation: '/home',
     initialAccountState: accountState,
@@ -4059,7 +4171,7 @@ AppBootstrapState _homeBootstrap(AccountState accountState) {
     network: 'main',
     rpcEndpointConfig: defaultRpcEndpointConfig('main'),
     themeMode: ThemeMode.system,
-    privacyModeEnabled: false,
+    privacyModeEnabled: privacyModeEnabled,
     isPasswordConfigured: true,
     isUnlocked: true,
     passwordRotationRecoveryFailed: false,

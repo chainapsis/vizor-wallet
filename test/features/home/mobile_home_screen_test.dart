@@ -2584,6 +2584,40 @@ void main() {
     expect(find.text('pay route zecToExternal exactOutput'), findsOneWidget);
   });
 
+  for (final action in ['send', 'receive', 'pay']) {
+    testWidgets('enlarged narrow home keeps the $action action usable', (
+      tester,
+    ) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(320, 568);
+      addTearDown(tester.view.reset);
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      await tester.pumpWidget(
+        _app(
+          _syncedState(orchardBalance: BigInt.from(14312000000)),
+          showVoting: false,
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      final button = find.byKey(ValueKey('mobile_home_$action'));
+      await tester.ensureVisible(button);
+      await tester.pump();
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+      expect(
+        find.text(
+          action == 'pay'
+              ? 'pay route zecToExternal exactOutput'
+              : '$action route',
+        ),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('hides the pay entry when swap is disabled', (tester) async {
     await tester.pumpWidget(
       _app(
@@ -3021,7 +3055,8 @@ void main() {
       find.ancestor(
         of: seeAllFinder,
         matching: find.byWidgetPredicate(
-          (widget) => widget is SizedBox && widget.height == 24,
+          (widget) =>
+              widget is ConstrainedBox && widget.constraints.minHeight == 24,
         ),
       ),
     );

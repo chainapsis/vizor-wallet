@@ -2,6 +2,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_shell.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
@@ -11,6 +12,41 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 
 void main() {
+  testWidgets(
+    'narrow account nav keeps enlarged name and sync status visible',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(320, 568);
+      addTearDown(tester.view.reset);
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      var taps = 0;
+      await tester.pumpWidget(
+        _harness(
+          MobileTopNav.account(
+            accountName: 'Zcash',
+            balanceLabel: '140.12 ZEC',
+            syncLabel: 'Vizor is synced',
+            onAccountTap: () => taps++,
+          ),
+        ),
+      );
+      for (final label in ['Zcash', '140.12 ZEC', 'Vizor is synced']) {
+        final paragraph = tester.renderObject<RenderParagraph>(
+          find.text(label),
+        );
+        expect(paragraph.didExceedMaxLines, isFalse, reason: label);
+      }
+      expect(
+        tester.getBottomLeft(find.text('Zcash')).dy,
+        lessThan(tester.getTopLeft(find.text('Vizor is synced')).dy),
+      );
+      await tester.tap(find.text('Zcash'));
+      expect(taps, 1);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('MobileTopNav.account shows name, balance, and sync label', (
     tester,
   ) async {
