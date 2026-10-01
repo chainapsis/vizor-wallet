@@ -154,8 +154,6 @@ ActivityRowData buildSwapActivityRow({
     leadingProgressValue: complete ? null : progress?.value,
     subtitle: payMode
         ? _payActivitySubtitle(receiveAsset)
-        : returnsFunds
-        ? sellAsset?.symbol ?? 'ZEC'
         : _swapActivityAssetSubtitle(sellAsset) ?? item.providerLabel,
     amountText: activityAmountTextForFormFactor(
       payMode
@@ -166,8 +164,6 @@ ActivityRowData buildSwapActivityRow({
               privacyModeEnabled: privacyModeEnabled,
             ),
     ),
-    amountIconName: returnsFunds ? AppIcons.uturnUp : null,
-    amountIconColor: returnsFunds ? colors.icon.regular : null,
     amountColor: outgoingAmountColor(colors),
     amountSubtitle: timedOut ? 'Timeout' : null,
     amountSubtitleIconName: timedOut ? AppIcons.time : null,
@@ -266,7 +262,13 @@ String _swapActivityAmountText(
       maskLength: _swapActivityAmountPrivacyMaskLength,
     );
   }
-  final amount = item.sellAmountText;
+  // A refund row shows what came back once the provider records it.
+  final refundedAmount = item.refundedAmountText?.trim();
+  final amount =
+      item.status == SwapIntentStatus.refunded &&
+          _isPositiveSwapAmount(refundedAmount)
+      ? refundedAmount!
+      : item.sellAmountText;
   if (amount.trim().isEmpty) return '--';
   if (!includeSign) return amount;
   return '-$amount';
