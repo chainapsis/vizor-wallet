@@ -615,10 +615,12 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     }
   }
 
-  /// Only a Card already in Received owns a durable claim wallet. Scanning
-  /// a new Card is a preview, including while its funding is still confirming.
-  bool _shouldKeepCard(PaymentLinkClaimSession session) =>
-      _receivedCards.any((record) => record.address == session.link.address);
+  /// Saved Cards own a claim wallet while they retain recovery material.
+  /// Receipts after recovery and new previews do not retain inspection wallets.
+  bool _shouldKeepCard(PaymentLinkClaimSession session) => _receivedCards.any(
+    (record) =>
+        record.address == session.link.address && record.claimLink != null,
+  );
 
   /// Keeps the link for retry after the recipient explicitly confirms a claim
   /// but preparing it for the selected account fails.
@@ -633,7 +635,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
   }
 
   /// An empty scan cannot prove that a Card will never receive funds. Keep
-  /// listed Cards and their wallets for retry; new previews remain disposable.
+  /// recoverable Cards and their wallets for retry; new previews are disposable.
   Future<void> _releaseUnavailableClaim(PaymentLinkClaimSession session) async {
     final epoch = _mobileNavigationEpoch;
     final availability =
@@ -1862,16 +1864,14 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
   }
 
   /// A refresh opens a second session over the same claim wallet; delete it
-  /// only when neither the live session nor a listed Card still owns it.
+  /// only when neither the live session nor a recoverable Card still owns it.
   Future<void> _discardRefreshedClaim(PaymentLinkClaimSession refreshed) async {
     final directory = paymentLinkClaimWalletDirectoryName(refreshed.link);
     final live = _receivedClaimSession;
     final stillOwned =
         (live != null &&
             paymentLinkClaimWalletDirectoryName(live.link) == directory) ||
-        _receivedCards.any(
-          (record) => record.address == refreshed.link.address,
-        );
+        _shouldKeepCard(refreshed);
     if (stillOwned) return;
     await _paymentLinkOperations.discardClaimSession(refreshed);
   }
@@ -1899,8 +1899,8 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     }
   }
 
-  /// A Card that stays in the Received list keeps its scanned claim wallet; an
-  /// abandoned preview deletes it.
+  /// A Card retaining recovery material keeps its scanned claim wallet;
+  /// an abandoned preview deletes it.
   void _releaseClaimSession(
     PaymentLinkClaimSession session, {
     required bool keepCard,

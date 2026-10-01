@@ -925,6 +925,34 @@ void main() {
     },
   );
 
+  testWidgets('mobile rechecking a completed Card discards its claim wallet', (
+    tester,
+  ) async {
+    final operations = FakePaymentLinkOperations(
+      receivedRecords: [
+        PaymentLinkReceivedRecord.fromLink(incomingLink).copyWith(
+          status: PaymentLinkReceivedStatus.received,
+          claimLink: null,
+          destinationAccountUuid: 'account-1',
+          claimTxids: 'claim-tx',
+          claimSubmittedAt: DateTime.utc(2026, 10, 1),
+        ),
+      ],
+      claimable: false,
+    );
+
+    await _openReceivedCard(tester, operations);
+
+    expect(operations.discardedClaimAddresses, [incomingLink.address]);
+    expect(operations.retainedClaimAddresses, isEmpty);
+    expect(
+      operations.receivedRecords.single.status,
+      PaymentLinkReceivedStatus.received,
+    );
+    expect(operations.receivedRecords.single.claimTxids, 'claim-tx');
+    expect(tester.takeException(), isNull);
+  });
+
   for (final waiting in [false, true]) {
     testWidgets(
       'closing a scanned ${waiting ? 'waiting' : 'claimable'} card leaves no Received entry',

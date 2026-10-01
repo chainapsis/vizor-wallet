@@ -295,6 +295,109 @@ void main() {
       );
     });
 
+    for (final received in [false, true]) {
+      test('discard preserves ${received ? 'received' : 'receiving'} '
+          'cards with recovery material', () async {
+        final inspection = await service.inspectClaim(_link());
+        final store = container.read(paymentLinkReceivedStoreProvider);
+        await store.saveReady(inspection.link);
+        await store.markReceiving(
+          address: inspection.link.address,
+          destinationAccountUuid: 'receiver',
+          claimTxids: 'claim-tx',
+          claimSubmittedAt: DateTime.utc(2026, 10, 1),
+        );
+        if (received) {
+          await store.markReceived(address: inspection.link.address);
+        }
+
+        await service.discardClaimInspection(inspection);
+
+        expect(await File(inspection.dbPath).exists(), isTrue);
+        expect((await store.load()).single.claimLink, isNotNull);
+      });
+    }
+
+    for (final existingAccount in [false, true]) {
+      test(
+        'completed card cache is removed by '
+        '${existingAccount ? 'existing-account retention' : 'inspection cleanup'}',
+        () async {
+          final first = await service.inspectClaim(_link());
+          final store = container.read(paymentLinkReceivedStoreProvider);
+          await store.saveReady(first.link);
+          final receiving = await store.markReceiving(
+            address: first.link.address,
+            destinationAccountUuid: 'receiver',
+            claimTxids: 'claim-tx',
+            claimSubmittedAt: DateTime.utc(2026, 10, 1),
+          );
+          await reconcilePaymentLinkClaimReceipt(
+            record: receiving,
+            transactions: [
+              _transaction(
+                txid: 'claim-tx',
+                minedHeight: api.tipHeight - 5,
+                accountBalanceDelta: first.link.amountZatoshi.toInt(),
+              ),
+            ],
+            verifiedHeight: BigInt.from(api.tipHeight),
+            store: store,
+            deleteRetainedWallet: (_) async {
+              await first.directory.delete(recursive: true);
+              return true;
+            },
+          );
+          expect((await store.load()).single.claimLink, isNull);
+          expect(await first.directory.exists(), isFalse);
+
+          api.total = BigInt.zero;
+          api.maxClaimable = null;
+          if (existingAccount) {
+            accounts.select('receiver', 'u1receiveraddress');
+            final reopened = await service.prepareClaim(first.link);
+            expect(await File(reopened.dbPath).exists(), isTrue);
+            // A stale screen may still choose retention for a completed receipt.
+            await service.retainPendingClaim(reopened);
+          } else {
+            final reopened = await service.inspectClaim(first.link);
+            expect(await File(reopened.dbPath).exists(), isTrue);
+            await service.discardClaimInspection(reopened);
+          }
+
+          expect(api.importCalls, 2);
+          expect(await first.directory.exists(), isFalse);
+          final receipt = (await store.load()).single;
+          expect(receipt.status, PaymentLinkReceivedStatus.received);
+          expect(receipt.claimLink, isNull);
+          expect(receipt.claimTxids, 'claim-tx');
+          expect(receipt.destinationAccountUuid, 'receiver');
+        },
+      );
+    }
+
+    test(
+      'retention preserves a received wallet before recovery ends',
+      () async {
+        accounts.select('receiver', 'u1receiveraddress');
+        final session = await service.prepareClaim(_link());
+        final store = container.read(paymentLinkReceivedStoreProvider);
+        await store.saveReady(session.link);
+        await store.markReceiving(
+          address: session.link.address,
+          destinationAccountUuid: 'receiver',
+          claimTxids: 'claim-tx',
+          claimSubmittedAt: DateTime.utc(2026, 10, 1),
+        );
+        await store.markReceived(address: session.link.address);
+
+        await service.retainPendingClaim(session);
+
+        expect(await File(session.dbPath).exists(), isTrue);
+        expect((await store.load()).single.claimLink, isNotNull);
+      },
+    );
+
     test('discard keeps a saved wallet while locked', () async {
       final inspection = await service.inspectClaim(_link());
       await container

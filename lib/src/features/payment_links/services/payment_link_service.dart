@@ -1939,8 +1939,9 @@ class PaymentLinkService
     // deleting unsaved wallets. These guards preserve the DB without scheduling
     // a retry; the normal first-wallet handoff must keep the inspected wallet.
     if (_ref.read(appSecurityProvider).requiresUnlock) return;
-    // A saved card owns its cached wallet and must remain recoverable.
-    if (await _receivedStore.find(inspection.link.address) != null) return;
+    // Only cards still retaining recovery material own a cached claim wallet.
+    final record = await _receivedStore.find(inspection.link.address);
+    if (record?.claimLink != null) return;
     // The app may lock while the saved-card lookup is awaiting storage.
     if (_ref.read(appSecurityProvider).requiresUnlock) return;
     await _claimWallet.deleteDb(inspection.directory);
@@ -1962,7 +1963,13 @@ class PaymentLinkService
     return _ref.read(paymentLinkClaimCoordinatorProvider).trackRetention(
       () async {
         await _claimWallet.cancelClaimSync(session.link);
-        await _receivedStore.saveReady(session.link);
+        final record = await _receivedStore.saveReady(session.link);
+        // A stale screen can request retention after six-confirmation cleanup.
+        // Keep the receipt, but discard any newly recreated inspection wallet.
+        if (record.claimLink == null) {
+          await _claimWallet.deleteDb(session.directory);
+          return;
+        }
         await _receivedStore.setAvailability(
           session.link.address,
           session.availability,
