@@ -664,6 +664,27 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildSettingsSecretPassphraseRevealUseCase,
   ),
   FigmaCompareScenario(
+    id: 'mobile-backup-intro',
+    description: 'Mobile Home backup warning and reminder',
+    builder: buildMobileBackupIntroUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-backup-completion',
+    description: 'Mobile backup reveal with completion action',
+    builder: buildMobileBackupCompletionUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-home-backup-reminder',
+    description: 'Mobile Home backup entry',
+    builder: buildMobileHomeBackupReminderUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-settings-secret-passphrase-gate',
     description: 'Mobile recovery passcode confirmation',
     builder: buildMobileSettingsSecretPassphraseGateUseCase,

@@ -651,6 +651,68 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     log('renameAccount: $uuid → $normalizedName');
   }
 
+  /// Records an explicit confirmation that this account's phrase was saved.
+  Future<void> markBackedUp(String uuid) => ref
+      .read(linuxKeyringCoordinatorProvider)
+      .runMutation(
+        () => _updateAccountSetupMetadata(
+          uuid,
+          (account) => account.copyWith(
+            setupPending: false,
+            clearBackupReminderSnooze: true,
+          ),
+        ),
+      );
+
+  /// Hides the Home reminder temporarily without marking the backup complete.
+  Future<void> snoozeBackupReminder(String uuid, {DateTime? now}) => ref
+      .read(linuxKeyringCoordinatorProvider)
+      .runMutation(
+        () => _updateAccountSetupMetadata(uuid, (account) {
+          if (!account.setupPending) {
+            throw StateError('Account backup is already complete: $uuid');
+          }
+          final count = (account.backupReminderSnoozeCount + 1).clamp(1, 3);
+          return account.copyWith(
+            backupReminderSnoozeCount: count,
+            backupReminderSnoozedUntilUtc: (now ?? DateTime.now()).toUtc().add(
+              backupReminderDelayForCount(count),
+            ),
+          );
+        }),
+      );
+
+  Future<void> _updateAccountSetupMetadata(
+    String uuid,
+    AccountInfo Function(AccountInfo) update,
+  ) async {
+    final previous = state.value ?? const AccountState();
+    final target = previous.accounts
+        .where((account) => account.uuid == uuid)
+        .firstOrNull;
+    if (target == null) throw StateError('Account not found: $uuid');
+    final updated = update(target);
+    AccountInfo merge(AccountInfo account) => account.uuid == uuid
+        ? account.copyWith(
+            setupPending: updated.setupPending,
+            backupReminderSnoozedUntilUtc:
+                updated.backupReminderSnoozedUntilUtc,
+            backupReminderSnoozeCount: updated.backupReminderSnoozeCount,
+            clearBackupReminderSnooze:
+                updated.backupReminderSnoozedUntilUtc == null,
+          )
+        : account;
+    await _saveAccounts(previous.accounts.map(merge).toList());
+    if (_storage.enforcesSessionGeneration && !ref.mounted) return;
+    // A keyring wait can outlive a lock. Keep the current address and account set.
+    final current = _storage.enforcesSessionGeneration
+        ? state.value ?? const AccountState()
+        : previous;
+    state = AsyncData(
+      current.copyWith(accounts: current.accounts.map(merge).toList()),
+    );
+  }
+
   /// Update an account profile picture.
   Future<void> updateProfilePicture(String uuid, String profilePictureId) => ref
       .read(linuxKeyringCoordinatorProvider)

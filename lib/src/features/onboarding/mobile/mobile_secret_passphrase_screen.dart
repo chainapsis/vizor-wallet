@@ -228,7 +228,7 @@ class _MobileSecretPassphraseScreenState
                 // The passphrase frame spreads the grid to a 44 px pitch.
                 rowGap: 19,
               )
-            : const _RevealWarningCard(),
+            : const SecretPassphraseRevealWarningCard(),
       ),
     );
   }
@@ -237,8 +237,8 @@ class _MobileSecretPassphraseScreenState
 /// Pre-reveal warning card — Figma `Onboarding 4 Secret Phrase` hidden
 /// variant: the words stay off-screen entirely; a centered key badge,
 /// headline, and caution paragraph fill the dark card instead.
-class _RevealWarningCard extends StatelessWidget {
-  const _RevealWarningCard();
+class SecretPassphraseRevealWarningCard extends StatelessWidget {
+  const SecretPassphraseRevealWarningCard({super.key});
 
   @override
   Widget build(BuildContext context) {

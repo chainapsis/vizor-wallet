@@ -735,6 +735,18 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildSettingsSecretPassphraseGateUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Mobile Home backup reminder',
+                      builder: buildMobileHomeBackupReminderUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Mobile backup intro',
+                      builder: buildMobileBackupIntroUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Mobile backup completion',
+                      builder: buildMobileBackupCompletionUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Mobile secret passphrase gate',
                       builder: buildMobileSettingsSecretPassphraseGateUseCase,
                     ),

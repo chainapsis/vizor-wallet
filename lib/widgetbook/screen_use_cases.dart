@@ -1078,17 +1078,54 @@ Widget buildMobileSettingsSecretPassphraseRevealLargeTextUseCase(
   BuildContext context,
 ) => _buildMobileBackupUseCase(context, reveal: true, largeText: true);
 
+Widget buildMobileBackupIntroUseCase(BuildContext context) =>
+    _buildMobileBackupUseCase(
+      context,
+      reveal: false,
+      pending: true,
+      intro: true,
+    );
+
+Widget buildMobileBackupCompletionUseCase(BuildContext context) =>
+    _buildMobileBackupUseCase(context, reveal: true, pending: true);
+
+Widget buildMobileHomeBackupReminderUseCase(BuildContext context) =>
+    _buildMobileHomeUseCase(
+      votingVisible: false,
+      accountState: _backupPreviewState,
+      syncState: SyncState(
+        accountUuid: _backupPreviewState.activeAccountUuid,
+        hasAccountScopedData: true,
+        percentage: 1,
+        totalBalance: BigInt.zero,
+      ),
+      backupPreview: true,
+    );
+
+final _backupPreviewState = _accountsDesignState.copyWith(
+  accounts: [
+    for (final account in _accountsDesignState.accounts)
+      account.copyWith(setupPending: true),
+  ],
+);
+
 Widget _buildMobileBackupUseCase(
   BuildContext context, {
   required bool reveal,
   bool largeText = false,
+  bool pending = false,
+  bool intro = false,
 }) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(
         _accountsBootstrap(_accountsDesignState),
       ),
-      accountProvider.overrideWith(_PreviewBackupAccountNotifier.new),
+      accountProvider.overrideWith(
+        () => _PreviewBackupAccountNotifier(
+          pending ? _backupPreviewState : _accountsDesignState,
+        ),
+      ),
       appSecurityProvider.overrideWith(_PreviewBackupSecurityNotifier.new),
       biometricUnlockProvider.overrideWith(
         () => _PreviewBiometricUnlockNotifier(
@@ -1110,14 +1147,19 @@ Widget _buildMobileBackupUseCase(
       ),
       child: _MobilePreviewFrame(
         constrainToDesignSize: false,
-        child: _MobileBackupHarness(key: ValueKey((reveal, largeText))),
+        child: _MobileBackupHarness(
+          intro: intro,
+          key: ValueKey((reveal, largeText, pending, intro)),
+        ),
       ),
     ),
   );
 }
 
 class _MobileBackupHarness extends StatefulWidget {
-  const _MobileBackupHarness({super.key});
+  const _MobileBackupHarness({this.intro = false, super.key});
+
+  final bool intro;
 
   @override
   State<_MobileBackupHarness> createState() => _MobileBackupHarnessState();
@@ -1126,8 +1168,25 @@ class _MobileBackupHarness extends StatefulWidget {
 class _MobileBackupHarnessState extends State<_MobileBackupHarness> {
   final _privacyController = SensitivePrivacyOverlayController();
   late final _router = GoRouter(
-    initialLocation: '/settings/secret-passphrase',
+    initialLocation: widget.intro
+        ? '/setup/backup'
+        : '/settings/secret-passphrase',
     routes: [
+      GoRoute(
+        path: '/home',
+        builder: (_, _) => const _PreviewRoutePlaceholder(label: '/home'),
+      ),
+      GoRoute(
+        path: '/setup/backup',
+        builder: (_, _) => MobileSeedPhraseScreen(
+          showBackupIntro: true,
+          screenshotStream: const Stream.empty(),
+          privacyOverlayController: _privacyController,
+          birthdayHeightLoader: (_) async => 3000000,
+          birthdayBlockTimeLoader: (_) async =>
+              DateTime(2026, 9, 1).millisecondsSinceEpoch ~/ 1000,
+        ),
+      ),
       GoRoute(
         path: '/settings',
         builder: (_, _) => const _PreviewRoutePlaceholder(label: '/settings'),
@@ -1159,7 +1218,38 @@ class _MobileBackupHarnessState extends State<_MobileBackupHarness> {
 }
 
 class _PreviewBackupAccountNotifier extends _PreviewAccountNotifier {
-  _PreviewBackupAccountNotifier() : super(_accountsDesignState);
+  _PreviewBackupAccountNotifier(super.initialState);
+
+  @override
+  Future<void> markBackedUp(String uuid) async => _updateBackup(
+    uuid,
+    (account) =>
+        account.copyWith(setupPending: false, clearBackupReminderSnooze: true),
+  );
+
+  @override
+  Future<void> snoozeBackupReminder(String uuid, {DateTime? now}) async =>
+      _updateBackup(uuid, (account) {
+        final count = (account.backupReminderSnoozeCount + 1).clamp(1, 3);
+        return account.copyWith(
+          backupReminderSnoozeCount: count,
+          backupReminderSnoozedUntilUtc: (now ?? DateTime.now()).toUtc().add(
+            backupReminderDelayForCount(count),
+          ),
+        );
+      });
+
+  void _updateBackup(String uuid, AccountInfo Function(AccountInfo) update) {
+    final current = state.requireValue;
+    state = AsyncData(
+      current.copyWith(
+        accounts: [
+          for (final account in current.accounts)
+            if (account.uuid == uuid) update(account) else account,
+        ],
+      ),
+    );
+  }
 
   @override
   Future<SoftwareWalletSecret?> getSoftwareWalletSecretForAccount(
@@ -2453,6 +2543,7 @@ Widget buildMobileHomeVotingHiddenUseCase(BuildContext context) =>
     buildMobileHomeDefaultUseCase(context, votingVisible: false);
 
 Widget _buildMobileHomeUseCase({
+  bool backupPreview = false,
   bool votingVisible = true,
   required AccountState accountState,
   required SyncState syncState,
@@ -2484,7 +2575,22 @@ Widget _buildMobileHomeUseCase({
           () => _PreviewNetworkPrivacyNotifier(networkPrivacyState),
         ),
       appBootstrapProvider.overrideWithValue(_homeBootstrap(accountState)),
-      accountProvider.overrideWith(() => _PreviewAccountNotifier(accountState)),
+      accountProvider.overrideWith(
+        () => backupPreview
+            ? _PreviewBackupAccountNotifier(accountState)
+            : _PreviewAccountNotifier(accountState),
+      ),
+      if (backupPreview) ...[
+        appSecurityProvider.overrideWith(_PreviewBackupSecurityNotifier.new),
+        biometricUnlockProvider.overrideWith(
+          () => _PreviewBiometricUnlockNotifier(
+            const BiometricUnlockState(
+              availability: BiometricAvailability.unavailable,
+              enabled: false,
+            ),
+          ),
+        ),
+      ],
       receiveAddressServiceProvider.overrideWithValue(
         const _PreviewReceiveAddressService(),
       ),
@@ -3170,6 +3276,7 @@ class _MobileHomeHarness extends StatefulWidget {
 
 class _MobileHomeHarnessState extends State<_MobileHomeHarness> {
   late final GoRouter _router;
+  final _privacyController = SensitivePrivacyOverlayController();
 
   @override
   void initState() {
@@ -3177,6 +3284,18 @@ class _MobileHomeHarnessState extends State<_MobileHomeHarness> {
     _router = GoRouter(
       initialLocation: '/home',
       routes: [
+        GoRoute(
+          path: '/setup/backup',
+          builder: (_, state) => MobileSeedPhraseScreen(
+            accountUuid: state.extra as String?,
+            showBackupIntro: true,
+            screenshotStream: const Stream.empty(),
+            privacyOverlayController: _privacyController,
+            birthdayHeightLoader: (_) async => 3000000,
+            birthdayBlockTimeLoader: (_) async =>
+                DateTime(2026, 9, 1).millisecondsSinceEpoch ~/ 1000,
+          ),
+        ),
         GoRoute(
           path: '/home',
           builder: (_, _) => AppMobileShell(
@@ -3230,6 +3349,7 @@ class _MobileHomeHarnessState extends State<_MobileHomeHarness> {
   @override
   void dispose() {
     _router.dispose();
+    _privacyController.dispose();
     super.dispose();
   }
 

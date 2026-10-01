@@ -69,6 +69,49 @@ class _FakeAccountNotifier extends AccountNotifier {
   final AccountState initialState;
   final String bip39Passphrase;
   final requestedMnemonicUuids = <String>[];
+  final backedUpUuids = <String>[];
+  final snoozedUuids = <String>[];
+  bool failSave = false;
+
+  @override
+  Future<void> markBackedUp(String uuid) async {
+    if (failSave) throw StateError("save failed");
+    backedUpUuids.add(uuid);
+    _update(
+      uuid,
+      (account) => account.copyWith(
+        setupPending: false,
+        clearBackupReminderSnooze: true,
+      ),
+    );
+  }
+
+  @override
+  Future<void> snoozeBackupReminder(String uuid, {DateTime? now}) async {
+    if (failSave) throw StateError("save failed");
+    snoozedUuids.add(uuid);
+    _update(
+      uuid,
+      (account) => account.copyWith(
+        backupReminderSnoozedUntilUtc: DateTime.now().toUtc().add(
+          const Duration(days: 2),
+        ),
+        backupReminderSnoozeCount: 1,
+      ),
+    );
+  }
+
+  void _update(String uuid, AccountInfo Function(AccountInfo) update) {
+    final current = state.requireValue;
+    state = AsyncData(
+      current.copyWith(
+        accounts: [
+          for (final account in current.accounts)
+            if (account.uuid == uuid) update(account) else account,
+        ],
+      ),
+    );
+  }
 
   @override
   FutureOr<AccountState> build() => initialState;
@@ -188,11 +231,13 @@ Widget _app({
   );
 }
 
-Widget _routerApp(GoRouter router) {
+Widget _routerApp(GoRouter router, {_FakeAccountNotifier? accountNotifier}) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
-      accountProvider.overrideWith(_FakeAccountNotifier.new),
+      accountProvider.overrideWith(
+        () => accountNotifier ?? _FakeAccountNotifier(),
+      ),
       appSecurityProvider.overrideWith(_FakeSecurityNotifier.new),
       biometricUnlockServiceProvider.overrideWithValue(_FakeBiometricUnlock()),
     ],
@@ -219,6 +264,111 @@ void main() {
       ..physicalSize = const Size(520, 1100)
       ..devicePixelRatio = 1.0;
   });
+
+  for (final snooze in [false, true]) {
+    testWidgets(
+      snooze
+          ? 'Home backup snoozes before revealing and returns directly Home'
+          : 'Home backup completion returns directly Home with no education redirect',
+      (tester) async {
+        final account = _FakeAccountNotifier(
+          _accountState.copyWith(
+            accounts: [
+              _accountState.accounts.first.copyWith(setupPending: true),
+            ],
+          ),
+        );
+        final privacy = SensitivePrivacyOverlayController();
+        addTearDown(privacy.dispose);
+        final router = GoRouter(
+          initialLocation: '/setup/backup',
+          routes: [
+            GoRoute(
+              path: '/home',
+              builder: (_, _) => const Text('Home destination'),
+            ),
+            GoRoute(
+              path: '/setup/backup',
+              builder: (_, _) => MobileSeedPhraseScreen(
+                accountUuid: 'account-1',
+                showBackupIntro: true,
+                privacyOverlayController: privacy,
+                screenshotStream: const Stream.empty(),
+                loadBirthday: false,
+              ),
+            ),
+          ],
+        );
+        addTearDown(router.dispose);
+        await tester.pumpWidget(_routerApp(router, accountNotifier: account));
+        await tester.pumpAndSettle();
+        expect(find.text('Remind me later'), findsOneWidget);
+        expect(find.text('abandon'), findsNothing);
+        if (snooze) {
+          await tester.tap(
+            find.byKey(const ValueKey('mobile_seed_backup_remind_later')),
+          );
+        } else {
+          await tester.tap(
+            find.byKey(const ValueKey('mobile_seed_backup_intro_continue')),
+          );
+          await tester.pumpAndSettle();
+          await _revealSecret(tester);
+          expect(find.text('Remind me later'), findsNothing);
+          await tester.tap(find.byKey(const ValueKey('mobile_seed_backed_up')));
+        }
+        await tester.pumpAndSettle();
+        expect(find.text('Home destination'), findsOneWidget);
+        expect(account.snoozedUuids, snooze ? ['account-1'] : isEmpty);
+        expect(account.backedUpUuids, snooze ? isEmpty : ['account-1']);
+        expect(account.state.requireValue.accounts.first.setupPending, snooze);
+      },
+    );
+  }
+
+  testWidgets(
+    'failed completion keeps the phrase and completion button available',
+    (tester) async {
+      final account = _FakeAccountNotifier(
+        _accountState.copyWith(
+          accounts: [_accountState.accounts.first.copyWith(setupPending: true)],
+        ),
+      )..failSave = true;
+      await tester.pumpWidget(_app(accountNotifier: () => account));
+      await tester.pumpAndSettle();
+      await _revealSecret(tester);
+      await tester.tap(find.byKey(const ValueKey('mobile_seed_backed_up')));
+      await tester.pump();
+      expect(find.text('abandon'), findsOneWidget);
+      expect(account.state.requireValue.accounts.first.setupPending, isTrue);
+      await tester.pump(const Duration(seconds: 5));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'compact backup reveal at 200 percent keeps the completion action visible',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 568);
+      addTearDown(tester.view.resetPhysicalSize);
+      final account = _FakeAccountNotifier(
+        _accountState.copyWith(
+          accounts: [_accountState.accounts.first.copyWith(setupPending: true)],
+        ),
+      );
+      await tester.pumpWidget(
+        _app(accountNotifier: () => account, textScaler: TextScaler.linear(2)),
+      );
+      await tester.pumpAndSettle();
+      await _revealSecret(tester);
+      await tester.pumpAndSettle();
+      final action = find.byKey(const ValueKey('mobile_seed_backed_up'));
+      final bounds = tester.getRect(action);
+      expect(bounds.bottom, lessThanOrEqualTo(568));
+      expect(bounds.top, greaterThan(0));
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('confirm gate uses the shared passcode layout', (tester) async {
     await tester.pumpWidget(_app());

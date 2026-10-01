@@ -44,6 +44,17 @@ class AccountInfo {
   final String profilePictureId;
   final String? walletLinkSourceAccountUuid;
 
+  /// Whether this account still needs to back up its secret passphrase.
+  final bool setupPending;
+
+  /// Keeps the Home backup prompt hidden until this UTC instant. The backup
+  /// itself remains incomplete while this is set.
+  final DateTime? backupReminderSnoozedUntilUtc;
+
+  /// Number of times the backup prompt was deferred. Three represents the
+  /// third and every later deferral so the reminder cadence stays bounded.
+  final int backupReminderSnoozeCount;
+
   const AccountInfo({
     required this.uuid,
     required this.name,
@@ -59,6 +70,9 @@ class AccountInfo {
     this.isSeedAnchor = false,
     this.profilePictureId = kDefaultProfilePictureId,
     this.walletLinkSourceAccountUuid,
+    this.setupPending = false,
+    this.backupReminderSnoozedUntilUtc,
+    this.backupReminderSnoozeCount = 0,
   }) : hardwareSignerKind =
            hardwareSignerKind ??
            (isHardware ? HardwareSignerKind.keystone : null);
@@ -82,6 +96,10 @@ class AccountInfo {
     String? ledgerDeviceModel,
     String? profilePictureId,
     String? walletLinkSourceAccountUuid,
+    bool? setupPending,
+    DateTime? backupReminderSnoozedUntilUtc,
+    bool clearBackupReminderSnooze = false,
+    int? backupReminderSnoozeCount,
   }) => AccountInfo(
     uuid: uuid,
     name: name ?? this.name,
@@ -98,6 +116,13 @@ class AccountInfo {
     profilePictureId: profilePictureId ?? this.profilePictureId,
     walletLinkSourceAccountUuid:
         walletLinkSourceAccountUuid ?? this.walletLinkSourceAccountUuid,
+    setupPending: setupPending ?? this.setupPending,
+    backupReminderSnoozedUntilUtc: clearBackupReminderSnooze
+        ? null
+        : backupReminderSnoozedUntilUtc ?? this.backupReminderSnoozedUntilUtc,
+    backupReminderSnoozeCount: clearBackupReminderSnooze
+        ? 0
+        : backupReminderSnoozeCount ?? this.backupReminderSnoozeCount,
   );
 
   Map<String, dynamic> toJson() => {
@@ -115,6 +140,11 @@ class AccountInfo {
     'isSeedAnchor': isSeedAnchor,
     'profilePictureId': profilePictureId,
     'walletLinkSourceAccountUuid': walletLinkSourceAccountUuid,
+    if (setupPending) 'setupPending': true,
+    if (backupReminderSnoozedUntilUtc case final snoozedUntil?)
+      'backupReminderSnoozedUntilUtc': snoozedUntil.toUtc().toIso8601String(),
+    if (backupReminderSnoozeCount > 0)
+      'backupReminderSnoozeCount': backupReminderSnoozeCount,
   };
 
   factory AccountInfo.fromJson(Map<String, dynamic> json) {
@@ -148,8 +178,35 @@ class AccountInfo {
       walletLinkSourceAccountUuid: _normalizedOptionalString(
         json['walletLinkSourceAccountUuid'],
       ),
+      setupPending: json['setupPending'] == true,
+      backupReminderSnoozedUntilUtc: _dateTimeUtcFromJson(
+        json['backupReminderSnoozedUntilUtc'],
+      ),
+      backupReminderSnoozeCount: _backupReminderSnoozeCountFromJson(
+        json['backupReminderSnoozeCount'],
+      ),
     );
   }
+}
+
+const kBackupReminderFirstDelay = Duration(days: 2);
+const kBackupReminderSecondDelay = Duration(days: 14);
+const kBackupReminderLaterDelay = Duration(days: 30);
+
+Duration backupReminderDelayForCount(int count) => switch (count) {
+  <= 1 => kBackupReminderFirstDelay,
+  2 => kBackupReminderSecondDelay,
+  _ => kBackupReminderLaterDelay,
+};
+
+DateTime? _dateTimeUtcFromJson(Object? value) {
+  if (value is! String) return null;
+  return DateTime.tryParse(value)?.toUtc();
+}
+
+int _backupReminderSnoozeCountFromJson(Object? value) {
+  if (value is! int) return 0;
+  return value.clamp(0, 3).toInt();
 }
 
 String? _normalizedOptionalString(Object? value) {

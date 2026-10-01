@@ -31,8 +31,10 @@ import '../../../../services/biometric_unlock.dart';
 import '../../../onboarding/mobile/mobile_passcode_screen.dart'
     show kMobilePasscodeLength;
 import '../../../onboarding/mobile/passcode_widgets.dart';
+import '../../../onboarding/mobile/mobile_secret_passphrase_screen.dart'
+    show SecretPassphraseRevealWarningCard;
 
-enum _SeedStage { confirmAccess, reveal }
+enum _SeedStage { intro, confirmAccess, reveal }
 
 /// Settings → Secret Passphrase — Figma `Confirm Access` / `Secret` /
 /// `If they try to screenshot` (4494:87180 / 4494:88388 / 4494:91643).
@@ -42,6 +44,7 @@ enum _SeedStage { confirmAccess, reveal }
 class MobileSeedPhraseScreen extends ConsumerStatefulWidget {
   const MobileSeedPhraseScreen({
     this.accountUuid,
+    this.showBackupIntro = false,
     this.screenshotStream,
     this.privacyOverlayController,
     this.loadBirthday = true,
@@ -51,6 +54,9 @@ class MobileSeedPhraseScreen extends ConsumerStatefulWidget {
   });
 
   final String? accountUuid;
+
+  /// Home backup entry opens on the warning before confirming access.
+  final bool showBackupIntro;
 
   /// Test seam — production listens to the platform screenshot events.
   @visibleForTesting
@@ -88,6 +94,8 @@ class _MobileSeedPhraseScreenState
   int? _birthdayBlockTime;
   bool _birthdayLoading = false;
   int _birthdayLoadGeneration = 0;
+  bool _markingBackedUp = false;
+  bool _snoozingBackup = false;
 
   StreamSubscription<void>? _screenshotSub;
   bool _screenshotSheetShowing = false;
@@ -100,6 +108,9 @@ class _MobileSeedPhraseScreenState
   @override
   void initState() {
     super.initState();
+    _stage = widget.showBackupIntro
+        ? _SeedStage.intro
+        : _SeedStage.confirmAccess;
     _ownsPrivacyController = widget.privacyOverlayController == null;
     _privacyController =
         widget.privacyOverlayController ??
@@ -474,10 +485,17 @@ class _MobileSeedPhraseScreenState
                   title: _stage == _SeedStage.confirmAccess
                       ? ''
                       : 'Secret Passphrase',
-                  onBack: () => context.pop(),
+                  onBack: () {
+                    if (context.canPop()) {
+                      context.pop();
+                    } else {
+                      context.go('/home');
+                    }
+                  },
                 ),
                 Expanded(
                   child: switch (_stage) {
+                    _SeedStage.intro => _buildIntro(),
                     _SeedStage.confirmAccess => _buildGate(colors),
                     _SeedStage.reveal => _buildReveal(colors),
                   },
@@ -487,6 +505,66 @@ class _MobileSeedPhraseScreenState
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildIntro() {
+    final account = _targetAccount(ref.watch(accountProvider).value);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.sm,
+              AppSpacing.s,
+              AppSpacing.sm,
+              AppSpacing.sm,
+            ),
+            children: const [SecretPassphraseRevealWarningCard()],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.all(AppSpacing.sm),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              AppButton(
+                key: const ValueKey('mobile_seed_backup_intro_continue'),
+                onPressed: _snoozingBackup
+                    ? null
+                    : () {
+                        setState(() => _stage = _SeedStage.confirmAccess);
+                        unawaited(_tryBiometricGate());
+                      },
+                size: AppButtonSize.large,
+                expand: true,
+                growWithContent: true,
+                constrainContent: true,
+                child: const Text('Continue', textAlign: TextAlign.center),
+              ),
+              if (account != null && account.setupPending) ...[
+                const SizedBox(height: AppSpacing.xs),
+                AppButton(
+                  key: const ValueKey('mobile_seed_backup_remind_later'),
+                  variant: AppButtonVariant.ghost,
+                  onPressed: _snoozingBackup
+                      ? null
+                      : () => unawaited(_snoozeBackup(account.uuid)),
+                  size: AppButtonSize.large,
+                  expand: true,
+                  growWithContent: true,
+                  constrainContent: true,
+                  child: const Text(
+                    'Remind me later',
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -610,7 +688,12 @@ class _MobileSeedPhraseScreenState
 
   Widget _buildReveal(AppColors colors) {
     final words = _mnemonic?.split(' ') ?? const <String>[];
-    return SingleChildScrollView(
+    final account = _targetAccount(ref.watch(accountProvider).value);
+    final showBackupAction =
+        _revealError == null &&
+        account != null &&
+        (account.setupPending || _markingBackedUp);
+    final content = SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.sm,
         AppSpacing.s,
@@ -723,6 +806,71 @@ class _MobileSeedPhraseScreenState
         ],
       ),
     );
+    return Column(
+      children: [
+        Expanded(child: content),
+        if (showBackupAction)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.sm,
+              AppSpacing.s,
+              AppSpacing.sm,
+              AppSpacing.sm,
+            ),
+            child: AppButton(
+              key: const ValueKey('mobile_seed_backed_up'),
+              onPressed: _markingBackedUp
+                  ? null
+                  : () => _markBackedUp(account.uuid),
+              size: AppButtonSize.large,
+              expand: true,
+              growWithContent: true,
+              constrainContent: true,
+              child: const Text(
+                'I’ve written it down',
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _markBackedUp(String accountUuid) async {
+    setState(() => _markingBackedUp = true);
+    try {
+      await ref.read(accountProvider.notifier).markBackedUp(accountUuid);
+    } catch (error) {
+      log('MobileSeedPhrase: marking backed up failed: $error');
+      if (mounted) {
+        showAppToast(context, 'Couldn’t save that. Try again.');
+        setState(() => _markingBackedUp = false);
+      }
+      return;
+    }
+    if (!mounted) return;
+    if (widget.showBackupIntro || !context.canPop()) {
+      context.go('/home');
+    } else {
+      context.pop();
+    }
+  }
+
+  Future<void> _snoozeBackup(String accountUuid) async {
+    setState(() => _snoozingBackup = true);
+    try {
+      await ref
+          .read(accountProvider.notifier)
+          .snoozeBackupReminder(accountUuid);
+    } catch (error) {
+      log('MobileSeedPhrase: snoozing backup failed: $error');
+      if (mounted) {
+        showAppToast(context, 'Couldn’t save that. Try again.');
+        setState(() => _snoozingBackup = false);
+      }
+      return;
+    }
+    if (mounted) context.go('/home');
   }
 }
 

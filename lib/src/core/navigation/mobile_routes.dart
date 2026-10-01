@@ -111,6 +111,16 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
     // match the desktop routes for the shared redirect guard and deep
     // links.
     GoRoute(
+      path: '/setup/backup',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: MobileSeedPhraseScreen(
+          accountUuid: state.extra is String ? state.extra as String : null,
+          showBackupIntro: true,
+        ),
+      ),
+    ),
+    GoRoute(
       path: '/settings/seed-phrase',
       pageBuilder: (context, state) => CupertinoPage(
         key: state.pageKey,
