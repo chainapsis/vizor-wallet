@@ -42,7 +42,7 @@ use zcash_primitives::transaction::{
     TxVersion,
 };
 use zcash_protocol::{
-    consensus::{BlockHeight, NetworkConstants, NetworkType, NetworkUpgrade, Parameters},
+    consensus::{BlockHeight, BranchId, NetworkConstants, NetworkType, NetworkUpgrade, Parameters},
     memo::MemoBytes,
     value::Zatoshis,
 };
@@ -178,6 +178,13 @@ fn run_prepare_fixture(config: Config) -> Result<(), String> {
     let db_path = config.db_path.ok_or_else(usage)?;
     let pczt_path = config.pczt_path.ok_or_else(usage)?;
     let metadata_path = config.metadata_path.ok_or_else(usage)?;
+    // The pre-Ironwood fixtures must use a branch ID the pinned Ledger app knows.
+    let fixture_branch = BranchId::for_height(&PreIronwoodMainNetwork, 100.into());
+    if fixture_branch != BranchId::Nu6_2 {
+        return Err(format!(
+            "Pre-Ironwood Ledger fixtures must target NU6.2, not {fixture_branch:?}"
+        ));
+    }
     let client = SpeculosClient::new(&config.api_url)?;
     client.require_supported_zcash_app()?;
     let (export, automated_review) =
@@ -539,10 +546,23 @@ impl Parameters for PreIronwoodMainNetwork {
         NetworkType::Main
     }
 
+    /// Every upgrade through NU6.2 is active, so the fixture is a V5 transaction
+    /// under the NU6.2 branch ID that Ledger Zcash 3.9.4 accepts. NU6.3 and NU7
+    /// stay inactive: Zakura's protocol crate defines NU7 unconditionally, and
+    /// a wildcard here would make the fixture target an NU7 branch ID that no
+    /// Ledger app recognizes.
     fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
         match nu {
-            NetworkUpgrade::Nu6_3 => None,
-            _ => Some(BlockHeight::from_u32(1)),
+            NetworkUpgrade::Nu6_3 | NetworkUpgrade::Nu7 => None,
+            NetworkUpgrade::Overwinter
+            | NetworkUpgrade::Sapling
+            | NetworkUpgrade::Blossom
+            | NetworkUpgrade::Heartwood
+            | NetworkUpgrade::Canopy
+            | NetworkUpgrade::Nu5
+            | NetworkUpgrade::Nu6
+            | NetworkUpgrade::Nu6_1
+            | NetworkUpgrade::Nu6_2 => Some(BlockHeight::from_u32(1)),
         }
     }
 }
