@@ -10,6 +10,7 @@
 //!   B external:  0 H05 input, 1 H08, 2 H12 reorg source, 3 H10, 4-5 H12,
 //!                6 H01, 7 H02, 8 H09, 9 H05 change
 //!   C external:  0 H02, 1-2 H05;  D external: 0 H11 swap deposit
+//!   F external:  0.. one per shielded funding note (Z -> F, then S -> A0 Orchard)
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -38,6 +39,9 @@ pub struct Ctx {
     pub b: Party,
     pub c: Party,
     pub d: Party,
+    /// Harness-only funder: Z pays it transparently and S moves its coins
+    /// into Alice's Orchard notes (zcashd never touches Orchard).
+    pub f: Party,
     pub r: VizorWallet,
     enabled: BTreeSet<String>,
     timings: Vec<(String, Duration)>,
@@ -76,6 +80,7 @@ impl Ctx {
         let b = Party::generate("B", "bob");
         let c = Party::generate("C", "carol");
         let d = Party::generate("D", "swap-provider");
+        let f = Party::generate("F", "harness");
         let mut suite = Suite::new();
         for (party, external, internal, ephemeral) in [
             (&a0, 30, 20, 20),
@@ -83,6 +88,7 @@ impl Ctx {
             (&b, 12, 0, 0),
             (&c, 6, 0, 0),
             (&d, 3, 0, 0),
+            (&f, 12, 0, 0),
         ] {
             suite.own(party, Scope::External, 0..external);
             suite.own(party, Scope::Internal, 0..internal);
@@ -110,6 +116,7 @@ impl Ctx {
             b,
             c,
             d,
+            f,
             r,
             enabled,
             timings: Vec::new(),
@@ -308,25 +315,39 @@ impl Ctx {
             self.mine(1);
         }
         // Shielded notes for the V-built cases: several, so consecutive V
-        // sends do not wait on change confirmations.
+        // sends do not wait on change confirmations. Z pays the funder F
+        // transparently; S moves each coin into an Orchard note for A0.
         let shielded_cases: Vec<&str> = ["H06", "H07", "H08", "H10", "H11", "H11", "H12"]
             .into_iter()
             .filter(|c| self.on(c))
             .collect();
-        let ua = self.r.unified_address("A0");
-        for chunk in shielded_cases.chunks(5) {
-            for case in chunk {
-                let txid = self.faucet.pay(&self.chain, &[(&ua, 3 * ZEC)]);
-                self.suite.tx(
-                    case,
-                    &txid,
-                    "Z",
-                    "funding_shielded",
-                    shielded_net("A0", 3 * ZEC as i64),
-                );
-            }
-            self.mine(1);
+        let mut coins = Vec::new();
+        for (index, case) in shielded_cases.iter().enumerate() {
+            let address = self.f.address(Scope::External, index as u32);
+            let txid = self
+                .faucet
+                .pay(&self.chain, &[(&address, 3 * ZEC + ZEC / 1000)]);
+            coins.push((*case, index as u32, txid, address));
         }
+        self.mine(1);
+        let orchard = signer::orchard_receiver(&self.r.unified_address("A0"));
+        for (case, index, funding, address) in coins {
+            let coin = coin_for(&self.chain, &funding, &address);
+            let built = signer::send(
+                &self.chain,
+                &[(coin, &self.f, Scope::External, index)],
+                &[Out::Orchard(orchard, 3 * ZEC)],
+                Some(&self.f.taddr(Scope::External, index)),
+            );
+            self.suite.tx(
+                case,
+                &built.txid,
+                "S",
+                "funding_shielded",
+                shielded_net("A0", 3 * ZEC as i64),
+            );
+        }
+        self.mine(1);
         // External notes need six confirmations before Vizor spends them.
         self.mine(6);
         self.settle_r();

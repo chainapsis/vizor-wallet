@@ -28,11 +28,11 @@ development run; anything short of H01–H13 fails the gate by design.
 | Piece | Where | Role |
 |---|---|---|
 | Chain | `chain.rs` | Isolated zcashd + lightwalletd, mining to chosen addresses, JSON-RPC |
-| Z | `faucet.rs` | zcashd's wallet as faucet (`z_sendmany` from shielded coinbase) |
+| Z | `faucet.rs` | zcashd's wallet as faucet (`z_sendmany` from shielded coinbase, transparent recipients only; zcashd's wallet asserts on Orchard anchors under this load, so it never touches Orchard) |
 | S | `signer.rs`, `provers.rs` | Harness transaction builder; signs with runtime-derived transparent keys; broadcasts through lightwalletd |
 | V | `vizor.rs` | Vizor's production send / shield / TEX / gift-card paths via `api::*` |
 | F | `proxy.rs` | lightwalletd proxy: records every request and its transparent subjects; injects faults |
-| Parties | `keys.rs` | A0/A1 (Alice's two seeds, in Vizor), B, C, D (harness-only keys) |
+| Parties | `keys.rs` | A0/A1 (Alice's two seeds, in Vizor), B, C, D (harness-only keys), F (harness funder: Z pays it, S turns its coins into Alice's Orchard notes) |
 | Cases | `cases.rs` | The H01–H13 timeline: builds chain facts, authors intent and shielded attribution |
 | Bookkeeping | `report.rs` | Ownership map, case manifest, observations, oracle bridge, Flutter handoff |
 | Oracle | `scripts/e2e/transparent_history_oracle.py` | Chain facts and owned ledger from zcashd only; compare; gate; manifest |
