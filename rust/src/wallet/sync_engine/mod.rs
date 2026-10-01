@@ -6497,3 +6497,6 @@ fn recovery_status_for(
         service_state,
     })
 }
+
+#[cfg(test)]
+mod birthday_rpc_tests;
