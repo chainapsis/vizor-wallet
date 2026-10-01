@@ -948,8 +948,10 @@ impl Ctx {
         std::fs::write(
             self.suite.out.join("chain.env"),
             format!(
-                "TH_CHAIN_NODE={}\nTH_CHAIN_LWD={}\n",
-                self.chain.node, self.chain.lwd
+                "TH_CHAIN_NODE={}\nTH_CHAIN_LWD={}\nTH_CHAIN_DIR={}\n",
+                self.chain.node,
+                self.chain.lwd,
+                self.chain.data_dir().display()
             ),
         )
         .unwrap();
