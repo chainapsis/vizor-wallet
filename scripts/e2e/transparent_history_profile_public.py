@@ -518,6 +518,7 @@ def ui_rows(context):
                 failed = bool(row.get("expired_unmined"))
                 pool = _first(row.get("display_pool"))
                 fee = _first(row.get("fee"))
+                fees = row.get("fee") if isinstance(row.get("fee"), list) else [fee]
                 in_every_set = all(
                     any(r.get("tx_kind") == kind for r in rows_) for rows_ in row_sets
                 )
@@ -542,6 +543,8 @@ def ui_rows(context):
                         else ("In progress" if pending else "Completed"),
                         block_time=facts["block_time"],
                         fee_known=fee if row.get("fee_state") == "known" else None,
+                        # Every fee the spec accepts (e.g. a grouped TEX fee).
+                        fee_values=fees if row.get("fee_state") == "known" else [],
                     )
                 )
     return rows

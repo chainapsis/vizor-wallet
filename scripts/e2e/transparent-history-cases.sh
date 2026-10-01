@@ -124,12 +124,15 @@ if [[ "$FLUTTER_LAYERS" == "mobile" || "$FLUTTER_LAYERS" == "both" ]]; then
   UDID="$(pick_simulator)"
   started=$(date +%s)
   set +e
-  E2E_LIGHTWALLETD_URL="$TH_LWD_URL" run_mobile_e2e \
-    integration_test/regtest_mobile_transparent_history_cases_test.dart "$UDID" \
-    "--dart-define=ZCASH_E2E_ZCASHD_RPC_URL=$TH_RPC_URL" \
-    "--dart-define=TH_A0_MNEMONIC=$TH_A0_MNEMONIC" \
-    "--dart-define=TH_A1_MNEMONIC=$TH_A1_MNEMONIC" \
-    "--dart-define=TH_EXPECTED_UI=$TH_EXPECTED_UI" 2>&1 | tee "$OUT/flutter-mobile.log"
+  (
+    cd "$ROOT"
+    E2E_LIGHTWALLETD_URL="$TH_LWD_URL" run_mobile_e2e \
+      integration_test/regtest_mobile_transparent_history_cases_test.dart "$UDID" \
+      "--dart-define=ZCASH_E2E_ZCASHD_RPC_URL=$TH_RPC_URL" \
+      "--dart-define=TH_A0_MNEMONIC=$TH_A0_MNEMONIC" \
+      "--dart-define=TH_A1_MNEMONIC=$TH_A1_MNEMONIC" \
+      "--dart-define=TH_EXPECTED_UI=$TH_EXPECTED_UI"
+  ) 2>&1 | tee "$OUT/flutter-mobile.log"
   status=${PIPESTATUS[0]}
   set -e
   echo "flutter_mobile_seconds=$(( $(date +%s) - started )) status=$status" | tee -a "$OUT/runtime.txt"
