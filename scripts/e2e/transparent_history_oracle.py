@@ -298,6 +298,61 @@ def owned_ledger(chain, ownership, account):
     ]
 
 
+def mempool_state(chain, ownership, account):
+    """The account's pending state from zcashd's mempool at this moment:
+    outputs that mempool transactions pay to the account's scripts, and every
+    outpoint a mempool transaction spends."""
+    scripts = {
+        s for s, e in ownership["scripts"].items() if e["account"] == account
+    }
+    receives = []
+    spends = []
+    for txid in sorted(chain.mempool):
+        tx = chain.raw(txid)
+        if tx is None:
+            continue
+        for vout in tx["vout"]:
+            if vout["scriptPubKey"]["hex"] in scripts:
+                receives.append({"txid": txid, "index": vout["n"], "value": vout["valueZat"]})
+        for vin in tx["vin"]:
+            if "coinbase" not in vin:
+                spends.append({"txid": vin["txid"], "index": vin["vout"], "spent_by": txid})
+    return {"receives": receives, "spends": spends}
+
+
+def expected_transparent_balance(exp, view):
+    """The transparent balance the wallet should report, from the chain plus
+    the mempool.
+
+    Mined UTXOs, less any a mempool transaction spends, plus unspent outputs
+    of mempool transactions paying the account. Mempool-only facts count where
+    the wallet recorded them: public sync learns an unmined transaction only by
+    building it or by having seen it mined before a reorg, so a pending
+    transaction the wallet never saw is not required. Every pending fact the
+    wallet does count must be in the mempool now."""
+    pending = exp.get("mempool") or {"receives": [], "spends": []}
+    mempool_spender = {(s["txid"], s["index"]): s["spent_by"] for s in pending["spends"]}
+    mined_spent = {(e["txid"], e["index"]) for e in exp["ledger"] if e["spent_by"]}
+    recorded = {(e["txid"], e["index"]): e for e in view.get("ledger", [])}
+
+    def recorded_spend(key):
+        spender = mempool_spender.get(key)
+        return spender is not None and spender in recorded.get(key, {}).get("all_spenders", [])
+
+    total = sum(
+        e["value"] for e in exp["utxos"] if not recorded_spend((e["txid"], e["index"]))
+    )
+    for receive in pending["receives"]:
+        key = (receive["txid"], receive["index"])
+        entry = recorded.get(key)
+        if entry is None or entry.get("receive_mined_height") is not None:
+            continue
+        if key in mined_spent or recorded_spend(key):
+            continue
+        total += receive["value"]
+    return total
+
+
 def derive(args):
     rpc = Rpc(args.rpc)
     ownership = load(args.ownership)
@@ -322,6 +377,7 @@ def derive(args):
             "ledger": ledger,
             "utxos": utxos,
             "transparent_balance": sum(e["value"] for e in utxos),
+            "mempool": mempool_state(chain, ownership, account),
             "active_scripts": active,
         }
     # Every chain tx touching Alice's scripts, and its direct parents: the
@@ -793,7 +849,8 @@ def account_problems(check, view, expected, observed, views):
         if balance is None:
             problems.append((f"balance unavailable: {view.get('balance_error')}", []))
         else:
-            if balance["transparent"] != exp["transparent_balance"]:
+            want_balance = expected_transparent_balance(exp, view)
+            if balance["transparent"] != want_balance:
                 # Attribute to the outputs the wallet and the chain disagree
                 # on: wallet-unspent (mined or not) versus chain UTXOs.
                 wallet_unspent = {
@@ -803,8 +860,8 @@ def account_problems(check, view, expected, observed, views):
                 differing = sorted({t for t, _ in wallet_unspent ^ chain_unspent})
                 problems.append(
                     (
-                        f"transparent balance {balance['transparent']} != chain "
-                        f"{exp['transparent_balance']}",
+                        f"transparent balance {balance['transparent']} != chain and "
+                        f"mempool {want_balance}",
                         differing or [e["txid"] for e in exp["utxos"]],
                     )
                 )
