@@ -311,7 +311,7 @@ void main() {
             _FakeAccountNotifier(_accountState, longPassphrase),
         birthdayHeightLoader: (_) async => 3000000,
         birthdayBlockTimeLoader: (_) async =>
-            DateTime.utc(2026, 9, 1).millisecondsSinceEpoch ~/ 1000,
+            DateTime(2026, 9, 1).millisecondsSinceEpoch ~/ 1000,
       ),
     );
     await _revealSecret(tester);
