@@ -165,6 +165,19 @@ Android and Dart: `--dart-define=VIZOR_DEEPLINK_BASE_URL` (default
   Dart's `classifyIncomingLink`, which drops unknown paths on the origin
   silently.
 
+## Mainnet Block-Time Table
+
+On mainnet, wallet birthday conversions (import date to height, seed-phrase
+screen height to date) never send lightwalletd a wallet-derived height. They
+read `rust/src/wallet/block_times/mainnet_data.rs`, a generated table of
+header times every 1,000 blocks. The only request left is the chain tip.
+
+- The weekly `Update mainnet block times` workflow appends entries after two
+  endpoints agree, and opens a PR for a person to merge.
+- Bootstrap or refresh before a release cut with
+  `scripts/update-mainnet-block-times.py` (needs `grpcurl`); validate offline
+  with `--check`. Never edit the data file by hand.
+
 ## Editing Figma
 
 When the user explicitly asks you to modify a Figma file or design, read

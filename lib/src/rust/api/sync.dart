@@ -976,6 +976,20 @@ Future<BigInt> getExportBirthdayHeight({
   accountUuid: accountUuid,
 );
 
+/// Header time of block `height`, answered without any network request:
+/// the scanned block's time, or on mainnet an estimate from the compiled-in
+/// block-time table. `None` means no local answer exists (off mainnet, before
+/// the block is scanned); callers may then fall back to [`get_block_time`].
+Future<BigInt?> getLocalBlockTime({
+  required String dbPath,
+  required String network,
+  required BigInt height,
+}) => RustLib.instance.api.crateApiSyncGetLocalBlockTime(
+  dbPath: dbPath,
+  network: network,
+  height: height,
+);
+
 Future<BigInt> getBlockTime({
   required String lightwalletdUrl,
   required BigInt height,

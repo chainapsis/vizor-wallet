@@ -346,6 +346,16 @@ class _MobileSeedPhraseScreenState
     final loader = widget.birthdayBlockTimeLoader;
     if (loader != null) return loader(height);
 
+    // Local first: the scanned block or, on mainnet, the compiled-in table.
+    // Only a network without a local answer asks lightwalletd for the height.
+    final dbPath = await getWalletDbPath();
+    final localTime = await rust_sync.getLocalBlockTime(
+      dbPath: dbPath,
+      network: ref.read(rpcEndpointProvider).networkName,
+      height: BigInt.from(height),
+    );
+    if (localTime != null) return localTime.toInt();
+
     final blockTime = await ref
         .read(rpcEndpointFailoverProvider.notifier)
         .runWithEndpointFallback(

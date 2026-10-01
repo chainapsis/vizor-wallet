@@ -31,6 +31,7 @@ use zcash_protocol::{
     memo::{Memo, MemoBytes},
 };
 
+use crate::wallet::block_times::{self, BlockTimePoint};
 use crate::wallet::db::with_wallet_db_write_lock;
 use crate::wallet::keys::parse_account_uuid;
 use crate::wallet::network::WalletNetwork;
@@ -701,6 +702,60 @@ pub(crate) fn get_export_birthday_anchor(
     get_account_birthday_height(db_path, account_uuid)?
         .map(|block_height| ExportBirthdayAnchor { block_height })
         .ok_or_else(|| "Account birthday not found".to_string())
+}
+
+/// Header time of block `height`, from local data only.
+///
+/// Returns the exact time when the wallet has scanned that block. Otherwise,
+/// where [`block_times::table_covers`] the network (real mainnet), estimates
+/// it from the compiled-in block-time table, anchored past the table by the
+/// wallet's highest scanned block. Returns `None` elsewhere, including Ironwood
+/// masquerade builds, when the block is not stored locally.
+///
+/// Callers pass the height they already display, so the returned time always
+/// belongs to that height even if the wallet's data changes in between.
+pub(crate) fn get_local_block_time(
+    db_path: &str,
+    network: WalletNetwork,
+    height: u64,
+) -> Result<Option<u64>, String> {
+    let conn = open_readonly_conn(db_path)?;
+    let exact = conn
+        .query_row(
+            "SELECT time FROM blocks WHERE height = ?1",
+            [height],
+            |row| row.get::<_, Option<u32>>(0),
+        )
+        .optional()
+        .map_err(|e| format!("Block time query error: {e}"))?
+        .flatten();
+    if let Some(time) = exact {
+        return Ok(Some(u64::from(time)));
+    }
+    if !block_times::table_covers(network) {
+        return Ok(None);
+    }
+
+    let highest_scanned = conn
+        .query_row(
+            "SELECT height, time FROM blocks
+             WHERE time IS NOT NULL
+             ORDER BY height DESC
+             LIMIT 1",
+            [],
+            |row| {
+                Ok(BlockTimePoint {
+                    height: row.get(0)?,
+                    time: row.get(1)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(|e| format!("Highest scanned block query error: {e}"))?;
+    Ok(Some(u64::from(block_times::mainnet_time_for_height(
+        height,
+        highest_scanned,
+    ))))
 }
 
 fn get_account_birthday_height(db_path: &str, account_uuid: &str) -> Result<Option<u64>, String> {
@@ -3203,6 +3258,119 @@ mod tests {
             get_export_birthday_anchor(db.path().to_str().unwrap(), &account.to_string()).unwrap();
 
         assert_eq!(got.block_height, 333_100);
+    }
+
+    fn add_blocks_table(db: &NamedTempFile, rows: &[(u32, u32)]) {
+        let conn = rusqlite::Connection::open(db.path()).unwrap();
+        conn.execute(
+            "CREATE TABLE blocks (height INTEGER PRIMARY KEY, time INTEGER)",
+            [],
+        )
+        .unwrap();
+        for (height, time) in rows {
+            conn.execute(
+                "INSERT INTO blocks (height, time) VALUES (?1, ?2)",
+                rusqlite::params![height, time],
+            )
+            .unwrap();
+        }
+    }
+
+    #[test]
+    fn local_block_time_uses_the_scanned_block_exactly() {
+        let db = fresh_history_db();
+        add_blocks_table(&db, &[(2_000_000, 1_677_600_000)]);
+
+        for network in [WalletNetwork::Main, WalletNetwork::Test] {
+            let got =
+                get_local_block_time(db.path().to_str().unwrap(), network, 2_000_000).unwrap();
+            assert_eq!(got, Some(1_677_600_000));
+        }
+    }
+
+    #[test]
+    fn local_block_time_answers_for_the_requested_height_only() {
+        // The export anchor would now resolve to the mined transaction at
+        // 2,500,000, but the caller asks about the height it already shows.
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        set_account_birthday(&db, account, 2_000_000);
+        insert_history_tx(
+            &db,
+            account,
+            &fake_txid(0x93),
+            Some(2_500_000),
+            0,
+            None,
+            1,
+            0,
+            1,
+            false,
+            None,
+        );
+        add_blocks_table(
+            &db,
+            &[(2_000_000, 1_677_600_000), (2_500_000, 1_715_296_781)],
+        );
+
+        let got = get_local_block_time(db.path().to_str().unwrap(), WalletNetwork::Main, 2_000_000)
+            .unwrap();
+        assert_eq!(got, Some(1_677_600_000));
+    }
+
+    #[cfg(not(ironwood_masquerade))]
+    #[test]
+    fn local_block_time_estimates_unscanned_mainnet_blocks() {
+        let db = fresh_history_db();
+        add_blocks_table(&db, &[]);
+        let path = db.path().to_str().unwrap();
+
+        let got = get_local_block_time(path, WalletNetwork::Main, 2_000_000)
+            .unwrap()
+            .unwrap();
+        // Mainnet block 2,000,000 was mined at 1,677,602,242.
+        assert!(got.abs_diff(1_677_602_242) <= 6 * 60 * 60, "{got}");
+
+        assert_eq!(
+            get_local_block_time(path, WalletNetwork::Test, 2_000_000).unwrap(),
+            None
+        );
+    }
+
+    #[cfg(ironwood_masquerade)]
+    #[test]
+    fn local_block_time_never_estimates_masquerade_chain_blocks() {
+        let db = fresh_history_db();
+        add_blocks_table(&db, &[(1_000, 1_790_000_000)]);
+        let path = db.path().to_str().unwrap();
+
+        // Unscanned heights fall back to the chain's own endpoint.
+        assert_eq!(
+            get_local_block_time(path, WalletNetwork::Main, 400).unwrap(),
+            None
+        );
+        // Scanned heights still answer exactly.
+        assert_eq!(
+            get_local_block_time(path, WalletNetwork::Main, 1_000).unwrap(),
+            Some(1_790_000_000)
+        );
+    }
+
+    #[cfg(not(ironwood_masquerade))]
+    #[test]
+    fn local_block_time_anchors_past_the_table_on_the_highest_scanned_block() {
+        let db = fresh_history_db();
+        add_blocks_table(&db, &[(900_000_100, 4_000_000_000)]);
+
+        let got = get_local_block_time(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Main,
+            900_000_000,
+        )
+        .unwrap()
+        .unwrap();
+        assert!(got < 4_000_000_000);
+        assert!(got > 3_999_000_000, "{got}");
     }
 
     /// Read `TxBase` from a synthetic `v_transactions` table.
