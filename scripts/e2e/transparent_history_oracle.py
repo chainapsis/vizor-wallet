@@ -929,6 +929,18 @@ def run_compare(expected, observed, mutate=None):
     return subprocess.run(command, capture_output=True, text=True).returncode
 
 
+def cells_status(cells):
+    """A case's status from its matrix cells, {variant: ["<checkpoint>:<pass|fail>"]}.
+
+    A checkpoint label may itself contain "fail" (h13_utxo_fail), so only the
+    status after the last colon is compared."""
+    if not cells:
+        return "not run"
+    if any(c.rsplit(":", 1)[1] == "fail" for cell in cells.values() for c in cell):
+        return "fail"
+    return "pass"
+
+
 def gate(args):
     out = args.out_dir
     cases = load(os.path.join(out, "cases.json"))
@@ -961,12 +973,7 @@ def gate(args):
     case_status = {}
     for case in required:
         cells = matrix.get(case, {})
-        if not cells:
-            case_status[case] = "not run"
-        elif any("fail" in c for cell in cells.values() for c in cell):
-            case_status[case] = "fail"
-        else:
-            case_status[case] = "pass"
+        case_status[case] = cells_status(cells)
     summary = {
         "cases": case_status,
         "matrix": matrix,

@@ -317,5 +317,16 @@ class AmountConstraint(unittest.TestCase):
         self.assertEqual(len(self.problems(2 * ZEC)), 1)
 
 
+class GateStatusTest(unittest.TestCase):
+    def test_a_checkpoint_named_fail_does_not_fail_the_case(self):
+        cells = {"N_cut": ["h13_cut:pass"], "N_utxo_fail": ["h13_utxo_fail:pass"]}
+        self.assertEqual(oracle.cells_status(cells), "pass")
+
+    def test_a_failed_checkpoint_fails_the_case(self):
+        cells = {"R": ["pending:pass", "final:fail"]}
+        self.assertEqual(oracle.cells_status(cells), "fail")
+        self.assertEqual(oracle.cells_status({}), "not run")
+
+
 if __name__ == "__main__":
     unittest.main()
