@@ -347,14 +347,16 @@ class SwapActivityTracker {
     required String accountUuid,
   }) {
     // An issued external deposit address needs automatic discovery even before
-    // the user claims a deposit. Outgoing ZEC needs tracking only after funds
-    // may have reached the network or the provider has observed a deposit.
-    // An unknown provider status does not establish that funds were never sent.
+    // the user claims a deposit. Outgoing ZEC needs tracking once a deposit
+    // transaction exists, because sync resubmits one whose first broadcast
+    // failed, or after the provider has observed a deposit. An unknown
+    // provider status does not establish that funds were never sent.
     return _isPersistableIntent(intent, accountUuid: accountUuid) &&
         !intent.status.isTerminal &&
         (intent.direction == SwapDirection.externalToZec ||
             intent.status == SwapIntentStatus.providerStatusUnknown ||
             intent.depositClaimedAt != null ||
+            (intent.depositTxHash?.trim().isNotEmpty ?? false) ||
             intent.hasConfirmedDepositEvidence ||
             intent.hasProviderObservedDepositEvidence);
   }

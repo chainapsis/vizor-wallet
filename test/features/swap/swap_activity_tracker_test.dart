@@ -6,37 +6,42 @@ import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dar
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_tracker.dart';
 
 void main() {
-  test('automatic refresh skips unsigned and unbroadcast ZEC deposits', () async {
-    final store = _MemorySwapActivityStore();
-    final provider = _StatusSwapProvider({});
-    final tracker = SwapActivityTracker(
-      activityStore: store,
-      swapProvider: provider,
-    );
-    final intents = [
-      _intent(id: 'unsigned', depositAddress: 'unsigned', depositTxHash: null),
-      _intent(
-        id: 'unbroadcast',
-        depositAddress: 'unbroadcast',
-      ).copyWith(broadcastStatus: SwapDepositBroadcastStatus.pendingBroadcast),
-    ];
-    await tracker.saveIntents(accountUuid: 'account-1', intents: intents);
-    final savesBefore = store.saveCount;
+  test(
+    'automatic refresh skips unsigned ZEC deposits but tracks created ones',
+    () async {
+      final store = _MemorySwapActivityStore();
+      final provider = _StatusSwapProvider({});
+      final tracker = SwapActivityTracker(
+        activityStore: store,
+        swapProvider: provider,
+      );
+      final intents = [
+        _intent(
+          id: 'unsigned',
+          depositAddress: 'unsigned',
+          depositTxHash: null,
+        ),
+        _intent(id: 'unbroadcast', depositAddress: 'unbroadcast').copyWith(
+          broadcastStatus: SwapDepositBroadcastStatus.pendingBroadcast,
+        ),
+      ];
+      await tracker.saveIntents(accountUuid: 'account-1', intents: intents);
 
-    final result = await tracker.refreshOpenIntents(
-      accountUuid: 'account-1',
-      currentIntents: intents,
-    );
-    expect(result.didRefresh, isFalse);
-    expect(provider.statusRequests, isEmpty);
-    expect(store.saveCount, savesBefore);
+      // Sync resubmits a created deposit whose first broadcast failed.
+      final result = await tracker.refreshOpenIntents(
+        accountUuid: 'account-1',
+        currentIntents: intents,
+      );
+      expect(result.didRefresh, isTrue);
+      expect(provider.statusRequests, ['unbroadcast']);
 
-    // Home/Activity's forced refresh still respects whether funds need tracking.
-    await SwapActivityStatusRefresher(
-      tracker: tracker,
-    ).refreshOpenActivities(accountUuid: 'account-1', force: true);
-    expect(provider.statusRequests, isEmpty);
-  });
+      provider.statusRequests.clear();
+      await SwapActivityStatusRefresher(
+        tracker: tracker,
+      ).refreshOpenActivities(accountUuid: 'account-1', force: true);
+      expect(provider.statusRequests, ['unbroadcast']);
+    },
+  );
 
   test(
     'automatic refresh discovers external deposits without a claim',
