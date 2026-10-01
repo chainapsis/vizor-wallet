@@ -1933,8 +1933,12 @@ class PaymentLinkService
     PaymentLinkClaimInspection inspection,
   ) async {
     await _claimWallet.cancelClaimSync(inspection.link);
+    // Locked storage cannot establish whether a saved card owns this wallet.
+    if (_ref.read(appSecurityProvider).requiresUnlock) return;
     // A saved card owns its cached wallet and must remain recoverable.
     if (await _receivedStore.find(inspection.link.address) != null) return;
+    // The app may lock while the saved-card lookup is awaiting storage.
+    if (_ref.read(appSecurityProvider).requiresUnlock) return;
     await _claimWallet.deleteDb(inspection.directory);
   }
 

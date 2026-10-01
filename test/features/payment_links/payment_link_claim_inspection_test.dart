@@ -295,6 +295,51 @@ void main() {
       );
     });
 
+    test('discard keeps a saved wallet while locked', () async {
+      final inspection = await service.inspectClaim(_link());
+      await container
+          .read(paymentLinkReceivedStoreProvider)
+          .saveReady(inspection.link);
+      final security =
+          container.read(appSecurityProvider.notifier)
+              as _SetupSecurityNotifier;
+      security.lockForTest();
+      receivedStorage.onRead = () async {
+        fail('Locked cleanup must not read saved-card storage.');
+      };
+
+      await service.discardClaimInspection(inspection);
+
+      expect(await File(inspection.dbPath).exists(), isTrue);
+      expect(api.cancelCalls, 1);
+    });
+
+    test('discard keeps a wallet if the app locks during lookup', () async {
+      final inspection = await service.inspectClaim(_link());
+      final security =
+          container.read(appSecurityProvider.notifier)
+              as _SetupSecurityNotifier;
+      final readStarted = Completer<void>();
+      final readResult = Completer<String?>();
+      receivedStorage.onRead = () {
+        readStarted.complete();
+        return readResult.future;
+      };
+
+      final cleanup = service.discardClaimInspection(inspection);
+      await readStarted.future;
+      security.lockForTest();
+      readResult.complete(null);
+      await cleanup;
+
+      expect(await File(inspection.dbPath).exists(), isTrue);
+      // A subsequent unlocked cleanup can still discard an unsaved wallet.
+      receivedStorage.onRead = null;
+      security.unlockForTest();
+      await service.discardClaimInspection(inspection);
+      expect(await inspection.directory.exists(), isFalse);
+    });
+
     test('a failed first inspection removes its temporary wallet', () async {
       api.failSync = true;
       await expectLater(service.inspectClaim(_link()), throwsStateError);
@@ -357,6 +402,11 @@ class _SetupSecurityNotifier extends AppSecurityNotifier {
     isPasswordConfigured: true,
     isUnlocked: false,
   );
+
+  void unlockForTest() => state = const AppSecurityState(
+    isPasswordConfigured: true,
+    isUnlocked: true,
+  );
 }
 
 class _RpcNotifier extends RpcEndpointNotifier {
@@ -387,12 +437,13 @@ class _MemoryRecoveryStorage implements PaymentLinkRecoveryStorage {
 
 class _MemoryReceivedStorage implements PaymentLinkReceivedStorage {
   String? value;
+  Future<String?> Function()? onRead;
 
   @override
   Future<void> delete() async => value = null;
 
   @override
-  Future<String?> read() async => value;
+  Future<String?> read() async => onRead == null ? value : await onRead!();
 
   @override
   Future<void> write(String nextValue) async => value = nextValue;
