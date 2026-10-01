@@ -1,5 +1,6 @@
-//! Build-specific API for the upgrade probe: account creation and transaction
-//! ingestion.
+//! `3442ab0c1` (the transparent ledger feature branch before it moved to
+//! wallet-libraries main) variant of `compat.rs`: its library refuses
+//! transparent stores on a handle without a transparent ledger mode.
 //!
 //! The probe is compiled against both the base tree and the current tree, so
 //! API that changed between them lives here. `test-db-upgrade.sh` replaces
@@ -54,8 +55,7 @@ pub fn import_hardware_account(
 }
 
 /// Stores `raw` through the build's library ingestion path, as sync and
-/// enhancement do; returns its txid. The handle is the one this base's own
-/// wallet code opens, unconfigured beyond what that base requires.
+/// enhancement do; returns its txid.
 pub fn store_transaction(db_path: &str, raw: &[u8], mined_height: u32) -> String {
     use rust_lib_zcash_wallet::wallet::network::WalletNetwork;
     use voting_crypto_deps::rand::rngs::OsRng;
@@ -65,8 +65,12 @@ pub fn store_transaction(db_path: &str, raw: &[u8], mined_height: u32) -> String
     use zcash_protocol::consensus::{BlockHeight, BranchId};
 
     let tx = Transaction::read(raw, BranchId::Sprout).expect("parse transaction");
+    // The handle mode that base's wallet code configures: `Public`.
     let mut db = WalletDb::for_path(db_path, WalletNetwork::Regtest, SystemClock, OsRng)
-        .expect("open wallet DB");
+        .expect("open wallet DB")
+        .with_transparent_ledger_mode(
+            zcash_client_backend::data_api::transparent_ledger::TransparentLedgerMode::Public,
+        );
     decrypt_and_store_transaction(
         &WalletNetwork::Regtest,
         &mut db,

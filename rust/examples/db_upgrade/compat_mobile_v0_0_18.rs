@@ -44,3 +44,26 @@ pub fn import_hardware_account(
     )
     .expect("import hardware account");
 }
+
+pub fn store_transaction(db_path: &str, raw: &[u8], mined_height: u32) -> String {
+    use rand::rngs::OsRng;
+    use rust_lib_zcash_wallet::wallet::network::WalletNetwork;
+    use zcash_client_backend::data_api::wallet::decrypt_and_store_transaction;
+    use zcash_client_sqlite::{util::SystemClock, WalletDb};
+    use zcash_primitives::transaction::Transaction;
+    use zcash_protocol::consensus::{BlockHeight, BranchId};
+
+    let tx = Transaction::read(raw, BranchId::Sprout).expect("parse transaction");
+    let mut db = WalletDb::for_path(db_path, WalletNetwork::Regtest, SystemClock, OsRng)
+        .expect("open wallet DB");
+    decrypt_and_store_transaction(
+        &WalletNetwork::Regtest,
+        &mut db,
+        &tx,
+        Some(BlockHeight::from_u32(mined_height)),
+    )
+    .expect("old build stores a wallet transaction");
+    let txid = tx.txid();
+    let bytes: &[u8; 32] = txid.as_ref();
+    hex::encode(bytes)
+}

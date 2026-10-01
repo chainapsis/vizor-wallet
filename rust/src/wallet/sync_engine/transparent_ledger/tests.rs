@@ -175,6 +175,8 @@ fn external(wallet: &Wallet, index: u32) -> TransparentAddress {
 
 fn receive(tag: u8, address: TransparentAddress, value: u64, height: u32) -> ReceiveEvent {
     ReceiveEvent {
+        // Fixture sources, like legacy recovery sources, carry no metadata.
+        metadata: None,
         outpoint: OutPoint::new([tag; 32], 0),
         address,
         value: Zatoshis::const_from_u64(value),
@@ -185,6 +187,7 @@ fn receive(tag: u8, address: TransparentAddress, value: u64, height: u32) -> Rec
 
 fn spend(tag: u8, of: &ReceiveEvent, height: u32) -> SpendEvent {
     SpendEvent {
+        metadata: None,
         spending_txid: TxId::from_bytes([tag; 32]),
         input_index: 0,
         prevout: of.outpoint.clone(),

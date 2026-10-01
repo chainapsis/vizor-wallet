@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Upgrade probe: create wallets with the build at <base-ref>, upgrade and verify
-# them with the current tree, then reopen them with the base build.
+# them with the current tree, hand them back to the base build through the
+# downgrade handover, let the base build read and write them (open-old, then
+# read-old in a fresh process), and verify them
+# with the current tree again (new -> old -> new).
 #
 # usage: scripts/test-db-upgrade.sh <base-ref> [scenario...]
 set -euo pipefail
@@ -42,6 +45,8 @@ cp "$EXAMPLES/db_upgrade.rs" "$OLD_WORKTREE/rust/examples/db_upgrade.rs"
 COMPAT="$EXAMPLES/db_upgrade/compat_$BASE_SLUG.rs"
 [[ -f "$COMPAT" ]] || COMPAT="$EXAMPLES/db_upgrade/compat.rs"
 cp "$COMPAT" "$OLD_WORKTREE/rust/examples/db_upgrade/compat.rs"
+# Checks only the current build can run are stubbed out in the base build.
+cp "$EXAMPLES/db_upgrade/current_stub.rs" "$OLD_WORKTREE/rust/examples/db_upgrade/current.rs"
 
 run_probe() {
   local worktree="$1"
@@ -60,7 +65,10 @@ for scenario in "${SCENARIOS[@]}"; do
   run_probe "$OLD_WORKTREE" create "$scenario" "$db_path" "$manifest_path"
   run_probe "$ROOT_DIR" verify "$scenario" "$db_path" "$manifest_path"
   run_probe "$ROOT_DIR" verify "$scenario" "$db_path" "$manifest_path"
+  run_probe "$ROOT_DIR" prepare-rollback "$scenario" "$db_path" "$manifest_path"
   run_probe "$OLD_WORKTREE" open-old "$scenario" "$db_path" "$manifest_path"
+  run_probe "$OLD_WORKTREE" read-old "$scenario" "$db_path" "$manifest_path"
+  run_probe "$ROOT_DIR" verify "$scenario" "$db_path" "$manifest_path"
 done
 
 echo "ok: $BASE_REF database upgrade compatibility"
