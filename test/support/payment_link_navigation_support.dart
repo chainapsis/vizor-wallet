@@ -18,6 +18,9 @@ class PendingClaimPaymentLinkOperations implements PaymentLinkOperations {
   Future<void> setReceivedCardArchived(String address, bool archived) async {}
 
   @override
+  Future<void> removeReceivedCard(String address) async {}
+
+  @override
   Future<PaymentLinkFundingQuote> quoteMaxFunding({
     required String sourceAccountUuid,
   }) => throw UnimplementedError();

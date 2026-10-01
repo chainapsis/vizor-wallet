@@ -69,6 +69,27 @@ List<PaymentLinkCardArtwork> paymentLinkMixedArtworks(
   return artworks.sublist(0, count);
 }
 
+/// A Card's artwork faded to grayscale, for a Card another wallet claimed: the
+/// design stays recognisable but reads as out of play.
+class PaymentLinkDimmedArtwork extends StatelessWidget {
+  const PaymentLinkDimmedArtwork({required this.child, super.key});
+
+  final Widget child;
+
+  static const _grayscale = ColorFilter.matrix(<double>[
+    0.2126, 0.7152, 0.0722, 0, 0, //
+    0.2126, 0.7152, 0.0722, 0, 0, //
+    0.2126, 0.7152, 0.0722, 0, 0, //
+    0, 0, 0, 1, 0, //
+  ]);
+
+  @override
+  Widget build(BuildContext context) => Opacity(
+    opacity: 0.45,
+    child: ColorFiltered(colorFilter: _grayscale, child: child),
+  );
+}
+
 /// Figma `_CARD` presentation component.
 ///
 /// [amountText] selects a static front state: null renders the default prompt,

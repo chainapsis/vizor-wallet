@@ -26,6 +26,7 @@ import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_car
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_selector_rail.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_batch_detail_desktop_view.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_confetti.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_copy.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_qr_share_card.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -359,7 +360,7 @@ void main() {
   }
 
   for (final outcome in [
-    (PaymentLinkAvailability.claimedElsewhere, 'Already claimed'),
+    (PaymentLinkAvailability.claimedElsewhere, 'Claimed elsewhere'),
     (PaymentLinkAvailability.noBalance, 'No balance'),
     (PaymentLinkAvailability.failed, 'Claim failed'),
   ]) {
@@ -392,65 +393,173 @@ void main() {
     });
   }
 
-  testWidgets(
-    'claimed elsewhere can be hidden and restored without another submission',
-    (tester) async {
-      final operations = FakePaymentLinkOperations(
+  testWidgets('a card claimed elsewhere is grouped and removed on confirm', (
+    tester,
+  ) async {
+    final operations = FakePaymentLinkOperations(
+      receivedRecords: [
+        PaymentLinkReceivedRecord.fromLink(
+          secondIncomingLink,
+        ).copyWith(status: PaymentLinkReceivedStatus.received),
+        PaymentLinkReceivedRecord.fromLink(
+          incomingLink,
+        ).copyWith(availability: PaymentLinkAvailability.claimedElsewhere),
+      ],
+    );
+    await pumpPaymentLinksScreen(tester, operations: operations);
+    await tester.tap(find.text('Received'));
+    await tester.pumpAndSettle();
+
+    final receivedRow = find.byKey(
+      ValueKey('payment_link_received_${secondIncomingLink.address}'),
+    );
+    final lostRow = find.byKey(
+      ValueKey('payment_link_received_${incomingLink.address}'),
+    );
+    final group = find.text('Claimed elsewhere');
+    expect(group, findsOneWidget);
+    expect(
+      tester.getTopLeft(group).dy,
+      greaterThan(tester.getTopLeft(receivedRow).dy),
+    );
+    expect(
+      tester.getTopLeft(lostRow).dy,
+      greaterThan(tester.getTopLeft(group).dy),
+    );
+    // The group names the state, so the row keeps the two-line layout and
+    // only its artwork is dimmed.
+    expect(tester.getSize(lostRow).height, tester.getSize(receivedRow).height);
+    expect(
+      find.descendant(
+        of: lostRow,
+        matching: find.byType(PaymentLinkDimmedArtwork),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: receivedRow,
+        matching: find.byType(PaymentLinkDimmedArtwork),
+      ),
+      findsNothing,
+    );
+    expect(find.text('View card'), findsNothing);
+
+    await tester.tap(find.text('Remove'));
+    await tester.pumpAndSettle();
+    expect(find.text('Remove this card?'), findsOneWidget);
+    await tester.tap(
+      find.byKey(const ValueKey('payment_link_remove_card_cancel_button')),
+    );
+    await tester.pumpAndSettle();
+    expect(operations.removedReceivedAddresses, isEmpty);
+    expect(lostRow, findsOneWidget);
+
+    await tester.tap(find.text('Remove'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('payment_link_remove_card_confirm_button')),
+    );
+    await tester.pumpAndSettle();
+    expect(operations.removedReceivedAddresses, [incomingLink.address]);
+    expect(group, findsNothing);
+    expect(lostRow, findsNothing);
+    expect(receivedRow, findsOneWidget);
+    expect(operations.claimedLinks, isEmpty);
+    expect(operations.preparedLinks, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a hidden card claimed elsewhere joins its group, not Archived', (
+    tester,
+  ) async {
+    await pumpPaymentLinksScreen(
+      tester,
+      operations: FakePaymentLinkOperations(
         receivedRecords: [
-          PaymentLinkReceivedRecord.fromLink(
-            incomingLink,
-          ).copyWith(availability: PaymentLinkAvailability.claimedElsewhere),
+          PaymentLinkReceivedRecord.fromLink(incomingLink).copyWith(
+            availability: PaymentLinkAvailability.claimedElsewhere,
+            archived: true,
+          ),
         ],
+      ),
+    );
+    await tester.tap(find.text('Received'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Claimed elsewhere'), findsOneWidget);
+    expect(find.text('Remove'), findsOneWidget);
+    expect(find.byType(PaymentLinkArchiveHeader), findsNothing);
+    expect(find.text(kPaymentLinkNoReceivedCardsText), findsNothing);
+  });
+
+  testWidgets('a refused removal shows the card as stored', (tester) async {
+    final lost = PaymentLinkReceivedRecord.fromLink(
+      incomingLink,
+    ).copyWith(availability: PaymentLinkAvailability.claimedElsewhere);
+    final operations = FakePaymentLinkOperations(receivedRecords: [lost]);
+    await pumpPaymentLinksScreen(tester, operations: operations);
+    await tester.tap(find.text('Received'));
+    await tester.pumpAndSettle();
+
+    // A later check found funds again, so the service refuses removal.
+    operations
+      ..refuseRemoval = true
+      ..receivedRecords[0] = lost.copyWith(
+        availability: PaymentLinkAvailability.noBalance,
       );
-      await pumpPaymentLinksScreen(tester, operations: operations);
-      await tester.tap(find.text('Received'));
-      await tester.pumpAndSettle();
-      expect(find.text('Already claimed'), findsOneWidget);
-      await tester.tap(find.text('View card'));
-      await tester.pumpAndSettle();
-      expect(
-        find.text(
-          'This gift card was claimed elsewhere. There is no balance available to claim.',
+    await tester.tap(find.text('Remove'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('payment_link_remove_card_confirm_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Card could not be removed. Try again.'), findsOneWidget);
+    expect(find.text('Claimed elsewhere'), findsNothing);
+    expect(find.text('Remove'), findsNothing);
+    expect(find.text('Check status'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('an unredeemed card can still be hidden and restored', (
+    tester,
+  ) async {
+    final operations = FakePaymentLinkOperations(
+      receivedRecords: [
+        PaymentLinkReceivedRecord.fromLink(incomingLink).copyWith(
+          availability: PaymentLinkAvailability.noBalance,
+          archived: true,
         ),
-        findsOneWidget,
-      );
-      await tester.tap(find.text('Hide card'));
-      await tester.pumpAndSettle();
-      expect(operations.receivedRecords.single.archived, isTrue);
-      expect(find.text('View card'), findsNothing);
-      final disclosure = find.byType(PaymentLinkArchiveHeader);
-      expect(tester.getSize(disclosure).height, greaterThanOrEqualTo(48));
-      expect(
-        tester.widget<PaymentLinkArchiveHeader>(disclosure).expanded,
-        isFalse,
-      );
-      await tester.tapAt(
-        tester.getRect(disclosure).centerRight - const Offset(8, 0),
-      );
-      await tester.pumpAndSettle();
-      expect(
-        tester.widget<PaymentLinkArchiveHeader>(disclosure).expanded,
-        isTrue,
-      );
-      await tester.tap(find.text('Archived (1)'));
-      await tester.pumpAndSettle();
-      expect(find.text('View card'), findsNothing);
-      await tester.tap(find.text('Archived (1)'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('View card'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Restore card'));
-      await tester.pumpAndSettle();
-      expect(operations.receivedRecords.single.archived, isFalse);
-      expect(
-        operations.receivedRecords.single.claimLink!.toUri(),
-        incomingLink.toUri(),
-      );
-      expect(operations.claimedLinks, isEmpty);
-      expect(operations.preparedLinks, isEmpty);
-      expect(tester.takeException(), isNull);
-    },
-  );
+      ],
+    );
+    await pumpPaymentLinksScreen(tester, operations: operations);
+    await tester.tap(find.text('Received'));
+    await tester.pumpAndSettle();
+    expect(find.text('Remove'), findsNothing);
+    final disclosure = find.byType(PaymentLinkArchiveHeader);
+    expect(tester.getSize(disclosure).height, greaterThanOrEqualTo(48));
+    expect(
+      tester.widget<PaymentLinkArchiveHeader>(disclosure).expanded,
+      isFalse,
+    );
+    await tester.tapAt(
+      tester.getRect(disclosure).centerRight - const Offset(8, 0),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<PaymentLinkArchiveHeader>(disclosure).expanded,
+      isTrue,
+    );
+    await tester.tap(find.text('View card'));
+    await tester.pumpAndSettle();
+    expect(find.text('Remove card'), findsNothing);
+    await tester.tap(find.text('Restore card'));
+    await tester.pumpAndSettle();
+    expect(operations.receivedRecords.single.archived, isFalse);
+    expect(operations.removedReceivedAddresses, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'checking an uncertain claim explicitly disables retransmission',
@@ -516,22 +625,25 @@ void main() {
   testWidgets('leaving an outcome resets the next redeem flow', (tester) async {
     final operations = FakePaymentLinkOperations(
       receivedRecords: [
-        PaymentLinkReceivedRecord.fromLink(
-          incomingLink,
-        ).copyWith(availability: PaymentLinkAvailability.claimedElsewhere),
+        PaymentLinkReceivedRecord.fromLink(incomingLink).copyWith(
+          availability: PaymentLinkAvailability.noBalance,
+          archived: true,
+        ),
       ],
     );
     await pumpPaymentLinksScreen(tester, operations: operations);
     await tester.tap(find.text('Received'));
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Archived (1)'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('View card'));
     await tester.pumpAndSettle();
-    expect(find.text('Hide card'), findsOneWidget);
+    expect(find.text('Restore card'), findsOneWidget);
     await tester.tap(find.text('My Cards'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Redeem a card'));
     await tester.pumpAndSettle();
-    expect(find.text('Hide card'), findsNothing);
+    expect(find.text('Restore card'), findsNothing);
     expect(find.text('Check status'), findsNothing);
     expect(find.text('Paste card link'), findsOneWidget);
   });

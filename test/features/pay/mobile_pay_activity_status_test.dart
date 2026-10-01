@@ -4,6 +4,7 @@ library;
 import 'package:flutter/material.dart' show MaterialApp, Tooltip;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/widgets.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
@@ -23,6 +24,7 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../figma_compare/figma_compare_font_loader.dart';
 
 const _recipient = '0x12351aBcDeF01234567890123456789076123';
 
@@ -30,20 +32,23 @@ Widget _harness(
   Widget child, {
   AppThemeData theme = AppThemeData.light,
   bool scroll = true,
+  double width = 393,
+  double textScale = 1,
 }) {
   return MaterialApp(
     builder: (_, navigator) => AppTheme(data: theme, child: navigator!),
     home: Directionality(
       textDirection: TextDirection.ltr,
       child: MediaQuery(
-        data: const MediaQueryData(
-          size: Size(393, 852),
+        data: MediaQueryData(
+          size: Size(width, 852),
+          textScaler: TextScaler.linear(textScale),
           disableAnimations: true,
         ),
         child: Align(
           alignment: Alignment.topLeft,
           child: SizedBox(
-            width: 393,
+            width: width,
             height: 852,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -121,6 +126,38 @@ Widget _content({required bool completed}) {
 }
 
 void main() {
+  testWidgets('scaled Pay headers and detail labels remain fully readable', (
+    tester,
+  ) async {
+    await loadFigmaCompareFonts();
+    for (final width in [320.0, 393.0]) {
+      await tester.pumpWidget(
+        _harness(_content(completed: false), width: width, textScale: 1.3),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      final header = tester.getRect(
+        find.byKey(const ValueKey('mobile_pay_status_header')),
+      );
+      for (final text in ['990 USDC', 'Full address', 'Converted from']) {
+        final target = find.text(text);
+        final paragraph = tester.renderObject<RenderParagraph>(target);
+        expect(paragraph.didExceedMaxLines, isFalse, reason: text);
+        expect(
+          paragraph.size.height,
+          greaterThanOrEqualTo(
+            paragraph.getMaxIntrinsicHeight(paragraph.size.width) - 0.1,
+          ),
+          reason: text,
+        );
+      }
+      expect(
+        tester.getRect(find.text('Full address')).bottom,
+        lessThanOrEqualTo(header.bottom),
+      );
+    }
+  });
+
   testWidgets('paying uses payment asset and recipient status layout', (
     tester,
   ) async {
@@ -229,11 +266,11 @@ void main() {
     expect(card.top - header.bottom, 76);
   });
 
-  testWidgets('failed Pay renders shared paid and refund evidence', (
+  testWidgets('refunded Pay keeps its amount header and refund evidence', (
     tester,
   ) async {
     final intent = _intent(
-      status: SwapIntentStatus.failed,
+      status: SwapIntentStatus.refunded,
       depositTxHash: null,
       originChainTxHash: 'provider-origin-txid',
       providerRefundInfo: const SwapProviderRefundInfo(
@@ -250,6 +287,13 @@ void main() {
       _harness(
         MobileSwapStatusContent(
           presentation: presentation,
+          paymentHeader: const MobilePayStatusHeader(
+            asset: SwapAsset.usdc,
+            amountText: '10 USDC',
+            fiatText: r'$10.00',
+            label: 'Amount',
+            recipientAddress: '0x1234567890123456789012345678901234567890',
+          ),
           payHeaderRow: MobileSwapReviewHeaderRow(
             label: presentation.payLabel,
             amountText: presentation.payAmountText,
@@ -269,19 +313,135 @@ void main() {
     );
     await tester.pump();
 
-    expect(presentation.payStatus, isNull);
-    expect(find.text('You paid'), findsWidgets);
-    expect(find.text('Recipient gets'), findsOneWidget);
+    expect(presentation.payStatus?.phase, PayActivityStatusPhase.refunded);
+    expect(find.text('Amount'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('mobile_pay_status_header')),
-      findsNothing,
+      findsOneWidget,
     );
-    expect(find.text('ZEC refunded to'), findsOneWidget);
-    expect(find.text('Fees'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_pay_status_asset_row')),
+      findsOneWidget,
+    );
+    expect(find.text('Refund to'), findsOneWidget);
+    expect(find.text('Refunded amount'), findsOneWidget);
+    expect(find.text('Tx fee'), findsNothing);
     expect(
       find.byKey(const ValueKey('mobile_pay_status_details')),
-      findsNothing,
+      findsOneWidget,
     );
+  });
+
+  testWidgets('failed Pay keeps the amount header and source amount', (
+    tester,
+  ) async {
+    final presentation = swapActivityStatusPresentationForIntent(
+      _state(),
+      _intent(
+        status: SwapIntentStatus.failed,
+        providerRefundInfo: const SwapProviderRefundInfo(
+          depositedAmountText: '4.125 ZEC',
+          refundedAmountText: '0 ZEC',
+        ),
+      ).copyWith(oneClickRefundTo: 'u1refund-address'),
+    );
+
+    await tester.pumpWidget(
+      _harness(
+        MobileSwapStatusContent(
+          presentation: presentation,
+          paymentHeader: const MobilePayStatusHeader(
+            asset: SwapAsset.usdc,
+            amountText: '10 USDC',
+            fiatText: r'$10.00',
+            label: 'Amount',
+            recipientAddress: '0x1234567890123456789012345678901234567890',
+          ),
+          payHeaderRow: MobileSwapReviewHeaderRow(
+            label: presentation.payLabel,
+            amountText: presentation.payAmountText,
+            asset: presentation.payAsset,
+          ),
+          receiveHeaderRow: MobileSwapReviewHeaderRow(
+            label: presentation.receiveLabel,
+            amountText: presentation.receiveAmountText,
+            asset: presentation.receiveAsset,
+          ),
+          activeTab: SwapStatusTab.details,
+          detailsExpanded: false,
+          onTabChanged: (_) {},
+          onToggleDetails: () {},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(presentation.payStatus?.phase, PayActivityStatusPhase.failed);
+    expect(
+      find.byKey(const ValueKey('mobile_pay_status_header')),
+      findsOneWidget,
+    );
+    expect(find.text('Failed'), findsOneWidget);
+    expect(find.text('Source amount'), findsOneWidget);
+    expect(find.text('Refund to'), findsOneWidget);
+    expect(find.text('Refunded amount'), findsNothing);
+    expect(find.text('Tx fee'), findsNothing);
+  });
+
+  testWidgets('wrapped Pay outcome labels keep a gap to the next row', (
+    tester,
+  ) async {
+    final presentation = swapActivityStatusPresentationForIntent(
+      _state(),
+      _intent(
+        status: SwapIntentStatus.refunded,
+        depositTxHash: null,
+        originChainTxHash: 'provider-origin-txid',
+        providerRefundInfo: const SwapProviderRefundInfo(
+          depositedAmountText: '4.125 ZEC',
+          refundedAmountText: '4.1249 ZEC',
+          recordedRefundFeeText: '0.0001 ZEC',
+        ),
+      ).copyWith(oneClickRefundTo: 'u1refund-address'),
+    );
+
+    await tester.pumpWidget(
+      _harness(
+        MobileSwapStatusContent(
+          presentation: presentation,
+          paymentHeader: const MobilePayStatusHeader(
+            asset: SwapAsset.usdc,
+            amountText: '10 USDC',
+            fiatText: r'$10.00',
+            label: 'Amount',
+            recipientAddress: '0x1234567890123456789012345678901234567890',
+          ),
+          payHeaderRow: MobileSwapReviewHeaderRow(
+            label: presentation.payLabel,
+            amountText: presentation.payAmountText,
+            asset: presentation.payAsset,
+          ),
+          receiveHeaderRow: MobileSwapReviewHeaderRow(
+            label: presentation.receiveLabel,
+            amountText: presentation.receiveAmountText,
+            asset: presentation.receiveAsset,
+          ),
+          activeTab: SwapStatusTab.details,
+          detailsExpanded: false,
+          onTabChanged: (_) {},
+          onToggleDetails: () {},
+        ),
+        width: 320,
+        textScale: 1.3,
+      ),
+    );
+    await tester.pump();
+
+    final amount = tester.getRect(find.text('Refunded amount'));
+    final refundTo = tester.getRect(find.text('Refund to'));
+    final lineHeight = tester.getRect(find.text('Refund to')).height;
+    expect(amount.height, greaterThan(lineHeight * 1.5));
+    expect(refundTo.top - amount.bottom, greaterThanOrEqualTo(8));
   });
 
   test(
@@ -454,6 +614,13 @@ void main() {
         _intent(status: SwapIntentStatus.complete),
       ),
       'Paid',
+    );
+    expect(
+      mobileSwapActivityTitle(
+        _state(),
+        _intent(status: SwapIntentStatus.refunded),
+      ),
+      'Payment refunded',
     );
 
     final swap = _intent(status: SwapIntentStatus.processing, payMode: false);

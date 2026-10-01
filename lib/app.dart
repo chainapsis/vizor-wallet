@@ -9,6 +9,8 @@ import 'package:desktop_window_bootstrap/desktop_window_bootstrap.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'src/core/input/caps_lock_monitor.dart';
+import 'src/core/feedback/app_review.dart';
+import 'src/core/feedback/app_review_host.dart';
 import 'src/core/input/app_password_input_source.dart';
 import 'src/app_bootstrap.dart';
 import 'src/core/lifecycle/signing_shutdown_host.dart';
@@ -259,6 +261,11 @@ Future<void> applyEnhancePirPolicy(
   }
 }
 
+final _productionAppReviewController = AppReviewController(
+  store: PreferencesAppReviewStore(),
+  native: MethodChannelAppReviewNative(),
+);
+
 /// Shared production configuration for immediate and Linux keyring startup.
 /// Preview/test builders remain opted out of native input monitoring.
 Future<BootstrappedZcashWalletApp> buildProductionZcashWalletApp({
@@ -272,6 +279,19 @@ Future<BootstrappedZcashWalletApp> buildProductionZcashWalletApp({
     initialBootstrap: bootstrap,
     overrides: [
       capsLockMonitoringEnabledProvider.overrideWithValue(true),
+      appReviewEnabledProvider.overrideWithValue(
+        isNativeAppReviewEnabled(
+          isIOS: Platform.isIOS,
+          isAndroid: Platform.isAndroid,
+        ),
+      ),
+      appReviewControllerProvider.overrideWithValue(
+        _productionAppReviewController,
+      ),
+      appReviewStartupWalletProvider.overrideWith((ref) {
+        final startup = ref.watch(appBootstrapProvider);
+        return startup.hasBlockingFailure ? null : startup.hasWallet;
+      }),
       appPasswordInputSourceProvider.overrideWith((ref) {
         final service = AppPasswordInputSource.production();
         ref.onDispose(service.dispose);
@@ -415,7 +435,7 @@ final _routerProvider = Provider<_AppRouter>((ref) {
                   .clearAfterNavigation(),
             ),
           ]
-        : const [],
+        : [ref.watch(appReviewRouteObserverProvider)],
     initialLocation: bootstrap.initialLocation,
     refreshListenable: refresh,
     redirect: (context, state) =>
@@ -1580,7 +1600,10 @@ class ZcashWalletApp extends ConsumerWidget {
                                         child: MobileNumericKeyboardToolbar(
                                           child: BackgroundAutoLockHost(
                                             router: router,
-                                            child: child!,
+                                            child: AppReviewHost(
+                                              router: router,
+                                              child: child!,
+                                            ),
                                           ),
                                         ),
                                       ),

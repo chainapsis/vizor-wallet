@@ -544,6 +544,18 @@ class FakePaymentLinkOperations implements PaymentLinkOperations {
     );
   }
 
+  final removedReceivedAddresses = <String>[];
+
+  /// Refuses removal, as the service does once the stored Card has moved on.
+  bool refuseRemoval = false;
+
+  @override
+  Future<void> removeReceivedCard(String address) async {
+    if (refuseRemoval) throw StateError('Card is no longer removable');
+    removedReceivedAddresses.add(address);
+    receivedRecords.removeWhere((record) => record.address == address);
+  }
+
   @override
   Future<PaymentLinkFundingQuote> quoteMaxFunding({
     required String sourceAccountUuid,

@@ -3,6 +3,8 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../feedback/app_review.dart';
+
 import '../../features/accounts/screens/mobile/mobile_accounts_screen.dart';
 import '../../features/activity/screens/mobile/mobile_activity_screen.dart';
 import '../../features/home/screens/mobile/mobile_home_screen.dart';
@@ -727,6 +729,9 @@ class _MobileTabShell extends ConsumerWidget {
           // shell keeps no tab history of its own). Skip when re-selecting
           // the active tab — that just resets it to root.
           if (targetBranchIndex != currentBranchIndex) {
+            if (targetTab.path != "/home") {
+              expectAppReviewVisit(ref, targetTab.path);
+            }
             ref
                 .read(mobilePreviousTabPathProvider.notifier)
                 .record(currentTab.path);

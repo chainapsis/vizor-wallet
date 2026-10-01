@@ -3,6 +3,7 @@ use std::num::NonZeroU32;
 use zcash_client_backend::data_api::wallet::ConfirmationsPolicy;
 
 pub(crate) mod addresses;
+pub(crate) mod block_times;
 pub(crate) mod db;
 pub(crate) mod gift_card_tracking;
 pub mod keys;
@@ -15,6 +16,7 @@ pub mod sync;
 pub mod sync_engine;
 pub(crate) mod transaction_data;
 pub(crate) mod transparent_receive_cache;
+pub(crate) mod tree_states;
 pub mod voting;
 pub(crate) mod wallet_summary_cache;
 
