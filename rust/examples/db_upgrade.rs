@@ -68,15 +68,17 @@ const LEDGER_MIGRATIONS: [&str; 3] = [
 ];
 /// Transparent activity metadata and shared derivations, then from
 /// wallet-libraries #82 sole-funder attribution (`funding_attribution`),
-/// observed UTXO absences (`transparent_utxo_absences`), and status
-/// obligations for rewound transactions (`unmined_status_obligations`), from
-/// the wallet-libraries bump. No supported base has applied them.
-const LIBRARY_BUMP_MIGRATIONS: [&str; 5] = [
+/// observed UTXO absences (`transparent_utxo_absences`), status obligations
+/// for rewound transactions (`unmined_status_obligations`), and mined-status
+/// reconfirmation (`status_reconfirmation`), from the wallet-libraries bump.
+/// No supported base has applied them.
+const LIBRARY_BUMP_MIGRATIONS: [&str; 6] = [
     "935cd43609fd4f4fa808260ee399cb21",
     "a03b0d6a60854859ae77bce948345214",
     "1496b05b5e214a76b44c5d371d294387",
     "fa14da0b94bb417f8bdaf9aac3d2a041",
     "6309d4afc73c476facab4f52f14d9675",
+    "feeaf3593c5b40d7850b309b1a7cd3a6",
 ];
 const LEGACY_PUBLIC_ORIGIN: i64 = 0;
 const LOCAL_ORIGIN: i64 = 1;
@@ -1238,6 +1240,20 @@ fn unique_keys(conn: &rusqlite::Connection, table: &str) -> BTreeSet<Vec<String>
 /// table, view, and index remains, with every base column and every base
 /// unique key (older writers name them as `ON CONFLICT` targets), except
 /// `removed`.
+/// Schema objects whose removal breaks the downgrade to this probe's base, for
+/// a base whose downgrade `scripts/test-db-upgrade.sh` declares unsupported
+/// (with its reason). Exact keys, comma-separated, in
+/// `VIZOR_DB_UPGRADE_DOWNGRADE_UNSUPPORTED`; empty for every other base.
+fn downgrade_unsupported_objects() -> Vec<String> {
+    std::env::var("VIZOR_DB_UPGRADE_DOWNGRADE_UNSUPPORTED")
+        .unwrap_or_default()
+        .split(',')
+        .map(str::trim)
+        .filter(|key| !key.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
 fn assert_schema_superset(base: &SchemaSnapshot, actual: &SchemaSnapshot, removed: &[&str]) {
     let allowed = |key: &str| removed.iter().any(|prefix| key.starts_with(prefix));
     let mut missing = Vec::new();
@@ -1279,10 +1295,28 @@ fn assert_schema_superset(base: &SchemaSnapshot, actual: &SchemaSnapshot, remove
             missing.push(key);
         }
     }
+    // A base whose downgrade is declared unsupported may lose exactly the
+    // declared objects, and must lose every one of them: an exemption whose
+    // cause is gone fails here and has to be removed.
+    let unsupported = downgrade_unsupported_objects();
+    let (declared, undeclared): (Vec<_>, Vec<_>) = missing
+        .into_iter()
+        .partition(|key| unsupported.contains(key));
     assert!(
-        missing.is_empty(),
-        "schema objects an older build may use were removed: {missing:?}"
+        undeclared.is_empty(),
+        "schema objects an older build may use were removed: {undeclared:?}"
     );
+    let kept: Vec<_> = unsupported
+        .iter()
+        .filter(|object| !declared.contains(object))
+        .collect();
+    assert!(
+        kept.is_empty(),
+        "declared unsupported for the downgrade but still present: {kept:?}; drop the exemption"
+    );
+    if !declared.is_empty() {
+        println!("downgrade unsupported by design: removed {declared:?}");
+    }
 }
 
 fn assert_scenario_shape(state: &LegacyState) {

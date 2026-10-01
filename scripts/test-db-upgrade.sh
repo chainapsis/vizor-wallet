@@ -58,6 +58,31 @@ run_probe() {
   )
 }
 
+# Per-base capabilities. Every base supports every step unless it is listed
+# here with the reason. The forward upgrade is always checked in full.
+#
+# An unsupported downgrade is still exercised, not skipped: the handover runs
+# and checks its schema, the base build must then fail to reopen the wallet
+# for the documented cause (`DOWNGRADE_FAILURE`), and the current build must
+# still open and verify the wallet afterwards. If the base starts reading the
+# handed-over wallet, or fails for any other cause, the probe fails, so the
+# exemption cannot outlive its reason.
+DOWNGRADE_UNSUPPORTED=""
+DOWNGRADE_FAILURE=""
+case "$BASE_REF" in
+  mobile/v0.0.18)
+    DOWNGRADE_UNSUPPORTED="mobile/v0.0.18 predates wallet-libraries rc5, which \
+replaced tx_retrieval_queue's unique key (txid); the downgrade handover does \
+not restore it, so that build cannot use the upgraded wallet"
+    # SQLite's error for an upsert whose unique key is gone: the base's
+    # tx_retrieval_queue insert relies on the removed key.
+    DOWNGRADE_FAILURE="ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE constraint"
+    # The schema objects the current build removes that this base needs; the
+    # probe accepts exactly these as missing, and requires each to be missing.
+    export VIZOR_DB_UPGRADE_DOWNGRADE_UNSUPPORTED="unique:tx_retrieval_queue(txid)"
+    ;;
+esac
+
 for scenario in "${SCENARIOS[@]}"; do
   db_path="$TEMP_DIR/$scenario.db"
   manifest_path="$TEMP_DIR/$scenario.json"
@@ -66,9 +91,32 @@ for scenario in "${SCENARIOS[@]}"; do
   run_probe "$ROOT_DIR" verify "$scenario" "$db_path" "$manifest_path"
   run_probe "$ROOT_DIR" verify "$scenario" "$db_path" "$manifest_path"
   run_probe "$ROOT_DIR" prepare-rollback "$scenario" "$db_path" "$manifest_path"
-  run_probe "$OLD_WORKTREE" open-old "$scenario" "$db_path" "$manifest_path"
-  run_probe "$OLD_WORKTREE" read-old "$scenario" "$db_path" "$manifest_path"
+  if [[ -n "$DOWNGRADE_UNSUPPORTED" ]]; then
+    echo "downgrade to $BASE_REF: unsupported: $DOWNGRADE_UNSUPPORTED"
+    old_log="$TEMP_DIR/$scenario.open-old.log"
+    if run_probe "$OLD_WORKTREE" open-old "$scenario" "$db_path" "$manifest_path" \
+      >"$old_log" 2>&1; then
+      cat "$old_log"
+      echo "error: $BASE_REF now reopens the handed-over wallet; remove its" \
+        "downgrade exemption from $0" >&2
+      exit 1
+    fi
+    if ! grep -qF "$DOWNGRADE_FAILURE" "$old_log"; then
+      cat "$old_log"
+      echo "error: $BASE_REF failed to reopen the wallet for a cause other than" \
+        "the documented one ($DOWNGRADE_FAILURE)" >&2
+      exit 1
+    fi
+    echo "downgrade to $BASE_REF: refused as documented ($DOWNGRADE_FAILURE)"
+  else
+    run_probe "$OLD_WORKTREE" open-old "$scenario" "$db_path" "$manifest_path"
+    run_probe "$OLD_WORKTREE" read-old "$scenario" "$db_path" "$manifest_path"
+  fi
   run_probe "$ROOT_DIR" verify "$scenario" "$db_path" "$manifest_path"
 done
 
-echo "ok: $BASE_REF database upgrade compatibility"
+if [[ -n "$DOWNGRADE_UNSUPPORTED" ]]; then
+  echo "ok: $BASE_REF database upgrade compatibility (downgrade unsupported by design)"
+else
+  echo "ok: $BASE_REF database upgrade compatibility"
+fi

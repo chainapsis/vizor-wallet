@@ -44,9 +44,57 @@ pub fn prepare_rollback(db_path: &str) {
 ///   effects are settled and `Unknown` before. Such a receive (a positive
 ///   account delta) may therefore lose the base's fee. Every other fee the
 ///   base showed must stay `Known` and equal.
+///
+/// One documented balance rule applies too (`sync_engine/address_discovery.rs`,
+/// "Coverage"): a public account's transparent funds are current only once
+/// its address-history discovery has run. Upgrading never runs it; the first
+/// sync does. So every upgraded account reads its transparent funds as
+/// `LastKnown`, exactly the base build's transparent total, with nothing
+/// transparent spendable, locked, or pending. This function asserts that
+/// authority and amount, and expects the zeroed transparent fields.
 pub fn expected_current_api(db_path: &str, base: &ApiSnapshot) -> ApiSnapshot {
     let mut expected = base.clone();
     for account in &mut expected.accounts {
+        let balance = sync::get_balance(
+            db_path.to_string(),
+            NETWORK.to_string(),
+            account.uuid.clone(),
+        )
+        .expect("read balance");
+        let base_total = account.balance.transparent
+            + account.balance.transparent_locked
+            + account.balance.transparent_pending;
+        assert!(
+            matches!(
+                balance.transparent_authority,
+                sync::TransparentBalanceAuthority::LastKnown
+            ),
+            "an upgraded public wallet reads transparent funds as current before discovery"
+        );
+        assert_eq!(
+            balance.transparent_last_known,
+            Some(base_total),
+            "upgrade changed the account's transparent total"
+        );
+        // The account totals carry no transparent funds while they are only
+        // last known.
+        account.balance.locked -= account.balance.transparent_locked;
+        account.balance.total -= base_total;
+        // Transparent pending value is change or value pending spendability;
+        // together those two account totals lose exactly that much.
+        let base_pending = account.balance.change_pending_confirmation
+            + account.balance.value_pending_spendability;
+        assert_eq!(
+            base_pending
+                - (balance.change_pending_confirmation + balance.value_pending_spendability),
+            account.balance.transparent_pending,
+            "pending totals changed by more than the transparent pending value"
+        );
+        account.balance.change_pending_confirmation = balance.change_pending_confirmation;
+        account.balance.value_pending_spendability = balance.value_pending_spendability;
+        account.balance.transparent = 0;
+        account.balance.transparent_locked = 0;
+        account.balance.transparent_pending = 0;
         let current = sync::get_transaction_history(
             db_path.to_string(),
             NETWORK.to_string(),
@@ -132,24 +180,10 @@ pub fn expected_current_api(db_path: &str, base: &ApiSnapshot) -> ApiSnapshot {
     expected
 }
 
-/// The fields older builds do not have. Upgraded public wallets have current
-/// transparent authority, and an unrecorded fee is unknown rather than zero.
+/// The fields older builds do not have: an unrecorded fee is unknown rather
+/// than zero. Transparent authority is checked by `expected_current_api`.
 pub fn assert_current_api(db_path: &str, api: &ApiSnapshot) {
     for account in &api.accounts {
-        let balance = sync::get_balance(
-            db_path.to_string(),
-            NETWORK.to_string(),
-            account.uuid.clone(),
-        )
-        .expect("read balance");
-        assert!(
-            matches!(
-                balance.transparent_authority,
-                sync::TransparentBalanceAuthority::Current
-            ),
-            "upgraded public wallet lost current transparent authority"
-        );
-        assert_eq!(balance.transparent_last_known, None);
         let history = sync::get_transaction_history(
             db_path.to_string(),
             NETWORK.to_string(),
