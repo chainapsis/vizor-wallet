@@ -2749,12 +2749,21 @@ mod tests {
 
     #[test]
     fn local_history_with_incomplete_effects_stays_provisional_until_scanned() {
-        use zcash_client_backend::data_api::transparent_ledger::{EffectCompleteness, PoolEffect};
+        use zcash_client_backend::data_api::transparent_ledger::{
+            AccountMovement, AggregatePayment, EffectCompleteness, PoolEffect,
+        };
         use zcash_protocol::{value::Zatoshis, PoolType};
 
         // Local construction knows the payment, but scanning still has to
         // discover the receipt to the account's own external shielded address.
         let mut details = TransactionHistoryDetails {
+            transaction_metadata: None,
+            aggregate_payment: AggregatePayment::Exact(Zatoshis::from_u64(50_000).unwrap()),
+            account_movement: AccountMovement {
+                received: 140_000,
+                spent: 200_000,
+                complete: false,
+            },
             txid: TxId::from_bytes([1; 32]),
             mined_height: None,
             effects: vec![PoolEffect {
@@ -2793,10 +2802,19 @@ mod tests {
 
     #[test]
     fn history_mapping_keeps_public_discovery_settled_and_provisional_classification() {
-        use zcash_client_backend::data_api::transparent_ledger::{EffectCompleteness, PoolEffect};
+        use zcash_client_backend::data_api::transparent_ledger::{
+            AccountMovement, AggregatePayment, EffectCompleteness, PoolEffect,
+        };
         use zcash_protocol::{value::Zatoshis, PoolType};
 
         let mut details = TransactionHistoryDetails {
+            transaction_metadata: None,
+            aggregate_payment: AggregatePayment::Unknown,
+            account_movement: AccountMovement {
+                received: 0,
+                spent: 0,
+                complete: true,
+            },
             txid: TxId::from_bytes([1; 32]),
             mined_height: None,
             effects: vec![
