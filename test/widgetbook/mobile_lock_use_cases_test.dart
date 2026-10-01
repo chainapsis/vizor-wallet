@@ -47,9 +47,7 @@ void main() {
           find.byKey(const ValueKey('mobile_unlock_biometric_footer')),
         )
         .dy;
-    // The 44px button and 16px gap keep the keypad where the earlier 36px
-    // button and 24px gap placed it.
-    expect(footerTop - keypadBottomWithoutMethod, closeTo(16, 0.1));
+    expect(footerTop - keypadBottomWithoutMethod, closeTo(AppSpacing.md, 0.1));
 
     await _pumpMobileLockUseCase(tester, buildMobileUnlockFaceIdUseCase);
     expect(tester.takeException(), isNull);
@@ -62,7 +60,7 @@ void main() {
     final faceIdButtonSize = tester.getSize(
       find.byKey(const ValueKey('passcode_biometric_button')),
     );
-    expect(faceIdButtonSize.height, kPasscodeBiometricButtonMinHeight);
+    expect(faceIdButtonSize.height, 36);
     expect(faceIdButtonSize.width, greaterThan(150));
     final faceIdLabel = tester.widget<Text>(find.text('Sign in with Face ID'));
     expect(faceIdLabel.style?.fontSize, AppTypography.labelLarge.fontSize);
@@ -83,7 +81,7 @@ void main() {
     final fingerprintButtonSize = tester.getSize(
       find.byKey(const ValueKey('passcode_biometric_button')),
     );
-    expect(fingerprintButtonSize.height, kPasscodeBiometricButtonMinHeight);
+    expect(fingerprintButtonSize.height, 36);
     expect(fingerprintButtonSize.width, greaterThan(150));
   });
 

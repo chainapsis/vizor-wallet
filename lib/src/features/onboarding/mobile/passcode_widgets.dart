@@ -21,10 +21,6 @@ const double _kPasscodeBackspaceSlotHeight = 32;
 const double _kPasscodeBackspaceGlyphWidth = 26.25;
 const double _kPasscodeBackspaceGlyphHeight = 23.15;
 const double _kPasscodeBiometricButtonHeight = 36;
-
-/// Minimum height of a wrapping [PasscodeBiometricButton]; passcode layouts
-/// reserve it for the biometric footer.
-const double kPasscodeBiometricButtonMinHeight = 44;
 const double _kPasscodeBiometricButtonMinWidth = 96;
 const double _kPasscodeBiometricIconSize = 16;
 const EdgeInsets _kPasscodeBackspaceInsets = EdgeInsets.fromLTRB(
@@ -39,16 +35,10 @@ const EdgeInsets _kPasscodeBackspaceInsets = EdgeInsets.fromLTRB(
 /// digits are typed; errors are conveyed by the plum message below, not
 /// by tinting the dots.
 class PasscodeDots extends StatelessWidget {
-  const PasscodeDots({
-    required this.length,
-    required this.filled,
-    this.horizontalPadding = AppSpacing.xs,
-    super.key,
-  });
+  const PasscodeDots({required this.length, required this.filled, super.key});
 
   final int length;
   final int filled;
-  final double horizontalPadding;
 
   @override
   Widget build(BuildContext context) {
@@ -58,7 +48,7 @@ class PasscodeDots extends StatelessWidget {
       children: [
         for (var i = 0; i < length; i++)
           Padding(
-            padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
             child: Transform.rotate(
               angle: math.pi / 4,
               child: Container(
@@ -308,11 +298,9 @@ class PasscodeBiometricButton extends StatelessWidget {
     required this.label,
     required this.icon,
     required this.onPressed,
-    this.wrapLabel = false,
     super.key,
   });
 
-  final bool wrapLabel;
   final String label;
   final Widget icon;
   final VoidCallback? onPressed;
@@ -360,15 +348,10 @@ class PasscodeBiometricButton extends StatelessWidget {
                       unawaited(AppHaptics.auxiliaryKey());
                       onPressed?.call();
                     },
-              child: Container(
-                constraints: wrapLabel
-                    ? const BoxConstraints(
-                        minHeight: kPasscodeBiometricButtonMinHeight,
-                      )
-                    : null,
+              child: SizedBox(
                 key: const ValueKey('passcode_biometric_button'),
                 width: width,
-                height: wrapLabel ? null : _kPasscodeBiometricButtonHeight,
+                height: _kPasscodeBiometricButtonHeight,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s),
                   child: Row(
@@ -392,8 +375,8 @@ class PasscodeBiometricButton extends StatelessWidget {
                           ),
                           child: Text(
                             label,
-                            maxLines: wrapLabel ? null : 1,
-                            overflow: wrapLabel ? null : TextOverflow.ellipsis,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: labelStyle,
                           ),
                         ),

@@ -27,7 +27,6 @@ import '../../../services/device_owner_auth.dart';
 import 'forgot_passcode_sheet.dart';
 import 'mobile_passcode_screen.dart' show kMobilePasscodeLength;
 import 'passcode_widgets.dart';
-import 'mobile_passcode_layout.dart';
 
 const mobileBiometricSignInBackgroundAsset =
     'assets/illustrations/mobile_onboarding_auth_background.png';
@@ -364,47 +363,92 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
     if (showBiometricSignIn && !_biometricUnlocking) {
       _scheduleBiometricPrompt(biometric);
     }
-    if (showBiometricSignIn) {
-      return Scaffold(
-        backgroundColor: colors.background.window,
-        body: const MobileBiometricSignInView(),
-      );
-    }
-    return MobilePasscodeLayout(
-      title: 'Welcome Back',
-      subtitle: _submitting
-          ? 'Opening your wallet...'
-          : 'Enter your passcode to open Vizor',
-      filled: _entry.length,
-      error: _error,
-      onDigit: _onDigit,
-      onBackspace: _onBackspace,
-      onHelp: _submitting ? null : _showForgotPasscodeSheet,
-      enabled: !_submitting,
-      // The slot stays when biometrics are unavailable, so the keypad does not
-      // move once the async biometric state resolves.
-      footer: ConstrainedBox(
-        key: const ValueKey('mobile_unlock_biometric_footer'),
-        constraints: const BoxConstraints(
-          minHeight: kPasscodeBiometricButtonMinHeight,
-        ),
-        child: biometric.usable
-            ? PasscodeBiometricButton(
-                wrapLabel: true,
-                label: biometric.availability.kind.signInLabel,
-                icon: Center(
-                  child: BiometricIcon(
-                    kind: biometric.availability.kind,
-                    size: 13.5,
-                    fingerprintSize: 16,
-                  ),
+    return Scaffold(
+      backgroundColor: colors.background.window,
+      body: showBiometricSignIn
+          ? const MobileBiometricSignInView()
+          : SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.sm,
+                  vertical: AppSpacing.md,
                 ),
-                onPressed: _submitting
-                    ? null
-                    : () => unawaited(_tryBiometricUnlock()),
-              )
-            : const SizedBox.shrink(),
-      ),
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'Welcome Back',
+                              textAlign: TextAlign.center,
+                              style: AppTypography.displayLarge.copyWith(
+                                color: colors.text.accent,
+                              ),
+                            ),
+                            const SizedBox(height: AppSpacing.s),
+                            Text(
+                              _submitting
+                                  ? 'Opening your wallet...'
+                                  : 'Enter your passcode to open Vizor',
+                              textAlign: TextAlign.center,
+                              style: AppTypography.bodyMediumStrong.copyWith(
+                                color: colors.text.primary,
+                              ),
+                            ),
+                            const SizedBox(height: AppSpacing.md),
+                            SizedBox(
+                              height: kPasscodePromptDigitsHeight,
+                              child: PasscodePromptField(
+                                length: kMobilePasscodeLength,
+                                filled: _entry.length,
+                                error: _error,
+                                minGap: 0,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    PasscodeNumpad(
+                      onDigit: _onDigit,
+                      onBackspace: _onBackspace,
+                      canDelete: _entry.isNotEmpty,
+                      onHelp: _submitting ? null : _showForgotPasscodeSheet,
+                      enabled: !_submitting,
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    SizedBox(
+                      key: const ValueKey('mobile_unlock_biometric_footer'),
+                      height: 36,
+                      child: Center(
+                        child: Builder(
+                          builder: (context) {
+                            if (!biometric.usable) {
+                              return const SizedBox.shrink();
+                            }
+                            return PasscodeBiometricButton(
+                              label: biometric.availability.kind.signInLabel,
+                              icon: Center(
+                                child: BiometricIcon(
+                                  kind: biometric.availability.kind,
+                                  size: 13.5,
+                                  fingerprintSize: 16,
+                                ),
+                              ),
+                              onPressed: _submitting
+                                  ? null
+                                  : () => unawaited(_tryBiometricUnlock()),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
     );
   }
 }

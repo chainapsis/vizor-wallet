@@ -56,7 +56,7 @@ import '../src/features/onboarding/mobile/mobile_customise_account_screen.dart';
 import '../src/features/onboarding/mobile/mobile_import_manual_screen.dart';
 import '../src/features/onboarding/mobile/mobile_import_review_screen.dart';
 import '../src/features/onboarding/mobile/mobile_import_screens.dart';
-import 'mobile_passcode_use_cases.dart';
+import '../src/features/onboarding/mobile/mobile_passcode_screen.dart';
 import '../src/features/onboarding/mobile/mobile_secret_passphrase_screen.dart';
 import '../src/features/onboarding/mobile/mobile_unlock_screen.dart';
 import '../src/features/onboarding/create/customise_account_screen.dart';
@@ -278,12 +278,11 @@ Widget buildLostPasswordEnabledUseCase(BuildContext context) {
 }
 
 Widget buildMobileUnlockPasscodeUseCase(BuildContext context) {
-  return _buildMobileUnlockUseCase(context, BiometricUnlockState.initial);
+  return _buildMobileUnlockUseCase(BiometricUnlockState.initial);
 }
 
 Widget buildMobileUnlockFaceIdUseCase(BuildContext context) {
   return _buildMobileUnlockUseCase(
-    context,
     const BiometricUnlockState(
       availability: BiometricAvailability(
         supported: true,
@@ -301,7 +300,6 @@ Widget buildMobileUnlockBiometricBackdropUseCase(BuildContext context) {
 
 Widget buildMobileUnlockFingerprintUseCase(BuildContext context) {
   return _buildMobileUnlockUseCase(
-    context,
     const BiometricUnlockState(
       availability: BiometricAvailability(
         supported: true,
@@ -315,7 +313,6 @@ Widget buildMobileUnlockFingerprintUseCase(BuildContext context) {
 
 Widget buildMobileUnlockTouchIdUseCase(BuildContext context) {
   return _buildMobileUnlockUseCase(
-    context,
     const BiometricUnlockState(
       availability: BiometricAvailability(
         supported: true,
@@ -328,7 +325,13 @@ Widget buildMobileUnlockTouchIdUseCase(BuildContext context) {
 }
 
 Widget buildMobileCreatePasscodeUseCase(BuildContext context) {
-  return buildMobilePasscodeOptions(context);
+  return _MobilePreviewFrame(
+    child: IgnorePointer(
+      child: MobilePasscodeScreen(
+        args: SetPasswordScreenArgs.create(mnemonic: _previewMnemonic),
+      ),
+    ),
+  );
 }
 
 Widget buildMobileCustomiseAccountUseCase(BuildContext context) {
@@ -3628,19 +3631,15 @@ class _UnlockHarnessState extends State<_UnlockHarness> {
   }
 }
 
-Widget _buildMobileUnlockUseCase(
-  BuildContext context,
-  BiometricUnlockState biometricState,
-) {
+Widget _buildMobileUnlockUseCase(BiometricUnlockState biometricState) {
   return ProviderScope(
     overrides: [
       biometricUnlockProvider.overrideWith(
         () => _PreviewBiometricUnlockNotifier(biometricState),
       ),
     ],
-    child: buildMobilePasscodeViewport(
-      context,
-      builder: (_) => const IgnorePointer(
+    child: _MobilePreviewFrame(
+      child: IgnorePointer(
         child: MobileUnlockScreen(autoPromptBiometric: false),
       ),
     ),
