@@ -42,6 +42,22 @@ class PendingClaimPaymentLinkOperations implements PaymentLinkOperations {
   }) async => records;
 
   @override
+  Future<PaymentLinkClaimInspection> inspectClaim(
+    VizorPaymentLink link, {
+    bool allowLongSync = false,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<PaymentLinkClaimSession> bindClaimDestination(
+    PaymentLinkClaimInspection inspection, {
+    required String destinationAccountUuid,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<void> discardClaimInspection(PaymentLinkClaimInspection inspection) =>
+      throw UnimplementedError();
+
+  @override
   Future<PaymentLinkClaimSession> prepareClaim(
     VizorPaymentLink link, {
     bool allowLongSync = false,
