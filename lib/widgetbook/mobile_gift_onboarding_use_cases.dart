@@ -204,7 +204,7 @@ class _GiftPreviewState extends State<_GiftPreview> {
       ),
       GoRoute(
         path: '/welcome',
-        builder: (_, _) => const MobileWelcomeScreen(animateBackground: false),
+        builder: (_, _) => const MobileWelcomeScreen(),
       ),
       GoRoute(path: '/gift', builder: (_, _) => const GiftClaimScreen()),
       GoRoute(

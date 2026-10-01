@@ -33,6 +33,8 @@ Claim execution/resumption and unbacked account removal are already in the base.
 
 Widgetbook: Screens > Gift Cards > Mobile > Onboarding - Full walkthrough
 (and focused entry/checking/passcode/customise/Face ID/warning/error cases).
+The interactive walkthrough enables the existing Welcome animation; deterministic
+Welcome captures continue to use their separate poster scenario.
 The fixture shares in-memory account, credential, received-store, sync and
 Activity state through Home, backup and Zcash education. Preview broadcast and
 confirmation adapters are simulated; production uses the real coordinator.
