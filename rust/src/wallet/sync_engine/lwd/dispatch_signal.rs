@@ -99,27 +99,36 @@ impl HttpBody for SignalBody {
     type Data = Bytes;
     type Error = tonic::Status;
 
+    /// Fires only on a poll after the last frame. The transport hands each
+    /// frame to the connection before it polls again, so firing while
+    /// returning the last frame would release the reservation before that
+    /// frame had been taken.
     fn poll_frame(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
+        if self.inner.is_end_stream() {
+            self.dispatched.fire_once();
+            return Poll::Ready(None);
+        }
         let frame = Pin::new(&mut self.inner).poll_frame(cx);
-        match &frame {
-            // The transport stops polling a body that reports its end, so the
-            // last frame may be the final poll.
-            Poll::Ready(Some(Ok(_))) if self.inner.is_end_stream() => self.dispatched.fire_once(),
-            Poll::Ready(None) => self.dispatched.fire_once(),
-            _ => {}
+        if let Poll::Ready(None) = frame {
+            self.dispatched.fire_once();
         }
         frame
     }
 
+    /// Never reports the end early: the transport stops polling a body that
+    /// does, and the poll after the last frame is the hand-off signal.
     fn is_end_stream(&self) -> bool {
-        self.inner.is_end_stream()
+        false
     }
 
+    /// Never exact, so the transport cannot infer the end from the size.
     fn size_hint(&self) -> SizeHint {
-        self.inner.size_hint()
+        let mut hint = SizeHint::new();
+        hint.set_lower(self.inner.size_hint().lower());
+        hint
     }
 }
 
@@ -171,6 +180,30 @@ mod tests {
         body.frame().await.unwrap().unwrap();
         assert!(fired.try_recv().is_err(), "fired before the body ended");
         while body.frame().await.is_some() {}
+        fired.try_recv().unwrap();
+    }
+
+    #[tokio::test]
+    async fn holds_the_signal_until_the_transport_polls_past_the_last_frame() {
+        let (dispatched, mut fired) = Dispatched::new();
+        let mut service = DispatchSignalService::new(Transport, dispatched);
+        // `Full` reports its end as soon as it returns its only frame.
+        let whole = Body::new(http_body_util::Full::new(Bytes::from_static(b"whole")));
+        let mut body = service
+            .call(http::Request::new(whole))
+            .await
+            .unwrap()
+            .into_body();
+        body.frame().await.unwrap().unwrap();
+        assert!(
+            fired.try_recv().is_err(),
+            "fired before the transport took the last frame"
+        );
+        assert!(
+            !body.is_end_stream(),
+            "reported the end before the hand-off poll"
+        );
+        assert!(body.frame().await.is_none());
         fired.try_recv().unwrap();
     }
 
