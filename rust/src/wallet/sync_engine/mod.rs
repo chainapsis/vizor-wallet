@@ -12,6 +12,7 @@ use zcash_client_backend::data_api::{
     chain::{self, error::Error as ChainError, scan_cached_blocks},
     ll::LowLevelWalletWrite,
     scanning::{ScanPriority, ScanRange},
+    transparent_ledger::TransparentLedgerRead,
     wallet::ConfirmationsPolicy,
     WalletCommitmentTrees, WalletRead, WalletWrite,
 };
@@ -1751,11 +1752,18 @@ async fn refresh_utxos(
             store_then_mark_transparent_refreshes(
                 downloaded,
                 |downloaded| {
-                    store_transparent_outputs(db, downloaded)?;
-                    // Outputs already received are stored, but a group answered
-                    // after a transition does not advance refresh metadata, so
-                    // a later pass under the new policy re-covers it.
-                    completion_authorized.set(gate.permits()?);
+                    // A group answered after a transition neither reports its
+                    // result nor advances refresh metadata, so a later pass
+                    // under the new policy re-covers it.
+                    completion_authorized.set(store_transparent_refreshes(
+                        db,
+                        Some(UtxoReport {
+                            gate: &gate,
+                            network,
+                            tip: tip_height,
+                        }),
+                        downloaded,
+                    )?);
                     Ok(())
                 },
                 |downloaded| {
@@ -1980,6 +1988,7 @@ fn store_then_mark_transparent_refreshes<T, E>(
     Ok(())
 }
 
+#[cfg(test)]
 fn store_transparent_outputs(
     db: &mut WalletDatabase,
     downloaded: &[DownloadedTransparentRefresh],
@@ -1987,9 +1996,39 @@ fn store_transparent_outputs(
     if downloaded.iter().all(|batch| batch.outputs.is_empty()) {
         return Ok(());
     }
+    store_transparent_refreshes(db, None, downloaded).map(|_| ())
+}
 
+/// Who authorizes a refresh group's report, and what it observed against.
+struct UtxoReport<'a> {
+    gate: &'a TransparentLookupGate,
+    network: WalletNetwork,
+    tip: BlockHeight,
+}
+
+/// Stores a group of UTXO refreshes and reports each one's result to the
+/// library, in one SQLite transaction (gap 5a).
+///
+/// Every refresh is a complete query: no entry limit, and its stream ended
+/// without error. For each queried address it reports the outputs returned
+/// since the refresh's start height, as observed against `report.tip`, the
+/// chain tip read before the query was issued. A wallet output mined in that
+/// range that was not returned, and whose spend the wallet has not seen, then
+/// stops counting as spendable and its spend is searched for. The report is a
+/// completion write: it is made only while `report.gate` still authorizes the
+/// lookups, reading the durable policy in this transaction. Returns whether it
+/// was authorized.
+fn store_transparent_refreshes(
+    db: &mut WalletDatabase,
+    report: Option<UtxoReport<'_>>,
+    downloaded: &[DownloadedTransparentRefresh],
+) -> Result<bool, SyncError> {
+    let observations = match &report {
+        Some(report) => utxo_observations(report.network, report.tip, downloaded)?,
+        None => Vec::new(),
+    };
     with_wallet_db_write_lock("sync_engine.put_received_transparent_utxos", || {
-        db.transactionally(|tx_db| -> Result<(), SqliteClientError> {
+        db.transactionally(|tx_db| -> Result<bool, SqliteClientError> {
             for batch in downloaded {
                 for output in &batch.outputs {
                     tx_db.put_received_transparent_utxo(output)?;
@@ -2002,16 +2041,66 @@ fn store_transparent_outputs(
                     tx_db.queue_tx_retrieval(std::iter::once(*output.outpoint().txid()), None)?;
                 }
             }
-            Ok(())
+            let Some(report) = &report else {
+                return Ok(false);
+            };
+            // Outputs already received are stored, but a group answered after
+            // a transition reports nothing, so a later pass under the new
+            // policy observes the addresses again.
+            if !report
+                .gate
+                .permits_applied(TransparentLedgerRead::applied_transparent_policy(&*tx_db)?)
+            {
+                return Ok(false);
+            }
+            for (address, start_height, unspent) in &observations {
+                tx_db.notify_transparent_utxos_observed(
+                    address,
+                    *start_height,
+                    report.tip,
+                    unspent,
+                )?;
+            }
+            Ok(true)
         })
         .map_err(|e| SyncError::db(format!("put_received_transparent_utxos: {e}")))
     })
 }
 
+/// Each queried address of each refresh, with the refresh's start height and
+/// the outpoints it returned for that address. A refresh that starts above
+/// `tip` judged nothing and reports nothing.
+fn utxo_observations(
+    network: WalletNetwork,
+    tip: BlockHeight,
+    downloaded: &[DownloadedTransparentRefresh],
+) -> Result<Vec<(TransparentAddress, BlockHeight, Vec<OutPoint>)>, SyncError> {
+    let query_network = transparent_utxo_query_network(network);
+    let mut observations = Vec::new();
+    for batch in downloaded {
+        if batch.refresh.start_height > tip {
+            continue;
+        }
+        for address in &batch.refresh.addresses {
+            let address = TransparentAddress::decode(&query_network, address).map_err(|e| {
+                SyncError::parse(format!("refreshed transparent address {address}: {e}"))
+            })?;
+            let unspent = batch
+                .outputs
+                .iter()
+                .filter(|output| *output.recipient_address() == address)
+                .map(|output| output.outpoint().clone())
+                .collect();
+            observations.push((address, batch.refresh.start_height, unspent));
+        }
+    }
+    Ok(observations)
+}
+
 async fn download_transparent_outputs(
     mut client: CompactTxStreamerClient<Channel>,
     gate: TransparentLookupGate,
-    mut refresh: TransparentRefresh,
+    refresh: TransparentRefresh,
     should_exit: &impl Fn() -> bool,
 ) -> Result<Option<DownloadedTransparentRefresh>, SyncError> {
     if should_exit() {
@@ -2035,7 +2124,7 @@ async fn download_transparent_outputs(
         refresh.addresses.len(),
     );
 
-    let addresses = std::mem::take(&mut refresh.addresses);
+    let addresses = refresh.addresses.clone();
     let stream = tokio::select! {
         biased;
         _ = watch_for_exit(should_exit) => {
