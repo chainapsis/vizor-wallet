@@ -674,8 +674,8 @@ fn update_mempool_chain_tip(
 /// dropped on the Rust side without crossing the FRB bridge.
 /// Unknown txs may still pay the cost of shielded trial decryption,
 /// but they never take the wallet DB write lock unless a Sapling or
-/// Orchard output decrypts for one of our accounts. Transparent
-/// inbound transactions are still discovered by the normal sync path.
+/// Orchard output decrypts for one of our accounts, or a transparent output
+/// pays one of the wallet's known transparent receivers.
 ///
 /// All failures are logged and swallowed — one un-parseable tx
 /// must not break the observer loop.
@@ -943,8 +943,58 @@ fn trial_decrypt_account_uuids(
     for output in decrypted.ironwood_outputs() {
         accounts.insert(output.account().expose_uuid().to_string());
     }
+    accounts.extend(transparent_recipient_account_uuids(db_path, network, tx)?);
 
     Ok(accounts.into_iter().collect())
+}
+
+/// Accounts that own a transparent output of `tx`: an output paying one of
+/// the wallet's known transparent receivers. Public sync finds transparent
+/// receives only once mined (UTXO and address-history queries cover mined
+/// data), so this is how an unmined transparent receive becomes visible as
+/// in progress. A local lookup only: nothing is sent to the network.
+fn transparent_recipient_account_uuids(
+    db_path: &str,
+    network: WalletNetwork,
+    tx: &Transaction,
+) -> Result<Vec<String>, String> {
+    use zcash_keys::encoding::AddressCodec as _;
+    let Some(bundle) = tx.transparent_bundle() else {
+        return Ok(Vec::new());
+    };
+    let addresses = bundle
+        .vout
+        .iter()
+        .filter_map(|output| output.recipient_address())
+        .map(|address| address.encode(&network))
+        .collect::<BTreeSet<_>>();
+    if addresses.is_empty() {
+        return Ok(Vec::new());
+    }
+    let conn = crate::wallet::db::open_readonly_conn_with_timeout(
+        db_path,
+        Some(super::SYNC_DB_BUSY_TIMEOUT),
+    )?;
+    let placeholders = vec!["?"; addresses.len()].join(",");
+    let mut stmt = conn
+        .prepare(&format!(
+            "SELECT DISTINCT acct.uuid FROM addresses a
+             JOIN accounts acct ON acct.id = a.account_id
+             WHERE a.cached_transparent_receiver_address IN ({placeholders})"
+        ))
+        .map_err(|e| format!("prepare transparent receiver lookup: {e}"))?;
+    let rows = stmt
+        .query_map(rusqlite::params_from_iter(addresses.iter()), |row| {
+            row.get::<_, Vec<u8>>(0)
+        })
+        .map_err(|e| format!("transparent receiver lookup: {e}"))?;
+    rows.map(|uuid| {
+        let uuid = uuid.map_err(|e| format!("read account uuid: {e}"))?;
+        uuid::Uuid::from_slice(&uuid)
+            .map(|uuid| uuid.to_string())
+            .map_err(|e| format!("account uuid: {e}"))
+    })
+    .collect()
 }
 
 fn merge_account_uuids(known: &[String], decrypted: &[String]) -> (Vec<String>, bool) {
@@ -1000,6 +1050,7 @@ mod tests {
     //!     responsiveness.
     use super::*;
     use tempfile::NamedTempFile;
+    use transparent::address::TransparentAddress;
 
     /// Create a throwaway SQLite database with a stand-in
     /// `transactions` table. `zcash_client_sqlite` stores far more
@@ -1367,5 +1418,82 @@ mod tests {
             elapsed >= Duration::from_millis(200),
             "sleep must wait at least ~duration: elapsed={elapsed:?}"
         );
+    }
+
+    /// A pre-Overwinter v1 transaction paying `value` to `recipient`.
+    fn transparent_payment(recipient: &TransparentAddress, value: u64) -> Vec<u8> {
+        let mut bytes = 1u32.to_le_bytes().to_vec();
+        bytes.push(1);
+        bytes.extend_from_slice(&[3u8; 32]);
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.push(0);
+        bytes.extend_from_slice(&u32::MAX.to_le_bytes());
+        bytes.push(1);
+        bytes.extend_from_slice(&value.to_le_bytes());
+        let script: transparent::address::Script = recipient.script().into();
+        bytes.push(script.0 .0.len() as u8);
+        bytes.extend_from_slice(&script.0 .0);
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes
+    }
+
+    fn observe(path: &str, tip: BlockHeight, data: Vec<u8>) -> Vec<MempoolTxEvent> {
+        let events = std::sync::Mutex::new(Vec::new());
+        handle_mempool_tx(
+            path,
+            WalletNetwork::Main,
+            tip,
+            &mut TxidSeenCache::new(16),
+            &mut TxidTtlCache::new(16, Duration::from_secs(60)),
+            &mut MempoolObserverStats::new(Instant::now()),
+            &RawTransaction { data, height: 0 },
+            &|event| events.lock().unwrap().push(event),
+        );
+        events.into_inner().unwrap()
+    }
+
+    /// H12 (app layer): an unmined transparent receive at one of the
+    /// wallet's addresses is stored as unmined and reported, so Activity
+    /// shows it as in progress. Public sync finds it only once mined.
+    #[test]
+    fn a_mempool_transparent_receive_to_a_wallet_address_is_stored_and_reported() {
+        use zcash_keys::encoding::AddressCodec as _;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db");
+        let path = path.to_str().unwrap();
+        let network = WalletNetwork::Main;
+        let seed = crate::wallet::keys::mnemonic_to_seed(&crate::wallet::keys::generate_mnemonic())
+            .unwrap();
+        let (uuid, _) = crate::wallet::keys::init_db_and_create_account(
+            path,
+            network,
+            &seed,
+            Some(2_000_000),
+            "mempool",
+        )
+        .unwrap();
+        let encoded =
+            crate::wallet::keys::software_account_transparent_addresses(network, &seed, 0, 1)
+                .unwrap();
+        let address = TransparentAddress::decode(&network, &encoded[0]).unwrap();
+        let tip = BlockHeight::from_u32(2_000_100);
+        crate::wallet::sync::update_chain_tip(path, network, u64::from(u32::from(tip))).unwrap();
+
+        let events = observe(path, tip, transparent_payment(&address, 330_000));
+        assert_eq!(events.len(), 1, "the receive is wallet-relevant");
+        assert_eq!(events[0].account_uuids, vec![uuid]);
+        let unmined: i64 = rusqlite::Connection::open(path)
+            .unwrap()
+            .query_row(
+                "SELECT COUNT(*) FROM transactions WHERE mined_height IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(unmined, 1, "stored as an unmined wallet transaction");
+
+        // A payment to an address the wallet does not own stays unmatched.
+        let outside = TransparentAddress::PublicKeyHash([7; 20]);
+        assert!(observe(path, tip, transparent_payment(&outside, 330_000)).is_empty());
     }
 }
