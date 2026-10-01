@@ -16,7 +16,7 @@ use std::collections::HashSet;
 
 use crate::wallet::{
     network::WalletNetwork,
-    sync_engine::{SyncError, WalletDatabase},
+    sync_engine::{SyncError, TransparentLookupGate, WalletDatabase},
 };
 use zakura_transaction_status::{
     DisabledSource, StatusError, StatusMode, StatusObservation, StatusReader, StatusRequest,
@@ -26,7 +26,9 @@ use zcash_client_backend::data_api::{status::TransactionStatusWork, WalletRead};
 use zcash_primitives::transaction::TxId;
 
 pub(crate) use private::PrivateStatusSource;
-pub(super) use public::lightwalletd_source;
+#[cfg(test)]
+pub(crate) use public::gated;
+pub(crate) use public::lightwalletd_source;
 #[cfg(test)]
 pub(super) use store::persist_status_observation;
 
@@ -98,6 +100,7 @@ pub(super) async fn run_requests<P, R>(
     reader: &mut RoutedStatusReader<P, R>,
     db: &mut WalletDatabase,
     work: &[TransactionStatusWork],
+    gate: &TransparentLookupGate,
     attempted: &mut HashSet<TxId>,
     private_failed: &mut bool,
     db_path: &str,
@@ -108,11 +111,16 @@ where
     P: StatusSource,
     R: StatusSource,
 {
+    // Public status discloses the txid; private work is unaffected. The public
+    // source is gated per observation, and persistence re-reads the generation
+    // in its own transaction. Withheld public work stays durable.
+    let mut public_allowed = work.iter().any(|work| !is_private(work)) && gate.permits()?;
     let pending: Vec<_> = work
         .iter()
         .copied()
         .filter(|work| !attempted.contains(&work.txid()))
         .filter(|work| !(*private_failed && is_private(work)))
+        .filter(|work| public_allowed || is_private(work))
         .collect();
     let actionable = !pending.is_empty();
     // set_transaction_status evaluates absence against this database's advertised chain tip.
@@ -133,6 +141,9 @@ where
         if should_exit() {
             return Ok(actionable);
         }
+        if !is_private(&work) && !public_allowed {
+            continue;
+        }
         let txid = work.txid();
         attempted.insert(txid);
         let observation = match reader.observe(work, required_through).await {
@@ -144,6 +155,13 @@ where
                 // complete negative-coverage recovery instead of silently
                 // weakening privacy.
                 return Err(SyncError::PrivateStatusCoverageIncomplete);
+            }
+            // The gated public source reports a withheld observation as
+            // `Cancelled`; the rest of the public work is withheld too.
+            Err(StatusError::Cancelled) if !is_private(&work) && !gate.permits()? => {
+                attempted.remove(&txid);
+                public_allowed = false;
+                continue;
             }
             Err(StatusError::Cancelled) => return Ok(actionable),
             // The wallet's own database could not be read. That is not a
@@ -174,6 +192,7 @@ where
             observation,
             required_through,
             decision_hash,
+            gate,
         )? {
             ready.insert(txid.as_ref().to_vec());
         }

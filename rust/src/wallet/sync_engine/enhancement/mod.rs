@@ -40,14 +40,19 @@ pub(super) const DEFAULT_MAINNET_ENDPOINT: &str = "https://enhance-pir.valargrou
 
 pub(super) use auxiliary::transparent_history::store_address_transaction;
 pub(super) use payload::{phase, queue_stored_transactions};
-pub(crate) use policy::EnhancementPolicy;
+#[cfg(test)]
+pub(crate) use policy::test_mode;
+pub(crate) use policy::{
+    transparent_ledger_mode, transparent_ledger_mode_for, EnhancementPolicy,
+    PublicTransparentLookups,
+};
 
 use std::collections::HashSet;
 use tonic::transport::Channel;
 use zcash_client_backend::data_api::{status::TransactionStatusRead, WalletRead};
 use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 
-use super::{block_source::MemoryBlockSource, SyncError, WalletDatabase};
+use super::{block_source::MemoryBlockSource, SyncError, TransparentLookupGate, WalletDatabase};
 use auxiliary::{fees::backfill_stored_fees, transparent_history::HistoryPass};
 use payload::{EnhancePirRunError, ProductionEnhancementEffects, RoutedPayloadEnhancement};
 use transport::RoutedTransport;
@@ -68,7 +73,14 @@ pub(super) struct EnhancementSession {
 
 impl EnhancementSession {
     pub(super) fn new(network: crate::wallet::network::WalletNetwork, db_path: &str) -> Self {
-        let policy = EnhancementPolicy::current(network);
+        Self::with_policy(network, db_path, EnhancementPolicy::current(network))
+    }
+
+    pub(super) fn with_policy(
+        network: crate::wallet::network::WalletNetwork,
+        db_path: &str,
+        policy: EnhancementPolicy,
+    ) -> Self {
         payload::begin_session(db_path);
         Self {
             policy,
@@ -78,6 +90,11 @@ impl EnhancementSession {
             private_status_failed: false,
             ready_resubmission: HashSet::new(),
         }
+    }
+
+    /// The policy captured for this sync, shared by every lane it runs.
+    pub(super) fn policy(&self) -> EnhancementPolicy {
+        self.policy
     }
 
     pub(super) fn take_ready_resubmission(&mut self) -> HashSet<Vec<u8>> {
@@ -95,12 +112,19 @@ impl EnhancementSession {
     ) -> Result<bool, SyncError> {
         self.ready_resubmission.clear();
         self.policy.configure_db(db);
+        // Captured once per checkpoint; the gate re-checks the durable
+        // generation before every public request and completing commit.
+        let gate = TransparentLookupGate::for_wallet(
+            self.policy.public_transparent_lookups(db)?,
+            &self.db_path,
+            self.network,
+        )?;
         backfill_stored_fees(client, db, &self.db_path, should_exit).await?;
 
         // The public source reuses the caller-owned lightwalletd channel, while
         // `status::reader` constructs the private source from wallet context.
         // Both remain lazy: only the source selected by policy is opened.
-        let public_source = status::lightwalletd_source(client.clone(), should_exit);
+        let public_source = status::lightwalletd_source(client.clone(), gate.clone(), should_exit);
         let mut status_reader =
             status::reader(&self.db_path, self.network, should_exit, public_source);
         let mut attempted_statuses = HashSet::new();
@@ -117,6 +141,7 @@ impl EnhancementSession {
                 &mut status_reader,
                 db,
                 &status_work,
+                &gate,
                 &mut attempted_statuses,
                 &mut self.private_status_failed,
                 &self.db_path,
@@ -134,6 +159,7 @@ impl EnhancementSession {
                     &self.db_path,
                     &requests,
                     self.network,
+                    &gate,
                     should_exit,
                 )
                 .await?;
@@ -158,8 +184,13 @@ impl EnhancementSession {
         should_exit: &impl Fn() -> bool,
     ) -> Result<bool, SyncError> {
         self.policy.configure_db(db);
+        let gate = TransparentLookupGate::for_wallet(
+            self.policy.public_transparent_lookups(db)?,
+            &self.db_path,
+            self.network,
+        )?;
         let mut effects =
-            ProductionEnhancementEffects::new(self.network, &self.db_path, client, cached);
+            ProductionEnhancementEffects::new(self.network, &self.db_path, client, cached, gate);
         let route = RoutedTransport::new(should_exit);
         match Box::pin(self.payload.run(db, &route, &mut effects, should_exit)).await {
             Ok(()) => effects.finish().map(|()| false),

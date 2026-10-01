@@ -36,7 +36,10 @@
 //!    extracted round-1 txid. Swaps, duplicates, modified effects, and missing
 //!    shielded or transparent signatures are rejected before persistence.
 //!
-//! 2. **Broadcast precedes persistence.** A definite lightwalletd rejection
+//! 2. **Authority is checked before broadcast; broadcast precedes persistence.**
+//!    Transparent input authorization holds a SQLite writer reservation until
+//!    each request has been handed to the transport, so recovery cannot revoke
+//!    it between check and send. A definite lightwalletd rejection
 //!    must leave that PCZT out of the wallet DB. After each ordered broadcast
 //!    attempt stops, the accepted-or-ambiguous prefix is persisted atomically;
 //!    a later store failure rolls back every earlier write in that prefix.
@@ -73,6 +76,7 @@ use transparent::keys::TransparentKeyScope;
 use zcash_address::{ToAddress, ZcashAddress};
 use zcash_client_backend::data_api::{Account, OutputLockStore, WalletRead};
 use zcash_client_backend::proposal::{Proposal, Step, StepOutputIndex};
+use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 use zcash_client_backend::wallet::WalletTransparentOutput;
 use zcash_primitives::transaction::{
     builder::{cached_orchard_proving_key, BundlePadding},
@@ -1658,11 +1662,34 @@ async fn store_and_broadcast_pczts_inner(
     let txids_joined = txids.join(",");
     let total_count = prepared.len() as u32;
 
-    // Resolve a recent tip before touching either the DB or the network. An
-    // already-expired set is terminal and must not be persisted as pending.
-    let mut expiry_client =
-        match crate::wallet::sync_engine::open_isolated_lwd_channel(lightwalletd_url).await {
-            Ok(client) => client,
+    let mined = prepared
+        .iter()
+        .map(|item| super::hardware_authority::stored_mined(db_path, network, &item.extracted.tx))
+        .collect::<Result<Vec<_>, _>>();
+    let mined = match mined {
+        Ok(mined) => mined,
+        Err(error) => return release_signed_pczt_operation_after_failure(proposal, error),
+    };
+    if mined.iter().all(|mined| *mined) {
+        if let Some((proposal_id, send_flow_id)) = proposal {
+            if let Err(error) = finish_stored_proposal(proposal_id, send_flow_id, false) {
+                log::warn!("keystone: mined transactions reconciled but proposal lock bookkeeping failed: {error}");
+            }
+        }
+        return Ok(StoreAndBroadcastPcztsResult {
+            txids: txids_joined,
+            status: StoreAndBroadcastPcztsResult::BROADCASTED.to_string(),
+            broadcasted_count: total_count,
+            total_count,
+            message: None,
+        });
+    }
+
+    // Only unmined rounds need a live tip and expiry checks. Mined evidence is
+    // already a completed submission, even after the original expiry height.
+    let expiry_transport =
+        match crate::wallet::sync_engine::open_isolated_lwd_transport(lightwalletd_url).await {
+            Ok(transport) => transport,
             Err(error) => {
                 return release_signed_pczt_operation_after_failure(
                     proposal,
@@ -1671,7 +1698,7 @@ async fn store_and_broadcast_pczts_inner(
             }
         };
     let latest = match crate::wallet::sync_engine::latest_block_for_transaction_with_client(
-        &mut expiry_client,
+        &mut CompactTxStreamerClient::new(expiry_transport.clone()),
         lightwalletd_url,
         network,
     )
@@ -1685,7 +1712,10 @@ async fn store_and_broadcast_pczts_inner(
             );
         }
     };
-    if let Some(error) = prepared.iter().find_map(|item| {
+    if let Some(error) = prepared.iter().zip(&mined).find_map(|(item, mined)| {
+        if *mined {
+            return None;
+        }
         pczt_broadcast_expiry_error(
             &item.extracted.txid,
             u32::from(item.extracted.tx.expiry_height()),
@@ -1695,7 +1725,7 @@ async fn store_and_broadcast_pczts_inner(
         let result = StoreAndBroadcastPcztsResult {
             txids: txids_joined,
             status: StoreAndBroadcastPcztsResult::EXPIRED.to_string(),
-            broadcasted_count: 0,
+            broadcasted_count: mined.iter().filter(|mined| **mined).count() as u32,
             total_count,
             message: Some(error.clone()),
         };
@@ -1711,16 +1741,23 @@ async fn store_and_broadcast_pczts_inner(
             None => Ok(result),
         };
     }
-    let mut first_client = Some(expiry_client);
+    let mut first_transport = Some(expiry_transport);
     let broadcast_plan = 'broadcast: loop {
         for (index, item) in prepared.iter().enumerate() {
-            let client = if let Some(client) = first_client.take() {
-                Ok(client)
+            if mined[index] {
+                match pczt_broadcast_step(index, prepared.len(), PcztBroadcastAttempt::Accepted) {
+                    PcztBroadcastStep::Continue => continue,
+                    PcztBroadcastStep::Stop(plan) => break 'broadcast plan,
+                    PcztBroadcastStep::Fail(_) => unreachable!(),
+                }
+            }
+            let transport = if let Some(transport) = first_transport.take() {
+                Ok(transport)
             } else {
-                crate::wallet::sync_engine::open_isolated_lwd_channel(lightwalletd_url).await
+                crate::wallet::sync_engine::open_isolated_lwd_transport(lightwalletd_url).await
             };
-            let mut client = match client {
-                Ok(client) => client,
+            let transport = match transport {
+                Ok(transport) => transport,
                 Err(error) => {
                     match pczt_broadcast_step(
                         index,
@@ -1740,17 +1777,34 @@ async fn store_and_broadcast_pczts_inner(
                     super::mark_proposal_broadcast_started(proposal_id, send_flow_id)?;
                 }
             }
-            let attempt = match crate::wallet::sync_engine::send_transaction_with_status(
-                &mut client,
-                &item.extracted.raw_tx,
+            let earlier = prepared[..index]
+                .iter()
+                .map(|p| &p.extracted.tx)
+                .collect::<Vec<_>>();
+            let attempt = match super::hardware_authority::dispatch(
+                db_path,
+                network,
+                &item.extracted.tx,
+                &earlier,
+                latest.height,
+                |dispatched| {
+                    crate::wallet::sync_engine::send_transaction_signalling(
+                        transport,
+                        &item.extracted.raw_tx,
+                        dispatched,
+                    )
+                },
             )
             .await
             {
-                Ok(response) => match super::broadcast::send_response_rejection_error(&response) {
-                    Some(error) => PcztBroadcastAttempt::DefiniteRejection(error),
-                    None => PcztBroadcastAttempt::Accepted,
-                },
-                Err(error) => PcztBroadcastAttempt::TransportUnknown(error.to_string()),
+                Ok(Ok(response)) => {
+                    match super::broadcast::send_response_rejection_error(&response) {
+                        Some(error) => PcztBroadcastAttempt::DefiniteRejection(error),
+                        None => PcztBroadcastAttempt::Accepted,
+                    }
+                }
+                Ok(Err(error)) => PcztBroadcastAttempt::TransportUnknown(error.to_string()),
+                Err(error) => PcztBroadcastAttempt::RouteUnavailable(error),
             };
             match pczt_broadcast_step(index, prepared.len(), attempt) {
                 PcztBroadcastStep::Continue => {}
@@ -1773,6 +1827,9 @@ async fn store_and_broadcast_pczts_inner(
                     .take(broadcast_plan.persisted_prefix_len)
                     .enumerate()
                 {
+                    if mined[index] {
+                        continue;
+                    }
                     let consensus_branch_id = *item.combined.global().consensus_branch_id();
                     let orchard_vk =
                         orchard_verifying_key_for_consensus_branch(consensus_branch_id);
@@ -1805,6 +1862,9 @@ async fn store_and_broadcast_pczts_inner(
                     .take(broadcast_plan.persisted_prefix_len)
                     .enumerate()
                 {
+                    if mined[index] {
+                        continue;
+                    }
                     decrypt_and_store_transaction(
                         &network,
                         transactional_db,
@@ -2241,11 +2301,11 @@ pub async fn extract_and_broadcast_pczt(
     // but a response deadline is ambiguous: lightwalletd may already
     // have relayed the transaction, so we store locally and let the
     // normal pending/resubmit path reconcile it.
-    let mut client = crate::wallet::sync_engine::open_isolated_lwd_channel(lightwalletd_url)
+    let transport = crate::wallet::sync_engine::open_isolated_lwd_transport(lightwalletd_url)
         .await
         .map_err(|e| e.to_string())?;
     let latest = crate::wallet::sync_engine::latest_block_for_transaction_with_client(
-        &mut client,
+        &mut CompactTxStreamerClient::new(transport.clone()),
         lightwalletd_url,
         network,
     )
@@ -2257,11 +2317,19 @@ pub async fn extract_and_broadcast_pczt(
         return Err(error);
     }
 
-    let resp = match crate::wallet::sync_engine::send_transaction_with_status(
-        &mut client,
-        &tx_bytes,
+    let resp = match super::hardware_authority::dispatch(
+        db_path,
+        network,
+        &tx,
+        &[],
+        latest.height,
+        |dispatched| {
+            crate::wallet::sync_engine::send_transaction_signalling(
+                transport, &tx_bytes, dispatched,
+            )
+        },
     )
-    .await
+    .await?
     {
         Ok(resp) => resp,
         // Once SendTransaction has started, a gRPC status is not proof that

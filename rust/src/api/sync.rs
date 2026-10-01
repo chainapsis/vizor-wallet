@@ -457,8 +457,23 @@ pub enum WalletBalanceAvailability {
     AccountUnavailable,
 }
 
+/// What the transparent fields of a [`WalletBalance`] represent.
+pub enum TransparentBalanceAuthority {
+    /// Current authorized amounts.
+    Current,
+    /// No current authority: the transparent fields are zero because nothing
+    /// is spendable, and `transparent_last_known` holds the prior amount.
+    LastKnown,
+    /// No current authority and no prior amount. Show as unavailable, never 0.
+    Unavailable,
+}
+
 pub struct WalletBalance {
     pub availability: WalletBalanceAvailability,
+    pub transparent_authority: TransparentBalanceAuthority,
+    /// Informational prior transparent total, present only with
+    /// `TransparentBalanceAuthority::LastKnown`. It never authorizes a spend.
+    pub transparent_last_known: Option<u64>,
     pub transparent: u64,
     pub sapling: u64,
     pub orchard: u64,
@@ -714,6 +729,17 @@ pub fn get_balance(
                 WalletBalanceAvailability::AccountUnavailable
             }
         };
+        let transparent_authority = match b.transparent_authority {
+            wallet_sync::TransparentBalanceAuthority::Current => {
+                TransparentBalanceAuthority::Current
+            }
+            wallet_sync::TransparentBalanceAuthority::LastKnown => {
+                TransparentBalanceAuthority::LastKnown
+            }
+            wallet_sync::TransparentBalanceAuthority::Unavailable => {
+                TransparentBalanceAuthority::Unavailable
+            }
+        };
         let spendable = b.sapling + b.orchard + b.ironwood;
         let total_spendable = b.transparent + b.sapling + b.orchard + b.ironwood;
         let locked = b.transparent_locked + b.sapling_locked + b.orchard_locked + b.ironwood_locked;
@@ -721,6 +747,8 @@ pub fn get_balance(
             b.transparent_pending + b.sapling_pending + b.orchard_pending + b.ironwood_pending;
         Ok(WalletBalance {
             availability,
+            transparent_authority,
+            transparent_last_known: b.transparent_last_known,
             transparent: b.transparent,
             sapling: b.sapling,
             orchard: b.orchard,
@@ -2570,13 +2598,31 @@ pub struct TransactionInfo {
     pub mined_height: u64,
     pub expired_unmined: bool,
     pub account_balance_delta: i64,
+    /// The recorded fee. Zero unless `fee_state` is `Known`.
     pub fee: u64,
+    pub fee_state: TransactionFeeState,
     pub block_time: u64,
     pub is_transparent: bool,
     pub tx_kind: String,
     pub display_amount: u64,
     pub display_pool: String,
     pub created_time: u64,
+    /// Whether the recipients, payment amounts, and memos are known.
+    pub details_complete: bool,
+    /// Whether later discovery or enhancement can still change this entry.
+    /// A provisional debit is a net amount, not a payment amount.
+    pub provisional: bool,
+}
+
+/// The fee of a transaction as it concerns the account.
+pub enum TransactionFeeState {
+    /// The account paid the recorded `fee`.
+    Known,
+    /// The account spent funds, or may have, but the fee is not recorded.
+    /// Show it as unknown, never as zero.
+    Unknown,
+    /// The account spent nothing, so it paid no fee.
+    NotApplicable,
 }
 
 pub struct TransactionDetail {
@@ -2587,6 +2633,10 @@ pub struct TransactionDetail {
     pub source_pool: Option<String>,
     pub memo: Option<String>,
     pub outputs: Vec<TransactionDetailOutput>,
+    /// Whether `outputs` holds every recipient and memo.
+    pub details_complete: bool,
+    /// See [`TransactionInfo::provisional`].
+    pub provisional: bool,
 }
 
 pub struct TransactionDetailOutput {
@@ -2613,12 +2663,21 @@ pub fn get_transaction_history(
                 expired_unmined: t.expired_unmined,
                 account_balance_delta: t.account_balance_delta,
                 fee: t.fee,
+                fee_state: match t.fee_state {
+                    wallet_sync::TransactionFeeState::Known => TransactionFeeState::Known,
+                    wallet_sync::TransactionFeeState::Unknown => TransactionFeeState::Unknown,
+                    wallet_sync::TransactionFeeState::NotApplicable => {
+                        TransactionFeeState::NotApplicable
+                    }
+                },
                 block_time: t.block_time,
                 is_transparent: t.is_transparent,
                 tx_kind: t.tx_kind,
                 display_amount: t.display_amount,
                 display_pool: t.display_pool,
                 created_time: t.created_time,
+                details_complete: t.details_complete,
+                provisional: t.provisional,
             })
             .collect())
     })
@@ -2729,6 +2788,8 @@ pub fn get_transaction_detail(
                     uses_orchard_receiver: output.uses_orchard_receiver,
                 })
                 .collect(),
+            details_complete: detail.details_complete,
+            provisional: detail.provisional,
         })
     })
 }

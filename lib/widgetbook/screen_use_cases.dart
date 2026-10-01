@@ -1346,6 +1346,11 @@ rust_sync.TransactionInfo _zeroValueTx(String kind) {
     expiredUnmined: false,
     accountBalanceDelta: kind == 'sent' ? -10000 : 0,
     fee: BigInt.from(10000),
+    feeState: kind == 'sent'
+        ? rust_sync.TransactionFeeState.known
+        : rust_sync.TransactionFeeState.notApplicable,
+    detailsComplete: true,
+    provisional: false,
     blockTime: seconds,
     isTransparent: false,
     txKind: kind,
@@ -1377,6 +1382,8 @@ rust_sync.TransactionDetail _zeroValueDetail(rust_sync.TransactionInfo tx) {
         usesOrchardReceiver: true,
       ),
     ],
+    detailsComplete: true,
+    provisional: false,
   );
 }
 
@@ -4258,6 +4265,9 @@ rust_sync.TransactionInfo _homeTx(int index) {
     expiredUnmined: false,
     accountBalanceDelta: 0,
     fee: BigInt.zero,
+    feeState: rust_sync.TransactionFeeState.notApplicable,
+    detailsComplete: true,
+    provisional: false,
     blockTime: seconds,
     isTransparent: false,
     txKind: 'received',
@@ -4279,6 +4289,9 @@ rust_sync.TransactionInfo _giftCardActivityTx({
     expiredUnmined: false,
     accountBalanceDelta: 0,
     fee: BigInt.zero,
+    feeState: rust_sync.TransactionFeeState.notApplicable,
+    detailsComplete: true,
+    provisional: false,
     blockTime: timestamp,
     isTransparent: false,
     txKind: kind,
@@ -5387,6 +5400,9 @@ class _GiftCardProgressPreviewState extends State<_GiftCardProgressPreview> {
       expiredUnmined: false,
       accountBalanceDelta: widget.creating ? -445010000 : 445000000,
       fee: widget.creating || _stage == 4 ? BigInt.from(10000) : BigInt.zero,
+      feeState: rust_sync.TransactionFeeState.known,
+      detailsComplete: true,
+      provisional: false,
       blockTime: mined ? seconds + BigInt.from(75) : BigInt.zero,
       isTransparent: false,
       txKind: widget.creating
@@ -5408,6 +5424,9 @@ class _GiftCardProgressPreviewState extends State<_GiftCardProgressPreview> {
           expiredUnmined: false,
           accountBalanceDelta: 100000000,
           fee: BigInt.zero,
+          feeState: rust_sync.TransactionFeeState.notApplicable,
+          detailsComplete: true,
+          provisional: false,
           blockTime: seconds - BigInt.from(30),
           isTransparent: false,
           txKind: 'received',

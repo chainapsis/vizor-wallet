@@ -28,6 +28,7 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../providers/zec_price_change_provider.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/enhance_pir_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_display_progress_provider.dart';
@@ -48,6 +49,7 @@ import '../../swap/models/swap_activity_navigation.dart';
 import '../../swap/models/swap_fiat_value_formatting.dart';
 import '../../swap/providers/swap_activity_tracker.dart';
 import '../../swap/providers/swap_state_provider.dart';
+import '../services/transparent_balance_display.dart';
 import '../services/transparent_shielding_service.dart';
 import '../widgets/keystone_shield_signing_overlay.dart';
 import '../widgets/ledger_shield_signing_overlay.dart';
@@ -312,8 +314,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       privacyModeEnabled: privacyModeEnabled,
     );
     final priceChange24hPct = ref.watch(zecPriceChange24hPctProvider);
-    final transparentBalance =
-        sync.transparentBalance + sync.transparentPendingBalance;
+    final transparentBalance = TransparentBalanceDisplay.of(sync);
     final canShieldTransparentBalance =
         sync.canShieldTransparentBalance && !isMigrationRequired;
     final isImportingForBackground =
@@ -394,8 +395,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 migratingBalanceText: formatZecAmount(migratingBalance),
                 waitingForMigrationConfirmation:
                     waitingForMigrationConfirmation,
-                transparentBalanceText: _formatZec(transparentBalance),
-                hasTransparentBalance: transparentBalance > BigInt.zero,
+                transparentBalanceText: transparentBalance.text(_formatZec),
+                hasTransparentBalance: transparentBalance.visible,
                 canShieldBalance: canShieldTransparentBalance,
                 isShieldingBalance: _isShieldingBalance,
                 shieldBalanceError: _shieldBalanceError,
@@ -755,6 +756,7 @@ class _HomePaneState extends ConsumerState<_HomePane> {
       row: buildTransactionActivityRow(
         context: context,
         transaction: transaction,
+        privateQueriesEnabled: ref.watch(enhancePirProvider),
         giftCardKind: giftCard?.kind,
         giftCardAmountZatoshi: giftCard?.amountZatoshi,
         giftCardBatchCount: giftCard?.batchCount,

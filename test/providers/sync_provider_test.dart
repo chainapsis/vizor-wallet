@@ -896,6 +896,7 @@ class _ExistingAccountNotifier extends AccountNotifier {
 rust_sync.WalletBalance _availableBalance(BigInt amount) =>
     rust_sync.WalletBalance(
       availability: rust_sync.WalletBalanceAvailability.available,
+      transparentAuthority: rust_sync.TransparentBalanceAuthority.current,
       transparent: BigInt.zero,
       sapling: BigInt.zero,
       orchard: amount,
@@ -918,6 +919,7 @@ rust_sync.WalletBalance _availableBalance(BigInt amount) =>
 
 final _unavailableBalance = rust_sync.WalletBalance(
   availability: rust_sync.WalletBalanceAvailability.summaryUnavailable,
+  transparentAuthority: rust_sync.TransparentBalanceAuthority.current,
   transparent: BigInt.zero,
   sapling: BigInt.zero,
   orchard: BigInt.zero,
@@ -945,6 +947,9 @@ rust_sync.TransactionInfo _transaction(String txidHex) {
     expiredUnmined: false,
     accountBalanceDelta: 0,
     fee: BigInt.zero,
+    feeState: rust_sync.TransactionFeeState.notApplicable,
+    detailsComplete: true,
+    provisional: false,
     blockTime: BigInt.from(1800000000),
     isTransparent: false,
     txKind: 'received',

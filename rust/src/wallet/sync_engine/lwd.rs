@@ -30,16 +30,19 @@ use zcash_client_backend::{
     proto::service::{
         self, compact_tx_streamer_client::CompactTxStreamerClient, BlockId, BlockRange, ChainSpec,
         Empty, GetAddressUtxosArg, GetAddressUtxosReply, GetSubtreeRootsArg, RawTransaction,
-        SendResponse, TransparentAddressBlockFilter, TreeState,
+        SendResponse, TransparentAddressBlockFilter, TreeState, TxFilter,
     },
 };
-use zcash_primitives::block::BlockHash;
+use zcash_primitives::{block::BlockHash, transaction::TxId};
 use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
 
 use crate::wallet::{db::with_wallet_db_write_lock, network::WalletNetwork};
 
 use super::block_source::MemoryBlockSource;
 use super::{elapsed, SyncError, WalletDatabase};
+
+pub(super) mod dispatch_signal;
+pub(super) mod transparent_lookup;
 
 const LIGHTWALLETD_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const LIGHTWALLETD_UNARY_RPC_TIMEOUT: Duration = Duration::from_secs(20);
@@ -155,6 +158,14 @@ pub(crate) async fn open_isolated_lwd_channel(
     open_lwd_channel_for_route(lightwalletd_url, true, || false).await
 }
 
+/// The transport [`open_isolated_lwd_channel`] wraps, for broadcasts that
+/// layer [`send_transaction_signalling`] over it.
+pub(crate) async fn open_isolated_lwd_transport(
+    lightwalletd_url: &str,
+) -> Result<Channel, SyncError> {
+    open_lwd_transport_for_route(lightwalletd_url, true, || false).await
+}
+
 /// Opens a lightwalletd channel that is always direct, bypassing the
 /// process-wide route policy entirely.
 ///
@@ -200,6 +211,16 @@ async fn open_lwd_channel_for_route(
     isolated: bool,
     cancelled: impl Fn() -> bool,
 ) -> Result<CompactTxStreamerClient<Channel>, SyncError> {
+    open_lwd_transport_for_route(lightwalletd_url, isolated, cancelled)
+        .await
+        .map(CompactTxStreamerClient::new)
+}
+
+async fn open_lwd_transport_for_route(
+    lightwalletd_url: &str,
+    isolated: bool,
+    cancelled: impl Fn() -> bool,
+) -> Result<Channel, SyncError> {
     static RUSTLS_INIT: std::sync::Once = std::sync::Once::new();
     RUSTLS_INIT.call_once(|| {
         let _ = rustls::crypto::ring::default_provider().install_default();
@@ -214,7 +235,7 @@ async fn open_lwd_channel_for_route(
     {
         let allow_onion_services = endpoint_allows_onion_services(&endpoint);
         return tor_client
-            .connect_to_lightwalletd(endpoint.uri().clone(), allow_onion_services)
+            .connect_lightwalletd_channel(endpoint.uri().clone(), allow_onion_services)
             .await
             .map_err(|e| SyncError::net(format!("Tor gRPC connect failed: {e}")));
     }
@@ -225,11 +246,10 @@ async fn open_lwd_channel_for_route(
     } else {
         endpoint
     };
-    let channel = endpoint
+    endpoint
         .connect_with_connector(DirectRouteConnector::new())
         .await
-        .map_err(|e| SyncError::net(format!("gRPC connect failed: {e}")))?;
-    Ok(CompactTxStreamerClient::new(channel))
+        .map_err(|e| SyncError::net(format!("gRPC connect failed: {e}")))
 }
 
 #[derive(Clone)]
@@ -418,6 +438,30 @@ pub(crate) async fn send_transaction_with_status(
     .await
 }
 
+/// Like [`send_transaction_with_status`], over `transport`, firing
+/// `dispatched` once the request body has been handed to the connection.
+pub(crate) async fn send_transaction_signalling(
+    transport: Channel,
+    data: &[u8],
+    dispatched: dispatch_signal::Dispatched,
+) -> Result<SendResponse, Status> {
+    let mut client = CompactTxStreamerClient::new(dispatch_signal::DispatchSignalService::new(
+        transport, dispatched,
+    ));
+    await_tonic_response(
+        "send_transaction",
+        LIGHTWALLETD_UNARY_RPC_TIMEOUT,
+        client.send_transaction(timed_request(
+            RawTransaction {
+                data: data.to_vec(),
+                height: 0,
+            },
+            LIGHTWALLETD_UNARY_RPC_TIMEOUT,
+        )),
+    )
+    .await
+}
+
 /// Submit a raw transaction with a bounded response wait and map tonic
 /// errors into the sync error taxonomy.
 pub(crate) async fn send_transaction(
@@ -432,7 +476,10 @@ pub(crate) async fn send_transaction(
 /// Open the deprecated transparent-address transaction stream with a
 /// bounded wait for response headers. Individual stream messages must
 /// still be read with [`next_stream_message`] to bound an idle stream.
-pub(crate) async fn get_taddress_txids(
+///
+/// It discloses `address`; lanes reach it only through
+/// [`transparent_lookup::TransparentLookupGate`].
+async fn get_taddress_txids(
     client: &mut CompactTxStreamerClient<Channel>,
     address: String,
     start_height: u64,
@@ -463,7 +510,10 @@ pub(crate) async fn get_taddress_txids(
 /// Open a transparent UTXO stream with a bounded wait for response headers.
 /// Callers should read individual messages with [`next_stream_message`] so a
 /// stalled lightwalletd stream cannot pin the sync loop indefinitely.
-pub(super) async fn get_address_utxos_stream(
+///
+/// It discloses `addresses`; lanes reach it only through
+/// [`transparent_lookup::TransparentLookupGate`].
+async fn get_address_utxos_stream(
     client: &mut CompactTxStreamerClient<Channel>,
     addresses: Vec<String>,
     start_height: BlockHeight,
@@ -477,6 +527,25 @@ pub(super) async fn get_address_utxos_stream(
         })),
     )
     .await
+}
+
+/// Public, txid-disclosing `GetTransaction`. Lanes reach it only through
+/// [`transparent_lookup::TransparentLookupGate`].
+async fn get_transaction_payload(
+    client: &mut CompactTxStreamerClient<Channel>,
+    txid: TxId,
+) -> Result<RawTransaction, Status> {
+    const TIMEOUT: Duration = Duration::from_secs(20);
+    let mut request = Request::new(TxFilter {
+        block: None,
+        index: 0,
+        hash: txid.as_ref().to_vec(),
+    });
+    request.set_timeout(TIMEOUT);
+    tokio::time::timeout(TIMEOUT, client.get_transaction(request))
+        .await
+        .map_err(|_| Status::deadline_exceeded("get_transaction_payload timed out"))?
+        .map(|response| response.into_inner())
 }
 
 async fn await_stream_message<T, F>(

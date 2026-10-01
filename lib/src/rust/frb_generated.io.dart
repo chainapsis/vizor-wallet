@@ -1216,7 +1216,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   TransactionDetailOutput dco_decode_transaction_detail_output(dynamic raw);
 
   @protected
+  TransactionFeeState dco_decode_transaction_fee_state(dynamic raw);
+
+  @protected
   TransactionInfo dco_decode_transaction_info(dynamic raw);
+
+  @protected
+  TransparentBalanceAuthority dco_decode_transparent_balance_authority(
+    dynamic raw,
+  );
 
   @protected
   TxDataRequest dco_decode_tx_data_request(dynamic raw);
@@ -2800,7 +2808,17 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  TransactionFeeState sse_decode_transaction_fee_state(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   TransactionInfo sse_decode_transaction_info(SseDeserializer deserializer);
+
+  @protected
+  TransparentBalanceAuthority sse_decode_transparent_balance_authority(
+    SseDeserializer deserializer,
+  );
 
   @protected
   TxDataRequest sse_decode_tx_data_request(SseDeserializer deserializer);
@@ -4713,8 +4731,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_transaction_fee_state(
+    TransactionFeeState self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_transaction_info(
     TransactionInfo self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_transparent_balance_authority(
+    TransparentBalanceAuthority self,
     SseSerializer serializer,
   );
 
