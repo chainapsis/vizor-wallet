@@ -40,7 +40,20 @@ class MobilePasscodeLayout extends StatelessWidget {
     body: SafeArea(
       child: LayoutBuilder(
         builder: (context, bounds) {
-          final compact = bounds.maxHeight < 740;
+          // Stay regular while its keys keep at least 90% of their size with
+          // the reserved error lines. The footer budget is the biometric
+          // button's minimum height.
+          final regularPortraitHeight =
+              bounds.maxHeight -
+              (navigation == null ? 0 : 74) -
+              (footer == null
+                  ? 48
+                  : 24 + 16 + kPasscodeBiometricButtonMinHeight);
+          final regularKeypadHeight =
+              regularPortraitHeight -
+              _fixedHeight(context, false, bounds.maxWidth - 32) -
+              _twoErrorLines(context, bounds.maxWidth - 32);
+          final compact = regularKeypadHeight < 368 * 0.9;
           return Column(
             children: [
               if (navigation != null)
@@ -93,6 +106,28 @@ class MobilePasscodeLayout extends StatelessWidget {
     painter.dispose();
     return height;
   }
+
+  /// Copy, dots and gaps around the error line, excluding the keypad.
+  double _fixedHeight(BuildContext context, bool compact, double width) {
+    final gap = compact ? 8.0 : 24.0;
+    return _textHeight(context, title, _titleStyle(context, compact), width) +
+        (compact ? 8 : 12) +
+        _textHeight(context, subtitle, _subtitleStyle(context), width) +
+        gap +
+        (compact ? 36 : 57) +
+        (compact ? 4 : 8) +
+        gap;
+  }
+
+  /// Two error lines are reserved so an error appearing or clearing never
+  /// resizes or moves the keypad.
+  double _twoErrorLines(BuildContext context, double width) =>
+      _textHeight(context, ' \n ', _errorStyle(context), width);
+
+  double _errorReserve(BuildContext context, double width) => math.max(
+    _twoErrorLines(context, width),
+    _textHeight(context, error ?? ' ', _errorStyle(context), width),
+  );
 
   Widget _copy(
     BuildContext context,
@@ -163,46 +198,45 @@ class MobilePasscodeLayout extends StatelessWidget {
             final gap = compact ? 8.0 : 24.0;
             final dotsHeight = compact ? 36.0 : 57.0;
             final errorGap = compact ? 4.0 : 8.0;
-            final copyHeight =
-                _textHeight(
-                  context,
-                  title,
-                  _titleStyle(context, compact),
-                  bounds.maxWidth,
-                ) +
-                (compact ? 8 : 12) +
-                _textHeight(
-                  context,
-                  subtitle,
-                  _subtitleStyle(context),
-                  bounds.maxWidth,
-                );
-            final errorHeight = _textHeight(
+            final fixedHeight = _fixedHeight(context, compact, bounds.maxWidth);
+            final errorLine = _textHeight(
               context,
-              error ?? ' ',
+              ' ',
               _errorStyle(context),
               bounds.maxWidth,
             );
-            final otherHeight =
-                copyHeight + gap + dotsHeight + errorGap + errorHeight + gap;
+            final errorReserve = _errorReserve(context, bounds.maxWidth);
             // Existing keypad is 320 wide / 368 tall. Prefer its original 80px keys,
             // reducing only as needed and never below 48px touch targets.
             final maxWidth = math.min(320.0, bounds.maxWidth);
             final keyWidth = math.min(
               maxWidth,
-              math.max(192.0, (bounds.maxHeight - otherHeight) * 320 / 368),
+              math.max(
+                192.0,
+                (bounds.maxHeight - fixedHeight - errorReserve) * 320 / 368,
+              ),
             );
             final scrollCopy =
-                otherHeight + keyWidth * 368 / 320 > bounds.maxHeight + 0.01;
+                fixedHeight + errorReserve + keyWidth * 368 / 320 >
+                bounds.maxHeight + 0.01;
             if (!scrollCopy) {
               // Keep the keypad anchored near the safe-area bottom. At the
               // reference setup size, 48 of the 76 spare pixels sit above the
               // heading; the rest separates the prompt from the keypad.
               final remaining = math.max(
                 0.0,
-                bounds.maxHeight - otherHeight - keyWidth * 368 / 320,
+                bounds.maxHeight -
+                    fixedHeight -
+                    errorLine -
+                    keyWidth * 368 / 320,
               );
-              final leadingSpace = compact ? 0.0 : remaining * (48 / 76);
+              // The spacer keeps room for a second error line.
+              final leadingSpace = compact
+                  ? 0.0
+                  : math.min(
+                      remaining * (48 / 76),
+                      math.max(0.0, remaining - (errorReserve - errorLine)),
+                    );
               return Column(
                 children: [
                   SizedBox(height: leadingSpace),
@@ -221,6 +255,7 @@ class MobilePasscodeLayout extends StatelessWidget {
               children: [
                 Expanded(
                   child: _ScrollablePasscodeCopy(
+                    revealEnd: error != null,
                     child: _copy(context, compact, includeError: true),
                   ),
                 ),
@@ -241,8 +276,11 @@ class MobilePasscodeLayout extends StatelessWidget {
 /// Only explanatory copy can scroll. The persistent thumb and edge fades
 /// indicate clipped content without covering or moving the input controls.
 class _ScrollablePasscodeCopy extends StatefulWidget {
-  const _ScrollablePasscodeCopy({required this.child});
+  const _ScrollablePasscodeCopy({required this.child, this.revealEnd = false});
   final Widget child;
+
+  /// Scrolls to the end, where the error sits, when it becomes true.
+  final bool revealEnd;
   @override
   State<_ScrollablePasscodeCopy> createState() =>
       _ScrollablePasscodeCopyState();
@@ -251,6 +289,30 @@ class _ScrollablePasscodeCopy extends StatefulWidget {
 class _ScrollablePasscodeCopyState extends State<_ScrollablePasscodeCopy> {
   final _controller = ScrollController();
   bool _hasOverflow = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.revealEnd) _scheduleReveal();
+  }
+
+  @override
+  void didUpdateWidget(_ScrollablePasscodeCopy oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.revealEnd && !oldWidget.revealEnd) _scheduleReveal();
+  }
+
+  void _scheduleReveal() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_controller.hasClients) return;
+      _controller.animateTo(
+        _controller.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
   @override
   void dispose() {
     _controller.dispose();

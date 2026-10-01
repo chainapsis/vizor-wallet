@@ -606,10 +606,7 @@ void main() {
         const Size(393, 852),
       );
       await _enterPasscode(tester, '000000');
-      expect(
-        find.text('Incorrect passcode. Please try again.'),
-        findsOneWidget,
-      );
+      expect(find.text('Incorrect passcode'), findsOneWidget);
       security.verify = (_) async => throw StateError('verification failed');
       await _enterPasscode(tester);
       expect(

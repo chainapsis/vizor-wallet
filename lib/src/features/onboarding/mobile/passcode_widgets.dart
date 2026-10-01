@@ -21,6 +21,10 @@ const double _kPasscodeBackspaceSlotHeight = 32;
 const double _kPasscodeBackspaceGlyphWidth = 26.25;
 const double _kPasscodeBackspaceGlyphHeight = 23.15;
 const double _kPasscodeBiometricButtonHeight = 36;
+
+/// Minimum height of a wrapping [PasscodeBiometricButton]; passcode layouts
+/// reserve it for the biometric footer.
+const double kPasscodeBiometricButtonMinHeight = 44;
 const double _kPasscodeBiometricButtonMinWidth = 96;
 const double _kPasscodeBiometricIconSize = 16;
 const EdgeInsets _kPasscodeBackspaceInsets = EdgeInsets.fromLTRB(
@@ -358,7 +362,9 @@ class PasscodeBiometricButton extends StatelessWidget {
                     },
               child: Container(
                 constraints: wrapLabel
-                    ? const BoxConstraints(minHeight: 44)
+                    ? const BoxConstraints(
+                        minHeight: kPasscodeBiometricButtonMinHeight,
+                      )
                     : null,
                 key: const ValueKey('passcode_biometric_button'),
                 width: width,

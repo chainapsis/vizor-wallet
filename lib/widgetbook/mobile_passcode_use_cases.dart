@@ -34,17 +34,11 @@ enum PasscodePreviewViewport {
   final EdgeInsets padding;
 }
 
-Widget buildMobilePasscodeOptions(
+/// Viewport and text-scale knobs around a passcode screen. Outside Widgetbook
+/// the screen keeps the Figma frame's safe areas.
+Widget buildMobilePasscodeViewport(
   BuildContext context, {
-  PasscodePreviewState initialState = PasscodePreviewState.create,
-  List<PasscodePreviewState> states = const [
-    PasscodePreviewState.create,
-    PasscodePreviewState.confirm,
-    PasscodePreviewState.enter,
-    PasscodePreviewState.remove,
-  ],
-  BiometricKind biometricKind = BiometricKind.face,
-  bool initialBiometric = false,
+  required WidgetBuilder builder,
 }) {
   if (WidgetbookState.maybeOf(context) == null) {
     return MediaQuery(
@@ -52,11 +46,7 @@ Widget buildMobilePasscodeOptions(
         padding: PasscodePreviewViewport.design.padding,
         viewPadding: PasscodePreviewViewport.design.padding,
       ),
-      child: PasscodeLayoutPreview(
-        state: initialState,
-        biometric: initialBiometric,
-        biometricKind: biometricKind,
-      ),
+      child: Builder(builder: builder),
     );
   }
   final viewport = context.knobs.object.dropdown(
@@ -65,25 +55,12 @@ Widget buildMobilePasscodeOptions(
     initialOption: PasscodePreviewViewport.design,
     labelBuilder: (v) => v.label,
   );
-  final state = context.knobs.object.dropdown(
-    label: 'Screen',
-    options: states,
-    initialOption: initialState,
-    labelBuilder: (s) => s.name,
-  );
   final scale = context.knobs.object.dropdown<double>(
     label: 'Text scale',
     options: [1, 1.3, 1.5, 2, 3],
     initialOption: 1,
   );
-  final biometric = context.knobs.boolean(
-    label: 'Biometric footer',
-    initialValue: initialBiometric,
-  );
-  final error = context.knobs.boolean(
-    label: 'Error message',
-    initialValue: false,
-  );
+  final child = builder(context);
   return SingleChildScrollView(
     scrollDirection: Axis.horizontal,
     child: SingleChildScrollView(
@@ -96,20 +73,49 @@ Widget buildMobilePasscodeOptions(
             viewPadding: viewport.padding,
             textScaler: TextScaler.linear(scale),
           ),
-          child: ClipRect(
-            child: PasscodeLayoutPreview(
-              key: ValueKey(state),
-              state: state,
-              biometric: biometric,
-              biometricKind: biometricKind,
-              showError: error,
-            ),
-          ),
+          child: ClipRect(child: child),
         ),
       ),
     ),
   );
 }
+
+/// Layout states the production screens cannot reach on their own, such as
+/// errors and the account-removal prompt.
+Widget buildMobilePasscodeOptions(BuildContext context) =>
+    buildMobilePasscodeViewport(
+      context,
+      builder: (context) {
+        if (WidgetbookState.maybeOf(context) == null) {
+          return const PasscodeLayoutPreview();
+        }
+        final state = context.knobs.object.dropdown(
+          label: 'Screen',
+          options: const [
+            PasscodePreviewState.create,
+            PasscodePreviewState.confirm,
+            PasscodePreviewState.enter,
+            PasscodePreviewState.remove,
+          ],
+          initialOption: PasscodePreviewState.create,
+          labelBuilder: (s) => s.name,
+        );
+        final biometric = context.knobs.boolean(
+          label: 'Biometric footer',
+          initialValue: false,
+        );
+        final error = context.knobs.boolean(
+          label: 'Error message',
+          initialValue: false,
+        );
+        return PasscodeLayoutPreview(
+          key: ValueKey(state),
+          state: state,
+          biometric: biometric,
+          showError: error,
+        );
+      },
+    );
 
 /// Interactive, in-memory visual fixture. Six digits never create, unlock,
 /// remove, or reset a wallet.

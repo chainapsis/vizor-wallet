@@ -381,23 +381,30 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
       onBackspace: _onBackspace,
       onHelp: _submitting ? null : _showForgotPasscodeSheet,
       enabled: !_submitting,
-      footer: biometric.usable
-          ? PasscodeBiometricButton(
-              key: const ValueKey('mobile_unlock_biometric_footer'),
-              wrapLabel: true,
-              label: biometric.availability.kind.signInLabel,
-              icon: Center(
-                child: BiometricIcon(
-                  kind: biometric.availability.kind,
-                  size: 13.5,
-                  fingerprintSize: 16,
+      // The slot stays when biometrics are unavailable, so the keypad does not
+      // move once the async biometric state resolves.
+      footer: ConstrainedBox(
+        key: const ValueKey('mobile_unlock_biometric_footer'),
+        constraints: const BoxConstraints(
+          minHeight: kPasscodeBiometricButtonMinHeight,
+        ),
+        child: biometric.usable
+            ? PasscodeBiometricButton(
+                wrapLabel: true,
+                label: biometric.availability.kind.signInLabel,
+                icon: Center(
+                  child: BiometricIcon(
+                    kind: biometric.availability.kind,
+                    size: 13.5,
+                    fingerprintSize: 16,
+                  ),
                 ),
-              ),
-              onPressed: _submitting
-                  ? null
-                  : () => unawaited(_tryBiometricUnlock()),
-            )
-          : null,
+                onPressed: _submitting
+                    ? null
+                    : () => unawaited(_tryBiometricUnlock()),
+              )
+            : const SizedBox.shrink(),
+      ),
     );
   }
 }

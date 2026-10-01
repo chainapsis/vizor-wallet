@@ -3632,14 +3632,18 @@ Widget _buildMobileUnlockUseCase(
   BuildContext context,
   BiometricUnlockState biometricState,
 ) {
-  return buildMobilePasscodeOptions(
-    context,
-    initialState: PasscodePreviewState.unlock,
-    states: const [PasscodePreviewState.unlock],
-    initialBiometric: biometricState.usable,
-    biometricKind: biometricState.usable
-        ? biometricState.availability.kind
-        : BiometricKind.face,
+  return ProviderScope(
+    overrides: [
+      biometricUnlockProvider.overrideWith(
+        () => _PreviewBiometricUnlockNotifier(biometricState),
+      ),
+    ],
+    child: buildMobilePasscodeViewport(
+      context,
+      builder: (_) => const IgnorePointer(
+        child: MobileUnlockScreen(autoPromptBiometric: false),
+      ),
+    ),
   );
 }
 

@@ -2,6 +2,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/passcode_widgets.dart';
@@ -45,6 +46,121 @@ void main() {
     expect(taller.top - reference.top, closeTo(100, 0.01));
     expect(taller.size, reference.size);
   });
+  Future<void> pumpPreview(
+    WidgetTester tester, {
+    required Size size,
+    required EdgeInsets padding,
+    double scale = 1,
+    PasscodePreviewState state = PasscodePreviewState.create,
+    bool showError = false,
+  }) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = size;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppTheme(
+          data: AppThemeData.dark,
+          child: MediaQuery(
+            data: MediaQueryData(
+              size: size,
+              padding: padding,
+              viewPadding: padding,
+              textScaler: TextScaler.linear(scale),
+            ),
+            child: PasscodeLayoutPreview(state: state, showError: showError),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  }
+
+  double titleSize(WidgetTester tester) => tester
+      .renderObject<RenderParagraph>(
+        find.byKey(const ValueKey('passcode_layout_title')),
+      )
+      .text
+      .style!
+      .fontSize!;
+
+  Rect keypadRect(WidgetTester tester) =>
+      tester.getRect(find.byKey(const ValueKey('passcode_layout_keypad')));
+
+  testWidgets('screens the regular layout fits keep it', (tester) async {
+    addTearDown(tester.view.reset);
+    // 375 x 812 iPhones fit the regular layout; iPad mini's window does not.
+    await pumpPreview(
+      tester,
+      size: const Size(375, 812),
+      padding: const EdgeInsets.only(top: 50, bottom: 34),
+    );
+    expect(titleSize(tester), AppTypography.displayLarge.fontSize);
+    expect(keypadRect(tester).width, kPasscodeKeypadWidth);
+
+    final ipad = PasscodePreviewViewport.ipad;
+    await pumpPreview(tester, size: ipad.size, padding: ipad.padding);
+    expect(titleSize(tester), lessThan(AppTypography.displayLarge.fontSize!));
+  });
+
+  for (final viewport in [
+    PasscodePreviewViewport.design,
+    PasscodePreviewViewport.ipad,
+  ]) {
+    testWidgets('${viewport.name} errors never move the keypad', (
+      tester,
+    ) async {
+      addTearDown(tester.view.reset);
+      for (final scale in [1.0, 1.353]) {
+        await pumpPreview(
+          tester,
+          size: viewport.size,
+          padding: viewport.padding,
+          scale: scale,
+          state: PasscodePreviewState.remove,
+        );
+        final withoutError = keypadRect(tester);
+        await pumpPreview(
+          tester,
+          size: viewport.size,
+          padding: viewport.padding,
+          scale: scale,
+          state: PasscodePreviewState.remove,
+          showError: true,
+        );
+        expect(keypadRect(tester), withoutError, reason: 'scale $scale');
+      }
+    });
+  }
+
+  testWidgets('scrolling copy reveals a new error', (tester) async {
+    addTearDown(tester.view.reset);
+    final ipad = PasscodePreviewViewport.ipad;
+    await pumpPreview(
+      tester,
+      size: ipad.size,
+      padding: ipad.padding,
+      scale: 2,
+      state: PasscodePreviewState.remove,
+    );
+    final scroll = find.byKey(const ValueKey('passcode_copy_scroll'));
+    expect(scroll, findsOneWidget);
+    await pumpPreview(
+      tester,
+      size: ipad.size,
+      padding: ipad.padding,
+      scale: 2,
+      state: PasscodePreviewState.remove,
+      showError: true,
+    );
+    final error = tester.getRect(
+      find.byKey(const ValueKey('passcode_layout_error')),
+    );
+    final area = tester.getRect(scroll);
+    expect(error.top, greaterThanOrEqualTo(area.top));
+    expect(error.bottom, lessThanOrEqualTo(area.bottom));
+  });
+
   for (final viewport in PasscodePreviewViewport.values) {
     for (final state in PasscodePreviewState.values) {
       for (final variant in [0, 1, 2]) {

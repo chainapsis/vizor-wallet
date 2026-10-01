@@ -46,7 +46,7 @@ class _MobileAccountRemovalPasscodeScreenState
         context.pop(true);
         return;
       }
-      setState(() => _error = 'Incorrect passcode. Please try again.');
+      setState(() => _error = 'Incorrect passcode');
     } catch (_) {
       if (!mounted || ModalRoute.of(context)?.isCurrent != true) return;
       setState(
