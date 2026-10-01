@@ -222,7 +222,8 @@ class MobilePasscodeLayout extends StatelessWidget {
             if (!scrollCopy) {
               // Keep the keypad anchored near the safe-area bottom. At the
               // reference setup size, 48 of the 76 spare pixels sit above the
-              // heading; the rest separates the prompt from the keypad.
+              // heading; the rest separates the prompt from the keypad. Compact
+              // layouts split their spare space the same way.
               final remaining = math.max(
                 0.0,
                 bounds.maxHeight -
@@ -231,12 +232,10 @@ class MobilePasscodeLayout extends StatelessWidget {
                     keyWidth * 368 / 320,
               );
               // The spacer keeps room for a second error line.
-              final leadingSpace = compact
-                  ? 0.0
-                  : math.min(
-                      remaining * (48 / 76),
-                      math.max(0.0, remaining - (errorReserve - errorLine)),
-                    );
+              final leadingSpace = math.min(
+                remaining * (48 / 76),
+                math.max(0.0, remaining - (errorReserve - errorLine)),
+              );
               return Column(
                 children: [
                   SizedBox(height: leadingSpace),
