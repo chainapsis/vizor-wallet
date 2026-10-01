@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart' show Scaffold;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,7 +7,6 @@ import 'package:go_router/go_router.dart';
 import '../../../../main.dart' show log;
 import '../../../core/feedback/app_haptics.dart';
 import '../../../core/layout/mobile/mobile_top_nav.dart';
-import '../../../core/theme/app_theme.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/router_refresh_provider.dart';
@@ -20,7 +18,7 @@ import '../keystone/keystone_onboarding_flow.dart'
 import '../shared/onboarding_error_messages.dart';
 import '../shared/onboarding_flow_args.dart';
 import 'mobile_onboarding_progress.dart';
-import 'passcode_widgets.dart';
+import 'mobile_passcode_layout.dart';
 
 /// Length of the mobile wallet passcode. The digit string is stored as
 /// the wallet password verbatim (see the wallet password policy note in
@@ -208,7 +206,6 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
     final isConfirm = _phase == _PasscodePhase.confirm;
     final isSubmitting = _phase == _PasscodePhase.submitting;
     final canNavigateBack = Navigator.of(context).canPop();
@@ -218,83 +215,21 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
         ? 'Re-enter your passcode.'
         : '6 digits length';
 
-    // A custom body rather than MobileOnboardingStepScaffold: the keypad is
-    // pinned at the bottom and the dots + error are centred in the gap
-    // above it, matching the other passcode screens — which the scaffold's
-    // scrolling step layout can't express.
-    return Scaffold(
-      backgroundColor: colors.background.window,
-      body: SafeArea(
-        child: Column(
-          children: [
-            MobileTopNav.steps(
-              progress: _progressForFlow(widget.args.flow),
-              showBackButton: canNavigateBack,
-              onBack: isSubmitting || !canNavigateBack
-                  ? null
-                  : () => Navigator.of(context).maybePop(),
-            ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.sm,
-                  vertical: AppSpacing.md,
-                ),
-                child: Column(
-                  children: [
-                    Expanded(
-                      child: Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              isConfirm
-                                  ? 'Confirm Passcode'
-                                  : 'Create Passcode',
-                              textAlign: TextAlign.center,
-                              style: AppTypography.displayLarge.copyWith(
-                                color: colors.text.accent,
-                              ),
-                            ),
-                            const SizedBox(height: AppSpacing.s),
-                            ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 320),
-                              child: Text(
-                                subtitle,
-                                textAlign: TextAlign.center,
-                                style: AppTypography.bodyMediumStrong.copyWith(
-                                  color: colors.text.primary,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: AppSpacing.md),
-                            SizedBox(
-                              height: kPasscodePromptDigitsHeight,
-                              child: PasscodePromptField(
-                                length: kMobilePasscodeLength,
-                                filled: _entry.length,
-                                error: _error,
-                                minGap: 0,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    PasscodeNumpad(
-                      onDigit: _onDigit,
-                      onBackspace: _onBackspace,
-                      canDelete: _entry.isNotEmpty,
-                      enabled: !isSubmitting,
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
+    return MobilePasscodeLayout(
+      title: isConfirm ? 'Confirm Passcode' : 'Create Passcode',
+      subtitle: subtitle,
+      filled: _entry.length,
+      error: _error,
+      navigation: MobileTopNav.steps(
+        progress: _progressForFlow(widget.args.flow),
+        showBackButton: canNavigateBack,
+        onBack: isSubmitting || !canNavigateBack
+            ? null
+            : () => Navigator.of(context).maybePop(),
       ),
+      onDigit: _onDigit,
+      onBackspace: _onBackspace,
+      enabled: !isSubmitting,
     );
   }
 }
