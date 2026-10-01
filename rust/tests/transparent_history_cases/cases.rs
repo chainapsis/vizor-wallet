@@ -157,55 +157,67 @@ impl Ctx {
     }
 
     pub fn run(&mut self) {
-        self.suite
-            .case("H01", "Transparent-only send", &[("final", &["N", "O"])]);
+        self.suite.case(
+            "H01",
+            "Transparent-only send",
+            &[("final", &["N", "N_seq", "O"])],
+        );
         self.suite.case(
             "H02",
             "Several inputs or recipients",
-            &[("final", &["N", "O"])],
+            &[("final", &["N", "N_seq", "O"])],
         );
         self.suite.case(
             "H03",
             "Ordinary transparent receive",
-            &[("final", &["R", "N", "O"])],
+            &[("final", &["R", "N", "N_seq", "O"])],
         );
         self.suite.case(
             "H04",
             "Retained local transaction",
-            &[("final", &["R", "N", "O"])],
+            &[("final", &["R", "N", "N_seq", "O"])],
         );
         self.suite.cases.get_mut("H04").unwrap().source_cases =
             vec!["H07".into(), "H08".into(), "H10".into(), "H11".into()];
         self.suite
-            .case("H05", "Shared funding", &[("final", &["N", "O"])]);
+            .case("H05", "Shared funding", &[("final", &["N", "N_seq", "O"])]);
         self.suite.case(
             "H06",
             "Self/cross-account transfer",
-            &[("final", &["R", "N"])],
+            &[("final", &["R", "N", "N_seq"])],
         );
         self.suite.case(
             "H07",
             "Owned shielding/unshielding",
-            &[("final", &["R", "N", "O"])],
+            &[("final", &["R", "N", "N_seq", "O"])],
         );
         self.suite.case(
             "H08",
             "External transparent unshielding",
-            &[("final", &["R", "N"])],
+            &[("final", &["R", "N", "N_seq"])],
         );
-        self.suite
-            .case("H09", "Other mixed-pool transaction", &[("final", &["N"])]);
-        self.suite
-            .case("H10", "TEX/multi-step operation", &[("final", &["R", "N"])]);
-        self.suite
-            .case("H11", "Swap/gift-card operation", &[("final", &["R", "N"])]);
+        self.suite.case(
+            "H09",
+            "Other mixed-pool transaction",
+            &[("final", &["N", "N_seq"])],
+        );
+        self.suite.case(
+            "H10",
+            "TEX/multi-step operation",
+            &[("final", &["R", "N", "N_seq"])],
+        );
+        self.suite.case(
+            "H11",
+            "Swap/gift-card operation",
+            &[("final", &["R", "N", "N_seq"])],
+        );
         self.suite.case(
             "H12",
             "Pending/expired/conflicted",
             &[
                 ("pending", &["R", "N_pending"]),
                 ("pre_reorg", &["R"]),
-                ("final", &["R", "N"]),
+                ("final", &["R", "N", "N_seq"]),
             ],
         );
         self.suite.case(
@@ -907,15 +919,21 @@ impl Ctx {
             self.suite.checkpoint(&self.chain, observation);
         }
         let n_result = n.settle().err();
+        // N_seq: the same fresh restore, with A0 synced alone before A1 is
+        // added, so adding an account rewinds a synced wallet.
+        let (n_seq, n_seq_first) =
+            VizorWallet::import_sequential("N_seq", &self.chain, &self.a0, &self.a1);
+        let n_seq_result = n_seq.settle().err().or(n_seq_first);
         checkpoint(
             &self.chain,
             &mut self.suite,
             "final",
-            &[(&self.r, "R"), (&o, "O"), (&n, "N")],
+            &[(&self.r, "R"), (&o, "O"), (&n, "N"), (&n_seq, "N_seq")],
             BTreeMap::from([
                 ("R".to_string(), r_result),
                 ("O".to_string(), o_result),
                 ("N".to_string(), n_result),
+                ("N_seq".to_string(), n_seq_result),
             ]),
         );
     }

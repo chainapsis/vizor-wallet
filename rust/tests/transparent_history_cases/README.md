@@ -41,7 +41,11 @@ development run; anything short of H01–H13 fails the gate by design.
 
 Variants: **R** is the wallet that built or observed each transaction, **O**
 is R's files copied to a new path (a reopen with no in-process state), **N**
-is a fresh restore of Alice's seeds. Fault variants: **N_pre** (N's first
+is a fresh restore of Alice's seeds (both imported before the first sync),
+and **N_seq** is the same restore in the order users reach: A0 is restored
+and synced alone, and only then is A1 added, which rewinds a synced wallet.
+N_seq is held to N's expectations. The app layer restores in N_seq's order.
+Fault variants: **N_pre** (N's first
 sync with every `GetTransaction` held: the pre-enrichment view), **N_cut**
 (`GetTaddressTxids` streams cut), **N_utxo_fail** (`GetAddressUtxos*` fail),
 **N_pending** (a fresh restore while H12's transactions are unmined).
