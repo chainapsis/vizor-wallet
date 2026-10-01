@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:flutter/material.dart' show ThemeMode;
@@ -217,8 +218,10 @@ class AppSyncSnapshot {
   );
 }
 
-Future<AppBootstrapState> loadAppBootstrap() async {
-  final storage = AppSecureStore.instance;
+Future<AppBootstrapState> loadAppBootstrap({
+  AppSecureStore? secureStore,
+}) async {
+  final storage = secureStore ?? AppSecureStore.instance;
 
   try {
     log('bootstrap: loading startup snapshot');
@@ -262,8 +265,8 @@ Future<AppBootstrapState> loadAppBootstrap() async {
       label: 'sync keep-awake prompt seen flag',
     );
     final enhancePirEnabled = await readEnhancePirEnabledPreference(storage);
-    final isPasswordConfigured = await storage.isPasswordConfigured();
-    final isUnlocked = storage.hasSessionPassword;
+    var isPasswordConfigured = await storage.isPasswordConfigured();
+    var isUnlocked = storage.hasSessionPassword;
     final dbPath = await _getDbPath();
     final databaseExists = rust_wallet.walletExists(dbPath: dbPath);
     if (databaseExists) {
@@ -285,6 +288,13 @@ Future<AppBootstrapState> loadAppBootstrap() async {
       }
     }
     final storedAccounts = await _readStoredAccounts(storage);
+    // Only presence is needed while locked; never decrypt the setup journal
+    // before the user unlocks an account that was actually created.
+    final hasPendingGiftMnemonic =
+        await storage.readPlain(kPendingAccountMnemonicStorageKey) != null;
+    final hasStartedGiftSetup =
+        await storage.readPlain(kGiftWalletSetupStartedStorageKey) != null;
+    final hasPendingGiftSetup = hasStartedGiftSetup || hasPendingGiftMnemonic;
     final storedAccountsByUuid = {
       for (final account in storedAccounts) account.uuid: account,
     };
@@ -298,7 +308,7 @@ Future<AppBootstrapState> loadAppBootstrap() async {
 
     var rustAccounts = <AccountInfo>[];
     final rustAddressesByUuid = <String, String>{};
-    if (rust_wallet.walletExists(dbPath: dbPath)) {
+    if (databaseExists) {
       try {
         final legacyHardwareAccounts = legacyHardwareAccountsForBackfill(
           storedAccounts,
@@ -348,10 +358,47 @@ Future<AppBootstrapState> loadAppBootstrap() async {
         log('bootstrap: rust accounts=${rustAccounts.length}');
       } catch (e) {
         log('bootstrap: failed to list Rust accounts: $e');
+        // An unreadable DB is not an empty DB. Preserve the setup records and
+        // stop startup rather than discard credentials or reopen onboarding.
+        if (hasPendingGiftSetup) rethrow;
       }
     }
 
     final accounts = rustAccounts.isNotEmpty ? rustAccounts : storedAccounts;
+    if (hasPendingGiftSetup && accounts.isEmpty) {
+      if (!databaseExists) {
+        // walletExists uses a filesystem existence check, which can also be
+        // false when the file cannot be inspected. Confirm its absence before
+        // removing the password that would protect a created account.
+        final dbFile = File(dbPath);
+        final dbIsPresent = await dbFile.parent
+            .list(followLinks: false)
+            .any((entry) => entry.path == dbPath);
+        if (dbIsPresent) {
+          throw StateError(
+            'The pending Gift wallet DB could not be inspected.',
+          );
+        }
+      }
+      // No account was created. Leave a setup record until credential deletes
+      // finish so another interruption can repeat cleanup on the next launch.
+      await storage.clearPasswordConfiguration();
+      isPasswordConfigured = await storage.isPasswordConfigured();
+      isUnlocked = storage.hasSessionPassword;
+      log('bootstrap: discarded Gift setup before account creation');
+    } else if (hasStartedGiftSetup &&
+        !hasPendingGiftMnemonic &&
+        accounts.isNotEmpty) {
+      // The account is durable and journal cleanup already finished. Removing
+      // the remaining plain marker must not alter its password or account data.
+      try {
+        await storage.delete(kGiftWalletSetupStartedStorageKey);
+      } catch (error) {
+        // This marker contains no recovery material. Keep the usable account
+        // available and retry marker cleanup on a later launch.
+        log('bootstrap: completed Gift setup marker cleanup failed: $error');
+      }
+    }
     final activeAccountUuid = _resolveActiveUuid(storedActiveUuid, accounts);
     final activeAddress = !isUnlocked || activeAccountUuid == null
         ? null

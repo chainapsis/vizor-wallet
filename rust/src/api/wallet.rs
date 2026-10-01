@@ -1083,6 +1083,26 @@ pub fn get_unified_address(
     })
 }
 
+/// The wallet account encrypted software recovery material derives at
+/// `zip32_account_index`, matched by viewing key. Accepts either a legacy plain
+/// mnemonic or the versioned mnemonic + BIP-39 passphrase storage envelope.
+/// Returns `None` when the wallet or account is missing.
+pub fn find_software_account_for_mnemonic(
+    mnemonic: String,
+    network: String,
+    db_path: String,
+    zip32_account_index: u32,
+) -> Result<Option<String>, String> {
+    catch(|| {
+        if !keys::wallet_exists(&db_path) {
+            return Ok(None);
+        }
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let seed = keys::mnemonic_bytes_to_seed(mnemonic.as_bytes())?;
+        keys::software_account_uuid_for_seed(&db_path, network, &seed, zip32_account_index)
+    })
+}
+
 /// Export a single account's Unified Full Viewing Key (UFVK). Works for both
 /// software and hardware (Keystone) accounts.
 pub fn get_account_ufvk(

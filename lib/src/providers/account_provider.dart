@@ -29,6 +29,7 @@ import '../features/migration/services/ironwood_migration_background_credential_
 import '../features/migration/services/ironwood_migration_operation_registry.dart';
 import '../features/payment_links/providers/payment_link_claim_lifecycle_registry_provider.dart';
 import '../features/payment_links/services/payment_link_received_store.dart';
+import '../features/payment_links/models/vizor_payment_link.dart';
 import '../features/payment_links/services/payment_link_recovery_store.dart';
 import '../features/voting/voting_flow_models.dart';
 import '../rust/api/sync.dart' as rust_sync;
@@ -73,6 +74,33 @@ class WalletCreationCurrentBlockHeightException implements Exception {
 
   @override
   String toString() => kWalletCreationCurrentBlockHeightErrorMessage;
+}
+
+/// A Gift Card wallet setup failed after its account was created. The wallet
+/// password now protects that account, so the caller must commit it rather
+/// than roll it back.
+class GiftClaimAccountCreatedException implements Exception {
+  const GiftClaimAccountCreatedException(this.accountUuid, this.cause);
+
+  final String? accountUuid;
+  final Object cause;
+
+  @override
+  String toString() => cause.toString();
+}
+
+const kWalletAccountStateUncertainMessage =
+    "Vizor couldn't verify the existing wallet. Close and reopen Vizor before trying again.";
+
+/// A first-account operation was refused because the wallet DB may already
+/// contain an account that is not represented in Dart state.
+class WalletAccountStateUncertainException implements Exception {
+  const WalletAccountStateUncertainException(this.cause);
+
+  final Object cause;
+
+  @override
+  String toString() => kWalletAccountStateUncertainMessage;
 }
 
 /// Kept to one rendered line: the desktop lost-password card is a fixed 520px
@@ -211,7 +239,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
 
       if (accounts.isEmpty) {
         // First account — create wallet (init DB + create account)
-        await _deleteExistingDb(dbPath);
+        await _replaceDbForFirstWallet(dbPath, network);
         final result = await rust_wallet.createWallet(
           network: network,
           dbPath: dbPath,
@@ -319,7 +347,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       late final String unifiedAddress;
 
       if (accounts.isEmpty) {
-        await _deleteExistingDb(dbPath);
+        await _replaceDbForFirstWallet(dbPath, network);
         final result = await rust_wallet.importWallet(
           mnemonic: mnemonic,
           bip39Passphrase: '',
@@ -370,6 +398,328 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       log('createAccountFromMnemonic: ERROR: $e\n$st');
       rethrow;
     }
+  }
+
+  /// Creates the first account while claiming a Gift Card, in an order where
+  /// no interruption leaves an account without its secret passphrase: the
+  /// passphrase goes to a pending key, then the account is created, then the
+  /// passphrase and account metadata are saved. The account stays
+  /// [AccountInfo.setupPending] until it is backed up.
+  ///
+  /// Any failure once the account may exist throws
+  /// [GiftClaimAccountCreatedException].
+  Future<String> createGiftClaimAccount({
+    required String name,
+    required String profilePictureId,
+    required VizorPaymentLink link,
+  }) => ref
+      .read(linuxKeyringCoordinatorProvider)
+      .runMutation(
+        () => _createGiftClaimAccount(
+          name: name,
+          profilePictureId: profilePictureId,
+          link: link,
+        ),
+      );
+
+  Future<String> _createGiftClaimAccount({
+    required String name,
+    required String profilePictureId,
+    required VizorPaymentLink link,
+  }) async {
+    validateAccountName(name);
+    final accountName = normalizeAccountName(name);
+    final giftProfilePictureId = normalizeProfilePictureId(profilePictureId);
+    final current = state.value;
+    if (current == null || current.accounts.isNotEmpty) {
+      throw StateError('A Gift Card wallet can only be the first account.');
+    }
+    final dbPath = await _getDbPath();
+    final network = ref.read(rpcEndpointProvider).networkName;
+    if (link.network != network) {
+      throw StateError('Gift Card network does not match the wallet.');
+    }
+    await _assertFirstWalletDbIsEmpty(dbPath, network);
+    final birthday = await _fetchCreationBirthdayHeight();
+    // Bootstrap must know the DB network even if creation or later saves stop.
+    await _storage.writeString(_networkKey, network);
+    final mnemonic = rust_wallet.generateMnemonic();
+    await _storage.writeSecretString(
+      kPendingAccountMnemonicStorageKey,
+      jsonEncode({
+        'mnemonic': mnemonic,
+        'network': network,
+        'name': accountName,
+        'profilePictureId': giftProfilePictureId,
+        'giftLink': link.toRecoveryUri().toString(),
+        'giftAddress': link.address,
+        'giftCreatedAt': link.createdAt.toIso8601String(),
+      }),
+    );
+
+    final rust_wallet.WalletImportResult created;
+    try {
+      await _deleteExistingDb(dbPath);
+      created = await rust_wallet.importWallet(
+        mnemonic: mnemonic,
+        bip39Passphrase: '',
+        birthdayHeight: birthday,
+        network: network,
+        dbPath: dbPath,
+        accountName: accountName,
+      );
+    } catch (error, stackTrace) {
+      // Roll back only when the DB provably holds no account.
+      final listed = await _listAccountsAfterFailedCreate(dbPath, network);
+      if (listed != null && listed.isEmpty) rethrow;
+      rust_wallet.AccountInfo? matchingAccount;
+      if (listed != null) {
+        try {
+          final matchingUuid = await rust_wallet.findSoftwareAccountForMnemonic(
+            mnemonic: mnemonic,
+            network: network,
+            dbPath: dbPath,
+            zip32AccountIndex: 0,
+          );
+          matchingAccount = listed
+              .where((account) => account.uuid == matchingUuid)
+              .firstOrNull;
+        } catch (lookupError) {
+          log(
+            'createGiftClaimAccount: created account lookup failed: $lookupError',
+          );
+        }
+      }
+      final uuid = matchingAccount?.uuid;
+      if (matchingAccount != null) {
+        _publishCreatedGiftAccount(
+          matchingAccount.uuid,
+          matchingAccount.unifiedAddress,
+          accountName,
+          giftProfilePictureId,
+        );
+      }
+      log('createGiftClaimAccount: account state unknown after: $error');
+      Error.throwWithStackTrace(
+        GiftClaimAccountCreatedException(uuid, error),
+        stackTrace,
+      );
+    }
+
+    final uuid = created.accountUuid;
+    try {
+      await _storage.writeAccountMnemonic(uuid, mnemonic);
+      await _saveAccounts([
+        _giftAccount(uuid, accountName, giftProfilePictureId),
+      ]);
+      await _storage.writeString(_activeAccountKey, uuid);
+      await ref
+          .read(paymentLinkReceivedStoreProvider)
+          .saveReady(link, setupAccountUuid: uuid);
+    } catch (error, stackTrace) {
+      // Publish the account so a retry cannot recreate the DB; the pending
+      // passphrase is attached on the next unlock.
+      _publishCreatedGiftAccount(
+        uuid,
+        created.unifiedAddress,
+        accountName,
+        giftProfilePictureId,
+      );
+      log('createGiftClaimAccount: saving the new account failed: $error');
+      Error.throwWithStackTrace(
+        GiftClaimAccountCreatedException(uuid, error),
+        stackTrace,
+      );
+    }
+    _publishCreatedGiftAccount(
+      uuid,
+      created.unifiedAddress,
+      accountName,
+      giftProfilePictureId,
+    );
+    log('createGiftClaimAccount: success, uuid=$uuid');
+    return uuid;
+  }
+
+  /// Called only after the card and its receiving account are durable.
+  Future<void> clearPendingGiftAccountSetup({
+    required String accountUuid,
+  }) async {
+    final pending = await _storage.readSecretStringWithOptions(
+      kPendingAccountMnemonicStorageKey,
+      requireUnlockedSession: true,
+    );
+    if (pending != null) {
+      final draft = jsonDecode(pending) as Map<String, dynamic>;
+      final card = await ref
+          .read(paymentLinkReceivedStoreProvider)
+          .find(draft['giftAddress'] as String);
+      if (card?.setupAccountUuid != accountUuid) {
+        throw StateError('Gift Card receiving account was not saved.');
+      }
+      await _storage.delete(kPendingAccountMnemonicStorageKey);
+    }
+    await _storage.delete(kGiftWalletSetupStartedStorageKey);
+  }
+
+  AccountInfo _giftAccount(String uuid, String name, String profilePictureId) =>
+      AccountInfo(
+        uuid: uuid,
+        name: name,
+        profilePictureId: profilePictureId,
+        order: 0,
+        isSeedAnchor: true,
+        setupPending: true,
+        giftEducationPending: true,
+      );
+
+  void _publishCreatedGiftAccount(
+    String uuid,
+    String address,
+    String name,
+    String profilePictureId,
+  ) {
+    state = AsyncData(
+      AccountState(
+        accounts: [_giftAccount(uuid, name, profilePictureId)],
+        activeAccountUuid: uuid,
+        activeAddress: address,
+      ),
+    );
+  }
+
+  /// Null when the DB cannot be read, which is not proof it is empty.
+  Future<List<rust_wallet.AccountInfo>?> _listAccountsAfterFailedCreate(
+    String dbPath,
+    String network,
+  ) async {
+    try {
+      if (!rust_wallet.walletExists(dbPath: dbPath)) return const [];
+      return await rust_wallet.listAccounts(dbPath: dbPath, network: network);
+    } catch (error) {
+      log('createGiftClaimAccount: account listing failed: $error');
+      return null;
+    }
+  }
+
+  /// Attaches a pending secret passphrase to the account it derives, after a
+  /// Gift Card setup stopped between creating the account and saving it.
+  /// A passphrase no account derives from cannot hold funds and is dropped.
+  Future<void> recoverPendingAccountMnemonic() => ref
+      .read(linuxKeyringCoordinatorProvider)
+      .runMutation(_recoverPendingAccountMnemonic);
+
+  Future<void> _recoverPendingAccountMnemonic() async {
+    final sessionGeneration = _storage.sessionGeneration;
+    void requireCurrentSession() {
+      if (!_storage.isSessionGenerationCurrent(sessionGeneration) ||
+          !_storage.hasSessionPassword) {
+        throw const SecureStorageSessionChangedException();
+      }
+    }
+
+    final pending = await _storage.readSecretStringWithOptions(
+      kPendingAccountMnemonicStorageKey,
+      requireUnlockedSession: true,
+    );
+    if (pending == null || pending.isEmpty) return;
+    final draft = jsonDecode(pending) as Map<String, dynamic>;
+    final mnemonic = draft['mnemonic'] as String;
+    final savedMetadata = await _storage.readString(_accountsKey);
+    final metadataUuids = savedMetadata == null
+        ? <String>{}
+        : {
+            for (final account in jsonDecode(savedMetadata) as List)
+              account['uuid'] as String,
+          };
+    final dbPath = await _getDbPath();
+    final network = draft['network'] as String;
+    final uuid = await rust_wallet.findSoftwareAccountForMnemonic(
+      mnemonic: mnemonic,
+      network: network,
+      dbPath: dbPath,
+      zip32AccountIndex: 0,
+    );
+    if (uuid != null) {
+      final stored = await _storage.readAccountMnemonicBytes(
+        uuid,
+        requireUnlockedSession: true,
+      );
+      final attached = stored != null && stored.isNotEmpty;
+      try {
+        if (attached) {
+          final attachedUuid = await rust_wallet.findSoftwareAccountForMnemonic(
+            mnemonic: utf8.decode(stored),
+            network: network,
+            dbPath: dbPath,
+            zip32AccountIndex: 0,
+          );
+          if (attachedUuid != uuid) {
+            throw StateError(
+              'Stored passphrase does not match the Gift account.',
+            );
+          }
+        }
+      } finally {
+        stored?.fillRange(0, stored.length, 0);
+      }
+      requireCurrentSession();
+      if (!attached) {
+        await _storage.writeAccountMnemonic(uuid, mnemonic);
+      }
+      final current = state.value ?? const AccountState();
+      if (!current.accounts.any((account) => account.uuid == uuid)) {
+        log(
+          'recoverPendingAccountMnemonic: derived account $uuid is missing '
+          'from account state; preserving pending passphrase',
+        );
+        return;
+      }
+      final accounts = [
+        for (final account in current.accounts)
+          account.uuid == uuid
+              ? account.copyWith(
+                  name: metadataUuids.contains(uuid)
+                      ? null
+                      : draft['name'] as String,
+                  profilePictureId: metadataUuids.contains(uuid)
+                      ? null
+                      : draft['profilePictureId'] as String,
+                  setupPending: metadataUuids.contains(uuid) ? null : true,
+                  giftEducationPending: metadataUuids.contains(uuid)
+                      ? null
+                      : true,
+                )
+              : account,
+      ];
+      // Persist the backup-required marker before deleting the recovery key.
+      // This is also required when the account mnemonic was already attached:
+      // account JSON may have failed to save immediately before a restart.
+      requireCurrentSession();
+      await _saveAccounts(accounts);
+      requireCurrentSession();
+      state = AsyncData(current.copyWith(accounts: accounts));
+      final link = VizorPaymentLink.parse(draft['giftLink'] as String)
+          .withResolvedMetadata(
+            address: draft['giftAddress'] as String,
+            createdAt: DateTime.parse(draft['giftCreatedAt'] as String),
+          );
+      final cards = ref.read(paymentLinkReceivedStoreProvider);
+      final card = await cards.find(link.address);
+      if ((card?.setupAccountUuid != null && card!.setupAccountUuid != uuid) ||
+          (card?.destinationAccountUuid != null &&
+              card!.destinationAccountUuid != uuid)) {
+        throw StateError('Gift Card belongs to a different receiving account.');
+      }
+      requireCurrentSession();
+      if (card?.setupAccountUuid == null) {
+        await cards.saveReady(link, setupAccountUuid: uuid);
+      }
+      log('recoverPendingAccountMnemonic: recovered $uuid');
+    }
+    requireCurrentSession();
+    await _storage.delete(kPendingAccountMnemonicStorageKey);
+    await _storage.delete(kGiftWalletSetupStartedStorageKey);
   }
 
   /// Import a wallet from mnemonic.
@@ -427,7 +777,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       final previousActiveAddress = state.value?.activeAddress;
 
       if (isFirstWalletAccount) {
-        await _deleteExistingDb(dbPath);
+        await _replaceDbForFirstWallet(dbPath, network);
       }
 
       final result = await rust_wallet.importSoftwareWalletWithAccountDiscovery(
@@ -1391,6 +1741,20 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   }
 
   Future<void> restoreAfterUnlock() async {
+    try {
+      await recoverPendingAccountMnemonic();
+    } catch (e) {
+      log('restoreAfterUnlock: pending passphrase recovery failed: $e');
+      if (ref.mounted) {
+        ref.read(appSecurityProvider.notifier).lock();
+        clearSensitiveStateForLock();
+      } else {
+        _storage.clearSessionPassword();
+      }
+      // The existing unlock screen shows a retry error. Never open Home while
+      // the account's required recovery writes or secret validation failed.
+      rethrow;
+    }
     final sessionGeneration = _storage.sessionGeneration;
     final prev = state.value ?? const AccountState();
     final accountUuid = prev.activeAccountUuid;
@@ -1492,6 +1856,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       final prev = state.value ?? const AccountState();
       final dbPath = await _getDbPath();
       final network = await _getNetwork();
+      if (prev.accounts.isEmpty) {
+        await _assertFirstWalletDbIsEmpty(dbPath, network);
+      }
 
       final result = await rust_wallet.importHardwareAccount(
         dbPath: dbPath,
@@ -1607,6 +1974,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       final prev = state.value ?? const AccountState();
       final dbPath = await _getDbPath();
       final network = await _getNetwork();
+      if (prev.accounts.isEmpty) {
+        await _assertFirstWalletDbIsEmpty(dbPath, network);
+      }
 
       final result = await rust_wallet.importHardwareAccount(
         dbPath: dbPath,
@@ -1686,7 +2056,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
 
       final dbPath = await _getDbPath();
       if (prev.accounts.isEmpty) {
-        await _deleteExistingDb(dbPath);
+        await _replaceDbForFirstWallet(dbPath, normalizedNetwork);
         await _storage.writeString(_networkKey, normalizedNetwork);
       }
 
@@ -2020,6 +2390,31 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       if (file.existsSync()) {
         file.deleteSync();
       }
+    }
+  }
+
+  Future<void> _replaceDbForFirstWallet(String dbPath, String network) async {
+    await _assertFirstWalletDbIsEmpty(dbPath, network);
+    await _deleteExistingDb(dbPath);
+  }
+
+  Future<void> _assertFirstWalletDbIsEmpty(
+    String dbPath,
+    String network,
+  ) async {
+    try {
+      if (!rust_wallet.walletExists(dbPath: dbPath)) return;
+      final accounts = await rust_wallet.listAccounts(
+        dbPath: dbPath,
+        network: network,
+      );
+      if (accounts.isEmpty) return;
+      throw StateError('The wallet DB already contains an account.');
+    } catch (error, stackTrace) {
+      Error.throwWithStackTrace(
+        WalletAccountStateUncertainException(error),
+        stackTrace,
+      );
     }
   }
 }
