@@ -113,6 +113,7 @@ if [[ "$FLUTTER_LAYERS" == "desktop" || "$FLUTTER_LAYERS" == "both" ]]; then
     fvm flutter test integration_test/regtest_transparent_history_cases_test.dart \
       -d macos \
       "${flutter_defines[@]}" \
+      "--dart-define=ZCASH_E2E_FIRST_UNLOCK_MNEMONIC_KEYCHAIN=true" \
       "--dart-define=VIZOR_E2E_HIDDEN_WINDOW=${VIZOR_E2E_HIDDEN_WINDOW:-true}"
   ) 2>&1 | tee "$OUT/flutter-desktop.log"
   status=${PIPESTATUS[0]}
