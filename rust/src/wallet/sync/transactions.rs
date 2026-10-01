@@ -2835,7 +2835,7 @@ mod tests {
     #[test]
     fn local_history_with_incomplete_effects_stays_provisional_until_scanned() {
         use zcash_client_backend::data_api::transparent_ledger::{
-            AccountMovement, AggregatePayment, EffectCompleteness, PoolEffect,
+            AccountMovement, AggregatePayment, EffectCompleteness, PoolEffect, TransactionFunding,
         };
         use zcash_protocol::{value::Zatoshis, PoolType};
 
@@ -2859,6 +2859,7 @@ mod tests {
             }],
             payment_details: DetailCompleteness::Complete,
             fee: FeeState::Known(Zatoshis::from_u64(10_000).unwrap()),
+            funding: TransactionFunding::Sole,
             classification: HistoryClassification::LocalIntent,
             pending_private_details: vec![],
         };
@@ -2888,7 +2889,7 @@ mod tests {
     #[test]
     fn history_mapping_keeps_public_discovery_settled_and_provisional_classification() {
         use zcash_client_backend::data_api::transparent_ledger::{
-            AccountMovement, AggregatePayment, EffectCompleteness, PoolEffect,
+            AccountMovement, AggregatePayment, EffectCompleteness, PoolEffect, TransactionFunding,
         };
         use zcash_protocol::{value::Zatoshis, PoolType};
 
@@ -2918,6 +2919,7 @@ mod tests {
             ],
             payment_details: DetailCompleteness::Complete,
             fee: FeeState::NotApplicable,
+            funding: TransactionFunding::NotFunded,
             classification: HistoryClassification::Reconstructed,
             pending_private_details: vec![],
         };
