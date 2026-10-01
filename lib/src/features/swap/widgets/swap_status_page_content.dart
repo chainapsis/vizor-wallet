@@ -585,129 +585,143 @@ class _ProgressStep extends StatelessWidget {
     // last step has no trailing connector.
     final height = active ? (isMobile ? 112.0 : 90.0) : (isLast ? 24.0 : 37.0);
     final title = step.titleForState(step.state);
-    return SizedBox(
-      key: ValueKey('swap_activity_route_step_${index}_${step.state.name}'),
-      height: height,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 24,
-            height: height,
-            child: Stack(
-              alignment: Alignment.topCenter,
-              children: [
+    final content = Row(
+      crossAxisAlignment: isMobile
+          ? CrossAxisAlignment.stretch
+          : CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 24,
+          height: isMobile ? null : height,
+          child: Stack(
+            alignment: Alignment.topCenter,
+            children: [
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: _ProgressStepIcon(step: step),
+              ),
+              if (!isLast)
                 Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  child: _ProgressStepIcon(step: step),
-                ),
-                if (!isLast)
-                  Positioned(
-                    key: ValueKey('swap_activity_route_step_${index}_line'),
-                    // The icon is 24 high; the connector starts 8px below it
-                    // and runs to the bottom of the step.
-                    top: 32,
-                    bottom: 0,
-                    left: 10.5,
-                    width: 3,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: colors.border.subtle,
-                        borderRadius: BorderRadius.circular(AppRadii.full),
-                      ),
+                  key: ValueKey('swap_activity_route_step_${index}_line'),
+                  // The icon is 24 high; the connector starts 8px below it
+                  // and runs to the bottom of the step.
+                  top: 32,
+                  bottom: 0,
+                  left: 10.5,
+                  width: 3,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: colors.border.subtle,
+                      borderRadius: BorderRadius.circular(AppRadii.full),
                     ),
                   ),
-              ],
-            ),
+                ),
+            ],
           ),
-          const SizedBox(width: AppSpacing.s),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SizedBox(
-                  key: ValueKey('swap_activity_route_step_${index}_title_row'),
-                  height: 24,
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          // Desktop redesign: active title is bold (w600) on
-                          // accent. Mobile (mobile-ui-vibe-coding-polishing-2):
-                          // every title stays w500 (the active step is set
-                          // apart by its loader, description and taller row),
-                          // accent for active/completed and text.secondary
-                          // only for pending (future) steps.
-                          style: AppTypography.labelLarge.copyWith(
-                            fontWeight: !isMobile && active
-                                ? FontWeight.w600
-                                : FontWeight.w500,
-                            color: isMobile && pending
-                                ? colors.text.secondary
-                                : colors.text.accent,
-                          ),
-                        ),
-                      ),
-                      if (!isMobile &&
-                          active &&
-                          step.lastCheckedLabel != null) ...[
-                        const SizedBox(width: AppSpacing.s),
-                        Text(
-                          step.lastCheckedLabel!,
-                          style: AppTypography.labelMedium.copyWith(
-                            color: colors.text.secondary,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                if (isMobile && active && step.lastCheckedLabel != null) ...[
-                  const SizedBox(height: AppSpacing.xxs),
-                  Text(
-                    step.lastCheckedLabel!,
-                    style: AppTypography.labelMedium.copyWith(
-                      color: colors.text.secondary,
-                    ),
-                  ),
-                ],
-                if (active && step.description != null) ...[
-                  const SizedBox(height: AppSpacing.xs),
-                  // Figma pads the description block vertically (8px above
-                  // and below the 2-line text), flush with the title column.
-                  if (isMobile)
-                    Text(
-                      step.description!,
-                      style: AppTypography.bodyMedium.copyWith(
-                        color: colors.text.secondary,
-                      ),
-                    )
-                  else
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: AppSpacing.xs,
-                      ),
+        ),
+        const SizedBox(width: AppSpacing.s),
+        Expanded(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                key: ValueKey('swap_activity_route_step_${index}_title_row'),
+                height: 24,
+                child: Row(
+                  children: [
+                    Expanded(
                       child: Text(
-                        step.description!,
-                        maxLines: 2,
+                        title,
+                        maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: AppTypography.bodyMedium.copyWith(
+                        // Desktop redesign: active title is bold (w600) on
+                        // accent. Mobile (mobile-ui-vibe-coding-polishing-2):
+                        // every title stays w500 (the active step is set
+                        // apart by its loader, description and taller row),
+                        // accent for active/completed and text.secondary
+                        // only for pending (future) steps.
+                        style: AppTypography.labelLarge.copyWith(
+                          fontWeight: !isMobile && active
+                              ? FontWeight.w600
+                              : FontWeight.w500,
+                          color: isMobile && pending
+                              ? colors.text.secondary
+                              : colors.text.accent,
+                        ),
+                      ),
+                    ),
+                    if (!isMobile &&
+                        active &&
+                        step.lastCheckedLabel != null) ...[
+                      const SizedBox(width: AppSpacing.s),
+                      Text(
+                        step.lastCheckedLabel!,
+                        style: AppTypography.labelMedium.copyWith(
                           color: colors.text.secondary,
                         ),
                       ),
-                    ),
-                ],
+                    ],
+                  ],
+                ),
+              ),
+              if (isMobile && active && step.lastCheckedLabel != null) ...[
+                const SizedBox(height: AppSpacing.xxs),
+                Text(
+                  step.lastCheckedLabel!,
+                  style: AppTypography.labelMedium.copyWith(
+                    color: colors.text.secondary,
+                  ),
+                ),
               ],
-            ),
+              if (active && step.description != null) ...[
+                const SizedBox(height: AppSpacing.xs),
+                // Figma pads the description block vertically (8px above
+                // and below the 2-line text), flush with the title column.
+                if (isMobile)
+                  Text(
+                    step.description!,
+                    style: AppTypography.bodyMedium.copyWith(
+                      color: colors.text.secondary,
+                    ),
+                  )
+                else
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: AppSpacing.xs,
+                    ),
+                    child: Text(
+                      step.description!,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.bodyMedium.copyWith(
+                        color: colors.text.secondary,
+                      ),
+                    ),
+                  ),
+              ],
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
+    final key = ValueKey(
+      'swap_activity_route_step_${index}_${step.state.name}',
+    );
+    if (isMobile) {
+      // Keep the reference connector length while allowing wrapped descriptions
+      // and larger text to extend the step and its connector together.
+      return IntrinsicHeight(
+        child: ConstrainedBox(
+          key: key,
+          constraints: BoxConstraints(minHeight: height),
+          child: content,
+        ),
+      );
+    }
+    return SizedBox(key: key, height: height, child: content);
   }
 }
 

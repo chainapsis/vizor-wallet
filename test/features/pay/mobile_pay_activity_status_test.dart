@@ -4,6 +4,7 @@ library;
 import 'package:flutter/material.dart' show MaterialApp, Tooltip;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/widgets.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
@@ -23,6 +24,7 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../figma_compare/figma_compare_font_loader.dart';
 
 const _recipient = '0x12351aBcDeF01234567890123456789076123';
 
@@ -30,20 +32,23 @@ Widget _harness(
   Widget child, {
   AppThemeData theme = AppThemeData.light,
   bool scroll = true,
+  double width = 393,
+  double textScale = 1,
 }) {
   return MaterialApp(
     builder: (_, navigator) => AppTheme(data: theme, child: navigator!),
     home: Directionality(
       textDirection: TextDirection.ltr,
       child: MediaQuery(
-        data: const MediaQueryData(
-          size: Size(393, 852),
+        data: MediaQueryData(
+          size: Size(width, 852),
+          textScaler: TextScaler.linear(textScale),
           disableAnimations: true,
         ),
         child: Align(
           alignment: Alignment.topLeft,
           child: SizedBox(
-            width: 393,
+            width: width,
             height: 852,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -121,6 +126,38 @@ Widget _content({required bool completed}) {
 }
 
 void main() {
+  testWidgets('scaled Pay headers and detail labels remain fully readable', (
+    tester,
+  ) async {
+    await loadFigmaCompareFonts();
+    for (final width in [320.0, 393.0]) {
+      await tester.pumpWidget(
+        _harness(_content(completed: false), width: width, textScale: 1.3),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      final header = tester.getRect(
+        find.byKey(const ValueKey('mobile_pay_status_header')),
+      );
+      for (final text in ['990 USDC', 'Full address', 'Converted from']) {
+        final target = find.text(text);
+        final paragraph = tester.renderObject<RenderParagraph>(target);
+        expect(paragraph.didExceedMaxLines, isFalse, reason: text);
+        expect(
+          paragraph.size.height,
+          greaterThanOrEqualTo(
+            paragraph.getMaxIntrinsicHeight(paragraph.size.width) - 0.1,
+          ),
+          reason: text,
+        );
+      }
+      expect(
+        tester.getRect(find.text('Full address')).bottom,
+        lessThanOrEqualTo(header.bottom),
+      );
+    }
+  });
+
   testWidgets('paying uses payment asset and recipient status layout', (
     tester,
   ) async {

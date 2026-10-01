@@ -238,13 +238,18 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
             // other mobile modals. Bottom-anchored and full-width.
             return SafeArea(
               bottom: false,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Spacer(),
-                  MobileModalCard(child: surfaceContent),
-                ],
-              ),
+              child: surface == _SwapModalSurface.slippageSettings
+                  ? Align(
+                      alignment: Alignment.bottomCenter,
+                      child: MobileModalCard(child: surfaceContent),
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Spacer(),
+                        MobileModalCard(child: surfaceContent),
+                      ],
+                    ),
             );
           },
         );

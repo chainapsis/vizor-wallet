@@ -295,13 +295,14 @@ class _MobileDepositQrCard extends StatelessWidget {
           child: Container(
             key: const ValueKey('swap_deposit_qr_card'),
             width: cardWidth,
-            height: _height,
+            constraints: const BoxConstraints(minHeight: _height),
             padding: const EdgeInsets.all(_padding),
             decoration: BoxDecoration(
               color: colors.background.homeCard,
               borderRadius: BorderRadius.circular(_radius),
             ),
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 _DepositQrCode(
@@ -313,21 +314,25 @@ class _MobileDepositQrCard extends StatelessWidget {
                   logoSize: _qrLogoSize * qrScale,
                 ),
                 const SizedBox(height: AppSpacing.sm),
-                SizedBox(
-                  height: 99,
+                ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 99),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
                       vertical: AppSpacing.sm,
                     ),
                     child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(
-                          amountText,
-                          textAlign: TextAlign.center,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTypography.headlineLarge.copyWith(
-                            color: colors.text.homeCard,
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            amountText,
+                            textAlign: TextAlign.center,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTypography.headlineLarge.copyWith(
+                              color: colors.text.homeCard,
+                            ),
                           ),
                         ),
                         const SizedBox(height: AppSpacing.s),

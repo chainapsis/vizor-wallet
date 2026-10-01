@@ -23,6 +23,8 @@ import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_status
 import 'package:zcash_wallet/src/features/swap/widgets/swap_activity_panel.dart'
     show mobileSwapStatusHeaderLabels, mobileSwapStatusRecipientFullAddress;
 
+import '../../figma_compare/figma_compare_font_loader.dart';
+
 Widget _harness(Widget child) {
   return MaterialApp(
     builder: (_, navigator) =>
@@ -128,6 +130,49 @@ SwapIntent _intent({
 }
 
 void main() {
+  testWidgets('compact progress descriptions grow instead of overflowing', (
+    tester,
+  ) async {
+    await loadFigmaCompareFonts();
+    tester.view.physicalSize = const Size(320, 568);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    const description =
+        'Confirm waiting for the source chain and provider to recognise the deposit';
+    await tester.pumpWidget(
+      _harness(
+        SingleChildScrollView(
+          child: _content(
+            showTabs: true,
+            activeTab: SwapStatusTab.progress,
+            steps: const [
+              SwapStatusStepData(
+                title: 'Deposit confirmation',
+                state: SwapStatusStepState.active,
+                lastCheckedLabel: 'Last check: 1m ago',
+                description: description,
+              ),
+              SwapStatusStepData(
+                title: 'Swap',
+                state: SwapStatusStepState.pending,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    final step = tester.getRect(
+      find.byKey(const ValueKey('swap_activity_route_step_0_active')),
+    );
+    expect(
+      tester.getRect(find.text(description)).bottom,
+      lessThanOrEqualTo(step.bottom),
+    );
+  });
+
   test('mobile failed and refunded headers do not imply delivery', () {
     for (final status in [SwapIntentStatus.failed, SwapIntentStatus.refunded]) {
       final labels = mobileSwapStatusHeaderLabels(status);
