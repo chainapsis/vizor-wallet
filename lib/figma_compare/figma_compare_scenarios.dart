@@ -90,6 +90,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-home-ten-long',
+    description: 'Longest real account, balance and activity copy',
+    builder: buildMobileHomeLongContentCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'caps-lock-unlock',
     description: 'Unlock screen with Caps Lock warning',
     builder: buildCapsLockUnlockCapture,

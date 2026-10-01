@@ -1279,7 +1279,9 @@ Widget buildMobileHomeRecentActivityReviewUseCase(
   BuildContext context, {
   bool withSwapChildRows = false,
   bool matchReportedScreenshot = false,
+  bool withLongContent = false,
 }) {
+  if (withLongContent) return _buildMobileHomeLongContentReviewUseCase();
   final swaps = <SwapActivityRowItem>[
     if (withSwapChildRows)
       for (var index = 0; index < 11; index++)
@@ -1331,10 +1333,143 @@ Widget buildMobileHomeRecentActivityReviewUseCase(
   );
 }
 
+/// Longest real Home copy: a 20-character account name, a five-digit balance,
+/// and the mapper's longest activity titles, subtitles, amounts and statuses.
+Widget _buildMobileHomeLongContentReviewUseCase() {
+  DateTime at(int minute) => DateTime.utc(2026, 9, 30, 12, 59 - minute);
+  rust_sync.TransactionInfo tx(
+    int minute,
+    String kind, {
+    required int zatoshi,
+    String pool = 'shielded',
+    bool pending = false,
+    bool expired = false,
+  }) {
+    final seconds = BigInt.from(at(minute).millisecondsSinceEpoch ~/ 1000);
+    return rust_sync.TransactionInfo(
+      txidHex: 'home-review-long-$minute',
+      minedHeight: pending || expired
+          ? BigInt.zero
+          : BigInt.from(2000 - minute),
+      expiredUnmined: expired,
+      accountBalanceDelta: 0,
+      fee: BigInt.zero,
+      blockTime: seconds,
+      isTransparent: pool == 'transparent',
+      txKind: kind,
+      displayAmount: BigInt.from(zatoshi),
+      displayPool: pool,
+      createdTime: seconds,
+    );
+  }
+
+  SwapActivityRowItem swap(
+    int minute,
+    SwapIntentStatus status, {
+    required SwapDirection direction,
+    required SwapAsset asset,
+    required String sell,
+    required String receive,
+    bool payMode = false,
+  }) => SwapActivityRowItem(
+    intentId: 'home-review-long-swap-$minute',
+    providerLabel: 'NEAR Intents',
+    sellAmountText: sell,
+    receiveEstimateText: receive,
+    status: status,
+    direction: direction,
+    externalAsset: asset,
+    activityTimestamp: at(minute),
+    payMode: payMode,
+  );
+
+  return _buildMobileHomeUseCase(
+    accountState: _accountsDesignState.copyWith(
+      accounts: [
+        for (final account in _accountsDesignState.accounts)
+          account.uuid == _accountsDesignState.activeAccountUuid
+              ? account.copyWith(name: 'Long term savings 01')
+              : account,
+      ],
+    ),
+    votingVisible: false,
+    marketData: const ZecMarketData(usdPrice: 70, change24hPct: -12.34),
+    syncState: _homeSyncedState(
+      orchardBalance: BigInt.from(1234567891000),
+      recentTransactions: [
+        tx(
+          1,
+          'migration',
+          zatoshi: 1234567800,
+          pool: 'ironwood',
+          pending: true,
+        ),
+        tx(3, 'sent', zatoshi: 12345678900),
+        tx(4, 'sent', zatoshi: 150000000, expired: true),
+        tx(7, 'migration', zatoshi: 1234567800, pool: 'ironwood'),
+        tx(9, 'received', zatoshi: 12345600, pool: 'transparent'),
+        tx(10, 'received', zatoshi: 150000000),
+      ],
+    ),
+    swapActivityItems: [
+      swap(
+        0,
+        SwapIntentStatus.processing,
+        direction: SwapDirection.zecToExternal,
+        asset: SwapAsset.doge,
+        sell: '12.345678 ZEC',
+        receive: '1,234.56 DOGE',
+        payMode: true,
+      ),
+      swap(
+        2,
+        SwapIntentStatus.incompleteDeposit,
+        direction: SwapDirection.externalToZec,
+        asset: SwapAsset.usdt,
+        sell: '1,234.56 USDT',
+        receive: '17.6 ZEC',
+      ),
+      swap(
+        5,
+        SwapIntentStatus.complete,
+        direction: SwapDirection.zecToExternal,
+        asset: SwapAsset.usdc,
+        sell: '1.4462 ZEC',
+        receive: '101.23 USDC',
+        payMode: true,
+      ),
+      swap(
+        6,
+        SwapIntentStatus.expired,
+        direction: SwapDirection.zecToExternal,
+        asset: SwapAsset.wbtc,
+        sell: '23.456789 ZEC',
+        receive: '0.0123 WBTC',
+      ),
+      swap(
+        8,
+        SwapIntentStatus.refunded,
+        direction: SwapDirection.externalToZec,
+        asset: SwapAsset.usdc,
+        sell: '101.23 USDC',
+        receive: '1.4462 ZEC',
+      ),
+    ],
+    activityStore: const _HomeReviewActivityStore(),
+    networkPrivacyState: const NetworkPrivacyState.off(),
+    usePlatformInsets: true,
+  );
+}
+
 rust_sync.TransactionInfo _homeReviewIronwoodTx(int index) {
   final seconds = BigInt.from(
-    DateTime.utc(2026, 9, index <= 3 ? 30 : 29, 12, 11 - index)
-            .millisecondsSinceEpoch ~/
+    DateTime.utc(
+          2026,
+          9,
+          index <= 3 ? 30 : 29,
+          12,
+          11 - index,
+        ).millisecondsSinceEpoch ~/
         1000,
   );
   return rust_sync.TransactionInfo(
@@ -1356,8 +1491,9 @@ class _HomeReviewActivityStore implements SwapActivityStore {
   const _HomeReviewActivityStore();
 
   @override
-  Future<List<SwapIntentRecord>> loadRecords({required String accountUuid}) async =>
-      const [];
+  Future<List<SwapIntentRecord>> loadRecords({
+    required String accountUuid,
+  }) async => const [];
 
   @override
   Future<void> saveRecords({

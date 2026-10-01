@@ -1678,27 +1678,10 @@ class _BalanceCard extends StatelessWidget {
                         ),
                         const SizedBox(height: AppSpacing.xs),
                       ],
-                      Text.rich(
-                        key: const ValueKey('mobile_home_shielded_balance'),
-                        TextSpan(
-                          children: [
-                            TextSpan(
-                              text: '$balanceText ',
-                              style: _mobileHomeBalanceAmountStyle.copyWith(
-                                color: cardText.withValues(
-                                  alpha: balanceDisabled ? 0.4 : 1,
-                                ),
-                              ),
-                            ),
-                            TextSpan(
-                              text: kZcashDefaultCurrencyTicker,
-                              style: _mobileHomeBalanceTickerStyle.copyWith(
-                                color: cardText.withValues(
-                                  alpha: balanceDisabled ? 0.4 : 1,
-                                ),
-                              ),
-                            ),
-                          ],
+                      _MobileBalanceAmount(
+                        balanceText: balanceText,
+                        color: cardText.withValues(
+                          alpha: balanceDisabled ? 0.4 : 1,
                         ),
                       ),
                     ],
@@ -2088,6 +2071,52 @@ class _PrivacyEyeButton extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Keeps the balance number on one line: the ticker may wrap below it, and a
+/// number wider than the card scales down instead of breaking mid-digit.
+class _MobileBalanceAmount extends StatelessWidget {
+  const _MobileBalanceAmount({required this.balanceText, required this.color});
+
+  final String balanceText;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final amountStyle = _mobileHomeBalanceAmountStyle.copyWith(color: color);
+    final painter = TextPainter(
+      text: TextSpan(text: balanceText, style: amountStyle),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+      maxLines: 1,
+    )..layout();
+    final numberWidth = painter.width;
+    painter.dispose();
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final fits = numberWidth <= constraints.maxWidth;
+        final text = Text.rich(
+          key: const ValueKey('mobile_home_shielded_balance'),
+          TextSpan(
+            children: [
+              TextSpan(text: '$balanceText ', style: amountStyle),
+              TextSpan(
+                text: kZcashDefaultCurrencyTicker,
+                style: _mobileHomeBalanceTickerStyle.copyWith(color: color),
+              ),
+            ],
+          ),
+          softWrap: fits,
+        );
+        if (fits) return text;
+        return FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: text,
+        );
+      },
     );
   }
 }

@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 
 import '../../theme/app_theme.dart';
 import '../../widgets/app_icon.dart';
+import '../minimum_visible_label.dart';
 
 /// Default height of [MobileTopNav] — Figma `Mobile Top Nav` (node 4237:92733).
 const double kMobileTopNavHeight = 72;
@@ -150,17 +151,17 @@ class MobileTopNav extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (_variant == _MobileTopNavVariant.account) {
-      return _buildAccount(context);
-    }
-    return SizedBox(
-      height: height,
-      child: switch (_variant) {
-        _MobileTopNavVariant.account => _buildAccount(context),
-        _MobileTopNavVariant.steps => _buildSteps(context),
-        _MobileTopNavVariant.back => _buildBack(context),
-      },
-    );
+    return switch (_variant) {
+      _MobileTopNavVariant.account => _buildAccount(context),
+      _MobileTopNavVariant.steps => SizedBox(
+        height: height,
+        child: _buildSteps(context),
+      ),
+      _MobileTopNavVariant.back => SizedBox(
+        height: height,
+        child: _buildBack(context),
+      ),
+    };
   }
 
   Widget _buildAccount(BuildContext context) {
@@ -228,18 +229,19 @@ class MobileTopNav extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final inlineWidth =
-            AppSpacing.sm +
-            _avatarSize +
-            AppSpacing.s +
-            textWidth(accountName, nameStyle) +
-            (syncLabel == null
-                ? AppSpacing.sm
-                : AppSpacing.s * 2 +
-                      textWidth(syncLabel!, AppTypography.labelMedium) +
-                      _syncIndicatorSize.width);
+        // The name may ellipsize; the label moves below it only when it
+        // would hide the name's first word.
+        final nameSpace =
+            constraints.maxWidth -
+            AppSpacing.sm -
+            _avatarSize -
+            AppSpacing.s * 2 -
+            AppSpacing.xs -
+            _syncIndicatorSize.width;
         final stackSync =
-            syncLabel != null && inlineWidth > constraints.maxWidth;
+            syncLabel != null &&
+            nameSpace - textWidth(syncLabel!, AppTypography.labelMedium) <
+                textWidth(minimumVisibleLabel(accountName), nameStyle);
 
         Widget layout(Widget? label, Widget? indicator) => ConstrainedBox(
           constraints: const BoxConstraints(minHeight: kMobileTopNavHeight),
@@ -249,7 +251,10 @@ class MobileTopNav extends StatelessWidget {
               children: [
                 const SizedBox(width: AppSpacing.sm),
                 Expanded(child: account(label: stackSync ? label : null)),
-                if (!stackSync && label != null) label,
+                if (!stackSync && label != null) ...[
+                  const SizedBox(width: AppSpacing.xs),
+                  label,
+                ],
                 if (indicator != null) ...[
                   const SizedBox(width: AppSpacing.s),
                   indicator,

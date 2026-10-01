@@ -1,10 +1,12 @@
 @Tags(['mobile'])
 library;
 
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart' show MaterialApp;
+import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:zcash_wallet/src/core/config/network_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/activity/activity_row_mapper.dart';
@@ -103,6 +105,85 @@ void main() {
     expect(decoration.boxShadow ?? const <BoxShadow>[], isEmpty);
   });
 
+  testWidgets('long subtitles ellipsize instead of stacking the row', (
+    tester,
+  ) async {
+    await _pumpActivityFeed(
+      tester,
+      width: 460,
+      rows: [
+        _row(
+          title: 'Paid',
+          subtitle: 'from shielded ZEC · Ethereum',
+          amountText: '-101.23 USDC',
+        ),
+      ],
+    );
+
+    expect(tester.getSize(find.byType(ActivityFeedRow)).height, 44);
+    expect(
+      tester.getTopLeft(find.text('-101.23 USDC')).dy,
+      lessThan(tester.getBottomLeft(find.text('Paid')).dy),
+    );
+  });
+
+  testWidgets('amounts that fit beside the first title word stay whole', (
+    tester,
+  ) async {
+    await _pumpActivityFeed(
+      tester,
+      width: 460,
+      rows: [_row(title: 'Sent', amountText: '-123.456789 ZEC')],
+    );
+
+    expect(tester.getSize(find.byType(ActivityFeedRow)).height, 44);
+    final amount = tester.renderObject<RenderParagraph>(
+      find.text('-123.456789 ZEC'),
+    );
+    expect(amount.didExceedMaxLines, isFalse);
+  });
+
+  testWidgets('rows stack when the amount crowds out the first title word', (
+    tester,
+  ) async {
+    await _pumpActivityFeed(
+      tester,
+      width: 460,
+      rows: [_row(title: 'Payment in progress', amountText: '-123.456789 ZEC')],
+    );
+
+    expect(
+      tester.getTopLeft(find.text('-123.456789 ZEC')).dy,
+      greaterThan(tester.getBottomLeft(find.text('Payment in progress')).dy),
+    );
+  });
+
+  testWidgets('a wrapped status keeps its icon beside the text', (
+    tester,
+  ) async {
+    await _pumpActivityFeed(
+      tester,
+      width: 300,
+      rows: [
+        _row(
+          title: 'Swapping...',
+          amountText: '-1.234K USDT',
+          statusText: 'Incomplete deposit',
+          statusIconName: AppIcons.warning,
+        ),
+      ],
+    );
+
+    final status = tester.renderObject<RenderParagraph>(
+      find.text('Incomplete deposit'),
+    );
+    final boxes = status.getBoxesForSelection(
+      const TextSelection(baseOffset: 0, extentOffset: 18),
+    );
+    expect(boxes.map((box) => box.top).toSet(), hasLength(2));
+    expect(boxes.map((box) => box.left).reduce(math.min), lessThan(0.5));
+  });
+
   test('mobile outgoing amount color matches the title accent', () {
     final colors = AppThemeData.light.colors;
     expect(outgoingAmountColor(colors), colors.text.accent);
@@ -112,6 +193,7 @@ void main() {
 Future<void> _pumpActivityFeed(
   WidgetTester tester, {
   required List<ActivityRowData> rows,
+  double width = 420,
 }) {
   return tester.pumpWidget(
     MaterialApp(
@@ -119,8 +201,9 @@ Future<void> _pumpActivityFeed(
         data: AppThemeData.light,
         child: Center(
           child: SizedBox(
-            width: 420,
+            width: width,
             child: ActivityFeed(
+              cardWidth: null,
               sections: [
                 ActivityFeedSectionData(title: 'This week', rows: rows),
               ],
@@ -137,6 +220,9 @@ ActivityRowData _row({
   String leadingIconName = AppIcons.plane,
   String? subtitle,
   String? subtitleIconName,
+  String amountText = '1.00 ZEC',
+  String statusText = 'Completed',
+  String? statusIconName,
 }) {
   return ActivityRowData(
     title: title,
@@ -145,8 +231,9 @@ ActivityRowData _row({
     leadingIconColor: const Color(0xFF4D5252),
     subtitle: subtitle,
     subtitleIconName: subtitleIconName,
-    amountText: '1.00 $kZcashDefaultCurrencyTicker',
-    statusText: 'Completed',
+    amountText: amountText,
+    statusText: statusText,
+    statusIconName: statusIconName,
     timestampText: 'Today, 13:11',
   );
 }

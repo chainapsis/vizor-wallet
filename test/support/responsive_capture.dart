@@ -8,7 +8,11 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// Checks only the text surfaces selected by a screen's readability contract.
 /// Scrolling, ancestor clipping, content counts, and taps remain screen-owned.
-List<String> readableTextIssues(Iterable<Finder> surfaces) {
+/// Texts in [ellipsisAllowed] may truncate but must still have enough height.
+List<String> readableTextIssues(
+  Iterable<Finder> surfaces, {
+  Set<String> ellipsisAllowed = const {},
+}) {
   final elements = <Element>{};
   for (final surface in surfaces) {
     elements.addAll(surface.evaluate().where((e) => e.widget is RichText));
@@ -18,16 +22,23 @@ List<String> readableTextIssues(Iterable<Finder> surfaces) {
   }
   return [
     for (final element in elements)
-      ..._paragraphIssues(element.findRenderObject()! as RenderParagraph),
+      ..._paragraphIssues(
+        element.findRenderObject()! as RenderParagraph,
+        ellipsisAllowed,
+      ),
   ];
 }
 
-List<String> _paragraphIssues(RenderParagraph paragraph) {
+List<String> _paragraphIssues(
+  RenderParagraph paragraph,
+  Set<String> ellipsisAllowed,
+) {
   final text = paragraph.text.toPlainText();
   final allocatedHeight = paragraph.size.height;
   final intrinsicHeight = paragraph.getMaxIntrinsicHeight(paragraph.size.width);
   return [
-    if (paragraph.didExceedMaxLines) 'Truncated text: $text',
+    if (paragraph.didExceedMaxLines && !ellipsisAllowed.contains(text))
+      'Truncated text: $text',
     if (intrinsicHeight > allocatedHeight + 0.5)
       'Text needs $intrinsicHeight px but has $allocatedHeight px of height: $text',
   ];

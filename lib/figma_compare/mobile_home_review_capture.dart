@@ -16,3 +16,6 @@ Widget buildMobileHomeReportedCapture(BuildContext context) =>
       context,
       matchReportedScreenshot: true,
     );
+
+Widget buildMobileHomeLongContentCapture(BuildContext context) =>
+    buildMobileHomeRecentActivityReviewUseCase(context, withLongContent: true);

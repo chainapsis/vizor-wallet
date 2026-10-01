@@ -47,6 +47,33 @@ void main() {
     },
   );
 
+  testWidgets('sync label stays beside a long name until it crowds it out', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(440, 800);
+    addTearDown(tester.view.reset);
+    for (final (label, inline) in [
+      ('Vizor is synced', true),
+      ('45% Syncing...', true),
+      ('Syncing failed. Wallet data error...', false),
+    ]) {
+      await tester.pumpWidget(
+        _harness(
+          MobileTopNav.account(
+            accountName: 'Savings for travel',
+            syncLabel: label,
+          ),
+        ),
+      );
+      final besideName =
+          tester.getTopLeft(find.text(label)).dy <
+          tester.getBottomLeft(find.text('Savings for travel')).dy;
+      expect(besideName, inline, reason: label);
+      expect(tester.getSize(find.byType(MobileTopNav)).height, 72);
+    }
+  });
+
   testWidgets('MobileTopNav.account shows name, balance, and sync label', (
     tester,
   ) async {

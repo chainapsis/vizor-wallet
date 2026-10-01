@@ -9,6 +9,7 @@ import 'package:zcash_wallet/src/providers/rpc_endpoint_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_home_entry_provider.dart';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
     as frb;
 import 'package:flutter/services.dart';
@@ -2617,6 +2618,40 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+
+  testWidgets('enlarged narrow home keeps the balance number on one line', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(320, 568);
+    addTearDown(tester.view.reset);
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    await tester.pumpWidget(
+      _app(
+        _syncedState(orchardBalance: BigInt.from(14312000000)),
+        showVoting: false,
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    final balance = tester.renderObject<RenderParagraph>(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_home_shielded_balance')),
+        matching: find.byType(RichText),
+      ),
+    );
+    final lineTops = balance
+        .getBoxesForSelection(
+          const TextSelection(baseOffset: 0, extentOffset: 6),
+        )
+        .map((box) => box.top)
+        .toSet();
+    expect(balance.text.toPlainText(), startsWith('143.12 '));
+    expect(lineTops, hasLength(1));
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('hides the pay entry when swap is disabled', (tester) async {
     await tester.pumpWidget(

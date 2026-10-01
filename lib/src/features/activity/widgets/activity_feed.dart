@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../../core/layout/app_form_factor.dart';
+import '../../../core/layout/minimum_visible_label.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../models/activity_row_data.dart';
@@ -924,12 +925,15 @@ class _MobileActivityRowContent extends StatelessWidget {
     final amount = _ActivityRowAmount(row: row, childRow: childRow);
     final supporting = amount.supportingText;
     final amountWidth =
-        _textWidth(
-          context,
-          row.amountText,
-          AppTypography.labelLarge.copyWith(fontWeight: FontWeight.w600),
-        ) +
-        (row.amountIconName == null ? 0 : 14 + AppSpacing.xxs);
+        (_textWidth(
+                  context,
+                  row.amountText,
+                  AppTypography.labelLarge.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ) +
+                (row.amountIconName == null ? 0 : 14 + AppSpacing.xxs))
+            .ceilToDouble();
     final supportingIcon = row.amountSubtitle == supporting
         ? row.amountSubtitleIconName
         : row.statusText.trim() == supporting
@@ -937,27 +941,29 @@ class _MobileActivityRowContent extends StatelessWidget {
         : null;
     final supportingWidth = supporting == null
         ? 0.0
-        : _textWidth(context, supporting, _activitySupportingStyle) +
-              (supportingIcon == null ? 0 : 12 + AppSpacing.xxs);
+        : (_textWidth(
+                    context,
+                    supporting,
+                    _activitySupportingStyle.copyWith(letterSpacing: 0),
+                  ) +
+                  (supportingIcon == null ? 0 : 12 + AppSpacing.xxs))
+              .ceilToDouble();
     final amountWidthNeeded = math.max(amountWidth, supportingWidth);
-    final subtitleWidth = row.subtitle == null
-        ? 0.0
-        : _textWidth(context, row.subtitle!, _activityRowSubtitleStyle) +
-              (row.subtitleIconName == null ? 0 : 12 + AppSpacing.xxs);
-    final titleWidth =
-        AppAssetSize.size +
-        AppSpacing.xs +
-        math.max(
-          _textWidth(context, row.title, AppTypography.labelLarge),
-          subtitleWidth,
-        );
+    // Titles and subtitles may ellipsize as on desktop; the row only stacks
+    // when the amount would hide the title's first word.
+    final minTitleWidth = _textWidth(
+      context,
+      minimumVisibleLabel(row.title),
+      AppTypography.labelLarge,
+    ).ceilToDouble();
     final leading = childRow
         ? const _ActivityChildConnector()
         : _ActivityRowIcon(row: row);
     return LayoutBuilder(
       builder: (context, constraints) {
-        final stacked =
-            titleWidth + 10 + amountWidthNeeded > constraints.maxWidth;
+        final titleSpace =
+            constraints.maxWidth - AppAssetSize.size - AppSpacing.xs - 10;
+        final stacked = titleSpace - amountWidth < minTitleWidth;
         final title = Row(
           children: [
             leading,
@@ -972,7 +978,10 @@ class _MobileActivityRowContent extends StatelessWidget {
           childRow: childRow,
           maxWidth: stacked
               ? constraints.maxWidth
-              : math.max(128, amountWidthNeeded),
+              : math.max(
+                  amountWidth,
+                  math.min(amountWidthNeeded, titleSpace - minTitleWidth),
+                ),
           allowWrap: stacked,
         );
         if (stacked) {
@@ -1159,6 +1168,10 @@ class _ActivityAmountValue extends StatelessWidget {
       maxLines: allowWrap ? null : 1,
       overflow: allowWrap ? TextOverflow.clip : TextOverflow.ellipsis,
       textAlign: TextAlign.end,
+      // Wrapped lines hug their text so a leading icon stays beside it.
+      textWidthBasis: allowWrap
+          ? TextWidthBasis.longestLine
+          : TextWidthBasis.parent,
       style: AppTypography.labelLarge.copyWith(
         color: color,
         fontWeight: FontWeight.w600,
@@ -1207,6 +1220,9 @@ class _ActivitySupportingAmountText extends StatelessWidget {
       maxLines: allowWrap ? null : 1,
       overflow: allowWrap ? TextOverflow.clip : TextOverflow.ellipsis,
       textAlign: TextAlign.end,
+      textWidthBasis: allowWrap
+          ? TextWidthBasis.longestLine
+          : TextWidthBasis.parent,
       style: _activitySupportingStyle.copyWith(color: color, letterSpacing: 0),
     );
     if (iconName == null) return label;
