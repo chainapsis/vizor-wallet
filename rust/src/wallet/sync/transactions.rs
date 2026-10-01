@@ -31,7 +31,6 @@ use zcash_protocol::{
     memo::{Memo, MemoBytes},
 };
 
-use crate::wallet::birthday::{self, BirthdayAnchor};
 use crate::wallet::db::with_wallet_db_write_lock;
 use crate::wallet::keys::parse_account_uuid;
 use crate::wallet::network::WalletNetwork;
@@ -702,48 +701,6 @@ pub(crate) fn get_export_birthday_anchor(
     get_account_birthday_height(db_path, account_uuid)?
         .map(|block_height| ExportBirthdayAnchor { block_height })
         .ok_or_else(|| "Account birthday not found".to_string())
-}
-
-/// Local time of exactly the height shown by the caller. Non-mainnet keeps
-/// the existing network lookup, including private Ironwood masquerade chains.
-pub(crate) fn get_local_block_time(
-    db_path: &str,
-    network: WalletNetwork,
-    height: u64,
-) -> Result<Option<u64>, String> {
-    if !birthday::uses_mainnet_anchors(network) {
-        return Ok(None);
-    }
-    let conn = open_readonly_conn(db_path)?;
-    let exact = conn
-        .query_row(
-            "SELECT time FROM blocks WHERE height = ?1",
-            [height],
-            |row| row.get::<_, Option<u32>>(0),
-        )
-        .optional()
-        .map_err(|e| format!("Block time query error: {e}"))?
-        .flatten();
-    if let Some(time) = exact {
-        return Ok(Some(u64::from(time)));
-    }
-    let highest_scanned = conn
-        .query_row(
-            "SELECT height, time FROM blocks WHERE time IS NOT NULL ORDER BY height DESC LIMIT 1",
-            [],
-            |row| {
-                Ok(BirthdayAnchor {
-                    height: row.get(0)?,
-                    time: row.get(1)?,
-                })
-            },
-        )
-        .optional()
-        .map_err(|e| format!("Highest scanned block query error: {e}"))?;
-    Ok(Some(u64::from(birthday::mainnet_time_for_height(
-        height,
-        highest_scanned,
-    ))))
 }
 
 fn get_account_birthday_height(db_path: &str, account_uuid: &str) -> Result<Option<u64>, String> {
@@ -2085,95 +2042,6 @@ mod tests {
     //! exercise the logic, so a regression in the SQL text shows up here
     //! first.
     use super::*;
-
-    fn birthday_blocks(rows: &[(u32, Option<u32>)]) -> NamedTempFile {
-        let db = NamedTempFile::new().unwrap();
-        let conn = rusqlite::Connection::open(db.path()).unwrap();
-        conn.execute(
-            "CREATE TABLE blocks (height INTEGER PRIMARY KEY, time INTEGER)",
-            [],
-        )
-        .unwrap();
-        for (height, time) in rows {
-            conn.execute(
-                "INSERT INTO blocks (height, time) VALUES (?1, ?2)",
-                rusqlite::params![height, time],
-            )
-            .unwrap();
-        }
-        db
-    }
-
-    #[cfg(not(ironwood_masquerade))]
-    #[test]
-    fn local_birthday_time_uses_exact_requested_block_or_sparse_estimate() {
-        let db = birthday_blocks(&[
-            (2_000_000, Some(1_677_600_000)),
-            (2_500_000, Some(1_715_296_781)),
-            (3_600_000, None),
-        ]);
-        let path = db.path().to_str().unwrap();
-        assert_eq!(
-            get_local_block_time(path, WalletNetwork::Main, 2_000_000).unwrap(),
-            Some(1_677_600_000)
-        );
-        // Request height remains authoritative even if the export anchor or
-        // highest scanned block changes while the screen loads its date.
-        let got = get_local_block_time(path, WalletNetwork::Main, 1_757_200)
-            .unwrap()
-            .unwrap();
-        assert!(got.abs_diff(1_659_305_748) < 6 * 60 * 60);
-        assert!(get_local_block_time(path, WalletNetwork::Main, 3_600_000)
-            .unwrap()
-            .is_some());
-    }
-
-    #[cfg(not(ironwood_masquerade))]
-    #[test]
-    fn local_birthday_time_uses_highest_scanned_time_beyond_last_anchor() {
-        let last = *birthday::MAINNET_BIRTHDAY_ANCHORS.last().unwrap();
-        let upper_height = u32::try_from(last.height + 10_000).unwrap();
-        let db = birthday_blocks(&[
-            (upper_height, Some(last.time + 1_000_000)),
-            (upper_height + 10_000, None),
-        ]);
-        let path = db.path().to_str().unwrap();
-        assert_eq!(
-            get_local_block_time(path, WalletNetwork::Main, last.height + 5_000).unwrap(),
-            Some(u64::from(last.time + 500_000))
-        );
-        assert_eq!(
-            get_local_block_time(path, WalletNetwork::Main, last.height + 10_010).unwrap(),
-            Some(u64::from(last.time + 1_000_750))
-        );
-        let empty = birthday_blocks(&[]);
-        assert_eq!(
-            get_local_block_time(
-                empty.path().to_str().unwrap(),
-                WalletNetwork::Main,
-                last.height + 5_000
-            )
-            .unwrap(),
-            Some(u64::from(last.time + 375_000))
-        );
-    }
-
-    #[test]
-    fn local_birthday_time_keeps_non_mainnet_network_lookup() {
-        let db = birthday_blocks(&[(2_000_000, Some(1_677_600_000))]);
-        let path = db.path().to_str().unwrap();
-        for network in [WalletNetwork::Test, WalletNetwork::Regtest] {
-            assert_eq!(
-                get_local_block_time(path, network, 2_000_000).unwrap(),
-                None
-            );
-        }
-        #[cfg(ironwood_masquerade)]
-        assert_eq!(
-            get_local_block_time(path, WalletNetwork::Main, 2_000_000).unwrap(),
-            None
-        );
-    }
     use tempfile::NamedTempFile;
 
     #[test]
