@@ -82,7 +82,7 @@ impl Chain {
     pub fn start(coinbase_to: &str, coinbase_blocks: u32, mature_blocks: u32) -> Self {
         let suffix = uuid::Uuid::new_v4().simple().to_string();
         let keep = std::env::var("TH_KEEP_CHAIN").as_deref() == Ok("1");
-        let chain = Chain {
+        let mut chain = Chain {
             // /tmp works as a Docker Desktop bind mount on macOS and Linux.
             dir: tempfile::Builder::new()
                 .prefix("vizor-th-chain-")
@@ -94,6 +94,10 @@ impl Chain {
             lwd_port: free_port(),
             keep,
         };
+        // A kept chain outlives this process (the Flutter layer uses it), so
+        // its data directory must too: zcashd and lightwalletd run on it. The
+        // runner removes it with the containers (TH_CHAIN_DIR in chain.env).
+        chain.dir.disable_cleanup(keep);
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -206,6 +210,10 @@ impl Chain {
             );
             std::thread::sleep(Duration::from_millis(500));
         }
+    }
+
+    pub fn data_dir(&self) -> &std::path::Path {
+        self.dir.path()
     }
 
     pub fn lwd_url(&self) -> String {
