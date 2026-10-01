@@ -1093,9 +1093,12 @@ fn read_transaction_detail(
             .then_with(|| a.output_pool.cmp(&b.output_pool))
     });
 
+    let pays_others = pays_others(&outputs, uuid_bytes.as_slice());
     let visible_outputs = outputs
         .iter()
-        .filter(|output| detail_includes_output(&base, output, uuid_bytes.as_slice(), tx_kind))
+        .filter(|output| {
+            detail_includes_output(&base, output, uuid_bytes.as_slice(), tx_kind, pays_others)
+        })
         .collect::<Vec<_>>();
     let memo = visible_outputs
         .iter()
@@ -1327,7 +1330,17 @@ fn read_history_base_by_txid(
 /// The upstream view aggregates `raw`, so SQLite materializes every blob
 /// and cannot push an outer account filter into the view. This copy drops
 /// `raw`, filters by `?1` early, and keeps the `notes` / `sent_note_counts`
-/// CTEs verbatim so row identity matches.
+/// CTEs verbatim so row identity matches, with one deliberate exception:
+///
+/// `sent_note_counts` groups by `sent_notes.from_account_id`. Upstream writes
+/// `GROUP BY account_id`, which SQLite binds to the joined
+/// `v_received_outputs.account_id` (an input column wins over a result alias
+/// in `GROUP BY`). A send whose sent notes include an output the wallet also
+/// received, such as transparent change (`v_received_outputs` reports
+/// transparent outputs with `is_change = 0`), then yields one
+/// `sent_note_counts` row per receiving account, and the outer join counts
+/// every note of the transaction once per row: the account's movement is
+/// doubled or tripled. For transactions without such outputs the two agree.
 ///
 /// Source: `zcash_client_sqlite` 0.22.0-rc.4 `VIEW_TRANSACTIONS`
 /// <https://github.com/zcash/librustzcash/blob/65a3add2f1d9b9ea455a71a9c33f9219dbc9e614/zcash_client_sqlite/src/wallet/db.rs#L1320-L1438>
@@ -1378,7 +1391,7 @@ const HISTORY_BASES_CTE: &str = r#"
                 FROM sent_notes
                 LEFT JOIN v_received_outputs ro ON sent_notes.id = ro.sent_note_id
                 WHERE COALESCE(ro.is_change, 0) = 0
-                GROUP BY account_id, sent_notes.transaction_id
+                GROUP BY sent_notes.from_account_id, sent_notes.transaction_id
             ),
             blocks_max_height AS (
                 SELECT MAX(blocks.height) AS max_height FROM blocks
@@ -1680,6 +1693,7 @@ fn summarize_activity_outputs(
     account_uuid: &[u8],
 ) -> ActivitySummary {
     let mut summary = ActivitySummary::default();
+    let pays_others = pays_others(outputs, account_uuid);
 
     for output in outputs {
         let from_own = output.from_account_uuid.as_deref() == Some(account_uuid);
@@ -1705,7 +1719,7 @@ fn summarize_activity_outputs(
         }
 
         let visible_self_output = from_own && to_own && is_user_visible_self_output(output);
-        let visible_sent = from_own && (!to_own || visible_self_output);
+        let visible_sent = from_own && (!to_own || (visible_self_output && !pays_others));
         let visible_received = to_own && (!from_own || visible_self_output);
 
         if visible_sent {
@@ -1722,11 +1736,25 @@ fn summarize_activity_outputs(
     summary
 }
 
+/// Whether the account paid anyone else in the transaction. A self-payment
+/// then shows only as the receive it is: counting it in the sent row too
+/// would report the account's own funds as paid away (H09: a transparent
+/// input paying an external address and the account's own shielded address).
+/// Without another recipient, a self-payment is the whole payment and shows
+/// as both a send and a receive.
+fn pays_others(outputs: &[TxOutput], account_uuid: &[u8]) -> bool {
+    outputs.iter().any(|output| {
+        output.from_account_uuid.as_deref() == Some(account_uuid)
+            && output.to_account_uuid.as_deref() != Some(account_uuid)
+    })
+}
+
 fn detail_includes_output(
     base: &TxBase,
     output: &TxOutput,
     account_uuid: &[u8],
     tx_kind: &str,
+    pays_others: bool,
 ) -> bool {
     let from_own = output.from_account_uuid.as_deref() == Some(account_uuid);
     let to_own = output.to_account_uuid.as_deref() == Some(account_uuid);
@@ -1734,7 +1762,9 @@ fn detail_includes_output(
     match tx_kind {
         "shielded" => base.is_shielding && to_own && is_shielded_pool(output.output_pool),
         "sent" => {
-            !base.is_shielding && from_own && (!to_own || is_user_visible_self_output(output))
+            !base.is_shielding
+                && from_own
+                && (!to_own || (is_user_visible_self_output(output) && !pays_others))
         }
         "received" | "receiving" => {
             !base.is_shielding && to_own && (!from_own || is_user_visible_self_output(output))
@@ -4200,7 +4230,10 @@ mod tests {
     ///
     /// This is the tripwire for a `zcash_client_sqlite` upgrade that
     /// changes the view: the CTE inlines the view's aggregates minus
-    /// `transactions.raw`, so the two must return identical rows.
+    /// `transactions.raw`, so the two must return identical rows. The one
+    /// intended difference is the `sent_note_counts` grouping (see
+    /// `HISTORY_BASES_CTE`): a send that pays a wallet-owned transparent
+    /// output shows a multiplied movement in the view and the true one here.
     ///
     /// It needs a database built by librustzcash itself — the synthetic
     /// fixtures in this module define `v_transactions` as a table and
@@ -5240,6 +5273,82 @@ mod tests {
         assert_eq!(got[1].tx_kind, "received");
         assert_eq!(got[1].display_amount, 1_100_000);
         assert_eq!(got[1].display_pool, "mixed");
+    }
+
+    /// H09: one transparent input pays an external transparent address and
+    /// the account's own shielded address. The sent row is the external
+    /// payment only; the shielded output is the account's receive, not money
+    /// paid away (the app showed −1.9998 for a 1.2998 payment).
+    #[test]
+    fn history_mixed_pool_payment_excludes_the_accounts_own_output() {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let tx = fake_txid(0xC9);
+
+        // 2.0 in; 1.29985 to B (external t), 0.7 to the account's own
+        // external UA (Orchard), 0.00015 fee.
+        insert_history_tx(
+            &db,
+            account,
+            &tx,
+            Some(1_000_000),
+            1,
+            Some(1_000_100),
+            -130_000_000,
+            200_000_000,
+            70_000_000,
+            false,
+            None,
+        );
+        insert_output_with_address(
+            &db,
+            &tx,
+            0,
+            Some(account),
+            None,
+            129_985_000,
+            false,
+            Some("t-external-b"),
+            None,
+        );
+        insert_output_with_address(
+            &db,
+            &tx,
+            3,
+            Some(account),
+            Some(account),
+            70_000_000,
+            false,
+            Some("u-own-external"),
+            Some(0),
+        );
+
+        let got = history_from_fixture(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            None,
+            &account.to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(got.len(), 2);
+        assert_eq!(got[0].tx_kind, "sent");
+        assert_eq!(got[0].display_amount, 129_985_000);
+        assert_eq!(got[0].display_pool, "transparent");
+        assert_eq!(got[1].tx_kind, "received");
+        assert_eq!(got[1].display_amount, 70_000_000);
+        assert_eq!(got[1].display_pool, "shielded");
+
+        let detail = detail_from_fixture(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            &account.to_string(),
+            &hex::encode(tx),
+            "sent",
+        )
+        .unwrap();
+        assert_eq!(detail.outputs.len(), 1, "the sent detail lists only B");
+        assert_eq!(detail.outputs[0].amount_zatoshi, 129_985_000);
     }
 
     #[test]
