@@ -346,6 +346,14 @@ class _MobileSeedPhraseScreenState
     final loader = widget.birthdayBlockTimeLoader;
     if (loader != null) return loader(height);
 
+    final dbPath = await getWalletDbPath();
+    final localTime = await rust_sync.getLocalBlockTime(
+      dbPath: dbPath,
+      network: ref.read(rpcEndpointProvider).networkName,
+      height: BigInt.from(height),
+    );
+    if (localTime != null) return localTime.toInt();
+
     final blockTime = await ref
         .read(rpcEndpointFailoverProvider.notifier)
         .runWithEndpointFallback(

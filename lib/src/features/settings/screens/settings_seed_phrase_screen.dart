@@ -401,6 +401,14 @@ class _SettingsSeedPhraseScreenState
   }
 
   Future<int> _loadBirthdayBlockTime(int height) async {
+    final dbPath = await getWalletDbPath();
+    final localTime = await rust_sync.getLocalBlockTime(
+      dbPath: dbPath,
+      network: ref.read(rpcEndpointProvider).networkName,
+      height: BigInt.from(height),
+    );
+    if (localTime != null) return localTime.toInt();
+
     final blockTime = await ref
         .read(rpcEndpointFailoverProvider.notifier)
         .runWithEndpointFallback(

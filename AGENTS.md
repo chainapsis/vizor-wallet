@@ -147,6 +147,21 @@ Android and Dart: `--dart-define=VIZOR_DEEPLINK_BASE_URL` (default
   Dart's `classifyIncomingLink`, which drops unknown paths on the origin
   silently.
 
+## Mainnet Birthday Estimates
+
+Date-to-height imports and seed-phrase height-to-date displays use the eight
+mainnet anchors in `rust/src/wallet/birthday.rs`. Never verify a birthday-derived
+height with lightwalletd on mainnet. Imports reuse the screen's tip metadata or
+fetch only the public tip; displays use the scanned block time where available.
+The existing 15-day date-import margin stays in Dart. Direct height entry stays
+exact. Testnet, regtest, and Ironwood masquerade keep their network lookup.
+
+Before a release, check interpolation errors against independent mainnet block
+times, including recent dates and an older tip snapshot. If needed, add or refresh
+one deep recent anchor after verifying its time against two independent endpoints.
+Keep the Sapling and Blossom anchors. Do not introduce a dense table or scheduled
+updates without a separate request. Sync's tree-state requests are unchanged.
+
 ## Editing Figma
 
 When the user explicitly asks you to modify a Figma file or design, read

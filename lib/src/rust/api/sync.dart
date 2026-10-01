@@ -976,6 +976,18 @@ Future<BigInt> getExportBirthdayHeight({
   accountUuid: accountUuid,
 );
 
+/// Mainnet birthday block time from the wallet DB or sparse local anchors.
+/// Returns None on other networks, whose callers keep get_block_time.
+Future<BigInt?> getLocalBlockTime({
+  required String dbPath,
+  required String network,
+  required BigInt height,
+}) => RustLib.instance.api.crateApiSyncGetLocalBlockTime(
+  dbPath: dbPath,
+  network: network,
+  height: height,
+);
+
 Future<BigInt> getBlockTime({
   required String lightwalletdUrl,
   required BigInt height,

@@ -22,62 +22,15 @@ use zcash_client_backend::tor::{
 };
 
 pub use crate::network_privacy::NetworkPrivacyStatus;
+use crate::wallet::birthday::{self, BirthdayAnchor, SAPLING_ACTIVATION};
+use crate::wallet::network::WalletNetwork;
 
 const TOR_API_RESPONSE_BODY_TIMEOUT: Duration = Duration::from_secs(30);
 const TOR_HTTP_REQUEST_TIMEOUT_ERROR: &str = "Tor HTTP request timed out";
 const TOR_HTTP_REQUEST_CANCELLED_ERROR: &str = "Tor HTTP request cancelled";
-const MAINNET_SAPLING_ACTIVATION_HEIGHT: u64 = 419_200;
-const MAINNET_SAPLING_ACTIVATION_TIME: u32 = 1_540_779_337;
-const BIRTHDAY_ESTIMATE_TOLERANCE_SECONDS: i64 = 6 * 60 * 60;
-const MAX_BIRTHDAY_CORRECTION_PROBES: usize = 2;
 static TOR_HTTP_CANCELLATIONS: LazyLock<Mutex<HashMap<u64, tokio::sync::watch::Sender<bool>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 static NEXT_TOR_HTTP_REQUEST_ID: AtomicU64 = AtomicU64::new(1);
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct BirthdayAnchor {
-    height: u64,
-    time: u32,
-}
-
-// Deep mainnet blocks are immutable enough to serve as interpolation anchors.
-// Blossom is included explicitly because its activation halved the target block
-// interval. Later anchors keep accumulated mining-rate drift well below the
-// existing 15-day wallet-birthday safety margin.
-const MAINNET_BIRTHDAY_ANCHORS: [BirthdayAnchor; 8] = [
-    BirthdayAnchor {
-        height: MAINNET_SAPLING_ACTIVATION_HEIGHT,
-        time: MAINNET_SAPLING_ACTIVATION_TIME,
-    },
-    BirthdayAnchor {
-        height: 653_600,
-        time: 1_576_101_005,
-    },
-    BirthdayAnchor {
-        height: 1_000_000,
-        time: 1_602_206_541,
-    },
-    BirthdayAnchor {
-        height: 1_500_000,
-        time: 1_639_913_234,
-    },
-    BirthdayAnchor {
-        height: 2_000_000,
-        time: 1_677_602_242,
-    },
-    BirthdayAnchor {
-        height: 2_500_000,
-        time: 1_715_296_781,
-    },
-    BirthdayAnchor {
-        height: 3_000_000,
-        time: 1_752_983_473,
-    },
-    BirthdayAnchor {
-        height: 3_450_000,
-        time: 1_786_894_060,
-    },
-];
 
 /// Blocks new policy-aware direct requests immediately. Tor bootstrap is
 /// intentionally separate so the caller can first quiesce channels that were
@@ -441,37 +394,14 @@ pub async fn get_import_birthday_metadata(
         .await
         .map_err(|error| error.to_string())?;
 
-    if use_mainnet_fast_path {
-        match client
-            .get_latest_tree_state(timed_birthday_request(Empty {}))
-            .await
-        {
-            Ok(response) => {
-                let tip = response.into_inner();
-                if !is_mainnet(&tip.network) {
-                    return Err(format!(
-                        "Expected mainnet birthday metadata, endpoint reported {}",
-                        tip.network
-                    ));
-                }
-                if tip.height < MAINNET_SAPLING_ACTIVATION_HEIGHT
-                    || tip.time < MAINNET_SAPLING_ACTIVATION_TIME
-                {
-                    return Err("Mainnet tip predates Sapling activation".to_string());
-                }
-                return Ok(ImportBirthdayMetadata {
-                    sapling_activation_height: MAINNET_SAPLING_ACTIVATION_HEIGHT,
-                    sapling_activation_time: MAINNET_SAPLING_ACTIVATION_TIME,
-                    tip_height: tip.height,
-                    tip_time: tip.time,
-                });
-            }
-            Err(error) if error.code() == tonic::Code::Unimplemented => {
-                // Older custom lightwalletd servers may not expose the combined
-                // tip state. Continue with the legacy four-request metadata path.
-            }
-            Err(error) => return Err(format!("GetLatestTreeState: {error}")),
-        }
+    if use_mainnet_fast_path && birthday::uses_mainnet_anchors(WalletNetwork::Main) {
+        let tip = mainnet_tip(&mut client).await?;
+        return Ok(ImportBirthdayMetadata {
+            sapling_activation_height: SAPLING_ACTIVATION.height,
+            sapling_activation_time: SAPLING_ACTIVATION.time,
+            tip_height: tip.height,
+            tip_time: tip.time,
+        });
     }
 
     let info = client
@@ -505,34 +435,25 @@ pub async fn estimate_import_birthday_height(
     tip_height: Option<u64>,
     tip_time: Option<u32>,
 ) -> Result<u64, String> {
+    if use_mainnet_fast_path && birthday::uses_mainnet_anchors(WalletNetwork::Main) {
+        // Reuse metadata fetched by the birthday screen without even opening a
+        // channel. Otherwise request only the public chain tip, never a height
+        // inferred from the user's birthday.
+        let tip = match (tip_height, tip_time) {
+            (Some(height), Some(time)) => BirthdayAnchor { height, time },
+            _ => {
+                let mut client = crate::wallet::sync_engine::open_lwd_channel(&lightwalletd_url)
+                    .await
+                    .map_err(|error| error.to_string())?;
+                mainnet_tip(&mut client).await?
+            }
+        };
+        return birthday::mainnet_height_for_time(target_epoch_seconds, tip);
+    }
+
     let mut client = crate::wallet::sync_engine::open_lwd_channel(&lightwalletd_url)
         .await
         .map_err(|error| error.to_string())?;
-
-    if use_mainnet_fast_path {
-        if let (Some(tip_height), Some(tip_time)) = (tip_height, tip_time) {
-            if let Some(height) = estimate_mainnet_birthday_height(
-                &mut client,
-                target_epoch_seconds,
-                BirthdayAnchor {
-                    height: tip_height,
-                    time: tip_time,
-                },
-            )
-            .await?
-            {
-                return Ok(height);
-            }
-
-            return binary_search_birthday_height(
-                &mut client,
-                MAINNET_SAPLING_ACTIVATION_HEIGHT,
-                tip_height,
-                target_epoch_seconds,
-            )
-            .await;
-        }
-    }
 
     let info = client
         .get_lightd_info(timed_birthday_request(Empty {}))
@@ -554,111 +475,45 @@ pub async fn estimate_import_birthday_height(
     .await
 }
 
-async fn estimate_mainnet_birthday_height(
+/// Public tip metadata; all request heights are independent of the wallet.
+async fn mainnet_tip(
     client: &mut CompactTxStreamerClient<tonic::transport::Channel>,
-    target_epoch_seconds: i64,
-    tip: BirthdayAnchor,
-) -> Result<Option<u64>, String> {
-    if target_epoch_seconds <= i64::from(MAINNET_SAPLING_ACTIVATION_TIME) {
-        return Ok(Some(MAINNET_SAPLING_ACTIVATION_HEIGHT));
-    }
-    if target_epoch_seconds >= i64::from(tip.time) {
-        return Ok(Some(tip.height));
-    }
-
-    let Some((lower, upper)) = mainnet_anchor_segment(target_epoch_seconds, tip) else {
-        return Ok(None);
+) -> Result<BirthdayAnchor, String> {
+    let tip = match client
+        .get_latest_tree_state(timed_birthday_request(Empty {}))
+        .await
+    {
+        Ok(response) => {
+            let tip = response.into_inner();
+            if !is_mainnet(&tip.network) {
+                return Err(format!(
+                    "Expected mainnet birthday metadata, endpoint reported {}",
+                    tip.network
+                ));
+            }
+            BirthdayAnchor {
+                height: tip.height,
+                time: tip.time,
+            }
+        }
+        Err(error) if error.code() == tonic::Code::Unimplemented => {
+            let tip = client
+                .get_latest_block(timed_birthday_request(ChainSpec {}))
+                .await
+                .map_err(|error| format!("GetLatestBlock: {error}"))?
+                .into_inner();
+            let block = block_at_height(client, tip.height).await?;
+            if block.height != tip.height {
+                return Err("Latest block response has an unexpected height".to_string());
+            }
+            BirthdayAnchor {
+                height: tip.height,
+                time: block.time,
+            }
+        }
+        Err(error) => return Err(format!("GetLatestTreeState: {error}")),
     };
-    let Some(mut candidate) = interpolate_height(lower, upper, target_epoch_seconds) else {
-        return Ok(None);
-    };
-
-    for probe_index in 0..=MAX_BIRTHDAY_CORRECTION_PROBES {
-        let candidate_time = i64::from(block_at_height(client, candidate).await?.time);
-        let error = target_epoch_seconds - candidate_time;
-        if error.abs() <= BIRTHDAY_ESTIMATE_TOLERANCE_SECONDS {
-            return Ok(Some(candidate));
-        }
-        if probe_index == MAX_BIRTHDAY_CORRECTION_PROBES {
-            break;
-        }
-
-        let Some(corrected) = correct_estimated_height(lower, upper, candidate, error) else {
-            return Ok(None);
-        };
-        if corrected == candidate {
-            return Ok(None);
-        }
-        candidate = corrected;
-    }
-
-    Ok(None)
-}
-
-fn mainnet_anchor_segment(
-    target_epoch_seconds: i64,
-    tip: BirthdayAnchor,
-) -> Option<(BirthdayAnchor, BirthdayAnchor)> {
-    let mut anchors = MAINNET_BIRTHDAY_ANCHORS
-        .iter()
-        .copied()
-        .take_while(|anchor| anchor.height < tip.height)
-        .collect::<Vec<_>>();
-    let previous = anchors.last().copied()?;
-    if tip.height <= previous.height || tip.time <= previous.time {
-        return None;
-    }
-    anchors.push(tip);
-
-    anchors.windows(2).find_map(|pair| {
-        let lower = pair[0];
-        let upper = pair[1];
-        (target_epoch_seconds <= i64::from(upper.time)).then_some((lower, upper))
-    })
-}
-
-fn interpolate_height(
-    lower: BirthdayAnchor,
-    upper: BirthdayAnchor,
-    target_epoch_seconds: i64,
-) -> Option<u64> {
-    let time_span = i128::from(upper.time.checked_sub(lower.time)?);
-    let height_span = i128::from(upper.height.checked_sub(lower.height)?);
-    let target_delta = i128::from(target_epoch_seconds - i64::from(lower.time));
-    let height_delta = divide_round_nearest(target_delta * height_span, time_span)?;
-    u64::try_from(
-        (i128::from(lower.height) + height_delta)
-            .clamp(i128::from(lower.height), i128::from(upper.height)),
-    )
-    .ok()
-}
-
-fn correct_estimated_height(
-    lower: BirthdayAnchor,
-    upper: BirthdayAnchor,
-    current_height: u64,
-    time_error_seconds: i64,
-) -> Option<u64> {
-    let time_span = i128::from(upper.time.checked_sub(lower.time)?);
-    let height_span = i128::from(upper.height.checked_sub(lower.height)?);
-    let correction = divide_round_nearest(i128::from(time_error_seconds) * height_span, time_span)?;
-    u64::try_from(
-        (i128::from(current_height) + correction)
-            .clamp(i128::from(lower.height), i128::from(upper.height)),
-    )
-    .ok()
-}
-
-fn divide_round_nearest(numerator: i128, denominator: i128) -> Option<i128> {
-    if denominator <= 0 {
-        return None;
-    }
-    let adjustment = denominator / 2;
-    Some(if numerator >= 0 {
-        (numerator + adjustment) / denominator
-    } else {
-        (numerator - adjustment) / denominator
-    })
+    birthday::validate_mainnet_tip(tip)
 }
 
 async fn binary_search_birthday_height(
@@ -728,99 +583,10 @@ mod tests {
     };
 
     use super::{
-        correct_estimated_height, interpolate_height, mainnet_anchor_segment,
         normalize_tor_http_error, tor_http_begin_request, tor_http_cancel_request,
         with_api_response_body_timeout, with_tor_http_request_cancellation,
-        with_tor_http_request_timeout, BirthdayAnchor, MAINNET_BIRTHDAY_ANCHORS,
-        TOR_HTTP_REQUEST_TIMEOUT_ERROR,
+        with_tor_http_request_timeout, TOR_HTTP_REQUEST_TIMEOUT_ERROR,
     };
-
-    #[test]
-    fn mainnet_anchor_interpolation_preserves_anchor_heights() {
-        let lower = MAINNET_BIRTHDAY_ANCHORS[1];
-        let upper = MAINNET_BIRTHDAY_ANCHORS[2];
-
-        assert_eq!(
-            interpolate_height(lower, upper, i64::from(lower.time)),
-            Some(lower.height)
-        );
-        assert_eq!(
-            interpolate_height(lower, upper, i64::from(upper.time)),
-            Some(upper.height)
-        );
-    }
-
-    #[test]
-    fn mainnet_anchor_interpolation_uses_blossom_as_interval_boundary() {
-        let tip = BirthdayAnchor {
-            height: 3_439_381,
-            time: 1_786_094_043,
-        };
-        let blossom = MAINNET_BIRTHDAY_ANCHORS[1];
-
-        assert_eq!(
-            mainnet_anchor_segment(i64::from(blossom.time), tip),
-            Some((MAINNET_BIRTHDAY_ANCHORS[0], blossom))
-        );
-        assert_eq!(
-            mainnet_anchor_segment(i64::from(blossom.time) + 1, tip),
-            Some((blossom, MAINNET_BIRTHDAY_ANCHORS[2]))
-        );
-    }
-
-    #[test]
-    fn mainnet_height_correction_moves_in_the_time_error_direction() {
-        let lower = MAINNET_BIRTHDAY_ANCHORS[3];
-        let upper = MAINNET_BIRTHDAY_ANCHORS[4];
-        let current = 1_750_000;
-
-        let later = correct_estimated_height(lower, upper, current, 3_600).unwrap();
-        let earlier = correct_estimated_height(lower, upper, current, -3_600).unwrap();
-
-        assert!(later > current);
-        assert!(earlier < current);
-    }
-
-    #[test]
-    fn mainnet_anchor_table_stays_chronologically_and_monotonically_ordered() {
-        for pair in MAINNET_BIRTHDAY_ANCHORS.windows(2) {
-            assert!(pair[1].height > pair[0].height);
-            assert!(pair[1].time > pair[0].time);
-        }
-    }
-
-    #[test]
-    fn mainnet_anchor_segment_resolves_against_the_latest_anchor() {
-        let latest = *MAINNET_BIRTHDAY_ANCHORS.last().unwrap();
-        let previous = MAINNET_BIRTHDAY_ANCHORS[MAINNET_BIRTHDAY_ANCHORS.len() - 2];
-        let tip = BirthdayAnchor {
-            height: latest.height + 10_000,
-            time: latest.time + 900_000,
-        };
-
-        assert_eq!(
-            mainnet_anchor_segment(i64::from(latest.time), tip),
-            Some((previous, latest))
-        );
-        assert_eq!(
-            mainnet_anchor_segment(i64::from(latest.time) + 1, tip),
-            Some((latest, tip))
-        );
-    }
-
-    #[test]
-    fn inconsistent_mainnet_tip_disables_fast_estimation() {
-        let last = *MAINNET_BIRTHDAY_ANCHORS.last().unwrap();
-        let stale_tip = BirthdayAnchor {
-            height: last.height + 1,
-            time: last.time,
-        };
-
-        assert_eq!(
-            mainnet_anchor_segment(i64::from(last.time), stale_tip),
-            None
-        );
-    }
 
     #[tokio::test]
     async fn ordinary_http_body_stall_is_cancelled_before_download_deadline() {
@@ -909,3 +675,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "network_privacy/birthday_tests.rs"]
+mod birthday_tests;
