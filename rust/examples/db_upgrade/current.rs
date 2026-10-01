@@ -45,6 +45,14 @@ pub fn prepare_rollback(db_path: &str) {
 ///   account delta) may therefore lose the base's fee. Every other fee the
 ///   base showed must stay `Known` and equal.
 ///
+/// A third history rule (gap 1 and H09, fixed in this build) applies to the
+/// send the base build stored itself (`old_build_send`): older builds counted
+/// a send's movement once per receiving wallet account, and counted the
+/// funding account's own output as paid. The funding account's row is
+/// therefore the probe's own construction: its movement is
+/// `OLD_BUILD_PAYMENT_ZAT - MINED_VALUE_ZAT`, and it paid
+/// `OLD_BUILD_PAYMENT_ZAT` to each other account.
+///
 /// One documented balance rule applies too (`sync_engine/address_discovery.rs`,
 /// "Coverage"): a public account's transparent funds are current only once
 /// its address-history discovery has run. Upgrading never runs it; the first
@@ -52,9 +60,25 @@ pub fn prepare_rollback(db_path: &str) {
 /// `LastKnown`, exactly the base build's transparent total, with nothing
 /// transparent spendable, locked, or pending. This function asserts that
 /// authority and amount, and expects the zeroed transparent fields.
-pub fn expected_current_api(db_path: &str, base: &ApiSnapshot) -> ApiSnapshot {
+pub fn expected_current_api(
+    db_path: &str,
+    base: &ApiSnapshot,
+    old_build_send: Option<&super::OldBuildSend>,
+) -> ApiSnapshot {
     let mut expected = base.clone();
     for account in &mut expected.accounts {
+        if let Some(send) = old_build_send {
+            let movement = super::OLD_BUILD_PAYMENT_ZAT as i64 - super::MINED_VALUE_ZAT;
+            for row in &mut account.history {
+                if row.txid_hex == send.txid_hex && row.account_balance_delta < 0 {
+                    row.account_balance_delta = movement;
+                    if row.tx_kind == "sent" {
+                        row.display_amount =
+                            super::OLD_BUILD_PAYMENT_ZAT * send.recipients.saturating_sub(1);
+                    }
+                }
+            }
+        }
         let balance = sync::get_balance(
             db_path.to_string(),
             NETWORK.to_string(),

@@ -553,9 +553,13 @@ fn verify_upgraded(scenario: &str, db_path: &str, manifest_path: &str) {
     // rules may change a row only as `expected_current_api` states.
     let actual_api = read_api(db_path);
     current::assert_current_api(db_path, &actual_api);
+    let old_build_send = manifest.after_old.as_ref().map(|after| OldBuildSend {
+        txid_hex: after.txid_hex.clone(),
+        recipients: actual.accounts.len() as u64,
+    });
     assert_eq!(
         actual_api,
-        current::expected_current_api(db_path, expected_api),
+        current::expected_current_api(db_path, expected_api, old_build_send.as_ref()),
         "current build reports different balances or history than the base build"
     );
     let spendable = spendable_outputs(db_path, &actual);
@@ -900,6 +904,14 @@ fn old_build_transaction(recipients: &[String]) -> Vec<u8> {
     }
     bytes.extend_from_slice(&0u32.to_le_bytes());
     bytes
+}
+
+/// The transaction the base build stored in `open-old`: it spends the mined
+/// `MINED_VALUE_ZAT` output and pays `OLD_BUILD_PAYMENT_ZAT` to each of
+/// `recipients` accounts, the funding account included.
+pub(crate) struct OldBuildSend {
+    pub(crate) txid_hex: String,
+    pub(crate) recipients: u64,
 }
 
 /// The key hash of a base58check P2PKH address with a two-byte prefix.
