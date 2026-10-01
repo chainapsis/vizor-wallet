@@ -50,8 +50,9 @@ pub fn prepare_rollback(db_path: &str) {
 /// a send's movement once per receiving wallet account, and counted the
 /// funding account's own output as paid. The funding account's row is
 /// therefore the probe's own construction: its movement is
-/// `OLD_BUILD_PAYMENT_ZAT - MINED_VALUE_ZAT`, and it paid
-/// `OLD_BUILD_PAYMENT_ZAT` to each other account.
+/// `OLD_BUILD_PAYMENT_ZAT - MINED_VALUE_ZAT`, and when other accounts are
+/// paid its payment is `OLD_BUILD_PAYMENT_ZAT` to each of them (a lone
+/// account's self-transfer keeps showing its own output).
 ///
 /// One documented balance rule applies too (`sync_engine/address_discovery.rs`,
 /// "Coverage"): a public account's transparent funds are current only once
@@ -72,7 +73,9 @@ pub fn expected_current_api(
             for row in &mut account.history {
                 if row.txid_hex == send.txid_hex && row.account_balance_delta < 0 {
                     row.account_balance_delta = movement;
-                    if row.tx_kind == "sent" {
+                    // A self-transfer (one account) still shows its own
+                    // output; once others are paid, only they count.
+                    if row.tx_kind == "sent" && send.recipients > 1 {
                         row.display_amount =
                             super::OLD_BUILD_PAYMENT_ZAT * send.recipients.saturating_sub(1);
                     }
