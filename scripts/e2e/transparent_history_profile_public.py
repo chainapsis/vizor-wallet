@@ -505,9 +505,18 @@ def ui_rows(context):
             }
             if not row_sets or not any(row_sets):
                 # Constraint-only expectation (e.g. shared funding): a tappable
-                # row must exist; its amount is checked by the Rust layer.
+                # row must exist; its amount is checked by the Rust layer. A
+                # shown fee must be the whole fee (never a share or zero).
                 if effect["spent"] or effect["delta"]:
-                    rows.append(dict(base, role=None, optional=False, fee_known=None))
+                    rows.append(
+                        dict(
+                            base,
+                            role=None,
+                            optional=False,
+                            fee_known=None,
+                            fee_values=[facts["fee"]] if facts.get("fee") else [],
+                        )
+                    )
                 continue
             preferred = max(row_sets, key=len)
             for row in preferred:
@@ -543,6 +552,18 @@ def ui_rows(context):
                         pool_label=POOL_LABELS.get(pool)
                         if kind in ("sent", "received", "receiving")
                         else None,
+                        # Every pool label the spec accepts for this row.
+                        pool_labels=[
+                            POOL_LABELS[p]
+                            for p in (
+                                row.get("display_pool")
+                                if isinstance(row.get("display_pool"), list)
+                                else [pool]
+                            )
+                            if p in POOL_LABELS
+                        ]
+                        if kind in ("sent", "received", "receiving")
+                        else [],
                         status="Failed"
                         if failed
                         else ("In progress" if pending else "Completed"),
