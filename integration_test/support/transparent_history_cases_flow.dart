@@ -36,6 +36,10 @@ class ThUiRow {
       amountZats = (json['amount_zats'] as num?)?.toInt(),
       sign = json['sign'] as String? ?? '',
       poolLabel = json['pool_label'] as String?,
+      poolLabels = [
+        for (final v in (json['pool_labels'] as List<Object?>? ?? const []))
+          v! as String,
+      ],
       status = json['status'] as String?,
       blockTime = (json['block_time'] as num?)?.toInt() ?? 0,
       feeKnown = (json['fee_known'] as num?)?.toInt(),
@@ -63,6 +67,9 @@ class ThUiRow {
   final int? amountZats;
   final String sign;
   final String? poolLabel;
+
+  /// Every pool label the spec accepts (e.g. Transparent or Mixed).
+  final List<String> poolLabels;
   final String? status;
   final int blockTime;
   final int? feeKnown;
@@ -345,7 +352,9 @@ Future<List<String>> thVerifyActivity(
       if (!texts.any((t) => t == amount || t.startsWith(amount))) {
         failures.add('${row.label}: amount "$amount" not in $texts');
       }
-      if (row.poolLabel != null && !texts.contains(row.poolLabel)) {
+      if (row.poolLabel != null &&
+          !texts.contains(row.poolLabel) &&
+          !row.poolLabels.any(texts.contains)) {
         failures.add('${row.label}: pool "${row.poolLabel}" not in $texts');
       }
       if (row.failed && row.amountZats! > 0 && !texts.contains('Refunded')) {
@@ -392,9 +401,13 @@ Future<List<String>> thVerifyActivity(
       if (row.feeKnown == null && fee == 0) {
         failures.add('${row.label}: unknown fee rendered as "$feeText"');
       }
-      if (row.feeKnown == null && fee != null && fee > 0) {
+      if (row.feeKnown == null &&
+          fee != null &&
+          fee > 0 &&
+          !row.feeValues.contains(fee)) {
         failures.add(
-          '${row.label}: fee "$feeText" shown but unknown to the oracle',
+          '${row.label}: fee "$feeText" is not a fee the spec accepts '
+          '${row.feeValues}',
         );
       }
     } else if (detailTexts.contains('Tx fee')) {
