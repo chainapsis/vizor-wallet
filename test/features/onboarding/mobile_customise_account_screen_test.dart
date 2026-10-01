@@ -262,6 +262,32 @@ void main() {
       find.byKey(const ValueKey('mobile_customise_account_edit_glyph')),
     );
     expect(editGlyph.size, 12);
+    final randomise = find.byKey(
+      const ValueKey('mobile_customise_account_randomise'),
+    );
+    final randomiseVisual = find.byKey(
+      const ValueKey('mobile_customise_account_randomise_visual'),
+    );
+    expect(tester.getSize(randomise), const Size.square(44));
+    expect(tester.getSize(randomiseVisual), const Size.square(28));
+    expect(
+      tester
+          .widget<AppIcon>(
+            find.descendant(
+              of: randomiseVisual,
+              matching: find.byType(AppIcon),
+            ),
+          )
+          .size,
+      16,
+    );
+    expect(
+      tester.getTopLeft(randomiseVisual) -
+          tester.getTopLeft(
+            find.byKey(const ValueKey('mobile_customise_account_card')),
+          ),
+      const Offset(325, 8),
+    );
 
     await tester.binding.setSurfaceSize(const Size(430, 932));
     await tester.pump();
@@ -274,6 +300,91 @@ void main() {
     await tester.pump();
     expect(submittedName, 'Windborne Wardbearer');
     expect(submittedProfilePictureId, 'pfp-03');
+  });
+
+  testWidgets('repeatedly randomises the name and profile picture together', (
+    tester,
+  ) async {
+    final random = _SequenceRandom([0, 1, 2, 3, 4, 5, 6, 7, 8]);
+    String? submittedName;
+    String? submittedProfilePictureId;
+
+    await tester.pumpWidget(
+      _harness(
+        MobileCustomiseAccountScreen(
+          args: const CustomiseAccountArgs(
+            setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
+          ),
+          random: random,
+          onFinish: (name, profilePictureId) async {
+            submittedName = name;
+            submittedProfilePictureId = profilePictureId;
+          },
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Windborne Wardbearer'), findsOneWidget);
+    expect(
+      find.bySemanticsLabel('Randomise account name and profile picture'),
+      findsOneWidget,
+    );
+
+    final randomise = find.byKey(
+      const ValueKey('mobile_customise_account_randomise'),
+    );
+    // The padding around the 28px circle remains part of the 44px tap target.
+    await tester.tapAt(tester.getTopLeft(randomise) + const Offset(2, 22));
+    await tester.pump();
+
+    expect(find.text('Valiant Wayfinder'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_customise_account_randomise')),
+    );
+    await tester.pump();
+
+    expect(find.text('Resolute Herald'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_customise_account_continue')),
+    );
+    await tester.pump();
+    expect(submittedName, 'Resolute Herald');
+    expect(submittedProfilePictureId, 'pfp-09');
+  });
+
+  testWidgets('keeps the randomise action at the logical end in RTL', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _harness(
+        Directionality(
+          textDirection: TextDirection.rtl,
+          child: MobileCustomiseAccountScreen(
+            args: const CustomiseAccountArgs(
+              setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
+            ),
+            random: _SequenceRandom([0, 1, 2]),
+            onFinish: (_, _) async {},
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      tester.getTopLeft(
+            find.byKey(
+              const ValueKey('mobile_customise_account_randomise_visual'),
+            ),
+          ) -
+          tester.getTopLeft(
+            find.byKey(const ValueKey('mobile_customise_account_card')),
+          ),
+      const Offset(8, 8),
+    );
   });
 
   testWidgets('uses the shared account name validation', (tester) async {
@@ -368,6 +479,14 @@ void main() {
       (widget) => widget is PopScope<void>,
     );
     expect(tester.widget<PopScope<void>>(popScope).canPop, isFalse);
+    expect(
+      tester
+          .widget<AppButton>(
+            find.byKey(const ValueKey('mobile_customise_account_randomise')),
+          )
+          .onPressed,
+      isNull,
+    );
 
     finish.complete();
     await tester.pump();

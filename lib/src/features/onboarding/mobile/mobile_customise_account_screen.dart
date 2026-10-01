@@ -144,6 +144,19 @@ class _MobileCustomiseAccountScreenState
     setState(() => _submitError = null);
   }
 
+  void _randomisePersona() {
+    if (_isSubmitting) return;
+    final suggestion = generateAccountPersona(random: widget.random);
+    _nameController.value = TextEditingValue(
+      text: suggestion.name,
+      selection: TextSelection.collapsed(offset: suggestion.name.length),
+    );
+    setState(() {
+      _profilePictureId = suggestion.profilePictureId;
+      _submitError = null;
+    });
+  }
+
   Future<void> _pickProfilePicture() async {
     if (_isSubmitting) return;
     _nameFocusNode.unfocus();
@@ -280,6 +293,7 @@ class _MobileCustomiseAccountScreenState
             enabled: !_isSubmitting,
             onNameChanged: _handleNameChanged,
             onEditProfilePicture: _pickProfilePicture,
+            onRandomisePersona: _randomisePersona,
             onSubmitted: _submit,
           ),
         ],
@@ -320,6 +334,7 @@ class _AccountProfileCard extends StatelessWidget {
     required this.enabled,
     required this.onNameChanged,
     required this.onEditProfilePicture,
+    required this.onRandomisePersona,
     required this.onSubmitted,
   });
 
@@ -330,7 +345,12 @@ class _AccountProfileCard extends StatelessWidget {
   final bool enabled;
   final ValueChanged<String> onNameChanged;
   final VoidCallback onEditProfilePicture;
+  final VoidCallback onRandomisePersona;
   final Future<void> Function() onSubmitted;
+
+  static const _randomiseTapSize = 44.0;
+  static const _randomiseVisualSize = 28.0;
+  static const _randomiseInset = (_randomiseTapSize - _randomiseVisualSize) / 2;
 
   @override
   Widget build(BuildContext context) {
@@ -342,63 +362,131 @@ class _AccountProfileCard extends StatelessWidget {
         Container(
           key: const ValueKey('mobile_customise_account_card'),
           height: 123,
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
           decoration: BoxDecoration(
             color: colors.background.homeCard,
-            borderRadius: BorderRadius.circular(AppRadii.xLarge),
+            // Keep the card corner concentric with the inset randomise circle.
+            borderRadius: BorderRadius.circular(
+              _randomiseVisualSize / 2 + _randomiseInset,
+            ),
           ),
-          child: Row(
+          child: Stack(
             children: [
-              _EditableProfilePicture(
-                profilePictureId: profilePictureId,
-                enabled: enabled,
-                onPressed: onEditProfilePicture,
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
+              Padding(
+                padding: const EdgeInsetsDirectional.only(
+                  start: AppSpacing.md,
+                  end: AppSpacing.xs,
+                ),
+                child: Row(
                   children: [
-                    Text(
-                      'Account name',
-                      style: AppTypography.labelLarge.copyWith(
-                        color: cardTextColor.withValues(alpha: 0.5),
-                        fontWeight: FontWeight.w400,
-                      ),
+                    _EditableProfilePicture(
+                      profilePictureId: profilePictureId,
+                      enabled: enabled,
+                      onPressed: onEditProfilePicture,
                     ),
-                    const SizedBox(height: 2),
-                    SizedBox(
-                      height: 30,
-                      child: TextField(
-                        key: const ValueKey(
-                          'mobile_customise_account_name_field',
-                        ),
-                        controller: nameController,
-                        focusNode: nameFocusNode,
-                        enabled: enabled,
-                        maxLines: 1,
-                        textInputAction: TextInputAction.done,
-                        style: AppTypography.headlineSmall.copyWith(
-                          color: cardTextColor,
-                        ),
-                        cursorColor: cardTextColor,
-                        cursorWidth: 2,
-                        cursorHeight: 22,
-                        cursorRadius: const Radius.circular(AppRadii.full),
-                        decoration: const InputDecoration(
-                          border: InputBorder.none,
-                          enabledBorder: InputBorder.none,
-                          focusedBorder: InputBorder.none,
-                          disabledBorder: InputBorder.none,
-                          contentPadding: EdgeInsets.zero,
-                          isDense: true,
-                        ),
-                        onChanged: onNameChanged,
-                        onSubmitted: (_) => onSubmitted(),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsetsDirectional.only(
+                              end: _randomiseTapSize,
+                            ),
+                            child: Text(
+                              'Account name',
+                              style: AppTypography.labelLarge.copyWith(
+                                color: cardTextColor.withValues(alpha: 0.5),
+                                fontWeight: FontWeight.w400,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          SizedBox(
+                            height: 30,
+                            child: TextField(
+                              key: const ValueKey(
+                                'mobile_customise_account_name_field',
+                              ),
+                              controller: nameController,
+                              focusNode: nameFocusNode,
+                              enabled: enabled,
+                              maxLines: 1,
+                              textInputAction: TextInputAction.done,
+                              style: AppTypography.headlineSmall.copyWith(
+                                color: cardTextColor,
+                              ),
+                              cursorColor: cardTextColor,
+                              cursorWidth: 2,
+                              cursorHeight: 22,
+                              cursorRadius: const Radius.circular(
+                                AppRadii.full,
+                              ),
+                              decoration: const InputDecoration(
+                                border: InputBorder.none,
+                                enabledBorder: InputBorder.none,
+                                focusedBorder: InputBorder.none,
+                                disabledBorder: InputBorder.none,
+                                contentPadding: EdgeInsets.zero,
+                                isDense: true,
+                              ),
+                              onChanged: onNameChanged,
+                              onSubmitted: (_) => onSubmitted(),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
+                ),
+              ),
+              PositionedDirectional(
+                top: 0,
+                end: 0,
+                child: Semantics(
+                  button: true,
+                  enabled: enabled,
+                  label: 'Randomise account name and profile picture',
+                  onTap: enabled ? onRandomisePersona : null,
+                  child: ExcludeSemantics(
+                    child: AppButton(
+                      key: const ValueKey('mobile_customise_account_randomise'),
+                      variant: AppButtonVariant.secondary,
+                      size: AppButtonSize.medium,
+                      height: _randomiseTapSize,
+                      minWidth: _randomiseTapSize,
+                      contentPadding: EdgeInsets.zero,
+                      enabledBackgroundColor: colors.background.homeCard
+                          .withValues(alpha: 0),
+                      pressedBackgroundColor: colors.background.homeCard
+                          .withValues(alpha: 0),
+                      disabledBackgroundColor: colors.background.homeCard
+                          .withValues(alpha: 0),
+                      onPressed: enabled ? onRandomisePersona : null,
+                      child: Container(
+                        key: const ValueKey(
+                          'mobile_customise_account_randomise_visual',
+                        ),
+                        width: _randomiseVisualSize,
+                        height: _randomiseVisualSize,
+                        decoration: BoxDecoration(
+                          color: enabled
+                              ? colors.button.secondary.bg
+                              : colors.button.disabled.bg,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Center(
+                          child: AppIcon(
+                            AppIcons.renew,
+                            size: 16,
+                            color: enabled
+                                ? colors.button.secondary.label
+                                : colors.button.disabled.label,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ],
