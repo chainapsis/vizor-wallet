@@ -4728,11 +4728,14 @@ async fn run_sync_impl(
 
     if !should_exit() {
         let mut changed = false;
+        // Each check sends an ephemeral address, so it is authorized under
+        // the transparent policy this sync captured.
         if let Err(error) = ephemeral_checks::run(
             lightwalletd_url,
             &mut db,
             db_data_path,
             network,
+            enhancement.policy(),
             BlockHeight::from_u32(final_tip_height as u32),
             &mut changed,
             &should_exit,

@@ -4,6 +4,7 @@ use std::time::{Duration, SystemTime};
 
 use zcash_client_backend::{
     data_api::{
+        transparent_ledger::{TransparentLedgerMode, TransparentLedgerWrite},
         wallet::{decrypt_and_store_transaction, ConfirmationsPolicy},
         TransactionDataRequest,
     },
@@ -198,6 +199,18 @@ impl Wallet {
             .map_or(0, |(_, balance)| u64::from(balance.spendable_value()))
     }
 
+    /// Public lookups as a sync would capture them now.
+    fn gate(&self) -> TransparentLookupGate {
+        TransparentLookupGate::for_wallet(
+            EnhancementPolicy::current(self.network)
+                .public_transparent_lookups(&self.db)
+                .unwrap(),
+            &self.path,
+            self.network,
+        )
+        .unwrap()
+    }
+
     fn set_check_time(&self, address: &TransparentAddress, at: SystemTime) {
         let secs = at.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs() as i64;
         let conn = rusqlite::Connection::open(&self.path).unwrap();
@@ -246,10 +259,12 @@ impl Wallet {
         fetched: &Cell<Vec<(String, u64, u64)>>,
     ) -> bool {
         let mut changed = false;
+        let gate = self.gate();
         ephemeral_checks::run_with(
             &mut self.db,
             &self.path.clone(),
             self.network,
+            &gate,
             BlockHeight::from_u32(TIP),
             now,
             &|| false,
@@ -258,7 +273,7 @@ impl Wallet {
                 let mut calls = fetched.take();
                 calls.push((address, start, end));
                 fetched.set(calls);
-                async move { Ok(history(response)) }
+                async move { Ok(Some(history(response))) }
             },
         )
         .await
@@ -390,11 +405,13 @@ async fn a_failing_address_is_deferred_behind_the_others() {
     w.set_check_time(&b, now - Duration::from_secs(60));
 
     let path = w.path.clone();
+    let gate = w.gate();
     let mut changed = false;
     let result = ephemeral_checks::run_with(
         &mut w.db,
         &path,
         w.network,
+        &gate,
         BlockHeight::from_u32(TIP),
         now,
         &|| false,
@@ -423,6 +440,7 @@ async fn exit_abandons_a_stalled_fetch_and_keeps_the_address_due() {
         polls.get() > 1
     };
     let path = w.path.clone();
+    let gate = w.gate();
     let mut changed = false;
     let result = tokio::time::timeout(
         Duration::from_secs(5),
@@ -430,11 +448,14 @@ async fn exit_abandons_a_stalled_fetch_and_keeps_the_address_due() {
             &mut w.db,
             &path,
             w.network,
+            &gate,
             BlockHeight::from_u32(TIP),
             now,
             &should_exit,
             &mut changed,
-            |_, _, _| std::future::pending::<Result<ephemeral_checks::History, SyncError>>(),
+            |_, _, _| {
+                std::future::pending::<Result<Option<ephemeral_checks::History>, SyncError>>()
+            },
         ),
     )
     .await
@@ -466,6 +487,7 @@ async fn each_transaction_is_stored_as_it_arrives() {
         }))
         .boxed();
     let path = w.path.clone();
+    let gate = w.gate();
     let mut changed = false;
     let result = tokio::time::timeout(
         Duration::from_secs(5),
@@ -473,11 +495,12 @@ async fn each_transaction_is_stored_as_it_arrives() {
             &mut w.db,
             &path,
             w.network,
+            &gate,
             BlockHeight::from_u32(TIP),
             now,
             &|| stalled.load(std::sync::atomic::Ordering::SeqCst),
             &mut changed,
-            move |_, _, _| async move { Ok(stream) },
+            move |_, _, _| async move { Ok(Some(stream)) },
         ),
     )
     .await
@@ -537,16 +560,18 @@ async fn transactions_stored_before_a_stream_error_are_reported() {
     ])
     .boxed();
     let path = w.path.clone();
+    let gate = w.gate();
     let mut changed = false;
     let result = ephemeral_checks::run_with(
         &mut w.db,
         &path,
         w.network,
+        &gate,
         BlockHeight::from_u32(TIP),
         now,
         &|| false,
         &mut changed,
-        move |_, _, _| async move { Ok(stream) },
+        move |_, _, _| async move { Ok(Some(stream)) },
     )
     .await;
     assert!(result.is_err());
@@ -616,4 +641,192 @@ async fn a_first_leg_output_a_second_leg_spent_or_can_still_spend_stays_unspenda
         );
         assert_eq!(w.spendable_value(&used), 0, "{mined:?} {expiry}");
     }
+}
+
+/// Applies `mode` through another connection, as a settings transition would.
+fn apply_policy(w: &Wallet, mode: TransparentLedgerMode) {
+    open_wallet_db_with_timeout(&w.path, w.network, SYNC_DB_BUSY_TIMEOUT)
+        .unwrap()
+        .apply_transparent_policy(mode)
+        .unwrap();
+}
+
+/// A lookup that discloses an ephemeral address is authorized when it is
+/// dispatched. A transition while the first check is in flight lets its
+/// response be stored but completes nothing, and no later check is sent under
+/// the lookups captured before the transition.
+#[tokio::test(flavor = "current_thread")]
+async fn a_transition_during_a_check_withholds_its_completion_and_later_checks() {
+    use super::test_lwd::{transition_on_first, CapturingLwd};
+
+    let mut w = wallet();
+    let (a, b) = (w.ephemeral[0], w.ephemeral[1]);
+    w.use_address(a, 1);
+    w.use_address(b, 2);
+    let now = SystemTime::now();
+    w.set_check_time(&a, now - Duration::from_secs(120));
+    w.set_check_time(&b, now - Duration::from_secs(60));
+    let returned = legacy_transaction(OutPoint::new([9; 32], 0), a, 70_000);
+    let mut returned_bytes = Vec::new();
+    returned.write(&mut returned_bytes).unwrap();
+    // `PrivateShadow` keeps public authority, so only the new generation
+    // revokes the lookups captured before it.
+    let lwd = CapturingLwd::start_with(
+        returned_bytes,
+        0,
+        transition_on_first(
+            "/GetTaddressTxids",
+            &w.path,
+            w.network,
+            TransparentLedgerMode::PrivateShadow,
+        ),
+    )
+    .await;
+    let gate = w.gate();
+    let path = w.path.clone();
+
+    let mut changed = false;
+    ephemeral_checks::run_gated(
+        &lwd.url,
+        &mut w.db,
+        &path,
+        w.network,
+        &gate,
+        BlockHeight::from_u32(TIP),
+        now,
+        &mut changed,
+        &|| false,
+    )
+    .await
+    .unwrap();
+    assert_eq!(lwd.count("/GetTaddressTxids"), 1);
+    assert!(changed, "the stored response still needs a refresh");
+    assert_eq!(
+        w.received_value(&a),
+        50_000 + 70_000,
+        "what was received is stored"
+    );
+    assert!(
+        w.request_at(&a).unwrap() <= now,
+        "the in-flight check is not completed"
+    );
+    assert!(w.request_at(&b).unwrap() <= now);
+
+    // The next due address is withheld at dispatch, and nothing is deferred.
+    let mut changed = false;
+    ephemeral_checks::run_gated(
+        &lwd.url,
+        &mut w.db,
+        &path,
+        w.network,
+        &gate,
+        BlockHeight::from_u32(TIP),
+        now,
+        &mut changed,
+        &|| false,
+    )
+    .await
+    .unwrap();
+    assert!(!changed);
+    assert_eq!(
+        lwd.count("/GetTaddressTxids"),
+        1,
+        "withheld after the transition"
+    );
+    assert!(w.request_at(&a).unwrap() <= now);
+    assert!(w.request_at(&b).unwrap() <= now);
+}
+
+/// A completion write reads the policy in its own transaction, so a
+/// transition committed after the response arrived withholds it.
+#[tokio::test(flavor = "current_thread")]
+async fn a_transition_before_completion_leaves_the_address_due() {
+    let mut w = wallet();
+    let used = w.ephemeral[0];
+    let first_leg = w.fund_first_leg(used);
+    w.store_second_leg(&first_leg, None, FIRST_LEG_EXPIRY);
+    let now = SystemTime::now();
+    w.set_check_time(&used, now - Duration::from_secs(60));
+    let gate = w.gate();
+    let path = w.path.clone();
+    let network = w.network;
+    let response = vec![raw(&first_leg, TIP - 50)];
+
+    let mut changed = false;
+    ephemeral_checks::run_with(
+        &mut w.db,
+        &path,
+        network,
+        &gate,
+        BlockHeight::from_u32(TIP),
+        now,
+        &|| false,
+        &mut changed,
+        |_, _, _| {
+            open_wallet_db_with_timeout(&path, network, SYNC_DB_BUSY_TIMEOUT)
+                .unwrap()
+                .apply_transparent_policy(TransparentLedgerMode::PrivateShadow)
+                .unwrap();
+            async move { Ok(Some(history(response))) }
+        },
+    )
+    .await
+    .unwrap();
+    assert!(!changed);
+    assert_eq!(
+        w.spendable_value(&used),
+        0,
+        "the expired-spend observation is withheld"
+    );
+    assert!(w.request_at(&used).unwrap() <= now, "stays due");
+}
+
+/// Lookups withheld when captured send nothing and leave every schedule alone.
+#[tokio::test(flavor = "current_thread")]
+async fn withheld_lookups_send_and_reschedule_nothing() {
+    let mut w = wallet();
+    let used = w.ephemeral[0];
+    w.use_address(used, 1);
+    let now = SystemTime::now();
+    w.set_check_time(&used, now - Duration::from_secs(60));
+    apply_policy(&w, TransparentLedgerMode::PrivateRequired);
+    let gate = TransparentLookupGate::pre_db(
+        crate::wallet::sync_engine::enhancement::PublicTransparentLookups::Withheld,
+    );
+    let path = w.path.clone();
+    let fetched = Cell::new(0);
+
+    let mut changed = false;
+    ephemeral_checks::run_with(
+        &mut w.db,
+        &path,
+        w.network,
+        &gate,
+        BlockHeight::from_u32(TIP),
+        now,
+        &|| false,
+        &mut changed,
+        |_, _, _| {
+            fetched.set(fetched.get() + 1);
+            async { Ok(None) }
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(fetched.get(), 0);
+    assert!(!changed);
+    // This build's Public handle cannot read the stricter wallet, and the
+    // production entry point fails closed on it instead of querying.
+    assert!(ephemeral_checks::run(
+        "http://127.0.0.1:9",
+        &mut w.db,
+        &path,
+        w.network,
+        EnhancementPolicy::current(w.network),
+        BlockHeight::from_u32(TIP),
+        &mut changed,
+        &|| false,
+    )
+    .await
+    .is_err());
 }

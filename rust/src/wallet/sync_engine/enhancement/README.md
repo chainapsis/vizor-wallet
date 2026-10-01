@@ -288,7 +288,8 @@ their fee locally. Fee persistence updates only a still-missing fee.
 Every request that sends a transparent address, outpoint, or txid to public
 lightwalletd goes through `TransparentLookupGate`
 (`sync_engine/lwd/transparent_lookup.rs`): UTXO refresh, Ledger and software
-account discovery, the import balance preview, address history, public
+account discovery, the import balance preview, address history, ZIP 320
+ephemeral address checks (`sync_engine/ephemeral_checks.rs`), public
 payloads, public status, and the public status checks that unbroadcast
 migration recovery runs before retiring a run. The raw `GetAddressUtxos`,
 `GetTaddressTxids`, and `GetTransaction` helpers are private to `lwd`, so a
@@ -313,9 +314,12 @@ handle and re-checks that generation at two kinds of check point:
   acknowledged or marked complete after the transition: an in-flight history
   range, even one answered empty, stays unchecked; a public status observation
   or payload `NotFound` is not committed; UTXO refresh metadata and Ledger
-  discovery progress are not advanced. Later passes re-cover them. The history
+  discovery progress are not advanced; an ephemeral address check is neither
+  notified, rescheduled, nor allowed to observe outputs of expired spends, so
+  the address stays due. Later passes re-cover them. The history
   acknowledgement, public status persistence, payload `NotFound` retirement,
-  and Ledger checkpoints (`transactionally_with_extension`) read the
+  the ephemeral check's notification and expired-spend observation, and Ledger
+  checkpoints (`transactionally_with_extension`) read the
   generation in the writing SQLite
   transaction, so a concurrent transition fails the write instead of slipping
   past the check. The UTXO receive cache lives outside the wallet database and
