@@ -576,8 +576,13 @@ def check_constraints(item, rows, view, expected):
                     f"wallet attributes {len(spent)} owned inputs, chain has {constraint['value']}"
                 )
         elif name == "detail_outputs_real":
+            # The payment's detail outputs must be real outputs to others. Only
+            # a sent row's detail lists payments; a received row's detail lists
+            # the account's own receipts, which `outputs` excludes by design.
             real = constraint["outputs"]
             for row in rows:
+                if row.get("tx_kind") != "sent":
+                    continue
                 detail = row.get("detail") or {}
                 for address, amount, _pool in detail.get("outputs", []):
                     if [address, amount] not in real and [None, amount] not in real:
