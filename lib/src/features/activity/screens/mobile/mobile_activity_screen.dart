@@ -12,7 +12,6 @@ import '../../../../core/navigation/mobile_tab_history.dart';
 import '../../../../core/storage/wallet_paths.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../providers/account_provider.dart';
-import '../../../../providers/enhance_pir_provider.dart';
 import '../../../../providers/privacy_mode_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/sync_provider.dart';
@@ -173,7 +172,6 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
       row: buildTransactionActivityRow(
         context: context,
         transaction: transaction,
-        privateQueriesEnabled: ref.watch(enhancePirProvider),
         giftCardKind: giftCard?.kind,
         giftCardAmountZatoshi: giftCard?.amountZatoshi,
         giftCardClaimInFlight: giftCard?.isClaimInFlight ?? false,
