@@ -73,6 +73,9 @@ void main() {
         accountProvider.overrideWith(
           () => AccountNotifier.testing(store: store),
         ),
+        appSecurityProvider.overrideWith(
+          () => AppSecurityNotifier.testing(store: store),
+        ),
         rpcEndpointFailoverLatestBlockHeightGetterProvider.overrideWithValue(
           (_, _) async => BigInt.from(3000000),
         ),
@@ -514,6 +517,9 @@ void main() {
   test(
     'an unlistable created DB blocks every first-wallet entry point',
     () async {
+      await container
+          .read(appSecurityProvider.notifier)
+          .preparePasswordSetup(_passcode);
       _rust
         ..importError = StateError('interrupted')
         ..createDbBeforeImportError = true

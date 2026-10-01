@@ -18,8 +18,9 @@ Decision: 2026-10-01, agreed while reviewing PR #814.
 
 ## Onboarding integration contract
 
-This section specifies the follow-up integration; PR #814 only separates the
-service operations and does not activate the new onboarding routes.
+This section specifies the follow-up UI integration. PR #814 provides card
+inspection and restart-safe account setup but does not activate the new
+onboarding routes or claim handoff.
 
 - Finish account creation and durably save the card and its receiving account
   UUID before handing off the claim work.
