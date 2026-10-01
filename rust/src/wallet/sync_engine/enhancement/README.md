@@ -423,13 +423,30 @@ through the library's `test-dependencies` hook
 - **Operations.** Shielding and software proposals use library selectors and
   store authorization. Every hardware submission path (Ledger outbox, Keystone
   full/compact batches, and legacy PCZT) additionally checks transparent inputs
-  through the library selector at the current network target before dispatch.
+  through `WalletDb::check_transparent_transaction_inputs` at the current network
+  target before dispatch. An exact stored transaction may retry its own recorded
+  spend; the exception requires full serialized-byte equality and never permits
+  a competing live or mined spender.
   A SQLite `BEGIN IMMEDIATE` reservation prevents policy, evidence, and rewind
   writes through that bounded send attempt, then rolls back without storing the
   transaction. It may delay other writers for the RPC timeout. Chained TEX inputs
   must name an existing output of an earlier finalized transaction in the batch.
   Definite rejection still persists nothing; accepted or ambiguous prefixes retain
   existing storage and recovery behavior. Cancellation drops the reservation.
+  After PCZT validation, exact stored mined rounds complete without an RPC or
+  expiry rejection, after checking database compatibility. Unmined rounds retain
+  expiry checks and retry their exact bytes. Wallet storage and Ledger outbox
+  outcomes remain separate commits: recovery can retry between them, and an
+  outcome committed before acknowledgement remains available for metadata repair.
+- **Account deletion.** Vizor borrows its existing SQLite transaction through
+  `SqlTransaction::new` and delegates wallet rows to library `WalletWrite::delete_account`.
+  Newer reader requirements or missing recorded policy metadata refuse deletion.
+  Retrieval detachment, enhancement retirement and ledger/provenance cleanup share
+  the transaction with Vizor receive addresses, Ledger discovery, migration runs,
+  signed operations and orphaned scan-range cleanup. Every transactional failure
+  rolls back all of these; cache and process-local cleanup run after commit.
+  Per-account deletion includes the initial Derived account while another remains;
+  the Accounts UI still treats the last account as a full wallet reset.
 - **Lag, outage and rewind.** When the chain passes the covered height, or a
   rewind clips coverage, authority pauses and Home shows the last-known amount.
   A source outage never falls back to lightwalletd. The next run that covers

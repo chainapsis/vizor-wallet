@@ -791,6 +791,13 @@ mod tests {
 
     fn signed_pczt(target_height: u32) -> (Vec<u8>, Vec<u8>, u32) {
         let sk = secp256k1::SecretKey::from_slice(&[7; 32]).unwrap();
+        signed_pczt_with_key(target_height, sk)
+    }
+
+    fn signed_pczt_with_key(
+        target_height: u32,
+        sk: secp256k1::SecretKey,
+    ) -> (Vec<u8>, Vec<u8>, u32) {
         let secp = secp256k1::Secp256k1::new();
         let pubkey = sk.public_key(&secp);
         let pubkey_bytes = pubkey.serialize();
@@ -1251,5 +1258,226 @@ mod tests {
 
         assert!(terminal);
         assert!(list(db_path, WalletNetwork::Main, None).unwrap().is_empty());
+    }
+    #[tokio::test]
+    async fn ledger_recovery_child() {
+        let Ok(path) = std::env::var("VIZOR_TEST_LEDGER_DB") else {
+            return;
+        };
+        let url = std::env::var("VIZOR_TEST_LEDGER_URL").unwrap();
+        let rows = list(&path, WalletNetwork::Regtest, None).unwrap();
+        if rows[0].state == STATE_SIGNED_PENDING_BROADCAST {
+            let result = broadcast(
+                &path,
+                &url,
+                WalletNetwork::Regtest,
+                "restart-op",
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+            assert_eq!(result.status, "broadcasted");
+            assert!(result.requires_ack);
+            let rows = list(&path, WalletNetwork::Regtest, None).unwrap();
+            assert_eq!(rows[0].state, STATE_RESULT_PENDING_ACK);
+            assert_eq!(rows[0].txid.as_deref(), Some(result.txid.as_str()));
+        } else {
+            // Startup consumes an outcome awaiting acknowledgement through metadata
+            // recovery, rather than invoking the pending-broadcast API again.
+            assert_eq!(rows[0].state, STATE_RESULT_PENDING_ACK);
+            assert_eq!(rows[0].status.as_deref(), Some("broadcasted"));
+            assert!(rows[0].txid.is_some());
+            assert_eq!(rows[0].external_ref.as_deref(), Some("deposit-1"));
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn restart_recovers_after_wallet_commit_and_before_outbox_commit() {
+        use crate::wallet::{
+            db::{open_wallet_db_with_timeout, WALLET_DB_BUSY_TIMEOUT},
+            keys,
+        };
+        use secrecy::ExposeSecret;
+        use transparent::keys::{AccountPrivKey, NonHardenedChildIndex, TransparentKeyScope};
+        use zcash_client_backend::{
+            data_api::{wallet::decrypt_and_store_transaction, WalletWrite},
+            wallet::WalletTransparentOutput,
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db").to_str().unwrap().to_owned();
+        let seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
+        let (uuid, _) = keys::init_db_and_create_account(
+            &path,
+            WalletNetwork::Regtest,
+            &seed,
+            Some(1),
+            "Ledger",
+        )
+        .unwrap();
+        let account = keys::parse_account_uuid(&uuid).unwrap();
+        let sk = AccountPrivKey::from_seed(
+            &WalletNetwork::Regtest,
+            seed.expose_secret(),
+            zip32::AccountId::ZERO,
+        )
+        .unwrap()
+        .derive_external_secret_key(NonHardenedChildIndex::from_index(0).unwrap())
+        .unwrap();
+        let address = TransparentAddress::from_pubkey(&sk.public_key(&secp256k1::Secp256k1::new()));
+        let (proof, signature, _) = signed_pczt_with_key(200, sk);
+        let mut db =
+            open_wallet_db_with_timeout(&path, WalletNetwork::Regtest, WALLET_DB_BUSY_TIMEOUT)
+                .unwrap();
+        db.update_chain_tip(BlockHeight::from_u32(200)).unwrap();
+        db.put_received_transparent_utxo(
+            &WalletTransparentOutput::from_parts(
+                OutPoint::new([1; 32], 0),
+                TxOut::new(Zatoshis::const_from_u64(1_000_000), address.script().into()),
+                Some(BlockHeight::from_u32(150)),
+                Some(account),
+                Some(TransparentKeyScope::EXTERNAL),
+                None,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        drop(db);
+        checkpoint(
+            &path,
+            WalletNetwork::Regtest,
+            "restart-op",
+            &uuid,
+            "swap_deposit",
+            Some("deposit-1"),
+            &proof,
+            &signature,
+        )
+        .unwrap();
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch("CREATE TRIGGER interrupt_outbox BEFORE UPDATE ON vizor_ledger_signed_operations WHEN NEW.state = 'result_pending_ack' BEGIN SELECT RAISE(ABORT, 'interrupted outcome write'); END").unwrap();
+        let server =
+            crate::wallet::sync_engine::test_lwd::CapturingLwd::start_for_broadcast(200).await;
+        assert!(broadcast(
+            &path,
+            &server.url,
+            WalletNetwork::Regtest,
+            "restart-op",
+            None,
+            None
+        )
+        .await
+        .is_err());
+        assert_eq!(server.count("/SendTransaction"), 1);
+        let own_spends: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM transparent_received_output_spends",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(own_spends, 1);
+        assert_eq!(
+            list(&path, WalletNetwork::Regtest, None).unwrap()[0].state,
+            STATE_SIGNED_PENDING_BROADCAST
+        );
+        conn.execute_batch("DROP TRIGGER interrupt_outbox").unwrap();
+        drop(conn);
+        // Execute the actual outbox broadcast API with a fresh process and fresh globals.
+        let child_path = path.clone();
+        let child_url = server.url.clone();
+        let status = tokio::task::spawn_blocking(move || {
+            std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "wallet::ledger::operations::tests::ledger_recovery_child",
+                    "--nocapture",
+                ])
+                .env("VIZOR_TEST_LEDGER_DB", child_path)
+                .env("VIZOR_TEST_LEDGER_URL", child_url)
+                .status()
+                .unwrap()
+        })
+        .await
+        .unwrap();
+        assert!(status.success());
+        assert_eq!(server.count("/SendTransaction"), 2);
+        // Restart after outcome commit must preserve the acknowledgement checkpoint.
+        assert_eq!(
+            list(&path, WalletNetwork::Regtest, None).unwrap()[0].state,
+            STATE_RESULT_PENDING_ACK
+        );
+        let child_path = path.clone();
+        let child_url = server.url.clone();
+        let status = tokio::task::spawn_blocking(move || {
+            std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "wallet::ledger::operations::tests::ledger_recovery_child",
+                    "--nocapture",
+                ])
+                .env("VIZOR_TEST_LEDGER_DB", child_path)
+                .env("VIZOR_TEST_LEDGER_URL", child_url)
+                .status()
+                .unwrap()
+        })
+        .await
+        .unwrap();
+        assert!(status.success());
+        assert_eq!(server.count("/SendTransaction"), 2);
+        acknowledge(&path, WalletNetwork::Regtest, "restart-op").unwrap();
+        assert!(list(&path, WalletNetwork::Regtest, None)
+            .unwrap()
+            .is_empty());
+        // Recreate the interrupted checkpoint, now with reliable mined evidence and an
+        // unreachable route. Recovery must succeed even beyond the transaction's expiry.
+        checkpoint(
+            &path,
+            WalletNetwork::Regtest,
+            "restart-op",
+            &uuid,
+            "swap_deposit",
+            Some("deposit-1"),
+            &proof,
+            &signature,
+        )
+        .unwrap();
+        let mut db =
+            open_wallet_db_with_timeout(&path, WalletNetwork::Regtest, WALLET_DB_BUSY_TIMEOUT)
+                .unwrap();
+        let raw: Vec<u8> = rusqlite::Connection::open(&path)
+            .unwrap()
+            .query_row(
+                "SELECT raw FROM transactions WHERE raw IS NOT NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let tx = zcash_primitives::transaction::Transaction::read(
+            &raw[..],
+            zcash_protocol::consensus::BranchId::Nu5,
+        )
+        .unwrap();
+        decrypt_and_store_transaction(
+            &WalletNetwork::Regtest,
+            &mut db,
+            &tx,
+            Some(BlockHeight::from_u32(201)),
+        )
+        .unwrap();
+        db.update_chain_tip(BlockHeight::from_u32(1000)).unwrap();
+        drop(db);
+        let result = broadcast(
+            &path,
+            "http://127.0.0.1:1",
+            WalletNetwork::Regtest,
+            "restart-op",
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.status, "broadcasted");
+        assert_eq!(server.count("/SendTransaction"), 2);
     }
 }

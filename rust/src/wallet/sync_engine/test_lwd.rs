@@ -14,7 +14,7 @@ use zcash_client_backend::data_api::transparent_ledger::{
     TransparentLedgerMode, TransparentLedgerWrite,
 };
 use zcash_client_backend::proto::service::{
-    compact_tx_streamer_client::CompactTxStreamerClient, BlockId, RawTransaction,
+    compact_tx_streamer_client::CompactTxStreamerClient, BlockId, RawTransaction, SendResponse,
 };
 
 use crate::wallet::{db::open_wallet_db_with_timeout, network::WalletNetwork};
@@ -46,6 +46,20 @@ impl CapturingLwd {
         history_tx: Vec<u8>,
         tip_height: u64,
         on_request: impl Fn(&str) + Send + Sync + 'static,
+    ) -> Self {
+        Self::start_inner(history_tx, tip_height, on_request, false).await
+    }
+
+    /// A real successful broadcast response for durable operation recovery tests.
+    pub(crate) async fn start_for_broadcast(tip_height: u64) -> Self {
+        Self::start_inner(Vec::new(), tip_height, |_| {}, true).await
+    }
+
+    async fn start_inner(
+        history_tx: Vec<u8>,
+        tip_height: u64,
+        on_request: impl Fn(&str) + Send + Sync + 'static,
+        accept_broadcast: bool,
     ) -> Self {
         let requests = Arc::new(Mutex::new(Vec::new()));
         let recorded = requests.clone();
@@ -84,6 +98,13 @@ impl CapturingLwd {
                                     };
                                     grpc.header("grpc-status", "0")
                                         .body(Full::new(grpc_frame(&message)))
+                                } else if path.ends_with("/SendTransaction") && accept_broadcast {
+                                    grpc.header("grpc-status", "0").body(Full::new(grpc_frame(
+                                        &SendResponse {
+                                            error_code: 0,
+                                            error_message: String::new(),
+                                        },
+                                    )))
                                 } else if path.ends_with("/GetTransaction") {
                                     grpc.header("grpc-status", "5")
                                         .header("grpc-message", "not found")

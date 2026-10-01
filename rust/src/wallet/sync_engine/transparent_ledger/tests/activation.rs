@@ -664,3 +664,93 @@ async fn projected_history_shows_a_known_debit_with_change_as_provisional() {
     assert!(detail.provisional);
     assert_eq!(detail.primary_address, None, "no recipient is invented");
 }
+
+#[tokio::test]
+async fn public_hardware_retry_of_own_stored_spend_reaches_submission() {
+    use crate::wallet::sync_engine::{send_transaction_with_status, test_lwd::CapturingLwd};
+    use transparent::bundle::TxOut;
+    use zcash_client_backend::data_api::wallet::decrypt_and_store_transaction;
+    use zcash_client_backend::wallet::WalletTransparentOutput;
+    let mut wallet = wallet();
+    wallet
+        .db
+        .update_chain_tip(BlockHeight::from_u32(TIP))
+        .unwrap();
+    let address = external(&wallet, 0);
+    let funded = OutPoint::new([0x31; 32], 0);
+    let output = WalletTransparentOutput::from_parts(
+        funded.clone(),
+        TxOut::new(Zatoshis::const_from_u64(VALUE), address.script().into()),
+        Some(BlockHeight::from_u32(150)),
+        Some(wallet.account),
+        Some(TransparentKeyScope::EXTERNAL),
+        None,
+    )
+    .unwrap();
+    wallet.db.put_received_transparent_utxo(&output).unwrap();
+    let tx = hardware_tx(vec![funded]);
+    let mut raw = Vec::new();
+    tx.write(&mut raw).unwrap();
+    let mut lwd = CapturingLwd::start(Vec::new()).await;
+    let _ambiguous_send = crate::wallet::sync::hardware_authority::dispatch(
+        &wallet.path,
+        NETWORK,
+        &tx,
+        &[],
+        TIP.into(),
+        send_transaction_with_status(&mut lwd.client, &raw),
+    )
+    .await
+    .unwrap();
+    assert_eq!(lwd.count("/SendTransaction"), 1);
+    // The real post-broadcast fallback store links this transaction's own spend.
+    decrypt_and_store_transaction(&NETWORK, &mut wallet.db, &tx, None).unwrap();
+    let spend_count: u32 = rusqlite::Connection::open(&wallet.path).unwrap().query_row(
+        "SELECT COUNT(*) FROM transparent_received_output_spends s JOIN transactions t ON t.id_tx=s.transaction_id WHERE t.txid=?1",
+        [tx.txid().as_ref()], |r| r.get(0),
+    ).unwrap();
+    assert_eq!(spend_count, 1);
+    // Retry the same signed bytes as Ledger outbox startup recovery does.
+    let retry = crate::wallet::sync::hardware_authority::dispatch(
+        &wallet.path,
+        NETWORK,
+        &tx,
+        &[],
+        TIP.into(),
+        send_transaction_with_status(&mut lwd.client, &raw),
+    )
+    .await;
+    assert!(retry.is_ok(), "{retry:?}");
+    assert_eq!(lwd.count("/SendTransaction"), 2);
+}
+
+#[test]
+fn mined_reconciliation_requires_exact_bytes_and_compatible_reader() {
+    let mut wallet = wallet();
+    wallet
+        .db
+        .update_chain_tip(BlockHeight::from_u32(TIP))
+        .unwrap();
+    let tx = hardware_tx(vec![]);
+    let mut raw = Vec::new();
+    tx.write(&mut raw).unwrap();
+    let conn = rusqlite::Connection::open(&wallet.path).unwrap();
+    conn.execute("INSERT INTO transactions(txid, raw, mined_height, min_observed_height) VALUES (?1, ?2, ?3, ?3)", rusqlite::params![tx.txid().as_ref(), raw, TIP]).unwrap();
+    assert!(
+        crate::wallet::sync::hardware_authority::stored_mined(&wallet.path, NETWORK, &tx).unwrap()
+    );
+    let conn = rusqlite::Connection::open(&wallet.path).unwrap();
+    conn.execute(
+        "UPDATE transactions SET raw = X'00' WHERE txid = ?1",
+        [tx.txid().as_ref()],
+    )
+    .unwrap();
+    assert!(
+        !crate::wallet::sync::hardware_authority::stored_mined(&wallet.path, NETWORK, &tx).unwrap()
+    );
+    conn.execute_batch("UPDATE tpir_meta SET min_reader_version = 999")
+        .unwrap();
+    assert!(
+        crate::wallet::sync::hardware_authority::stored_mined(&wallet.path, NETWORK, &tx).is_err()
+    );
+}
