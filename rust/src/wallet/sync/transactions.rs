@@ -1327,7 +1327,17 @@ fn read_history_base_by_txid(
 /// The upstream view aggregates `raw`, so SQLite materializes every blob
 /// and cannot push an outer account filter into the view. This copy drops
 /// `raw`, filters by `?1` early, and keeps the `notes` / `sent_note_counts`
-/// CTEs verbatim so row identity matches.
+/// CTEs verbatim so row identity matches, with one deliberate exception:
+///
+/// `sent_note_counts` groups by `sent_notes.from_account_id`. Upstream writes
+/// `GROUP BY account_id`, which SQLite binds to the joined
+/// `v_received_outputs.account_id` (an input column wins over a result alias
+/// in `GROUP BY`). A send whose sent notes include an output the wallet also
+/// received, such as transparent change (`v_received_outputs` reports
+/// transparent outputs with `is_change = 0`), then yields one
+/// `sent_note_counts` row per receiving account, and the outer join counts
+/// every note of the transaction once per row: the account's movement is
+/// doubled or tripled. For transactions without such outputs the two agree.
 ///
 /// Source: `zcash_client_sqlite` 0.22.0-rc.4 `VIEW_TRANSACTIONS`
 /// <https://github.com/zcash/librustzcash/blob/65a3add2f1d9b9ea455a71a9c33f9219dbc9e614/zcash_client_sqlite/src/wallet/db.rs#L1320-L1438>
@@ -1378,7 +1388,7 @@ const HISTORY_BASES_CTE: &str = r#"
                 FROM sent_notes
                 LEFT JOIN v_received_outputs ro ON sent_notes.id = ro.sent_note_id
                 WHERE COALESCE(ro.is_change, 0) = 0
-                GROUP BY account_id, sent_notes.transaction_id
+                GROUP BY sent_notes.from_account_id, sent_notes.transaction_id
             ),
             blocks_max_height AS (
                 SELECT MAX(blocks.height) AS max_height FROM blocks
@@ -4182,7 +4192,10 @@ mod tests {
     ///
     /// This is the tripwire for a `zcash_client_sqlite` upgrade that
     /// changes the view: the CTE inlines the view's aggregates minus
-    /// `transactions.raw`, so the two must return identical rows.
+    /// `transactions.raw`, so the two must return identical rows. The one
+    /// intended difference is the `sent_note_counts` grouping (see
+    /// `HISTORY_BASES_CTE`): a send that pays a wallet-owned transparent
+    /// output shows a multiplied movement in the view and the true one here.
     ///
     /// It needs a database built by librustzcash itself — the synthetic
     /// fixtures in this module define `v_transactions` as a table and
