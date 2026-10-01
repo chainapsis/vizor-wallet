@@ -8,11 +8,13 @@
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/core/config/network_config.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 
+import 'support/desktop_activity_flow.dart';
 import 'support/desktop_onboarding_flow.dart';
 import 'support/desktop_regtest_flow.dart';
 import 'support/transparent_history_cases_flow.dart';
@@ -137,10 +139,23 @@ Future<void> _importSeed(
 }
 
 Future<void> _openActivity(WidgetTester tester) async {
-  await tapAppWidget(tester, const ValueKey('sidebar_activity_button'));
+  // The feed is a lazy sliver: once scrolled, its title row may not be built,
+  // so any activity row also proves the screen is showing.
+  bool showing() =>
+      tester.any(find.byKey(const ValueKey('activity_screen_title_row'))) ||
+      tester.any(desktopActivityRowsFinder());
+  if (!showing()) {
+    // From a transaction detail the sidebar's Activity item is a no-op (the
+    // matched location is already /activity), so navigate explicitly.
+    GoRouter.of(tester.element(find.byType(Navigator).first)).go('/activity');
+    await tester.pump(const Duration(milliseconds: 400));
+  }
+  if (!showing()) {
+    await tapAppWidget(tester, const ValueKey('sidebar_activity_button'));
+  }
   await pumpUntil(
     tester,
-    () => tester.any(find.byKey(const ValueKey('activity_screen_title_row'))),
+    showing,
     description: 'activity screen',
     timeout: const Duration(minutes: 1),
   );
