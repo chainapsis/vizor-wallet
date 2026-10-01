@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import '../../../../providers/app_security_provider.dart';
 import '../../../../providers/voting/voting_participation_provider.dart';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -11,6 +12,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../../../main.dart' show log;
 import '../../../../core/config/swap_feature_config.dart';
 import '../../../../core/feedback/app_haptics.dart';
+import '../../../../core/feedback/app_review.dart';
 import '../../../../core/formatting/sync_status_label.dart';
 import '../../../../core/config/network_config.dart';
 import '../../../../core/formatting/zec_amount.dart';
@@ -406,9 +408,9 @@ class _IronwoodMigrationAttentionHostState
           return MobileIronwoodMigrationAttentionSheetBody(
             kind: attention.kind,
             count: attention.count,
-            onOpenMigration: () => Navigator.of(
-              sheetContext,
-            ).pop(_IronwoodAttentionAction.openMigration),
+            onOpenMigration: () =>
+                Navigator.of(sheetContext)
+                    .pop(_IronwoodAttentionAction.openMigration),
             onLater: () =>
                 Navigator.of(sheetContext).pop(_IronwoodAttentionAction.later),
           );
@@ -476,9 +478,9 @@ class _IronwoodMigrationAnnouncementHostState
       final action = await showAppMobileSheet<_IronwoodAnnouncementAction>(
         context: context,
         builder: (sheetContext) => MobileIronwoodMigrationAnnouncementSheet(
-          onStartMigration: () => Navigator.of(
-            sheetContext,
-          ).pop(_IronwoodAnnouncementAction.startMigration),
+          onStartMigration: () =>
+              Navigator.of(sheetContext)
+                  .pop(_IronwoodAnnouncementAction.startMigration),
           onOpenReleaseNotes: () => unawaited(_openReleaseNotes()),
         ),
       );
@@ -821,6 +823,15 @@ class _HomeContent extends ConsumerStatefulWidget {
 }
 
 class _HomeContentState extends ConsumerState<_HomeContent> {
+  void _expectReviewVisit(String path) {
+    expectAppReviewVisit(ref, path);
+  }
+
+  Future<T?> _pushUsedScreen<T>(String path, {Object? extra}) {
+    _expectReviewVisit(path);
+    return context.push<T>(path, extra: extra);
+  }
+
   bool _isShieldingBalance = false;
 
   Future<void> _openTransactionStatus(
@@ -852,7 +863,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     }
     if (!context.mounted) return;
 
-    context.push(
+    _pushUsedScreen(
       Uri(
         path: '/activity/tx/${transaction.txidHex}',
         queryParameters: {'kind': transaction.txKind},
@@ -890,14 +901,22 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         privacyModeEnabled: privacyModeEnabled,
         dateOnlyTimestamp: true,
         onTap: () => unawaited(
-          _openTransactionStatus(context, ref, transaction, giftCard: giftCard),
+          duringAppReviewBusy(
+            ref,
+            () => _openTransactionStatus(
+              context,
+              ref,
+              transaction,
+              giftCard: giftCard,
+            ),
+          ),
         ),
       ),
     );
   }
 
   void _openLoadedTransactionStatus(rust_sync.TransactionInfo transaction) {
-    context.push(
+    _pushUsedScreen(
       Uri(
         path: '/activity/tx/${transaction.txidHex}',
         queryParameters: {'kind': transaction.txKind},
@@ -934,6 +953,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
       expectedAccountUuid: accountUuid,
     );
     if (!prepared) return;
+    _expectReviewVisit('/pay');
     router.push(
       '/pay',
       extra: const PayComposerNavigationArgs(preservePreparedComposer: true),
@@ -1099,7 +1119,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
             item: item,
             privacyModeEnabled: privacyModeEnabled,
             dateOnlyTimestamp: true,
-            onTap: () => context.push(
+            onTap: () => _pushUsedScreen(
               swapActivityDetailUri(
                 intentId: item.intentId,
                 returnTarget: SwapActivityReturnTarget.home,
@@ -1131,7 +1151,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         if (sync.failure?.kind == SyncFailureKind.privateStatusCoverage) ...[
           _PrivateStatusCoverageNotice(
             message: sync.failure!.userMessage,
-            onSettings: () => context.push('/settings'),
+            onSettings: () => _pushUsedScreen('/settings'),
           ),
           const SizedBox(height: AppSpacing.s),
         ],
@@ -1140,14 +1160,14 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
             _BalanceCard(
               balanceText: privacyModeEnabled
                   ? fixedPrivacyMask()
-                  : ZecAmount.fromZatoshi(
-                      shieldedBalance,
-                    ).compactBalance.amountText,
+                  : ZecAmount.fromZatoshi(shieldedBalance)
+                        .compactBalance
+                        .amountText,
               fiatBalanceText: shieldedFiatBalanceText,
               priceChange24hPct: priceChange24hPct,
-              transparentBalanceText: ZecAmount.fromZatoshi(
-                transparentBalance,
-              ).compactBalance.amountText,
+              transparentBalanceText: ZecAmount.fromZatoshi(transparentBalance)
+                  .compactBalance
+                  .amountText,
               hasTransparentBalance: transparentBalance > BigInt.zero,
               canShieldBalance: sync.canShieldTransparentBalance,
               isShieldingBalance: _isShieldingBalance,
@@ -1164,16 +1184,19 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                 };
                 if (target != null) context.push(target);
               },
-              onShieldBalancePressed: () =>
-                  unawaited(_shieldTransparentBalance()),
+              onShieldBalancePressed: () => unawaited(
+                duringAppReviewBusy(ref, _shieldTransparentBalance),
+              ),
             ),
             const SizedBox(height: AppSpacing.s),
             if (hasBalance)
               _MobileHomeActions(
-                onSend: sendDisabled ? null : () => context.push('/send'),
-                onReceive: () => context.push('/receive'),
+                onSend: sendDisabled ? null : () => _pushUsedScreen('/send'),
+                onReceive: () => _pushUsedScreen('/receive'),
                 // Pay shares the swap feature gate and engine.
-                onPay: showPayEntry ? _openPay : null,
+                onPay: showPayEntry
+                    ? () => duringAppReviewBusy(ref, _openPay)
+                    : null,
               )
             else
               AppButton(
@@ -1183,7 +1206,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                 expand: true,
                 constrainContent: true,
                 growWithContent: true,
-                onPressed: () => context.push('/receive'),
+                onPressed: () => _pushUsedScreen('/receive'),
                 leading: const _ButtonIcon(AppIcons.addNew),
                 height: _mobileHomeActionButtonHeight,
                 child: const Text('Receive your first ZEC'),
@@ -1226,7 +1249,12 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _RecentActivityHeader(onSeeAll: () => context.go('/activity')),
+                _RecentActivityHeader(
+                  onSeeAll: () {
+                    _expectReviewVisit('/activity');
+                    context.go('/activity');
+                  },
+                ),
                 const SizedBox(height: AppSpacing.md),
                 for (var i = 0; i < recentRows.length; i++) ...[
                   if (i > 0) const SizedBox(height: AppSpacing.s),

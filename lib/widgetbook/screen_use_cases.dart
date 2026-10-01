@@ -16,6 +16,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
 import 'package:go_router/go_router.dart';
 
 import '../src/app_bootstrap.dart';
+import '../src/features/activity/screens/activity_transaction_status_screen.dart';
 import '../src/features/activity/screens/mobile/mobile_transaction_status_screen.dart';
 import '../src/features/address_book/providers/address_book_provider.dart';
 import '../src/features/send/widgets/send_recipient_resolver.dart';
@@ -1566,6 +1567,112 @@ Widget buildMobileActivityDefaultUseCase(BuildContext context) {
   );
 }
 
+// Memo-only payments carry zero value. These previews run them through the
+// production activity mapper and receipt screens.
+const _zeroValueMemo = 'Dinner is on me next time. See you on Friday!';
+const _zeroValueRecipient =
+    'u1memo8pw4k3dz0x9qf2l7vhn6jr5ya3ts4cme8uxq0gk7d2wz9lnf6h3';
+
+rust_sync.TransactionInfo _zeroValueTx(String kind) {
+  final seconds = BigInt.from(kind == 'sent' ? 1800000020 : 1800000021);
+  return rust_sync.TransactionInfo(
+    txidHex: 'preview-zero-value-$kind',
+    minedHeight: BigInt.from(3000),
+    expiredUnmined: false,
+    accountBalanceDelta: kind == 'sent' ? -10000 : 0,
+    fee: BigInt.from(10000),
+    blockTime: seconds,
+    isTransparent: false,
+    txKind: kind,
+    displayAmount: BigInt.zero,
+    displayPool: 'shielded',
+    createdTime: seconds,
+  );
+}
+
+List<rust_sync.TransactionInfo> _zeroValueActivity() => [
+  _zeroValueTx('received'),
+  _zeroValueTx('sent'),
+  _homeTx(3),
+];
+
+rust_sync.TransactionDetail _zeroValueDetail(rust_sync.TransactionInfo tx) {
+  final sent = tx.txKind == 'sent';
+  return rust_sync.TransactionDetail(
+    txidHex: tx.txidHex,
+    txKind: tx.txKind,
+    primaryAddress: sent ? _zeroValueRecipient : null,
+    sourcePool: sent ? null : 'shielded',
+    memo: _zeroValueMemo,
+    outputs: [
+      rust_sync.TransactionDetailOutput(
+        address: sent ? _zeroValueRecipient : null,
+        amountZatoshi: BigInt.zero,
+        pool: 'shielded',
+        usesOrchardReceiver: true,
+      ),
+    ],
+  );
+}
+
+Widget buildMobileZeroValueActivityUseCase(BuildContext context) =>
+    _buildMobileZeroValueUseCase(
+      MobileActivityScreen(historyLoader: (_) async => _zeroValueActivity()),
+    );
+
+Widget buildMobileZeroValueReceiptUseCase(BuildContext context) =>
+    _buildMobileZeroValueUseCase(_mobileZeroValueReceipt('received'));
+
+Widget buildMobileZeroValueSendUseCase(BuildContext context) =>
+    _buildMobileZeroValueUseCase(_mobileZeroValueReceipt('sent'));
+
+Widget _mobileZeroValueReceipt(String kind) {
+  final tx = _zeroValueTx(kind);
+  final detail = _zeroValueDetail(tx);
+  return MobileTransactionStatusScreen(
+    args: MobileTransactionStatusArgs(
+      txidHex: tx.txidHex,
+      txKind: kind,
+      initialTransaction: tx,
+      initialDetail: detail,
+    ),
+    historyLoader: (_) async => _zeroValueActivity(),
+    detailLoader: (_, _) async => detail,
+  );
+}
+
+Widget _buildMobileZeroValueUseCase(Widget screen) {
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(
+        _homeBootstrap(_accountsDesignState),
+      ),
+      accountProvider.overrideWith(
+        () => _PreviewAccountNotifier(_accountsDesignState),
+      ),
+      syncProvider.overrideWith(
+        () => _PreviewSyncNotifier(
+          _accountsDesignState.activeAccountUuid,
+          initialState: _homeSyncedState(
+            orchardBalance: BigInt.from(14312000000),
+            recentTransactions: _zeroValueActivity(),
+          ),
+        ),
+      ),
+      privacyModeProvider.overrideWith(_PreviewPrivacyModeNotifier.new),
+      giftCardActivityIndexProvider.overrideWith(
+        (ref, accountUuid) async => GiftCardActivityIndex.empty,
+      ),
+      swapActivityRowItemsProvider.overrideWith((ref, accountUuid) async {
+        return const [];
+      }),
+      addressBookProvider.overrideWith(_GiftCardPreviewAddressBook.new),
+      ownAccountAddressesProvider.overrideWith((ref) async => const {}),
+    ],
+    child: _MobilePreviewFrame(child: screen),
+  );
+}
+
 List<rust_sync.TransactionInfo> _previewGiftCardActivityTransactions() {
   return [
     _giftCardActivityTx(
@@ -1741,6 +1848,35 @@ Widget buildDesktopHomeGiftCardsUseCase(BuildContext context) {
     ),
     migrationCta: const IronwoodHomeMigrationCtaState.hidden(),
     giftCardActivityIndex: _previewGiftCardActivityIndex(),
+  );
+}
+
+Widget buildDesktopZeroValueActivityUseCase(BuildContext context) =>
+    _buildDesktopZeroValueUseCase();
+
+Widget buildDesktopZeroValueReceiptUseCase(BuildContext context) =>
+    _buildDesktopZeroValueUseCase(receiptKind: 'received');
+
+Widget buildDesktopZeroValueSendUseCase(BuildContext context) =>
+    _buildDesktopZeroValueUseCase(receiptKind: 'sent');
+
+Widget _buildDesktopZeroValueUseCase({String? receiptKind}) {
+  final tx = receiptKind == null ? null : _zeroValueTx(receiptKind);
+  return _buildDesktopHomeUseCase(
+    accountState: _accountsDesignState,
+    syncState: _homeSyncedState(
+      orchardBalance: BigInt.from(14_323_000_000),
+      recentTransactions: _zeroValueActivity(),
+    ),
+    migrationCta: const IronwoodHomeMigrationCtaState.hidden(),
+    receiptArgs: tx == null
+        ? null
+        : ActivityTransactionStatusArgs(
+            txidHex: tx.txidHex,
+            txKind: tx.txKind,
+            initialTransaction: tx,
+            initialDetail: _zeroValueDetail(tx),
+          ),
   );
 }
 
@@ -2661,9 +2797,14 @@ Widget _buildDesktopHomeUseCase({
   double zecUsdPrice = 1.20012,
   GiftCardActivityIndex giftCardActivityIndex = GiftCardActivityIndex.empty,
   NetworkPrivacyState? networkPrivacyState,
+  ActivityTransactionStatusArgs? receiptArgs,
 }) {
   return ProviderScope(
     overrides: [
+      if (receiptArgs != null) ...[
+        addressBookProvider.overrideWith(_GiftCardPreviewAddressBook.new),
+        ownAccountAddressesProvider.overrideWith((ref) async => const {}),
+      ],
       if (networkPrivacyState != null)
         networkPrivacyProvider.overrideWith(
           () => _PreviewNetworkPrivacyNotifier(networkPrivacyState),
@@ -2712,7 +2853,7 @@ Widget _buildDesktopHomeUseCase({
         return announcement;
       }),
     ],
-    child: const _DesktopHomeHarness(),
+    child: _DesktopHomeHarness(receiptArgs: receiptArgs),
   );
 }
 
@@ -3392,7 +3533,10 @@ class _MobileHomeHarnessState extends State<_MobileHomeHarness> {
 }
 
 class _DesktopHomeHarness extends StatefulWidget {
-  const _DesktopHomeHarness();
+  const _DesktopHomeHarness({this.receiptArgs});
+
+  /// Opens the production receipt for these args instead of the home screen.
+  final ActivityTransactionStatusArgs? receiptArgs;
 
   @override
   State<_DesktopHomeHarness> createState() => _DesktopHomeHarnessState();
@@ -3404,8 +3548,11 @@ class _DesktopHomeHarnessState extends State<_DesktopHomeHarness> {
   @override
   void initState() {
     super.initState();
+    final receiptArgs = widget.receiptArgs;
     _router = GoRouter(
-      initialLocation: '/home',
+      initialLocation: receiptArgs == null
+          ? '/home'
+          : '/activity/tx/${receiptArgs.txidHex}',
       routes: [
         GoRoute(path: '/home', builder: (_, _) => const HomeScreen()),
         GoRoute(
@@ -3426,9 +3573,15 @@ class _DesktopHomeHarnessState extends State<_DesktopHomeHarness> {
         ),
         GoRoute(
           path: '/activity/tx/:txid',
-          builder: (_, state) => _PreviewRoutePlaceholder(
-            label: '/activity/tx/${state.pathParameters['txid']}',
-          ),
+          builder: (_, state) => receiptArgs == null
+              ? _PreviewRoutePlaceholder(
+                  label: '/activity/tx/${state.pathParameters['txid']}',
+                )
+              : ActivityTransactionStatusScreen(
+                  args: receiptArgs,
+                  historyLoader: (_) async => [?receiptArgs.initialTransaction],
+                  detailLoader: (_, _) async => receiptArgs.initialDetail,
+                ),
         ),
         GoRoute(
           path: '/settings',

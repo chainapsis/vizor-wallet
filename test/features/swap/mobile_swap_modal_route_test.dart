@@ -96,6 +96,46 @@ Widget _app({
 );
 
 void main() {
+  testWidgets('slippage buttons stay above the keyboard on a compact route', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 568);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetViewInsets);
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+    await tester.tap(find.bySemanticsLabel('Swap').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_settings_button')));
+    await tester.pumpAndSettle();
+    tester.view.viewInsets = const FakeViewPadding(bottom: 216);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('mobile_swap_slippage_value')),
+      '1.25',
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    for (final key in [
+      'swap_slippage_update_button',
+      'swap_slippage_cancel_button',
+    ]) {
+      final button = find.byKey(ValueKey(key));
+      expect(tester.getRect(button).bottom, lessThanOrEqualTo(352));
+      expect(button.hitTestable(), findsOneWidget);
+    }
+    await tester.tap(find.byKey(const ValueKey('swap_slippage_update_button')));
+    await tester.pumpAndSettle();
+    expect(find.byType(MobileSwapSlippageStepperModal), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('swap_settings_button')));
+    await tester.pumpAndSettle();
+    await tester.tapAt(const Offset(8, 8));
+    await tester.pumpAndSettle();
+    expect(find.byType(MobileSwapSlippageStepperModal), findsNothing);
+  });
+
   testWidgets('amount input displays a leading zero and keeps the cursor', (
     tester,
   ) async {
@@ -171,6 +211,12 @@ void main() {
     );
     await tester.pump();
 
+    expect(
+      find.text(
+        "Sets the maximum rate change you'll accept. Network fees are separate.",
+      ),
+      findsOneWidget,
+    );
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_swap_slippage_minus'))),
       const Size(60, 50),

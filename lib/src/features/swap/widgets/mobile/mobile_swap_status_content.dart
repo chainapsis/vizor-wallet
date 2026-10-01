@@ -13,7 +13,7 @@ import '../../../../core/widgets/review_list_row.dart' show kTxFeeHelpTooltip;
 import '../../domain/swap_contract.dart';
 import '../../models/swap_address_formatting.dart';
 import '../../models/swap_activity_status_mapper.dart'
-    show SwapActivityStatusPresentation;
+    show PayActivityStatusPhase, SwapActivityStatusPresentation;
 import '../../models/swap_detail_tooltips.dart';
 import '../../models/swap_status_presentation.dart';
 import '../swap_asset_icon.dart';
@@ -148,12 +148,13 @@ class MobilePayStatusHeader extends StatelessWidget {
     );
     final name = recipientName?.trim();
     final profilePictureId = recipientProfilePictureId?.trim();
-    return SizedBox(
+    return ConstrainedBox(
       key: const ValueKey('mobile_pay_status_header'),
-      height: 252,
+      constraints: const BoxConstraints(minHeight: 252),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _MobilePayStatusHeaderRow(
@@ -165,6 +166,7 @@ class MobilePayStatusHeader extends StatelessWidget {
               ),
               label: label,
               headline: amountText,
+              scaleHeadlineToFit: true,
               bottomText: fiatText,
             ),
             SizedBox(
@@ -220,6 +222,7 @@ class _MobilePayStatusHeaderRow extends StatelessWidget {
     required this.leading,
     required this.label,
     required this.headline,
+    this.scaleHeadlineToFit = false,
     this.bottomText,
     this.bottomAction,
     super.key,
@@ -228,24 +231,32 @@ class _MobilePayStatusHeaderRow extends StatelessWidget {
   final Widget leading;
   final String label;
   final String headline;
+  final bool scaleHeadlineToFit;
   final String? bottomText;
   final Widget? bottomAction;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return SizedBox(
-      height: 90,
+    final headlineText = Text(
+      headline,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: AppTypography.headlineLarge.copyWith(color: colors.text.accent),
+    );
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 90),
       child: Row(
         children: [
           SizedBox(width: 40, child: Center(child: leading)),
           const SizedBox(width: AppSpacing.sm),
           Expanded(
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SizedBox(
-                  height: 24,
+                ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 24),
                   child: Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
@@ -257,17 +268,17 @@ class _MobilePayStatusHeaderRow extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: AppSpacing.xxs),
-                Text(
-                  headline,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.headlineLarge.copyWith(
-                    color: colors.text.accent,
-                  ),
-                ),
+                if (scaleHeadlineToFit)
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: headlineText,
+                  )
+                else
+                  headlineText,
                 const SizedBox(height: AppSpacing.xxs),
-                SizedBox(
-                  height: 24,
+                ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 24),
                   child: Row(
                     children: [
                       if (bottomText != null)
@@ -331,20 +342,27 @@ class _MobilePayFullAddressButton extends StatelessWidget {
         key: const ValueKey('mobile_pay_status_full_address'),
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.xxs),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AppIcon(AppIcons.eye, size: 16, color: colors.button.ghost.label),
-              const SizedBox(width: AppSpacing.xxs),
-              Text(
-                'Full address',
-                style: AppTypography.labelLarge.copyWith(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 24),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AppIcon(
+                  AppIcons.eye,
+                  size: 16,
                   color: colors.button.ghost.label,
                 ),
-              ),
-            ],
+                const SizedBox(width: AppSpacing.xxs),
+                Text(
+                  'Full address',
+                  style: AppTypography.labelLarge.copyWith(
+                    color: colors.button.ghost.label,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -469,6 +487,11 @@ class _MobileStatusChipRow extends StatelessWidget {
         'Completed',
         colors.text.positiveStrong,
       ),
+      SwapStatusBadgeKind.refunded => (
+        AppIcons.uturnUp,
+        'Refunded',
+        colors.text.positiveStrong,
+      ),
       SwapStatusBadgeKind.failed => (
         AppIcons.cross,
         'Failed',
@@ -584,6 +607,35 @@ class _MobilePaymentDetails extends StatelessWidget {
             help: true,
             helpTooltip: kTxFeeHelpTooltip,
           );
+    final terminalOutcome =
+        payStatus?.phase == PayActivityStatusPhase.failed ||
+        payStatus?.phase == PayActivityStatusPhase.refunded;
+    final outcomeRows = <SwapStatusDetailRowData>[
+      if (payStatus?.phase == PayActivityStatusPhase.failed)
+        SwapStatusDetailRowData(
+          label: 'Source amount',
+          value: payStatus!.convertedFromText,
+        ),
+      if (payStatus?.phase == PayActivityStatusPhase.refunded &&
+          payStatus?.refundedAmountText?.isNotEmpty == true)
+        SwapStatusDetailRowData(
+          label: 'Refunded amount',
+          value: payStatus!.refundedAmountText!,
+        ),
+      if (terminalOutcome && payStatus?.refundAddress?.isNotEmpty == true)
+        SwapStatusDetailRowData(
+          label: 'Refund to',
+          value: compactSwapAddress(payStatus!.refundAddress!),
+          copyable: true,
+          copyText: payStatus.refundAddress,
+        ),
+      if (payStatus?.phase == PayActivityStatusPhase.refunded &&
+          payStatus?.refundFeeText?.isNotEmpty == true)
+        SwapStatusDetailRowData(
+          label: 'Refund fee',
+          value: payStatus!.refundFeeText!,
+        ),
+    ];
     return Column(
       key: const ValueKey('mobile_pay_status_details'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -609,20 +661,25 @@ class _MobilePaymentDetails extends StatelessWidget {
         const SizedBox(height: AppSpacing.sm),
         Container(height: 1, color: context.colors.border.regular),
         const SizedBox(height: AppSpacing.sm),
-        _MobileFinalDetailRow(
-          row: convertedFrom,
-          paymentMode: true,
-          trailingIcon: AppIcons.shieldKeyhole,
-          actionIconSize: 20,
-          actionIconColor: context.colors.icon.accent,
-        ),
-        if (displayFee != null)
+        if (terminalOutcome)
+          for (final row in outcomeRows)
+            _MobileFinalDetailRow(row: row, paymentMode: true)
+        else ...[
           _MobileFinalDetailRow(
-            row: displayFee,
+            row: convertedFrom,
             paymentMode: true,
+            trailingIcon: AppIcons.shieldKeyhole,
             actionIconSize: 20,
-            actionIconColor: context.colors.icon.muted,
+            actionIconColor: context.colors.icon.accent,
           ),
+          if (displayFee != null)
+            _MobileFinalDetailRow(
+              row: displayFee,
+              paymentMode: true,
+              actionIconSize: 20,
+              actionIconColor: context.colors.icon.muted,
+            ),
+        ],
       ],
     );
   }
@@ -693,14 +750,20 @@ class _MobileDetailRows extends StatelessWidget {
       hideSuccessAddressRows: hideSuccessAddressRows,
       compactTransactionDetails: compactTransactionDetails,
     );
-    final firstFeeIndex = visibleRows.indexWhere(_isMobileFeeDetailRow);
+    // Like desktop, a recorded refund starts the outcome group so its amount
+    // and fee stay together below the transaction metadata.
+    final refundIndex = visibleRows.indexWhere(
+      (row) => row.label == 'Refunded amount',
+    );
+    final dividerIndex = refundIndex > 0
+        ? refundIndex
+        : visibleRows.indexWhere(_isMobileFeeDetailRow);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         for (var i = 0; i < visibleRows.length; i++) ...[
-          if (i > 0 && i != firstFeeIndex)
-            const SizedBox(height: AppSpacing.xs),
-          if (i == firstFeeIndex) ...[
+          if (i > 0 && i != dividerIndex) const SizedBox(height: AppSpacing.xs),
+          if (i == dividerIndex) ...[
             const SizedBox(height: AppSpacing.sm),
             // Figma `border/neutral/default`.
             Container(height: 1, color: colors.border.regular),
@@ -809,63 +872,69 @@ class _MobileFinalDetailRow extends StatelessWidget {
                 }
               }
             : null,
-        child: SizedBox(
-          height: 32,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Flexible(
-                fit: FlexFit.loose,
-                child: Text(
-                  displayLabel,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style:
-                      (paymentMode
-                              ? AppTypography.labelLarge
-                              : AppTypography.labelMedium)
-                          .copyWith(color: colors.text.secondary),
-                ),
-              ),
-              const SizedBox(width: AppSpacing.s),
-              Flexible(
-                fit: FlexFit.loose,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Flexible(
-                      child: _MobileScaledDetailValueText(
-                        value: displayValue,
-                        style: AppTypography.labelLarge.copyWith(
-                          color: colors.text.accent,
-                        ),
-                      ),
+        child: LayoutBuilder(
+          builder: (context, constraints) => ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 32),
+            // The padding fits inside the default 32px row, so only wrapped
+            // labels gain separation from the neighbouring rows.
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      displayLabel,
+                      style:
+                          (paymentMode
+                                  ? AppTypography.labelLarge
+                                  : AppTypography.labelMedium)
+                              .copyWith(color: colors.text.secondary),
                     ),
-                    if (linkUri != null ||
-                        row.copyable ||
-                        row.help ||
-                        trailingIcon != null) ...[
-                      const SizedBox(width: AppSpacing.xxs),
-                      _MobileStatusDetailActionIcon(
-                        icon:
-                            trailingIcon ??
-                            (linkUri != null
-                                ? AppIcons.arrowTopRight
-                                : row.copyable
-                                ? AppIcons.copy
-                                : AppIcons.help),
-                        size: actionIconSize,
-                        color: actionIconColor,
-                        tooltipMessage: row.help
-                            ? row.helpTooltip ??
-                                  _mobileStatusHelpTooltip(row.label)
-                            : null,
-                      ),
-                    ],
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: AppSpacing.s),
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: (constraints.maxWidth - AppSpacing.s) / 2,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: _MobileScaledDetailValueText(
+                            value: displayValue,
+                            style: AppTypography.labelLarge.copyWith(
+                              color: colors.text.accent,
+                            ),
+                          ),
+                        ),
+                        if (linkUri != null ||
+                            row.copyable ||
+                            row.help ||
+                            trailingIcon != null) ...[
+                          const SizedBox(width: AppSpacing.xxs),
+                          _MobileStatusDetailActionIcon(
+                            icon:
+                                trailingIcon ??
+                                (linkUri != null
+                                    ? AppIcons.arrowTopRight
+                                    : row.copyable
+                                    ? AppIcons.copy
+                                    : AppIcons.help),
+                            size: actionIconSize,
+                            color: actionIconColor,
+                            tooltipMessage: row.help
+                                ? row.helpTooltip ??
+                                      _mobileStatusHelpTooltip(row.label)
+                                : null,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),

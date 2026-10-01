@@ -41,13 +41,27 @@ class PayActivityStatusContent extends StatelessWidget {
   static const double reviewInfoHeight = 204;
   static const double detailCardHeight = 257;
 
-  bool get _completed => status.phase == PayActivityStatusPhase.completed;
+  int get _outcomeDetailRowCount => switch (status.phase) {
+    PayActivityStatusPhase.failed =>
+      1 + (status.refundAddress?.isNotEmpty == true ? 1 : 0),
+    PayActivityStatusPhase.refunded => [
+      status.refundedAmountText,
+      status.refundAddress,
+      status.refundFeeText,
+    ].where((value) => value != null && value.isNotEmpty).length,
+    _ => 2,
+  };
+
+  double get _extraDetailHeight => _outcomeDetailRowCount > 2
+      ? (_outcomeDetailRowCount - 2) * ReviewListRow.height
+      : 0;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox.fromSize(
+    return SizedBox(
       key: const ValueKey('pay_activity_status_content'),
-      size: contentSize,
+      width: contentSize.width,
+      height: contentSize.height + _extraDetailHeight,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -136,15 +150,30 @@ class PayActivityStatusContent extends StatelessWidget {
 
   Widget _detailCard(BuildContext context) {
     final colors = context.colors;
-    final statusColor = _completed
-        ? colors.text.positiveStrong
-        : colors.text.secondary;
+    final (statusColor, statusIcon) = switch (status.phase) {
+      PayActivityStatusPhase.completed => (
+        colors.text.positiveStrong,
+        AppIcons.checkCircle,
+      ),
+      PayActivityStatusPhase.refunded => (
+        colors.text.positiveStrong,
+        AppIcons.uturnUp,
+      ),
+      PayActivityStatusPhase.failed => (
+        colors.text.destructive,
+        AppIcons.warning,
+      ),
+      PayActivityStatusPhase.inProgress => (
+        colors.text.secondary,
+        AppIcons.loader,
+      ),
+    };
     final animationsDisabled =
         MediaQuery.maybeOf(context)?.disableAnimations ?? false;
 
     return SizedBox(
       key: const ValueKey('pay_status_detail_card'),
-      height: detailCardHeight,
+      height: detailCardHeight + _extraDetailHeight,
       child: ReviewWrapCard(
         children: [
           TickerMode(
@@ -154,9 +183,7 @@ class PayActivityStatusContent extends StatelessWidget {
               label: 'Status',
               value: status.statusLabel,
               valueColor: statusColor,
-              leadingIconName: _completed
-                  ? AppIcons.checkCircle
-                  : AppIcons.loader,
+              leadingIconName: statusIcon,
             ),
           ),
           Column(
@@ -178,18 +205,47 @@ class PayActivityStatusContent extends StatelessWidget {
           Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              ReviewListRow(
-                label: 'Converted from',
-                value: status.convertedFromText,
-                trailingIconName: AppIcons.shieldKeyhole,
-              ),
-              ReviewListRow(
-                label: 'Tx fee',
-                value: status.transactionFeeText,
-                trailingIconName: AppIcons.help,
-                trailingIconColor: colors.text.secondary,
-                trailingIconTooltip: kTxFeeHelpTooltip,
-              ),
+              if (status.phase == PayActivityStatusPhase.failed)
+                ReviewListRow(
+                  label: 'Source amount',
+                  value: status.convertedFromText,
+                ),
+              if (status.phase == PayActivityStatusPhase.refunded &&
+                  status.refundedAmountText?.isNotEmpty == true)
+                ReviewListRow(
+                  label: 'Refunded amount',
+                  value: status.refundedAmountText!,
+                ),
+              if ((status.phase == PayActivityStatusPhase.failed ||
+                      status.phase == PayActivityStatusPhase.refunded) &&
+                  status.refundAddress?.isNotEmpty == true)
+                ReviewListRow(
+                  label: 'Refund to',
+                  value: compactSwapAddress(status.refundAddress!),
+                  copyText: status.refundAddress,
+                  scaleValueToFit: true,
+                ),
+              if (status.phase == PayActivityStatusPhase.refunded &&
+                  status.refundFeeText?.isNotEmpty == true)
+                ReviewListRow(
+                  label: 'Refund fee',
+                  value: status.refundFeeText!,
+                ),
+              if (status.phase == PayActivityStatusPhase.inProgress ||
+                  status.phase == PayActivityStatusPhase.completed) ...[
+                ReviewListRow(
+                  label: 'Converted from',
+                  value: status.convertedFromText,
+                  trailingIconName: AppIcons.shieldKeyhole,
+                ),
+                ReviewListRow(
+                  label: 'Tx fee',
+                  value: status.transactionFeeText,
+                  trailingIconName: AppIcons.help,
+                  trailingIconColor: colors.text.secondary,
+                  trailingIconTooltip: kTxFeeHelpTooltip,
+                ),
+              ],
             ],
           ),
         ],

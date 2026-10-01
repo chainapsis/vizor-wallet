@@ -491,7 +491,7 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
   ),
   FigmaCompareScenario(
     id: 'gift-card-claimed-elsewhere',
-    description: 'Gift Card already claimed outcome',
+    description: 'Gift Card claimed elsewhere outcome',
     builder: buildClaimedElsewhereUseCase,
     mobile: true,
   ),
@@ -805,6 +805,21 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'activity-gift-card-batch-detail',
     description: 'Desktop created Gift Card batch activity detail',
     builder: buildGiftCardBatchActivityDetailUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'activity-zero-value',
+    description: 'Desktop home activity with zero-value memo payments',
+    builder: buildDesktopZeroValueActivityUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'activity-zero-value-received-detail',
+    description: 'Desktop receipt for a zero-value receive with its memo',
+    builder: buildDesktopZeroValueReceiptUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'activity-zero-value-sent-detail',
+    description: 'Desktop receipt for a zero-value send with its memo',
+    builder: buildDesktopZeroValueSendUseCase,
   ),
   FigmaCompareScenario(
     id: 'payment-link-empty',
@@ -1334,6 +1349,43 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildSwapPageTorBlockedUseCase,
   ),
   FigmaCompareScenario(
+    id: 'swap-guidance-deposit-desktop',
+    description: 'Desktop deposit token and network guidance',
+    builder: buildSwapGuidanceDepositDesktopUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-guidance-slippage-desktop',
+    description: 'Swap slippage rate-change guidance',
+    builder: buildSwapSlippageModalUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-guidance-failed-desktop',
+    description: 'Failed swap with no recorded refund',
+    builder: buildSwapStatusFailedCaptureUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-guidance-refunded-desktop',
+    description: 'Swap with a recorded refund amount and fee',
+    builder: buildSwapStatusRefundedCaptureUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'pay-guidance-failed-desktop',
+    description: 'Failed Pay retains payment asset and recipient',
+    builder: buildPayFailedCaptureUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'pay-guidance-refunded-desktop',
+    description: 'Refunded Pay shows recorded refund amount and fee',
+    builder: buildPayRefundedCaptureUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-guidance-deposit-mobile',
+    description: 'Mobile deposit token and network guidance',
+    builder: buildSwapGuidanceDepositMobileUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-customise-account',
     description: 'Mobile account personalisation onboarding screen',
     builder: buildMobileCustomiseAccountUseCase,
@@ -1559,6 +1611,27 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'mobile-activity-default',
     description: 'Mobile Activity screen with deterministic transactions',
     builder: buildMobileActivityDefaultUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-activity-zero-value',
+    description: 'Mobile Activity with zero-value memo payments',
+    builder: buildMobileZeroValueActivityUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-activity-zero-value-received-detail',
+    description: 'Mobile receipt for a zero-value receive with its memo',
+    builder: buildMobileZeroValueReceiptUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-activity-zero-value-sent-detail',
+    description: 'Mobile receipt for a zero-value send with its memo',
+    builder: buildMobileZeroValueSendUseCase,
     desktop: false,
     mobile: true,
   ),

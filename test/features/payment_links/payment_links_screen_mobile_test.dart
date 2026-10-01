@@ -451,7 +451,7 @@ void main() {
   }
 
   for (final outcome in [
-    (PaymentLinkAvailability.claimedElsewhere, 'Already claimed'),
+    (PaymentLinkAvailability.claimedElsewhere, 'Claimed elsewhere'),
     (PaymentLinkAvailability.noBalance, 'No balance'),
     (PaymentLinkAvailability.failed, 'Claim failed'),
   ]) {
@@ -1570,6 +1570,42 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Receiving…'), findsOneWidget);
+  });
+
+  testWidgets('mobile row removes a card claimed elsewhere on confirm', (
+    tester,
+  ) async {
+    final operations = FakePaymentLinkOperations(
+      receivedRecords: [
+        PaymentLinkReceivedRecord.fromLink(
+          incomingLink,
+        ).copyWith(availability: PaymentLinkAvailability.claimedElsewhere),
+      ],
+    );
+    await pumpPaymentLinksScreen(tester, operations: operations);
+    await tester.tap(
+      find.byKey(const ValueKey('payment_links_mobile_received_tab')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Claimed elsewhere'), findsOneWidget);
+    expect(find.text('Received'), findsOneWidget);
+    await tester.tap(find.text('Remove'));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('payment_link_remove_card_sheet')),
+      findsOneWidget,
+    );
+    expect(operations.removedReceivedAddresses, isEmpty);
+    await tester.tap(
+      find.byKey(
+        const ValueKey('payment_link_remove_card_sheet_confirm_button'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(operations.removedReceivedAddresses, [incomingLink.address]);
+    expect(find.text('Claimed elsewhere'), findsNothing);
+    expect(operations.claimedLinks, isEmpty);
   });
 }
 

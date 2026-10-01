@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `block_height_from_u64`, `catch`, `discover_software_account_at_index`, `discover_used_software_accounts`, `discovery_start_height`, `import_discovered_software_wallet_accounts`, `is_ironwood_active_at_height`, `network_name`, `nu6_3_activation_height`, `parse_network_and_migrate`, `preview_transparent_balance_for_addresses`
+// These functions are ignored because they are not marked as `pub`: `block_height_from_u64`, `catch`, `discover_software_account_at_index`, `discover_used_software_accounts`, `discovery_start_height`, `import_discovered_software_wallet_accounts`, `is_ironwood_active_at_height`, `network_name`, `nu6_3_activation_height`, `parse_network_and_migrate`, `preview_transparent_balance_for_addresses`, `restored_birthday`
 
 /// Get the latest block height from lightwalletd.
 Future<BigInt> getLatestBlockHeight({
@@ -43,6 +43,8 @@ Future<ChainUpgradeActivationStatus> getChainUpgradeStatusAtHeight({
 
 /// Create a new Zcash wallet with a fresh mnemonic.
 /// birthday_height should be the current chain tip (from get_latest_block_height).
+/// It is stored exactly: a tip birthday reveals only that a wallet was created
+/// now, and rounding it would only add blocks to scan.
 Future<WalletCreationResult> createWallet({
   required String network,
   required String dbPath,
@@ -55,7 +57,12 @@ Future<WalletCreationResult> createWallet({
   accountName: accountName,
 );
 
-/// Import an existing wallet from a mnemonic phrase.
+/// Create the first account of a wallet from a caller-provided mnemonic.
+///
+/// The birthday is stored as given. Its callers are the create-wallet flow
+/// (the chain tip) and payment-link claims (the height from the shared link).
+/// Restores go through [`import_software_wallet_with_account_discovery`], which
+/// rounds the birthday instead.
 Future<WalletImportResult> importWallet({
   required String mnemonic,
   required String bip39Passphrase,
@@ -72,7 +79,11 @@ Future<WalletImportResult> importWallet({
   accountName: accountName,
 );
 
-/// Add an additional account to an existing wallet database.
+/// Add a newly created account to an existing wallet database.
+///
+/// The birthday is stored as given; callers pass the chain tip. Restored
+/// accounts go through [`import_software_wallet_with_account_discovery`],
+/// which rounds the birthday instead.
 Future<AccountCreationResult> addAccount({
   required String dbPath,
   required String network,

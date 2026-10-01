@@ -58,6 +58,7 @@ class SwapDepositTokensPageContent extends StatelessWidget {
       now: now,
       memo: memo,
       mobile: mobile,
+      showNetworkGuidance: true,
       actionArea: _DepositConfirmActionArea(
         checking: checking,
         warning: checkWarning,
@@ -128,6 +129,7 @@ class _SwapDepositPageShell extends StatelessWidget {
     this.now,
     this.memo,
     this.mobile = false,
+    this.showNetworkGuidance = false,
   });
 
   final SwapAsset asset;
@@ -139,6 +141,7 @@ class _SwapDepositPageShell extends StatelessWidget {
   final String? memo;
   final Widget actionArea;
   final bool mobile;
+  final bool showNetworkGuidance;
 
   @override
   Widget build(BuildContext context) {
@@ -164,7 +167,10 @@ class _SwapDepositPageShell extends StatelessWidget {
             now: now,
           ),
         ),
-        const SizedBox(height: AppSpacing.lg),
+        if (showNetworkGuidance)
+          _DepositNetworkGuidance(asset: asset)
+        else
+          const SizedBox(height: AppSpacing.lg),
         _DepositDetailsList(
           asset: asset,
           amountText: amountText,
@@ -203,7 +209,10 @@ class _SwapDepositPageShell extends StatelessWidget {
               now: now,
             ),
           ),
-          const SizedBox(height: AppSpacing.lg),
+          if (showNetworkGuidance)
+            _DepositNetworkGuidance(asset: asset)
+          else
+            const SizedBox(height: AppSpacing.lg),
           _DepositDetailsList(
             asset: asset,
             amountText: amountText,
@@ -212,6 +221,34 @@ class _SwapDepositPageShell extends StatelessWidget {
           ),
           actionArea,
         ],
+      ),
+    );
+  }
+}
+
+/// Keeps the token and network beside the QR without moving the deposit rows.
+/// The warning wraps instead of truncating, so the network name stays whole.
+class _DepositNetworkGuidance extends StatelessWidget {
+  const _DepositNetworkGuidance({required this.asset});
+
+  final SwapAsset asset;
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      key: const ValueKey('swap_deposit_network_guidance'),
+      constraints: const BoxConstraints(minHeight: AppSpacing.lg),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+        child: Center(
+          child: Text(
+            'Send only ${asset.symbol} on ${asset.chainLabel}',
+            textAlign: TextAlign.center,
+            style: AppTypography.labelMedium.copyWith(
+              color: context.colors.text.secondary,
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -261,13 +298,14 @@ class _MobileDepositQrCard extends StatelessWidget {
           child: Container(
             key: const ValueKey('swap_deposit_qr_card'),
             width: cardWidth,
-            height: _height,
+            constraints: const BoxConstraints(minHeight: _height),
             padding: const EdgeInsets.all(_padding),
             decoration: BoxDecoration(
               color: colors.background.homeCard,
               borderRadius: BorderRadius.circular(_radius),
             ),
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 _DepositQrCode(
@@ -279,21 +317,25 @@ class _MobileDepositQrCard extends StatelessWidget {
                   logoSize: _qrLogoSize * qrScale,
                 ),
                 const SizedBox(height: AppSpacing.sm),
-                SizedBox(
-                  height: 99,
+                ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 99),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
                       vertical: AppSpacing.sm,
                     ),
                     child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(
-                          amountText,
-                          textAlign: TextAlign.center,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTypography.headlineLarge.copyWith(
-                            color: colors.text.homeCard,
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            amountText,
+                            textAlign: TextAlign.center,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTypography.headlineLarge.copyWith(
+                              color: colors.text.homeCard,
+                            ),
                           ),
                         ),
                         const SizedBox(height: AppSpacing.s),

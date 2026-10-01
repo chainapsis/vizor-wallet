@@ -157,6 +157,12 @@ class PaymentLinkReceivedRecord {
           availability == PaymentLinkAvailability.claimedElsewhere ||
           availability == PaymentLinkAvailability.failed);
 
+  /// A Card another wallet claimed first has nothing left to recover, so it
+  /// can be removed outright instead of kept among the received Cards.
+  bool get canRemove =>
+      !isClaimInFlight &&
+      availability == PaymentLinkAvailability.claimedElsewhere;
+
   bool get isClaimInFlight =>
       status == PaymentLinkReceivedStatus.submitting ||
       status == PaymentLinkReceivedStatus.receiving;

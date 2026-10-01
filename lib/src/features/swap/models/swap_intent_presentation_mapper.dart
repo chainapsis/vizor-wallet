@@ -2,11 +2,14 @@ import 'swap_models.dart';
 
 SwapIntent _swapIntentFromRecord(SwapIntentRecord record, {DateTime? now}) {
   final timestamp = now ?? DateTime.now().toUtc();
-  final status = _resolveDepositDeadlineStatus(
-    providerStatus: record.status,
-    deadline: record.depositDeadline,
-    hasDepositEvidence: _recordHasDepositEvidence(record),
-    now: timestamp,
+  final status = _resolveRecordedRefundStatus(
+    _resolveDepositDeadlineStatus(
+      providerStatus: record.status,
+      deadline: record.depositDeadline,
+      hasDepositEvidence: _recordHasDepositEvidence(record),
+      now: timestamp,
+    ),
+    record.providerRefundInfo,
   );
   final nextAction = _nextActionForRestoredStatus(status, record);
   return SwapIntent(
@@ -72,11 +75,14 @@ SwapIntentRecord resolveSwapRecordForDisplay(
   SwapIntentRecord record, {
   DateTime? now,
 }) {
-  final status = _resolveDepositDeadlineStatus(
-    providerStatus: record.status,
-    deadline: record.depositDeadline,
-    hasDepositEvidence: _recordHasDepositEvidence(record),
-    now: now ?? DateTime.now().toUtc(),
+  final status = _resolveRecordedRefundStatus(
+    _resolveDepositDeadlineStatus(
+      providerStatus: record.status,
+      deadline: record.depositDeadline,
+      hasDepositEvidence: _recordHasDepositEvidence(record),
+      now: now ?? DateTime.now().toUtc(),
+    ),
+    record.providerRefundInfo,
   );
   if (status == record.status) return record;
   return record.copyWith(
@@ -103,11 +109,15 @@ SwapIntent swapIntentFromSnapshot({
 }) {
   final depositDeadline =
       snapshot.depositInstruction.deadline ?? quote.depositInstruction.deadline;
-  final status = _resolveDepositDeadlineStatus(
-    providerStatus: snapshot.status,
-    deadline: depositDeadline,
-    hasDepositEvidence: _snapshotHasDepositEvidence(snapshot),
-    now: now,
+  final refundInfo = snapshot.providerRefundInfo ?? quote.providerRefundInfo;
+  final status = _resolveRecordedRefundStatus(
+    _resolveDepositDeadlineStatus(
+      providerStatus: snapshot.status,
+      deadline: depositDeadline,
+      hasDepositEvidence: _snapshotHasDepositEvidence(snapshot),
+      now: now,
+    ),
+    refundInfo,
   );
   final nextAction = _nextActionForResolvedStatus(status, snapshot);
   final record = SwapIntentRecord(
@@ -135,7 +145,7 @@ SwapIntent swapIntentFromSnapshot({
     nearIntentHash: snapshot.nearIntentHash,
     originChainTxHash: snapshot.originChainTxHash,
     destinationChainTxHash: snapshot.destinationChainTxHash,
-    providerRefundInfo: snapshot.providerRefundInfo ?? quote.providerRefundInfo,
+    providerRefundInfo: refundInfo,
     fiatValueBasis: snapshot.fiatValueBasis ?? quote.fiatValueBasis,
     oneClickRecipient: addressPlan.oneClickRecipient,
     oneClickRefundTo: addressPlan.oneClickRefundTo,
@@ -228,25 +238,28 @@ SwapIntent updateSwapIntentFromSnapshot(
       snapshot.providerRefundInfo;
   final depositDeadline =
       snapshot.depositInstruction.deadline ?? intent.depositDeadline;
-  final status = _resolveDepositDeadlineStatus(
-    providerStatus: snapshot.status,
-    deadline: depositDeadline,
-    hasDepositEvidence:
-        swapHasProviderObservedDepositEvidence(
-          status: snapshot.status,
-          originChainTxHash: _hasText(intent.originChainTxHash)
-              ? intent.originChainTxHash
-              : snapshot.originChainTxHash,
-          depositedAmountText: providerRefundInfo?.depositedAmountText,
-        ) ||
-        swapHasConfirmedDepositEvidence(
-          originChainTxHash: _hasText(intent.originChainTxHash)
-              ? intent.originChainTxHash
-              : snapshot.originChainTxHash,
-          depositTxHash: intent.depositTxHash,
-          broadcastStatus: intent.broadcastStatus,
-        ),
-    now: timestamp,
+  final status = _resolveRecordedRefundStatus(
+    _resolveDepositDeadlineStatus(
+      providerStatus: snapshot.status,
+      deadline: depositDeadline,
+      hasDepositEvidence:
+          swapHasProviderObservedDepositEvidence(
+            status: snapshot.status,
+            originChainTxHash: _hasText(intent.originChainTxHash)
+                ? intent.originChainTxHash
+                : snapshot.originChainTxHash,
+            depositedAmountText: providerRefundInfo?.depositedAmountText,
+          ) ||
+          swapHasConfirmedDepositEvidence(
+            originChainTxHash: _hasText(intent.originChainTxHash)
+                ? intent.originChainTxHash
+                : snapshot.originChainTxHash,
+            depositTxHash: intent.depositTxHash,
+            broadcastStatus: intent.broadcastStatus,
+          ),
+      now: timestamp,
+    ),
+    providerRefundInfo,
   );
   final nextAction = _nextActionForResolvedStatus(status, snapshot);
   final record = SwapIntentRecord.fromIntent(intent).copyWith(
@@ -294,6 +307,17 @@ SwapIntentStatus _resolveDepositDeadlineStatus({
   return SwapIntentStatus.expired;
 }
 
+SwapIntentStatus _resolveRecordedRefundStatus(
+  SwapIntentStatus status,
+  SwapProviderRefundInfo? refundInfo,
+) {
+  if (status == SwapIntentStatus.failed &&
+      refundInfo?.hasRecordedRefund == true) {
+    return SwapIntentStatus.refunded;
+  }
+  return status;
+}
+
 bool _isAwaitingDepositStatus(SwapIntentStatus status) {
   return status == SwapIntentStatus.awaitingDeposit ||
       status == SwapIntentStatus.awaitingExternalDeposit;
@@ -307,6 +331,10 @@ String _nextActionForResolvedStatus(
       snapshot.status != SwapIntentStatus.expired) {
     return 'Start a fresh quote';
   }
+  if (status == SwapIntentStatus.refunded &&
+      snapshot.status == SwapIntentStatus.failed) {
+    return 'Refund sent to your refund address';
+  }
   return snapshot.nextAction;
 }
 
@@ -317,6 +345,10 @@ String _nextActionForRestoredStatus(
   if (status == SwapIntentStatus.expired &&
       record.status != SwapIntentStatus.expired) {
     return 'Start a fresh quote';
+  }
+  if (status == SwapIntentStatus.refunded &&
+      record.status == SwapIntentStatus.failed) {
+    return 'Refund sent to your refund address';
   }
   return record.nextAction;
 }

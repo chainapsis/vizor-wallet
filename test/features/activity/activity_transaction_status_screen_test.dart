@@ -708,6 +708,60 @@ void main() {
     },
   );
 
+  testWidgets('shows 0 ZEC and the memo for a zero-value receive', (
+    tester,
+  ) async {
+    const memo = 'Memo-only payment';
+    await _pumpScreen(
+      tester,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'received',
+        initialTransaction: _transaction(
+          txKind: 'received',
+          displayAmount: BigInt.zero,
+        ),
+        initialDetail: _detail(
+          txKind: 'received',
+          sourcePool: 'shielded',
+          memo: memo,
+        ),
+      ),
+    );
+
+    expect(find.byType(ReceivedReceiptView), findsOneWidget);
+    expect(find.text('Received successfully'), findsOneWidget);
+    expect(find.text('0.00 ZEC'), findsOneWidget);
+    expect(find.text(memo), findsOneWidget);
+  });
+
+  testWidgets('shows 0 ZEC and the memo for a zero-value send', (tester) async {
+    const memo = 'Memo-only payment';
+    await _pumpScreen(
+      tester,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'sent',
+        initialTransaction: _transaction(
+          txKind: 'sent',
+          displayAmount: BigInt.zero,
+          fee: BigInt.from(10000),
+        ),
+        initialDetail: _detail(
+          txKind: 'sent',
+          primaryAddress: _recipientAddress,
+          memo: memo,
+        ),
+      ),
+    );
+
+    expect(find.byType(SendStatusContentView), findsOneWidget);
+    expect(find.text('Sent successfully'), findsOneWidget);
+    expect(find.text('0.00 ZEC'), findsOneWidget);
+    expect(find.text('0.0001 ZEC'), findsOneWidget);
+    expect(find.text(memo), findsOneWidget);
+  });
+
   testWidgets('show full address opens and closes the verify modal', (
     tester,
   ) async {
@@ -873,6 +927,25 @@ void main() {
     expect(find.text(_expectedTimestamp(_blockTime)), findsOneWidget);
   });
 
+  testWidgets('keeps a dash for an unknown tx with no amount', (tester) async {
+    await _pumpScreen(
+      tester,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'unknown',
+        initialTransaction: _transaction(
+          txKind: 'unknown',
+          displayAmount: BigInt.zero,
+        ),
+        initialDetail: _detail(txKind: 'unknown'),
+      ),
+    );
+
+    expect(find.text('Transaction'), findsOneWidget);
+    expect(find.text('--'), findsOneWidget);
+    expect(find.text('0.00 ZEC'), findsNothing);
+  });
+
   testWidgets(
     'falls back to the minimal receipt for a sent tx with no recipient',
     (tester) async {
@@ -1004,6 +1077,7 @@ rust_sync.TransactionInfo _transaction({
   BigInt? minedHeight,
   bool expiredUnmined = false,
   BigInt? fee,
+  BigInt? displayAmount,
 }) {
   return rust_sync.TransactionInfo(
     txidHex: txidHex,
@@ -1014,7 +1088,7 @@ rust_sync.TransactionInfo _transaction({
     blockTime: _blockTime,
     isTransparent: false,
     txKind: txKind,
-    displayAmount: BigInt.from(12000000000),
+    displayAmount: displayAmount ?? BigInt.from(12000000000),
     displayPool: 'shielded',
     createdTime: _blockTime,
   );
