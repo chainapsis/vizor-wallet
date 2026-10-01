@@ -66,13 +66,17 @@ const LEDGER_MIGRATIONS: [&str; 3] = [
     "8f290af0eb5a4f1e88d43550fc0ff911",
     "b7c4e2a19d3f4e8ba6c51f0e8d7c6b5a",
 ];
-/// Transparent activity metadata, shared derivations, and sole-funder
-/// attribution (wallet-libraries #82, `funding_attribution`), from the
-/// wallet-libraries bump. No supported base has applied them.
-const LIBRARY_BUMP_MIGRATIONS: [&str; 3] = [
+/// Transparent activity metadata and shared derivations, then from
+/// wallet-libraries #82 sole-funder attribution (`funding_attribution`),
+/// observed UTXO absences (`transparent_utxo_absences`), and status
+/// obligations for rewound transactions (`unmined_status_obligations`), from
+/// the wallet-libraries bump. No supported base has applied them.
+const LIBRARY_BUMP_MIGRATIONS: [&str; 5] = [
     "935cd43609fd4f4fa808260ee399cb21",
     "a03b0d6a60854859ae77bce948345214",
     "1496b05b5e214a76b44c5d371d294387",
+    "fa14da0b94bb417f8bdaf9aac3d2a041",
+    "6309d4afc73c476facab4f52f14d9675",
 ];
 const LEGACY_PUBLIC_ORIGIN: i64 = 0;
 const LOCAL_ORIGIN: i64 = 1;

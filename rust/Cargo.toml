@@ -229,15 +229,17 @@ assertions_on_constants = "allow"
 # them. `zakura-pczt` and `zakura-pir-enhance-types` are patched because the
 # git `zakura-client-backend` depends on them by path. Drop this once a release includes the revision.
 # Pinned to the head of wallet-libraries draft PR #82 (claude/tpir-history-fixes:
-# sole-funder attribution, send movement counted once, funding re-derivation),
+# sole-funder attribution, send movement counted once, funding re-derivation,
+# observed UTXO absences for spend detection, status obligations for rewound
+# transactions),
 # on top of main at the merge of PR #81 (#77 transparent activity metadata, #78
 # public legacy-rollback handover, #79 exact retries and guarded deletion).
 # A draft PR head: repin to a released revision before vizor-wallet #783 merges.
 [patch.crates-io]
-zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries", rev = "670ae20740b8e269e001f1bed4ca90796b1fe5e9" }
-zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries", rev = "670ae20740b8e269e001f1bed4ca90796b1fe5e9" }
-zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries", rev = "670ae20740b8e269e001f1bed4ca90796b1fe5e9" }
-zakura-pir-enhance-types = { git = "https://github.com/zakura-core/wallet-libraries", rev = "670ae20740b8e269e001f1bed4ca90796b1fe5e9" }
+zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries", rev = "f2096029376406d7e1dc28366c12ea51fc90d6a2" }
+zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries", rev = "f2096029376406d7e1dc28366c12ea51fc90d6a2" }
+zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries", rev = "f2096029376406d7e1dc28366c12ea51fc90d6a2" }
+zakura-pir-enhance-types = { git = "https://github.com/zakura-core/wallet-libraries", rev = "f2096029376406d7e1dc28366c12ea51fc90d6a2" }
 
 # Flutter debug builds use Cargokit + Cargo's dev profile (`cargo build`
 # without `--release`). Rust crypto and voting flows are slow under the default
