@@ -15,6 +15,7 @@ import 'package:zcash_wallet/src/core/widgets/review_list_row.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
+import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 const thA0Mnemonic = String.fromEnvironment('TH_A0_MNEMONIC');
@@ -139,6 +140,11 @@ String _hhmm(int epochSeconds) {
 
 /// Waits until the app's own history (fresh restore) holds every required
 /// expected transaction for the account.
+///
+/// The harness chain is quiet after the handoff, so no new block triggers the
+/// app's next sync. Discovery past the initial address gap needs that next
+/// pass, so the wait asks the app's own sync notifier to sync again every 20s:
+/// the same path a new block takes in production.
 Future<void> thWaitForHistory(
   WidgetTester tester, {
   required String accountUuid,
@@ -149,6 +155,8 @@ Future<void> thWaitForHistory(
   final wanted = rows.where((r) => !r.optional).map((r) => r.txid).toSet();
   final deadline = DateTime.now().add(timeout);
   var missing = wanted;
+  var nextSync = DateTime.now().add(const Duration(seconds: 20));
+  var syncs = 0;
   while (DateTime.now().isBefore(deadline)) {
     try {
       final history = await rust_sync.getTransactionHistory(
@@ -159,13 +167,25 @@ Future<void> thWaitForHistory(
       );
       final seen = history.map((t) => t.txidHex).toSet();
       missing = wanted.difference(seen);
-      if (missing.isEmpty) return;
+      if (missing.isEmpty) {
+        debugPrint('[th-e2e] history complete after $syncs extra syncs');
+        return;
+      }
     } catch (_) {}
+    if (DateTime.now().isAfter(nextSync) && !rust_sync.isSyncRunning()) {
+      ProviderScope.containerOf(
+        tester.element(find.byType(WidgetsApp).first),
+      ).read(syncProvider.notifier).startSync();
+      syncs++;
+      nextSync = DateTime.now().add(const Duration(seconds: 20));
+    }
     await tester.pump(const Duration(milliseconds: 200));
     await Future<void>.delayed(const Duration(milliseconds: 300));
   }
   // Leave the per-row checks to report the gap precisely.
-  debugPrint('[th-e2e] history still missing ${missing.length} txs');
+  debugPrint(
+    '[th-e2e] history still missing ${missing.length} txs after $syncs extra syncs',
+  );
 }
 
 Set<String> _textsIn(WidgetTester tester, Finder finder) {
