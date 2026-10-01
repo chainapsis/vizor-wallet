@@ -30,10 +30,11 @@ Future<String> setUpGiftCardWallet(
       ),
     );
   } catch (error) {
-    // An uncertain database is not evidence that no account exists.
+    // Preserve the credential if this attempt may have created an account.
+    // The initial DB guard runs before creation and journal persistence, so
+    // its failure can roll back the newly prepared password configuration.
     final accountMayExist =
         error is GiftClaimAccountCreatedException ||
-        error is WalletAccountStateUncertainException ||
         (ref.read(accountProvider).value?.hasAccounts ?? true);
     if (accountMayExist) {
       security.commitPasswordSetup();

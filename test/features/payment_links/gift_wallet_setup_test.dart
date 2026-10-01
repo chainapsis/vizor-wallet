@@ -76,24 +76,26 @@ void main() {
     expect(events, ['prepare']);
   });
 
-  testWidgets('a known pre-account failure rolls the passcode back', (
-    tester,
-  ) async {
-    final error = WalletCreationCurrentBlockHeightException(
-      StateError('offline'),
+  for (final error in [
+    WalletCreationCurrentBlockHeightException(StateError('offline')),
+    WalletAccountStateUncertainException(StateError('DB cannot be listed')),
+  ]) {
+    testWidgets(
+      'a pre-account failure rolls the passcode back: ${error.runtimeType}',
+      (tester) async {
+        await expectLater(
+          () => setUp(tester, creationError: error),
+          throwsA(same(error)),
+        );
+        expect(events, ['prepare', 'create and save', 'rollback']);
+        expect(security.state.isPasswordConfigured, isFalse);
+      },
     );
-    await expectLater(
-      () => setUp(tester, creationError: error),
-      throwsA(same(error)),
-    );
-    expect(events, ['prepare', 'create and save', 'rollback']);
-    expect(security.state.isPasswordConfigured, isFalse);
-  });
+  }
 
   for (final error in [
     GiftClaimAccountCreatedException('gift-account', StateError('save failed')),
     GiftClaimAccountCreatedException(null, StateError('outcome unknown')),
-    WalletAccountStateUncertainException(StateError('DB cannot be listed')),
   ]) {
     testWidgets(
       'an existing or uncertain account preserves its credential: ${error.runtimeType} ${error.toString()}',
