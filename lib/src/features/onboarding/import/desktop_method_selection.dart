@@ -142,7 +142,6 @@ class DesktopMethodSelectionCard extends StatelessWidget {
 
     return Semantics(
       button: true,
-      label: '$title. $description',
       child: AppButton(
         onPressed: onPressed,
         variant: AppButtonVariant.secondary,

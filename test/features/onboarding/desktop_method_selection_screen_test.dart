@@ -1,4 +1,4 @@
-import 'dart:ui' show Size;
+import 'dart:ui' show SemanticsAction, Size;
 
 import 'package:flutter/material.dart' show MaterialApp;
 import 'package:flutter/widgets.dart' show Text, ValueKey, Widget;
@@ -11,6 +11,51 @@ import 'package:zcash_wallet/src/features/onboarding/import/desktop_hardware_sel
 import 'package:zcash_wallet/src/features/onboarding/import/desktop_import_method_selection_screen.dart';
 
 void main() {
+  for (final screen in [
+    (
+      location: '/import/method',
+      labels: {
+        'desktop_import_secret_passphrase_card':
+            'Import secret passphrase\nVizor or any other Zcash wallet',
+        'desktop_import_hardware_card':
+            'Connect hardware wallet\nLedger or Keystone wallet',
+      },
+    ),
+    (
+      location: '/import/hardware',
+      labels: {
+        'desktop_hardware_keystone_card':
+            'Connect Keystone\nImport from Keystone wallet',
+        'desktop_hardware_ledger_card':
+            'Connect Ledger\nImport from Ledger wallet',
+      },
+    ),
+  ]) {
+    testWidgets('${screen.location} announces each card label once', (
+      tester,
+    ) async {
+      final semantics = tester.ensureSemantics();
+      try {
+        await _setDesktopViewport(tester);
+        await tester.pumpWidget(
+          _harness(
+            initialLocation: screen.location,
+            capability: const LedgerCapability.supported(),
+          ),
+        );
+        for (final card in screen.labels.entries) {
+          final node = tester.getSemantics(find.byKey(ValueKey(card.key)));
+          final data = node.getSemanticsData();
+          expect(data.label, card.value);
+          expect(node.flagsCollection.isButton, isTrue);
+          expect(data.hasAction(SemanticsAction.tap), isTrue);
+        }
+      } finally {
+        semantics.dispose();
+      }
+    });
+  }
+
   testWidgets('desktop import picker renders the two supported methods', (
     tester,
   ) async {
