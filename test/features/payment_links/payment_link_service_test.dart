@@ -15,6 +15,8 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_provider.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
+import 'package:zcash_wallet/src/features/payment_links/providers/gift_card_tracking_provider.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/gift_card_tracking_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_claim_coordinator_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_claim_lifecycle_registry_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
@@ -25,6 +27,7 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../fakes/fake_gift_link_rust_api.dart';
 
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
@@ -419,6 +422,7 @@ void main() {
     late _ClaimDestinationAccountNotifier accounts;
     late ProviderContainer container;
     late PaymentLinkService service;
+    late _BlockingRegistrationBackend observer;
     late _ClaimMarketDataSource marketData;
     late _ClaimPreviewMarketData previewPrice;
     late bool pricingEnabled;
@@ -439,6 +443,7 @@ void main() {
             (_) async => supportDirectory.path,
           );
       api.reset();
+      observer = _BlockingRegistrationBackend();
       accounts = _ClaimDestinationAccountNotifier();
       marketData = _ClaimMarketDataSource();
       pricingEnabled = true;
@@ -464,6 +469,15 @@ void main() {
           paymentLinkReceivedStoreProvider.overrideWithValue(
             PaymentLinkReceivedStore(receivedStorage),
           ),
+          giftCardTrackingServiceProvider.overrideWith(
+            (ref) => GiftCardTrackingService(
+              store: ref.read(paymentLinkRecoveryStoreProvider),
+              backend: observer,
+              network: () => 'main',
+              allowed: () => true,
+              onState: (_, _, _) {},
+            ),
+          ),
         ],
       );
       await container.read(accountProvider.future);
@@ -476,6 +490,39 @@ void main() {
           .setMockMethodCallHandler(pathChannel, null);
       await supportDirectory.delete(recursive: true);
     });
+
+    for (final prefetchedHeight in [null, 75]) {
+      test(
+        'hardware draft uses birthday $prefetchedHeight without waiting for observation',
+        () async {
+          api.validGiftAddresses.add(_link().address);
+          try {
+            final link = await service
+                .createFundingDraft(
+                  amountZatoshi: BigInt.from(100000),
+                  sourceAccountUuid: 'hardware-account',
+                  birthdayHeight: prefetchedHeight,
+                )
+                .timeout(const Duration(seconds: 1));
+            await observer.started.future;
+            expect(observer.release.isCompleted, isFalse);
+            final record =
+                (await container.read(paymentLinkRecoveryStoreProvider).load())
+                    .single;
+            expect(record.link.address, link.address);
+            expect(link.birthdayHeight, prefetchedHeight ?? 100);
+            expect(api.heightLookups, prefetchedHeight == null ? 1 : 0);
+            expect(record.state, PaymentLinkRecoveryState.draft);
+            expect(record.usage.accountUuid, isNull);
+          } finally {
+            observer.release.complete();
+            await container
+                .read(giftCardTrackingServiceProvider)
+                .quiesceAndDrain();
+          }
+        },
+      );
+    }
 
     for (final address in ['u1legacy', 'u1current', 'u1legacy-projection']) {
       test('completed receipt $address survives secret cleanup', () async {
@@ -2633,7 +2680,26 @@ rust_sync.TransactionInfo _transaction({
 // prepareClaim destination lookup without creating a claim wallet or syncing.
 class _DestinationValidated implements Exception {}
 
-class _ClaimDestinationRustApi implements RustLibApi {
+class _ClaimDestinationRustApi extends FakeGiftLinkRustApi {
+  @override
+  Future<rust_wallet.GeneratedSoftwareAccount>
+  crateApiWalletGenerateSoftwareAccount({required String network}) async =>
+      rust_wallet.GeneratedSoftwareAccount(
+        mnemonic: _link().mnemonic,
+        unifiedAddress: _link().address,
+      );
+
+  @override
+  Future<BigInt> crateApiWalletGetLatestBlockHeight({
+    required String lightwalletdUrl,
+    required String network,
+  }) async {
+    heightLookups++;
+    return BigInt.from(100);
+  }
+
+  int heightLookups = 0;
+
   final requestedAccounts = <String>[];
   final validatedAddresses = <String>[];
   var lookupStarted = Completer<void>();
@@ -2778,6 +2844,7 @@ class _ClaimDestinationRustApi implements RustLibApi {
   }) async {}
 
   void reset() {
+    heightLookups = 0;
     requestedAccounts.clear();
     cancelledClaimSyncs.clear();
     validatedAddresses.clear();
@@ -2851,9 +2918,6 @@ class _ClaimDestinationRustApi implements RustLibApi {
     validatedAddresses.add(address);
     throw _DestinationValidated();
   }
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _ClaimDestinationAccountNotifier extends AccountNotifier {
@@ -2903,4 +2967,21 @@ class _ClaimMarketDataSource implements ZecMarketDataSource {
     if (throwOnFetch) throw StateError('price unavailable');
     return price == null ? null : ZecMarketData(usdPrice: price!);
   }
+}
+
+class _BlockingRegistrationBackend implements GiftCardTrackingBackend {
+  final started = Completer<void>();
+  final release = Completer<void>();
+  @override
+  Future<String> register(PaymentLinkRecoveryRecord card) async {
+    started.complete();
+    await release.future;
+    return 'observer-account';
+  }
+
+  @override
+  void cancel() {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

@@ -101,6 +101,7 @@ void main() {
       );
       expect(hardwareSigning.createdAmounts, [BigInt.from(10000000)]);
       expect(hardwareSigning.createdFromAccounts, ['hardware-account']);
+      expect(hardwareSigning.createdBirthdayHeights, [3500000]);
       expect(operations.createdAmounts, isEmpty);
     },
   );
@@ -296,6 +297,7 @@ Future<void> _pumpMobilePaymentLinks(
           paymentLinkHardwareSigningServiceProvider.overrideWithValue(
             hardwareSigning,
           ),
+        paymentLinkFundingBirthdayProvider.overrideWith((ref) async => 3500000),
         syncProvider.overrideWith(
           () => FakeSyncNotifier(
             SyncState(
@@ -524,6 +526,7 @@ class _FakePaymentLinkHardwareSigningService
 
   final createdAmounts = <BigInt>[];
   final createdFromAccounts = <String>[];
+  final createdBirthdayHeights = <int?>[];
   final discardedDrafts = <BigInt>[];
   Completer<void>? releaseCompleter;
 
@@ -541,9 +544,11 @@ class _FakePaymentLinkHardwareSigningService
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
     PaymentLinkPresentation? presentation,
+    int? birthdayHeight,
   }) async {
     createdAmounts.add(amountZatoshi);
     createdFromAccounts.add(sourceAccountUuid);
+    createdBirthdayHeights.add(birthdayHeight);
     return draft;
   }
 
