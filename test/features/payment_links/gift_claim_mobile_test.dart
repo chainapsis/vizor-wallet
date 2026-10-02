@@ -388,6 +388,14 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(GiftClaimScreen), findsOneWidget);
+    expect(
+      find.text('Create wallet by redeeming Vizor Gift Card'),
+      findsOneWidget,
+    );
+    expect(
+      find.text('Create a new Vizor wallet to receive the card’s balance.'),
+      findsOneWidget,
+    );
     expect(find.text('Paste card link'), findsOneWidget);
     expect(clipboard.readCalls, 0);
     expect(find.text('Gift found'), findsNothing);
@@ -1142,16 +1150,32 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(keyed('mobile_welcome_redeem_card'));
       await tester.pumpAndSettle();
+      expect(
+        find.text('Create account by redeeming Vizor Gift Card'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Create a new account to receive the card’s balance.'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Create wallet by redeeming Vizor Gift Card'),
+        findsNothing,
+      );
       await tester.tap(find.text('Paste card link'));
       await tester.pumpAndSettle();
-      expect(keyed('gift_claim_create_a_wallet_to_claim'), findsOneWidget);
+      expect(
+        find.text('Create an account or use one you have to claim it.'),
+        findsOneWidget,
+      );
+      expect(keyed('gift_claim_create_an_account_to_claim'), findsOneWidget);
       expect(keyed('gift_claim_claim_with_an_existing_wallet'), findsOneWidget);
       await tester.tap(keyed('gift_claim_claim_with_an_existing_wallet'));
       await tester.pumpAndSettle();
       expect(location(tester), '/onboarding/method');
       router.pop();
       await tester.pumpAndSettle();
-      await tester.tap(keyed('gift_claim_create_a_wallet_to_claim'));
+      await tester.tap(keyed('gift_claim_create_an_account_to_claim'));
       await tester.pumpAndSettle();
       expect(find.byType(MobileCustomiseAccountScreen), findsOneWidget);
       expect(find.byType(MobilePasscodeScreen), findsNothing);
@@ -1190,7 +1214,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Paste card link'));
       await tester.pumpAndSettle();
-      await tester.tap(keyed('gift_claim_create_a_wallet_to_claim'));
+      await tester.tap(keyed('gift_claim_create_an_account_to_claim'));
       await tester.pumpAndSettle();
       expect(find.byType(MobileCustomiseAccountScreen), findsOneWidget);
       container

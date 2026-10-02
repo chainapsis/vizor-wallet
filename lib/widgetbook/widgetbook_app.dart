@@ -1254,8 +1254,16 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildMobileGiftOnboardingEntry,
                     ),
                     WidgetbookUseCase(
+                      name: 'Onboarding - Add account card entry',
+                      builder: buildMobileGiftAddAccountEntry,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Onboarding - Gift found',
                       builder: buildMobileGiftOnboardingInspected,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Onboarding - Add account gift found',
+                      builder: buildMobileGiftAddAccountInspected,
                     ),
                     WidgetbookUseCase(
                       name: 'Onboarding - Checking card',

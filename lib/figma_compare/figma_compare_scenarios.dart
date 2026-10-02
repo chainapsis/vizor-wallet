@@ -119,6 +119,20 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-gift-add-account-entry',
+    description: 'Existing wallet Gift Card entry for a new account',
+    builder: buildMobileGiftAddAccountEntry,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-gift-add-account-inspected',
+    description: 'Checked Gift Card with account-oriented actions',
+    builder: buildMobileGiftAddAccountInspected,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-gift-onboarding-checking',
     description: 'Gift Card inspection skeleton without amount or artwork',
     builder: buildMobileGiftOnboardingChecking,
