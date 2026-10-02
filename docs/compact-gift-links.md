@@ -1,4 +1,4 @@
-# Compact gift links
+# Compact gift links (v3 and v4)
 
 V3 encodes the original English BIP-39 entropy in the fragment of
 `https://link.vizor.cash/payment-links/open#v3=<payload>`. The origin remains
@@ -6,10 +6,13 @@ configurable through `VIZOR_DEEPLINK_BASE_URL`. No resolver, remote presentation
 lookup, or new route is needed. New gifts still use 24 words. Decoding also
 supports existing 12, 15, 18, and 21 word phrases.
 
+V4 retains those compact fields and adds a named options object for event
+policy. Ordinary cards continue sharing as v3; `skipScan: true` shares as v4.
+
 The message remains inline. It is not placed in, or fetched from, a funding
 transaction memo. The amount and birthday retain their existing meanings.
 
-## Positional JSON schema
+## V3 positional JSON schema
 
 The fragment contains unpadded Base64url of a UTF-8 JSON array. The array uses
 these fixed positions, with at least the first four entries and at most eight:
@@ -28,7 +31,7 @@ these fixed positions, with at least the first four entries and at most eight:
 Omit trailing null entries when writing. Keep null placeholders when a later
 optional field is present. An empty custom label is allowed. Amounts use decimal
 strings without a sign, exponent, or leading zeroes. The version is already in
-`#v3=` and is not repeated in the array.
+the fragment prefix and is not repeated in the array.
 
 The complete URL is bounded to 16 KiB before decoding. Both Base64url strings
 use only `A-Z`, `a-z`, `0-9`, `-`, and `_`, without padding or noncanonical trailing
@@ -42,11 +45,13 @@ remain limited to 128 grapheme clusters and 512 UTF-8 bytes.
 
 Entropy is 16, 20, 24, 28, or 32 bytes, reconstructing the original English
 mnemonic with an empty BIP-39 passphrase and ZIP32 account zero. New gifts still
-use 32 bytes, or 24 words. Legacy cards with alternate mnemonic whitespace
+use 32 bytes, or 24 words. Ordinary legacy cards with alternate mnemonic whitespace
 share as v2 after verifying the original address and validating the canonical
 phrase. Their original secret,
 recovery records, and claim-cache identity remain unchanged. Other conversion or
 address-validation errors fail sharing; they never trigger a v2 fallback.
+Event options never downgrade to v2; event sharing rejects alternate mnemonic
+whitespace because compact sharing cannot preserve that original secret.
 Synchronous FFI only converts mnemonic and entropy; address validation remains
 asynchronous and local.
 
@@ -57,12 +62,13 @@ unreleased binary v3 prototype; v1/v2 compatibility is preserved.
 
 ## Compatibility and recovery
 
-`toShareUri()` always writes v3. The verified sharing helper preserves v2
-only for legacy mnemonic whitespace. `toRecoveryUri()`
+`toShareUri()` writes v3 for ordinary cards and v4 for cards carrying the
+optional `skipScan` policy. The verified sharing helper preserves v2
+for legacy mnemonic whitespace. `toRecoveryUri()`
 continues writing the established v2 JSON format. `toUri()` remains a v2 alias
 for existing callers. Sender addresses, creation times, status, funding
 transactions, and claim evidence stay in their existing secure records.
-Incoming v3 links persist through that same v2 representation. Decoding rejects
+Incoming v3/v4 links persist through that same v2 representation. Decoding rejects
 links whose v2 recovery URI exceeds 16 KiB, including the expanded mnemonic,
 JSON field names, string escaping, and Base64 encoding.
 
@@ -77,26 +83,57 @@ existing legacy-directory preference when submission evidence exists. Intake
 equality continues comparing normalized logical payloads rather than the wire
 version. Different amounts, birthdays, labels, or presentation remain distinct.
 
-Desktop and mobile share v3 without an older-version copy
-option. Recipients must upgrade to a v3-capable Vizor to claim compact links.
+Desktop and mobile share ordinary cards as v3 without an older-version copy
+option. Event links carrying the scan policy require a v4-capable reader.
 Existing v1 and v2 links remain readable.
 
-| Reader | v1 | v2 | v3 |
-| --- | --- | --- | --- |
-| V1-only Vizor | Yes | No | No |
-| V2-capable Vizor | Yes | Yes | No |
-| This implementation | Yes | Yes | Yes |
+| Reader | v1 | v2 | v3 | v4 |
+| --- | --- | --- | --- | --- |
+| V1-only Vizor | Yes | No | No | No |
+| V2-capable Vizor | Yes | Yes | No | No |
+| Existing v3 reader | Yes | Yes | Yes | No |
+| This implementation | Yes | Yes | Yes | Yes |
 
 An older installed app may intercept a new link before a browser fallback can
-help. Recipients need a v3-capable build for new links. Existing v1/v2 links
-remain readable without migration.
+help. Recipients need a v3-capable build for ordinary compact links and a
+v4-capable build for event-option links. Existing v1/v2/v3 links remain readable
+without migration.
+
+### Optional event policy in v4
+
+V3 keeps its original four-to-eight-entry array and rejects extra fields.
+V4 uses `#v4=<payload>` with the same entries at positions 0 through 7 and
+an optional options object at position 8. Its array has four to nine entries;
+all options belong in that object rather than new array positions.
+
+```json
+{"skipScan": true}
+```
+
+Missing or null options, or a missing or false `skipScan`, mean the ordinary
+policy. A present `skipScan` must be a boolean. Unknown option keys are ignored
+when reading and omitted when reserializing. Writers select v4 when the known
+policy is enabled; normal links retain their existing v3 representation.
+Future optional keys can use the same object without changing v3's schema.
+
+The link model retains this policy through metadata resolution, sharing, and
+the sender and recipient stores' v2 recovery representation. It participates
+in payload equality but does not change the claim-wallet cache identity.
+The v2 recovery representation is existing local storage, not the selected
+event-sharing format. Apps without a v4 reader reject v4 links rather than
+silently ignoring the event policy.
+
+This change carries the policy only. The scan-free claim execution path is
+not connected yet; the existing claim path still obtains its funds and spend
+witnesses through scanning.
 
 ## Rollout and local testing
 
-V3 sharing is enabled by default, with no build flag. The gateway must accept
-opaque `#v3=` envelopes and recipients must have a v3-capable wallet. There is
-no online recipient capability check or automatic downgrade for older apps.
-This PR does not deploy the gateway.
+Ordinary cards use v3 sharing by default, with no build flag. Event options
+select v4. The gateway must accept opaque `#v3=` and `#v4=` envelopes. Ordinary
+recipients need a v3-capable wallet; event recipients need a v4-capable wallet.
+There is no online recipient capability check or automatic downgrade for older
+apps. These local changes do not deploy the gateway.
 
 Run `fvm flutter test test/features/payment_links/compact_payment_link_test.dart`
 for codec, persistence, copy, and QR navigation regressions. The existing

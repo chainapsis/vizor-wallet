@@ -31,6 +31,7 @@ VizorPaymentLink card({
   PaymentLinkPresentation? presentation,
   BigInt? amount,
   int height = 3483141,
+  bool skipScan = false,
 }) => VizorPaymentLink(
   network: 'main',
   address: 'locally-verified-address',
@@ -40,6 +41,7 @@ VizorPaymentLink card({
   label: label,
   createdAt: DateTime.utc(2026, 9, 14),
   presentation: presentation,
+  skipScan: skipScan,
 );
 const decorated = PaymentLinkPresentation(
   artworkId: 'knightMagic',
@@ -47,11 +49,13 @@ const decorated = PaymentLinkPresentation(
   fiatSnapshot: PaymentLinkFiatSnapshot(amount: 11.1747),
 );
 String wire(VizorPaymentLink card) => card.toShareUri().toString();
-String withJson(Object? payload) =>
-    withJsonBytes(utf8.encode(jsonEncode(payload)));
-String withJsonBytes(List<int> bytes) => card()
+String withJson(Object? payload, {int version = 3}) =>
+    withJsonBytes(utf8.encode(jsonEncode(payload)), version: version);
+String withJsonBytes(List<int> bytes, {int version = 3}) => card()
     .toShareUri()
-    .replace(fragment: 'v3=${base64UrlEncode(bytes).replaceAll('=', '')}')
+    .replace(
+      fragment: 'v$version=${base64UrlEncode(bytes).replaceAll('=', '')}',
+    )
     .toString();
 List<Object?> fieldsOf(String link) =>
     jsonDecode(
@@ -153,74 +157,115 @@ void main() {
   );
 
   test(
-    'v3 persists as v2 and retains funding and pending-claim evidence on restart',
+    'event options use v4 and keep funding-address and entropy validation',
     () async {
-      final source = card(presentation: decorated);
-      final decoded = VizorPaymentLink.parse(wire(source)).withResolvedMetadata(
-        address: source.address,
-        createdAt: source.createdAt,
-      );
-      final senderStorage = _MemoryStorage();
-      final sender = PaymentLinkRecoveryStore(senderStorage);
-      await sender.saveDraft(
-        link: decoded,
-        sourceAccountUuid: 'sender',
-        claimFeeReserveZatoshi: BigInt.from(10000),
-      );
-      await sender.markFunded(
-        address: decoded.address,
-        fundingTxids: 'funding-txid',
-      );
-      final senderJson =
-          jsonDecode(senderStorage.value!) as Map<String, dynamic>;
+      final source = card(skipScan: true, presentation: decorated);
+      final shared = await preparePaymentLinkShareUri(source);
+      expect(shared.fragment, startsWith('v4='));
+      expect(shared.query, isEmpty);
+      expect(fieldsOf(shared.toString())[8], {'skipScan': true});
+      final restored = VizorPaymentLink.parse(shared.toString());
+      expect(restored.skipScan, isTrue);
+      expect(restored.hasSameCanonicalPayload(source), isTrue);
+      expect(restored.toShareUri(), shared);
+      expect(api.validatedMnemonics, [source.mnemonic]);
       expect(
-        Uri.parse(
-          (senderJson['records'] as List).single['link'] as String,
-        ).fragment,
-        startsWith('v2='),
+        paymentLinkClaimWalletDirectoryName(source),
+        paymentLinkClaimWalletDirectoryName(card()),
       );
-      final restoredSender = (await PaymentLinkRecoveryStore(
-        senderStorage,
-      ).load()).single;
-      expect(restoredSender.link.toRecoveryUri(), source.toRecoveryUri());
-      expect(restoredSender.fundingTxids, 'funding-txid');
-      expect(restoredSender.state, PaymentLinkRecoveryState.funded);
-      final receiverStorage = _MemoryStorage();
-      var receiver = PaymentLinkReceivedStore(receiverStorage);
-      await receiver.saveReady(decoded);
-      await receiver.markClaimStarted(
-        address: decoded.address,
-        destinationAccountUuid: 'receiver',
-        priorTxids: ['prior-txid'],
+
+      api.failEntropy = true;
+      await expectLater(
+        preparePaymentLinkShareUri(source),
+        throwsFormatException,
       );
-      await receiver.markReceiving(
-        address: decoded.address,
-        destinationAccountUuid: 'receiver',
-        claimTxids: 'claim-txid',
-      );
-      final receiverJson =
-          jsonDecode(receiverStorage.value!) as Map<String, dynamic>;
-      expect(
-        Uri.parse(
-          (receiverJson['records'] as List).single['claimLink'] as String,
-        ).fragment,
-        startsWith('v2='),
-      );
-      receiver = PaymentLinkReceivedStore(receiverStorage);
-      await receiver.saveReady(
-        VizorPaymentLink.parse(legacyPaymentLinkUri(source).toString()),
-      );
-      final restoredReceiver = (await receiver.load()).single;
-      expect(restoredReceiver.status, PaymentLinkReceivedStatus.receiving);
-      expect(restoredReceiver.claimTxids, 'claim-txid');
-      expect(restoredReceiver.destinationAccountUuid, 'receiver');
-      expect(restoredReceiver.claimPriorTxids, ['prior-txid']);
-      expect(
-        restoredReceiver.claimLink!.toRecoveryUri(),
-        source.toRecoveryUri(),
+      api.failEntropy = false;
+      api.failAddress = true;
+      await expectLater(
+        preparePaymentLinkShareUri(source),
+        throwsFormatException,
       );
     },
   );
+
+  for (final skipScan in [false, true]) {
+    test(
+      '${skipScan ? 'event v4' : 'ordinary v3'} retains options and claim evidence on restart',
+      () async {
+        final source = card(presentation: decorated, skipScan: skipScan);
+        final decoded = VizorPaymentLink.parse(wire(source))
+            .withResolvedMetadata(
+              address: source.address,
+              createdAt: source.createdAt,
+            );
+        final senderStorage = _MemoryStorage();
+        final sender = PaymentLinkRecoveryStore(senderStorage);
+        await sender.saveDraft(
+          link: decoded,
+          sourceAccountUuid: 'sender',
+          claimFeeReserveZatoshi: BigInt.from(10000),
+        );
+        await sender.markFunded(
+          address: decoded.address,
+          fundingTxids: 'funding-txid',
+        );
+        final senderJson =
+            jsonDecode(senderStorage.value!) as Map<String, dynamic>;
+        expect(
+          Uri.parse(
+            (senderJson['records'] as List).single['link'] as String,
+          ).fragment,
+          startsWith('v2='),
+        );
+        final restoredSender = (await PaymentLinkRecoveryStore(
+          senderStorage,
+        ).load()).single;
+        expect(restoredSender.link.toRecoveryUri(), source.toRecoveryUri());
+        expect(restoredSender.link.skipScan, skipScan);
+        expect(
+          await preparePaymentLinkShareUri(restoredSender.link),
+          source.toShareUri(),
+        );
+        expect(restoredSender.fundingTxids, 'funding-txid');
+        expect(restoredSender.state, PaymentLinkRecoveryState.funded);
+        final receiverStorage = _MemoryStorage();
+        var receiver = PaymentLinkReceivedStore(receiverStorage);
+        await receiver.saveReady(decoded);
+        await receiver.markClaimStarted(
+          address: decoded.address,
+          destinationAccountUuid: 'receiver',
+          priorTxids: ['prior-txid'],
+        );
+        await receiver.markReceiving(
+          address: decoded.address,
+          destinationAccountUuid: 'receiver',
+          claimTxids: 'claim-txid',
+        );
+        final receiverJson =
+            jsonDecode(receiverStorage.value!) as Map<String, dynamic>;
+        expect(
+          Uri.parse(
+            (receiverJson['records'] as List).single['claimLink'] as String,
+          ).fragment,
+          startsWith('v2='),
+        );
+        receiver = PaymentLinkReceivedStore(receiverStorage);
+        await receiver.saveReady(
+          VizorPaymentLink.parse(legacyPaymentLinkUri(source).toString()),
+        );
+        final restoredReceiver = (await receiver.load()).single;
+        expect(restoredReceiver.status, PaymentLinkReceivedStatus.receiving);
+        expect(restoredReceiver.claimTxids, 'claim-txid');
+        expect(restoredReceiver.destinationAccountUuid, 'receiver');
+        expect(restoredReceiver.claimPriorTxids, ['prior-txid']);
+        expect(restoredReceiver.claimLink!.skipScan, skipScan);
+        expect(
+          restoredReceiver.claimLink!.toRecoveryUri(),
+          source.toRecoveryUri(),
+        );
+      },
+    );
+  }
 
   test('rejects v3 labels that exceed the v2 recovery limit', () async {
     final oversized = card(label: '"' * 6000);
@@ -310,6 +355,20 @@ void main() {
       }
     },
   );
+
+  test('event options never downgrade to legacy whitespace links', () async {
+    final source = card(
+      mnemonic: phrase(32).replaceAll(' ', '  '),
+      skipScan: true,
+    );
+    final saved = source.toRecoveryUri();
+    await expectLater(
+      preparePaymentLinkShareUri(source),
+      throwsFormatException,
+    );
+    expect(source.toRecoveryUri(), saved);
+    expect(source.skipScan, isTrue);
+  });
 
   test(
     'legacy whitespace never bypasses address or payload validation',
@@ -518,6 +577,79 @@ void main() {
       utf8.encode(const JsonEncoder.withIndent('  ').convert(fields)),
     );
     expect(VizorPaymentLink.parse(pretty).toShareUri(), plain.toShareUri());
+  });
+
+  test('v4 defaults missing, null and false options to ordinary policy', () {
+    final source = card();
+    final uri = source.toShareUri();
+    expect(VizorPaymentLink.parse(uri.toString()).skipScan, isFalse);
+    final fields = [...fieldsOf(uri.toString()), null, null, null, null];
+    for (final payload in [
+      fieldsOf(uri.toString()),
+      [...fields, null],
+      [...fields, <String, Object?>{}],
+      [
+        ...fields,
+        {'skipScan': false},
+      ],
+    ]) {
+      final decoded = VizorPaymentLink.parse(withJson(payload, version: 4));
+      expect(decoded.skipScan, isFalse);
+      expect(decoded.toShareUri(), uri);
+    }
+  });
+
+  test('v4 ignores unknown option keys without losing known scan policy', () {
+    final source = card(skipScan: true);
+    final futurePayload = fieldsOf(wire(source));
+    futurePayload[8] = {
+      'skipScan': true,
+      'futureOption': {'enabled': true},
+    };
+    final restored = VizorPaymentLink.parse(
+      withJson(futurePayload, version: 4),
+    );
+    expect(restored.skipScan, isTrue);
+    expect(restored.hasSameCanonicalPayload(source), isTrue);
+    expect(restored.toShareUri(), source.toShareUri());
+  });
+
+  test('v3 retains its eight-field limit and rejects event extensions', () {
+    final eventPayload = fieldsOf(wire(card(skipScan: true)));
+    expect(
+      () => VizorPaymentLink.parse(withJson(eventPayload)),
+      throwsFormatException,
+    );
+    expect(api.decodingCalls, 0);
+  });
+
+  test('v4 validates known options before mnemonic conversion', () {
+    final fields = [...fieldsOf(wire(card())), null, null, null, null];
+    for (final options in <Object?>[
+      true,
+      'skip',
+      <Object?>[],
+      {'skipScan': null},
+      {'skipScan': 'true'},
+      {'skipScan': 1},
+    ]) {
+      expect(
+        () =>
+            VizorPaymentLink.parse(withJson([...fields, options], version: 4)),
+        throwsFormatException,
+      );
+    }
+    expect(
+      () => VizorPaymentLink.parse(
+        withJson([
+          ...fields,
+          {'skipScan': true},
+          null,
+        ], version: 4),
+      ),
+      throwsFormatException,
+    );
+    expect(api.decodingCalls, 0);
   });
 
   test('bounds numbers, messages and labels on write', () {

@@ -29,6 +29,7 @@ abstract final class _CompactPaymentLinkCodec {
         link.presentation?.fiatSnapshot?.amount,
         presentation?['message'],
         label == _defaultLabel ? null : label,
+        if (link.skipScan) {'skipScan': true},
       ];
       while (payload.length > 4 && payload.last == null) {
         payload.removeLast();
@@ -39,13 +40,13 @@ abstract final class _CompactPaymentLinkCodec {
     }
   }
 
-  static VizorPaymentLink decode(String encoded) {
+  static VizorPaymentLink decode(String encoded, {bool withOptions = false}) {
     try {
       if (encoded.length > VizorPaymentLink.maxEncodedLength) throw _invalid;
       final payload = jsonDecode(utf8.decode(_decodeBase64(encoded)));
       if (payload is! List<Object?> ||
           payload.length < 4 ||
-          payload.length > 8) {
+          payload.length > (withOptions ? 9 : 8)) {
         throw _invalid;
       }
       final network = payload[0];
@@ -69,6 +70,9 @@ abstract final class _CompactPaymentLinkCodec {
       final message = payload.length > 6 ? payload[6] : null;
       final label = payload.length > 7 ? payload[7] : null;
       if (label != null && label is! String) throw _invalid;
+      final skipScan = withOptions && payload.length > 8
+          ? _readSkipScanOption(payload[8])
+          : false;
       final presentation = PaymentLinkPresentation.fromPayload({
         'artworkId': artwork,
         'message': message,
@@ -84,6 +88,7 @@ abstract final class _CompactPaymentLinkCodec {
         label: (label as String?)?.trim() ?? _defaultLabel,
         createdAt: null,
         presentation: presentation,
+        skipScan: skipScan,
       );
       // Accepted gifts must fit the durable recovery format before claim.
       link.toRecoveryUri();
@@ -91,6 +96,14 @@ abstract final class _CompactPaymentLinkCodec {
     } catch (_) {
       throw _invalid;
     }
+  }
+
+  static bool _readSkipScanOption(Object? options) {
+    if (options == null) return false;
+    if (options is! Map<String, Object?>) throw _invalid;
+    final skipScan = options['skipScan'];
+    if (options.containsKey('skipScan') && skipScan is! bool) throw _invalid;
+    return skipScan == true;
   }
 
   static void _validateRequired(String network, int height, BigInt amount) {

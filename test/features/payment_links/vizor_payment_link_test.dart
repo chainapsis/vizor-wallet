@@ -81,6 +81,61 @@ void main() {
       });
     });
 
+    test('preserves the scan policy through recovery serialization', () {
+      final source = _link(skipScan: true);
+      final uri = source.toRecoveryUri();
+      final payload = _decodePayload(uri);
+      expect(payload['v'], 2);
+      expect(payload['skipScan'], isTrue);
+      expect(uri.query, isEmpty);
+
+      final restored = VizorPaymentLink.parse(uri.toString());
+      expect(restored.skipScan, isTrue);
+      expect(restored.toRecoveryUri(), uri);
+      expect(restored.hasSameCanonicalPayload(source), isTrue);
+      expect(restored.hasSameCanonicalPayload(_link()), isFalse);
+      expect(
+        restored
+            .withResolvedMetadata(
+              address: source.address,
+              createdAt: source.createdAt,
+            )
+            .toRecoveryUri(),
+        uri,
+      );
+    });
+
+    test('missing and false scan options keep the existing v2 payload', () {
+      final source = _link();
+      final uri = source.toRecoveryUri();
+      final payload = _decodePayload(uri);
+      expect(payload.containsKey('skipScan'), isFalse);
+      expect(VizorPaymentLink.parse(uri.toString()).skipScan, isFalse);
+
+      payload['skipScan'] = false;
+      final explicitFalse = uri.replace(
+        fragment: 'v2=${base64UrlEncode(utf8.encode(jsonEncode(payload)))}',
+      );
+      final restored = VizorPaymentLink.parse(explicitFalse.toString());
+      expect(restored.skipScan, isFalse);
+      expect(restored.toRecoveryUri(), uri);
+      expect(restored.hasSameCanonicalPayload(source), isTrue);
+    });
+
+    test('rejects scan options with non-boolean values', () {
+      final uri = _link().toRecoveryUri();
+      for (final value in [null, 'true', 1, <String, Object?>{}, <Object?>[]]) {
+        final payload = _decodePayload(uri)..['skipScan'] = value;
+        final malformed = uri.replace(
+          fragment: 'v2=${base64UrlEncode(utf8.encode(jsonEncode(payload)))}',
+        );
+        expect(
+          () => VizorPaymentLink.parse(malformed.toString()),
+          throwsFormatException,
+        );
+      }
+    });
+
     test('compares the complete canonical payment-link payload', () {
       final original = _link();
       final roundTripped = VizorPaymentLink.parse(original.toUri().toString());
@@ -361,6 +416,7 @@ VizorPaymentLink _link({
   String label = 'Demo link',
   DateTime? createdAt,
   PaymentLinkPresentation? presentation,
+  bool skipScan = false,
 }) {
   return VizorPaymentLink(
     network: network,
@@ -371,5 +427,6 @@ VizorPaymentLink _link({
     label: label,
     createdAt: createdAt ?? DateTime.utc(2026, 6, 21, 12),
     presentation: presentation,
+    skipScan: skipScan,
   );
 }

@@ -163,6 +163,7 @@ class VizorPaymentLink {
     required this.label,
     required DateTime createdAt,
     this.presentation,
+    this.skipScan = false,
     this.isCreatedAtProvisional = false,
   }) : _address = address,
        _createdAt = createdAt;
@@ -176,6 +177,7 @@ class VizorPaymentLink {
     required this.label,
     required DateTime? createdAt,
     required this.presentation,
+    this.skipScan = false,
     this.isCreatedAtProvisional = false,
   }) : _address = address,
        _createdAt = createdAt;
@@ -194,22 +196,25 @@ class VizorPaymentLink {
   final String label;
   final DateTime? _createdAt;
 
+  /// Event policy carried by the v4 share and stable recovery payloads.
+  final bool skipScan;
+
   /// Local-only provenance; never included in the shared payload.
   final bool isCreatedAtProvisional;
   final PaymentLinkPresentation? presentation;
 
   /// The address derived from [mnemonic], when it is known locally.
   ///
-  /// Versions 2 and 3 do not carry this value. A received link gains it when its
-  /// temporary claim wallet imports the mnemonic.
+  /// Versions 2 through 4 do not carry this value. A received link gains it
+  /// when its temporary claim wallet imports the mnemonic.
   String get address =>
       _address ??
       (throw StateError('Payment link address has not been derived yet.'));
 
   /// The card creation time, when it is known locally or from the chain.
   ///
-  /// Versions 2 and 3 do not carry this value. A received link gains it from the
-  /// funding transaction's block time after its claim wallet syncs.
+  /// Versions 2 through 4 do not carry this value. A received link gains it
+  /// from the funding transaction's block time after its claim wallet syncs.
   DateTime get createdAt =>
       _createdAt ??
       (throw StateError('Payment link creation time is not known yet.'));
@@ -237,6 +242,7 @@ class VizorPaymentLink {
       isCreatedAtProvisional:
           isCreatedAtProvisional ?? this.isCreatedAtProvisional,
       presentation: presentation,
+      skipScan: skipScan,
     );
   }
 
@@ -264,20 +270,32 @@ class VizorPaymentLink {
 
   /// Serialize for sharing. Callers dropping a known address must first verify
   /// it asynchronously with [rust_wallet.validateGiftAddress].
-  Uri toShareUri() => _uri('v3=${_CompactPaymentLinkCodec.encode(this)}');
+  Uri toShareUri() => _shareUri();
 
-  /// Returns v2 only when legacy mnemonic whitespace cannot be carried by v3.
+  Uri _shareUri({String? mnemonic}) {
+    final version = skipScan ? 4 : 3;
+    return _uri(
+      'v$version=${_CompactPaymentLinkCodec.encode(this, mnemonic: mnemonic)}',
+    );
+  }
+
+  /// Returns v2 for ordinary cards whose legacy whitespace cannot fit v3.
   /// The caller must first verify the original mnemonic against a known address.
   /// Canonicalization is used only to validate, never to replace the stored secret.
   Uri? toLegacyWhitespaceShareUri() {
     final original = mnemonic.trim();
     final canonical = original.split(RegExp(r'\s+')).join(' ');
     if (canonical == original) return null;
+    if (skipScan) {
+      throw const FormatException(
+        'Event gift cards require a standard secret passphrase.',
+      );
+    }
     if (knownAddress == null) {
       throw const FormatException('Gift card address could not be verified.');
     }
     // Apply every compact payload check as well, including BIP-39 validation.
-    _uri('v3=${_CompactPaymentLinkCodec.encode(this, mnemonic: canonical)}');
+    _shareUri(mnemonic: canonical);
     return toRecoveryUri();
   }
 
@@ -308,6 +326,7 @@ class VizorPaymentLink {
       'mnemonic': mnemonic.trim(),
       'birthdayHeight': birthdayHeight,
       'label': label.trim(),
+      if (skipScan) 'skipScan': true,
     };
     final presentationPayload = presentation?.toPayload();
     if (presentationPayload != null) {
@@ -336,6 +355,12 @@ class VizorPaymentLink {
     final fragment = uri.fragment;
     if (fragment.startsWith('v3=')) {
       return _CompactPaymentLinkCodec.decode(fragment.substring(3));
+    }
+    if (fragment.startsWith('v4=')) {
+      return _CompactPaymentLinkCodec.decode(
+        fragment.substring(3),
+        withOptions: true,
+      );
     }
     final int expectedVersion;
     final String fragmentPrefix;
@@ -368,6 +393,11 @@ class VizorPaymentLink {
     final payload = decodedJson;
     if (payload['v'] != expectedVersion) {
       throw const FormatException('Payment link version is not supported.');
+    }
+
+    final skipScan = payload['skipScan'];
+    if (payload.containsKey('skipScan') && skipScan is! bool) {
+      throw const FormatException('Payment link scan option is invalid.');
     }
 
     final network = _readString(payload, 'network');
@@ -416,6 +446,7 @@ class VizorPaymentLink {
       label: label,
       createdAt: createdAt,
       presentation: presentation,
+      skipScan: skipScan == true,
     );
   }
 
