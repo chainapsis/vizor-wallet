@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
+import '../../../providers/app_security_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../models/vizor_payment_link.dart';
 import '../services/payment_link_service.dart';
@@ -112,9 +113,23 @@ class GiftClaimFlowNotifier extends Notifier<GiftClaimFlowState?> {
   // Different payloads can use the same claim wallet. Drain the old check and
   // its cleanup before inspecting another payload with that wallet identity.
   final _cleanupByWallet = <String, Future<void>>{};
+  Completer<void>? _unlockWaiter;
+  int _lockGeneration = 0;
 
   @override
   GiftClaimFlowState? build() {
+    ref.listen(appSecurityProvider, (previous, next) {
+      if (next.requiresUnlock) {
+        if (previous?.requiresUnlock != true) _lockGeneration++;
+      } else {
+        _unlockWaiter?.complete();
+        _unlockWaiter = null;
+      }
+    });
+    ref.onDispose(() {
+      _unlockWaiter?.complete();
+      _unlockWaiter = null;
+    });
     // When the first wallet appears, setup or Payment Links owns the Card; the
     // claim wallet this flow checked stays available for that handoff.
     ref.listen(walletProvider, (previous, next) {
@@ -151,7 +166,10 @@ class GiftClaimFlowNotifier extends Notifier<GiftClaimFlowState?> {
   }
 
   /// Navigation away releases only the setup owned by this screen.
-  void finishWalletSetup(PaymentLinkClaimInspection inspection) {
+  void finishWalletSetup(
+    PaymentLinkClaimInspection inspection, {
+    bool handedOff = false,
+  }) {
     if (!ref.mounted ||
         state?.walletSetupInProgress != true ||
         !identical(state?.inspection, inspection)) {
@@ -160,9 +178,10 @@ class GiftClaimFlowNotifier extends Notifier<GiftClaimFlowState?> {
     final finished = state;
     _generation++;
     state = null;
-    // A completed account/Received handoff owns the cache. If setup was
-    // abandoned earlier, discard it; the service also protects partial journals.
-    if (ref.read(walletProvider).value?.hasWallet != true) {
+    // Only this Card's durable handoff owns the cache, not an existing account.
+    // The service still protects partially saved account recovery journals.
+    if (!handedOff) {
+      ref.read(paymentLinkIntakeProvider.notifier).discard(inspection.link);
       _queueInspectionCleanup(finished);
     }
   }
@@ -362,7 +381,18 @@ class GiftClaimFlowNotifier extends Notifier<GiftClaimFlowState?> {
       final finished = task == null ? flow : await task;
       final inspection = finished.inspection ?? flow.inspection;
       if (inspection != null) {
-        await operations.discardClaimInspection(inspection);
+        // Locked storage cannot prove this wallet is unsaved. Retain the
+        // cleanup (and serialize any reopening) until ownership can be checked.
+        while (ref.mounted) {
+          if (ref.read(appSecurityProvider).requiresUnlock) {
+            await (_unlockWaiter ??= Completer<void>()).future;
+            continue;
+          }
+          final lockGeneration = _lockGeneration;
+          await operations.discardClaimInspection(inspection);
+          if (!ref.mounted || lockGeneration == _lockGeneration) return;
+          // A lock during the asynchronous ownership check can skip deletion.
+        }
       }
     }();
     _cleanupByWallet[walletId] = cleanup;

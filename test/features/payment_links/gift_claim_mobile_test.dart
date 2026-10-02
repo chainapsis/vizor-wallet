@@ -1174,6 +1174,50 @@ void main() {
     },
   );
 
+  testWidgets(
+    'locking during additional Gift customisation cleans up after unlock',
+    (tester) async {
+      final container = await pumpWelcome(
+        tester,
+        restored: true,
+        addingGiftAccount: true,
+        clipboard: incomingLink.toUri().toString(),
+      );
+      final router = GoRouter.of(tester.element(find.byType(Navigator).last));
+      router.push('/add-account');
+      await tester.pumpAndSettle();
+      await tester.tap(keyed('mobile_welcome_redeem_card'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Paste card link'));
+      await tester.pumpAndSettle();
+      await tester.tap(keyed('gift_claim_create_a_wallet_to_claim'));
+      await tester.pumpAndSettle();
+      expect(find.byType(MobileCustomiseAccountScreen), findsOneWidget);
+      container
+          .read(paymentLinkIntakeProvider.notifier)
+          .prioritize(incomingLink);
+
+      final security =
+          container.read(appSecurityProvider.notifier) as _Security;
+      security.lock();
+      await tester.pumpAndSettle();
+      expect(location(tester), '/unlock');
+      expect(operations.discarded, isEmpty);
+      expect(container.read(paymentLinkIntakeProvider).pendingLink, isNull);
+      expect(
+        container.read(accountProvider).value!.accounts.map((a) => a.uuid),
+        ['original'],
+      );
+
+      security.commitPasswordSetup();
+      await tester.pumpAndSettle();
+      expect(location(tester), '/home');
+      expect(operations.discarded, hasLength(1));
+      expect(operations.claimedDestinations, isEmpty);
+      expect(find.byType(GiftClaimScreen), findsNothing);
+    },
+  );
+
   testWidgets('an incoming Card opens over Welcome', (tester) async {
     final container = await pumpWelcome(tester);
     operations.waiting = true;

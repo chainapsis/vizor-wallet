@@ -2002,10 +2002,9 @@ class PaymentLinkService
   ) async {
     await _claimWallet.cancelClaimSync(inspection.link);
     // Locked storage cannot establish whether a saved card owns this wallet.
-    // TODO(gift onboarding): When wiring callers that can discard while locked,
-    // retain cleanup intent and retry the ownership check after unlock before
-    // deleting unsaved wallets. These guards preserve the DB without scheduling
-    // a retry; the normal first-wallet handoff must keep the inspected wallet.
+    // GiftClaimFlow retains cleanup intent and retries after unlock. Other
+    // callers must also retry before relying on this guard to delete a wallet;
+    // this method alone preserves the DB without scheduling a retry.
     if (_ref.read(appSecurityProvider).requiresUnlock) return;
     // A partially created first account may own this inspection before its
     // Received record is written. Its recovery journal must keep the cache.

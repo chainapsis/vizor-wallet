@@ -88,7 +88,7 @@ Future<void> completeGiftClaimWalletSetup(
                   );
                 }),
           );
-          flow.finishWalletSetup(inspection);
+          flow.finishWalletSetup(inspection, handedOff: true);
           onComplete();
         }),
       );
