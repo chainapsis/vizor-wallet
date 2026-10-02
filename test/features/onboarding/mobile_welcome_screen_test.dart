@@ -406,19 +406,19 @@ void main() {
       expect(GoRouterState.of(tester.element(welcome)).uri.path, entry);
       expect(
         find.byKey(const ValueKey('mobile_welcome_redeem_card')),
-        entry == '/welcome' ? findsOneWidget : findsNothing,
+        findsOneWidget,
       );
     });
   }
 
-  testWidgets('add-account Welcome hides Gift Card and returns home', (
+  testWidgets('add-account Welcome offers Gift Card and returns home', (
     tester,
   ) async {
     await pump(tester, location: '/add-account');
-    expect(find.text('Activate gift card'), findsNothing);
+    expect(find.text('Activate gift card'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('mobile_welcome_redeem_card')),
-      findsNothing,
+      findsOneWidget,
     );
     await tester.tap(find.bySemanticsLabel('Back'));
     await tester.pumpAndSettle();

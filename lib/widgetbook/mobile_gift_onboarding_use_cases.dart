@@ -1,6 +1,7 @@
 // ignore_for_file: depend_on_referenced_packages
 // Preview boundaries are in memory; no wallet, network, storage or Rust calls.
 import 'dart:async';
+import '../src/features/payment_links/providers/gift_card_entry_price_provider.dart';
 import 'dart:io';
 import 'dart:math';
 
@@ -335,6 +336,7 @@ class _GiftPreviewState extends State<_GiftPreview> {
                     : null,
               ),
             ),
+          giftCardEntryPriceProvider.overrideWith((ref) async => 31.9618),
           accountProvider.overrideWith(() => _accounts),
           appSecurityProvider.overrideWith(_GiftPreviewSecurity.new),
           biometricUnlockProvider.overrideWith(_GiftPreviewBiometrics.new),
@@ -640,6 +642,9 @@ class _GiftPreviewSecurity extends AppSecurityNotifier {
   @override
   String requireSessionPasswordForNativeSecretUse() => _passcode;
   @override
+  Future<void> completePasswordSetup() async => commitPasswordSetup();
+
+  @override
   void commitPasswordSetup() => state = const AppSecurityState(
     isPasswordConfigured: true,
     isUnlocked: true,
@@ -881,6 +886,7 @@ class _InspectedGiftFlow extends GiftClaimFlowNotifier {
     phase: GiftClaimPhase.inspected,
     inspection: _previewInspection(_link),
     setupPasscode: setupPasscode,
+    walletSetupInProgress: setupPasscode != null,
   );
 }
 

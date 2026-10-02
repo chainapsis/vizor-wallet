@@ -1655,7 +1655,6 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     final epoch = _mobileNavigationEpoch;
     setState(() {
       _operationInProgress = true;
-      _redeemState = PaymentLinkRedeemVisualState.loading;
       _retryLink = null;
       _redeemFromQrCode = false;
     });

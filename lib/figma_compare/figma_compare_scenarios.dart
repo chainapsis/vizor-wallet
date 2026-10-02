@@ -1,4 +1,5 @@
 import 'mobile_welcome_capture.dart';
+import '../src/features/payment_links/widgets/payment_link_gift_card.dart';
 import 'ledger_pairing_capture.dart';
 import 'caps_lock_capture.dart';
 // ignore_for_file: depend_on_referenced_packages
@@ -76,6 +77,12 @@ class FigmaCompareScenario {
 /// storage, network, wallet, and Rust state. Widgetbook fixtures are preferred
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
+  FigmaCompareScenario(
+    id: 'gift-card-value',
+    description: 'Gift card value typography and optional fiat amount',
+    builder: _giftCardValueCapture,
+    mobile: true,
+  ),
   FigmaCompareScenario(
     id: 'mobile-forgot-passcode-warning',
     description: 'Reset confirmation including unbacked account warning',
@@ -2716,3 +2723,14 @@ Widget _buildLedgerVotingProcessing(BuildContext context) =>
     buildLedgerVotingProcessingPreview(
       mobile: kAppFormFactor == AppFormFactor.mobile,
     );
+
+Widget _giftCardValueCapture(BuildContext context) => const Center(
+  child: PaymentLinkGiftCard(
+    artwork: PaymentLinkCardArtwork.knightMagic,
+    cardWidth: 361,
+    cardHeight: 225.625,
+    amountText: '4.45',
+    supportingText: r'$142.23',
+    showCaret: false,
+  ),
+);

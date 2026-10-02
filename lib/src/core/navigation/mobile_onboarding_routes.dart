@@ -71,7 +71,7 @@ List<RouteBase> mobileOnboardingRoutes() => [
         state,
         child: GiftCustomiseAccountScreen(
           args: GiftCustomiseAccountArgs(
-            passcode: setup.setupPasscode!,
+            passcode: setup.setupPasscode,
             inspection: setup.inspection!,
           ),
         ),

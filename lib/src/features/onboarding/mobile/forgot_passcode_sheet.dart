@@ -43,55 +43,60 @@ class ForgotPasscodeSheet extends ConsumerWidget {
       onClose: () => Navigator.of(context).pop(false),
       bodyGap: AppSpacing.md,
       bottomPadding: AppSpacing.base,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            "If you can't remember your passcode, the only way to "
-            'recover your account is to completely reset the Vizor app, '
-            'which means deleting all accounts and requiring you to '
-            'import accounts again. Unshared gift card links will be '
-            'permanently lost.',
-            style: AppTypography.bodyMedium.copyWith(color: colors.text.accent),
-          ),
-          const SizedBox(height: AppSpacing.s),
-          Text(
-            kForgotPasscodeUnbackedAccountWarning,
-            key: const ValueKey('mobile_forgot_passcode_backup_warning'),
-            style: AppTypography.bodyMediumStrong.copyWith(
-              color: colors.text.destructive,
+      constrainBody: true,
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              "If you can't remember your passcode, the only way to "
+              'recover your account is to completely reset the Vizor app, '
+              'which means deleting all accounts and requiring you to '
+              'import accounts again. Unshared gift card links will be '
+              'permanently lost.',
+              style: AppTypography.bodyMedium.copyWith(
+                color: colors.text.accent,
+              ),
             ),
-          ),
-          if (claimsInFlight > 0) ...[
             const SizedBox(height: AppSpacing.s),
             Text(
-              kWalletResetInFlightGiftCardWarningMessage,
+              kForgotPasscodeUnbackedAccountWarning,
+              key: const ValueKey('mobile_forgot_passcode_backup_warning'),
               style: AppTypography.bodyMediumStrong.copyWith(
                 color: colors.text.destructive,
               ),
             ),
+            if (claimsInFlight > 0) ...[
+              const SizedBox(height: AppSpacing.s),
+              Text(
+                kWalletResetInFlightGiftCardWarningMessage,
+                style: AppTypography.bodyMediumStrong.copyWith(
+                  color: colors.text.destructive,
+                ),
+              ),
+            ],
+            const SizedBox(height: AppSpacing.md),
+            AppButton(
+              key: const ValueKey('mobile_forgot_passcode_reset'),
+              expand: true,
+              constrainContent: true,
+              minWidth: _kForgotPasscodeButtonMinWidth,
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const _ModalButtonLabel('Continue to reset Vizor'),
+            ),
+            const SizedBox(height: AppSpacing.s),
+            AppButton(
+              key: const ValueKey('mobile_forgot_passcode_cancel'),
+              variant: AppButtonVariant.ghost,
+              expand: true,
+              constrainContent: true,
+              minWidth: _kForgotPasscodeButtonMinWidth,
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const _ModalButtonLabel('Cancel'),
+            ),
           ],
-          const SizedBox(height: AppSpacing.md),
-          AppButton(
-            key: const ValueKey('mobile_forgot_passcode_reset'),
-            expand: true,
-            constrainContent: true,
-            minWidth: _kForgotPasscodeButtonMinWidth,
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const _ModalButtonLabel('Continue to reset Vizor'),
-          ),
-          const SizedBox(height: AppSpacing.s),
-          AppButton(
-            key: const ValueKey('mobile_forgot_passcode_cancel'),
-            variant: AppButtonVariant.ghost,
-            expand: true,
-            constrainContent: true,
-            minWidth: _kForgotPasscodeButtonMinWidth,
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const _ModalButtonLabel('Cancel'),
-          ),
-        ],
+        ),
       ),
     );
   }

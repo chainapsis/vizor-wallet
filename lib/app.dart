@@ -13,6 +13,7 @@ import 'src/core/feedback/app_review.dart';
 import 'src/core/feedback/app_review_host.dart';
 import 'src/core/input/app_password_input_source.dart';
 import 'src/app_bootstrap.dart';
+import 'src/providers/account_provider.dart';
 import 'src/core/lifecycle/signing_shutdown_host.dart';
 import 'src/core/lifecycle/app_shutdown_signal.dart';
 import 'src/core/config/swap_feature_config.dart';
@@ -553,7 +554,14 @@ String? appRedirect({
   }
   if (_isRouteOrChild(state.matchedLocation, '/gift')) {
     if (kAppFormFactor != AppFormFactor.mobile) return '/';
-    if (hasWallet) return requiresUnlock ? '/unlock' : '/payment-links';
+    if (hasWallet) {
+      if (requiresUnlock) return '/unlock';
+      if (state.matchedLocation == '/gift' &&
+          state.uri.queryParameters['addAccount'] == 'true') {
+        return null;
+      }
+      return '/payment-links';
+    }
     return null;
   }
   if (!hasWallet && isUnlockFlow) return '/welcome';
@@ -839,9 +847,13 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
                 if (!context.mounted) return;
                 context.go('/home');
               });
-            } catch (_) {
+            } catch (error) {
               if (passwordPrepared && !passwordCommitted) {
-                await securityNotifier.rollbackPasswordSetup();
+                await securityNotifier.finishPasswordSetupAfterFailure(
+                  accountMayExist:
+                      error is WalletAccountSetupInterruptedException ||
+                      (ref.read(accountProvider).value?.hasAccounts ?? false),
+                );
               }
               rethrow;
             }

@@ -267,6 +267,9 @@ class _Security extends AppSecurityNotifier {
   }
 
   @override
+  Future<void> completePasswordSetup() async => commitPasswordSetup();
+
+  @override
   void commitPasswordSetup() {
     expect(prepared, isTrue);
     events.add('commit');

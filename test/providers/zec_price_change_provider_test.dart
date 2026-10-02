@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:zcash_wallet/src/features/payment_links/providers/gift_card_entry_price_provider.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -57,6 +58,60 @@ class _FakeCache implements ZecMarketDataCache {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  group('Gift entry price', () {
+    final now = DateTime.utc(2026, 10, 2);
+    for (final fresh in [true, false]) {
+      test('uses fresh cache or fetches only once: fresh=$fresh', () async {
+        final source = _FakeSource(const ZecMarketData(usdPrice: 42));
+        final cache = _FakeCache(
+          value: fresh
+              ? CachedZecMarketData(
+                  data: const ZecMarketData(usdPrice: 31),
+                  fetchedAt: now,
+                )
+              : null,
+        );
+        final container = ProviderContainer(
+          overrides: [
+            swapFeatureEnabledProvider.overrideWithValue(true),
+            zecMarketDataSourceProvider.overrideWithValue(source),
+            zecMarketDataCacheProvider.overrideWithValue(cache),
+            zecMarketDataNowProvider.overrideWithValue(() => now),
+          ],
+        );
+        addTearDown(container.dispose);
+        final subscription = container.listen(
+          giftCardEntryPriceProvider,
+          (_, _) {},
+        );
+        addTearDown(subscription.close);
+        expect(
+          await container.read(giftCardEntryPriceProvider.future),
+          fresh ? 31 : 42,
+        );
+        expect(
+          await container.read(giftCardEntryPriceProvider.future),
+          fresh ? 31 : 42,
+        );
+        expect(source.fetchCount, fresh ? 0 : 1);
+        expect(cache.writes.length, fresh ? 0 : 1);
+      });
+    }
+    test('unavailable price resolves without an error or retry loop', () async {
+      final source = _FakeSource(null);
+      final container = ProviderContainer(
+        overrides: [
+          swapFeatureEnabledProvider.overrideWithValue(true),
+          zecMarketDataSourceProvider.overrideWithValue(source),
+          zecMarketDataCacheProvider.overrideWithValue(_FakeCache()),
+        ],
+      );
+      addTearDown(container.dispose);
+      expect(await container.read(giftCardEntryPriceProvider.future), isNull);
+      expect(source.fetchCount, 1);
+    });
+  });
 
   test('CoinGecko source uses a 20 second request timeout by default', () {
     final networkClient = NetworkHttpClient(torDesired: () => false);

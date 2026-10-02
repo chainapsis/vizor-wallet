@@ -269,6 +269,7 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
     // above it, matching the other passcode screens — which the scaffold's
     // scrolling step layout can't express.
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       backgroundColor: colors.background.window,
       body: SafeArea(
         child: Column(

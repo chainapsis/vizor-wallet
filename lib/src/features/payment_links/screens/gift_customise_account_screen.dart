@@ -17,7 +17,7 @@ class GiftCustomiseAccountArgs {
     required this.passcode,
     required this.inspection,
   });
-  final String passcode;
+  final String? passcode;
   final PaymentLinkClaimInspection inspection;
 }
 
@@ -62,7 +62,9 @@ class _GiftCustomiseAccountScreenState
     setupCommitted: _createdAccountUuid != null,
     position: OnboardingProgressPlan.forFlow(
       OnboardingFlow.gift,
-      setupMode: OnboardingSetupMode.createPasscode,
+      setupMode: widget.args.passcode == null
+          ? OnboardingSetupMode.reusePasscode
+          : OnboardingSetupMode.createPasscode,
     ).at(OnboardingStage.customiseAccount),
     onFinish: (name, profilePictureId) async {
       try {
@@ -76,7 +78,13 @@ class _GiftCustomiseAccountScreenState
           // Match normal account creation: security is committed before
           // asking for biometric unlock, then continue to Home.
           onComplete: () {
-            if (context.mounted) context.go('/onboarding/biometrics');
+            if (context.mounted) {
+              context.go(
+                widget.args.passcode == null
+                    ? '/home'
+                    : '/onboarding/biometrics',
+              );
+            }
           },
         );
       } on GiftClaimAccountCreatedException catch (error) {

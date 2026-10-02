@@ -140,6 +140,24 @@ void main() {
       ..devicePixelRatio = 1.0;
   });
 
+  testWidgets(
+    'dismissed birthday keyboard does not compress the passcode title',
+    (tester) async {
+      tester.view.physicalSize = const Size(402, 874);
+      tester.view.devicePixelRatio = 1;
+      tester.view.padding = const FakeViewPadding(top: 62, bottom: 34);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 95);
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(_app());
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      expect(find.text('Create Passcode'), findsOneWidget);
+      await _enter(tester, '123456');
+      expect(find.text('Confirm Passcode'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('six digits advance to the confirm phase', (tester) async {
     await tester.pumpWidget(_app());
     await tester.pump();

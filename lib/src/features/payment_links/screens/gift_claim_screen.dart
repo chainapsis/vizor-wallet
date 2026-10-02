@@ -14,6 +14,8 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
+import '../../../providers/zec_price_change_provider.dart';
+import '../providers/gift_card_entry_price_provider.dart';
 import '../../../providers/account_provider.dart';
 import '../../swap/models/swap_fiat_value_formatting.dart';
 import '../models/vizor_payment_link.dart';
@@ -35,7 +37,7 @@ import '../widgets/payment_link_long_sync_warning.dart';
 import '../../onboarding/mobile/mobile_onboarding_progress.dart';
 import '../../onboarding/mobile/mobile_onboarding_progress_scope.dart';
 
-/// `/gift`: a Gift Card opened on a device without a wallet. The card is
+/// `/gift`: a Gift Card opened from Welcome or Add account. The card is
 /// checked without an account; the recipient then creates or brings a wallet
 /// to claim it.
 class GiftClaimScreen extends ConsumerStatefulWidget {
@@ -85,7 +87,13 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
   Future<void> _close() async {
     try {
       await ref.read(giftClaimFlowProvider.notifier).close();
-      if (mounted) context.go('/welcome');
+      if (mounted) {
+        context.go(
+          ref.read(accountProvider).value?.hasAccounts == true
+              ? '/add-account'
+              : '/welcome',
+        );
+      }
     } catch (_) {
       if (mounted) {
         showAppToast(
@@ -151,7 +159,15 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
     _handingOff = true;
     try {
       await ref.read(giftClaimFlowProvider.notifier).cancelSetupReturn();
-      if (mounted) context.push('/gift/passcode');
+      if (!mounted) return;
+      if (ref.read(accountProvider).value?.hasAccounts == true) {
+        final inspection = ref.read(giftClaimFlowProvider)?.inspection;
+        if (inspection == null) return;
+        ref.read(giftClaimFlowProvider.notifier).beginWalletSetup(inspection);
+        context.push('/gift/customise');
+      } else {
+        context.push('/gift/passcode');
+      }
     } catch (_) {
       if (mounted) {
         showAppToast(
@@ -205,6 +221,7 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(giftCardEntryPriceProvider);
     final flow = ref.watch(giftClaimFlowProvider);
     if (flow == null) {
       return _guardBack(
@@ -212,14 +229,12 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
           backgroundColor: context.colors.background.window,
           body: SafeArea(
             child: MobileGiftCardEntryView(
-              state: _reading
-                  ? PaymentLinkRedeemMobileState.loading
-                  : _invalidPaste
+              state: _invalidPaste
                   ? PaymentLinkRedeemMobileState.invalid
                   : PaymentLinkRedeemMobileState.paste,
               onBack: _close,
-              onPaste: _paste,
-              onScan: _scan,
+              onPaste: _reading ? null : _paste,
+              onScan: _reading ? null : _scan,
             ),
           ),
         ),
@@ -360,9 +375,14 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
       cardWidth: kPaymentLinkMobileCardWidth,
       cardHeight: kPaymentLinkMobileCardHeight,
       amountText: formatZecAmount(link.amountZatoshi),
-      supportingText: snapshot == null || !ref.watch(swapFeatureEnabledProvider)
+      supportingText: !ref.watch(swapFeatureEnabledProvider)
           ? null
-          : swapFormatCompactFiatValue(snapshot.amount),
+          : snapshot != null
+          ? swapFormatCompactFiatValue(snapshot.amount)
+          : fiatTextForZatoshi(
+              link.amountZatoshi,
+              zecUsdUnitPrice: ref.watch(giftCardEntryPriceProvider).value,
+            ),
       showCaret: false,
       onTap: message.isEmpty ? null : () => setState(() => _showsBack = true),
       semanticLabel: message.isEmpty
@@ -443,8 +463,8 @@ class MobileGiftCardEntryView extends StatelessWidget {
 
   final PaymentLinkRedeemMobileState state;
   final VoidCallback onBack;
-  final VoidCallback onPaste;
-  final VoidCallback onScan;
+  final VoidCallback? onPaste;
+  final VoidCallback? onScan;
 
   @override
   Widget build(BuildContext context) {

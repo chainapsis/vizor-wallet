@@ -19,7 +19,7 @@ import 'payment_link_service.dart';
 /// Face ID and Home do not wait for binding, broadcast, or confirmations.
 Future<void> completeGiftClaimWalletSetup(
   WidgetRef ref, {
-  required String password,
+  required String? password,
   required String accountName,
   required String profilePictureId,
   required PaymentLinkClaimInspection inspection,

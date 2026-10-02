@@ -6,19 +6,24 @@ import '../../../providers/app_security_provider.dart';
 import '../../../providers/wallet_mutation_guard.dart';
 import '../models/vizor_payment_link.dart';
 
-/// Creates and durably records a first wallet for a checked Gift Card.
+/// Creates and durably records an account for a checked Gift Card.
 /// The caller pauses router refresh while this transaction is in progress.
 /// Submission and receiving-account binding happen after this boundary.
 Future<String> setUpGiftCardWallet(
   WidgetRef ref, {
-  required String passcode,
+  required String? passcode,
   required VizorPaymentLink link,
   required String accountName,
   required String profilePictureId,
 }) async {
   final security = ref.read(appSecurityProvider.notifier);
   final accounts = ref.read(accountProvider.notifier);
-  await security.preparePasswordSetup(passcode);
+  if (passcode != null) {
+    await security.preparePasswordSetup(passcode);
+  } else if (!ref.read(appSecurityProvider).isUnlocked ||
+      ref.read(accountProvider).value?.hasAccounts != true) {
+    throw StateError('An unlocked wallet is required to add an account.');
+  }
   final String uuid;
   try {
     uuid = await runWithSyncPausedForAccountMutation(
@@ -36,12 +41,14 @@ Future<String> setUpGiftCardWallet(
     final accountMayExist =
         error is GiftClaimAccountCreatedException ||
         (ref.read(accountProvider).value?.hasAccounts ?? true);
-    await security.finishPasswordSetupAfterFailure(
-      accountMayExist: accountMayExist,
-    );
+    if (passcode != null) {
+      await security.finishPasswordSetupAfterFailure(
+        accountMayExist: accountMayExist,
+      );
+    }
     rethrow;
   }
-  security.commitPasswordSetup();
+  if (passcode != null) security.commitPasswordSetup();
   try {
     await accounts.clearPendingGiftAccountSetup(accountUuid: uuid);
   } catch (error) {

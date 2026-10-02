@@ -650,8 +650,15 @@ Widget buildMobileTouchIdOptInUseCase(BuildContext context) {
   );
 }
 
-Widget buildMobileForgotPasscodeSheetUseCase(BuildContext context) {
-  return _buildMobileUnlockModalUseCase(context, const ForgotPasscodeSheet());
+Widget buildMobileForgotPasscodeSheetUseCase(
+  BuildContext context, {
+  int claimsInFlight = 0,
+}) {
+  return _buildMobileUnlockModalUseCase(
+    context,
+    const ForgotPasscodeSheet(),
+    claimsInFlight: claimsInFlight,
+  );
 }
 
 Widget buildMobileForgotPasscodeLastWarningUseCase(BuildContext context) {
@@ -4221,10 +4228,16 @@ Widget _buildMobileBiometricOptInUseCase(BiometricUnlockState biometricState) {
   );
 }
 
-Widget _buildMobileUnlockModalUseCase(BuildContext context, Widget sheet) {
+Widget _buildMobileUnlockModalUseCase(
+  BuildContext context,
+  Widget sheet, {
+  int claimsInFlight = 0,
+}) {
   return ProviderScope(
     overrides: [
-      paymentLinkClaimsInFlightProvider.overrideWith((ref) async => 0),
+      paymentLinkClaimsInFlightProvider.overrideWith(
+        (ref) async => claimsInFlight,
+      ),
       biometricUnlockProvider.overrideWith(
         () => _PreviewBiometricUnlockNotifier(
           const BiometricUnlockState(

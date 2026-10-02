@@ -28,7 +28,7 @@ class MobileWelcomeScreen extends ConsumerStatefulWidget {
     super.key,
   });
 
-  /// `/add-account` returns home and omits the walletless Gift Card entry.
+  /// `/add-account` returns home and offers the same Gift Card setup choices.
   final bool showBackButton;
   final bool animateBackground;
 
@@ -218,7 +218,7 @@ class _MobileWelcomeScreenState extends ConsumerState<MobileWelcomeScreen> {
                                             ),
                                           ),
                                         ),
-                                        if (!widget.showBackButton) ...[
+                                        ...[
                                           const SizedBox(height: AppSpacing.sm),
                                           Semantics(
                                             key: const ValueKey(
@@ -230,7 +230,11 @@ class _MobileWelcomeScreenState extends ConsumerState<MobileWelcomeScreen> {
                                               expand: true,
                                               variant: AppButtonVariant.ghost,
                                               onPressed: () => _enter(
-                                                () => context.push('/gift'),
+                                                () => context.push(
+                                                  widget.showBackButton
+                                                      ? '/gift?addAccount=true'
+                                                      : '/gift',
+                                                ),
                                               ),
                                               disabledBackgroundColor:
                                                   const Color(0x00000000),

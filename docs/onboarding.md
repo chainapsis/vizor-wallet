@@ -1,8 +1,9 @@
 # Mobile onboarding
 
 This document describes the mobile onboarding behavior integrated in PR #793.
-Desktop onboarding remains separate; this umbrella preserves its existing
-entry paths. Mobile builds, tests, and captures use
+Desktop onboarding UI remains separate; this umbrella preserves its existing
+entry paths. Shared account persistence, credentials, bootstrap, and recovery
+changes also apply to desktop and are validated in the desktop test lane. Mobile builds, tests, and captures use
 `--dart-define=VIZOR_FORM_FACTOR=mobile`.
 
 ## Entry and account setup
@@ -16,8 +17,11 @@ entry paths. Mobile builds, tests, and captures use
 | Redeem a gift card into a new wallet | Card inspection, passcode, account customisation | Claim handoff, optional Face ID, then Home |
 | Redeem a gift card into an imported wallet | Card inspection, existing import flow, receiving-account selection when needed | Claim handoff, optional Face ID, then Home |
 
-- Welcome shows the gift card entry only before an account exists. Add-account
-  entry omits it and reuses the configured passcode.
+- Both Welcome and Add account offer the gift card entry, with new-account
+  creation and wallet-import choices after inspection. Add account reuses the
+  configured passcode, preserves existing accounts, and returns to Home without
+  repeating biometric setup. It creates the recipient via the normal additional
+  software-account path, never by replacing the wallet DB.
 - A gift link opened without a wallet uses the same card entry screen. Existing
   wallets retain their unlock and gift card routes; other arriving cards remain
   queued while setup is in progress.
@@ -77,7 +81,17 @@ Account ready: 1
 Explicit paste or scan inspects the card in a temporary claim wallet without a
 receiving account. Checking uses the shared skeleton, hides amount/artwork, and
 disables dismissal. Error and unavailable-card states expose their existing
-exit/retry controls. Old birthdays keep the existing long-scan warning sheet.
+exit/retry controls. Opening the scanner or reading/validating clipboard text
+keeps the entry card; the skeleton begins only when a valid card is inspected.
+Old birthdays keep the existing long-scan warning sheet.
+
+Price lookup is independent of inspection and claim execution. Entering the
+card screen reuses a fresh persisted ZEC price or fetches it once in the
+background. A stored card fiat snapshot takes precedence; otherwise an available
+price supplies the approximate value. While price is missing or unavailable,
+only ZEC is shown. No loading indicator, periodic refresh, or awaited price
+request is added to account setup, binding, or claiming. Non-mainnet pricing
+keeps the existing feature gate.
 
 Inspection is a snapshot. It does not guarantee that funds remain available or
 that a later claim succeeds. A checked or confirmation-waiting card can proceed
@@ -326,3 +340,18 @@ the Rust call would lose recovery for broadcasts interrupted before returning.
 - [Post-creation backup](../lib/src/features/settings/screens/mobile/mobile_seed_phrase_screen.dart)
 - [Home reminder visibility](../lib/src/features/home/providers/backup_reminder_provider.dart)
 - [Account metadata and removal](../lib/src/providers/account_provider.dart)
+
+## Interrupted first-wallet imports
+
+Wallet Link writes an encrypted recovery journal before importing its first
+account. If Rust creates accounts but mnemonic or account-metadata persistence
+fails, the prepared credential is retained. Bootstrap lists the existing DB;
+unlock matches each journal entry by seed and account index, restores only
+accounts already present, and clears the journal after durable storage. Entries
+not yet imported are not created during recovery. The existing nonempty-DB guard
+continues to prevent a retry from replacing those accounts.
+
+First Keystone and Ledger imports also retain the credential if the DB contains
+an account or its state cannot be verified after a failure. The hardware UFVK
+is already in Rust; no software mnemonic journal is needed. Desktop Ledger uses
+the same failure boundary.
