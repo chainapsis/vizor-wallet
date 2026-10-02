@@ -26,12 +26,16 @@ class GiftClaimFlowState {
     required this.phase,
     this.inspection,
     this.failure,
+    this.setupPasscode,
   });
 
   final VizorPaymentLink link;
   final GiftClaimPhase phase;
   final PaymentLinkClaimInspection? inspection;
   final GiftClaimFailure? failure;
+  // Kept only until setup leaves the screen. Route refresh must not serialize it.
+  final String? setupPasscode;
+  bool get walletSetupInProgress => setupPasscode != null;
 }
 
 /// Carries the inspected Card through normal wallet import. The import commits
@@ -112,7 +116,11 @@ class GiftClaimFlowNotifier extends Notifier<GiftClaimFlowState?> {
     // Once a wallet exists, setup or Payment Links owns the Card; the
     // claim wallet this flow checked stays available for that handoff.
     ref.listen(walletProvider, (_, next) {
-      if (next.value?.hasWallet != true || state == null) return;
+      if (next.value?.hasWallet != true ||
+          state == null ||
+          state!.walletSetupInProgress) {
+        return;
+      }
       final generation = ++_generation;
       // Wallet state can rebuild lazily while the covered Gift screen builds.
       // Invalidate late checks now, then publish the handoff outside that build.
@@ -122,6 +130,31 @@ class GiftClaimFlowNotifier extends Notifier<GiftClaimFlowState?> {
       });
     });
     return null;
+  }
+
+  /// Retain the checked Card while its first account finishes durable setup.
+  void beginWalletSetup(
+    PaymentLinkClaimInspection inspection, {
+    required String passcode,
+  }) {
+    _generation++;
+    state = GiftClaimFlowState(
+      link: inspection.link,
+      phase: GiftClaimPhase.inspected,
+      inspection: inspection,
+      setupPasscode: passcode,
+    );
+  }
+
+  /// Navigation away releases only the setup owned by this screen.
+  void finishWalletSetup(PaymentLinkClaimInspection inspection) {
+    if (!ref.mounted ||
+        state?.walletSetupInProgress != true ||
+        !identical(state?.inspection, inspection)) {
+      return;
+    }
+    _generation++;
+    state = null;
   }
 
   /// Starts checking [link] unless the same Card is already open.
@@ -145,7 +178,10 @@ class GiftClaimFlowNotifier extends Notifier<GiftClaimFlowState?> {
   /// or discard a handoff already owned by a newly created/imported wallet.
   void closeAfterPop(GiftClaimFlowState? poppedFlow) {
     if (!ref.mounted || !identical(state, poppedFlow)) return;
-    if (ref.read(walletProvider).value?.hasWallet == true) return;
+    if (state?.walletSetupInProgress == true ||
+        ref.read(walletProvider).value?.hasWallet == true) {
+      return;
+    }
     unawaited(
       close().catchError((Object error) {
         log('Gift import cleanup failed: ${error.runtimeType}');

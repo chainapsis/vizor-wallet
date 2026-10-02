@@ -5,9 +5,8 @@ import 'package:go_router/go_router.dart';
 import '../../onboarding/mobile/mobile_onboarding_progress.dart';
 import '../../onboarding/mobile/mobile_passcode_screen.dart';
 import '../providers/gift_claim_flow_provider.dart';
-import 'gift_customise_account_screen.dart';
 
-/// Holds the confirmed passcode in route memory until Customise completes.
+/// Holds the confirmed passcode in live flow memory until Customise completes.
 class GiftPasscodeScreen extends ConsumerWidget {
   const GiftPasscodeScreen({super.key});
 
@@ -23,13 +22,12 @@ class GiftPasscodeScreen extends ConsumerWidget {
           if (inspection == null) {
             throw StateError('The gift card is no longer open.');
           }
-          await context.push<void>(
-            '/gift/customise',
-            extra: GiftCustomiseAccountArgs(
-              passcode: passcode,
-              inspection: inspection,
-            ),
-          );
+          // The live flow owns this transient credential through route refresh;
+          // it is never serialized into restoration or browser history.
+          ref
+              .read(giftClaimFlowProvider.notifier)
+              .beginWalletSetup(inspection, passcode: passcode);
+          context.go('/gift/customise');
         },
       );
 }

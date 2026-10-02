@@ -40,6 +40,7 @@ class MobileCustomiseAccountScreen extends ConsumerStatefulWidget {
     this.onBack,
     this.random,
     this.actionsEnabled = true,
+    this.setupCommitted = false,
     super.key,
   }) : assert(
          args != null || (onFinish != null && position != null),
@@ -59,6 +60,9 @@ class MobileCustomiseAccountScreen extends ConsumerStatefulWidget {
 
   /// A terminal setup failure can require reopening instead of creating again.
   final bool actionsEnabled;
+
+  /// The account exists; retry only its unfinished storage, keeping its persona.
+  final bool setupCommitted;
 
   @override
   ConsumerState<MobileCustomiseAccountScreen> createState() =>
@@ -152,7 +156,9 @@ class _MobileCustomiseAccountScreenState
   }
 
   void _randomisePersona() {
-    if (_isSubmitting) return;
+    if (_isSubmitting || widget.setupCommitted || !widget.actionsEnabled) {
+      return;
+    }
     final suggestion = generateAccountPersona(random: widget.random);
     _nameController.value = TextEditingValue(
       text: suggestion.name,
@@ -165,7 +171,9 @@ class _MobileCustomiseAccountScreenState
   }
 
   Future<void> _pickProfilePicture() async {
-    if (_isSubmitting) return;
+    if (_isSubmitting || widget.setupCommitted || !widget.actionsEnabled) {
+      return;
+    }
     _nameFocusNode.unfocus();
     final selected = await showProfilePictureSheet(
       context,
@@ -285,9 +293,10 @@ class _MobileCustomiseAccountScreenState
         onPressed: _canContinue ? _submit : null,
         trailing: const AppIcon(AppIcons.chevronForward),
         child: Text(switch (_submitPhase) {
-          _SubmitPhase.idle => 'Continue',
+          _SubmitPhase.idle => widget.setupCommitted ? 'Try again' : 'Continue',
           _SubmitPhase.stoppingSync => 'Stop syncing...',
-          _SubmitPhase.creatingWallet => 'Creating wallet...',
+          _SubmitPhase.creatingWallet =>
+            widget.setupCommitted ? 'Saving wallet...' : 'Creating wallet...',
         }),
       ),
       child: Column(
@@ -299,7 +308,10 @@ class _MobileCustomiseAccountScreenState
             nameFocusNode: _nameFocusNode,
             profilePictureId: _profilePictureId,
             message: _nameMessage,
-            enabled: !_isSubmitting,
+            enabled:
+                !_isSubmitting &&
+                !widget.setupCommitted &&
+                widget.actionsEnabled,
             onNameChanged: _handleNameChanged,
             onEditProfilePicture: _pickProfilePicture,
             onRandomisePersona: _randomisePersona,

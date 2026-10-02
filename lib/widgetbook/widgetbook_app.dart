@@ -1240,6 +1240,10 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildMobileGiftOnboardingSubmissionError,
                     ),
                     WidgetbookUseCase(
+                      name: 'Onboarding - Storage recovery',
+                      builder: buildMobileGiftOnboardingStorageRecovery,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Home - Empty',
                       builder: buildMobilePaymentLinkHomeEmptyUseCase,
                     ),

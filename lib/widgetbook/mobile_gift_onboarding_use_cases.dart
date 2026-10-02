@@ -68,6 +68,11 @@ Widget buildMobileGiftOnboardingSubmissionError(BuildContext context) =>
     const _GiftPreview(initialLocation: '/gift', failCreation: true);
 Widget buildMobileGiftOnboardingClaimFailure(BuildContext context) =>
     const _GiftPreview(initialLocation: '/gift/customise', failClaim: true);
+Widget buildMobileGiftOnboardingStorageRecovery(BuildContext context) =>
+    const _GiftPreview(
+      initialLocation: '/gift/customise',
+      recoverStorage: true,
+    );
 Widget buildMobileGiftOnboardingBiometrics(BuildContext context) =>
     const _GiftPreview(initialLocation: '/onboarding/biometrics');
 Widget buildMobileGiftOnboardingImportAccounts(BuildContext context) =>
@@ -127,6 +132,7 @@ class _GiftPreview extends StatefulWidget {
     this.longSyncWarning = false,
     this.failCreation = false,
     this.failClaim = false,
+    this.recoverStorage = false,
     this.walletLinkImport = false,
   });
   final String initialLocation;
@@ -135,6 +141,7 @@ class _GiftPreview extends StatefulWidget {
   final bool longSyncWarning;
   final bool failCreation;
   final bool failClaim;
+  final bool recoverStorage;
   final bool walletLinkImport;
   @override
   State<_GiftPreview> createState() => _GiftPreviewState();
@@ -144,17 +151,11 @@ class _GiftPreviewState extends State<_GiftPreview> {
   final _storage = _MemoryGiftStorage();
   late final _accounts = _GiftPreviewAccounts(
     failCreation: widget.failCreation,
+    recoverStorage: widget.recoverStorage,
   );
   late final _router = GoRouter(
     initialLocation: widget.initialLocation,
-    initialExtra: widget.walletLinkImport
-        ? _walletLinkImportArgs
-        : widget.initialLocation == '/gift/customise'
-        ? GiftCustomiseAccountArgs(
-            passcode: '123456',
-            inspection: _previewInspection(_link),
-          )
-        : null,
+    initialExtra: widget.walletLinkImport ? _walletLinkImportArgs : null,
     routes: [
       ...mobileOnboardingRoutes().whereType<GoRoute>().where(
         (route) => {
@@ -267,10 +268,28 @@ class _GiftPreviewState extends State<_GiftPreview> {
       ),
       GoRoute(
         path: '/gift/customise',
-        builder: (_, state) => GiftCustomiseAccountScreen(
-          args: state.extra as GiftCustomiseAccountArgs,
-          random: Random(1234),
-        ),
+        redirect: (context, _) =>
+            ProviderScope.containerOf(
+                  context,
+                ).read(giftClaimFlowProvider)?.walletSetupInProgress ==
+                true
+            ? null
+            : '/gift',
+        pageBuilder: (context, state) {
+          final setup = ProviderScope.containerOf(
+            context,
+          ).read(giftClaimFlowProvider)!;
+          return NoTransitionPage(
+            key: state.pageKey,
+            child: GiftCustomiseAccountScreen(
+              args: GiftCustomiseAccountArgs(
+                passcode: setup.setupPasscode!,
+                inspection: setup.inspection!,
+              ),
+              random: Random(1234),
+            ),
+          );
+        },
       ),
       GoRoute(
         path: '/payment-links',
@@ -309,7 +328,13 @@ class _GiftPreviewState extends State<_GiftPreview> {
             giftClaimFlowProvider.overrideWith(_CheckingGiftFlow.new)
           else if (widget.inspected ||
               widget.initialLocation.startsWith('/gift/'))
-            giftClaimFlowProvider.overrideWith(_InspectedGiftFlow.new),
+            giftClaimFlowProvider.overrideWith(
+              () => _InspectedGiftFlow(
+                setupPasscode: widget.initialLocation == '/gift/customise'
+                    ? '123456'
+                    : null,
+              ),
+            ),
           accountProvider.overrideWith(() => _accounts),
           appSecurityProvider.overrideWith(_GiftPreviewSecurity.new),
           biometricUnlockProvider.overrideWith(_GiftPreviewBiometrics.new),
@@ -404,8 +429,14 @@ Widget _importFrame(Widget child) =>
     MobileOnboardingProgressFrame(child: child);
 
 class _GiftPreviewAccounts extends AccountNotifier {
-  _GiftPreviewAccounts({required this.failCreation});
+  _GiftPreviewAccounts({
+    required this.failCreation,
+    required this.recoverStorage,
+  });
   final bool failCreation;
+  final bool recoverStorage;
+  VizorPaymentLink? _pendingGift;
+  var _recoveryAttempts = 0;
   @override
   AccountState build() => const AccountState();
 
@@ -450,6 +481,17 @@ class _GiftPreviewAccounts extends AccountNotifier {
   Future<void> clearPendingGiftAccountSetup({
     required String accountUuid,
   }) async {}
+
+  @override
+  Future<void> recoverPendingAccountMnemonic() async {
+    if (_recoveryAttempts++ == 0) {
+      throw StateError('Preview storage recovery failure');
+    }
+    await ref
+        .read(paymentLinkReceivedStoreProvider)
+        .saveReady(_pendingGift!, setupAccountUuid: 'gift-preview');
+    _pendingGift = null;
+  }
 
   @override
   Future<SoftwareWalletSecret?> getSoftwareWalletSecretForAccount(
@@ -562,6 +604,13 @@ class _GiftPreviewAccounts extends AccountNotifier {
         activeAddress: 'u1preview',
       ),
     );
+    if (recoverStorage) {
+      _pendingGift = link;
+      throw GiftClaimAccountCreatedException(
+        'gift-preview',
+        StateError('Preview post-creation storage failure'),
+      );
+    }
     await ref
         .read(paymentLinkReceivedStoreProvider)
         .saveReady(link, setupAccountUuid: 'gift-preview');
@@ -827,11 +876,15 @@ PaymentLinkClaimInspection _previewInspection(VizorPaymentLink link) =>
     );
 
 class _InspectedGiftFlow extends GiftClaimFlowNotifier {
+  _InspectedGiftFlow({this.setupPasscode});
+  final String? setupPasscode;
+
   @override
   GiftClaimFlowState build() => GiftClaimFlowState(
     link: _link,
     phase: GiftClaimPhase.inspected,
     inspection: _previewInspection(_link),
+    setupPasscode: setupPasscode,
   );
 }
 

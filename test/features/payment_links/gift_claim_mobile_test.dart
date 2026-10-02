@@ -33,6 +33,7 @@ import 'package:zcash_wallet/src/features/payment_links/services/payment_link_se
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_copy.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_claim_outcome_view.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/gift_claim_failure_notice_provider.dart';
+import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_claim_coordinator_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/gift_claim_import_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_long_sync_warning.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -547,25 +548,153 @@ void main() {
     expect(operations.claimedDestinations, ['new-account']);
   });
 
-  testWidgets('a post-creation storage failure never returns to creation', (
+  testWidgets('a post-creation storage failure recovers before Face ID', (
     tester,
   ) async {
     final container = await reachGiftCustomise(tester);
-    (container.read(accountProvider.notifier) as _NoAccounts).creationError =
-        GiftClaimAccountCreatedException(
-          'new-account',
-          StateError('storage unavailable'),
-        );
+    final accounts = container.read(accountProvider.notifier) as _NoAccounts;
+    accounts.creationError = GiftClaimAccountCreatedException(
+      'new-account',
+      StateError('storage unavailable'),
+    );
+    accounts.afterRecoverySave = () async {
+      // Resume can run after the journal is cleared but before the caller
+      // registers its inspection. It must not scan the Card again here.
+      await container.read(paymentLinkClaimCoordinatorProvider).refresh();
+      expect(operations.allowLongSyncChecks, [false]);
+      expect(operations.bindDestinations, isEmpty);
+    };
+    final broadcast = Completer<void>();
+    operations.broadcastGate = broadcast;
     await tester.tap(keyed('mobile_customise_account_continue'));
     await tester.pumpAndSettle();
     expect(location(tester), '/onboarding/biometrics');
+    expect(accounts.creationCalls, 1);
+    expect(accounts.recoveryCalls, 1);
+    expect(container.read(giftClaimFlowProvider), isNull);
     expect(container.read(appSecurityProvider).isPasswordConfigured, isTrue);
-    expect(operations.claimedDestinations, isEmpty);
+    expect(operations.claimedDestinations, ['new-account']);
+    expect(operations.allowLongSyncChecks, [false]);
+    final saved =
+        (await container.read(paymentLinkReceivedStoreProvider).load()).single;
+    expect(saved.setupAccountUuid, 'new-account');
+    expect(saved.status, PaymentLinkReceivedStatus.submitting);
+    expect(broadcast.isCompleted, isFalse);
     expect(
       (container.read(appSecurityProvider.notifier) as _Security).rollbackCalls,
       0,
     );
+    await tester.tap(keyed('mobile_biometrics_not_now'));
+    await tester.pumpAndSettle();
+    expect(location(tester), '/home');
+    broadcast.complete();
+    await tester.pumpAndSettle();
   });
+
+  testWidgets(
+    'failed storage recovery retries the same account on the screen',
+    (tester) async {
+      final container = await reachGiftCustomise(tester);
+      final accounts = container.read(accountProvider.notifier) as _NoAccounts;
+      accounts
+        ..creationError = GiftClaimAccountCreatedException(
+          'new-account',
+          StateError('storage unavailable'),
+        )
+        ..recoveryError = StateError('storage still unavailable');
+      for (var attempt = 0; attempt < 2; attempt++) {
+        await tester.tap(keyed('mobile_customise_account_continue'));
+        await tester.pumpAndSettle();
+        expect(location(tester), '/gift/customise');
+        expect(
+          find.text('Couldn’t finish saving your wallet. Try again.'),
+          findsOneWidget,
+        );
+        expect(find.text('Try again'), findsOneWidget);
+        expect(
+          tester
+              .widget<TextField>(keyed('mobile_customise_account_name_field'))
+              .enabled,
+          isFalse,
+        );
+        expect(
+          tester
+              .widget<AppButton>(keyed('mobile_customise_account_randomise'))
+              .onPressed,
+          isNull,
+        );
+        expect(accounts.creationCalls, 1);
+        expect(accounts.recoveryCalls, attempt + 1);
+        expect(operations.claimedDestinations, isEmpty);
+        expect(
+          await container.read(paymentLinkReceivedStoreProvider).load(),
+          isEmpty,
+        );
+      }
+
+      accounts.recoveryError = null;
+      await tester.tap(keyed('mobile_customise_account_continue'));
+      await tester.pumpAndSettle();
+      expect(location(tester), '/onboarding/biometrics');
+      expect(accounts.creationCalls, 1);
+      expect(accounts.recoveryCalls, 3);
+      final security =
+          container.read(appSecurityProvider.notifier) as _Security;
+      expect(security.prepareCalls, 1);
+      expect(security.rollbackCalls, 0);
+      expect(operations.claimedDestinations, ['new-account']);
+      expect(operations.allowLongSyncChecks, [false]);
+    },
+  );
+
+  testWidgets('incomplete recovery does not continue without a saved Card', (
+    tester,
+  ) async {
+    final container = await reachGiftCustomise(tester);
+    final accounts = container.read(accountProvider.notifier) as _NoAccounts;
+    accounts
+      ..creationError = GiftClaimAccountCreatedException(
+        'new-account',
+        StateError('storage unavailable'),
+      )
+      ..skipRecoverySave = true;
+    await tester.tap(keyed('mobile_customise_account_continue'));
+    await tester.pumpAndSettle();
+    expect(location(tester), '/gift/customise');
+    expect(find.text('Try again'), findsOneWidget);
+    expect(operations.claimedDestinations, isEmpty);
+    expect(accounts.creationCalls, 1);
+    expect(accounts.recoveryCalls, 1);
+  });
+
+  testWidgets(
+    'locking during a storage retry leaves setup for unlock recovery',
+    (tester) async {
+      final container = await reachGiftCustomise(tester);
+      final accounts = container.read(accountProvider.notifier) as _NoAccounts;
+      accounts
+        ..creationError = GiftClaimAccountCreatedException(
+          'new-account',
+          StateError('storage unavailable'),
+        )
+        ..recoveryError = StateError('storage still unavailable');
+      await tester.tap(keyed('mobile_customise_account_continue'));
+      await tester.pumpAndSettle();
+      expect(location(tester), '/gift/customise');
+      expect(
+        container.read(giftClaimFlowProvider)?.walletSetupInProgress,
+        isTrue,
+      );
+
+      (container.read(appSecurityProvider.notifier) as _Security).lock();
+      await tester.pumpAndSettle();
+      expect(location(tester), '/unlock');
+      expect(find.byType(MobileCustomiseAccountScreen), findsNothing);
+      expect(container.read(giftClaimFlowProvider), isNull);
+      expect(operations.claimedDestinations, isEmpty);
+      expect(accounts.creationCalls, 1);
+    },
+  );
 
   testWidgets('an unknown DB result asks to reopen and disables recreation', (
     tester,
@@ -1315,6 +1444,12 @@ class _NoAccounts extends AccountNotifier {
   }
 
   GiftClaimAccountCreatedException? creationError;
+  Object? recoveryError;
+  bool skipRecoverySave = false;
+  int creationCalls = 0;
+  int recoveryCalls = 0;
+  VizorPaymentLink? _pendingGift;
+  Future<void> Function()? afterRecoverySave;
   @override
   AccountState build() => const AccountState();
 
@@ -1324,14 +1459,28 @@ class _NoAccounts extends AccountNotifier {
   }) async {}
 
   @override
+  Future<void> recoverPendingAccountMnemonic() async {
+    recoveryCalls++;
+    if (recoveryError case final error?) throw error;
+    if (skipRecoverySave) return;
+    await ref
+        .read(paymentLinkReceivedStoreProvider)
+        .saveReady(_pendingGift!, setupAccountUuid: 'new-account');
+    await afterRecoverySave?.call();
+    _pendingGift = null;
+  }
+
+  @override
   Future<String> createGiftClaimAccount({
     required String name,
     required String profilePictureId,
     required VizorPaymentLink link,
   }) async {
+    creationCalls++;
     if (creationError?.accountUuid == null && creationError != null) {
       throw creationError!;
     }
+    _pendingGift = link;
     state = AsyncData(
       AccountState(
         accounts: [
@@ -1356,6 +1505,7 @@ class _NoAccounts extends AccountNotifier {
 }
 
 class _Security extends AppSecurityNotifier {
+  @override
   void lock() => state = const AppSecurityState(
     isPasswordConfigured: true,
     isUnlocked: false,

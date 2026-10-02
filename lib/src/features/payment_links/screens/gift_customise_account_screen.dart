@@ -1,12 +1,15 @@
+import 'dart:async';
 import 'dart:math';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../main.dart' show log;
 import '../../onboarding/mobile/mobile_customise_account_screen.dart';
 import '../../onboarding/mobile/mobile_onboarding_progress.dart';
 import '../services/gift_claim_setup_coordinator.dart';
 import '../services/payment_link_service.dart';
+import '../providers/gift_claim_flow_provider.dart';
 import '../../../providers/account_provider.dart';
 
 class GiftCustomiseAccountArgs {
@@ -36,11 +39,27 @@ class GiftCustomiseAccountScreen extends ConsumerStatefulWidget {
 class _GiftCustomiseAccountScreenState
     extends ConsumerState<GiftCustomiseAccountScreen> {
   bool _requiresRestart = false;
+  String? _createdAccountUuid;
+  late final GiftClaimFlowNotifier _flow;
+
+  @override
+  void initState() {
+    super.initState();
+    _flow = ref.read(giftClaimFlowProvider.notifier);
+  }
+
+  @override
+  void dispose() {
+    final inspection = widget.args.inspection;
+    scheduleMicrotask(() => _flow.finishWalletSetup(inspection));
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) => MobileCustomiseAccountScreen(
     random: widget.random,
     actionsEnabled: !_requiresRestart,
+    setupCommitted: _createdAccountUuid != null,
     position: OnboardingProgressPlan.forFlow(
       OnboardingFlow.gift,
       setupMode: OnboardingSetupMode.createPasscode,
@@ -53,12 +72,17 @@ class _GiftCustomiseAccountScreenState
           accountName: name,
           profilePictureId: profilePictureId,
           inspection: widget.args.inspection,
+          createdAccountUuid: _createdAccountUuid,
           // Match normal account creation: security is committed before
           // asking for biometric unlock, then continue to Home.
           onComplete: () {
             if (context.mounted) context.go('/onboarding/biometrics');
           },
         );
+      } on GiftClaimAccountCreatedException catch (error) {
+        if (mounted) setState(() => _createdAccountUuid = error.accountUuid);
+        log('Gift wallet storage recovery failed: ${error.cause.runtimeType}');
+        throw Exception('Couldn’t finish saving your wallet. Try again.');
       } on WalletAccountStateUncertainException {
         if (mounted) setState(() => _requiresRestart = true);
         rethrow;

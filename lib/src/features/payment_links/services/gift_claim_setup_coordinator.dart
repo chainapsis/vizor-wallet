@@ -24,40 +24,74 @@ Future<void> completeGiftClaimWalletSetup(
   required String profilePictureId,
   required PaymentLinkClaimInspection inspection,
   required void Function() onComplete,
+  String? createdAccountUuid,
 }) {
   final coordinator = ref.read(paymentLinkClaimCoordinatorProvider);
   final intake = ref.read(paymentLinkIntakeProvider.notifier);
-  return ref.read(routerRefreshProvider).pauseWhile(() async {
-    final String accountUuid;
-    try {
-      accountUuid = await setUpGiftCardWallet(
-        ref,
-        passcode: password,
-        link: inspection.link,
-        accountName: accountName,
-        profilePictureId: profilePictureId,
+  final accounts = ref.read(accountProvider.notifier);
+  final store = ref.read(paymentLinkReceivedStoreProvider);
+  final flow = ref.read(giftClaimFlowProvider.notifier);
+  flow.beginWalletSetup(inspection, passcode: password);
+  return ref
+      .read(routerRefreshProvider)
+      .pauseWhile(
+        () => coordinator.trackRetention(() async {
+          var accountUuid = createdAccountUuid;
+          var needsRecovery = accountUuid != null;
+          if (accountUuid == null) {
+            try {
+              accountUuid = await setUpGiftCardWallet(
+                ref,
+                passcode: password,
+                link: inspection.link,
+                accountName: accountName,
+                profilePictureId: profilePictureId,
+              );
+            } on GiftClaimAccountCreatedException catch (error) {
+              final createdUuid = error.accountUuid;
+              if (createdUuid == null) {
+                throw WalletAccountStateUncertainException(error.cause);
+              }
+              accountUuid = createdUuid;
+              needsRecovery = true;
+            }
+          }
+
+          if (needsRecovery) {
+            try {
+              // The credential is already committed. Finish the existing account's
+              // journal now; this unlocked session will not run unlock recovery.
+              await accounts.recoverPendingAccountMnemonic();
+              final saved = await store.find(inspection.link.address);
+              if (saved?.setupAccountUuid != accountUuid ||
+                  saved?.claimLink?.hasSameCanonicalPayload(inspection.link) !=
+                      true) {
+                throw StateError('Gift Card receiving account was not saved.');
+              }
+            } catch (error, stackTrace) {
+              // Retain the UUID so the screen retries recovery, never creation.
+              Error.throwWithStackTrace(
+                GiftClaimAccountCreatedException(accountUuid, error),
+                stackTrace,
+              );
+            }
+          }
+
+          intake.discard(inspection.link);
+          unawaited(
+            coordinator
+                .claimSetupCard(inspection, destinationAccountUuid: accountUuid)
+                .catchError((Object error) {
+                  // The durable Card stays in Received for the existing recovery.
+                  log(
+                    'GiftClaimSetup: claim needs recovery: ${error.runtimeType}',
+                  );
+                }),
+          );
+          flow.finishWalletSetup(inspection);
+          onComplete();
+        }),
       );
-    } on GiftClaimAccountCreatedException catch (error) {
-      // An account may already exist. The setup journal owns recovery; never
-      // offer account creation again or roll back its committed credential.
-      if (error.accountUuid == null) {
-        throw WalletAccountStateUncertainException(error.cause);
-      }
-      intake.discard(inspection.link);
-      onComplete();
-      return;
-    }
-    intake.discard(inspection.link);
-    unawaited(
-      coordinator
-          .claimSetupCard(inspection, destinationAccountUuid: accountUuid)
-          .catchError((Object error) {
-            // The durable Card stays in Received for the existing recovery.
-            log('GiftClaimSetup: claim needs recovery: ${error.runtimeType}');
-          }),
-    );
-    onComplete();
-  });
 }
 
 /// Finishes the existing-wallet choice before Face ID, using the inspection

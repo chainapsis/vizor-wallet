@@ -56,14 +56,27 @@ List<RouteBase> mobileOnboardingRoutes() => [
   ),
   GoRoute(
     path: '/gift/customise',
-    redirect: (_, state) =>
-        state.extra is GiftCustomiseAccountArgs ? null : '/gift',
-    pageBuilder: (_, state) => _mobileOnboardingPage(
-      state,
-      child: GiftCustomiseAccountScreen(
-        args: state.extra as GiftCustomiseAccountArgs,
-      ),
-    ),
+    redirect: (context, _) =>
+        ProviderScope.containerOf(
+              context,
+            ).read(giftClaimFlowProvider)?.walletSetupInProgress ==
+            true
+        ? null
+        : '/gift',
+    pageBuilder: (context, state) {
+      final setup = ProviderScope.containerOf(
+        context,
+      ).read(giftClaimFlowProvider)!;
+      return _mobileOnboardingPage(
+        state,
+        child: GiftCustomiseAccountScreen(
+          args: GiftCustomiseAccountArgs(
+            passcode: setup.setupPasscode!,
+            inspection: setup.inspection!,
+          ),
+        ),
+      );
+    },
   ),
   GoRoute(
     path: '/welcome',

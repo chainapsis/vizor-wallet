@@ -82,6 +82,7 @@ import 'src/features/payment_links/models/vizor_payment_link.dart';
 import 'src/features/payment_links/providers/payment_link_cards_provider.dart';
 import 'src/features/payment_links/providers/payment_link_claim_coordinator_provider.dart';
 import 'src/features/payment_links/providers/payment_link_intake_provider.dart';
+import 'src/features/payment_links/providers/gift_claim_flow_provider.dart';
 import 'src/features/payment_links/screens/payment_links_screen.dart';
 import 'src/features/payment_links/services/payment_link_entry_policy.dart';
 import 'src/features/receive/screens/receive_screen.dart';
@@ -519,6 +520,14 @@ String? appRedirect({
   if (isStorageUnavailable) {
     if (!hasWallet) return '/welcome';
     return requiresUnlock ? '/unlock' : '/home';
+  }
+  // Creating the account does not finish its storage. Keep that setup
+  // actionable on this screen; locking still takes precedence.
+  if (hasWallet &&
+      kAppFormFactor == AppFormFactor.mobile &&
+      ref.read(giftClaimFlowProvider)?.walletSetupInProgress == true &&
+      state.matchedLocation == '/gift/customise') {
+    return requiresUnlock ? '/unlock' : null;
   }
   if (_isRouteOrChild(state.matchedLocation, '/gift')) {
     if (kAppFormFactor != AppFormFactor.mobile) return '/';

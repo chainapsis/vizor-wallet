@@ -676,15 +676,20 @@ void main() {
     expect(_rust.importCalls, 1);
   });
 
-  for (final entry in <String, String>{
+  for (final entry in <String, String?>{
     'account mnemonic': 'zcash_account_mnemonic_uuid-1',
     'account JSON': 'zcash_accounts',
     'active account': 'zcash_active_account',
+    'card record': null,
   }.entries) {
     test(
       'a ${entry.key} save failure publishes and preserves the DB',
       () async {
-        storage.failNextWriteFor(entry.value);
+        if (entry.value case final key?) {
+          storage.failNextWriteFor(key);
+        } else {
+          receivedStorage.failNextWrite = true;
+        }
 
         await expectLater(
           accounts().createGiftClaimAccount(
@@ -713,6 +718,15 @@ void main() {
         );
         expect(_rust.importCalls, 1);
         expect(await store.verifyPassword(_passcode), isTrue);
+
+        // The current unlocked setup session can finish storage immediately;
+        // it does not need a restart or another account-creation attempt.
+        await accounts().recoverPendingAccountMnemonic();
+        expect(await store.readAccountMnemonic('uuid-1'), _mnemonic);
+        expect(await store.readString('zcash_accounts'), isNotNull);
+        expect((await cards.load()).single.setupAccountUuid, 'uuid-1');
+        expect(await pending(), isNull);
+        expect(_rust.importCalls, 1);
       },
     );
   }
@@ -968,10 +982,18 @@ class _FailingStorage extends FlutterSecureStorage {
 
 class _GiftReceivedStorage implements PaymentLinkReceivedStorage {
   String? value;
+  bool failNextWrite = false;
   @override
   Future<String?> read() async => value;
   @override
-  Future<void> write(String next) async => value = next;
+  Future<void> write(String next) async {
+    if (failNextWrite) {
+      failNextWrite = false;
+      throw StateError('forced card record write failure');
+    }
+    value = next;
+  }
+
   @override
   Future<void> delete() async => value = null;
 }

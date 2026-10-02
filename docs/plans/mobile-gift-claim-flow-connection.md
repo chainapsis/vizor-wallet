@@ -13,13 +13,20 @@ Claim execution/resumption and unbacked account removal are already in the base.
    skeleton, hides amount/artwork, and disables dismissal. Failures expose existing
    close/retry controls. Old birthdays retain the existing long-scan warning sheet.
 4. A checked or confirmation-waiting Card can enter Gift wallet creation. The
-   shared passcode screen confirms six digits in route memory only. Shared account
-   customisation retains persona randomisation and omits back/skip controls.
+   shared passcode screen confirms six digits in live flow memory only. Shared
+   account customisation retains persona randomisation and omits back/skip controls.
 5. Customise Continue runs the existing setup boundary: credential preparation,
    account creation, durable Card and receiving UUID, credential commit, journal
-   cleanup. Pre-account failures stay inline. A known created account continues
-   without recreation; its saved journal owns incomplete-storage recovery. An
-   uncertain DB result uses the existing reopen message and disables recreation.
+   cleanup. Pre-account failures stay inline. If the account exists but storage
+   fails, recover its pending mnemonic/account metadata and verify the durable
+   Card's receiving UUID and payload before continuing. Repeated recovery errors
+   stay on Customise with the existing inline error and **Try again** action;
+   persona controls are locked and retries never recreate the account or prepare
+   its credential again. The live flow retains the checked inspection and passcode
+   through route refresh, then clears them on completion or leaving the screen.
+   They are not serialized into route restoration or browser history. Locking
+   still routes to unlock and leaves the durable journal for existing recovery.
+   An uncertain DB result uses the existing reopen message and disables recreation.
 6. The existing inspection goes to `claimSetupCard`, independently of navigation.
    Face ID opt-in then Home proceed without waiting for broadcast or confirmations.
    Saved Card recovery owns binding/network errors; no account creation retry.
@@ -50,9 +57,12 @@ Claim execution/resumption and unbacked account removal are already in the base.
 
 Widgetbook: Screens > Gift Cards > Mobile > Onboarding - Full walkthrough
 (and focused entry/checking/passcode/customise/Face ID/warning/error cases,
-including **Onboarding - Claim failure toast** and **Onboarding - Imported
-receiving account**). The latter starts at passcode confirmation and exercises
-the production Wallet Link import and receiving sheet with two preview accounts.
+including **Onboarding - Storage recovery**, **Onboarding - Claim failure toast**
+and **Onboarding - Imported receiving account**). The storage case simulates a
+post-creation storage error, fails its first immediate recovery, then succeeds
+on Try again using the same account. The receiving case starts at passcode
+confirmation and exercises the production Wallet Link import and receiving sheet
+with two preview accounts.
 The interactive walkthrough enables the existing Welcome animation; deterministic
 Welcome captures continue to use their separate poster scenario.
 The fixture shares in-memory account, credential, received-store, sync and
@@ -77,7 +87,22 @@ and a cross-store transaction redesign remain outside this slice.
 
 ## Current validation
 
-Recipient selection and toast alignment follow-up:
+Immediate storage recovery follow-up:
+
+- Focused default regressions: **67 passed**, including the actual account
+  recovery after mnemonic, account JSON, active-account and Received-store writes fail.
+- Focused mobile regressions: **90 passed**, covering immediate recovery,
+  repeated recovery failures, incomplete Card persistence, retry-only setup,
+  locking, normal onboarding, routing and the interactive Widgetbook flows.
+- Scoped analysis of all 13 changed Dart files: **no issues**.
+- Light/dark storage-recovery capture tests: **2 passed**, visually inspected.
+  Existing entry/recipient-sheet/toast captures remain applicable to their
+  unchanged states; recovery screenshots show the new locked persona and retry action.
+- An explicit journal-clear/handoff race test verifies that recovery cannot
+  launch an extra scan before the existing inspection is registered. A stalled
+  broadcast still permits Face ID and Home.
+
+Previous recipient selection and toast alignment follow-up:
 
 - Focused default regressions: **79 passed**.
 - Focused mobile regressions: **131 passed**.

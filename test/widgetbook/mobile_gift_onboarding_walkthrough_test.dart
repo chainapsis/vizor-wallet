@@ -333,6 +333,51 @@ void main() {
     expect(find.text('Couldn’t redeem your gift card.'), findsNothing);
   });
 
+  testWidgets(
+    'storage recovery preview retries without recreating the wallet',
+    (tester) async {
+      await _render(tester, buildMobileGiftOnboardingStorageRecovery);
+      await _advance(tester);
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(MobileCustomiseAccountScreen)),
+      );
+      final button = find.byKey(
+        const ValueKey('mobile_customise_account_continue'),
+      );
+      await tester.tap(button);
+      await _advance(tester);
+      expect(
+        find.text('Couldn’t finish saving your wallet. Try again.'),
+        findsOneWidget,
+      );
+      expect(find.text('Try again'), findsOneWidget);
+      expect(find.byType(MobileBiometricsScreen), findsNothing);
+      expect(container.read(accountProvider).value!.accounts, hasLength(1));
+      expect(
+        await container.read(paymentLinkReceivedStoreProvider).load(),
+        isEmpty,
+      );
+      expect(
+        tester
+            .widget<TextField>(
+              find.byKey(const ValueKey('mobile_customise_account_name_field')),
+            )
+            .enabled,
+        isFalse,
+      );
+
+      await tester.tap(button);
+      await _advance(tester);
+      expect(find.byType(MobileBiometricsScreen), findsOneWidget);
+      expect(container.read(accountProvider).value!.accounts, hasLength(1));
+      final record =
+          (await container.read(paymentLinkReceivedStoreProvider).load())
+              .single;
+      expect(record.setupAccountUuid, 'gift-preview');
+      expect(record.status, PaymentLinkReceivedStatus.receiving);
+    },
+  );
+
   for (final confirm in [true, false]) {
     testWidgets(
       'imported receiving account preview ${confirm ? 'claims into Savings' : 'keeps a dismissed card unclaimed'}',

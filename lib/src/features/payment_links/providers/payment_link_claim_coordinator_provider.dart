@@ -479,7 +479,10 @@ class PaymentLinkClaimCoordinator {
     // Security opens its session before unlock restores interrupted account
     // setup. Never submit a setup Card until that durable journal is cleared.
     // The same gate protects the password-commit -> journal-cleanup boundary.
-    if (await _ref.read(paymentLinkSetupJournalPendingProvider)()) {
+    // A live persistence operation may clear the journal before registering
+    // its checked inspection. Check ownership after the asynchronous read too.
+    if (await _ref.read(paymentLinkSetupJournalPendingProvider)() ||
+        _retentions.isNotEmpty) {
       return;
     }
     for (final record in records) {
