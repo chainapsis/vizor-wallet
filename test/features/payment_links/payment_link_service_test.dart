@@ -477,6 +477,35 @@ void main() {
       await supportDirectory.delete(recursive: true);
     });
 
+    for (final sourcePathUnavailable in [false, true]) {
+      test(
+        'claim sync uses optional root source: unavailable=$sourcePathUnavailable',
+        () async {
+          api.poolFixture = true;
+          final wallet = container.read(Provider(PaymentLinkClaimWallet.new));
+          final link = _link();
+          final claimWallet = await wallet.createOrOpen(link);
+          final sourceDbPath = await getWalletDbPath();
+          if (sourcePathUnavailable) {
+            TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+                .setMockMethodCallHandler(pathChannel, (_) async {
+                  throw PlatformException(
+                    code: 'support_directory_unavailable',
+                  );
+                });
+          }
+
+          await wallet.runClaimSync(link: link, dbPath: claimWallet.dbPath);
+
+          expect(api.claimSyncCalls, 1);
+          expect(api.claimSyncDbPaths, [claimWallet.dbPath]);
+          expect(api.claimSyncSourceDbPaths, [
+            sourcePathUnavailable ? null : sourceDbPath,
+          ]);
+        },
+      );
+    }
+
     for (final address in ['u1legacy', 'u1current', 'u1legacy-projection']) {
       test('completed receipt $address survives secret cleanup', () async {
         final link = _link().withResolvedMetadata(address: address);
@@ -2653,6 +2682,7 @@ class _ClaimDestinationRustApi implements RustLibApi {
   List<bool> claimSyncModes = [];
   final cancelledClaimSyncs = <String>[];
   final claimSyncDbPaths = <String>[];
+  final claimSyncSourceDbPaths = <String?>[];
   final validGiftAddresses = <String>{};
   int giftVariantLookups = 0;
 
@@ -2714,11 +2744,13 @@ class _ClaimDestinationRustApi implements RustLibApi {
     required String dbPath,
     required String lightwalletdUrl,
     required String network,
+    String? sourceDbPath,
   }) async {
     if (!poolFixture) throw StateError('Unexpected claim sync');
     claimSyncCalls++;
     claimSyncModes.add(allowResubmit);
     claimSyncDbPaths.add(dbPath);
+    claimSyncSourceDbPaths.add(sourceDbPath);
     if (!syncStarted.isCompleted) syncStarted.complete();
     await syncGate?.future;
   }
@@ -2797,6 +2829,7 @@ class _ClaimDestinationRustApi implements RustLibApi {
     claimSyncCalls = 0;
     claimSyncModes = [];
     claimSyncDbPaths.clear();
+    claimSyncSourceDbPaths.clear();
     giftVariantLookups = 0;
     validGiftAddresses
       ..clear()

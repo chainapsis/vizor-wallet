@@ -207,13 +207,16 @@ pub fn is_sync_running() -> bool {
 ///
 /// Claim syncs do not use the main wallet's process-global running guard or
 /// desired mode. Different claim IDs can therefore scan independent databases
-/// concurrently with each other and with the main wallet.
+/// concurrently with each other and with the main wallet. `source_db_path` may
+/// supply public, chain-checked Ironwood roots from the main wallet; unavailable
+/// or stale cache data falls back to the server.
 pub fn run_payment_link_claim_sync(
     claim_id: String,
     db_path: String,
     lightwalletd_url: String,
     network: String,
     allow_resubmit: bool,
+    source_db_path: Option<String>,
 ) -> Result<(), String> {
     if claim_id.trim().is_empty() {
         return Err("Payment-link claim ID must not be empty".into());
@@ -241,6 +244,7 @@ pub fn run_payment_link_claim_sync(
             network,
             cancel,
             allow_resubmit,
+            source_db_path.as_deref(),
         ))
     }));
 

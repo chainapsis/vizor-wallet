@@ -2662,6 +2662,7 @@ pub async fn run_payment_link_claim_sync(
     network: WalletNetwork,
     cancel: Arc<AtomicBool>,
     allow_resubmit: bool,
+    source_db_path: Option<&str>,
 ) -> Result<(), String> {
     let started = std::time::Instant::now();
     const MAX_RETRIES: u32 = 3;
@@ -2687,6 +2688,7 @@ pub async fn run_payment_link_claim_sync(
             network,
             cancel.clone(),
             allow_resubmit,
+            source_db_path,
         )
         .await
         {
@@ -2732,6 +2734,7 @@ async fn run_payment_link_claim_sync_once(
     network: WalletNetwork,
     cancel: Arc<AtomicBool>,
     allow_resubmit: bool,
+    source_db_path: Option<&str>,
 ) -> Result<(), SyncError> {
     let should_exit = || cancel.load(Ordering::Relaxed);
     let mut client = open_lwd_channel(lightwalletd_url).await?;
@@ -2766,7 +2769,16 @@ async fn run_payment_link_claim_sync_once(
     crate::wallet::sync::recover_orphaned_send_locks(db_data_path, network)
         .map_err(|error| SyncError::db(format!("payment-link recover send locks: {error}")))?;
 
-    claim_roots::prepare_roots(&mut client, &mut db, db_data_path, network, tip_height).await?;
+    claim_roots::prepare_roots(
+        &mut client,
+        &mut db,
+        db_data_path,
+        source_db_path,
+        network,
+        tip_height,
+        &initial_tip.hash,
+    )
+    .await?;
 
     let mut rewind_attempts = 0u32;
     loop {

@@ -401,7 +401,7 @@ Widget _buildClaimAccountPreview(int accountCount) {
             ),
         ],
         activeAccountUuid: 'claim-preview-0',
-        onConfirm: (_) async {},
+        onConfirm: (_) async => true,
         onConfirmed: _noop,
         onClose: _noop,
       ),

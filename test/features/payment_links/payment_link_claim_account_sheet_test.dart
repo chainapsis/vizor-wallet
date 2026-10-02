@@ -90,7 +90,10 @@ Future<void> _openSheet(
                     ),
                 ],
                 activeAccountUuid: 'account-0',
-                onConfirm: onConfirm,
+                onConfirm: (uuid) async {
+                  await onConfirm(uuid);
+                  return true;
+                },
               ),
               child: const Text('Open'),
             ),
