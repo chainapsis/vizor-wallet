@@ -1,3 +1,6 @@
+import 'passcode_review_capture.dart';
+import '../widgetbook/mobile_passcode_use_cases.dart';
+import '../src/features/accounts/screens/mobile/mobile_account_removal_passcode_screen.dart';
 import 'ledger_pairing_capture.dart';
 import 'caps_lock_capture.dart';
 // ignore_for_file: depend_on_referenced_packages
@@ -67,6 +70,62 @@ class FigmaCompareScenario {
 /// storage, network, wallet, and Rust state. Widgetbook fixtures are preferred
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
+  FigmaCompareScenario(
+    id: 'passcode-review-create',
+    description: 'Actual passcode setup screen for main/PR comparisons',
+    builder: buildPasscodeReviewCreate,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'passcode-review-unlock',
+    description: 'Actual unlock screen with inert Face ID state',
+    builder: buildPasscodeReviewUnlock,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'passcode-layout-ipad',
+    description: 'iPad compatibility with Face ID footer',
+    builder: buildPasscodeIpadCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'passcode-layout-small-error',
+    description: 'Small phone with larger text and wrapped error',
+    builder: buildPasscodeSmallErrorCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'passcode-layout-create',
+    description: 'Responsive create passcode',
+    builder: buildPasscodeCreateCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'passcode-layout-enter',
+    description: 'Responsive enter passcode',
+    builder: buildPasscodeEnterCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'passcode-layout-confirm',
+    description: 'Responsive confirm passcode',
+    builder: buildPasscodeConfirmCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-account-removal-passcode',
+    description: 'Full-screen passcode confirmation before account removal',
+    builder: _buildAccountRemovalPasscode,
+    desktop: false,
+    mobile: true,
+  ),
   FigmaCompareScenario(
     id: 'caps-lock-unlock',
     description: 'Unlock screen with Caps Lock warning',
@@ -2471,3 +2530,6 @@ Widget _buildLedgerVotingProcessing(BuildContext context) =>
     buildLedgerVotingProcessingPreview(
       mobile: kAppFormFactor == AppFormFactor.mobile,
     );
+
+Widget _buildAccountRemovalPasscode(BuildContext context) =>
+    const MobileAccountRemovalPasscodeScreen(isLastAccount: false);
