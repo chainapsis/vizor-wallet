@@ -699,6 +699,98 @@ void main() {
     );
   }
 
+  for (final failRecoveryWrite in [false, true]) {
+    test(
+      'Gift recovery selects the added account after restart: retry=$failRecoveryWrite',
+      () async {
+        const original = AccountInfo(
+          uuid: 'original',
+          name: 'Original',
+          order: 0,
+          isSeedAnchor: true,
+        );
+        _rust.walletExists = true;
+        _rust.listedAccounts = [_listed('original')];
+        await store.writeString('zcash_active_account', 'original');
+        final existing = ProviderContainer(
+          overrides: [
+            appBootstrapProvider.overrideWithValue(
+              _bootstrappedGiftAccount(account: original),
+            ),
+            accountProvider.overrideWith(
+              () => AccountNotifier.testing(store: store),
+            ),
+            appSecurityProvider.overrideWith(
+              () => AppSecurityNotifier.testing(store: store),
+            ),
+            paymentLinkReceivedStoreProvider.overrideWithValue(cards),
+            rpcEndpointFailoverLatestBlockHeightGetterProvider
+                .overrideWithValue((_, _) async => BigInt.from(3000000)),
+          ],
+        );
+        addTearDown(existing.dispose);
+        await existing.read(accountProvider.future);
+        storage.failNextWriteFor('zcash_active_account');
+        await expectLater(
+          existing
+              .read(accountProvider.notifier)
+              .createGiftClaimAccount(
+                name: _name,
+                profilePictureId: _profile,
+                link: incomingLink,
+              ),
+          throwsA(isA<GiftClaimAccountCreatedException>()),
+        );
+        final savedAccounts =
+            (jsonDecode((await store.readString('zcash_accounts'))!) as List)
+                .map((json) => AccountInfo.fromJson(json))
+                .toList();
+        expect(await store.readString('zcash_active_account'), 'original');
+
+        // Bootstrap still selects the previously persisted, valid account.
+        final restarted = ProviderContainer(
+          overrides: [
+            appBootstrapProvider.overrideWithValue(
+              _bootstrappedGiftAccount(accounts: savedAccounts),
+            ),
+            accountProvider.overrideWith(
+              () => AccountNotifier.testing(store: store),
+            ),
+            paymentLinkReceivedStoreProvider.overrideWithValue(cards),
+          ],
+        );
+        addTearDown(restarted.dispose);
+        await restarted.read(accountProvider.future);
+        final notifier = restarted.read(accountProvider.notifier);
+        if (failRecoveryWrite) {
+          storage.failNextWriteFor('zcash_active_account');
+          await expectLater(
+            notifier.recoverPendingAccountMnemonic(),
+            throwsA(isA<StateError>()),
+          );
+          expect(await pending(), isNotNull);
+          expect(await store.readString('zcash_active_account'), 'original');
+          expect(restarted.read(accountSetupRecoveryGenerationProvider), 0);
+        }
+        await notifier.recoverPendingAccountMnemonic();
+        expect(await store.readString('zcash_active_account'), 'uuid-1');
+        final recovered = restarted.read(accountProvider).value!;
+        expect(recovered.activeAccountUuid, 'uuid-1');
+        expect(recovered.activeAddress, isNull);
+        expect(recovered.accounts.map((a) => a.uuid), ['original', 'uuid-1']);
+        expect((await cards.load()).single.setupAccountUuid, 'uuid-1');
+        expect(await pending(), isNull);
+        expect(restarted.read(accountSetupRecoveryGenerationProvider), 1);
+        await notifier.restoreAfterUnlock();
+        expect(
+          restarted.read(accountProvider).value!.activeAddress,
+          'u1uuid-1',
+        );
+        expect(_rust.addCalls, 1);
+      },
+    );
+  }
+
   for (final ledger in [false, true]) {
     test(
       'first hardware account restores its metadata after save failure: ledger=$ledger',
@@ -1469,7 +1561,7 @@ AppBootstrapState _bootstrappedGiftAccount({
               ),
         ],
     activeAccountUuid: accounts?.first.uuid ?? account?.uuid ?? 'uuid-1',
-    activeAddress: 'u1uuid-1',
+    activeAddress: 'u1${accounts?.first.uuid ?? account?.uuid ?? 'uuid-1'}',
   ),
   initialSyncSnapshot: AppSyncSnapshot.empty,
   network: kZcashDefaultNetworkName,

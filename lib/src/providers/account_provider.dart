@@ -770,7 +770,6 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       requireCurrentSession();
       await _saveAccounts(accounts);
       requireCurrentSession();
-      state = AsyncData(current.copyWith(accounts: accounts));
       final link = VizorPaymentLink.parse(draft['giftLink'] as String)
           .withResolvedMetadata(
             address: draft['giftAddress'] as String,
@@ -788,6 +787,20 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       if (card?.setupAccountUuid == null) {
         await cards.saveReady(link, setupAccountUuid: uuid);
       }
+      // Finish the interrupted account selection before clearing its journal.
+      // A still-valid previous UUID otherwise wins on the next bootstrap.
+      requireCurrentSession();
+      await _storage.writeString(_activeAccountKey, uuid);
+      requireCurrentSession();
+      state = AsyncData(
+        AccountState(
+          accounts: accounts,
+          activeAccountUuid: uuid,
+          activeAddress: current.activeAccountUuid == uuid
+              ? current.activeAddress
+              : null,
+        ),
+      );
       log('recoverPendingAccountMnemonic: recovered $uuid');
     }
     requireCurrentSession();
