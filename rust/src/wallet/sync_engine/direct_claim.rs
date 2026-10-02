@@ -1,6 +1,6 @@
 //! Prepares an event gift from its known funding transaction, without scanning
-//! the birthday-to-tip range. Only explicitly identified mined transactions'
-//! blocks are processed. Gaps remain unscanned in the wallet database.
+//! the birthday-to-tip range. Known transaction blocks and sparse witness
+//! boundary blocks are processed; historical gaps remain unscanned.
 
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -32,6 +32,7 @@ pub(crate) struct Preparation {
     pub funding_txid: TxId,
     pub funding_height: BlockHeight,
     pub tip_height: BlockHeight,
+    pub anchor_height: BlockHeight,
 }
 
 fn parse_txid(value: &str) -> Result<TxId, String> {
@@ -51,15 +52,16 @@ pub(crate) fn load(path: &str) -> Result<Option<Preparation>, String> {
     if !exists {
         return Ok(None);
     }
-    let row: Option<(String, u32, u32)> = conn.query_row(
-        "SELECT funding_txid, funding_height, tip_height FROM vizor_gift_direct_claim WHERE id=1",
-        [], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+    let row: Option<(String, u32, u32, u32)> = conn.query_row(
+        "SELECT funding_txid, funding_height, tip_height, anchor_height FROM vizor_gift_direct_claim WHERE id=1",
+        [], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)))
         .optional().map_err(|e| e.to_string())?;
-    row.map(|(txid, height, tip)| {
+    row.map(|(txid, height, tip, anchor)| {
         Ok(Preparation {
             funding_txid: parse_txid(&txid)?,
             funding_height: height.into(),
             tip_height: tip.into(),
+            anchor_height: anchor.into(),
         })
     })
     .transpose()
@@ -69,13 +71,10 @@ pub(crate) fn load(path: &str) -> Result<Option<Preparation>, String> {
 pub(crate) fn clear(path: &str) -> Result<(), String> {
     with_wallet_db_write_lock("direct_claim.clear", || {
         let conn = open_wallet_raw_conn_with_timeout(path, READ_DB_BUSY_TIMEOUT)?;
-        let exists: bool = conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='vizor_gift_direct_claim')",
-        [], |row| row.get(0)).map_err(|e| e.to_string())?;
-        if exists {
-            conn.execute("DELETE FROM vizor_gift_direct_claim", [])
-                .map_err(|e| e.to_string())?;
-        }
+        // This private cache belongs to the unreleased v4 path. Recreate it on
+        // refresh rather than preserving an obsolete preparation or schema.
+        conn.execute_batch("DROP TABLE IF EXISTS vizor_gift_direct_claim")
+            .map_err(|e| e.to_string())?;
         Ok(())
     })
 }
@@ -116,6 +115,13 @@ pub(crate) async fn prepare(
     if height == 0 || height > tip_height {
         return Err("Gift Card funding transaction is not confirmed yet".into());
     }
+    // Match the regular gift-claim confirmation policy. The funding height
+    // supplies the note; the recent checkpoint supplies the spend anchor.
+    let anchor_height = tip_height
+        .checked_add(1)
+        .and_then(|target| target.checked_sub(crate::wallet::PAYMENT_LINK_CLAIM_CONFIRMATIONS))
+        .filter(|anchor| *anchor >= height)
+        .ok_or("Gift Card funding transaction needs more confirmations")?;
     let mut db = open_db(path, network).map_err(|e| e.to_string())?;
     if db.get_account_ids().map_err(|e| e.to_string())?.len() != 1 {
         return Err("Direct Gift Card preparation requires an isolated account".into());
@@ -131,6 +137,26 @@ pub(crate) async fn prepare(
         if previous != BlockHeight::from(height) {
             let divergent_height = previous.min(height.into());
             rewind(&mut client, &mut db, divergent_height).await?;
+        }
+    }
+    // A fork can replace a previously prepared anchor while leaving funding
+    // untouched. Detect it before merging new frontiers into cached witnesses.
+    if let Some(stored) = db.block_max_scanned().map_err(|e| e.to_string())? {
+        if stored.block_height() > BlockHeight::from(height) {
+            let current_height = stored.block_height().min(tip_height.into());
+            let state = get_tree_state(&mut client, u64::from(u32::from(current_height)))
+                .await
+                .map_err(|e| e.to_string())?
+                .to_chain_state()
+                .map_err(|e| e.to_string())?;
+            if state.block_height() != current_height {
+                return Err("Gift Card cached frontier height does not match".into());
+            }
+            if stored.block_height() > BlockHeight::from(tip_height)
+                || stored.block_hash() != state.block_hash()
+            {
+                rewind(&mut client, &mut db, height.into()).await?;
+            }
         }
     }
 
@@ -240,18 +266,32 @@ pub(crate) async fn prepare(
     if cancel.load(Ordering::Relaxed) {
         return Err("Gift Card preparation cancelled".into());
     }
+    witnesses::prepare_recent_anchor(
+        &mut client,
+        &mut db,
+        network,
+        funding_id,
+        height,
+        tip_height,
+        anchor_height,
+        &cancel,
+    )
+    .await?;
+    if cancel.load(Ordering::Relaxed) {
+        return Err("Gift Card preparation cancelled".into());
+    }
     with_wallet_db_write_lock("direct_claim.save", || -> Result<(), String> {
         let conn = open_wallet_raw_conn_with_timeout(path, READ_DB_BUSY_TIMEOUT)?;
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS vizor_gift_direct_claim (
         id INTEGER PRIMARY KEY CHECK(id=1), funding_txid TEXT NOT NULL,
-        funding_height INTEGER NOT NULL, tip_height INTEGER NOT NULL);",
+        funding_height INTEGER NOT NULL, tip_height INTEGER NOT NULL, anchor_height INTEGER NOT NULL);",
         )
         .map_err(|e| e.to_string())?;
         conn.execute(
-            "INSERT INTO vizor_gift_direct_claim (id, funding_txid, funding_height, tip_height)
-        VALUES(1, ?1, ?2, ?3)",
-            rusqlite::params![funding_id.to_string(), height, tip_height],
+            "INSERT INTO vizor_gift_direct_claim (id, funding_txid, funding_height, tip_height, anchor_height)
+        VALUES(1, ?1, ?2, ?3, ?4)",
+            rusqlite::params![funding_id.to_string(), height, tip_height, anchor_height],
         )
         .map_err(|e| e.to_string())?;
         Ok(())
@@ -360,12 +400,24 @@ async fn process_transaction_block(
     height: u32,
     cancel: &AtomicBool,
 ) -> Result<(), String> {
+    process_block(client, db, network, Some(id), height, cancel).await
+}
+
+async fn process_block(
+    client: &mut CompactTxStreamerClient<Channel>,
+    db: &mut crate::wallet::db::WalletDatabase,
+    network: WalletNetwork,
+    expected_txid: Option<TxId>,
+    height: u32,
+    cancel: &AtomicBool,
+) -> Result<(), String> {
     let start = BlockHeight::from(height);
     let (source, state) = download_scan_batch(client, start, start, network)
         .await
         .map_err(|e| e.to_string())?;
     validate_scan_batch(&source, &state, start, start + 1).map_err(|e| e.to_string())?;
-    if !source.transaction_hashes().any(|hash| hash == id.as_ref()) {
+    if expected_txid.is_some_and(|id| !source.transaction_hashes().any(|hash| hash == id.as_ref()))
+    {
         return Err("Gift Card transaction is missing from its reported block".into());
     }
     let block_hash = source
@@ -388,6 +440,8 @@ async fn process_transaction_block(
     .map_err(|e| format!("Prepare Gift Card transaction block: {e}"))?;
     Ok(())
 }
+
+mod witnesses;
 
 #[cfg(test)]
 mod tests;

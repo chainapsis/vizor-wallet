@@ -17,20 +17,23 @@ redemption applies at the shared claim boundary, including onboarding,
 Settings → My gift cards, and interrupted-claim recovery.
 
 The txid-based claim path is implemented at the shared redemption boundary.
-Isolated regtest verified real Orchard and Ironwood proof generation, node
-acceptance, mined recipient balances, and history while processing only the
-funding block. The Ironwood funding transaction was 5,003 blocks old and its
-anchor differed from the current tip. Rust preparation used four read RPCs;
-preparation plus submission used six. Account setup, Dart intake, recipient
-sync, and recovery make additional calls. This is not a six-RPC bound on the
-entire onboarding flow. Subsequent integration covered duplicate rejection,
-funding and claim reorgs, interrupted submission with reuse of signed bytes,
-and expiry followed by an explicit retry. A native iOS Simulator walkthrough
-also completed actual first-wallet creation, claim submission, recipient sync,
-the `0.50 TAZ` Home balance, and redeemed-gift activity. Physical devices and
-production-network claims still require qualification.
-The explicit integration lane is in
+It uses the known funding transaction to recover the note, then advances its
+witness to a recent anchor at the regular gift-claim depth (two confirmations,
+`tip - 1`). Inspection prepares that witness; actual event submission refreshes
+it so a preview left open cannot freeze an old anchor. Historical gaps remain
+unscanned. Real-node validation used recent roots for a 5,003-block-old Ironwood card and
+an Orchard card while processing two blocks each. A busy Ironwood case repaired
+a missing witness boundary and processed three blocks. Initial preparation used
+seven and seventeen read RPCs respectively; submission-time refresh, setup,
+recipient sync, and recovery add calls. The latest-source reuse lane also covered
+an anchor-only reorg with unchanged funding. The explicit real-node integration lane is in
 [`regtest_direct_gift_claim.rs`](../rust/tests/regtest_direct_gift_claim.rs).
+
+Earlier regtest and native iOS Simulator validation established actual first-wallet
+creation, proof generation, node acceptance, recipient sync, Home balance and
+redeemed-gift activity. Its four-read-RPC measurement used the older funding-height
+anchor and is not a bound for the recent-anchor implementation. Physical devices
+and production-network claims still require qualification.
 
 The message remains inline. It is not placed in, or fetched from, a funding
 transaction memo. The amount and birthday retain their existing meanings.
@@ -164,7 +167,13 @@ event-sharing format. Apps without a v4 reader reject v4 links rather than
 silently ignoring the event policy.
 
 The event claim contract retrieves the identified funding transaction and
-processes its block with the preceding tree frontier. It leaves birthday-to-tip gaps
+processes its block with the preceding tree frontier. It also processes the
+recent anchor block and pins its hash-checked end-of-block frontier. When an
+opaque subtree hides required witness siblings, it locates the blocks completing
+those nodes by binary-searching tree sizes with `GetTreeState` and processes only
+those individual boundary blocks. It caches frontier lookups during preparation
+and verifies the resulting root against the recent frontier. It never falls back
+to the funding-height anchor or a full historical scan. Birthday-to-tip gaps stay
 unscanned. Claim estimates and proposals only select notes decrypted for that
 funding txid, with real Merkle witnesses and the existing two-confirmation
 claim policy. Retained claims must query their known outgoing transactions
@@ -198,7 +207,10 @@ is a confirmed funding height. See the
 Preparation clears its persisted marker before any remote lookup. A failed or
 cancelled refresh cannot create a new direct quote from the old marker. Funding
 height moves and stored block-hash changes rewind the card DB before rebuilding
-the witness. Known outgoing claims also rewind their previous mined state when
+the witness. Refresh also checks the highest previously processed card block;
+if its fork changed while funding stayed mined, it rewinds to the funding
+predecessor and rebuilds sparse witnesses. A retained preparation therefore does
+not permanently pin an obsolete anchor branch. Known outgoing claims also rewind their previous mined state when
 the node reports them missing, unmined, or mined at another height. Recovery
 resubmits the existing signed bytes under the existing lifecycle and expiry
 policy; it does not create a replacement claim automatically.
@@ -228,12 +240,15 @@ the server. The funding txid does not reveal shielded addresses or amounts on
 its own. A funding transaction that contains transparent components may expose
 those components independently of this feature.
 
-Using a witness at the funding block also uses an older on-chain anchor than
-ordinary sends. This can distinguish the event claims and link them as a
-cohort; it does not by itself prove which shielded output was spent. Zcash's
+Event claims use `tip - 1`, matching the existing two-confirmation gift-claim
+policy rather than retaining the funding-height anchor. Zcash's draft
 [wallet guidance on anchor selection](https://zips.z.cash/zip-0315#anchor-selection)
-recommends a fixed depth near the tip. This departure needs explicit review
-before release; it must not change ordinary wallet sends.
+recommends a fixed near-tip depth and proposes three blocks. This change retains
+Vizor's existing gift-claim depth; it does not adopt that draft's three-block
+value. Ordinary sends keep their existing confirmation and anchor policies. A tree root
+can remain unchanged across empty blocks; selecting a recent height cannot
+force new commitments or prove complete privacy. Direct txid lookup disclosure
+and other event/link correlation remain separate trade-offs.
 
 ## Rollout and local testing
 
