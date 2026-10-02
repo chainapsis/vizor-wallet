@@ -1,3 +1,6 @@
+@Tags(['mobile'])
+library;
+
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -14,7 +17,8 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 // Live-network check for a disposable, fresh-install mobile simulator/device.
 // Uses real Tor/Rust/storage and a mainnet lightwalletd server; creates no wallet.
-// Run with VIZOR_FORM_FACTOR=mobile against a dedicated test device.
+// Run against a dedicated test device with --tags mobile --run-skipped and
+// --dart-define=VIZOR_FORM_FACTOR=mobile (see the network settings spec).
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(initializeZcashWalletRuntime);

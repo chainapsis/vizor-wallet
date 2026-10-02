@@ -83,3 +83,11 @@ The live iOS Simulator integration test in
 cancellation, native keyboard focus and RPC verification on a fresh install.
 It also checks that no wallet, sync or new wallet DB is created. It does not
 cover full Tor bootstrap success or Android device networking.
+
+Run it against a dedicated fresh-install test device:
+
+```bash
+fvm flutter test --tags mobile --run-skipped \
+  --dart-define=VIZOR_FORM_FACTOR=mobile \
+  integration_test/mobile_welcome_network_settings_test.dart -d <device-id>
+```
