@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../import/desktop_import_navigation.dart';
 import '../../../core/input/app_password_input_source.dart';
 import '../../../../main.dart' show log;
 import '../../../core/account_name_policy.dart';
@@ -223,9 +224,14 @@ class _CustomiseAccountScreenState
             'Desktop Ledger uses its dedicated setup routes.',
           ),
           SetPasswordFlow.create => OnboardingStep.setPassword.routePath,
-          SetPasswordFlow.importWallet => '/import/set-password',
-          SetPasswordFlow.importKeystone =>
+          SetPasswordFlow.importWallet => desktopImportLocation(
+            context,
+            '/import/set-password',
+          ),
+          SetPasswordFlow.importKeystone => desktopImportLocation(
+            context,
             KeystoneOnboardingStep.setPassword.routePath,
+          ),
           SetPasswordFlow.importWalletLink => throw StateError(
             'Wallet Link does not use account customisation.',
           ),
@@ -247,7 +253,9 @@ class _CustomiseAccountScreenState
           'Wallet Link does not use account customisation.',
         ),
       },
-      routePath: args.setupArgs.backRoutePath,
+      routePath: args.flow == SetPasswordFlow.create
+          ? args.setupArgs.backRoutePath
+          : desktopImportLocation(context, args.setupArgs.backRoutePath),
       routeExtra: args.setupArgs.backRouteExtra,
     );
   }

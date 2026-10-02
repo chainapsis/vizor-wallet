@@ -533,7 +533,11 @@ class _WalletButtonsStack extends StatelessWidget {
         const SizedBox(height: AppSpacing.s),
         AppButton(
           key: const ValueKey('welcome_import_wallet_button'),
-          onPressed: () => context.go('/import'),
+          onPressed: () => context.go(
+            GoRouterState.of(context).matchedLocation == '/add-account'
+                ? '/import/method?from=add-account'
+                : '/import/method',
+          ),
           variant: AppButtonVariant.secondary,
           minWidth: _welcomeActionWidth,
           leading: const AppIcon(AppIcons.importWallet),

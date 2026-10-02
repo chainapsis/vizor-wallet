@@ -388,3 +388,16 @@ its existing password flow rather than adopting the mobile passcode/Face ID
 screens. Link Vizor Desktop is excluded from the desktop import selector because
 it is a phone-to-desktop QR flow. Ledger choices and summary copy follow the
 existing capability gates; this work does not expand Ledger network support.
+
+### Desktop import selection
+
+Welcome and Add account open `/import/method`, offering secret-passphrase and
+hardware import. `/import/hardware` offers Keystone and, where the existing
+capability allows it, Ledger. The summary uses the same capability gate.
+Selector-origin parameters survive birthday, password and customisation steps
+without changing typed route extras. Cancel returns to the originating Welcome
+or Add account screen; direct import/device entry retains its original fallback.
+
+Preview the selectors from Widgetbook's desktop Welcome use case by clicking
+Import a wallet. The `desktop-onboarding-import` and
+`desktop-onboarding-hardware` capture scenarios render deterministic content.
