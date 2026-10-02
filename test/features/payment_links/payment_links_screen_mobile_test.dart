@@ -1205,6 +1205,42 @@ void main() {
     expect(router.routerDelegate.currentConfiguration.uri.path, '/settings');
   });
 
+  testWidgets('pasted card shows a skeleton only after clipboard parsing', (
+    tester,
+  ) async {
+    final clipboardRead = Completer<String?>();
+    final prepare = Completer<void>();
+    final operations = FakePaymentLinkOperations(
+      prepareClaimGates: {1: prepare},
+    );
+    await pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      clipboard: FakePaymentLinkClipboard(readCompleter: clipboardRead),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('payment_links_mobile_redeem_button')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Paste card link'));
+    await tester.pump();
+    final skeleton = find.byKey(
+      const ValueKey('payment_link_mobile_loading_card'),
+    );
+    expect(skeleton, findsNothing);
+    expect(find.text('Paste card link'), findsOneWidget);
+    clipboardRead.complete(incomingLink.toUri().toString());
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(operations.preparedLinks, hasLength(1));
+    expect(skeleton, findsOneWidget);
+    expect(find.text('4.45'), findsNothing);
+    prepare.complete();
+    await tester.pumpAndSettle();
+    expect(skeleton, findsNothing);
+    expect(find.text('4.45'), findsOneWidget);
+  });
+
   testWidgets('mobile confirms before checking a Gift Card with a long scan', (
     tester,
   ) async {
