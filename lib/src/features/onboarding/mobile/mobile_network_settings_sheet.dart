@@ -187,6 +187,7 @@ class _MobileNetworkSettingsSheetState
       valueListenable: widget.dismissal,
       builder: (context, canDismiss, _) => MobileNetworkSettingsContent(
         torControl: MobileTorControl(
+          useGeneralDescription: true,
           enabled: !_submitting && !(_torRequestPending && !state.isBusy),
           onRequest: _requestTor,
         ),
@@ -199,7 +200,6 @@ class _MobileNetworkSettingsSheetState
         onClose: canDismiss ? () => Navigator.of(context).pop() : null,
         canUpdate: _canUpdate(current),
         submitting: _submitting,
-        transportReady: welcomeNetworkReady(state),
         error: _error ?? _inputError,
       ),
     );
@@ -218,7 +218,6 @@ class MobileNetworkSettingsContent extends StatelessWidget {
     required this.onClose,
     required this.canUpdate,
     required this.submitting,
-    required this.transportReady,
     this.fieldRegion,
     this.error,
     super.key,
@@ -234,7 +233,6 @@ class MobileNetworkSettingsContent extends StatelessWidget {
   final VoidCallback? onClose;
   final bool canUpdate;
   final bool submitting;
-  final bool transportReady;
   final String? error;
 
   @override
@@ -314,15 +312,6 @@ class MobileNetworkSettingsContent extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
-          if (!transportReady) ...[
-            Text(
-              'Connect to Tor or turn it off before updating the endpoint.',
-              style: AppTypography.bodySmall.copyWith(
-                color: colors.text.secondary,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-          ],
           AppButton(
             key: const ValueKey('welcome_endpoint_update'),
             variant: AppButtonVariant.primary,

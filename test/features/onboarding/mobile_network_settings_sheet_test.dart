@@ -310,6 +310,81 @@ void main() {
     },
   );
 
+  for (final scale in [1.0, 1.4]) {
+    testWidgets(
+      'normal Tor transitions keep the sheet still without reserved space at scale $scale',
+      (tester) async {
+        tester.view.physicalSize = scale == 1
+            ? const Size(393, 852)
+            : const Size(320, 640);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final privacy = _Privacy();
+        await _pump(tester, privacy, _Endpoint(), scale: scale);
+        await _open(tester);
+        final sheet = find.byType(MobileNetworkSettingsContent);
+        final endpoint = find.byKey(const ValueKey('welcome_endpoint_input'));
+        final update = find.byKey(const ValueKey('welcome_endpoint_update'));
+        final description = find.byKey(
+          const ValueKey('mobile_settings_tor_description'),
+        );
+        final initialDescription = tester.widget<Text>(description).data;
+        final sheetRect = tester.getRect(sheet);
+        final endpointTop = tester.getTopLeft(endpoint);
+        final updateRect = tester.getRect(update);
+        for (final state in [
+          const NetworkPrivacyState(
+            torEnabled: true,
+            status: NetworkPrivacyConnectionStatus.connecting,
+          ),
+          const NetworkPrivacyState(
+            torEnabled: true,
+            status: NetworkPrivacyConnectionStatus.connected,
+          ),
+          const NetworkPrivacyState(
+            torEnabled: true,
+            status: NetworkPrivacyConnectionStatus.connecting,
+            targetTorEnabled: false,
+          ),
+          const NetworkPrivacyState.off(),
+        ]) {
+          privacy.publish(state);
+          await tester.pumpAndSettle();
+          expect(tester.getRect(sheet), sheetRect, reason: state.status.name);
+          expect(
+            tester.getTopLeft(endpoint),
+            endpointTop,
+            reason: state.status.name,
+          );
+          expect(tester.getRect(update), updateRect, reason: state.status.name);
+          expect(tester.widget<Text>(description).data, initialDescription);
+          expect(tester.takeException(), isNull);
+        }
+        privacy.publish(
+          const NetworkPrivacyState(
+            torEnabled: true,
+            status: NetworkPrivacyConnectionStatus.failed,
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Try again'), findsOneWidget);
+        expect(
+          tester.widget<Text>(description).data,
+          contains('Requests stay blocked'),
+        );
+        expect(tester.takeException(), isNull);
+        // Let the optional native corner lookup finish after the sheet resizes.
+        await tester.pump(const Duration(milliseconds: 300));
+        await tester.pumpAndSettle();
+      },
+      variant: TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.iOS,
+      }),
+    );
+  }
+
   testWidgets('additional account does not expose network settings', (
     tester,
   ) async {

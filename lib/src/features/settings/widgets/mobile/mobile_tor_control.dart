@@ -15,9 +15,18 @@ const _rowHeight = 44.0;
 
 /// Tor's existing mobile presentation, shared by Settings and Welcome.
 class MobileTorControl extends ConsumerWidget {
-  const MobileTorControl({this.enabled = true, this.onRequest, super.key});
+  const MobileTorControl({
+    this.enabled = true,
+    this.onRequest,
+    this.useGeneralDescription = false,
+    super.key,
+  });
 
   final bool enabled;
+
+  /// Welcome keeps the explanation unchanged during normal route transitions.
+  /// Errors still describe the current route and offer the existing retry.
+  final bool useGeneralDescription;
   final Future<void> Function(bool enabled)? onRequest;
 
   @override
@@ -29,6 +38,13 @@ class MobileTorControl extends ConsumerWidget {
       state,
       platform: defaultTargetPlatform,
     );
+    final description =
+        useGeneralDescription &&
+            state.status != NetworkPrivacyConnectionStatus.failed
+        ? 'Use Tor to hide your IP address from servers. Other apps use their '
+              'own network settings.'
+              '${defaultTargetPlatform == TargetPlatform.iOS ? ' Ironwood private migration connects directly while Vizor is closed.' : ''}'
+        : presentation.description;
     final toggleAction = networkPrivacyToggleAction(state);
     final interactive = enabled && toggleAction.isInteractive;
     Future<void> request(bool value) =>
@@ -114,7 +130,7 @@ class MobileTorControl extends ConsumerWidget {
         ),
         const SizedBox(height: AppSpacing.sm),
         Text(
-          presentation.description,
+          description,
           key: const ValueKey('mobile_settings_tor_description'),
           style: AppTypography.bodyMedium.copyWith(
             color: colors.text.secondary,

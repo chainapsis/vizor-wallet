@@ -118,7 +118,10 @@ class _PreviewState extends State<_Preview> {
       background: const MobileWelcomeScreen(animateBackground: false),
       child: widget.rpcPending || widget.rpcError != null
           ? MobileNetworkSettingsContent(
-              torControl: MobileTorControl(enabled: !widget.rpcPending),
+              torControl: MobileTorControl(
+                enabled: !widget.rpcPending,
+                useGeneralDescription: true,
+              ),
               current: defaultRpcEndpointConfig('main'),
               controller: _controller,
               focusNode: _focus,
@@ -127,7 +130,6 @@ class _PreviewState extends State<_Preview> {
               onClose: widget.rpcPending ? null : () {},
               canUpdate: !widget.rpcPending,
               submitting: widget.rpcPending,
-              transportReady: true,
               error: widget.rpcError is FormatException
                   ? (widget.rpcError as FormatException).message
                   : widget.rpcError != null
