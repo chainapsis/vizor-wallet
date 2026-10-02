@@ -154,6 +154,109 @@ void main() {
     );
   }
 
+  for (final signer in [
+    HardwareSignerKind.keystone,
+    HardwareSignerKind.ledger,
+  ]) {
+    for (final mixed in [false, true]) {
+      test(
+        'Wallet Link restores $signer metadata after interrupted mixed=$mixed import',
+        () async {
+          final security = container.read(appSecurityProvider.notifier);
+          await security.preparePasswordSetup(_passcode);
+          storage.failNextWriteFor('zcash_accounts');
+          final hardware = LinkedWalletAccountImport(
+            name: 'Hardware wallet',
+            birthdayHeight: 3000000,
+            zip32AccountIndex: 3,
+            isHardware: true,
+            isSeedAnchor: false,
+            hardwareSignerKind: signer,
+            ufvk: 'hardware-ufvk',
+            seedFingerprint: List.filled(32, 1),
+            profilePictureId: _profile,
+            sourceAccountUuid: 'desktop-hardware-uuid',
+          );
+          await expectLater(
+            accounts().importLinkedWalletAccounts(
+              network: kZcashDefaultNetworkName,
+              accountsToImport: [
+                if (mixed)
+                  const LinkedWalletAccountImport(
+                    name: 'Software wallet',
+                    birthdayHeight: 3000000,
+                    zip32AccountIndex: 0,
+                    isHardware: false,
+                    isSeedAnchor: true,
+                    mnemonic: _mnemonic,
+                  ),
+                hardware,
+              ],
+            ),
+            throwsA(isA<WalletAccountSetupInterruptedException>()),
+          );
+          await security.finishPasswordSetupAfterFailure(accountMayExist: true);
+          final restarted = ProviderContainer(
+            overrides: [
+              appBootstrapProvider.overrideWithValue(
+                _bootstrappedGiftAccount(
+                  accounts: [
+                    if (mixed)
+                      const AccountInfo(
+                        uuid: 'uuid-1',
+                        name: 'Software',
+                        order: 0,
+                      ),
+                    AccountInfo(
+                      uuid: 'hardware',
+                      name: 'Hardware',
+                      order: mixed ? 1 : 0,
+                      isHardware: true,
+                      hardwareSignerKind: signer,
+                    ),
+                  ],
+                ),
+              ),
+              accountProvider.overrideWith(
+                () => AccountNotifier.testing(store: store),
+              ),
+              appSecurityProvider.overrideWith(
+                () => AppSecurityNotifier.testing(store: store),
+              ),
+            ],
+          );
+          addTearDown(restarted.dispose);
+          await restarted.read(accountProvider.future);
+          final recovered = restarted.read(accountProvider.notifier);
+          await recovered.restoreAfterUnlock();
+          final account = restarted
+              .read(accountProvider)
+              .value!
+              .accounts
+              .singleWhere((account) => account.uuid == 'hardware');
+          expect(account.name, 'Hardware wallet');
+          expect(account.profilePictureId, normalizeProfilePictureId(_profile));
+          expect(account.walletLinkSourceAccountUuid, 'desktop-hardware-uuid');
+          expect(account.hardwareSignerKind, signer);
+          expect(
+            await recovered.alreadyImportedWalletLinkSourceAccountUuids(
+              network: kZcashDefaultNetworkName,
+              accountsToCheck: [hardware],
+            ),
+            {'desktop-hardware-uuid'},
+          );
+          expect(
+            await store.readAccountSoftwareWalletSecret('hardware'),
+            isNull,
+          );
+          expect(_rust.hardwareImportCalls, 1);
+          expect(_rust.importCalls, mixed ? 1 : 0);
+          expect(await pending(), isNull);
+        },
+      );
+    }
+  }
+
   test(
     'Wallet Link recovers every imported account, including a nonzero BIP39 index',
     () async {
@@ -1240,7 +1343,7 @@ AppBootstrapState _bootstrappedGiftAccount({
                 isSeedAnchor: true,
               ),
         ],
-    activeAccountUuid: 'uuid-1',
+    activeAccountUuid: accounts?.first.uuid ?? account?.uuid ?? 'uuid-1',
     activeAddress: 'u1uuid-1',
   ),
   initialSyncSnapshot: AppSyncSnapshot.empty,
@@ -1268,6 +1371,8 @@ class _GiftAccountRustApi implements RustLibApi {
   String? importedDbPath;
   int importCalls = 0;
   int addCalls = 0;
+  int hardwareImportCalls = 0;
+  final hardwareUfvks = <String, String>{};
   int listCalls = 0;
 
   void reset() {
@@ -1284,6 +1389,8 @@ class _GiftAccountRustApi implements RustLibApi {
     importedDbPath = null;
     importCalls = 0;
     addCalls = 0;
+    hardwareImportCalls = 0;
+    hardwareUfvks.clear();
     listCalls = 0;
   }
 
@@ -1339,14 +1446,18 @@ class _GiftAccountRustApi implements RustLibApi {
   }) async {
     walletExists = true;
     File(dbPath).writeAsStringSync('hardware account database');
+    hardwareImportCalls++;
+    hardwareUfvks['hardware'] = ufvkString;
     listedAccounts = [
-      const rust_wallet.AccountInfo(
+      ...listedAccounts,
+      rust_wallet.AccountInfo(
         uuid: 'hardware',
         name: _name,
         unifiedAddress: 'u1hardware',
         birthdayHeight: 3000000,
         isSeedAnchor: false,
         isHardware: true,
+        hardwareSignerKind: hardwareSignerKind,
       ),
     ];
     return const rust_wallet.AccountCreationResult(
@@ -1354,6 +1465,13 @@ class _GiftAccountRustApi implements RustLibApi {
       unifiedAddress: 'u1hardware',
     );
   }
+
+  @override
+  Future<String> crateApiWalletGetAccountUfvk({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+  }) async => hardwareUfvks[accountUuid]!;
 
   @override
   Future<rust_wallet.WalletImportResult> crateApiWalletImportWallet({

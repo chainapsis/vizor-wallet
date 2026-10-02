@@ -982,19 +982,22 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       'network': network,
       'accounts': [
         for (final input in inputs)
-          if (!input.isHardware)
-            {
+          {
+            'isHardware': input.isHardware,
+            if (input.isHardware)
+              'ufvk': input.ufvk
+            else
               'mnemonic': SoftwareWalletSecret(
                 mnemonic: input.mnemonic ?? '',
                 bip39Passphrase: input.bip39Passphrase,
               ).encodeForStorage(),
-              'index': input.zip32AccountIndex,
-              'name': input.name,
-              'profilePictureId': normalizeProfilePictureId(
-                input.profilePictureId ?? kDefaultProfilePictureId,
-              ),
-              'sourceAccountUuid': input.sourceAccountUuid,
-            },
+            'index': input.zip32AccountIndex,
+            'name': input.name,
+            'profilePictureId': normalizeProfilePictureId(
+              input.profilePictureId ?? kDefaultProfilePictureId,
+            ),
+            'sourceAccountUuid': input.sourceAccountUuid,
+          },
       ],
     }),
   );
@@ -1012,34 +1015,53 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       for (final item in saved == null ? const [] : jsonDecode(saved) as List)
         item['uuid'] as String,
     };
+    final entries = (draft['accounts'] as List).cast<Map<String, dynamic>>();
+    final hardwareUuidsByUfvk = <String, String>{};
+    if (entries.any((entry) => entry['isHardware'] == true)) {
+      for (final account in current.accounts.where((item) => item.isHardware)) {
+        final ufvk = await rust_wallet.getAccountUfvk(
+          dbPath: dbPath,
+          network: network,
+          accountUuid: account.uuid,
+        );
+        requireCurrentSession();
+        hardwareUuidsByUfvk[ufvk] = account.uuid;
+      }
+    }
     final recovered = <String, AccountInfo>{};
-    for (final entry in draft['accounts'] as List) {
-      final input = entry as Map<String, dynamic>;
-      final secret = SoftwareWalletSecret.decode(input['mnemonic'] as String);
+    for (final input in entries) {
+      final isHardware = input['isHardware'] as bool;
+      final secret = isHardware
+          ? null
+          : SoftwareWalletSecret.decode(input['mnemonic'] as String);
       final index = input['index'] as int;
-      final uuid = await rust_wallet.findSoftwareAccountForMnemonic(
-        mnemonic: secret.encodeForStorage(),
-        network: network,
-        dbPath: dbPath,
-        zip32AccountIndex: index,
-      );
+      final uuid = isHardware
+          ? hardwareUuidsByUfvk[input['ufvk'] as String]
+          : await rust_wallet.findSoftwareAccountForMnemonic(
+              mnemonic: secret!.encodeForStorage(),
+              network: network,
+              dbPath: dbPath,
+              zip32AccountIndex: index,
+            );
       // An interrupted package may contain entries not yet imported. Never
       // create them during unlock; restore only accounts present in this DB.
       if (uuid == null) continue;
       final account = current.accounts
           .where((item) => item.uuid == uuid)
           .firstOrNull;
-      if (account == null || account.isHardware) {
+      if (account == null || account.isHardware != isHardware) {
         throw StateError('Linked account recovery does not match the wallet.');
       }
-      await _restoreAccountSecretIfMissing(
-        uuid: uuid,
-        secret: secret,
-        dbPath: dbPath,
-        network: network,
-        zip32AccountIndex: index,
-        requireCurrentSession: requireCurrentSession,
-      );
+      if (secret != null) {
+        await _restoreAccountSecretIfMissing(
+          uuid: uuid,
+          secret: secret,
+          dbPath: dbPath,
+          network: network,
+          zip32AccountIndex: index,
+          requireCurrentSession: requireCurrentSession,
+        );
+      }
       recovered[uuid] = savedUuids.contains(uuid)
           ? account
           : account.copyWith(
@@ -1050,9 +1072,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
             );
     }
     if (current.accounts.any(
-      (account) => !account.isHardware && !recovered.containsKey(account.uuid),
+      (account) => !recovered.containsKey(account.uuid),
     )) {
-      throw StateError('A linked account is missing its recovery secret.');
+      throw StateError('A linked account is missing its recovery data.');
     }
     final accounts = [
       for (final account in current.accounts)
