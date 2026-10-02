@@ -1,3 +1,4 @@
+import '../src/features/accounts/screens/mobile/mobile_account_removal_passcode_screen.dart';
 import 'ledger_pairing_capture.dart';
 import 'caps_lock_capture.dart';
 // ignore_for_file: depend_on_referenced_packages
@@ -67,6 +68,13 @@ class FigmaCompareScenario {
 /// storage, network, wallet, and Rust state. Widgetbook fixtures are preferred
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
+  FigmaCompareScenario(
+    id: 'mobile-account-removal-passcode',
+    description: 'Full-screen passcode confirmation before account removal',
+    builder: _buildAccountRemovalPasscode,
+    desktop: false,
+    mobile: true,
+  ),
   FigmaCompareScenario(
     id: 'caps-lock-unlock',
     description: 'Unlock screen with Caps Lock warning',
@@ -2471,3 +2479,6 @@ Widget _buildLedgerVotingProcessing(BuildContext context) =>
     buildLedgerVotingProcessingPreview(
       mobile: kAppFormFactor == AppFormFactor.mobile,
     );
+
+Widget _buildAccountRemovalPasscode(BuildContext context) =>
+    const MobileAccountRemovalPasscodeScreen(isLastAccount: false);

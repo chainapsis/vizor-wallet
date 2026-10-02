@@ -21,11 +21,14 @@ import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/mobile_account_avatar.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile_text_field.dart';
 import 'package:zcash_wallet/src/features/accounts/screens/mobile/mobile_accounts_screen.dart';
+import 'package:zcash_wallet/src/features/accounts/screens/mobile/mobile_account_removal_passcode_screen.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/passcode_widgets.dart';
 import 'package:zcash_wallet/src/features/accounts/widgets/mobile/account_edit_sheets.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_reconciler.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
@@ -68,6 +71,7 @@ AppBootstrapState _bootstrap(AccountState accounts) => AppBootstrapState(
 Widget _app(
   AccountState accounts, {
   AccountNotifier Function()? accountNotifier,
+  _FakeSecurityNotifier? securityNotifier,
   BiometricUnlockNotifier Function()? biometricNotifier,
   SyncNotifier Function()? syncNotifier,
   Map<String, rust_sync.MigrationStatus> migrationStatuses = const {},
@@ -80,6 +84,12 @@ Widget _app(
       GoRoute(
         path: '/accounts',
         builder: (_, _) => const MobileAccountsScreen(),
+      ),
+      GoRoute(
+        path: '/accounts/confirm-removal',
+        builder: (_, state) => MobileAccountRemovalPasscodeScreen(
+          isLastAccount: state.extra == true,
+        ),
       ),
       GoRoute(
         path: '/add-account',
@@ -101,6 +111,9 @@ Widget _app(
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap(accounts)),
+      appSecurityProvider.overrideWith(
+        () => securityNotifier ?? _FakeSecurityNotifier(),
+      ),
       if (accountNotifier != null)
         accountProvider.overrideWith(accountNotifier),
       biometricUnlockProvider.overrideWith(
@@ -124,6 +137,27 @@ Widget _app(
       builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
     ),
   );
+}
+
+class _FakeSecurityNotifier extends AppSecurityNotifier {
+  Future<bool> Function(String)? verify;
+
+  @override
+  Future<bool> confirmPassword(String password) async =>
+      verify != null ? await verify!(password) : password == '123456';
+}
+
+Future<void> _enterPasscode(
+  WidgetTester tester, [
+  String code = '123456',
+]) async {
+  for (final digit in code.split('')) {
+    final key = find.bySemanticsLabel('Digit $digit');
+    await tester.ensureVisible(key);
+    await tester.tap(key);
+    await tester.pump();
+  }
+  await tester.pumpAndSettle();
 }
 
 class _FakeMigrationCoordinator extends IronwoodMigrationCoordinator {
@@ -527,6 +561,82 @@ void main() {
     expect(find.text('viewing key route b'), findsOneWidget);
   });
 
+  for (final lastAccount in [false, true]) {
+    testWidgets('removal authentication fails closed (last: $lastAccount)', (
+      tester,
+    ) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(393, 852);
+      addTearDown(tester.view.reset);
+      final accounts = AccountState(
+        accounts: [
+          _account('a', 'Active'),
+          if (!lastAccount) _account('b', 'Other'),
+        ],
+        activeAccountUuid: 'a',
+      );
+      final notifier = _FakeAccountNotifier(accounts);
+      final sync = _FakeWalletMutationSyncNotifier();
+      final security = _FakeSecurityNotifier();
+      await tester.pumpWidget(
+        _app(
+          accounts,
+          accountNotifier: () => notifier,
+          syncNotifier: () => sync,
+          securityNotifier: security,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('mobile_accounts_menu_a')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_account_menu_remove')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_account_remove_confirm')),
+      );
+      await tester.pumpAndSettle();
+      expect(notifier.removedUuid, isNull);
+      expect(notifier.resetCount, 0);
+      expect(sync.pauseCount, 0);
+      expect(find.bySemanticsLabel('Passcode help'), findsNothing);
+      expect(find.byType(PasscodeBiometricButton), findsNothing);
+      expect(find.byType(MobileModalScaffold), findsNothing);
+      expect(find.byType(MobileAccountRemovalPasscodeScreen), findsOneWidget);
+      expect(
+        tester.getSize(find.byType(MobileAccountRemovalPasscodeScreen)),
+        const Size(393, 852),
+      );
+      await _enterPasscode(tester, '000000');
+      expect(find.text('Incorrect passcode'), findsOneWidget);
+      security.verify = (_) async => throw StateError('verification failed');
+      await _enterPasscode(tester);
+      expect(
+        find.text("Couldn't check your passcode. Please try again."),
+        findsOneWidget,
+      );
+      expect(notifier.removedUuid, isNull);
+      expect(notifier.resetCount, 0);
+      expect(sync.pauseCount, 0);
+      final pending = Completer<bool>();
+      security.verify = (_) => pending.future;
+      for (final digit in '123456'.split('')) {
+        await tester.tap(find.bySemanticsLabel('Digit $digit'));
+        await tester.pump();
+      }
+      // Cancel while verification is outstanding; a late success must not delete.
+      await tester.tap(find.bySemanticsLabel('Back'));
+      pending.complete(true);
+      await tester.pumpAndSettle();
+      expect(notifier.removedUuid, isNull);
+      expect(notifier.resetCount, 0);
+      expect(sync.pauseCount, 0);
+      expect(find.text('Enter Passcode'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('the last remaining seed account resets the app on removal', (
     tester,
   ) async {
@@ -562,6 +672,7 @@ void main() {
       find.byKey(const ValueKey('mobile_account_remove_confirm')),
     );
     await tester.pumpAndSettle();
+    await _enterPasscode(tester);
 
     expect(accountNotifier.resetCount, 1);
     expect(accountNotifier.removedUuid, isNull);
@@ -599,6 +710,7 @@ void main() {
       find.byKey(const ValueKey('mobile_account_remove_confirm')),
     );
     await tester.pumpAndSettle();
+    await _enterPasscode(tester);
 
     expect(accountNotifier.removedUuid, 'a');
     expect(syncNotifier.accountSwitchRefreshes, 1);
@@ -731,6 +843,7 @@ void main() {
         find.byKey(const ValueKey('mobile_account_remove_confirm')),
       );
       await tester.pumpAndSettle();
+      await _enterPasscode(tester);
 
       final subject = isLastAccount
           ? 'Resetting Vizor'
@@ -753,6 +866,7 @@ void main() {
         find.byKey(const ValueKey('mobile_account_remove_confirm')),
       );
       await tester.pumpAndSettle();
+      await _enterPasscode(tester);
 
       expect(accountNotifier.confirmedUnsharedGiftCardCounts, [
         0,
@@ -840,6 +954,7 @@ void main() {
         find.byKey(const ValueKey('mobile_account_remove_confirm')),
       );
       await tester.pumpAndSettle();
+      await _enterPasscode(tester);
 
       expect(find.text(testCase.message), findsOneWidget);
       expect(find.text("Couldn't remove the account"), findsNothing);
