@@ -1439,6 +1439,29 @@ void main() {
       },
     );
 
+    for (final fundingHeight in [null, 3500000]) {
+      test('direct submission refreshes the anchor before estimating a spend: '
+          '${fundingHeight == null ? 'txid' : 'height'}', () async {
+        api.poolFixture = true;
+        api.estimateGate = Completer<rust_sync.SendMaxEstimateResult>();
+        final link = _eventLink(fundingHeight: fundingHeight);
+        final failed = expectLater(
+          service.claimPreparedLink(_claimSession(link: link)),
+          throwsStateError,
+        );
+        await api.estimateStarted.future;
+        expect(api.directClaimTxids, [?link.fundingTxid]);
+        expect(api.directClaimHeights, [?fundingHeight]);
+        expect(api.directClaimAmounts, [
+          if (fundingHeight != null) link.amountZatoshi + BigInt.from(10000),
+        ]);
+        expect(api.claimSyncModes, [false]);
+        expect(api.claimSyncCalls, 0);
+        api.estimateGate!.completeError(StateError('preparation failed'));
+        await failed;
+      });
+    }
+
     for (final price in [200.0, null, 0.0, double.nan, -1.0, double.infinity]) {
       test('claim persists fresh fiat or enclosed fallback: $price', () async {
         container.listen(zecHomeMarketDataStateProvider, (_, _) {});
@@ -3156,8 +3179,8 @@ class _UnlockedSecurityNotifier extends AppSecurityNotifier {
       const AppSecurityState(isPasswordConfigured: true, isUnlocked: true);
 }
 
-PaymentLinkClaimSession _claimSession() {
-  final link = _link();
+PaymentLinkClaimSession _claimSession({VizorPaymentLink? link}) {
+  link ??= _link();
   return PaymentLinkClaimSession(
     link: link,
     destinationAddress: 'u1receiver',
@@ -3234,7 +3257,11 @@ const _legacyClaimDirectory =
     'payment_link_claim_main_'
     'df3533c3dc54740770e230053a1f1962724f8653ec41b84e4d53164d46733494';
 
-VizorPaymentLink _eventLink({String? fundingTxid, int? birthdayHeight}) {
+VizorPaymentLink _eventLink({
+  String? fundingTxid,
+  int? birthdayHeight,
+  int? fundingHeight,
+}) {
   final link = _link();
   return VizorPaymentLink(
     network: link.network,
@@ -3244,7 +3271,8 @@ VizorPaymentLink _eventLink({String? fundingTxid, int? birthdayHeight}) {
     birthdayHeight: birthdayHeight ?? link.birthdayHeight,
     label: link.label,
     createdAt: link.createdAt,
-    fundingTxid: fundingTxid ?? 'aa' * 32,
+    fundingTxid: fundingHeight == null ? fundingTxid ?? 'aa' * 32 : null,
+    fundingHeight: fundingHeight,
   );
 }
 
@@ -3573,6 +3601,8 @@ class _ClaimDestinationRustApi implements RustLibApi {
     fundingMessageLookups = 0;
     fundingMessageFails = false;
     directClaimTxids.clear();
+    directClaimHeights.clear();
+    directClaimAmounts.clear();
     requestedAccounts.clear();
     cancelledClaimSyncs.clear();
     validatedAddresses.clear();
