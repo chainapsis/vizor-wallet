@@ -164,6 +164,7 @@ class VizorPaymentLink {
     required DateTime createdAt,
     this.presentation,
     this.skipScan = false,
+    this.fundingTxid,
     this.isCreatedAtProvisional = false,
   }) : _address = address,
        _createdAt = createdAt;
@@ -178,6 +179,7 @@ class VizorPaymentLink {
     required DateTime? createdAt,
     required this.presentation,
     this.skipScan = false,
+    this.fundingTxid,
     this.isCreatedAtProvisional = false,
   }) : _address = address,
        _createdAt = createdAt;
@@ -198,6 +200,9 @@ class VizorPaymentLink {
 
   /// Event policy carried by the v4 share and stable recovery payloads.
   final bool skipScan;
+
+  /// The single funding transaction used by event cards instead of a history scan.
+  final String? fundingTxid;
 
   /// Local-only provenance; never included in the shared payload.
   final bool isCreatedAtProvisional;
@@ -243,7 +248,15 @@ class VizorPaymentLink {
           isCreatedAtProvisional ?? this.isCreatedAtProvisional,
       presentation: presentation,
       skipScan: skipScan,
+      fundingTxid: fundingTxid,
     );
+  }
+
+  static String validateFundingTxid(Object? value) {
+    if (value is! String || !RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(value)) {
+      throw const FormatException('Gift card funding transaction is invalid.');
+    }
+    return value.toLowerCase();
   }
 
   static bool supportsNetwork(String network) {
@@ -273,7 +286,12 @@ class VizorPaymentLink {
   Uri toShareUri() => _shareUri();
 
   Uri _shareUri({String? mnemonic}) {
-    final version = skipScan ? 4 : 3;
+    if (skipScan && fundingTxid == null) {
+      throw const FormatException(
+        'Event gift cards must be funded before sharing.',
+      );
+    }
+    final version = skipScan || fundingTxid != null ? 4 : 3;
     return _uri(
       'v$version=${_CompactPaymentLinkCodec.encode(this, mnemonic: mnemonic)}',
     );
@@ -286,7 +304,7 @@ class VizorPaymentLink {
     final original = mnemonic.trim();
     final canonical = original.split(RegExp(r'\s+')).join(' ');
     if (canonical == original) return null;
-    if (skipScan) {
+    if (skipScan || fundingTxid != null) {
       throw const FormatException(
         'Event gift cards require a standard secret passphrase.',
       );
@@ -327,6 +345,7 @@ class VizorPaymentLink {
       'birthdayHeight': birthdayHeight,
       'label': label.trim(),
       if (skipScan) 'skipScan': true,
+      if (fundingTxid != null) 'fundingTxid': validateFundingTxid(fundingTxid),
     };
     final presentationPayload = presentation?.toPayload();
     if (presentationPayload != null) {
@@ -399,6 +418,9 @@ class VizorPaymentLink {
     if (payload.containsKey('skipScan') && skipScan is! bool) {
       throw const FormatException('Payment link scan option is invalid.');
     }
+    final fundingTxid = payload.containsKey('fundingTxid')
+        ? validateFundingTxid(payload['fundingTxid'])
+        : null;
 
     final network = _readString(payload, 'network');
     final amountZatoshi = _readBigInt(payload, 'amountZatoshi');
@@ -447,6 +469,7 @@ class VizorPaymentLink {
       createdAt: createdAt,
       presentation: presentation,
       skipScan: skipScan == true,
+      fundingTxid: fundingTxid,
     );
   }
 

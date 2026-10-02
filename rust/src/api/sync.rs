@@ -215,6 +215,43 @@ pub fn run_payment_link_claim_sync(
     network: String,
     allow_resubmit: bool,
 ) -> Result<(), String> {
+    run_isolated_payment_link_claim(
+        claim_id,
+        db_path,
+        lightwalletd_url,
+        network,
+        allow_resubmit,
+        None,
+    )
+}
+
+/// Prepares a gift using its funding txid; never scans the birthday-to-tip range.
+pub fn prepare_payment_link_claim_transaction(
+    claim_id: String,
+    db_path: String,
+    lightwalletd_url: String,
+    network: String,
+    funding_txid: String,
+    allow_resubmit: bool,
+) -> Result<(), String> {
+    run_isolated_payment_link_claim(
+        claim_id,
+        db_path,
+        lightwalletd_url,
+        network,
+        allow_resubmit,
+        Some(funding_txid),
+    )
+}
+
+fn run_isolated_payment_link_claim(
+    claim_id: String,
+    db_path: String,
+    lightwalletd_url: String,
+    network: String,
+    allow_resubmit: bool,
+    funding_txid: Option<String>,
+) -> Result<(), String> {
     if claim_id.trim().is_empty() {
         return Err("Payment-link claim ID must not be empty".into());
     }
@@ -235,13 +272,25 @@ pub fn run_payment_link_claim_sync(
     let result = catch(panic::AssertUnwindSafe(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
         let runtime = tokio::runtime::Runtime::new().map_err(|error| format!("tokio: {error}"))?;
-        runtime.block_on(sync_engine::run_payment_link_claim_sync(
-            &db_path,
-            &lightwalletd_url,
-            network,
-            cancel,
-            allow_resubmit,
-        ))
+        if let Some(txid) = funding_txid {
+            runtime.block_on(sync_engine::direct_claim::prepare(
+                &db_path,
+                &lightwalletd_url,
+                network,
+                &txid,
+                cancel,
+                allow_resubmit,
+            ))
+        } else {
+            sync_engine::direct_claim::clear(&db_path)?;
+            runtime.block_on(sync_engine::run_payment_link_claim_sync(
+                &db_path,
+                &lightwalletd_url,
+                network,
+                cancel,
+                allow_resubmit,
+            ))
+        }
     }));
 
     PAYMENT_LINK_CLAIM_SYNCS

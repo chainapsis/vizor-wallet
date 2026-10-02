@@ -7,7 +7,30 @@ lookup, or new route is needed. New gifts still use 24 words. Decoding also
 supports existing 12, 15, 18, and 21 word phrases.
 
 V4 retains those compact fields and adds a named options object for event
-policy. Ordinary cards continue sharing as v3; `skipScan: true` shares as v4.
+policy. Ordinary cards continue sharing as v3; a scan policy or funding txid
+selects v4.
+
+Event links are issued and printed with separate tooling. The application's
+single-card and batch-creation UI continues creating ordinary cards; this
+change adds no event-mode toggle or funding-txid input to that UI. Event
+redemption applies at the shared claim boundary, including onboarding,
+Settings → My gift cards, and interrupted-claim recovery.
+
+The txid-based claim path is implemented at the shared redemption boundary.
+Isolated regtest verified real Orchard and Ironwood proof generation, node
+acceptance, mined recipient balances, and history while processing only the
+funding block. The Ironwood funding transaction was 5,003 blocks old and its
+anchor differed from the current tip. Rust preparation used four read RPCs;
+preparation plus submission used six. Account setup, Dart intake, recipient
+sync, and recovery make additional calls. This is not a six-RPC bound on the
+entire onboarding flow. Subsequent integration covered duplicate rejection,
+funding and claim reorgs, interrupted submission with reuse of signed bytes,
+and expiry followed by an explicit retry. A native iOS Simulator walkthrough
+also completed actual first-wallet creation, claim submission, recipient sync,
+the `0.50 TAZ` Home balance, and redeemed-gift activity. Physical devices and
+production-network claims still require qualification.
+The explicit integration lane is in
+[`regtest_direct_gift_claim.rs`](../rust/tests/regtest_direct_gift_claim.rs).
 
 The message remains inline. It is not placed in, or fetched from, a funding
 transaction memo. The amount and birthday retain their existing meanings.
@@ -63,11 +86,12 @@ unreleased binary v3 prototype; v1/v2 compatibility is preserved.
 ## Compatibility and recovery
 
 `toShareUri()` writes v3 for ordinary cards and v4 for cards carrying the
-optional `skipScan` policy. The verified sharing helper preserves v2
+optional `skipScan` policy or funding txid. The verified sharing helper preserves v2
 for legacy mnemonic whitespace. `toRecoveryUri()`
 continues writing the established v2 JSON format. `toUri()` remains a v2 alias
 for existing callers. Sender addresses, creation times, status, funding
-transactions, and claim evidence stay in their existing secure records.
+transactions, and claim evidence stay in their existing secure records. Event
+links additionally include the funding txid for direct retrieval.
 Incoming v3/v4 links persist through that same v2 representation. Decoding rejects
 links whose v2 recovery URI exceeds 16 KiB, including the expanded mnemonic,
 JSON field names, string escaping, and Base64 encoding.
@@ -78,10 +102,16 @@ untouched and reports a sharing error. Funding creation checks the selected
 share and recovery representations before the durable draft and broadcast.
 All funding signers share this path. No retry replaces a funded secret.
 
-The claim cache continues using network, mnemonic, and birthday, including its
-existing legacy-directory preference when submission evidence exists. Intake
+Ordinary claim caches continue using network, mnemonic, and birthday, including
+the existing legacy-directory preference when submission evidence exists. Event
+caches additionally include the validated funding txid and a direct-claim policy
+suffix, and never reuse an ordinary card's legacy cache. Intake
 equality continues comparing normalized logical payloads rather than the wire
 version. Different amounts, birthdays, labels, or presentation remain distinct.
+Persisted event policy, funding txid, destination, and submission evidence must
+survive restart and must not be overwritten by an incoming policy-free link.
+Cached quotes and proposals must not carry event preparation into ordinary
+claims or retain stale preparation after a failed verification.
 
 Desktop and mobile share ordinary cards as v3 without an older-version copy
 option. Event links carrying the scan policy require a v4-capable reader.
@@ -107,25 +137,103 @@ an optional options object at position 8. Its array has four to nine entries;
 all options belong in that object rather than new array positions.
 
 ```json
-{"skipScan": true}
+{"skipScan": true, "fundingTxid": "<64 hexadecimal characters>"}
 ```
 
 Missing or null options, or a missing or false `skipScan`, mean the ordinary
 policy. A present `skipScan` must be a boolean. Unknown option keys are ignored
 when reading and omitted when reserializing. Writers select v4 when the known
-policy is enabled; normal links retain their existing v3 representation.
+policy is enabled or a funding txid is present; normal links retain their
+existing v3 representation. A txid without `skipScan: true` still uses ordinary
+sync; optimizing that path to start at funding height is outside this change.
+An event share requires a funding txid. It is lowercase display-order hex;
+wrong types or lengths are rejected before mnemonic conversion. Draft recovery
+records may omit it, but externally issued event links must identify their
+confirmed funding transaction before printing. The first event format supports
+one funding transaction per card; one transaction may fund multiple cards.
+Comma-separated txids and discovery of additional funding are unsupported.
 Future optional keys can use the same object without changing v3's schema.
 
 The link model retains this policy through metadata resolution, sharing, and
 the sender and recipient stores' v2 recovery representation. It participates
-in payload equality but does not change the claim-wallet cache identity.
+in payload equality. Event claim-wallet cache identities include the scan policy
+and funding txid, so an ordinary card cannot reuse a partially scanned event DB.
+Ordinary cache identities and legacy cache recovery remain unchanged.
 The v2 recovery representation is existing local storage, not the selected
 event-sharing format. Apps without a v4 reader reject v4 links rather than
 silently ignoring the event policy.
 
-This change carries the policy only. The scan-free claim execution path is
-not connected yet; the existing claim path still obtains its funds and spend
-witnesses through scanning.
+The event claim contract retrieves the identified funding transaction and
+processes its block with the preceding tree frontier. It leaves birthday-to-tip gaps
+unscanned. Claim estimates and proposals only select notes decrypted for that
+funding txid, with real Merkle witnesses and the existing two-confirmation
+claim policy. Retained claims must query their known outgoing transactions
+instead of falling back to historical scanning. This is bounded block processing, not
+zero block processing. It does not defer the skipped range to Home or background
+sync. The recipient wallet's own sync follows its existing policy. Ordinary
+cards keep the existing scan path.
+
+Reading a funding block does not establish that the card's notes were never
+spent in later blocks. The event path verifies actual decrypted funds and fees,
+but network validation remains necessary before a claim can be reported as
+submitted. It must not turn an absent RPC response into evidence of an empty,
+previously claimed, or successfully received card. Creating the recipient
+account and claiming the card are separate completion states.
+
+### Reorg contract
+
+Do not embed a funding height, block hash, witness, or anchor in the link.
+Resolve the identified transaction against the current chain before preparing
+the claim. If the same txid is included in another block, retain the printed
+link and rebuild the note position and witness. A same-height reorg can also
+change the tree; comparing heights alone is insufficient.
+
+Invalidate quotes and proposals derived from the old chain while preserving
+signed/submitted claim IDs and recovery records. A mempool transaction or one
+mined only on a fork is not ready for claim preparation. The RPC height
+sentinels are `0` for mempool and `u64::MAX` for a non-main-chain fork; neither
+is a confirmed funding height. See the
+[lightwalletd protocol](https://raw.githubusercontent.com/zcash/lightwallet-protocol/master/walletrpc/service.proto).
+
+Preparation clears its persisted marker before any remote lookup. A failed or
+cancelled refresh cannot create a new direct quote from the old marker. Funding
+height moves and stored block-hash changes rewind the card DB before rebuilding
+the witness. Known outgoing claims also rewind their previous mined state when
+the node reports them missing, unmined, or mined at another height. Recovery
+resubmits the existing signed bytes under the existing lifecycle and expiry
+policy; it does not create a replacement claim automatically.
+
+If the funding transaction must be replaced by a new txid, the issuer must
+regenerate and redistribute the link. There is no resolver or automatic scan
+that discovers the replacement for the printed URL. This is an external
+issuance responsibility, not an application creation-UI feature. A mined card
+does not expire merely because it is old; transaction expiry matters if an
+unmined transaction can no longer be included. See
+[ZIP 203](https://zips.z.cash/zip-0203).
+
+### Privacy trade-offs under validation
+
+The payload contains the card's bearer recovery secret, not the recipient's
+wallet seed, account name, profile, or passcode. Possession of the link already
+grants access to the card's funds and recoverable transaction history. Adding
+the funding txid makes it easier to correlate cards funded in the same batch.
+Correlation among cards distributed by the same event host is accepted for
+this use case. It does not authorize exposing recipient IPs or changing the
+privacy policy of ordinary sends.
+
+Direct `GetTransaction` requests disclose the requested txid to lightwalletd.
+In direct networking mode, the server can associate it with the connecting IP;
+Tor changes that transport exposure but does not hide the requested txid from
+the server. The funding txid does not reveal shielded addresses or amounts on
+its own. A funding transaction that contains transparent components may expose
+those components independently of this feature.
+
+Using a witness at the funding block also uses an older on-chain anchor than
+ordinary sends. This can distinguish the event claims and link them as a
+cohort; it does not by itself prove which shielded output was spent. Zcash's
+[wallet guidance on anchor selection](https://zips.z.cash/zip-0315#anchor-selection)
+recommends a fixed depth near the tip. This departure needs explicit review
+before release; it must not change ordinary wallet sends.
 
 ## Rollout and local testing
 
@@ -149,6 +257,52 @@ regtest lane creates disposable accounts and cleans its regtest wallet. It
 must not be pointed at a personal wallet. Bridge regeneration uses
 `scripts/generate-rust-bridge.sh` from the repository root, which invokes FRB
 with the repository's existing expanded-Rust compatibility wrapper.
+
+### Event direct-claim integration lane
+
+The disposable stack uses different ports from the shared regtest stack. Its
+node configuration activates Ironwood at height 500. Build the existing local
+`vizor-ironwood-regtest-lightwalletd:latest` image before running it. Start with
+empty `.regtest/zcashd` and `.regtest/lightwalletd` directories in an isolated
+checkout; do not reuse a personal wallet or reset another test stack.
+
+```sh
+docker compose -f docker-compose.direct-gift-regtest.yml up -d
+# In a second terminal; counts real RPCs and injects submission outages.
+node scripts/regtest/direct-gift-rpc-proxy.cjs
+# Fresh chain: Orchard, then Ironwood with 5,000 blocks after funding.
+VIZOR_DIRECT_GIFT_COMPOSE="$PWD/docker-compose.direct-gift-regtest.yml" \
+  cargo test --manifest-path rust/Cargo.toml --test regtest_direct_gift_claim \
+  known_funding_block_claims_without_scanning_the_historical_gap \
+  -- --ignored --nocapture --test-threads=1
+```
+
+For subsequent runs on this same owned chain, set
+`VIZOR_DIRECT_GIFT_REUSE_CHAIN=1`. That lane uses a shorter 200-block funding gap
+while retaining duplicate, reorg, failed-submission recovery, and expiry checks.
+The test never clears the chain. An explicit fixture lane funds a new card for
+the native mobile walkthrough:
+
+```sh
+VIZOR_DIRECT_GIFT_COMPOSE="$PWD/docker-compose.direct-gift-regtest.yml" \
+  VIZOR_DIRECT_GIFT_FIXTURE_OUTPUT=/tmp/vizor-event-gift-fixture.json \
+  cargo test --manifest-path rust/Cargo.toml --test regtest_direct_gift_claim \
+  create_mobile_event_fixture -- --ignored --nocapture --test-threads=1
+```
+
+Run `integration_test/regtest_mobile_event_gift_onboarding_test.dart` on a
+disposable iOS Simulator with
+`fvm flutter test --tags mobile --run-skipped -d <simulator-uuid>`, supplying
+these dart-defines: `VIZOR_FORM_FACTOR=mobile`, `ZCASH_DEFAULT_NETWORK=regtest`,
+`ZCASH_REGTEST_IRONWOOD_ACTIVATION_HEIGHT=500`,
+`ZCASH_E2E_LIGHTWALLETD_URL=http://127.0.0.1:9267`,
+`ZCASH_E2E_ZCASHD_RPC_URL=http://127.0.0.1:18252`,
+`VIZOR_PAYMENT_LINK_REGTEST_ENABLED=true`, and
+`VIZOR_EVENT_GIFT_FIXTURE=<base64-encoded fixture JSON>`.
+The JSON contains a bearer secret: keep it local and delete it after use.
+This scenario uses the actual app, passcode setup, account creation, proof,
+submission, and recipient sync. The separate Widgetbook skip-scan walkthrough
+is only a deterministic UX preview.
 
 Reader tests cover v1/v2 equivalence, persistence representation, JSON types and
 positions, truncation, numeric bounds, unknown artwork, custom labels, Unicode,

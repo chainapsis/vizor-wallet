@@ -7,7 +7,7 @@ import '../frb_generated.dart';
 import 'keystone.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `api_proposal_result`, `catch`, `enhance_pir_enabled`, `fetch_block_time`, `migration_status_from_balance`, `parse_network_and_migrate`, `payment_link_batch_pairs`, `run_full_sync_internal`, `to_wallet_action_sigs`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
+// These functions are ignored because they are not marked as `pub`: `api_proposal_result`, `catch`, `enhance_pir_enabled`, `fetch_block_time`, `migration_status_from_balance`, `parse_network_and_migrate`, `payment_link_batch_pairs`, `run_full_sync_internal`, `run_isolated_payment_link_claim`, `to_wallet_action_sigs`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `MempoolObserverState`
 
 /// Set the desired sync mode. 0=none, 1=foreground, 2=background.
@@ -83,6 +83,23 @@ Future<void> runPaymentLinkClaimSync({
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
   network: network,
+  allowResubmit: allowResubmit,
+);
+
+/// Prepares a gift using its funding txid; never scans the birthday-to-tip range.
+Future<void> preparePaymentLinkClaimTransaction({
+  required String claimId,
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required String fundingTxid,
+  required bool allowResubmit,
+}) => RustLib.instance.api.crateApiSyncPreparePaymentLinkClaimTransaction(
+  claimId: claimId,
+  dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
+  network: network,
+  fundingTxid: fundingTxid,
   allowResubmit: allowResubmit,
 );
 

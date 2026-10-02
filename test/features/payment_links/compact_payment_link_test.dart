@@ -17,6 +17,8 @@ import '../../support/payment_links_screen_support.dart';
 import '../../support/legacy_payment_link.dart';
 
 const _message = "It's a great day to shield your ZEC 🛡️";
+const _fundingTxid =
+    '0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20';
 const _golden24 =
     'WyJtYWluIiwiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQSIsMzQ4MzE0MSwiMTAwMDAwMCIsImtuaWdodE1hZ2ljIiwxMS4xNzQ3LCJJdCdzIGEgZ3JlYXQgZGF5IHRvIHNoaWVsZCB5b3VyIFpFQyDwn5uh77iPIl0';
 const _golden12 =
@@ -32,6 +34,7 @@ VizorPaymentLink card({
   BigInt? amount,
   int height = 3483141,
   bool skipScan = false,
+  String? fundingTxid = _fundingTxid,
 }) => VizorPaymentLink(
   network: 'main',
   address: 'locally-verified-address',
@@ -42,6 +45,7 @@ VizorPaymentLink card({
   createdAt: DateTime.utc(2026, 9, 14),
   presentation: presentation,
   skipScan: skipScan,
+  fundingTxid: skipScan ? fundingTxid : null,
 );
 const decorated = PaymentLinkPresentation(
   artworkId: 'knightMagic',
@@ -163,7 +167,10 @@ void main() {
       final shared = await preparePaymentLinkShareUri(source);
       expect(shared.fragment, startsWith('v4='));
       expect(shared.query, isEmpty);
-      expect(fieldsOf(shared.toString())[8], {'skipScan': true});
+      expect(fieldsOf(shared.toString())[8], {
+        'skipScan': true,
+        'fundingTxid': _fundingTxid,
+      });
       final restored = VizorPaymentLink.parse(shared.toString());
       expect(restored.skipScan, isTrue);
       expect(restored.hasSameCanonicalPayload(source), isTrue);
@@ -171,7 +178,7 @@ void main() {
       expect(api.validatedMnemonics, [source.mnemonic]);
       expect(
         paymentLinkClaimWalletDirectoryName(source),
-        paymentLinkClaimWalletDirectoryName(card()),
+        isNot(paymentLinkClaimWalletDirectoryName(card())),
       );
 
       api.failEntropy = true;
@@ -207,7 +214,7 @@ void main() {
         );
         await sender.markFunded(
           address: decoded.address,
-          fundingTxids: 'funding-txid',
+          fundingTxids: _fundingTxid,
         );
         final senderJson =
             jsonDecode(senderStorage.value!) as Map<String, dynamic>;
@@ -226,7 +233,7 @@ void main() {
           await preparePaymentLinkShareUri(restoredSender.link),
           source.toShareUri(),
         );
-        expect(restoredSender.fundingTxids, 'funding-txid');
+        expect(restoredSender.fundingTxids, _fundingTxid);
         expect(restoredSender.state, PaymentLinkRecoveryState.funded);
         final receiverStorage = _MemoryStorage();
         var receiver = PaymentLinkReceivedStore(receiverStorage);
@@ -604,6 +611,7 @@ void main() {
     final futurePayload = fieldsOf(wire(source));
     futurePayload[8] = {
       'skipScan': true,
+      'fundingTxid': _fundingTxid,
       'futureOption': {'enabled': true},
     };
     final restored = VizorPaymentLink.parse(
@@ -613,6 +621,41 @@ void main() {
     expect(restored.hasSameCanonicalPayload(source), isTrue);
     expect(restored.toShareUri(), source.toShareUri());
   });
+
+  test(
+    'event shares require a valid funding txid and preserve it through metadata',
+    () {
+      expect(
+        () => card(skipScan: true, fundingTxid: null).toShareUri(),
+        throwsFormatException,
+      );
+      expect(
+        () => card(skipScan: true, fundingTxid: 'bad').toShareUri(),
+        throwsFormatException,
+      );
+      final source = card(
+        skipScan: true,
+        fundingTxid: _fundingTxid.toUpperCase(),
+      );
+      final parsed = VizorPaymentLink.parse(wire(source));
+      expect(parsed.fundingTxid, _fundingTxid);
+      final retained = parsed.withResolvedMetadata(
+        address: source.address,
+        createdAt: source.createdAt,
+      );
+      expect(
+        VizorPaymentLink.parse(retained.toRecoveryUri().toString()).fundingTxid,
+        _fundingTxid,
+      );
+      expect(
+        card(
+          skipScan: true,
+          fundingTxid: 'ff' * 32,
+        ).hasSameCanonicalPayload(retained),
+        isFalse,
+      );
+    },
+  );
 
   test('v3 retains its eight-field limit and rejects event extensions', () {
     final eventPayload = fieldsOf(wire(card(skipScan: true)));
@@ -632,6 +675,10 @@ void main() {
       {'skipScan': null},
       {'skipScan': 'true'},
       {'skipScan': 1},
+      {'skipScan': true},
+      {'skipScan': true, 'fundingTxid': null},
+      {'skipScan': true, 'fundingTxid': 'invalid'},
+      {'skipScan': true, 'fundingTxid': 1},
     ]) {
       expect(
         () =>

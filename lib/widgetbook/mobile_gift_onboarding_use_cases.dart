@@ -57,6 +57,10 @@ Widget buildMobileGiftOnboardingCustomise(BuildContext context) =>
     const _GiftPreview(initialLocation: '/gift/customise');
 Widget buildMobileGiftOnboardingWalkthrough(BuildContext context) =>
     const _GiftPreview();
+
+/// UX preview only: the scan-free inspection and claim data are simulated.
+Widget buildMobileGiftOnboardingSkipScanWalkthrough(BuildContext context) =>
+    const _GiftPreview(skipScan: true);
 Widget buildMobileGiftOnboardingInspected(BuildContext context) =>
     const _GiftPreview(initialLocation: '/gift', inspected: true);
 Widget buildMobileGiftOnboardingChecking(BuildContext context) =>
@@ -101,7 +105,10 @@ final _walletLinkImportArgs = SetPasswordScreenArgs.importWalletLink(
   keyBytes: List.filled(32, 0),
 );
 
-final _link = VizorPaymentLink(
+final _link = _previewLink();
+final _skipScanLink = _previewLink(skipScan: true);
+
+VizorPaymentLink _previewLink({bool skipScan = false}) => VizorPaymentLink(
   network: 'main',
   address: 'u1previewgiftcard',
   amountZatoshi: BigInt.from(445000000),
@@ -109,6 +116,8 @@ final _link = VizorPaymentLink(
   birthdayHeight: 3000000,
   label: 'Payment link',
   createdAt: DateTime.utc(2026, 9, 1),
+  skipScan: skipScan,
+  fundingTxid: skipScan ? 'aa' * 32 : null,
   presentation: PaymentLinkPresentation(
     artworkId: PaymentLinkCardArtwork.knightMagic.protocolId,
     message: 'Welcome to the Shielded World ;)',
@@ -134,6 +143,7 @@ class _GiftPreview extends StatefulWidget {
     this.failClaim = false,
     this.recoverStorage = false,
     this.walletLinkImport = false,
+    this.skipScan = false,
   });
   final String initialLocation;
   final bool checking;
@@ -143,12 +153,14 @@ class _GiftPreview extends StatefulWidget {
   final bool failClaim;
   final bool recoverStorage;
   final bool walletLinkImport;
+  final bool skipScan;
   @override
   State<_GiftPreview> createState() => _GiftPreviewState();
 }
 
 class _GiftPreviewState extends State<_GiftPreview> {
   final _storage = _MemoryGiftStorage();
+  late final _card = widget.skipScan ? _skipScanLink : _link;
   late final _accounts = _GiftPreviewAccounts(
     failCreation: widget.failCreation,
     recoverStorage: widget.recoverStorage,
@@ -364,10 +376,10 @@ class _GiftPreviewState extends State<_GiftPreview> {
             );
           }),
           paymentLinkClipboardProvider.overrideWithValue(
-            _GiftPreviewClipboard(),
+            _GiftPreviewClipboard(_card),
           ),
           paymentLinkScannerProvider.overrideWithValue(
-            (_, {required networkName}) async => _link,
+            (_, {required networkName}) async => _card,
           ),
         ],
         child: MediaQuery(
@@ -726,8 +738,11 @@ class _GiftPreviewBiometrics extends BiometricUnlockNotifier {
 }
 
 class _GiftPreviewClipboard implements PaymentLinkClipboard {
+  _GiftPreviewClipboard(this.link);
+  final VizorPaymentLink link;
+
   @override
-  Future<String?> readText() async => _link.toUri().toString();
+  Future<String?> readText() async => link.toRecoveryUri().toString();
   @override
   Future<void> clear() async {}
   @override
@@ -770,7 +785,9 @@ class _GiftPreviewOperations implements PaymentLinkOperations {
     VizorPaymentLink link, {
     bool allowLongSync = false,
   }) async {
-    await Future<void>.delayed(const Duration(seconds: 1));
+    if (!link.skipScan) {
+      await Future<void>.delayed(const Duration(seconds: 1));
+    }
     return _previewInspection(link);
   }
 

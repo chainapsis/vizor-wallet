@@ -1200,6 +1200,10 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildMobileGiftOnboardingWalkthrough,
                     ),
                     WidgetbookUseCase(
+                      name: 'Onboarding - Skip scan UX preview',
+                      builder: buildMobileGiftOnboardingSkipScanWalkthrough,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Onboarding - Card entry',
                       builder: buildMobileGiftOnboardingEntry,
                     ),

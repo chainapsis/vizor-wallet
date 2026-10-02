@@ -29,7 +29,14 @@ abstract final class _CompactPaymentLinkCodec {
         link.presentation?.fiatSnapshot?.amount,
         presentation?['message'],
         label == _defaultLabel ? null : label,
-        if (link.skipScan) {'skipScan': true},
+        if (link.skipScan || link.fundingTxid != null)
+          {
+            if (link.skipScan) 'skipScan': true,
+            if (link.fundingTxid != null)
+              'fundingTxid': VizorPaymentLink.validateFundingTxid(
+                link.fundingTxid,
+              ),
+          },
       ];
       while (payload.length > 4 && payload.last == null) {
         payload.removeLast();
@@ -70,9 +77,13 @@ abstract final class _CompactPaymentLinkCodec {
       final message = payload.length > 6 ? payload[6] : null;
       final label = payload.length > 7 ? payload[7] : null;
       if (label != null && label is! String) throw _invalid;
-      final skipScan = withOptions && payload.length > 8
-          ? _readSkipScanOption(payload[8])
-          : false;
+      final options = withOptions && payload.length > 8 ? payload[8] : null;
+      final skipScan = _readSkipScanOption(options);
+      final fundingTxid =
+          options is Map<String, Object?> && options.containsKey('fundingTxid')
+          ? VizorPaymentLink.validateFundingTxid(options['fundingTxid'])
+          : null;
+      if (skipScan && fundingTxid == null) throw _invalid;
       final presentation = PaymentLinkPresentation.fromPayload({
         'artworkId': artwork,
         'message': message,
@@ -89,6 +100,7 @@ abstract final class _CompactPaymentLinkCodec {
         createdAt: null,
         presentation: presentation,
         skipScan: skipScan,
+        fundingTxid: fundingTxid,
       );
       // Accepted gifts must fit the durable recovery format before claim.
       link.toRecoveryUri();

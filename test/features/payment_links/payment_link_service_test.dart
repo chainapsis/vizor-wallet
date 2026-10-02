@@ -529,6 +529,36 @@ void main() {
       },
     );
 
+    test(
+      'event preparation uses the txid path and preserves retry policy',
+      () async {
+        api.poolFixture = true;
+        final link = _eventLink();
+        final wallet = container.read(Provider(PaymentLinkClaimWallet.new));
+        await wallet.runClaimSync(
+          link: link,
+          dbPath: 'event.db',
+          allowResubmit: true,
+        );
+        expect(api.directClaimTxids, [link.fundingTxid]);
+        expect(api.claimSyncModes, [true]);
+        expect(api.claimSyncCalls, 0);
+        await wallet.runClaimSync(link: _link(), dbPath: 'normal.db');
+        expect(api.claimSyncCalls, 1);
+      },
+    );
+
+    test('event wallets cannot reuse a legacy normal-card cache', () async {
+      final wallet = container.read(Provider(PaymentLinkClaimWallet.new));
+      final normal = await wallet.locate(_link());
+      await normal.directory.create(recursive: true);
+      await File(normal.dbPath).writeAsString('normal');
+      final event = await wallet.locate(_eventLink());
+      expect(event.dbPath, isNot(normal.dbPath));
+      expect(await File(event.dbPath).exists(), isFalse);
+      expect(await File(normal.dbPath).readAsString(), 'normal');
+    });
+
     for (final address in ['u1legacy', 'u1current', 'u1legacy-projection']) {
       test('completed receipt $address survives secret cleanup', () async {
         final link = _link().withResolvedMetadata(address: address);
@@ -2505,6 +2535,28 @@ void main() {
     expect(sameLinkName, isNot(contains('abandon')));
   });
 
+  test(
+    'event cache identity includes the funding transaction and scan policy',
+    () {
+      final normal = _link();
+      final event = _eventLink();
+      expect(
+        paymentLinkClaimWalletDirectoryName(event),
+        isNot(paymentLinkClaimWalletDirectoryName(normal)),
+      );
+      expect(
+        paymentLinkClaimWalletDirectoryName(_eventLink(fundingTxid: 'bb' * 32)),
+        isNot(paymentLinkClaimWalletDirectoryName(event)),
+      );
+      expect(
+        paymentLinkClaimWalletDirectoryName(
+          event.withResolvedMetadata(address: 'u1other'),
+        ),
+        paymentLinkClaimWalletDirectoryName(event),
+      );
+    },
+  );
+
   test('claim wallet directory name carries the link network', () {
     final mainName = paymentLinkClaimWalletDirectoryName(_link());
     final regtestName = paymentLinkClaimWalletDirectoryName(
@@ -2744,6 +2796,21 @@ const _legacyClaimDirectory =
     'payment_link_claim_main_'
     'df3533c3dc54740770e230053a1f1962724f8653ec41b84e4d53164d46733494';
 
+VizorPaymentLink _eventLink({String? fundingTxid}) {
+  final link = _link();
+  return VizorPaymentLink(
+    network: link.network,
+    address: link.address,
+    amountZatoshi: link.amountZatoshi,
+    mnemonic: link.mnemonic,
+    birthdayHeight: link.birthdayHeight,
+    label: link.label,
+    createdAt: link.createdAt,
+    skipScan: true,
+    fundingTxid: fundingTxid ?? 'aa' * 32,
+  );
+}
+
 VizorPaymentLink _link() {
   return VizorPaymentLink(
     network: 'main',
@@ -2788,6 +2855,7 @@ rust_sync.TransactionInfo _transaction({
 class _DestinationValidated implements Exception {}
 
 class _ClaimDestinationRustApi implements RustLibApi {
+  final directClaimTxids = <String>[];
   final requestedAccounts = <String>[];
   final validatedAddresses = <String>[];
   var lookupStarted = Completer<void>();
@@ -2915,6 +2983,19 @@ class _ClaimDestinationRustApi implements RustLibApi {
   }
 
   @override
+  Future<void> crateApiSyncPreparePaymentLinkClaimTransaction({
+    required bool allowResubmit,
+    required String claimId,
+    required String dbPath,
+    required String lightwalletdUrl,
+    required String network,
+    required String fundingTxid,
+  }) async {
+    directClaimTxids.add(fundingTxid);
+    claimSyncModes.add(allowResubmit);
+  }
+
+  @override
   Future<List<rust_sync.TransactionInfo>> crateApiSyncGetTransactionHistory({
     required String dbPath,
     required String network,
@@ -2969,6 +3050,7 @@ class _ClaimDestinationRustApi implements RustLibApi {
   }) async {}
 
   void reset() {
+    directClaimTxids.clear();
     requestedAccounts.clear();
     cancelledClaimSyncs.clear();
     validatedAddresses.clear();
