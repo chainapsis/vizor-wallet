@@ -109,16 +109,57 @@ fn funding_block_builds_a_real_claim_quote_while_historical_gaps_remain_unscanne
         )
         .unwrap();
     assert!(regular.ironwood().is_empty());
+    let anchor = tip - 1;
+    let mut frontier = incrementalmerkletree::frontier::Frontier::empty();
+    for action in bundle.actions().iter() {
+        frontier.append(orchard::tree::MerkleHashOrchard::from_cmx(action.cmx()));
+    }
+    let reference = ChainState::new(
+        anchor,
+        BlockHash([2; 32]),
+        incrementalmerkletree::frontier::Frontier::empty(),
+        incrementalmerkletree::frontier::Frontier::empty(),
+        frontier.clone(),
+    );
+    let anchor_source = MemoryBlockSource::new(vec![CompactBlock {
+        height: u64::from(u32::from(anchor)),
+        hash: vec![2; 32],
+        prev_hash: vec![0; 32],
+        chain_metadata: Some(ChainMetadata {
+            ironwood_commitment_tree_size: actions.len() as u32,
+            ..Default::default()
+        }),
+        ..Default::default()
+    }]);
+    let previous = ChainState::new(
+        anchor - 1,
+        BlockHash([0; 32]),
+        incrementalmerkletree::frontier::Frontier::empty(),
+        incrementalmerkletree::frontier::Frontier::empty(),
+        frontier,
+    );
+    scan_cached_blocks(&network, &anchor_source, &mut db, anchor, &previous, 1).unwrap();
+    witnesses::insert_anchor_frontier(&mut db, &reference).unwrap();
+    assert!(
+        witnesses::missing_witness_nodes(&mut db, id, tip, &reference)
+            .unwrap()
+            .is_empty()
+    );
     drop(db);
     let conn = open_wallet_raw_conn_with_timeout(path, READ_DB_BUSY_TIMEOUT).unwrap();
     conn.execute_batch(
         "CREATE TABLE vizor_gift_direct_claim (id INTEGER PRIMARY KEY,
-        funding_txid TEXT, funding_height INTEGER, tip_height INTEGER);",
+        funding_txid TEXT, funding_height INTEGER, tip_height INTEGER, anchor_height INTEGER);",
     )
     .unwrap();
     conn.execute(
-        "INSERT INTO vizor_gift_direct_claim VALUES(1, ?1, ?2, ?3)",
-        rusqlite::params![id.to_string(), u32::from(funding_height), u32::from(tip)],
+        "INSERT INTO vizor_gift_direct_claim VALUES(1, ?1, ?2, ?3, ?4)",
+        rusqlite::params![
+            id.to_string(),
+            u32::from(funding_height),
+            u32::from(tip),
+            u32::from(tip - 1)
+        ],
     )
     .unwrap();
     drop(conn);
@@ -148,16 +189,17 @@ fn failed_and_cancelled_refreshes_invalidate_cached_preparation() {
     let path = dir.path().join("gift.db");
     let path = path.to_str().unwrap();
     let conn = rusqlite::Connection::open(path).unwrap();
-    conn.execute_batch(
-        "CREATE TABLE vizor_gift_direct_claim (
-        id INTEGER PRIMARY KEY, funding_txid TEXT, funding_height INTEGER, tip_height INTEGER);",
-    )
-    .unwrap();
     let id = TxId::from_bytes([7; 32]);
     let runtime = tokio::runtime::Runtime::new().unwrap();
     for cancelled in [false, true] {
+        conn.execute_batch(
+            "CREATE TABLE vizor_gift_direct_claim (
+            id INTEGER PRIMARY KEY, funding_txid TEXT, funding_height INTEGER,
+            tip_height INTEGER, anchor_height INTEGER);",
+        )
+        .unwrap();
         conn.execute(
-            "INSERT INTO vizor_gift_direct_claim VALUES (1, ?1, 100, 102)",
+            "INSERT INTO vizor_gift_direct_claim VALUES (1, ?1, 100, 102, 101)",
             [id.to_string()],
         )
         .unwrap();

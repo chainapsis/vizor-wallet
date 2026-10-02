@@ -1127,6 +1127,25 @@ void main() {
       },
     );
 
+    test(
+      'event submission refreshes the anchor before estimating a spend',
+      () async {
+        api.poolFixture = true;
+        api.estimateGate = Completer<rust_sync.SendMaxEstimateResult>();
+        final link = _eventLink();
+        final failed = expectLater(
+          service.claimPreparedLink(_claimSession(link: link)),
+          throwsStateError,
+        );
+        await api.estimateStarted.future;
+        expect(api.directClaimTxids, [link.fundingTxid]);
+        expect(api.claimSyncModes, [false]);
+        expect(api.claimSyncCalls, 0);
+        api.estimateGate!.completeError(StateError('preparation failed'));
+        await failed;
+      },
+    );
+
     for (final price in [200.0, null, 0.0, double.nan, -1.0, double.infinity]) {
       test('claim persists fresh fiat or enclosed fallback: $price', () async {
         container.listen(zecHomeMarketDataStateProvider, (_, _) {});
@@ -2718,8 +2737,8 @@ class _UnlockedSecurityNotifier extends AppSecurityNotifier {
       const AppSecurityState(isPasswordConfigured: true, isUnlocked: true);
 }
 
-PaymentLinkClaimSession _claimSession() {
-  final link = _link();
+PaymentLinkClaimSession _claimSession({VizorPaymentLink? link}) {
+  link ??= _link();
   return PaymentLinkClaimSession(
     link: link,
     destinationAddress: 'u1receiver',

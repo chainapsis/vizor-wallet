@@ -1901,6 +1901,15 @@ class PaymentLinkService
         'using ${endpoint.networkName}.',
       );
     }
+    if (session.link.skipScan) {
+      // The preview may have stayed open while the tip advanced. Refresh the
+      // event witness at submission time so it uses the regular claim depth.
+      await _claimWallet.runClaimSync(
+        link: session.link,
+        dbPath: session.dbPath,
+        allowResubmit: false,
+      );
+    }
     final estimate = await rust_sync.estimatePaymentLinkClaimMax(
       dbPath: session.dbPath,
       network: endpoint.networkName,

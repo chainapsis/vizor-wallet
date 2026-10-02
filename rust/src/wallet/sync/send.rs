@@ -4529,7 +4529,7 @@ fn propose_direct_claim(
             &network,
             &source,
             (prepared.tip_height + 1).into(),
-            prepared.funding_height,
+            prepared.anchor_height,
             &db.pool_migration_params(),
             payment_link_claim_confirmations_policy(),
             account,

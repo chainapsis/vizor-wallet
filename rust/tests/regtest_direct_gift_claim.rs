@@ -103,7 +103,7 @@ fn known_funding_block_claims_without_scanning_the_historical_gap() {
         assert_eq!(shielded.status, "broadcasted");
         mine(&compose, 10);
         sync_wallet(&funder);
-        run_card(&funder, "Ironwood", 200, &compose, Some(500));
+        run_card(&funder, "Ironwood", 200, &compose, Some(500), 4);
         exercise_recovery(&funder, &compose);
         exercise_expiry(&funder, &compose);
         return;
@@ -116,7 +116,7 @@ fn known_funding_block_claims_without_scanning_the_historical_gap() {
     if tip() < 110 {
         mine(&compose, 110 - tip());
     }
-    let funder = create_wallet("Funder", 1);
+    let funder = create_wallet("Funder", tip());
     let transparent = wallet::get_transparent_receive_address(
         funder.db.clone(),
         NETWORK.into(),
@@ -139,7 +139,7 @@ fn known_funding_block_claims_without_scanning_the_historical_gap() {
     sync_wallet(&funder);
 
     // Existing Orchard pool, with no prior scan of the card's funding block.
-    run_card(&funder, "Orchard", 200, &compose, None);
+    run_card(&funder, "Orchard", 200, &compose, None, 1);
 
     let height = tip();
     if height < 506 {
@@ -147,12 +147,19 @@ fn known_funding_block_claims_without_scanning_the_historical_gap() {
     }
     sync_wallet(&funder);
     // Ironwood pool, with 5,000 blocks between funding and claiming.
-    run_card(&funder, "Ironwood", 5_000, &compose, None);
+    run_card(&funder, "Ironwood", 5_000, &compose, None, 1);
     exercise_recovery(&funder, &compose);
     exercise_expiry(&funder, &compose);
 }
 
-fn run_card(funder: &Wallet, pool: &str, gap: u64, compose: &str, birthday: Option<u64>) {
+fn run_card(
+    funder: &Wallet,
+    pool: &str,
+    gap: u64,
+    compose: &str,
+    birthday: Option<u64>,
+    noise_rounds: u32,
+) {
     let card = create_wallet(pool, birthday.unwrap_or_else(tip));
     let flow = format!("direct-gift-fund-{pool}");
     let proposal = sync::propose_send(
@@ -177,19 +184,25 @@ fn run_card(funder: &Wallet, pool: &str, gap: u64, compose: &str, birthday: Opti
     // Change this pool's commitment root between funding and claiming. An
     // empty historical gap alone would leave the old anchor equal to the tip.
     let unrelated = create_wallet("Unrelated", tip());
-    let noise_flow = format!("direct-gift-tree-change-{pool}");
-    let noise_proposal = sync::propose_send(
-        funder.db.clone(),
-        NETWORK.into(),
-        funder.account.clone(),
-        noise_flow.clone(),
-        unrelated.address.clone(),
-        1_000_000,
-        None,
-    )
-    .unwrap();
-    let noise = execute(funder, noise_proposal.proposal_id, &noise_flow, backend());
-    assert_eq!(noise.status, "broadcasted");
+    for round in 0..noise_rounds {
+        if round > 0 {
+            mine(compose, 6);
+            sync_wallet(funder);
+        }
+        let noise_flow = format!("direct-gift-tree-change-{pool}-{round}");
+        let noise_proposal = sync::propose_send(
+            funder.db.clone(),
+            NETWORK.into(),
+            funder.account.clone(),
+            noise_flow.clone(),
+            unrelated.address.clone(),
+            1_000_000,
+            None,
+        )
+        .unwrap();
+        let noise = execute(funder, noise_proposal.proposal_id, &noise_flow, backend());
+        assert_eq!(noise.status, "broadcasted");
+    }
     mine(compose, gap + 2);
     let recipient = create_wallet("Recipient", tip());
 
@@ -210,14 +223,32 @@ fn run_card(funder: &Wallet, pool: &str, gap: u64, compose: &str, birthday: Opti
     let scanned: u64 = conn
         .query_row("SELECT COUNT(*) FROM blocks", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(scanned, 1, "the card must process only its funding block");
+    assert!(
+        (2..=32).contains(&scanned),
+        "only sparse witness boundary blocks may be processed: {scanned}"
+    );
+    if noise_rounds > 1 {
+        assert!(
+            scanned > 2,
+            "busy fixture must exercise witness boundary repair"
+        );
+    }
+    assert!(
+        preparation_calls["calls"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|c| c["method"] == "GetBlockRange")
+            .all(|c| c["start"] == c["end"]),
+        "no historical block range may be downloaded"
+    );
     let pending: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM scan_queue WHERE priority > 10 AND block_range_end - block_range_start > 100)", [], |r| r.get(0)).unwrap();
     assert!(pending, "the historical gap must remain unscanned");
-    let (funding_height, prepared_tip): (u64, u64) = conn
+    let (funding_height, prepared_tip, anchor_height): (u64, u64, u64) = conn
         .query_row(
-            "SELECT funding_height, tip_height FROM vizor_gift_direct_claim WHERE id=1",
+            "SELECT funding_height, tip_height, anchor_height FROM vizor_gift_direct_claim WHERE id=1",
             [],
-            |r| Ok((r.get(0)?, r.get(1)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
         .unwrap();
     drop(conn);
@@ -265,14 +296,26 @@ fn run_card(funder: &Wallet, pool: &str, gap: u64, compose: &str, birthday: Opti
         &["z_gettreestate", &prepared_tip.to_string()],
     ))
     .unwrap();
+    assert_eq!(
+        anchor_height,
+        prepared_tip - 1,
+        "use the regular gift-claim anchor depth"
+    );
+    let anchor_tree: serde_json::Value = serde_json::from_str(&cli(
+        compose,
+        &["z_gettreestate", &anchor_height.to_string()],
+    ))
+    .unwrap();
+    let recent_root = &anchor_tree[&pool_key]["commitments"]["finalRoot"];
     let old_root = &funding_tree[&pool_key]["commitments"]["finalRoot"];
     let tip_root = &tip_tree[&pool_key]["commitments"]["finalRoot"];
     assert!(old_root.is_string() && tip_root.is_string());
     assert_ne!(old_root, tip_root, "fixture must change the pool root");
     assert_eq!(
-        &claimed_tx[&pool_key]["anchor"], old_root,
-        "claim must use its funding-block anchor"
+        &claimed_tx[&pool_key]["anchor"], recent_root,
+        "claim must use the recent anchor rather than the funding-block root"
     );
+    assert_ne!(recent_root, old_root, "old funding root must not be reused");
     assert!(!claimed_tx[&pool_key]["actions"]
         .as_array()
         .unwrap()
@@ -310,12 +353,12 @@ fn run_card(funder: &Wallet, pool: &str, gap: u64, compose: &str, birthday: Opti
         .query_row("SELECT COUNT(*) FROM blocks", [], |r| r.get(0))
         .unwrap();
     assert_eq!(
-        scanned_after, 1,
+        scanned_after, scanned,
         "transaction construction must not scan the gap"
     );
     println!(
         "DIRECT_GIFT_RESULT {}",
-        serde_json::json!({"pool":pool,"requested_funding_gap_blocks":gap,"birthday_height":card.birthday,"funding_height":funding_height,"prepared_tip":prepared_tip,"funding_age_blocks":prepared_tip-funding_height,"historical_span_blocks":prepared_tip-card.birthday,"funding_anchor_differs_from_tip":old_root!=tip_root,"processed_card_blocks":scanned_after,"preparation_ms":preparation_ms,"proof_and_broadcast_ms":proof_and_broadcast_ms,"recipient_received_zatoshi":balance.total,"preparation_rpc":preparation_calls,"prepare_and_claim_rpc":claim_calls})
+        serde_json::json!({"pool":pool,"intervening_funding_rounds":noise_rounds,"requested_funding_gap_blocks":gap,"birthday_height":card.birthday,"funding_height":funding_height,"prepared_tip":prepared_tip,"anchor_height":anchor_height,"anchor_age_blocks":prepared_tip-anchor_height,"recent_anchor_differs_from_funding":recent_root!=old_root,"funding_age_blocks":prepared_tip-funding_height,"historical_span_blocks":prepared_tip-card.birthday,"funding_anchor_differs_from_tip":old_root!=tip_root,"processed_card_blocks":scanned_after,"preparation_ms":preparation_ms,"proof_and_broadcast_ms":proof_and_broadcast_ms,"recipient_received_zatoshi":balance.total,"preparation_rpc":preparation_calls,"prepare_and_claim_rpc":claim_calls})
     );
     // Reopening the original DB observes our mined spend, even without a full scan.
     prepare(&card, &funding.txids, false);
@@ -437,7 +480,7 @@ fn exercise_recovery(funder: &Wallet, compose: &str) {
     assert_eq!(
         rusqlite::Connection::open(&card.db)
             .unwrap()
-            .query_row("SELECT COUNT(*) FROM vizor_gift_direct_claim", [], |r| r
+            .query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='vizor_gift_direct_claim'", [], |r| r
                 .get::<_, u64>(0))
             .unwrap(),
         0
@@ -453,6 +496,44 @@ fn exercise_recovery(funder: &Wallet, compose: &str) {
     .unwrap();
     assert_eq!(quote.amount_zatoshi, GIFT);
     println!("DIRECT_GIFT_FUNDING_REORG_RECOVERED");
+
+    // Replacing a later anchor must also recover when funding stays mined in
+    // exactly the same block. Cached sparse witnesses cannot pin the old fork.
+    mine(compose, 6);
+    prepare(&card, &funding.txids, false);
+    let conn = rusqlite::Connection::open(&card.db).unwrap();
+    let (stable_funding, prior_anchor): (u64, u64) = conn
+        .query_row(
+            "SELECT funding_height, anchor_height FROM vizor_gift_direct_claim",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    drop(conn);
+    reorg(compose, prior_anchor);
+    mine(compose, 3);
+    prepare(&card, &funding.txids, false);
+    let current_funding: u64 = rusqlite::Connection::open(&card.db)
+        .unwrap()
+        .query_row(
+            "SELECT funding_height FROM vizor_gift_direct_claim",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(current_funding, stable_funding);
+    assert_eq!(
+        sync::estimate_payment_link_claim_max(
+            card.db.clone(),
+            NETWORK.into(),
+            card.account.clone(),
+            recipient.address.clone(),
+        )
+        .unwrap()
+        .amount_zatoshi,
+        GIFT
+    );
+    println!("DIRECT_GIFT_ANCHOR_REORG_RECOVERED");
 
     // Simulate losing connectivity after signing and durable transaction storage.
     telemetry("fail-next-submission");
@@ -526,8 +607,9 @@ fn reorg(compose: &str, height: u64) {
     let hash = cli(compose, &["getblockhash", &height.to_string()]);
     cli(compose, &["invalidateblock", hash.trim()]);
     let expected = height - 1;
+    let canonical_hash = cli(compose, &["getblockhash", &expected.to_string()]);
     for _ in 0..120 {
-        if tip() == expected {
+        if tip() == expected && cached_block_matches(expected, canonical_hash.trim()) {
             return;
         }
         std::thread::sleep(std::time::Duration::from_millis(250));
@@ -685,18 +767,60 @@ fn cli(compose: &str, args: &[&str]) -> String {
     String::from_utf8(output.stdout).unwrap()
 }
 fn mine(compose: &str, count: u64) {
+    let previous_tip = tip();
     cli(compose, &["generate", &count.to_string()]);
     let expected = cli(compose, &["getblockcount"])
         .trim()
         .parse::<u64>()
         .unwrap();
+    let heights = [previous_tip + 1, (previous_tip + 2).min(expected), expected];
+    let canonical = heights.map(|h| (h, cli(compose, &["getblockhash", &h.to_string()])));
     for _ in 0..120 {
-        if tip() >= expected {
+        if tip() >= expected
+            && canonical
+                .iter()
+                .all(|(h, hash)| cached_block_matches(*h, hash.trim()))
+        {
             return;
         }
         std::thread::sleep(std::time::Duration::from_millis(250));
     }
     panic!("lightwalletd did not catch up to the isolated node");
+}
+
+fn cached_block_matches(height: u64, canonical_hash: &str) -> bool {
+    use zcash_client_backend::proto::service::{
+        compact_tx_streamer_client::CompactTxStreamerClient, BlockId, BlockRange,
+    };
+    // GetLatestBlock can reflect the node before lightwalletd's compact cache
+    // catches up, especially after a reorg. Use the same range API as preparation
+    // and check the new fork's first blocks as well as its tip.
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let Ok(mut client) = CompactTxStreamerClient::connect(backend()).await else {
+            return false;
+        };
+        let Ok(response) = client
+            .get_block_range(BlockRange {
+                start: Some(BlockId {
+                    height,
+                    hash: vec![],
+                }),
+                end: Some(BlockId {
+                    height,
+                    hash: vec![],
+                }),
+                ..Default::default()
+            })
+            .await
+        else {
+            return false;
+        };
+        response
+            .into_inner()
+            .message()
+            .await
+            .is_ok_and(|block| block.is_some_and(|b| b.hash().to_string() == canonical_hash))
+    })
 }
 fn telemetry(path: &str) -> serde_json::Value {
     let output = Command::new("curl")
