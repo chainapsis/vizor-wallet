@@ -154,6 +154,78 @@ void main() {
     );
   }
 
+  for (final scenario in ['added', 'deleted original', 'unsaved']) {
+    test('stale hardware setup journal with $scenario account', () async {
+      storage.failNextDeleteFor(kPendingAccountMnemonicStorageKey);
+      await accounts().importKeystoneAccount(
+        name: 'Keystone',
+        ufvk: 'hardware-ufvk',
+        seedFingerprint: List.filled(32, 1),
+        zip32Index: 0,
+        birthdayHeight: 3000000,
+      );
+      expect(await pending(), isNotNull);
+      await accounts().createAccountFromMnemonic(
+        mnemonic: _mnemonic,
+        name: 'Added account',
+        profilePictureId: _profile,
+      );
+      final current = container
+          .read(accountProvider)
+          .requireValue
+          .accounts
+          .where((a) => scenario != 'deleted original' || a.uuid != 'hardware')
+          .toList();
+      // Model the persisted account list and Rust bootstrap after restart.
+      await store.writeString(
+        'zcash_accounts',
+        jsonEncode([
+          for (final account in current)
+            if (scenario != 'unsaved' || account.uuid == 'hardware')
+              account.toJson(),
+        ]),
+      );
+      _rust.listedAccounts = _rust.listedAccounts
+          .where((a) => current.any((saved) => saved.uuid == a.uuid))
+          .toList();
+      final restarted = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(
+            _bootstrappedGiftAccount(accounts: current),
+          ),
+          accountProvider.overrideWith(
+            () => AccountNotifier.testing(store: store),
+          ),
+          appSecurityProvider.overrideWith(
+            () => AppSecurityNotifier.testing(store: store),
+          ),
+        ],
+      );
+      addTearDown(restarted.dispose);
+      await restarted.read(accountProvider.future);
+      final restore = restarted
+          .read(accountProvider.notifier)
+          .restoreAfterUnlock();
+      if (scenario == 'unsaved') {
+        await expectLater(restore, throwsStateError);
+        expect(restarted.read(appSecurityProvider).requiresUnlock, isTrue);
+        expect(
+          await store.readPlain(kPendingAccountMnemonicStorageKey),
+          isNotNull,
+        );
+      } else {
+        await restore;
+        expect(restarted.read(appSecurityProvider).requiresUnlock, isFalse);
+        expect(await pending(), isNull);
+        final restored = restarted.read(accountProvider).requireValue.accounts;
+        expect(restored.map((a) => a.toJson()), current.map((a) => a.toJson()));
+        expect(await store.readAccountMnemonic('uuid-1'), _mnemonic);
+        expect(_rust.hardwareImportCalls, 1);
+        expect(_rust.addCalls, 1);
+      }
+    });
+  }
+
   for (final signer in [
     HardwareSignerKind.keystone,
     HardwareSignerKind.ledger,

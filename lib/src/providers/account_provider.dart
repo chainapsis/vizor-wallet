@@ -1118,8 +1118,12 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
                   input['sourceAccountUuid'] as String?,
             );
     }
+    // A completed setup journal can survive cleanup failure. Accounts saved
+    // afterward do not need entries in that older journal to unlock safely.
     if (current.accounts.any(
-      (account) => !recovered.containsKey(account.uuid),
+      (account) =>
+          !savedUuids.contains(account.uuid) &&
+          !recovered.containsKey(account.uuid),
     )) {
       throw StateError('A linked account is missing its recovery data.');
     }
