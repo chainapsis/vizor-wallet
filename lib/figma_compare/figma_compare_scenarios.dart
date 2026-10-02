@@ -1227,7 +1227,7 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
   ),
   FigmaCompareScenario(
     id: 'settings-explorer',
-    description: 'Desktop explorer settings with CipherScan selected',
+    description: 'Desktop explorer settings with ZecBlock selected',
     builder: buildSettingsExplorerUseCase,
   ),
   FigmaCompareScenario(
@@ -1244,7 +1244,7 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
   ),
   FigmaCompareScenario(
     id: 'mobile-explorer',
-    description: 'Mobile explorer settings with CipherScan selected',
+    description: 'Mobile explorer settings with ZecBlock selected',
     builder: buildMobileExplorerUseCase,
     desktop: false,
     mobile: true,

@@ -87,7 +87,7 @@ void main() {
     await tester.pump();
 
     expect(find.text('Explorer'), findsOneWidget);
-    expect(find.text('CipherScan'), findsOneWidget);
+    expect(find.text('ZecBlock'), findsOneWidget);
     expect(find.text('Any explorer you prefer'), findsOneWidget);
 
     await tester.tap(
