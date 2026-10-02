@@ -20,6 +20,7 @@ import 'keystone_use_cases.dart';
 import 'ledger_use_cases.dart';
 import 'mobile_pay_use_cases.dart';
 import 'mobile_shell_use_cases.dart';
+import 'mobile_welcome_network_use_cases.dart';
 import 'mobile_gift_onboarding_use_cases.dart';
 import 'payment_request_use_cases.dart';
 import 'request_amount_use_cases.dart';
@@ -133,6 +134,55 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Network settings - Private queries changing',
                       builder: buildWelcomePrivateQueriesChangingUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Mobile welcome network settings',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Off',
+                      builder: buildMobileWelcomeNetworkOff,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Connecting',
+                      builder: buildMobileWelcomeNetworkConnecting,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Connected',
+                      builder: buildMobileWelcomeNetworkConnected,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Switching to direct',
+                      builder: buildMobileWelcomeNetworkSwitching,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Tor failed',
+                      builder: buildMobileWelcomeNetworkFailed,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Tor setting not saved',
+                      builder: buildMobileWelcomeNetworkSaveFailed,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Direct setting not saved',
+                      builder: buildMobileWelcomeNetworkDirectSaveFailed,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Switch failed',
+                      builder: buildMobileWelcomeNetworkSwitchFailed,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'RPC wrong network',
+                      builder: buildMobileWelcomeNetworkWrongChain,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'RPC save failed',
+                      builder: buildMobileWelcomeNetworkRpcSaveFailed,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'RPC checking',
+                      builder: buildMobileWelcomeNetworkRpcPending,
                     ),
                   ],
                 ),

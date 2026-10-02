@@ -32,6 +32,7 @@ import '../widgetbook/send_review_status_use_cases.dart';
 import '../widgetbook/send_use_cases.dart';
 import '../widgetbook/carousel_use_cases.dart';
 import '../widgetbook/screen_use_cases.dart';
+import '../widgetbook/mobile_welcome_network_use_cases.dart';
 import '../widgetbook/swap_use_cases.dart';
 import '../widgetbook/voting_use_cases.dart';
 import '../widgetbook/address_verify_use_cases.dart';
@@ -114,6 +115,78 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'mobile-gift-onboarding-customise',
     description: 'Gift wallet customisation before committing setup',
     builder: buildMobileGiftOnboardingCustomise,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-welcome-network-off',
+    description: 'Mobile welcome network settings: off',
+    builder: buildMobileWelcomeNetworkOff,
+    renderShadows: true,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-welcome-network-connecting',
+    description: 'Mobile welcome network settings: connecting',
+    builder: buildMobileWelcomeNetworkConnecting,
+    renderShadows: true,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-welcome-network-connected',
+    description: 'Mobile welcome network settings: connected',
+    builder: buildMobileWelcomeNetworkConnected,
+    renderShadows: true,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-welcome-network-switching',
+    description: 'Mobile welcome network settings: switching',
+    builder: buildMobileWelcomeNetworkSwitching,
+    renderShadows: true,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-welcome-network-failed',
+    description: 'Mobile welcome network settings: failed',
+    builder: buildMobileWelcomeNetworkFailed,
+    renderShadows: true,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-welcome-network-save-failed',
+    description: 'Mobile welcome network settings: save-failed',
+    builder: buildMobileWelcomeNetworkSaveFailed,
+    renderShadows: true,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-welcome-network-rpc-wrong-network',
+    description: 'Mobile welcome network settings: rpc-wrong-network',
+    builder: buildMobileWelcomeNetworkWrongChain,
+    renderShadows: true,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-welcome-network-rpc-save-failed',
+    description: 'Mobile welcome network settings: rpc-save-failed',
+    builder: buildMobileWelcomeNetworkRpcSaveFailed,
+    renderShadows: true,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-welcome-network-rpc-checking',
+    description: 'Mobile welcome network settings: rpc-checking',
+    builder: buildMobileWelcomeNetworkRpcPending,
+    renderShadows: true,
     desktop: false,
     mobile: true,
   ),

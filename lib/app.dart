@@ -79,6 +79,7 @@ import 'src/features/onboarding/storage_unavailable_screen.dart';
 import 'src/features/onboarding/mobile/mobile_unlock_screen.dart';
 import 'src/features/onboarding/unlock_screen.dart';
 import 'src/features/onboarding/welcome.dart';
+import 'src/features/onboarding/providers/welcome_network_settings_provider.dart';
 import 'src/features/pay/screens/pay_screen.dart';
 import 'src/features/payment_links/widgets/gift_claim_failure_toast_listener.dart';
 import 'src/features/payment_links/models/vizor_payment_link.dart';
@@ -1807,6 +1808,12 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(
+      welcomeNetworkSettingsPresentedProvider,
+      (_, _) => _openPendingPaymentLink(),
+    );
+    ref.listen(networkPrivacyProvider, (_, _) => _openPendingPaymentLink());
+
     ref.listen<AsyncValue<WalletState>>(walletProvider, (_, next) {
       final wallet = next.value;
       if (wallet != null) {
@@ -1936,12 +1943,19 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
         location == '/welcome' &&
         !(ref.read(walletProvider).value?.hasWallet ??
             ref.read(appBootstrapProvider).hasWallet)) {
+      if (ref.read(welcomeNetworkSettingsPresentedProvider) ||
+          !welcomeNetworkReady(ref.read(networkPrivacyProvider))) {
+        return;
+      }
       _navigationScheduled = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _navigationScheduled = false;
         if (!mounted ||
             widget.router.state.matchedLocation != '/welcome' ||
-            ref.read(paymentLinkIntakeProvider).pendingLink == null) {
+            ref.read(paymentLinkIntakeProvider).pendingLink == null ||
+            ref.read(appSecurityProvider).requiresUnlock ||
+            ref.read(welcomeNetworkSettingsPresentedProvider) ||
+            !welcomeNetworkReady(ref.read(networkPrivacyProvider))) {
           return;
         }
         widget.router.push('/gift');
@@ -2721,6 +2735,18 @@ class _NetworkPrivacyStartupToastBridgeState
         if (next == null || next == previous) return;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!context.mounted) return;
+          // Walletless mobile Welcome owns this failure in its network
+          // sheet, including on the first frame before the modal is pushed.
+          // Keep the existing startup toast for locked/existing wallets.
+          if (kAppFormFactor == AppFormFactor.mobile &&
+              next == kTorStartupFailureNotice &&
+              ref.read(_routerProvider).router.state.matchedLocation ==
+                  '/welcome' &&
+              !(ref.read(walletProvider).value?.hasWallet ??
+                  ref.read(appBootstrapProvider).hasWallet)) {
+            ref.read(networkPrivacyProvider.notifier).clearStartupNotice();
+            return;
+          }
           showNetworkFallbackToast(
             context,
             next,

@@ -4,6 +4,11 @@ import 'package:flutter/material.dart' show Scaffold;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../providers/network_privacy_provider.dart';
+import '../providers/welcome_network_settings_provider.dart';
+import 'mobile_network_settings_sheet.dart';
 
 import 'mobile_onboarding_progress_scope.dart';
 
@@ -16,7 +21,7 @@ import '../shared/welcome_accent_button.dart';
 import '../shared/welcome_button_tokens.dart';
 
 /// Figma `Welcome` (8635:103040): native video with create and import entry paths.
-class MobileWelcomeScreen extends StatelessWidget {
+class MobileWelcomeScreen extends ConsumerStatefulWidget {
   const MobileWelcomeScreen({
     this.showBackButton = false,
     this.animateBackground = true,
@@ -28,7 +33,56 @@ class MobileWelcomeScreen extends StatelessWidget {
   final bool animateBackground;
 
   @override
+  ConsumerState<MobileWelcomeScreen> createState() =>
+      _MobileWelcomeScreenState();
+}
+
+class _MobileWelcomeScreenState extends ConsumerState<MobileWelcomeScreen> {
+  bool _openingScheduled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!widget.showBackButton &&
+        !welcomeNetworkReady(ref.read(networkPrivacyProvider))) {
+      _scheduleSettings();
+    }
+  }
+
+  void _scheduleSettings() {
+    if (_openingScheduled ||
+        ref.read(welcomeNetworkSettingsPresentedProvider)) {
+      return;
+    }
+    _openingScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _openingScheduled = false;
+      if (!mounted ||
+          widget.showBackButton ||
+          ModalRoute.of(context)?.isCurrent != true ||
+          welcomeNetworkReady(ref.read(networkPrivacyProvider))) {
+        return;
+      }
+      showMobileWelcomeNetworkSettings(context, ref);
+    });
+  }
+
+  void _enter(VoidCallback navigate) {
+    if (!widget.showBackButton &&
+        !welcomeNetworkReady(ref.read(networkPrivacyProvider))) {
+      showMobileWelcomeNetworkSettings(context, ref);
+      return;
+    }
+    if (!ref.read(welcomeNetworkSettingsPresentedProvider)) navigate();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    ref.listen(networkPrivacyProvider, (_, state) {
+      if (!widget.showBackButton && !welcomeNetworkReady(state)) {
+        _scheduleSettings();
+      }
+    });
     final bottom = math.max(50.0, MediaQuery.paddingOf(context).bottom + 16);
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
@@ -47,7 +101,9 @@ class MobileWelcomeScreen extends StatelessWidget {
                   left: -1,
                   width: constraints.maxWidth + 1,
                   height: videoHeight,
-                  child: MobileWelcomeBackdrop(animate: animateBackground),
+                  child: MobileWelcomeBackdrop(
+                    animate: widget.animateBackground,
+                  ),
                 ),
                 Positioned.fill(
                   child: IgnorePointer(
@@ -116,10 +172,11 @@ class MobileWelcomeScreen extends StatelessWidget {
                                           semanticKey: const ValueKey(
                                             'mobile_welcome_get_started',
                                           ),
-                                          onPressed: () =>
-                                              context.startOnboarding(
-                                                '/onboarding/intro',
-                                              ),
+                                          onPressed: () => _enter(
+                                            () => context.startOnboarding(
+                                              '/onboarding/intro',
+                                            ),
+                                          ),
                                         ),
                                         const SizedBox(height: AppSpacing.sm),
                                         Semantics(
@@ -145,10 +202,11 @@ class MobileWelcomeScreen extends StatelessWidget {
                                             pressedLabelColor:
                                                 WelcomeButtonTokens
                                                     .secondaryLabel,
-                                            onPressed: () =>
-                                                context.startOnboarding(
-                                                  '/onboarding/method',
-                                                ),
+                                            onPressed: () => _enter(
+                                              () => context.startOnboarding(
+                                                '/onboarding/method',
+                                              ),
+                                            ),
                                             leading: const AppIcon(
                                               AppIcons.importWallet,
                                             ),
@@ -160,7 +218,7 @@ class MobileWelcomeScreen extends StatelessWidget {
                                             ),
                                           ),
                                         ),
-                                        if (!showBackButton) ...[
+                                        if (!widget.showBackButton) ...[
                                           const SizedBox(height: AppSpacing.sm),
                                           Semantics(
                                             key: const ValueKey(
@@ -171,8 +229,9 @@ class MobileWelcomeScreen extends StatelessWidget {
                                             child: AppButton(
                                               expand: true,
                                               variant: AppButtonVariant.ghost,
-                                              onPressed: () =>
-                                                  context.push('/gift'),
+                                              onPressed: () => _enter(
+                                                () => context.push('/gift'),
+                                              ),
                                               disabledBackgroundColor:
                                                   const Color(0x00000000),
                                               leading: const AppIcon(
@@ -205,7 +264,37 @@ class MobileWelcomeScreen extends StatelessWidget {
                     ),
                   ),
                 ),
-                if (showBackButton)
+                if (!widget.showBackButton)
+                  Positioned(
+                    top: MediaQuery.paddingOf(context).top + AppSpacing.xs,
+                    right: AppSpacing.sm,
+                    child: Semantics(
+                      label: 'Network settings',
+                      button: true,
+                      child: GestureDetector(
+                        key: const ValueKey('mobile_welcome_network_settings'),
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () =>
+                            showMobileWelcomeNetworkSettings(context, ref),
+                        child: Container(
+                          width: 44,
+                          height: 44,
+                          decoration: const BoxDecoration(
+                            color: Color(0x66000000),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Center(
+                            child: AppIcon(
+                              AppIcons.cog,
+                              size: 24,
+                              color: Color(0xffffffff),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                if (widget.showBackButton)
                   Positioned(
                     top: MediaQuery.paddingOf(context).top + AppSpacing.xs,
                     left: AppSpacing.s,
