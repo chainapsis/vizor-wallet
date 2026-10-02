@@ -1002,6 +1002,42 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     }),
   );
 
+  Future<void> _recordPendingHardwareSetup({
+    required String network,
+    required String name,
+    required String profilePictureId,
+    required String ufvk,
+    required int zip32AccountIndex,
+    required int birthdayHeight,
+    required HardwareSignerKind hardwareSignerKind,
+    LedgerConnectionTransport? ledgerLastTransport,
+    String? ledgerDeviceId,
+    String? ledgerDeviceName,
+    String? ledgerDeviceModel,
+  }) => _storage.writeSecretString(
+    kPendingAccountMnemonicStorageKey,
+    jsonEncode({
+      'kind': 'linked',
+      'network': network,
+      'accounts': [
+        {
+          'isHardware': true,
+          'ufvk': ufvk,
+          'index': zip32AccountIndex,
+          'name': name,
+          'profilePictureId': profilePictureId,
+          'sourceAccountUuid': null,
+          'hardwareSignerKind': hardwareSignerKind.name,
+          'birthdayHeight': birthdayHeight,
+          'ledgerLastTransport': ledgerLastTransport?.name,
+          'ledgerDeviceId': ledgerDeviceId,
+          'ledgerDeviceName': ledgerDeviceName,
+          'ledgerDeviceModel': ledgerDeviceModel,
+        },
+      ],
+    }),
+  );
+
   Future<void> _recoverPendingLinkedSetup(
     Map<String, dynamic> draft,
     void Function() requireCurrentSession,
@@ -1067,6 +1103,17 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
           : account.copyWith(
               name: input['name'] as String,
               profilePictureId: input['profilePictureId'] as String,
+              hardwareSignerKind: isHardware
+                  ? HardwareSignerKind.fromJson(input['hardwareSignerKind'])
+                  : null,
+              birthdayHeight: input['birthdayHeight'] as int?,
+              zip32AccountIndex: index,
+              ledgerLastTransport: LedgerConnectionTransport.fromJson(
+                input['ledgerLastTransport'],
+              ),
+              ledgerDeviceId: input['ledgerDeviceId'] as String?,
+              ledgerDeviceName: input['ledgerDeviceName'] as String?,
+              ledgerDeviceModel: input['ledgerDeviceModel'] as String?,
               walletLinkSourceAccountUuid:
                   input['sourceAccountUuid'] as String?,
             );
@@ -2226,6 +2273,15 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       final network = await _getNetwork();
       if (prev.accounts.isEmpty) {
         await _assertFirstWalletDbIsEmpty(dbPath, network);
+        await _recordPendingHardwareSetup(
+          network: network,
+          name: accountName,
+          profilePictureId: normalizedProfilePictureId,
+          ufvk: ufvk,
+          zip32AccountIndex: zip32Index,
+          birthdayHeight: birthdayHeight,
+          hardwareSignerKind: HardwareSignerKind.keystone,
+        );
         firstWalletDbPath = dbPath;
         firstWalletNetwork = network;
       }
@@ -2265,6 +2321,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
           activeAddress: address,
         ),
       );
+      if (firstWalletDbPath != null) await _clearPendingAccountSetup();
       log('importKeystoneAccount: uuid=$accountUuid, address=$address');
     } catch (e, st) {
       if (firstWalletDbPath != null) {
@@ -2356,6 +2413,19 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       final network = await _getNetwork();
       if (prev.accounts.isEmpty) {
         await _assertFirstWalletDbIsEmpty(dbPath, network);
+        await _recordPendingHardwareSetup(
+          network: network,
+          name: accountName,
+          profilePictureId: normalizedProfilePictureId,
+          ufvk: ufvk,
+          zip32AccountIndex: zip32Index,
+          birthdayHeight: birthdayHeight,
+          hardwareSignerKind: HardwareSignerKind.ledger,
+          ledgerLastTransport: connectionTransport,
+          ledgerDeviceId: ledgerDeviceId,
+          ledgerDeviceName: ledgerDeviceName,
+          ledgerDeviceModel: ledgerDeviceModel,
+        );
         firstWalletDbPath = dbPath;
         firstWalletNetwork = network;
       }
@@ -2398,6 +2468,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
           activeAddress: address,
         ),
       );
+      if (firstWalletDbPath != null) await _clearPendingAccountSetup();
       log('importLedgerAccount: uuid=$accountUuid, address=$address');
     } catch (e, st) {
       if (firstWalletDbPath != null) {

@@ -629,7 +629,7 @@ void main() {
 
   for (final ledger in [false, true]) {
     test(
-      'first hardware account preserves its passcode after metadata failure: ledger=$ledger',
+      'first hardware account restores its metadata after save failure: ledger=$ledger',
       () async {
         final security = container.read(appSecurityProvider.notifier);
         await security.preparePasswordSetup(_passcode);
@@ -641,6 +641,11 @@ void main() {
                 seedFingerprint: List.filled(32, 1),
                 zip32Index: 0,
                 birthdayHeight: 3000000,
+                profilePictureId: _profile,
+                connectionTransport: LedgerConnectionTransport.bluetooth,
+                ledgerDeviceId: 'ledger-device-id',
+                ledgerDeviceName: 'Ledger Flex',
+                ledgerDeviceModel: 'flex',
               )
             : accounts().importKeystoneAccount(
                 name: _name,
@@ -648,6 +653,7 @@ void main() {
                 seedFingerprint: List.filled(32, 1),
                 zip32Index: 0,
                 birthdayHeight: 3000000,
+                profilePictureId: _profile,
               );
         await expectLater(
           import,
@@ -656,6 +662,53 @@ void main() {
         await security.finishPasswordSetupAfterFailure(accountMayExist: true);
         expect(await store.verifyPassword(_passcode), isTrue);
         expect(_rust.listedAccounts.single.isHardware, isTrue);
+        expect(jsonDecode((await pending())!)['kind'], 'linked');
+
+        final restarted = ProviderContainer(
+          overrides: [
+            appBootstrapProvider.overrideWithValue(
+              _bootstrappedGiftAccount(
+                account: AccountInfo(
+                  uuid: 'hardware',
+                  name: 'Hardware',
+                  order: 0,
+                  isHardware: true,
+                  hardwareSignerKind: ledger
+                      ? HardwareSignerKind.ledger
+                      : HardwareSignerKind.keystone,
+                ),
+              ),
+            ),
+            accountProvider.overrideWith(
+              () => AccountNotifier.testing(store: store),
+            ),
+            appSecurityProvider.overrideWith(
+              () => AppSecurityNotifier.testing(store: store),
+            ),
+          ],
+        );
+        addTearDown(restarted.dispose);
+        await restarted.read(accountProvider.future);
+        await restarted.read(accountProvider.notifier).restoreAfterUnlock();
+
+        final recovered = restarted.read(accountProvider).value!.activeAccount!;
+        expect(recovered.name, _name);
+        expect(recovered.profilePictureId, normalizeProfilePictureId(_profile));
+        expect(
+          recovered.hardwareSignerKind,
+          ledger ? HardwareSignerKind.ledger : HardwareSignerKind.keystone,
+        );
+        expect(recovered.birthdayHeight, 3000000);
+        expect(recovered.zip32AccountIndex, 0);
+        expect(
+          recovered.ledgerLastTransport,
+          ledger ? LedgerConnectionTransport.bluetooth : null,
+        );
+        expect(recovered.ledgerDeviceId, ledger ? 'ledger-device-id' : null);
+        expect(recovered.ledgerDeviceName, ledger ? 'Ledger Flex' : null);
+        expect(recovered.ledgerDeviceModel, ledger ? 'flex' : null);
+        expect(_rust.hardwareImportCalls, 1);
+        expect(await pending(), isNull);
       },
     );
   }
