@@ -205,10 +205,29 @@ Direct preparation does not establish whether the note was spent in a later
 block. The node validates spentness when the claim is broadcast. Its funding
 lookup currently uses the existing public transaction-payload path, so do not
 interpret a shorter height locator as hiding the resolved txid from the
-endpoint. The separate recent-anchor work is not included here.
+endpoint.
 Direct claims refresh their funding preparation again before submission and
 use the same cancellable check when recovering retained receipts. They do not
 enter the birthday observer or fall back to scanning historical ranges.
+
+Direct claims use `tip - 1`, matching the existing two-confirmation gift-claim
+policy, rather than the funding-height anchor. Preparation processes the recent
+anchor block and individual boundary blocks needed to complete missing witness
+nodes; historical gaps remain unscanned. Each funding note's witness must match
+the verified recent tree root. Failure to establish it stops preparation, with
+no fallback to an old anchor or a full scan. Submission refreshes preparation
+before estimation so a long-open preview does not preserve an old anchor.
+
+Preparation clears its quote marker before remote lookup while preserving the
+height locator's durable funding resolution. A failed or cancelled refresh
+cannot reuse an old quote. Funding-height moves or cached block-hash changes
+rewind and rebuild sparse witnesses. An anchor-only fork also triggers rebuilding
+when the funding transaction remains unchanged. Stored outgoing claims retain
+the existing same-txid recovery and expiry behavior.
+
+Recent anchors do not remove direct lookup disclosure or all link correlations.
+A tree root can remain unchanged across empty blocks. Ordinary sends and birthday
+claims retain their existing confirmation and anchor policies.
 
 The funded regtest uses temporary claim DBs and an explicitly selected isolated
 node stack. `VIZOR_DIRECT_GIFT_PROJECT` can select an owned Compose project;
