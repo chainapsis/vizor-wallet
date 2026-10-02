@@ -63,12 +63,15 @@ class AppToast extends StatelessWidget {
         ? null
         : IconButton(
             onPressed: onDismiss,
-            constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+            constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+            style: const ButtonStyle(
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
             icon: Semantics(
               label: 'Dismiss notification',
               excludeSemantics: true,
               child: AppIcon(
-                AppIcons.cancel,
+                AppIcons.cross,
                 size: _kToastIconSize,
                 color: iconColor,
               ),
@@ -86,68 +89,19 @@ class AppToast extends StatelessWidget {
             borderRadius: BorderRadius.circular(AppRadii.small),
           ),
           child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.s,
-              vertical: AppSpacing.xs,
+            padding: EdgeInsetsDirectional.fromSTEB(
+              AppSpacing.s,
+              AppSpacing.xs,
+              action != null && dismissButton != null ? 0 : AppSpacing.s,
+              AppSpacing.xs,
             ),
             child: action != null
-                ? Row(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.only(top: AppSpacing.s),
-                        child: ExcludeSemantics(
-                          child: AppIcon(
-                            iconName,
-                            size: _kToastIconSize,
-                            color: iconColor,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.xs),
-                      Flexible(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.only(top: AppSpacing.s),
-                              child: Text(
-                                message,
-                                style: AppTypography.bodySmall.copyWith(
-                                  color: textColor,
-                                ),
-                              ),
-                            ),
-                            TextButton(
-                              onPressed: action.onPressed,
-                              style: ButtonStyle(
-                                foregroundColor: WidgetStatePropertyAll(
-                                  textColor,
-                                ),
-                                textStyle: WidgetStatePropertyAll(
-                                  AppTypography.labelMedium.copyWith(
-                                    decoration: TextDecoration.underline,
-                                    decorationColor: textColor,
-                                  ),
-                                ),
-                                padding: const WidgetStatePropertyAll(
-                                  EdgeInsets.zero,
-                                ),
-                                minimumSize: const WidgetStatePropertyAll(
-                                  Size(44, 44),
-                                ),
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                alignment: Alignment.centerLeft,
-                              ),
-                              child: Text(action.label),
-                            ),
-                          ],
-                        ),
-                      ),
-                      ?dismissButton,
-                    ],
+                ? _actionContent(
+                    context,
+                    action: action,
+                    dismissButton: dismissButton,
+                    textColor: textColor,
+                    iconColor: iconColor,
                   )
                 : Row(
                     mainAxisSize: MainAxisSize.min,
@@ -178,6 +132,95 @@ class AppToast extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _actionContent(
+    BuildContext context, {
+    required AppToastAction action,
+    required Widget? dismissButton,
+    required Color textColor,
+    required Color iconColor,
+  }) {
+    final messageStyle = AppTypography.bodySmall.copyWith(color: textColor);
+    final actionStyle = AppTypography.labelMedium.copyWith(
+      color: textColor,
+      decoration: TextDecoration.underline,
+      decorationColor: textColor,
+    );
+    final textScaler = MediaQuery.textScalerOf(context);
+    final direction = Directionality.of(context);
+    double textWidth(String value, TextStyle style) {
+      final painter = TextPainter(
+        text: TextSpan(text: value, style: style),
+        textDirection: direction,
+        textScaler: textScaler,
+      )..layout();
+      final width = painter.width;
+      painter.dispose();
+      return width;
+    }
+
+    final actionWidth = math.max(44, textWidth(action.label, actionStyle));
+    // Keep the compact row while the message can occupy roughly two lines.
+    // Large text or longer labels get an action below the same leading edge.
+    final minimumMessageWidth = textWidth(message, messageStyle) / 2;
+    final icon = ExcludeSemantics(
+      child: AppIcon(iconName, size: _kToastIconSize, color: iconColor),
+    );
+    final messageText = Text(message, style: messageStyle);
+    final actionButton = TextButton(
+      onPressed: action.onPressed,
+      style: ButtonStyle(
+        foregroundColor: WidgetStatePropertyAll(textColor),
+        textStyle: WidgetStatePropertyAll(actionStyle),
+        padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+        minimumSize: const WidgetStatePropertyAll(Size(44, 44)),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        alignment: AlignmentDirectional.centerStart,
+      ),
+      child: Text(action.label),
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final controlsWidth =
+            _kToastIconSize +
+            AppSpacing.xs * 2 +
+            actionWidth +
+            (dismissButton == null ? 0 : 44);
+        if (constraints.maxWidth - controlsWidth >= minimumMessageWidth) {
+          return Row(
+            children: [
+              icon,
+              const SizedBox(width: AppSpacing.xs),
+              Expanded(child: messageText),
+              const SizedBox(width: AppSpacing.xs),
+              actionButton,
+              ?dismissButton,
+            ],
+          );
+        }
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                icon,
+                const SizedBox(width: AppSpacing.xs),
+                Expanded(child: messageText),
+                ?dismissButton,
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsetsDirectional.only(
+                start: _kToastIconSize + AppSpacing.xs,
+              ),
+              child: actionButton,
+            ),
+          ],
+        );
+      },
     );
   }
 }
