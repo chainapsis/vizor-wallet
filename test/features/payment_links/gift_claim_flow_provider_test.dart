@@ -271,6 +271,26 @@ void main() {
     }
   }
 
+  test('late import completion does not clear a newer Gift screen', () async {
+    final container = makeContainer();
+    wallet.create();
+    flow(container).open(incomingLink);
+    final earlier = _inspection(incomingLink);
+    operations.completeNext(earlier);
+    await pumpEventQueue();
+    flow(container).finishImportSetup(earlier);
+    expect(operations.discarded, isEmpty);
+
+    flow(container).open(secondIncomingLink);
+    operations.completeNext(_inspection(secondIncomingLink));
+    await pumpEventQueue();
+    final newer = container.read(giftClaimFlowProvider);
+    flow(container).finishImportSetup(earlier);
+    expect(container.read(giftClaimFlowProvider), same(newer));
+    expect(newer?.link, secondIncomingLink);
+    expect(operations.discarded, isEmpty);
+  });
+
   test('abandoned additional setup waits for unlock before cleanup', () async {
     final container = makeContainer();
     wallet.create();

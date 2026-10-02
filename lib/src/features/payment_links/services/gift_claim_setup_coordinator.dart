@@ -108,6 +108,7 @@ Future<void> completeGiftClaimImportSetup(WidgetRef ref) async {
   if (accounts.isEmpty) return;
   final coordinator = ref.read(paymentLinkClaimCoordinatorProvider);
   final journal = ref.read(giftClaimImportStoreProvider);
+  final flow = ref.read(giftClaimFlowProvider.notifier);
   final store = ref.read(paymentLinkReceivedStoreProvider);
 
   Future<void> finish(String? recipient) async {
@@ -128,6 +129,7 @@ Future<void> completeGiftClaimImportSetup(WidgetRef ref) async {
         );
       }
       await journal.clear(request);
+      flow.finishImportSetup(request.inspection);
     });
     if (!context.mounted) return;
     if (!ref
@@ -184,6 +186,7 @@ Future<void> completeGiftClaimImportSetup(WidgetRef ref) async {
       ref.read(paymentLinkIntakeProvider.notifier).discard(request.link);
     }
     journal.releaseLiveHandoff();
+    flow.finishImportSetup(request.inspection);
     coordinator.resume();
     log('Gift import handoff needs recovery: ${error.runtimeType}');
   }

@@ -186,6 +186,14 @@ class GiftClaimFlowNotifier extends Notifier<GiftClaimFlowState?> {
     }
   }
 
+  /// Import has handed this Card to Received/claim recovery. Release only its
+  /// screen state; the new owner still needs the inspected claim wallet.
+  void finishImportSetup(PaymentLinkClaimInspection inspection) {
+    if (!ref.mounted || !identical(state?.inspection, inspection)) return;
+    _generation++;
+    state = null;
+  }
+
   /// Starts checking [link] unless the same Card is already open.
   void open(VizorPaymentLink link) {
     final current = state;
