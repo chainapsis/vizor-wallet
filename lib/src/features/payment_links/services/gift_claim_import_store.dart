@@ -18,16 +18,16 @@ class GiftClaimImportHandoff {
   final VizorPaymentLink link;
   final Set<String> accountUuidsBeforeSetup;
 
+  Set<String> importedAccountUuids(Iterable<String> currentAccountUuids) =>
+      currentAccountUuids
+          .where((uuid) => !accountUuidsBeforeSetup.contains(uuid))
+          .toSet();
+
   String? recipientAccountUuid({
     required Iterable<String> currentAccountUuids,
-    required String? activeAccountUuid,
   }) {
-    final added = currentAccountUuids
-        .where((uuid) => !accountUuidsBeforeSetup.contains(uuid))
-        .toList(growable: false);
-    if (activeAccountUuid != null && added.contains(activeAccountUuid)) {
-      return activeAccountUuid;
-    }
+    // An active account is only a UI default, not consent to receive a gift.
+    final added = importedAccountUuids(currentAccountUuids);
     return added.length == 1 ? added.single : null;
   }
 }
@@ -60,6 +60,9 @@ class GiftClaimImportStore {
   bool hasLiveHandoff = false;
   bool _loaded = false;
   GiftClaimImportHandoff? _cached;
+
+  bool hasLiveHandoffFor(VizorPaymentLink link) =>
+      hasLiveHandoff && _cached?.link.hasSameCanonicalPayload(link) == true;
 
   Future<T> _exclusive<T>(Future<T> Function() run) {
     final result = _tail.then((_) => run());

@@ -281,13 +281,17 @@ class PaymentLinkClaimCoordinator {
     final handoff = await journal.load();
     if (!_canRunRecovery || handoff == null) return;
     final accounts = _ref.read(accountProvider).value;
+    final currentAccountUuids =
+        accounts?.accounts.map((a) => a.uuid) ?? const <String>[];
+    if (handoff.importedAccountUuids(currentAccountUuids).isEmpty) return;
     final recipient = handoff.recipientAccountUuid(
-      currentAccountUuids: accounts?.accounts.map((a) => a.uuid) ?? const [],
-      activeAccountUuid: accounts?.activeAccountUuid,
+      currentAccountUuids: currentAccountUuids,
     );
-    if (recipient == null) return;
     await trackRetention(() async {
       if (!_canRunRecovery) return;
+      // A multi-account import interrupted before selection stays in Received
+      // for manual claim. saveReady preserves a recipient already confirmed
+      // before the interruption; never infer one from the active account.
       await _ref
           .read(paymentLinkReceivedStoreProvider)
           .saveReady(handoff.link, setupAccountUuid: recipient);
@@ -485,6 +489,11 @@ class PaymentLinkClaimCoordinator {
       if (_setupHandoffs.containsKey(record.address)) continue;
 
       final link = record.claimLink!;
+      // The import caller still owns its checked inspection. Let it register
+      // the handoff before journal cleanup exposes this card to recovery.
+      if (_ref.read(giftClaimImportStoreProvider).hasLiveHandoffFor(link)) {
+        continue;
+      }
       final destinationAccountUuid = record.setupAccountUuid!;
       final accounts = _ref.read(accountProvider).value?.accounts;
       if (accounts == null ||

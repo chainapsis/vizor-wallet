@@ -1224,6 +1224,10 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildMobileGiftOnboardingBiometrics,
                     ),
                     WidgetbookUseCase(
+                      name: 'Onboarding - Imported receiving account',
+                      builder: buildMobileGiftOnboardingImportAccounts,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Onboarding - Long scan warning',
                       builder: buildMobileGiftOnboardingLongSyncWarning,
                     ),

@@ -277,7 +277,7 @@ void main() {
     },
   );
 
-  test('multi-account setup gives the gift to its active imported account', () {
+  test('multi-account setup requires an explicit receiving account', () {
     final request = GiftClaimSetupReturn(
       link: incomingLink,
       inspection: _inspection(incomingLink),
@@ -287,20 +287,12 @@ void main() {
     expect(
       request.recipientAccountUuid(
         currentAccountUuids: const {'existing', 'primary', 'additional'},
-        activeAccountUuid: 'primary',
-      ),
-      'primary',
-    );
-    expect(
-      request.recipientAccountUuid(
-        currentAccountUuids: const {'existing', 'primary', 'additional'},
-        activeAccountUuid: 'existing',
       ),
       isNull,
     );
   });
 
-  test('a sole imported account is the fallback recipient', () {
+  test('a sole imported account is the automatic recipient', () {
     final request = GiftClaimSetupReturn(
       link: incomingLink,
       inspection: _inspection(incomingLink),
@@ -310,7 +302,6 @@ void main() {
     expect(
       request.recipientAccountUuid(
         currentAccountUuids: const {'existing', 'imported'},
-        activeAccountUuid: null,
       ),
       'imported',
     );

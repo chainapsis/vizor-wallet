@@ -25,10 +25,19 @@ Claim execution/resumption and unbacked account removal are already in the base.
    Saved Card recovery owns binding/network errors; no account creation retry.
 7. Choosing an existing wallet saves the resolved Card and pre-import account
    UUIDs in OS secure storage before leaving the Card screen. Normal import
-   commits the credential, pins the new recipient in the encrypted Received
-   store, clears the import journal, and starts the claim before Face ID using
-   the existing inspection. Restart recovery can reconstruct this handoff;
-   ambiguous imports retain the existing manual claim surface.
+   commits the credential and retains all three import methods: secret
+   passphrase, Link Vizor Desktop, and hardware wallet (Keystone/Ledger under
+   their existing capability gates). A sole imported account receives the gift
+   automatically. Multiple imported accounts reuse the existing **Choose
+   receiving account** sheet, including additional ZIP32 passphrase accounts.
+   Confirmation switches Home to the selected account, pins that recipient in
+   the encrypted Received store, registers the existing inspection with the
+   claim runner, and then clears the import journal before Face ID. Broadcast
+   and confirmations remain independent of navigation; no extra handoff scan.
+   Closing the sheet continues to Face ID/Home with an unbound, unclaimed Card
+   in Received. Restart before selection also retains it for manual claim;
+   recovery never guesses from the active account. A recipient saved before
+   interruption is preserved even if import-journal cleanup was incomplete.
 8. Home uses the committed backup/Zcash manual carousel and real Gift Activity
    indexing. Definitive setup-claim failure shows one neutral, dismissible toast
    once the recipient's Home is visible: "Couldn’t redeem your gift card." and
@@ -41,7 +50,9 @@ Claim execution/resumption and unbacked account removal are already in the base.
 
 Widgetbook: Screens > Gift Cards > Mobile > Onboarding - Full walkthrough
 (and focused entry/checking/passcode/customise/Face ID/warning/error cases,
-including **Onboarding - Claim failure toast**).
+including **Onboarding - Claim failure toast** and **Onboarding - Imported
+receiving account**). The latter starts at passcode confirmation and exercises
+the production Wallet Link import and receiving sheet with two preview accounts.
 The interactive walkthrough enables the existing Welcome animation; deterministic
 Welcome captures continue to use their separate poster scenario.
 The fixture shares in-memory account, credential, received-store, sync and
@@ -66,7 +77,24 @@ and a cross-store transaction redesign remain outside this slice.
 
 ## Current validation
 
-Review fixes and toast polish were checked separately from the initial PR:
+Recipient selection and toast alignment follow-up:
+
+- Focused default regressions: **79 passed**.
+- Focused mobile regressions: **131 passed**.
+- Scoped analysis of all 13 changed Dart files: **no issues**.
+- Light/dark receiving-sheet captures: **2 passed**, visually inspected.
+  Light/dark aligned Home toast and component captures were also inspected.
+
+- Mobile regression tests cover Wallet Link/passphrase multi-account choice,
+  dismissal, single-account automatic claim, an ordinary import without Gift
+  intent, lock during selection, and restart before/after a durable receiving choice.
+- Widgetbook exercises confirmation/dismissal of the same production sheet.
+- Tests assert that the live import handoff does not perform an additional scan.
+- The deferred Home failure notice is still in memory; restart before Home can
+  lose that notice while the failed Card itself remains in Received. This is a
+  separate outstanding review item.
+
+Previous review fixes and initial toast polish (`b81638150`):
 
 - Focused default regressions: 64 tests passed.
 - Focused mobile regressions: 118 tests passed, including pre-Face-ID submission,
@@ -99,16 +127,23 @@ Initial PR baseline:
 
 | Severity | Location | Before | After | Why |
 | --- | --- | --- | --- | --- |
-| MEDIUM | `lib/src/core/widgets/app_toast.dart:116`; `lib/src/features/payment_links/widgets/gift_claim_failure_toast_listener.dart:74` | Message and action had the same weight in one row. | Regular message with a separate, underlined "View card" action. | The failure is readable and the recovery destination is clearly interactive. |
+| MEDIUM | `lib/src/core/widgets/app_toast.dart:145`; `lib/src/features/payment_links/widgets/gift_claim_failure_toast_listener.dart:74` | Message and action had the same weight in one row. | Regular message with an underlined "View card" action. | The failure is readable and the recovery destination is clearly interactive. |
+
+### Shared axes and edges
+
+| Severity | Location | Before | After | Why |
+| --- | --- | --- | --- | --- |
+| MEDIUM | `lib/src/core/widgets/app_toast.dart:191` | Arbitrary top offsets and a circled dismiss glyph made the message and controls appear misaligned. | Status, message, action and a simple X share one vertical center; visible leading/trailing glyph insets match. Large text places the action below the message on its logical leading edge. | Makes the recovery action easy to scan and preserves alignment in RTL and at 200% text size. |
 
 ### Accessible reading and controls
 
 | Severity | Location | Before | After | Why |
 | --- | --- | --- | --- | --- |
 | MEDIUM | `lib/src/features/payment_links/widgets/gift_claim_failure_toast_listener.dart:77` | The notice disappeared after five seconds. | It stays until dismissal/action; leaving Home, locking, or switching accounts also closes it. | Gives users time to read and reach the recovery action. |
-| MEDIUM | `lib/src/core/widgets/app_toast.dart:64`; `lib/src/core/widgets/app_toast.dart:123` | Small action target and truncated copy. | Native buttons, at least 44 px targets, wrapping copy and a live-region announcement. | Supports large text and clear, labeled controls. |
+| MEDIUM | `lib/src/core/widgets/app_toast.dart:64`; `lib/src/core/widgets/app_toast.dart:172` | Small action target and truncated copy. | Native buttons, at least 44 px targets, wrapping copy and a live-region announcement. | Supports large text and clear, labeled controls. |
 
 Verification: light/dark static captures, default/mobile interaction tests,
-320 px at 200% text, navigation and replacement lifecycle. Not verified: native
-VoiceOver/TalkBack, device keyboard focus, and hover/pressed rendering on device.
+LTR/RTL shared-axis checks, 320 px at 200% text, navigation and replacement
+lifecycle. Earlier two-row toast captures are stale after this alignment change.
+Not verified: native VoiceOver/TalkBack, device keyboard focus, and hover/pressed rendering on device.
 No custom toast motion was added. **Approve** for the inspected widget surface.

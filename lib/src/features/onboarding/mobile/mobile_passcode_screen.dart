@@ -14,6 +14,7 @@ import '../../../providers/app_security_provider.dart';
 import '../../../providers/router_refresh_provider.dart';
 import '../../../providers/wallet_mutation_guard.dart';
 import '../../address_book/providers/address_book_provider.dart';
+import '../../payment_links/services/gift_claim_setup_coordinator.dart';
 import '../../wallet_link/services/wallet_link_completion.dart';
 import '../keystone/keystone_onboarding_flow.dart'
     show keystoneOnboardingProvider;
@@ -39,6 +40,7 @@ enum _PasscodePhase { create, confirm, submitting }
 class MobilePasscodeScreen extends ConsumerStatefulWidget {
   const MobilePasscodeScreen({
     required SetPasswordScreenArgs this.args,
+    this.completeWalletLinkPackage = completeWalletLinkPackageBestEffort,
     super.key,
   }) : onConfirmed = null,
        position = null;
@@ -47,11 +49,13 @@ class MobilePasscodeScreen extends ConsumerStatefulWidget {
     required Future<void> Function(String passcode) this.onConfirmed,
     required OnboardingProgressPosition this.position,
     super.key,
-  }) : args = null;
+  }) : args = null,
+       completeWalletLinkPackage = completeWalletLinkPackageBestEffort;
 
   final SetPasswordScreenArgs? args;
   final Future<void> Function(String passcode)? onConfirmed;
   final OnboardingProgressPosition? position;
+  final WalletLinkCompletionCallback completeWalletLinkPackage;
 
   @override
   ConsumerState<MobilePasscodeScreen> createState() =>
@@ -193,9 +197,11 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
                     network: args.requiredWalletLinkNetwork,
                     accountsToImport: args.walletLinkAccounts,
                   );
-              walletLinkImportedContactCount = await ref
-                  .read(addressBookProvider.notifier)
-                  .importContacts(args.walletLinkContacts);
+              walletLinkImportedContactCount = args.walletLinkContacts.isEmpty
+                  ? 0
+                  : await ref
+                        .read(addressBookProvider.notifier)
+                        .importContacts(args.walletLinkContacts);
           }
         });
 
@@ -209,7 +215,7 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
           if (accountImportResult == null) {
             throw StateError('Wallet link import result is missing.');
           }
-          await completeWalletLinkPackageBestEffort(
+          await widget.completeWalletLinkPackage(
             packageId: args.requiredWalletLinkPackageId,
             completionToken: args.requiredWalletLinkCompletionToken,
             keyBytes: args.requiredWalletLinkKeyBytes,
@@ -217,6 +223,7 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
             importedContactCount: walletLinkImportedContactCount,
           );
         }
+        await completeGiftClaimImportSetup(ref);
         router.go('/onboarding/biometrics');
       });
     } catch (e, st) {

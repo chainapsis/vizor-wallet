@@ -15,6 +15,11 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_toast.dart';
+import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_passcode_screen.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_customise_account_screen.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_progress_scope.dart';
+import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_welcome_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_biometrics_screen.dart';
 import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
@@ -59,11 +64,13 @@ void main() {
     BiometricUnlock? biometric,
     Size size = const Size(393, 852),
     bool restored = false,
+    bool multipleRestoredAccounts = false,
+    PaymentLinkReceivedStore? receivedStore,
   }) async {
     await tester.binding.setSurfaceSize(size);
     addTearDown(() => tester.binding.setSurfaceSize(null));
     if (!restored) FlutterSecureStorage.setMockInitialValues({});
-    final store = PaymentLinkReceivedStore(_MemoryStorage());
+    final store = receivedStore ?? PaymentLinkReceivedStore(_MemoryStorage());
     operations = _GiftOperations(store);
     await tester.pumpWidget(
       ProviderScope(
@@ -71,7 +78,11 @@ void main() {
         overrides: [
           appBootstrapProvider.overrideWithValue(_noWalletBootstrap),
           accountProvider.overrideWith(
-            restored ? _ImportedAccounts.new : _NoAccounts.new,
+            restored
+                ? multipleRestoredAccounts
+                      ? _MultipleImportedAccounts.new
+                      : _ImportedAccounts.new
+                : _NoAccounts.new,
           ),
           appSecurityProvider.overrideWith(
             restored ? _RestoredSecurity.new : _Security.new,
@@ -102,6 +113,241 @@ void main() {
 
   String location(WidgetTester tester) =>
       GoRouter.of(tester.element(find.byType(Navigator).last)).state.uri.path;
+
+  Future<ProviderContainer> pumpImport(
+    WidgetTester tester, {
+    int count = 2,
+    bool walletLink = true,
+    bool withGift = true,
+  }) async {
+    await tester.binding.setSurfaceSize(const Size(393, 852));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    FlutterSecureStorage.setMockInitialValues({});
+    final store = PaymentLinkReceivedStore(_MemoryStorage());
+    operations = _GiftOperations(store);
+    final args = walletLink
+        ? SetPasswordScreenArgs.importWalletLink(
+            network: 'main',
+            accounts: [
+              for (var index = 0; index < count; index++)
+                LinkedWalletAccountImport(
+                  name: 'Imported ${index + 1}',
+                  birthdayHeight: 3000000,
+                  zip32AccountIndex: index,
+                  isHardware: false,
+                  isSeedAnchor: index == 0,
+                  mnemonic: 'stub mnemonic words',
+                ),
+            ],
+            contacts: const [],
+            packageId: 'test-package',
+            completionToken: 'test-token',
+            keyBytes: List.filled(32, 0),
+          )
+        : SetPasswordScreenArgs.importWallet(
+            mnemonic: 'stub mnemonic words',
+            birthdayHeight: 3000000,
+            selectedAdditionalAccountIndices: count == 2 ? const [1] : const [],
+          );
+    final router = GoRouter(
+      routes: [
+        GoRoute(
+          path: '/',
+          builder: (_, _) => MobilePasscodeScreen(
+            args: args,
+            completeWalletLinkPackage:
+                ({
+                  required packageId,
+                  required completionToken,
+                  required keyBytes,
+                  required importedAccountCount,
+                  required importedContactCount,
+                }) async {},
+          ),
+        ),
+        GoRoute(
+          path: '/onboarding/customise-account',
+          builder: (_, state) => MobileCustomiseAccountScreen(
+            args: mobileOnboardingPayload(state.extra)! as CustomiseAccountArgs,
+          ),
+        ),
+        GoRoute(
+          path: '/onboarding/biometrics',
+          builder: (_, _) => const MobileBiometricsScreen(),
+        ),
+        GoRoute(path: '/home', builder: (_, _) => const Text('Imported Home')),
+      ],
+    );
+    addTearDown(router.dispose);
+    await tester.pumpWidget(
+      ProviderScope(
+        key: UniqueKey(),
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_noWalletBootstrap),
+          accountProvider.overrideWith(
+            () => _NoAccounts(importedAccountCount: count),
+          ),
+          appSecurityProvider.overrideWith(_Security.new),
+          biometricUnlockServiceProvider.overrideWithValue(_FaceBiometrics()),
+          syncProvider.overrideWith(_IdleSync.new),
+          paymentLinkReceivedStoreProvider.overrideWithValue(store),
+          paymentLinkOperationsProvider.overrideWithValue(operations),
+        ],
+        child: MaterialApp.router(
+          routerConfig: router,
+          builder: (_, child) => AppTheme(
+            data: AppThemeData.light,
+            child: MobileOnboardingProgressFrame(child: child!),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MaterialApp)),
+    );
+    if (withGift) {
+      final inspection = await operations.inspectClaim(
+        paymentLinkNavigationLink,
+      );
+      await container
+          .read(giftClaimSetupReturnProvider.notifier)
+          .begin(
+            inspection.link,
+            accountUuidsBeforeSetup: const [],
+            inspection: inspection,
+          );
+    }
+    for (var round = 0; round < 2; round++) {
+      for (final digit in '123456'.split('')) {
+        await tester.tap(find.bySemanticsLabel('Digit $digit'));
+        await tester.pump();
+      }
+    }
+    await tester.pumpAndSettle();
+    if (!walletLink) {
+      await tester.tap(keyed('mobile_customise_account_continue'));
+      await tester.pumpAndSettle();
+    }
+    return container;
+  }
+
+  testWidgets('a single Wallet Link import starts the gift before Face ID', (
+    tester,
+  ) async {
+    final container = await pumpImport(tester, count: 1);
+    expect(find.byType(MobileBiometricsScreen), findsOneWidget);
+    expect(keyed('payment_link_claim_account_sheet'), findsNothing);
+    expect(operations.claimedDestinations, ['new-account']);
+    expect(operations.allowLongSyncChecks, [false]);
+    expect(await container.read(giftClaimImportStoreProvider).load(), isNull);
+    expect(container.read(giftClaimSetupReturnProvider), isNull);
+  });
+
+  for (final walletLink in [true, false]) {
+    final method = walletLink ? 'Wallet Link' : 'passphrase';
+    testWidgets(
+      '$method import claims only into the explicitly selected account',
+      (tester) async {
+        final container = await pumpImport(tester, walletLink: walletLink);
+        expect(keyed('payment_link_claim_account_sheet'), findsOneWidget);
+        expect(operations.bindDestinations, isEmpty);
+        expect(operations.claimedDestinations, isEmpty);
+        expect(
+          container.read(appSecurityProvider).isPasswordConfigured,
+          isTrue,
+        );
+        expect(
+          (await container.read(paymentLinkReceivedStoreProvider).load())
+              .single
+              .setupAccountUuid,
+          isNull,
+        );
+        final gate = Completer<void>();
+        operations.bindGate = gate;
+        await tester.tap(keyed('payment_link_claim_account_second-account'));
+        await tester.tap(keyed('payment_link_claim_account_confirm'));
+        await tester.pumpAndSettle();
+        expect(find.byType(MobileBiometricsScreen), findsOneWidget);
+        expect(
+          container.read(accountProvider).value?.activeAccountUuid,
+          'second-account',
+        );
+        expect(
+          (await container.read(paymentLinkReceivedStoreProvider).load())
+              .single
+              .setupAccountUuid,
+          'second-account',
+        );
+        expect(operations.bindDestinations, ['second-account']);
+        expect(operations.claimedDestinations, isEmpty);
+        expect(operations.allowLongSyncChecks, [false]);
+        gate.complete();
+        await tester.pumpAndSettle();
+        expect(operations.claimedDestinations, ['second-account']);
+      },
+    );
+
+    testWidgets(
+      'closing the $method receiving choice continues with an unclaimed card',
+      (tester) async {
+        final container = await pumpImport(tester, walletLink: walletLink);
+        await tester.tap(find.bySemanticsLabel('Close'));
+        await tester.pumpAndSettle();
+        expect(find.byType(MobileBiometricsScreen), findsOneWidget);
+        expect(operations.claimedDestinations, isEmpty);
+        final record =
+            (await container.read(paymentLinkReceivedStoreProvider).load())
+                .single;
+        expect(record.setupAccountUuid, isNull);
+        expect(record.status, PaymentLinkReceivedStatus.readyToClaim);
+        expect(
+          await container.read(giftClaimImportStoreProvider).load(),
+          isNull,
+        );
+        expect(container.read(giftClaimSetupReturnProvider), isNull);
+        await tester.tap(keyed('mobile_biometrics_not_now'));
+        await tester.pumpAndSettle();
+        expect(find.text('Imported Home'), findsOneWidget);
+      },
+    );
+  }
+
+  testWidgets('locking during account choice leaves the gift unbound', (
+    tester,
+  ) async {
+    final container = await pumpImport(tester);
+    (container.read(appSecurityProvider.notifier) as _Security).lock();
+    await tester.tap(keyed('payment_link_claim_account_confirm'));
+    await tester.pumpAndSettle();
+    expect(keyed('payment_link_claim_account_sheet'), findsOneWidget);
+    expect(
+      find.text(
+        'Couldn’t prepare this gift. Try again or choose another account.',
+      ),
+      findsOneWidget,
+    );
+    expect(operations.bindDestinations, isEmpty);
+    expect(
+      (await container.read(paymentLinkReceivedStoreProvider).load())
+          .single
+          .setupAccountUuid,
+      isNull,
+    );
+  });
+
+  testWidgets('ordinary Wallet Link import has no gift account choice', (
+    tester,
+  ) async {
+    final container = await pumpImport(tester, withGift: false);
+    expect(find.byType(MobileBiometricsScreen), findsOneWidget);
+    expect(keyed('payment_link_claim_account_sheet'), findsNothing);
+    expect(operations.claimedDestinations, isEmpty);
+    expect(
+      await container.read(paymentLinkReceivedStoreProvider).load(),
+      isEmpty,
+    );
+  });
 
   testWidgets('Redeem a card waits for an explicit clipboard paste', (
     tester,
@@ -621,6 +867,55 @@ void main() {
     expect(await restarted.read(giftClaimImportStoreProvider).load(), isNull);
   });
 
+  for (final selected in [false, true]) {
+    testWidgets(
+      'restart after multi-account import ${selected ? 'honors a saved choice' : 'never guesses a recipient'}',
+      (tester) async {
+        final container = await pumpWelcome(tester);
+        container
+            .read(paymentLinkIntakeProvider.notifier)
+            .receive(paymentLinkNavigationLink.toUri().toString());
+        await tester.pumpAndSettle();
+        await tester.tap(keyed('gift_claim_claim_with_an_existing_wallet'));
+        await tester.pumpAndSettle();
+        final store = container.read(paymentLinkReceivedStoreProvider);
+        if (selected) {
+          // Simulate termination after the choice is durable but before journal cleanup.
+          final handoff = await container
+              .read(giftClaimImportStoreProvider)
+              .load();
+          await store.saveReady(
+            handoff!.link,
+            setupAccountUuid: 'second-account',
+          );
+        }
+        final restarted = await pumpWelcome(
+          tester,
+          restored: true,
+          multipleRestoredAccounts: true,
+          receivedStore: store,
+        );
+        await tester.pumpAndSettle();
+        final record = (await store.load()).single;
+        expect(record.setupAccountUuid, selected ? 'second-account' : isNull);
+        expect(
+          record.status,
+          selected
+              ? PaymentLinkReceivedStatus.receiving
+              : PaymentLinkReceivedStatus.readyToClaim,
+        );
+        expect(
+          operations.claimedDestinations,
+          selected ? ['second-account'] : isEmpty,
+        );
+        expect(
+          await restarted.read(giftClaimImportStoreProvider).load(),
+          isNull,
+        );
+      },
+    );
+  }
+
   testWidgets('gift choice actions expose button semantics', (tester) async {
     final semantics = tester.ensureSemantics();
     final container = await pumpWelcome(tester);
@@ -966,6 +1261,59 @@ class _GiftOperations extends PendingClaimPaymentLinkOperations {
 }
 
 class _NoAccounts extends AccountNotifier {
+  _NoAccounts({this.importedAccountCount = 1});
+  final int importedAccountCount;
+
+  void _importAccounts() {
+    state = AsyncData(
+      AccountState(
+        accounts: [
+          const AccountInfo(uuid: 'new-account', name: 'Imported 1', order: 0),
+          if (importedAccountCount > 1)
+            const AccountInfo(
+              uuid: 'second-account',
+              name: 'Imported 2',
+              order: 1,
+            ),
+        ],
+        activeAccountUuid: 'new-account',
+        activeAddress: 'u1new',
+      ),
+    );
+  }
+
+  @override
+  Future<void> importAccount({
+    required String mnemonic,
+    String bip39Passphrase = '',
+    int? birthdayHeight,
+    String? name,
+    String profilePictureId = 'pfp-01',
+    List<int> additionalAccountIndices = const [],
+  }) async => _importAccounts();
+
+  @override
+  Future<LinkedWalletAccountsImportResult> importLinkedWalletAccounts({
+    required String network,
+    required List<LinkedWalletAccountImport> accountsToImport,
+  }) async {
+    _importAccounts();
+    return LinkedWalletAccountsImportResult(
+      importedCount: importedAccountCount,
+      skippedDuplicateCount: 0,
+    );
+  }
+
+  @override
+  Future<void> switchAccount(String uuid) async {
+    state = AsyncData(
+      state.requireValue.copyWith(
+        activeAccountUuid: uuid,
+        activeAddress: 'u1new',
+      ),
+    );
+  }
+
   GiftClaimAccountCreatedException? creationError;
   @override
   AccountState build() => const AccountState();
@@ -1008,6 +1356,11 @@ class _NoAccounts extends AccountNotifier {
 }
 
 class _Security extends AppSecurityNotifier {
+  void lock() => state = const AppSecurityState(
+    isPasswordConfigured: true,
+    isUnlocked: false,
+  );
+
   int prepareCalls = 0;
   int rollbackCalls = 0;
   @override
@@ -1117,4 +1470,16 @@ class _RestoredSecurity extends _Security {
   @override
   AppSecurityState build() =>
       const AppSecurityState(isPasswordConfigured: true, isUnlocked: true);
+}
+
+class _MultipleImportedAccounts extends _NoAccounts {
+  @override
+  AccountState build() => const AccountState(
+    accounts: [
+      AccountInfo(uuid: 'new-account', name: 'Imported 1', order: 0),
+      AccountInfo(uuid: 'second-account', name: 'Imported 2', order: 1),
+    ],
+    activeAccountUuid: 'new-account',
+    activeAddress: 'u1new',
+  );
 }

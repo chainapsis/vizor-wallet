@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../src/features/onboarding/mobile/mobile_welcome_screen.dart';
+import '../src/features/onboarding/mobile/mobile_passcode_screen.dart';
 import '../src/core/navigation/mobile_onboarding_routes.dart';
 import '../src/features/onboarding/mobile/mobile_import_screens.dart';
 import '../src/features/onboarding/mobile/mobile_import_manual_screen.dart';
@@ -69,6 +70,31 @@ Widget buildMobileGiftOnboardingClaimFailure(BuildContext context) =>
     const _GiftPreview(initialLocation: '/gift/customise', failClaim: true);
 Widget buildMobileGiftOnboardingBiometrics(BuildContext context) =>
     const _GiftPreview(initialLocation: '/onboarding/biometrics');
+Widget buildMobileGiftOnboardingImportAccounts(BuildContext context) =>
+    const _GiftPreview(
+      initialLocation: '/onboarding/set-passcode',
+      walletLinkImport: true,
+    );
+
+final _walletLinkImportArgs = SetPasswordScreenArgs.importWalletLink(
+  network: 'main',
+  accounts: [
+    for (var index = 0; index < 2; index++)
+      LinkedWalletAccountImport(
+        name: index == 0 ? 'Personal wallet' : 'Savings',
+        birthdayHeight: 3000000,
+        zip32AccountIndex: index,
+        isHardware: false,
+        isSeedAnchor: index == 0,
+        profilePictureId: index == 0 ? 'pfp-01' : 'pfp-05',
+        mnemonic: _importPhrase,
+      ),
+  ],
+  contacts: const [],
+  packageId: 'preview-package',
+  completionToken: 'preview-completion',
+  keyBytes: List.filled(32, 0),
+);
 
 final _link = VizorPaymentLink(
   network: 'main',
@@ -101,6 +127,7 @@ class _GiftPreview extends StatefulWidget {
     this.longSyncWarning = false,
     this.failCreation = false,
     this.failClaim = false,
+    this.walletLinkImport = false,
   });
   final String initialLocation;
   final bool checking;
@@ -108,6 +135,7 @@ class _GiftPreview extends StatefulWidget {
   final bool longSyncWarning;
   final bool failCreation;
   final bool failClaim;
+  final bool walletLinkImport;
   @override
   State<_GiftPreview> createState() => _GiftPreviewState();
 }
@@ -119,7 +147,9 @@ class _GiftPreviewState extends State<_GiftPreview> {
   );
   late final _router = GoRouter(
     initialLocation: widget.initialLocation,
-    initialExtra: widget.initialLocation == '/gift/customise'
+    initialExtra: widget.walletLinkImport
+        ? _walletLinkImportArgs
+        : widget.initialLocation == '/gift/customise'
         ? GiftCustomiseAccountArgs(
             passcode: '123456',
             inspection: _previewInspection(_link),
@@ -127,14 +157,33 @@ class _GiftPreviewState extends State<_GiftPreview> {
         : null,
     routes: [
       ...mobileOnboardingRoutes().whereType<GoRoute>().where(
-        (route) => const {
+        (route) => {
           '/onboarding/method',
           '/onboarding/hardware',
-          '/onboarding/set-passcode',
+          if (!widget.walletLinkImport) '/onboarding/set-passcode',
           '/onboarding/customise-account',
           '/onboarding/biometrics',
         }.contains(route.path),
       ),
+      if (widget.walletLinkImport)
+        GoRoute(
+          path: '/onboarding/set-passcode',
+          builder: (_, state) => _importFrame(
+            MobilePasscodeScreen(
+              args:
+                  mobileOnboardingPayload(state.extra)!
+                      as SetPasswordScreenArgs,
+              completeWalletLinkPackage:
+                  ({
+                    required packageId,
+                    required completionToken,
+                    required keyBytes,
+                    required importedAccountCount,
+                    required importedContactCount,
+                  }) async {},
+            ),
+          ),
+        ),
       GoRoute(
         path: '/import',
         builder: (_, _) => _importFrame(
@@ -252,6 +301,8 @@ class _GiftPreviewState extends State<_GiftPreview> {
           giftClaimImportStoreProvider.overrideWith(
             (ref) => GiftClaimImportStore(storage: _GiftPreviewImportStorage()),
           ),
+          if (widget.walletLinkImport)
+            giftClaimSetupReturnProvider.overrideWith(_ImportGiftReturn.new),
           if (widget.longSyncWarning)
             giftClaimFlowProvider.overrideWith(_LongSyncGiftFlow.new)
           else if (widget.checking)
@@ -357,6 +408,44 @@ class _GiftPreviewAccounts extends AccountNotifier {
   final bool failCreation;
   @override
   AccountState build() => const AccountState();
+
+  @override
+  Future<LinkedWalletAccountsImportResult> importLinkedWalletAccounts({
+    required String network,
+    required List<LinkedWalletAccountImport> accountsToImport,
+  }) async {
+    state = AsyncData(
+      AccountState(
+        accounts: [
+          for (final (index, input) in accountsToImport.indexed)
+            AccountInfo(
+              uuid: 'gift-import-$index',
+              name: input.name,
+              order: index,
+              profilePictureId:
+                  input.profilePictureId ?? kDefaultProfilePictureId,
+            ),
+        ],
+        activeAccountUuid: 'gift-import-0',
+        activeAddress: 'u1preview',
+      ),
+    );
+    return LinkedWalletAccountsImportResult(
+      importedCount: accountsToImport.length,
+      skippedDuplicateCount: 0,
+    );
+  }
+
+  @override
+  Future<void> switchAccount(String uuid) async {
+    state = AsyncData(
+      state.requireValue.copyWith(
+        activeAccountUuid: uuid,
+        activeAddress: 'u1preview',
+      ),
+    );
+  }
+
   @override
   Future<void> clearPendingGiftAccountSetup({
     required String accountUuid,
@@ -478,6 +567,15 @@ class _GiftPreviewAccounts extends AccountNotifier {
         .saveReady(link, setupAccountUuid: 'gift-preview');
     return 'gift-preview';
   }
+}
+
+class _ImportGiftReturn extends GiftClaimSetupReturnNotifier {
+  @override
+  GiftClaimSetupReturn build() => GiftClaimSetupReturn(
+    link: _link,
+    accountUuidsBeforeSetup: const {},
+    inspection: _previewInspection(_link),
+  );
 }
 
 class _GiftPreviewSecurity extends AppSecurityNotifier {

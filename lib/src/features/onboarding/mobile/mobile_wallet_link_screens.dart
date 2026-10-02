@@ -21,6 +21,7 @@ import '../../address_book/providers/address_book_provider.dart';
 import '../../address_book/widgets/address_book_network_icon.dart';
 import '../../address_scan/widgets/address_qr_scan_modal.dart';
 import '../../address_scan/widgets/mobile_address_scan_card.dart';
+import '../../payment_links/services/gift_claim_setup_coordinator.dart';
 import '../../wallet_link/models/wallet_link_models.dart';
 import '../../wallet_link/providers/mobile_wallet_link_provider.dart';
 import '../../wallet_link/services/wallet_link_completion.dart';
@@ -30,15 +31,6 @@ import 'mobile_keystone_scan_card.dart';
 import 'mobile_onboarding_scaffold.dart';
 import 'mobile_onboarding_progress.dart';
 import 'mobile_onboarding_progress_scope.dart';
-
-typedef WalletLinkCompletionCallback =
-    Future<void> Function({
-      required String packageId,
-      required String completionToken,
-      required List<int> keyBytes,
-      required int importedAccountCount,
-      required int importedContactCount,
-    });
 
 class MobileWalletLinkIntroScreen extends StatelessWidget {
   const MobileWalletLinkIntroScreen({super.key});
@@ -818,6 +810,7 @@ Future<void> _continueToPasscodeOrImport(
       importedAccountCount: accountImportResult.importedCount,
       importedContactCount: importedContactCount,
     );
+    await completeGiftClaimImportSetup(ref);
   } catch (error) {
     controller.endSubmit();
     if (!context.mounted) return;

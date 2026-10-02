@@ -14,6 +14,7 @@ import 'package:zcash_wallet/src/features/payment_links/widgets/mobile/payment_l
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_long_sync_warning.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
@@ -331,6 +332,66 @@ void main() {
     await _advance(tester);
     expect(find.text('Couldn’t redeem your gift card.'), findsNothing);
   });
+
+  for (final confirm in [true, false]) {
+    testWidgets(
+      'imported receiving account preview ${confirm ? 'claims into Savings' : 'keeps a dismissed card unclaimed'}',
+      (tester) async {
+        await _render(tester, buildMobileGiftOnboardingImportAccounts);
+        for (var round = 0; round < 2; round++) {
+          for (final digit in '123456'.split('')) {
+            await tester.tap(find.bySemanticsLabel('Digit $digit'));
+            await tester.pump();
+          }
+        }
+        await _advance(tester);
+        expect(find.text('Choose receiving account'), findsOneWidget);
+        expect(find.text('Personal wallet'), findsOneWidget);
+        expect(find.text('Savings'), findsOneWidget);
+        final container = ProviderScope.containerOf(
+          tester.element(find.text('Savings')),
+        );
+        expect(
+          container.read(appSecurityProvider).isPasswordConfigured,
+          isTrue,
+        );
+        expect(
+          (await container.read(paymentLinkReceivedStoreProvider).load())
+              .single
+              .setupAccountUuid,
+          isNull,
+        );
+        if (confirm) {
+          await tester.tap(
+            find.byKey(
+              const ValueKey('payment_link_claim_account_gift-import-1'),
+            ),
+          );
+          await tester.tap(
+            find.byKey(const ValueKey('payment_link_claim_account_confirm')),
+          );
+        } else {
+          await tester.tap(find.bySemanticsLabel('Close'));
+        }
+        await _advance(tester);
+        expect(find.byType(MobileBiometricsScreen), findsOneWidget);
+        final record =
+            (await container.read(paymentLinkReceivedStoreProvider).load())
+                .single;
+        expect(record.setupAccountUuid, confirm ? 'gift-import-1' : isNull);
+        expect(
+          record.status,
+          confirm
+              ? PaymentLinkReceivedStatus.receiving
+              : PaymentLinkReceivedStatus.readyToClaim,
+        );
+        expect(
+          await container.read(giftClaimImportStoreProvider).load(),
+          isNull,
+        );
+      },
+    );
+  }
 
   testWidgets('an existing wallet import returns to the inspected gift', (
     tester,
