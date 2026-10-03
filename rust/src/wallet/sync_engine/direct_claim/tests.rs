@@ -21,14 +21,12 @@ fn funding_block_builds_a_real_claim_quote_while_historical_gaps_remain_unscanne
         .mnemonic;
     assert_eq!(phrase.split_whitespace().count(), 12);
     let seed = keys::mnemonic_to_seed(&phrase).unwrap();
-    let (account, address) = keys::init_db_and_create_account(
-        path,
-        network,
-        &seed,
-        Some(u64::from(u32::from(funding_height - 100))),
-        "Gift",
-    )
-    .unwrap();
+    let (account, address) =
+        keys::init_db_and_create_account(path, network, &seed, None, "Gift").unwrap();
+    assert_eq!(
+        keys::list_accounts(path, network).unwrap()[0].birthday_height,
+        u32::from(network.activation_height(NetworkUpgrade::Sapling).unwrap())
+    );
     let sk = orchard::keys::SpendingKey::from_zip32_seed(
         seed.expose_secret(),
         133,

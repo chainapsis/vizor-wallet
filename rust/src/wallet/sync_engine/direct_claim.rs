@@ -127,6 +127,14 @@ pub(crate) async fn prepare(
     if BlockHeight::from(height) < birthday {
         return Err("Gift Card funding precedes its birthday".into());
     }
+    // A fresh card wallet can lack a chain tip. The SDK's
+    // transaction-height lookup requires one even when the tx is not stored.
+    if db.chain_height().map_err(|e| e.to_string())?.is_none() {
+        with_wallet_db_write_lock("direct_claim.initialize_tip", || {
+            db.update_chain_tip(tip_height.into())
+        })
+        .map_err(|e| e.to_string())?;
+    }
     if let Some(previous) = db.get_tx_height(funding_id).map_err(|e| e.to_string())? {
         if previous != BlockHeight::from(height) {
             let divergent_height = previous.min(height.into());

@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/config/network_config.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_sharing.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
@@ -88,36 +89,49 @@ void main() {
     String withBytes(List<int> bytes) => withJsonBytes(bytes, version: 4);
 
     test('matches independent vectors, full txid order and link sizes', () {
-      const vectors = {
-        16: 'AAAAAAAAAAAAAAAAAAAAAAAANSYFAAAAAAAPQkABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4fIAU',
-        32: 'BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADUmBQAAAAAAD0JAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyAF',
-      };
-      for (final entry in vectors.entries) {
-        final source = card(
-          entropyBytes: entry.key,
-          fundingTxid: _fundingTxid,
-          presentation: const PaymentLinkPresentation(artworkId: 'knightMagic'),
+      const vector =
+          'AAAAAAAAAAAAAAAAAAAAAAAAAAAAD0JAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyAF';
+      final source = card(
+        fundingTxid: _fundingTxid,
+        presentation: const PaymentLinkPresentation(artworkId: 'knightMagic'),
+      );
+      final shared = source.toShareUri();
+      expect(shared.fragment, 'v4=$vector');
+      expect(bytesOf(shared).length, 57);
+      expect(shared.toString().length, 122);
+      final restored = VizorPaymentLink.parse(shared.toString());
+      expect(restored.network, 'main');
+      expect(restored.isEventCard, isTrue);
+      expect(restored.fundingTxid, _fundingTxid);
+      expect(restored.mnemonic, source.mnemonic);
+      expect(
+        restored.birthdayHeight,
+        ZcashNetwork.mainnet.saplingActivationHeight,
+      );
+      expect(restored.hasSameCanonicalPayload(source), isTrue);
+      expect(restored.toShareUri(), shared);
+      expect(restored.knownAddress, isNull);
+      expect(restored.knownCreatedAt, isNull);
+      for (final height in [0, 1, 0x100000000]) {
+        expect(
+          card(fundingTxid: _fundingTxid, height: height).toShareUri(),
+          card(fundingTxid: _fundingTxid).toShareUri(),
         );
-        final shared = source.toShareUri();
-        expect(shared.fragment, 'v4=${entry.value}');
-        expect(bytesOf(shared).length, entry.key == 16 ? 62 : 78);
-        expect(shared.toString().length, entry.key == 16 ? 129 : 150);
-        final restored = VizorPaymentLink.parse(shared.toString());
-        expect(restored.network, 'main');
-        expect(restored.isEventCard, isTrue);
-        expect(restored.fundingTxid, _fundingTxid);
-        expect(restored.mnemonic, source.mnemonic);
-        expect(restored.hasSameCanonicalPayload(source), isTrue);
-        expect(restored.toShareUri(), shared);
-        expect(restored.knownAddress, isNull);
-        expect(restored.knownCreatedAt, isNull);
       }
+      expect(
+        () => wire(card(entropyBytes: 32, fundingTxid: _fundingTxid)),
+        throwsFormatException,
+      );
     });
 
     test('preserves messages while omitting local fiat and custom labels', () {
       final source = card(fundingTxid: _fundingTxid, presentation: decorated);
       final shared = source.toShareUri();
-      expect(shared.toString().length, 189);
+      expect(shared.toString().length, 180);
+      expect(
+        shared.fragment,
+        'v4=AAAAAAAAAAAAAAAAAAAAAAAAAAAAD0JAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyAFSXQncyBhIGdyZWF0IGRheSB0byBzaGllbGQgeW91ciBaRUMg8J-boe-4jw',
+      );
       expect(source.presentation!.fiatSnapshot!.amount, 11.1747);
       final restored = VizorPaymentLink.parse(shared.toString());
       expect(restored.presentation!.message, _message);
@@ -219,28 +233,22 @@ void main() {
     );
 
     test(
-      'rejects old JSON v4, corruption and truncation before recovering a secret',
+      'rejects malformed fixed fields and messages before recovering a secret',
       () {
         final raw = bytesOf(card(fundingTxid: _fundingTxid).toShareUri());
         final invalid = <List<int>>[
           utf8.encode(jsonEncode(fieldsOf(wire(card())))),
           for (var length = 0; length < raw.length; length++)
             raw.sublist(0, length),
-          [...raw, 0],
-          [...raw]..[0] = 0x20, // Reserved header bit.
-          [...raw]..[0] = 0x10, // Custom-label bit is now reserved.
-          [...raw]..[0] = 5, // Invalid entropy size.
           [...raw]..[raw.length - 1] = 255, // Unknown artwork.
-          [...raw]..setRange(17, 21, [0, 0, 0, 0]), // Zero birthday.
-          [...raw]..setRange(21, 29, List.filled(8, 0)), // Zero amount.
-          [...raw]..setRange(21, 29, List.filled(8, 255)), // Amount overflow.
-          [...raw]..[0] = 8, // Missing message length.
-          [...raw, 0, 1, 255]..[0] = 8, // Invalid UTF-8.
-          [...raw, 0, 2, 65]..[0] = 8, // Truncated message.
-          [...raw, 0, 0]..[0] = 8, // Empty optional message.
-          [...raw, 0, 1, 32]..[0] = 8, // Noncanonical whitespace.
-          [...raw, 2, 1, ...List.filled(513, 65)]..[0] = 8,
-          [...raw, 0, 129, ...List.filled(129, 65)]..[0] = 8,
+          [...raw]..setRange(16, 24, List.filled(8, 0)), // Zero amount.
+          [...raw]..setRange(16, 24, List.filled(8, 255)), // Amount overflow.
+          [...raw, 255], // Invalid UTF-8.
+          [...raw, 0xf0, 0x9f], // Truncated UTF-8 sequence.
+          [...raw, 32], // Empty optional message.
+          [...raw, 32, 65], // Noncanonical whitespace.
+          [...raw, ...List.filled(513, 65)],
+          [...raw, ...List.filled(129, 65)],
         ];
         for (final bytes in invalid) {
           final input = withBytes(bytes);
@@ -265,8 +273,6 @@ void main() {
       'bounds message bytes and numeric values on write and preserves maxima',
       () {
         for (final source in [
-          card(fundingTxid: _fundingTxid, height: 0),
-          card(fundingTxid: _fundingTxid, height: 0x100000000),
           card(fundingTxid: _fundingTxid, amount: BigInt.zero),
           card(
             fundingTxid: _fundingTxid,
@@ -281,7 +287,6 @@ void main() {
         }
         final maximum = card(
           fundingTxid: _fundingTxid,
-          height: 0xffffffff,
           amount: BigInt.from(2100000000000000),
           presentation: PaymentLinkPresentation(message: '🎉' * 128),
         );

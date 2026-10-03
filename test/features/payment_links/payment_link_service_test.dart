@@ -2538,7 +2538,7 @@ void main() {
   });
 
   test(
-    'event cache identity includes the funding transaction and scan policy',
+    'event cache identity uses the funding transaction without a birthday',
     () {
       final normal = _link();
       final event = _eventLink();
@@ -2553,6 +2553,16 @@ void main() {
       expect(
         paymentLinkClaimWalletDirectoryName(
           event.withResolvedMetadata(address: 'u1other'),
+        ),
+        paymentLinkClaimWalletDirectoryName(event),
+      );
+      expect(
+        paymentLinkClaimWalletDirectoryName(_eventLink(birthdayHeight: 1)),
+        paymentLinkClaimWalletDirectoryName(event),
+      );
+      expect(
+        paymentLinkClaimWalletDirectoryName(
+          VizorPaymentLink.parse(event.toRecoveryUri().toString()),
         ),
         paymentLinkClaimWalletDirectoryName(event),
       );
@@ -2798,14 +2808,14 @@ const _legacyClaimDirectory =
     'payment_link_claim_main_'
     'df3533c3dc54740770e230053a1f1962724f8653ec41b84e4d53164d46733494';
 
-VizorPaymentLink _eventLink({String? fundingTxid}) {
+VizorPaymentLink _eventLink({String? fundingTxid, int? birthdayHeight}) {
   final link = _link();
   return VizorPaymentLink(
     network: link.network,
     address: link.address,
     amountZatoshi: link.amountZatoshi,
     mnemonic: link.mnemonic,
-    birthdayHeight: link.birthdayHeight,
+    birthdayHeight: birthdayHeight ?? link.birthdayHeight,
     label: link.label,
     createdAt: link.createdAt,
     fundingTxid: fundingTxid ?? 'aa' * 32,

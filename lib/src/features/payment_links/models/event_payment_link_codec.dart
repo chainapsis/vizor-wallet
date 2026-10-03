@@ -3,8 +3,8 @@ part of 'vizor_payment_link.dart';
 /// Mainnet event links carry raw entropy and the full funding txid, once each.
 /// The wire layout and permanent artwork codes are in docs/compact-gift-links.md.
 abstract final class _EventPaymentLinkCodec {
-  static const _messageFlag = 0x08;
-  static const _reservedBits = 0xf0;
+  static const _entropyLength = 16;
+  static const _fixedLength = _entropyLength + 8 + 32 + 1;
 
   // Wire codes are permanent: append new codes, never renumber or reuse them.
   // Zero means no specified artwork. Do not derive codes from a UI enum index.
@@ -30,36 +30,30 @@ abstract final class _EventPaymentLinkCodec {
       if (link.network.trim() != 'main') throw _invalid;
       _CompactPaymentLinkCodec._validateRequired(
         'main',
-        link.birthdayHeight,
+        link.claimBirthdayHeight,
         link.amountZatoshi,
       );
       final txid = VizorPaymentLink.validateFundingTxid(link.fundingTxid);
       final entropy = rust_wallet.giftMnemonicToEntropy(
         mnemonic: link.mnemonic.trim(),
       );
-      final entropyCode = _CompactPaymentLinkCodec._entropyLengths.indexOf(
-        entropy.length,
-      );
-      if (entropyCode < 0) throw _invalid;
+      if (entropy.length != _entropyLength) throw _invalid;
       final presentation = link.presentation?.toPayload();
       final artwork = presentation?['artworkId'] as String?;
       final artworkCode = artwork == null
           ? 0
           : _artworks.entries.firstWhere((entry) => entry.value == artwork).key;
       final message = presentation?['message'] as String?;
-      final header = entropyCode | (message == null ? 0 : _messageFlag);
-      final numbers = ByteData(12)
-        ..setUint32(0, link.birthdayHeight, Endian.big)
-        ..setUint32(4, (link.amountZatoshi >> 32).toInt(), Endian.big)
+      final amount = ByteData(8)
+        ..setUint32(0, (link.amountZatoshi >> 32).toInt(), Endian.big)
         ..setUint32(
-          8,
+          4,
           (link.amountZatoshi & BigInt.from(0xffffffff)).toInt(),
           Endian.big,
         );
       final bytes = BytesBuilder(copy: false)
-        ..addByte(header)
         ..add(entropy)
-        ..add(numbers.buffer.asUint8List())
+        ..add(amount.buffer.asUint8List())
         // Txid bytes follow display-hex order. Rust converts protocol order.
         ..add(
           List.generate(
@@ -68,7 +62,7 @@ abstract final class _EventPaymentLinkCodec {
           ),
         )
         ..addByte(artworkCode);
-      if (message != null) _writeString(bytes, message);
+      if (message != null) bytes.add(utf8.encode(message));
       return _CompactPaymentLinkCodec._encodeBase64(bytes.takeBytes());
     } catch (_) {
       throw _invalid;
@@ -79,54 +73,37 @@ abstract final class _EventPaymentLinkCodec {
     try {
       if (encoded.length > VizorPaymentLink.maxEncodedLength) throw _invalid;
       final bytes = _CompactPaymentLinkCodec._decodeBase64(encoded);
-      final header = bytes[0];
-      final entropyCode = header & 0x07;
-      if (header & _reservedBits != 0 ||
-          entropyCode >= _CompactPaymentLinkCodec._entropyLengths.length) {
+      if (bytes.length < _fixedLength ||
+          bytes.length >
+              _fixedLength + PaymentLinkPresentation.maxMessageUtf8Bytes) {
         throw _invalid;
       }
-      final entropyLength =
-          _CompactPaymentLinkCodec._entropyLengths[entropyCode];
-      final fixedLength = 1 + entropyLength + 4 + 8 + 32 + 1;
-      if (bytes.length < fixedLength) throw _invalid;
-      final numbers = ByteData.sublistView(bytes, 1 + entropyLength);
-      final height = numbers.getUint32(0, Endian.big);
+      final numbers = ByteData.sublistView(bytes, _entropyLength);
       final amount =
-          (BigInt.from(numbers.getUint32(4, Endian.big)) << 32) |
-          BigInt.from(numbers.getUint32(8, Endian.big));
+          (BigInt.from(numbers.getUint32(0, Endian.big)) << 32) |
+          BigInt.from(numbers.getUint32(4, Endian.big));
+      final height = ZcashNetwork.mainnet.saplingActivationHeight;
       _CompactPaymentLinkCodec._validateRequired('main', height, amount);
-      final txidStart = 1 + entropyLength + 12;
+      const txidStart = _entropyLength + 8;
       final txid = bytes
           .sublist(txidStart, txidStart + 32)
           .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
           .join();
-      final artworkCode = bytes[fixedLength - 1];
+      final artworkCode = bytes[_fixedLength - 1];
       if (artworkCode != 0 && !_artworks.containsKey(artworkCode)) {
         throw _invalid;
       }
       String? message;
-      if (header & _messageFlag != 0) {
-        if (bytes.length < fixedLength + 2) throw _invalid;
-        final length = ByteData.sublistView(
-          bytes,
-          fixedLength,
-        ).getUint16(0, Endian.big);
-        if (length == 0 ||
-            length > PaymentLinkPresentation.maxMessageUtf8Bytes ||
-            bytes.length != fixedLength + 2 + length) {
-          throw _invalid;
-        }
-        message = utf8.decode(bytes.sublist(fixedLength + 2));
-        if (message != message.trim()) throw _invalid;
-      } else if (bytes.length != fixedLength) {
-        throw _invalid;
+      if (bytes.length > _fixedLength) {
+        message = utf8.decode(bytes.sublist(_fixedLength));
+        if (message.trim().isEmpty || message != message.trim()) throw _invalid;
       }
       final presentation = PaymentLinkPresentation.fromPayload({
         'artworkId': _artworks[artworkCode],
         'message': message,
       });
       final mnemonic = rust_wallet.giftMnemonicFromEntropy(
-        entropy: Uint8List.sublistView(bytes, 1, 1 + entropyLength),
+        entropy: Uint8List.sublistView(bytes, 0, _entropyLength),
       );
       final link = VizorPaymentLink._parsed(
         network: 'main',
@@ -146,17 +123,5 @@ abstract final class _EventPaymentLinkCodec {
       // Never include the secret-bearing input in an error.
       throw _invalid;
     }
-  }
-
-  static void _writeString(BytesBuilder bytes, String value) {
-    final encoded = utf8.encode(value);
-    if (encoded.length > 0xffff) throw _invalid;
-    bytes
-      ..add(
-        (ByteData(
-          2,
-        )..setUint16(0, encoded.length, Endian.big)).buffer.asUint8List(),
-      )
-      ..add(encoded);
   }
 }

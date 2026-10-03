@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:characters/characters.dart';
 
+import '../../../core/config/network_config.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/navigation/vizor_deep_link.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
@@ -203,6 +204,12 @@ class VizorPaymentLink {
   /// A funding transaction identifies an event card and selects direct claim.
   bool get isEventCard => fundingTxid != null;
 
+  /// Direct-only card wallets use a stable local birthday, absent from v4.
+  /// Keeping it at activation also permits funding to move earlier in a reorg.
+  int get claimBirthdayHeight => isEventCard
+      ? zcashNetworkFromName(network).saplingActivationHeight
+      : birthdayHeight;
+
   /// Local-only provenance; never included in the shared payload.
   final bool isCreatedAtProvisional;
   final PaymentLinkPresentation? presentation;
@@ -330,7 +337,7 @@ class VizorPaymentLink {
       'network': normalizedNetwork,
       'amountZatoshi': amountZatoshi.toString(),
       'mnemonic': mnemonic.trim(),
-      'birthdayHeight': birthdayHeight,
+      'birthdayHeight': claimBirthdayHeight,
       'label': label.trim(),
       if (fundingTxid != null) 'fundingTxid': validateFundingTxid(fundingTxid),
     };
