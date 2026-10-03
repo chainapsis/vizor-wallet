@@ -59,6 +59,8 @@ pub(crate) mod mempool;
 mod tip_cache;
 #[cfg(test)]
 mod transparent_recovery_tests;
+#[cfg(test)]
+mod witness_check_tests;
 
 use enhancement::{queue_stored_transactions, EnhancementPolicy, EnhancementSession};
 pub(crate) use error::SyncError;
@@ -1074,13 +1076,160 @@ fn validate_complete_tip_hash(
     }
 }
 
-fn queue_witness_repairs_if_needed(
+/// An inspection owns its read connection until its result is applied, since
+/// SQLite's `data_version` values are comparable only on the same connection.
+struct WitnessInspection {
+    connection: rusqlite::Connection,
+    data_version: i64,
+    result: Result<Vec<std::ops::Range<BlockHeight>>, SqliteClientError>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum WitnessRepairOutcome {
+    NoRepairs,
+    Retry,
+    Queued(u64),
+    Cancelled,
+}
+
+fn witness_data_version(connection: &rusqlite::Connection) -> Result<i64, SyncError> {
+    connection
+        .pragma_query_value(None, "data_version", |row| row.get(0))
+        .map_err(|e| SyncError::db(format!("read witness inspection data version: {e}")))
+}
+
+/// Inspect a consistent SQLite read snapshot without blocking wallet writers.
+fn inspect_witnesses(
+    db_data_path: &str,
+    network: WalletNetwork,
+) -> Result<WitnessInspection, SyncError> {
+    let started = std::time::Instant::now();
+    let mut connection = open_readonly_conn_with_timeout(db_data_path, Some(SYNC_DB_BUSY_TIMEOUT))
+        .map_err(SyncError::db)?;
+    let data_version = witness_data_version(&connection)?;
+    // `check_witnesses` opens its own transaction, pinning all note and tree
+    // reads to one snapshot. It needs neither spending keys nor a writable DB.
+    let result = zcash_client_sqlite::WalletDb::from_connection(&mut connection, network, (), ())
+        .check_witnesses();
+    log::info!(
+        "[{}] sync: read-only witness inspection took {:.3}s",
+        elapsed(),
+        started.elapsed().as_secs_f64(),
+    );
+    Ok(WitnessInspection {
+        connection,
+        data_version,
+        result,
+    })
+}
+
+fn apply_witness_inspection(
+    db_data_path: &str,
+    db: &mut WalletDatabase,
+    current_tip_height: u64,
+    repair_passes_this_run: &mut u32,
+    inspection: WitnessInspection,
+    should_exit: &impl Fn() -> bool,
+) -> Result<WitnessRepairOutcome, SyncError> {
+    with_wallet_db_write_lock("sync_engine.apply_witness_inspection", || {
+        if should_exit() {
+            return Ok(WitnessRepairOutcome::Cancelled);
+        }
+        // The mutex prevents in-process writes between validation and applying
+        // the result. Check the original read connection after its transaction
+        // ended so any intervening commit invalidates even a clean result.
+        if witness_data_version(&inspection.connection)? != inspection.data_version {
+            log::info!(
+                "[{}] sync: wallet changed during witness inspection; checking again",
+                elapsed(),
+            );
+            return Ok(WitnessRepairOutcome::Retry);
+        }
+
+        let rescan_ranges = match inspection.result {
+            Ok(ranges) => ranges,
+            Err(error) if is_witness_position_beyond_tree(&error) => {
+                let cleared = clear_unmined_note_commitment_positions(db_data_path)?;
+                if cleared == 0 {
+                    return Err(SyncError::db(format!("check_witnesses: {error}")));
+                }
+                log::warn!(
+                    "[{}] sync: cleared {} stale commitment-tree position(s) from \
+                     unmined notes after reorg; retrying read-only witness inspection",
+                    elapsed(),
+                    cleared,
+                );
+                return Ok(WitnessRepairOutcome::Retry);
+            }
+            Err(error) => return Err(SyncError::db(format!("check_witnesses: {error}"))),
+        };
+
+        let Some(nonempty_ranges) = NonEmpty::from_vec(rescan_ranges) else {
+            if let Err(e) = mark_witness_check_clean(db_data_path, current_tip_height) {
+                log::warn!(
+                    "[{}] sync: witness repair clean marker update failed: {e}",
+                    elapsed(),
+                );
+            } else {
+                log::info!(
+                    "[{}] sync: witness repair check found no work; marked clean at height {}",
+                    elapsed(),
+                    current_tip_height,
+                );
+            }
+            return Ok(WitnessRepairOutcome::NoRepairs);
+        };
+
+        if *repair_passes_this_run >= MAX_WITNESS_REPAIR_PASSES_PER_RUN {
+            let first = describe_block_range(&nonempty_ranges.head);
+            return Err(SyncError::db(format!(
+                "sync completion blocked: witness repair budget exhausted \
+                 after {} pass(es); first remaining repair range: {first}",
+                MAX_WITNESS_REPAIR_PASSES_PER_RUN,
+            )));
+        }
+
+        let range_count = 1 + nonempty_ranges.tail.len();
+        let repair_blocks = nonempty_ranges.iter().map(block_range_len).sum::<u64>();
+        let first = describe_block_range(&nonempty_ranges.head);
+        db.queue_rescans(nonempty_ranges, ScanPriority::Verify)
+            .map_err(|e| SyncError::db(format!("queue witness rescans: {e}")))?;
+        *repair_passes_this_run += 1;
+        log::warn!(
+            "[{}] sync: witness repair pass {}/{} queued {} range(s), {} block(s) \
+             (first={first})",
+            elapsed(),
+            *repair_passes_this_run,
+            MAX_WITNESS_REPAIR_PASSES_PER_RUN,
+            range_count,
+            repair_blocks,
+        );
+
+        let post_ranges = db
+            .suggest_scan_ranges()
+            .map_err(|e| SyncError::db(format!("suggest_scan_ranges after witness repair: {e}")))?;
+        let pending_blocks = pending_scan_blocks(&post_ranges);
+        if pending_blocks == 0 && current_tip_height > 0 {
+            return Err(SyncError::db(format!(
+                "sync completion blocked: witness repair queued ranges but no pending scan \
+                 ranges were produced at tip {current_tip_height}"
+            )));
+        }
+        Ok(WitnessRepairOutcome::Queued(pending_blocks))
+    })
+}
+
+async fn queue_witness_repairs_if_needed(
     db_data_path: &str,
     db: &mut WalletDatabase,
     current_tip_height: u64,
     repair_passes_this_run: &mut u32,
     force_check: bool,
-) -> Result<Option<u64>, SyncError> {
+    should_exit: &(impl Fn() -> bool + Sync),
+) -> Result<WitnessRepairOutcome, SyncError> {
+    if should_exit() {
+        return Ok(WitnessRepairOutcome::Cancelled);
+    }
     match witness_check_decision(db_data_path, current_tip_height, force_check) {
         WitnessCheckDecision::Run(reason) => {
             log::info!(
@@ -1099,94 +1248,25 @@ fn queue_witness_repairs_if_needed(
                  age_blocks={age_blocks}, max_age_blocks={WITNESS_CHECK_MAX_CLEAN_AGE_BLOCKS})",
                 elapsed(),
             );
-            return Ok(None);
+            return Ok(WitnessRepairOutcome::NoRepairs);
         }
     }
 
-    let rescan_ranges = with_wallet_db_write_lock("sync_engine.check_witnesses", || {
-        match db.check_witnesses() {
-            Ok(ranges) => Ok(ranges),
-            Err(error) if is_witness_position_beyond_tree(&error) => {
-                let cleared = clear_unmined_note_commitment_positions(db_data_path)?;
-                if cleared == 0 {
-                    return Err(SyncError::db(format!("check_witnesses: {error}")));
-                }
-
-                log::warn!(
-                    "[{}] sync: cleared {} stale commitment-tree position(s) from unmined notes after reorg; retrying witness check",
-                    elapsed(),
-                    cleared,
-                );
-                db.check_witnesses().map_err(|retry_error| {
-                    SyncError::db(format!(
-                        "check_witnesses after clearing unmined note positions: {retry_error}"
-                    ))
-                })
-            }
-            Err(error) => Err(SyncError::db(format!("check_witnesses: {error}"))),
-        }
-    })?;
-
-    let Some(nonempty_ranges) = NonEmpty::from_vec(rescan_ranges) else {
-        if let Err(e) = with_wallet_db_write_lock("sync_engine.mark_witness_check_clean", || {
-            mark_witness_check_clean(db_data_path, current_tip_height)
-        }) {
-            log::warn!(
-                "[{}] sync: witness repair clean marker update failed: {e}",
-                elapsed(),
-            );
-        } else {
-            log::info!(
-                "[{}] sync: witness repair check found no work; marked clean at height {}",
-                elapsed(),
-                current_tip_height,
-            );
-        }
-        return Ok(None);
-    };
-
-    if *repair_passes_this_run >= MAX_WITNESS_REPAIR_PASSES_PER_RUN {
-        let first = describe_block_range(&nonempty_ranges.head);
-        return Err(SyncError::db(format!(
-            "sync completion blocked: witness repair budget exhausted \
-             after {} pass(es); first remaining repair range: {first}",
-            MAX_WITNESS_REPAIR_PASSES_PER_RUN,
-        )));
-    }
-
-    *repair_passes_this_run += 1;
-    let pass = *repair_passes_this_run;
-    let range_count = 1 + nonempty_ranges.tail.len();
-    let repair_blocks = nonempty_ranges.iter().map(block_range_len).sum::<u64>();
-    let first = describe_block_range(&nonempty_ranges.head);
-
-    log::warn!(
-        "[{}] sync: witness repair pass {}/{} queued {} range(s), {} block(s) \
-         (first={first})",
-        elapsed(),
-        pass,
-        MAX_WITNESS_REPAIR_PASSES_PER_RUN,
-        range_count,
-        repair_blocks,
-    );
-
-    with_wallet_db_write_lock("sync_engine.queue_witness_repairs", || {
-        db.queue_rescans(nonempty_ranges, ScanPriority::Verify)
-            .map_err(|e| SyncError::db(format!("queue witness rescans: {e}")))
-    })?;
-
-    let post_ranges = db
-        .suggest_scan_ranges()
-        .map_err(|e| SyncError::db(format!("suggest_scan_ranges after witness repair: {e}")))?;
-    let pending_blocks = pending_scan_blocks(&post_ranges);
-    if pending_blocks == 0 && current_tip_height > 0 {
-        return Err(SyncError::db(format!(
-            "sync completion blocked: witness repair queued ranges but no pending scan \
-             ranges were produced at tip {current_tip_height}"
-        )));
-    }
-
-    Ok(Some(pending_blocks))
+    let path = db_data_path.to_owned();
+    let network = *db.params();
+    // Do not block the async runtime's worker while walking every note's tree.
+    // Await the worker even on cancellation so reset/lock drains its DB reader.
+    let inspection = tokio::task::spawn_blocking(move || inspect_witnesses(&path, network))
+        .await
+        .map_err(|e| SyncError::other(format!("witness inspection worker failed: {e}")))??;
+    apply_witness_inspection(
+        db_data_path,
+        db,
+        current_tip_height,
+        repair_passes_this_run,
+        inspection,
+        should_exit,
+    )
 }
 
 async fn repair_anchor_root_mismatch_if_needed(
@@ -3597,24 +3677,36 @@ async fn run_sync_impl(
                     }
                 }
 
-                if let Some(repair_pending_blocks) = queue_witness_repairs_if_needed(
+                match queue_witness_repairs_if_needed(
                     db_data_path,
                     &mut db,
                     current_tip_height,
                     &mut witness_repair_passes_this_run,
                     force_witness_check_this_run,
-                )? {
-                    force_witness_check_this_run = true;
-                    initial_total = repair_pending_blocks;
-                    prev_remaining = repair_pending_blocks;
-                    progress_display_mode = ProgressDisplayMode::TailRepair {
-                        base_percentage: last_progress_percentage
-                            .min(TAIL_REPAIR_MAX_START_PERCENTAGE),
-                        total_blocks: repair_pending_blocks,
-                    };
-                    prefetch = None;
-                    continue;
-                } else if let Some(repair_pending_blocks) = repair_anchor_root_mismatch_if_needed(
+                    &should_exit,
+                )
+                .await?
+                {
+                    WitnessRepairOutcome::Cancelled => return Ok(()),
+                    WitnessRepairOutcome::Retry => {
+                        force_witness_check_this_run = true;
+                        continue;
+                    }
+                    WitnessRepairOutcome::Queued(repair_pending_blocks) => {
+                        force_witness_check_this_run = true;
+                        initial_total = repair_pending_blocks;
+                        prev_remaining = repair_pending_blocks;
+                        progress_display_mode = ProgressDisplayMode::TailRepair {
+                            base_percentage: last_progress_percentage
+                                .min(TAIL_REPAIR_MAX_START_PERCENTAGE),
+                            total_blocks: repair_pending_blocks,
+                        };
+                        prefetch = None;
+                        continue;
+                    }
+                    WitnessRepairOutcome::NoRepairs => {}
+                }
+                if let Some(repair_pending_blocks) = repair_anchor_root_mismatch_if_needed(
                     db_data_path,
                     &mut client,
                     &mut db,
