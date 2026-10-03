@@ -74,11 +74,57 @@ fn test_wallet() -> Wallet {
         Ok(())
     });
     result.unwrap().expect("Ironwood is enabled on regtest");
+    install_witness_change_watch(&path).unwrap();
     Wallet {
         _dir: dir,
         path,
         db,
     }
+}
+
+fn store_unmined_receive(wallet: &Wallet) {
+    with_wallet_db_write_lock("test.mempool_receive", || {
+        let mut conn = rusqlite::Connection::open(&wallet.path).unwrap();
+        let tx = conn.transaction().unwrap();
+        tx.execute(
+            "INSERT INTO transactions (id_tx, txid, min_observed_height)
+             VALUES (2, ?1, ?2)",
+            params![[1_u8; 32].as_slice(), TIP],
+        )
+        .unwrap();
+        tx.execute_batch(
+            "INSERT INTO sapling_received_notes
+                 (transaction_id, output_index, account_id, diversifier, value,
+                  rcm, nf, is_change, commitment_tree_position, recipient_key_scope)
+             SELECT 2, 0, account_id, diversifier, value, rcm, NULL, 0, NULL, 0
+             FROM sapling_received_notes WHERE transaction_id = 1;",
+        )
+        .unwrap();
+        for pool in ["orchard", "ironwood"] {
+            tx.execute_batch(&format!(
+                "INSERT INTO {pool}_received_notes
+                     (transaction_id, action_index, account_id, diversifier, value,
+                      rho, rseed, nf, is_change, commitment_tree_position,
+                      recipient_key_scope, note_version)
+                 SELECT 2, 0, account_id, diversifier, value, rho, rseed,
+                     randomblob(32), 0, NULL, 0, note_version
+                 FROM {pool}_received_notes WHERE transaction_id = 1;"
+            ))
+            .unwrap();
+            tx.execute_batch(&format!(
+                "UPDATE {pool}_received_notes SET memo = X'01', value = 11000
+                 WHERE transaction_id = 2;"
+            ))
+            .unwrap();
+        }
+        // Full mempool payload recovery can also fill in expiry/raw metadata.
+        tx.execute_batch(
+            "UPDATE transactions SET expiry_height = 200, raw = X'01'
+             WHERE id_tx = 2;",
+        )
+        .unwrap();
+        tx.commit().unwrap();
+    });
 }
 
 fn apply(
@@ -105,8 +151,11 @@ fn not_contained() -> SqliteClientError {
 fn mutate_without_changing_tip(wallet: &Wallet) {
     with_wallet_db_write_lock("test.witness_mutation", || {
         let conn = rusqlite::Connection::open(&wallet.path).unwrap();
-        conn.execute("UPDATE accounts SET name = 'changed'", [])
-            .unwrap();
+        conn.execute(
+            "UPDATE accounts SET birthday_height = birthday_height - 1",
+            [],
+        )
+        .unwrap();
     });
 }
 
@@ -118,8 +167,8 @@ fn witness_inspection_is_read_only_and_matches_all_pool_witnesses() {
     let inspection = inspect_witnesses(&wallet.path, NETWORK).unwrap();
     assert_eq!(inspection.result.as_ref().unwrap(), &expected);
     assert_eq!(
-        witness_data_version(&inspection.connection).unwrap(),
-        inspection.data_version
+        witness_state(&inspection.connection).unwrap(),
+        inspection.state
     );
     let error = inspection
         .connection
@@ -365,6 +414,155 @@ fn witness_inspection_is_not_invalidated_by_an_unrelated_wallet_write() {
     );
 }
 
+#[test]
+fn witness_inspection_accepts_a_concurrent_unmined_receive() {
+    let mut wallet = test_wallet();
+    let inspection = inspect_witnesses(&wallet.path, NETWORK).unwrap();
+    let version: i64 = inspection
+        .connection
+        .pragma_query_value(None, "data_version", |r| r.get(0))
+        .unwrap();
+    store_unmined_receive(&wallet);
+    let changed_version: i64 = inspection
+        .connection
+        .pragma_query_value(None, "data_version", |r| r.get(0))
+        .unwrap();
+    assert_ne!(version, changed_version);
+    assert_eq!(
+        witness_state(&inspection.connection).unwrap(),
+        inspection.state
+    );
+    assert_eq!(
+        apply(&mut wallet, inspection, &mut 0).unwrap(),
+        WitnessRepairOutcome::NoRepairs
+    );
+}
+
+#[test]
+fn witness_inspection_keeps_real_repairs_after_an_unmined_receive() {
+    let mut wallet = test_wallet();
+    let conn = rusqlite::Connection::open(&wallet.path).unwrap();
+    conn.execute_batch(
+        "UPDATE orchard_tree_checkpoints SET position = 1;
+         UPDATE blocks SET orchard_commitment_tree_size = 2;",
+    )
+    .unwrap();
+    let inspection = inspect_witnesses(&wallet.path, NETWORK).unwrap();
+    assert!(!inspection.result.as_ref().unwrap().is_empty());
+    store_unmined_receive(&wallet);
+    let mut passes = 0;
+    assert_eq!(
+        apply(&mut wallet, inspection, &mut passes).unwrap(),
+        WitnessRepairOutcome::Queued(1)
+    );
+    assert_eq!(passes, 1);
+}
+
+#[test]
+fn witness_inspection_ignores_cosmetic_note_and_account_metadata() {
+    let mut wallet = test_wallet();
+    let inspection = inspect_witnesses(&wallet.path, NETWORK).unwrap();
+    let conn = rusqlite::Connection::open(&wallet.path).unwrap();
+    conn.execute_batch(
+        "UPDATE accounts SET name = 'cosmetic';
+         UPDATE sapling_received_notes SET memo = X'01';",
+    )
+    .unwrap();
+    assert_eq!(
+        apply(&mut wallet, inspection, &mut 0).unwrap(),
+        WitnessRepairOutcome::NoRepairs
+    );
+}
+
+#[test]
+fn witness_inspection_rejects_same_tip_changes_to_witness_inputs() {
+    for sql in [
+        "UPDATE blocks SET sapling_commitment_tree_size = 2",
+        "UPDATE scan_queue SET priority = 60",
+        "UPDATE sapling_tree_checkpoints SET position = 1",
+        "UPDATE sapling_received_notes SET commitment_tree_position = 1",
+        "UPDATE sapling_received_notes SET nf = NULL",
+        "UPDATE sapling_received_notes SET recipient_key_scope = NULL",
+        "UPDATE sapling_received_notes SET value = 1",
+        "DELETE FROM sapling_received_notes",
+    ] {
+        let mut wallet = test_wallet();
+        let inspection = inspect_witnesses(&wallet.path, NETWORK).unwrap();
+        let conn = rusqlite::Connection::open(&wallet.path).unwrap();
+        conn.execute_batch(sql).unwrap();
+        let mut passes = 0;
+        assert_eq!(
+            apply(&mut wallet, inspection, &mut passes).unwrap(),
+            WitnessRepairOutcome::Retry,
+            "{sql}"
+        );
+        assert_eq!(passes, 0);
+    }
+}
+
+#[test]
+fn witness_inspection_rejects_new_positions_in_each_shielded_pool() {
+    for pool in ["sapling", "orchard", "ironwood"] {
+        let mut wallet = test_wallet();
+        store_unmined_receive(&wallet);
+        let inspection = inspect_witnesses(&wallet.path, NETWORK).unwrap();
+        let conn = rusqlite::Connection::open(&wallet.path).unwrap();
+        conn.execute_batch(&format!(
+            "UPDATE {pool}_received_notes SET commitment_tree_position = 1
+             WHERE transaction_id = 2;"
+        ))
+        .unwrap();
+        assert_eq!(
+            apply(&mut wallet, inspection, &mut 0).unwrap(),
+            WitnessRepairOutcome::Retry,
+            "{pool}"
+        );
+    }
+}
+
+#[test]
+fn witness_inspection_tracks_spends_and_spending_transaction_status() {
+    let mut wallet = test_wallet();
+    store_unmined_receive(&wallet);
+    let inspection = inspect_witnesses(&wallet.path, NETWORK).unwrap();
+    let conn = rusqlite::Connection::open(&wallet.path).unwrap();
+    conn.execute_batch(
+        "INSERT INTO sapling_received_note_spends
+             (sapling_received_note_id, transaction_id)
+         SELECT id, 2 FROM sapling_received_notes WHERE transaction_id = 1;",
+    )
+    .unwrap();
+    assert_eq!(
+        apply(&mut wallet, inspection, &mut 0).unwrap(),
+        WitnessRepairOutcome::Retry
+    );
+    let inspection = inspect_witnesses(&wallet.path, NETWORK).unwrap();
+    conn.execute(
+        "UPDATE transactions SET expiry_height = 0 WHERE id_tx = 2",
+        [],
+    )
+    .unwrap();
+    assert_eq!(
+        apply(&mut wallet, inspection, &mut 0).unwrap(),
+        WitnessRepairOutcome::Retry
+    );
+}
+
+#[test]
+fn witness_inspection_accepts_a_rolled_back_witness_change() {
+    let mut wallet = test_wallet();
+    let inspection = inspect_witnesses(&wallet.path, NETWORK).unwrap();
+    let mut conn = rusqlite::Connection::open(&wallet.path).unwrap();
+    let tx = conn.transaction().unwrap();
+    tx.execute("UPDATE sapling_tree_checkpoints SET position = 1", [])
+        .unwrap();
+    tx.rollback().unwrap();
+    assert_eq!(
+        apply(&mut wallet, inspection, &mut 0).unwrap(),
+        WitnessRepairOutcome::NoRepairs
+    );
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn witness_inspection_worker_completes_and_obeys_cancellation() {
     let mut wallet = test_wallet();
@@ -396,4 +594,93 @@ async fn witness_inspection_worker_completes_and_obeys_cancellation() {
         WitnessRepairOutcome::Cancelled
     );
     assert_eq!(passes, 0);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn witness_inspection_removes_watches_after_success_and_worker_error() {
+    let mut wallet = test_wallet();
+    remove_witness_change_watch(&wallet.path).unwrap();
+    let conn = rusqlite::Connection::open(&wallet.path).unwrap();
+    for malformed in [false, true] {
+        if malformed {
+            conn.execute(
+                "UPDATE ext_vizor_sync_meta SET value = 'invalid' WHERE key = ?1",
+                [WITNESS_CHECK_REVISION_KEY],
+            )
+            .unwrap();
+        }
+        let result = queue_witness_repairs_if_needed(
+            &wallet.path,
+            &mut wallet.db,
+            u64::from(TIP),
+            &mut 0,
+            true,
+            &|| false,
+        )
+        .await;
+        assert_eq!(result.is_err(), malformed);
+        let remaining: u32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master
+                 WHERE type = 'trigger' AND name GLOB 'ext_vizor_witness_watch_*'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(remaining, 0);
+    }
+}
+
+#[test]
+fn witness_inspection_replaces_interrupted_watches_and_sync_start_removes_them() {
+    let mut wallet = test_wallet();
+    let conn = rusqlite::Connection::open(&wallet.path).unwrap();
+    conn.execute_batch(
+        "DROP TRIGGER ext_vizor_witness_watch_sapling_received_notes_update;
+         CREATE TRIGGER ext_vizor_witness_watch_sapling_received_notes_update
+         AFTER UPDATE ON sapling_received_notes BEGIN SELECT 1; END;",
+    )
+    .unwrap();
+    install_witness_change_watch(&wallet.path).unwrap();
+    let inspection = inspect_witnesses(&wallet.path, NETWORK).unwrap();
+    conn.execute("UPDATE sapling_received_notes SET output_index = 1", [])
+        .unwrap();
+    assert_eq!(
+        apply(&mut wallet, inspection, &mut 0).unwrap(),
+        WitnessRepairOutcome::Retry
+    );
+    with_wallet_db_write_lock("test.sync_start", || mark_sync_started(&wallet.path)).unwrap();
+    let remaining: u32 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master
+             WHERE type = 'trigger' AND name GLOB 'ext_vizor_witness_watch_*'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(remaining, 0);
+}
+
+#[test]
+fn witness_inspection_tracks_auto_assigned_transaction_ids_for_positioned_notes() {
+    let mut wallet = test_wallet();
+    let conn = rusqlite::Connection::open(&wallet.path).unwrap();
+    conn.pragma_update(None, "foreign_keys", false).unwrap();
+    // Model orphaned positioned notes whose parent is recovered later. The
+    // transaction insert watch must see SQLite's assigned ID, not NEW.id_tx
+    // before the insert has run.
+    conn.execute("DELETE FROM transactions WHERE id_tx = 1", [])
+        .unwrap();
+    let inspection = inspect_witnesses(&wallet.path, NETWORK).unwrap();
+    conn.execute(
+        "INSERT INTO transactions (txid, min_observed_height, mined_height, block)
+         VALUES (?1, ?2, ?2, ?2)",
+        params![[1_u8; 32].as_slice(), TIP],
+    )
+    .unwrap();
+    assert_eq!(conn.last_insert_rowid(), 1);
+    assert_eq!(
+        apply(&mut wallet, inspection, &mut 0).unwrap(),
+        WitnessRepairOutcome::Retry
+    );
 }
