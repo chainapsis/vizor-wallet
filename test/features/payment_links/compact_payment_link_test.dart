@@ -90,15 +90,15 @@ void main() {
 
     test('matches independent vectors, full txid order and link sizes', () {
       const vector =
-          'AAAAAAAAAAAAAAAAAAAAAAAAAAAAD0JAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyAF';
+          'AAAAAAAAAAAAAAAAAAAAAAAAAAAAD0JAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA';
       final source = card(
         fundingTxid: _fundingTxid,
-        presentation: const PaymentLinkPresentation(artworkId: 'knightMagic'),
+        presentation: const PaymentLinkPresentation(artworkId: 'gift'),
       );
       final shared = source.toShareUri();
       expect(shared.fragment, 'v4=$vector');
-      expect(bytesOf(shared).length, 57);
-      expect(shared.toString().length, 122);
+      expect(bytesOf(shared).length, 56);
+      expect(shared.toString().length, 121);
       final restored = VizorPaymentLink.parse(shared.toString());
       expect(restored.network, 'main');
       expect(restored.isEventCard, isTrue);
@@ -127,15 +127,15 @@ void main() {
     test('preserves messages while omitting local fiat and custom labels', () {
       final source = card(fundingTxid: _fundingTxid, presentation: decorated);
       final shared = source.toShareUri();
-      expect(shared.toString().length, 180);
+      expect(shared.toString().length, 178);
       expect(
         shared.fragment,
-        'v4=AAAAAAAAAAAAAAAAAAAAAAAAAAAAD0JAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyAFSXQncyBhIGdyZWF0IGRheSB0byBzaGllbGQgeW91ciBaRUMg8J-boe-4jw',
+        'v4=AAAAAAAAAAAAAAAAAAAAAAAAAAAAD0JAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyBJdCdzIGEgZ3JlYXQgZGF5IHRvIHNoaWVsZCB5b3VyIFpFQyDwn5uh77iP',
       );
       expect(source.presentation!.fiatSnapshot!.amount, 11.1747);
       final restored = VizorPaymentLink.parse(shared.toString());
       expect(restored.presentation!.message, _message);
-      expect(restored.presentation!.artworkId, 'knightMagic');
+      expect(restored.presentation!.artworkId, 'gift');
       expect(restored.presentation!.fiatSnapshot, isNull);
       expect(restored.toShareUri(), shared);
       for (final label in ['', '행사 🎉', 'Payment link']) {
@@ -152,49 +152,28 @@ void main() {
       }
     });
 
-    test('keeps permanent artwork codes independent of enum ordering', () {
-      const artworkCodes = {
-        'knight': 1,
-        'chestLava': 2,
-        'chestCave': 3,
-        'dragon': 4,
-        'knightMagic': 5,
-        'gandalf': 6,
-        'crystal': 7,
-        'diamond': 8,
-        'ruby': 9,
-        'coin': 10,
-        'gift': 11,
-      };
-      for (final artwork in PaymentLinkCardArtwork.values) {
+    test('omits artwork and always restores the default gift image', () {
+      final baseline = card(fundingTxid: _fundingTxid).toShareUri();
+      for (final artwork in [
+        ...PaymentLinkCardArtwork.values.map((artwork) => artwork.protocolId),
+        'future_card',
+      ]) {
         final source = card(
           fundingTxid: _fundingTxid,
-          presentation: PaymentLinkPresentation(artworkId: artwork.protocolId),
+          presentation: PaymentLinkPresentation(artworkId: artwork),
         );
         final shared = source.toShareUri();
-        expect(bytesOf(shared).last, artworkCodes[artwork.protocolId]);
+        expect(shared, baseline);
+        expect(source.presentation!.artworkId, artwork);
+        final restored = VizorPaymentLink.parse(shared.toString());
+        expect(restored.presentation!.artworkId, 'gift');
         expect(
-          VizorPaymentLink.parse(shared.toString()).presentation!.artworkId,
-          artwork.protocolId,
+          VizorPaymentLink.parse(
+            restored.toRecoveryUri().toString(),
+          ).presentation!.artworkId,
+          'gift',
         );
       }
-      final withoutArtwork = card(fundingTxid: _fundingTxid).toShareUri();
-      expect(bytesOf(withoutArtwork).last, 0);
-      expect(
-        VizorPaymentLink.parse(withoutArtwork.toString()).presentation,
-        isNull,
-      );
-      expect(
-        () => wire(
-          card(
-            fundingTxid: _fundingTxid,
-            presentation: const PaymentLinkPresentation(
-              artworkId: 'future_card',
-            ),
-          ),
-        ),
-        throwsFormatException,
-      );
     });
 
     test(
@@ -240,7 +219,6 @@ void main() {
           utf8.encode(jsonEncode(fieldsOf(wire(card())))),
           for (var length = 0; length < raw.length; length++)
             raw.sublist(0, length),
-          [...raw]..[raw.length - 1] = 255, // Unknown artwork.
           [...raw]..setRange(16, 24, List.filled(8, 0)), // Zero amount.
           [...raw]..setRange(16, 24, List.filled(8, 255)), // Amount overflow.
           [...raw, 255], // Invalid UTF-8.
@@ -290,12 +268,10 @@ void main() {
           amount: BigInt.from(2100000000000000),
           presentation: PaymentLinkPresentation(message: '🎉' * 128),
         );
-        expect(
-          VizorPaymentLink.parse(
-            wire(maximum),
-          ).hasSameCanonicalPayload(maximum),
-          isTrue,
-        );
+        final restored = VizorPaymentLink.parse(wire(maximum));
+        expect(restored.amountZatoshi, maximum.amountZatoshi);
+        expect(restored.mnemonic, maximum.mnemonic);
+        expect(restored.presentation!.message, maximum.presentation!.message);
       },
     );
 
