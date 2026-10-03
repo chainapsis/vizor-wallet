@@ -48,6 +48,7 @@ use {
 mod address_history;
 mod block_source;
 mod claim_roots;
+pub(crate) mod direct_claim;
 pub(crate) mod enhancement;
 mod ephemeral_checks;
 #[cfg(test)]

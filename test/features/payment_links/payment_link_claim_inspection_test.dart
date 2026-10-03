@@ -714,6 +714,7 @@ class _InspectRustApi implements RustLibApi {
     required String dbPath,
     required String lightwalletdUrl,
     required String network,
+    String? fundingTxid,
   }) async {
     syncCalls++;
     if (failSync) throw StateError('Claim scan failed');

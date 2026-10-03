@@ -1586,7 +1586,8 @@ class PaymentLinkService
       currentTipHeight: currentTipHeight.toInt(),
     );
     log('PaymentLinkClaim: birthday validated');
-    if (!allowLongSync &&
+    if (!link.isEventCard &&
+        !allowLongSync &&
         isLongPaymentLinkSync(
           birthdayHeight: claimBirthdayHeight,
           currentTipHeight: currentTipHeight.toInt(),
