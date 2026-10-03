@@ -337,10 +337,22 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                             ref.watch(addressBookProvider).value?.contacts ??
                             const [],
                         onSubmitted: (value, remember) {
-                          if (remember) {
-                            unawaited(_rememberSwapAddress(value, swapState));
-                          }
+                          // A chain-prefixed address (e.g. `usdttron:...`)
+                          // can switch the resolved asset/chain, so update
+                          // the destination first and remember against the
+                          // resolved state — otherwise a prefixed value
+                          // would be saved verbatim under the pre-switch
+                          // chain.
                           swapNotifier.updateDestination(value);
+                          if (remember) {
+                            final resolvedState = ref.read(swapStateProvider);
+                            unawaited(
+                              _rememberSwapAddress(
+                                resolvedState.destinationText,
+                                resolvedState,
+                              ),
+                            );
+                          }
                           _closeSwapModal();
                         },
                         onScan: _openAddressScanner,
