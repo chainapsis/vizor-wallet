@@ -1,26 +1,10 @@
 part of 'vizor_payment_link.dart';
 
 /// Mainnet event links carry raw entropy and the full funding txid, once each.
-/// The wire layout and permanent artwork codes are in docs/compact-gift-links.md.
+/// The wire layout is in docs/compact-gift-links.md.
 abstract final class _EventPaymentLinkCodec {
   static const _entropyLength = 16;
-  static const _fixedLength = _entropyLength + 8 + 32 + 1;
-
-  // Wire codes are permanent: append new codes, never renumber or reuse them.
-  // Zero means no specified artwork. Do not derive codes from a UI enum index.
-  static const _artworks = <int, String>{
-    1: 'knight',
-    2: 'chestLava',
-    3: 'chestCave',
-    4: 'dragon',
-    5: 'knightMagic',
-    6: 'gandalf',
-    7: 'crystal',
-    8: 'diamond',
-    9: 'ruby',
-    10: 'coin',
-    11: 'gift',
-  };
+  static const _fixedLength = _entropyLength + 8 + 32;
 
   static FormatException get _invalid => _CompactPaymentLinkCodec._invalid;
 
@@ -39,10 +23,6 @@ abstract final class _EventPaymentLinkCodec {
       );
       if (entropy.length != _entropyLength) throw _invalid;
       final presentation = link.presentation?.toPayload();
-      final artwork = presentation?['artworkId'] as String?;
-      final artworkCode = artwork == null
-          ? 0
-          : _artworks.entries.firstWhere((entry) => entry.value == artwork).key;
       final message = presentation?['message'] as String?;
       final amount = ByteData(8)
         ..setUint32(0, (link.amountZatoshi >> 32).toInt(), Endian.big)
@@ -60,8 +40,7 @@ abstract final class _EventPaymentLinkCodec {
             32,
             (i) => int.parse(txid.substring(i * 2, i * 2 + 2), radix: 16),
           ),
-        )
-        ..addByte(artworkCode);
+        );
       if (message != null) bytes.add(utf8.encode(message));
       return _CompactPaymentLinkCodec._encodeBase64(bytes.takeBytes());
     } catch (_) {
@@ -89,17 +68,13 @@ abstract final class _EventPaymentLinkCodec {
           .sublist(txidStart, txidStart + 32)
           .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
           .join();
-      final artworkCode = bytes[_fixedLength - 1];
-      if (artworkCode != 0 && !_artworks.containsKey(artworkCode)) {
-        throw _invalid;
-      }
       String? message;
       if (bytes.length > _fixedLength) {
         message = utf8.decode(bytes.sublist(_fixedLength));
         if (message.trim().isEmpty || message != message.trim()) throw _invalid;
       }
       final presentation = PaymentLinkPresentation.fromPayload({
-        'artworkId': _artworks[artworkCode],
+        'artworkId': 'gift',
         'message': message,
       });
       final mnemonic = rust_wallet.giftMnemonicFromEntropy(

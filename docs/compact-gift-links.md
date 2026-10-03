@@ -9,8 +9,8 @@ event phrases at 12 words.
 
 V4 is a compact binary format for mainnet event cards. A required funding txid
 selects direct claim without a separate `skipScan` flag. Network, fiat value,
-custom labels, and birthday height are omitted from sharing. Artwork and an
-optional message remain inline. Ordinary cards continue sharing as unchanged v3 JSON.
+custom labels, birthday height, and artwork are omitted from sharing. Event
+cards use the default gift image; an optional message remains inline. Ordinary cards continue sharing as unchanged v3 JSON.
 
 Event links are issued and printed with separate tooling. The application's
 single-card and batch-creation UI continues creating ordinary cards; this
@@ -96,18 +96,17 @@ compatibility branches.
 | 0 | Original 12-word BIP-39 entropy | 16 |
 | 1 | Positive recipient amount in zatoshi | 8, unsigned big-endian |
 | 2 | Full funding txid | 32, display-hex byte order |
-| 3 | Artwork code | 1 |
-| 4 | Optional message | All remaining bytes, UTF-8 |
+| 3 | Optional message | All remaining bytes, UTF-8 |
 
-The fixed prefix is 57 bytes. There is no header, birthday, message flag, or
-message length prefix. Exactly 57 bytes means no message; a longer payload
-uses its entire tail as the message. No string field follows it. V4 accepts
+The fixed prefix is 56 bytes. There is no header, birthday, artwork field,
+message flag, or message length prefix. Exactly 56 bytes means no message;
+a longer payload uses its entire tail as the message. No string field follows it. V4 accepts
 only 16-byte entropy (12 words); ordinary v1–v3 retain every supported size.
 Labels are not shared; readers use `Payment link`. Messages must be valid
 UTF-8, nonempty and already trimmed, with the existing 128-grapheme and
-512-byte limits. Truncation of the fixed prefix or a UTF-8 sequence, unknown
-artwork codes, noncanonical Base64url, and out-of-range amounts are rejected
-before mnemonic reconstruction. Links must also fit v2 recovery. This format
+512-byte limits. Truncation of the fixed prefix or a UTF-8 sequence,
+noncanonical Base64url, and out-of-range amounts are rejected before mnemonic
+reconstruction. Links must also fit v2 recovery. This format
 does not promise to detect changes to otherwise valid entropy, txid, or message
 bytes; claim preparation verifies the funding transaction against its reported
 block and decrypts it with the card's key.
@@ -131,54 +130,39 @@ hex, in the same order. They are not a numeric field and are not reversed by
 this codec. The existing Rust transaction lookup converts them to protocol
 order. This carries all 256 bits, without truncation or a block locator.
 
-Artwork codes are permanent and independent of UI enum order:
-
-| Code | Artwork ID |
-| --- | --- |
-| 0 | No specified artwork |
-| 1 | `knight` |
-| 2 | `chestLava` |
-| 3 | `chestCave` |
-| 4 | `dragon` |
-| 5 | `knightMagic` |
-| 6 | `gandalf` |
-| 7 | `crystal` |
-| 8 | `diamond` |
-| 9 | `ruby` |
-| 10 | `coin` |
-| 11 | `gift` |
-
-Append new codes; never renumber or reuse assigned values. V3 retains string
-artwork IDs and its existing fallback for unknown strings. V4 writers reject
-unregistered artwork IDs instead of silently dropping the chosen image.
+V4 readers always use the existing `gift` artwork and preserve it in local recovery.
+Writers omit any locally selected artwork without changing the local model.
+There is no artwork-code registry. V3 keeps string artwork IDs and its existing
+fallback for unknown strings.
 
 ### Size vectors
 
 All sizes include the 46-character default HTTPS prefix. Event gifts use
-12 words (16-byte entropy); no message yields 57 payload bytes, 76 Base64url
-characters, and a **122-character URL**, with artwork. Adding
+12 words (16-byte entropy); no message yields 56 payload bytes, 75 Base64url
+characters, and a **121-character URL** with the fixed gift image. Adding
 `It's a great day to shield your ZEC 🛡️` adds 43 UTF-8 bytes and yields a
-**180-character URL**. A message can increase the total; 122 is not an upper
+**178-character URL**. A message can increase the total; 121 is not an upper
 bound on every card.
 
 The public zero-entropy vectors use recipient amount 1,000,000 zatoshi,
-artwork `knightMagic`, and txid bytes 1–32. Do not fund this published secret.
+the fixed gift image, and txid bytes 1–32. Do not fund this published secret.
 
 ```text
-No message: AAAAAAAAAAAAAAAAAAAAAAAAAAAAD0JAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyAF
-Example message: AAAAAAAAAAAAAAAAAAAAAAAAAAAAD0JAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyAFSXQncyBhIGdyZWF0IGRheSB0byBzaGllbGQgeW91ciBaRUMg8J-boe-4jw
+No message: AAAAAAAAAAAAAAAAAAAAAAAAAAAAD0JAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA
+Example message: AAAAAAAAAAAAAAAAAAAAAAAAAAAAD0JAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyBJdCdzIGEgZ3JlYXQgZGF5IHRvIHNoaWVsZCB5b3VyIFpFQyDwn5uh77iP
 ```
 
 | 12-word sample | V3 URL characters | V4 URL characters |
 | --- | ---: | ---: |
-| No artwork, fiat, or message | 114 | 122 |
-| Artwork; no fiat or message | 133 | 122 |
-| Artwork and fiat; no message | 144 | 122 |
-| Artwork and message; no fiat | 201 | 180 |
-| Artwork, fiat, and message | 205 | 180 |
+| No artwork, fiat, or message | 114 | 121 |
+| Artwork; no fiat or message | 133 | 121 |
+| Artwork and fiat; no message | 144 | 121 |
+| Artwork and message; no fiat | 201 | 178 |
+| Artwork, fiat, and message | 205 | 178 |
 
 V3 uses birthday 3,483,141 and, where present, fiat 11.1747. V4 omits both and
-adds the full funding txid. Amount, entropy, artwork, and message are the same.
+artwork, and adds the full funding txid. Amount, entropy, and message are the
+same; v4 uses the fixed gift image instead of the v3 sample's `knightMagic`.
 The minimal v3 link remains shorter because it carries no funding txid.
 
 ## Compatibility and recovery
@@ -342,6 +326,32 @@ must not be pointed at a personal wallet. Bridge regeneration uses
 `scripts/generate-rust-bridge.sh` from the repository root, which invokes FRB
 with the repository's existing expanded-Rust compatibility wrapper.
 
+### Desktop gift-card E2E
+
+The ordinary macOS round-trip runner above continues testing v3 creation,
+clipboard import, confirmation waiting, claim submission, received balance,
+spendability, and retained-secret cleanup. Its test also accepts
+`--dart-define=VIZOR_E2E_EVENT_GIFT_CARD=true` to attach the mined funding txid
+before redemption. This event lane checks the fixed gift image and the same
+receipt/finality flow through Settings → My gift cards. Regtest uses the local
+v2 recovery envelope; it does not qualify mainnet v4 wire handoff.
+
+The shared runner accepts additional Flutter arguments:
+
+```sh
+source scripts/e2e/lib-payment-link.sh
+start_payment_link_regtest
+run_payment_link_phase integration_test/regtest_payment_link_round_trip_test.dart \
+  --dart-define=VIZOR_E2E_EVENT_GIFT_CARD=true
+```
+
+On 2026-10-03, the native desktop attempt was blocked before test execution:
+the installed wildcard provisioning profile excluded the current Mac, and
+profile refresh returned `No Accounts`. Neither desktop lane passed.
+The build/signing logs are `/tmp/vizor-v4-desktop-e2e.log` and
+`/tmp/vizor-v4-desktop-signing-build.log`. The Dart analysis for this integration
+scenario passed; that is not native E2E evidence.
+
 ### Event direct-claim integration lane
 
 The disposable stack uses different ports from the shared regtest stack. Its
@@ -443,9 +453,10 @@ Base: PR #830, `b1d2419307065c55984344da3fc1124dd0f4015e`.
 Reviewed as draft PR #822, stacked on `feat/twelve-word-gift-cards` (#830).
 
 - Dart codec, model, shared claim-service, inspection, and received-store tests:
-  214 passed after removing v4 birthday/header/message-length fields. Includes
+  214 passed after removing v4 birthday/header/message-length/artwork fields. Includes
   legacy v1/v2/v3 vectors, binary v4 vectors, malformed input, mainnet-only
-  sharing, actual parsed-v4 routing through the shared claim API, recipient
+  sharing, default gift artwork through recovery, actual parsed-v4 routing
+  through the shared claim API, recipient
   restart evidence, and sender-local fiat and custom-label retention.
 - Claim coordinator, interruption/recovery, and inspection checks: 71 passed
   (the default desktop lane skips one mobile-tagged test).
@@ -469,7 +480,7 @@ Reviewed as draft PR #822, stacked on `feat/twelve-word-gift-cards` (#830).
   this binary layout. Its earlier 31-test run used the previous 129/189-character
   vectors; server tests were not rerun for this layout change.
 
-### Funded E2E after field removal (2026-10-03)
+### Funded E2E after birthday/header removal, before artwork removal (2026-10-03)
 
 - Orchard and Ironwood cards both used the local activation birthday (regtest
   height 1). Funding was 203 blocks old; each card processed only one block,
