@@ -1,9 +1,10 @@
-# Mobile onboarding
+# Onboarding
 
-This document describes the mobile onboarding behavior integrated in PR #793.
-Desktop onboarding UI remains separate; this umbrella preserves its existing
-entry paths. Shared account persistence, credentials, bootstrap, and recovery
-changes also apply to desktop and are validated in the desktop test lane. Mobile builds, tests, and captures use
+This document describes the mobile onboarding behavior integrated in PR #793
+and the planned desktop integration. Desktop entry paths retain their existing
+behavior until the relevant slices below are merged. Shared account persistence,
+credentials, bootstrap, and recovery changes also apply to desktop and are
+validated in the desktop test lane. Mobile builds, tests, and captures use
 `--dart-define=VIZOR_FORM_FACTOR=mobile`.
 
 ## Entry and account setup
@@ -355,3 +356,35 @@ First Keystone and Ledger imports also retain the credential if the DB contains
 an account or its state cannot be verified after a failure. The hardware UFVK
 is already in Rust; no software mnemonic journal is needed. Desktop Ledger uses
 the same failure boundary.
+
+## Desktop integration
+
+Desktop onboarding is delivered through a draft umbrella based on `main` after
+#826. Its child PRs target the umbrella in the order below. The existing shared
+account journals, credential retention, and unlock recovery apply to desktop;
+the recovery slice connects and verifies desktop retry and navigation behavior.
+
+1. Import-method and hardware selectors: first/additional-account entry,
+   Back/Cancel destinations, and testnet capability copy.
+2. Welcome: desktop video/poster, WebP playback, gradient, buttons, and network
+   settings. Gift activation is connected in the later Gift slices.
+3. Ordinary setup screens: introduction, password and account customisation,
+   using the existing shared name/profile controls.
+4. Interrupted setup: preserve existing accounts and credentials across storage
+   failure, lock and restart; retry recovery instead of creating replacements.
+5. Post-creation backup: password confirmation, phrase and birthday, explicit
+   completion and Remind me later, with continued Settings access.
+6. Gift into a new account: inspection, password if needed, customisation,
+   durable setup and claim handoff, then Home; include additional accounts.
+7. Gift into an imported account: software/Keystone/Ledger import, recipient
+   selection when needed, and cancellation/restart recovery.
+8. Home guidance and education: manual carousel, account-specific backup state
+   and Zcash education. Do not add Gift status banners.
+9. Full-flow E2E and walkthroughs: ordinary and Gift setup, first/additional
+   accounts, failures, lock and restart. Hide mnemonic text in recordings.
+
+Complete recovery and backup before integrating Gift onboarding. Desktop keeps
+its existing password flow rather than adopting the mobile passcode/Face ID
+screens. Link Vizor Desktop is excluded from the desktop import selector because
+it is a phone-to-desktop QR flow. Ledger choices and summary copy follow the
+existing capability gates; this work does not expand Ledger network support.
