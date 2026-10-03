@@ -35,8 +35,8 @@ fn create_mobile_event_fixture() {
     assert_eq!(result.status, "broadcasted");
     mine(&compose, 10);
     sync_wallet(&funder);
-    // An old birthday demonstrates that event inspection skips the long-sync warning.
-    let card = create_wallet("Mobile event card", 500);
+    // Event cards use the protocol birthday locally, absent from the shared link.
+    let card = create_wallet("Mobile event card", 1);
     let flow = "mobile-event-funding";
     let proposal = sync::propose_send(
         funder.db.clone(),
@@ -79,8 +79,8 @@ fn known_funding_block_claims_without_scanning_the_historical_gap() {
     simple::configure_regtest_ironwood_activation_height(500).unwrap();
     if std::env::var_os("VIZOR_DIRECT_GIFT_REUSE_CHAIN").is_some() {
         assert!(
-            tip() > 5_000,
-            "reuse lane needs an already-mined isolated chain"
+            tip() > 500,
+            "reuse lane needs an Ironwood-active isolated chain"
         );
         let funder = create_wallet("Funder", tip());
         let transparent = wallet::get_transparent_receive_address(
@@ -103,7 +103,7 @@ fn known_funding_block_claims_without_scanning_the_historical_gap() {
         assert_eq!(shielded.status, "broadcasted");
         mine(&compose, 10);
         sync_wallet(&funder);
-        run_card(&funder, "Ironwood", 200, &compose, Some(500));
+        run_card(&funder, "Ironwood", 200, &compose);
         exercise_recovery(&funder, &compose);
         exercise_expiry(&funder, &compose);
         return;
@@ -139,7 +139,7 @@ fn known_funding_block_claims_without_scanning_the_historical_gap() {
     sync_wallet(&funder);
 
     // Existing Orchard pool, with no prior scan of the card's funding block.
-    run_card(&funder, "Orchard", 200, &compose, None);
+    run_card(&funder, "Orchard", 200, &compose);
 
     let height = tip();
     if height < 506 {
@@ -147,13 +147,13 @@ fn known_funding_block_claims_without_scanning_the_historical_gap() {
     }
     sync_wallet(&funder);
     // Ironwood pool, with 5,000 blocks between funding and claiming.
-    run_card(&funder, "Ironwood", 5_000, &compose, None);
+    run_card(&funder, "Ironwood", 5_000, &compose);
     exercise_recovery(&funder, &compose);
     exercise_expiry(&funder, &compose);
 }
 
-fn run_card(funder: &Wallet, pool: &str, gap: u64, compose: &str, birthday: Option<u64>) {
-    let card = create_wallet(pool, birthday.unwrap_or_else(tip));
+fn run_card(funder: &Wallet, pool: &str, gap: u64, compose: &str) {
+    let card = create_wallet(pool, 1);
     let flow = format!("direct-gift-fund-{pool}");
     let proposal = sync::propose_send(
         funder.db.clone(),
@@ -399,7 +399,7 @@ fn prepare(card: &Wallet, funding: &str, retry: bool) {
 
 fn exercise_recovery(funder: &Wallet, compose: &str) {
     sync_wallet(funder);
-    let card = create_wallet("Recovery card", tip());
+    let card = create_wallet("Recovery card", 1);
     let recipient = create_wallet("Recovery recipient", tip());
     let flow = "recovery-funding";
     let proposal = sync::propose_send(
@@ -538,7 +538,7 @@ fn reorg(compose: &str, height: u64) {
 fn exercise_expiry(funder: &Wallet, compose: &str) {
     const AMOUNT: u64 = 10_000_000;
     sync_wallet(funder);
-    let card = create_wallet("Expiry card", tip());
+    let card = create_wallet("Expiry card", 1);
     let recipient = create_wallet("Expiry recipient", tip());
     let flow = "expiry-funding";
     let proposal = sync::propose_send(

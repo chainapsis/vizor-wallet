@@ -4,12 +4,13 @@ V3 encodes the original English BIP-39 entropy in the fragment of
 `https://link.vizor.cash/payment-links/open#v3=<payload>`. The origin remains
 configurable through `VIZOR_DEEPLINK_BASE_URL`. No resolver, remote presentation
 lookup, or new route is needed. New gifts use 12 words. Decoding continues to
-support existing 12, 15, 18, 21, and 24 word phrases without a version change.
+support existing 12, 15, 18, 21, and 24 word phrases in v1–v3. V4 fixes
+event phrases at 12 words.
 
 V4 is a compact binary format for mainnet event cards. A required funding txid
 selects direct claim without a separate `skipScan` flag. Network, fiat value,
-and custom labels are omitted from sharing. Artwork and an optional message
-remain inline. Ordinary cards continue sharing as unchanged v3 JSON.
+custom labels, and birthday height are omitted from sharing. Artwork and an
+optional message remain inline. Ordinary cards continue sharing as unchanged v3 JSON.
 
 Event links are issued and printed with separate tooling. The application's
 single-card and batch-creation UI continues creating ordinary cards; this
@@ -18,13 +19,14 @@ redemption applies at the shared claim boundary, including onboarding,
 Settings → My gift cards, and interrupted-claim recovery.
 
 The txid-based claim code is carried over from the earlier event-card work.
-Its earlier regtest and Simulator results do not qualify this new binary wire
-format. The local checks for this branch cover encoding, decoding, recovery,
-shared claim routing, and a real 12-word funding-note witness in Rust. The
-funded integration lanes below are available but must be explicitly run.
+The local checks cover encoding, decoding, recovery, shared claim routing,
+and funded direct claims. Regtest uses the local recovery envelope rather than
+mainnet v4 sharing, so those runs do not qualify deployed v4 wire handoff.
 
 The message remains inline. It is not placed in, or fetched from, a funding
-transaction memo. The amount and birthday retain their existing meanings.
+transaction memo. The amount retains its existing advertised-recipient meaning.
+V4 has no shared birthday; its isolated claim wallet uses Sapling activation
+as a stable local birthday and still processes only identified transaction blocks.
 
 ## V3 positional JSON schema
 
@@ -86,26 +88,43 @@ unreleased binary v3 prototype; v1/v2 compatibility is preserved.
 The fragment is `#v4=<unpadded Base64url>`. Decode once to the bytes below.
 V4 always means mainnet; it never takes its network from the current wallet.
 Sharing a non-mainnet card as v4 is rejected even in a regtest-enabled build.
-The unreleased JSON v4 proposal is replaced without a compatibility branch.
+Earlier unreleased JSON and binary v4 layouts are replaced without
+compatibility branches.
 
 | Order | Value | Bytes |
 | --- | --- | --- |
-| 0 | Header: entropy-size code and optional-message flag | 1 |
-| 1 | Original BIP-39 entropy | 16, 20, 24, 28, or 32 |
-| 2 | Positive birthday height | 4, unsigned big-endian |
-| 3 | Positive recipient amount in zatoshi | 8, unsigned big-endian |
-| 4 | Full funding txid | 32, display-hex byte order |
-| 5 | Artwork code | 1 |
-| 6 | Message, only when its flag is set | 2-byte big-endian UTF-8 length + bytes |
+| 0 | Original 12-word BIP-39 entropy | 16 |
+| 1 | Positive recipient amount in zatoshi | 8, unsigned big-endian |
+| 2 | Full funding txid | 32, display-hex byte order |
+| 3 | Artwork code | 1 |
+| 4 | Optional message | All remaining bytes, UTF-8 |
 
-Header bits 0–2 are the entropy-size code: 0=16, 1=20, 2=24, 3=28, 4=32 bytes.
-Codes 5–7 are invalid. Bit 3 (`0x08`) signals a message. Bits 4–7 are reserved
-and must be zero. A missing message adds no length prefix. Labels are not shared;
-readers use `Payment link`. Messages must use valid UTF-8 with already-trimmed
-content and retain the 128-grapheme and 512-byte limits. An empty flagged message,
-trailing bytes, truncation, unknown artwork codes,
-reserved header bits, noncanonical Base64url, and out-of-range numbers are
-rejected before mnemonic reconstruction. Links must also fit v2 recovery.
+The fixed prefix is 57 bytes. There is no header, birthday, message flag, or
+message length prefix. Exactly 57 bytes means no message; a longer payload
+uses its entire tail as the message. No string field follows it. V4 accepts
+only 16-byte entropy (12 words); ordinary v1–v3 retain every supported size.
+Labels are not shared; readers use `Payment link`. Messages must be valid
+UTF-8, nonempty and already trimmed, with the existing 128-grapheme and
+512-byte limits. Truncation of the fixed prefix or a UTF-8 sequence, unknown
+artwork codes, noncanonical Base64url, and out-of-range amounts are rejected
+before mnemonic reconstruction. Links must also fit v2 recovery. This format
+does not promise to detect changes to otherwise valid entropy, txid, or message
+bytes; claim preparation verifies the funding transaction against its reported
+block and decrypts it with the card's key.
+
+The SDK birthday remains local metadata, not a scan request: mainnet uses its
+Sapling activation height from the existing network configuration. Direct claim
+never falls back to a birthday-to-tip scan. Event caches use network, mnemonic,
+and funding txid; their identity does not change when funding is remined at a
+different height. This also avoids setting the birthday at a height that a
+funding reorg could move behind. V2 local recovery stores this local birthday
+alongside the txid, destination, and submission evidence.
+
+A fresh activation-birthday DB can have no chain tip. Before the SDK's existing
+transaction-height lookup, direct preparation initializes a missing tip with
+the already-fetched value. An existing tip is preserved for reorg detection:
+the SDK filters transaction heights above that tip. The regular post-rewind
+tip update remains in place. No additional RPC is introduced.
 
 Txid bytes are the successive pairs of its conventional 64-character display
 hex, in the same order. They are not a numeric field and are not reversed by
@@ -135,21 +154,32 @@ unregistered artwork IDs instead of silently dropping the chosen image.
 
 ### Size vectors
 
-All sizes include the 46-character default HTTPS prefix. New event gifts use
-12 words (16-byte entropy); no message yields 62 payload
-bytes, 83 Base64url characters, and a **129-character URL**, with artwork.
-The same fields with 24 words yield 78 bytes and a 150-character URL.
-Adding `It's a great day to shield your ZEC 🛡️` adds 43 UTF-8 bytes plus its
-2-byte length and yields a **189-character URL** with 12 words. An optional message
-increases the size; 129 characters is not a bound on every card.
+All sizes include the 46-character default HTTPS prefix. Event gifts use
+12 words (16-byte entropy); no message yields 57 payload bytes, 76 Base64url
+characters, and a **122-character URL**, with artwork. Adding
+`It's a great day to shield your ZEC 🛡️` adds 43 UTF-8 bytes and yields a
+**180-character URL**. A message can increase the total; 122 is not an upper
+bound on every card.
 
-These fixed, public BIP-39 zero-entropy vectors use birthday 3,483,141, recipient
-amount 1,000,000 zatoshi, artwork `knightMagic`, no strings, and txid bytes 1–32:
+The public zero-entropy vectors use recipient amount 1,000,000 zatoshi,
+artwork `knightMagic`, and txid bytes 1–32. Do not fund this published secret.
 
 ```text
-12 words: AAAAAAAAAAAAAAAAAAAAAAAANSYFAAAAAAAPQkABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4fIAU
-24 words: BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADUmBQAAAAAAD0JAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyAF
+No message: AAAAAAAAAAAAAAAAAAAAAAAAAAAAD0JAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyAF
+Example message: AAAAAAAAAAAAAAAAAAAAAAAAAAAAD0JAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyAFSXQncyBhIGdyZWF0IGRheSB0byBzaGllbGQgeW91ciBaRUMg8J-boe-4jw
 ```
+
+| 12-word sample | V3 URL characters | V4 URL characters |
+| --- | ---: | ---: |
+| No artwork, fiat, or message | 114 | 122 |
+| Artwork; no fiat or message | 133 | 122 |
+| Artwork and fiat; no message | 144 | 122 |
+| Artwork and message; no fiat | 201 | 180 |
+| Artwork, fiat, and message | 205 | 180 |
+
+V3 uses birthday 3,483,141 and, where present, fiat 11.1747. V4 omits both and
+adds the full funding txid. Amount, entropy, artwork, and message are the same.
+The minimal v3 link remains shorter because it carries no funding txid.
 
 ## Compatibility and recovery
 
@@ -173,10 +203,12 @@ All funding signers share this path. No retry replaces a funded secret.
 
 Ordinary claim caches continue using network, mnemonic, and birthday, including
 the existing legacy-directory preference when submission evidence exists. Event
-caches additionally include the validated funding txid and a direct-claim policy
-suffix, and never reuse an ordinary card's legacy cache. Intake
+caches use network, mnemonic, and the validated funding txid, without birthday,
+and never reuse an ordinary card's legacy cache. Intake
 equality continues comparing normalized logical payloads rather than the wire
-version. Different amounts, birthdays, labels, or presentation remain distinct.
+version. Different amounts, labels, or presentation remain distinct; birthday
+changes matter only to ordinary cards. Event recovery normalizes its local
+birthday to network activation.
 Persisted funding txid, destination, and submission evidence must
 survive restart and must not be overwritten by an incoming policy-free link.
 Cached quotes and proposals must not carry event preparation into ordinary
@@ -330,7 +362,8 @@ VIZOR_DIRECT_GIFT_COMPOSE="$PWD/docker-compose.direct-gift-regtest.yml" \
 ```
 
 For subsequent runs on this same owned chain, set
-`VIZOR_DIRECT_GIFT_REUSE_CHAIN=1`. That lane uses a shorter 200-block funding gap
+`VIZOR_DIRECT_GIFT_REUSE_CHAIN=1` once Ironwood is active (height above 500).
+That lane uses a shorter 200-block funding gap
 while retaining duplicate, reorg, failed-submission recovery, and expiry checks.
 The test never clears the chain. An explicit fixture lane funds a new card for
 the native mobile walkthrough:
@@ -410,29 +443,51 @@ Base: PR #830, `b1d2419307065c55984344da3fc1124dd0f4015e`.
 Reviewed as draft PR #822, stacked on `feat/twelve-word-gift-cards` (#830).
 
 - Dart codec, model, shared claim-service, inspection, and received-store tests:
-  213 passed. This includes
+  214 passed after removing v4 birthday/header/message-length fields. Includes
   legacy v1/v2/v3 vectors, binary v4 vectors, malformed input, mainnet-only
   sharing, actual parsed-v4 routing through the shared claim API, recipient
   restart evidence, and sender-local fiat and custom-label retention.
+- Claim coordinator, interruption/recovery, and inspection checks: 71 passed
+  (the default desktop lane skips one mobile-tagged test).
 - Mobile Widgetbook onboarding walkthrough tests: 12 passed with the mobile
   form-factor define. The event case is a mock UX preview, not a funded claim.
 - Rust direct-claim unit tests: 3 passed, including a real decrypted funding note
   derived from a newly generated 12-word gift account and a claim quote while
-  historical scan gaps remain unscanned.
-- Native gift tests: 18 passed, including real BIP-39 conversion, funding-address
+  historical scan gaps remain unscanned, with the local birthday at Sapling
+  activation.
+- Earlier native gift tests: 18 passed, including real BIP-39 conversion, funding-address
   preservation, and existing gift funding/signing restrictions.
-- Bridge regenerated with `scripts/generate-rust-bridge.sh`.
-- Rust library and integration-test targets pass `cargo check --tests`.
+- Bridge regenerated in the earlier #822 qualification with
+  `scripts/generate-rust-bridge.sh`; this revision changes no Rust API.
+- Rust library and integration-test targets passed `cargo check --tests` in that
+  earlier qualification; current direct-claim unit and integration targets compile.
 - Changed Rust files pass focused rustfmt checks. Whole-crate `cargo fmt --check`
   reports existing formatting differences in three unchanged files:
   `rust/src/wallet/sync/mod.rs`, `rust/tests/gift_link_legacy_whitespace.rs`, and
   `rust/tests/software_account_recovery.rs`.
-- Deeplink server draft #3: 31 tests passed, including exact binary-v4 URL copy
-  for the 129- and 189-character public vectors. Its production parser is
-  unchanged; one regression test is added locally. Lint and test-file formatting
-  checks pass.
+- Deeplink server draft #3 validates an opaque v4 envelope, independently of
+  this binary layout. Its earlier 31-test run used the previous 129/189-character
+  vectors; server tests were not rerun for this layout change.
 
-### Funded E2E validation (2026-10-03)
+### Funded E2E after field removal (2026-10-03)
+
+- Orchard and Ironwood cards both used the local activation birthday (regtest
+  height 1). Funding was 203 blocks old; each card processed only one block,
+  used four preparation RPCs, and delivered 50,000,000 zatoshi. Preparation took
+  57 ms for Orchard and 60 ms for Ironwood on the local isolated stack.
+- Orchard passed in the fresh-chain run. That run was intentionally stopped
+  during the later 5,000-block mining step; it is not a complete fresh-lane pass.
+  The Ironwood-active reuse lane then passed with a 200-block requested gap,
+  including duplicate rejection, funding reorg, submission-outage recovery with
+  the original signed transaction, claim reorg, and expired-claim retry.
+- This run exposed a fresh-DB error: the SDK transaction-height lookup requires
+  a chain tip even when the transaction is absent. The missing-tip initialization
+  described above fixes it while preserving existing-tip/reorg ordering.
+- Logs are recorded locally in `/tmp/vizor-v4-minimal-e2e.log` (Orchard phase),
+  `/tmp/vizor-v4-minimal-reuse-e2e.log` (complete reuse lane), and
+  `/tmp/vizor-v4-minimal-rust.log` (direct-claim unit tests).
+
+### Earlier funded E2E validation (before field removal, 2026-10-03)
 
 - The Rust direct-claim integration scenario passed on a newly created isolated
   regtest chain. Orchard funding was 203 blocks old; Ironwood funding was 5,003

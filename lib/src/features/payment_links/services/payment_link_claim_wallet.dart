@@ -10,22 +10,19 @@
 part of 'payment_link_service.dart';
 
 /// Claim databases are cached by the fields that determine the recovered
-/// account and its scan range. Share-payload fields such as amount, label,
+/// account and its scan range (ordinary cards) or funding txid (event cards).
+/// Share-payload fields such as amount, label,
 /// address, timestamp, and presentation deliberately do not participate, so a
 /// corrected payload can reuse already-scanned state.
 ///
 /// The network is also kept outside the hash, as a readable name segment, so a
 /// cleanup sweep can scope itself to one network.
 String paymentLinkClaimWalletDirectoryName(VizorPaymentLink link) {
-  final policy = link.isEventCard
-      ? ':direct:${VizorPaymentLink.validateFundingTxid(link.fundingTxid)}'
-      : '';
+  final recovery = link.isEventCard
+      ? 'direct:${VizorPaymentLink.validateFundingTxid(link.fundingTxid)}'
+      : '${link.birthdayHeight}';
   final identity = sha256
-      .convert(
-        utf8.encode(
-          '${link.network}:${link.mnemonic}:${link.birthdayHeight}$policy',
-        ),
-      )
+      .convert(utf8.encode('${link.network}:${link.mnemonic}:$recovery'))
       .toString();
   return paymentLinkClaimWalletDirectoryNameFor(
     network: link.network.trim(),
@@ -379,7 +376,7 @@ class PaymentLinkClaimWallet {
     if (accountUuid == null) {
       final imported = await importClaimAccount(
         link: link,
-        birthdayHeight: link.birthdayHeight,
+        birthdayHeight: link.claimBirthdayHeight,
         dbPath: tempWallet.dbPath,
         network: link.network,
       );

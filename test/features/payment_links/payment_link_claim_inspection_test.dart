@@ -229,6 +229,37 @@ void main() {
     );
 
     test(
+      'event inspection imports at activation without a supplied birthday or long scan',
+      () async {
+        final ordinary = _link();
+        final link = VizorPaymentLink(
+          network: ordinary.network,
+          address: ordinary.address,
+          amountZatoshi: ordinary.amountZatoshi,
+          mnemonic: ordinary.mnemonic,
+          birthdayHeight: api.tipHeight + 1,
+          label: ordinary.label,
+          createdAt: ordinary.createdAt,
+          fundingTxid: 'aa' * 32,
+        );
+        final inspection = await service.inspectClaim(link);
+        expect(
+          api.importedBirthday,
+          BigInt.from(ZcashNetwork.mainnet.saplingActivationHeight),
+        );
+        expect(api.directClaimTxids, [link.fundingTxid]);
+        expect(inspection.claimableZatoshi, ordinary.amountZatoshi);
+        expect(api.importCalls, 1);
+
+        // Restoring the local envelope preserves the same imported wallet.
+        await service.inspectClaim(
+          VizorPaymentLink.parse(link.toRecoveryUri().toString()),
+        );
+        expect(api.importCalls, 1);
+      },
+    );
+
+    test(
       'binding uses the specified UUID and re-estimates without scanning',
       () async {
         accounts.select('other-account', 'u1otheraddress');
@@ -805,6 +836,8 @@ class _InspectRustApi implements RustLibApi {
   int? fundingHeight;
   int? checkedTip;
   String? importedDbPath;
+  BigInt? importedBirthday;
+  final directClaimTxids = <String>[];
   Completer<String>? lookupGate;
   Completer<void> lookupStarted = Completer<void>();
 
@@ -830,6 +863,8 @@ class _InspectRustApi implements RustLibApi {
     fundingHeight = null;
     checkedTip = null;
     importedDbPath = null;
+    importedBirthday = null;
+    directClaimTxids.clear();
     lookupGate = null;
     lookupStarted = Completer<void>();
   }
@@ -845,6 +880,7 @@ class _InspectRustApi implements RustLibApi {
   }) async {
     importCalls++;
     importedDbPath = dbPath;
+    importedBirthday = birthdayHeight;
     await File(dbPath).writeAsString('claim wallet fixture');
     if (!importStarted.isCompleted) importStarted.complete();
     await importGate?.future;

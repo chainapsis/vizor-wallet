@@ -1767,7 +1767,7 @@ class PaymentLinkService
         .getLatestBlockHeight();
     requirePreparation();
     final claimBirthdayHeight = validatePaymentLinkClaimBirthday(
-      advertisedBirthdayHeight: link.birthdayHeight,
+      advertisedBirthdayHeight: link.claimBirthdayHeight,
       currentTipHeight: currentTipHeight.toInt(),
     );
     log('PaymentLinkClaim: birthday validated');
