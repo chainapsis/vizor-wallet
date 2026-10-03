@@ -67,7 +67,9 @@ bool isSyncCancelRequested() =>
 /// Check if a sync is currently running.
 bool isSyncRunning() => RustLib.instance.api.crateApiSyncIsSyncRunning();
 
-/// Runs an isolated scan for one short-lived payment-link claim database.
+/// Prepares one isolated payment-link claim database.
+///
+/// A funding txid selects direct event preparation; otherwise history is scanned.
 ///
 /// Claim syncs do not use the main wallet's process-global running guard or
 /// desired mode. Different claim IDs can therefore scan independent databases
@@ -78,12 +80,14 @@ Future<void> runPaymentLinkClaimSync({
   required String lightwalletdUrl,
   required String network,
   required bool allowResubmit,
+  String? fundingTxid,
 }) => RustLib.instance.api.crateApiSyncRunPaymentLinkClaimSync(
   claimId: claimId,
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
   network: network,
   allowResubmit: allowResubmit,
+  fundingTxid: fundingTxid,
 );
 
 Stream<ApiGiftCardCheckProgress> runPaymentLinkClaimCheck({

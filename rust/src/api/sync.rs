@@ -203,7 +203,9 @@ pub fn is_sync_running() -> bool {
     SYNC_RUNNING.load(Ordering::SeqCst)
 }
 
-/// Runs an isolated scan for one short-lived payment-link claim database.
+/// Prepares one isolated payment-link claim database.
+///
+/// A funding txid selects direct event preparation; otherwise history is scanned.
 ///
 /// Claim syncs do not use the main wallet's process-global running guard or
 /// desired mode. Different claim IDs can therefore scan independent databases
@@ -214,6 +216,7 @@ pub fn run_payment_link_claim_sync(
     lightwalletd_url: String,
     network: String,
     allow_resubmit: bool,
+    funding_txid: Option<String>,
 ) -> Result<(), String> {
     if claim_id.trim().is_empty() {
         return Err("Payment-link claim ID must not be empty".into());
@@ -235,13 +238,25 @@ pub fn run_payment_link_claim_sync(
     let result = catch(panic::AssertUnwindSafe(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
         let runtime = tokio::runtime::Runtime::new().map_err(|error| format!("tokio: {error}"))?;
-        runtime.block_on(sync_engine::run_payment_link_claim_sync(
-            &db_path,
-            &lightwalletd_url,
-            network,
-            cancel,
-            allow_resubmit,
-        ))
+        if let Some(txid) = funding_txid {
+            runtime.block_on(sync_engine::direct_claim::prepare(
+                &db_path,
+                &lightwalletd_url,
+                network,
+                &txid,
+                cancel,
+                allow_resubmit,
+            ))
+        } else {
+            sync_engine::direct_claim::clear(&db_path)?;
+            runtime.block_on(sync_engine::run_payment_link_claim_sync(
+                &db_path,
+                &lightwalletd_url,
+                network,
+                cancel,
+                allow_resubmit,
+            ))
+        }
     }));
 
     PAYMENT_LINK_CLAIM_SYNCS

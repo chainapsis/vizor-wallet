@@ -11,11 +11,14 @@ import 'package:zcash_wallet/src/features/payment_links/services/payment_link_re
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_qr_share_card.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
 import '../../support/payment_links_screen_support.dart';
 import '../../support/legacy_payment_link.dart';
 
+const _fundingTxid =
+    '0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20';
 const _message = "It's a great day to shield your ZEC 🛡️";
 const _golden24 =
     'WyJtYWluIiwiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQSIsMzQ4MzE0MSwiMTAwMDAwMCIsImtuaWdodE1hZ2ljIiwxMS4xNywiSXQncyBhIGdyZWF0IGRheSB0byBzaGllbGQgeW91ciBaRUMg8J-boe-4jyJd';
@@ -35,8 +38,10 @@ VizorPaymentLink card({
   PaymentLinkPresentation? presentation,
   BigInt? amount,
   int height = 3483141,
+  String network = 'main',
+  String? fundingTxid,
 }) => VizorPaymentLink(
-  network: 'main',
+  network: network,
   address: 'locally-verified-address',
   amountZatoshi: amount ?? BigInt.from(1000000),
   mnemonic: mnemonic ?? phrase(entropyBytes),
@@ -44,6 +49,7 @@ VizorPaymentLink card({
   label: label,
   createdAt: DateTime.utc(2026, 9, 14),
   presentation: presentation,
+  fundingTxid: fundingTxid,
 );
 const decorated = PaymentLinkPresentation(
   artworkId: 'knightMagic',
@@ -53,9 +59,11 @@ const decorated = PaymentLinkPresentation(
 String wire(VizorPaymentLink card) => card.toShareUri().toString();
 String withJson(Object? payload) =>
     withJsonBytes(utf8.encode(jsonEncode(payload)));
-String withJsonBytes(List<int> bytes) => card()
+String withJsonBytes(List<int> bytes, {int version = 3}) => card()
     .toShareUri()
-    .replace(fragment: 'v3=${base64UrlEncode(bytes).replaceAll('=', '')}')
+    .replace(
+      fragment: 'v$version=${base64UrlEncode(bytes).replaceAll('=', '')}',
+    )
     .toString();
 List<Object?> fieldsOf(String link) =>
     jsonDecode(
@@ -76,6 +84,310 @@ void main() {
     api.validatedMnemonics.clear();
     api.decodingCalls = 0;
     api.addressValidationGate = null;
+  });
+
+  group('binary event v4', () {
+    List<int> bytesOf(Uri uri) =>
+        base64Url.decode(base64Url.normalize(uri.fragment.substring(3)));
+    String withBytes(List<int> bytes) => withJsonBytes(bytes, version: 4);
+
+    test('matches independent vectors, full txid order and link sizes', () {
+      const vectors = {
+        16: 'AAAAAAAAAAAAAAAAAAAAAAAANSYFAAAAAAAPQkABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4fIAU',
+        32: 'BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADUmBQAAAAAAD0JAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyAF',
+      };
+      for (final entry in vectors.entries) {
+        final source = card(
+          entropyBytes: entry.key,
+          fundingTxid: _fundingTxid,
+          presentation: const PaymentLinkPresentation(artworkId: 'knightMagic'),
+        );
+        final shared = source.toShareUri();
+        expect(shared.fragment, 'v4=${entry.value}');
+        expect(bytesOf(shared).length, entry.key == 16 ? 62 : 78);
+        expect(shared.toString().length, entry.key == 16 ? 129 : 150);
+        final restored = VizorPaymentLink.parse(shared.toString());
+        expect(restored.network, 'main');
+        expect(restored.isEventCard, isTrue);
+        expect(restored.fundingTxid, _fundingTxid);
+        expect(restored.mnemonic, source.mnemonic);
+        expect(restored.hasSameCanonicalPayload(source), isTrue);
+        expect(restored.toShareUri(), shared);
+        expect(restored.knownAddress, isNull);
+        expect(restored.knownCreatedAt, isNull);
+      }
+    });
+
+    test('preserves messages while omitting local fiat and custom labels', () {
+      final source = card(fundingTxid: _fundingTxid, presentation: decorated);
+      final shared = source.toShareUri();
+      expect(shared.toString().length, 189);
+      expect(source.presentation!.fiatSnapshot!.amount, 11.1747);
+      final restored = VizorPaymentLink.parse(shared.toString());
+      expect(restored.presentation!.message, _message);
+      expect(restored.presentation!.artworkId, 'knightMagic');
+      expect(restored.presentation!.fiatSnapshot, isNull);
+      expect(restored.toShareUri(), shared);
+      for (final label in ['', '행사 🎉', 'Payment link']) {
+        final cardWithLabel = card(
+          fundingTxid: _fundingTxid,
+          label: label,
+          presentation: const PaymentLinkPresentation(message: '축하해 🎉'),
+        );
+        final parsed = VizorPaymentLink.parse(wire(cardWithLabel));
+        expect(cardWithLabel.label, label);
+        expect(parsed.label, 'Payment link');
+        expect(parsed.presentation!.message, '축하해 🎉');
+        expect(parsed.toShareUri(), cardWithLabel.toShareUri());
+      }
+    });
+
+    test('keeps permanent artwork codes independent of enum ordering', () {
+      const artworkCodes = {
+        'knight': 1,
+        'chestLava': 2,
+        'chestCave': 3,
+        'dragon': 4,
+        'knightMagic': 5,
+        'gandalf': 6,
+        'crystal': 7,
+        'diamond': 8,
+        'ruby': 9,
+        'coin': 10,
+        'gift': 11,
+      };
+      for (final artwork in PaymentLinkCardArtwork.values) {
+        final source = card(
+          fundingTxid: _fundingTxid,
+          presentation: PaymentLinkPresentation(artworkId: artwork.protocolId),
+        );
+        final shared = source.toShareUri();
+        expect(bytesOf(shared).last, artworkCodes[artwork.protocolId]);
+        expect(
+          VizorPaymentLink.parse(shared.toString()).presentation!.artworkId,
+          artwork.protocolId,
+        );
+      }
+      final withoutArtwork = card(fundingTxid: _fundingTxid).toShareUri();
+      expect(bytesOf(withoutArtwork).last, 0);
+      expect(
+        VizorPaymentLink.parse(withoutArtwork.toString()).presentation,
+        isNull,
+      );
+      expect(
+        () => wire(
+          card(
+            fundingTxid: _fundingTxid,
+            presentation: const PaymentLinkPresentation(
+              artworkId: 'future_card',
+            ),
+          ),
+        ),
+        throwsFormatException,
+      );
+    });
+
+    test(
+      'selects v4 from txid, validates the address and rejects other networks',
+      () async {
+        final source = card(fundingTxid: _fundingTxid.toUpperCase());
+        final shared = await preparePaymentLinkShareUri(source);
+        expect(shared.fragment, startsWith('v4='));
+        expect(
+          VizorPaymentLink.parse(shared.toString()).fundingTxid,
+          _fundingTxid,
+        );
+        expect(api.validatedMnemonics, [source.mnemonic]);
+        expect(card().toShareUri().fragment, startsWith('v3='));
+        for (final network in ['regtest', 'test']) {
+          expect(
+            () => wire(card(network: network, fundingTxid: _fundingTxid)),
+            throwsFormatException,
+          );
+        }
+        for (final txid in ['', '00', 'gg' * 32, 'ab' * 33]) {
+          expect(() => wire(card(fundingTxid: txid)), throwsFormatException);
+        }
+        api.failAddress = true;
+        await expectLater(
+          preparePaymentLinkShareUri(source),
+          throwsFormatException,
+        );
+        api.failAddress = false;
+        api.failEntropy = true;
+        await expectLater(
+          preparePaymentLinkShareUri(source),
+          throwsFormatException,
+        );
+      },
+    );
+
+    test(
+      'rejects old JSON v4, corruption and truncation before recovering a secret',
+      () {
+        final raw = bytesOf(card(fundingTxid: _fundingTxid).toShareUri());
+        final invalid = <List<int>>[
+          utf8.encode(jsonEncode(fieldsOf(wire(card())))),
+          for (var length = 0; length < raw.length; length++)
+            raw.sublist(0, length),
+          [...raw, 0],
+          [...raw]..[0] = 0x20, // Reserved header bit.
+          [...raw]..[0] = 0x10, // Custom-label bit is now reserved.
+          [...raw]..[0] = 5, // Invalid entropy size.
+          [...raw]..[raw.length - 1] = 255, // Unknown artwork.
+          [...raw]..setRange(17, 21, [0, 0, 0, 0]), // Zero birthday.
+          [...raw]..setRange(21, 29, List.filled(8, 0)), // Zero amount.
+          [...raw]..setRange(21, 29, List.filled(8, 255)), // Amount overflow.
+          [...raw]..[0] = 8, // Missing message length.
+          [...raw, 0, 1, 255]..[0] = 8, // Invalid UTF-8.
+          [...raw, 0, 2, 65]..[0] = 8, // Truncated message.
+          [...raw, 0, 0]..[0] = 8, // Empty optional message.
+          [...raw, 0, 1, 32]..[0] = 8, // Noncanonical whitespace.
+          [...raw, 2, 1, ...List.filled(513, 65)]..[0] = 8,
+          [...raw, 0, 129, ...List.filled(129, 65)]..[0] = 8,
+        ];
+        for (final bytes in invalid) {
+          final input = withBytes(bytes);
+          try {
+            VizorPaymentLink.parse(input);
+            fail('Malformed binary card was accepted');
+          } on FormatException catch (error) {
+            expect(error.source, isNull);
+            expect(error.message, isNot(contains(input)));
+          }
+        }
+        expect(api.decodingCalls, 0);
+        final v3 = [...fieldsOf(wire(card())), null, null, null, null, {}];
+        expect(
+          () => VizorPaymentLink.parse(withJson(v3)),
+          throwsFormatException,
+        );
+      },
+    );
+
+    test(
+      'bounds message bytes and numeric values on write and preserves maxima',
+      () {
+        for (final source in [
+          card(fundingTxid: _fundingTxid, height: 0),
+          card(fundingTxid: _fundingTxid, height: 0x100000000),
+          card(fundingTxid: _fundingTxid, amount: BigInt.zero),
+          card(
+            fundingTxid: _fundingTxid,
+            amount: BigInt.from(2100000000000001),
+          ),
+          card(
+            fundingTxid: _fundingTxid,
+            presentation: PaymentLinkPresentation(message: 'a' * 129),
+          ),
+        ]) {
+          expect(() => wire(source), throwsFormatException);
+        }
+        final maximum = card(
+          fundingTxid: _fundingTxid,
+          height: 0xffffffff,
+          amount: BigInt.from(2100000000000000),
+          presentation: PaymentLinkPresentation(message: '🎉' * 128),
+        );
+        expect(
+          VizorPaymentLink.parse(
+            wire(maximum),
+          ).hasSameCanonicalPayload(maximum),
+          isTrue,
+        );
+      },
+    );
+
+    test(
+      'retains direct claim and submission evidence after durable restart',
+      () async {
+        final source = card(
+          fundingTxid: _fundingTxid,
+          presentation: const PaymentLinkPresentation(
+            artworkId: 'knightMagic',
+            message: _message,
+          ),
+        );
+        final parsed = VizorPaymentLink.parse(wire(source))
+            .withResolvedMetadata(
+              address: source.address,
+              createdAt: source.createdAt,
+            );
+        final storage = _MemoryStorage();
+        final receiver = PaymentLinkReceivedStore(storage);
+        await receiver.saveReady(parsed);
+        await receiver.markClaimStarted(
+          address: parsed.address,
+          destinationAccountUuid: 'receiver',
+          priorTxids: ['prior-txid'],
+        );
+        await receiver.markReceiving(
+          address: parsed.address,
+          destinationAccountUuid: 'receiver',
+          claimTxids: 'claim-txid',
+        );
+        final restored = (await PaymentLinkReceivedStore(
+          storage,
+        ).load()).single;
+        expect(restored.status, PaymentLinkReceivedStatus.receiving);
+        expect(restored.claimTxids, 'claim-txid');
+        expect(restored.destinationAccountUuid, 'receiver');
+        expect(restored.claimPriorTxids, ['prior-txid']);
+        expect(restored.claimLink!.isEventCard, isTrue);
+        expect(restored.claimLink!.fundingTxid, _fundingTxid);
+        expect(restored.claimLink!.toShareUri(), source.toShareUri());
+        final recovery =
+            jsonDecode(
+                  utf8.decode(
+                    base64Url.decode(
+                      base64Url.normalize(
+                        restored.claimLink!.toRecoveryUri().fragment.substring(
+                          3,
+                        ),
+                      ),
+                    ),
+                  ),
+                )
+                as Map<String, dynamic>;
+        expect(recovery['fundingTxid'], _fundingTxid);
+        expect(recovery.containsKey('skipScan'), isFalse);
+        final identity = paymentLinkClaimWalletDirectoryName(parsed);
+        expect(identity, isNot(paymentLinkClaimWalletDirectoryName(card())));
+        expect(
+          identity,
+          isNot(
+            paymentLinkClaimWalletDirectoryName(card(fundingTxid: 'ff' * 32)),
+          ),
+        );
+        expect(
+          identity,
+          paymentLinkClaimWalletDirectoryName(
+            card(fundingTxid: _fundingTxid, amount: BigInt.one),
+          ),
+        );
+        final senderStorage = _MemoryStorage();
+        final sender = PaymentLinkRecoveryStore(senderStorage);
+        final senderSource = card(
+          fundingTxid: _fundingTxid,
+          presentation: decorated,
+        );
+        await sender.saveDraft(
+          link: senderSource,
+          sourceAccountUuid: 'sender',
+          claimFeeReserveZatoshi: BigInt.from(10000),
+        );
+        await sender.markFunded(
+          address: senderSource.address,
+          fundingTxids: _fundingTxid,
+        );
+        final restoredSender = (await PaymentLinkRecoveryStore(
+          senderStorage,
+        ).load()).single;
+        expect(restoredSender.link.isEventCard, isTrue);
+        expect(restoredSender.link.presentation!.fiatSnapshot!.amount, 11.1747);
+        expect(restoredSender.link.toShareUri(), source.toShareUri());
+      },
+    );
   });
 
   test('matches independently encoded JSON vectors and exact size targets', () {

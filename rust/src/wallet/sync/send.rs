@@ -1068,6 +1068,19 @@ fn propose_request(
     }
     let proposed_tx_version = proposed_tx_version_for_wallet_db(db, network, context)?;
     let transaction_request = request.build()?;
+    if matches!(purpose, SendPurpose::PaymentLinkClaim) {
+        if let Some(prepared) = sync_engine::direct_claim::load(db_path)? {
+            let proposal = propose_direct_claim(
+                db,
+                network,
+                account_id,
+                transaction_request,
+                &prepared,
+                proposed_tx_version,
+            )?;
+            return Ok((proposal, proposed_tx_version));
+        }
+    }
     let migration_locks = super::migration::locked_migration_note_refs(db_path, account_uuid)?;
     let spend_policy = ordinary_send_spend_policy(
         super::migration::migration_reserves_orchard_inputs(db_path, account_uuid, network)?,
@@ -1134,7 +1147,10 @@ pub(crate) fn estimate_send_max_for_purpose(
 ) -> Result<SendMaxEstimateResult, String> {
     let mut db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
-    if purpose == SendPurpose::PaymentLinkClaim {
+    if matches!(purpose, SendPurpose::PaymentLinkClaim) {
+        if let Some(prepared) = sync_engine::direct_claim::load(db_path)? {
+            return estimate_direct_claim(&db, network, account_id, to_address, &prepared);
+        }
         if let Some(source) = gift_card_input::CardInput::load(&db, db_path, account_id)? {
             return source.estimate_max(network, to_address, memo_str);
         }
@@ -3826,6 +3842,7 @@ fn build_ledger_shielding_round(
         .collect::<HashSet<_>>();
     let source = ReservedInputSource {
         inner: db,
+        direct_claim: None,
         reserved: &BTreeSet::new(),
         migration_locks: &BTreeSet::new(),
         transparent_allowlist: Some(&allowed),
@@ -4017,6 +4034,7 @@ fn propose_send_with_reserved_notes(
         .ok_or("Wallet must sync before creating a reserved batch")?;
     let reserved_db = ReservedInputSource {
         inner: db,
+        direct_claim: None,
         reserved,
         migration_locks,
         transparent_allowlist: None,
@@ -4203,12 +4221,46 @@ where
 
 struct ReservedInputSource<'a, I: InputSource> {
     inner: &'a I,
+    direct_claim: Option<(I::AccountId, &'a sync_engine::direct_claim::Preparation)>,
     reserved: &'a BTreeSet<I::NoteRef>,
     migration_locks: &'a BTreeSet<(String, u32)>,
     transparent_allowlist: Option<&'a HashSet<OutPoint>>,
 }
 
 impl<I: InputSource> ReservedInputSource<'_, I> {
+    fn direct_notes(&self, notes: ReceivedNotes<I::NoteRef>) -> ReceivedNotes<I::NoteRef> {
+        let Some((_, prepared)) = self.direct_claim else {
+            return notes;
+        };
+        let eligible = |txid: &TxId, height: Option<BlockHeight>| {
+            *txid == prepared.funding_txid
+                && height == Some(prepared.funding_height)
+                && u32::from(prepared.tip_height)
+                    .saturating_sub(u32::from(prepared.funding_height))
+                    .saturating_add(1)
+                    >= payment_link_claim_confirmations_policy().untrusted().get()
+        };
+        ReceivedNotes::new(
+            notes
+                .sapling()
+                .iter()
+                .filter(|n| eligible(n.txid(), n.mined_height()))
+                .cloned()
+                .collect(),
+            notes
+                .orchard()
+                .iter()
+                .filter(|n| eligible(n.txid(), n.mined_height()))
+                .cloned()
+                .collect(),
+            notes
+                .ironwood()
+                .iter()
+                .filter(|n| eligible(n.txid(), n.mined_height()))
+                .cloned()
+                .collect(),
+        )
+    }
     fn merged_excludes(&self, exclude: &[I::NoteRef]) -> Vec<I::NoteRef> {
         let mut merged = exclude.to_vec();
         merged.extend(self.reserved.iter().copied());
@@ -4267,6 +4319,21 @@ impl<I: InputSource> InputSource for ReservedInputSource<'_, I> {
         target_height: wallet::TargetHeight,
         lock_filter: LockFilter<'_>,
     ) -> Result<Option<ReceivedNote<Self::NoteRef, Note>>, Self::Error> {
+        if let Some((account, _)) = self.direct_claim {
+            return Ok(self
+                .select_spendable_notes(
+                    account,
+                    TargetValue::AtLeast(Zatoshis::ZERO),
+                    &[protocol],
+                    target_height,
+                    payment_link_claim_confirmations_policy(),
+                    &[],
+                    lock_filter,
+                )?
+                .into_vec(&RetainAllNotes)
+                .into_iter()
+                .find(|note| note.txid() == txid && note.output_index() as u32 == index));
+        }
         Ok(self
             .inner
             .get_spendable_note(txid, protocol, index, target_height, lock_filter)?
@@ -4284,15 +4351,25 @@ impl<I: InputSource> InputSource for ReservedInputSource<'_, I> {
         exclude: &[Self::NoteRef],
         lock_filter: LockFilter<'_>,
     ) -> Result<ReceivedNotes<Self::NoteRef>, Self::Error> {
-        let selected = self.inner.select_spendable_notes(
-            account,
-            target_value,
-            sources,
-            target_height,
-            confirmations_policy,
-            &self.merged_excludes(exclude),
-            lock_filter,
-        )?;
+        let selected = if self.direct_claim.is_some() {
+            self.direct_notes(self.inner.select_unspent_notes(
+                account,
+                sources,
+                target_height,
+                &self.merged_excludes(exclude),
+                lock_filter,
+            )?)
+        } else {
+            self.inner.select_spendable_notes(
+                account,
+                target_value,
+                sources,
+                target_height,
+                confirmations_policy,
+                &self.merged_excludes(exclude),
+                lock_filter,
+            )?
+        };
         Ok(ReceivedNotes::new(
             selected.sapling().to_vec(),
             selected
@@ -4321,6 +4398,19 @@ impl<I: InputSource> InputSource for ReservedInputSource<'_, I> {
         lock_filter: LockFilter<'_>,
         max_additional_notes: usize,
     ) -> Result<ConsolidationNotes<Self::NoteRef>, Self::Error> {
+        if self.direct_claim.is_some() {
+            return self
+                .select_spendable_notes(
+                    account,
+                    TargetValue::AtLeast(value),
+                    &[source],
+                    target_height,
+                    confirmations_policy,
+                    exclude,
+                    lock_filter,
+                )
+                .map(|notes| ConsolidationNotes::from_parts(notes, ReceivedNotes::empty()));
+        }
         let mut merged_excludes = self.merged_excludes(exclude);
         loop {
             let selected = self.inner.select_spendable_notes_for_consolidation(
@@ -4424,6 +4514,105 @@ impl<I: InputSource> InputSource for ReservedInputSource<'_, I> {
         }
         Ok(outputs)
     }
+}
+
+fn propose_direct_claim(
+    db: &WalletDatabase,
+    network: WalletNetwork,
+    account: AccountUuid,
+    request: TransactionRequest,
+    prepared: &sync_engine::direct_claim::Preparation,
+    version: Option<TxVersion>,
+) -> Result<Proposal<WalletFeeRule, ReceivedNoteId>, String> {
+    let reserved = BTreeSet::new();
+    let migration_locks = BTreeSet::new();
+    let source = ReservedInputSource {
+        inner: db,
+        direct_claim: Some((account, prepared)),
+        reserved: &reserved,
+        migration_locks: &migration_locks,
+        transparent_allowlist: None,
+    };
+    let (change, selector) = zip317_helper::<ReservedInputSource<'_, WalletDatabase>>(None, false);
+    selector
+        .propose_transaction(
+            &network,
+            &source,
+            (prepared.tip_height + 1).into(),
+            prepared.funding_height,
+            &db.pool_migration_params(),
+            payment_link_claim_confirmations_policy(),
+            account,
+            request,
+            &change,
+            &SpendPolicy::default(),
+            version,
+        )
+        .map_err(|e| format!("Propose direct Gift Card claim failed: {e}"))
+}
+
+fn estimate_direct_claim(
+    db: &WalletDatabase,
+    network: WalletNetwork,
+    account: AccountUuid,
+    to_address: &str,
+    prepared: &sync_engine::direct_claim::Preparation,
+) -> Result<SendMaxEstimateResult, String> {
+    let reserved = BTreeSet::new();
+    let locks = BTreeSet::new();
+    let source = ReservedInputSource {
+        inner: db,
+        direct_claim: Some((account, prepared)),
+        reserved: &reserved,
+        migration_locks: &locks,
+        transparent_allowlist: None,
+    };
+    let notes = source
+        .select_spendable_notes(
+            account,
+            TargetValue::AllFunds(MaxSpendMode::MaxSpendable),
+            &[
+                ShieldedPool::Sapling,
+                ShieldedPool::Orchard,
+                ShieldedPool::Ironwood,
+            ],
+            (prepared.tip_height + 1).into(),
+            payment_link_claim_confirmations_policy(),
+            &[],
+            LockFilter::Policy(&LockedInputPolicy::Exclude),
+        )
+        .map_err(|e| e.to_string())?;
+    let total = notes.total_value().map_err(|e| e.to_string())?;
+    if total <= Zatoshis::const_from_u64(10_000) {
+        return Err("Insufficient balance to claim Gift Card".into());
+    }
+    // Let the existing selector calculate ZIP-317 fees and change. A probe may
+    // create change outputs; repeat with the full amount until the quote has no
+    // change. No guessed fee is exposed to Dart or used for a submitted claim.
+    let mut amount = Zatoshis::const_from_u64(1);
+    for _ in 0..4 {
+        let request = SendRequest::Single {
+            to_address,
+            amount_zatoshi: u64::from(amount),
+            memo_str: None,
+        }
+        .build()?;
+        let proposal = propose_direct_claim(
+            db,
+            network,
+            account,
+            request,
+            prepared,
+            proposed_tx_version_for_send(network, (prepared.tip_height + 1).into()),
+        )?;
+        let fee = Zatoshis::from_u64(proposal_fee_zatoshi(&proposal)).map_err(|e| e.to_string())?;
+        let max = (total - fee).ok_or("Insufficient balance to claim Gift Card")?;
+        if max == amount {
+            return summarize_send_max_proposal(&proposal);
+        }
+        amount = max;
+    }
+    Err("Gift Card claim fee did not stabilize".into())
 }
 
 fn build_send_max_proposal(

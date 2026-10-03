@@ -1250,6 +1250,10 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildMobileGiftOnboardingWalkthrough,
                     ),
                     WidgetbookUseCase(
+                      name: 'Onboarding - Event card UX preview',
+                      builder: buildMobileGiftOnboardingEventWalkthrough,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Onboarding - Card entry',
                       builder: buildMobileGiftOnboardingEntry,
                     ),

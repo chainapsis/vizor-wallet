@@ -7756,6 +7756,7 @@ fn wire__crate__api__sync__run_payment_link_claim_sync_impl(
             let api_lightwalletd_url = <String>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_allow_resubmit = <bool>::sse_decode(&mut deserializer);
+            let api_funding_txid = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -7765,6 +7766,7 @@ fn wire__crate__api__sync__run_payment_link_claim_sync_impl(
                         api_lightwalletd_url,
                         api_network,
                         api_allow_resubmit,
+                        api_funding_txid,
                     )?;
                     Ok(output_ok)
                 })())
