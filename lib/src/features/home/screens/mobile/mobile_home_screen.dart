@@ -1047,6 +1047,9 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     // the payment-URI drain in `app.dart` cannot drift away from what this
     // button does.
     final sendDisabled = ref.watch(migrationSendGateProvider);
+    final showsIronwoodOnlyBalance =
+        ref.watch(ironwoodHomeBalancePresentationProvider) ==
+        IronwoodHomeBalancePresentationMode.ironwoodOnly;
     final shieldedBalance = migrationRequired
         ? sync.orchardBalance + sync.orchardPendingBalance
         : sync.saplingBalance +
@@ -1174,6 +1177,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
               isShieldingBalance: _isShieldingBalance,
               privacyModeEnabled: privacyModeEnabled,
               ironwoodMigrationCta: widget.ironwoodMigrationCta,
+              showsIronwoodOnlyBalance: showsIronwoodOnlyBalance,
               balanceDisabled: migrationRequired,
               onTogglePrivacyMode: widget.onTogglePrivacyMode,
               onIronwoodMigrationTap: () {
@@ -1744,6 +1748,7 @@ class _BalanceCard extends StatelessWidget {
     required this.isShieldingBalance,
     required this.privacyModeEnabled,
     required this.ironwoodMigrationCta,
+    required this.showsIronwoodOnlyBalance,
     required this.balanceDisabled,
     required this.onTogglePrivacyMode,
     required this.onIronwoodMigrationTap,
@@ -1759,6 +1764,9 @@ class _BalanceCard extends StatelessWidget {
   final bool isShieldingBalance;
   final bool privacyModeEnabled;
   final IronwoodHomeMigrationCtaState ironwoodMigrationCta;
+  // Matches desktop Home's "Shielded balance (Ironwood)" wording once a
+  // wallet's shielded funds have migrated to Ironwood.
+  final bool showsIronwoodOnlyBalance;
   final bool balanceDisabled;
   final VoidCallback onTogglePrivacyMode;
   final VoidCallback onIronwoodMigrationTap;
@@ -1826,7 +1834,9 @@ class _BalanceCard extends StatelessWidget {
                               const SizedBox(width: AppSpacing.s),
                               Expanded(
                                 child: Text(
-                                  'Shielded balance',
+                                  showsIronwoodOnlyBalance
+                                      ? 'Shielded balance (Ironwood)'
+                                      : 'Shielded balance',
                                   style: _mobileHomeLabelMStyle.copyWith(
                                     color: cardText,
                                   ),
