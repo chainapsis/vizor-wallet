@@ -70,7 +70,7 @@ is_regtest_state_startup_error() {
     [[ "$output" == *".regtest/zcashd"* || "$output" == *".regtest/lightwalletd"* ]]; then
     return 0
   fi
-  [[ "$output" == *"Cannot obtain a lock on data directory /var/lib/zcash/.zcash/regtest"* ]] && \
+  [[ "$output" == *"Cannot obtain a lock on data directory /srv/zcash/.zcash/regtest"* ]] && \
     [[ "$output" == *"No such file or directory"* ]]
 }
 
