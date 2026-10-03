@@ -30,6 +30,12 @@ optional field is present. An empty custom label is allowed. Amounts use decimal
 strings without a sign, exponent, or leading zeroes. The version is already in
 `#v3=` and is not repeated in the array.
 
+The v3 writer rounds the display-only USD snapshot to two decimal places and
+keeps it a JSON number. Readers continue accepting older full-precision USD
+snapshots in v1, v2, and v3 without rounding them. Local v2 recovery records
+retain their original precision; resharing a card rounds only the v3 snapshot.
+The ZEC amount, mnemonic, birthday, and claim calculations are unaffected.
+
 The complete URL is bounded to 16 KiB before decoding. Both Base64url strings
 use only `A-Z`, `a-z`, `0-9`, `-`, and `_`, without padding or noncanonical trailing
 bits. JSON whitespace and normal JSON string escaping are accepted. Wrong
@@ -125,33 +131,33 @@ normal release qualification; unit tests are not a substitute for those checks.
 
 The following unfunded public vector uses 32 zero entropy bytes (23 `abandon`
 words followed by `art`), mainnet, height 3,483,141, amount 1,000,000 zatoshi,
-artwork `knightMagic`, USD 11.1747, and the exact message
+artwork `knightMagic`, USD 11.17, and the exact message
 `It's a great day to shield your ZEC 🛡️`. Do not fund this published secret.
 
 Its decoded JSON is:
 
 ```json
-["main","AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",3483141,"1000000","knightMagic",11.1747,"It's a great day to shield your ZEC 🛡️"]
+["main","AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",3483141,"1000000","knightMagic",11.17,"It's a great day to shield your ZEC 🛡️"]
 ```
 
 The full link is:
 
 ```text
-https://link.vizor.cash/payment-links/open#v3=WyJtYWluIiwiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQSIsMzQ4MzE0MSwiMTAwMDAwMCIsImtuaWdodE1hZ2ljIiwxMS4xNzQ3LCJJdCdzIGEgZ3JlYXQgZGF5IHRvIHNoaWVsZCB5b3VyIFpFQyDwn5uh77iPIl0
+https://link.vizor.cash/payment-links/open#v3=WyJtYWluIiwiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQSIsMzQ4MzE0MSwiMTAwMDAwMCIsImtuaWdodE1hZ2ljIiwxMS4xNywiSXQncyBhIGdyZWF0IGRheSB0byBzaGllbGQgeW91ciBaRUMg8J-boe-4jyJd
 ```
 
-It is 233 characters: 46 for the URL prefix and 187 for the Base64url encoding
-of 140 JSON bytes. The message itself occupies 43 UTF-8 bytes.
+It is 230 characters: 46 for the URL prefix and 184 for the Base64url encoding
+of 138 JSON bytes. The message itself occupies 43 UTF-8 bytes.
 
 | Contents, default label | 24 words | 12 words (decoder support only) |
 | --- | ---: | ---: |
 | Plain | 142 | 114 |
-| Artwork and fiat | 172 | 144 |
-| Artwork, fiat, example message | 233 | 205 |
-| Artwork, fiat, 512-byte message | 858 | 830 |
+| Artwork and fiat | 169 | 141 |
+| Artwork, fiat, example message | 230 | 202 |
+| Artwork, fiat, 512-byte message | 856 | 828 |
 
 The original v1 example in planning measured 914 characters. Its bearer secret
-is not included in source or fixtures. Positional JSON retains a 74.5% reduction
+is not included in source or fixtures. Positional JSON retains a 74.8% reduction
 for the decorated example, while using standard JSON tooling.
 
 Further size reductions are deferred: 12-word generation saves about 28

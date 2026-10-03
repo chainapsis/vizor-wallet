@@ -18,8 +18,12 @@ import '../../support/legacy_payment_link.dart';
 
 const _message = "It's a great day to shield your ZEC 🛡️";
 const _golden24 =
-    'WyJtYWluIiwiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQSIsMzQ4MzE0MSwiMTAwMDAwMCIsImtuaWdodE1hZ2ljIiwxMS4xNzQ3LCJJdCdzIGEgZ3JlYXQgZGF5IHRvIHNoaWVsZCB5b3VyIFpFQyDwn5uh77iPIl0';
+    'WyJtYWluIiwiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQSIsMzQ4MzE0MSwiMTAwMDAwMCIsImtuaWdodE1hZ2ljIiwxMS4xNywiSXQncyBhIGdyZWF0IGRheSB0byBzaGllbGQgeW91ciBaRUMg8J-boe-4jyJd';
 const _golden12 =
+    'WyJtYWluIiwiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQSIsMzQ4MzE0MSwiMTAwMDAwMCIsImtuaWdodE1hZ2ljIiwxMS4xNywiSXQncyBhIGdyZWF0IGRheSB0byBzaGllbGQgeW91ciBaRUMg8J-boe-4jyJd';
+const _legacyGolden24 =
+    'WyJtYWluIiwiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQSIsMzQ4MzE0MSwiMTAwMDAwMCIsImtuaWdodE1hZ2ljIiwxMS4xNzQ3LCJJdCdzIGEgZ3JlYXQgZGF5IHRvIHNoaWVsZCB5b3VyIFpFQyDwn5uh77iPIl0';
+const _legacyGolden12 =
     'WyJtYWluIiwiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQSIsMzQ4MzE0MSwiMTAwMDAwMCIsImtuaWdodE1hZ2ljIiwxMS4xNzQ3LCJJdCdzIGEgZ3JlYXQgZGF5IHRvIHNoaWVsZCB5b3VyIFpFQyDwn5uh77iPIl0';
 String phrase(int bytes) =>
     '${List.filled(bytes == 32 ? 23 : 11, 'abandon').join(' ')} ${bytes == 32 ? 'art' : 'about'}';
@@ -44,7 +48,7 @@ VizorPaymentLink card({
 const decorated = PaymentLinkPresentation(
   artworkId: 'knightMagic',
   message: _message,
-  fiatSnapshot: PaymentLinkFiatSnapshot(amount: 11.1747),
+  fiatSnapshot: PaymentLinkFiatSnapshot(amount: 11.17),
 );
 String wire(VizorPaymentLink card) => card.toShareUri().toString();
 String withJson(Object? payload) =>
@@ -79,7 +83,7 @@ void main() {
       final source = card(entropyBytes: entry.key, presentation: decorated);
       final uri = source.toShareUri();
       expect(uri.fragment, 'v3=${entry.value}');
-      expect(uri.toString().length, entry.key == 32 ? 233 : 205);
+      expect(uri.toString().length, entry.key == 32 ? 230 : 202);
       expect(uri.path, '/payment-links/open');
       expect(uri.query, isEmpty);
       final restored = VizorPaymentLink.parse(uri.toString());
@@ -103,7 +107,7 @@ void main() {
             ),
           ),
         ).length,
-        144 + extra,
+        141 + extra,
       );
       expect(
         wire(
@@ -116,8 +120,70 @@ void main() {
             ),
           ),
         ).length,
-        830 + extra,
+        828 + extra,
       );
+    }
+  });
+
+  test('rounds shared USD snapshots to cents without changing recovery', () {
+    for (final entry in <double, double>{
+      0: 0,
+      0.0049: 0,
+      0.0051: 0.01,
+      11.1747: 11.17,
+      11.176: 11.18,
+      11.999: 12,
+      142.4: 142.4,
+      1e308: 1e308,
+    }.entries) {
+      final source = card(
+        presentation: PaymentLinkPresentation(
+          fiatSnapshot: PaymentLinkFiatSnapshot(amount: entry.key),
+        ),
+      );
+      final recovery = source.toRecoveryUri();
+      final shared = wire(source);
+      expect(fieldsOf(shared)[5], entry.value);
+      final decoded = VizorPaymentLink.parse(shared);
+      expect(decoded.presentation!.fiatSnapshot!.amount, entry.value);
+      expect(decoded.mnemonic, source.mnemonic);
+      expect(decoded.birthdayHeight, source.birthdayHeight);
+      expect(decoded.amountZatoshi, source.amountZatoshi);
+      expect(wire(decoded), shared);
+      expect(source.presentation!.fiatSnapshot!.amount, entry.key);
+      expect(source.toRecoveryUri(), recovery);
+      expect(
+        VizorPaymentLink.parse(
+          recovery.toString(),
+        ).presentation!.fiatSnapshot!.amount,
+        entry.key,
+      );
+    }
+  });
+
+  test('decodes existing full-precision v1, v2 and v3 USD snapshots', () {
+    for (final entry in {16: _legacyGolden12, 32: _legacyGolden24}.entries) {
+      final source = card(
+        entropyBytes: entry.key,
+        presentation: const PaymentLinkPresentation(
+          artworkId: 'knightMagic',
+          message: _message,
+          fiatSnapshot: PaymentLinkFiatSnapshot(amount: 11.1747),
+        ),
+      );
+      for (final uri in [
+        legacyPaymentLinkUri(source),
+        source.toRecoveryUri(),
+        source.toShareUri().replace(fragment: 'v3=${entry.value}'),
+      ]) {
+        final decoded = VizorPaymentLink.parse(uri.toString());
+        expect(decoded.presentation!.fiatSnapshot!.amount, 11.1747);
+        expect(decoded.hasSameCanonicalPayload(source), isTrue);
+        expect(decoded.toRecoveryUri(), source.toRecoveryUri());
+        expect(decoded.presentation!.message, _message);
+        expect(decoded.presentation!.artworkId, 'knightMagic');
+        expect(fieldsOf(wire(decoded))[5], 11.17);
+      }
     }
   });
 
