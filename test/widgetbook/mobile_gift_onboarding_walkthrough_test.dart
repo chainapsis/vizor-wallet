@@ -99,6 +99,25 @@ void main() {
     expect(find.byKey(const ValueKey('gift_claim_close_button')), findsNothing);
   });
 
+  testWidgets('the event preview retains its policy through wallet setup', (
+    tester,
+  ) async {
+    await _render(tester, buildMobileGiftOnboardingEventWalkthrough);
+    await _reachCustomise(tester);
+    expect(find.byType(PaymentLinkLongSyncWarningSheet), findsNothing);
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_customise_account_continue')),
+    );
+    await _advance(tester);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MobileBiometricsScreen)),
+    );
+    final record =
+        (await container.read(paymentLinkReceivedStoreProvider).load()).single;
+    expect(record.claimLink!.isEventCard, isTrue);
+    expect(record.claimLink!.fundingTxid, 'aa' * 32);
+  });
+
   testWidgets('the old card preview opens the existing warning sheet', (
     tester,
   ) async {

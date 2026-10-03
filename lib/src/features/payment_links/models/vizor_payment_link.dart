@@ -3,11 +3,13 @@ import 'dart:typed_data';
 
 import 'package:characters/characters.dart';
 
+import '../../../core/config/network_config.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/navigation/vizor_deep_link.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
 
 part 'compact_payment_link_codec.dart';
+part 'event_payment_link_codec.dart';
 
 const kPaymentLinkRegtestEnabledEnvKey = 'VIZOR_PAYMENT_LINK_REGTEST_ENABLED';
 const kPaymentLinkRegtestEnabled = bool.fromEnvironment(
@@ -163,6 +165,7 @@ class VizorPaymentLink {
     required this.label,
     required DateTime createdAt,
     this.presentation,
+    this.fundingTxid,
     this.isCreatedAtProvisional = false,
   }) : _address = address,
        _createdAt = createdAt;
@@ -176,6 +179,7 @@ class VizorPaymentLink {
     required this.label,
     required DateTime? createdAt,
     required this.presentation,
+    this.fundingTxid,
     this.isCreatedAtProvisional = false,
   }) : _address = address,
        _createdAt = createdAt;
@@ -194,22 +198,34 @@ class VizorPaymentLink {
   final String label;
   final DateTime? _createdAt;
 
+  /// The single funding transaction used by event cards instead of a history scan.
+  final String? fundingTxid;
+
+  /// A funding transaction identifies an event card and selects direct claim.
+  bool get isEventCard => fundingTxid != null;
+
+  /// Direct-only card wallets use a stable local birthday, absent from v4.
+  /// Keeping it at activation also permits funding to move earlier in a reorg.
+  int get claimBirthdayHeight => isEventCard
+      ? zcashNetworkFromName(network).saplingActivationHeight
+      : birthdayHeight;
+
   /// Local-only provenance; never included in the shared payload.
   final bool isCreatedAtProvisional;
   final PaymentLinkPresentation? presentation;
 
   /// The address derived from [mnemonic], when it is known locally.
   ///
-  /// Versions 2 and 3 do not carry this value. A received link gains it when its
-  /// temporary claim wallet imports the mnemonic.
+  /// Versions 2 through 4 do not carry this value. A received link gains it
+  /// when its temporary claim wallet imports the mnemonic.
   String get address =>
       _address ??
       (throw StateError('Payment link address has not been derived yet.'));
 
   /// The card creation time, when it is known locally or from the chain.
   ///
-  /// Versions 2 and 3 do not carry this value. A received link gains it from the
-  /// funding transaction's block time after its claim wallet syncs.
+  /// Versions 2 through 4 do not carry this value. A received link gains it
+  /// from the funding transaction's block time after its claim wallet syncs.
   DateTime get createdAt =>
       _createdAt ??
       (throw StateError('Payment link creation time is not known yet.'));
@@ -237,7 +253,15 @@ class VizorPaymentLink {
       isCreatedAtProvisional:
           isCreatedAtProvisional ?? this.isCreatedAtProvisional,
       presentation: presentation,
+      fundingTxid: fundingTxid,
     );
+  }
+
+  static String validateFundingTxid(Object? value) {
+    if (value is! String || !RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(value)) {
+      throw const FormatException('Gift card funding transaction is invalid.');
+    }
+    return value.toLowerCase();
   }
 
   static bool supportsNetwork(String network) {
@@ -264,15 +288,22 @@ class VizorPaymentLink {
 
   /// Serialize for sharing. Callers dropping a known address must first verify
   /// it asynchronously with [rust_wallet.validateGiftAddress].
-  Uri toShareUri() => _uri('v3=${_CompactPaymentLinkCodec.encode(this)}');
+  Uri toShareUri() => isEventCard
+      ? _uri('v4=${_EventPaymentLinkCodec.encode(this)}')
+      : _uri('v3=${_CompactPaymentLinkCodec.encode(this)}');
 
-  /// Returns v2 only when legacy mnemonic whitespace cannot be carried by v3.
+  /// Returns v2 for ordinary cards whose legacy whitespace cannot fit v3.
   /// The caller must first verify the original mnemonic against a known address.
   /// Canonicalization is used only to validate, never to replace the stored secret.
   Uri? toLegacyWhitespaceShareUri() {
     final original = mnemonic.trim();
     final canonical = original.split(RegExp(r'\s+')).join(' ');
     if (canonical == original) return null;
+    if (isEventCard) {
+      throw const FormatException(
+        'Event gift cards require a standard secret passphrase.',
+      );
+    }
     if (knownAddress == null) {
       throw const FormatException('Gift card address could not be verified.');
     }
@@ -306,8 +337,9 @@ class VizorPaymentLink {
       'network': normalizedNetwork,
       'amountZatoshi': amountZatoshi.toString(),
       'mnemonic': mnemonic.trim(),
-      'birthdayHeight': birthdayHeight,
+      'birthdayHeight': claimBirthdayHeight,
       'label': label.trim(),
+      if (fundingTxid != null) 'fundingTxid': validateFundingTxid(fundingTxid),
     };
     final presentationPayload = presentation?.toPayload();
     if (presentationPayload != null) {
@@ -336,6 +368,9 @@ class VizorPaymentLink {
     final fragment = uri.fragment;
     if (fragment.startsWith('v3=')) {
       return _CompactPaymentLinkCodec.decode(fragment.substring(3));
+    }
+    if (fragment.startsWith('v4=')) {
+      return _EventPaymentLinkCodec.decode(fragment.substring(3));
     }
     final int expectedVersion;
     final String fragmentPrefix;
@@ -369,6 +404,10 @@ class VizorPaymentLink {
     if (payload['v'] != expectedVersion) {
       throw const FormatException('Payment link version is not supported.');
     }
+
+    final fundingTxid = payload.containsKey('fundingTxid')
+        ? validateFundingTxid(payload['fundingTxid'])
+        : null;
 
     final network = _readString(payload, 'network');
     final amountZatoshi = _readBigInt(payload, 'amountZatoshi');
@@ -416,6 +455,7 @@ class VizorPaymentLink {
       label: label,
       createdAt: createdAt,
       presentation: presentation,
+      fundingTxid: fundingTxid,
     );
   }
 

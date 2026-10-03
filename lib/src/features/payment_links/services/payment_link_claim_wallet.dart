@@ -10,17 +10,19 @@
 part of 'payment_link_service.dart';
 
 /// Claim databases are cached by the fields that determine the recovered
-/// account and its scan range. Share-payload fields such as amount, label,
+/// account and its scan range (ordinary cards) or funding txid (event cards).
+/// Share-payload fields such as amount, label,
 /// address, timestamp, and presentation deliberately do not participate, so a
 /// corrected payload can reuse already-scanned state.
 ///
 /// The network is also kept outside the hash, as a readable name segment, so a
 /// cleanup sweep can scope itself to one network.
 String paymentLinkClaimWalletDirectoryName(VizorPaymentLink link) {
+  final recovery = link.isEventCard
+      ? 'direct:${VizorPaymentLink.validateFundingTxid(link.fundingTxid)}'
+      : '${link.birthdayHeight}';
   final identity = sha256
-      .convert(
-        utf8.encode('${link.network}:${link.mnemonic}:${link.birthdayHeight}'),
-      )
+      .convert(utf8.encode('${link.network}:${link.mnemonic}:$recovery'))
       .toString();
   return paymentLinkClaimWalletDirectoryNameFor(
     network: link.network.trim(),
@@ -73,7 +75,7 @@ class PaymentLinkClaimWallet {
     final future = _runClaimSyncOnce(
       claimId: claimId,
       dbPath: dbPath,
-      network: link.network,
+      link: link,
       allowResubmit: allowResubmit,
     );
     _claimSyncs[claimId] = future;
@@ -87,7 +89,7 @@ class PaymentLinkClaimWallet {
   Future<void> _runClaimSyncOnce({
     required String claimId,
     required String dbPath,
-    required String network,
+    required VizorPaymentLink link,
     required bool allowResubmit,
   }) {
     return _ref
@@ -95,9 +97,9 @@ class PaymentLinkClaimWallet {
         .runWithEndpointFallback<void>(
           operation: 'Gift Card claim sync',
           action: (endpoint) {
-            if (endpoint.networkName != network) {
+            if (endpoint.networkName != link.network) {
               throw StateError(
-                'Payment link is for $network, but this wallet is using '
+                'Payment link is for ${link.network}, but this wallet is using '
                 '${endpoint.networkName}.',
               );
             }
@@ -105,8 +107,9 @@ class PaymentLinkClaimWallet {
               claimId: claimId,
               dbPath: dbPath,
               lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-              network: network,
+              network: link.network,
               allowResubmit: allowResubmit,
+              fundingTxid: link.fundingTxid,
             );
           },
         );
@@ -213,7 +216,7 @@ class PaymentLinkClaimWallet {
     if (accountUuid == null) {
       final imported = await importClaimAccount(
         link: link,
-        birthdayHeight: link.birthdayHeight,
+        birthdayHeight: link.claimBirthdayHeight,
         dbPath: tempWallet.dbPath,
         network: link.network,
       );
@@ -256,7 +259,7 @@ class PaymentLinkClaimWallet {
     // Prefer it even if a newer cache also exists: a rescan of that cache cannot
     // replace the original attempt's locally recorded transaction evidence.
     final legacyAddress = link.knownAddress;
-    if (legacyAddress != null) {
+    if (!link.isEventCard && legacyAddress != null) {
       final legacyIdentity = sha256.convert(
         utf8.encode(
           '${link.network}:$legacyAddress:${link.mnemonic}:'

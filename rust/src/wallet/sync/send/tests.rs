@@ -1227,6 +1227,7 @@ fn reserved_input_source_preserves_consolidation_selection_and_exclusions() {
     let migration_locks =
         BTreeSet::from([(format!("{}", TxId::from_bytes([7; 32])).to_lowercase(), 0)]);
     let source = ReservedInputSource {
+        direct_claim: None,
         transparent_allowlist: None,
         inner: &inner,
         reserved: &reserved,
@@ -1280,6 +1281,7 @@ fn reserved_input_source_does_not_apply_orchard_migration_locks_to_sapling() {
     let migration_locks =
         BTreeSet::from([(format!("{}", TxId::from_bytes([7; 32])).to_lowercase(), 0)]);
     let source = ReservedInputSource {
+        direct_claim: None,
         transparent_allowlist: None,
         inner: &inner,
         reserved: &reserved,

@@ -1582,11 +1582,12 @@ class PaymentLinkService
         .read(rpcEndpointFailoverProvider.notifier)
         .getLatestBlockHeight();
     final claimBirthdayHeight = validatePaymentLinkClaimBirthday(
-      advertisedBirthdayHeight: link.birthdayHeight,
+      advertisedBirthdayHeight: link.claimBirthdayHeight,
       currentTipHeight: currentTipHeight.toInt(),
     );
     log('PaymentLinkClaim: birthday validated');
-    if (!allowLongSync &&
+    if (!link.isEventCard &&
+        !allowLongSync &&
         isLongPaymentLinkSync(
           birthdayHeight: claimBirthdayHeight,
           currentTipHeight: currentTipHeight.toInt(),

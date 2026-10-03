@@ -69,5 +69,6 @@ run_payment_link_phase() {
     --dart-define=VIZOR_DEEPLINK_BASE_URL="$PAYMENT_LINK_DEEPLINK_BASE_URL" \
     --dart-define=ZCASH_E2E_LIGHTWALLETD_URL="$PAYMENT_LINK_LIGHTWALLETD_URL" \
     --dart-define=ZCASH_E2E_ZCASHD_RPC_URL="$PAYMENT_LINK_ZCASHD_RPC_URL" \
-    --dart-define=VIZOR_E2E_HIDDEN_WINDOW="${VIZOR_E2E_HIDDEN_WINDOW:-true}"
+    --dart-define=VIZOR_E2E_HIDDEN_WINDOW="${VIZOR_E2E_HIDDEN_WINDOW:-true}" \
+    "${@:2}"
 }
