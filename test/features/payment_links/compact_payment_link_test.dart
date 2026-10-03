@@ -25,7 +25,7 @@ String phrase(int bytes) =>
     '${List.filled(bytes == 32 ? 23 : 11, 'abandon').join(' ')} ${bytes == 32 ? 'art' : 'about'}';
 
 VizorPaymentLink card({
-  int entropyBytes = 32,
+  int entropyBytes = 16,
   String? mnemonic,
   String label = 'Payment link',
   PaymentLinkPresentation? presentation,
@@ -84,6 +84,11 @@ void main() {
       expect(uri.query, isEmpty);
       final restored = VizorPaymentLink.parse(uri.toString());
       expect(restored.mnemonic, source.mnemonic);
+      expect(
+        restored.mnemonic.split(' '),
+        hasLength(entry.key == 16 ? 12 : 24),
+      );
+      expect(fieldsOf(uri.toString())[1], 'A' * (entry.key == 16 ? 22 : 43));
       expect(restored.hasSameCanonicalPayload(source), isTrue);
       expect(restored.knownAddress, isNull);
       expect(restored.knownCreatedAt, isNull);
@@ -223,22 +228,25 @@ void main() {
   );
 
   test('rejects v3 labels that exceed the v2 recovery limit', () async {
-    final oversized = card(label: '"' * 6000);
-    final compact = wire(oversized);
-    expect(compact.length, lessThan(VizorPaymentLink.maxEncodedLength));
-    expect(() => oversized.toRecoveryUri(), throwsFormatException);
-    expect(() => VizorPaymentLink.parse(compact), throwsFormatException);
+    for (final entropyBytes in [16, 32]) {
+      final oversized = card(entropyBytes: entropyBytes, label: '"' * 6050);
+      final compact = wire(oversized);
+      expect(compact.length, lessThan(VizorPaymentLink.maxEncodedLength));
+      expect(() => oversized.toRecoveryUri(), throwsFormatException);
+      expect(() => VizorPaymentLink.parse(compact), throwsFormatException);
 
-    // Long labels remain supported when their escaped recovery payload fits.
-    for (final label in ['a' * 8000, '"' * 4000]) {
-      final source = card(label: label);
-      final decoded = VizorPaymentLink.parse(wire(source)).withResolvedMetadata(
-        address: source.address,
-        createdAt: source.createdAt,
-      );
-      final receiver = PaymentLinkReceivedStore(_MemoryStorage());
-      await receiver.saveReady(decoded);
-      expect((await receiver.load()).single.claimLink!.label, label);
+      // Long labels remain supported when their escaped recovery payload fits.
+      for (final label in ['a' * 8000, '"' * 4000]) {
+        final source = card(entropyBytes: entropyBytes, label: label);
+        final decoded = VizorPaymentLink.parse(wire(source))
+            .withResolvedMetadata(
+              address: source.address,
+              createdAt: source.createdAt,
+            );
+        final receiver = PaymentLinkReceivedStore(_MemoryStorage());
+        await receiver.saveReady(decoded);
+        expect((await receiver.load()).single.claimLink!.label, label);
+      }
     }
   });
 
