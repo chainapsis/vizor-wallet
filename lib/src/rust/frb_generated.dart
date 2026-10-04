@@ -1274,6 +1274,8 @@ abstract class RustLibApi extends BaseApi {
     required String network,
     required bool allowResubmit,
     String? fundingTxid,
+    int? fundingHeight,
+    BigInt? expectedFundingAmount,
   });
 
   bool crateApiWalletSameOrchardReceiver({
@@ -9417,6 +9419,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String network,
     required bool allowResubmit,
     String? fundingTxid,
+    int? fundingHeight,
+    BigInt? expectedFundingAmount,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -9428,6 +9432,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(network, serializer);
           sse_encode_bool(allowResubmit, serializer);
           sse_encode_opt_String(fundingTxid, serializer);
+          sse_encode_opt_box_autoadd_u_32(fundingHeight, serializer);
+          sse_encode_opt_box_autoadd_u_64(expectedFundingAmount, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -9447,6 +9453,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           network,
           allowResubmit,
           fundingTxid,
+          fundingHeight,
+          expectedFundingAmount,
         ],
         apiImpl: this,
       ),
@@ -9463,6 +9471,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "network",
           "allowResubmit",
           "fundingTxid",
+          "fundingHeight",
+          "expectedFundingAmount",
         ],
       );
 

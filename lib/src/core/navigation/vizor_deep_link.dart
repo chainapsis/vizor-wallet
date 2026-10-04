@@ -9,6 +9,7 @@ abstract final class VizorDeepLink {
     kVizorDeeplinkBaseUrlEnvKey,
     defaultValue: kDefaultVizorDeeplinkBaseUrl,
   );
+  static const giftPath = '/gift';
   static const paymentLinkPath = '/payment-links/open';
   static final Uri _origin = _parseOrigin(baseUrl);
 
@@ -21,7 +22,7 @@ abstract final class VizorDeepLink {
     return switch (uri.path) {
       '' ||
       '/' when !uri.hasQuery && uri.fragment.isEmpty => VizorDeepLinkRoute.home,
-      paymentLinkPath => VizorDeepLinkRoute.paymentLink,
+      giftPath || paymentLinkPath => VizorDeepLinkRoute.paymentLink,
       _ => null,
     };
   }

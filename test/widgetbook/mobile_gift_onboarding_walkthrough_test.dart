@@ -114,7 +114,7 @@ void main() {
     );
     final record =
         (await container.read(paymentLinkReceivedStoreProvider).load()).single;
-    expect(record.claimLink!.isEventCard, isTrue);
+    expect(record.claimLink!.isDirectClaim, isTrue);
     expect(record.claimLink!.fundingTxid, 'aa' * 32);
   });
 

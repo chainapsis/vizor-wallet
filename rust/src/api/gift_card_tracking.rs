@@ -38,6 +38,8 @@ pub fn sync_gift_card_observers(
         network,
         false,
         None,
+        None,
+        None,
     )
 }
 

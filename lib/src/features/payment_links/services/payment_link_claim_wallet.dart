@@ -10,17 +10,21 @@
 part of 'payment_link_service.dart';
 
 /// Claim databases are cached by the fields that determine the recovered
-/// account and its scan range (ordinary cards) or funding txid (event cards).
-/// Share-payload fields such as amount, label,
+/// account and its scan range or funding locator. Height discovery also binds
+/// the expected amount. Other share-payload fields such as label,
 /// address, timestamp, and presentation deliberately do not participate, so a
 /// corrected payload can reuse already-scanned state.
 ///
 /// The network is also kept outside the hash, as a readable name segment, so a
 /// cleanup sweep can scope itself to one network.
 String paymentLinkClaimWalletDirectoryName(VizorPaymentLink link) {
-  final recovery = link.isEventCard
-      ? 'direct:${VizorPaymentLink.validateFundingTxid(link.fundingTxid)}'
-      : '${link.birthdayHeight}';
+  final recovery = switch (link.locatorKind) {
+    PaymentLinkLocatorKind.birthday => '${link.birthdayHeight}',
+    PaymentLinkLocatorKind.fundingHeight =>
+      'height:${link.fundingHeight}:${link.amountZatoshi}',
+    PaymentLinkLocatorKind.fundingTxid =>
+      'direct:${VizorPaymentLink.validateFundingTxid(link.fundingTxid)}',
+  };
   final identity = sha256
       .convert(utf8.encode('${link.network}:${link.mnemonic}:$recovery'))
       .toString();
@@ -258,6 +262,10 @@ class PaymentLinkClaimWallet {
               network: link.network,
               allowResubmit: allowResubmit,
               fundingTxid: link.fundingTxid,
+              fundingHeight: link.fundingHeight,
+              expectedFundingAmount: link.fundingHeight == null
+                  ? null
+                  : paymentLinkFundingAmountZatoshi(link.amountZatoshi),
             );
           },
         );
@@ -420,7 +428,7 @@ class PaymentLinkClaimWallet {
     // Prefer it even if a newer cache also exists: a rescan of that cache cannot
     // replace the original attempt's locally recorded transaction evidence.
     final legacyAddress = link.knownAddress;
-    if (!link.isEventCard && legacyAddress != null) {
+    if (!link.isDirectClaim && legacyAddress != null) {
       final legacyIdentity = sha256.convert(
         utf8.encode(
           '${link.network}:$legacyAddress:${link.mnemonic}:'

@@ -24,7 +24,11 @@ import 'support/desktop_regtest_flow.dart';
 import 'support/payment_link_regtest_flow.dart' as payment_link_flow;
 
 const _network = 'regtest';
-const _eventCard = bool.fromEnvironment('VIZOR_E2E_EVENT_GIFT_CARD');
+const _fundingHeightCard = bool.fromEnvironment(
+  'VIZOR_E2E_FUNDING_HEIGHT_GIFT_CARD',
+);
+const _eventCard =
+    bool.fromEnvironment('VIZOR_E2E_EVENT_GIFT_CARD') || _fundingHeightCard;
 const _lightwalletdUrl = String.fromEnvironment(
   'ZCASH_E2E_LIGHTWALLETD_URL',
   defaultValue: 'http://127.0.0.1:9067',
@@ -190,7 +194,7 @@ void main() {
         createdAt: fundingRecovery.link.createdAt,
       );
       if (_eventCard) {
-        // The issuer supplies the mined txid. Mainnet-only v4 sharing stays
+        // The issuer supplies a mined height or txid. Mainnet-only v4 sharing stays
         // gated; regtest exercises the same direct claim via local recovery.
         link = VizorPaymentLink(
           network: link.network,
@@ -204,10 +208,13 @@ void main() {
             artworkId: 'gift',
             message: _giftMessage,
           ),
-          fundingTxid: minedFunding.txidHex,
+          fundingHeight: _fundingHeightCard
+              ? minedFunding.minedHeight.toInt()
+              : null,
+          fundingTxid: _fundingHeightCard ? null : minedFunding.txidHex,
         );
         final recovery = link.toRecoveryUri().toString();
-        expect(VizorPaymentLink.parse(recovery).isEventCard, isTrue);
+        expect(VizorPaymentLink.parse(recovery).isDirectClaim, isTrue);
         expect(() => link.toShareUri(), throwsFormatException);
         await Clipboard.setData(ClipboardData(text: recovery));
       }

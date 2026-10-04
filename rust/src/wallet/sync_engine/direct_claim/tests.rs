@@ -110,6 +110,23 @@ fn funding_block_builds_a_real_claim_quote_while_historical_gaps_remain_unscanne
         )
         .unwrap();
     assert!(regular.ironwood().is_empty());
+    assert_eq!(
+        discover_funding(path, u32::from(funding_height), 50_010_000, &[id]).unwrap(),
+        id
+    );
+    assert!(discover_funding(path, u32::from(funding_height), 50_010_001, &[id]).is_err());
+    assert!(discover_funding(path, u32::from(funding_height), 50_010_000, &[]).is_err());
+    save_resolution(path, u32::from(funding_height), 50_010_000, id).unwrap();
+    clear(path).unwrap();
+    assert_eq!(
+        resolved_funding(path, u32::from(funding_height), 50_010_000).unwrap(),
+        Some(id)
+    );
+    assert!(
+        resolved_funding(path, u32::from(funding_height), 50_010_001)
+            .unwrap()
+            .is_none()
+    );
     drop(db);
     let conn = open_wallet_raw_conn_with_timeout(path, READ_DB_BUSY_TIMEOUT).unwrap();
     conn.execute_batch(
@@ -134,6 +151,21 @@ fn funding_block_builds_a_real_claim_quote_while_historical_gaps_remain_unscanne
     .unwrap();
     assert_eq!(quote.amount_zatoshi, 50_000_000);
     assert_eq!(quote.fee_zatoshi, 10_000);
+    assert!(crate::api::sync::run_payment_link_claim_sync(
+        "invalid-locator".into(),
+        path.into(),
+        "http://127.0.0.1:9".into(),
+        "main".into(),
+        false,
+        Some(id.to_string()),
+        Some(u32::from(funding_height)),
+        Some(50_010_000)
+    )
+    .is_err());
+    assert!(
+        load(path).unwrap().is_none(),
+        "invalid refresh must clear the old quote"
+    );
 }
 
 #[test]
@@ -168,11 +200,58 @@ fn failed_and_cancelled_refreshes_invalidate_cached_preparation() {
                 path,
                 "http://127.0.0.1:9",
                 WalletNetwork::Main,
-                &id.to_string(),
+                FundingLocator::Txid(&id.to_string()),
                 Arc::new(AtomicBool::new(cancelled)),
                 false
             ))
             .is_err());
         assert!(load(path).unwrap().is_none());
     }
+}
+
+#[test]
+fn height_discovery_rejects_ambiguous_and_split_funding() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("discovery.db");
+    let path = path.to_str().unwrap();
+    let conn = rusqlite::Connection::open(path).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE transactions (id_tx INTEGER, txid BLOB, mined_height INTEGER);
+        CREATE TABLE sapling_received_notes (transaction_id INTEGER, value INTEGER);
+        CREATE TABLE orchard_received_notes (transaction_id INTEGER, value INTEGER);
+        CREATE TABLE ironwood_received_notes (transaction_id INTEGER, value INTEGER);",
+    )
+    .unwrap();
+    let a = TxId::from_bytes([1; 32]);
+    let b = TxId::from_bytes([2; 32]);
+    for (index, id) in [(1, a), (2, b)] {
+        conn.execute(
+            "INSERT INTO transactions VALUES(?1, ?2, 500)",
+            rusqlite::params![index, id.as_ref()],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO orchard_received_notes VALUES(?1, 50010000)",
+            [index],
+        )
+        .unwrap();
+    }
+    assert!(discover_funding(path, 500, 50_010_000, &[a, b])
+        .unwrap_err()
+        .contains("ambiguous"));
+    assert_eq!(discover_funding(path, 500, 50_010_000, &[a]).unwrap(), a);
+    // Padding is not a second positive input. A split positive payment is.
+    conn.execute_batch(
+        "DELETE FROM orchard_received_notes WHERE transaction_id=2;
+        INSERT INTO sapling_received_notes VALUES(1, 0);",
+    )
+    .unwrap();
+    assert_eq!(discover_funding(path, 500, 50_010_000, &[a, b]).unwrap(), a);
+    conn.execute_batch(
+        "DELETE FROM orchard_received_notes;
+        INSERT INTO orchard_received_notes VALUES(1, 25005000);
+        INSERT INTO ironwood_received_notes VALUES(1, 25005000);",
+    )
+    .unwrap();
+    assert!(discover_funding(path, 500, 50_010_000, &[a, b]).is_err());
 }

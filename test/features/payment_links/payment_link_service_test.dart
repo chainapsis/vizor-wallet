@@ -635,6 +635,48 @@ void main() {
       },
     );
 
+    test(
+      'height preparation passes the funded amount and keeps its original locator',
+      () async {
+        api.poolFixture = true;
+        final base = _link();
+        final link = VizorPaymentLink(
+          network: base.network,
+          address: base.address,
+          amountZatoshi: base.amountZatoshi,
+          mnemonic: base.mnemonic,
+          birthdayHeight: base.birthdayHeight,
+          label: base.label,
+          createdAt: base.createdAt,
+          fundingHeight: 3500000,
+        );
+        final wallet = container.read(Provider(PaymentLinkClaimWallet.new));
+        await wallet.runClaimSync(
+          link: link,
+          dbPath: 'height.db',
+          allowResubmit: true,
+        );
+        expect(api.directClaimTxids, isEmpty);
+        expect(api.directClaimHeights, [3500000]);
+        expect(api.directClaimAmounts, [
+          base.amountZatoshi + BigInt.from(10000),
+        ]);
+        expect(api.claimSyncModes, [true]);
+        final restored = VizorPaymentLink.parse(
+          link.toRecoveryUri().toString(),
+        );
+        expect(restored.fundingHeight, 3500000);
+        expect(
+          paymentLinkClaimWalletDirectoryName(restored),
+          paymentLinkClaimWalletDirectoryName(link),
+        );
+        expect(
+          paymentLinkClaimWalletDirectoryName(base),
+          isNot(paymentLinkClaimWalletDirectoryName(link)),
+        );
+      },
+    );
+
     test('event wallets cannot reuse a legacy normal-card cache', () async {
       final wallet = container.read(Provider(PaymentLinkClaimWallet.new));
       final normal = await wallet.locate(_link());
@@ -3192,6 +3234,8 @@ class _ClaimDestinationRustApi implements RustLibApi {
       _link().mnemonic;
 
   final directClaimTxids = <String>[];
+  final directClaimHeights = <int>[];
+  final directClaimAmounts = <BigInt>[];
   final requestedAccounts = <String>[];
   final validatedAddresses = <String>[];
   var lookupStarted = Completer<void>();
@@ -3351,10 +3395,15 @@ class _ClaimDestinationRustApi implements RustLibApi {
     required String lightwalletdUrl,
     required String network,
     String? fundingTxid,
+    int? fundingHeight,
+    BigInt? expectedFundingAmount,
   }) async {
     if (!poolFixture) throw StateError('Unexpected claim sync');
     if (fundingTxid != null) {
       directClaimTxids.add(fundingTxid);
+    } else if (fundingHeight != null) {
+      directClaimHeights.add(fundingHeight);
+      directClaimAmounts.add(expectedFundingAmount!);
     } else {
       claimSyncCalls++;
     }

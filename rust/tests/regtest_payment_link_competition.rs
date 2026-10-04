@@ -88,6 +88,8 @@ fn one_card_two_claimants_preserve_and_resolve_losing_transaction() {
         REGTEST_NETWORK.into(),
         false,
         None,
+        None,
+        None,
     )
     .unwrap();
     let evidence = api::get_payment_link_spend_evidence(

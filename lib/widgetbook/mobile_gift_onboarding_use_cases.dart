@@ -832,7 +832,7 @@ class _GiftPreviewOperations implements PaymentLinkOperations {
     VizorPaymentLink link, {
     bool allowLongSync = false,
   }) async {
-    if (!link.isEventCard) {
+    if (!link.isDirectClaim) {
       await Future<void>.delayed(const Duration(seconds: 1));
     }
     return _previewInspection(link);

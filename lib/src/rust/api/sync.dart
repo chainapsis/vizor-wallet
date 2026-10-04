@@ -69,7 +69,8 @@ bool isSyncRunning() => RustLib.instance.api.crateApiSyncIsSyncRunning();
 
 /// Prepares one isolated payment-link claim database.
 ///
-/// A funding txid selects direct event preparation; otherwise history is scanned.
+/// A funding txid or exact funding height selects direct preparation; otherwise
+/// history is scanned. Height discovery requires the funded amount, including fee reserve.
 ///
 /// Claim syncs do not use the main wallet's process-global running guard or
 /// desired mode. Different claim IDs can therefore scan independent databases
@@ -81,6 +82,8 @@ Future<void> runPaymentLinkClaimSync({
   required String network,
   required bool allowResubmit,
   String? fundingTxid,
+  int? fundingHeight,
+  BigInt? expectedFundingAmount,
 }) => RustLib.instance.api.crateApiSyncRunPaymentLinkClaimSync(
   claimId: claimId,
   dbPath: dbPath,
@@ -88,6 +91,8 @@ Future<void> runPaymentLinkClaimSync({
   network: network,
   allowResubmit: allowResubmit,
   fundingTxid: fundingTxid,
+  fundingHeight: fundingHeight,
+  expectedFundingAmount: expectedFundingAmount,
 );
 
 Stream<ApiGiftCardCheckProgress> runPaymentLinkClaimCheck({

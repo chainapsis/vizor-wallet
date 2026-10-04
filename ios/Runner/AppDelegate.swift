@@ -910,7 +910,7 @@ final class IncomingUriChannelBridge {
   static let deeplinkHost =
     (Bundle.main.object(forInfoDictionaryKey: "VizorDeeplinkHost") as? String)?
     .lowercased() ?? "link.vizor.cash"
-  private static let paymentLinkPath = "/payment-links/open"
+  private static let paymentLinkPaths = ["/gift", "/payment-links/open"]
   /// Sanity ceiling, set far above every link this app actually accepts.
   ///
   /// Dart owns the real size limits -- `VizorPaymentLink.maxEncodedLength` and
@@ -977,7 +977,7 @@ final class IncomingUriChannelBridge {
     let isHome = (url.path.isEmpty || url.path == "/")
       && url.query == nil
       && url.fragment == nil
-    return isHome || url.path == Self.paymentLinkPath
+    return isHome || Self.paymentLinkPaths.contains(url.path)
   }
 
   @discardableResult

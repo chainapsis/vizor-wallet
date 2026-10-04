@@ -329,6 +329,8 @@ fn claim_sync(card: &Wallet) {
         NETWORK.into(),
         false,
         None,
+        None,
+        None,
     )
     .expect("claim sync");
 }

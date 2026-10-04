@@ -9,7 +9,9 @@ import '../../../core/navigation/vizor_deep_link.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
 
 part 'compact_payment_link_codec.dart';
-part 'event_payment_link_codec.dart';
+part 'v4_payment_link_codec.dart';
+
+enum PaymentLinkLocatorKind { birthday, fundingHeight, fundingTxid }
 
 const kPaymentLinkRegtestEnabledEnvKey = 'VIZOR_PAYMENT_LINK_REGTEST_ENABLED';
 const kPaymentLinkRegtestEnabled = bool.fromEnvironment(
@@ -156,7 +158,7 @@ class PaymentLinkPresentation {
 }
 
 class VizorPaymentLink {
-  const VizorPaymentLink({
+  VizorPaymentLink({
     required this.network,
     required String address,
     required this.amountZatoshi,
@@ -165,12 +167,15 @@ class VizorPaymentLink {
     required this.label,
     required DateTime createdAt,
     this.presentation,
+    this.fundingHeight,
     this.fundingTxid,
     this.isCreatedAtProvisional = false,
   }) : _address = address,
-       _createdAt = createdAt;
+       _createdAt = createdAt {
+    _rejectMultipleFundingLocators(fundingHeight, fundingTxid);
+  }
 
-  const VizorPaymentLink._parsed({
+  VizorPaymentLink._parsed({
     required this.network,
     required String? address,
     required this.amountZatoshi,
@@ -179,10 +184,13 @@ class VizorPaymentLink {
     required this.label,
     required DateTime? createdAt,
     required this.presentation,
+    this.fundingHeight,
     this.fundingTxid,
     this.isCreatedAtProvisional = false,
   }) : _address = address,
-       _createdAt = createdAt;
+       _createdAt = createdAt {
+    _rejectMultipleFundingLocators(fundingHeight, fundingTxid);
+  }
 
   static const maxEncodedLength = 16 * 1024;
   static const _version = 2;
@@ -198,15 +206,23 @@ class VizorPaymentLink {
   final String label;
   final DateTime? _createdAt;
 
-  /// The single funding transaction used by event cards instead of a history scan.
+  /// The funding block used for bounded discovery instead of a history scan.
+  final int? fundingHeight;
+
+  /// The single funding transaction used for direct claim.
   final String? fundingTxid;
 
-  /// A funding transaction identifies an event card and selects direct claim.
-  bool get isEventCard => fundingTxid != null;
+  PaymentLinkLocatorKind get locatorKind => fundingTxid != null
+      ? PaymentLinkLocatorKind.fundingTxid
+      : fundingHeight != null
+      ? PaymentLinkLocatorKind.fundingHeight
+      : PaymentLinkLocatorKind.birthday;
+
+  bool get isDirectClaim => locatorKind != PaymentLinkLocatorKind.birthday;
 
   /// Direct-only card wallets use a stable local birthday, absent from v4.
   /// Keeping it at activation also permits funding to move earlier in a reorg.
-  int get claimBirthdayHeight => isEventCard
+  int get claimBirthdayHeight => isDirectClaim
       ? zcashNetworkFromName(network).saplingActivationHeight
       : birthdayHeight;
 
@@ -253,8 +269,27 @@ class VizorPaymentLink {
       isCreatedAtProvisional:
           isCreatedAtProvisional ?? this.isCreatedAtProvisional,
       presentation: presentation,
+      fundingHeight: fundingHeight,
       fundingTxid: fundingTxid,
     );
+  }
+
+  static void _rejectMultipleFundingLocators(
+    int? fundingHeight,
+    String? fundingTxid,
+  ) {
+    if (fundingHeight != null && fundingTxid != null) {
+      throw ArgumentError(
+        'A Gift Card cannot use both a funding height and funding transaction.',
+      );
+    }
+  }
+
+  static int validateFundingHeight(Object? value) {
+    if (value is! int || value <= 0 || value > 0xffffffff) {
+      throw const FormatException('Gift card funding height is invalid.');
+    }
+    return value;
   }
 
   static String validateFundingTxid(Object? value) {
@@ -284,13 +319,44 @@ class VizorPaymentLink {
 
   /// Stable local serialization, independent of the selected share writer.
   /// Resolved address, time, and submission evidence live in the enclosing record.
-  Uri toRecoveryUri() => _uri('$_fragmentPrefix${_encodedPayload()}');
+  Uri toRecoveryUri() => _uri(
+    '$_fragmentPrefix${_encodedPayload()}',
+    path: VizorDeepLink.paymentLinkPath,
+  );
 
   /// Serialize for sharing. Callers dropping a known address must first verify
   /// it asynchronously with [rust_wallet.validateGiftAddress].
-  Uri toShareUri() => isEventCard
-      ? _uri('v4=${_EventPaymentLinkCodec.encode(this)}')
-      : _uri('v3=${_CompactPaymentLinkCodec.encode(this)}');
+  Uri toShareUri() {
+    final words = mnemonic.trim().split(RegExp(r'\s+')).length;
+    if (locatorKind == PaymentLinkLocatorKind.birthday &&
+        (words != 12 || network.trim() != 'main')) {
+      return _uri(
+        'v3=${_CompactPaymentLinkCodec.encode(this)}',
+        path: VizorDeepLink.paymentLinkPath,
+      );
+    }
+    return _uri(
+      'v4=${_V4PaymentLinkCodec.encode(this)}',
+      path: VizorDeepLink.giftPath,
+    );
+  }
+
+  /// Encodes an externally funded v4 card without initializing the Rust bridge.
+  ///
+  /// The entropy is the original 16-byte BIP-39 entropy. External issuers can
+  /// use this after funding a card and learning its confirmed height or txid.
+  static Uri encodeV4FromEntropy({
+    required List<int> entropy,
+    required BigInt amountZatoshi,
+    required PaymentLinkLocatorKind locatorKind,
+    int? birthdayHeight,
+    int? fundingHeight,
+    String? fundingTxid,
+    PaymentLinkPresentation? presentation,
+  }) => _uri(
+    'v4=${_V4PaymentLinkCodec.encodeFields(entropy: entropy, amountZatoshi: amountZatoshi, locatorKind: locatorKind, birthdayHeight: birthdayHeight, fundingHeight: fundingHeight, fundingTxid: fundingTxid, presentation: presentation)}',
+    path: VizorDeepLink.giftPath,
+  );
 
   /// Returns v2 for ordinary cards whose legacy whitespace cannot fit v3.
   /// The caller must first verify the original mnemonic against a known address.
@@ -299,7 +365,7 @@ class VizorPaymentLink {
     final original = mnemonic.trim();
     final canonical = original.split(RegExp(r'\s+')).join(' ');
     if (canonical == original) return null;
-    if (isEventCard) {
+    if (isDirectClaim) {
       throw const FormatException(
         'Event gift cards require a standard secret passphrase.',
       );
@@ -308,15 +374,18 @@ class VizorPaymentLink {
       throw const FormatException('Gift card address could not be verified.');
     }
     // Apply every compact payload check as well, including BIP-39 validation.
-    _uri('v3=${_CompactPaymentLinkCodec.encode(this, mnemonic: canonical)}');
+    _uri(
+      'v3=${_CompactPaymentLinkCodec.encode(this, mnemonic: canonical)}',
+      path: VizorDeepLink.paymentLinkPath,
+    );
     return toRecoveryUri();
   }
 
-  static Uri _uri(String fragment) {
+  static Uri _uri(String fragment, {required String path}) {
     final uri = Uri(
       scheme: VizorDeepLink.scheme,
       host: VizorDeepLink.host,
-      path: VizorDeepLink.paymentLinkPath,
+      path: path,
       fragment: fragment,
     );
     if (uri.toString().length > maxEncodedLength) {
@@ -339,6 +408,8 @@ class VizorPaymentLink {
       'mnemonic': mnemonic.trim(),
       'birthdayHeight': claimBirthdayHeight,
       'label': label.trim(),
+      if (fundingHeight != null)
+        'fundingHeight': validateFundingHeight(fundingHeight),
       if (fundingTxid != null) 'fundingTxid': validateFundingTxid(fundingTxid),
     };
     final presentationPayload = presentation?.toPayload();
@@ -370,7 +441,7 @@ class VizorPaymentLink {
       return _CompactPaymentLinkCodec.decode(fragment.substring(3));
     }
     if (fragment.startsWith('v4=')) {
-      return _EventPaymentLinkCodec.decode(fragment.substring(3));
+      return _V4PaymentLinkCodec.decode(fragment.substring(3));
     }
     final int expectedVersion;
     final String fragmentPrefix;
@@ -408,6 +479,14 @@ class VizorPaymentLink {
     final fundingTxid = payload.containsKey('fundingTxid')
         ? validateFundingTxid(payload['fundingTxid'])
         : null;
+    final fundingHeight = payload.containsKey('fundingHeight')
+        ? validateFundingHeight(payload['fundingHeight'])
+        : null;
+    if (fundingHeight != null && fundingTxid != null) {
+      throw const FormatException(
+        'A Gift Card cannot use both a funding height and funding transaction.',
+      );
+    }
 
     final network = _readString(payload, 'network');
     final amountZatoshi = _readBigInt(payload, 'amountZatoshi');
@@ -455,6 +534,7 @@ class VizorPaymentLink {
       label: label,
       createdAt: createdAt,
       presentation: presentation,
+      fundingHeight: fundingHeight,
       fundingTxid: fundingTxid,
     );
   }

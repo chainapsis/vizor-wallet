@@ -1,4 +1,4 @@
-//! Prepares an event gift from its known funding transaction, without scanning
+//! Prepares a gift from its funding height or transaction, without scanning
 //! the birthday-to-tip range. Only explicitly identified mined transactions'
 //! blocks are processed. Gaps remain unscanned in the wallet database.
 
@@ -32,6 +32,84 @@ pub(crate) struct Preparation {
     pub funding_txid: TxId,
     pub funding_height: BlockHeight,
     pub tip_height: BlockHeight,
+}
+
+pub(crate) enum FundingLocator<'a> {
+    Txid(&'a str),
+    Height { height: u32, expected_amount: u64 },
+}
+
+// Resolution is separate from quote readiness: a cancelled refresh invalidates
+// the quote, but must not lose the transaction already discovered at a height.
+fn resolved_funding(path: &str, height: u32, amount: u64) -> Result<Option<TxId>, String> {
+    let conn = open_wallet_raw_conn_with_timeout(path, READ_DB_BUSY_TIMEOUT)?;
+    let exists: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='vizor_gift_funding_resolution')",
+        [], |r| r.get(0)).map_err(|e| e.to_string())?;
+    if !exists {
+        return Ok(None);
+    }
+    let id: Option<String> = conn.query_row(
+        "SELECT funding_txid FROM vizor_gift_funding_resolution WHERE origin_height=?1 AND expected_amount=?2",
+        rusqlite::params![height, amount], |r| r.get(0)).optional().map_err(|e| e.to_string())?;
+    id.map(|id| parse_txid(&id)).transpose()
+}
+
+fn save_resolution(path: &str, height: u32, amount: u64, id: TxId) -> Result<(), String> {
+    with_wallet_db_write_lock("direct_claim.resolve", || {
+        let conn = open_wallet_raw_conn_with_timeout(path, READ_DB_BUSY_TIMEOUT)?;
+        conn.execute_batch("CREATE TABLE IF NOT EXISTS vizor_gift_funding_resolution (
+            origin_height INTEGER NOT NULL, expected_amount INTEGER NOT NULL, funding_txid TEXT NOT NULL,
+            PRIMARY KEY(origin_height, expected_amount));").map_err(|e| e.to_string())?;
+        conn.execute(
+            "INSERT OR IGNORE INTO vizor_gift_funding_resolution VALUES(?1, ?2, ?3)",
+            rusqlite::params![height, amount, id.to_string()],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    })
+}
+
+/// The isolated account must receive one positive note with exactly the funded
+/// value. Ignore zero-valued padding and transactions outside this block.
+fn discover_funding(
+    path: &str,
+    height: u32,
+    amount: u64,
+    block_ids: &[TxId],
+) -> Result<TxId, String> {
+    let conn = open_wallet_raw_conn_with_timeout(path, READ_DB_BUSY_TIMEOUT)?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT t.txid FROM transactions t JOIN (
+        SELECT transaction_id AS tx, value FROM sapling_received_notes WHERE value > 0
+        UNION ALL SELECT transaction_id AS tx, value FROM orchard_received_notes WHERE value > 0
+        UNION ALL SELECT transaction_id AS tx, value FROM ironwood_received_notes WHERE value > 0
+    ) n ON n.tx=t.id_tx WHERE t.mined_height=?1
+    GROUP BY t.txid HAVING COUNT(*)=1 AND SUM(n.value)=?2",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(rusqlite::params![height, amount], |r| {
+            r.get::<_, Vec<u8>>(0)
+        })
+        .map_err(|e| e.to_string())?;
+    let mut candidates = Vec::new();
+    for row in rows {
+        let id = TxId::from_bytes(
+            row.map_err(|e| e.to_string())?
+                .try_into()
+                .map_err(|_| "Stored Gift Card transaction ID is invalid")?,
+        );
+        if block_ids.contains(&id) {
+            candidates.push(id);
+        }
+    }
+    match candidates.as_slice() {
+        [id] => Ok(*id),
+        [] => Err("Gift Card funding was not found in the specified block".into()),
+        _ => Err("Gift Card funding is ambiguous in the specified block".into()),
+    }
 }
 
 fn parse_txid(value: &str) -> Result<TxId, String> {
@@ -84,7 +162,7 @@ pub(crate) async fn prepare(
     path: &str,
     url: &str,
     network: WalletNetwork,
-    funding_txid: &str,
+    locator: FundingLocator<'_>,
     cancel: Arc<AtomicBool>,
     allow_resubmit: bool,
 ) -> Result<(), String> {
@@ -92,7 +170,6 @@ pub(crate) async fn prepare(
     if cancel.load(Ordering::Relaxed) {
         return Err("Gift Card preparation cancelled".into());
     }
-    let funding_id = parse_txid(funding_txid)?;
     let mut client = open_lwd_channel(url).await.map_err(|e| e.to_string())?;
     let tip = get_latest_block(&mut client)
         .await
@@ -101,6 +178,48 @@ pub(crate) async fn prepare(
         .height
         .try_into()
         .map_err(|_| "Gift Card chain height is invalid")?;
+    let mut db = open_db(path, network).map_err(|e| e.to_string())?;
+    if db.get_account_ids().map_err(|e| e.to_string())?.len() != 1 {
+        return Err("Direct Gift Card preparation requires an isolated account".into());
+    }
+    let birthday = db
+        .get_wallet_birthday()
+        .map_err(|e| e.to_string())?
+        .ok_or("Gift Card birthday is missing")?;
+    with_wallet_db_write_lock("direct_claim.initialize_tip", || {
+        db.update_chain_tip(tip_height.into())
+    })
+    .map_err(|e| e.to_string())?;
+    let mut scanned_height = None;
+    let funding_id = match locator {
+        FundingLocator::Txid(id) => parse_txid(id)?,
+        FundingLocator::Height {
+            height,
+            expected_amount,
+        } => {
+            if expected_amount == 0 || expected_amount > 2_100_000_000_000_000 {
+                return Err("Gift Card funding amount is invalid".into());
+            }
+            match resolved_funding(path, height, expected_amount)? {
+                Some(id) => id,
+                None => {
+                    if height == 0 || height > tip_height || BlockHeight::from(height) < birthday {
+                        return Err(
+                            "Gift Card funding height is outside the confirmed chain".into()
+                        );
+                    }
+                    let ids =
+                        process_block(&mut client, &mut db, network, None, height, &cancel).await?;
+                    let id = discover_funding(path, height, expected_amount, &ids)?;
+                    // Compact-block decryption binds this identity before any
+                    // subsequent RPC or cancellation can interrupt preparation.
+                    save_resolution(path, height, expected_amount, id)?;
+                    scanned_height = Some(height);
+                    id
+                }
+            }
+        }
+    };
     let raw = get_transaction_payload(&mut client, funding_id)
         .await
         .map_err(|e| format!("Read Gift Card funding transaction: {e}"))?;
@@ -116,24 +235,11 @@ pub(crate) async fn prepare(
     if height == 0 || height > tip_height {
         return Err("Gift Card funding transaction is not confirmed yet".into());
     }
-    let mut db = open_db(path, network).map_err(|e| e.to_string())?;
-    if db.get_account_ids().map_err(|e| e.to_string())?.len() != 1 {
-        return Err("Direct Gift Card preparation requires an isolated account".into());
-    }
-    let birthday = db
-        .get_wallet_birthday()
-        .map_err(|e| e.to_string())?
-        .ok_or("Gift Card birthday is missing")?;
     if BlockHeight::from(height) < birthday {
         return Err("Gift Card funding precedes its birthday".into());
     }
-    // A fresh card wallet can lack a chain tip. The SDK's
-    // transaction-height lookup requires one even when the tx is not stored.
-    if db.chain_height().map_err(|e| e.to_string())?.is_none() {
-        with_wallet_db_write_lock("direct_claim.initialize_tip", || {
-            db.update_chain_tip(tip_height.into())
-        })
-        .map_err(|e| e.to_string())?;
+    if scanned_height.is_some_and(|h| h != height) {
+        return Err("Gift Card funding moved from the specified block".into());
     }
     if let Some(previous) = db.get_tx_height(funding_id).map_err(|e| e.to_string())? {
         if previous != BlockHeight::from(height) {
@@ -151,7 +257,17 @@ pub(crate) async fn prepare(
         return Err("Gift Card preparation cancelled".into());
     }
 
-    process_transaction_block(&mut client, &mut db, network, funding_id, height, &cancel).await?;
+    if scanned_height != Some(height) {
+        process_block(
+            &mut client,
+            &mut db,
+            network,
+            Some(funding_id),
+            height,
+            &cancel,
+        )
+        .await?;
+    }
     crate::wallet::sync::decrypt_and_store_transaction(path, network, &raw.data, Some(raw.height))?;
     with_wallet_db_write_lock("direct_claim.witnesses", || {
         validate_funding_witnesses(&mut db, funding_id, height.into(), tip_height.into())
@@ -209,7 +325,7 @@ pub(crate) async fn prepare(
                 .try_into()
                 .map_err(|_| "Gift Card claim height is invalid")?;
             rewind_claim_if_moved(&mut client, &mut db, previous_height, Some(h)).await?;
-            process_transaction_block(&mut client, &mut db, network, id, h, &cancel).await?;
+            process_block(&mut client, &mut db, network, Some(id), h, &cancel).await?;
             crate::wallet::sync::decrypt_and_store_transaction(
                 path,
                 network,
@@ -360,20 +476,20 @@ fn validate_funding_witnesses(
     Ok(())
 }
 
-async fn process_transaction_block(
+async fn process_block(
     client: &mut CompactTxStreamerClient<Channel>,
     db: &mut crate::wallet::db::WalletDatabase,
     network: WalletNetwork,
-    id: TxId,
+    id: Option<TxId>,
     height: u32,
     cancel: &AtomicBool,
-) -> Result<(), String> {
+) -> Result<Vec<TxId>, String> {
     let start = BlockHeight::from(height);
     let (source, state) = download_scan_batch(client, start, start, network)
         .await
         .map_err(|e| e.to_string())?;
     validate_scan_batch(&source, &state, start, start + 1).map_err(|e| e.to_string())?;
-    if !source.transaction_hashes().any(|hash| hash == id.as_ref()) {
+    if id.is_some_and(|id| !source.transaction_hashes().any(|hash| hash == id.as_ref())) {
         return Err("Gift Card transaction is missing from its reported block".into());
     }
     let block_hash = source
@@ -394,7 +510,14 @@ async fn process_transaction_block(
         scan_cached_blocks(&network, &source, db, start, &state, 1)
     })
     .map_err(|e| format!("Prepare Gift Card transaction block: {e}"))?;
-    Ok(())
+    source
+        .transaction_hashes()
+        .map(|hash| {
+            hash.try_into()
+                .map(TxId::from_bytes)
+                .map_err(|_| "Gift Card block transaction ID is invalid".into())
+        })
+        .collect()
 }
 
 #[cfg(test)]

@@ -146,8 +146,13 @@ fn known_funding_block_claims_without_scanning_the_historical_gap() {
         mine(&compose, 506 - height);
     }
     sync_wallet(&funder);
-    // Ironwood pool, with 5,000 blocks between funding and claiming.
-    run_card(&funder, "Ironwood", 5_000, &compose);
+    // Keep the large-gap lane available; a bounded run can verify the same
+    // sparse preparation with an explicitly selected shorter fixture.
+    let gap = std::env::var("VIZOR_DIRECT_GIFT_IRONWOOD_GAP")
+        .ok()
+        .map(|value| value.parse().expect("positive Ironwood funding gap"))
+        .unwrap_or(5_000);
+    run_card(&funder, "Ironwood", gap, &compose);
     exercise_recovery(&funder, &compose);
     exercise_expiry(&funder, &compose);
 }
@@ -193,6 +198,12 @@ fn run_card(funder: &Wallet, pool: &str, gap: u64, compose: &str) {
     mine(compose, gap + 2);
     let recipient = create_wallet("Recipient", tip());
 
+    let funding_json: serde_json::Value =
+        serde_json::from_str(&cli(compose, &["getrawtransaction", &funding.txids, "1"])).unwrap();
+    let funding_block_hash = funding_json["blockhash"].as_str().unwrap();
+    let funding_block: serde_json::Value =
+        serde_json::from_str(&cli(compose, &["getblockheader", funding_block_hash])).unwrap();
+    let locator_height = funding_block["height"].as_u64().unwrap() as u32;
     telemetry("reset");
     let start = Instant::now();
     sync::run_payment_link_claim_sync(
@@ -201,11 +212,43 @@ fn run_card(funder: &Wallet, pool: &str, gap: u64, compose: &str) {
         proxy(),
         NETWORK.into(),
         false,
-        Some(funding.txids.clone()),
+        None,
+        Some(locator_height),
+        Some(GIFT + 10_000),
     )
     .expect("direct preparation");
     let preparation_ms = start.elapsed().as_millis();
     let preparation_calls = telemetry("snapshot");
+    let ranges: Vec<_> = preparation_calls["calls"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|call| call["method"] == "GetBlockRange")
+        .collect();
+    assert_eq!(ranges.len(), 1, "height discovery must scan one block once");
+    assert_eq!(ranges[0]["start"], locator_height);
+    assert_eq!(ranges[0]["end"], locator_height);
+    let resolution: String = rusqlite::Connection::open(&card.db)
+        .unwrap()
+        .query_row(
+            "SELECT funding_txid FROM vizor_gift_funding_resolution WHERE origin_height=?1",
+            [locator_height],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(resolution, funding.txids);
+    // A second prepare follows the persisted ID and cannot rediscover another payment.
+    sync::run_payment_link_claim_sync(
+        format!("retry-{pool}"),
+        card.db.clone(),
+        proxy(),
+        NETWORK.into(),
+        false,
+        None,
+        Some(locator_height),
+        Some(GIFT + 10_000),
+    )
+    .unwrap();
     let conn = rusqlite::Connection::open(&card.db).unwrap();
     let scanned: u64 = conn
         .query_row("SELECT COUNT(*) FROM blocks", [], |r| r.get(0))
@@ -369,6 +412,8 @@ fn prepare(card: &Wallet, funding: &str, retry: bool) {
         NETWORK.into(),
         retry,
         Some(funding.into()),
+        None,
+        None,
     )
     .unwrap_or_else(|error| {
         let conn = rusqlite::Connection::open(&card.db).unwrap();
@@ -397,6 +442,20 @@ fn prepare(card: &Wallet, funding: &str, retry: bool) {
     });
 }
 
+fn prepare_height(card: &Wallet, height: u32, retry: bool) {
+    sync::run_payment_link_claim_sync(
+        format!("height-recover-{}", card.account),
+        card.db.clone(),
+        proxy(),
+        NETWORK.into(),
+        retry,
+        None,
+        Some(height),
+        Some(GIFT + 10_000),
+    )
+    .unwrap();
+}
+
 fn exercise_recovery(funder: &Wallet, compose: &str) {
     sync_wallet(funder);
     let card = create_wallet("Recovery card", 1);
@@ -415,7 +474,18 @@ fn exercise_recovery(funder: &Wallet, compose: &str) {
     let funding = execute(funder, proposal.proposal_id, flow, backend());
     assert_eq!(funding.status, "broadcasted");
     mine(compose, 2);
-    prepare(&card, &funding.txids, false);
+    let funding_json: serde_json::Value =
+        serde_json::from_str(&cli(compose, &["getrawtransaction", &funding.txids, "1"])).unwrap();
+    let header: serde_json::Value = serde_json::from_str(&cli(
+        compose,
+        &[
+            "getblockheader",
+            funding_json["blockhash"].as_str().unwrap(),
+        ],
+    ))
+    .unwrap();
+    let origin_height = header["height"].as_u64().unwrap() as u32;
+    prepare_height(&card, origin_height, false);
     let funding_height: u64 = rusqlite::Connection::open(&card.db)
         .unwrap()
         .query_row(
@@ -431,7 +501,9 @@ fn exercise_recovery(funder: &Wallet, compose: &str) {
         proxy(),
         NETWORK.into(),
         false,
-        Some(funding.txids.clone())
+        None,
+        Some(origin_height),
+        Some(GIFT + 10_000),
     )
     .is_err());
     assert_eq!(
@@ -442,8 +514,20 @@ fn exercise_recovery(funder: &Wallet, compose: &str) {
             .unwrap(),
         0
     );
+    let resolved: String = rusqlite::Connection::open(&card.db)
+        .unwrap()
+        .query_row(
+            "SELECT funding_txid FROM vizor_gift_funding_resolution WHERE origin_height=?1",
+            [origin_height],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        resolved, funding.txids,
+        "failed refresh must retain the discovered identity"
+    );
     mine(compose, 3);
-    prepare(&card, &funding.txids, false);
+    prepare_height(&card, origin_height, false);
     let quote = sync::estimate_payment_link_claim_max(
         card.db.clone(),
         NETWORK.into(),
@@ -469,17 +553,17 @@ fn exercise_recovery(funder: &Wallet, compose: &str) {
     let pending = execute(&card, proposal.proposal_id, flow, proxy());
     assert_ne!(pending.status, "broadcasted");
     assert!(!pending.txids.is_empty());
-    prepare(&card, &funding.txids, true);
+    prepare_height(&card, origin_height, true);
     assert!(cli(compose, &["getrawmempool"]).contains(&pending.txids));
     mine(compose, 2);
-    prepare(&card, &funding.txids, false);
+    prepare_height(&card, origin_height, false);
     let mined: serde_json::Value =
         serde_json::from_str(&cli(compose, &["getrawtransaction", &pending.txids, "1"])).unwrap();
     let block_hash = mined["blockhash"].as_str().unwrap();
     let block: serde_json::Value =
         serde_json::from_str(&cli(compose, &["getblock", block_hash])).unwrap();
     reorg(compose, block["height"].as_u64().unwrap());
-    prepare(&card, &funding.txids, true);
+    prepare_height(&card, origin_height, true);
     let conn = rusqlite::Connection::open(&card.db).unwrap();
     let mined_count: u64 = conn
         .query_row(
@@ -497,7 +581,7 @@ fn exercise_recovery(funder: &Wallet, compose: &str) {
     // Allow the normal recipient wallet's confirmation/verification window,
     // just as in the successful fresh-card case above.
     mine(compose, 10);
-    prepare(&card, &funding.txids, false);
+    prepare_height(&card, origin_height, false);
     sync_wallet(&recipient);
     assert_eq!(
         sync::get_balance(
@@ -666,7 +750,8 @@ fn cli(compose: &str, args: &[&str]) -> String {
             "-f",
             compose,
             "-p",
-            "vizor-gift-direct-claim-822",
+            &std::env::var("VIZOR_DIRECT_GIFT_PROJECT")
+                .unwrap_or_else(|_| "vizor-gift-direct-claim-822".into()),
             "exec",
             "-T",
             "zcashd",
