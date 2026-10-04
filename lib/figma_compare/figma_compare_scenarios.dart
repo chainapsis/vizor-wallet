@@ -78,6 +78,25 @@ class FigmaCompareScenario {
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
   FigmaCompareScenario(
+    id: 'gift-card-claim-checking',
+    description: 'Discovered Gift Card on the checking surface at 50%',
+    builder: buildPaymentLinkReceivedCheckingUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-gift-card-claim-checking',
+    description: 'Discovered Gift Card on the checking surface at 50%',
+    builder: buildMobilePaymentLinkReceivedCheckingUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-gift-onboarding-funding-found',
+    description: 'Walletless Gift Card with funding found and 50% progress',
+    builder: buildMobileGiftOnboardingFundingFound,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'gift-card-value',
     description: 'Gift card value typography and optional fiat amount',
     builder: _giftCardValueCapture,
@@ -1042,6 +1061,18 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'activity-gift-card-batch-detail',
     description: 'Desktop created Gift Card batch activity detail',
     builder: buildGiftCardBatchActivityDetailUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'home-activity-eta',
+    description: 'Home pending activity with estimate, unknown and longer wait',
+    builder: buildHomeActivityEtaUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'activities-eta',
+    description: 'Activity pending rows with estimate, unknown and longer wait',
+    builder: buildActivitiesEtaUseCase,
+    mobile: true,
   ),
   FigmaCompareScenario(
     id: 'activity-zero-value',

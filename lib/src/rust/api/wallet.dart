@@ -4,6 +4,7 @@
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
 import '../frb_generated.dart';
+
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `block_height_from_u64`, `catch`, `discover_software_account_at_index`, `discover_used_software_accounts`, `discovery_start_height`, `import_discovered_software_wallet_accounts`, `import_gate`, `is_ironwood_active_at_height`, `network_name`, `nu6_3_activation_height`, `parse_network_and_migrate`, `preview_transparent_balance_for_addresses`, `restored_birthday`
@@ -101,9 +102,9 @@ Future<AccountCreationResult> addAccount({
   birthdayHeight: birthdayHeight,
 );
 
-/// Generate a software account mnemonic and shielded address without touching
-/// the wallet DB. Used for an external one-time recipient controlled by a
-/// fresh seed, such as payment-link funding.
+/// Generate a 12-word BIP-39 mnemonic and shielded address for Gift Card funding
+/// without touching the wallet DB. Regular wallets and Gift Card recipients
+/// continue using the 24-word [`keys::generate_mnemonic`] generator.
 Future<GeneratedSoftwareAccount> generateSoftwareAccount({
   required String network,
 }) => RustLib.instance.api.crateApiWalletGenerateSoftwareAccount(

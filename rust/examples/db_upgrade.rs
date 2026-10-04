@@ -6,18 +6,8 @@
 //! 2. `verify` (current build) upgrades it and checks that the schema is a
 //!    superset of the base schema, the raw state is unchanged, and the current
 //!    APIs report what the base APIs did.
-//! 3. `open-old` (base build) reopens the upgraded wallet with no handover,
-//!    reads it through the base APIs, and stores a wallet transaction through
-//!    the base library's real ingestion path (`decrypt_and_store_transaction`).
-//!    The upgrade keeps every schema object the base writes, including
-//!    `transactions.zip318_kind` (wallet-libraries #86). `read-old` (base
-//!    build, a fresh process, so no in-process balance cache predates the
-//!    write) records what the base APIs then report.
-//! 4. `verify` (current build) again. The current library does not reconcile
-//!    what an older build writes after the upgrade (#86 adds no reconciliation
-//!    or qualification for it), so the base build's records stay without
-//!    transparent provenance; `verify` checks that they do, and that nothing
-//!    the wallet held before is lost.
+//! Published-to-current upgrades are supported. Older writers after a private-ledger
+//! upgrade are not qualified by this probe.
 //!
 //! API that differs between builds lives in `db_upgrade/compat.rs` (or a
 //! base's `compat_<base>.rs`); current-build-only checks live in
@@ -650,9 +640,7 @@ fn expected_spendable(manifest: &Manifest) -> BTreeSet<(String, u32, u64)> {
 /// The ledger starts public (generation 0, reader version 1), and every
 /// transparent record carries legacy-public provenance, plus local provenance
 /// where the wallet created the transaction. Neither is private coverage.
-/// Records the base build wrote after the upgrade (`open-old`) are not
-/// reconciled: they carry no provenance at all, so nothing treats them as
-/// qualified.
+/// The upgrade runner uses only records stored before the upgrade.
 fn assert_transparent_ledger(db_path: &str, after_old: Option<&AfterOld>) {
     let conn = rusqlite::Connection::open(db_path).expect("open upgraded DB");
     for table in ["tpir_meta", "tpir_output_origins", "tpir_spend_origins"] {
@@ -775,8 +763,7 @@ fn origins(conn: &rusqlite::Connection, sql: &str, txid: &[u8]) -> Vec<i64> {
     origins
 }
 
-/// The base build reopens the upgraded wallet with no handover and stores a
-/// transaction through its own ingestion path.
+/// Optional diagnostic command; the upgrade runner does not qualify older writers.
 fn verify_old_reopen(scenario: &str, db_path: &str, manifest_path: &str) {
     let mut manifest = read_manifest(manifest_path);
     assert_eq!(manifest.state.scenario, scenario);

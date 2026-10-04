@@ -55,6 +55,7 @@ mod ephemeral_checks;
 #[cfg(test)]
 mod ephemeral_checks_tests;
 mod error;
+pub(crate) mod gift_card_claim;
 mod lwd;
 pub(crate) mod mempool;
 #[cfg(test)]

@@ -27,6 +27,9 @@ import '../src/features/payment_links/services/payment_link_recovery_reconciler.
 import '../src/core/config/rpc_endpoint_config.dart';
 import '../src/core/config/swap_feature_config.dart';
 import '../src/core/layout/app_layout.dart';
+import '../src/features/activity/activity_eta_provider.dart';
+import '../src/features/swap/providers/swap_activity_store.dart';
+import '../src/features/activity/screens/activity_screen.dart';
 import '../src/core/layout/mobile/app_mobile_sheet.dart';
 import '../src/core/layout/mobile/app_mobile_shell.dart';
 import '../src/core/layout/mobile/app_mobile_tab_bar.dart';
@@ -1690,6 +1693,7 @@ rust_sync.TransactionInfo _zeroValueTx(String kind) {
     txKind: kind,
     displayAmount: BigInt.zero,
     displayPool: 'shielded',
+    activityPool: 'orchard',
     createdTime: seconds,
   );
 }
@@ -2018,6 +2022,138 @@ Widget buildDesktopHomeGiftCardsUseCase(BuildContext context) {
     migrationCta: const IronwoodHomeMigrationCtaState.hidden(),
     giftCardActivityIndex: _previewGiftCardActivityIndex(),
   );
+}
+
+// Deterministic Home/Activity row captures for every pending presentation.
+Widget buildHomeActivityEtaUseCase(BuildContext context) =>
+    _buildActivityEtaUseCase(home: true);
+
+Widget buildActivitiesEtaUseCase(BuildContext context) =>
+    _buildActivityEtaUseCase(home: false);
+
+List<rust_sync.TransactionInfo> _etaTransactions() => [
+  for (final (id, pool, kind) in [
+    ('eta', 'ironwood', 'sent'),
+    ('long', 'sapling', 'sent'),
+    ('tex', 'transparent', 'sent'),
+    ('gift-created', 'ironwood', 'sent'),
+    ('gift-redeemed', 'ironwood', 'receiving'),
+    ('connection', 'orchard', 'receiving'),
+    ('unknown', 'orchard', 'receiving'),
+  ])
+    rust_sync.TransactionInfo(
+      detailsComplete: true,
+      feeState: rust_sync.TransactionFeeState.known,
+      provisional: false,
+      txidHex: 'preview-$id',
+      fundingParentTxid: id == 'tex' ? 'preview-parent' : null,
+      fundingParentMinedHeight: id == 'tex' ? BigInt.zero : null,
+      fundingParentExpired: id == 'tex' ? false : null,
+      minedHeight: BigInt.zero,
+      expiredUnmined: false,
+      accountBalanceDelta: kind == 'sent' ? -125000000 : 125000000,
+      fee: BigInt.from(10000),
+      blockTime: BigInt.zero,
+      isTransparent: false,
+      txKind: kind,
+      displayAmount: BigInt.from(125000000),
+      displayPool: 'shielded',
+      activityPool: pool,
+      createdTime: BigInt.from(1800000000),
+    ),
+  _homeTx(3),
+];
+
+GiftCardActivityIndex _etaGiftIndex() => GiftCardActivityIndex(
+  createdTxids: {'preview-gift-created'},
+  redeemedTxids: {'preview-gift-redeemed'},
+  createdMetadataByTxid: {
+    'preview-gift-created': GiftCardActivityMetadata(
+      kind: GiftCardActivityKind.created,
+      amountZatoshi: BigInt.from(125000000),
+      artworkId: null,
+      message: null,
+      claimFeeReserveZatoshi: BigInt.from(10000),
+    ),
+  },
+  redeemedMetadataByTxid: {
+    'preview-gift-redeemed': GiftCardActivityMetadata(
+      kind: GiftCardActivityKind.redeemed,
+      amountZatoshi: BigInt.from(125000000),
+      artworkId: null,
+      message: null,
+      isClaimInFlight: true,
+      stableId: 'gift-card:preview-card',
+      claimTxids: ['preview-gift-redeemed', 'preview-gift-other'],
+    ),
+  },
+);
+
+Widget _buildActivityEtaUseCase({required bool home}) {
+  final mobile = kAppFormFactor == AppFormFactor.mobile;
+  final sync = _homeSyncedState(
+    orchardBalance: BigInt.from(14312000000),
+    recentTransactions: _etaTransactions(),
+  );
+  final previewChild = home ? null : _ActivityEtaPreviewRouter(mobile: mobile);
+  const etaLabels = {
+    'preview-eta': 'Est. 1–3 min',
+    'preview-long': 'Taking longer',
+    'preview-connection': 'Waiting for connection',
+    'funding:preview-tex': 'Est. 2–6 min',
+    'preview-gift-created': 'Est. 1–3 min',
+    'gift-card:preview-card': 'Est. 1–3 min',
+  };
+  return mobile
+      ? _buildMobileHomeUseCase(
+          accountState: _accountsDesignState,
+          syncState: sync,
+          votingVisible: false,
+          swapEnabled: false,
+          previewChild: previewChild,
+          etaLabels: etaLabels,
+          giftCardActivityIndex: _etaGiftIndex(),
+        )
+      : _buildDesktopHomeUseCase(
+          accountState: _accountsDesignState,
+          syncState: sync,
+          migrationCta: const IronwoodHomeMigrationCtaState.hidden(),
+          previewChild: previewChild,
+          etaLabels: etaLabels,
+          giftCardActivityIndex: _etaGiftIndex(),
+        );
+}
+
+class _ActivityEtaPreviewRouter extends StatefulWidget {
+  const _ActivityEtaPreviewRouter({required this.mobile});
+  final bool mobile;
+  @override
+  State<_ActivityEtaPreviewRouter> createState() =>
+      _ActivityEtaPreviewRouterState();
+}
+
+class _ActivityEtaPreviewRouterState extends State<_ActivityEtaPreviewRouter> {
+  late final _router = GoRouter(
+    initialLocation: '/activity',
+    routes: [
+      GoRoute(
+        path: '/activity',
+        builder: (_, _) => widget.mobile
+            ? MobileActivityScreen(
+                historyLoader: (_) async => _etaTransactions(),
+              )
+            : ActivityScreen(historyLoader: (_) async => _etaTransactions()),
+      ),
+      GoRoute(path: '/home', builder: (_, _) => const SizedBox.shrink()),
+    ],
+  );
+  @override
+  Widget build(BuildContext context) => Router.withConfig(config: _router);
+  @override
+  void dispose() {
+    _router.dispose();
+    super.dispose();
+  }
 }
 
 Widget buildDesktopZeroValueActivityUseCase(BuildContext context) =>
@@ -2879,6 +3015,8 @@ Widget buildMobileHomeVotingHiddenUseCase(BuildContext context) =>
 
 Widget _buildMobileHomeUseCase({
   String initialLocation = '/home',
+  Widget? previewChild,
+  Map<String, String>? etaLabels,
   bool setupPreview = false,
   bool inheritWalletState = false,
   bool votingVisible = true,
@@ -2906,6 +3044,10 @@ Widget _buildMobileHomeUseCase({
   );
   return ProviderScope(
     overrides: [
+      if (etaLabels != null) ...[
+        activityEtaLabelsProvider.overrideWithValue(etaLabels),
+        swapActivityRecordsProvider.overrideWith((ref, account) async => []),
+      ],
       votingHomeEntryVisibleProvider.overrideWithValue(votingVisible),
       votingHomeRefreshActionProvider.overrideWithValue(() async {}),
       if (networkPrivacyState != null)
@@ -2964,12 +3106,14 @@ Widget _buildMobileHomeUseCase({
     ],
     child: _MobilePreviewFrame(
       constrainToDesignSize: constrainToPreviewFrame,
-      child: harness,
+      child: previewChild ?? harness,
     ),
   );
 }
 
 Widget _buildDesktopHomeUseCase({
+  Widget? previewChild,
+  Map<String, String>? etaLabels,
   required AccountState accountState,
   required SyncState syncState,
   required IronwoodHomeMigrationCtaState migrationCta,
@@ -2982,6 +3126,10 @@ Widget _buildDesktopHomeUseCase({
 }) {
   return ProviderScope(
     overrides: [
+      if (etaLabels != null) ...[
+        activityEtaLabelsProvider.overrideWithValue(etaLabels),
+        swapActivityRecordsProvider.overrideWith((ref, account) async => []),
+      ],
       if (receiptArgs != null) ...[
         addressBookProvider.overrideWith(_GiftCardPreviewAddressBook.new),
         ownAccountAddressesProvider.overrideWith((ref) async => const {}),
@@ -3034,7 +3182,7 @@ Widget _buildDesktopHomeUseCase({
         return announcement;
       }),
     ],
-    child: _DesktopHomeHarness(receiptArgs: receiptArgs),
+    child: previewChild ?? _DesktopHomeHarness(receiptArgs: receiptArgs),
   );
 }
 
@@ -4743,6 +4891,7 @@ rust_sync.TransactionInfo _homeTx(int index) {
     txKind: 'received',
     displayAmount: BigInt.from(index) * BigInt.from(100000000),
     displayPool: 'shielded',
+    activityPool: 'orchard',
     createdTime: seconds,
   );
 }

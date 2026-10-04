@@ -1,12 +1,6 @@
 #!/usr/bin/env bash
-# Upgrade probe: create wallets with the build at <base-ref>, upgrade and verify
-# them twice with the current tree, then reopen them with the base build with
-# no handover: it reads them and stores a transaction through its real
-# ingestion path (open-old, then read-old in a fresh process). The current tree
-# reopens them last (new -> old -> new). The upgrade keeps every schema object
-# the base writes, including transactions.zip318_kind; the current library
-# does not reconcile what the base wrote afterwards, and the last step checks
-# exactly that.
+# Upgrade probe: create wallets with the published build at <base-ref>, upgrade
+# and verify them twice with the current tree. Writable downgrades are not qualified.
 #
 # usage: scripts/test-db-upgrade.sh <base-ref> [scenario...]
 set -euo pipefail
@@ -93,28 +87,7 @@ for scenario in "${SCENARIOS[@]}"; do
   run_probe "$OLD_WORKTREE" create "$scenario" "$db_path" "$manifest_path"
   run_probe "$ROOT_DIR" verify "$scenario" "$db_path" "$manifest_path"
   run_probe "$ROOT_DIR" verify "$scenario" "$db_path" "$manifest_path"
-  if [[ -n "$DOWNGRADE_UNSUPPORTED" ]]; then
-    echo "downgrade to $BASE_REF: unsupported: $DOWNGRADE_UNSUPPORTED"
-    old_log="$TEMP_DIR/$scenario.open-old.log"
-    if run_probe "$OLD_WORKTREE" open-old "$scenario" "$db_path" "$manifest_path" \
-      >"$old_log" 2>&1; then
-      cat "$old_log"
-      echo "error: $BASE_REF now reopens the upgraded wallet; remove its" \
-        "downgrade exemption from $0" >&2
-      exit 1
-    fi
-    if ! grep -qF "$DOWNGRADE_FAILURE" "$old_log"; then
-      cat "$old_log"
-      echo "error: $BASE_REF failed to reopen the wallet for a cause other than" \
-        "the documented one ($DOWNGRADE_FAILURE)" >&2
-      exit 1
-    fi
-    echo "downgrade to $BASE_REF: refused as documented ($DOWNGRADE_FAILURE)"
-  else
-    run_probe "$OLD_WORKTREE" open-old "$scenario" "$db_path" "$manifest_path"
-    run_probe "$OLD_WORKTREE" read-old "$scenario" "$db_path" "$manifest_path"
-  fi
-  run_probe "$ROOT_DIR" verify "$scenario" "$db_path" "$manifest_path"
+
 done
 
 if [[ -n "$DOWNGRADE_UNSUPPORTED" ]]; then

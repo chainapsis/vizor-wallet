@@ -105,7 +105,13 @@ enum _SetupClaimFailurePhase { preparation, submission }
 /// and setup Cards that become ready are submitted into their saved account, on
 /// app start, unlock, resume, and a bounded foreground timer.
 class PaymentLinkClaimCoordinator {
-  PaymentLinkClaimCoordinator(this._ref);
+  PaymentLinkClaimCoordinator(this._ref)
+    : _lifecyclePaused = switch (WidgetsBinding.instance.lifecycleState) {
+        AppLifecycleState.hidden ||
+        AppLifecycleState.paused ||
+        AppLifecycleState.detached => true,
+        _ => false,
+      };
 
   final Ref _ref;
   final Map<String, _AccountClaimOperation<PaymentLinkClaimResult>>
@@ -116,6 +122,8 @@ class PaymentLinkClaimCoordinator {
   Future<List<PaymentLinkReceivedRecord>>? _recoveryInFlight;
   Timer? _retryTimer;
   bool _enabled = false;
+  bool _lifecyclePaused;
+  int _preparationGeneration = 0;
   bool _resetQuiesced = false;
   bool _disposed = false;
 
@@ -124,6 +132,50 @@ class PaymentLinkClaimCoordinator {
 
   @visibleForTesting
   int get activeSetupPreparationCount => _setupPreparations.length;
+
+  final Set<Future<Object?>> _preparations = {};
+  final Set<Future<void> Function()> _checkCancellations = {};
+
+  VoidCallback registerCheckCancellation(Future<void> Function() cancel) {
+    _checkCancellations.add(cancel);
+    return () => _checkCancellations.remove(cancel);
+  }
+
+  Future<void> _cancelChecks() =>
+      Future.wait(_checkCancellations.toList().map((cancel) => cancel()));
+  // Account-free previews are allowed before recovery is enabled. Only the
+  // app lifecycle, reset, and disposal gate their admission.
+  bool get acceptsPreparation =>
+      !_lifecyclePaused && !_resetQuiesced && !_disposed;
+
+  int beginPreparation() {
+    final generation = _preparationGeneration;
+    requirePreparation(generation);
+    return generation;
+  }
+
+  void requirePreparation(int generation) {
+    if (!acceptsPreparation || generation != _preparationGeneration) {
+      throw StateError('Gift Card preparation is paused.');
+    }
+  }
+
+  /// Register before invoking work, including inspections with no receiving account.
+  Future<T> trackPreparation<T>(Future<T> Function() action) {
+    if (!acceptsPreparation) {
+      return Future.error(StateError('Gift Card preparation is paused.'));
+    }
+    final completer = Completer<T>();
+    late final Future<T> tracked;
+    tracked = completer.future.whenComplete(
+      () => _preparations.remove(tracked),
+    );
+    _preparations.add(tracked);
+    Future<T>.sync(
+      action,
+    ).then(completer.complete, onError: completer.completeError);
+    return tracked;
+  }
 
   bool isSubmitting(String address) => _submissions.containsKey(address);
 
@@ -420,15 +472,29 @@ class PaymentLinkClaimCoordinator {
   }
 
   void resume() {
-    if (_disposed || _resetQuiesced) return;
+    if (_disposed || _resetQuiesced || _lifecyclePaused) return;
     _enabled = true;
     _refreshInBackground();
   }
 
   void pause() {
+    _preparationGeneration++;
     _enabled = false;
+    if (!_disposed) {
+      unawaited(_cancelChecks());
+    }
     _retryTimer?.cancel();
     _retryTimer = null;
+  }
+
+  void pauseForLifecycle() {
+    _lifecyclePaused = true;
+    pause();
+  }
+
+  void resumeForLifecycle() {
+    _lifecyclePaused = false;
+    resume();
   }
 
   void dispose() {
@@ -440,12 +506,15 @@ class PaymentLinkClaimCoordinator {
   Future<void> quiesceAndDrain() async {
     _resetQuiesced = true;
     pause();
-    while (_submissions.isNotEmpty ||
+    await _cancelChecks();
+    while (_preparations.isNotEmpty ||
+        _submissions.isNotEmpty ||
         _setupPreparations.isNotEmpty ||
         _setupHandoffs.isNotEmpty ||
         _retentions.isNotEmpty ||
         _recoveryInFlight != null) {
       final pending = <Future<Object?>>[
+        ..._preparations,
         ..._submissions.values.map((submission) => submission.future),
         ..._setupPreparations.values.map((preparation) => preparation.future),
         ..._setupHandoffs.values.map((handoff) => handoff.future),
@@ -577,7 +646,11 @@ class PaymentLinkClaimCoordinator {
   }
 
   bool get _canRunRecovery {
-    if (_disposed || !_ref.mounted || !_enabled || _resetQuiesced) {
+    if (_disposed ||
+        !_ref.mounted ||
+        !_enabled ||
+        _lifecyclePaused ||
+        _resetQuiesced) {
       return false;
     }
     final security = _ref.read(appSecurityProvider);
@@ -693,9 +766,9 @@ final paymentLinkClaimCoordinatorProvider = Provider((ref) {
   });
 
   final lifecycleListener = AppLifecycleListener(
-    onHide: coordinator.pause,
-    onPause: coordinator.pause,
-    onResume: coordinator.resume,
+    onHide: coordinator.pauseForLifecycle,
+    onPause: coordinator.pauseForLifecycle,
+    onResume: coordinator.resumeForLifecycle,
   );
   ref.onDispose(() {
     lifecycleRegistry.unregister(coordinator);

@@ -16,6 +16,7 @@ import '../../../core/widgets/app_toast.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/zec_price_change_provider.dart';
 import '../providers/gift_card_entry_price_provider.dart';
+import '../providers/gift_card_check_progress_provider.dart';
 import '../../../providers/account_provider.dart';
 import '../../swap/models/swap_fiat_value_formatting.dart';
 import '../models/vizor_payment_link.dart';
@@ -246,9 +247,29 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
         ),
       );
     }
+    final checkProgress = ref.watch(
+      giftCardCheckProgressProvider,
+    )[paymentLinkClaimWalletDirectoryName(flow.link)];
     final waitingForCheck =
         flow.phase == GiftClaimPhase.checking ||
         flow.phase == GiftClaimPhase.longSyncConfirmation;
+    if (waitingForCheck) {
+      return _guardBack(
+        Scaffold(
+          backgroundColor: context.colors.background.window,
+          body: SafeArea(
+            child: PaymentLinkReadyMobileView(
+              state: PaymentLinkReadyMobileState.checking,
+              card: checkProgress?.hasFunding ?? false
+                  ? _card(flow.link, celebrate: false)
+                  : const PaymentLinkLoadingMobileCard(),
+              onHome: _close,
+              waitingStatusLabel: checkProgress?.label ?? 'Checking the gift…',
+            ),
+          ),
+        ),
+      );
+    }
     final inspection = flow.inspection;
     final canContinue =
         flow.phase == GiftClaimPhase.inspected &&
@@ -262,15 +283,12 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
         body: SafeArea(
           child: Column(
             children: [
-              if (waitingForCheck)
-                const SizedBox(height: kMobileTopNavHeight)
-              else
-                MobileTopNav.back(
-                  key: const ValueKey('gift_claim_close_button'),
-                  title: '',
-                  onBack: _close,
-                  backIcon: AppIcons.cross,
-                ),
+              MobileTopNav.back(
+                key: const ValueKey('gift_claim_close_button'),
+                title: '',
+                onBack: _close,
+                backIcon: AppIcons.cross,
+              ),
               Expanded(
                 child: canContinue
                     ? Padding(
@@ -323,13 +341,7 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
                           children: [
                             const SizedBox(height: 42),
                             const SizedBox(height: AppSpacing.md),
-                            if (waitingForCheck)
-                              const FittedBox(
-                                fit: BoxFit.scaleDown,
-                                child: PaymentLinkLoadingMobileCard(),
-                              )
-                            else
-                              _card(flow.link, celebrate: false),
+                            _card(flow.link, celebrate: false),
                             const SizedBox(height: AppSpacing.md),
                             _GiftClaimStatus(
                               flow: flow,
@@ -814,15 +826,7 @@ class _GiftClaimActions extends ConsumerWidget {
                 !inspection.waitingForFundingConfirmations) ||
             inspection.waitingForFundingConfirmations);
     final List<Widget> actions = switch (flow.phase) {
-      GiftClaimPhase.checking || GiftClaimPhase.longSyncConfirmation => [
-        _primary(
-          addingAccount
-              ? 'Create an account to claim'
-              : 'Create a wallet to claim',
-          null,
-        ),
-        _secondary('Claim with an existing wallet', null),
-      ],
+      GiftClaimPhase.checking || GiftClaimPhase.longSyncConfirmation => [],
       GiftClaimPhase.failed =>
         flow.failure == GiftClaimFailure.network
             ? [_primary('Try again', notifier.recheck)]

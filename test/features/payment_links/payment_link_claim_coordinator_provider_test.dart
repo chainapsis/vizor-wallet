@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -15,6 +16,74 @@ import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => FlutterSecureStorage.setMockInitialValues({}));
+
+  test(
+    'a coordinator created while hidden rejects preparations and recovery',
+    () async {
+      final binding = TestWidgetsFlutterBinding.ensureInitialized();
+      binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      var recoveries = 0;
+      final container = ProviderContainer(
+        overrides: [
+          appSecurityProvider.overrideWith(_UnlockedSecurityNotifier.new),
+          paymentLinkClaimRecoveryRunnerProvider.overrideWithValue(() async {
+            recoveries++;
+            return const [];
+          }),
+        ],
+      );
+      try {
+        final coordinator = container.read(paymentLinkClaimCoordinatorProvider);
+        coordinator.resume();
+        expect(coordinator.acceptsPreparation, isFalse);
+        await expectLater(
+          coordinator.trackPreparation(() async {}),
+          throwsStateError,
+        );
+        expect(await coordinator.refresh(), isEmpty);
+        expect(recoveries, 0);
+      } finally {
+        container.dispose();
+        binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      }
+    },
+  );
+
+  test(
+    'reset cancels native checks and drains account-free preparations',
+    () async {
+      final container = ProviderContainer(
+        overrides: [
+          appSecurityProvider.overrideWith(_UnlockedSecurityNotifier.new),
+          paymentLinkClaimRecoveryRunnerProvider.overrideWithValue(
+            () async => const [],
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final coordinator = container.read(paymentLinkClaimCoordinatorProvider);
+      final release = Completer<void>();
+      var cancelled = false;
+      final unregister = coordinator.registerCheckCancellation(() async {
+        cancelled = true;
+      });
+      final work = coordinator.trackPreparation(() => release.future);
+      var drained = false;
+      final drain = coordinator.quiesceAndDrain().then((_) => drained = true);
+      await Future<void>.delayed(Duration.zero);
+      expect(cancelled, isTrue);
+      expect(drained, isFalse);
+      await expectLater(
+        coordinator.trackPreparation(() async {}),
+        throwsStateError,
+      );
+      release.complete();
+      await work;
+      await drain;
+      unregister();
+      expect(drained, isTrue);
+    },
+  );
 
   test(
     'different claims submit concurrently while duplicate claims join',

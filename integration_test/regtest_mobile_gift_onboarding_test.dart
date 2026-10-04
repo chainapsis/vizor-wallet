@@ -63,10 +63,10 @@ void main() {
       expect(account.name, 'Gift recipient');
       expect(account.setupPending, isTrue);
       expect(account.giftEducationPending, isTrue);
-      expect(
-        (await AppSecureStore.instance.readAccountMnemonic(uuid))?.isNotEmpty,
-        isTrue,
-      );
+      final recipientMnemonic = await AppSecureStore.instance
+          .readAccountMnemonic(uuid);
+      expect(recipientMnemonic?.split(' '), hasLength(24));
+      expect(recipientMnemonic, isNot(link.mnemonic));
       await _assertClaimReceived(tester, link, uuid);
 
       // Home has two manually selected setup banners, and no Gift banner.
@@ -300,6 +300,7 @@ Future<VizorPaymentLink> _newGift() async {
   final gift = await rust_wallet.generateSoftwareAccount(
     network: mobileE2eNetwork,
   );
+  expect(gift.mnemonic.split(' '), hasLength(12));
   return VizorPaymentLink(
     network: mobileE2eNetwork,
     address: gift.unifiedAddress,
@@ -326,7 +327,9 @@ Future<void> _fundGift(
 
 Future<void> _inspectGift(WidgetTester tester, VizorPaymentLink link) async {
   await tapWidget(tester, const ValueKey('mobile_welcome_redeem_card'));
-  await Clipboard.setData(ClipboardData(text: link.toUri().toString()));
+  final uri = link.toShareUri();
+  expect(uri.fragment, startsWith('v3='));
+  await Clipboard.setData(ClipboardData(text: uri.toString()));
   await tapAppButton(
     tester,
     const ValueKey('payment_link_mobile_paste_button'),
@@ -340,6 +343,9 @@ Future<void> _inspectGift(WidgetTester tester, VizorPaymentLink link) async {
     description: 'real Gift inspection',
     timeout: const Duration(minutes: 3),
   );
+  final inspected = _container(tester).read(giftClaimFlowProvider)!.inspection!;
+  expect(inspected.link.mnemonic, link.mnemonic);
+  expect(inspected.link.address, link.address);
 }
 
 Future<void> _createGiftWallet(

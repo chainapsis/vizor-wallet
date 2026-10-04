@@ -33,6 +33,7 @@ import '../providers/gift_card_tracking_provider.dart';
 import '../providers/payment_link_cards_provider.dart';
 import '../providers/payment_link_claim_coordinator_provider.dart';
 import '../providers/payment_link_intake_provider.dart';
+import '../providers/gift_card_check_progress_provider.dart';
 import '../services/payment_link_clipboard.dart';
 import '../services/payment_link_batch_export.dart';
 import '../services/payment_link_batch_limits.dart';
@@ -241,6 +242,22 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       _receivedCards = initialCards.received;
       _initialCardsLoaded = true;
     }
+    ref.listenManual(giftCardCheckProgressProvider, (_, next) {
+      final link = _receivedLink;
+      if (!mounted || link == null || !_operationInProgress) return;
+      final progress = next[paymentLinkClaimWalletDirectoryName(link)];
+      if (progress == null || !progress.hasFunding || progress.event.complete) {
+        return;
+      }
+      if (_page != PaymentLinksLocalPage.redeem &&
+          _page != PaymentLinksLocalPage.received) {
+        return;
+      }
+      setState(() {
+        _receivedLink = progress.link;
+        _page = PaymentLinksLocalPage.received;
+      });
+    });
     _amountFocusNode.addListener(_handleAmountFocus);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -1758,6 +1775,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     bool allowLongSync = false,
   }) async {
     final epoch = _mobileNavigationEpoch;
+    _receivedLink = link;
     final previousSession = _receivedClaimSession;
     if (previousSession != null &&
         paymentLinkClaimWalletDirectoryName(previousSession.link) !=
@@ -1835,6 +1853,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       log('PaymentLinkClaim: waiting for long sync confirmation');
       if (!mounted || !_isCurrentNavigation(epoch)) return;
       setState(() {
+        _page = PaymentLinksLocalPage.redeem;
         _redeemState = PaymentLinkRedeemVisualState.paste;
         if (kAppFormFactor == AppFormFactor.desktop) {
           _longSyncLink = link;
@@ -1867,6 +1886,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       // A different network is a permanent property of the link, so there is
       // nothing to retry: clear the retry affordance and name the reason.
       setState(() {
+        _page = PaymentLinksLocalPage.redeem;
         _longSyncLink = null;
         _retryLink = null;
         _redeemState = PaymentLinkRedeemVisualState.paste;
@@ -1879,6 +1899,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       );
       if (mounted && _isCurrentNavigation(epoch)) {
         setState(() {
+          _page = PaymentLinksLocalPage.redeem;
           _longSyncLink = null;
           _retryLink = null;
           _redeemState = PaymentLinkRedeemVisualState.invalid;
@@ -1888,6 +1909,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       log('PaymentLinkClaim: preparation failed type=${error.runtimeType}');
       if (mounted && _isCurrentNavigation(epoch)) {
         setState(() {
+          _page = PaymentLinksLocalPage.redeem;
           _longSyncLink = null;
           _retryLink = link;
           _redeemState = PaymentLinkRedeemVisualState.paste;
@@ -2428,6 +2450,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
         receivedFiatText: _savedCardFiatText(_receivedLink),
         receivedShowsBack: _receivedShowsBack,
         receivedClaimSession: _receivedClaimSession,
+        claimPreparationLabel: _claimCheckLabel,
         linkWaitLabel: _estimatedLinkWaitLabel,
         claimWaitLabel: _estimatedClaimWaitLabel,
         availableSoonRemainingConfirmations:
@@ -2510,6 +2533,21 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(padding: EdgeInsets.zero, child: pane),
     );
+  }
+
+  String? get _claimCheckLabel {
+    final link = _receivedLink;
+    if (link == null ||
+        !_operationInProgress ||
+        _redeemState != PaymentLinkRedeemVisualState.loading) {
+      return null;
+    }
+    final progress = ref.watch(
+      giftCardCheckProgressProvider,
+    )[paymentLinkClaimWalletDirectoryName(link)];
+    // A complete stream event is not yet a prepared claim session. Keep the
+    // waiting surface until prepareClaim installs its authoritative result.
+    return progress?.label ?? 'Checking the gift…';
   }
 
   Widget _buildCurrentPage({
@@ -3512,6 +3550,16 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
           )
         : front;
     final session = _receivedClaimSession;
+    final checkLabel = _claimCheckLabel;
+    if (checkLabel != null) {
+      return PaymentLinkReadyDesktopView(
+        state: PaymentLinkReadyVisualState.checking,
+        card: card,
+        onBack: _abandonReceivedPreview,
+        onCopy: null,
+        waitingStatusLabel: checkLabel,
+      );
+    }
     if (session?.waitingForFundingConfirmations ?? false) {
       return PaymentLinkReadyDesktopView(
         state: PaymentLinkReadyVisualState.waiting,

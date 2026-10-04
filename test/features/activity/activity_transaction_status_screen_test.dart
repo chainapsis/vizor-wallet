@@ -612,9 +612,7 @@ void main() {
     expect(find.text('Show full address'), findsNothing);
   });
 
-  testWidgets('shows no fee row for a receive even with a known fee', (
-    tester,
-  ) async {
+  testWidgets('shows the recorded network fee for a receive', (tester) async {
     await _pumpScreen(
       tester,
       args: ActivityTransactionStatusArgs(
@@ -628,10 +626,58 @@ void main() {
       ),
     );
 
-    // The sender paid the fee, so a receive shows none.
-    expect(find.text('Network fee'), findsNothing);
-    expect(find.text('0.0001 ZEC'), findsNothing);
+    expect(find.text('Network fee'), findsOneWidget);
+    expect(find.text('0.0001 ZEC'), findsOneWidget);
   });
+
+  testWidgets('masks the recorded receive fee in privacy mode', (tester) async {
+    await _pumpScreen(
+      tester,
+      privacyEnabled: true,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'received',
+        initialTransaction: _transaction(
+          txKind: 'received',
+          fee: BigInt.from(10000),
+        ),
+        initialDetail: _detail(txKind: 'received'),
+      ),
+    );
+    expect(find.text('Network fee'), findsOneWidget);
+    expect(find.text('0.0001 ZEC'), findsNothing);
+    final receipt = tester.widget<ReceivedReceiptView>(
+      find.byType(ReceivedReceiptView),
+    );
+    expect(receipt.feeText, isNotNull);
+    expect(receipt.feeText, isNot('--'));
+  });
+
+  for (final feeState in [
+    rust_sync.TransactionFeeState.unknown,
+    rust_sync.TransactionFeeState.notApplicable,
+  ]) {
+    testWidgets(
+      'does not display a receive fee without known status: $feeState',
+      (tester) async {
+        await _pumpScreen(
+          tester,
+          args: ActivityTransactionStatusArgs(
+            txidHex: _txidHex,
+            txKind: 'received',
+            initialTransaction: _transaction(
+              txKind: 'received',
+              fee: BigInt.from(10000),
+              feeState: feeState,
+            ),
+            initialDetail: _detail(txKind: 'received'),
+          ),
+        );
+        expect(find.text('Network fee'), findsNothing);
+        expect(find.text('0.0001 ZEC'), findsNothing);
+      },
+    );
+  }
 
   testWidgets('shows the in-progress receipt for an unconfirmed receive', (
     tester,

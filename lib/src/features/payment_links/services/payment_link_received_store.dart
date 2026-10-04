@@ -91,6 +91,7 @@ class PaymentLinkReceivedRecord {
     this.claimDestinationPool,
     this.availability = PaymentLinkAvailability.unchecked,
     this.archived = false,
+    this.claimRecoveryConfirmed = false,
     this.claimPriorTxids = const [],
     this.setupAccountUuid,
   });
@@ -148,6 +149,9 @@ class PaymentLinkReceivedRecord {
   final PaymentLinkAvailability availability;
   final bool archived;
 
+  /// Durable six-confirmation checkpoint, retained if file/secret cleanup fails.
+  final bool claimRecoveryConfirmed;
+
   /// Local transactions that predate this attempt, excluded from recovery.
   /// Null means an older record has no baseline; [] is a known empty baseline.
   final List<String>? claimPriorTxids;
@@ -194,6 +198,7 @@ class PaymentLinkReceivedRecord {
     String? claimDestinationPool,
     PaymentLinkAvailability? availability,
     bool? archived,
+    bool? claimRecoveryConfirmed,
     Object? claimPriorTxids = _fieldNotProvided,
   }) {
     return PaymentLinkReceivedRecord(
@@ -225,6 +230,8 @@ class PaymentLinkReceivedRecord {
       claimDestinationPool: claimDestinationPool ?? this.claimDestinationPool,
       availability: availability ?? this.availability,
       archived: archived ?? this.archived,
+      claimRecoveryConfirmed:
+          claimRecoveryConfirmed ?? this.claimRecoveryConfirmed,
       claimPriorTxids: identical(claimPriorTxids, _fieldNotProvided)
           ? this.claimPriorTxids
           : claimPriorTxids as List<String>?,
@@ -492,6 +499,7 @@ class PaymentLinkReceivedStore {
             claimDestinationPool ?? existing.claimDestinationPool,
         availability: PaymentLinkAvailability.available,
         archived: existing.archived,
+        claimRecoveryConfirmed: existing.claimRecoveryConfirmed,
         claimPriorTxids: existing.claimPriorTxids,
       );
       await _writeRecords(_replaceByAddress(records, updated));
@@ -533,6 +541,7 @@ class PaymentLinkReceivedStore {
         fiatSnapshot:
             fiatSnapshot ?? existing.claimLink?.presentation?.fiatSnapshot,
         status: PaymentLinkReceivedStatus.submitting,
+        claimRecoveryConfirmed: false,
         availability: PaymentLinkAvailability.checking,
         archived: false,
         claimPriorTxids: List<String>.unmodifiable(priorTxids),
@@ -573,6 +582,7 @@ class PaymentLinkReceivedStore {
         claimDestinationPool: existing.claimDestinationPool,
         availability: existing.availability,
         archived: existing.archived,
+        claimRecoveryConfirmed: existing.claimRecoveryConfirmed,
         claimPriorTxids: existing.claimPriorTxids,
       );
       await _writeRecords(_replaceByAddress(records, updated));
@@ -597,6 +607,24 @@ class PaymentLinkReceivedStore {
       final pool = claimDestinationPool.trim();
       if (pool.isEmpty) throw ArgumentError.value(claimDestinationPool);
       final updated = existing.copyWith(claimDestinationPool: pool);
+      await _writeRecords(_replaceByAddress(records, updated));
+      return updated;
+    });
+  }
+
+  Future<PaymentLinkReceivedRecord> markClaimRecoveryConfirmed(
+    PaymentLinkReceivedRecord expected,
+  ) {
+    return _runExclusive(() async {
+      final records = await _loadUnlocked();
+      final existing = _findRequired(records, expected.address);
+      if (existing.status != PaymentLinkReceivedStatus.received ||
+          existing.claimTxids != expected.claimTxids ||
+          existing.claimSubmittedAt != expected.claimSubmittedAt ||
+          existing.destinationAccountUuid != expected.destinationAccountUuid) {
+        throw StateError('Gift Card attempt changed before cleanup.');
+      }
+      final updated = existing.copyWith(claimRecoveryConfirmed: true);
       await _writeRecords(_replaceByAddress(records, updated));
       return updated;
     });
@@ -655,6 +683,7 @@ class PaymentLinkReceivedStore {
         status: PaymentLinkReceivedStatus.readyToClaim,
         availability: availability,
         archived: existing.archived,
+        claimRecoveryConfirmed: existing.claimRecoveryConfirmed,
         claimLink: existing.claimLink,
         destinationAccountUuid: null,
         claimTxids: null,
@@ -829,6 +858,7 @@ Map<String, Object?> _recordToJson(PaymentLinkReceivedRecord record) {
     'status': record.status.name,
     'availability': record.availability.name,
     'archived': record.archived,
+    'claimRecoveryConfirmed': record.claimRecoveryConfirmed,
     'claimPriorTxids': record.claimPriorTxids,
     'claimLink': record.claimLink?.toRecoveryUri().toString(),
     'destinationAccountUuid': record.destinationAccountUuid,
@@ -864,6 +894,7 @@ PaymentLinkReceivedRecord _recordFromJson(Object? value) {
   final claimSubmittedAtRaw = value['claimSubmittedAt'];
   final claimDestinationPool = value['claimDestinationPool'];
   final setupAccountUuid = value['setupAccountUuid'];
+  final recoveryConfirmed = value['claimRecoveryConfirmed'];
   if (network is! String ||
       network.isEmpty ||
       address is! String ||
@@ -880,7 +911,8 @@ PaymentLinkReceivedRecord _recordFromJson(Object? value) {
       updatedAtRaw is! String ||
       (claimSubmittedAtRaw != null && claimSubmittedAtRaw is! String) ||
       (claimDestinationPool != null && claimDestinationPool is! String) ||
-      (setupAccountUuid != null && setupAccountUuid is! String)) {
+      (setupAccountUuid != null && setupAccountUuid is! String) ||
+      (recoveryConfirmed != null && recoveryConfirmed is! bool)) {
     throw const PaymentLinkReceivedStoreFormatException(
       'Received-card record fields are invalid.',
     );
@@ -1018,5 +1050,6 @@ PaymentLinkReceivedRecord _recordFromJson(Object? value) {
     claimSubmittedAt: claimSubmittedAt?.toUtc(),
     claimDestinationPool: claimDestinationPool as String?,
     setupAccountUuid: setupAccountUuid as String?,
+    claimRecoveryConfirmed: recoveryConfirmed == true,
   );
 }

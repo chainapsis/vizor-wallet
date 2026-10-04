@@ -86,6 +86,7 @@ enum PaymentLinkPreviewState {
   redeemInvalid,
   receivedWaiting,
   received,
+  receivedChecking,
   receivedMessage,
 }
 
@@ -265,6 +266,11 @@ Widget buildPaymentLinkRedeemInvalidUseCase(BuildContext context) =>
 
 Widget buildPaymentLinkReceivedUseCase(BuildContext context) =>
     const PaymentLinkDesktopPreview(state: PaymentLinkPreviewState.received);
+
+Widget buildPaymentLinkReceivedCheckingUseCase(BuildContext context) =>
+    const PaymentLinkDesktopPreview(
+      state: PaymentLinkPreviewState.receivedChecking,
+    );
 
 Widget buildPaymentLinkReceivedWaitingUseCase(BuildContext context) =>
     const PaymentLinkDesktopPreview(
@@ -651,6 +657,8 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
       PaymentLinkPreviewState.received => const _PaymentLinkReceivedPreview(
         hasMessage: false,
       ),
+      PaymentLinkPreviewState.receivedChecking =>
+        const _PaymentLinkReceivedPreview(hasMessage: false, checking: true),
       PaymentLinkPreviewState.receivedMessage =>
         const _PaymentLinkReceivedPreview(hasMessage: true),
     };
@@ -1260,9 +1268,13 @@ class _PaymentLinkInteractiveMessageDesktopPreviewState
 }
 
 class _PaymentLinkReceivedPreview extends StatefulWidget {
-  const _PaymentLinkReceivedPreview({required this.hasMessage});
+  const _PaymentLinkReceivedPreview({
+    required this.hasMessage,
+    this.checking = false,
+  });
 
   final bool hasMessage;
+  final bool checking;
 
   @override
   State<_PaymentLinkReceivedPreview> createState() =>
@@ -1283,6 +1295,20 @@ class _PaymentLinkReceivedPreviewState
 
   @override
   Widget build(BuildContext context) {
+    if (widget.checking) {
+      return PaymentLinkReadyDesktopView(
+        state: PaymentLinkReadyVisualState.checking,
+        card: const PaymentLinkGiftCard(
+          artwork: PaymentLinkCardArtwork.ruby,
+          amountText: '4.45',
+          supportingText: r'$1,210.20',
+          showCaret: false,
+        ),
+        onBack: _noop,
+        onCopy: null,
+        waitingStatusLabel: 'Checking the gift… 50%',
+      );
+    }
     if (!widget.hasMessage) {
       return PaymentLinkReceivedDesktopView(
         card: const PaymentLinkGiftCard(

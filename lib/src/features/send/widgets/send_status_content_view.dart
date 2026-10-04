@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/primitives.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/receipt_loading_skeleton.dart';
 import '../../../core/widgets/review_list_row.dart';
 import '../../../core/widgets/review_wrap_card.dart';
 import 'send_review_layout.dart';
@@ -34,6 +35,7 @@ class SendStatusContentView extends StatelessWidget {
     this.fiatText,
     this.memoText,
     this.memoExpanded = false,
+    this.memoLoading = false,
     this.noticeText,
     this.titleOverride,
     this.recipientRow,
@@ -42,14 +44,14 @@ class SendStatusContentView extends StatelessWidget {
     this.onOpenExplorer,
     this.onFeeHelp,
     super.key,
-  });
+  }) : assert(recipient != null || recipientRow != null);
 
   final SendStatusPhase phase;
 
   /// Formatted send amount ("123.12 ZEC").
   final String amountText;
 
-  final SendReviewRecipient recipient;
+  final SendReviewRecipient? recipient;
 
   /// Pool badge for raw-address recipients.
   final bool isShieldedRecipient;
@@ -75,6 +77,9 @@ class SendStatusContentView extends StatelessWidget {
 
   /// Whether the Message row shows the full memo (see [ReviewMemoRows]).
   final bool memoExpanded;
+
+  /// Reserves the collapsed message row until the detail read completes.
+  final bool memoLoading;
 
   /// Optional status detail under the wrap card — the partial/offline
   /// broadcast guidance or the failure reason. Hidden when null.
@@ -170,7 +175,9 @@ class SendStatusContentView extends StatelessWidget {
             Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (memoText != null)
+                if (memoLoading)
+                  const ReceiptMemoSkeleton()
+                else if (memoText != null)
                   ReviewMemoRows(
                     memoText: memoText!,
                     expanded: memoExpanded,
