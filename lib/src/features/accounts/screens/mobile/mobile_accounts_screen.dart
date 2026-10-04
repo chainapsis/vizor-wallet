@@ -459,7 +459,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
     if (!mounted) return;
     final confirmed = await showAppMobileSheet<bool>(
       context: context,
-      builder: (_) => _RemoveAccountSheet(
+      builder: (_) => MobileAccountRemovalSheet(
         account: account,
         isLastAccount: isLastAccount,
         hasActiveMigration: hasActiveMigration,
@@ -730,12 +730,13 @@ class _AccountsGroupCard extends StatelessWidget {
 }
 
 /// Figma `Remove` (4514:85954): compact destructive confirmation sheet.
-class _RemoveAccountSheet extends StatelessWidget {
-  const _RemoveAccountSheet({
+class MobileAccountRemovalSheet extends StatelessWidget {
+  const MobileAccountRemovalSheet({
     required this.account,
     required this.isLastAccount,
     required this.hasActiveMigration,
     required this.unsharedGiftCardCount,
+    super.key,
   });
 
   final AccountInfo account;
@@ -805,44 +806,58 @@ class _RemoveAccountSheet extends StatelessWidget {
         hardwareSignerKind: account.hardwareSignerKind,
       ),
       titleStyle: _titleStyle.copyWith(color: colors.text.accent),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            _description,
-            style: _bodyStyle.copyWith(color: colors.text.accent),
-          ),
-          if (unsharedGiftCardWarning != null) ...[
-            const SizedBox(height: AppSpacing.s),
+      constrainBody: true,
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
             Text(
-              unsharedGiftCardWarning,
-              key: const ValueKey('mobile_account_remove_unshared_gift_cards'),
-              style: _bodyStyle.copyWith(color: colors.text.warning),
+              _description,
+              style: _bodyStyle.copyWith(color: colors.text.accent),
             ),
-          ],
-          const SizedBox(height: AppSpacing.md),
-          AppButton(
-            key: const ValueKey('mobile_account_remove_confirm'),
-            variant: AppButtonVariant.destructive,
-            expand: true,
-            onPressed: () => Navigator.of(context).pop(true),
-            leading: isLastAccount ? null : const AppIcon(AppIcons.trash),
-            child: Text(
-              isLastAccount ? 'Reset Vizor' : 'Remove',
-              style: _buttonLabelStyle.copyWith(
-                color: colors.button.destructive.label,
+            if (account.setupPending && !account.isHardware) ...[
+              const SizedBox(height: AppSpacing.s),
+              Text(
+                'If you haven’t backed up this account’s secret passphrase, '
+                'you can’t recover its funds after removal.',
+                key: const ValueKey('mobile_account_remove_backup_warning'),
+                style: _bodyStyle.copyWith(color: colors.text.destructive),
+              ),
+            ],
+            if (unsharedGiftCardWarning != null) ...[
+              const SizedBox(height: AppSpacing.s),
+              Text(
+                unsharedGiftCardWarning,
+                key: const ValueKey(
+                  'mobile_account_remove_unshared_gift_cards',
+                ),
+                style: _bodyStyle.copyWith(color: colors.text.warning),
+              ),
+            ],
+            const SizedBox(height: AppSpacing.md),
+            AppButton(
+              key: const ValueKey('mobile_account_remove_confirm'),
+              variant: AppButtonVariant.destructive,
+              expand: true,
+              onPressed: () => Navigator.of(context).pop(true),
+              leading: isLastAccount ? null : const AppIcon(AppIcons.trash),
+              child: Text(
+                isLastAccount ? 'Reset Vizor' : 'Remove',
+                style: _buttonLabelStyle.copyWith(
+                  color: colors.button.destructive.label,
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: AppSpacing.s),
-          MobileSheetCancel(
-            onTap: () => Navigator.of(context).pop(false),
-            textStyle: _buttonLabelStyle.copyWith(
-              color: colors.button.ghost.label,
+            const SizedBox(height: AppSpacing.s),
+            MobileSheetCancel(
+              onTap: () => Navigator.of(context).pop(false),
+              textStyle: _buttonLabelStyle.copyWith(
+                color: colors.button.ghost.label,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -70,6 +70,24 @@ class PaymentLinkIntakeNotifier extends Notifier<PaymentLinkIntakeState> {
     }
   }
 
+  /// Keeps the Card chosen before wallet setup at the front of the queue.
+  /// Other arriving links retain their relative order.
+  PaymentLinkIntakeResult prioritize(VizorPaymentLink link) {
+    final remaining = [
+      for (final pending in state.pendingLinks)
+        if (!pending.hasSameCanonicalPayload(link)) pending,
+    ];
+    if (remaining.length == kPaymentLinkIntakeQueueCapacity) {
+      state = PaymentLinkIntakeState(
+        pendingLinks: state.pendingLinks,
+        errorMessage: 'Too many payment links are waiting to open.',
+      );
+      return PaymentLinkIntakeResult.rejected;
+    }
+    state = PaymentLinkIntakeState(pendingLinks: [link, ...remaining]);
+    return PaymentLinkIntakeResult.accepted;
+  }
+
   VizorPaymentLink? takePending() {
     final link = state.pendingLink;
     if (link == null) return null;
@@ -78,6 +96,17 @@ class PaymentLinkIntakeNotifier extends Notifier<PaymentLinkIntakeState> {
       errorMessage: state.errorMessage,
     );
     return link;
+  }
+
+  /// Drops every queued copy of [link] once another flow owns it.
+  void discard(VizorPaymentLink link) {
+    state = PaymentLinkIntakeState(
+      pendingLinks: [
+        for (final pending in state.pendingLinks)
+          if (!pending.hasSameCanonicalPayload(link)) pending,
+      ],
+      errorMessage: state.errorMessage,
+    );
   }
 
   void clearError() {

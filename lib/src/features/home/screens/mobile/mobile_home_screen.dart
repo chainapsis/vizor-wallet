@@ -56,6 +56,8 @@ import '../../../migration/widgets/mobile/mobile_ironwood_migration_announcement
 import '../../../swap/models/swap_activity_navigation.dart';
 import '../../../swap/providers/swap_state_provider.dart';
 import '../../../swap/widgets/swap_activity_status_auto_refresh.dart';
+import '../../providers/backup_reminder_provider.dart';
+import '../../widgets/mobile_home_carousel.dart';
 import '../../services/transparent_balance_display.dart';
 import '../../services/transparent_shielding_service.dart';
 import 'mobile_keystone_shield_screen.dart';
@@ -1271,6 +1273,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
+            const _MobileSetupCarousel(),
             const _MobileVotingEntry(),
             if (widget.ironwoodMigrationCta.visible) ...[
               const SizedBox(height: AppSpacing.s),
@@ -1504,13 +1507,101 @@ class _MobileVotingEntryState extends ConsumerState<_MobileVotingEntry> {
     }
     return Padding(
       padding: const EdgeInsets.only(top: AppSpacing.s),
-      child: _MobileVotingEntryCard(onTap: () => context.push('/voting')),
+      child: _MobileHomeEntryCard(
+        key: const ValueKey('mobile_home_coinholder_voting'),
+        icon: AppIcons.vote,
+        title: 'Coinholder voting',
+        subtitle: 'Help to shape the network',
+        semanticsLabel: 'Open coinholder voting',
+        onTap: () => context.push('/voting'),
+      ),
     );
   }
 }
 
-class _MobileVotingEntryCard extends StatelessWidget {
-  const _MobileVotingEntryCard({required this.onTap});
+class _MobileSetupCarousel extends ConsumerWidget {
+  const _MobileSetupCarousel();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final items = <MobileHomeCarouselItem>[];
+    final activeAccountUuid = ref.watch(
+      accountProvider.select((state) => state.value?.activeAccountUuid),
+    );
+    if (ref.watch(showBackupReminderProvider)) {
+      items.add(
+        MobileHomeCarouselItem(
+          id: 'wallet-setup',
+          child: _MobileHomeEntryCard(
+            key: const ValueKey('mobile_home_backup'),
+            icon: AppIcons.shieldKeyhole,
+            title: 'Secure your wallet',
+            subtitle: 'Back up your secret passphrase\nLast step',
+            emphasized: true,
+            showChevron: false,
+            onTap: () => context.push(
+              '/setup/backup',
+              extra: ref.read(accountProvider).value?.activeAccountUuid,
+            ),
+          ),
+        ),
+      );
+    }
+    final educationPending = ref.watch(
+      accountProvider.select(
+        (state) => state.value?.activeAccount?.giftEducationPending ?? false,
+      ),
+    );
+    if (educationPending) {
+      items.add(
+        MobileHomeCarouselItem(
+          id: 'zcash-education',
+          child: _MobileHomeEntryCard(
+            key: const ValueKey('mobile_home_zcash_education'),
+            icon: AppIcons.book,
+            title: 'Learn about Zcash',
+            subtitle: 'Privacy, address types, and what to expect',
+            emphasized: true,
+            showChevron: false,
+            onTap: () => context.push(
+              '/setup/education/intro',
+              extra: ref.read(accountProvider).value?.activeAccountUuid,
+            ),
+          ),
+        ),
+      );
+    }
+    if (items.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.s),
+      child: MobileHomeCarousel(
+        key: ValueKey('mobile_home_setup_carousel_$activeAccountUuid'),
+        items: items,
+      ),
+    );
+  }
+}
+
+class _MobileHomeEntryCard extends StatelessWidget {
+  const _MobileHomeEntryCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    this.emphasized = false,
+    this.showChevron = true,
+    this.semanticsLabel,
+    super.key,
+  });
+
+  final String icon;
+  final String title;
+  final String subtitle;
+  final bool emphasized;
+  final bool showChevron;
+
+  /// Replaces [title] as the spoken name; the subtitle is always read after.
+  final String? semanticsLabel;
 
   final VoidCallback onTap;
 
@@ -1518,32 +1609,56 @@ class _MobileVotingEntryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Semantics(
+      // One item for screen readers whether or not it is tappable.
+      container: true,
       button: true,
-      label: 'Open coinholder voting',
+      label: '${semanticsLabel ?? title}\n$subtitle',
+      onTap: onTap,
+      excludeSemantics: true,
       child: GestureDetector(
-        key: const ValueKey('mobile_home_coinholder_voting'),
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: Container(
-          constraints: const BoxConstraints(minHeight: 77),
-          padding: const EdgeInsets.symmetric(
+          constraints: BoxConstraints(minHeight: emphasized ? 88 : 77),
+          padding: EdgeInsets.symmetric(
             horizontal: AppSpacing.sm,
-            vertical: AppSpacing.s,
+            vertical: emphasized ? AppSpacing.sm : AppSpacing.s,
           ),
           decoration: BoxDecoration(
-            color: colors.background.ground,
+            color: emphasized ? colors.surface.card : colors.background.ground,
             borderRadius: BorderRadius.circular(AppRadii.large),
+            boxShadow: emphasized ? appSurfaceShadow(colors) : null,
           ),
           foregroundDecoration: BoxDecoration(
             borderRadius: BorderRadius.circular(AppRadii.large),
-            border: Border.all(color: const Color(0x12FFFFFF), width: 1.5),
+            border: emphasized
+                ? Border.all(color: colors.border.regular)
+                : Border.all(color: const Color(0x12FFFFFF), width: 1.5),
           ),
           child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.xxs),
+            padding: emphasized
+                ? EdgeInsets.zero
+                : const EdgeInsets.all(AppSpacing.xxs),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                AppIcon(AppIcons.vote, size: 20, color: colors.icon.accent),
+                if (emphasized)
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: colors.background.brandCrimsonSubtle,
+                      borderRadius: BorderRadius.circular(AppRadii.xSmall),
+                    ),
+                    alignment: Alignment.center,
+                    child: AppIcon(
+                      icon,
+                      size: 20,
+                      color: colors.icon.brandCrimson,
+                    ),
+                  )
+                else
+                  AppIcon(icon, size: 20, color: colors.icon.accent),
                 const SizedBox(width: AppSpacing.s),
                 Expanded(
                   child: Column(
@@ -1554,26 +1669,29 @@ class _MobileVotingEntryCard extends StatelessWidget {
                         children: [
                           Expanded(
                             child: Text(
-                              'Coinholder voting',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                              title,
+                              maxLines: emphasized ? null : 1,
+                              overflow: emphasized
+                                  ? null
+                                  : TextOverflow.ellipsis,
                               style: AppTypography.labelLarge.copyWith(
                                 color: colors.text.accent,
                               ),
                             ),
                           ),
-                          AppIcon(
-                            AppIcons.chevronForward,
-                            size: 20,
-                            color: colors.icon.accent,
-                          ),
+                          if (showChevron)
+                            AppIcon(
+                              AppIcons.chevronForward,
+                              size: 20,
+                              color: colors.icon.accent,
+                            ),
                         ],
                       ),
                       const SizedBox(height: AppSpacing.xs),
                       Text(
-                        'Help to shape the network',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                        subtitle,
+                        maxLines: emphasized ? null : 1,
+                        overflow: emphasized ? null : TextOverflow.ellipsis,
                         style: AppTypography.bodyMedium.copyWith(
                           color: colors.text.secondary,
                           height: 17 / 16,

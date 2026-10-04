@@ -5,7 +5,6 @@ import 'package:flutter/material.dart' show TextField;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
@@ -25,6 +24,7 @@ import '../shared/onboarding_flow_args.dart';
 import 'mobile_import_account_discovery_sheet.dart';
 import 'mobile_import_birthday_unknown_height_sheet.dart';
 import 'mobile_onboarding_progress.dart';
+import 'mobile_onboarding_progress_scope.dart';
 import 'mobile_onboarding_scaffold.dart';
 
 enum _BirthdayEntryMode { date, blockHeight }
@@ -47,7 +47,7 @@ class MobileImportBirthdayScreen extends ConsumerStatefulWidget {
   const MobileImportBirthdayScreen({
     required this.args,
     this.onHeightConfirmed,
-    this.progress,
+    this.position,
     this.loadChainMetadata = true,
     super.key,
   });
@@ -60,9 +60,8 @@ class MobileImportBirthdayScreen extends ConsumerStatefulWidget {
   /// through the screen's standard error line.
   final Future<void> Function(int height)? onHeightConfirmed;
 
-  /// Override for shared Keystone usage. Software import uses the compact
-  /// import-flow value.
-  final double? progress;
+  /// Semantic position when the birthday screen is reused by a device flow.
+  final OnboardingProgressPosition? position;
 
   /// Test seam — widget tests disable the lightwalletd metadata fetch.
   @visibleForTesting
@@ -330,7 +329,7 @@ class _MobileImportBirthdayScreenState
         setState(() {
           _submitPhase = _MobileImportSubmitPhase.idle;
         });
-        context.push(
+        context.pushOnboarding(
           '/onboarding/set-passcode',
           extra: SetPasswordScreenArgs.importWallet(
             mnemonic: widget.args.mnemonic,
@@ -367,7 +366,7 @@ class _MobileImportBirthdayScreenState
         birthdayHeight: height,
         selectedAdditionalAccountIndices: selectedAdditionalAccountIndices,
       );
-      context.push(
+      context.pushOnboarding(
         '/onboarding/customise-account',
         extra: CustomiseAccountArgs(setupArgs: setupArgs),
       );
@@ -460,7 +459,11 @@ class _MobileImportBirthdayScreenState
         : AppIcons.chevronForward;
 
     return MobileOnboardingStepScaffold(
-      progress: widget.progress ?? mobileImportProgress(3),
+      progress:
+          widget.position?.value ??
+          MobileOnboardingProgressScope.of(
+            context,
+          ).at(OnboardingFlow.importWallet, OnboardingStage.birthday).value,
       onBack: _isSubmitting ? null : () => Navigator.of(context).maybePop(),
       title: 'Around when did you create your wallet?',
       // Two 25 px lines like the Figma subtitle block.

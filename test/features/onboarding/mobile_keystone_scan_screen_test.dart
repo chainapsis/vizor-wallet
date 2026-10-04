@@ -6,6 +6,9 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_progress_scope.dart';
+
 import 'package:go_router/go_router.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
@@ -40,6 +43,9 @@ const _phoneViewPadding = EdgeInsets.only(top: 55);
 
 Widget _app({MobileScannerController? controller}) {
   return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+    ],
     child: MaterialApp(
       home: MobileKeystoneScanScreen(scannerController: controller),
       builder: (context, child) {
@@ -48,7 +54,10 @@ Widget _app({MobileScannerController? controller}) {
         ).copyWith(padding: _phoneViewPadding, viewPadding: _phoneViewPadding);
         return AppTheme(
           data: AppThemeData.dark,
-          child: MediaQuery(data: mediaQuery, child: child!),
+          child: MediaQuery(
+            data: mediaQuery,
+            child: MobileOnboardingProgressFrame(child: child!),
+          ),
         );
       },
     ),
@@ -79,6 +88,9 @@ Widget _routerApp({
   );
 
   return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+    ],
     child: MaterialApp.router(
       routerConfig: router,
       builder: (context, child) {
@@ -89,7 +101,9 @@ Widget _routerApp({
           data: AppThemeData.dark,
           child: MediaQuery(
             data: mediaQuery,
-            child: child ?? const SizedBox.shrink(),
+            child: MobileOnboardingProgressFrame(
+              child: child ?? const SizedBox.shrink(),
+            ),
           ),
         );
       },
@@ -99,6 +113,9 @@ Widget _routerApp({
 
 Widget _stackedRouteApp({MobileScannerController? controller}) {
   return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+    ],
     child: MaterialApp(
       initialRoute: '/scan',
       routes: {
@@ -113,7 +130,9 @@ Widget _stackedRouteApp({MobileScannerController? controller}) {
           data: AppThemeData.dark,
           child: MediaQuery(
             data: mediaQuery,
-            child: child ?? const SizedBox.shrink(),
+            child: MobileOnboardingProgressFrame(
+              child: child ?? const SizedBox.shrink(),
+            ),
           ),
         );
       },

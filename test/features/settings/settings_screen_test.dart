@@ -61,7 +61,7 @@ void main() {
 
     expect(_rowBackgroundColor(tester, 'Password'), isNull);
     expect(find.text('Explorer'), findsOneWidget);
-    expect(find.text('CipherScan'), findsOneWidget);
+    expect(find.text('ZecBlock'), findsOneWidget);
 
     final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
     addTearDown(mouse.removePointer);

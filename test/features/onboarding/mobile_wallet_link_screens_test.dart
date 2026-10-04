@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_progress_scope.dart';
+
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
@@ -37,7 +39,10 @@ Widget _app(Widget child, {required MobileWalletLinkState state}) {
       ),
     ],
     child: MaterialApp(
-      builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
+      builder: (_, c) => AppTheme(
+        data: AppThemeData.light,
+        child: MobileOnboardingProgressFrame(child: c!),
+      ),
       home: child,
     ),
   );
@@ -73,7 +78,10 @@ Widget _routerApp(
     ],
     child: MaterialApp.router(
       routerConfig: router,
-      builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
+      builder: (_, c) => AppTheme(
+        data: AppThemeData.light,
+        child: MobileOnboardingProgressFrame(child: c!),
+      ),
     ),
   );
 }

@@ -343,6 +343,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Forgot Passcode?'), findsOneWidget);
+    expect(find.text(kForgotPasscodeUnbackedAccountWarning), findsOneWidget);
+    expect(tester.takeException(), isNull);
     expect(find.text('Continue to reset Vizor'), findsOneWidget);
 
     await tester.tap(find.text('Cancel'));

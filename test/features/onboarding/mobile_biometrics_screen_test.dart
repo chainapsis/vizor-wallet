@@ -5,6 +5,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -44,7 +45,10 @@ Widget _app(_FakeBiometricUnlock biometric) {
     ],
   );
   return ProviderScope(
-    overrides: [biometricUnlockServiceProvider.overrideWithValue(biometric)],
+    overrides: [
+      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+      biometricUnlockServiceProvider.overrideWithValue(biometric),
+    ],
     child: MaterialApp.router(
       routerConfig: router,
       builder: (_, child) => AppTheme(

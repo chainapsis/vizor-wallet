@@ -205,7 +205,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
           },
         );
 
-        securityNotifier.commitPasswordSetup();
+        await securityNotifier.completePasswordSetup();
         passwordCommitted = true;
         unawaited(inputSourceService.remember(inputSource));
         if (args.flow == SetPasswordFlow.importKeystone) {
@@ -232,7 +232,11 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
     } catch (e, st) {
       if (passwordPrepared && !passwordCommitted) {
         try {
-          await securityNotifier.rollbackPasswordSetup();
+          await securityNotifier.finishPasswordSetupAfterFailure(
+            accountMayExist:
+                e is WalletAccountSetupInterruptedException ||
+                (ref.read(accountProvider).value?.hasAccounts ?? false),
+          );
         } catch (rollbackError, rollbackStack) {
           log(
             'SetPasswordScreen._submit: password rollback failed: '

@@ -5,10 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_onboarding_routes.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_create_steps.dart';
-import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_progress.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_welcome_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_secret_passphrase_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/create/onboarding_split_view.dart';
 import '../../figma_compare/figma_compare_font_loader.dart';
@@ -19,22 +20,30 @@ class _FixtureMnemonic extends CreateOnboardingMnemonicNotifier {
       'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
 }
 
-Widget _app(String initialLocation, {double bottomInset = 0}) {
+Widget _app(
+  String initialLocation, {
+  double bottomInset = 0,
+  double topInset = 0,
+  double textScale = 1,
+  AppThemeData theme = AppThemeData.light,
+}) {
   final router = GoRouter(
     initialLocation: initialLocation,
     routes: mobileOnboardingRoutes(),
   );
   return ProviderScope(
     overrides: [
+      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
       createOnboardingMnemonicProvider.overrideWith(_FixtureMnemonic.new),
     ],
     child: MaterialApp.router(
       routerConfig: router,
       builder: (context, child) => MediaQuery(
-        data: MediaQuery.of(
-          context,
-        ).copyWith(padding: EdgeInsets.only(bottom: bottomInset)),
-        child: AppTheme(data: AppThemeData.light, child: child!),
+        data: MediaQuery.of(context).copyWith(
+          padding: EdgeInsets.only(top: topInset, bottom: bottomInset),
+          textScaler: TextScaler.linear(textScale),
+        ),
+        child: AppTheme(data: theme, child: child!),
       ),
     ),
   );
@@ -72,25 +81,91 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('mobile_intro_skip')));
     await tester.pumpAndSettle();
-    // Secret passphrase is still the placeholder until OB-4.
-    expect(find.byType(MobileAddressTypesScreen), findsNothing);
+    expect(find.byType(MobileSecretPassphraseScreen), findsOneWidget);
+    await tester.tap(find.bySemanticsLabel('Back'));
+    await tester.pumpAndSettle();
+    expect(find.byType(MobileOnboardingIntroScreen), findsOneWidget);
   });
 
-  testWidgets('create education screens count welcome in progress', (
+  testWidgets('intro Back returns to Welcome', (tester) async {
+    await tester.pumpWidget(_app('/welcome'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile_welcome_get_started')));
+    await tester.pumpAndSettle();
+    expect(find.byType(MobileOnboardingIntroScreen), findsOneWidget);
+    await tester.tap(find.bySemanticsLabel('Back'));
+    await tester.pumpAndSettle();
+    expect(find.byType(MobileWelcomeScreen), findsOneWidget);
+  });
+
+  testWidgets('create education screens use shared stage progress', (
     tester,
   ) async {
     await tester.pumpWidget(_app('/onboarding/intro'));
     await tester.pumpAndSettle();
-    expect(_stepsProgress(tester), closeTo(mobileCreateProgress(3), 0.0001));
+    expect(_stepsProgress(tester), closeTo(60 / 196, 0.0001));
 
     await tester.pumpWidget(_app('/onboarding/address-types'));
     await tester.pumpAndSettle();
-    expect(_stepsProgress(tester), closeTo(mobileCreateProgress(4), 0.0001));
+    expect(_stepsProgress(tester), closeTo(0.42176870748, 0.0001));
 
     await tester.pumpWidget(_app('/onboarding/things-to-know'));
     await tester.pumpAndSettle();
-    expect(_stepsProgress(tester), closeTo(mobileCreateProgress(5), 0.0001));
+    expect(_stepsProgress(tester), closeTo(0.53741496599, 0.0001));
   });
+
+  for (final theme in [AppThemeData.light, AppThemeData.dark]) {
+    for (final size in [const Size(393, 852), const Size(320, 568)]) {
+      testWidgets(
+        'intro scales text without clipping and keeps both actions reachable '
+        'at $size in ${theme == AppThemeData.light ? 'light' : 'dark'}',
+        (tester) async {
+          tester.view.physicalSize = size;
+          addTearDown(tester.view.resetPhysicalSize);
+          await tester.pumpWidget(
+            _app(
+              '/onboarding/intro',
+              theme: theme,
+              textScale: 1.4,
+              topInset: 55,
+              bottomInset: size.width == 393 ? 34 : 0,
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull);
+
+          final card = tester.getRect(
+            find.byKey(const ValueKey('mobile_intro_info_card')),
+          );
+          final body = tester.getRect(
+            find.text(
+              'Unlike Bitcoin or Ethereum, shielded Zcash transactions '
+              'hide the sender, recipient, and amount — verified by '
+              'cryptography, not trust.',
+            ),
+          );
+          expect(body.left, greaterThanOrEqualTo(card.left));
+          expect(body.right, lessThanOrEqualTo(card.right));
+          expect(body.top, greaterThanOrEqualTo(card.top));
+          expect(body.bottom, lessThanOrEqualTo(card.bottom));
+
+          final continueAction = find.byKey(
+            const ValueKey('mobile_intro_continue'),
+          );
+          final skipAction = find.byKey(const ValueKey('mobile_intro_skip'));
+          expect(continueAction.hitTestable(), findsOneWidget);
+          expect(skipAction.hitTestable(), findsOneWidget);
+          expect(
+            tester.getRect(skipAction).bottom,
+            lessThanOrEqualTo(size.height - (size.width == 393 ? 34 : 0)),
+          );
+          await tester.tap(skipAction);
+          await tester.pumpAndSettle();
+          expect(find.byType(MobileSecretPassphraseScreen), findsOneWidget);
+        },
+      );
+    }
+  }
 
   testWidgets('address types lists both pools and continues', (tester) async {
     await tester.pumpWidget(_app('/onboarding/address-types'));
