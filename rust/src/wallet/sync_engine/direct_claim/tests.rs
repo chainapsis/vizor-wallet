@@ -3,7 +3,15 @@ use super::*;
 use crate::wallet::{keys, payment_link_claim_confirmations_policy, sync::SendPurpose};
 use secrecy::ExposeSecret;
 use zcash_client_backend::{
-    data_api::{chain::ChainState, scanning::ScanPriority},
+    data_api::{
+        chain::ChainState,
+        enhance_pir::{
+            EnhancePirRead, EnhancePirStoreResult, EnhancePirWork, EnhancePirWrite, EnhanceRecord,
+            EnhanceRecordParts, EnhanceTransactionMetadata, EnhancementMode,
+            TransactionEnhancementWork,
+        },
+        scanning::ScanPriority,
+    },
     proto::compact_formats::{ChainMetadata, CompactBlock, CompactTx},
 };
 use zcash_primitives::block::BlockHash;
@@ -43,12 +51,15 @@ fn funding_block_builds_a_real_claim_quote_while_historical_gaps_remain_unscanne
         orchard::Anchor::empty_tree(),
     )
     .unwrap();
+    let mut funding_memo = [0; 512];
+    let message = b"Gift from the funding output";
+    funding_memo[..message.len()].copy_from_slice(message);
     builder
         .add_output(
             None,
             recipient,
             orchard::value::NoteValue::from_raw(50_010_000),
-            [0; 512],
+            funding_memo,
         )
         .unwrap();
     let (bundle, _) = builder
@@ -127,15 +138,49 @@ fn funding_block_builds_a_real_claim_quote_while_historical_gaps_remain_unscanne
             .unwrap()
             .is_none()
     );
+    // The SDK routes the compact-scanned funding note to PIR; authenticate the
+    // real funding ciphertext rather than writing a synthetic cached memo.
+    db.set_enhancement_mode(EnhancementMode::PrivateIronwood);
+    let work = db.transaction_enhancement_work().unwrap();
+    assert!(!work.iter().any(|item| matches!(
+        item, TransactionEnhancementWork::Public(request) if request.txid() == id
+    )));
+    let request = work
+        .iter()
+        .find_map(|item| match item {
+            TransactionEnhancementWork::Private(EnhancePirWork::Query(request))
+                if request.request_id().txid() == id =>
+            {
+                Some(*request)
+            }
+            _ => None,
+        })
+        .expect("funding note must have a private memo obligation");
+    let action = &bundle.actions()[request.request_id().output_index() as usize];
+    let record = EnhanceRecord::from_parts(EnhanceRecordParts {
+        enc_ciphertext_suffix: action.encrypted_note().enc_ciphertext[52..]
+            .try_into()
+            .unwrap(),
+        cv_net: action.cv_net().to_bytes(),
+        out_ciphertext: action.encrypted_note().out_ciphertext,
+        has_transparent_inputs: false,
+        has_transparent_outputs: false,
+        metadata: EnhanceTransactionMetadata::new(0, Some(0)).unwrap(),
+    });
+    let mut invalid = record.as_bytes().to_owned();
+    invalid[0] ^= 1;
+    assert_eq!(
+        db.apply_ironwood_enhance_record(request, &EnhanceRecord::from_bytes(invalid).unwrap())
+            .unwrap(),
+        EnhancePirStoreResult::Rejected,
+    );
+    assert_eq!(
+        db.apply_ironwood_enhance_record(request, &record).unwrap(),
+        EnhancePirStoreResult::Stored
+    );
     drop(db);
     let conn = open_wallet_raw_conn_with_timeout(path, READ_DB_BUSY_TIMEOUT).unwrap();
-    // Use the SDK's real scanned-note schema and prove all locator modes read
-    // the same output without opening the deliberately unreachable endpoint.
-    conn.execute(
-        "UPDATE ironwood_received_notes SET memo=?1 WHERE value>0",
-        [b"Gift from the funding output".as_slice()],
-    )
-    .unwrap();
+    // All locator modes read the authenticated memo without opening this URL.
     let rt = tokio::runtime::Runtime::new().unwrap();
     let display_id = id.to_string();
     for (txid, height) in [

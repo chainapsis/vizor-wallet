@@ -2,17 +2,13 @@
 use std::time::Duration;
 
 use rusqlite::Connection;
-use zcash_primitives::transaction::{Transaction, TxId};
-use zcash_protocol::{
-    consensus::BranchId,
-    memo::{Memo, MemoBytes},
-};
+use zcash_primitives::transaction::TxId;
+use zcash_protocol::memo::{Memo, MemoBytes};
 
-use super::{direct_claim, enhancement::EnhancementPolicy, open_lwd_channel};
+use super::{direct_claim, enhancement::EnhancementSession, open_db, open_lwd_channel};
 use crate::wallet::{
     db::{open_wallet_raw_conn_with_timeout, READ_DB_BUSY_TIMEOUT},
     network::WalletNetwork,
-    transaction_data::payload::get_transaction_payload,
 };
 
 #[derive(Debug, PartialEq)]
@@ -98,7 +94,8 @@ fn text(memo: Option<&[u8]>) -> Option<String> {
 }
 
 /// Direct locators only read their existing decrypted payload. Birthday mode
-/// may fetch one missing payload in public mode, with a bounded display budget.
+/// recovers missing metadata through the wallet's existing public/PIR routing,
+/// with a bounded display budget and no private-to-public failure fallback.
 /// Errors are optional metadata failures; callers keep claim validation separate.
 pub(crate) async fn read(
     path: &str,
@@ -132,25 +129,24 @@ pub(crate) async fn read(
     if selected.memo.is_some() {
         return Ok(text(selected.memo.as_deref()));
     }
-    if direct || EnhancementPolicy::current(network).is_private() {
+    if direct {
         return Ok(None);
     }
 
-    let raw = tokio::time::timeout(Duration::from_secs(5), async {
+    // Claim scanning omits enhancement. Reuse its existing routing authority
+    // here, including PIR note authentication and mixed-pool routing, rather
+    // than treating the install preference as a reason to omit every memo.
+    tokio::time::timeout(Duration::from_secs(5), async {
+        let mut enhancement = EnhancementSession::new(network, path);
+        let mut db = open_db(path, network).map_err(|e| e.to_string())?;
         let mut client = open_lwd_channel(url).await.map_err(|e| e.to_string())?;
-        get_transaction_payload(&mut client, selected.txid)
+        enhancement
+            .run_payload_recovery(&mut db, &mut client, None, &|| false)
             .await
             .map_err(|e| e.to_string())
     })
     .await
     .map_err(|_| "Gift message lookup timed out")??;
-    let tx =
-        Transaction::read(raw.data.as_slice(), BranchId::Sapling).map_err(|e| e.to_string())?;
-    // A metadata fetch must not rewrite a concurrently changed funding state.
-    if tx.txid() != selected.txid || raw.height != u64::from(selected.height) {
-        return Ok(None);
-    }
-    crate::wallet::sync::decrypt_and_store_transaction(path, network, &raw.data, Some(raw.height))?;
     let conn = open_wallet_raw_conn_with_timeout(path, READ_DB_BUSY_TIMEOUT)?;
     let updated = candidate(
         &conn,
@@ -159,7 +155,11 @@ pub(crate) async fn read(
         Some(selected.txid),
     )?;
     Ok(updated
-        .filter(|note| note.pool == selected.pool && note.index == selected.index)
+        .filter(|note| {
+            note.pool == selected.pool
+                && note.index == selected.index
+                && note.height == selected.height
+        })
         .and_then(|note| text(note.memo.as_deref())))
 }
 

@@ -217,12 +217,15 @@ not supply a display message. Txid mode uses the link identity; height mode
 uses the durable resolution identity even after a reorg.
 
 Direct height/txid preparation already decrypts the funding payload: reading
-its memo adds no RPC. Birthday claim sync skips transaction enhancement. If
-its funding note lacks a memo, public mode may fetch that one transaction,
-with a five-second total lookup budget. Private mode does not add a public
-lookup for optional display metadata; a missing message is omitted. This
-means birthday messages can be unavailable in private mode. The public
-lookup reveals the funding txid to the chosen endpoint.
+its memo adds no RPC. Birthday claim sync skips transaction enhancement, so
+missing metadata is recovered from the isolated claim database through the
+existing payload scheduler, with a five-second total display budget. The SDK
+routes pure Ironwood funding notes to Enhance PIR when Private queries is
+on; transactions it explicitly routes to public transport retain the normal
+lightwalletd lookup. No PIR failure, missing coverage, or timeout authorizes a
+public fallback. A temporarily unavailable message is omitted without blocking
+the claim. Public lookups disclose the funding txid to the chosen endpoint;
+PIR uses the existing position query and authenticated note-recovery path.
 
 URL messages in v1-v3 retain precedence. Otherwise readers use a retained
 received-record message, then the newly decoded funding memo. Inspection and

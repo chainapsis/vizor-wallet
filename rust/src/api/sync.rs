@@ -2703,8 +2703,8 @@ pub fn set_transaction_status(
 // ======================== Transaction History ========================
 
 /// Optional message from the unique shielded output funding a Gift Card.
-/// Public birthday claims may recover one missing raw payload. Private
-/// birthday claims never fall back to a public lookup for display metadata.
+/// Birthday claims recover missing metadata through the existing public/PIR
+/// routing. A private lookup failure never authorizes public fallback.
 pub fn get_payment_link_funding_message(
     db_path: String,
     lightwalletd_url: String,
