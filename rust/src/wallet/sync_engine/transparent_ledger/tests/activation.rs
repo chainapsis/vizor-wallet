@@ -820,6 +820,61 @@ async fn public_hardware_retry_of_own_stored_spend_reaches_submission() {
     assert_eq!(lwd.count("/SendTransaction"), 2);
 }
 
+/// A Public-mode hardware TEX send dispatches leg 1 from a wallet UTXO and
+/// leg 2 from leg 1's ephemeral output, which exists only in `earlier`. An
+/// input the wallet never received is withheld in Public mode too; the
+/// Speculos TEX fixture once spent such an input.
+#[tokio::test]
+async fn public_hardware_tex_legs_dispatch_and_unknown_inputs_are_withheld() {
+    use transparent::bundle::TxOut;
+    use zcash_client_backend::wallet::WalletTransparentOutput;
+    let mut wallet = wallet();
+    wallet
+        .db
+        .update_chain_tip(BlockHeight::from_u32(TIP))
+        .unwrap();
+    let funded = OutPoint::new([0x41; 32], 0);
+    let output = WalletTransparentOutput::from_parts(
+        funded.clone(),
+        TxOut::new(
+            Zatoshis::const_from_u64(VALUE),
+            external(&wallet, 0).script().into(),
+        ),
+        Some(BlockHeight::from_u32(150)),
+        Some(wallet.account),
+        Some(TransparentKeyScope::EXTERNAL),
+        None,
+    )
+    .unwrap();
+    wallet.db.put_received_transparent_utxo(&output).unwrap();
+    let leg_1 = hardware_tx(vec![funded]);
+    let leg_2 = hardware_tx(vec![OutPoint::new(*leg_1.txid().as_ref(), 0)]);
+    async fn dispatch(
+        path: &str,
+        tx: &zcash_primitives::transaction::Transaction,
+        earlier: &[&zcash_primitives::transaction::Transaction],
+    ) -> Result<bool, String> {
+        crate::wallet::sync::hardware_authority::dispatch(
+            path,
+            NETWORK,
+            tx,
+            earlier,
+            TIP.into(),
+            |_| async { true },
+        )
+        .await
+    }
+    assert_eq!(dispatch(&wallet.path, &leg_1, &[]).await, Ok(true));
+    assert_eq!(dispatch(&wallet.path, &leg_2, &[&leg_1]).await, Ok(true));
+
+    let unknown = hardware_tx(vec![OutPoint::new([2; 32], 0)]);
+    let error = dispatch(&wallet.path, &unknown, &[]).await.unwrap_err();
+    assert!(
+        error.contains("private transparent authority is required"),
+        "{error}"
+    );
+}
+
 #[test]
 fn mined_reconciliation_requires_exact_bytes_and_compatible_reader() {
     let mut wallet = wallet();
