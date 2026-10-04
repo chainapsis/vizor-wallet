@@ -32,7 +32,7 @@ use zcash_client_backend::data_api::{
     },
     Balance, WalletRead, WalletWrite,
 };
-use zcash_client_sqlite::AccountUuid;
+use zcash_client_sqlite::{wallet::history::TransactionSummary, AccountUuid};
 use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::{
     consensus::{BlockHeight, BranchId},
@@ -756,14 +756,25 @@ pub(crate) fn get_transaction_history(
     account_uuid: &str,
 ) -> Result<Vec<TransactionInfo>, String> {
     let account = parse_account_uuid(account_uuid)?;
-    let uuid_bytes = account.expose_uuid().as_bytes().to_vec();
-
-    // Open a separate read-only connection (WalletDb.conn is private).
     let conn = open_readonly_conn(db_path)?;
+    read_transaction_history(&conn, db_path, network, limit, account)
+}
+
+fn read_transaction_history(
+    conn: &rusqlite::Connection,
+    db_path: &str,
+    network: WalletNetwork,
+    limit: Option<u32>,
+    account: AccountUuid,
+) -> Result<Vec<TransactionInfo>, String> {
+    let uuid = account.expose_uuid();
+    let uuid_bytes = uuid.as_bytes();
+    // All library and output reads borrow this connection. The summary API joins
+    // the caller's transaction, keeping one WAL snapshot across concurrent sync.
     let read_tx = conn
         .unchecked_transaction()
         .map_err(|e| format!("SQL error: {e}"))?;
-    let mut bases = read_history_bases(&read_tx, &uuid_bytes)?;
+    let mut bases = read_history_bases(&read_tx, db_path, network, account)?;
     if bases.is_empty() {
         return Ok(Vec::new());
     }
@@ -775,7 +786,7 @@ pub(crate) fn get_transaction_history(
     // raw blob even though this path never reads them.
     let outputs_by_txid = read_history_outputs(
         &read_tx,
-        &uuid_bytes,
+        uuid_bytes,
         bases.iter().map(|base| base.txid.as_slice()),
     )?;
     drop(read_tx);
@@ -783,7 +794,7 @@ pub(crate) fn get_transaction_history(
     Ok(assemble_history(
         &bases,
         &outputs_by_txid,
-        &uuid_bytes,
+        uuid_bytes,
         limit,
     ))
 }
@@ -836,12 +847,10 @@ fn txid_of(bytes: &[u8]) -> Result<TxId, String> {
 /// This is the whole classification pipeline — summarize, suppress
 /// funding steps, classify, filter, sort, truncate — with no database
 /// access, so it can be exercised directly from `TxBase` / `TxOutput`
-/// values instead of through SQL fixtures. `read_history_bases` and
-/// `read_history_outputs` own the SQL side; their agreement with
-/// librustzcash's own schema is pinned by the regtest equivalence
-/// check rather than by synthetic in-memory tables, which cannot
-/// express states the real schema forbids (a spend, for instance,
-/// always implies a funding receive that is itself a history row).
+/// values instead of through SQL fixtures. Library summaries and output reads
+/// provide local facts; completeness remains a separate library read. Migrated
+/// wallet fixtures cover their agreement and snapshot boundary, while synthetic
+/// fixtures exercise display classification independently.
 fn assemble_history(
     bases: &[TxBase],
     outputs_by_txid: &HashMap<Vec<u8>, Vec<TxOutput>>,
@@ -1371,167 +1380,43 @@ fn read_history_base_by_txid(
     Ok(row)
 }
 
-/// Account-scoped stand-in for `v_transactions`, without `transactions.raw`.
-///
-/// The upstream view aggregates `raw`, so SQLite materializes every blob
-/// and cannot push an outer account filter into the view. This copy drops
-/// `raw`, filters by `?1` early, and keeps the `notes` / `sent_note_counts`
-/// CTEs verbatim so row identity matches.
-///
-/// Source: `zcash_client_sqlite` 0.22.0-rc.4 `VIEW_TRANSACTIONS`
-/// <https://github.com/zcash/librustzcash/blob/65a3add2f1d9b9ea455a71a9c33f9219dbc9e614/zcash_client_sqlite/src/wallet/db.rs#L1320-L1438>
-///
-/// `history_bases_match_v_transactions` is the tripwire if the view changes.
-const HISTORY_BASES_CTE: &str = r#"
-        WITH vt AS (
-            WITH
-            notes AS (
-                SELECT ro.account_id              AS account_id,
-                       ro.transaction_id          AS transaction_id,
-                       ro.pool                    AS pool,
-                       id_within_pool_table,
-                       ro.value                   AS value,
-                       ro.value                   AS received_value,
-                       0                          AS spent_value,
-                       0                          AS spent_note_count,
-                       CASE WHEN ro.is_change THEN 1 ELSE 0 END AS change_note_count,
-                       CASE WHEN ro.is_change THEN 0 ELSE 1 END AS received_count,
-                       CASE
-                         WHEN (ro.memo IS NULL OR ro.memo = X'F6') THEN 0
-                         ELSE 1
-                       END AS memo_present,
-                       CASE WHEN ro.pool = 0 THEN 1 ELSE 0 END AS does_not_match_shielding
-                FROM v_received_outputs ro
-                UNION
-                SELECT ro.account_id              AS account_id,
-                       ros.transaction_id         AS transaction_id,
-                       ro.pool                    AS pool,
-                       id_within_pool_table,
-                       -ro.value                  AS value,
-                       0                          AS received_value,
-                       ro.value                   AS spent_value,
-                       1                          AS spent_note_count,
-                       0                          AS change_note_count,
-                       0                          AS received_count,
-                       0                          AS memo_present,
-                       CASE WHEN ro.pool != 0 THEN 1 ELSE 0 END AS does_not_match_shielding
-                FROM v_received_outputs ro
-                JOIN v_received_output_spends ros
-                     ON ros.pool = ro.pool
-                     AND ros.received_output_id = ro.id_within_pool_table
-            ),
-            sent_note_counts AS (
-                SELECT sent_notes.from_account_id     AS account_id,
-                       sent_notes.transaction_id      AS transaction_id,
-                       COUNT(DISTINCT sent_notes.id)  AS sent_notes
-                FROM sent_notes
-                LEFT JOIN v_received_outputs ro ON sent_notes.id = ro.sent_note_id
-                WHERE COALESCE(ro.is_change, 0) = 0
-                GROUP BY account_id, sent_notes.transaction_id
-            ),
-            blocks_max_height AS (
-                SELECT MAX(blocks.height) AS max_height FROM blocks
-            )
-            SELECT transactions.txid          AS txid,
-                   transactions.mined_height  AS mined_height,
-                   transactions.tx_index      AS tx_index,
-                   transactions.expiry_height AS expiry_height,
-                   transactions.fee           AS fee_paid,
-                   blocks.time                AS block_time,
-                   SUM(notes.value)           AS account_balance_delta,
-                   SUM(notes.spent_value)     AS total_spent,
-                   SUM(notes.received_value)  AS total_received,
-                   (
-                        transactions.mined_height IS NULL
-                        AND transactions.expiry_height BETWEEN 1 AND blocks_max_height.max_height
-                   ) AS expired_unmined,
-                   (
-                        SUM(notes.does_not_match_shielding) = 0
-                        AND SUM(notes.spent_note_count) > 0
-                        AND (SUM(notes.received_count) + SUM(notes.change_note_count)) > 0
-                        AND MAX(COALESCE(sent_note_counts.sent_notes, 0)) = 0
-                   ) AS is_shielding
-            FROM notes
-            JOIN accounts ON accounts.id = notes.account_id
-            JOIN transactions ON transactions.id_tx = notes.transaction_id
-            LEFT JOIN blocks_max_height
-            LEFT JOIN blocks ON blocks.height = transactions.mined_height
-            LEFT JOIN sent_note_counts
-                 ON sent_note_counts.account_id = notes.account_id
-                 AND sent_note_counts.transaction_id = notes.transaction_id
-            WHERE accounts.uuid = ?1
-            GROUP BY notes.account_id, notes.transaction_id
-        )
-"#;
-
+/// Read the library-owned accounting projection through the caller's connection.
+/// Completeness and output reads must stay in the same transaction as this read.
 fn read_history_bases(
     conn: &rusqlite::Connection,
-    account_uuid: &[u8],
+    db_path: &str,
+    network: WalletNetwork,
+    account: AccountUuid,
 ) -> Result<Vec<TxBase>, String> {
-    let mut stmt = conn
-        .prepare(&format!(
-            r#"{HISTORY_BASES_CTE}
-        SELECT
-            vt.txid,
-            COALESCE(tx.id_tx, -1) AS transaction_id,
-            vt.mined_height,
-            -- NULL when no scanned block or expiry height makes expiry comparable: pending.
-            COALESCE(vt.expired_unmined, 0) AS expired_unmined,
-            vt.account_balance_delta,
-            vt.fee_paid AS fee_paid,
-            COALESCE(vt.block_time, 0) AS block_time,
-            COALESCE(vt.total_spent, 0) AS total_spent,
-            COALESCE(vt.total_received, 0) AS total_received,
-            COALESCE(vt.is_shielding, 0) AS is_shielding,
-            vt.expiry_height,
-            COALESCE(vt.tx_index, -1) AS tx_index,
-            tx.created,
-            CAST(COALESCE(strftime('%s', tx.created), 0) AS INTEGER) AS created_time,
-            EXISTS (
-                SELECT 1
-                FROM transactions spent_tx
-                JOIN orchard_received_note_spends spent
-                    ON spent.transaction_id = spent_tx.id_tx
-                JOIN orchard_received_notes spent_note
-                    ON spent_note.id = spent.orchard_received_note_id
-                WHERE spent_tx.txid = vt.txid
-                  AND spent_note.note_version = ?2
-            ) AS spent_orchard_note
-        FROM vt
-        LEFT JOIN transactions tx ON tx.txid = vt.txid
-        "#
-        ))
-        .map_err(|e| format!("SQL error: {e}"))?;
+    wallet_db_on(conn, db_path, network)
+        .transaction_history_summaries(account)
+        .map(|summaries| summaries.into_iter().map(TxBase::from).collect())
+        .map_err(|e| format!("Failed to read history summaries: {e}"))
+}
 
-    let rows = stmt
-        .query_map(
-            rusqlite::params![account_uuid, ORCHARD_NOTE_VERSION],
-            |row| {
-                let fee = row.get::<_, Option<i64>>(5)?.map(i64::unsigned_abs);
-                Ok(TxBase {
-                    txid: row.get(0)?,
-                    transaction_id: row.get(1)?,
-                    mined_height: row.get(2)?,
-                    expired_unmined: row.get(3)?,
-                    account_balance_delta: row.get(4)?,
-                    fee,
-                    block_time: row.get::<_, i64>(6)?.unsigned_abs(),
-                    total_spent: row.get::<_, i64>(7)?.unsigned_abs(),
-                    total_received: row.get::<_, i64>(8)?.unsigned_abs(),
-                    is_shielding: row.get(9)?,
-                    expiry_height: row.get(10)?,
-                    tx_index: row.get(11)?,
-                    created: row.get(12)?,
-                    created_time: row.get::<_, i64>(13)?.unsigned_abs(),
-                    spent_orchard_note: row.get(14)?,
-                    history: HistoryCompleteness::unread(fee),
-                })
-            },
-        )
-        .map_err(|e| format!("Query error: {e}"))?;
-
-    rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|e| format!("Row error: {e}"))
+impl From<TransactionSummary> for TxBase {
+    fn from(summary: TransactionSummary) -> Self {
+        Self {
+            txid: summary.txid.as_ref().to_vec(),
+            transaction_id: summary.transaction_id,
+            mined_height: summary.mined_height.map(u32::from),
+            expired_unmined: summary.expired_unmined,
+            account_balance_delta: summary.account_balance_delta,
+            fee: summary.fee,
+            block_time: summary.block_time.unwrap_or(0),
+            total_spent: summary.total_spent,
+            total_received: summary.total_received,
+            is_shielding: summary.is_shielding,
+            expiry_height: summary
+                .expiry_height
+                .map(|height| i64::from(u32::from(height))),
+            tx_index: summary.tx_index.map(i64::from).unwrap_or(-1),
+            created: summary.created,
+            created_time: summary.created_time.map(i64::unsigned_abs).unwrap_or(0),
+            spent_orchard_note: summary.has_orchard_spend,
+            history: HistoryCompleteness::unread(summary.fee),
+        }
+    }
 }
 
 fn read_history_outputs<'a>(
@@ -2459,6 +2344,10 @@ pub(crate) fn get_resubmittable_txs_excluding(
 #[cfg(test)]
 #[path = "transactions/resubmission_tests.rs"]
 pub(super) mod resubmission_tests;
+
+#[cfg(test)]
+#[path = "transactions/history_summary_tests.rs"]
+mod history_summary_tests;
 
 #[cfg(test)]
 mod tests {
@@ -4126,14 +4015,8 @@ mod tests {
 
     /// Read `TxBase` from a synthetic `v_transactions` table.
     ///
-    /// This is needed because the synthetic `v_transactions` table
-    /// doesn't have the note-derived aggregates that the real
-    /// `HISTORY_BASES_CTE` does.
-    ///
-    /// This helper allows us to test `read_history_bases` against the
-    /// synthetic `v_transactions` table.
-    ///
-    /// The equivalency test checks that the two paths return the same rows.
+    /// Synthetic classification fixtures do not have the library's note schema.
+    /// Real-schema tests separately compare the library projection with this view.
     fn read_history_bases_via_v_transactions(
         conn: &rusqlite::Connection,
         account_uuid: &[u8],
@@ -4225,7 +4108,7 @@ mod tests {
     }
 
     /// `get_transaction_history` with its bases read from the synthetic
-    /// `v_transactions` fixture instead of `HISTORY_BASES_CTE`.
+    /// `v_transactions` fixture instead of the library summary API.
     ///
     /// Everything else is production code: the real
     /// `read_history_outputs` and the real `assemble_history`. The fixture has
@@ -4331,15 +4214,10 @@ mod tests {
         println!("compared {} accounts", uuids.len());
     }
 
-    /// Pin `HISTORY_BASES_CTE` to the upstream `v_transactions` view.
+    /// Additional equivalence coverage on a synced wallet, beyond the automatic
+    /// migrated-schema fixtures in `history_summary_tests`.
     ///
-    /// This is the tripwire for a `zcash_client_sqlite` upgrade that
-    /// changes the view: the CTE inlines the view's aggregates minus
-    /// `transactions.raw`, so the two must return identical rows.
-    ///
-    /// It needs a database built by librustzcash itself — the synthetic
-    /// fixtures in this module define `v_transactions` as a table and
-    /// have none of the note-level schema the CTE reads. Point it at a
+    /// It needs a database built by librustzcash itself. Point it at a
     /// regtest wallet (`./run-regtest-rust-tests.sh` leaves one behind)
     /// or any real wallet DB:
     ///
@@ -4366,32 +4244,36 @@ mod tests {
             "{db_path} has no accounts; point at a synced wallet"
         );
 
+        let read_tx = conn.unchecked_transaction().unwrap();
         let mut compared = 0usize;
         for account in &accounts {
             let sort = |mut rows: Vec<TxBase>| {
                 rows.sort_by(|a, b| a.txid.cmp(&b.txid));
                 rows
             };
-            let via_cte = sort(read_history_bases(&conn, account).unwrap());
-            let via_view = sort(read_history_bases_via_v_transactions(&conn, account).unwrap());
+            let account_id = AccountUuid::from_uuid(uuid::Uuid::from_slice(account).unwrap());
+            let via_summary = sort(
+                read_history_bases(&read_tx, &db_path, WalletNetwork::Main, account_id).unwrap(),
+            );
+            let via_view = sort(read_history_bases_via_v_transactions(&read_tx, account).unwrap());
 
             assert_eq!(
-                via_cte.len(),
+                via_summary.len(),
                 via_view.len(),
-                "account {}: row count differs between HISTORY_BASES_CTE and v_transactions",
+                "account {}: row count differs between library summaries and v_transactions",
                 hex::encode(account)
             );
-            for (cte, view) in via_cte.iter().zip(via_view.iter()) {
+            for (summary, view) in via_summary.iter().zip(via_view.iter()) {
                 assert_eq!(
-                    cte,
+                    summary,
                     view,
-                    "account {} tx {}: HISTORY_BASES_CTE diverged from v_transactions; \
-                     re-check the mirrored SQL against the upstream view definition",
+                    "account {} tx {}: library summaries diverged from v_transactions; \
+                     re-check the summary mapping against the upstream view definition",
                     hex::encode(account),
-                    hex::encode(&cte.txid),
+                    hex::encode(&summary.txid),
                 );
             }
-            compared += via_cte.len();
+            compared += via_summary.len();
         }
         println!(
             "compared {compared} rows across {} accounts",
@@ -4717,10 +4599,10 @@ mod tests {
 
             let conn = open_readonly_conn(db.path().to_str().unwrap()).unwrap();
             let account_bytes = account.as_bytes().as_slice();
-            // Bases come from the fixture oracle, not `HISTORY_BASES_CTE`:
+            // Bases come from the fixture oracle, not the library API:
             // this case is about the outputs filter, and the synthetic
-            // schema cannot feed the CTE. The CTE's own agreement with
-            // `v_transactions` is pinned against a real wallet database.
+            // schema cannot feed the library query. Real-schema tests cover
+            // the summary adapter's agreement with `v_transactions`.
             let bases = read_history_bases_via_v_transactions(&conn, account_bytes).unwrap();
             let base_txids: HashSet<Vec<u8>> = bases.iter().map(|base| base.txid.clone()).collect();
             let distinct_txids = distinct_v_transactions_txids(&conn, account_bytes).unwrap();
