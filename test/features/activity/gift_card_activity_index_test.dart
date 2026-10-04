@@ -1,6 +1,7 @@
 import 'package:zcash_wallet/src/core/config/zcash_explorer.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_transaction_matching.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
@@ -309,6 +310,7 @@ void main() {
     final receivedStore = PaymentLinkReceivedStore(_MemoryReceivedStorage());
     final container = ProviderContainer(
       overrides: [
+        appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
         paymentLinkRecoveryStoreProvider.overrideWithValue(recoveryStore),
         paymentLinkReceivedStoreProvider.overrideWithValue(receivedStore),
       ],

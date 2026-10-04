@@ -983,7 +983,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Explorer'), findsOneWidget);
-    expect(find.text('CipherScan'), findsOneWidget);
+    expect(find.text('ZecBlock'), findsOneWidget);
   });
 
   testWidgets('settings groups run Personal, Account, System, Privacy', (

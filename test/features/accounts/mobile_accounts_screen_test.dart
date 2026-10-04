@@ -527,50 +527,64 @@ void main() {
     expect(find.text('viewing key route b'), findsOneWidget);
   });
 
-  testWidgets('the last remaining seed account resets the app on removal', (
-    tester,
-  ) async {
-    final accountState = AccountState(
-      accounts: [_account('a', 'Knight', isSeedAnchor: true)],
-      activeAccountUuid: 'a',
-    );
-    final accountNotifier = _FakeAccountNotifier(accountState);
-    final biometricNotifier = _FakeBiometricUnlockNotifier();
-    final syncNotifier = _FakeWalletMutationSyncNotifier();
+  for (final setupPending in [false, true]) {
+    testWidgets('the last remaining seed account resets the app on removal '
+        '(backup pending: $setupPending)', (tester) async {
+      final accountState = AccountState(
+        accounts: [
+          _account(
+            'a',
+            'Knight',
+            isSeedAnchor: true,
+          ).copyWith(setupPending: setupPending),
+        ],
+        activeAccountUuid: 'a',
+      );
+      final accountNotifier = _FakeAccountNotifier(accountState);
+      final biometricNotifier = _FakeBiometricUnlockNotifier();
+      final syncNotifier = _FakeWalletMutationSyncNotifier();
 
-    await tester.pumpWidget(
-      _app(
-        accountState,
-        accountNotifier: () => accountNotifier,
-        biometricNotifier: () => biometricNotifier,
-        syncNotifier: () => syncNotifier,
-      ),
-    );
-    await tester.pump();
+      await tester.pumpWidget(
+        _app(
+          accountState,
+          accountNotifier: () => accountNotifier,
+          biometricNotifier: () => biometricNotifier,
+          syncNotifier: () => syncNotifier,
+        ),
+      );
+      await tester.pump();
 
-    await tester.tap(find.byKey(const ValueKey('mobile_accounts_menu_a')));
-    await tester.pumpAndSettle();
-    expect(find.text('Remove account'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('mobile_accounts_menu_a')));
+      await tester.pumpAndSettle();
+      expect(find.text('Remove account'), findsOneWidget);
 
-    await tester.tap(find.byKey(const ValueKey('mobile_account_menu_remove')));
-    await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_account_menu_remove')),
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.textContaining('deletes every account'), findsOneWidget);
-    expect(find.text('Reset Vizor'), findsOneWidget);
+      expect(find.textContaining('deletes every account'), findsOneWidget);
+      expect(find.text('Reset Vizor'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('mobile_account_remove_backup_warning')),
+        setupPending ? findsOneWidget : findsNothing,
+      );
+      expect(find.byType(TextField), findsNothing);
 
-    await tester.tap(
-      find.byKey(const ValueKey('mobile_account_remove_confirm')),
-    );
-    await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_account_remove_confirm')),
+      );
+      await tester.pumpAndSettle();
 
-    expect(accountNotifier.resetCount, 1);
-    expect(accountNotifier.removedUuid, isNull);
-    expect(syncNotifier.pauseCount, 1);
-    expect(syncNotifier.resumeCount, 0);
-    expect(syncNotifier.clearCachedDbPathCount, 1);
-    expect(biometricNotifier.disableCount, 1);
-    expect(find.text('welcome route'), findsOneWidget);
-  });
+      expect(accountNotifier.resetCount, 1);
+      expect(accountNotifier.removedUuid, isNull);
+      expect(syncNotifier.pauseCount, 1);
+      expect(syncNotifier.resumeCount, 0);
+      expect(syncNotifier.clearCachedDbPathCount, 1);
+      expect(biometricNotifier.disableCount, 1);
+      expect(find.text('welcome route'), findsOneWidget);
+    });
+  }
 
   testWidgets('removing the active account uses the switch refresh', (
     tester,
@@ -649,7 +663,10 @@ void main() {
   ]) {
     testWidgets('removal sheet warns about ${testCase.name}', (tester) async {
       final accountState = AccountState(
-        accounts: [for (final uuid in testCase.accounts) _account(uuid, uuid)],
+        accounts: [
+          for (final uuid in testCase.accounts)
+            _account(uuid, uuid).copyWith(setupPending: uuid == 'a'),
+        ],
         activeAccountUuid: 'a',
       );
       final accountNotifier = _FakeAccountNotifier(accountState);
@@ -673,6 +690,10 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text(testCase.message), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('mobile_account_remove_backup_warning')),
+        findsOneWidget,
+      );
       final confirm = tester.widget<AppButton>(
         find.byKey(const ValueKey('mobile_account_remove_confirm')),
       );
@@ -692,7 +713,7 @@ void main() {
     ) async {
       final accountState = AccountState(
         accounts: [
-          _account('a', 'Active'),
+          _account('a', 'Active').copyWith(setupPending: true),
           if (!isLastAccount) _account('b', 'Replacement'),
         ],
         activeAccountUuid: 'a',
@@ -738,6 +759,10 @@ void main() {
       final action = isLastAccount
           ? 'resetting Vizor'
           : 'removing this account';
+      expect(
+        find.byKey(const ValueKey('mobile_account_remove_backup_warning')),
+        findsOneWidget,
+      );
       expect(
         find.text(
           recheckFailed
@@ -1186,7 +1211,11 @@ void main() {
       _app(
         AccountState(
           accounts: [
-            _account('a', 'Knight', isSeedAnchor: true),
+            _account(
+              'a',
+              'Knight',
+              isSeedAnchor: true,
+            ).copyWith(setupPending: true),
             _account('b', 'Viking'),
           ],
           activeAccountUuid: 'a',
@@ -1204,6 +1233,11 @@ void main() {
     expect(find.text('Remove account'), findsOneWidget);
     expect(find.textContaining('deletes its local data'), findsOneWidget);
     expect(find.textContaining('re-import it'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_account_remove_backup_warning')),
+      findsNothing,
+      reason: 'Another account needing backup does not affect this removal.',
+    );
     final title = tester.widget<Text>(find.text('Remove account'));
     expect(title.style?.fontSize, 16);
     expect(title.style?.height, 24 / 16);
@@ -1226,6 +1260,141 @@ void main() {
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
     expect(find.textContaining('deletes its local data'), findsNothing);
+  });
+
+  testWidgets('unbacked account removal warns even when its Home reminder '
+      'is snoozed, and cancel preserves the account', (tester) async {
+    final accounts = AccountState(
+      accounts: [
+        _account('a', 'Knight', isSeedAnchor: true),
+        _account('b', 'Viking').copyWith(
+          setupPending: true,
+          backupReminderSnoozedUntilUtc: DateTime.utc(2099),
+        ),
+      ],
+      activeAccountUuid: 'a',
+    );
+    final notifier = _FakeAccountNotifier(accounts);
+    final sync = _FakeWalletMutationSyncNotifier();
+    await tester.pumpWidget(
+      _app(accounts, accountNotifier: () => notifier, syncNotifier: () => sync),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_accounts_menu_b')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Remove account'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'If you haven’t backed up this account’s secret passphrase, '
+        'you can’t recover its funds after removal.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.byType(TextField), findsNothing);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(notifier.removedUuid, isNull);
+    expect(notifier.resetCount, 0);
+    expect(sync.pauseCount, 0);
+
+    await tester.tap(find.byKey(const ValueKey('mobile_accounts_menu_b')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Remove account'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_account_remove_confirm')),
+    );
+    await tester.pumpAndSettle();
+    expect(notifier.removedUuid, 'b');
+    expect(notifier.resetCount, 0);
+    expect(
+      find.byKey(const ValueKey('mobile_accounts_menu_a')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('mobile_accounts_menu_b')), findsNothing);
+  });
+
+  testWidgets('hardware account removal never warns about a local phrase', (
+    tester,
+  ) async {
+    final accounts = AccountState(
+      accounts: [
+        _account('a', 'Knight'),
+        _account(
+          'b',
+          'Keystone',
+          isHardware: true,
+        ).copyWith(setupPending: true),
+      ],
+      activeAccountUuid: 'a',
+    );
+    await tester.pumpWidget(_app(accounts));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('mobile_accounts_menu_b')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Remove account'));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('mobile_account_remove_backup_warning')),
+      findsNothing,
+    );
+    expect(find.text('Remove'), findsOneWidget);
+  });
+
+  testWidgets('all removal warnings keep cancel reachable on a small screen '
+      'with enlarged text', (tester) async {
+    tester.view
+      ..physicalSize = const Size(320, 568)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        builder: (context, child) => AppTheme(
+          data: AppThemeData.light,
+          child: MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: const TextScaler.linear(1.5)),
+            child: child!,
+          ),
+        ),
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showAppMobileSheet<bool>(
+                context: context,
+                builder: (_) => MobileAccountRemovalSheet(
+                  account: _account('a', 'Knight').copyWith(setupPending: true),
+                  isLastAccount: false,
+                  hasActiveMigration: true,
+                  unsharedGiftCardCount: 2,
+                ),
+              ),
+              child: const Text('Open removal'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open removal'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.textContaining('already submitted'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_account_remove_backup_warning')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('mobile_account_remove_unshared_gift_cards')),
+      findsOneWidget,
+    );
+    await tester.ensureVisible(find.text('Cancel'));
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(find.byType(MobileAccountRemovalSheet), findsNothing);
   });
 
   testWidgets('remove explains what happens to an active migration', (

@@ -558,7 +558,7 @@ class _OrDivider extends StatelessWidget {
           Expanded(child: _OrDividerLine(color: colors.border.regular)),
           const SizedBox(width: AppSpacing.s),
           Text(
-            'OR',
+            'Or',
             style: AppTypography.labelSmall.copyWith(
               color: colors.text.secondary,
             ),

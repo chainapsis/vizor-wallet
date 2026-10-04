@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'mobile_onboarding_progress.dart';
 import '../../../../main.dart' show log;
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -13,6 +14,7 @@ import '../../../providers/app_security_provider.dart';
 import '../../../providers/biometric_unlock_provider.dart';
 import '../../../services/biometric_unlock.dart';
 import 'mobile_onboarding_scaffold.dart';
+import '../../payment_links/providers/gift_claim_flow_provider.dart';
 
 /// Biometric unlock opt-in — Figma `Biometrics FaceID` /
 /// `Biometrics` (4394:83068 / 4394:83378). Enabling writes
@@ -49,7 +51,7 @@ class _MobileBiometricsScreenState
     final state = await ref.read(biometricUnlockProvider.future);
     if (!mounted || _skipped || state.availability.supported) return;
     _skipped = true;
-    context.go('/home');
+    context.go(giftClaimSetupCompletionLocation(ref, otherwise: '/home'));
   }
 
   Future<void> _enable() async {
@@ -70,7 +72,7 @@ class _MobileBiometricsScreenState
           .requireSessionPasswordForNativeSecretUse();
       await ref.read(biometricUnlockProvider.notifier).enable(passcode);
       if (!mounted) return;
-      context.go('/home');
+      context.go(giftClaimSetupCompletionLocation(ref, otherwise: '/home'));
     } catch (e, st) {
       log('MobileBiometrics._enable: ERROR: $e\n$st');
       if (!mounted) return;
@@ -89,7 +91,7 @@ class _MobileBiometricsScreenState
     final kind = biometric?.availability.kind ?? BiometricKind.none;
 
     return MobileOnboardingStepScaffold(
-      progress: 1,
+      progress: OnboardingProgressPosition.accountReady.value,
       showBackButton: false,
       aboveTitle: _BiometricHero(kind: kind),
       // Line breaks match the Figma title/subtitle wraps.
@@ -115,7 +117,11 @@ class _MobileBiometricsScreenState
             key: const ValueKey('mobile_biometrics_not_now'),
             variant: AppButtonVariant.ghost,
             expand: true,
-            onPressed: _enabling ? null : () => context.go('/home'),
+            onPressed: _enabling
+                ? null
+                : () => context.go(
+                    giftClaimSetupCompletionLocation(ref, otherwise: '/home'),
+                  ),
             child: Text(
               'Not now',
               style: AppTypography.labelLarge.copyWith(

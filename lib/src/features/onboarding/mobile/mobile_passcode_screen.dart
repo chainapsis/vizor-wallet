@@ -14,12 +14,14 @@ import '../../../providers/app_security_provider.dart';
 import '../../../providers/router_refresh_provider.dart';
 import '../../../providers/wallet_mutation_guard.dart';
 import '../../address_book/providers/address_book_provider.dart';
+import '../../payment_links/services/gift_claim_setup_coordinator.dart';
 import '../../wallet_link/services/wallet_link_completion.dart';
 import '../keystone/keystone_onboarding_flow.dart'
     show keystoneOnboardingProvider;
 import '../shared/onboarding_error_messages.dart';
 import '../shared/onboarding_flow_args.dart';
 import 'mobile_onboarding_progress.dart';
+import 'mobile_onboarding_progress_scope.dart';
 import 'passcode_widgets.dart';
 
 /// Length of the mobile wallet passcode. The digit string is stored as
@@ -36,9 +38,24 @@ enum _PasscodePhase { create, confirm, submitting }
 /// Import flows still use the desktop set-password sequence (prepare → account
 /// mutation under the sync pause → commit, with rollback on failure).
 class MobilePasscodeScreen extends ConsumerStatefulWidget {
-  const MobilePasscodeScreen({required this.args, super.key});
+  const MobilePasscodeScreen({
+    required SetPasswordScreenArgs this.args,
+    this.completeWalletLinkPackage = completeWalletLinkPackageBestEffort,
+    super.key,
+  }) : onConfirmed = null,
+       position = null;
 
-  final SetPasswordScreenArgs args;
+  const MobilePasscodeScreen.giftCard({
+    required Future<void> Function(String passcode) this.onConfirmed,
+    required OnboardingProgressPosition this.position,
+    super.key,
+  }) : args = null,
+       completeWalletLinkPackage = completeWalletLinkPackageBestEffort;
+
+  final SetPasswordScreenArgs? args;
+  final Future<void> Function(String passcode)? onConfirmed;
+  final OnboardingProgressPosition? position;
+  final WalletLinkCompletionCallback completeWalletLinkPackage;
 
   @override
   ConsumerState<MobilePasscodeScreen> createState() =>
@@ -96,7 +113,23 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
   /// Software, Keystone, and Ledger setup continue to account customisation without
   /// persisting the pending passcode. Wallet Link remains an immediate import.
   Future<void> _submit(String passcode) async {
-    final args = widget.args;
+    final onConfirmed = widget.onConfirmed;
+    if (onConfirmed != null) {
+      setState(() => _phase = _PasscodePhase.submitting);
+      try {
+        await onConfirmed(passcode);
+      } catch (error) {
+        if (mounted) _error = onboardingSubmitErrorMessage(error);
+      }
+      if (!mounted) return;
+      setState(() {
+        _phase = _PasscodePhase.create;
+        _entry = '';
+        _firstPasscode = null;
+      });
+      return;
+    }
+    final args = widget.args!;
     setState(() {
       _phase = _PasscodePhase.submitting;
       _error = null;
@@ -106,7 +139,13 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
     if (args.flow != SetPasswordFlow.importWalletLink) {
       await router.push<void>(
         '/onboarding/customise-account',
-        extra: CustomiseAccountArgs(setupArgs: args, pendingPassword: passcode),
+        extra: MobileOnboardingRouteArgs(
+          setupMode: MobileOnboardingProgressScope.of(context).setupMode,
+          payload: CustomiseAccountArgs(
+            setupArgs: args,
+            pendingPassword: passcode,
+          ),
+        ),
       );
       if (!mounted) return;
       setState(() {
@@ -158,13 +197,15 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
                     network: args.requiredWalletLinkNetwork,
                     accountsToImport: args.walletLinkAccounts,
                   );
-              walletLinkImportedContactCount = await ref
-                  .read(addressBookProvider.notifier)
-                  .importContacts(args.walletLinkContacts);
+              walletLinkImportedContactCount = args.walletLinkContacts.isEmpty
+                  ? 0
+                  : await ref
+                        .read(addressBookProvider.notifier)
+                        .importContacts(args.walletLinkContacts);
           }
         });
 
-        securityNotifier.commitPasswordSetup();
+        await securityNotifier.completePasswordSetup();
         passwordCommitted = true;
         if (args.flow == SetPasswordFlow.importKeystone) {
           ref.read(keystoneOnboardingProvider.notifier).resetScan();
@@ -174,7 +215,7 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
           if (accountImportResult == null) {
             throw StateError('Wallet link import result is missing.');
           }
-          await completeWalletLinkPackageBestEffort(
+          await widget.completeWalletLinkPackage(
             packageId: args.requiredWalletLinkPackageId,
             completionToken: args.requiredWalletLinkCompletionToken,
             keyBytes: args.requiredWalletLinkKeyBytes,
@@ -182,12 +223,17 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
             importedContactCount: walletLinkImportedContactCount,
           );
         }
+        await completeGiftClaimImportSetup(ref);
         router.go('/onboarding/biometrics');
       });
     } catch (e, st) {
       if (passwordPrepared && !passwordCommitted) {
         try {
-          await securityNotifier.rollbackPasswordSetup();
+          await securityNotifier.finishPasswordSetupAfterFailure(
+            accountMayExist:
+                e is WalletAccountSetupInterruptedException ||
+                (ref.read(accountProvider).value?.hasAccounts ?? false),
+          );
         } catch (rollbackError, rollbackStack) {
           log(
             'MobilePasscode: password rollback failed: '
@@ -223,12 +269,19 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
     // above it, matching the other passcode screens — which the scaffold's
     // scrolling step layout can't express.
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       backgroundColor: colors.background.window,
       body: SafeArea(
         child: Column(
           children: [
             MobileTopNav.steps(
-              progress: _progressForFlow(widget.args.flow),
+              progress:
+                  (widget.position ??
+                          MobileOnboardingProgressScope.of(context).at(
+                            onboardingFlowForSetup(widget.args!.flow),
+                            OnboardingStage.passcode,
+                          ))
+                      .value,
               showBackButton: canNavigateBack,
               onBack: isSubmitting || !canNavigateBack
                   ? null
@@ -298,11 +351,3 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
     );
   }
 }
-
-double _progressForFlow(SetPasswordFlow flow) => switch (flow) {
-  SetPasswordFlow.create => mobileCreateProgress(7),
-  SetPasswordFlow.importLedger => kMobileLedgerPasscodeProgress,
-  SetPasswordFlow.importKeystone => kMobileKeystonePasscodeProgress,
-  SetPasswordFlow.importWallet => mobileImportProgress(4),
-  SetPasswordFlow.importWalletLink => kMobileWalletLinkPasscodeProgress,
-};

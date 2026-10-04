@@ -76,9 +76,14 @@ part 'payment_links_batch_creation.dart';
 /// [PaymentLinkOperations]. Artwork and message are carried by the v1
 /// presentation payload.
 class PaymentLinksScreen extends ConsumerStatefulWidget {
-  const PaymentLinksScreen({this.initialCards, super.key});
+  const PaymentLinksScreen({
+    this.initialCards,
+    this.initialReceivedCardAddress,
+    super.key,
+  });
 
   final PaymentLinkCardsSnapshot? initialCards;
+  final String? initialReceivedCardAddress;
 
   @override
   ConsumerState<PaymentLinksScreen> createState() => _PaymentLinksScreenState();
@@ -434,6 +439,15 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       unawaited(_refreshFundingProgress(records: initialCards.created));
       unawaited(_refreshReceivedClaims(records: initialCards.received));
     }
+    final address = widget.initialReceivedCardAddress;
+    if (address != null) {
+      final card = _receivedCards
+          .where((r) => r.address == address)
+          .firstOrNull;
+      setState(() => _activeCardsTab = PaymentLinkCardsTab.received);
+      if (card != null) _openReceivedCard(card);
+      return;
+    }
     await _consumePendingPaymentLink();
   }
 
@@ -617,10 +631,12 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     }
   }
 
-  /// Only a Card already in Received owns a durable claim wallet. Scanning
-  /// a new Card is a preview, including while its funding is still confirming.
-  bool _shouldKeepCard(PaymentLinkClaimSession session) =>
-      _receivedCards.any((record) => record.address == session.link.address);
+  /// Saved Cards own a claim wallet while they retain recovery material.
+  /// Receipts after recovery and new previews do not retain inspection wallets.
+  bool _shouldKeepCard(PaymentLinkClaimSession session) => _receivedCards.any(
+    (record) =>
+        record.address == session.link.address && record.claimLink != null,
+  );
 
   /// Keeps the link for retry after the recipient explicitly confirms a claim
   /// but preparing it for the selected account fails.
@@ -635,7 +651,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
   }
 
   /// An empty scan cannot prove that a Card will never receive funds. Keep
-  /// listed Cards and their wallets for retry; new previews remain disposable.
+  /// recoverable Cards and their wallets for retry; new previews are disposable.
   Future<void> _releaseUnavailableClaim(PaymentLinkClaimSession session) async {
     final epoch = _mobileNavigationEpoch;
     final availability =
@@ -1095,7 +1111,11 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
   /// reopened for the account now in front of the user.
   void _handleClaimDestinationAccountChanged(String current) {
     final session = _receivedClaimSession;
-    if (session == null || session.destinationAccountUuid == current) return;
+    if (session == null ||
+        session.isSetupClaim ||
+        session.destinationAccountUuid == current) {
+      return;
+    }
     final link = _receivedLink;
     final keepCard = _shouldKeepCard(session);
     setState(() {
@@ -1635,7 +1655,6 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     final epoch = _mobileNavigationEpoch;
     setState(() {
       _operationInProgress = true;
-      _redeemState = PaymentLinkRedeemVisualState.loading;
       _retryLink = null;
       _redeemFromQrCode = false;
     });
@@ -1650,6 +1669,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       }
       final link = VizorPaymentLink.parse(rawLink);
       if (!mounted) return;
+      setState(() => _redeemState = PaymentLinkRedeemVisualState.loading);
       await _prepareDecodedPaymentLink(link);
     } catch (_) {
       if (mounted && _isCurrentNavigation(epoch)) {
@@ -1770,6 +1790,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
           ?.activeAccountUuid;
       if (activeAccountUuid != null &&
           activeAccountUuid != session.destinationAccountUuid &&
+          !session.isSetupClaim &&
           (session.waitingForFundingConfirmations || session.canClaim)) {
         _receivedClaimSession = session;
         _receivedLink = session.link;
@@ -1930,16 +1951,14 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
   }
 
   /// A refresh opens a second session over the same claim wallet; delete it
-  /// only when neither the live session nor a listed Card still owns it.
+  /// only when neither the live session nor a recoverable Card still owns it.
   Future<void> _discardRefreshedClaim(PaymentLinkClaimSession refreshed) async {
     final directory = paymentLinkClaimWalletDirectoryName(refreshed.link);
     final live = _receivedClaimSession;
     final stillOwned =
         (live != null &&
             paymentLinkClaimWalletDirectoryName(live.link) == directory) ||
-        _receivedCards.any(
-          (record) => record.address == refreshed.link.address,
-        );
+        _shouldKeepCard(refreshed);
     if (stillOwned) return;
     await _paymentLinkOperations.discardClaimSession(refreshed);
   }
@@ -1967,8 +1986,8 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     }
   }
 
-  /// A Card that stays in the Received list keeps its scanned claim wallet; an
-  /// abandoned preview deletes it.
+  /// A Card retaining recovery material keeps its scanned claim wallet;
+  /// an abandoned preview deletes it.
   void _releaseClaimSession(
     PaymentLinkClaimSession session, {
     required bool keepCard,
@@ -2052,7 +2071,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     final accountState = ref.read(accountProvider).value;
     final activeAccountUuid = accountState?.activeAccountUuid;
     if (accountState == null || activeAccountUuid == null) return;
-    if (accountState.accounts.length == 1) {
+    if (session.isSetupClaim || accountState.accounts.length == 1) {
       _claimReceivedLink();
       return;
     }
@@ -2842,7 +2861,8 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
               _ => '$usedCount of $count used',
             }
           : switch (_batchPendingKind(members)) {
-              PaymentLinkBatchPendingKind.incomplete => 'Some cards aren’t ready',
+              PaymentLinkBatchPendingKind.incomplete =>
+                'Some cards aren’t ready',
               PaymentLinkBatchPendingKind.unconfirmedBroadcast =>
                 'Payment status pending',
               PaymentLinkBatchPendingKind.confirming => 'Confirming payment',

@@ -5,7 +5,17 @@ import '../core/config/rpc_endpoint_config.dart';
 import '../core/storage/app_secure_store.dart';
 import '../rust/api/wallet.dart' as rust_wallet;
 
+class RpcEndpointSaveException implements Exception {
+  const RpcEndpointSaveException(this.cause);
+  final Object cause;
+}
+
+Future<String> _getChainName(String url) =>
+    rust_wallet.getLightwalletdChainName(lightwalletdUrl: url);
+
 class RpcEndpointNotifier extends Notifier<RpcEndpointConfig> {
+  RpcEndpointNotifier({this.getChainName = _getChainName});
+  final Future<String> Function(String url) getChainName;
   static final _store = AppSecureStore.instance;
 
   @override
@@ -45,24 +55,26 @@ class RpcEndpointNotifier extends Notifier<RpcEndpointConfig> {
   }
 
   Future<void> _persist(RpcEndpointConfig next) async {
-    final effectivePresetId = next.effectivePresetId;
-    if (effectivePresetId == kDefaultRpcEndpointPresetId) {
-      await _store.delete(kRpcEndpointUrlKey);
-      await _store.writePlain(kRpcEndpointPresetKey, effectivePresetId);
-    } else {
-      await _store.writePlain(
-        kRpcEndpointUrlKey,
-        next.normalizedLightwalletdUrl,
-      );
-      await _store.writePlain(kRpcEndpointPresetKey, effectivePresetId);
+    try {
+      final effectivePresetId = next.effectivePresetId;
+      if (effectivePresetId == kDefaultRpcEndpointPresetId) {
+        await _store.delete(kRpcEndpointUrlKey);
+        await _store.writePlain(kRpcEndpointPresetKey, effectivePresetId);
+      } else {
+        await _store.writePlain(
+          kRpcEndpointUrlKey,
+          next.normalizedLightwalletdUrl,
+        );
+        await _store.writePlain(kRpcEndpointPresetKey, effectivePresetId);
+      }
+    } catch (error) {
+      throw RpcEndpointSaveException(error);
     }
     state = next;
   }
 
   Future<void> _verifyNetwork(String lightwalletdUrl) async {
-    final chainName = await rust_wallet.getLightwalletdChainName(
-      lightwalletdUrl: lightwalletdUrl,
-    );
+    final chainName = await getChainName(lightwalletdUrl);
     if (chainName != state.networkName) {
       throw FormatException(
         'Endpoint is for $chainName, but this wallet uses ${state.networkName}.',

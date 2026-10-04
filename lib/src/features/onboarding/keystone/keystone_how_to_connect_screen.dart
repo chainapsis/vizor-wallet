@@ -11,15 +11,19 @@ import '../../../core/widgets/app_icon.dart';
 import 'keystone_onboarding_flow.dart';
 
 class KeystoneHowToConnectScreen extends ConsumerWidget {
-  const KeystoneHowToConnectScreen({super.key});
+  const KeystoneHowToConnectScreen({this.backTarget, super.key});
+
+  final OnboardingBackTarget? backTarget;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return KeystoneOnboardingTrailingPane(
-      backTarget: const OnboardingBackTarget.route(
-        label: 'Welcome',
-        routePath: '/welcome',
-      ),
+      backTarget:
+          backTarget ??
+          const OnboardingBackTarget.route(
+            label: 'Welcome',
+            routePath: '/welcome',
+          ),
       bodyPadding: EdgeInsets.zero,
       child: _HeroLayout(ref: ref),
     );

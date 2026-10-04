@@ -1,7 +1,7 @@
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart'
-    show TargetPlatform, defaultTargetPlatform;
+    show TargetPlatform, defaultTargetPlatform, ValueListenable;
 import 'package:flutter/material.dart'
     show Material, MaterialLocalizations, showModalBottomSheet;
 import 'package:flutter/widgets.dart';
@@ -12,6 +12,7 @@ import '../../widgets/app_icon.dart';
 import '../../widgets/app_modal_shape.dart';
 import 'mobile_modal_corners.dart';
 import 'prepared_modal_sheet_route.dart';
+import 'controlled_modal_sheet_route.dart';
 
 /// Shows a mobile modal as a floating card — the Figma modal base
 /// (`_Modal Type`, e.g. 4600:50437). It still rises from the bottom, but
@@ -43,6 +44,7 @@ Future<T?> showAppMobileSheet<T>({
   bool isDismissible = true,
   bool enableDrag = true,
   bool transparentBackground = false,
+  ValueListenable<bool>? canDismiss,
 }) {
   final appTheme = context.appTheme;
   final colors = context.colors;
@@ -63,26 +65,51 @@ Future<T?> showAppMobileSheet<T>({
   if (defaultTargetPlatform == TargetPlatform.iOS && !transparentBackground) {
     final navigator = Navigator.of(context, rootNavigator: true);
     final localizations = MaterialLocalizations.of(context);
-    return navigator.push(
-      PreparedModalSheetRoute<T>(
-        capturedThemes: InheritedTheme.capture(
-          from: context,
-          to: navigator.context,
-        ),
-        modalBarrierColor: colors.background.neutralScrim,
-        barrierLabel: localizations.scrimLabel,
-        barrierOnTapHint: localizations.scrimOnTapHint(
-          localizations.bottomSheetLabel,
-        ),
-        isDismissible: isDismissible,
-        enableDrag: enableDrag,
-        builder: (_) => wrapSheet(
-          Builder(
-            builder: (context) => MobileModalCard(child: builder(context)),
-          ),
+    final route = PreparedModalSheetRoute<T>(
+      capturedThemes: InheritedTheme.capture(
+        from: context,
+        to: navigator.context,
+      ),
+      modalBarrierColor: colors.background.neutralScrim,
+      barrierLabel: localizations.scrimLabel,
+      barrierOnTapHint: localizations.scrimOnTapHint(
+        localizations.bottomSheetLabel,
+      ),
+      canDismiss: canDismiss,
+      isDismissible: isDismissible,
+      enableDrag: enableDrag,
+      builder: (_) => wrapSheet(
+        Builder(builder: (context) => MobileModalCard(child: builder(context))),
+      ),
+    );
+    final popped = navigator.push(route);
+    return canDismiss == null ? popped : popped.then((_) => route.completed);
+  }
+
+  if (canDismiss != null) {
+    final navigator = Navigator.of(context, rootNavigator: true);
+    final route = ControlledModalSheetRoute<T>(
+      canDismiss: canDismiss,
+      capturedThemes: InheritedTheme.capture(
+        from: context,
+        to: navigator.context,
+      ),
+      isDismissible: isDismissible,
+      enableDrag: enableDrag,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: const Color(0x00000000),
+      elevation: 0,
+      modalBarrierColor: colors.background.neutralScrim,
+      barrierLabel: MaterialLocalizations.of(context).scrimLabel,
+      builder: (_) => wrapSheet(
+        MobileModalCard(
+          transparentBackground: transparentBackground,
+          child: Builder(builder: builder),
         ),
       ),
     );
+    return navigator.push(route).then((_) => route.completed);
   }
 
   return showModalBottomSheet<T>(
@@ -313,7 +340,7 @@ class MobileModalScaffold extends StatelessWidget {
   });
 
   final String title;
-  final VoidCallback onClose;
+  final VoidCallback? onClose;
   final Widget child;
 
   /// Keeps a scrollable body within the height left below the fixed header.
@@ -404,7 +431,7 @@ class MobileModalScaffold extends StatelessWidget {
 class _ModalCloseButton extends StatefulWidget {
   const _ModalCloseButton({required this.onTap});
 
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   State<_ModalCloseButton> createState() => _ModalCloseButtonState();
@@ -428,14 +455,19 @@ class _ModalCloseButtonState extends State<_ModalCloseButton> {
     return Semantics(
       label: 'Close',
       button: true,
+      enabled: widget.onTap != null,
       child: MouseRegion(
-        cursor: SystemMouseCursors.click,
+        cursor: widget.onTap == null
+            ? SystemMouseCursors.basic
+            : SystemMouseCursors.click,
         onEnter: (_) => setState(() => _hovered = true),
         onExit: (_) => setState(() => _hovered = false),
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: widget.onTap,
-          onTapDown: (_) => setState(() => _pressed = true),
+          onTapDown: widget.onTap == null
+              ? null
+              : (_) => setState(() => _pressed = true),
           onTapUp: (_) => setState(() => _pressed = false),
           onTapCancel: () => setState(() => _pressed = false),
           child: Container(
@@ -447,7 +479,9 @@ class _ModalCloseButtonState extends State<_ModalCloseButton> {
               child: AppIcon(
                 AppIcons.cross,
                 size: 20,
-                color: colors.icon.accent,
+                color: widget.onTap == null
+                    ? colors.icon.muted
+                    : colors.icon.accent,
               ),
             ),
           ),

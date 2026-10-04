@@ -5,7 +5,7 @@
 //! lightwalletd the wallet's birthday. This table answers both directions
 //! locally. Entry `i` of [`mainnet_data::TIMES`] is the header time of block
 //! `START_HEIGHT + i * STEP`. Linear interpolation inside one 1,000-block span
-//! stays within a few hours of the true time, far inside the 15-day import
+//! stays within a few hours of the true time, far inside the 7-day import
 //! safety margin.
 //!
 //! `scripts/update-mainnet-block-times.py` appends entries; a weekly workflow

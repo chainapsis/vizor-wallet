@@ -6,7 +6,8 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `block_height_from_u64`, `catch`, `discover_software_account_at_index`, `discover_used_software_accounts`, `discovery_start_height`, `import_discovered_software_wallet_accounts`, `import_lookups`, `is_ironwood_active_at_height`, `lookups_still_allowed`, `network_name`, `nu6_3_activation_height`, `parse_network_and_migrate`, `preview_transparent_balance_for_addresses`, `pub`, `restored_birthday`
+// These functions are ignored because they are not marked as `pub`: `block_height_from_u64`, `catch`, `discover_software_account_at_index`, `discover_used_software_accounts`, `discovery_start_height`, `import_discovered_software_wallet_accounts`, `import_gate`, `is_ironwood_active_at_height`, `network_name`, `nu6_3_activation_height`, `parse_network_and_migrate`, `preview_transparent_balance_for_addresses`, `restored_birthday`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Probe`
 
 /// Get the latest block height from lightwalletd.
 Future<BigInt> getLatestBlockHeight({
@@ -356,6 +357,22 @@ Future<String> getUnifiedAddress({
   dbPath: dbPath,
   network: network,
   accountUuid: accountUuid,
+);
+
+/// The wallet account encrypted software recovery material derives at
+/// `zip32_account_index`, matched by viewing key. Accepts either a legacy plain
+/// mnemonic or the versioned mnemonic + BIP-39 passphrase storage envelope.
+/// Returns `None` when the wallet or account is missing.
+Future<String?> findSoftwareAccountForMnemonic({
+  required String mnemonic,
+  required String network,
+  required String dbPath,
+  required int zip32AccountIndex,
+}) => RustLib.instance.api.crateApiWalletFindSoftwareAccountForMnemonic(
+  mnemonic: mnemonic,
+  network: network,
+  dbPath: dbPath,
+  zip32AccountIndex: zip32AccountIndex,
 );
 
 /// Export a single account's Unified Full Viewing Key (UFVK). Works for both
