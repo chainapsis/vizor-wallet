@@ -328,8 +328,12 @@ fn history_summaries_details_and_outputs_share_snapshot_during_sync_commit() {
         let mut conn = Connection::open(path).unwrap();
         conn.busy_timeout(Duration::from_secs(2)).unwrap();
         let tx = conn.transaction().unwrap();
+        // Remove construction evidence as well as mined evidence. A recorded
+        // local construction legitimately keeps payment details complete even
+        // while unmined; this recovery state must change the completeness read.
         tx.execute(
-            "UPDATE transactions SET mined_height = NULL, tx_index = NULL, fee = 20000
+            "UPDATE transactions SET mined_height = NULL, tx_index = NULL,
+                 fee = 20000, created = NULL
              WHERE txid = ?1",
             [PAYMENT],
         )
@@ -404,7 +408,9 @@ fn history_summaries_details_and_outputs_share_snapshot_during_sync_commit() {
     assert_eq!(payment.mined_height, 0);
     assert_eq!(payment.block_time, 0);
     assert_eq!(payment.account_balance_delta, -155000);
+    assert_eq!(payment.display_amount, 146000);
     assert_eq!(payment.fee, 20000);
+    assert_eq!(payment.created_time, 0);
     assert!(!payment.details_complete);
     assert!(payment.provisional);
 }
