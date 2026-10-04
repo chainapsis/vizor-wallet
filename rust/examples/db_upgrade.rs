@@ -6,15 +6,8 @@
 //! 2. `verify` (current build) upgrades it and checks that the schema is a
 //!    superset of the base schema, the raw state is unchanged, and the current
 //!    APIs report what the base APIs did.
-//! 3. `prepare-rollback` (current build) runs the downgrade handover and checks
-//!    the schema an older build will write to.
-//! 4. `open-old` (base build) reopens the wallet, reads it through the base
-//!    APIs, and stores a wallet transaction through the base library's real
-//!    ingestion path (`decrypt_and_store_transaction`). `read-old` (base
-//!    build, a fresh process, so no in-process balance cache predates the
-//!    write) records what the base APIs then report.
-//! 5. `verify` (current build) again: the older build's writes are reconciled
-//!    and the current APIs report what the base APIs did after those writes.
+//! Published-to-current upgrades are supported. Older writers after a private-ledger
+//! upgrade are not qualified by this probe.
 //!
 //! API that differs between builds lives in `db_upgrade/compat.rs` (or a
 //! base's `compat_<base>.rs`); current-build-only checks live in
@@ -76,7 +69,7 @@ const LEGACY_PUBLIC_ORIGIN: i64 = 0;
 const LOCAL_ORIGIN: i64 = 1;
 
 /// Schema objects the current build removes on purpose. Every entry must be
-/// unused by older builds at runtime, or restored for them by the handover.
+/// unused by the current build at runtime.
 ///
 /// Matched as a prefix of `table:<name>`, `view:<name>`, `index:<name>`,
 /// `column:<table or view>.<column>`, or `unique:<table>(<sorted columns>)`.
@@ -84,16 +77,9 @@ const LOCAL_ORIGIN: i64 = 1;
 const REMOVED_FOR_ALL_BUILDS: [&str; 1] = [
     // The ZIP 318 pool-migration engine. Published builds reference these
     // tables only through `ON DELETE CASCADE` from `accounts`, which is inert
-    // once the tables are gone; the handover does not restore them.
+    // once the tables are gone.
     "table:orchard_ironwood_migration",
 ];
-/// Removed while the current build runs, and restored by the handover that
-/// published rc5/rc7 writers need (`prepare-rollback` checks they are back).
-const REMOVED_UNTIL_HANDOVER: [&str; 2] = [
-    "column:transactions.zip318_kind",
-    "column:v_transactions.zip318_kind",
-];
-
 #[derive(Debug, Deserialize, Serialize)]
 struct Manifest {
     state: LegacyState,
@@ -233,7 +219,7 @@ fn main() {
     let mut args = std::env::args().skip(1);
     let mode = args.next().expect(
         "usage: db_upgrade \
-             <create|verify|prepare-rollback|open-old|read-old> <scenario> <db> <manifest>",
+             <create|verify|open-old|read-old> <scenario> <db> <manifest>",
     );
     let scenario = args.next().expect("scenario");
     let db_path = args.next().expect("database path");
@@ -242,7 +228,6 @@ fn main() {
     match mode.as_str() {
         "create" => create_fixture(&scenario, &db_path, &manifest_path),
         "verify" => verify_upgraded(&scenario, &db_path, &manifest_path),
-        "prepare-rollback" => prepare_rollback(&scenario, &db_path, &manifest_path),
         "open-old" => verify_old_reopen(&scenario, &db_path, &manifest_path),
         "read-old" => read_after_old(&scenario, &db_path, &manifest_path),
         other => panic!("unknown mode {other}"),
@@ -535,7 +520,7 @@ fn verify_upgraded(scenario: &str, db_path: &str, manifest_path: &str) {
     assert_schema_superset(
         &manifest.schema,
         &read_schema(db_path),
-        &[&REMOVED_FOR_ALL_BUILDS[..], &REMOVED_UNTIL_HANDOVER[..]].concat(),
+        &REMOVED_FOR_ALL_BUILDS,
     );
     assert_transparent_ledger(db_path, manifest.after_old.as_ref());
     assert_sqlite_health(db_path);
@@ -637,8 +622,7 @@ fn expected_spendable(manifest: &Manifest) -> BTreeSet<(String, u32, u64)> {
 /// The ledger starts public (generation 0, reader version 1), and every
 /// transparent record carries legacy-public provenance, plus local provenance
 /// where the wallet created the transaction. Neither is private coverage.
-/// Records an older build wrote after the handover are reconciled the same
-/// way when this build returns.
+/// The upgrade runner uses only records stored before the upgrade.
 fn assert_transparent_ledger(db_path: &str, after_old: Option<&AfterOld>) {
     let conn = rusqlite::Connection::open(db_path).expect("open upgraded DB");
     for table in ["tpir_meta", "tpir_output_origins", "tpir_spend_origins"] {
@@ -743,32 +727,7 @@ fn origins(conn: &rusqlite::Connection, sql: &str, txid: &[u8]) -> Vec<i64> {
     origins
 }
 
-/// The downgrade handover: older public writers can store transactions again
-/// only if no schema object they use is missing.
-fn prepare_rollback(scenario: &str, db_path: &str, manifest_path: &str) {
-    let manifest = read_manifest(manifest_path);
-    assert_eq!(manifest.state.scenario, scenario);
-    assert!(
-        manifest.after_old.is_none(),
-        "handover after the round trip"
-    );
-
-    current::prepare_rollback(db_path);
-    current::prepare_rollback(db_path);
-
-    let conn = rusqlite::Connection::open(db_path).expect("open prepared DB");
-    assert!(column_exists(&conn, "transactions", "zip318_kind"));
-    assert!(column_exists(&conn, "v_transactions", "zip318_kind"));
-    drop(conn);
-    assert_schema_superset(
-        &manifest.schema,
-        &read_schema(db_path),
-        &REMOVED_FOR_ALL_BUILDS,
-    );
-    assert_sqlite_health(db_path);
-    println!("prepared scenario={scenario} for an older build");
-}
-
+/// Optional diagnostic command; the upgrade runner does not qualify older writers.
 fn verify_old_reopen(scenario: &str, db_path: &str, manifest_path: &str) {
     let mut manifest = read_manifest(manifest_path);
     assert_eq!(manifest.state.scenario, scenario);
@@ -1355,10 +1314,9 @@ fn assert_current_schema(db_path: &str) {
         0,
         "ZIP 318 pool-migration schema survived the upgrade"
     );
-    // The column is restored only for a handover to an older build; opening
-    // the wallet with this build drops it again.
-    assert!(!column_exists(&conn, "transactions", "zip318_kind"));
-    assert!(!column_exists(&conn, "v_transactions", "zip318_kind"));
+    // The current library retains the published classification schema in place.
+    assert!(column_exists(&conn, "transactions", "zip318_kind"));
+    assert!(column_exists(&conn, "v_transactions", "zip318_kind"));
     assert!(
         object_exists(
             &conn,

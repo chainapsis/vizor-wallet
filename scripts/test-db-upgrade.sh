@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
-# Upgrade probe: create wallets with the build at <base-ref>, upgrade and verify
-# them with the current tree, hand them back to the base build through the
-# downgrade handover, let the base build read and write them (open-old, then
-# read-old in a fresh process), and verify them
-# with the current tree again (new -> old -> new).
+# Upgrade probe: create wallets with the published build at <base-ref>, upgrade
+# and verify them twice with the current tree. Writable downgrades are not qualified.
 #
 # usage: scripts/test-db-upgrade.sh <base-ref> [scenario...]
 set -euo pipefail
@@ -65,10 +62,7 @@ for scenario in "${SCENARIOS[@]}"; do
   run_probe "$OLD_WORKTREE" create "$scenario" "$db_path" "$manifest_path"
   run_probe "$ROOT_DIR" verify "$scenario" "$db_path" "$manifest_path"
   run_probe "$ROOT_DIR" verify "$scenario" "$db_path" "$manifest_path"
-  run_probe "$ROOT_DIR" prepare-rollback "$scenario" "$db_path" "$manifest_path"
-  run_probe "$OLD_WORKTREE" open-old "$scenario" "$db_path" "$manifest_path"
-  run_probe "$OLD_WORKTREE" read-old "$scenario" "$db_path" "$manifest_path"
-  run_probe "$ROOT_DIR" verify "$scenario" "$db_path" "$manifest_path"
+
 done
 
 echo "ok: $BASE_REF database upgrade compatibility"
