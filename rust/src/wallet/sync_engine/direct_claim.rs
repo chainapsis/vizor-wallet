@@ -41,7 +41,11 @@ pub(crate) enum FundingLocator<'a> {
 
 // Resolution is separate from quote readiness: a cancelled refresh invalidates
 // the quote, but must not lose the transaction already discovered at a height.
-fn resolved_funding(path: &str, height: u32, amount: u64) -> Result<Option<TxId>, String> {
+pub(super) fn resolved_funding(
+    path: &str,
+    height: u32,
+    amount: u64,
+) -> Result<Option<TxId>, String> {
     let conn = open_wallet_raw_conn_with_timeout(path, READ_DB_BUSY_TIMEOUT)?;
     let exists: bool = conn.query_row(
         "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='vizor_gift_funding_resolution')",
@@ -112,7 +116,7 @@ fn discover_funding(
     }
 }
 
-fn parse_txid(value: &str) -> Result<TxId, String> {
+pub(super) fn parse_txid(value: &str) -> Result<TxId, String> {
     let mut bytes: [u8; 32] = hex::decode(value)
         .map_err(|_| "Gift Card funding transaction ID is invalid")?
         .try_into()

@@ -290,13 +290,13 @@ Future<BigInt> estimatePaymentLinkBatchFee({
   required String dbPath,
   required String network,
   required String accountUuid,
-  required List<String> addresses,
+  required List<PaymentLinkBatchOutput> outputs,
   required BigInt amountZatoshi,
 }) => RustLib.instance.api.crateApiSyncEstimatePaymentLinkBatchFee(
   dbPath: dbPath,
   network: network,
   accountUuid: accountUuid,
-  addresses: addresses,
+  outputs: outputs,
   amountZatoshi: amountZatoshi,
 );
 
@@ -306,14 +306,14 @@ Future<ProposalResult> proposePaymentLinkBatch({
   required String network,
   required String accountUuid,
   required String sendFlowId,
-  required List<String> addresses,
+  required List<PaymentLinkBatchOutput> outputs,
   required BigInt amountZatoshi,
 }) => RustLib.instance.api.crateApiSyncProposePaymentLinkBatch(
   dbPath: dbPath,
   network: network,
   accountUuid: accountUuid,
   sendFlowId: sendFlowId,
-  addresses: addresses,
+  outputs: outputs,
   amountZatoshi: amountZatoshi,
 );
 
@@ -974,6 +974,27 @@ Future<void> setTransactionStatus({
   network: network,
   txidHex: txidHex,
   status: status,
+);
+
+/// Optional message from the unique shielded output funding a Gift Card.
+/// Public birthday claims may recover one missing raw payload. Private
+/// birthday claims never fall back to a public lookup for display metadata.
+Future<String?> getPaymentLinkFundingMessage({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required String accountUuid,
+  required BigInt expectedFundingAmount,
+  String? fundingTxid,
+  int? fundingHeight,
+}) => RustLib.instance.api.crateApiSyncGetPaymentLinkFundingMessage(
+  dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
+  network: network,
+  accountUuid: accountUuid,
+  expectedFundingAmount: expectedFundingAmount,
+  fundingTxid: fundingTxid,
+  fundingHeight: fundingHeight,
 );
 
 Future<List<TransactionInfo>> getTransactionHistory({
@@ -2450,6 +2471,25 @@ class OrchardMigrationPrivatePlan {
           proofReadinessDelayBlocks == other.proofReadinessDelayBlocks &&
           estimatedProofReadyHeight == other.estimatedProofReadyHeight &&
           scheduledTransfers == other.scheduledTransfers;
+}
+
+/// One card's destination and its optional, output-specific message.
+class PaymentLinkBatchOutput {
+  final String address;
+  final String? memo;
+
+  const PaymentLinkBatchOutput({required this.address, this.memo});
+
+  @override
+  int get hashCode => address.hashCode ^ memo.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PaymentLinkBatchOutput &&
+          runtimeType == other.runtimeType &&
+          address == other.address &&
+          memo == other.memo;
 }
 
 /// Positive, scanned evidence for a Gift Card's shielded inputs. This reads

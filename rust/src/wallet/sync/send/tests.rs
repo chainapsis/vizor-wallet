@@ -16,9 +16,49 @@ const MIGRATION_TEST_PASSWORD: &[u8] = b"correct horse battery staple";
 const MIGRATION_TEST_SALT: &str = "AQIDBAUGBwgJCgsMDQ4PEA==";
 
 #[test]
+fn gift_card_batch_quote_rejects_ledger_memo_overflow_only() {
+    use crate::wallet::keys::HardwareSignerKind;
+    let payments: Vec<_> = (1..=9)
+        .map(|i| (gift_card_batch_address(i), 20_000, Some("a".repeat(128))))
+        .collect();
+    let request = build_payment_link_batch_request(&payments).unwrap();
+    assert!(validate_payment_link_batch_memos(&request, Some(HardwareSignerKind::Ledger)).is_err());
+    assert!(
+        validate_payment_link_batch_memos(&request, Some(HardwareSignerKind::Keystone)).is_ok()
+    );
+    assert!(validate_payment_link_batch_memos(&request, None).is_ok());
+    let request = build_payment_link_batch_request(&payments[..8]).unwrap();
+    assert!(validate_payment_link_batch_memos(&request, Some(HardwareSignerKind::Ledger)).is_ok());
+    let mut nul = payments[..2].to_vec();
+    nul[0].2 = Some("hello\0".into());
+    assert!(build_payment_link_batch_request(&nul).is_err());
+}
+
+#[test]
+fn gift_card_batch_memos_stay_with_their_outputs() {
+    let payments = vec![
+        (gift_card_batch_address(1), 20_000, Some("For Alice".into())),
+        (gift_card_batch_address(2), 20_000, Some("For Bob".into())),
+    ];
+    let request = build_payment_link_batch_request(&payments).unwrap();
+    for (index, message) in ["For Alice", "For Bob"].iter().enumerate() {
+        let memo = request.payments().get(&index).unwrap().memo().unwrap();
+        let Memo::Text(text) = Memo::try_from(memo).unwrap() else {
+            panic!("Text memo expected")
+        };
+        assert_eq!(String::from(text), *message);
+    }
+    let oversized = vec![
+        (gift_card_batch_address(1), 20_000, Some("a".repeat(513))),
+        (gift_card_batch_address(2), 20_000, None),
+    ];
+    assert!(build_payment_link_batch_request(&oversized).is_err());
+}
+
+#[test]
 fn gift_card_batch_request_accepts_fifty_distinct_payments() {
     let payments: Vec<_> = (1..=50)
-        .map(|index| (gift_card_batch_address(index), 20_000))
+        .map(|index| (gift_card_batch_address(index), 20_000, None))
         .collect();
     let request = build_payment_link_batch_request(&payments).unwrap();
     assert_eq!(request.payments().len(), 50);
@@ -26,7 +66,7 @@ fn gift_card_batch_request_accepts_fifty_distinct_payments() {
     assert!(build_payment_link_batch_request(
         &[
             payments.clone(),
-            vec![(gift_card_batch_address(51), 20_000)]
+            vec![(gift_card_batch_address(51), 20_000, None)]
         ]
         .concat()
     )
@@ -45,8 +85,8 @@ fn gift_card_batch_request_rejects_transparent_only_recipients() {
             .to_string()
     };
     assert!(build_payment_link_batch_request(&[
-        (gift_card_batch_address(1), 20_000),
-        (sapling, 20_000),
+        (gift_card_batch_address(1), 20_000, None),
+        (sapling, 20_000, None),
     ])
     .is_ok());
 
@@ -56,8 +96,12 @@ fn gift_card_batch_request_rejects_transparent_only_recipients() {
         Address::Tex([2; 20]),
     ] {
         let error = build_payment_link_batch_request(&[
-            (gift_card_batch_address(1), 20_000),
-            (transparent.to_zcash_address(&network).to_string(), 20_000),
+            (gift_card_batch_address(1), 20_000, None),
+            (
+                transparent.to_zcash_address(&network).to_string(),
+                20_000,
+                None,
+            ),
         ])
         .unwrap_err();
         assert_eq!(error, "Gift Card batch address has no shielded receiver");

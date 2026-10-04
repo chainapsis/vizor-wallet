@@ -833,7 +833,7 @@ pub(crate) fn propose_payment_link_batch(
     network: WalletNetwork,
     account_uuid: &str,
     send_flow_id: &str,
-    payments: &[(String, u64)],
+    payments: &[(String, u64, Option<String>)],
 ) -> Result<ProposalResult, String> {
     propose_send_with_request(
         db_path,
@@ -988,7 +988,7 @@ pub fn estimate_payment_link_batch_fee(
     db_path: &str,
     network: WalletNetwork,
     account_uuid: &str,
-    payments: &[(String, u64)],
+    payments: &[(String, u64, Option<String>)],
 ) -> Result<u64, String> {
     estimate_fee_with_request(
         db_path,
@@ -1028,7 +1028,7 @@ enum SendRequest<'a> {
         amount_zatoshi: u64,
         memo_str: Option<&'a str>,
     },
-    PaymentLinkBatch(&'a [(String, u64)]),
+    PaymentLinkBatch(&'a [(String, u64, Option<String>)]),
 }
 
 impl SendRequest<'_> {
@@ -1068,6 +1068,14 @@ fn propose_request(
     }
     let proposed_tx_version = proposed_tx_version_for_wallet_db(db, network, context)?;
     let transaction_request = request.build()?;
+    let batch_signer = if let SendRequest::PaymentLinkBatch(_) = request {
+        db.get_account(account_id)
+            .map_err(|e| e.to_string())?
+            .and_then(|account| crate::wallet::keys::hardware_signer_kind(account.source()))
+    } else {
+        None
+    };
+    validate_payment_link_batch_memos(&transaction_request, batch_signer)?;
     if matches!(purpose, SendPurpose::PaymentLinkClaim) {
         if let Some(prepared) = sync_engine::direct_claim::load(db_path)? {
             let proposal = propose_direct_claim(
@@ -1105,11 +1113,7 @@ fn propose_request(
         });
 
     if let SendRequest::PaymentLinkBatch(_) = request {
-        let signer = db
-            .get_account(account_id)
-            .map_err(|e| e.to_string())?
-            .and_then(|account| crate::wallet::keys::hardware_signer_kind(account.source()));
-        validate_payment_link_batch_proposal(&proposal, network, signer)?;
+        validate_payment_link_batch_proposal(&proposal, network, batch_signer)?;
     }
     Ok((proposal, tx_version))
 }
@@ -3867,6 +3871,16 @@ fn build_ledger_shielding_round(
     Ok((proposal, selected))
 }
 
+fn text_memo(value: Option<&str>) -> Result<Option<MemoBytes>, String> {
+    value
+        .map(|text| {
+            Memo::from_bytes(text.as_bytes())
+                .map(MemoBytes::from)
+                .map_err(|e| format!("Bad memo: {e}"))
+        })
+        .transpose()
+}
+
 fn build_send_request(
     to_address: &str,
     amount_zatoshi: u64,
@@ -3876,15 +3890,7 @@ fn build_send_request(
         .parse()
         .map_err(|e| format!("Bad address: {e}"))?;
     let value = Zatoshis::from_u64(amount_zatoshi).map_err(|_| "Bad amount")?;
-    let memo_bytes = match memo_str {
-        Some(m) => {
-            let bytes = MemoBytes::from(
-                Memo::from_bytes(m.as_bytes()).map_err(|e| format!("Bad memo: {e}"))?,
-            );
-            Some(bytes)
-        }
-        None => None,
-    };
+    let memo_bytes = text_memo(memo_str)?;
 
     let payment = Payment::new(to, Some(value), memo_bytes, None, None, vec![])
         .map_err(|e| format!("Cannot create payment: {e:?}"))?;
@@ -3903,15 +3909,45 @@ fn payment_link_batch_rejection(reason: impl std::fmt::Display) -> String {
     format!("{PAYMENT_LINK_BATCH_REJECTION_PREFIX}{reason}")
 }
 
+fn validate_payment_link_batch_memos(
+    request: &TransactionRequest,
+    signer: Option<crate::wallet::keys::HardwareSignerKind>,
+) -> Result<(), String> {
+    if matches!(
+        signer,
+        Some(crate::wallet::keys::HardwareSignerKind::Ledger)
+    ) {
+        // Conservative across the builder's randomized output order.
+        let cost: usize = request
+            .payments()
+            .values()
+            .filter_map(|p| p.memo())
+            .map(|memo| crate::wallet::ledger::memo_review_cost(memo.as_array()))
+            .sum();
+        if cost > crate::wallet::ledger::MAX_RETAINED_MEMO_BYTES {
+            return Err(payment_link_batch_rejection(
+                "has too much memo data for Ledger. Try fewer cards or a shorter message.",
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn build_payment_link_batch_request(
-    payments: &[(String, u64)],
+    payments: &[(String, u64, Option<String>)],
 ) -> Result<TransactionRequest, String> {
     if !(2..=50).contains(&payments.len()) {
         return Err("Gift Card batch must contain 2 to 50 cards".to_string());
     }
     let mut seen = HashSet::with_capacity(payments.len());
     let mut outputs = Vec::with_capacity(payments.len());
-    for (address, amount) in payments {
+    for (address, amount, memo) in payments {
+        if memo
+            .as_deref()
+            .is_some_and(|message| message.contains('\0'))
+        {
+            return Err("Gift card messages cannot contain null characters.".into());
+        }
         if !seen.insert(address.as_str()) {
             return Err("Gift Card batch addresses must be distinct".to_string());
         }
@@ -3927,8 +3963,15 @@ fn build_payment_link_batch_request(
         }
         let value = Zatoshis::from_u64(*amount).map_err(|_| "Bad Gift Card amount")?;
         outputs.push(
-            Payment::new(to, Some(value), None, None, None, vec![])
-                .map_err(|e| format!("Cannot create Gift Card payment: {e:?}"))?,
+            Payment::new(
+                to,
+                Some(value),
+                text_memo(memo.as_deref())?,
+                None,
+                None,
+                vec![],
+            )
+            .map_err(|e| format!("Cannot create Gift Card payment: {e:?}"))?,
         );
     }
     TransactionRequest::new(outputs).map_err(|e| format!("{e:?}"))

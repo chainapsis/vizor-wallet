@@ -159,7 +159,7 @@ class RustPaymentLinkHardwareSigningService
             network: endpoint.networkName,
             accountUuid: batch.quote.sourceAccountUuid,
             sendFlowId: sendFlowId,
-            addresses: [for (final link in batch.links) link.address],
+            outputs: paymentLinkFundingOutputs(batch.links),
             amountZatoshi: paymentLinkFundingAmountZatoshi(
               batch.quote.recipientAmountZatoshi,
             ),
@@ -205,6 +205,7 @@ class RustPaymentLinkHardwareSigningService
         sendFlowId: sendFlowId,
         toAddress: link.address,
         amountZatoshi: paymentLinkFundingAmountZatoshi(amountZatoshi),
+        memo: paymentLinkFundingMemo(link),
       ),
       removeDrafts: () =>
           _recoveryStore.removeUnsubmittedDraft(address: link.address),

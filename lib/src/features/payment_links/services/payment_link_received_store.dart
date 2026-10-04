@@ -381,6 +381,7 @@ class PaymentLinkReceivedStore {
     VizorPaymentLink link, {
     DateTime? updatedAt,
     String? setupAccountUuid,
+    String? fundingMessage,
   }) {
     return _runExclusive(() async {
       final records = await _loadUnlocked();
@@ -410,7 +411,8 @@ class PaymentLinkReceivedStore {
         createdAt: link.createdAt.toUtc(),
         isCreatedAtProvisional: link.isCreatedAtProvisional,
         artworkId: link.presentation?.artworkId,
-        message: link.presentation?.message,
+        message:
+            link.presentation?.message ?? existing?.message ?? fundingMessage,
         fiatSnapshot: existing?.fiatSnapshot ?? link.presentation?.fiatSnapshot,
         status: existing?.status ?? PaymentLinkReceivedStatus.readyToClaim,
         claimLink: link,

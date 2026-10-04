@@ -132,7 +132,7 @@ void main() {
       final restored = VizorPaymentLink.parse(wire(source));
       expect(restored.presentation!.artworkId, 'knightMagic');
       expect(restored.presentation!.fiatSnapshot!.amount, 11.1747);
-      expect(restored.presentation!.message, _message);
+      expect(restored.presentation!.message, isNull);
       expect(restored.toShareUri(), source.toShareUri());
 
       final unknownArtwork = card(
@@ -154,7 +154,7 @@ void main() {
         final withUnknown = [...raw, 99, 3, 1, 2, 3, 3, 2, 104, 105];
         final parsedUnknown = VizorPaymentLink.parse(withBytes(withUnknown));
         expect(parsedUnknown.presentation!.artworkId, 'knightMagic');
-        expect(parsedUnknown.presentation!.message, 'hi');
+        expect(parsedUnknown.presentation!.message, isNull);
 
         for (final malformed in [
           [...raw, 3],

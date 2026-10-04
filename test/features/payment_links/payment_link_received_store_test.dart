@@ -8,6 +8,32 @@ import 'package:zcash_wallet/src/features/payment_links/services/payment_link_re
 
 void main() {
   test(
+    'funding message survives intake and receipt without changing link identity',
+    () async {
+      final storage = _FakePaymentLinkReceivedStorage();
+      var store = PaymentLinkReceivedStore(storage);
+      final link = _link(message: null);
+      await store.saveReady(link, fundingMessage: 'From the funding output');
+      store = PaymentLinkReceivedStore(storage);
+      final saved = await store.saveReady(link, fundingMessage: 'Later top-up');
+      expect(saved.message, 'From the funding output');
+      expect(saved.claimLink!.hasSameCanonicalPayload(link), isTrue);
+      expect(link.presentation?.message, isNull);
+      await store.markClaimStarted(
+        address: link.address,
+        destinationAccountUuid: 'receiver',
+      );
+      await store.markReceiving(
+        address: link.address,
+        destinationAccountUuid: 'receiver',
+        claimTxids: 'pending',
+      );
+      await store.markReceived(address: link.address);
+      expect((await store.load()).single.message, 'From the funding output');
+    },
+  );
+
+  test(
     'provisional date survives restart and lifecycle, enrichment preserves claim metadata',
     () async {
       final storage = _FakePaymentLinkReceivedStorage();
@@ -903,6 +929,7 @@ void main() {
 VizorPaymentLink _link({
   String address = 'u1paymentlinkaddress',
   double? fiatAmount = 142.23,
+  String? message = 'Enjoy your gift!',
 }) {
   return VizorPaymentLink(
     network: 'main',
@@ -918,7 +945,7 @@ VizorPaymentLink _link({
       fiatSnapshot: fiatAmount == null
           ? null
           : PaymentLinkFiatSnapshot(amount: fiatAmount),
-      message: 'Enjoy your gift!',
+      message: message,
     ),
   );
 }

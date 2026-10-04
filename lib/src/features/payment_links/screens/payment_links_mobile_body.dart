@@ -68,6 +68,7 @@ class PaymentLinksMobileBody extends StatelessWidget {
     required this.fundingProgressByAddress,
     required this.readyShowsBack,
     required this.receivedLink,
+    this.receivedMessage,
     required this.receivedFiatText,
     required this.receivedShowsBack,
     required this.receivedClaimSession,
@@ -150,6 +151,7 @@ class PaymentLinksMobileBody extends StatelessWidget {
   final bool readyShowsBack;
 
   final VizorPaymentLink? receivedLink;
+  final String? receivedMessage;
   final String? receivedFiatText;
   final bool receivedShowsBack;
   final PaymentLinkClaimSession? receivedClaimSession;
@@ -456,7 +458,11 @@ class PaymentLinksMobileBody extends StatelessWidget {
     final artwork = PaymentLinkCardArtwork.fromProtocolId(
       link.presentation?.artworkId,
     );
-    final message = link.presentation?.message ?? '';
+    final message =
+        link.presentation?.message ??
+        receivedMessage ??
+        receivedClaimSession?.fundingMessage ??
+        '';
     final hasCardMessage = message.isNotEmpty;
     final front = PaymentLinkGiftCard(
       artwork: artwork,

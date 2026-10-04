@@ -129,6 +129,35 @@ fn funding_block_builds_a_real_claim_quote_while_historical_gaps_remain_unscanne
     );
     drop(db);
     let conn = open_wallet_raw_conn_with_timeout(path, READ_DB_BUSY_TIMEOUT).unwrap();
+    // Use the SDK's real scanned-note schema and prove all locator modes read
+    // the same output without opening the deliberately unreachable endpoint.
+    conn.execute(
+        "UPDATE ironwood_received_notes SET memo=?1 WHERE value>0",
+        [b"Gift from the funding output".as_slice()],
+    )
+    .unwrap();
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let display_id = id.to_string();
+    for (txid, height) in [
+        (None, None),
+        (Some(display_id.as_str()), None),
+        (None, Some(u32::from(funding_height))),
+    ] {
+        assert_eq!(
+            rt.block_on(super::super::gift_message::read(
+                path,
+                "http://127.0.0.1:9",
+                network,
+                &account,
+                50_010_000,
+                txid,
+                height
+            ))
+            .unwrap()
+            .as_deref(),
+            Some("Gift from the funding output")
+        );
+    }
     conn.execute_batch(
         "CREATE TABLE vizor_gift_direct_claim (id INTEGER PRIMARY KEY,
         funding_txid TEXT, funding_height INTEGER, tip_height INTEGER);",

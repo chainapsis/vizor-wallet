@@ -9,7 +9,6 @@ abstract final class _V4PaymentLinkCodec {
   static const _fundingTxidMode = 2;
   static const _artworkTag = 1;
   static const _fiatTag = 2;
-  static const _messageTag = 3;
 
   static const _artworkIds = <String>[
     'knight',
@@ -114,8 +113,6 @@ abstract final class _V4PaymentLinkCodec {
         final data = ByteData(8)..setFloat64(0, fiat.amount, Endian.big);
         _addTlv(bytes, _fiatTag, data.buffer.asUint8List());
       }
-      final message = payload?['message'] as String?;
-      if (message != null) _addTlv(bytes, _messageTag, utf8.encode(message));
       final result = bytes.takeBytes();
       if (result.length > _maxDecodedLength) throw _invalid;
       return _CompactPaymentLinkCodec._encodeBase64(result);
@@ -177,7 +174,6 @@ abstract final class _V4PaymentLinkCodec {
 
       String? artworkId;
       double? fiatAmount;
-      String? message;
       final seenTags = <int>{};
       while (offset < bytes.length) {
         final tag = bytes[offset++];
@@ -193,8 +189,7 @@ abstract final class _V4PaymentLinkCodec {
         if (length > bytes.length - offset) break;
         final value = bytes.sublist(offset, offset + length);
         offset += length;
-        if (!seenTags.add(tag) &&
-            (tag == _artworkTag || tag == _fiatTag || tag == _messageTag)) {
+        if (!seenTags.add(tag) && (tag == _artworkTag || tag == _fiatTag)) {
           break;
         }
         try {
@@ -213,13 +208,6 @@ abstract final class _V4PaymentLinkCodec {
               ).getFloat64(0, Endian.big);
               if (!candidate.isFinite || candidate < 0) throw _invalid;
               fiatAmount = candidate;
-            case _messageTag:
-              final candidate = utf8.decode(value);
-              if (candidate.isEmpty || candidate != candidate.trim()) {
-                throw _invalid;
-              }
-              PaymentLinkPresentation._validate(message: candidate);
-              message = candidate;
             default:
             // Unknown display options are length-delimited and skippable.
           }
@@ -230,7 +218,6 @@ abstract final class _V4PaymentLinkCodec {
 
       final presentation = PaymentLinkPresentation.fromPayload({
         'artworkId': artworkId,
-        'message': message,
         'fiat': fiatAmount == null
             ? null
             : {'amount': fiatAmount, 'currency': 'USD'},

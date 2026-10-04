@@ -28,7 +28,7 @@ const kLedgerMemoHashAppVersion = '3.9.4';
 /// `LEDGER_MEMO_HASH_UNSUPPORTED` in `rust/src/wallet/ledger/parse.rs`, which is
 /// the error Rust returns and `ledgerFailureGuidance` matches on.
 const ledgerMemoHashUnsupportedError =
-    'Update the Ledger Zcash app to sign non-English memos';
+    'Update the Ledger Zcash app to sign these memos';
 
 /// Accounts connected from now on start without the 3.9.3 memo limit; those
 /// connected earlier keep signing from [kMinimumLedgerZcashAppVersion].

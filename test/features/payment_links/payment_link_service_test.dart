@@ -117,6 +117,24 @@ void main() {
       isNull,
     );
   });
+  test(
+    'funding memo normalization and output pairing preserve each card message',
+    () {
+      final first = _link(message: '  For Alice  ');
+      final second = _link(message: 'For Bob');
+      final outputs = paymentLinkFundingOutputs([first, second]);
+      expect(outputs.map((output) => output.memo), ['For Alice', 'For Bob']);
+      expect(outputs.map((output) => output.address), [
+        first.address,
+        second.address,
+      ]);
+      expect(paymentLinkFundingMemo(_link()), isNull);
+      expect(
+        () => paymentLinkFundingMemo(_link(message: 'hello\u0000')),
+        throwsFormatException,
+      );
+    },
+  );
 
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -966,6 +984,42 @@ void main() {
         expect(await store.find(link.address), isNull);
       },
     );
+
+    for (final invalidMessage in [false, true]) {
+      test(
+        'funding memo enriches inspection only and failure stays optional=$invalidMessage',
+        () async {
+          final link = _link();
+          api
+            ..poolFixture = true
+            ..emptyClaimWallet = true
+            ..claimHistory = []
+            ..fundingMessage = 'On-chain gift message'
+            ..fundingMessageFails = invalidMessage;
+          final wallet = container.read(Provider(PaymentLinkClaimWallet.new));
+          final location = await wallet.locate(link);
+          await location.directory.create(recursive: true);
+          await File(location.dbPath).writeAsString('claim DB fixture');
+          final inspection = await service.inspectClaim(
+            link,
+            allowLongSync: true,
+          );
+          expect(
+            inspection.message,
+            invalidMessage ? isNull : 'On-chain gift message',
+          );
+          expect(inspection.link.hasSameCanonicalPayload(link), isTrue);
+          expect(inspection.link.presentation?.message, isNull);
+          expect(api.fundingMessageLookups, 1);
+          expect(
+            await container
+                .read(paymentLinkReceivedStoreProvider)
+                .find(link.address),
+            isNull,
+          );
+        },
+      );
+    }
 
     for (final setupCard in [false, true]) {
       test(
@@ -3181,12 +3235,13 @@ VizorPaymentLink _eventLink({String? fundingTxid, int? birthdayHeight}) {
   );
 }
 
-VizorPaymentLink _link() {
+VizorPaymentLink _link({String? message}) {
   return VizorPaymentLink(
     network: 'main',
     address: 'u1paymentlinkaddress',
-    presentation: const PaymentLinkPresentation(
-      fiatSnapshot: PaymentLinkFiatSnapshot(amount: 0.1),
+    presentation: PaymentLinkPresentation(
+      message: message,
+      fiatSnapshot: const PaymentLinkFiatSnapshot(amount: 0.1),
     ),
     amountZatoshi: BigInt.from(100000),
     mnemonic:
@@ -3225,6 +3280,24 @@ rust_sync.TransactionInfo _transaction({
 class _DestinationValidated implements Exception {}
 
 class _ClaimDestinationRustApi implements RustLibApi {
+  String? fundingMessage;
+  int fundingMessageLookups = 0;
+  bool fundingMessageFails = false;
+  @override
+  Future<String?> crateApiSyncGetPaymentLinkFundingMessage({
+    required String dbPath,
+    required String lightwalletdUrl,
+    required String network,
+    required String accountUuid,
+    required BigInt expectedFundingAmount,
+    String? fundingTxid,
+    int? fundingHeight,
+  }) async {
+    fundingMessageLookups++;
+    if (fundingMessageFails) throw StateError('Optional metadata unavailable');
+    return fundingMessage;
+  }
+
   @override
   Uint8List crateApiWalletGiftMnemonicToEntropy({required String mnemonic}) =>
       Uint8List(16);
@@ -3470,6 +3543,9 @@ class _ClaimDestinationRustApi implements RustLibApi {
   }) async {}
 
   void reset() {
+    fundingMessage = null;
+    fundingMessageLookups = 0;
+    fundingMessageFails = false;
     directClaimTxids.clear();
     requestedAccounts.clear();
     cancelledClaimSyncs.clear();

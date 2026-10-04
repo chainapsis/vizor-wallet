@@ -2447,6 +2447,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
         fundingProgressByAddress: _fundingProgressByAddress,
         readyShowsBack: _readyShowsBack,
         receivedLink: _receivedLink,
+        receivedMessage: _receivedCardMessage,
         receivedFiatText: _savedCardFiatText(_receivedLink),
         receivedShowsBack: _receivedShowsBack,
         receivedClaimSession: _receivedClaimSession,
@@ -3524,13 +3525,21 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     return swapFormatCompactFiatValue(snapshot.amount);
   }
 
+  String? get _receivedCardMessage =>
+      _receivedLink?.presentation?.message ??
+      _receivedCards
+          .where((record) => record.address == _receivedLink?.address)
+          .firstOrNull
+          ?.message ??
+      _receivedClaimSession?.fundingMessage;
+
   Widget _buildReceived() {
     final link = _receivedLink;
     if (link == null) return _buildHome();
     final artwork = PaymentLinkCardArtwork.fromProtocolId(
       link.presentation?.artworkId,
     );
-    final message = link.presentation?.message ?? '';
+    final message = _receivedCardMessage ?? '';
     final hasMessage = message.isNotEmpty;
     final front = PaymentLinkGiftCard(
       artwork: artwork,

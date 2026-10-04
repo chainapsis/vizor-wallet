@@ -1233,11 +1233,20 @@ pub struct ShieldTransparentPcztResult {
     pub needs_sapling_params: bool,
 }
 
-/// Pairs every card address with the same funding amount.
-fn payment_link_batch_pairs(addresses: Vec<String>, amount_zatoshi: u64) -> Vec<(String, u64)> {
-    addresses
+/// One card's destination and its optional, output-specific message.
+pub struct PaymentLinkBatchOutput {
+    pub address: String,
+    pub memo: Option<String>,
+}
+
+/// Pairs every card with the same funding amount, preserving output memos.
+fn payment_link_batch_pairs(
+    outputs: Vec<PaymentLinkBatchOutput>,
+    amount_zatoshi: u64,
+) -> Vec<(String, u64, Option<String>)> {
+    outputs
         .into_iter()
-        .map(|address| (address, amount_zatoshi))
+        .map(|output| (output.address, amount_zatoshi, output.memo))
         .collect()
 }
 
@@ -1246,7 +1255,7 @@ pub fn estimate_payment_link_batch_fee(
     db_path: String,
     network: String,
     account_uuid: String,
-    addresses: Vec<String>,
+    outputs: Vec<PaymentLinkBatchOutput>,
     amount_zatoshi: u64,
 ) -> Result<u64, String> {
     catch(|| {
@@ -1255,7 +1264,7 @@ pub fn estimate_payment_link_batch_fee(
             &db_path,
             network,
             &account_uuid,
-            &payment_link_batch_pairs(addresses, amount_zatoshi),
+            &payment_link_batch_pairs(outputs, amount_zatoshi),
         )
     })
 }
@@ -1266,7 +1275,7 @@ pub fn propose_payment_link_batch(
     network: String,
     account_uuid: String,
     send_flow_id: String,
-    addresses: Vec<String>,
+    outputs: Vec<PaymentLinkBatchOutput>,
     amount_zatoshi: u64,
 ) -> Result<ProposalResult, String> {
     catch(|| {
@@ -1276,7 +1285,7 @@ pub fn propose_payment_link_batch(
             network,
             &account_uuid,
             &send_flow_id,
-            &payment_link_batch_pairs(addresses, amount_zatoshi),
+            &payment_link_batch_pairs(outputs, amount_zatoshi),
         )
         .map(api_proposal_result)
     })
@@ -2692,6 +2701,33 @@ pub fn set_transaction_status(
 }
 
 // ======================== Transaction History ========================
+
+/// Optional message from the unique shielded output funding a Gift Card.
+/// Public birthday claims may recover one missing raw payload. Private
+/// birthday claims never fall back to a public lookup for display metadata.
+pub fn get_payment_link_funding_message(
+    db_path: String,
+    lightwalletd_url: String,
+    network: String,
+    account_uuid: String,
+    expected_funding_amount: u64,
+    funding_txid: Option<String>,
+    funding_height: Option<u32>,
+) -> Result<Option<String>, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
+        rt.block_on(sync_engine::gift_message::read(
+            &db_path,
+            &lightwalletd_url,
+            network,
+            &account_uuid,
+            expected_funding_amount,
+            funding_txid.as_deref(),
+            funding_height,
+        ))
+    })
+}
 
 pub struct TransactionInfo {
     pub txid_hex: String,

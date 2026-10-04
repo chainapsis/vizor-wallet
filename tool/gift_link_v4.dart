@@ -40,7 +40,11 @@ String _encodeRecord(Map<String, Object?> record) {
     _ => throw FormatException('Unknown locatorKind "$locatorText".'),
   };
   final artworkId = _optionalText(record['artworkId'], 'artworkId');
-  final message = _optionalText(record['message'], 'message');
+  if (_optionalText(record['message'], 'message') != null) {
+    throw const _UsageException(
+      'Messages belong in the funding transaction memo, not the URL.',
+    );
+  }
   final fiatText = _optionalNumberText(record['fiatUsd'], 'fiatUsd');
   final amountText = _requiredString(record, 'amountZatoshi');
   if (!RegExp(r'^[1-9][0-9]*$').hasMatch(amountText)) {
@@ -53,11 +57,10 @@ String _encodeRecord(Map<String, Object?> record) {
     birthdayHeight: _optionalInt(record['birthdayHeight']),
     fundingHeight: _optionalInt(record['fundingHeight']),
     fundingTxid: _optionalText(record['fundingTxid'], 'fundingTxid'),
-    presentation: artworkId == null && message == null && fiatText == null
+    presentation: artworkId == null && fiatText == null
         ? null
         : PaymentLinkPresentation(
             artworkId: artworkId,
-            message: message,
             fiatSnapshot: fiatText == null
                 ? null
                 : PaymentLinkFiatSnapshot(amount: double.parse(fiatText)),

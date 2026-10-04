@@ -307,6 +307,7 @@ final paymentLinkBatchOperationsProvider = Provider<PaymentLinkBatchOperations>(
 class PaymentLinkClaimInspection {
   const PaymentLinkClaimInspection({
     required this.link,
+    this.fundingMessage,
     required this.directory,
     required this.dbPath,
     required this.accountUuid,
@@ -319,6 +320,8 @@ class PaymentLinkClaimInspection {
   });
 
   final VizorPaymentLink link;
+  final String? fundingMessage;
+  String? get message => link.presentation?.message ?? fundingMessage;
   final Directory directory;
   final String dbPath;
   final String accountUuid;
@@ -333,6 +336,7 @@ class PaymentLinkClaimInspection {
 class PaymentLinkClaimSession {
   const PaymentLinkClaimSession({
     required this.link,
+    this.fundingMessage,
     required this.destinationAddress,
     required this.destinationAccountUuid,
     required this.directory,
@@ -348,6 +352,8 @@ class PaymentLinkClaimSession {
   });
 
   final VizorPaymentLink link;
+  final String? fundingMessage;
+  String? get message => link.presentation?.message ?? fundingMessage;
   final String destinationAddress;
   final String destinationAccountUuid;
   final Directory directory;
@@ -622,6 +628,26 @@ class PaymentLinkFundingResult {
   final bool broadcastAccepted;
 }
 
+String? paymentLinkFundingMemo(VizorPaymentLink link) {
+  final message = link.presentation?.toPayload()?['message'] as String?;
+  if (message?.contains('\u0000') == true) {
+    throw const FormatException(
+      'Gift card messages cannot contain null characters.',
+    );
+  }
+  return message;
+}
+
+List<rust_sync.PaymentLinkBatchOutput> paymentLinkFundingOutputs(
+  Iterable<VizorPaymentLink> links,
+) => [
+  for (final link in links)
+    rust_sync.PaymentLinkBatchOutput(
+      address: link.address,
+      memo: paymentLinkFundingMemo(link),
+    ),
+];
+
 class PaymentLinkService
     implements PaymentLinkOperations, PaymentLinkBatchOperations {
   PaymentLinkService(
@@ -765,7 +791,7 @@ class PaymentLinkService
               dbPath: await getWalletDbPath(),
               network: endpoint.networkName,
               accountUuid: sourceAccountUuid,
-              addresses: [for (final link in links) link.address],
+              outputs: paymentLinkFundingOutputs(links),
               amountZatoshi: paymentLinkFundingAmountZatoshi(amountZatoshi),
             ),
           );
@@ -824,7 +850,7 @@ class PaymentLinkService
               network: network,
               accountUuid: accountUuid,
               sendFlowId: sendFlowId,
-              addresses: [for (final link in draft.links) link.address],
+              outputs: paymentLinkFundingOutputs(draft.links),
               amountZatoshi: paymentLinkFundingAmountZatoshi(
                 draft.quote.recipientAmountZatoshi,
               ),
@@ -938,7 +964,7 @@ class PaymentLinkService
                 fromAccountUuid: sourceAccountUuid,
                 toAddress: link.address,
                 amountZatoshi: paymentLinkFundingAmountZatoshi(amountZatoshi),
-                memo: null,
+                memo: paymentLinkFundingMemo(link),
                 onSubmissionStarted: () async {
                   // The durable trace has to land before the broadcast, and
                   // the local marker only after it: a failed write leaves
@@ -1111,6 +1137,7 @@ class PaymentLinkService
       createdAt: DateTime.now(),
       presentation: presentation,
     );
+    paymentLinkFundingMemo(link);
     // Fail before saving or funding a draft if the selected share format cannot
     // represent it. All funding signers use this same creation path.
     await preparePaymentLinkShareUri(link);
@@ -1703,6 +1730,7 @@ class PaymentLinkService
     bool isSetupClaim = false,
   }) => PaymentLinkClaimSession(
     link: inspection.link,
+    fundingMessage: inspection.fundingMessage,
     destinationAddress: destinationAddress,
     destinationAccountUuid: destinationAccountUuid,
     directory: inspection.directory,
@@ -1867,6 +1895,28 @@ class PaymentLinkService
         dbPath: tempWallet.dbPath,
       );
       log('PaymentLinkClaim: independent check completed');
+      String? fundingMessage = existingRecord?.message;
+      if (link.presentation?.message == null && fundingMessage == null) {
+        try {
+          final message = await rust_sync.getPaymentLinkFundingMessage(
+            dbPath: tempWallet.dbPath,
+            lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+            network: endpoint.networkName,
+            accountUuid: importedAccountUuid,
+            expectedFundingAmount: paymentLinkFundingAmountZatoshi(
+              link.amountZatoshi,
+            ),
+            fundingTxid: link.fundingTxid,
+            fundingHeight: link.fundingHeight,
+          );
+          fundingMessage = PaymentLinkPresentation.fromPayload({
+            'message': message,
+          })?.message;
+        } catch (_) {
+          // Display metadata must not turn a valid claim into a funding failure.
+          log('PaymentLinkClaim: funding message unavailable');
+        }
+      }
       // Before wallet setup, use the card's own receiver only for the preview
       // estimate. This address is never used as a submitted claim destination.
       requirePreparation();
@@ -1946,6 +1996,7 @@ class PaymentLinkService
 
       return PaymentLinkClaimInspection(
         link: link,
+        fundingMessage: fundingMessage,
         directory: tempWallet.directory,
         dbPath: tempWallet.dbPath,
         accountUuid: importedAccountUuid,
@@ -1994,7 +2045,10 @@ class PaymentLinkService
     // user explicitly starts a claim, before any broadcast can occur, so an
     // interrupted submission remains recoverable without making previews look
     // received.
-    await _receivedStore.saveReady(session.link);
+    await _receivedStore.saveReady(
+      session.link,
+      fundingMessage: session.fundingMessage,
+    );
     final priorEvidence = await rust_sync.getPaymentLinkSpendEvidence(
       dbPath: session.dbPath,
       accountUuid: session.accountUuid,
@@ -2240,7 +2294,10 @@ class PaymentLinkService
         if (saved?.needsClaimRecovery == true) return;
         _requireSetupClaimDestination(saved, session.destinationAccountUuid);
         await _claimWallet.cancelClaimSync(session.link);
-        final record = await _receivedStore.saveReady(session.link);
+        final record = await _receivedStore.saveReady(
+          session.link,
+          fundingMessage: session.fundingMessage,
+        );
         // A stale screen can request retention after six-confirmation cleanup.
         // Keep the receipt, but discard any newly recreated inspection wallet.
         if (record.claimLink == null) {

@@ -54,14 +54,17 @@ claim locator.
 | --- | --- |
 | `01` | One-byte artwork code |
 | `02` | USD snapshot as IEEE-754 float64, big-endian |
-| `03` | UTF-8 personal message |
+| `03` | Reserved; messages are carried in the funding output memo |
 
 Artwork codes are stable: `1 knight`, `2 chestLava`, `3 chestCave`, `4 dragon`,
 `5 knightMagic`, `6 gandalf`, `7 crystal`, `8 diamond`, `9 ruby`, `10 coin`,
 and `11 gift`. A writer omits an unknown local artwork ID.
 
-Fiat values must be finite and nonnegative. Messages must be valid UTF-8,
-nonempty, trimmed, at most 128 grapheme clusters, and at most 512 UTF-8 bytes.
+Fiat values must be finite and nonnegative. A gift message uses the standard
+UTF-8 memo on its shielded funding output, with no custom header. App writers
+trim messages, allow at most 128 grapheme clusters / 512 UTF-8 bytes, and reject
+NUL characters before funding. An absent or invalid display memo never blocks
+a valid claim. Funding validation failures retain their existing behavior.
 Labels are local and are not shared.
 
 Readers skip complete unknown TLVs. If the display suffix is truncated,
@@ -89,8 +92,7 @@ JSON input may be one object or an array:
     "locatorKind": "fundingHeight",
     "fundingHeight": 4000000,
     "artworkId": "gift",
-    "fiatUsd": 0.42,
-    "message": "For you"
+    "fiatUsd": 0.42
   },
   {
     "entropyHex": "00000000000000000000000000000001",
@@ -108,8 +110,8 @@ fvm dart run tool/gift_link_v4.dart --input cards.json --output links.txt
 CSV uses the same field names in its header. Empty optional cells are omitted:
 
 ```csv
-entropyHex,amountZatoshi,locatorKind,birthdayHeight,fundingHeight,fundingTxid,artworkId,fiatUsd,message
-00000000000000000000000000000000,1000000,fundingHeight,,4000000,,gift,0.42,For you
+entropyHex,amountZatoshi,locatorKind,birthdayHeight,fundingHeight,fundingTxid,artworkId,fiatUsd
+00000000000000000000000000000000,1000000,fundingHeight,,4000000,,gift,0.42
 ```
 
 ```bash
@@ -118,6 +120,9 @@ fvm dart run tool/gift_link_v4.dart --format csv --input cards.csv
 
 The command writes one URL per input record. It exits nonzero on the first
 invalid record and does not print the secret-bearing input in its error.
+`message` input is rejected: this encoder cannot add a memo to an already
+funded gift. External issuers must attach the message when constructing each
+funding output, before broadcasting. Funding messages cannot be edited later.
 
 ## V3 compatibility
 
@@ -167,11 +172,13 @@ including the HTTPS origin, path, and version prefix:
 | Payload | v3 JSON | v4 birthday | v4 funding height | v4 funding txid |
 | --- | ---: | ---: | ---: | ---: |
 | Required fields only | 116 characters | 66 | 66 | 103 |
-| Plus gift artwork, USD 25 snapshot, and `For you` | 145 | 95 | 95 | 132 |
+| Plus gift artwork, USD 25 snapshot, and `For you` | 145 | 83 | 83 | 120 |
 
-V4's height modes save 50 characters in this example. The full txid mode saves
-13. These are examples, not fixed lengths: amount varint size, text length,
-and a configured origin change the total. V3 itself uses JSON containing
+V4's height modes save 50 characters without optional metadata and 62 with
+the displayed example. The full txid mode saves 13 and 25 respectively; its
+message is in the funding output rather than the link. These are examples,
+not fixed lengths: amount varint size, text length, and a configured origin
+change the total. V3 itself uses JSON containing
 binary entropy, rather than JSON containing the mnemonic words.
 
 ## Claim verification
@@ -198,3 +205,35 @@ the default retains the 5,000-block lane. The desktop round-trip fixture accepts
 `--dart-define=VIZOR_E2E_FUNDING_HEIGHT_GIFT_CARD=true` to exercise the height
 locator through Settings and the generated Rust bridge. Shared v4 remains
 mainnet-only; regtest uses the same model's local recovery envelope.
+
+## Funding messages
+
+Messages belong to a shielded output, not to a transaction as a whole. Readers
+bind the memo to the isolated gift account, funding transaction, pool, and
+output index. Only a unique transaction with one positive received note equal
+to the advertised recipient amount plus the 10,000-zatoshi reserve is eligible.
+Zero-valued notes, unrelated accounts, split funding, and ambiguous top-ups do
+not supply a display message. Txid mode uses the link identity; height mode
+uses the durable resolution identity even after a reorg.
+
+Direct height/txid preparation already decrypts the funding payload: reading
+its memo adds no RPC. Birthday claim sync skips transaction enhancement. If
+its funding note lacks a memo, public mode may fetch that one transaction,
+with a five-second total lookup budget. Private mode does not add a public
+lookup for optional display metadata; a missing message is omitted. This
+means birthday messages can be unavailable in private mode. The public
+lookup reveals the funding txid to the chosen endpoint.
+
+URL messages in v1-v3 retain precedence. Otherwise readers use a retained
+received-record message, then the newly decoded funding memo. Inspection and
+session carry `fundingMessage` separately from link identity. Checking stays
+read-only; the message is saved with the existing claim/retention operation,
+without rewriting the recovery link, and survives secret/database cleanup.
+The outgoing claim transaction still carries no sender message.
+
+Ledger batch quotes conservatively bound memo review retention at 1,024 bytes
+across randomized outputs (ASCII text length, otherwise a 64-byte hash).
+The signing parser also accounts for the device's actual ordered retention
+across both shielded pools; older apps reject any hash display path. Messages
+remain in Keystone's compact PCZT, so they can increase QR frame count.
+Maximum-device batches still require physical Ledger/Keystone validation.

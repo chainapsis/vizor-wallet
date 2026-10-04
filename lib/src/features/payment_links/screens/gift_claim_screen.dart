@@ -319,7 +319,11 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
                                 Flexible(
                                   child: FittedBox(
                                     fit: BoxFit.scaleDown,
-                                    child: _card(flow.link, celebrate: true),
+                                    child: _card(
+                                      flow.link,
+                                      celebrate: true,
+                                      fundingMessage: inspection.fundingMessage,
+                                    ),
                                   ),
                                 ),
                                 SizedBox(height: gap),
@@ -389,11 +393,15 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
     );
   }
 
-  Widget _card(VizorPaymentLink link, {required bool celebrate}) {
+  Widget _card(
+    VizorPaymentLink link, {
+    required bool celebrate,
+    String? fundingMessage,
+  }) {
     final artwork = PaymentLinkCardArtwork.fromProtocolId(
       link.presentation?.artworkId,
     );
-    final message = link.presentation?.message ?? '';
+    final message = link.presentation?.message ?? fundingMessage ?? '';
     final snapshot = link.presentation?.fiatSnapshot;
     final front = PaymentLinkGiftCard(
       artwork: artwork,
