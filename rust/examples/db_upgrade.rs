@@ -1390,9 +1390,18 @@ fn assert_current_schema(db_path: &str) {
         0,
         "ZIP 318 pool-migration schema survived the upgrade"
     );
-    // The current library retains the published classification schema in place.
-    assert!(column_exists(&conn, "transactions", "zip318_kind"));
-    assert!(column_exists(&conn, "v_transactions", "zip318_kind"));
+    // The current library retains the published classification schema in
+    // place. A base whose library already dropped the column cannot be
+    // upgraded; `scripts/test-db-upgrade.sh` matches this message for it.
+    assert!(
+        column_exists(&conn, "transactions", "zip318_kind"),
+        "no such column: transactions.zip318_kind (dropped before the upgrade; \
+         the current library cannot restore it)"
+    );
+    assert!(
+        column_exists(&conn, "v_transactions", "zip318_kind"),
+        "no such column: v_transactions.zip318_kind"
+    );
     assert!(
         object_exists(
             &conn,

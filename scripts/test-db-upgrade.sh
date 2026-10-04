@@ -2,6 +2,13 @@
 # Upgrade probe: create wallets with the published build at <base-ref>, upgrade
 # and verify them twice with the current tree. Writable downgrades are not qualified.
 #
+# Unsupported upgrade sources: builds pinned to wallet-libraries before #86
+# (unreleased PR 783 builds such as 3442ab0c1) dropped transactions.zip318_kind,
+# which the current library cannot restore. Upgrading their wallets is
+# unsupported by design; their users restore from seed. For such a base the
+# probe still creates the fixture with it and runs `verify` with the current
+# build, requires `verify` to fail for exactly that reason, and skips the rest.
+#
 # usage: scripts/test-db-upgrade.sh <base-ref> [scenario...]
 set -euo pipefail
 
@@ -80,17 +87,52 @@ it, so that build cannot use the upgraded wallet"
     ;;
 esac
 
+# A base whose wallets cannot be upgraded at all, keyed on the resolved commit
+# so it matches however the base is spelled. The upgrade is still exercised:
+# `verify` must fail for the documented cause (`UPGRADE_FAILURE`, matched by
+# both the probe's assertion and SQLite's own read error); a success or any
+# other failure fails the probe, so the declaration cannot outlive its reason.
+UPGRADE_UNSUPPORTED=""
+UPGRADE_FAILURE="no such column: transactions.zip318_kind"
+case "$(git -C "$ROOT_DIR" rev-parse "$BASE_REF^{commit}")" in
+  3442ab0c144e4ffa162d421f4472bccace58d68b)
+    UPGRADE_UNSUPPORTED="unreleased PR 783 build from before wallet-libraries \
+#86 dropped transactions.zip318_kind; its wallets must be restored from seed"
+    ;;
+esac
+
 for scenario in "${SCENARIOS[@]}"; do
   db_path="$TEMP_DIR/$scenario.db"
   manifest_path="$TEMP_DIR/$scenario.json"
 
   run_probe "$OLD_WORKTREE" create "$scenario" "$db_path" "$manifest_path"
+  if [[ -n "$UPGRADE_UNSUPPORTED" ]]; then
+    verify_log="$TEMP_DIR/$scenario.verify.log"
+    if run_probe "$ROOT_DIR" verify "$scenario" "$db_path" "$manifest_path" \
+      >"$verify_log" 2>&1; then
+      cat "$verify_log"
+      echo "error: $BASE_REF declared unsupported but upgrade succeeded; drop" \
+        "the declaration from $0" >&2
+      exit 1
+    fi
+    if ! grep -qF "$UPGRADE_FAILURE" "$verify_log"; then
+      cat "$verify_log"
+      echo "error: upgrading $BASE_REF failed for a cause other than the" \
+        "documented one ($UPGRADE_FAILURE)" >&2
+      exit 1
+    fi
+    echo "upgrade from $BASE_REF ($scenario): refused as documented" \
+      "($UPGRADE_FAILURE)"
+    continue
+  fi
   run_probe "$ROOT_DIR" verify "$scenario" "$db_path" "$manifest_path"
   run_probe "$ROOT_DIR" verify "$scenario" "$db_path" "$manifest_path"
 
 done
 
-if [[ -n "$DOWNGRADE_UNSUPPORTED" ]]; then
+if [[ -n "$UPGRADE_UNSUPPORTED" ]]; then
+  echo "ok: $BASE_REF upgrade unsupported by design ($UPGRADE_UNSUPPORTED)"
+elif [[ -n "$DOWNGRADE_UNSUPPORTED" ]]; then
   echo "ok: $BASE_REF database upgrade compatibility (downgrade unsupported by design)"
 else
   echo "ok: $BASE_REF database upgrade compatibility"
