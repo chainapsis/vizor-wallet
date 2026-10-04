@@ -1,8 +1,13 @@
-import 'package:flutter/cupertino.dart' show BuildContext, CupertinoPage;
+import 'package:flutter/cupertino.dart'
+    show BuildContext, CupertinoPage, Widget;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../providers/app_security_provider.dart';
+import '../../features/payment_links/providers/gift_claim_flow_provider.dart';
+import '../../features/payment_links/screens/gift_claim_screen.dart';
+import '../../features/payment_links/screens/gift_passcode_screen.dart';
+import '../../features/payment_links/screens/gift_customise_account_screen.dart';
 
 import '../../features/onboarding/mobile/mobile_biometrics_screen.dart';
 import '../../features/onboarding/mobile/mobile_customise_account_screen.dart';
@@ -15,9 +20,11 @@ import '../../features/onboarding/mobile/mobile_keystone_screens.dart';
 import '../../features/onboarding/mobile/mobile_ledger_birthday_screen.dart';
 import '../../features/onboarding/mobile/mobile_ledger_connect_screen.dart';
 import '../../features/onboarding/mobile/mobile_method_selection_screen.dart';
+import '../../features/onboarding/mobile/mobile_hardware_selection_screen.dart';
 import '../../features/onboarding/mobile/mobile_secret_passphrase_screen.dart';
 import '../../features/onboarding/mobile/mobile_passcode_screen.dart';
 import '../../features/onboarding/mobile/mobile_welcome_screen.dart';
+import '../../features/onboarding/mobile/mobile_onboarding_progress_scope.dart';
 import '../../features/onboarding/mobile/mobile_wallet_link_screens.dart';
 import '../../features/onboarding/ledger/ledger_setup_args.dart';
 import '../../features/onboarding/shared/onboarding_flow_args.dart';
@@ -31,53 +38,102 @@ import '../../features/onboarding/shared/onboarding_flow_args.dart';
 /// the wallet password on mobile) and `/onboarding/biometrics`.
 List<RouteBase> mobileOnboardingRoutes() => [
   GoRoute(
+    path: '/gift',
+    pageBuilder: (_, state) => _mobileOnboardingPage(
+      state,
+      child: GiftClaimScreen(
+        addingAccount: state.uri.queryParameters['addAccount'] == 'true',
+      ),
+    ),
+  ),
+  GoRoute(
+    path: '/gift/passcode',
+    redirect: (context, _) =>
+        ProviderScope.containerOf(
+              context,
+            ).read(giftClaimFlowProvider)?.inspection ==
+            null
+        ? '/gift'
+        : null,
+    pageBuilder: (_, state) =>
+        _mobileOnboardingPage(state, child: const GiftPasscodeScreen()),
+  ),
+  GoRoute(
+    path: '/gift/customise',
+    redirect: (context, _) =>
+        ProviderScope.containerOf(
+              context,
+            ).read(giftClaimFlowProvider)?.walletSetupInProgress ==
+            true
+        ? null
+        : '/gift',
+    pageBuilder: (context, state) {
+      final setup = ProviderScope.containerOf(
+        context,
+      ).read(giftClaimFlowProvider)!;
+      return _mobileOnboardingPage(
+        state,
+        child: GiftCustomiseAccountScreen(
+          args: GiftCustomiseAccountArgs(
+            passcode: setup.setupPasscode,
+            inspection: setup.inspection!,
+          ),
+        ),
+      );
+    },
+  ),
+  GoRoute(
     path: '/welcome',
     pageBuilder: (context, state) =>
-        CupertinoPage(key: state.pageKey, child: const MobileWelcomeScreen()),
+        _mobileOnboardingPage(state, child: const MobileWelcomeScreen()),
   ),
   GoRoute(
     path: '/add-account',
-    pageBuilder: (context, state) => CupertinoPage(
-      key: state.pageKey,
+    pageBuilder: (context, state) => _mobileOnboardingPage(
+      state,
       child: const MobileWelcomeScreen(showBackButton: true),
     ),
   ),
   GoRoute(
     path: '/onboarding/method',
-    pageBuilder: (context, state) => CupertinoPage(
-      key: state.pageKey,
+    pageBuilder: (context, state) => _mobileOnboardingPage(
+      state,
       child: const MobileMethodSelectionScreen(),
     ),
   ),
   GoRoute(
+    path: '/onboarding/hardware',
+    pageBuilder: (context, state) => _mobileOnboardingPage(
+      state,
+      child: const MobileHardwareSelectionScreen(),
+    ),
+  ),
+  GoRoute(
     path: '/onboarding/intro',
-    pageBuilder: (context, state) => CupertinoPage(
-      key: state.pageKey,
+    pageBuilder: (context, state) => _mobileOnboardingPage(
+      state,
       child: const MobileOnboardingIntroScreen(),
     ),
   ),
   GoRoute(
     path: '/onboarding/address-types',
-    pageBuilder: (context, state) => CupertinoPage(
-      key: state.pageKey,
-      child: const MobileAddressTypesScreen(),
-    ),
+    pageBuilder: (context, state) =>
+        _mobileOnboardingPage(state, child: const MobileAddressTypesScreen()),
   ),
   GoRoute(
     path: '/onboarding/things-to-know',
-    pageBuilder: (context, state) => CupertinoPage(
-      key: state.pageKey,
-      child: const MobileThingsToKnowScreen(),
-    ),
+    pageBuilder: (context, state) =>
+        _mobileOnboardingPage(state, child: const MobileThingsToKnowScreen()),
   ),
   GoRoute(
     path: '/onboarding/secret-passphrase',
     pageBuilder: (context, state) {
-      final args = state.extra is CreateSecretPassphraseArgs
-          ? state.extra as CreateSecretPassphraseArgs
+      final args =
+          mobileOnboardingPayload(state.extra) is CreateSecretPassphraseArgs
+          ? mobileOnboardingPayload(state.extra) as CreateSecretPassphraseArgs
           : null;
-      return CupertinoPage(
-        key: state.pageKey,
+      return _mobileOnboardingPage(
+        state,
         child: MobileSecretPassphraseScreen(args: args),
       );
     },
@@ -85,94 +141,97 @@ List<RouteBase> mobileOnboardingRoutes() => [
   GoRoute(
     path: '/onboarding/set-passcode',
     redirect: (_, state) =>
-        state.extra is SetPasswordScreenArgs ? null : '/welcome',
-    pageBuilder: (context, state) => CupertinoPage(
-      key: state.pageKey,
-      child: MobilePasscodeScreen(args: state.extra as SetPasswordScreenArgs),
+        mobileOnboardingPayload(state.extra) is SetPasswordScreenArgs
+        ? null
+        : '/welcome',
+    pageBuilder: (context, state) => _mobileOnboardingPage(
+      state,
+      child: MobilePasscodeScreen(
+        args: mobileOnboardingPayload(state.extra) as SetPasswordScreenArgs,
+      ),
     ),
   ),
   GoRoute(
     path: '/onboarding/customise-account',
     redirect: (_, state) {
-      final args = state.extra;
+      final args = mobileOnboardingPayload(state.extra);
       return args is CustomiseAccountArgs &&
               args.flow != SetPasswordFlow.importWalletLink
           ? null
           : '/welcome';
     },
-    pageBuilder: (context, state) => CupertinoPage(
-      key: state.pageKey,
+    pageBuilder: (context, state) => _mobileOnboardingPage(
+      state,
       child: MobileCustomiseAccountScreen(
-        args: state.extra as CustomiseAccountArgs,
+        args: mobileOnboardingPayload(state.extra) as CustomiseAccountArgs,
       ),
     ),
   ),
   GoRoute(
     path: '/onboarding/biometrics',
-    pageBuilder: (context, state) => CupertinoPage(
-      key: state.pageKey,
-      child: const MobileBiometricsScreen(),
-    ),
+    pageBuilder: (context, state) =>
+        _mobileOnboardingPage(state, child: const MobileBiometricsScreen()),
   ),
   GoRoute(
     path: '/import',
     pageBuilder: (context, state) =>
-        CupertinoPage(key: state.pageKey, child: const MobileImportScreen()),
+        _mobileOnboardingPage(state, child: const MobileImportScreen()),
   ),
   GoRoute(
     path: '/import/manual',
-    pageBuilder: (context, state) => CupertinoPage(
-      key: state.pageKey,
-      child: const MobileImportManualScreen(),
-    ),
+    pageBuilder: (context, state) =>
+        _mobileOnboardingPage(state, child: const MobileImportManualScreen()),
   ),
   GoRoute(
     path: '/import/review',
     redirect: (_, state) =>
-        state.extra is ImportSecretPassphraseArgs ? null : '/import',
-    pageBuilder: (context, state) => CupertinoPage(
-      key: state.pageKey,
+        mobileOnboardingPayload(state.extra) is ImportSecretPassphraseArgs
+        ? null
+        : '/import',
+    pageBuilder: (context, state) => _mobileOnboardingPage(
+      state,
       child: MobileImportReviewScreen(
-        args: state.extra as ImportSecretPassphraseArgs,
+        args:
+            mobileOnboardingPayload(state.extra) as ImportSecretPassphraseArgs,
       ),
     ),
   ),
   GoRoute(
     path: '/import/birthday',
     redirect: (_, state) =>
-        state.extra is ImportBirthdayArgs ? null : '/import',
-    pageBuilder: (context, state) => CupertinoPage(
-      key: state.pageKey,
+        mobileOnboardingPayload(state.extra) is ImportBirthdayArgs
+        ? null
+        : '/import',
+    pageBuilder: (context, state) => _mobileOnboardingPage(
+      state,
       child: MobileImportBirthdayScreen(
-        args: state.extra as ImportBirthdayArgs,
+        args: mobileOnboardingPayload(state.extra) as ImportBirthdayArgs,
       ),
     ),
   ),
   GoRoute(
     path: '/onboarding/link-desktop',
-    pageBuilder: (context, state) => CupertinoPage(
-      key: state.pageKey,
+    pageBuilder: (context, state) => _mobileOnboardingPage(
+      state,
       child: const MobileWalletLinkIntroScreen(),
     ),
   ),
   GoRoute(
     path: '/onboarding/link-desktop/scan',
-    pageBuilder: (context, state) => CupertinoPage(
-      key: state.pageKey,
-      child: const MobileWalletLinkScanScreen(),
-    ),
+    pageBuilder: (context, state) =>
+        _mobileOnboardingPage(state, child: const MobileWalletLinkScanScreen()),
   ),
   GoRoute(
     path: '/onboarding/link-desktop/accounts',
-    pageBuilder: (context, state) => CupertinoPage(
-      key: state.pageKey,
+    pageBuilder: (context, state) => _mobileOnboardingPage(
+      state,
       child: const MobileWalletLinkSelectAccountsScreen(),
     ),
   ),
   GoRoute(
     path: '/onboarding/link-desktop/contacts',
-    pageBuilder: (context, state) => CupertinoPage(
-      key: state.pageKey,
+    pageBuilder: (context, state) => _mobileOnboardingPage(
+      state,
       child: const MobileWalletLinkSelectContactsScreen(),
     ),
   ),
@@ -180,49 +239,45 @@ List<RouteBase> mobileOnboardingRoutes() => [
   // shared redirect guard and deep links treat them identically.
   GoRoute(
     path: '/onboarding/keystone',
-    pageBuilder: (context, state) => CupertinoPage(
-      key: state.pageKey,
-      child: const MobileKeystoneIntroScreen(),
-    ),
+    pageBuilder: (context, state) =>
+        _mobileOnboardingPage(state, child: const MobileKeystoneIntroScreen()),
   ),
   GoRoute(
     path: '/onboarding/keystone/scan',
-    pageBuilder: (context, state) => CupertinoPage(
-      key: state.pageKey,
-      child: const MobileKeystoneScanScreen(),
-    ),
+    pageBuilder: (context, state) =>
+        _mobileOnboardingPage(state, child: const MobileKeystoneScanScreen()),
   ),
   GoRoute(
     path: '/onboarding/keystone/select-account',
-    pageBuilder: (context, state) => CupertinoPage(
-      key: state.pageKey,
+    pageBuilder: (context, state) => _mobileOnboardingPage(
+      state,
       child: const MobileKeystoneSelectAccountScreen(),
     ),
   ),
   GoRoute(
     path: '/onboarding/keystone/birthday',
-    pageBuilder: (context, state) => CupertinoPage(
-      key: state.pageKey,
+    pageBuilder: (context, state) => _mobileOnboardingPage(
+      state,
       child: const MobileKeystoneBirthdayScreen(),
     ),
   ),
   GoRoute(
     path: '/onboarding/ledger',
     redirect: (context, _) => _mobileLedgerRedirect(context),
-    pageBuilder: (context, state) => CupertinoPage(
-      key: state.pageKey,
-      child: const MobileLedgerConnectScreen(),
-    ),
+    pageBuilder: (context, state) =>
+        _mobileOnboardingPage(state, child: const MobileLedgerConnectScreen()),
   ),
   GoRoute(
     path: '/onboarding/ledger/birthday',
     redirect: (context, state) async =>
         await _mobileLedgerRedirect(context) ??
-        (state.extra is LedgerBirthdayArgs ? null : '/onboarding/ledger'),
-    pageBuilder: (context, state) => CupertinoPage(
-      key: state.pageKey,
+        (mobileOnboardingPayload(state.extra) is LedgerBirthdayArgs
+            ? null
+            : '/onboarding/ledger'),
+    pageBuilder: (context, state) => _mobileOnboardingPage(
+      state,
       child: MobileLedgerBirthdayScreen(
-        args: state.extra as LedgerBirthdayArgs,
+        args: mobileOnboardingPayload(state.extra) as LedgerBirthdayArgs,
       ),
     ),
   ),
@@ -230,13 +285,14 @@ List<RouteBase> mobileOnboardingRoutes() => [
     path: '/onboarding/ledger/customise-account',
     redirect: (context, state) async =>
         await _mobileLedgerRedirect(context) ??
-        (state.extra is LedgerCustomiseAccountArgs
+        (mobileOnboardingPayload(state.extra) is LedgerCustomiseAccountArgs
             ? null
             : '/onboarding/ledger'),
-    pageBuilder: (context, state) => CupertinoPage(
-      key: state.pageKey,
+    pageBuilder: (context, state) => _mobileOnboardingPage(
+      state,
       child: MobileLedgerCustomiseAccountScreen(
-        args: state.extra as LedgerCustomiseAccountArgs,
+        args:
+            mobileOnboardingPayload(state.extra) as LedgerCustomiseAccountArgs,
       ),
     ),
   ),
@@ -254,4 +310,18 @@ Future<String?> _mobileLedgerRedirect(BuildContext context) async {
   final container = ProviderScope.containerOf(context, listen: false);
   final security = container.read(appSecurityProvider);
   return security.requiresUnlock ? '/unlock' : null;
+}
+
+CupertinoPage<void> _mobileOnboardingPage(
+  GoRouterState state, {
+  required Widget child,
+}) {
+  final extra = state.extra;
+  return CupertinoPage<void>(
+    key: state.pageKey,
+    child: MobileOnboardingProgressFrame(
+      setupMode: extra is MobileOnboardingRouteArgs ? extra.setupMode : null,
+      child: child,
+    ),
+  );
 }

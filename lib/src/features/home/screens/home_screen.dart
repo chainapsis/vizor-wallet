@@ -21,7 +21,6 @@ import '../../../core/layout/app_desktop_backdrop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/privacy/privacy_mask.dart';
-import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -30,14 +29,15 @@ import '../../../providers/zec_price_change_provider.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/enhance_pir_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
-import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_display_progress_provider.dart';
 import '../../../providers/network_privacy_provider.dart';
 import '../../../providers/sync_provider.dart';
+import '../../../providers/pending_activity_evidence_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../activity/activity_feed_sections.dart';
 import '../../activity/gift_card_activity_index.dart';
+import '../../activity/activity_eta_provider.dart';
 import '../../activity/activity_row_mapper.dart';
 import '../../activity/models/activity_row_data.dart';
 import '../../activity/screens/activity_transaction_status_screen.dart';
@@ -48,6 +48,7 @@ import '../../migration/widgets/ironwood_migration_announcement_modal.dart';
 import '../../swap/models/swap_activity_navigation.dart';
 import '../../swap/models/swap_fiat_value_formatting.dart';
 import '../../swap/providers/swap_activity_tracker.dart';
+import '../widgets/desktop_home_setup_carousel.dart';
 import '../../swap/providers/swap_state_provider.dart';
 import '../services/transparent_balance_display.dart';
 import '../services/transparent_shielding_service.dart';
@@ -57,7 +58,7 @@ import '../widgets/ledger_shield_signing_overlay.dart';
 const _shieldErrorTooltipIconSize = 14.0;
 const _shieldErrorTooltipGap = AppSpacing.xxs;
 const _ironwoodMigrationIllustrationAsset =
-    'assets/illustrations/ironwood_migration_illustration.png';
+    'assets/illustrations/desktop/ironwood_migration_illustration.webp';
 const _ironwoodMigrationCtaBackgroundColor = Color(0xFF1B1F1F);
 const _ironwoodMigrationCtaBorderColor = Color(0x12FFFFFF);
 const _homeDesktopActivationShortcuts = <ShortcutActivator, Intent>{
@@ -322,10 +323,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         !sync.hasAccountScopedData &&
         sync.failure == null;
     final isDark = context.appTheme == AppThemeData.dark;
-    final backgroundVariant = isImportingForBackground
-        ? 'importing'
-        : 'default';
-    final backgroundTheme = isDark ? 'dark' : 'light';
+    final backgroundAsset = isImportingForBackground
+        ? 'assets/illustrations/home_importing_background.webp'
+        : 'assets/illustrations/desktop/'
+              'home_default_background_${isDark ? 'dark' : 'light'}.webp';
     final ironwoodAnnouncementAsync = ref.watch(
       ironwoodMigrationAnnouncementProvider,
     );
@@ -361,10 +362,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
     final visibleIronwoodAnnouncement = _visibleIronwoodAnnouncement;
     return AppDesktopBackdropShell(
-      background: _HomeFullPageBackground(
-        assetName:
-            'assets/illustrations/home_${backgroundVariant}_background_$backgroundTheme.png',
-      ),
+      background: _HomeFullPageBackground(assetName: backgroundAsset),
       sidebar: const AppMainSidebar(),
       pane: Stack(
         fit: StackFit.expand,
@@ -629,6 +627,7 @@ class _HomePaneState extends ConsumerState<_HomePane> {
     );
 
     return _HomeDesktopPane(
+      hasSetupReminders: ref.watch(showDesktopHomeSetupCarouselProvider),
       isImporting: isImporting,
       importingAccountName: activeAccountName,
       hasBalance: hasBalance,
@@ -725,7 +724,12 @@ class _HomePaneState extends ConsumerState<_HomePane> {
           _homeTransactionActivityEntry(
             context,
             tx,
-            giftCardActivityIndex.metadataFor(tx),
+            giftCardActivityIndex.metadataFor(
+              tx,
+              transactions: widget.hasActivitySyncData
+                  ? widget.sync.recentTransactions
+                  : const [],
+            ),
           ),
       for (final item in swapItems)
         _HomeActivityEntry(
@@ -757,6 +761,16 @@ class _HomePaneState extends ConsumerState<_HomePane> {
         context: context,
         transaction: transaction,
         privateQueriesEnabled: ref.watch(enhancePirProvider),
+        showPendingEstimate: !ref
+            .watch(activityEtaExcludedTxidsProvider)
+            .contains(activityTxidKey(transaction.txidHex)),
+        pendingLabel:
+            activityEtaLabelFor(
+              transaction: transaction,
+              labels: ref.watch(activityEtaLabelsProvider),
+              giftCard: giftCard,
+            ) ??
+            ref.watch(activityPendingFallbackLabelProvider),
         giftCardKind: giftCard?.kind,
         giftCardAmountZatoshi: giftCard?.amountZatoshi,
         giftCardBatchCount: giftCard?.batchCount,
@@ -774,7 +788,7 @@ class _HomePaneState extends ConsumerState<_HomePane> {
     rust_sync.TransactionInfo transaction, {
     GiftCardActivityMetadata? giftCard,
   }) {
-    unawaited(_pushTransactionStatus(transaction, giftCard: giftCard));
+    _pushTransactionStatus(transaction, giftCard: giftCard);
   }
 
   void _openSwapStatus(String intentId) {
@@ -786,18 +800,12 @@ class _HomePaneState extends ConsumerState<_HomePane> {
     );
   }
 
-  Future<void> _pushTransactionStatus(
+  void _pushTransactionStatus(
     rust_sync.TransactionInfo transaction, {
     GiftCardActivityMetadata? giftCard,
-  }) async {
+  }) {
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
-    final detail = await _loadTransactionDetail(transaction);
-    if (!mounted) return;
-    // The receipt takes this transaction and its Gift Card metadata as the
-    // active account's, so a switch during the load has to cancel the handoff.
-    if (accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
-      return;
-    }
+    if (accountUuid == null) return;
     context.push(
       Uri(
         path: '/activity/tx/${transaction.txidHex}',
@@ -807,36 +815,10 @@ class _HomePaneState extends ConsumerState<_HomePane> {
         txidHex: transaction.txidHex,
         txKind: transaction.txKind,
         initialTransaction: transaction,
-        initialDetail: detail,
+        sourceAccountUuid: accountUuid,
         giftCard: giftCard,
       ),
     );
-  }
-
-  Future<rust_sync.TransactionDetail?> _loadTransactionDetail(
-    rust_sync.TransactionInfo transaction,
-  ) async {
-    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
-    if (accountUuid == null) return null;
-
-    try {
-      final dbPath = await getWalletDbPath();
-      final endpoint = ref.read(rpcEndpointFailoverProvider).current;
-      if (!mounted ||
-          accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
-        return null;
-      }
-      return await rust_sync.getTransactionDetail(
-        dbPath: dbPath,
-        network: endpoint.networkName,
-        accountUuid: accountUuid,
-        txidHex: transaction.txidHex,
-        txKind: transaction.txKind,
-      );
-    } catch (e, st) {
-      log('HomeScreen: transaction detail load failed: $e\n$st');
-      return null;
-    }
   }
 }
 
@@ -1165,6 +1147,7 @@ Offset _positionShieldErrorTooltip(TooltipPositionContext context) {
 class _HomeDesktopPane extends StatelessWidget {
   const _HomeDesktopPane({
     required this.isImporting,
+    required this.hasSetupReminders,
     required this.importingAccountName,
     required this.hasBalance,
     required this.showsIronwoodOnlyBalance,
@@ -1193,6 +1176,7 @@ class _HomeDesktopPane extends StatelessWidget {
   });
 
   final bool isImporting;
+  final bool hasSetupReminders;
   final String? importingAccountName;
   final bool hasBalance;
   final bool showsIronwoodOnlyBalance;
@@ -1285,6 +1269,13 @@ class _HomeDesktopPane extends StatelessWidget {
                     child: _HomeNoticeCard(data: notice!),
                   ),
                 ],
+                if (hasSetupReminders)
+                  const SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.only(top: AppSpacing.xs),
+                      child: Center(child: DesktopHomeSetupCarousel()),
+                    ),
+                  ),
                 SliverPadding(
                   padding: EdgeInsets.only(
                     top: hasMigrationHomeState
@@ -1315,32 +1306,35 @@ class _HomeDesktopPane extends StatelessWidget {
           );
         }
 
-        return Stack(
-          fit: StackFit.expand,
-          children: [
-            Positioned.fill(
-              top: contentTop,
-              child: Align(
-                alignment: Alignment.topCenter,
-                child: SizedBox(
+        return AppPaneScrollbar(
+          builder: (context, controller) => SingleChildScrollView(
+            controller: controller,
+            padding: EdgeInsets.only(top: contentTop),
+            child: Column(
+              children: [
+                SizedBox(
                   key: const ValueKey('home_desktop_content'),
                   width: 420,
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.s,
-                      vertical: AppSpacing.sm,
+                    padding: EdgeInsets.fromLTRB(
+                      AppSpacing.s,
+                      AppSpacing.sm,
+                      AppSpacing.s,
+                      hasSetupReminders ? 0 : AppSpacing.sm,
                     ),
                     child: Consumer(
                       builder: (context, ref, _) => _HomeImportingContent(
                         progress: ref.watch(syncDisplayPercentageProvider),
                         accountName: importingAccountName,
+                        height: hasSetupReminders ? 520 : 624,
                       ),
                     ),
                   ),
                 ),
-              ),
+                const DesktopHomeSetupCarousel(),
+              ],
             ),
-          ],
+          ),
         );
       },
     );
@@ -1374,10 +1368,15 @@ class _HomeDesktopCenteredSliver extends StatelessWidget {
 }
 
 class _HomeImportingContent extends StatelessWidget {
-  const _HomeImportingContent({required this.progress, this.accountName});
+  const _HomeImportingContent({
+    required this.progress,
+    this.accountName,
+    this.height = 624,
+  });
 
   final double progress;
   final String? accountName;
+  final double height;
 
   @override
   Widget build(BuildContext context) {
@@ -1390,7 +1389,7 @@ class _HomeImportingContent extends StatelessWidget {
         : 'It might take some time.\nKeep Vizor open & running.';
     return SizedBox(
       width: 396,
-      height: 624,
+      height: height,
       child: Stack(
         children: [
           Positioned(
@@ -1447,7 +1446,7 @@ class _HomeImportingContent extends StatelessWidget {
                   width: 246,
                   height: 192,
                   child: Image.asset(
-                    'assets/illustrations/home_rest_character.png',
+                    'assets/illustrations/home_rest_character.webp',
                     fit: BoxFit.contain,
                   ),
                 ),
@@ -2457,7 +2456,7 @@ class _HomeDesktopEmptyActivity extends StatelessWidget {
                   ),
                   const SizedBox(height: AppSpacing.xxs),
                   Image.asset(
-                    'assets/illustrations/home_rest_character.png',
+                    'assets/illustrations/home_rest_character.webp',
                     width: illustrationWidth,
                     height: illustrationHeight,
                     fit: BoxFit.contain,

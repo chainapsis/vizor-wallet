@@ -14,6 +14,7 @@ import '../core/lifecycle/app_shutdown_signal.dart';
 import '../core/storage/wallet_paths.dart';
 import '../rust/api/sync.dart' as rust_sync;
 import 'account_provider.dart';
+import 'pending_activity_evidence_provider.dart';
 import 'enhance_pir_provider.dart';
 import 'app_security_provider.dart';
 import 'chain_upgrade_provider.dart';
@@ -844,6 +845,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   AppLifecycleListener? _lifecycleListener;
   Timer? _pollTimer;
   bool _pollCheckInFlight = false;
+  bool _resumeTipCheckPending = false;
   int _sensitiveStateEpoch = 0;
   int _progressEventVersion = 0;
   int _balanceReadVersion = 0;
@@ -861,6 +863,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   // what actually stops it, and `_mempoolSub` is just the Dart
   // side of the corresponding stream.
   StreamSubscription? _mempoolSub;
+  int _mempoolEvidenceEpoch = 0;
   bool _mempoolRefreshInFlight = false;
   bool _mempoolRefreshQueued = false;
   // Coalesce balance/history refreshes through `_requestBalanceRefresh`.
@@ -952,19 +955,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     shutdown.addListener(_stopForAppExit);
     ref.onDispose(() => shutdown.removeListener(_stopForAppExit));
     _lifecycleListener = AppLifecycleListener(
-      onResume: () {
-        if (shutdown.isShuttingDown) return;
-        _isInForeground = true;
-        unawaited(_refreshBalanceAfterResume());
-        _checkAndSync();
-      },
-      onHide: () {
-        _isInForeground = false;
-        _foregroundEpoch++;
-        if (!canRunAppProcessWork(isInForeground: _isInForeground)) {
-          _stopPolling();
-        }
-      },
+      onResume: _handleAppResume,
+      onHide: _handleAppHide,
     );
 
     ref.onDispose(() {
@@ -1000,6 +992,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       final nextCount = next.value?.accounts.length ?? 0;
       final prevAccountUuid = prev?.value?.activeAccountUuid;
       final nextAccountUuid = next.value?.activeAccountUuid;
+      if (nextCount < prevCount) {
+        ref.read(pendingActivityEvidenceProvider.notifier).clear();
+      }
       if (prevAccountUuid != nextAccountUuid) {
         // This only changes the order of transparent refreshes that Rust has
         // not started yet. The current bounded request group keeps running.
@@ -1195,6 +1190,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   /// Quiesce scan/poll work without waiting on network I/O or cancelling durable
   /// sends. Generation changes also reject preflight completions already queued.
   void _stopForAppExit() {
+    _resumeTipCheckPending = false;
     ++_syncGen;
     ++_sensitiveStateEpoch;
     ++_progressEventVersion;
@@ -1734,6 +1730,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   }
 
   void stopSync() {
+    _resumeTipCheckPending = false;
     _syncStartDeferred = false;
     _deferredSyncLatestTipHeight = null;
     ++_syncGen; // invalidate pending startSync callbacks
@@ -2017,6 +2014,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   }
 
   Future<void> clearSensitiveStateForLock() async {
+    _resumeTipCheckPending = false;
+    ref.read(pendingActivityEvidenceProvider.notifier).clear();
     _recoveryRestartGate.reset();
     _pendingMutationRestartSync = false;
     _pendingMutationRestartPolling = false;
@@ -2146,6 +2145,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       );
     }
     await updateTransport();
+    // Welcome can change Tor before a wallet exists. The transport is ready,
+    // but there is no account to sync or poll yet.
+    if (_getActiveAccountUuid() == null) return;
     startSync();
     _startPolling();
   }
@@ -2161,6 +2163,26 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     );
   }
 
+  void _handleAppResume() {
+    if (_isShuttingDown) return;
+    _isInForeground = true;
+    ref.read(pendingActivityEvidenceProvider.notifier).setForeground(true);
+    unawaited(_refreshBalanceAfterResume());
+    // Coalesce repeated focus/resume events. An old mobile check spanning
+    // backgrounding cannot certify foreground freshness; follow it immediately.
+    _resumeTipCheckPending = true;
+    unawaited(_checkAndSync());
+  }
+
+  void _handleAppHide() {
+    _isInForeground = false;
+    ref.read(pendingActivityEvidenceProvider.notifier).setForeground(false);
+    ++_foregroundEpoch;
+    if (!canRunAppProcessWork(isInForeground: _isInForeground)) {
+      _stopPolling();
+    }
+  }
+
   void _startPolling() {
     _pollTimer?.cancel();
     if (_isShuttingDown) return;
@@ -2169,6 +2191,14 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       return;
     }
     if (!canRunAppProcessWork(isInForeground: _isInForeground)) return;
+    if (_resumeTipCheckPending &&
+        !_pollCheckInFlight &&
+        !_isSyncing &&
+        !_requiresUnlock &&
+        (ref.read(accountProvider).value?.hasAccounts ?? false)) {
+      unawaited(_checkAndSync());
+      return;
+    }
     _pollTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
       try {
         await _checkAndSync();
@@ -2192,6 +2222,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     }
     final gen = _syncGen;
     final epoch = _sensitiveStateEpoch;
+    final foregroundEpoch = _foregroundEpoch;
     final hasAccounts = ref.read(accountProvider).value?.hasAccounts ?? false;
     if (_pollCheckInFlight ||
         _isSyncing ||
@@ -2201,6 +2232,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       return;
     }
     _pollCheckInFlight = true;
+    _resumeTipCheckPending = false;
     _stopPolling();
     try {
       final tip = await ref
@@ -2213,6 +2245,16 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       if (gen != _syncGen || epoch != _sensitiveStateEpoch || _requiresUnlock) {
         log('AutoSync: skipping restart after lock transition');
         return;
+      }
+      if (canRunAppProcessWork(isInForeground: false) ||
+          (foregroundEpoch == _foregroundEpoch && _isInForeground)) {
+        _resumeTipCheckPending = false;
+        ref
+            .read(pendingActivityEvidenceProvider.notifier)
+            .networkChecked(
+              tip.toInt(),
+              allowBackground: canRunAppProcessWork(isInForeground: false),
+            );
       }
       // Skip the status read entirely when the tip or an incomplete previous
       // sync already calls for a restart: that sync runs recovery anyway.
@@ -2244,6 +2286,16 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         startSync(latestTipHeight: tip.toInt());
       }
     } catch (e) {
+      if (ref.mounted && gen == _syncGen && epoch == _sensitiveStateEpoch) {
+        final kind = classifySyncFailure(e).kind;
+        ref
+            .read(pendingActivityEvidenceProvider.notifier)
+            .invalidateNetwork(
+              connectionFailed:
+                  kind == SyncFailureKind.network ||
+                  kind == SyncFailureKind.torUnavailable,
+            );
+      }
       log('AutoSync: tip check failed: $e');
     } finally {
       _pollCheckInFlight = false;
@@ -2311,6 +2363,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       return;
     }
     _mempoolSub?.cancel();
+    final evidenceEpoch = ++_mempoolEvidenceEpoch;
     final stream = rust_sync.startMempoolObserver(
       dbPath: dbPath,
       network: endpoint.networkName,
@@ -2318,8 +2371,22 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     );
     _mempoolSub = stream.listen(
       (event) {
+        if (evidenceEpoch != _mempoolEvidenceEpoch ||
+            _requiresUnlock ||
+            _isShuttingDown ||
+            !ref.mounted) {
+          return;
+        }
         if (!event.matched) return;
         final activeAccountUuid = _getActiveAccountUuid();
+        final scopes = event.accountUuids.isEmpty
+            ? [?activeAccountUuid]
+            : event.accountUuids;
+        for (final accountUuid in scopes) {
+          ref
+              .read(pendingActivityEvidenceProvider.notifier)
+              .observe(accountUuid: accountUuid, txids: [event.txidHex]);
+        }
         // Empty account scope means Rust knows the tx is wallet-relevant,
         // but cannot narrow it to an account yet; preserve the legacy
         // active-account refresh behavior in that case.
@@ -2388,6 +2455,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   /// the Dart subscription. Symmetric with [_startMempoolObserver]
   /// and called from [stopSync] as well as on dispose.
   void _stopMempoolObserver() {
+    ++_mempoolEvidenceEpoch;
+    ref.read(pendingActivityEvidenceProvider.notifier).invalidateNetwork();
     if (rust_sync.isMempoolObserverRunning()) {
       rust_sync.stopMempoolObserver();
     }
@@ -2544,6 +2613,13 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         '${useFetchedBalance || useFetchedRecentTxs ? ', kept account data' : ''}',
       );
       return;
+    }
+    if ((event.hasNewTx || event.isComplete) &&
+        useFetchedAccountData &&
+        balanceReadIsCurrent) {
+      ref
+          .read(pendingActivityEvidenceProvider.notifier)
+          .historyReadCompleted(accountUuid, available: didFetchRecentTxs);
     }
     if (useFetchedBalance) {
       ++_authoritativeBalanceVersion;
@@ -3151,6 +3227,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     if (requireAuthoritativeBalance && !hasAuthoritativeBalance) {
       throw StateError('Balance unavailable after releasing send proposal');
     }
+    ref
+        .read(pendingActivityEvidenceProvider.notifier)
+        .historyReadCompleted(accountUuid, available: didFetchRecentTxs);
     // Commit against the latest state so a slow balance/history refresh
     // cannot roll sync progress or completion metadata back to the snapshot
     // captured before the awaits above.
@@ -3407,6 +3486,18 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _cachedDbPath = await _walletDbPathResolver();
     return _cachedDbPath!;
   }
+
+  @visibleForTesting
+  void handleAppResumeForTesting() => _handleAppResume();
+
+  @visibleForTesting
+  void handleAppHideForTesting() => _handleAppHide();
+
+  @visibleForTesting
+  void stopTipChecksForTesting() => _stopPolling();
+
+  @visibleForTesting
+  Future<void> checkTipForTesting() => _checkAndSync();
 
   @visibleForTesting
   Future<void> handleSyncProgressForTesting(SyncProgressEvent event) =>

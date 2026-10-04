@@ -22,6 +22,7 @@ import '../../../core/zcash/transparent_ledger_errors.dart';
 import '../../../core/zcash/zip321_payment_request.dart'
     show stripUnsupportedZip321MemoText;
 import '../../../providers/account_provider.dart';
+import '../../../providers/pending_activity_evidence_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
@@ -127,11 +128,25 @@ class KeystoneBroadcastArgs {
     required this.reviewArgs,
     required this.pcztWithProofs,
     required this.pcztWithSignatures,
+    this.isRecoveryRetry = false,
   });
 
   final SendReviewArgs reviewArgs;
   final List<List<int>> pcztWithProofs;
   final List<List<int>> pcztWithSignatures;
+
+  /// Rust already retained this batch. Dart must not discard its proposal if
+  /// a new attempt fails before reaching Rust.
+  final bool isRecoveryRetry;
+
+  /// Reuses the signed payload after a retryable outcome. Local preparation
+  /// failures during this attempt preserve Rust's existing reservation.
+  KeystoneBroadcastArgs forRecoveryRetry() => KeystoneBroadcastArgs(
+    reviewArgs: reviewArgs,
+    pcztWithProofs: pcztWithProofs,
+    pcztWithSignatures: pcztWithSignatures,
+    isRecoveryRetry: true,
+  );
 }
 
 /// Direct-USB Ledger handoff payload. The device-signed PCZT is combined with
@@ -616,6 +631,7 @@ class SendBroadcastOutcome {
     this.txid,
     this.statusMessage,
     this.error,
+    this.canRetryBroadcast = false,
   });
 
   final SendBroadcastPhase phase;
@@ -624,6 +640,10 @@ class SendBroadcastOutcome {
   /// when false the caller must not assume the proposal was released
   /// here unless the phase is [SendBroadcastPhase.aborted].
   final bool proposalConsumed;
+
+  /// Rust retained the validated signed batch and its proposal for another
+  /// attempt. Retry must reuse the same payload rather than create a new send.
+  final bool canRetryBroadcast;
   final String? txid;
   final String? statusMessage;
   final String? error;
@@ -747,7 +767,8 @@ Future<SendBroadcastOutcome> _runSendBroadcast({
 }) async {
   final hasHardwarePayload = ledger != null || keystone != null;
   var proposalConsumed = hasHardwarePayload;
-  var proposalReleased = false;
+  var proposalReleased = keystone?.isRecoveryRetry ?? false;
+  var keystoneRustAttempted = false;
   LinuxSecretOperationGuard? secretGuard;
   final syncNotifier = ref.read(syncProvider.notifier);
 
@@ -822,8 +843,10 @@ Future<SendBroadcastOutcome> _runSendBroadcast({
           return SendBroadcastOutcome(
             phase: SendBroadcastPhase.failed,
             proposalConsumed: proposalConsumed,
-            error:
-                'Sending was cancelled before proving parameters were downloaded.',
+            canRetryBroadcast: keystone?.isRecoveryRetry ?? false,
+            error: keystone?.isRecoveryRetry == true
+                ? 'Proof parameters are required to retry this signed transaction.'
+                : 'Sending was cancelled before proving parameters were downloaded.',
           );
         }
 
@@ -926,9 +949,11 @@ Future<SendBroadcastOutcome> _runSendBroadcast({
             payload.pcztWithProofs.isEmpty) {
           throw Exception('Invalid Keystone signing round count.');
         }
-        // The Rust orchestration owns proposal-lock cleanup on every outcome
-        // from this point onward, including validation and atomic-store errors.
+        // Rust owns proposal-lock bookkeeping from this point onward. It
+        // preserves retryable mined-evidence errors and cleans up terminal
+        // validation failures and completed outcomes.
         proposalReleased = true;
+        keystoneRustAttempted = true;
         final rust_sync.StoreAndBroadcastPcztsResult result;
         if (args.addressType == 'tex') {
           result = await rust_sync.storeAndBroadcastSignedPcztsForProposal(
@@ -1072,6 +1097,21 @@ Future<SendBroadcastOutcome> _runSendBroadcast({
     }
 
     if (canReadProviders) {
+      if (broadcastComplete &&
+          !ref.read(appSecurityProvider).requiresUnlock &&
+          (ref
+                  .read(accountProvider)
+                  .value
+                  ?.accounts
+                  .any((account) => account.uuid == args.proposalAccountUuid) ??
+              false)) {
+        ref
+            .read(pendingActivityEvidenceProvider.notifier)
+            .observe(
+              accountUuid: args.proposalAccountUuid,
+              txids: txids.split(','),
+            );
+      }
       try {
         await ref.read(syncProvider.notifier).refreshAfterSend();
       } catch (e) {
@@ -1095,7 +1135,15 @@ Future<SendBroadcastOutcome> _runSendBroadcast({
     );
   } catch (e) {
     log('SendBroadcast: ERROR: $e');
-    final message = friendlyBroadcastError(e.toString());
+    // Keep identical to Rust's HARDWARE_RECOVERY_RETRYABLE_PREFIX. Only Rust
+    // can confirm that a failed native call retained the signed proposal.
+    final canRetryBroadcast =
+        keystone != null &&
+        ((keystone.isRecoveryRetry && !keystoneRustAttempted) ||
+            e.toString().contains('hardware_recovery_retryable:'));
+    final message = canRetryBroadcast
+        ? 'Wait for wallet sync, then retry this signed transaction.'
+        : friendlyBroadcastError(e.toString());
     if (await abortRequested()) return aborted();
     if (!proposalReleased) {
       proposalConsumed = await discardSendProposal(
@@ -1110,6 +1158,7 @@ Future<SendBroadcastOutcome> _runSendBroadcast({
     return SendBroadcastOutcome(
       phase: SendBroadcastPhase.failed,
       proposalConsumed: proposalConsumed,
+      canRetryBroadcast: canRetryBroadcast,
       error: message,
     );
   }

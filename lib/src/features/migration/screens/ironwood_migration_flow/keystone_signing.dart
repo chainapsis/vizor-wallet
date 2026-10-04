@@ -274,7 +274,7 @@ class MobileIronwoodKeystoneScanHelpBody extends StatelessWidget {
         Align(
           alignment: Alignment.center,
           child: Image.asset(
-            'assets/illustrations/keystone_qr_scan_error.png',
+            'assets/illustrations/keystone_qr_scan_error.webp',
             width: 48,
             height: 48,
             filterQuality: FilterQuality.high,
@@ -444,7 +444,7 @@ enum _KeystoneDenominationSignStage {
 // no card lands between the two halves of a round.
 class _IronwoodMigrationKeystonePrivateSignScreenState
     extends ConsumerState<_IronwoodMigrationKeystonePrivateSignScreen>
-    with PaymentUriBusySurfaceHoldMixin {
+    with ExternalActionGuardHoldMixin {
   _KeystoneDenominationSignStage _stage =
       _KeystoneDenominationSignStage.preparing;
   late final IronwoodMigrationService _migrationService;

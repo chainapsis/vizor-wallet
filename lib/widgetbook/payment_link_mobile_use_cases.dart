@@ -53,9 +53,7 @@ Widget buildMobilePaymentLinkHomeEmptyUseCase(BuildContext context) {
 
 Widget buildMobilePaymentLinkHomeCardsUseCase(BuildContext context) {
   return _withPaymentLinkCardsProviders(
-    const _MobilePaymentLinkFrame(
-      child: _PaymentLinkCardsFixture(),
-    ),
+    const _MobilePaymentLinkFrame(child: _PaymentLinkCardsFixture()),
   );
 }
 
@@ -374,6 +372,11 @@ Widget buildMobilePaymentLinkReceivedUseCase(BuildContext context) {
   return const _MobilePaymentLinkFrame(child: _MobileReceivedFixture());
 }
 
+Widget buildMobilePaymentLinkReceivedCheckingUseCase(BuildContext context) =>
+    const _MobilePaymentLinkFrame(
+      child: _MobileReceivedFixture(checking: true),
+    );
+
 Widget buildMobilePaymentLinkClaimAccountUseCase(BuildContext context) =>
     _buildClaimAccountPreview(3);
 
@@ -462,7 +465,7 @@ class _PaymentLinkHomeFixture extends StatelessWidget {
   Widget build(BuildContext context) {
     return PaymentLinksHomeMobileView(
       illustration: Image.asset(
-        'assets/illustrations/payment_links/payment_link_empty_card.png',
+        'assets/illustrations/payment_links/payment_link_empty_card.webp',
         fit: BoxFit.contain,
         excludeFromSemantics: true,
       ),
@@ -706,7 +709,9 @@ class _MobileReadyFixtureState extends State<_MobileReadyFixture> {
 }
 
 class _MobileReceivedFixture extends StatefulWidget {
-  const _MobileReceivedFixture();
+  const _MobileReceivedFixture({this.checking = false});
+
+  final bool checking;
 
   @override
   State<_MobileReceivedFixture> createState() => _MobileReceivedFixtureState();
@@ -717,6 +722,21 @@ class _MobileReceivedFixtureState extends State<_MobileReceivedFixture> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.checking) {
+      return PaymentLinkReadyMobileView(
+        state: PaymentLinkReadyMobileState.checking,
+        card: const PaymentLinkGiftCard(
+          artwork: PaymentLinkCardArtwork.knightMagic,
+          cardWidth: _cardWidth,
+          cardHeight: _cardHeight,
+          amountText: _fixtureAmount,
+          supportingText: r'$142.23',
+          showCaret: false,
+        ),
+        onHome: _noop,
+        waitingStatusLabel: 'Checking the gift… 50%',
+      );
+    }
     return PaymentLinkReceivedMobileView(
       card: PaymentLinkCardFlip(
         showBack: _showBack,

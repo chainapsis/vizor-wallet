@@ -22,17 +22,17 @@ const _supportingValueShadows = <Shadow>[
 
 /// Artwork choices exported from the Figma `_CARD BG IMAGE` component set.
 enum PaymentLinkCardArtwork {
-  knight('payment_link_card_knight.png', 'Knight'),
-  chestLava('payment_link_card_chest_lava.png', 'Chest in lava cave'),
-  chestCave('payment_link_card_chest_cave.png', 'Chest in crystal cave'),
-  dragon('payment_link_card_dragon.png', 'Dragon'),
-  knightMagic('payment_link_card_knight_magic.png', 'Magic knight'),
-  gandalf('payment_link_card_gandalf.png', 'Wizard'),
-  crystal('payment_link_card_crystal.png', 'Crystal'),
-  diamond('payment_link_card_diamond.png', 'Diamond'),
-  ruby('payment_link_card_ruby.png', 'Ruby'),
-  coin('payment_link_card_coin.png', 'Zcash coin'),
-  gift('payment_link_card_gift.png', 'Gift box');
+  knight('payment_link_card_knight.webp', 'Knight'),
+  chestLava('payment_link_card_chest_lava.webp', 'Chest in lava cave'),
+  chestCave('payment_link_card_chest_cave.webp', 'Chest in crystal cave'),
+  dragon('payment_link_card_dragon.webp', 'Dragon'),
+  knightMagic('payment_link_card_knight_magic.webp', 'Magic knight'),
+  gandalf('payment_link_card_gandalf.webp', 'Wizard'),
+  crystal('payment_link_card_crystal.webp', 'Crystal'),
+  diamond('payment_link_card_diamond.webp', 'Diamond'),
+  ruby('payment_link_card_ruby.webp', 'Ruby'),
+  coin('payment_link_card_coin.webp', 'Zcash coin'),
+  gift('payment_link_card_gift.webp', 'Gift box');
 
   const PaymentLinkCardArtwork(this.fileName, this.semanticLabel);
 
@@ -753,7 +753,7 @@ class _PaymentLinkStaticAmountRow extends StatelessWidget {
               amount,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: AppTypography.headlineLarge.copyWith(color: cardTextColor),
+              style: AppTypography.displayLarge.copyWith(color: cardTextColor),
             ),
           ),
           const SizedBox(width: AppSpacing.xxs),
@@ -773,6 +773,7 @@ class _PaymentLinkStaticAmountRow extends StatelessWidget {
           _PaymentLinkCurrencyLabel(
             currencySymbol: currencySymbol,
             cardTextColor: cardTextColor,
+            valueStyle: true,
           ),
       ],
     );
@@ -937,10 +938,12 @@ class _PaymentLinkCurrencyLabel extends StatelessWidget {
   const _PaymentLinkCurrencyLabel({
     required this.currencySymbol,
     required this.cardTextColor,
+    this.valueStyle = false,
   });
 
   final String currencySymbol;
   final Color cardTextColor;
+  final bool valueStyle;
 
   @override
   Widget build(BuildContext context) {
@@ -953,9 +956,11 @@ class _PaymentLinkCurrencyLabel extends StatelessWidget {
         child: Text(
           currencySymbol,
           maxLines: 1,
-          style: AppTypography.headlineMedium.copyWith(
-            color: cardTextColor.withValues(alpha: 0.55),
-          ),
+          style:
+              (valueStyle
+                      ? AppTypography.headlineLarge
+                      : AppTypography.headlineMedium)
+                  .copyWith(color: cardTextColor.withValues(alpha: 0.55)),
         ),
       ),
     );
@@ -974,7 +979,7 @@ class _PaymentLinkGiftCardBackBackground extends StatelessWidget {
       children: [
         ColoredBox(color: context.colors.background.brandCrimsonStrong),
         Image.asset(
-          'assets/illustrations/payment_links/payment_link_message_pattern.png',
+          'assets/illustrations/payment_links/payment_link_message_pattern.webp',
           key: const ValueKey('payment_link_message_pattern'),
           fit: BoxFit.cover,
           excludeFromSemantics: true,

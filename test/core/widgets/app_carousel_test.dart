@@ -20,11 +20,70 @@ const _items = [
   AppCarouselItem.image(
     message: 'Third carousel message.',
     tileColor: Color(0xFFB90A4A),
-    imageAsset: 'assets/illustrations/ironwood_migration_expect_running.png',
+    imageAsset:
+        'assets/illustrations/desktop/ironwood_migration_expect_running.webp',
   ),
 ];
 
 void main() {
+  testWidgets('a single visible card supports page selection and activation', (
+    tester,
+  ) async {
+    final activated = <int>[];
+    final pages = <int>[];
+    await tester.pumpWidget(
+      _harness(
+        autoplay: false,
+        showAdjacentCards: false,
+        onPageChanged: pages.add,
+        items: [
+          AppCarouselItem.icon(
+            message: 'Back up your wallet.',
+            tileColor: const Color(0xFF00A460),
+            icon: AppIcons.key,
+            onTap: () => activated.add(0),
+          ),
+          AppCarouselItem.icon(
+            message: 'Learn about Zcash.',
+            tileColor: const Color(0xFF9667E2),
+            icon: AppIcons.zcash,
+            onTap: () => activated.add(1),
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+    final viewport = tester.getRect(
+      find.byKey(const ValueKey('app_carousel_viewport')),
+    );
+    final card = tester.getRect(
+      find.byKey(const ValueKey('app_carousel_card_0')),
+    );
+    expect(card.left, viewport.left);
+    expect(card.right, viewport.right);
+    expect(find.text('Learn about Zcash.').hitTestable(), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('app_carousel_indicator_1')));
+    await tester.pumpAndSettle();
+    expect(pages, [1]);
+    await tester.tap(find.text('Learn about Zcash.'));
+    final carousel = find.byKey(const ValueKey('app_carousel'));
+    tester
+        .widget<Focus>(
+          find.descendant(of: carousel, matching: find.byType(Focus)),
+        )
+        .focusNode!
+        .requestFocus();
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    expect(activated, [1, 1, 1]);
+    await tester.drag(
+      find.byKey(const ValueKey('app_carousel_page_view')),
+      const Offset(396, 0),
+    );
+    await tester.pumpAndSettle();
+    expect(pages, [1, 0]);
+  });
   testWidgets('matches the Figma shell and card geometry', (tester) async {
     await tester.pumpWidget(_harness(autoplay: false));
     await tester.pumpAndSettle();
@@ -274,6 +333,7 @@ Future<void> _advanceAutoplay(WidgetTester tester) async {
 Widget _harness({
   List<AppCarouselItem> items = _items,
   bool autoplay = true,
+  bool showAdjacentCards = true,
   bool disableAnimations = false,
   ValueChanged<int>? onPageChanged,
 }) {
@@ -290,6 +350,7 @@ Widget _harness({
             child: AppCarousel(
               items: items,
               autoplay: autoplay,
+              showAdjacentCards: showAdjacentCards,
               semanticLabel: 'Migration information',
               onPageChanged: onPageChanged,
             ),

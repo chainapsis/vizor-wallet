@@ -18,6 +18,7 @@ class MobileReviewInfoRow extends StatelessWidget {
     required this.value,
     required this.leading,
     this.bottom,
+    this.valuePlaceholder,
     this.strikethrough = false,
     super.key,
   });
@@ -26,6 +27,9 @@ class MobileReviewInfoRow extends StatelessWidget {
   final String value;
   final Widget leading;
   final Widget? bottom;
+
+  /// Loading content in the headline's usual line box.
+  final Widget? valuePlaceholder;
   final bool strikethrough;
 
   @override
@@ -55,17 +59,33 @@ class MobileReviewInfoRow extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: AppSpacing.xxs),
-                Text(
-                  value,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.headlineLarge.copyWith(
-                    color: colors.text.accent,
-                    decoration: strikethrough
-                        ? TextDecoration.lineThrough
-                        : TextDecoration.none,
+                if (valuePlaceholder != null)
+                  SizedBox(
+                    width: double.infinity,
+                    child: Stack(
+                      children: [
+                        Text('', style: AppTypography.headlineLarge),
+                        Positioned.fill(
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: valuePlaceholder,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                else
+                  Text(
+                    value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.headlineLarge.copyWith(
+                      color: colors.text.accent,
+                      decoration: strikethrough
+                          ? TextDecoration.lineThrough
+                          : TextDecoration.none,
+                    ),
                   ),
-                ),
                 const SizedBox(height: AppSpacing.xxs),
                 SizedBox(height: 24, child: bottom ?? const SizedBox()),
               ],

@@ -6,6 +6,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_progress_scope.dart';
+
+import '../../figma_compare/figma_compare_font_loader.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
@@ -37,7 +40,10 @@ Widget _app({Future<void> Function(int height)? onHeightConfirmed}) {
   return ProviderScope(
     overrides: [appBootstrapProvider.overrideWithValue(_bootstrap())],
     child: MaterialApp(
-      builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
+      builder: (_, c) => AppTheme(
+        data: AppThemeData.light,
+        child: MobileOnboardingProgressFrame(child: c!),
+      ),
       home: MobileImportBirthdayScreen(
         args: const ImportBirthdayArgs(mnemonic: 'stub mnemonic'),
         onHeightConfirmed: onHeightConfirmed,
@@ -66,7 +72,8 @@ Widget _routerApp({
       GoRoute(
         path: '/onboarding/set-passcode',
         builder: (_, state) {
-          final args = state.extra as SetPasswordScreenArgs;
+          final args =
+              mobileOnboardingPayload(state.extra) as SetPasswordScreenArgs;
           onPasscodeArgs?.call(args);
           return const Text('passcode route');
         },
@@ -74,7 +81,9 @@ Widget _routerApp({
       GoRoute(
         path: '/onboarding/customise-account',
         builder: (_, state) {
-          onCustomiseArgs?.call(state.extra as CustomiseAccountArgs);
+          onCustomiseArgs?.call(
+            mobileOnboardingPayload(state.extra) as CustomiseAccountArgs,
+          );
           return const Text('customise route');
         },
       ),
@@ -91,7 +100,10 @@ Widget _routerApp({
     ],
     child: MaterialApp.router(
       routerConfig: router,
-      builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
+      builder: (_, c) => AppTheme(
+        data: AppThemeData.light,
+        child: MobileOnboardingProgressFrame(child: c!),
+      ),
     ),
   );
 }
@@ -124,6 +136,7 @@ const _discoveredAccounts = [
 ];
 
 void main() {
+  setUpAll(loadFigmaCompareFonts);
   setUp(() {
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
     binding.platformDispatcher.views.first
@@ -308,10 +321,7 @@ void main() {
         .getSize(find.byType(ImportBirthdayCalendarPanel))
         .height;
     final sheetHeight = tester.getSize(find.byType(BottomSheet)).height;
-    expect(
-      sheetHeight,
-      closeTo(panelHeight + AppSpacing.sm * 3, 1.0),
-    );
+    expect(sheetHeight, closeTo(panelHeight + AppSpacing.sm * 3, 1.0));
 
     // The panel is its own card, so the sheet surface stays invisible —
     // only the scrim and the calendar render.

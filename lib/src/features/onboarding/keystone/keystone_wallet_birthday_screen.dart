@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../import/desktop_import_navigation.dart';
 import '../../../../main.dart' show log;
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -248,7 +249,12 @@ class _KeystoneWalletBirthdayScreenState
 
     final account = ref.read(keystoneOnboardingProvider).selectedAccount;
     if (account == null) {
-      context.go(KeystoneOnboardingStep.selectAccount.routePath);
+      context.go(
+        desktopImportLocation(
+          context,
+          KeystoneOnboardingStep.selectAccount.routePath,
+        ),
+      );
       return;
     }
 
@@ -262,7 +268,10 @@ class _KeystoneWalletBirthdayScreenState
       if (!security.isPasswordConfigured) {
         if (!mounted) return;
         context.go(
-          KeystoneOnboardingStep.setPassword.routePath,
+          desktopImportLocation(
+            context,
+            KeystoneOnboardingStep.setPassword.routePath,
+          ),
           extra: SetPasswordScreenArgs.importKeystone(
             name: account.name,
             ufvk: account.ufvk,
@@ -282,7 +291,10 @@ class _KeystoneWalletBirthdayScreenState
         birthdayHeight: birthdayHeight,
       );
       context.go(
-        KeystoneOnboardingStep.customiseAccount.routePath,
+        desktopImportLocation(
+          context,
+          KeystoneOnboardingStep.customiseAccount.routePath,
+        ),
         extra: CustomiseAccountArgs(setupArgs: setupArgs),
       );
     } catch (e, st) {
@@ -364,7 +376,10 @@ class _KeystoneWalletBirthdayScreenState
     return KeystoneOnboardingTrailingPane(
       backTarget: OnboardingBackTarget.route(
         label: KeystoneOnboardingStep.selectAccount.label,
-        routePath: KeystoneOnboardingStep.selectAccount.routePath,
+        routePath: desktopImportLocation(
+          context,
+          KeystoneOnboardingStep.selectAccount.routePath,
+        ),
       ),
       overlay: _isUnknownBirthdayConfirmOpen
           ? ImportBirthdayUnknownHeightModal(

@@ -85,6 +85,7 @@ rust_sync.TransactionInfo _tx({
   bool expired = false,
   BigInt? fee,
   String displayPool = 'shielded',
+  String? activityPool,
   BigInt? blockTime,
   BigInt? createdTime,
   rust_sync.TransactionFeeState feeState = rust_sync.TransactionFeeState.known,
@@ -106,6 +107,7 @@ rust_sync.TransactionInfo _tx({
     txKind: kind,
     displayAmount: displayAmount ?? BigInt.from(12312000000),
     displayPool: displayPool,
+    activityPool: activityPool,
     createdTime: createdTime ?? BigInt.from(1750000000),
   );
 }
@@ -139,6 +141,7 @@ GiftCardActivityMetadata _giftCard({
   DateTime? activityTimestamp,
   bool isClaimInFlight = false,
   PaymentLinkFiatSnapshot? fiatSnapshot,
+  String? displayPool,
 }) {
   return GiftCardActivityMetadata(
     kind: kind,
@@ -149,6 +152,7 @@ GiftCardActivityMetadata _giftCard({
     isClaimInFlight: isClaimInFlight,
     fiatSnapshot: fiatSnapshot,
     claimFeeReserveZatoshi: BigInt.from(20000),
+    displayPool: displayPool,
   );
 }
 
@@ -878,6 +882,96 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  testWidgets('sent receipt shows the exact pool without adding rows', (
+    tester,
+  ) async {
+    for (final (pool, label) in [
+      ('ironwood', 'Shielded'),
+      ('orchard', 'Orchard'),
+      ('sapling', 'Sapling'),
+      ('mixed', 'Mixed'),
+    ]) {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpWidget(_app(_tx(activityPool: pool)));
+      await tester.pumpAndSettle();
+      expect(find.text(label), findsOneWidget);
+      expect(find.text('To'), findsOneWidget);
+      expect(find.text('From'), findsNothing);
+      expect(find.text('Sent successfully'), findsOneWidget);
+    }
+  });
+
+  testWidgets('TEX address badge takes precedence over the pool label', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        _tx(displayPool: 'transparent', activityPool: 'transparent'),
+        detail: _detail(primaryAddress: _texAddress),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('TEX'), findsOneWidget);
+    expect(find.text('Transparent'), findsNothing);
+  });
+
+  testWidgets('gift card receipt keeps pool details hidden', (
+    tester,
+  ) async {
+    for (final pool in ['ironwood', 'shielded', 'orchard', 'sapling']) {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpWidget(
+        _app(
+          _tx(activityPool: 'ironwood'),
+          giftCard: _giftCard(displayPool: pool),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Created a gift card'), findsOneWidget);
+      expect(find.text('Ironwood'), findsNothing);
+      expect(find.text('Shielded'), findsNothing);
+      expect(find.text('Orchard'), findsNothing);
+      expect(find.text('Sapling'), findsNothing);
+      expect(find.text('To'), findsNothing);
+    }
+  });
+
+  testWidgets('sent receipt updates when only the exact pool is enriched', (
+    tester,
+  ) async {
+    final initial = _tx();
+    final history = [initial];
+    await tester.pumpWidget(_app(initial, history: history));
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MobileTransactionStatusScreen)),
+    );
+    final notifier = container.read(syncProvider.notifier) as FakeSyncNotifier;
+    notifier.setSyncState(
+      SyncState(
+        accountUuid: 'account-1',
+        hasAccountScopedData: true,
+        recentTransactions: [initial],
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Shielded'), findsOneWidget);
+
+    final enriched = _tx(activityPool: 'orchard');
+    history[0] = enriched;
+    notifier.setSyncState(
+      SyncState(
+        accountUuid: 'account-1',
+        hasAccountScopedData: true,
+        recentTransactions: [enriched],
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Orchard'), findsOneWidget);
+    expect(find.text('Shielded'), findsNothing);
+    expect(find.text('Sent successfully'), findsOneWidget);
   });
 
   testWidgets('unmined sent tx shows the in-progress state', (tester) async {

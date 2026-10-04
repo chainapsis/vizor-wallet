@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/material.dart';
@@ -16,6 +17,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_pane_modal_overlay.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_screen.dart';
+import 'package:zcash_wallet/src/features/activity/screens/activity_transaction_status_screen.dart';
 import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
 import 'package:zcash_wallet/src/features/home/screens/home_screen.dart';
 import 'package:zcash_wallet/src/features/settings/screens/settings_screen.dart';
@@ -37,8 +39,10 @@ import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_failure.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/features/activity/activity_eta_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../support/wallet_path_read_blocker.dart';
 import '../../fakes/fake_zec_market_data_cache.dart';
 
 void main() {
@@ -925,6 +929,75 @@ void main() {
     expect(find.byType(ActivityScreen), findsOneWidget);
   });
 
+  testWidgets('Home shows ETA in place of the compact pending pool', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        swapEnabled: false,
+        etaLabels: const {'pending-receive': 'Est. 1–3 min'},
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          recentTransactions: [_pendingReceivingTx(txidHex: 'pending-receive')],
+        ),
+      ),
+    );
+    await _pumpUntilPresent(tester, find.text('Receiving ...'));
+    expect(find.text('Est. 1–3 min'), findsOneWidget);
+    expect(find.text('Shielded'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('home activity opens before receipt loading completes', (
+    tester,
+  ) async {
+    final history = Completer<List<rust_sync.TransactionInfo>>();
+    final tx = _receivedZecTx(
+      txidHex: 'a' * 64,
+      amountZatoshi: 100000000,
+      blockTime: 1764150000,
+    );
+    ActivityTransactionStatusArgs? suppliedArgs;
+    final router = GoRouter(
+      initialLocation: '/home',
+      routes: [
+        GoRoute(path: '/home', builder: (_, _) => const HomeScreen()),
+        GoRoute(
+          path: '/activity/tx/:txid',
+          builder: (_, state) {
+            suppliedArgs = state.extra as ActivityTransactionStatusArgs;
+            return ActivityTransactionStatusScreen(
+              args: suppliedArgs!,
+              historyLoader: (_) => history.future,
+              detailLoader: (_, _) async => null,
+            );
+          },
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        router: router,
+        swapEnabled: false,
+        syncState: _syncedSyncState.copyWith(recentTransactions: [tx]),
+      ),
+    );
+    await _pumpUntilPresent(tester, find.text('Received'));
+    WalletPathReadBlocker();
+    await tester.tap(find.text('Received'));
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('Received successfully'), findsOneWidget);
+    expect(history.isCompleted, isFalse);
+    expect(suppliedArgs!.sourceAccountUuid, 'account-1');
+    expect(suppliedArgs!.initialTransaction, same(tx));
+    expect(suppliedArgs!.initialDetail, isNull);
+  });
+
   testWidgets('home recent activity keeps untimed pending receives visible', (
     tester,
   ) async {
@@ -1489,6 +1562,8 @@ rust_sync.MigrationStatus _migrationStatus(
 
 Widget _appHarness(
   String initialLocation, {
+  Map<String, String>? etaLabels,
+  GoRouter? router,
   bool? swapEnabled,
   bool privacyModeEnabled = false,
   bool passwordRotationRecoveryFailed = false,
@@ -1511,6 +1586,8 @@ Widget _appHarness(
 }) {
   return ProviderScope(
     overrides: [
+      if (etaLabels != null)
+        activityEtaLabelsProvider.overrideWithValue(etaLabels),
       if (networkPrivacy != null)
         networkPrivacyProvider.overrideWith(() => networkPrivacy),
       zecMarketDataSourceProvider.overrideWithValue(
@@ -1610,7 +1687,13 @@ Widget _appHarness(
         return const IronwoodMigrationAnnouncementState.hidden();
       }),
     ],
-    child: const ZcashWalletApp(),
+    child: router == null
+        ? const ZcashWalletApp()
+        : MaterialApp.router(
+            routerConfig: router,
+            builder: (_, child) =>
+                AppTheme(data: AppThemeData.dark, child: child!),
+          ),
   );
 }
 

@@ -20,6 +20,7 @@ import 'package:zcash_wallet/src/core/formatting/address_display.dart';
 import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/donation/widgets/donation_views.dart';
@@ -753,52 +754,61 @@ void main() {
     });
   }
 
-  testWidgets(
-    'Keystone params rejection releases the retained input lock before broadcast',
-    (tester) async {
-      final args = _reviewArgs(needsSaplingParams: true);
-      late WidgetRef widgetRef;
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            appBootstrapProvider.overrideWithValue(_bootstrap(true)),
-            appSecurityProvider.overrideWith(_FakeAppSecurityNotifier.new),
-            syncProvider.overrideWith(_FakeSyncNotifier.new),
-          ],
-          child: MaterialApp(
-            home: Consumer(
-              builder: (_, ref, _) {
-                widgetRef = ref;
-                return const SizedBox.shrink();
-              },
+  for (final isRecoveryRetry in [false, true]) {
+    testWidgets(
+      isRecoveryRetry
+          ? 'Keystone params rejection preserves an existing recovery retry'
+          : 'Keystone params rejection releases the input lock before broadcast',
+      (tester) async {
+        final args = _reviewArgs(needsSaplingParams: true);
+        late WidgetRef widgetRef;
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              appBootstrapProvider.overrideWithValue(_bootstrap(true)),
+              appSecurityProvider.overrideWith(_FakeAppSecurityNotifier.new),
+              syncProvider.overrideWith(_FakeSyncNotifier.new),
+            ],
+            child: MaterialApp(
+              home: Consumer(
+                builder: (_, ref, _) {
+                  widgetRef = ref;
+                  return const SizedBox.shrink();
+                },
+              ),
             ),
           ),
-        ),
-      );
-      await tester.pump();
-      final outcome = await tester.runAsync(
-        () => runSendBroadcast(
-          ref: widgetRef,
-          args: args,
-          keystone: KeystoneBroadcastArgs(
-            reviewArgs: args,
-            pcztWithProofs: const [
-              [3, 3, 3],
-            ],
-            pcztWithSignatures: const [
-              [9, 9],
-            ],
+        );
+        await tester.pump();
+        final outcome = await tester.runAsync(
+          () => runSendBroadcast(
+            ref: widgetRef,
+            args: args,
+            keystone: KeystoneBroadcastArgs(
+              reviewArgs: args,
+              pcztWithProofs: const [
+                [3, 3, 3],
+              ],
+              pcztWithSignatures: const [
+                [9, 9],
+              ],
+              isRecoveryRetry: isRecoveryRetry,
+            ),
+            confirmSaplingParamsDownload: () async => false,
           ),
-          confirmSaplingParamsDownload: () async => false,
-        ),
-      );
+        );
 
-      expect(rustApi.storeCalls, isEmpty);
-      expect(rustApi.discardCalls, [(BigInt.one, 'test-send-flow')]);
-      expect(outcome?.phase, SendBroadcastPhase.failed);
-      expect(outcome?.proposalConsumed, isTrue);
-    },
-  );
+        expect(rustApi.storeCalls, isEmpty);
+        expect(
+          rustApi.discardCalls,
+          isRecoveryRetry ? isEmpty : [(BigInt.one, 'test-send-flow')],
+        );
+        expect(outcome?.phase, SendBroadcastPhase.failed);
+        expect(outcome?.proposalConsumed, isTrue);
+        expect(outcome?.canRetryBroadcast, isRecoveryRetry);
+      },
+    );
+  }
 
   testWidgets('proposal cleanup retries a transient Rust unlock failure', (
     tester,
@@ -855,6 +865,96 @@ void main() {
     expect(rustApi.retainCalls, isEmpty);
   });
 
+  for (final addressType in ['tex', 'unified']) {
+    testWidgets(
+      'Keystone $addressType recovery retries the same signed payload',
+      (tester) async {
+        rustApi.storeError = Exception(
+          'hardware_recovery_retryable: Hardware transaction is awaiting mined-state recovery; retry after sync',
+        );
+        final args = _reviewArgs(
+          addressType: addressType,
+          address: addressType == 'tex' ? _texAddress : _address,
+        );
+        final payload = KeystoneBroadcastArgs(
+          reviewArgs: args,
+          pcztWithProofs: addressType == 'tex'
+              ? const [
+                  [3, 3, 3],
+                  [4, 4, 4],
+                ]
+              : const [
+                  [3, 3, 3],
+                ],
+          pcztWithSignatures: addressType == 'tex'
+              ? const [
+                  [9, 9],
+                  [8, 8],
+                ]
+              : const [
+                  [9, 9],
+                ],
+        );
+        await _setDesktopViewport(tester);
+        await tester.pumpWidget(
+          _harness(args, keystone: payload, isHardware: true),
+        );
+        await tester.pump();
+        await _flushBroadcast(tester);
+        expect(find.text('Retry'), findsOneWidget);
+        expect(_sendStatusTerminal(tester), isFalse);
+        expect(rustApi.discardCalls, isEmpty);
+        final firstCall = rustApi.storeCalls.single;
+
+        // A retry can fail locally before Rust owns the new attempt. The
+        // original signed batch must remain reachable and reserved.
+        final paths = PathProviderPlatform.instance;
+        PathProviderPlatform.instance = _FailingPathProviderPlatform();
+        await tester.tap(find.text('Retry'));
+        await _flushBroadcast(tester);
+        PathProviderPlatform.instance = paths;
+        expect(find.text('Retry'), findsOneWidget);
+        expect(rustApi.storeCalls, hasLength(1));
+        expect(rustApi.discardCalls, isEmpty);
+        expect(_sendStatusTerminal(tester), isFalse);
+        rustApi.storeError = null;
+        final gate = Completer<StoreAndBroadcastPcztsResult>();
+        rustApi.storeGate = gate;
+        final retry = tester
+            .widget<AppButton>(
+              find.ancestor(
+                of: find.text('Retry'),
+                matching: find.byType(AppButton),
+              ),
+            )
+            .onPressed!;
+        retry();
+        retry(); // A second tap cannot dispatch a parallel broadcast.
+        await tester.pump();
+        await _flushBroadcast(tester);
+        expect(rustApi.storeCalls, hasLength(2));
+        expect(rustApi.storeCalls.last.$1, firstCall.$1);
+        expect(rustApi.storeCalls.last.$2, firstCall.$2);
+        expect(rustApi.storeCalls.last.$4, firstCall.$4);
+        expect(rustApi.storeCalls.last.$5, firstCall.$5);
+        expect(find.text('Retry'), findsNothing);
+        expect(_sendStatusTerminal(tester), isFalse);
+        gate.complete(
+          StoreAndBroadcastPcztsResult(
+            txids: addressType == 'tex' ? '$_txid,$_secondTxid' : _txid,
+            status: 'broadcasted',
+            broadcastedCount: payload.pcztWithProofs.length,
+            totalCount: payload.pcztWithProofs.length,
+          ),
+        );
+        await _flushBroadcast(tester);
+        expect(find.text('Sent successfully'), findsOneWidget);
+        expect(_sendStatusTerminal(tester), isTrue);
+        expect(rustApi.discardCalls, isEmpty);
+      },
+    );
+  }
+
   testWidgets('Keystone definite rejection surfaces as a send failure', (
     tester,
   ) async {
@@ -882,6 +982,8 @@ void main() {
     await _flushBroadcast(tester);
 
     expect(find.text('Send failed'), findsOneWidget);
+    expect(find.text('Retry'), findsNothing);
+    expect(_sendStatusTerminal(tester), isTrue);
     expect(
       find.text('The network rejected this transaction. Try again later.'),
       findsOneWidget,
@@ -962,6 +1064,8 @@ void main() {
       ),
       findsOneWidget,
     );
+    expect(find.text('Retry'), findsNothing);
+    expect(_sendStatusTerminal(tester), isTrue);
     expect(find.textContaining('will retry automatically'), findsNothing);
     expect(find.text('Tx ID'), findsNothing);
     expect(rustApi.discardCalls, isEmpty);
@@ -1206,6 +1310,14 @@ class _FakePathProviderPlatform extends Fake
   Future<String?> getApplicationSupportPath() async => root;
 }
 
+class _FailingPathProviderPlatform extends Fake
+    with MockPlatformInterfaceMixin
+    implements PathProviderPlatform {
+  @override
+  Future<String?> getApplicationSupportPath() async =>
+      throw Exception('temporary support directory unavailable');
+}
+
 class _FakeAddressBookRepository implements AddressBookRepository {
   @override
   Future<List<AddressBookContact>> loadContacts() async => const [];
@@ -1254,6 +1366,7 @@ class _RustApiFake implements RustLibApi {
   final storeCalls =
       <(List<List<int>>, List<List<int>>, String?, BigInt, String)>[];
   Object? storeError;
+  Completer<StoreAndBroadcastPcztsResult>? storeGate;
   ExecuteProposalResult? executeResult;
   Object? executeError;
   StoreAndBroadcastPcztsResult? storeResult;
@@ -1272,6 +1385,7 @@ class _RustApiFake implements RustLibApi {
     retainCalls.clear();
     storeCalls.clear();
     storeError = null;
+    storeGate = null;
     executeResult = null;
     executeError = null;
     storeResult = null;
@@ -1361,6 +1475,7 @@ class _RustApiFake implements RustLibApi {
       sendFlowId,
     ));
     if (storeError case final error?) throw error;
+    if (storeGate case final gate?) return gate.future;
     return storeResult!;
   }
 
@@ -1385,6 +1500,7 @@ class _RustApiFake implements RustLibApi {
       sendFlowId,
     ));
     if (storeError case final error?) throw error;
+    if (storeGate case final gate?) return gate.future;
     return storeResult!;
   }
 

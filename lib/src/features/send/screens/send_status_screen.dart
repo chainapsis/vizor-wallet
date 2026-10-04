@@ -77,6 +77,8 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
   /// The running broadcast; a receipt left while still `sending` hands its
   /// completion to the terminal flag instead of a release of its own.
   Future<SendBroadcastOutcome>? _broadcast;
+  bool _canRetryBroadcast = false;
+  KeystoneBroadcastArgs? _keystoneRecovery;
   String? _error;
   String? _statusMessage;
   String? _txid;
@@ -222,13 +224,25 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
   }
 
   Future<void> _startBroadcast() async {
+    if (!mounted ||
+        (_phase == _SendStatusPhase.sending && _broadcast != null)) {
+      return;
+    }
+    if (_canRetryBroadcast) {
+      _keystoneRecovery = widget.keystone!.forRecoveryRetry();
+    }
+    setState(() {
+      _phase = _SendStatusPhase.sending;
+      _canRetryBroadcast = false;
+      _statusMessage = null;
+    });
     // A broadcast is starting: nothing is safe to leave yet.
     _sendStatusTerminal.reset();
     final runner = widget.broadcastRunner ?? runSendBroadcast;
     final broadcast = runner(
       ref: ref,
       args: widget.args,
-      keystone: widget.keystone,
+      keystone: _keystoneRecovery ?? widget.keystone,
       ledger: widget.ledger,
       confirmSaplingParamsDownload: _showSaplingParamsDialog,
       shouldAbort: () async => !mounted,
@@ -238,6 +252,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     _proposalConsumed = outcome.proposalConsumed;
     if (outcome.phase == SendBroadcastPhase.aborted || !mounted) return;
     setState(() {
+      _canRetryBroadcast = outcome.canRetryBroadcast;
       _phase = switch (outcome.phase) {
         SendBroadcastPhase.succeeded => _SendStatusPhase.succeeded,
         SendBroadcastPhase.pendingBroadcast =>
@@ -252,6 +267,9 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
         _completedAt = DateTime.now();
       }
     });
+    // A retained signed batch still owns recovery; keep incoming payment
+    // links parked until it completes or the user explicitly leaves.
+    if (_canRetryBroadcast) return;
     if (_phase == _SendStatusPhase.succeeded ||
         _phase == _SendStatusPhase.failed) {
       if (_phase == _SendStatusPhase.failed) {
@@ -324,7 +342,9 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     };
     final isDonation = widget.args.flowKind == SendFlowKind.donation;
     final isKeystoneSubmitting =
-        widget.keystone != null && _phase == _SendStatusPhase.sending;
+        widget.keystone != null &&
+        _keystoneRecovery == null &&
+        _phase == _SendStatusPhase.sending;
     final addressBookContacts =
         ref.watch(addressBookProvider).value?.contacts ??
         const <AddressBookContact>[];
@@ -421,6 +441,9 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
                         onExpandMemo: () => setState(
                           () => _messageExpanded = !_messageExpanded,
                         ),
+                        onRetry: _canRetryBroadcast
+                            ? () => unawaited(_startBroadcast())
+                            : null,
                         onOpenExplorer: canOpenExplorer
                             ? _openTransactionExplorer
                             : null,

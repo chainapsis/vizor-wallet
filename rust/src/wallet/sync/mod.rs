@@ -23,7 +23,7 @@ use crate::wallet::{
 };
 
 mod broadcast;
-mod payment_link;
+pub(crate) mod payment_link;
 pub(crate) use payment_link::{payment_link_resubmit_exclusions, payment_link_spend_evidence};
 pub(crate) mod hardware_authority;
 mod migration;
@@ -35,6 +35,7 @@ mod send;
 mod transactions;
 pub(crate) use transactions::has_recovered_status_work;
 pub(crate) use transactions::resolve_recovered_nonmined_status;
+pub(crate) use transactions::ResubmittableTx;
 
 // Keep the existing address API path while its implementation lives with address policy.
 pub use crate::wallet::addresses::{
@@ -105,7 +106,8 @@ pub(crate) use send::{get_orchard_migration_immediate_plan, get_orchard_migratio
 // Internal-only re-export for `sync_engine::run_sync_impl`'s
 // auto-resubmit pass. Not part of the `wallet::sync` public surface.
 pub(crate) use send::migration_anchor_retention_required;
-pub(crate) use send::resubmit_pending_transactions;
+#[cfg(test)]
+pub(super) use send::ConservativeZip317FeeRule;
 #[allow(unused_imports)] // names reachable via `crate::wallet::sync::*`; pre-refactor surface
 pub(crate) use send::ProposalResult;
 #[allow(unused_imports)] // names reachable via `crate::wallet::sync::*`; pre-refactor surface
@@ -116,6 +118,7 @@ pub(crate) use send::ShieldTransparentPcztResult;
 pub(crate) use send::ShieldTransparentResult;
 #[allow(unused_imports)] // names reachable via `crate::wallet::sync::*`; pre-refactor surface
 pub(crate) use send::ShieldTransparentStatus;
+pub(crate) use send::{resubmit_pending_transactions, resubmit_transactions};
 #[allow(unused_imports)] // names reachable via `crate::wallet::sync::*`; pre-refactor surface
 pub(crate) use send::{KeystoneMigrationMessage, KeystoneMigrationSigningRequest};
 pub use transactions::{

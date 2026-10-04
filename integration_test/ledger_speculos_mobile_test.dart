@@ -256,7 +256,9 @@ Future<void> _runMobileImportScenario(WidgetTester tester) async {
     find.byKey(const ValueKey('mobile_welcome_get_started')),
     findsOneWidget,
   );
-  await tester.tap(find.byKey(const ValueKey('mobile_welcome_get_started')));
+  await tester.tap(find.byKey(const ValueKey('mobile_welcome_import')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const ValueKey('mobile_import_hardware')));
   await tester.pumpAndSettle();
   final ledgerEntry = find.byKey(const ValueKey('mobile_welcome_ledger'));
   expect(ledgerEntry, findsOneWidget);

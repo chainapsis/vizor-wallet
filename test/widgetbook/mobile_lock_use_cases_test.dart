@@ -1,8 +1,8 @@
 @Tags(['mobile'])
 library;
 
-import 'dart:io';
-import 'dart:typed_data';
+import 'dart:ui' as ui;
+import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
 
 import 'package:flutter/material.dart' show Icons, MaterialApp;
 import 'package:flutter/services.dart' show FontLoader, rootBundle;
@@ -23,6 +23,48 @@ import 'package:zcash_wallet/widgetbook/screen_use_cases.dart';
 
 void main() {
   setUpAll(_loadAppFonts);
+
+  testWidgets('forgot passcode actions remain reachable with enlarged text', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(375, 667);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 1.3;
+    addTearDown(tester.view.reset);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          paymentLinkClaimsInFlightProvider.overrideWith((ref) async => 1),
+        ],
+        child: MaterialApp(
+          builder: (context, child) =>
+              AppTheme(data: AppThemeData.light, child: child!),
+          home: Builder(
+            builder: (context) => AppButton(
+              onPressed: () => showAppMobileSheet<bool>(
+                context: context,
+                builder: (_) => const ForgotPasscodeSheet(),
+              ),
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    final scroll = find.descendant(
+      of: find.byType(ForgotPasscodeSheet),
+      matching: find.byType(SingleChildScrollView),
+    );
+    expect(scroll, findsOneWidget);
+    await tester.drag(scroll, const Offset(0, -600));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.text('Cancel').hitTestable(), findsOneWidget);
+  });
 
   testWidgets('mobile lock use cases render method-specific variants', (
     tester,
@@ -171,7 +213,7 @@ void main() {
             widget is Image &&
             widget.image is AssetImage &&
             (widget.image as AssetImage).assetName ==
-                'assets/illustrations/biometrics_fingerprint_knight.png',
+                'assets/illustrations/biometrics_fingerprint_knight.webp',
       ),
       findsOneWidget,
     );
@@ -249,11 +291,16 @@ void main() {
   testWidgets('keeps desktop and mobile auth backgrounds separate', (
     tester,
   ) async {
-    expect(_pngSize(onboardingAuthBackgroundAsset), const Size(1344, 720));
-    expect(
-      _pngSize(mobileBiometricSignInBackgroundAsset),
-      const Size(392, 720),
-    );
+    await tester.runAsync(() async {
+      expect(
+        await _imageSize(onboardingAuthBackgroundAsset),
+        const Size(1344, 720),
+      );
+      expect(
+        await _imageSize(mobileBiometricSignInBackgroundAsset),
+        const Size(392, 720),
+      );
+    });
   });
 
   testWidgets('forgot-passcode sheet warns about an in-flight Gift Card', (
@@ -261,8 +308,8 @@ void main() {
   ) async {
     await _pumpMobileLockUseCase(
       tester,
-      buildMobileForgotPasscodeSheetUseCase,
-      claimsInFlight: 1,
+      (context) =>
+          buildMobileForgotPasscodeSheetUseCase(context, claimsInFlight: 1),
     );
 
     // Warned, never blocked: this is the only way back into a wallet whose
@@ -425,13 +472,21 @@ void main() {
   });
 }
 
-Size _pngSize(String assetPath) {
-  final bytes = File(assetPath).readAsBytesSync();
-  final data = ByteData.sublistView(Uint8List.fromList(bytes));
-  return Size(
-    data.getUint32(16, Endian.big).toDouble(),
-    data.getUint32(20, Endian.big).toDouble(),
+Future<Size> _imageSize(String assetPath) async {
+  final data = await rootBundle.load(assetPath);
+  final buffer = await ui.ImmutableBuffer.fromUint8List(
+    data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
   );
+  try {
+    final descriptor = await ui.ImageDescriptor.encoded(buffer);
+    try {
+      return Size(descriptor.width.toDouble(), descriptor.height.toDouble());
+    } finally {
+      descriptor.dispose();
+    }
+  } finally {
+    buffer.dispose();
+  }
 }
 
 Future<void> _pumpMobileLockUseCase(

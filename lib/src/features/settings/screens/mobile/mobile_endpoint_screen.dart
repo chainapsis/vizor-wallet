@@ -356,7 +356,7 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
             borderRadius: BorderRadius.circular(AppRadii.large),
             border: Border.all(color: colors.border.subtleOpacity, width: 1.5),
             image: const DecorationImage(
-              image: AssetImage('assets/illustrations/endpoint_custom_bg.png'),
+              image: AssetImage('assets/illustrations/endpoint_custom_bg.webp'),
               fit: BoxFit.cover,
               alignment: Alignment.bottomCenter,
             ),
