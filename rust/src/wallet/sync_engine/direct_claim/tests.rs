@@ -203,6 +203,91 @@ fn funding_block_builds_a_real_claim_quote_while_historical_gaps_remain_unscanne
             Some("Gift from the funding output")
         );
     }
+    // Reach birthday-mode network recovery with no cached memo. Model a
+    // concurrent successful memo commit followed by a failed public request:
+    // the optional pass error must not discard the already-authenticated text.
+    let cached_memo: Vec<u8> = conn
+        .query_row(
+            "SELECT memo FROM ironwood_received_notes WHERE value > 0",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    conn.execute(
+        "UPDATE ironwood_received_notes SET memo = NULL WHERE value > 0",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT OR REPLACE INTO tx_retrieval_queue (txid, query_type) VALUES (?1, 1)",
+        rusqlite::params![id.as_ref()],
+    )
+    .unwrap();
+    rt.block_on(async {
+        use bytes::Bytes;
+        use http_body_util::Full;
+        use hyper::service::service_fn;
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        };
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let server_calls = calls.clone();
+        let db_path = path.to_owned();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let service = service_fn(move |request: hyper::Request<hyper::body::Incoming>| {
+                let db_path = db_path.clone();
+                let memo = cached_memo.clone();
+                let calls = server_calls.clone();
+                async move {
+                    assert!(request.uri().path().ends_with("/GetTransaction"));
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    let db = rusqlite::Connection::open(db_path).unwrap();
+                    db.execute(
+                        "UPDATE ironwood_received_notes SET memo = ?1 WHERE value > 0",
+                        [memo],
+                    )
+                    .unwrap();
+                    Ok::<_, std::convert::Infallible>(
+                        hyper::Response::builder()
+                            .header("content-type", "application/grpc")
+                            .header("grpc-status", "14")
+                            .header("grpc-message", "temporary failure")
+                            .body(Full::new(Bytes::new()))
+                            .unwrap(),
+                    )
+                }
+            });
+            hyper::server::conn::http2::Builder::new(hyper_util::rt::TokioExecutor::new())
+                .serve_connection(hyper_util::rt::TokioIo::new(stream), service)
+                .await
+                .unwrap();
+        });
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let result = super::super::gift_message::read(
+            path,
+            &format!("http://{address}"),
+            network,
+            &account,
+            50_010_000,
+            None,
+            None,
+        )
+        .await;
+        server.abort();
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "uncached birthday read must reach the payload transport"
+        );
+        assert_eq!(
+            result.unwrap().as_deref(),
+            Some("Gift from the funding output")
+        );
+    });
     conn.execute_batch(
         "CREATE TABLE vizor_gift_direct_claim (id INTEGER PRIMARY KEY,
         funding_txid TEXT, funding_height INTEGER, tip_height INTEGER);",

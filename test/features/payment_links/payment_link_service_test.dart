@@ -1575,6 +1575,7 @@ void main() {
       'retained receipt recovery refreshes a persisted provisional date',
       () async {
         api.poolFixture = true;
+        api.fundingMessage = 'Recovered after submission';
         api.localClaimTxids = ['pending'];
         final link = _link().withResolvedMetadata(isCreatedAtProvisional: true);
         api.claimHistory = [
@@ -1616,6 +1617,18 @@ void main() {
         expect(
           after.createdAt,
           DateTime.fromMillisecondsSinceEpoch(1800000000000, isUtc: true),
+        );
+        expect(after.message, 'Recovered after submission');
+        expect(api.fundingMessageLookups, 1);
+        api.fundingMessage = 'Must not overwrite';
+        await service.inspectReceivedLinkClaims(
+          await store.load(),
+          allowResubmit: false,
+        );
+        expect(api.fundingMessageLookups, 1);
+        expect(
+          (await store.load()).single.message,
+          'Recovered after submission',
         );
         expect(after.isCreatedAtProvisional, isFalse);
         expect(after.claimLink!.isCreatedAtProvisional, isFalse);

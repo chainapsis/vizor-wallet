@@ -816,6 +816,49 @@ void main() {
       expect(container.read(enhancePirProvider), isFalse);
     },
   );
+  for (final fails in [false, true]) {
+    test(
+      'private toggle drains gift payload reads and closes admission, failure=$fails',
+      () async {
+        final sync = _RestartSync();
+        final store = _Store();
+        final container = setup(store, sync);
+        addTearDown(container.dispose);
+        await container.read(syncProvider.future);
+        final pending = Completer<String?>();
+        final read = sync.runRecoveryQuery(() => pending.future);
+        final readExpectation = fails
+            ? expectLater(read, throwsStateError)
+            : expectLater(read, completion('Gift message'));
+        final toggle = container.read(enhancePirProvider.notifier).set(true);
+        await Future<void>.delayed(Duration.zero);
+        expect(api.values, isEmpty);
+        expect(store.value, isNull);
+        var entered = false;
+        await expectLater(
+          sync.runRecoveryQuery(() async {
+            entered = true;
+            return null;
+          }),
+          throwsStateError,
+        );
+        expect(entered, isFalse);
+        if (fails) {
+          pending.completeError(StateError('optional lookup failed'));
+        } else {
+          pending.complete('Gift message');
+        }
+        await readExpectation;
+        await toggle;
+        expect(api.values, [true]);
+        expect(
+          await sync.runRecoveryQuery(() async => 'New policy'),
+          'New policy',
+        );
+      },
+    );
+  }
+
   test('quiescence timeout returns even if native never settles', () async {
     final source = Completer<void>();
     var reported = false;

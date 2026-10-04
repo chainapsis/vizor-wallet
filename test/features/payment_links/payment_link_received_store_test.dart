@@ -7,6 +7,45 @@ import 'package:zcash_wallet/src/features/payment_links/services/payment_link_li
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 
 void main() {
+  test('late funding message fills only missing display data', () async {
+    final storage = _FakePaymentLinkReceivedStorage();
+    final store = PaymentLinkReceivedStore(storage);
+    final link = _link(message: null);
+    await store.saveReady(link);
+    await store.markClaimStarted(
+      address: link.address,
+      destinationAccountUuid: 'receiver',
+    );
+    await store.markReceiving(
+      address: link.address,
+      destinationAccountUuid: 'receiver',
+      claimTxids: 'pending',
+    );
+    final before = (await store.load()).single;
+    await store.fillFundingMessage(
+      address: link.address,
+      message: '  From Alice  ',
+    );
+    final after = (await PaymentLinkReceivedStore(storage).load()).single;
+    expect(after.message, 'From Alice');
+    expect(after.status, before.status);
+    expect(after.updatedAt, before.updatedAt);
+    expect(after.claimSubmittedAt, before.claimSubmittedAt);
+    expect(after.claimTxids, before.claimTxids);
+    expect(after.claimLink!.hasSameCanonicalPayload(link), isTrue);
+    await store.fillFundingMessage(
+      address: link.address,
+      message: 'Another transaction',
+    );
+    expect((await store.load()).single.message, 'From Alice');
+    await store.remove(link.address);
+    await store.fillFundingMessage(
+      address: link.address,
+      message: 'Must not recreate',
+    );
+    expect(await store.load(), isEmpty);
+  });
+
   test(
     'funding message survives intake and receipt without changing link identity',
     () async {

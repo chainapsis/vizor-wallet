@@ -1897,25 +1897,11 @@ class PaymentLinkService
       log('PaymentLinkClaim: independent check completed');
       String? fundingMessage = existingRecord?.message;
       if (link.presentation?.message == null && fundingMessage == null) {
-        try {
-          final message = await rust_sync.getPaymentLinkFundingMessage(
-            dbPath: tempWallet.dbPath,
-            lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-            network: endpoint.networkName,
-            accountUuid: importedAccountUuid,
-            expectedFundingAmount: paymentLinkFundingAmountZatoshi(
-              link.amountZatoshi,
-            ),
-            fundingTxid: link.fundingTxid,
-            fundingHeight: link.fundingHeight,
-          );
-          fundingMessage = PaymentLinkPresentation.fromPayload({
-            'message': message,
-          })?.message;
-        } catch (_) {
-          // Display metadata must not turn a valid claim into a funding failure.
-          log('PaymentLinkClaim: funding message unavailable');
-        }
+        fundingMessage = await _claimWallet.readFundingMessage(
+          link: link,
+          dbPath: tempWallet.dbPath,
+          accountUuid: importedAccountUuid,
+        );
       }
       // Before wallet setup, use the card's own receiver only for the preview
       // estimate. This address is never used as a submitted claim destination.

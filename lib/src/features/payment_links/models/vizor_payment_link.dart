@@ -171,6 +171,7 @@ class VizorPaymentLink {
     this.fundingTxid,
     this.isCreatedAtProvisional = false,
   }) : _address = address,
+       _messageInFundingMemo = true,
        _createdAt = createdAt {
     _rejectMultipleFundingLocators(fundingHeight, fundingTxid);
   }
@@ -187,7 +188,9 @@ class VizorPaymentLink {
     this.fundingHeight,
     this.fundingTxid,
     this.isCreatedAtProvisional = false,
+    bool messageInFundingMemo = false,
   }) : _address = address,
+       _messageInFundingMemo = messageInFundingMemo,
        _createdAt = createdAt {
     _rejectMultipleFundingLocators(fundingHeight, fundingTxid);
   }
@@ -200,6 +203,9 @@ class VizorPaymentLink {
 
   final String network;
   final String? _address;
+  // New funding paths write the message into the transaction. Imported URL
+  // messages must remain in their share payload until that is known to be true.
+  final bool _messageInFundingMemo;
   final BigInt amountZatoshi;
   final String mnemonic;
   final int birthdayHeight;
@@ -269,6 +275,7 @@ class VizorPaymentLink {
       isCreatedAtProvisional:
           isCreatedAtProvisional ?? this.isCreatedAtProvisional,
       presentation: presentation,
+      messageInFundingMemo: _messageInFundingMemo,
       fundingHeight: fundingHeight,
       fundingTxid: fundingTxid,
     );
@@ -320,7 +327,7 @@ class VizorPaymentLink {
   /// Stable local serialization, independent of the selected share writer.
   /// Resolved address, time, and submission evidence live in the enclosing record.
   Uri toRecoveryUri() => _uri(
-    '$_fragmentPrefix${_encodedPayload()}',
+    '$_fragmentPrefix${_encodedPayload(includeMessageSource: true)}',
     path: VizorDeepLink.paymentLinkPath,
   );
 
@@ -329,7 +336,9 @@ class VizorPaymentLink {
   Uri toShareUri() {
     final words = mnemonic.trim().split(RegExp(r'\s+')).length;
     if (locatorKind == PaymentLinkLocatorKind.birthday &&
-        (words != 12 || network.trim() != 'main')) {
+        (words != 12 ||
+            network.trim() != 'main' ||
+            (presentation?.message != null && !_messageInFundingMemo))) {
       return _uri(
         'v3=${_CompactPaymentLinkCodec.encode(this)}',
         path: VizorDeepLink.paymentLinkPath,
@@ -394,7 +403,7 @@ class VizorPaymentLink {
     return uri;
   }
 
-  String _encodedPayload() {
+  String _encodedPayload({bool includeMessageSource = false}) {
     final normalizedNetwork = network.trim();
     if (!supportsNetwork(normalizedNetwork)) {
       throw const FormatException(
@@ -415,6 +424,13 @@ class VizorPaymentLink {
     final presentationPayload = presentation?.toPayload();
     if (presentationPayload != null) {
       payload['presentation'] = presentationPayload;
+      if (includeMessageSource &&
+          presentationPayload['message'] != null &&
+          _messageInFundingMemo &&
+          mnemonic.trim().split(RegExp(r'\s+')).length == 12 &&
+          network.trim() == 'main') {
+        payload['messageInFundingMemo'] = true;
+      }
     }
     return base64UrlEncode(utf8.encode(jsonEncode(payload)));
   }
@@ -534,6 +550,7 @@ class VizorPaymentLink {
       label: label,
       createdAt: createdAt,
       presentation: presentation,
+      messageInFundingMemo: payload['messageInFundingMemo'] == true,
       fundingHeight: fundingHeight,
       fundingTxid: fundingTxid,
     );

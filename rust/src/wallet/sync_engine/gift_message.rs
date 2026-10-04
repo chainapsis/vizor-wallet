@@ -136,7 +136,7 @@ pub(crate) async fn read(
     // Claim scanning omits enhancement. Reuse its existing routing authority
     // here, including PIR note authentication and mixed-pool routing, rather
     // than treating the install preference as a reason to omit every memo.
-    tokio::time::timeout(Duration::from_secs(5), async {
+    let recovery = tokio::time::timeout(Duration::from_secs(5), async {
         let mut enhancement = EnhancementSession::new(network, path);
         let mut db = open_db(path, network).map_err(|e| e.to_string())?;
         let mut client = open_lwd_channel(url).await.map_err(|e| e.to_string())?;
@@ -145,8 +145,15 @@ pub(crate) async fn read(
             .await
             .map_err(|e| e.to_string())
     })
-    .await
-    .map_err(|_| "Gift message lookup timed out")??;
+    .await;
+    match recovery {
+        Ok(Ok(_)) => {}
+        Ok(Err(error)) => log::info!("Gift message recovery deferred: {error}"),
+        Err(_) => log::info!("Gift message recovery timed out"),
+    }
+    // The bound memo may have been committed before later work failed.
+    // Always re-read it after optional network recovery.
+
     let conn = open_wallet_raw_conn_with_timeout(path, READ_DB_BUSY_TIMEOUT)?;
     let updated = candidate(
         &conn,

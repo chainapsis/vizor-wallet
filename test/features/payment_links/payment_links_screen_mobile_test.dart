@@ -22,6 +22,9 @@ import 'package:zcash_wallet/src/features/payment_links/services/payment_link_se
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_selector.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_selector_rail.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_flip.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_action.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_copy.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_qr_share_card.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 
@@ -1536,6 +1539,43 @@ void main() {
     },
   );
 
+  testWidgets('memo-only gift keeps its message flip during submission', (
+    tester,
+  ) async {
+    final claim = Completer<PaymentLinkClaimResult>();
+    final operations = FakePaymentLinkOperations(
+      claimCompleter: claim,
+      fundingMessage: 'From the funding memo',
+    );
+    final link = VizorPaymentLink(
+      network: incomingLink.network,
+      address: incomingLink.address,
+      amountZatoshi: incomingLink.amountZatoshi,
+      mnemonic: incomingLink.mnemonic,
+      birthdayHeight: incomingLink.birthdayHeight,
+      label: incomingLink.label,
+      createdAt: incomingLink.createdAt,
+    );
+    await _openReceivedCard(tester, operations, link: link);
+    expect(find.byType(PaymentLinkCardFlip), findsOneWidget);
+    await _claimGift(tester);
+    expect(find.text('Claiming…'), findsOneWidget);
+    expect(find.byType(PaymentLinkCardFlip), findsOneWidget);
+    final reveal = find.byWidgetPredicate(
+      (widget) =>
+          widget is PaymentLinkAction &&
+          widget.semanticLabel == kPaymentLinkRevealMessageSemanticLabel,
+    );
+    expect(reveal, findsOneWidget);
+    await tester.tap(reveal);
+    await tester.pump();
+    await tester.pump(PaymentLinkCardFlip.settleDuration);
+    expect(find.text('From the funding memo'), findsOneWidget);
+
+    claim.complete(broadcastedClaimResult);
+    await _pumpClaimFrames(tester);
+  });
+
   testWidgets('mobile home lists a funded card and copies its link', (
     tester,
   ) async {
@@ -1764,6 +1804,7 @@ Future<GoRouter> _openReceivedCard(
   WidgetTester tester,
   FakePaymentLinkOperations operations, {
   SwitchablePaymentLinkAccountNotifier? accountNotifier,
+  VizorPaymentLink? link,
 }) async {
   await pumpPaymentLinksScreen(
     tester,
@@ -1778,7 +1819,7 @@ Future<GoRouter> _openReceivedCard(
   );
   container
       .read(paymentLinkIntakeProvider.notifier)
-      .receive(incomingLink.toUri().toString());
+      .receive((link ?? incomingLink).toUri().toString());
   await tester.pumpAndSettle();
   return GoRouter.of(
     tester.element(find.byKey(const ValueKey('payment_links_mobile_screen'))),

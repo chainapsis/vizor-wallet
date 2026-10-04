@@ -271,6 +271,38 @@ class PaymentLinkClaimWallet {
         );
   }
 
+  /// Display metadata is optional and follows the current endpoint after sync
+  /// failover. Settings changes drain this read before changing query policy.
+  Future<String?> readFundingMessage({
+    required VizorPaymentLink link,
+    required String dbPath,
+    required String accountUuid,
+  }) async {
+    try {
+      return await _ref.read(syncProvider.notifier).runRecoveryQuery(() async {
+        final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
+        if (endpoint.networkName != link.network) return null;
+        final message = await rust_sync.getPaymentLinkFundingMessage(
+          dbPath: dbPath,
+          lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+          network: link.network,
+          accountUuid: accountUuid,
+          expectedFundingAmount: paymentLinkFundingAmountZatoshi(
+            link.amountZatoshi,
+          ),
+          fundingTxid: link.fundingTxid,
+          fundingHeight: link.fundingHeight,
+        );
+        return PaymentLinkPresentation.fromPayload({
+          'message': message,
+        })?.message;
+      });
+    } catch (_) {
+      log('PaymentLinkClaim: funding message unavailable');
+      return null;
+    }
+  }
+
   Future<PaymentLinkAvailability?> syncRetained({
     required PaymentLinkReceivedRecord record,
     required String network,
@@ -312,6 +344,18 @@ class PaymentLinkClaimWallet {
         'Gift Card identity; leaving it recoverable from the stored link',
       );
       return null;
+    }
+    if (record.message == null) {
+      final message = await readFundingMessage(
+        link: link,
+        dbPath: tempWallet.dbPath,
+        accountUuid: accounts.single.uuid,
+      );
+      if (message != null) {
+        await _ref
+            .read(paymentLinkReceivedStoreProvider)
+            .fillFundingMessage(address: record.address, message: message);
+      }
     }
     final transactions = await rust_sync.getTransactionHistory(
       dbPath: tempWallet.dbPath,

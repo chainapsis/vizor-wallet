@@ -186,6 +186,7 @@ class PaymentLinkReceivedRecord {
       status == PaymentLinkReceivedStatus.submitting;
 
   PaymentLinkReceivedRecord copyWith({
+    String? message,
     Object? fiatSnapshot = _fieldNotProvided,
     PaymentLinkReceivedStatus? status,
     Object? claimLink = _fieldNotProvided,
@@ -210,7 +211,7 @@ class PaymentLinkReceivedRecord {
       isCreatedAtProvisional:
           isCreatedAtProvisional ?? this.isCreatedAtProvisional,
       artworkId: artworkId,
-      message: message,
+      message: message ?? this.message,
       fiatSnapshot: identical(fiatSnapshot, _fieldNotProvided)
           ? this.fiatSnapshot
           : fiatSnapshot as PaymentLinkFiatSnapshot?,
@@ -375,6 +376,24 @@ class PaymentLinkReceivedStore {
       ),
     );
     await _writeRecords(_replaceByAddress(records, updated));
+  });
+
+  /// Fill missing display metadata without overwriting a legacy URL message,
+  /// changing claim state, or recreating a removed Card.
+  Future<void> fillFundingMessage({
+    required String address,
+    required String message,
+  }) => _runExclusive(() async {
+    final normalized = PaymentLinkPresentation.fromPayload({
+      'message': message,
+    })?.message;
+    if (normalized == null) return;
+    final records = await _loadUnlocked();
+    final existing = _findByAddress(records, address);
+    if (existing == null || existing.message != null) return;
+    await _writeRecords(
+      _replaceByAddress(records, existing.copyWith(message: normalized)),
+    );
   });
 
   Future<PaymentLinkReceivedRecord> saveReady(

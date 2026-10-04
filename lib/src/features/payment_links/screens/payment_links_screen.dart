@@ -692,13 +692,27 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     _outcomeAvailability = availability;
   }
 
-  void _rememberReceivedLink(VizorPaymentLink link) {
+  void _rememberReceivedLink(VizorPaymentLink link, {String? fundingMessage}) {
     final existingIndex = _receivedCards.indexWhere(
       (record) => record.address == link.address,
     );
-    if (existingIndex >= 0) return;
+    if (existingIndex >= 0) {
+      if (_receivedCards[existingIndex].message == null &&
+          fundingMessage != null) {
+        _receivedCards = [
+          for (final record in _receivedCards)
+            if (record.address == link.address)
+              record.copyWith(message: fundingMessage)
+            else
+              record,
+        ];
+      }
+      return;
+    }
     _receivedCards = [
-      PaymentLinkReceivedRecord.fromLink(link),
+      PaymentLinkReceivedRecord.fromLink(
+        link,
+      ).copyWith(message: link.presentation?.message ?? fundingMessage),
       ..._receivedCards,
     ];
   }
@@ -2221,7 +2235,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
         .submit(session);
     setState(() {
       _receivedShowsBack = false;
-      _rememberReceivedLink(link);
+      _rememberReceivedLink(link, fundingMessage: session.fundingMessage);
       _setReceivedCardStatus(link.address, PaymentLinkReceivedStatus.receiving);
       _activeCardsTab = PaymentLinkCardsTab.received;
       // The coordinator owns the session once submission starts. Keep only

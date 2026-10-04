@@ -805,8 +805,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   // it cannot restart sync: their snapshots describe the deleted wallet.
   int _walletResetEpoch = 0;
   bool _pendingMutationRestartPolling = false;
-  int _recoveryStatusReadCount = 0;
-  Completer<void>? _recoveryStatusReadsDrained;
+  int _recoveryReadCount = 0;
+  Completer<void>? _recoveryReadsDrained;
   bool _isInForeground = true;
   int _foregroundEpoch = 0;
   int _activeSyncForegroundEpoch = 0;
@@ -1773,7 +1773,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   bool needsPauseForWalletMutation() =>
       _walletMutationSyncPauseSnapshot().hadWorkToPause ||
-      _recoveryStatusReadCount > 0;
+      _recoveryReadCount > 0;
 
   void clearCachedWalletDbPath() {
     _cachedDbPath = null;
@@ -1785,31 +1785,41 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   Future<rust_sync.EnhanceRecoveryStatus?> recoveryStatus() async {
     if (_requiresUnlock ||
         _getActiveAccountUuid() == null ||
-        _walletMutationPauseCount > 0) {
+        _walletMutationPauseCount > 0 ||
+        _recoverySettingTransition) {
       return null;
     }
-    // Register before the first asynchronous step so account deletion/reset can
-    // close admission and drain every reader before touching the wallet DB.
-    _recoveryStatusReadCount++;
-    try {
+    return runRecoveryQuery(() async {
       final dbPath = await _getDbPath();
       if (_walletMutationPauseCount > 0) return null;
-      return await rust_sync.getEnhanceRecoveryStatus(
+      return rust_sync.getEnhanceRecoveryStatus(
         dbPath: dbPath,
         network: _endpointConfig.networkName,
       );
+    });
+  }
+
+  /// Includes temporary gift-wallet payload reads in setting and mutation
+  /// quiescence. Register before the first asynchronous step.
+  Future<T> runRecoveryQuery<T>(Future<T> Function() action) async {
+    if (_recoverySettingTransition || _walletMutationPauseCount > 0) {
+      throw StateError('Recovery queries are paused.');
+    }
+    _recoveryReadCount++;
+    try {
+      return await action();
     } finally {
-      _recoveryStatusReadCount--;
-      if (_recoveryStatusReadCount == 0) {
-        _recoveryStatusReadsDrained?.complete();
-        _recoveryStatusReadsDrained = null;
+      _recoveryReadCount--;
+      if (_recoveryReadCount == 0) {
+        _recoveryReadsDrained?.complete();
+        _recoveryReadsDrained = null;
       }
     }
   }
 
-  Future<void> _drainRecoveryStatusReads() {
-    if (_recoveryStatusReadCount == 0) return Future.value();
-    return (_recoveryStatusReadsDrained ??= Completer<void>()).future;
+  Future<void> _drainRecoveryReads() {
+    if (_recoveryReadCount == 0) return Future.value();
+    return (_recoveryReadsDrained ??= Completer<void>()).future;
   }
 
   /// Exit a pause without resuming. Destructive callers use this when the
@@ -1947,7 +1957,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         }
       }
 
-      await _drainRecoveryStatusReads().timeout(_recoveryTransitionTimeout);
+      await _drainRecoveryReads().timeout(_recoveryTransitionTimeout);
       return pause;
     } catch (_) {
       resumeAfterWalletMutation(pause);

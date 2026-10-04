@@ -128,7 +128,14 @@ void main() {
     });
 
     test('preserves known display TLVs and omits unknown artwork on write', () {
-      final source = card(fundingHeight: 4000000, presentation: decorated);
+      final source = card(
+        fundingHeight: 4000000,
+        presentation: const PaymentLinkPresentation(
+          artworkId: 'knightMagic',
+          message: _message,
+          fiatSnapshot: PaymentLinkFiatSnapshot(amount: 11.1747),
+        ),
+      );
       final restored = VizorPaymentLink.parse(wire(source));
       expect(restored.presentation!.artworkId, 'knightMagic');
       expect(restored.presentation!.fiatSnapshot!.amount, 11.1747);
@@ -229,6 +236,49 @@ void main() {
         throwsFormatException,
       );
     });
+
+    test(
+      'resharing legacy URL messages preserves them across local recovery',
+      () {
+        final original = withJson([
+          'main',
+          base64UrlEncode(List<int>.filled(16, 0)).replaceAll('=', ''),
+          3483141,
+          '1000000',
+          null,
+          null,
+          'Legacy URL message',
+        ]);
+        final imported = VizorPaymentLink.parse(original);
+        for (final link in [
+          imported,
+          VizorPaymentLink.parse(imported.toRecoveryUri().toString()),
+        ]) {
+          final shared = link.toShareUri();
+          expect(shared.fragment, startsWith('v3='));
+          expect(
+            VizorPaymentLink.parse(shared.toString()).presentation?.message,
+            'Legacy URL message',
+          );
+        }
+        final fresh = card(
+          presentation: const PaymentLinkPresentation(
+            message: 'New funding memo',
+          ),
+        );
+        final recovered = VizorPaymentLink.parse(
+          fresh.toRecoveryUri().toString(),
+        );
+        expect(recovered.hasSameCanonicalPayload(fresh), isTrue);
+        expect(recovered.toShareUri().fragment, startsWith('v4='));
+        expect(
+          VizorPaymentLink.parse(
+            recovered.toShareUri().toString(),
+          ).presentation?.message,
+          isNull,
+        );
+      },
+    );
 
     test('keeps 24-word legacy cards on v3', () {
       final legacy = card(entropyBytes: 32, presentation: decorated);
@@ -331,7 +381,7 @@ void main() {
     }
   });
 
-  test('rounds shared USD snapshots to cents without changing recovery', () {
+  test('rounds v3 USD snapshots to cents without changing recovery', () {
     for (final entry in <double, double>{
       0: 0,
       0.0049: 0,
@@ -343,6 +393,7 @@ void main() {
       1e308: 1e308,
     }.entries) {
       final source = card(
+        entropyBytes: 32,
         presentation: PaymentLinkPresentation(
           fiatSnapshot: PaymentLinkFiatSnapshot(amount: entry.key),
         ),
@@ -369,7 +420,7 @@ void main() {
 
   test('decodes existing full-precision v1, v2 and v3 USD snapshots', () {
     for (final entry in {16: _legacyGolden12, 32: _legacyGolden24}.entries) {
-      final source = card(
+      final original = card(
         entropyBytes: entry.key,
         presentation: const PaymentLinkPresentation(
           artworkId: 'knightMagic',
@@ -377,6 +428,16 @@ void main() {
           fiatSnapshot: PaymentLinkFiatSnapshot(amount: 11.1747),
         ),
       );
+      final source =
+          VizorPaymentLink.parse(
+            original
+                .toShareUri()
+                .replace(fragment: 'v3=${entry.value}')
+                .toString(),
+          ).withResolvedMetadata(
+            address: original.address,
+            createdAt: original.createdAt,
+          );
       for (final uri in [
         legacyPaymentLinkUri(source),
         source.toRecoveryUri(),

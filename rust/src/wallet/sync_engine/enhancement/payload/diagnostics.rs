@@ -3,7 +3,11 @@
 //! This process-global state is for UI reporting and request pacing only. It is
 //! never authoritative for durable routing, persistence, or privacy decisions.
 
-use std::time::{Duration, Instant};
+use std::{
+    collections::HashMap,
+    sync::{LazyLock, Mutex},
+    time::{Duration, Instant},
+};
 
 const ROUTING_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
 
@@ -31,33 +35,21 @@ impl RecoveryPhase {
 
 #[derive(Default)]
 struct ServiceState {
-    wallet_db_path: String,
     phase: RecoveryPhase,
     last_routing_refresh: Option<Instant>,
 }
 
-static SERVICE: std::sync::Mutex<Option<ServiceState>> = std::sync::Mutex::new(None);
+static SERVICE: LazyLock<Mutex<HashMap<String, ServiceState>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 pub(in crate::wallet::sync_engine) fn begin_session(wallet_db_path: &str) {
     let mut state = SERVICE.lock().unwrap_or_else(|error| error.into_inner());
-    if state
-        .as_ref()
-        .is_none_or(|state| state.wallet_db_path != wallet_db_path)
-    {
-        *state = Some(ServiceState {
-            wallet_db_path: wallet_db_path.into(),
-            ..Default::default()
-        });
-    }
-    state.as_mut().expect("initialized above").phase = RecoveryPhase::Idle;
+    state.entry(wallet_db_path.into()).or_default().phase = RecoveryPhase::Idle;
 }
 
 pub(super) fn set_phase(wallet_db_path: &str, phase: RecoveryPhase) {
     let mut state = SERVICE.lock().unwrap_or_else(|error| error.into_inner());
-    if let Some(state) = state
-        .as_mut()
-        .filter(|state| state.wallet_db_path == wallet_db_path)
-    {
+    if let Some(state) = state.get_mut(wallet_db_path) {
         state.phase = phase;
     }
 }
@@ -66,8 +58,7 @@ pub(super) fn routing_refresh_due(wallet_db_path: &str) -> bool {
     SERVICE
         .lock()
         .unwrap_or_else(|error| error.into_inner())
-        .as_ref()
-        .filter(|state| state.wallet_db_path == wallet_db_path)
+        .get(wallet_db_path)
         .and_then(|state| state.last_routing_refresh)
         .is_none_or(|refresh| refresh.elapsed() >= ROUTING_REFRESH_INTERVAL)
 }
@@ -76,8 +67,7 @@ pub(super) fn mark_routing_refresh(wallet_db_path: &str) {
     if let Some(state) = SERVICE
         .lock()
         .unwrap_or_else(|error| error.into_inner())
-        .as_mut()
-        .filter(|state| state.wallet_db_path == wallet_db_path)
+        .get_mut(wallet_db_path)
     {
         state.last_routing_refresh = Some(Instant::now());
     }
@@ -87,8 +77,33 @@ pub(in crate::wallet::sync_engine) fn phase(wallet_db_path: &str) -> String {
     SERVICE
         .lock()
         .unwrap_or_else(|error| error.into_inner())
-        .as_ref()
-        .filter(|state| state.wallet_db_path == wallet_db_path)
+        .get(wallet_db_path)
         .map(|state| state.phase.as_str().to_owned())
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn temporary_wallets_preserve_main_wallet_phase_and_refresh_budget() {
+        let main = format!("main-{}", uuid::Uuid::new_v4());
+        let gift = format!("gift-{}", uuid::Uuid::new_v4());
+        begin_session(&main);
+        set_phase(&main, RecoveryPhase::WaitingForSnapshot);
+        mark_routing_refresh(&main);
+        begin_session(&gift);
+        set_phase(&gift, RecoveryPhase::Recovering);
+        assert_eq!(phase(&main), "waiting_for_snapshot");
+        assert!(!routing_refresh_due(&main));
+        assert!(routing_refresh_due(&gift));
+        mark_routing_refresh(&gift);
+        begin_session(&gift);
+        assert!(!routing_refresh_due(&gift));
+        assert_eq!(phase(&main), "waiting_for_snapshot");
+        let mut states = SERVICE.lock().unwrap();
+        states.remove(&main);
+        states.remove(&gift);
+    }
 }

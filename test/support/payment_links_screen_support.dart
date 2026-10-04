@@ -486,6 +486,7 @@ class FakePaymentLinkOperations implements PaymentLinkOperations {
     this.fundingBroadcastAcceptedOnCreate = true,
     this.fundingConfirmationCount = kPaymentLinkShareConfirmationTarget,
     this.claimable = true,
+    this.fundingMessage,
     this.waitingForFundingConfirmations = false,
     this.longSyncConfirmationRequired = false,
   }) : records = List.of(records),
@@ -510,6 +511,7 @@ class FakePaymentLinkOperations implements PaymentLinkOperations {
   int fundingConfirmationCount;
   bool expireFundingOnInspect = false;
   bool claimable;
+  final String? fundingMessage;
   bool waitingForFundingConfirmations;
   final bool longSyncConfirmationRequired;
   final List<PaymentLinkRecoveryRecord> records;
@@ -768,6 +770,7 @@ class FakePaymentLinkOperations implements PaymentLinkOperations {
     }
     return PaymentLinkClaimSession(
       link: link,
+      fundingMessage: fundingMessage,
       destinationAddress: destination?.activeAddress ?? 'u1receiver',
       destinationAccountUuid: destination?.activeAccountUuid ?? 'account-1',
       directory: Directory('/tmp/vizor-payment-link-test'),
