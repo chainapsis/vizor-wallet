@@ -970,7 +970,8 @@ fn read_history_base_by_txid(
             vt.txid,
             COALESCE(tx.id_tx, -1) AS transaction_id,
             vt.mined_height,
-            vt.expired_unmined,
+            -- NULL when no scanned block or expiry height makes expiry comparable: pending.
+            COALESCE(vt.expired_unmined, 0) AS expired_unmined,
             vt.account_balance_delta,
             COALESCE(vt.fee_paid, 0) AS fee_paid,
             COALESCE(vt.block_time, 0) AS block_time,
@@ -1133,7 +1134,8 @@ fn read_history_bases(
             vt.txid,
             COALESCE(tx.id_tx, -1) AS transaction_id,
             vt.mined_height,
-            vt.expired_unmined,
+            -- NULL when no scanned block or expiry height makes expiry comparable: pending.
+            COALESCE(vt.expired_unmined, 0) AS expired_unmined,
             vt.account_balance_delta,
             COALESCE(vt.fee_paid, 0) AS fee_paid,
             COALESCE(vt.block_time, 0) AS block_time,
@@ -3394,7 +3396,7 @@ mod tests {
                 vt.txid,
                 COALESCE(tx.id_tx, -1) AS transaction_id,
                 vt.mined_height,
-                vt.expired_unmined,
+                COALESCE(vt.expired_unmined, 0) AS expired_unmined,
                 vt.account_balance_delta,
                 COALESCE(vt.fee_paid, 0) AS fee_paid,
                 COALESCE(vt.block_time, 0) AS block_time,
@@ -5914,6 +5916,65 @@ mod tests {
         assert_eq!(got[0].tx_kind, "sent");
         assert_eq!(got[0].mined_height, 0);
         assert_eq!(got[0].display_amount, 1_000_000);
+    }
+
+    /// `expired_unmined` is SQL NULL for an unmined transaction whose expiry
+    /// cannot be compared to a scanned height: no `blocks` rows yet (a
+    /// hardware wallet that broadcasts before its first scan, as the Ledger
+    /// Speculos fixtures do) or no recorded expiry height. Such a row is
+    /// pending, not expired, and must not fail the whole history read.
+    #[test]
+    fn history_reads_unmined_rows_without_a_comparable_expiry() {
+        use transparent::{address::TransparentAddress, bundle::OutPoint, bundle::TxOut};
+        use zcash_client_backend::{data_api::WalletWrite, wallet::WalletTransparentOutput};
+        use zcash_keys::encoding::AddressCodec as _;
+
+        let network = WalletNetwork::Regtest;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db").to_str().unwrap().to_owned();
+        let seed = crate::wallet::keys::mnemonic_to_seed(&crate::wallet::keys::generate_mnemonic())
+            .unwrap();
+        let (uuid, _) =
+            crate::wallet::keys::init_db_and_create_account(&path, network, &seed, Some(100), "a")
+                .unwrap();
+        let address = crate::wallet::keys::software_account_transparent_addresses(
+            network, &seed, 0, 1,
+        )
+        .unwrap()
+        .swap_remove(0);
+        let address = TransparentAddress::decode(&network, &address).unwrap();
+        let output = WalletTransparentOutput::from_parts(
+            OutPoint::new([0x51; 32], 0),
+            TxOut::new(
+                zcash_protocol::value::Zatoshis::const_from_u64(50_000),
+                address.script().into(),
+            ),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let mut db = open_wallet_db(&path, network).unwrap();
+        db.put_received_transparent_utxo(&output).unwrap();
+        drop(db);
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        let blocks: i64 = conn
+            .query_row("SELECT COUNT(*) FROM blocks", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(blocks, 0, "the wallet has not scanned a block");
+
+        for expiry_height in [None, Some(140)] {
+            conn.execute(
+                "UPDATE transactions SET expiry_height = ?1 WHERE txid = ?2",
+                rusqlite::params![expiry_height, [0x51u8; 32].as_slice()],
+            )
+            .unwrap();
+            let history = get_transaction_history(&path, network, None, &uuid).unwrap();
+            assert_eq!(history.len(), 1, "expiry {expiry_height:?}");
+            assert_eq!(history[0].mined_height, 0);
+            assert!(!history[0].expired_unmined, "expiry {expiry_height:?}");
+        }
     }
 
     #[test]
