@@ -17,8 +17,18 @@ use super::*;
 use crate::wallet::keys;
 
 const NETWORK: WalletNetwork = WalletNetwork::Regtest;
-const FUNDING: [u8; 32] = [0x31; 32];
-const PAYMENT: [u8; 32] = [0x32; 32];
+// Nonuniform identifiers catch an accidental switch from database byte order
+// to TxId's reversed display encoding at the typed-API boundary.
+const FUNDING: [u8; 32] = {
+    let mut bytes = [0x31; 32];
+    bytes[0] = 0x11;
+    bytes
+};
+const PAYMENT: [u8; 32] = {
+    let mut bytes = [0x32; 32];
+    bytes[0] = 0x12;
+    bytes
+};
 
 struct Wallet {
     _dir: tempfile::TempDir,
@@ -221,7 +231,7 @@ fn history_summaries_match_view_and_preserve_account_display_and_limit() {
     }
     let sender = history(&wallet, wallet.sender, None);
     assert_eq!(sender.len(), 2);
-    assert_eq!(sender[0].txid_hex, TxId::from_bytes(PAYMENT).to_string());
+    assert_eq!(sender[0].txid_hex, hex::encode(PAYMENT));
     assert_eq!(sender[0].tx_kind, "sent");
     assert_eq!(sender[0].display_amount, 140000);
     assert_eq!(sender[0].fee, 10000);
@@ -275,7 +285,7 @@ fn history_summaries_preserve_unknown_metadata_and_private_expiry_fallback() {
     let rows = history(&wallet, wallet.sender, None);
     let payment = rows
         .iter()
-        .find(|row| row.txid_hex == TxId::from_bytes(PAYMENT).to_string())
+        .find(|row| row.txid_hex == hex::encode(PAYMENT))
         .unwrap();
     assert_eq!(payment.fee_state, TransactionFeeState::Unknown);
     assert!(!payment.expired_unmined);
