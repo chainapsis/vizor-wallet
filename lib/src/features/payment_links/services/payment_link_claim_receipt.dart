@@ -65,8 +65,9 @@ Future<void> reconcilePaymentLinkClaimReceipt({
 }
 
 /// A redeemed Card does not block account removal during its recovery window.
-/// Exclude removed destinations before any retained-wallet sync or history
-/// query. Failed file cleanup stays durable for the coordinator's next retry.
+/// An unclaimed setup Card is forgotten together with its removed recipient.
+/// Exclude removed recipients before any retained-wallet sync or history query.
+/// Failed file cleanup stays durable for the coordinator's next retry.
 @visibleForTesting
 Future<List<PaymentLinkReceivedRecord>>
 discardPaymentLinkClaimsForDeletedAccounts({
@@ -79,7 +80,11 @@ discardPaymentLinkClaimsForDeletedAccounts({
 }) async {
   final eligible = <PaymentLinkReceivedRecord>[];
   for (final record in records) {
-    final destination = record.destinationAccountUuid;
+    final destination =
+        record.destinationAccountUuid ??
+        (record.status == PaymentLinkReceivedStatus.readyToClaim
+            ? record.setupAccountUuid
+            : null);
     if (record.network != network ||
         destination == null ||
         accountUuids.contains(destination)) {
@@ -91,4 +96,46 @@ discardPaymentLinkClaimsForDeletedAccounts({
     }
   }
   return eligible;
+}
+
+/// Card observation covers confirmations independently of the recipient DB.
+Future<void> reconcileObservedPaymentLinkClaimReceipt({
+  required PaymentLinkReceivedRecord record,
+  required int confirmationCount,
+  required PaymentLinkReceivedStore store,
+  required Future<bool> Function(PaymentLinkReceivedRecord)
+  deleteRetainedWallet,
+}) async {
+  if (record.claimRecoveryConfirmed) {
+    await finalizeConfirmedPaymentLinkClaim(
+      record: record,
+      deleteRetainedWallet: deleteRetainedWallet,
+      clearClaimSecret: (address) =>
+          store.clearConfirmedClaimSecret(address: address),
+    );
+    return;
+  }
+  if (confirmationCount == 0) {
+    if (record.status == PaymentLinkReceivedStatus.received) {
+      await store.markReceiving(
+        expected: record,
+        address: record.address,
+        destinationAccountUuid: record.destinationAccountUuid!,
+        claimTxids: record.claimTxids!,
+      );
+    }
+    return;
+  }
+  var received = record;
+  if (received.status != PaymentLinkReceivedStatus.received) {
+    received = await store.markReceived(address: received.address);
+  }
+  if (confirmationCount < kPaymentLinkClaimRecoveryConfirmationTarget) return;
+  final checkpoint = await store.markClaimRecoveryConfirmed(received);
+  await finalizeConfirmedPaymentLinkClaim(
+    record: checkpoint,
+    deleteRetainedWallet: deleteRetainedWallet,
+    clearClaimSecret: (address) =>
+        store.clearConfirmedClaimSecret(address: address),
+  );
 }

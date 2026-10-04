@@ -40,6 +40,8 @@ class LedgerGiftHarness {
       },
       refresh: () async {},
       currentChainHeight: () => ledgerGiftChainHeight,
+      onAcceptedBroadcast: (account, txids) =>
+          acceptedBroadcasts.add((account, txids)),
     );
   }
   final storage = LedgerGiftStorage();
@@ -51,6 +53,7 @@ class LedgerGiftHarness {
   bool accountExists = true;
   int releases = 0;
   final settlements = <String?>[];
+  final acceptedBroadcasts = <(String, String)>[];
   Future<PaymentLinkHardwarePcztDraft> prepare() async {
     final draft = await service.prepare(
       accountUuid: 'account-1',

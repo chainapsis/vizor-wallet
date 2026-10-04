@@ -5,12 +5,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
+import '../../payment_links/services/gift_claim_setup_coordinator.dart';
 import '../../../core/account_name_policy.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../providers/app_security_provider.dart';
+import '../../../providers/account_provider.dart';
 import '../../../providers/router_refresh_provider.dart';
 import '../../accounts/widgets/mobile/account_edit_sheets.dart'
     show showProfilePictureSheet;
@@ -20,7 +22,9 @@ import '../shared/customise_account_mutation.dart';
 import '../shared/onboarding_error_messages.dart';
 import '../shared/onboarding_flow_args.dart';
 import 'mobile_onboarding_progress.dart';
+import 'mobile_onboarding_progress_scope.dart';
 import 'mobile_onboarding_scaffold.dart';
+import '../../payment_links/providers/gift_claim_flow_provider.dart';
 
 typedef MobileCustomiseAccountFinishCallback =
     Future<void> Function(String accountName, String profilePictureId);
@@ -33,12 +37,14 @@ class MobileCustomiseAccountScreen extends ConsumerStatefulWidget {
   const MobileCustomiseAccountScreen({
     this.args,
     this.onFinish,
-    this.progress,
+    this.position,
     this.onBack,
     this.random,
+    this.actionsEnabled = true,
+    this.setupCommitted = false,
     super.key,
   }) : assert(
-         args != null || (onFinish != null && progress != null),
+         args != null || (onFinish != null && position != null),
          'Custom setup args or an alternate completion presentation is required.',
        );
 
@@ -47,11 +53,17 @@ class MobileCustomiseAccountScreen extends ConsumerStatefulWidget {
   /// Alternate completion seam used by previews, tests, and hardware flows.
   final MobileCustomiseAccountFinishCallback? onFinish;
 
-  final double? progress;
+  final OnboardingProgressPosition? position;
   final VoidCallback? onBack;
 
   /// Optional entropy source for deterministic previews and tests.
   final Random? random;
+
+  /// A terminal setup failure can require reopening instead of creating again.
+  final bool actionsEnabled;
+
+  /// The account exists; retry only its unfinished storage, keeping its persona.
+  final bool setupCommitted;
 
   @override
   ConsumerState<MobileCustomiseAccountScreen> createState() =>
@@ -75,7 +87,8 @@ class _MobileCustomiseAccountScreenState
   int get _nameLength => accountNameCharacterLength(_nameController.text);
   bool get _nameValid => isAccountNameLengthValid(_nameController.text);
   bool get _isSubmitting => _submitPhase != _SubmitPhase.idle;
-  bool get _canContinue => !_isSubmitting && _nameValid;
+  bool get _canContinue =>
+      widget.actionsEnabled && !_isSubmitting && _nameValid;
 
   String? get _nameMessage {
     if (_submitError != null) return _submitError;
@@ -143,8 +156,25 @@ class _MobileCustomiseAccountScreenState
     setState(() => _submitError = null);
   }
 
+  void _randomisePersona() {
+    if (_isSubmitting || widget.setupCommitted || !widget.actionsEnabled) {
+      return;
+    }
+    final suggestion = generateAccountPersona(random: widget.random);
+    _nameController.value = TextEditingValue(
+      text: suggestion.name,
+      selection: TextSelection.collapsed(offset: suggestion.name.length),
+    );
+    setState(() {
+      _profilePictureId = suggestion.profilePictureId;
+      _submitError = null;
+    });
+  }
+
   Future<void> _pickProfilePicture() async {
-    if (_isSubmitting) return;
+    if (_isSubmitting || widget.setupCommitted || !widget.actionsEnabled) {
+      return;
+    }
     _nameFocusNode.unfocus();
     final selected = await showProfilePictureSheet(
       context,
@@ -204,8 +234,9 @@ class _MobileCustomiseAccountScreenState
     final pendingPassword = args.pendingPassword;
     if (pendingPassword == null) {
       await createAccount();
+      await completeGiftClaimImportSetup(ref);
       clearCustomisedAccountDraft(ref, args.flow);
-      router.go('/home');
+      router.go(giftClaimSetupCompletionLocation(ref, otherwise: '/home'));
       return;
     }
 
@@ -218,15 +249,20 @@ class _MobileCustomiseAccountScreenState
         await securityNotifier.preparePasswordSetup(pendingPassword);
         passwordPrepared = true;
         await createAccount();
-        securityNotifier.commitPasswordSetup();
+        await securityNotifier.completePasswordSetup();
         passwordCommitted = true;
+        await completeGiftClaimImportSetup(ref);
         clearCustomisedAccountDraft(ref, args.flow);
         router.go('/onboarding/biometrics');
       });
-    } catch (_) {
+    } catch (e) {
       if (passwordPrepared && !passwordCommitted) {
         try {
-          await securityNotifier.rollbackPasswordSetup();
+          await securityNotifier.finishPasswordSetupAfterFailure(
+            accountMayExist:
+                e is WalletAccountSetupInterruptedException ||
+                (ref.read(accountProvider).value?.hasAccounts ?? false),
+          );
         } catch (rollbackError, rollbackStack) {
           log(
             'MobileCustomiseAccount._finishSetup: password rollback failed: '
@@ -242,16 +278,13 @@ class _MobileCustomiseAccountScreenState
   Widget build(BuildContext context) {
     final content = MobileOnboardingStepScaffold(
       progress:
-          widget.progress ??
-          switch (widget.args!.flow) {
-            SetPasswordFlow.create => mobileCreateProgress(8),
-            SetPasswordFlow.importWallet => mobileImportProgress(5),
-            SetPasswordFlow.importKeystone => kMobileKeystoneCustomiseProgress,
-            SetPasswordFlow.importLedger => kMobileLedgerCustomiseProgress,
-            SetPasswordFlow.importWalletLink => throw StateError(
-              'Wallet Link does not use account customisation.',
-            ),
-          },
+          widget.position?.value ??
+          MobileOnboardingProgressScope.of(context)
+              .at(
+                onboardingFlowForSetup(widget.args!.flow),
+                OnboardingStage.customiseAccount,
+              )
+              .value,
       onBack: _isSubmitting ? null : widget.onBack,
       showBackButton: widget.onBack != null,
       title: 'Customise Account',
@@ -265,9 +298,10 @@ class _MobileCustomiseAccountScreenState
         onPressed: _canContinue ? _submit : null,
         trailing: const AppIcon(AppIcons.chevronForward),
         child: Text(switch (_submitPhase) {
-          _SubmitPhase.idle => 'Continue',
+          _SubmitPhase.idle => widget.setupCommitted ? 'Try again' : 'Continue',
           _SubmitPhase.stoppingSync => 'Stop syncing...',
-          _SubmitPhase.creatingWallet => 'Creating wallet...',
+          _SubmitPhase.creatingWallet =>
+            widget.setupCommitted ? 'Saving wallet...' : 'Creating wallet...',
         }),
       ),
       child: Column(
@@ -279,9 +313,13 @@ class _MobileCustomiseAccountScreenState
             nameFocusNode: _nameFocusNode,
             profilePictureId: _profilePictureId,
             message: _nameMessage,
-            enabled: !_isSubmitting,
+            enabled:
+                !_isSubmitting &&
+                !widget.setupCommitted &&
+                widget.actionsEnabled,
             onNameChanged: _handleNameChanged,
             onEditProfilePicture: _pickProfilePicture,
+            onRandomisePersona: _randomisePersona,
             onSubmitted: _submit,
           ),
         ],
@@ -322,6 +360,7 @@ class _AccountProfileCard extends StatelessWidget {
     required this.enabled,
     required this.onNameChanged,
     required this.onEditProfilePicture,
+    required this.onRandomisePersona,
     required this.onSubmitted,
   });
 
@@ -332,7 +371,12 @@ class _AccountProfileCard extends StatelessWidget {
   final bool enabled;
   final ValueChanged<String> onNameChanged;
   final VoidCallback onEditProfilePicture;
+  final VoidCallback onRandomisePersona;
   final Future<void> Function() onSubmitted;
+
+  static const _randomiseTapSize = 44.0;
+  static const _randomiseVisualSize = 28.0;
+  static const _randomiseInset = (_randomiseTapSize - _randomiseVisualSize) / 2;
 
   @override
   Widget build(BuildContext context) {
@@ -344,63 +388,131 @@ class _AccountProfileCard extends StatelessWidget {
         Container(
           key: const ValueKey('mobile_customise_account_card'),
           height: 123,
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
           decoration: BoxDecoration(
             color: colors.background.homeCard,
-            borderRadius: BorderRadius.circular(AppRadii.xLarge),
+            // Keep the card corner concentric with the inset randomise circle.
+            borderRadius: BorderRadius.circular(
+              _randomiseVisualSize / 2 + _randomiseInset,
+            ),
           ),
-          child: Row(
+          child: Stack(
             children: [
-              _EditableProfilePicture(
-                profilePictureId: profilePictureId,
-                enabled: enabled,
-                onPressed: onEditProfilePicture,
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
+              Padding(
+                padding: const EdgeInsetsDirectional.only(
+                  start: AppSpacing.md,
+                  end: AppSpacing.xs,
+                ),
+                child: Row(
                   children: [
-                    Text(
-                      'Account name',
-                      style: AppTypography.labelLarge.copyWith(
-                        color: cardTextColor.withValues(alpha: 0.5),
-                        fontWeight: FontWeight.w400,
-                      ),
+                    _EditableProfilePicture(
+                      profilePictureId: profilePictureId,
+                      enabled: enabled,
+                      onPressed: onEditProfilePicture,
                     ),
-                    const SizedBox(height: 2),
-                    SizedBox(
-                      height: 30,
-                      child: TextField(
-                        key: const ValueKey(
-                          'mobile_customise_account_name_field',
-                        ),
-                        controller: nameController,
-                        focusNode: nameFocusNode,
-                        enabled: enabled,
-                        maxLines: 1,
-                        textInputAction: TextInputAction.done,
-                        style: AppTypography.headlineSmall.copyWith(
-                          color: cardTextColor,
-                        ),
-                        cursorColor: cardTextColor,
-                        cursorWidth: 2,
-                        cursorHeight: 22,
-                        cursorRadius: const Radius.circular(AppRadii.full),
-                        decoration: const InputDecoration(
-                          border: InputBorder.none,
-                          enabledBorder: InputBorder.none,
-                          focusedBorder: InputBorder.none,
-                          disabledBorder: InputBorder.none,
-                          contentPadding: EdgeInsets.zero,
-                          isDense: true,
-                        ),
-                        onChanged: onNameChanged,
-                        onSubmitted: (_) => onSubmitted(),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsetsDirectional.only(
+                              end: _randomiseTapSize,
+                            ),
+                            child: Text(
+                              'Account name',
+                              style: AppTypography.labelLarge.copyWith(
+                                color: cardTextColor.withValues(alpha: 0.5),
+                                fontWeight: FontWeight.w400,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          SizedBox(
+                            height: 30,
+                            child: TextField(
+                              key: const ValueKey(
+                                'mobile_customise_account_name_field',
+                              ),
+                              controller: nameController,
+                              focusNode: nameFocusNode,
+                              enabled: enabled,
+                              maxLines: 1,
+                              textInputAction: TextInputAction.done,
+                              style: AppTypography.headlineSmall.copyWith(
+                                color: cardTextColor,
+                              ),
+                              cursorColor: cardTextColor,
+                              cursorWidth: 2,
+                              cursorHeight: 22,
+                              cursorRadius: const Radius.circular(
+                                AppRadii.full,
+                              ),
+                              decoration: const InputDecoration(
+                                border: InputBorder.none,
+                                enabledBorder: InputBorder.none,
+                                focusedBorder: InputBorder.none,
+                                disabledBorder: InputBorder.none,
+                                contentPadding: EdgeInsets.zero,
+                                isDense: true,
+                              ),
+                              onChanged: onNameChanged,
+                              onSubmitted: (_) => onSubmitted(),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
+                ),
+              ),
+              PositionedDirectional(
+                top: 0,
+                end: 0,
+                child: Semantics(
+                  button: true,
+                  enabled: enabled,
+                  label: 'Randomise account name and profile picture',
+                  onTap: enabled ? onRandomisePersona : null,
+                  child: ExcludeSemantics(
+                    child: AppButton(
+                      key: const ValueKey('mobile_customise_account_randomise'),
+                      variant: AppButtonVariant.secondary,
+                      size: AppButtonSize.medium,
+                      height: _randomiseTapSize,
+                      minWidth: _randomiseTapSize,
+                      contentPadding: EdgeInsets.zero,
+                      enabledBackgroundColor: colors.background.homeCard
+                          .withValues(alpha: 0),
+                      pressedBackgroundColor: colors.background.homeCard
+                          .withValues(alpha: 0),
+                      disabledBackgroundColor: colors.background.homeCard
+                          .withValues(alpha: 0),
+                      onPressed: enabled ? onRandomisePersona : null,
+                      child: Container(
+                        key: const ValueKey(
+                          'mobile_customise_account_randomise_visual',
+                        ),
+                        width: _randomiseVisualSize,
+                        height: _randomiseVisualSize,
+                        decoration: BoxDecoration(
+                          color: enabled
+                              ? colors.button.secondary.bg
+                              : colors.button.disabled.bg,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Center(
+                          child: AppIcon(
+                            AppIcons.renew,
+                            size: 16,
+                            color: enabled
+                                ? colors.button.secondary.label
+                                : colors.button.disabled.label,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ],

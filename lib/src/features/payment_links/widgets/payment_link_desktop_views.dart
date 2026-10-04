@@ -14,6 +14,7 @@ import 'payment_link_action.dart';
 import 'payment_link_card_motion.dart';
 import 'payment_link_cards_layout.dart';
 import 'payment_link_copy.dart';
+import 'payment_link_claim_checking_content.dart';
 import 'payment_link_gift_card.dart';
 import 'payment_link_group_entry.dart';
 import 'payment_link_qr_share_card.dart';
@@ -40,7 +41,7 @@ enum PaymentLinkAmountVisualState {
 
 enum PaymentLinkMessageVisualState { empty, filled }
 
-enum PaymentLinkReadyVisualState { waiting, ready }
+enum PaymentLinkReadyVisualState { checking, waiting, ready }
 
 enum PaymentLinkRedeemVisualState { paste, loading, invalid }
 
@@ -746,7 +747,8 @@ class PaymentLinkReadyDesktopView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final waiting = state == PaymentLinkReadyVisualState.waiting;
+    final checking = state == PaymentLinkReadyVisualState.checking;
+    final waiting = state != PaymentLinkReadyVisualState.ready;
     final canFlip = !waiting && onCardTap != null;
     final motionCard = PaymentLinkCardMotion(
       celebrate: !waiting,
@@ -763,6 +765,25 @@ class PaymentLinkReadyDesktopView extends StatelessWidget {
             ),
           )
         : motionCard;
+    if (checking) {
+      return PaymentLinkPane(
+        backLabel: backLabel,
+        onBack: onBack,
+        child: Center(
+          child: SizedBox(
+            width: 520,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 66.5, bottom: AppSpacing.md),
+              child: PaymentLinkClaimCheckingContent(
+                card: cardContent,
+                status: PaymentLinkDashedStatusPill(label: waitingStatusLabel),
+                statusSpacing: AppSpacing.lg,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     return PaymentLinkPane(
       backLabel: backLabel,
       onBack: onBack,

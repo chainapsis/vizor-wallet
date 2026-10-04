@@ -395,10 +395,13 @@ class PaymentLinkDashedStatusPill extends StatelessWidget {
                   color: context.colors.icon.muted,
                 ),
                 const SizedBox(width: AppSpacing.xxs),
-                Text(
-                  label,
-                  style: AppTypography.bodyMedium.copyWith(
-                    color: context.colors.text.secondary,
+                Flexible(
+                  child: Text(
+                    label,
+                    textAlign: TextAlign.center,
+                    style: AppTypography.bodyMedium.copyWith(
+                      color: context.colors.text.secondary,
+                    ),
                   ),
                 ),
               ],

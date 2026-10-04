@@ -13,6 +13,14 @@ enum AppButtonVariant { primary, secondary, ghost, destructive }
 /// with Small using the reduced label token from the Figma component.
 enum AppButtonSize { large, mediumLarge, medium, small }
 
+/// Decorates the pill with effects that follow the button's interaction state.
+typedef AppButtonDecorationBuilder =
+    Widget Function(
+      BuildContext context,
+      Set<WidgetState> states,
+      Widget child,
+    );
+
 const _mobile = kAppFormFactor == AppFormFactor.mobile;
 
 class _Sizing {
@@ -227,6 +235,7 @@ class AppButton extends StatefulWidget {
     this.autofocus = false,
     this.expand = false,
     this.constrainContent = false,
+    this.decorationBuilder,
   });
 
   /// Tap handler. `null` disables the button.
@@ -304,6 +313,10 @@ class AppButton extends StatefulWidget {
   /// of letting long text overflow the pill. Intended for one-line CTAs in
   /// narrow mobile rows; default keeps the historical intrinsic layout.
   final bool constrainContent;
+
+  /// Optional surface effects, such as a gradient and an animated inner glow.
+  /// Keep the child's layout and hit target unchanged across states.
+  final AppButtonDecorationBuilder? decorationBuilder;
 
   @override
   State<AppButton> createState() => _AppButtonState();
@@ -454,6 +467,14 @@ class _AppButtonState extends State<AppButton> {
     );
 
     final focusRingWidth = widget.size == AppButtonSize.small ? 1.5 : 2.0;
+    final decoratedPill =
+        widget.decorationBuilder?.call(context, {
+          if (_hovered) WidgetState.hovered,
+          if (_pressed) WidgetState.pressed,
+          if (_focused) WidgetState.focused,
+          if (!_enabled) WidgetState.disabled,
+        }, pill) ??
+        pill;
     final focusRingColor =
         widget.focusRingColor ??
         (_hovered ? palette.focusRingHover : palette.focusRing);
@@ -478,7 +499,7 @@ class _AppButtonState extends State<AppButton> {
       alignment: Alignment.center,
       fit: widget.expand ? StackFit.passthrough : StackFit.loose,
       children: [
-        pill,
+        decoratedPill,
         Positioned(
           left: -focusRingOutset,
           top: -focusRingOutset,

@@ -62,6 +62,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  RustStreamSink<ApiGiftCardCheckProgress>
+  dco_decode_StreamSink_api_gift_card_check_progress_Sse(dynamic raw);
+
+  @protected
   RustStreamSink<ApiMempoolTxEvent>
   dco_decode_StreamSink_api_mempool_tx_event_Sse(dynamic raw);
 
@@ -119,6 +123,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApiDynamicConfigMirrorFailure dco_decode_api_dynamic_config_mirror_failure(
     dynamic raw,
   );
+
+  @protected
+  ApiGiftCardCheckProgress dco_decode_api_gift_card_check_progress(dynamic raw);
 
   @protected
   ApiKeystoneSignatureBatchResult
@@ -262,6 +269,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   double dco_decode_box_autoadd_f_64(dynamic raw);
+
+  @protected
+  int dco_decode_box_autoadd_i_32(dynamic raw);
 
   @protected
   ImmediateShareKey dco_decode_box_autoadd_immediate_share_key(dynamic raw);
@@ -913,6 +923,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   double? dco_decode_opt_box_autoadd_f_64(dynamic raw);
 
   @protected
+  int? dco_decode_opt_box_autoadd_i_32(dynamic raw);
+
+  @protected
   ImmediateShareKey? dco_decode_opt_box_autoadd_immediate_share_key(
     dynamic raw,
   );
@@ -1322,6 +1335,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  RustStreamSink<ApiGiftCardCheckProgress>
+  sse_decode_StreamSink_api_gift_card_check_progress_Sse(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   RustStreamSink<ApiMempoolTxEvent>
   sse_decode_StreamSink_api_mempool_tx_event_Sse(SseDeserializer deserializer);
 
@@ -1395,6 +1414,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ApiDynamicConfigMirrorFailure sse_decode_api_dynamic_config_mirror_failure(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiGiftCardCheckProgress sse_decode_api_gift_card_check_progress(
     SseDeserializer deserializer,
   );
 
@@ -1586,6 +1610,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   double sse_decode_box_autoadd_f_64(SseDeserializer deserializer);
+
+  @protected
+  int sse_decode_box_autoadd_i_32(SseDeserializer deserializer);
 
   @protected
   ImmediateShareKey sse_decode_box_autoadd_immediate_share_key(
@@ -2419,6 +2446,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   double? sse_decode_opt_box_autoadd_f_64(SseDeserializer deserializer);
 
   @protected
+  int? sse_decode_opt_box_autoadd_i_32(SseDeserializer deserializer);
+
+  @protected
   ImmediateShareKey? sse_decode_opt_box_autoadd_immediate_share_key(
     SseDeserializer deserializer,
   );
@@ -2948,6 +2978,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_StreamSink_api_gift_card_check_progress_Sse(
+    RustStreamSink<ApiGiftCardCheckProgress> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_StreamSink_api_mempool_tx_event_Sse(
     RustStreamSink<ApiMempoolTxEvent> self,
     SseSerializer serializer,
@@ -3040,6 +3076,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_api_dynamic_config_mirror_failure(
     ApiDynamicConfigMirrorFailure self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_gift_card_check_progress(
+    ApiGiftCardCheckProgress self,
     SseSerializer serializer,
   );
 
@@ -3264,6 +3306,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_box_autoadd_f_64(double self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_i_32(int self, SseSerializer serializer);
 
   @protected
   void sse_encode_box_autoadd_immediate_share_key(
@@ -4269,6 +4314,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_opt_box_autoadd_f_64(double? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_i_32(int? self, SseSerializer serializer);
 
   @protected
   void sse_encode_opt_box_autoadd_immediate_share_key(

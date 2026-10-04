@@ -100,9 +100,9 @@ Future<AccountCreationResult> addAccount({
   birthdayHeight: birthdayHeight,
 );
 
-/// Generate a software account mnemonic and shielded address without touching
-/// the wallet DB. Used for an external one-time recipient controlled by a
-/// fresh seed, such as payment-link funding.
+/// Generate a 12-word BIP-39 mnemonic and shielded address for Gift Card funding
+/// without touching the wallet DB. Regular wallets and Gift Card recipients
+/// continue using the 24-word [`keys::generate_mnemonic`] generator.
 Future<GeneratedSoftwareAccount> generateSoftwareAccount({
   required String network,
 }) => RustLib.instance.api.crateApiWalletGenerateSoftwareAccount(
@@ -356,6 +356,22 @@ Future<String> getUnifiedAddress({
   dbPath: dbPath,
   network: network,
   accountUuid: accountUuid,
+);
+
+/// The wallet account encrypted software recovery material derives at
+/// `zip32_account_index`, matched by viewing key. Accepts either a legacy plain
+/// mnemonic or the versioned mnemonic + BIP-39 passphrase storage envelope.
+/// Returns `None` when the wallet or account is missing.
+Future<String?> findSoftwareAccountForMnemonic({
+  required String mnemonic,
+  required String network,
+  required String dbPath,
+  required int zip32AccountIndex,
+}) => RustLib.instance.api.crateApiWalletFindSoftwareAccountForMnemonic(
+  mnemonic: mnemonic,
+  network: network,
+  dbPath: dbPath,
+  zip32AccountIndex: zip32AccountIndex,
 );
 
 /// Export a single account's Unified Full Viewing Key (UFVK). Works for both

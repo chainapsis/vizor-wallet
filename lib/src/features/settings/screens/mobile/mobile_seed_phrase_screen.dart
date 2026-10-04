@@ -31,8 +31,10 @@ import '../../../../services/biometric_unlock.dart';
 import '../../../onboarding/mobile/mobile_passcode_screen.dart'
     show kMobilePasscodeLength;
 import '../../../onboarding/mobile/passcode_widgets.dart';
+import '../../../onboarding/mobile/mobile_secret_passphrase_screen.dart'
+    show SecretPassphraseRevealWarningCard;
 
-enum _SeedStage { confirmAccess, reveal }
+enum _SeedStage { intro, confirmAccess, reveal }
 
 /// Settings → Secret Passphrase — Figma `Confirm Access` / `Secret` /
 /// `If they try to screenshot` (4494:87180 / 4494:88388 / 4494:91643).
@@ -42,6 +44,7 @@ enum _SeedStage { confirmAccess, reveal }
 class MobileSeedPhraseScreen extends ConsumerStatefulWidget {
   const MobileSeedPhraseScreen({
     this.accountUuid,
+    this.showBackupIntro = false,
     this.screenshotStream,
     this.privacyOverlayController,
     this.loadBirthday = true,
@@ -51,6 +54,9 @@ class MobileSeedPhraseScreen extends ConsumerStatefulWidget {
   });
 
   final String? accountUuid;
+
+  /// Home backup entry opens on the warning before confirming access.
+  final bool showBackupIntro;
 
   /// Test seam — production listens to the platform screenshot events.
   @visibleForTesting
@@ -88,6 +94,8 @@ class _MobileSeedPhraseScreenState
   int? _birthdayBlockTime;
   bool _birthdayLoading = false;
   int _birthdayLoadGeneration = 0;
+  bool _markingBackedUp = false;
+  bool _snoozingBackup = false;
 
   StreamSubscription<void>? _screenshotSub;
   bool _screenshotSheetShowing = false;
@@ -100,6 +108,9 @@ class _MobileSeedPhraseScreenState
   @override
   void initState() {
     super.initState();
+    _stage = widget.showBackupIntro
+        ? _SeedStage.intro
+        : _SeedStage.confirmAccess;
     _ownsPrivacyController = widget.privacyOverlayController == null;
     _privacyController =
         widget.privacyOverlayController ??
@@ -484,10 +495,17 @@ class _MobileSeedPhraseScreenState
                   title: _stage == _SeedStage.confirmAccess
                       ? ''
                       : 'Secret Passphrase',
-                  onBack: () => context.pop(),
+                  onBack: () {
+                    if (context.canPop()) {
+                      context.pop();
+                    } else {
+                      context.go('/home');
+                    }
+                  },
                 ),
                 Expanded(
                   child: switch (_stage) {
+                    _SeedStage.intro => _buildIntro(),
                     _SeedStage.confirmAccess => _buildGate(colors),
                     _SeedStage.reveal => _buildReveal(colors),
                   },
@@ -500,188 +518,369 @@ class _MobileSeedPhraseScreenState
     );
   }
 
+  Widget _buildIntro() {
+    final account = _targetAccount(ref.watch(accountProvider).value);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.sm,
+              AppSpacing.s,
+              AppSpacing.sm,
+              AppSpacing.sm,
+            ),
+            children: const [SecretPassphraseRevealWarningCard()],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.all(AppSpacing.sm),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              AppButton(
+                key: const ValueKey('mobile_seed_backup_intro_continue'),
+                onPressed: _snoozingBackup
+                    ? null
+                    : () {
+                        setState(() => _stage = _SeedStage.confirmAccess);
+                        unawaited(_tryBiometricGate());
+                      },
+                size: AppButtonSize.large,
+                expand: true,
+                growWithContent: true,
+                constrainContent: true,
+                child: const Text('Continue', textAlign: TextAlign.center),
+              ),
+              if (account != null && account.setupPending) ...[
+                const SizedBox(height: AppSpacing.xs),
+                AppButton(
+                  key: const ValueKey('mobile_seed_backup_remind_later'),
+                  variant: AppButtonVariant.ghost,
+                  onPressed: _snoozingBackup
+                      ? null
+                      : () => unawaited(_snoozeBackup(account.uuid)),
+                  size: AppButtonSize.large,
+                  expand: true,
+                  growWithContent: true,
+                  constrainContent: true,
+                  child: const Text(
+                    'Remind me later',
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildGate(AppColors colors) {
     final biometric =
         ref.watch(biometricUnlockProvider).value ??
         BiometricUnlockState.initial;
     final showBiometric = !_checking && biometric.usable;
-    return Column(
+    final title = Text(
+      'Enter Passcode',
+      textAlign: TextAlign.center,
+      style: AppTypography.displayLarge.copyWith(color: colors.text.accent),
+    );
+    final subtitle = Text(
+      'Confirm your access',
+      textAlign: TextAlign.center,
+      style: AppTypography.bodyMediumStrong.copyWith(
+        color: colors.text.primary,
+      ),
+    );
+    final prompt = Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Expanded(
+        title,
+        const SizedBox(height: AppSpacing.s),
+        subtitle,
+        const SizedBox(height: AppSpacing.md),
+        SizedBox(
+          height: kPasscodePromptDigitsHeight,
+          child: PasscodePromptField(
+            length: kMobilePasscodeLength,
+            filled: _entry.length,
+            error: _gateError,
+            minGap: 0,
+          ),
+        ),
+      ],
+    );
+    const biometricHeight = 36.0;
+    final controls = [
+      PasscodeNumpad(
+        onDigit: _onDigit,
+        onBackspace: _onBackspace,
+        canDelete: _entry.isNotEmpty,
+        enabled: !_checking,
+      ),
+      const SizedBox(height: AppSpacing.md),
+      if (showBiometric)
+        SizedBox(
+          key: const ValueKey('mobile_seed_phrase_biometric_footer'),
+          height: biometricHeight,
           child: Center(
+            child: PasscodeBiometricButton(
+              label: biometric.availability.kind.signInLabel,
+              icon: Center(
+                child: BiometricIcon(
+                  kind: biometric.availability.kind,
+                  size: 13.5,
+                  fingerprintSize: 16,
+                ),
+              ),
+              onPressed: () => unawaited(_tryBiometricGate()),
+            ),
+          ),
+        ),
+    ];
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        double textHeight(Text text) {
+          final painter = TextPainter(
+            text: TextSpan(text: text.data, style: text.style),
+            textDirection: Directionality.of(context),
+            textScaler: MediaQuery.textScalerOf(context),
+          )..layout(maxWidth: constraints.maxWidth);
+          final height = painter.height;
+          painter.dispose();
+          return height;
+        }
+
+        // Match the shared keypad's wrap geometry, including narrow viewports.
+        final keypadWidth = math.min(
+          kPasscodeKeypadWidth,
+          constraints.maxWidth,
+        );
+        final columns =
+            ((keypadWidth + AppSpacing.sm) / (kPasscodeKeySize + AppSpacing.sm))
+                .floor()
+                .clamp(1, 3);
+        final rows = (12 / columns).ceil();
+        final keypadHeight =
+            rows * kPasscodeKeySize + (rows - 1) * AppSpacing.sm;
+        final requiredHeight =
+            textHeight(title) +
+            textHeight(subtitle) +
+            AppSpacing.s +
+            AppSpacing.md +
+            kPasscodePromptDigitsHeight +
+            keypadHeight +
+            AppSpacing.md +
+            (showBiometric ? biometricHeight : 0);
+        if (requiredHeight > constraints.maxHeight) {
+          return SingleChildScrollView(
             child: Column(
-              mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  'Enter Passcode',
-                  textAlign: TextAlign.center,
-                  style: AppTypography.displayLarge.copyWith(
-                    color: colors.text.accent,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.s),
-                Text(
-                  'Confirm your access',
-                  textAlign: TextAlign.center,
-                  style: AppTypography.bodyMediumStrong.copyWith(
-                    color: colors.text.primary,
-                  ),
-                ),
+                prompt,
                 const SizedBox(height: AppSpacing.md),
-                SizedBox(
-                  height: kPasscodePromptDigitsHeight,
-                  child: PasscodePromptField(
-                    length: kMobilePasscodeLength,
-                    filled: _entry.length,
-                    error: _gateError,
-                    minGap: 0,
-                  ),
-                ),
+                ...controls,
               ],
             ),
-          ),
-        ),
-        PasscodeNumpad(
-          onDigit: _onDigit,
-          onBackspace: _onBackspace,
-          canDelete: _entry.isNotEmpty,
-          enabled: !_checking,
-        ),
-        if (showBiometric) ...[
-          const SizedBox(height: AppSpacing.md),
-          SizedBox(
-            key: const ValueKey('mobile_seed_phrase_biometric_footer'),
-            height: 36,
-            child: Center(
-              child: PasscodeBiometricButton(
-                label: biometric.availability.kind.signInLabel,
-                icon: Center(
-                  child: BiometricIcon(
-                    kind: biometric.availability.kind,
-                    size: 13.5,
-                    fingerprintSize: 16,
-                  ),
-                ),
-                onPressed: () => unawaited(_tryBiometricGate()),
-              ),
-            ),
-          ),
-        ],
-        if (!showBiometric) const SizedBox(height: AppSpacing.md),
-      ],
+          );
+        }
+        return Column(
+          children: [
+            Expanded(child: Center(child: prompt)),
+            ...controls,
+          ],
+        );
+      },
     );
   }
 
   Widget _buildReveal(AppColors colors) {
     final words = _mnemonic?.split(' ') ?? const <String>[];
-    return ListView(
+    final account = _targetAccount(ref.watch(accountProvider).value);
+    final showBackupAction =
+        _revealError == null &&
+        account != null &&
+        (account.setupPending || _markingBackedUp);
+    final content = SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.sm,
         AppSpacing.s,
         AppSpacing.sm,
         AppSpacing.lg,
       ),
-      children: [
-        if (_revealError != null)
-          MobileSurfaceCard(
-            child: Text(
-              _revealError!,
-              style: AppTypography.bodyMedium.copyWith(
-                color: colors.text.destructive,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (_revealError != null)
+            MobileSurfaceCard(
+              child: Text(
+                _revealError!,
+                style: AppTypography.bodyMedium.copyWith(
+                  color: colors.text.destructive,
+                ),
+              ),
+            )
+          else ...[
+            MobileSurfaceCard(
+              cornerRadius: AppRadii.xLarge,
+              padding: EdgeInsets.zero,
+              child: Stack(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.sm,
+                      AppSpacing.base,
+                      AppSpacing.sm,
+                      AppSpacing.base,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          'Secret Passphrase',
+                          style: AppTypography.bodyMediumStrong.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: colors.text.accent,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        _LightWordGrid(words: words),
+                        if (_bip39Passphrase case final passphrase?) ...[
+                          const SizedBox(height: AppSpacing.sm),
+                          Container(height: 1, color: colors.border.subtle),
+                          const SizedBox(height: AppSpacing.s),
+                          _MobileBip39PassphraseRow(
+                            passphrase: passphrase,
+                            onCopy: _copyBip39Passphrase,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  Positioned(
+                    top: AppSpacing.s,
+                    right: AppSpacing.s,
+                    child: _CopyChip(
+                      key: const ValueKey('mobile_seed_copy'),
+                      label: 'Copy',
+                      onTap: _copyMnemonic,
+                    ),
+                  ),
+                ],
               ),
             ),
-          )
-        else ...[
-          MobileSurfaceCard(
-            cornerRadius: AppRadii.xLarge,
-            padding: EdgeInsets.zero,
-            child: Stack(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.sm,
-                    AppSpacing.base,
-                    AppSpacing.sm,
-                    AppSpacing.base,
+            const SizedBox(height: AppSpacing.sm),
+            MobileSurfaceCard(
+              cornerRadius: AppRadii.large,
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.sm,
+                AppSpacing.base,
+                AppSpacing.sm,
+                AppSpacing.base,
+              ),
+              child: Column(
+                children: [
+                  _BirthdayRow(
+                    label: 'Birthday date',
+                    value: _birthdayBlockTime != null
+                        ? _formatBirthdayDate(_birthdayBlockTime!)
+                        : _birthdayLoading
+                        ? '…'
+                        : '—',
+                    onCopy: _birthdayBlockTime == null
+                        ? null
+                        : () => _copy(
+                            _formatBirthdayDate(_birthdayBlockTime!),
+                            'Birthday date copied',
+                          ),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(
-                        'Secret Passphrase',
-                        style: AppTypography.bodyMediumStrong.copyWith(
-                          fontWeight: FontWeight.w600,
-                          color: colors.text.accent,
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.md),
-                      _LightWordGrid(words: words),
-                      if (_bip39Passphrase case final passphrase?) ...[
-                        const SizedBox(height: AppSpacing.sm),
-                        Container(height: 1, color: colors.border.subtle),
-                        const SizedBox(height: AppSpacing.s),
-                        _MobileBip39PassphraseRow(
-                          passphrase: passphrase,
-                          onCopy: _copyBip39Passphrase,
-                        ),
-                      ],
-                    ],
+                  const SizedBox(height: AppSpacing.xs),
+                  _BirthdayRow(
+                    label: 'Birthday block height',
+                    value:
+                        _birthdayHeight?.toString() ??
+                        (_birthdayLoading ? '…' : '—'),
+                    onCopy: _birthdayHeight == null
+                        ? null
+                        : () => _copy(
+                            '$_birthdayHeight',
+                            'Birthday height copied',
+                          ),
                   ),
-                ),
-                Positioned(
-                  top: AppSpacing.s,
-                  right: AppSpacing.s,
-                  child: _CopyChip(
-                    key: const ValueKey('mobile_seed_copy'),
-                    label: 'Copy',
-                    onTap: _copyMnemonic,
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          MobileSurfaceCard(
-            cornerRadius: AppRadii.large,
+          ],
+        ],
+      ),
+    );
+    return Column(
+      children: [
+        Expanded(child: content),
+        if (showBackupAction)
+          Padding(
             padding: const EdgeInsets.fromLTRB(
               AppSpacing.sm,
-              AppSpacing.base,
+              AppSpacing.s,
               AppSpacing.sm,
-              AppSpacing.base,
+              AppSpacing.sm,
             ),
-            child: Column(
-              children: [
-                _BirthdayRow(
-                  label: 'Birthday date',
-                  value: _birthdayBlockTime != null
-                      ? _formatBirthdayDate(_birthdayBlockTime!)
-                      : _birthdayLoading
-                      ? '…'
-                      : '—',
-                  onCopy: _birthdayBlockTime == null
-                      ? null
-                      : () => _copy(
-                          _formatBirthdayDate(_birthdayBlockTime!),
-                          'Birthday date copied',
-                        ),
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                _BirthdayRow(
-                  label: 'Birthday block height',
-                  value:
-                      _birthdayHeight?.toString() ??
-                      (_birthdayLoading ? '…' : '—'),
-                  onCopy: _birthdayHeight == null
-                      ? null
-                      : () =>
-                            _copy('$_birthdayHeight', 'Birthday height copied'),
-                ),
-              ],
+            child: AppButton(
+              key: const ValueKey('mobile_seed_backed_up'),
+              onPressed: _markingBackedUp
+                  ? null
+                  : () => _markBackedUp(account.uuid),
+              size: AppButtonSize.large,
+              expand: true,
+              growWithContent: true,
+              constrainContent: true,
+              child: const Text(
+                'I’ve written it down',
+                textAlign: TextAlign.center,
+              ),
             ),
           ),
-        ],
       ],
     );
+  }
+
+  Future<void> _markBackedUp(String accountUuid) async {
+    setState(() => _markingBackedUp = true);
+    try {
+      await ref.read(accountProvider.notifier).markBackedUp(accountUuid);
+    } catch (error) {
+      log('MobileSeedPhrase: marking backed up failed: $error');
+      if (mounted) {
+        showAppToast(context, 'Couldn’t save that. Try again.');
+        setState(() => _markingBackedUp = false);
+      }
+      return;
+    }
+    if (!mounted) return;
+    if (widget.showBackupIntro || !context.canPop()) {
+      context.go('/home');
+    } else {
+      context.pop();
+    }
+  }
+
+  Future<void> _snoozeBackup(String accountUuid) async {
+    setState(() => _snoozingBackup = true);
+    try {
+      await ref
+          .read(accountProvider.notifier)
+          .snoozeBackupReminder(accountUuid);
+    } catch (error) {
+      log('MobileSeedPhrase: snoozing backup failed: $error');
+      if (mounted) {
+        showAppToast(context, 'Couldn’t save that. Try again.');
+        setState(() => _snoozingBackup = false);
+      }
+      return;
+    }
+    if (mounted) context.go('/home');
   }
 }
 
@@ -795,14 +994,13 @@ class _MobileBip39PassphraseRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
+    final largeText = MediaQuery.textScalerOf(context).scale(1) > 1.5;
+    final label = Text(
+      'BIP39 Passphrase',
+      style: AppTypography.labelMedium.copyWith(color: colors.text.accent),
+    );
+    final valueAndCopy = Row(
       children: [
-        Text(
-          'BIP39 Passphrase',
-          style: AppTypography.labelMedium.copyWith(color: colors.text.accent),
-        ),
-        const SizedBox(width: AppSpacing.s),
         Expanded(
           child: Text(
             passphrase,
@@ -837,6 +1035,24 @@ class _MobileBip39PassphraseRow extends StatelessWidget {
         ),
       ],
     );
+    if (largeText) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          label,
+          const SizedBox(height: AppSpacing.xxs),
+          valueAndCopy,
+        ],
+      );
+    }
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        label,
+        const SizedBox(width: AppSpacing.s),
+        Expanded(child: valueAndCopy),
+      ],
+    );
   }
 }
 
@@ -854,48 +1070,65 @@ class _BirthdayRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return SizedBox(
-      height: 36,
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              style: AppTypography.labelMedium.copyWith(
-                fontWeight: FontWeight.w500,
-                color: colors.text.accent,
-              ),
-            ),
-          ),
-          Text(
-            value,
-            style: AppTypography.labelMedium.copyWith(
-              fontWeight: FontWeight.w400,
-              color: colors.text.accent,
-            ),
-          ),
-          if (onCopy != null) ...[
-            Semantics(
-              button: true,
-              label: 'Copy $label',
-              excludeSemantics: true,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: onCopy,
-                child: SizedBox(
-                  width: 24,
-                  height: 36,
-                  child: Center(
-                    child: AppIcon(
-                      AppIcons.copy,
-                      size: AppIconSize.medium,
-                      color: colors.icon.muted,
-                    ),
+    final labelText = Text(
+      label,
+      style: AppTypography.labelMedium.copyWith(
+        fontWeight: FontWeight.w500,
+        color: colors.text.accent,
+      ),
+    );
+    final valueText = Text(
+      value,
+      textAlign: TextAlign.end,
+      style: AppTypography.labelMedium.copyWith(
+        fontWeight: FontWeight.w400,
+        color: colors.text.accent,
+      ),
+    );
+    final copyButton = onCopy == null
+        ? null
+        : Semantics(
+            button: true,
+            label: 'Copy $label',
+            excludeSemantics: true,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onCopy,
+              child: SizedBox(
+                width: 24,
+                height: 36,
+                child: Center(
+                  child: AppIcon(
+                    AppIcons.copy,
+                    size: AppIconSize.medium,
+                    color: colors.icon.muted,
                   ),
                 ),
               ),
             ),
-          ],
+          );
+    if (MediaQuery.textScalerOf(context).scale(1) > 1.5) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          labelText,
+          const SizedBox(height: AppSpacing.xxs),
+          Row(
+            children: [
+              Expanded(child: valueText),
+              ?copyButton,
+            ],
+          ),
+        ],
+      );
+    }
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 36),
+      child: Row(
+        children: [
+          Expanded(child: labelText),
+          valueText,
+          ?copyButton,
         ],
       ),
     );

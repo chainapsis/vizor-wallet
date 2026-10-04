@@ -39,6 +39,9 @@ final paymentLinkLedgerFundingServiceProvider =
           );
         },
         refresh: () => ref.read(syncProvider.notifier).refreshAfterSend(),
+        onAcceptedBroadcast: (account, txids) => ref
+            .read(paymentLinkServiceProvider)
+            .observeActivityBroadcast(accountUuid: account, txids: txids),
         currentChainHeight: () =>
             ref.read(syncProvider).value?.chainTipHeight ?? 0,
       );
@@ -68,6 +71,7 @@ class PaymentLinkLedgerFundingService {
     required this.settleProposal,
     required this.refresh,
     this.currentChainHeight = _unknownChainHeight,
+    this.onAcceptedBroadcast,
   });
   final PaymentLinkHardwareSigningService hardware;
   final LedgerSignedOperationService operations;
@@ -80,6 +84,7 @@ class PaymentLinkLedgerFundingService {
 
   /// The in-memory sync tip used to date a submission; `0` when unknown.
   final int Function() currentChainHeight;
+  final void Function(String accountUuid, String txids)? onAcceptedBroadcast;
 
   void _requireAccount(String accountUuid) {
     if (!accountExists(accountUuid)) {
@@ -367,7 +372,11 @@ class PaymentLinkLedgerFundingService {
             'The gift card transaction does not match its saved funding.',
           );
         }
-      } else {
+      }
+      if (isPaymentLinkFundingBroadcastAccepted(result.status)) {
+        onAcceptedBroadcast?.call(operation.accountUuid, result.txid);
+      }
+      if (record.state == PaymentLinkRecoveryState.draft) {
         // Only an accepted broadcast is promoted; the reconciler settles an
         // unknown one once the wallet holds the transaction or it expires.
         final accepted = isPaymentLinkFundingBroadcastAccepted(result.status);

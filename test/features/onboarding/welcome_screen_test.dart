@@ -35,6 +35,7 @@ void main() {
     await tester.pumpWidget(_welcomeScreen());
 
     expect(find.text('Back'), findsNothing);
+    expect(find.text('Or'), findsOneWidget);
   });
 
   testWidgets('shows Ledger on first wallet creation entry', (tester) async {

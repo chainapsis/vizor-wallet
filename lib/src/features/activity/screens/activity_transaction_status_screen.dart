@@ -19,6 +19,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_copy_feedback.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/review_info_row.dart';
+import '../../../core/widgets/receipt_loading_skeleton.dart';
 import '../../../core/widgets/review_list_row.dart';
 import '../../../core/widgets/review_wrap_card.dart';
 import '../../../providers/account_provider.dart';
@@ -49,6 +50,7 @@ class ActivityTransactionStatusArgs {
     this.txKind,
     this.initialTransaction,
     this.initialDetail,
+    this.sourceAccountUuid,
     this.giftCard,
   });
 
@@ -56,6 +58,9 @@ class ActivityTransactionStatusArgs {
   final String? txKind;
   final rust_sync.TransactionInfo? initialTransaction;
   final rust_sync.TransactionDetail? initialDetail;
+
+  /// Account that supplied the row and its metadata. Absent for direct links.
+  final String? sourceAccountUuid;
   final GiftCardActivityMetadata? giftCard;
 }
 
@@ -99,9 +104,13 @@ class _ActivityTransactionStatusScreenState
   rust_sync.TransactionInfo? _transaction;
   rust_sync.TransactionDetail? _detail;
   bool _isLoading = false;
+  // A null detail can mean pending, unavailable, or failed. Keep the read
+  // state separate, and show placeholders only without a matching cached detail.
+  bool _detailsPending = true;
   String? _error;
   String? _activeAccountUuid;
   String? _argsAccountUuid;
+  int _loadGeneration = 0;
   bool _messageExpanded = false;
   String? _verifyAddress;
 
@@ -111,29 +120,44 @@ class _ActivityTransactionStatusScreenState
     _transaction = widget.args.initialTransaction;
     _detail = widget.args.initialDetail;
     _activeAccountUuid = ref.read(accountProvider).value?.activeAccountUuid;
-    _argsAccountUuid = _activeAccountUuid;
+    _argsAccountUuid = widget.args.sourceAccountUuid ?? _activeAccountUuid;
+    if (_argsAccountUuid != _activeAccountUuid) {
+      _transaction = null;
+      _detail = null;
+    }
+    _isLoading = _transaction == null;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.read(appLayoutProvider.notifier).setMode(AppLayoutMode.large);
-      unawaited(_loadTransaction(showLoading: _transaction == null));
+      unawaited(_loadTransaction());
     });
   }
 
-  Future<void> _loadTransaction({bool showLoading = false}) async {
+  bool _loadIsCurrent(int generation, String? accountUuid) =>
+      mounted &&
+      generation == _loadGeneration &&
+      accountUuid == ref.read(accountProvider).value?.activeAccountUuid;
+
+  Future<void> _loadTransaction() async {
+    final generation = ++_loadGeneration;
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    final accountChanged = accountUuid != _activeAccountUuid;
     _activeAccountUuid = accountUuid;
-
-    if (showLoading && mounted) {
-      setState(() {
-        _isLoading = true;
-        _error = null;
-      });
-    }
-
+    setState(() {
+      if (accountChanged) {
+        _transaction = null;
+        _detail = null;
+        _verifyAddress = null;
+        _messageExpanded = false;
+      }
+      _isLoading = _transaction == null;
+      _detailsPending = true;
+      _error = null;
+    });
     if (accountUuid == null) {
-      if (!mounted) return;
       setState(() {
         _isLoading = false;
+        _detailsPending = false;
         _error = 'No active account.';
       });
       return;
@@ -141,11 +165,7 @@ class _ActivityTransactionStatusScreenState
 
     try {
       final txs = await _loadHistory(accountUuid);
-      if (!mounted) return;
-      if (accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
-        return;
-      }
-
+      if (!_loadIsCurrent(generation, accountUuid)) return;
       final tx = _findTransaction(
         txs,
         widget.args.txidHex,
@@ -154,40 +174,38 @@ class _ActivityTransactionStatusScreenState
             widget.args.initialTransaction?.txKind ??
             widget.args.txKind,
       );
-      rust_sync.TransactionDetail? detail;
-      if (tx != null) {
-        try {
-          detail = await _loadDetail(accountUuid, tx);
-        } catch (e, st) {
-          log('ActivityTransactionStatus: detail load failed: $e\n$st');
-        }
-        if (!mounted) return;
-        if (accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
-          return;
-        }
-      }
-      setState(() {
-        if (tx != null) {
-          _transaction = tx;
-          _detail = detail;
-          _error = null;
-        } else {
-          _detail = null;
+      if (tx == null) {
+        setState(() {
           _error = _transaction == null
               ? 'Transaction could not be loaded.'
               : 'Latest transaction status could not be refreshed.';
-        }
+          _isLoading = false;
+          _detailsPending = false;
+        });
+        return;
+      }
+      // Publish the status without waiting for addresses, outputs, or memo.
+      setState(() {
+        _transaction = tx;
+        _detail = _matchingDetailFor(tx);
         _isLoading = false;
+        _error = null;
+      });
+      final detail = await _loadDetail(accountUuid, tx);
+      if (!_loadIsCurrent(generation, accountUuid)) return;
+      setState(() {
+        _detail = detail ?? _detail;
+        _detailsPending = false;
       });
     } catch (e, st) {
+      if (!_loadIsCurrent(generation, accountUuid)) return;
       log('ActivityTransactionStatus: transaction load failed: $e\n$st');
-      if (!mounted) return;
       setState(() {
-        _detail = null;
         _error = _transaction == null
             ? 'Transaction could not be loaded.'
             : 'Latest transaction status could not be refreshed.';
         _isLoading = false;
+        _detailsPending = false;
       });
     }
   }
@@ -404,6 +422,9 @@ class _ActivityTransactionStatusScreenState
     return detail;
   }
 
+  bool get _detailsLoading =>
+      _detailsPending && _matchingDetailFor(_transaction) == null;
+
   /// The output the funds arrived on (the "Amount" sub-address) — the
   /// largest of our visible received outputs that carries an address.
   rust_sync.TransactionDetailOutput? _receivingOutputFor(
@@ -483,6 +504,7 @@ class _ActivityTransactionStatusScreenState
         isShieldedReceivingAddress: receivingIsShielded,
         memoText: memo,
         memoExpanded: _messageExpanded,
+        detailsLoading: _detailsLoading,
         onShowFullAddress: hasFromAddress
             ? () => _showVerifyAddress(fromAddress)
             : null,
@@ -501,36 +523,47 @@ class _ActivityTransactionStatusScreenState
 
   Widget _sentContent(
     rust_sync.TransactionInfo tx,
-    rust_sync.TransactionDetail detail,
-    String recipientAddress,
+    rust_sync.TransactionDetail? detail,
+    String? recipientAddress,
     List<AddressBookContact> addressBookContacts, {
     required bool privacyModeEnabled,
   }) {
     final ownAccounts =
         ref.watch(ownAccountAddressesProvider).value ??
         const <String, AccountInfo>{};
-    final recipient = sendReviewRecipientFor(
-      contacts: addressBookContacts,
-      address: recipientAddress,
-      ownAccounts: ownAccounts,
-    );
-    final memo = detail.memo?.trim();
+    final recipient = recipientAddress == null
+        ? null
+        : sendReviewRecipientFor(
+            contacts: addressBookContacts,
+            address: recipientAddress,
+            ownAccounts: ownAccounts,
+          );
+    final memo = detail?.memo?.trim();
     final hasMemo = memo != null && memo.isNotEmpty;
 
     return SendStatusContentView(
       phase: _sentPhaseFor(tx),
       amountText: _amountText(tx, privacyModeEnabled: privacyModeEnabled),
       recipient: recipient,
+      recipientRow: recipient == null
+          ? const ReceiptCounterpartySkeleton(label: 'To')
+          : null,
       timestampText: _timestampText(tx),
       txIdText: _truncatedDisplayTxid(tx.txidHex),
       feeText: _feeText(tx, privacyModeEnabled: privacyModeEnabled),
       isShieldedRecipient:
+          recipientAddress != null &&
           zcashAddressDisplayKind(recipientAddress) ==
-          ZcashAddressDisplayKind.shielded,
-      recipientAddressType: _recipientAddressTypeForDisplay(recipientAddress),
+              ZcashAddressDisplayKind.shielded,
+      recipientAddressType: recipientAddress == null
+          ? null
+          : _recipientAddressTypeForDisplay(recipientAddress),
       memoText: hasMemo ? memo : null,
       memoExpanded: _messageExpanded,
-      onShowFullAddress: () => _showVerifyAddress(recipientAddress),
+      memoLoading: _detailsLoading,
+      onShowFullAddress: recipientAddress == null
+          ? null
+          : () => _showVerifyAddress(recipientAddress),
       onExpandMemo: hasMemo ? _toggleMessageExpanded : null,
       onOpenExplorer: () => unawaited(_openTransactionExplorer()),
     );
@@ -560,6 +593,7 @@ class _ActivityTransactionStatusScreenState
             : null,
         memoText: hasMemo ? memo : null,
         memoExpanded: _messageExpanded,
+        memoLoading: _detailsLoading,
         onExpandMemo: hasMemo ? _toggleMessageExpanded : null,
         onTxIdPressed: () => unawaited(_openTransactionExplorer()),
       ),
@@ -827,7 +861,7 @@ class _ActivityTransactionStatusScreenState
     ref.listen<AsyncValue<AccountState>>(accountProvider, (previous, next) {
       final nextUuid = next.value?.activeAccountUuid;
       if (nextUuid != _activeAccountUuid) {
-        unawaited(_loadTransaction(showLoading: _transaction == null));
+        unawaited(_loadTransaction());
       }
     });
     ref.listen<AsyncValue<SyncState>>(syncProvider, (previous, next) {
@@ -852,8 +886,7 @@ class _ActivityTransactionStatusScreenState
         _activeAccountUuid;
     // The args metadata was resolved for the account that was active when the
     // row was tapped; under another account only that account's index counts.
-    final suppliedGiftCard =
-        _argsAccountUuid == null || _argsAccountUuid == activeAccountUuid
+    final suppliedGiftCard = _argsAccountUuid == activeAccountUuid
         ? widget.args.giftCard
         : null;
     final giftCard =
@@ -877,13 +910,13 @@ class _ActivityTransactionStatusScreenState
       );
     } else if (tx != null &&
         tx.txKind == 'sent' &&
-        detail != null &&
-        sentRecipientAddress != null &&
-        sentRecipientAddress.isNotEmpty) {
+        (_detailsLoading ||
+            (sentRecipientAddress != null &&
+                sentRecipientAddress.isNotEmpty))) {
       redesignedContent = _sentContent(
         tx,
         detail,
-        sentRecipientAddress,
+        sentRecipientAddress?.isNotEmpty == true ? sentRecipientAddress : null,
         addressBookContacts,
         privacyModeEnabled: privacyModeEnabled,
       );
@@ -905,6 +938,30 @@ class _ActivityTransactionStatusScreenState
       );
     }
 
+    Widget receiptContent =
+        redesignedContent ??
+        _fallbackContent(tx, privacyModeEnabled: privacyModeEnabled);
+    // Both dedicated and summary-only receipts retain refresh errors. When
+    // there is no row, the fallback already displays its loading/error state.
+    if (tx != null && _error != null) {
+      receiptContent = Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          receiptContent,
+          Padding(
+            padding: const EdgeInsets.all(AppSpacing.sm),
+            child: Text(
+              _error!,
+              textAlign: TextAlign.center,
+              style: AppTypography.bodyMedium.copyWith(
+                color: context.colors.text.secondary,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
     final verifyAddress = _verifyAddress;
     final verifyAccountUuid =
         _activeAccountUuid ??
@@ -916,12 +973,7 @@ class _ActivityTransactionStatusScreenState
         padding: EdgeInsets.zero,
         child: Stack(
           children: [
-            if (redesignedContent != null)
-              _redesignedPane(redesignedContent)
-            else
-              _redesignedPane(
-                _fallbackContent(tx, privacyModeEnabled: privacyModeEnabled),
-              ),
+            _redesignedPane(receiptContent),
             if (verifyAddress != null && verifyAccountUuid != null)
               SendVerifyAddressOverlay(
                 accountUuid: verifyAccountUuid,

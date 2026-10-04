@@ -34,6 +34,154 @@ class PaymentLinkClaimWallet {
 
   final Ref _ref;
   final Map<String, Future<void>> _claimSyncs = {};
+  int _checkCancellationEpoch = 0;
+  final Map<String, Future<rust_sync.ApiGiftCardCheckProgress>> _claimChecks =
+      {};
+
+  Future<rust_sync.ApiGiftCardCheckProgress> runClaimCheck({
+    required VizorPaymentLink link,
+    required String dbPath,
+    bool allowResubmit = false,
+  }) {
+    final claimId = paymentLinkClaimWalletDirectoryName(link);
+    final existing = _claimChecks[claimId];
+    if (existing != null) return existing;
+    final unregister = _ref
+        .read(paymentLinkClaimCoordinatorProvider)
+        .registerCheckCancellation(() => cancelAllChecks());
+    late final Future<rust_sync.ApiGiftCardCheckProgress> tracked;
+    tracked =
+        _runClaimCheckOnce(
+          link: link,
+          dbPath: dbPath,
+          allowResubmit: allowResubmit,
+        ).whenComplete(() {
+          unregister();
+          if (identical(_claimChecks[claimId], tracked)) {
+            _claimChecks.remove(claimId);
+            _ref.read(giftCardCheckProgressProvider.notifier).clear(link);
+          }
+        });
+    _claimChecks[claimId] = tracked;
+    return tracked;
+  }
+
+  Future<rust_sync.ApiGiftCardCheckProgress> _runClaimCheckOnce({
+    required VizorPaymentLink link,
+    required String dbPath,
+    required bool allowResubmit,
+  }) async {
+    final coordinator = _ref.read(paymentLinkClaimCoordinatorProvider);
+    final generation = coordinator.beginPreparation();
+    final epoch = _checkCancellationEpoch;
+    return _ref
+        .read(rpcEndpointFailoverProvider.notifier)
+        .runWithEndpointFallback<rust_sync.ApiGiftCardCheckProgress>(
+          operation: 'Gift Card check',
+          action: (endpoint) async {
+            coordinator.requirePreparation(generation);
+            if (epoch != _checkCancellationEpoch ||
+                !_ref
+                    .read(paymentLinkClaimCoordinatorProvider)
+                    .acceptsPreparation ||
+                _ref.read(appSecurityProvider).requiresUnlock) {
+              throw StateError('Gift Card preparation is paused.');
+            }
+            if (endpoint.networkName != link.network) {
+              throw StateError('Gift Card network changed.');
+            }
+            try {
+              final failover = _ref.read(rpcEndpointFailoverProvider);
+              rust_sync.ApiGiftCardCheckProgress? last;
+              var paused = false;
+              await for (final event in rust_sync.runPaymentLinkClaimCheck(
+                claimId: paymentLinkClaimWalletDirectoryName(link),
+                dbPath: dbPath,
+                lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+                // Capability fallback also works for custom endpoints. Preserve
+                // configured transport routing; these are public chain queries.
+                fallbackUrls:
+                    {
+                          ...failover.fallbackCandidates
+                              .where((e) => e.networkName == link.network)
+                              .map((e) => e.normalizedLightwalletdUrl),
+                          ...rpcEndpointPresetsForNetwork(link.network).map(
+                            (e) => RpcEndpointConfig(
+                              networkName: link.network,
+                              lightwalletdUrl: e.url,
+                            ).normalizedLightwalletdUrl,
+                          ),
+                        }
+                        .where(
+                          (url) => url != endpoint.normalizedLightwalletdUrl,
+                        )
+                        .toList(),
+                network: link.network,
+                allowResubmit: allowResubmit,
+              )) {
+                if (epoch != _checkCancellationEpoch ||
+                    _ref.read(appSecurityProvider).requiresUnlock ||
+                    !_ref
+                        .read(paymentLinkClaimCoordinatorProvider)
+                        .acceptsPreparation) {
+                  rust_sync.cancelPaymentLinkClaimSync(
+                    claimId: paymentLinkClaimWalletDirectoryName(link),
+                  );
+                  paused = true;
+                }
+                if (paused) continue;
+                last = event;
+                _ref
+                    .read(giftCardCheckProgressProvider.notifier)
+                    .update(link, event);
+              }
+              coordinator.requirePreparation(generation);
+              if (paused || epoch != _checkCancellationEpoch) {
+                throw StateError('Gift Card preparation is paused.');
+              }
+              if (last == null || !last.complete) {
+                throw StateError('Gift Card check did not complete.');
+              }
+              return last;
+            } catch (_) {
+              // A late transport error after pause must not start endpoint
+              // health probes or a fallback scan, even after a quick resume.
+              coordinator.requirePreparation(generation);
+              rethrow;
+            }
+          },
+        );
+  }
+
+  Future<void> cancelAllChecks() async {
+    _checkCancellationEpoch++;
+    final pending = _claimChecks.entries.toList();
+    if (pending.isEmpty) return;
+    void cancel() {
+      for (final entry in pending) {
+        rust_sync.cancelPaymentLinkClaimSync(claimId: entry.key);
+      }
+    }
+
+    cancel();
+    // Dispatch to Rust can race the first cancellation. Keep signalling until
+    // accepted native work has actually unwound, before any file deletion.
+    final timer = Timer.periodic(
+      const Duration(milliseconds: 100),
+      (_) => cancel(),
+    );
+    try {
+      await Future.wait(
+        pending.map((entry) async {
+          try {
+            await entry.value;
+          } catch (_) {}
+        }),
+      );
+    } finally {
+      timer.cancel();
+    }
+  }
 
   /// Verifies the cached wallet and advertised address against the recovery
   /// phrase, accepting current and legacy default-address representations.
@@ -126,11 +274,23 @@ class PaymentLinkClaimWallet {
     final tempWallet = await locate(link);
     if (!await File(tempWallet.dbPath).exists()) return null;
 
-    await runClaimSync(
-      link: link,
+    final fastConfirmations = await rust_sync.getPaymentLinkClaimConfirmations(
       dbPath: tempWallet.dbPath,
-      allowResubmit: allowResubmit,
+      claimTxids: claimTxids,
     );
+    if (fastConfirmations != null) {
+      await runClaimCheck(
+        link: link,
+        dbPath: tempWallet.dbPath,
+        allowResubmit: allowResubmit,
+      );
+    } else {
+      await runClaimSync(
+        link: link,
+        dbPath: tempWallet.dbPath,
+        allowResubmit: allowResubmit,
+      );
+    }
     final accounts = await rust_wallet.listAccounts(
       dbPath: tempWallet.dbPath,
       network: network,
@@ -235,6 +395,7 @@ class PaymentLinkClaimWallet {
     final tempWallet = await locate(link);
     if (!await tempWallet.directory.exists()) return true;
     try {
+      await cancelClaimSync(link);
       await tempWallet.directory.delete(recursive: true);
       return true;
     } catch (error, stackTrace) {
@@ -343,6 +504,7 @@ class PaymentLinkClaimWallet {
     final claimId = paymentLinkClaimWalletDirectoryName(link);
     rust_sync.cancelPaymentLinkClaimSync(claimId: claimId);
     try {
+      await _claimChecks[claimId];
       await _claimSyncs[claimId];
     } catch (_) {
       // A failed scan does not prevent the user-requested preview cleanup.

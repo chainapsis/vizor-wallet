@@ -450,6 +450,10 @@ pub(crate) struct TransactionInfo {
     pub tx_kind: String,
     pub display_amount: u64,
     pub display_pool: String,
+    pub activity_pool: Option<String>,
+    pub funding_parent_txid: Option<String>,
+    pub funding_parent_mined_height: Option<u64>,
+    pub funding_parent_expired: Option<bool>,
     pub created_time: u64,
     /// Whether the recipients, payment amounts, and memos are known. A
     /// missing recipient row does not mean there was no payment.
@@ -489,6 +493,8 @@ pub(crate) struct TransactionDetailOutput {
     pub address: Option<String>,
     pub amount_zatoshi: u64,
     pub pool: String,
+    /// Exact output pool for activity and Gift Card destination metadata.
+    pub activity_pool: Option<String>,
     pub uses_orchard_receiver: bool,
 }
 
@@ -666,7 +672,8 @@ struct ActivityAmounts {
     amount: u64,
     output_count: usize,
     has_transparent: bool,
-    has_shielded: bool,
+    has_sapling: bool,
+    has_orchard: bool,
     has_ironwood: bool,
 }
 
@@ -676,18 +683,40 @@ impl ActivityAmounts {
         self.output_count += 1;
         match output.output_pool {
             TRANSPARENT_POOL => self.has_transparent = true,
-            SAPLING_POOL | ORCHARD_POOL => self.has_shielded = true,
+            SAPLING_POOL => self.has_sapling = true,
+            ORCHARD_POOL => self.has_orchard = true,
             IRONWOOD_POOL => self.has_ironwood = true,
             _ => {}
         }
     }
 
     fn display_pool(&self) -> &'static str {
-        match (self.has_transparent, self.has_shielded, self.has_ironwood) {
+        // Preserve the legacy grouping used by Gift Card activity.
+        match (
+            self.has_transparent,
+            self.has_sapling || self.has_orchard,
+            self.has_ironwood,
+        ) {
             (true, false, false) => "transparent",
             (false, true, false) => "shielded",
             (false, false, true) => "ironwood",
             (false, false, false) => "unknown",
+            _ => "mixed",
+        }
+    }
+
+    fn activity_pool(&self) -> &'static str {
+        match (
+            self.has_transparent,
+            self.has_sapling,
+            self.has_orchard,
+            self.has_ironwood,
+        ) {
+            (true, false, false, false) => "transparent",
+            (false, true, false, false) => "sapling",
+            (false, false, true, false) => "orchard",
+            (false, false, false, true) => "ironwood",
+            (false, false, false, false) => "unknown",
             _ => "mixed",
         }
     }
@@ -710,6 +739,7 @@ type FundingStepMatchKey = (String, i64, u64);
 struct SuppressedFundingStepFees {
     suppressed_funding_txids: HashSet<i64>,
     extra_fee_by_external_txid: HashMap<i64, Fee>,
+    funding_parent_by_external_txid: HashMap<i64, i64>,
 }
 
 struct ClassifiedTx {
@@ -736,6 +766,26 @@ pub(crate) fn get_transaction_history(
         .unchecked_transaction()
         .map_err(|e| format!("SQL error: {e}"))?;
     let mut bases = read_history_bases(&read_tx, &uuid_bytes)?;
+    if let Some(state) = crate::wallet::sync_engine::gift_card_claim::snapshot_from_conn(&read_tx)?
+    {
+        for base in &mut bases {
+            if base.created.is_some() {
+                base.mined_height = read_tx
+                    .query_row(
+                        "SELECT height FROM vizor_giftcard_mined WHERE txid=?1",
+                        [&base.txid],
+                        |r| r.get(0),
+                    )
+                    .optional()
+                    .map_err(|e| e.to_string())?;
+                base.expired_unmined = state.complete
+                    && base.mined_height.is_none()
+                    && base
+                        .expiry_height
+                        .is_some_and(|h| h > 0 && h as u64 + 5 <= state.checked_height as u64);
+            }
+        }
+    }
     if bases.is_empty() {
         return Ok(Vec::new());
     }
@@ -837,6 +887,10 @@ fn assemble_history(
     let suppressed_funding_step_fees =
         build_suppressed_funding_step_fees(bases, &summaries, &external_send_keys);
 
+    let bases_by_id: HashMap<i64, &TxBase> = bases
+        .iter()
+        .map(|base| (base.transaction_id, base))
+        .collect();
     let mut visible = Vec::new();
     for base in bases {
         let summary = summaries.get(&base.txid).cloned().unwrap_or_default();
@@ -857,7 +911,23 @@ fn assemble_history(
             Fee::NotApplicable
         };
 
-        visible.extend(classify_history_tx(base, &summary, extra_sent_fee));
+        let mut rows = classify_history_tx(base, &summary, extra_sent_fee);
+        if let Some(parent_id) = suppressed_funding_step_fees
+            .funding_parent_by_external_txid
+            .get(&base.transaction_id)
+        {
+            if let Some(parent) = bases_by_id.get(parent_id) {
+                for row in &mut rows {
+                    if row.info.tx_kind == "sent" {
+                        row.info.funding_parent_txid = Some(hex::encode(&parent.txid));
+                        row.info.funding_parent_mined_height =
+                            Some(parent.mined_height.unwrap_or(0).into());
+                        row.info.funding_parent_expired = Some(parent.expired_unmined);
+                    }
+                }
+            }
+        }
+        visible.extend(rows);
     }
 
     visible.sort_by(|a, b| {
@@ -1122,6 +1192,7 @@ fn read_transaction_detail(
             address: output.detail_address(tx_kind),
             amount_zatoshi: output.value,
             pool: output_pool_label(output.output_pool).to_string(),
+            activity_pool: exact_output_pool_label(output.output_pool).map(str::to_string),
             uses_orchard_receiver: matches!(output.output_pool, ORCHARD_POOL | IRONWOOD_POOL),
         })
         .collect();
@@ -1261,7 +1332,8 @@ fn read_history_base_by_txid(
             vt.txid,
             COALESCE(tx.id_tx, -1) AS transaction_id,
             vt.mined_height,
-            vt.expired_unmined,
+            -- NULL when no scanned block or expiry height makes expiry comparable: pending.
+            COALESCE(vt.expired_unmined, 0) AS expired_unmined,
             vt.account_balance_delta,
             vt.fee_paid AS fee_paid,
             COALESCE(vt.block_time, 0) AS block_time,
@@ -1426,7 +1498,8 @@ fn read_history_bases(
             vt.txid,
             COALESCE(tx.id_tx, -1) AS transaction_id,
             vt.mined_height,
-            vt.expired_unmined,
+            -- NULL when no scanned block or expiry height makes expiry comparable: pending.
+            COALESCE(vt.expired_unmined, 0) AS expired_unmined,
             vt.account_balance_delta,
             vt.fee_paid AS fee_paid,
             COALESCE(vt.block_time, 0) AS block_time,
@@ -1754,6 +1827,16 @@ fn is_shielded_pool(output_pool: i64) -> bool {
     matches!(output_pool, SAPLING_POOL | ORCHARD_POOL | IRONWOOD_POOL)
 }
 
+fn exact_output_pool_label(output_pool: i64) -> Option<&'static str> {
+    match output_pool {
+        TRANSPARENT_POOL => Some("transparent"),
+        SAPLING_POOL => Some("sapling"),
+        ORCHARD_POOL => Some("orchard"),
+        IRONWOOD_POOL => Some("ironwood"),
+        _ => None,
+    }
+}
+
 fn output_pool_label(output_pool: i64) -> &'static str {
     match output_pool {
         TRANSPARENT_POOL => "transparent",
@@ -1870,6 +1953,9 @@ fn build_suppressed_funding_step_fees(
             external_index += 1;
 
             matched
+                .funding_parent_by_external_txid
+                .insert(external_transaction_id, funding_transaction_id);
+            matched
                 .suppressed_funding_txids
                 .insert(funding_transaction_id);
             let entry = matched
@@ -1975,7 +2061,7 @@ fn classify_history_tx(
     // how memo-only payments travel.
     let mut rows = Vec::new();
     if summary.sent.output_count > 0 {
-        rows.push(build_classified_tx_with_fee(
+        let mut row = build_classified_tx_with_fee(
             base,
             "sent",
             summary.sent.amount,
@@ -1983,7 +2069,9 @@ fn classify_history_tx(
             summary.sent.has_transparent,
             1,
             base.history.fee.plus(extra_sent_fee),
-        ));
+        );
+        row.info.activity_pool = Some(summary.sent.activity_pool().to_string());
+        rows.push(row);
     }
     // Before enhancement links our zero-value change to its send, the change
     // looks like an external receipt, so a zero-value receipt needs a tx that
@@ -1992,14 +2080,16 @@ fn classify_history_tx(
     if summary.received.amount > 0
         || (summary.received.output_count > 0 && zero_value_receipt_allowed)
     {
-        rows.push(build_classified_tx(
+        let mut row = build_classified_tx(
             base,
             receiving_tx_kind(base),
             summary.received.amount,
             summary.received.display_pool(),
             summary.received.has_transparent,
             2,
-        ));
+        );
+        row.info.activity_pool = Some(summary.received.activity_pool().to_string());
+        rows.push(row);
     }
 
     if rows.is_empty() {
@@ -2099,6 +2189,10 @@ fn build_classified_tx_with_fee(
             tx_kind: tx_kind.to_string(),
             display_amount,
             display_pool: display_pool.to_string(),
+            activity_pool: None,
+            funding_parent_txid: None,
+            funding_parent_mined_height: None,
+            funding_parent_expired: None,
             created_time: base.created_time,
             details_complete: base.history.details_complete,
             provisional: base.history.provisional,
@@ -2675,6 +2769,7 @@ mod tests {
         assert_eq!(rows[0].info.tx_kind, "migration");
         assert_eq!(rows[0].info.display_amount, 624_980_000);
         assert_eq!(rows[0].info.display_pool, "ironwood");
+        assert_eq!(rows[0].info.activity_pool, None);
     }
 
     #[test]
@@ -3007,6 +3102,79 @@ mod tests {
 
     fn second_test_account_uuid() -> uuid::Uuid {
         uuid::Uuid::from_u128(0x3eb4ded306b74bf2a5393f1b78d792a6)
+    }
+
+    #[test]
+    fn history_exposes_activity_pools_without_changing_legacy_grouping() {
+        let cases: &[(&[i64], &str, &str)] = &[
+            (&[TRANSPARENT_POOL], "transparent", "transparent"),
+            (&[SAPLING_POOL], "sapling", "shielded"),
+            (&[ORCHARD_POOL], "orchard", "shielded"),
+            (&[IRONWOOD_POOL], "ironwood", "ironwood"),
+            (&[SAPLING_POOL, ORCHARD_POOL], "mixed", "shielded"),
+            (&[ORCHARD_POOL, IRONWOOD_POOL], "mixed", "mixed"),
+            (&[TRANSPARENT_POOL, SAPLING_POOL], "mixed", "mixed"),
+            (&[TRANSPARENT_POOL, IRONWOOD_POOL], "mixed", "mixed"),
+        ];
+        for &(pools, activity_pool, legacy_pool) in cases {
+            let db = fresh_history_db();
+            let account = test_account_uuid();
+            let txid = fake_txid(0xB0);
+            let amount = pools.len() as i64 * 100_000;
+            insert_history_tx(
+                &db,
+                account,
+                &txid,
+                Some(1_000_000),
+                1,
+                None,
+                0,
+                amount,
+                amount,
+                false,
+                None,
+            );
+            for &pool in pools {
+                insert_output_with_address(
+                    &db,
+                    &txid,
+                    pool,
+                    Some(account),
+                    Some(account),
+                    100_000,
+                    false,
+                    Some("self-address"),
+                    Some(0),
+                );
+            }
+            let rows = history_from_fixture(
+                db.path().to_str().unwrap(),
+                WalletNetwork::Test,
+                None,
+                &account.to_string(),
+            )
+            .unwrap();
+            assert_eq!(rows.len(), 2, "pools: {pools:?}");
+            assert_eq!(rows[0].tx_kind, "sent");
+            assert_eq!(rows[1].tx_kind, "received");
+            for row in rows {
+                assert_eq!(row.activity_pool.as_deref(), Some(activity_pool));
+                assert_eq!(row.display_pool, legacy_pool);
+                assert_eq!(row.display_amount, amount as u64);
+            }
+        }
+    }
+
+    #[test]
+    fn history_unknown_pool_fallback_has_no_exact_activity_pool() {
+        let mut base = tx_base_for_history();
+        base.total_spent = 0;
+        base.account_balance_delta = 50_000;
+        let rows = classify_history_tx(&base, &ActivitySummary::default(), 0);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].info.tx_kind, "received");
+        assert_eq!(rows[0].info.display_pool, "unknown");
+        assert_eq!(rows[0].info.activity_pool, None);
     }
 
     #[test]
@@ -4010,7 +4178,7 @@ mod tests {
                 vt.txid,
                 COALESCE(tx.id_tx, -1) AS transaction_id,
                 vt.mined_height,
-                vt.expired_unmined,
+                COALESCE(vt.expired_unmined, 0) AS expired_unmined,
                 vt.account_balance_delta,
                 vt.fee_paid AS fee_paid,
                 COALESCE(vt.block_time, 0) AS block_time,
@@ -4683,6 +4851,36 @@ mod tests {
         assert_eq!(got[0].tx_kind, "sent");
         assert_eq!(got[0].display_amount, 10_000_000);
         assert_eq!(got[0].fee, 50_000);
+        assert_eq!(got[0].funding_parent_txid, Some(hex::encode(funding_step)));
+        assert_eq!(got[0].funding_parent_mined_height, Some(0));
+        assert_eq!(got[0].funding_parent_expired, Some(false));
+        let conn = rusqlite::Connection::open(db.path()).unwrap();
+        conn.execute(
+            "UPDATE v_transactions SET mined_height = 100 WHERE txid = ?1",
+            rusqlite::params![funding_step],
+        )
+        .unwrap();
+        let confirmed = history_from_fixture(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Main,
+            Some(1),
+            &account.to_string(),
+        )
+        .unwrap();
+        assert_eq!(confirmed[0].funding_parent_mined_height, Some(100));
+        conn.execute(
+            "UPDATE v_transactions SET mined_height = NULL, expired_unmined = 1 WHERE txid = ?1",
+            rusqlite::params![funding_step],
+        )
+        .unwrap();
+        let expired = history_from_fixture(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Main,
+            Some(1),
+            &account.to_string(),
+        )
+        .unwrap();
+        assert_eq!(expired[0].funding_parent_expired, Some(true));
     }
 
     #[test]
@@ -5408,10 +5606,10 @@ mod tests {
 
     #[test]
     fn detail_sent_row_returns_recipient_address_and_memo() {
-        for (output_pool, label, uses_orchard) in [
-            (SAPLING_POOL, "shielded", false),
-            (ORCHARD_POOL, "shielded", true),
-            (IRONWOOD_POOL, "ironwood", true),
+        for (output_pool, label, activity_pool, uses_orchard) in [
+            (SAPLING_POOL, "shielded", "sapling", false),
+            (ORCHARD_POOL, "shielded", "orchard", true),
+            (IRONWOOD_POOL, "ironwood", "ironwood", true),
         ] {
             let db = fresh_history_db();
             let account = test_account_uuid();
@@ -5460,6 +5658,7 @@ mod tests {
             assert_eq!(got.outputs[0].address.as_deref(), Some("u-recipient"));
             assert_eq!(got.outputs[0].amount_zatoshi, 1_000_000);
             assert_eq!(got.outputs[0].pool, label);
+            assert_eq!(got.outputs[0].activity_pool.as_deref(), Some(activity_pool));
             assert_eq!(got.outputs[0].uses_orchard_receiver, uses_orchard);
         }
     }
@@ -6557,6 +6756,64 @@ mod tests {
         assert_eq!(got[0].tx_kind, "sent");
         assert_eq!(got[0].mined_height, 0);
         assert_eq!(got[0].display_amount, 1_000_000);
+    }
+
+    /// `expired_unmined` is SQL NULL for an unmined transaction whose expiry
+    /// cannot be compared to a scanned height: no `blocks` rows yet (a
+    /// hardware wallet that broadcasts before its first scan, as the Ledger
+    /// Speculos fixtures do) or no recorded expiry height. Such a row is
+    /// pending, not expired, and must not fail the whole history read.
+    #[test]
+    fn history_reads_unmined_rows_without_a_comparable_expiry() {
+        use transparent::{address::TransparentAddress, bundle::OutPoint, bundle::TxOut};
+        use zcash_client_backend::{data_api::WalletWrite, wallet::WalletTransparentOutput};
+        use zcash_keys::encoding::AddressCodec as _;
+
+        let network = WalletNetwork::Regtest;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db").to_str().unwrap().to_owned();
+        let seed = crate::wallet::keys::mnemonic_to_seed(&crate::wallet::keys::generate_mnemonic())
+            .unwrap();
+        let (uuid, _) =
+            crate::wallet::keys::init_db_and_create_account(&path, network, &seed, Some(100), "a")
+                .unwrap();
+        let address =
+            crate::wallet::keys::software_account_transparent_addresses(network, &seed, 0, 1)
+                .unwrap()
+                .swap_remove(0);
+        let address = TransparentAddress::decode(&network, &address).unwrap();
+        let output = WalletTransparentOutput::from_parts(
+            OutPoint::new([0x51; 32], 0),
+            TxOut::new(
+                zcash_protocol::value::Zatoshis::const_from_u64(50_000),
+                address.script().into(),
+            ),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let mut db = open_wallet_db(&path, network).unwrap();
+        db.put_received_transparent_utxo(&output).unwrap();
+        drop(db);
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        let blocks: i64 = conn
+            .query_row("SELECT COUNT(*) FROM blocks", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(blocks, 0, "the wallet has not scanned a block");
+
+        for expiry_height in [None, Some(140)] {
+            conn.execute(
+                "UPDATE transactions SET expiry_height = ?1 WHERE txid = ?2",
+                rusqlite::params![expiry_height, [0x51u8; 32].as_slice()],
+            )
+            .unwrap();
+            let history = get_transaction_history(&path, network, None, &uuid).unwrap();
+            assert_eq!(history.len(), 1, "expiry {expiry_height:?}");
+            assert_eq!(history[0].mined_height, 0);
+            assert!(!history[0].expired_unmined, "expiry {expiry_height:?}");
+        }
     }
 
     #[test]
