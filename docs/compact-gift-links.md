@@ -3,8 +3,8 @@
 V3 encodes the original English BIP-39 entropy in the fragment of
 `https://link.vizor.cash/payment-links/open#v3=<payload>`. The origin remains
 configurable through `VIZOR_DEEPLINK_BASE_URL`. No resolver, remote presentation
-lookup, or new route is needed. New gifts still use 24 words. Decoding also
-supports existing 12, 15, 18, and 21 word phrases.
+lookup, or new route is needed. New gifts use 12 words. Decoding continues to
+support existing 12, 15, 18, 21, and 24 word phrases without a version change.
 
 The message remains inline. It is not placed in, or fetched from, a funding
 transaction memo. The amount and birthday retain their existing meanings.
@@ -30,6 +30,12 @@ optional field is present. An empty custom label is allowed. Amounts use decimal
 strings without a sign, exponent, or leading zeroes. The version is already in
 `#v3=` and is not repeated in the array.
 
+The v3 writer rounds the display-only USD snapshot to two decimal places and
+keeps it a JSON number. Readers continue accepting older full-precision USD
+snapshots in v1, v2, and v3 without rounding them. Local v2 recovery records
+retain their original precision; resharing a card rounds only the v3 snapshot.
+The ZEC amount, mnemonic, birthday, and claim calculations are unaffected.
+
 The complete URL is bounded to 16 KiB before decoding. Both Base64url strings
 use only `A-Z`, `a-z`, `0-9`, `-`, and `_`, without padding or noncanonical trailing
 bits. JSON whitespace and normal JSON string escaping are accepted. Wrong
@@ -41,12 +47,15 @@ of at most 64 characters; unknown IDs use the local artwork fallback. Messages
 remain limited to 128 grapheme clusters and 512 UTF-8 bytes.
 
 Entropy is 16, 20, 24, 28, or 32 bytes, reconstructing the original English
-mnemonic with an empty BIP-39 passphrase and ZIP32 account zero. New gifts still
-use 32 bytes, or 24 words. Legacy cards with alternate mnemonic whitespace
-share as v2 after verifying the original address and validating the canonical
-phrase. Their original secret,
-recovery records, and claim-cache identity remain unchanged. Other conversion or
-address-validation errors fail sharing; they never trigger a v2 fallback.
+mnemonic with an empty BIP-39 passphrase and ZIP32 account zero. New gifts use
+16 bytes, or 12 words, instead of 32 bytes, or 24 words. This changes only new
+gift funding accounts; existing funded secrets are never shortened. Ordinary
+wallet creation and the recipient wallet automatically created during Gift
+Card onboarding continue using independent 24-word mnemonics. Legacy cards with
+alternate mnemonic whitespace share as v2 after verifying the original address
+and validating the canonical phrase. Their original secret, recovery records,
+and claim-cache identity remain unchanged. Other conversion or address-validation
+errors fail sharing; they never trigger a v2 fallback.
 Synchronous FFI only converts mnemonic and entropy; address validation remains
 asynchronous and local.
 
@@ -123,38 +132,38 @@ normal release qualification; unit tests are not a substitute for those checks.
 
 ## Synthetic reference and sizes
 
-The following unfunded public vector uses 32 zero entropy bytes (23 `abandon`
-words followed by `art`), mainnet, height 3,483,141, amount 1,000,000 zatoshi,
-artwork `knightMagic`, USD 11.1747, and the exact message
+The following unfunded public vector uses 16 zero entropy bytes (11 `abandon`
+words followed by `about`), mainnet, height 3,483,141, amount 1,000,000 zatoshi,
+artwork `knightMagic`, USD 11.17, and the exact message
 `It's a great day to shield your ZEC 🛡️`. Do not fund this published secret.
 
 Its decoded JSON is:
 
 ```json
-["main","AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",3483141,"1000000","knightMagic",11.1747,"It's a great day to shield your ZEC 🛡️"]
+["main","AAAAAAAAAAAAAAAAAAAAAA",3483141,"1000000","knightMagic",11.17,"It's a great day to shield your ZEC 🛡️"]
 ```
 
 The full link is:
 
 ```text
-https://link.vizor.cash/payment-links/open#v3=WyJtYWluIiwiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQSIsMzQ4MzE0MSwiMTAwMDAwMCIsImtuaWdodE1hZ2ljIiwxMS4xNzQ3LCJJdCdzIGEgZ3JlYXQgZGF5IHRvIHNoaWVsZCB5b3VyIFpFQyDwn5uh77iPIl0
+https://link.vizor.cash/payment-links/open#v3=WyJtYWluIiwiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQSIsMzQ4MzE0MSwiMTAwMDAwMCIsImtuaWdodE1hZ2ljIiwxMS4xNywiSXQncyBhIGdyZWF0IGRheSB0byBzaGllbGQgeW91ciBaRUMg8J-boe-4jyJd
 ```
 
-It is 233 characters: 46 for the URL prefix and 187 for the Base64url encoding
-of 140 JSON bytes. The message itself occupies 43 UTF-8 bytes.
+It is 202 characters: 46 for the URL prefix and 156 for the Base64url encoding
+of 117 JSON bytes. The message itself occupies 43 UTF-8 bytes.
 
-| Contents, default label | 24 words | 12 words (decoder support only) |
+| Contents, default label | 24 words (legacy) | 12 words (new gifts) |
 | --- | ---: | ---: |
 | Plain | 142 | 114 |
-| Artwork and fiat | 172 | 144 |
-| Artwork, fiat, example message | 233 | 205 |
-| Artwork, fiat, 512-byte message | 858 | 830 |
+| Artwork and fiat | 169 | 141 |
+| Artwork, fiat, example message | 230 | 202 |
+| Artwork, fiat, 512-byte message | 856 | 828 |
 
 The original v1 example in planning measured 914 characters. Its bearer secret
-is not included in source or fixtures. Positional JSON retains a 74.5% reduction
+is not included in source or fixtures. Positional JSON retains a 77.9% reduction
 for the decorated example, while using standard JSON tooling.
 
-Further size reductions are deferred: 12-word generation saves about 28
-characters; `/gift` saves 14; placing the example message on-chain saves about 61 but
+Twelve-word generation saves about 28 characters. Further size reductions are
+deferred: `/gift` saves 14; placing the example message on-chain saves about 61 but
 adds memo retrieval and its privacy/availability tradeoffs; compression has
 variable savings and adds parser complexity.

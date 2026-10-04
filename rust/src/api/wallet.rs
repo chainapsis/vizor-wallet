@@ -2,13 +2,16 @@ use std::panic;
 
 use crate::wallet::sync_engine::{enhancement::EnhancementPolicy, TransparentLookupGate};
 use crate::wallet::{keys, network::WalletNetwork, transparent_receive_cache};
+use bip0039::{Count, English, Mnemonic};
+use tonic::{transport::Channel, Request};
+use zcash_client_backend::proto::service::{
+    self, compact_tx_streamer_client::CompactTxStreamerClient,
+};
 
 /// Returned before any request when the transparent policy withholds public
 /// UTXO lookups; an unavailable preview is not a zero balance.
 const TRANSPARENT_PREVIEW_UNAVAILABLE: &str =
     "Transparent balance preview is unavailable under the private transparent policy";
-use tonic::transport::Channel;
-use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
 
 const SOFTWARE_ACCOUNT_DISCOVERY_MAX_INDEX: u32 = 20;
@@ -189,21 +192,28 @@ pub fn get_lightwalletd_chain_name(lightwalletd_url: String) -> Result<String, S
     catch(|| {
         let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
         rt.block_on(async {
-            use zcash_client_backend::proto::service::Empty;
+            // Bound channel establishment as well as the RPC response. Endpoint
+            // editors hold dismissal while verifying; timing out only in Dart
+            // would let the original request persist its result afterwards.
+            tokio::time::timeout(std::time::Duration::from_secs(30), async {
+                use zcash_client_backend::proto::service::Empty;
 
-            let mut client = crate::wallet::sync_engine::open_lwd_channel(&lightwalletd_url)
+                let mut client = crate::wallet::sync_engine::open_lwd_channel(&lightwalletd_url)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                let info = tokio::time::timeout(
+                    std::time::Duration::from_secs(10),
+                    client.get_lightd_info(Empty {}),
+                )
                 .await
-                .map_err(|e| e.to_string())?;
-            let info = tokio::time::timeout(
-                std::time::Duration::from_secs(10),
-                client.get_lightd_info(Empty {}),
-            )
-            .await
-            .map_err(|_| "get_lightd_info: timed out waiting for response".to_string())?
-            .map_err(|e| format!("get_lightd_info: {e}"))?
-            .into_inner();
+                .map_err(|_| "get_lightd_info: timed out waiting for response".to_string())?
+                .map_err(|e| format!("get_lightd_info: {e}"))?
+                .into_inner();
 
-            Ok(info.chain_name)
+                Ok(info.chain_name)
+            })
+            .await
+            .map_err(|_| "endpoint verification: timed out".to_string())?
         })
     })
 }
@@ -357,13 +367,15 @@ pub fn add_account(
     })
 }
 
-/// Generate a software account mnemonic and shielded address without touching
-/// the wallet DB. Used for an external one-time recipient controlled by a
-/// fresh seed, such as payment-link funding.
+/// Generate a 12-word BIP-39 mnemonic and shielded address for Gift Card funding
+/// without touching the wallet DB. Regular wallets and Gift Card recipients
+/// continue using the 24-word [`keys::generate_mnemonic`] generator.
 pub fn generate_software_account(network: String) -> Result<GeneratedSoftwareAccount, String> {
     catch(|| {
         let network = keys::parse_network(&network)?;
-        let mnemonic = keys::generate_mnemonic();
+        let mnemonic = Mnemonic::<English>::generate(Count::Words12)
+            .phrase()
+            .to_string();
         let seed = keys::mnemonic_to_seed(&mnemonic)?;
         let unified_address = keys::derive_gift_address(network, &seed, 0)?;
 
@@ -1173,6 +1185,26 @@ pub fn get_unified_address(
     })
 }
 
+/// The wallet account encrypted software recovery material derives at
+/// `zip32_account_index`, matched by viewing key. Accepts either a legacy plain
+/// mnemonic or the versioned mnemonic + BIP-39 passphrase storage envelope.
+/// Returns `None` when the wallet or account is missing.
+pub fn find_software_account_for_mnemonic(
+    mnemonic: String,
+    network: String,
+    db_path: String,
+    zip32_account_index: u32,
+) -> Result<Option<String>, String> {
+    catch(|| {
+        if !keys::wallet_exists(&db_path) {
+            return Ok(None);
+        }
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let seed = keys::mnemonic_bytes_to_seed(mnemonic.as_bytes())?;
+        keys::software_account_uuid_for_seed(&db_path, network, &seed, zip32_account_index)
+    })
+}
+
 /// Export a single account's Unified Full Viewing Key (UFVK). Works for both
 /// software and hardware (Keystone) accounts.
 pub fn get_account_ufvk(
@@ -1540,14 +1572,6 @@ mod tests {
             let error = gift_mnemonic_to_entropy(phrase.clone()).unwrap_err();
             assert!(!error.contains(&phrase));
         }
-        assert_eq!(
-            generate_software_account("main".into())
-                .unwrap()
-                .mnemonic
-                .split_whitespace()
-                .count(),
-            24
-        );
     }
 
     #[test]
@@ -1607,12 +1631,53 @@ mod tests {
     const BIP39_VECTOR_MAINNET_TADDR: &str = "t1eB9Q9aDobjEnazefA9hdGyx3ku7dHshw5";
 
     #[test]
-    fn generates_valid_software_account_without_creating_a_database() {
-        let account = generate_software_account("main".to_string()).unwrap();
+    fn generated_gift_entropy_recovers_the_funded_account() {
+        use secrecy::ExposeSecret;
 
-        assert_eq!(account.mnemonic.split_whitespace().count(), 24);
-        assert!(validate_mnemonic(account.mnemonic.clone()));
-        assert!(account.unified_address.starts_with("u1"));
+        for network in [WalletNetwork::Main, WalletNetwork::Regtest] {
+            let network_name = network_name(network).to_string();
+            let account = generate_software_account(network_name.clone()).unwrap();
+            assert_eq!(account.mnemonic.split_whitespace().count(), 12);
+            assert!(validate_mnemonic(account.mnemonic.clone()));
+
+            let entropy = gift_mnemonic_to_entropy(account.mnemonic.clone()).unwrap();
+            assert_eq!(entropy.len(), 16);
+            let restored = gift_mnemonic_from_entropy(entropy).unwrap();
+            assert_eq!(restored, account.mnemonic);
+            assert_eq!(
+                keys::mnemonic_to_seed(&restored).unwrap().expose_secret(),
+                keys::mnemonic_to_seed(&account.mnemonic)
+                    .unwrap()
+                    .expose_secret(),
+            );
+            validate_gift_address(
+                restored.clone(),
+                network_name.clone(),
+                account.unified_address.clone(),
+            )
+            .unwrap();
+
+            // Claiming imports the decoded secret into an isolated wallet.
+            let dir = tempfile::tempdir().unwrap();
+            let db_path = temp_db(&dir, "claim.db");
+            let imported = import_wallet(
+                restored.clone(),
+                String::new(),
+                Some(3_483_141),
+                network_name.clone(),
+                db_path.clone(),
+                Some("Gift Card".to_string()),
+            )
+            .unwrap();
+            assert_eq!(imported.unified_address, account.unified_address);
+            assert_eq!(
+                find_software_account_for_mnemonic(restored, network_name, db_path, 0).unwrap(),
+                Some(imported.account_uuid),
+            );
+        }
+
+        // Recipient setup continues to use the ordinary 24-word generator.
+        assert_eq!(generate_mnemonic().split_whitespace().count(), 24);
     }
 
     #[test]

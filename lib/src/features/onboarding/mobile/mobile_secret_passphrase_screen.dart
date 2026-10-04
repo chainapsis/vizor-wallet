@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/clipboard/sensitive_clipboard.dart';
@@ -25,6 +24,7 @@ import '../shared/onboarding_flow_args.dart';
 import '../../settings/screens/mobile/mobile_seed_phrase_screen.dart'
     show MobileSeedScreenshotWarningSheet;
 import 'mobile_onboarding_progress.dart';
+import 'mobile_onboarding_progress_scope.dart';
 import 'mobile_onboarding_scaffold.dart';
 import 'seed_card.dart';
 
@@ -142,14 +142,14 @@ class _MobileSecretPassphraseScreenState
     final security = ref.read(appSecurityProvider);
     clearCreateOnboardingSecretState(ref.read);
     if (!security.isPasswordConfigured) {
-      context.go(
+      context.goOnboarding(
         '/onboarding/set-passcode',
         extra: SetPasswordScreenArgs.create(mnemonic: mnemonic),
       );
       return;
     }
 
-    context.go(
+    context.goOnboarding(
       '/onboarding/customise-account',
       extra: CustomiseAccountArgs(
         setupArgs: SetPasswordScreenArgs.create(mnemonic: mnemonic),
@@ -191,7 +191,9 @@ class _MobileSecretPassphraseScreenState
       sensitiveContentVisible: _revealed && _mnemonic != null,
       controller: _privacyController,
       child: MobileOnboardingStepScaffold(
-        progress: mobileCreateProgress(6),
+        progress: MobileOnboardingProgressScope.of(
+          context,
+        ).at(OnboardingFlow.create, OnboardingStage.secretPassphrase).value,
         onBack: () => Navigator.of(context).maybePop(),
         title: 'Secret Passphrase',
         subtitle: 'The Master Key to your wallet.',
@@ -226,7 +228,7 @@ class _MobileSecretPassphraseScreenState
                 // The passphrase frame spreads the grid to a 44 px pitch.
                 rowGap: 19,
               )
-            : const _RevealWarningCard(),
+            : const SecretPassphraseRevealWarningCard(),
       ),
     );
   }
@@ -235,8 +237,8 @@ class _MobileSecretPassphraseScreenState
 /// Pre-reveal warning card — Figma `Onboarding 4 Secret Phrase` hidden
 /// variant: the words stay off-screen entirely; a centered key badge,
 /// headline, and caution paragraph fill the dark card instead.
-class _RevealWarningCard extends StatelessWidget {
-  const _RevealWarningCard();
+class SecretPassphraseRevealWarningCard extends StatelessWidget {
+  const SecretPassphraseRevealWarningCard({super.key});
 
   @override
   Widget build(BuildContext context) {

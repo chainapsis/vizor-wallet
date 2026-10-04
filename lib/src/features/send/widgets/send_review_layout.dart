@@ -59,12 +59,12 @@ class SendReviewInfoSection extends StatelessWidget {
     this.recipientRow,
     this.onShowFullAddress,
     super.key,
-  });
+  }) : assert(recipient != null || recipientRow != null);
 
   /// Formatted send amount ("123.12 ZEC").
   final String amountText;
 
-  final SendReviewRecipient recipient;
+  final SendReviewRecipient? recipient;
 
   /// Pool badge for raw-address recipients. Contact recipients keep the
   /// truncated-address sub-line shown in Figma instead of a pool badge.
@@ -170,7 +170,7 @@ class SendReviewInfoSection extends StatelessWidget {
     final rowKey = isPaymentRequest
         ? const ValueKey('send_review_requested_by')
         : null;
-    return switch (recipient) {
+    return switch (recipient!) {
       SendReviewAddressRecipient(:final address) => ReviewInfoRow(
         key: rowKey,
         label: rowLabel,

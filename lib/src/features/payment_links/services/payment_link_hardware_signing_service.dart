@@ -96,6 +96,7 @@ class PaymentLinkHardwarePcztDraft {
     required this.proposalId,
     required this.sendFlowId,
     this.batch,
+    this.sourceAccountUuid,
   });
 
   final VizorPaymentLink link;
@@ -105,6 +106,7 @@ class PaymentLinkHardwarePcztDraft {
   final BigInt proposalId;
   final String sendFlowId;
   final PaymentLinkBatchDraft? batch;
+  final String? sourceAccountUuid;
 
   String get recoveryRef => batch?.id ?? link.address;
 
@@ -253,6 +255,7 @@ class RustPaymentLinkHardwareSigningService
                 consumed = true;
                 return PaymentLinkHardwarePcztDraft(
                   link: links.first,
+                  sourceAccountUuid: accountUuid,
                   batch: batch,
                   pcztBytes: pcztBytes,
                   needsSaplingParams: proposal.needsSaplingParams,
@@ -462,6 +465,13 @@ class RustPaymentLinkHardwareSigningService
       for (final link in draft.links) {
         _surfaces.close(link.address);
       }
+    }
+    if (isPaymentLinkFundingBroadcastAccepted(stored.status) &&
+        draft.sourceAccountUuid != null) {
+      _paymentLinkService.observeActivityBroadcast(
+        accountUuid: draft.sourceAccountUuid!,
+        txids: stored.txids,
+      );
     }
     final result = rust_sync.ExtractAndBroadcastPcztResult(
       txid: stored.txids

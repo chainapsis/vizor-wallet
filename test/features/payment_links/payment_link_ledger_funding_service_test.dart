@@ -263,6 +263,7 @@ void main() {
         throwsStateError,
       );
       expect(h.operations.acks, 0);
+      expect(h.acceptedBroadcasts, isEmpty);
       await h.service.complete(
         entry,
         LedgerSignedOperationBroadcastResult(
@@ -273,6 +274,7 @@ void main() {
         ),
       );
       expect(h.operations.acks, 1);
+      expect(h.acceptedBroadcasts, [('account-1', 'gift-txid')]);
       expect(
         (await h.recovery.load()).single.state,
         PaymentLinkRecoveryState.shared,

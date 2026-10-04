@@ -20,6 +20,7 @@ import '../shared/onboarding_flow_args.dart';
 import 'mobile_import_review_screen.dart';
 import 'mobile_import_screens.dart';
 import 'mobile_onboarding_progress.dart';
+import 'mobile_onboarding_progress_scope.dart';
 import 'mobile_onboarding_scaffold.dart';
 
 const _kManualInvalidWordMessage = 'Invalid secret passphrase word.';
@@ -34,6 +35,7 @@ const _kManualSuggestionChipHeight = 36.0;
 class MobileImportManualScreen extends StatefulWidget {
   const MobileImportManualScreen({
     this.wordListOverride,
+    this.mnemonicValidator,
     this.initialAcceptedWords = const [],
     this.initialTypedWord,
     this.initialError,
@@ -45,6 +47,9 @@ class MobileImportManualScreen extends StatefulWidget {
   /// Test seam — production loads the Rust BIP39 list.
   @visibleForTesting
   final List<String>? wordListOverride;
+
+  /// Preview boundary; production validates the phrase checksum through Rust.
+  final String? Function(List<String> words)? mnemonicValidator;
 
   /// Test/Widgetbook seam for previewing later word-entry states.
   @visibleForTesting
@@ -324,7 +329,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen>
 
   void _continueToReview() {
     final words = [..._accepted];
-    final error = validateImportedMnemonic(words);
+    final error = (widget.mnemonicValidator ?? validateImportedMnemonic)(words);
     if (error != null) {
       setState(() => _error = error);
       return;
@@ -333,7 +338,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen>
     // this screen is fully covered (RouteCoverageAware), so review and later
     // screens are not blanked while the seed is no longer visible.
     context
-        .push<Object?>(
+        .pushOnboarding<Object?>(
           '/import/review',
           extra: ImportSecretPassphraseArgs(mnemonic: words.join(' ')),
         )
@@ -343,7 +348,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen>
             if (context.canPop()) {
               context.pop();
             } else {
-              context.go('/import');
+              context.goOnboarding('/import');
             }
             return;
           }
@@ -413,7 +418,9 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen>
           (_accepted.isNotEmpty || _typed.isNotEmpty) && !isCoveredByNextRoute,
       controller: _privacyController,
       child: MobileOnboardingStepScaffold(
-        progress: mobileImportProgress(1),
+        progress: MobileOnboardingProgressScope.of(
+          context,
+        ).at(OnboardingFlow.importWallet, OnboardingStage.phraseEntry).value,
         onBack: () => Navigator.of(context).maybePop(),
         title: 'Enter your Secret Passphrase',
         subtitle: 'Accept 12, 15, 18, 21 or 24 words',

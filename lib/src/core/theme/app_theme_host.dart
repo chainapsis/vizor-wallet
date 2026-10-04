@@ -32,7 +32,10 @@ class AppThemeHost extends StatelessWidget {
         child: _IOSWindowAppearanceSync(
           themeMode: themeMode,
           brightness: brightness,
-          child: _AndroidSystemBarsSync(brightness: brightness, child: child),
+          child: AnnotatedRegion<SystemUiOverlayStyle>(
+            value: appSystemBarsStyleFor(brightness),
+            child: child,
+          ),
         ),
       ),
     );
@@ -120,63 +123,12 @@ class _IOSWindowAppearanceSyncState extends State<_IOSWindowAppearanceSync> {
   Widget build(BuildContext context) => widget.child;
 }
 
-/// Keeps the Android system bars — the status bar and the navigation
-/// bar (3-button / gesture) — on the app's themed `background.window`
-/// color with matching icon contrast.
-///
-/// Two OS regimes share this one overlay style:
-/// * API <= 34: the bar colors paint directly.
-/// * Android 15+ with targetSdk 35+: the OS enforces edge-to-edge and
-///   ignores the colors — the transparent bars show the scaffold's
-///   `background.window` instead, and disabling contrast enforcement
-///   stops the OS from laying its own scrim over them. Only the icon
-///   brightness needs setting.
-class _AndroidSystemBarsSync extends StatefulWidget {
-  const _AndroidSystemBarsSync({required this.brightness, required this.child});
-
-  final Brightness brightness;
-  final Widget child;
-
-  @override
-  State<_AndroidSystemBarsSync> createState() => _AndroidSystemBarsSyncState();
-}
-
-class _AndroidSystemBarsSyncState extends State<_AndroidSystemBarsSync> {
-  @override
-  void initState() {
-    super.initState();
-    _AndroidSystemBars.sync(widget.brightness);
-  }
-
-  @override
-  void didUpdateWidget(covariant _AndroidSystemBarsSync oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.brightness == widget.brightness) return;
-    _AndroidSystemBars.sync(widget.brightness);
-  }
-
-  @override
-  Widget build(BuildContext context) => widget.child;
-}
-
-abstract final class _AndroidSystemBars {
-  static Brightness? _lastBrightness;
-
-  static void sync(Brightness brightness) {
-    if (kIsWeb || !Platform.isAndroid) return;
-    if (_lastBrightness == brightness) return;
-    _lastBrightness = brightness;
-    SystemChrome.setSystemUIOverlayStyle(androidSystemBarsStyleFor(brightness));
-  }
-}
-
-/// Overlay style for the resolved app theme brightness — both system
-/// bars take the theme's `background.window` (the scaffold background
-/// used across the mobile shell, onboarding, and unlock screens) with
-/// matching icon contrast. `statusBarBrightness` is the iOS-side field
-/// and stays unset; this style only ever applies on Android.
+/// Theme-level system-bar style. A screen (such as Welcome) can override it
+/// with a nested AnnotatedRegion; leaving that screen restores this style.
+/// Android 15+ ignores bar colors under edge-to-edge, but still uses icon
+/// brightness and contrast enforcement. iOS uses statusBarBrightness.
 @visibleForTesting
-SystemUiOverlayStyle androidSystemBarsStyleFor(Brightness brightness) {
+SystemUiOverlayStyle appSystemBarsStyleFor(Brightness brightness) {
   final window = brightness == Brightness.dark
       ? AppColors.dark.background.window
       : AppColors.light.background.window;
@@ -185,6 +137,7 @@ SystemUiOverlayStyle androidSystemBarsStyleFor(Brightness brightness) {
       : Brightness.dark;
   return SystemUiOverlayStyle(
     statusBarColor: window,
+    statusBarBrightness: brightness,
     statusBarIconBrightness: icons,
     systemStatusBarContrastEnforced: false,
     systemNavigationBarColor: window,

@@ -2,11 +2,20 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart'
+    show TextButton, IconButton, ButtonStyle, MaterialTapTargetSize;
 
 import '../theme/app_theme.dart';
 import 'app_icon.dart';
 
 enum AppToastTone { neutral, destructive }
+
+class AppToastAction {
+  const AppToastAction({required this.label, required this.onPressed});
+
+  final String label;
+  final VoidCallback onPressed;
+}
 
 const _kToastIconSize = 20.0;
 const _kDestructiveToastForeground = Color(0xFFFFFFFF);
@@ -16,6 +25,8 @@ class AppToast extends StatelessWidget {
     required this.message,
     this.iconName = AppIcons.checkCircle,
     this.tone = AppToastTone.neutral,
+    this.action,
+    this.onDismiss,
     super.key,
   });
 
@@ -24,6 +35,8 @@ class AppToast extends StatelessWidget {
   final String message;
   final String iconName;
   final AppToastTone tone;
+  final AppToastAction? action;
+  final VoidCallback? onDismiss;
 
   @override
   Widget build(BuildContext context) {
@@ -46,39 +59,168 @@ class AppToast extends StatelessWidget {
         fontWeight: FontWeight.w400,
       ),
     };
-    return DefaultTextStyle.merge(
-      style: const TextStyle(decoration: TextDecoration.none),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: backgroundColor,
-          borderRadius: BorderRadius.circular(AppRadii.small),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.s,
-            vertical: AppSpacing.xs,
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              AppIcon(iconName, size: _kToastIconSize, color: iconColor),
-              const SizedBox(width: AppSpacing.xxs),
-              // Flexible so long messages wrap inside the pill instead of
-              // overflowing the row off-screen.
-              Flexible(
-                child: Text(
-                  message,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: textStyle.copyWith(color: textColor),
-                ),
+    final dismissButton = onDismiss == null
+        ? null
+        : IconButton(
+            onPressed: onDismiss,
+            constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+            style: const ButtonStyle(
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            icon: Semantics(
+              label: 'Dismiss notification',
+              excludeSemantics: true,
+              child: AppIcon(
+                AppIcons.cross,
+                size: _kToastIconSize,
+                color: iconColor,
               ),
-            ],
+            ),
+          );
+    final action = this.action;
+    return Semantics(
+      container: true,
+      liveRegion: true,
+      child: DefaultTextStyle.merge(
+        style: const TextStyle(decoration: TextDecoration.none),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: backgroundColor,
+            borderRadius: BorderRadius.circular(AppRadii.small),
+          ),
+          child: Padding(
+            padding: EdgeInsetsDirectional.fromSTEB(
+              AppSpacing.s,
+              AppSpacing.xs,
+              action != null && dismissButton != null ? 0 : AppSpacing.s,
+              AppSpacing.xs,
+            ),
+            child: action != null
+                ? _actionContent(
+                    context,
+                    action: action,
+                    dismissButton: dismissButton,
+                    textColor: textColor,
+                    iconColor: iconColor,
+                  )
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      ExcludeSemantics(
+                        child: AppIcon(
+                          iconName,
+                          size: _kToastIconSize,
+                          color: iconColor,
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.xxs),
+                      // Flexible so long messages wrap inside the pill instead of
+                      // overflowing the row off-screen.
+                      Flexible(
+                        child: Text(
+                          message,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: textStyle.copyWith(color: textColor),
+                        ),
+                      ),
+                      ?dismissButton,
+                    ],
+                  ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _actionContent(
+    BuildContext context, {
+    required AppToastAction action,
+    required Widget? dismissButton,
+    required Color textColor,
+    required Color iconColor,
+  }) {
+    final messageStyle = AppTypography.bodySmall.copyWith(color: textColor);
+    final actionStyle = AppTypography.labelMedium.copyWith(
+      color: textColor,
+      decoration: TextDecoration.underline,
+      decorationColor: textColor,
+    );
+    final textScaler = MediaQuery.textScalerOf(context);
+    final direction = Directionality.of(context);
+    double textWidth(String value, TextStyle style) {
+      final painter = TextPainter(
+        text: TextSpan(text: value, style: style),
+        textDirection: direction,
+        textScaler: textScaler,
+      )..layout();
+      final width = painter.width;
+      painter.dispose();
+      return width;
+    }
+
+    final actionWidth = math.max(44, textWidth(action.label, actionStyle));
+    // Keep the compact row while the message can occupy roughly two lines.
+    // Large text or longer labels get an action below the same leading edge.
+    final minimumMessageWidth = textWidth(message, messageStyle) / 2;
+    final icon = ExcludeSemantics(
+      child: AppIcon(iconName, size: _kToastIconSize, color: iconColor),
+    );
+    final messageText = Text(message, style: messageStyle);
+    final actionButton = TextButton(
+      onPressed: action.onPressed,
+      style: ButtonStyle(
+        foregroundColor: WidgetStatePropertyAll(textColor),
+        textStyle: WidgetStatePropertyAll(actionStyle),
+        padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+        minimumSize: const WidgetStatePropertyAll(Size(44, 44)),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        alignment: AlignmentDirectional.centerStart,
+      ),
+      child: Text(action.label),
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final controlsWidth =
+            _kToastIconSize +
+            AppSpacing.xs * 2 +
+            actionWidth +
+            (dismissButton == null ? 0 : 44);
+        if (constraints.maxWidth - controlsWidth >= minimumMessageWidth) {
+          return Row(
+            children: [
+              icon,
+              const SizedBox(width: AppSpacing.xs),
+              Expanded(child: messageText),
+              const SizedBox(width: AppSpacing.xs),
+              actionButton,
+              ?dismissButton,
+            ],
+          );
+        }
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                icon,
+                const SizedBox(width: AppSpacing.xs),
+                Expanded(child: messageText),
+                ?dismissButton,
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsetsDirectional.only(
+                start: _kToastIconSize + AppSpacing.xs,
+              ),
+              child: actionButton,
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -92,6 +234,24 @@ class AppToastHost extends StatefulWidget {
   State<AppToastHost> createState() => _AppToastHostState();
 }
 
+class _ToastNotification {
+  const _ToastNotification({
+    required this.message,
+    required this.duration,
+    required this.iconName,
+    required this.tone,
+    this.action,
+    this.onDismiss,
+  });
+
+  final String message;
+  final Duration? duration;
+  final String iconName;
+  final AppToastTone tone;
+  final AppToastAction? action;
+  final VoidCallback? onDismiss;
+}
+
 class _AppToastHostState extends State<AppToastHost> {
   static final List<_AppToastHostState> _activeStates = [];
   static OverlayEntry? _fallbackOverlayEntry;
@@ -103,9 +263,10 @@ class _AppToastHostState extends State<AppToastHost> {
     return null;
   }
 
-  String? _message;
-  String _iconName = AppIcons.checkCircle;
-  AppToastTone _tone = AppToastTone.neutral;
+  _ToastNotification? _notification;
+  // One persistent notice survives temporary copy/confirmation feedback.
+  // This is deliberately bounded; newer persistent notices replace older ones.
+  _ToastNotification? _pendingPersistent;
   Timer? _timer;
 
   @override
@@ -114,24 +275,54 @@ class _AppToastHostState extends State<AppToastHost> {
     _activeStates.add(this);
   }
 
-  void show(
+  VoidCallback show(
     String message, {
-    Duration duration = AppToast.defaultDuration,
+    Duration? duration = AppToast.defaultDuration,
     String iconName = AppIcons.checkCircle,
     AppToastTone tone = AppToastTone.neutral,
+    AppToastAction? action,
+    VoidCallback? onDismiss,
   }) {
+    final notification = _ToastNotification(
+      message: message,
+      duration: duration,
+      iconName: iconName,
+      tone: tone,
+      action: action,
+      onDismiss: onDismiss,
+    );
+    if (duration == null) {
+      _pendingPersistent = null;
+    } else if (_notification case final current?
+        when current.duration == null) {
+      _pendingPersistent = current;
+    }
+    _display(notification);
+    return () => _dismiss(notification);
+  }
+
+  void _display(_ToastNotification? notification) {
     _timer?.cancel();
-    setState(() {
-      _message = message;
-      _iconName = iconName;
-      _tone = tone;
-    });
-    _timer = Timer(duration, () {
-      if (!mounted) return;
-      setState(() {
-        _message = null;
-      });
-    });
+    if (!mounted) return;
+    setState(() => _notification = notification);
+    final duration = notification?.duration;
+    _timer = duration == null
+        ? null
+        : Timer(duration, () => _dismiss(notification!));
+  }
+
+  void _dismiss(_ToastNotification notification, {bool acknowledge = false}) {
+    if (identical(_notification, notification)) {
+      final pending = _pendingPersistent;
+      _pendingPersistent = null;
+      _display(pending);
+    } else if (identical(_pendingPersistent, notification)) {
+      _pendingPersistent = null;
+    } else {
+      return;
+    }
+    // Route/lock-driven hiding must preserve the caller's recovery notice.
+    if (acknowledge) notification.onDismiss?.call();
   }
 
   @override
@@ -143,7 +334,7 @@ class _AppToastHostState extends State<AppToastHost> {
 
   @override
   Widget build(BuildContext context) {
-    final message = _message;
+    final notification = _notification;
     // Hosts mounted outside a SafeArea (the mobile screens) must keep
     // the toast clear of the status bar / notch; inside a SafeArea the
     // ambient padding is already consumed and this resolves to the
@@ -158,21 +349,36 @@ class _AppToastHostState extends State<AppToastHost> {
         fit: StackFit.expand,
         children: [
           widget.child,
-          if (message != null)
+          if (notification != null)
             Positioned(
               top: topInset,
               left: 0,
               right: 0,
               child: IgnorePointer(
+                ignoring:
+                    notification.action == null &&
+                    notification.duration != null,
                 child: Center(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: AppSpacing.sm,
                     ),
                     child: AppToast(
-                      message: message,
-                      iconName: _iconName,
-                      tone: _tone,
+                      message: notification.message,
+                      iconName: notification.iconName,
+                      tone: notification.tone,
+                      onDismiss: notification.duration == null
+                          ? () => _dismiss(notification, acknowledge: true)
+                          : null,
+                      action: notification.action == null
+                          ? null
+                          : AppToastAction(
+                              label: notification.action!.label,
+                              onPressed: () {
+                                _dismiss(notification);
+                                notification.action!.onPressed();
+                              },
+                            ),
                     ),
                   ),
                 ),
@@ -184,12 +390,17 @@ class _AppToastHostState extends State<AppToastHost> {
   }
 }
 
-void showAppToast(
+/// Returns a dismissal callback scoped to this notification. Callers that keep
+/// an actionable toast visible can dismiss it when its screen becomes hidden.
+/// [onDismiss] runs only when the user closes the notice.
+VoidCallback? showAppToast(
   BuildContext context,
   String message, {
-  Duration duration = AppToast.defaultDuration,
+  Duration? duration = AppToast.defaultDuration,
   String iconName = AppIcons.checkCircle,
   AppToastTone tone = AppToastTone.neutral,
+  AppToastAction? action,
+  VoidCallback? onDismiss,
 }) {
   // 1. A direct host scope (the toast renders inside the nearest
   //    AppToastHost, which is under the app's AppTheme).
@@ -197,13 +408,14 @@ void showAppToast(
       .getElementForInheritedWidgetOfExactType<_AppToastScope>();
   final scope = element?.widget as _AppToastScope?;
   if (scope != null) {
-    scope.state.show(
+    return scope.state.show(
       message,
       duration: duration,
       iconName: iconName,
       tone: tone,
+      action: action,
+      onDismiss: onDismiss,
     );
-    return;
   }
 
   // 2. No direct host scope. If the most-recently-active host lives on the
@@ -212,13 +424,14 @@ void showAppToast(
   final fallbackState = _AppToastHostState._lastActiveState;
   if (fallbackState != null &&
       _canUseToastHostForContext(context, fallbackState.context)) {
-    fallbackState.show(
+    return fallbackState.show(
       message,
       duration: duration,
       iconName: iconName,
       tone: tone,
+      action: action,
+      onDismiss: onDismiss,
     );
-    return;
   }
 
   // 3. The host is covered by a modal route / bottom sheet (or there is no
@@ -232,32 +445,35 @@ void showAppToast(
     final themeElement = context
         .getElementForInheritedWidgetOfExactType<AppTheme>();
     final theme = (themeElement?.widget as AppTheme?)?.data;
-    _showOverlayToast(
+    return _showOverlayToast(
       overlay,
       message,
       duration: duration,
       iconName: iconName,
       tone: tone,
       theme: theme,
+      action: action,
+      onDismiss: onDismiss,
     );
-    return;
   }
 
   // 4. Last resort for overlay-less subtrees: the most recently active host,
   //    even if it is covered.
   if (fallbackState != null) {
-    fallbackState.show(
+    return fallbackState.show(
       message,
       duration: duration,
       iconName: iconName,
       tone: tone,
+      action: action,
+      onDismiss: onDismiss,
     );
-    return;
   }
   assert(
     fallbackState != null,
     'showAppToast called without an AppToastHost ancestor.',
   );
+  return null;
 }
 
 bool _canUseToastHostForContext(
@@ -270,13 +486,15 @@ bool _canUseToastHostForContext(
   return identical(toastRoute, hostRoute);
 }
 
-void _showOverlayToast(
+VoidCallback _showOverlayToast(
   OverlayState overlay,
   String message, {
-  required Duration duration,
+  required Duration? duration,
   required String iconName,
   required AppToastTone tone,
   required AppThemeData? theme,
+  AppToastAction? action,
+  VoidCallback? onDismiss,
 }) {
   final previousEntry = _AppToastHostState._fallbackOverlayEntry;
   if (previousEntry?.mounted ?? false) {
@@ -285,6 +503,13 @@ void _showOverlayToast(
   _AppToastHostState._fallbackOverlayEntry = null;
 
   late final OverlayEntry entry;
+  void dismiss() {
+    if (_AppToastHostState._fallbackOverlayEntry == entry) {
+      _AppToastHostState._fallbackOverlayEntry = null;
+    }
+    if (entry.mounted) entry.remove();
+  }
+
   entry = OverlayEntry(
     builder: (_) => _OverlayAppToast(
       message: message,
@@ -292,13 +517,11 @@ void _showOverlayToast(
       tone: tone,
       duration: duration,
       theme: theme,
-      onDismiss: () {
-        if (_AppToastHostState._fallbackOverlayEntry == entry) {
-          _AppToastHostState._fallbackOverlayEntry = null;
-        }
-        if (entry.mounted) {
-          entry.remove();
-        }
+      action: action,
+      onDismiss: dismiss,
+      onUserDismiss: () {
+        dismiss();
+        onDismiss?.call();
       },
       onDisposed: () {
         if (_AppToastHostState._fallbackOverlayEntry == entry) {
@@ -310,6 +533,7 @@ void _showOverlayToast(
 
   _AppToastHostState._fallbackOverlayEntry = entry;
   overlay.insert(entry);
+  return dismiss;
 }
 
 class _OverlayAppToast extends StatefulWidget {
@@ -321,15 +545,19 @@ class _OverlayAppToast extends StatefulWidget {
     required this.theme,
     required this.onDismiss,
     required this.onDisposed,
+    required this.onUserDismiss,
+    this.action,
   });
 
   final String message;
   final String iconName;
   final AppToastTone tone;
-  final Duration duration;
+  final Duration? duration;
   final AppThemeData? theme;
+  final AppToastAction? action;
   final VoidCallback onDismiss;
   final VoidCallback onDisposed;
+  final VoidCallback onUserDismiss;
 
   @override
   State<_OverlayAppToast> createState() => _OverlayAppToastState();
@@ -341,7 +569,8 @@ class _OverlayAppToastState extends State<_OverlayAppToast> {
   @override
   void initState() {
     super.initState();
-    _timer = Timer(widget.duration, widget.onDismiss);
+    final duration = widget.duration;
+    if (duration != null) _timer = Timer(duration, widget.onDismiss);
   }
 
   @override
@@ -350,7 +579,8 @@ class _OverlayAppToastState extends State<_OverlayAppToast> {
     if (oldWidget.duration != widget.duration ||
         oldWidget.onDismiss != widget.onDismiss) {
       _timer?.cancel();
-      _timer = Timer(widget.duration, widget.onDismiss);
+      final duration = widget.duration;
+      _timer = duration == null ? null : Timer(duration, widget.onDismiss);
     }
   }
 
@@ -372,6 +602,16 @@ class _OverlayAppToastState extends State<_OverlayAppToast> {
       message: widget.message,
       iconName: widget.iconName,
       tone: widget.tone,
+      onDismiss: widget.duration == null ? widget.onUserDismiss : null,
+      action: widget.action == null
+          ? null
+          : AppToastAction(
+              label: widget.action!.label,
+              onPressed: () {
+                widget.onDismiss();
+                widget.action!.onPressed();
+              },
+            ),
     );
     // The root overlay sits above the app's AppTheme, so re-provide the
     // ambient theme captured at call time; otherwise AppToast cannot resolve
@@ -384,6 +624,7 @@ class _OverlayAppToastState extends State<_OverlayAppToast> {
       left: 0,
       right: 0,
       child: IgnorePointer(
+        ignoring: widget.action == null && widget.duration != null,
         child: Center(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),

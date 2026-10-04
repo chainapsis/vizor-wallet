@@ -73,7 +73,7 @@ void main() {
 
     _expectNoCrash(errors);
     expect(find.text('Explorer'), findsOneWidget);
-    expect(find.text('CipherScan'), findsOneWidget);
+    expect(find.text('ZecBlock'), findsOneWidget);
   });
 
   testWidgets('settings explorer custom use case shows the URL field', (

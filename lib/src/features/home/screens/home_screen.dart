@@ -21,7 +21,6 @@ import '../../../core/layout/app_desktop_backdrop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/privacy/privacy_mask.dart';
-import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -30,14 +29,15 @@ import '../../../providers/zec_price_change_provider.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/enhance_pir_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
-import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_display_progress_provider.dart';
 import '../../../providers/network_privacy_provider.dart';
 import '../../../providers/sync_provider.dart';
+import '../../../providers/pending_activity_evidence_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../activity/activity_feed_sections.dart';
 import '../../activity/gift_card_activity_index.dart';
+import '../../activity/activity_eta_provider.dart';
 import '../../activity/activity_row_mapper.dart';
 import '../../activity/models/activity_row_data.dart';
 import '../../activity/screens/activity_transaction_status_screen.dart';
@@ -757,6 +757,16 @@ class _HomePaneState extends ConsumerState<_HomePane> {
         context: context,
         transaction: transaction,
         privateQueriesEnabled: ref.watch(enhancePirProvider),
+        showPendingEstimate: !ref
+            .watch(activityEtaExcludedTxidsProvider)
+            .contains(activityTxidKey(transaction.txidHex)),
+        pendingLabel:
+            activityEtaLabelFor(
+              transaction: transaction,
+              labels: ref.watch(activityEtaLabelsProvider),
+              giftCard: giftCard,
+            ) ??
+            ref.watch(activityPendingFallbackLabelProvider),
         giftCardKind: giftCard?.kind,
         giftCardAmountZatoshi: giftCard?.amountZatoshi,
         giftCardBatchCount: giftCard?.batchCount,
@@ -774,7 +784,7 @@ class _HomePaneState extends ConsumerState<_HomePane> {
     rust_sync.TransactionInfo transaction, {
     GiftCardActivityMetadata? giftCard,
   }) {
-    unawaited(_pushTransactionStatus(transaction, giftCard: giftCard));
+    _pushTransactionStatus(transaction, giftCard: giftCard);
   }
 
   void _openSwapStatus(String intentId) {
@@ -786,18 +796,12 @@ class _HomePaneState extends ConsumerState<_HomePane> {
     );
   }
 
-  Future<void> _pushTransactionStatus(
+  void _pushTransactionStatus(
     rust_sync.TransactionInfo transaction, {
     GiftCardActivityMetadata? giftCard,
-  }) async {
+  }) {
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
-    final detail = await _loadTransactionDetail(transaction);
-    if (!mounted) return;
-    // The receipt takes this transaction and its Gift Card metadata as the
-    // active account's, so a switch during the load has to cancel the handoff.
-    if (accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
-      return;
-    }
+    if (accountUuid == null) return;
     context.push(
       Uri(
         path: '/activity/tx/${transaction.txidHex}',
@@ -807,36 +811,10 @@ class _HomePaneState extends ConsumerState<_HomePane> {
         txidHex: transaction.txidHex,
         txKind: transaction.txKind,
         initialTransaction: transaction,
-        initialDetail: detail,
+        sourceAccountUuid: accountUuid,
         giftCard: giftCard,
       ),
     );
-  }
-
-  Future<rust_sync.TransactionDetail?> _loadTransactionDetail(
-    rust_sync.TransactionInfo transaction,
-  ) async {
-    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
-    if (accountUuid == null) return null;
-
-    try {
-      final dbPath = await getWalletDbPath();
-      final endpoint = ref.read(rpcEndpointFailoverProvider).current;
-      if (!mounted ||
-          accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
-        return null;
-      }
-      return await rust_sync.getTransactionDetail(
-        dbPath: dbPath,
-        network: endpoint.networkName,
-        accountUuid: accountUuid,
-        txidHex: transaction.txidHex,
-        txKind: transaction.txKind,
-      );
-    } catch (e, st) {
-      log('HomeScreen: transaction detail load failed: $e\n$st');
-      return null;
-    }
   }
 }
 

@@ -26,7 +26,7 @@ void main() {
     )..addFont(rootBundle.load('assets/fonts/YoungSerif-Regular.ttf'))).load();
   });
   testWidgets(
-    'claim stages preserve the same row, time, pool, amount and order',
+    'claim stages preserve identity and restore the pool after confirmation',
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(393, 1000));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -54,7 +54,8 @@ void main() {
       final initialRow = tester.widget<ActivityFeedRow>(cardFinder).row;
       final initialState = tester.state(cardFinder);
       expect(initialRow.timestampText, isNot('--'));
-      expect(initialRow.subtitle, 'Ironwood');
+      expect(initialRow.subtitle, 'Checking status');
+      expect(initialRow.subtitleIconName, isNull);
       for (var stage = 1; stage <= 4; stage++) {
         await tester.tap(find.byKey(ValueKey('gift_card_stage_$stage')));
         await renderStage();
@@ -71,7 +72,12 @@ void main() {
           initialRow.timestampText,
           reason: 'stage $stage timestamp',
         );
-        expect(row.subtitle, 'Ironwood', reason: 'stage $stage pool');
+        expect(
+          row.subtitle,
+          stage >= 2 ? 'Ironwood' : 'Checking status',
+          reason: 'stage $stage subtitle',
+        );
+        expect(row.subtitleIconName, stage >= 2 ? isNotNull : isNull);
         expect(
           row.amountText,
           initialRow.amountText,

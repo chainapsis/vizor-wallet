@@ -84,9 +84,7 @@ Widget _harness({String explorerUrlTemplate = ''}) {
 }
 
 void main() {
-  testWidgets('defaults to CipherScan and saves a custom origin', (
-    tester,
-  ) async {
+  testWidgets('defaults to ZecBlock and saves a custom origin', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1512, 982));
     addTearDown(() async {
       await tester.binding.setSurfaceSize(null);
@@ -96,8 +94,8 @@ void main() {
     await tester.pump();
 
     expect(find.text('Explorer'), findsOneWidget);
-    expect(find.text('CipherScan'), findsOneWidget);
-    expect(find.textContaining('cipherscan.app'), findsWidgets);
+    expect(find.text('ZecBlock'), findsOneWidget);
+    expect(find.textContaining('zecblock.com'), findsWidgets);
     expect(find.text(kZcashExplorerPrivacyCopy), findsOneWidget);
     expect(find.text('Any explorer you prefer'), findsOneWidget);
 
@@ -116,9 +114,7 @@ void main() {
     expect(find.textContaining('privacy.example'), findsWidgets);
   });
 
-  testWidgets('resetting to CipherScan clears a custom explorer', (
-    tester,
-  ) async {
+  testWidgets('resetting to ZecBlock clears a custom explorer', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1512, 982));
     addTearDown(() async {
       await tester.binding.setSurfaceSize(null);
@@ -131,7 +127,7 @@ void main() {
 
     expect(find.textContaining('privacy.example'), findsWidgets);
 
-    await tester.tap(find.byKey(const ValueKey('explorer_option_cipherscan')));
+    await tester.tap(find.byKey(const ValueKey('explorer_option_zecblock')));
     await tester.pump();
     await tester.tap(find.byKey(const ValueKey('explorer_update')));
     await tester.pump();

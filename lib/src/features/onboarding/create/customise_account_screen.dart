@@ -16,6 +16,7 @@ import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/app_profile_picture_picker_modal.dart';
 import '../../../providers/app_security_provider.dart';
+import '../../../providers/account_provider.dart';
 import '../../../providers/router_refresh_provider.dart';
 import '../import/import_split_view.dart';
 import '../keystone/keystone_onboarding_flow.dart';
@@ -167,16 +168,20 @@ class _CustomiseAccountScreenState
         await securityNotifier.preparePasswordSetup(pendingPassword);
         passwordPrepared = true;
         await createAccount();
-        securityNotifier.commitPasswordSetup();
+        await securityNotifier.completePasswordSetup();
         passwordCommitted = true;
         unawaited(inputSourceService.remember(args.passwordInputSource));
         clearCustomisedAccountDraft(ref, args.flow);
         router.go('/home');
       });
-    } catch (_) {
+    } catch (e) {
       if (passwordPrepared && !passwordCommitted) {
         try {
-          await securityNotifier.rollbackPasswordSetup();
+          await securityNotifier.finishPasswordSetupAfterFailure(
+            accountMayExist:
+                e is WalletAccountSetupInterruptedException ||
+                (ref.read(accountProvider).value?.hasAccounts ?? false),
+          );
         } catch (rollbackError, rollbackStack) {
           log(
             'CustomiseAccountScreen._finishSetup: '
