@@ -6,10 +6,6 @@ use std::collections::BTreeSet;
 
 use super::ApiSnapshot;
 
-pub fn prepare_rollback(_db_path: &str) {
-    unreachable!("prepare-rollback runs on the current build")
-}
-
 pub fn expected_current_api(
     _db_path: &str,
     _base: &ApiSnapshot,

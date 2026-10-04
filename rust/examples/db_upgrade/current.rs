@@ -4,10 +4,7 @@
 
 use std::{collections::BTreeSet, num::NonZeroU32};
 
-use rust_lib_zcash_wallet::{
-    api::sync,
-    wallet::{legacy_rollback, network::WalletNetwork},
-};
+use rust_lib_zcash_wallet::{api::sync, wallet::network::WalletNetwork};
 use transparent::address::TransparentAddress;
 use voting_crypto_deps::rand::rngs::OsRng;
 use zcash_client_backend::data_api::{
@@ -23,12 +20,6 @@ use zcash_keys::encoding::AddressCodec as _;
 use zcash_protocol::consensus::BlockHeight;
 
 use super::{ApiSnapshot, HistoryRow, NETWORK};
-
-/// Runs the downgrade handover through Vizor's entry point.
-pub fn prepare_rollback(db_path: &str) {
-    legacy_rollback::prepare_for_legacy_build(db_path, WalletNetwork::Regtest)
-        .expect("prepare the wallet for an older build");
-}
 
 /// `base`, as the current build should report it. Two documented history
 /// rules (`enhancement/README.md`, "History completeness") may change what an

@@ -6,15 +6,18 @@
 //! 2. `verify` (current build) upgrades it and checks that the schema is a
 //!    superset of the base schema, the raw state is unchanged, and the current
 //!    APIs report what the base APIs did.
-//! 3. `prepare-rollback` (current build) runs the downgrade handover and checks
-//!    the schema an older build will write to.
-//! 4. `open-old` (base build) reopens the wallet, reads it through the base
-//!    APIs, and stores a wallet transaction through the base library's real
-//!    ingestion path (`decrypt_and_store_transaction`). `read-old` (base
+//! 3. `open-old` (base build) reopens the upgraded wallet with no handover,
+//!    reads it through the base APIs, and stores a wallet transaction through
+//!    the base library's real ingestion path (`decrypt_and_store_transaction`).
+//!    The upgrade keeps every schema object the base writes, including
+//!    `transactions.zip318_kind` (wallet-libraries #86). `read-old` (base
 //!    build, a fresh process, so no in-process balance cache predates the
 //!    write) records what the base APIs then report.
-//! 5. `verify` (current build) again: the older build's writes are reconciled
-//!    and the current APIs report what the base APIs did after those writes.
+//! 4. `verify` (current build) again. The current library does not reconcile
+//!    what an older build writes after the upgrade (#86 adds no reconciliation
+//!    or qualification for it), so the base build's records stay without
+//!    transparent provenance; `verify` checks that they do, and that nothing
+//!    the wallet held before is lost.
 //!
 //! API that differs between builds lives in `db_upgrade/compat.rs` (or a
 //! base's `compat_<base>.rs`); current-build-only checks live in
@@ -59,32 +62,38 @@ const MINED_HEIGHT: i64 = 5;
 const OLD_BUILD_HEIGHT: u32 = 12;
 const OLD_BUILD_PAYMENT_ZAT: u64 = 9_000_000;
 
-/// The ledger schema, ledger policy generation, and ZIP 318 schema drop. The
-/// pre-bump feature build applied them already; older bases did not.
+/// The ZIP 318 pool-migration table drop (which, since wallet-libraries #86,
+/// keeps `transactions.zip318_kind` and its view field), the ledger schema,
+/// and ledger policy generation. The pre-bump feature build applied them
+/// already; older bases did not.
 const LEDGER_MIGRATIONS: [&str; 3] = [
     "772a06323d0e4dffb1f8c64863eefaaa",
     "8f290af0eb5a4f1e88d43550fc0ff911",
     "b7c4e2a19d3f4e8ba6c51f0e8d7c6b5a",
 ];
-/// Transparent activity metadata and shared derivations, then from
-/// wallet-libraries #82 sole-funder attribution (`funding_attribution`),
-/// observed UTXO absences (`transparent_utxo_absences`), status obligations
-/// for rewound transactions (`unmined_status_obligations`), and mined-status
-/// reconfirmation (`status_reconfirmation`), from the wallet-libraries bump.
-/// No supported base has applied them.
-const LIBRARY_BUMP_MIGRATIONS: [&str; 6] = [
+/// From the wallet-libraries bump: transparent activity metadata and shared
+/// derivations (main), send movement grouped by sending account
+/// (`v_transactions_sender_grouping`, #89), sole-funder attribution
+/// (`funding_attribution`, #90), observed UTXO absences
+/// (`transparent_utxo_absences`, #91), and rewind re-confirmation
+/// (`unmined_status_obligations`, `status_reconfirmation`,
+/// `transaction_reconfirmation_receipts`, #88). No supported base has applied
+/// them.
+const LIBRARY_BUMP_MIGRATIONS: [&str; 8] = [
     "935cd43609fd4f4fa808260ee399cb21",
     "a03b0d6a60854859ae77bce948345214",
-    "1496b05b5e214a76b44c5d371d294387",
-    "fa14da0b94bb417f8bdaf9aac3d2a041",
-    "6309d4afc73c476facab4f52f14d9675",
-    "feeaf3593c5b40d7850b309b1a7cd3a6",
+    "0eaf99b94db74d0bb0bd00a9a6bbd8cf",
+    "a7bb8d3bbc2745e28f209fb42b758119",
+    "1975c40abaed41a5883517ab66f9be83",
+    "31eeaa720c174e22b8023f8161d6accd",
+    "6ad71499aa45439d8b4b3f7cff9c0017",
+    "96bc0e7251cf4cdbb11f85a460db37ab",
 ];
 const LEGACY_PUBLIC_ORIGIN: i64 = 0;
 const LOCAL_ORIGIN: i64 = 1;
 
 /// Schema objects the current build removes on purpose. Every entry must be
-/// unused by older builds at runtime, or restored for them by the handover.
+/// unused by the current build at runtime.
 ///
 /// Matched as a prefix of `table:<name>`, `view:<name>`, `index:<name>`,
 /// `column:<table or view>.<column>`, or `unique:<table>(<sorted columns>)`.
@@ -92,16 +101,9 @@ const LOCAL_ORIGIN: i64 = 1;
 const REMOVED_FOR_ALL_BUILDS: [&str; 1] = [
     // The ZIP 318 pool-migration engine. Published builds reference these
     // tables only through `ON DELETE CASCADE` from `accounts`, which is inert
-    // once the tables are gone; the handover does not restore them.
+    // once the tables are gone.
     "table:orchard_ironwood_migration",
 ];
-/// Removed while the current build runs, and restored by the handover that
-/// published rc5/rc7 writers need (`prepare-rollback` checks they are back).
-const REMOVED_UNTIL_HANDOVER: [&str; 2] = [
-    "column:transactions.zip318_kind",
-    "column:v_transactions.zip318_kind",
-];
-
 #[derive(Debug, Deserialize, Serialize)]
 struct Manifest {
     state: LegacyState,
@@ -241,7 +243,7 @@ fn main() {
     let mut args = std::env::args().skip(1);
     let mode = args.next().expect(
         "usage: db_upgrade \
-             <create|verify|prepare-rollback|open-old|read-old> <scenario> <db> <manifest>",
+             <create|verify|open-old|read-old> <scenario> <db> <manifest>",
     );
     let scenario = args.next().expect("scenario");
     let db_path = args.next().expect("database path");
@@ -250,7 +252,6 @@ fn main() {
     match mode.as_str() {
         "create" => create_fixture(&scenario, &db_path, &manifest_path),
         "verify" => verify_upgraded(&scenario, &db_path, &manifest_path),
-        "prepare-rollback" => prepare_rollback(&scenario, &db_path, &manifest_path),
         "open-old" => verify_old_reopen(&scenario, &db_path, &manifest_path),
         "read-old" => read_after_old(&scenario, &db_path, &manifest_path),
         other => panic!("unknown mode {other}"),
@@ -543,7 +544,7 @@ fn verify_upgraded(scenario: &str, db_path: &str, manifest_path: &str) {
     assert_schema_superset(
         &manifest.schema,
         &read_schema(db_path),
-        &[&REMOVED_FOR_ALL_BUILDS[..], &REMOVED_UNTIL_HANDOVER[..]].concat(),
+        &REMOVED_FOR_ALL_BUILDS,
     );
     assert_transparent_ledger(db_path, manifest.after_old.as_ref());
     assert_sqlite_health(db_path);
@@ -649,8 +650,9 @@ fn expected_spendable(manifest: &Manifest) -> BTreeSet<(String, u32, u64)> {
 /// The ledger starts public (generation 0, reader version 1), and every
 /// transparent record carries legacy-public provenance, plus local provenance
 /// where the wallet created the transaction. Neither is private coverage.
-/// Records an older build wrote after the handover are reconciled the same
-/// way when this build returns.
+/// Records the base build wrote after the upgrade (`open-old`) are not
+/// reconciled: they carry no provenance at all, so nothing treats them as
+/// qualified.
 fn assert_transparent_ledger(db_path: &str, after_old: Option<&AfterOld>) {
     let conn = rusqlite::Connection::open(db_path).expect("open upgraded DB");
     for table in ["tpir_meta", "tpir_output_origins", "tpir_spend_origins"] {
@@ -682,16 +684,23 @@ fn assert_transparent_ledger(db_path: &str, after_old: Option<&AfterOld>) {
         0,
         "queued work outside the initial policy generation"
     );
-    assert_eq!(
-        scalar_i64(
-            &conn,
+    let old_build_txid =
+        after_old.map(|after| hex::decode(&after.txid_hex).expect("decode old-build txid"));
+    let without_legacy_provenance: i64 = conn
+        .query_row(
             "SELECT COUNT(*) FROM transparent_received_outputs o
-             WHERE NOT EXISTS (
+             JOIN transactions t ON t.id_tx = o.transaction_id
+             WHERE t.txid IS NOT ?1
+             AND NOT EXISTS (
                  SELECT 1 FROM tpir_output_origins r
                  WHERE r.output_id = o.id AND r.origin = 0
              )",
-        ),
-        0,
+            [old_build_txid.as_deref()],
+            |row| row.get(0),
+        )
+        .expect("count outputs without legacy provenance");
+    assert_eq!(
+        without_legacy_provenance, 0,
         "transparent output without legacy provenance"
     );
     let output_origins = |txid: &[u8]| {
@@ -723,22 +732,33 @@ fn assert_transparent_ledger(db_path: &str, after_old: Option<&AfterOld>) {
         spend_origins(&LOCAL_TXID),
         vec![LEGACY_PUBLIC_ORIGIN, LOCAL_ORIGIN]
     );
-    let mut spends = 2;
-    if let Some(after) = after_old {
-        // The base build's transaction is a public observation, not local intent.
-        let txid = hex::decode(&after.txid_hex).expect("decode old-build txid");
-        let outputs = output_origins(&txid);
-        assert!(!outputs.is_empty(), "old-build outputs are missing");
-        assert!(
-            outputs.iter().all(|origin| *origin == LEGACY_PUBLIC_ORIGIN),
-            "old-build outputs not reconciled as public: {outputs:?}"
+    if let Some(txid) = &old_build_txid {
+        // The base build stored its transaction and outputs, but the current
+        // library does not reconcile them: no provenance of any kind.
+        let stored: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM transparent_received_outputs o
+                 JOIN transactions t ON t.id_tx = o.transaction_id
+                 WHERE t.txid = ?1",
+                [txid],
+                |row| row.get(0),
+            )
+            .expect("count old-build outputs");
+        assert!(stored > 0, "old-build outputs are missing");
+        assert_eq!(
+            output_origins(txid),
+            Vec::<i64>::new(),
+            "old-build outputs were given provenance"
         );
-        assert_eq!(spend_origins(&txid), vec![LEGACY_PUBLIC_ORIGIN]);
-        spends += 1;
+        assert_eq!(
+            spend_origins(txid),
+            Vec::<i64>::new(),
+            "old-build spend was given provenance"
+        );
     }
     assert_eq!(
         scalar_i64(&conn, "SELECT COUNT(*) FROM tpir_spend_origins"),
-        spends,
+        2,
         "unexpected transparent spend provenance"
     );
 }
@@ -755,32 +775,8 @@ fn origins(conn: &rusqlite::Connection, sql: &str, txid: &[u8]) -> Vec<i64> {
     origins
 }
 
-/// The downgrade handover: older public writers can store transactions again
-/// only if no schema object they use is missing.
-fn prepare_rollback(scenario: &str, db_path: &str, manifest_path: &str) {
-    let manifest = read_manifest(manifest_path);
-    assert_eq!(manifest.state.scenario, scenario);
-    assert!(
-        manifest.after_old.is_none(),
-        "handover after the round trip"
-    );
-
-    current::prepare_rollback(db_path);
-    current::prepare_rollback(db_path);
-
-    let conn = rusqlite::Connection::open(db_path).expect("open prepared DB");
-    assert!(column_exists(&conn, "transactions", "zip318_kind"));
-    assert!(column_exists(&conn, "v_transactions", "zip318_kind"));
-    drop(conn);
-    assert_schema_superset(
-        &manifest.schema,
-        &read_schema(db_path),
-        &REMOVED_FOR_ALL_BUILDS,
-    );
-    assert_sqlite_health(db_path);
-    println!("prepared scenario={scenario} for an older build");
-}
-
+/// The base build reopens the upgraded wallet with no handover and stores a
+/// transaction through its own ingestion path.
 fn verify_old_reopen(scenario: &str, db_path: &str, manifest_path: &str) {
     let mut manifest = read_manifest(manifest_path);
     assert_eq!(manifest.state.scenario, scenario);
@@ -1407,10 +1403,9 @@ fn assert_current_schema(db_path: &str) {
         0,
         "ZIP 318 pool-migration schema survived the upgrade"
     );
-    // The column is restored only for a handover to an older build; opening
-    // the wallet with this build drops it again.
-    assert!(!column_exists(&conn, "transactions", "zip318_kind"));
-    assert!(!column_exists(&conn, "v_transactions", "zip318_kind"));
+    // The current library retains the published classification schema in place.
+    assert!(column_exists(&conn, "transactions", "zip318_kind"));
+    assert!(column_exists(&conn, "v_transactions", "zip318_kind"));
     assert!(
         object_exists(
             &conn,

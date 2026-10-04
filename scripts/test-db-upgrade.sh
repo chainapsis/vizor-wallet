@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # Upgrade probe: create wallets with the build at <base-ref>, upgrade and verify
-# them with the current tree, hand them back to the base build through the
-# downgrade handover, let the base build read and write them (open-old, then
-# read-old in a fresh process), and verify them
-# with the current tree again (new -> old -> new).
+# them twice with the current tree, then reopen them with the base build with
+# no handover: it reads them and stores a transaction through its real
+# ingestion path (open-old, then read-old in a fresh process). The current tree
+# reopens them last (new -> old -> new). The upgrade keeps every schema object
+# the base writes, including transactions.zip318_kind; the current library
+# does not reconcile what the base wrote afterwards, and the last step checks
+# exactly that.
 #
 # usage: scripts/test-db-upgrade.sh <base-ref> [scenario...]
 set -euo pipefail
@@ -61,19 +64,19 @@ run_probe() {
 # Per-base capabilities. Every base supports every step unless it is listed
 # here with the reason. The forward upgrade is always checked in full.
 #
-# An unsupported downgrade is still exercised, not skipped: the handover runs
-# and checks its schema, the base build must then fail to reopen the wallet
-# for the documented cause (`DOWNGRADE_FAILURE`), and the current build must
-# still open and verify the wallet afterwards. If the base starts reading the
-# handed-over wallet, or fails for any other cause, the probe fails, so the
+# An unsupported downgrade is still exercised, not skipped: the base build must
+# fail to reopen the upgraded wallet for the documented cause
+# (`DOWNGRADE_FAILURE`), and the current build must still open and verify the
+# wallet afterwards. If the base starts reading the
+# upgraded wallet, or fails for any other cause, the probe fails, so the
 # exemption cannot outlive its reason.
 DOWNGRADE_UNSUPPORTED=""
 DOWNGRADE_FAILURE=""
 case "$BASE_REF" in
   mobile/v0.0.18)
     DOWNGRADE_UNSUPPORTED="mobile/v0.0.18 predates wallet-libraries rc5, which \
-replaced tx_retrieval_queue's unique key (txid); the downgrade handover does \
-not restore it, so that build cannot use the upgraded wallet"
+replaced tx_retrieval_queue's unique key (txid); the upgrade does not keep \
+it, so that build cannot use the upgraded wallet"
     # SQLite's error for an upsert whose unique key is gone: the base's
     # tx_retrieval_queue insert relies on the removed key.
     DOWNGRADE_FAILURE="ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE constraint"
@@ -90,14 +93,13 @@ for scenario in "${SCENARIOS[@]}"; do
   run_probe "$OLD_WORKTREE" create "$scenario" "$db_path" "$manifest_path"
   run_probe "$ROOT_DIR" verify "$scenario" "$db_path" "$manifest_path"
   run_probe "$ROOT_DIR" verify "$scenario" "$db_path" "$manifest_path"
-  run_probe "$ROOT_DIR" prepare-rollback "$scenario" "$db_path" "$manifest_path"
   if [[ -n "$DOWNGRADE_UNSUPPORTED" ]]; then
     echo "downgrade to $BASE_REF: unsupported: $DOWNGRADE_UNSUPPORTED"
     old_log="$TEMP_DIR/$scenario.open-old.log"
     if run_probe "$OLD_WORKTREE" open-old "$scenario" "$db_path" "$manifest_path" \
       >"$old_log" 2>&1; then
       cat "$old_log"
-      echo "error: $BASE_REF now reopens the handed-over wallet; remove its" \
+      echo "error: $BASE_REF now reopens the upgraded wallet; remove its" \
         "downgrade exemption from $0" >&2
       exit 1
     fi
