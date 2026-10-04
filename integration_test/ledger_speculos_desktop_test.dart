@@ -792,7 +792,7 @@ Future<void> _runLedgerTexSendScenario(WidgetTester tester) async {
     proposalAccountUuid: fixture.accountUuid,
     address: fixture.texAddress,
     addressType: 'tex',
-    amountZatoshi: BigInt.from(1980000),
+    amountZatoshi: BigInt.from(980000),
     feeZatoshi: BigInt.from(20000),
     needsSaplingParams: false,
   );
