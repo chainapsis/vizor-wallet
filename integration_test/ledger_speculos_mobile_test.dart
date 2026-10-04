@@ -18,6 +18,7 @@ import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_onboarding_routes.dart';
+import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_ledger_shield_screen.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
@@ -203,7 +204,7 @@ Future<void> _runMobileVotingSigningScenario(WidgetTester tester) async {
 Future<void> _runMobileImportScenario(WidgetTester tester) async {
   final fixture = _Fixture.load();
   final importService = _SpeculosLedgerMobileBleService(fixture.ufvkApiUrl);
-  final sandboxDirectory = await Directory.systemTemp.createTemp(
+  final sandboxDirectory = await _createIsolatedSandbox(
     'vizor-ledger-mobile-first-account-e2e.',
   );
   addTearDown(() => sandboxDirectory.delete(recursive: true));
@@ -968,7 +969,7 @@ Future<void> _runMobileSwapScenario(
 }
 
 Future<String> _copyFixtureDb(_Fixture fixture) async {
-  final directory = await Directory.systemTemp.createTemp(
+  final directory = await _createIsolatedSandbox(
     'vizor-ledger-mobile-speculos-e2e.',
   );
   addTearDown(() => directory.delete(recursive: true));
@@ -2150,4 +2151,19 @@ class _FakeSyncNotifier extends SyncNotifier {
 class _EmptySyncNotifier extends SyncNotifier {
   @override
   Future<SyncState> build() async => SyncState(chainTipHeight: 4000000);
+}
+
+/// Creates a scenario sandbox and resolves all wallet storage inside it.
+///
+/// These lanes run on mainnet under the app's bundle identifier, so a provider
+/// that resolves the default wallet path (for example
+/// `ownAccountAddressesProvider` on the send review) would otherwise open and
+/// migrate the installed app's real wallet. The runners compile with
+/// `VIZOR_E2E_REQUIRE_ISOLATED_WALLET_STORAGE`, which fails any resolution
+/// made while no sandbox is set.
+Future<Directory> _createIsolatedSandbox(String prefix) async {
+  final directory = await Directory.systemTemp.createTemp(prefix);
+  debugWalletStorageDirectory = directory;
+  addTearDown(() => debugWalletStorageDirectory = null);
+  return directory;
 }

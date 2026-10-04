@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'app_secure_store.dart';
@@ -24,13 +25,52 @@ RegExp _paymentLinkClaimWalletDirectoryPatternFor(String network) => RegExp(
   '${RegExp.escape(network)}_[0-9a-f]{64}\$',
 );
 
+/// Set by integration runners whose tests share the installed app's bundle
+/// identifier and network (the Ledger Speculos lanes run on mainnet). Such a
+/// build must never resolve the installed app's wallet storage: an unset
+/// [debugWalletStorageDirectory] then fails the test instead of opening, and
+/// migrating, the user's real wallet.
+const _requireIsolatedWalletStorage = bool.fromEnvironment(
+  'VIZOR_E2E_REQUIRE_ISOLATED_WALLET_STORAGE',
+);
+
+/// Wallet DB file name used inside [debugWalletStorageDirectory].
+@visibleForTesting
+const kDebugWalletDbName = 'wallet.db';
+
+/// Test-only wallet storage root. When set, every wallet storage path resolves
+/// inside it and the wallet DB is [kDebugWalletDbName]; neither the app
+/// container nor the keychain-held DB name is consulted.
+@visibleForTesting
+Directory? debugWalletStorageDirectory;
+
+Directory? _isolatedWalletStorageDirectory() {
+  final directory = debugWalletStorageDirectory;
+  if (directory == null && _requireIsolatedWalletStorage) {
+    final error = StateError(
+      'This E2E build resolved the installed app wallet storage. Set '
+      'debugWalletStorageDirectory to the scenario sandbox.',
+    );
+    // Callers such as ownAccountAddressesProvider treat a failed lookup as
+    // best-effort, so report it where the test binding fails the test.
+    FlutterError.reportError(
+      FlutterErrorDetails(exception: error, library: 'wallet storage'),
+    );
+    throw error;
+  }
+  return directory;
+}
+
 Future<Directory> getWalletSupportDirectory() async {
-  final dir = await getApplicationSupportDirectory();
+  final dir =
+      _isolatedWalletStorageDirectory() ??
+      await getApplicationSupportDirectory();
   await dir.create(recursive: true);
   return dir;
 }
 
 Future<String> getWalletDbName() async {
+  if (_isolatedWalletStorageDirectory() != null) return kDebugWalletDbName;
   return AppSecureStore.instance.ensureWalletDbName();
 }
 

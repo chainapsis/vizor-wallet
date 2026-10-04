@@ -13,6 +13,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/activity/screens/swap_activity_detail_screen.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
@@ -67,7 +68,7 @@ void main() {
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
       final fixture = _Fixture.load();
-      final sandboxDirectory = await Directory.systemTemp.createTemp(
+      final sandboxDirectory = await _createIsolatedSandbox(
         'vizor-ledger-speculos-e2e.',
       );
       final dbPath = '${sandboxDirectory.path}/wallet.db';
@@ -390,7 +391,7 @@ void main() {
     'signs sequential Ledger operations in one app lifecycle',
     (tester) async {
       final fixture = _Fixture.load();
-      final sandboxDirectory = await Directory.systemTemp.createTemp(
+      final sandboxDirectory = await _createIsolatedSandbox(
         'vizor-ledger-sequential-speculos-e2e.',
       );
       final dbPath = '${sandboxDirectory.path}/wallet.db';
@@ -433,7 +434,7 @@ void main() {
 
 Future<void> _runPostIronwoodOrchardSigningScenario(WidgetTester tester) async {
   final fixture = _Fixture.load();
-  final sandboxDirectory = await Directory.systemTemp.createTemp(
+  final sandboxDirectory = await _createIsolatedSandbox(
     'vizor-ledger-orchard-v6-speculos-e2e.',
   );
   addTearDown(() => sandboxDirectory.delete(recursive: true));
@@ -472,7 +473,7 @@ Future<void> _runPostIronwoodOrchardSigningScenario(WidgetTester tester) async {
 
 Future<void> _runLedgerVotingSigningScenario(WidgetTester tester) async {
   final fixture = _Fixture.load();
-  final sandboxDirectory = await Directory.systemTemp.createTemp(
+  final sandboxDirectory = await _createIsolatedSandbox(
     'vizor-ledger-voting-speculos-e2e.',
   );
   addTearDown(() => sandboxDirectory.delete(recursive: true));
@@ -677,7 +678,7 @@ Future<void> _runLedgerShieldScenario(WidgetTester tester) async {
   addTearDown(() => tester.binding.setSurfaceSize(null));
 
   final fixture = _Fixture.load();
-  final sandboxDirectory = await Directory.systemTemp.createTemp(
+  final sandboxDirectory = await _createIsolatedSandbox(
     'vizor-ledger-shield-speculos-e2e.',
   );
   addTearDown(() => sandboxDirectory.delete(recursive: true));
@@ -777,7 +778,7 @@ Future<void> _runLedgerTexSendScenario(WidgetTester tester) async {
   addTearDown(() => tester.binding.setSurfaceSize(null));
 
   final fixture = _Fixture.load();
-  final sandboxDirectory = await Directory.systemTemp.createTemp(
+  final sandboxDirectory = await _createIsolatedSandbox(
     'vizor-ledger-tex-speculos-e2e.',
   );
   final dbPath = '${sandboxDirectory.path}/wallet.db';
@@ -922,7 +923,7 @@ Future<void> _runLedgerSwapScenario(
   addTearDown(() => tester.binding.setSurfaceSize(null));
 
   final fixture = _Fixture.load();
-  final sandboxDirectory = await Directory.systemTemp.createTemp(
+  final sandboxDirectory = await _createIsolatedSandbox(
     'vizor-ledger-${scenario.label}-speculos-e2e.',
   );
   final dbPath = '${sandboxDirectory.path}/wallet.db';
@@ -1892,4 +1893,19 @@ Future<void> _chooseUsbForHeadlessSigning(ProviderContainer container) async {
     await Future<void>.delayed(const Duration(milliseconds: 50));
   }
   throw TimeoutException('Timed out waiting for Ledger connection choice.');
+}
+
+/// Creates a scenario sandbox and resolves all wallet storage inside it.
+///
+/// These lanes run on mainnet under the app's bundle identifier, so a provider
+/// that resolves the default wallet path (for example
+/// `ownAccountAddressesProvider` on the send review) would otherwise open and
+/// migrate the installed app's real wallet. The runners compile with
+/// `VIZOR_E2E_REQUIRE_ISOLATED_WALLET_STORAGE`, which fails any resolution
+/// made while no sandbox is set.
+Future<Directory> _createIsolatedSandbox(String prefix) async {
+  final directory = await Directory.systemTemp.createTemp(prefix);
+  debugWalletStorageDirectory = directory;
+  addTearDown(() => debugWalletStorageDirectory = null);
+  return directory;
 }
