@@ -6930,11 +6930,10 @@ mod tests {
         let (uuid, _) =
             crate::wallet::keys::init_db_and_create_account(&path, network, &seed, Some(100), "a")
                 .unwrap();
-        let address = crate::wallet::keys::software_account_transparent_addresses(
-            network, &seed, 0, 1,
-        )
-        .unwrap()
-        .swap_remove(0);
+        let address =
+            crate::wallet::keys::software_account_transparent_addresses(network, &seed, 0, 1)
+                .unwrap()
+                .swap_remove(0);
         let address = TransparentAddress::decode(&network, &address).unwrap();
         let output = WalletTransparentOutput::from_parts(
             OutPoint::new([0x51; 32], 0),
