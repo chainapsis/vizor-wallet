@@ -569,8 +569,7 @@ there is no separate release gate.
 ## Library dependency
 
 The four patched library crates use wallet-libraries main revision
-`0497bc370f83d4e9277f07beecc467047daf9532` (the merge of #81, after #77, #78,
-and #79). Trusted qualification, rather than candidate observation, authorizes
+`6c7dbb0d8d0ee0d8a1c21c915e4a011d0845e242` (main after #86). Trusted qualification, rather than candidate observation, authorizes
 provisional revision replacement. The replacement regression explicitly
 qualifies fixture revisions at that boundary. Reader version 6 state is not
 supported by version 5 rollback readers; this pin remains preparatory work,
@@ -584,17 +583,11 @@ with production private activation and real-source verification deferred.
   (`tpir_transaction_metadata`, `tpir_shared_derivations`); writing either
   raises the reader version, and neither changes policy, balances, or
   authority.
-- **#78** keeps the ZIP 318 drop but adds an explicit public-only handover,
-  `prepare_legacy_rollback`, which restores `transactions.zip318_kind` for the
-  published rc5/rc7 writers. Without it those builds fail to store any
-  transaction in a wallet this build opened. Vizor's entry point is
-  `wallet::legacy_rollback::prepare_for_legacy_build`; nothing in production
-  calls it yet, because a running build cannot know an older one is next. The
-  way back needs no call: the migration gate's `init_wallet_db` reconciles the
-  older build's public writes into `tpir_output_origins` and
-  `tpir_spend_origins` and drops the column again. Initialization now also
-  refuses unknown migration IDs, so a database written by a newer library
-  fails to open instead of being misread.
+- **#86** retains `transactions.zip318_kind` and its view field throughout upgrades
+  from published schemas. The explicit rollback preparation API is removed; Vizor
+  removes its unused wrapper. Development databases that already dropped the column
+  and writable downgrades after a private-ledger upgrade are outside this change's
+  supported upgrade path. Unknown migration IDs still cause initialization to refuse.
 - **#79** adds `WalletDb::check_transparent_transaction_inputs` and
   `SqlTransaction::new`, which hardware submission checks and account deletion
   use (see "Operations" and "Account deletion" above).
