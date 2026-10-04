@@ -739,7 +739,8 @@ fn read_transaction_history(
     limit: Option<u32>,
     account: AccountUuid,
 ) -> Result<Vec<TransactionInfo>, String> {
-    let uuid_bytes = account.expose_uuid().as_bytes();
+    let uuid = account.expose_uuid();
+    let uuid_bytes = uuid.as_bytes();
     // All library and output reads borrow this connection. The summary API joins
     // the caller's transaction, keeping one WAL snapshot across concurrent sync.
     let read_tx = conn
@@ -4466,8 +4467,8 @@ mod tests {
             let account_bytes = account.as_bytes().as_slice();
             // Bases come from the fixture oracle, not the library API:
             // this case is about the outputs filter, and the synthetic
-            // schema cannot feed the CTE. The CTE's own agreement with
-            // `v_transactions` is pinned against a real wallet database.
+            // schema cannot feed the library query. Real-schema tests cover
+            // the summary adapter's agreement with `v_transactions`.
             let bases = read_history_bases_via_v_transactions(&conn, account_bytes).unwrap();
             let base_txids: HashSet<Vec<u8>> = bases.iter().map(|base| base.txid.clone()).collect();
             let distinct_txids = distinct_v_transactions_txids(&conn, account_bytes).unwrap();
