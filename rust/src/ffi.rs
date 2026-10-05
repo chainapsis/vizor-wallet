@@ -311,7 +311,7 @@ pub extern "C" fn zcash_lightwalletd_observe_transaction(
 
 /// [`zcash_lightwalletd_observe_transaction`] under an explicit `policy`, so
 /// tests select one without the process-wide preference.
-fn observe_public_transaction(
+pub(crate) fn observe_public_transaction(
     lightwalletd_url: &str,
     db_path: &str,
     network: WalletNetwork,
