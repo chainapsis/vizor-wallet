@@ -1452,6 +1452,7 @@ async fn refresh_utxos(
     db_data_path: &str,
     db: &mut WalletDatabase,
     network: WalletNetwork,
+    policy: EnhancementPolicy,
     tip_height: BlockHeight,
     account_selection: TransparentAccountSelection<'_>,
     priority_account_target: Option<&ActiveSyncAccountTarget>,
@@ -1461,10 +1462,11 @@ async fn refresh_utxos(
 ) -> Result<TransparentRefreshSummary, SyncError> {
     let mut refreshes = Vec::new();
     let mut summary = TransparentRefreshSummary::default();
-    // GetAddressUtxos discloses every refreshed address. When withheld, no query
-    // height advances, so a later authorized refresh still covers the gap.
+    // GetAddressUtxos discloses every refreshed address, so it is authorized
+    // under the policy the sync captured. When withheld, no query height
+    // advances, so a later authorized refresh still covers the gap.
     let gate = TransparentLookupGate::for_wallet(
-        EnhancementPolicy::current(network).public_transparent_lookups(db)?,
+        policy.public_transparent_lookups(db)?,
         db_data_path,
         network,
     )?;
@@ -3135,6 +3137,7 @@ async fn run_sync_impl(
         &mut db,
         db_data_path,
         network,
+        enhancement.policy(),
         tip_height,
         &should_exit,
     )
@@ -3165,6 +3168,7 @@ async fn run_sync_impl(
             db_data_path,
             &mut db,
             network,
+            enhancement.policy(),
             tip_height,
             TransparentAccountSelection::Only(active_account_uuid),
             None,
@@ -3184,6 +3188,7 @@ async fn run_sync_impl(
                 db_data_path,
                 &mut db,
                 network,
+                enhancement.policy(),
                 tip_height,
                 TransparentAccountSelection::All,
                 None,
@@ -3203,6 +3208,7 @@ async fn run_sync_impl(
             db_data_path,
             &mut db,
             network,
+            enhancement.policy(),
             tip_height,
             TransparentAccountSelection::All,
             None,
@@ -4642,6 +4648,7 @@ async fn run_sync_impl(
                 db_data_path,
                 &mut db,
                 network,
+                enhancement.policy(),
                 BlockHeight::from_u32(final_tip_height as u32),
                 TransparentAccountSelection::Except(active_account_uuid),
                 active_account_target,

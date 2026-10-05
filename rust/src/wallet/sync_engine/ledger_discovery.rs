@@ -291,16 +291,18 @@ impl DiscoveryRpc for CompactTxStreamerClient<Channel> {
     }
 }
 
-/// Called by sync before its normal UTXO refresh; shares sync's cancellation lifetime.
+/// Called by sync before its normal UTXO refresh; shares sync's cancellation
+/// lifetime and the transparent policy it captured.
 pub(super) async fn run(
     client: &mut CompactTxStreamerClient<Channel>,
     db: &mut WalletDatabase,
     db_path: &str,
     network: WalletNetwork,
+    policy: EnhancementPolicy,
     tip: BlockHeight,
     should_exit: &impl Fn() -> bool,
 ) -> Result<(), SyncError> {
-    run_with(client, db, db_path, network, tip, should_exit).await
+    run_with(client, db, db_path, network, policy, tip, should_exit).await
 }
 
 async fn run_with<R: DiscoveryRpc>(
@@ -308,6 +310,7 @@ async fn run_with<R: DiscoveryRpc>(
     db: &mut WalletDatabase,
     db_path: &str,
     network: WalletNetwork,
+    policy: EnhancementPolicy,
     tip: BlockHeight,
     should_exit: &impl Fn() -> bool,
 ) -> Result<(), SyncError> {
@@ -315,7 +318,7 @@ async fn run_with<R: DiscoveryRpc>(
     // each history request, and every checkpoint that marks candidates checked
     // re-checks it, so nothing is queried or completed without authority.
     let gate = TransparentLookupGate::for_wallet(
-        EnhancementPolicy::current(network).public_transparent_lookups(db)?,
+        policy.public_transparent_lookups(db)?,
         db_path,
         network,
     )?;
@@ -949,6 +952,7 @@ mod tests {
             &mut db,
             &path,
             WalletNetwork::Main,
+            EnhancementPolicy::current(WalletNetwork::Main),
             BlockHeight::from_u32(2_600_000),
             &|| false,
         )
@@ -975,6 +979,7 @@ mod tests {
             &mut db,
             &path,
             WalletNetwork::Main,
+            EnhancementPolicy::current(WalletNetwork::Main),
             BlockHeight::from_u32(2_600_001),
             &|| false,
         )
@@ -1014,6 +1019,7 @@ mod tests {
             &mut db,
             &path,
             WalletNetwork::Main,
+            EnhancementPolicy::current(WalletNetwork::Main),
             BlockHeight::from_u32(2_600_000),
             &|| false
         )
@@ -1041,6 +1047,7 @@ mod tests {
             &mut db,
             &path,
             WalletNetwork::Main,
+            EnhancementPolicy::current(WalletNetwork::Main),
             BlockHeight::from_u32(2_600_010),
             &|| false,
         )
@@ -1063,6 +1070,7 @@ mod tests {
             &mut db,
             &path,
             WalletNetwork::Main,
+            EnhancementPolicy::current(WalletNetwork::Main),
             BlockHeight::from_u32(2_600_000),
             &|| true,
         )
@@ -1095,6 +1103,7 @@ mod tests {
             &mut db,
             &path,
             WalletNetwork::Main,
+            EnhancementPolicy::current(WalletNetwork::Main),
             BlockHeight::from_u32(2_600_000),
             &|| false
         )
@@ -1108,6 +1117,7 @@ mod tests {
             &mut db,
             &path,
             WalletNetwork::Main,
+            EnhancementPolicy::current(WalletNetwork::Main),
             BlockHeight::from_u32(2_600_001),
             &|| false,
         )
@@ -1146,6 +1156,7 @@ mod tests {
             &mut db,
             &path,
             WalletNetwork::Main,
+            EnhancementPolicy::current(WalletNetwork::Main),
             BlockHeight::from_u32(2_600_000),
             &|| false
         )
@@ -1161,6 +1172,7 @@ mod tests {
             &mut db,
             &path,
             WalletNetwork::Main,
+            EnhancementPolicy::current(WalletNetwork::Main),
             BlockHeight::from_u32(2_600_001),
             &|| false,
         )
@@ -1193,13 +1205,17 @@ mod tests {
         let tip = BlockHeight::from_u32(2_600_000);
         // A Public handle opened before the transition cannot read the
         // stricter wallet, so discovery fails closed on it.
-        assert!(
-            run_with(&mut rpc, &mut db, &path, WalletNetwork::Main, tip, &|| {
-                false
-            })
-            .await
-            .is_err()
-        );
+        assert!(run_with(
+            &mut rpc,
+            &mut db,
+            &path,
+            WalletNetwork::Main,
+            EnhancementPolicy::current(WalletNetwork::Main),
+            tip,
+            &|| { false }
+        )
+        .await
+        .is_err());
         // A handle opened after it adopts the durable policy, so discovery is
         // withheld: it succeeds without a query.
         let mut db = crate::wallet::db::open_wallet_db_with_timeout(
@@ -1208,9 +1224,15 @@ mod tests {
             SYNC_DB_BUSY_TIMEOUT,
         )
         .unwrap();
-        run_with(&mut rpc, &mut db, &path, WalletNetwork::Main, tip, &|| {
-            false
-        })
+        run_with(
+            &mut rpc,
+            &mut db,
+            &path,
+            WalletNetwork::Main,
+            EnhancementPolicy::current(WalletNetwork::Main),
+            tip,
+            &|| false,
+        )
         .await
         .unwrap();
 
@@ -1257,6 +1279,7 @@ mod tests {
             &mut db,
             &path,
             WalletNetwork::Main,
+            EnhancementPolicy::current(WalletNetwork::Main),
             BlockHeight::from_u32(2_600_000),
             &|| false,
         )
