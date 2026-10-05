@@ -73,7 +73,7 @@ Cell values:
 | H07 Owned shielding/unshielding | pass | pass | pass | - | pass | pass | pass | pass; incomplete by design: shield, self-unshield (details, pool, provisional) | - | pass (4 rows); 3 marked incomplete |
 | H08 External transparent unshielding | pass | - | pass | - | pass | pass | - | pass; incomplete by design: unshield to Bob (details, fee, pool, provisional) | - | pass (2 rows); 2 marked incomplete |
 | H09 Other mixed-pool transaction | - | - | fail (G1) | - | fail (G6) | - | - | pass; incomplete by design: mixed-pool send (details, pool, provisional) | - | pass (2 rows); 1 marked incomplete |
-| H10 TEX/multi-step operation | pass | - | pass | - | pass | pass | - | pass; details incomplete by design: TEX leg 2; incomplete by design: TEX leg 1 (details, pool, provisional) | - | pass (4 rows, TEX leg 1 shown); 3 marked incomplete |
+| H10 TEX/multi-step operation | pass | - | pass | - | pass | pass | - | pass; details incomplete by design: TEX leg 2; incomplete by design: TEX leg 1 (details, pool, provisional) | - | pass (4 rows; both TEX leg 1 rows, optional, shown); 3 marked incomplete |
 | H11 Swap/gift-card operation | pass | - | pass | - | pass | pass; incomplete by design: gift-card claim (details) | - | pass; incomplete by design: gift-card claim (details), gift-card create (details, fee, pool, provisional), swap deposit (details, fee, pool, provisional) | - | pass (5 rows); 5 marked incomplete |
 | H12 Pending/expired/conflicted | pass (pending, pre-reorg, final) | - | fail (G4) | N_pending: pass | fail (G4) | pass (pending, pre-reorg, final); details incomplete by design: conflicting spend (pre-reorg, final) | - | pass; details incomplete by design: conflicting spend; incomplete by design: pending shield (details, pool, provisional) | N_pending: pass | pass (6 rows; the unmined receive, optional, not shown); 3 marked incomplete |
 | H13 Incomplete coverage | - | - | - | N_cut: fail (G5)<br>N_pre: pass<br>N_utxo_fail: pass | - | - | - | - | N_lag: pass<br>N_pir_fail: pass<br>N_pre: pass | - |
@@ -83,9 +83,12 @@ and H11 pass; H01, H02, H05, H06, H09, H12 and H13 fail on G1-G5. In every
 run all four negative controls (a wrong fee, a wrong input count, an omitted
 ledger event, a wrong ownership mapping) make the comparison fail, as
 required. Public app layer: 8 of 49 rows fail, in H01, H02, H06, H09 and H12.
-Private app layer: every row passes. The unmined H12 receive is optional and
-not shown: private recovery reads mined blocks, and the mempool observer
-matches shielded outputs only.
+Private app layer: all 47 rows pass, and the "Details incomplete" marker
+appears on exactly the rows marked above. Its sent rows in H01, H02, H06 and
+H12 carry the Transparent pool label, so G1 does not appear. The unmined H12
+receive is optional and not shown: private recovery reads mined blocks, and
+the mempool observer matches shielded outputs only
+(`rust/src/wallet/sync_engine/mempool.rs`).
 For shared funding (H05) the app layer checks only that a row exists and that
 a shown fee is the whole fee; the Rust layer checks its amount.
 
@@ -94,32 +97,34 @@ a shown fee is the whole fee; the Rust layer checks its amount.
 The requests each wallet made, summed over checkpoints and variants. A
 transparent subject is an address method (`GetAddressUtxosStream`,
 `GetTaddressTxids`) or a `GetTransaction`: a request that names a transparent
-address or a txid to lightwalletd.
+address or a txid to lightwalletd. Public and Private are the Rust layer
+(`public3`, `private3`); Private app is the macOS app's fresh restore in
+`private-desktop`, which reaches lightwalletd through a recording proxy.
 
-| | Public | Private |
-|---|---|---|
-| lightwalletd requests | 868 | 332 |
-| with a transparent subject | 529 (226 `GetAddressUtxosStream`, 80 `GetTaddressTxids`, 223 `GetTransaction`) | 0 |
-| block and tree data (`GetLatestBlock`, `GetBlockRange`, `GetTreeState`, `GetSubtreeRoots`) | 313 | 303 |
-| `SendTransaction` (the wallet's own transactions) | 26 | 29 |
-| transparent PIR service requests | - | 1,648 (1,152 directory and 34 page queries, the rest catalog, manifest and setup) |
-| privacy violations at the PIR service (Alice's script in a path, header or body, a query string, an unknown route) | - | 0 |
+| | Public | Private | Private app |
+|---|---|---|---|
+| lightwalletd requests | 868 | 332 | 44 |
+| with a transparent subject | 529 (226 `GetAddressUtxosStream`, 80 `GetTaddressTxids`, 223 `GetTransaction`) | 0 | 0 |
+| block and tree data (`GetLatestBlock`, `GetBlock`, `GetBlockRange`, `GetTreeState`, `GetSubtreeRoots`) | 313 | 303 | 38 (26, 4, 2, 2, 4) |
+| server info and mempool (`GetLightdInfo`, `GetMempoolStream`) | 0 | 0 | 6 (3, 3) |
+| `SendTransaction` (the wallet's own transactions) | 26 | 29 | 0 |
+| transparent PIR service requests | - | 1,648 (1,152 directory and 34 page queries, the rest catalog, manifest and setup) | 78 (56 directory and 2 page queries, the rest catalog, manifest and setup) |
+| privacy violations at the PIR service (Alice's script in a path, header or body, a query string, an unknown route) | - | 0 | 0 |
 
-The private request policy allows block and tree data and the wallet's own
-broadcasts only; any other method fails the run. Under `PrivateRequired` the
+The private request policy allows block and tree data, `GetLightdInfo` and
+the wallet's own broadcasts only; any other method fails the run. Under `PrivateRequired` the
 lookup gate withholds every transparent lookup, in every variant including
 the faults. The private capture is identical to the run before D2's fix, which
 changes display only. The public desktop run's Rust layer made 871 requests
 (525 with a transparent subject: 229, 75 and 221; 320 block and tree; 26
 broadcasts); the public app layer's own requests are not captured.
 
-The private app layer reaches lightwalletd through a recording proxy
-(`private-desktop`, whose Rust layer made 341 requests, none with a
-transparent subject). The app made 44 lightwalletd requests, none with a
-transparent subject: 26 `GetLatestBlock`, 4 `GetBlock`, 2 `GetBlockRange`, 2
-`GetTreeState`, 4 `GetSubtreeRoots`, 3 `GetLightdInfo` and 3
-`GetMempoolStream` (the whole mempool, no subject). It made 78 transparent PIR
-requests (56 directory and 2 page queries), with no privacy violation.
+For the private app layer, a request with a transparent subject fails the run;
+other methods are recorded. `GetMempoolStream` streams the whole mempool and
+names no address or txid; it is outside that policy only because the Rust
+layer does not use it. The `private-desktop` run's Rust layer made 341
+lightwalletd requests, none with a transparent subject, and 1,648 PIR
+requests with no privacy violation.
 
 ## Product defects
 
