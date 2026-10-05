@@ -501,6 +501,45 @@ void main() {
     expect(publicIncomplete.amountSubtitle, isNull);
   });
 
+  testWidgets('a fee-only entry reads as its network fee', (tester) async {
+    rust_sync.TransactionInfo recovered({
+      required int displayAmount,
+      required int fee,
+      bool amountIncludesFee = true,
+    }) => _transaction(
+      txKind: 'sent',
+      displayPool: 'unknown',
+      detailsComplete: false,
+      provisional: true,
+      displayAmount: BigInt.from(displayAmount),
+      fee: BigInt.from(fee),
+      amountIncludesFee: amountIncludesFee,
+    );
+
+    // A recovered self-shield: the whole balance change is the fee.
+    final feeOnly = await mapRow(
+      tester,
+      recovered(displayAmount: 65000, fee: 65000),
+    );
+    expect(feeOnly.title, kNetworkFeeText);
+    expect(feeOnly.amountText, activityAmountTextForFormFactor('-0.00065 ZEC'));
+
+    // A net change keeps its sent row and its whole amount: a row has no fee
+    // line to repeat the fee in.
+    final netChange = await mapRow(
+      tester,
+      recovered(displayAmount: 70000000, fee: 10000),
+    );
+    expect(netChange.title, 'Sent');
+    expect(netChange.amountText, activityAmountTextForFormFactor('-0.7 ZEC'));
+
+    final payment = await mapRow(
+      tester,
+      recovered(displayAmount: 65000, fee: 65000, amountIncludesFee: false),
+    );
+    expect(payment.title, 'Sent', reason: 'a payment equal to its fee');
+  });
+
   testWidgets('a failed entry keeps its refund note', (tester) async {
     final row = await mapRow(
       tester,
@@ -524,16 +563,21 @@ rust_sync.TransactionInfo _transaction({
   bool detailsComplete = true,
   bool provisional = false,
   String? activityPool,
+  BigInt? fee,
+  bool amountIncludesFee = false,
 }) {
   return rust_sync.TransactionInfo(
     txidHex: 'ab12cd34',
     minedHeight: minedHeight ?? BigInt.from(2500000),
     expiredUnmined: expiredUnmined,
     accountBalanceDelta: 0,
-    fee: BigInt.zero,
-    feeState: rust_sync.TransactionFeeState.notApplicable,
+    fee: fee ?? BigInt.zero,
+    feeState: fee == null
+        ? rust_sync.TransactionFeeState.notApplicable
+        : rust_sync.TransactionFeeState.known,
     detailsComplete: detailsComplete,
     provisional: provisional,
+    amountIncludesFee: amountIncludesFee,
     blockTime: BigInt.from(1750000000),
     isTransparent: false,
     txKind: txKind,

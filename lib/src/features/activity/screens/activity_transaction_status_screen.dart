@@ -745,7 +745,11 @@ class _ActivityTransactionStatusScreenState
         : tx.minedHeight == BigInt.zero
         ? ('In progress', AppIcons.loader, colors.text.secondary)
         : ('Completed', AppIcons.checkCircle, colors.text.positiveStrong);
-    final feeText = tx.fee > BigInt.zero || _showUnknownFee(tx)
+    // The fee appears once: a fee-only entry is its one fee line, and an
+    // amount that includes the fee says so.
+    final feePresentation = transactionFeePresentation(tx);
+    final feeOnly = feePresentation == TransactionFeePresentation.feeOnly;
+    final feeText = !feeOnly && (tx.fee > BigInt.zero || _showUnknownFee(tx))
         ? _feeText(tx, privacyModeEnabled: privacyModeEnabled)
         : null;
 
@@ -772,8 +776,17 @@ class _ActivityTransactionStatusScreenState
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
             child: ReviewInfoRow(
-              label: isMigration ? 'Amount migrated' : 'Amount',
-              value: _amountText(tx, privacyModeEnabled: privacyModeEnabled),
+              label: isMigration
+                  ? 'Amount migrated'
+                  : switch (feePresentation) {
+                      TransactionFeePresentation.separate => 'Amount',
+                      TransactionFeePresentation.includedInAmount =>
+                        kNetChangeIncludesFeeText,
+                      TransactionFeePresentation.feeOnly => kNetworkFeeText,
+                    },
+              value: feeOnly
+                  ? _feeText(tx, privacyModeEnabled: privacyModeEnabled)
+                  : _amountText(tx, privacyModeEnabled: privacyModeEnabled),
               leading: ClipOval(
                 child: Image.asset(
                   'assets/icons/network_zec.png',

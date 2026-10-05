@@ -72,6 +72,13 @@ ActivityRowData buildTransactionActivityRow({
   // in the leading slot and a progressive title, per the Content Line
   // pending variant in the design.
   final isInFlight = isPending && (isInbound || isSent || isMigration);
+  // A privately recovered entry whose whole balance change is its network
+  // fee reads as that fee, not as a payment.
+  final isFeeOnly =
+      giftCardKind == null &&
+      giftCardAmountZatoshi == null &&
+      transactionFeePresentation(transaction) ==
+          TransactionFeePresentation.feeOnly;
 
   return ActivityRowData(
     stableId:
@@ -96,6 +103,8 @@ ActivityRowData buildTransactionActivityRow({
                 ? 'Sending'
                 : 'Receiving',
           )
+        : isFeeOnly
+        ? kNetworkFeeText
         : _txTitle(kind),
     leadingIconName: giftCardKind != null && !isInFlight
         ? AppIcons.giftCard

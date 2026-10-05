@@ -564,6 +564,7 @@ rust_sync.TransactionInfo _tx(int index) {
     feeState: rust_sync.TransactionFeeState.notApplicable,
     detailsComplete: true,
     provisional: false,
+    amountIncludesFee: false,
     blockTime: seconds,
     isTransparent: false,
     txKind: 'received',
@@ -583,6 +584,7 @@ rust_sync.TransactionInfo _sentZecTx({required String txidHex}) {
     feeState: rust_sync.TransactionFeeState.known,
     detailsComplete: true,
     provisional: false,
+    amountIncludesFee: false,
     blockTime: BigInt.from(1800000000),
     isTransparent: false,
     txKind: 'sent',
@@ -630,6 +632,7 @@ rust_sync.TransactionInfo _receivedZecTx({
     feeState: rust_sync.TransactionFeeState.notApplicable,
     detailsComplete: true,
     provisional: false,
+    amountIncludesFee: false,
     blockTime: BigInt.from(1800000000),
     isTransparent: false,
     txKind: 'received',
@@ -2915,6 +2918,7 @@ void main() {
           feeState: rust_sync.TransactionFeeState.notApplicable,
           detailsComplete: true,
           provisional: false,
+          amountIncludesFee: false,
           blockTime: height == BigInt.zero
               ? BigInt.zero
               : BigInt.from(1800000100),
