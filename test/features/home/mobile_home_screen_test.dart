@@ -3,6 +3,7 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+
 import 'package:zcash_wallet/src/providers/voting/voting_home_cache_provider.dart';
 import 'package:zcash_wallet/src/services/voting/voting_models.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_provider.dart';
@@ -28,6 +29,7 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
 import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
 import 'package:zcash_wallet/src/features/activity/widgets/activity_feed.dart';
+import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_transaction_status_screen.dart';
 import 'package:zcash_wallet/src/features/migration/models/mobile_ironwood_migration_attention_state.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
@@ -45,6 +47,7 @@ import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../support/wallet_path_read_blocker.dart';
 import '../../fakes/fake_zec_market_data_cache.dart';
 
 /// Skips the secure-storage write so toggling works without a platform
@@ -236,6 +239,7 @@ Widget _app(
   GiftCardActivityIndex? giftCardActivityIndex,
   AppThemeData theme = AppThemeData.dark,
   AccountState accountState = _accountState,
+  Widget Function(GoRouterState)? receiptBuilder,
 }) {
   final effectiveSyncNotifier = syncNotifier ?? FakeSyncNotifier(syncState);
   final router = GoRouter(
@@ -296,6 +300,7 @@ Widget _app(
       GoRoute(
         path: '/activity/tx/:txid',
         builder: (_, state) =>
+            receiptBuilder?.call(state) ??
             Text('activity tx route ${state.pathParameters['txid']}'),
       ),
       GoRoute(
@@ -2983,6 +2988,53 @@ void main() {
     expect(find.text('Sending...'), findsNothing);
     expect(find.text('Sent'), findsNothing);
     expect(find.text('Transparent'), findsNothing);
+  });
+
+  testWidgets('home activity opens before receipt loading completes', (
+    tester,
+  ) async {
+    final history = Completer<List<rust_sync.TransactionInfo>>();
+    final tx = _tx(1);
+    MobileTransactionStatusArgs? suppliedArgs;
+    await tester.binding.setSurfaceSize(const Size(393, 1200));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      _app(
+        SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          percentage: 1,
+          recentTransactions: [tx],
+        ),
+        showVoting: false,
+        swapEnabled: false,
+        receiptBuilder: (state) {
+          suppliedArgs = state.extra as MobileTransactionStatusArgs;
+          return MobileTransactionStatusScreen(
+            args: suppliedArgs!,
+            historyLoader: (_) => history.future,
+            detailLoader: (_, _) async => null,
+          );
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    WalletPathReadBlocker();
+    await tester.tap(find.text('Received'));
+    await tester.pump();
+    await tester.pump();
+    expect(find.byType(MobileTransactionStatusScreen), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(MobileTransactionStatusScreen),
+        matching: find.text('Received'),
+      ),
+      findsOneWidget,
+    );
+    expect(history.isCompleted, isFalse);
+    expect(suppliedArgs!.sourceAccountUuid, _accountState.activeAccountUuid);
+    expect(suppliedArgs!.initialTransaction, same(tx));
+    expect(suppliedArgs!.initialDetail, isNull);
   });
 
   testWidgets('recent activity keeps absorbed receive amount and tap-through', (

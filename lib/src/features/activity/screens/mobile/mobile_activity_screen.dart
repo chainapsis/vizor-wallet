@@ -116,32 +116,13 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
     }
   }
 
-  Future<void> _openTransactionStatus(
+  void _openTransactionStatus(
     BuildContext context,
     rust_sync.TransactionInfo transaction, {
     GiftCardActivityMetadata? giftCard,
-  }) async {
+  }) {
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     if (accountUuid == null) return;
-
-    rust_sync.TransactionDetail? detail;
-    try {
-      final dbPath = await getWalletDbPath();
-      final endpoint = ref.read(rpcEndpointProvider);
-      detail = await rust_sync.getTransactionDetail(
-        dbPath: dbPath,
-        network: endpoint.networkName,
-        accountUuid: accountUuid,
-        txidHex: transaction.txidHex,
-        txKind: transaction.txKind,
-      );
-    } catch (e, st) {
-      log('MobileActivity: transaction detail load failed: $e\n$st');
-    }
-    if (!context.mounted ||
-        accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
-      return;
-    }
 
     context.push(
       Uri(
@@ -152,7 +133,7 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
         txidHex: transaction.txidHex,
         txKind: transaction.txKind,
         initialTransaction: transaction,
-        initialDetail: detail,
+        sourceAccountUuid: accountUuid,
         giftCard: giftCard,
       ),
     );
@@ -178,9 +159,8 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
         giftCardActivityTimestamp: giftCard?.activityTimestamp,
         giftCardDisplayPool: giftCard?.displayPool,
         privacyModeEnabled: privacyModeEnabled,
-        onTap: () => unawaited(
-          _openTransactionStatus(context, transaction, giftCard: giftCard),
-        ),
+        onTap: () =>
+            _openTransactionStatus(context, transaction, giftCard: giftCard),
       ),
     );
   }
@@ -198,6 +178,7 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
         txidHex: transaction.txidHex,
         txKind: transaction.txKind,
         initialTransaction: transaction,
+        sourceAccountUuid: ref.read(accountProvider).value?.activeAccountUuid,
       ),
     );
   }

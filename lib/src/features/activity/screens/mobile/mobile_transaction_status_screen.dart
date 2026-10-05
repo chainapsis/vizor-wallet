@@ -53,6 +53,7 @@ class MobileTransactionStatusArgs {
     this.txKind,
     this.initialTransaction,
     this.initialDetail,
+    this.sourceAccountUuid,
     this.giftCard,
   });
 
@@ -60,6 +61,9 @@ class MobileTransactionStatusArgs {
   final String? txKind;
   final rust_sync.TransactionInfo? initialTransaction;
   final rust_sync.TransactionDetail? initialDetail;
+
+  /// Account that supplied the row and its metadata. Absent for direct links.
+  final String? sourceAccountUuid;
 
   /// Set when the tapped row already resolved this tx as a Gift Card; the
   /// screen re-resolves it from the index when this is null.
@@ -111,8 +115,10 @@ class _MobileTransactionStatusScreenState
   rust_sync.TransactionInfo? _transaction;
   rust_sync.TransactionDetail? _detail;
   String? _error;
+  bool _isLoading = true;
   String? _activeAccountUuid;
   String? _argsAccountUuid;
+  int _loadGeneration = 0;
   bool _messageExpanded = false;
 
   @override
@@ -121,8 +127,14 @@ class _MobileTransactionStatusScreenState
     _transaction = widget.args.initialTransaction;
     _detail = widget.args.initialDetail;
     _activeAccountUuid = ref.read(accountProvider).value?.activeAccountUuid;
-    _argsAccountUuid = _activeAccountUuid;
-    unawaited(_loadTransaction());
+    _argsAccountUuid = widget.args.sourceAccountUuid ?? _activeAccountUuid;
+    if (_argsAccountUuid != _activeAccountUuid) {
+      _transaction = null;
+      _detail = null;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_loadTransaction());
+    });
   }
 
   Future<List<rust_sync.TransactionInfo>> _loadHistory(
@@ -156,50 +168,76 @@ class _MobileTransactionStatusScreenState
     );
   }
 
+  bool _loadIsCurrent(int generation, String? accountUuid) =>
+      mounted &&
+      generation == _loadGeneration &&
+      accountUuid == ref.read(accountProvider).value?.activeAccountUuid;
+
+  rust_sync.TransactionDetail? _matchingDetailFor(
+    rust_sync.TransactionInfo? tx,
+  ) {
+    final detail = _detail;
+    if (tx == null ||
+        detail == null ||
+        !_txidsMatch(detail.txidHex, tx.txidHex) ||
+        !_txKindMatches(detail.txKind, tx.txKind)) {
+      return null;
+    }
+    return detail;
+  }
+
   Future<void> _loadTransaction() async {
+    final generation = ++_loadGeneration;
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    final accountChanged = accountUuid != _activeAccountUuid;
     _activeAccountUuid = accountUuid;
+    if (accountChanged) {
+      setState(() {
+        _transaction = null;
+        _detail = null;
+        _messageExpanded = false;
+        _error = null;
+        _isLoading = true;
+      });
+    }
     if (accountUuid == null) {
-      if (!mounted) return;
-      setState(() => _error = 'No active account.');
+      setState(() {
+        _isLoading = false;
+        _error = 'No active account.';
+      });
       return;
     }
 
     try {
       final txs = await _loadHistory(accountUuid);
-      if (!mounted ||
-          accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
+      if (!_loadIsCurrent(generation, accountUuid)) return;
+      final tx = _findTransaction(txs);
+      if (tx == null) {
+        setState(() {
+          _error = _transaction == null
+              ? 'Transaction could not be loaded.'
+              : 'Latest transaction status could not be refreshed.';
+          _isLoading = false;
+        });
         return;
       }
-      final tx = _findTransaction(txs);
-      rust_sync.TransactionDetail? detail;
-      if (tx != null) {
-        try {
-          detail = await _loadDetail(accountUuid, tx);
-        } catch (e, st) {
-          log('MobileTransactionStatus: detail load failed: $e\n$st');
-        }
-        if (!mounted ||
-            accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
-          return;
-        }
-      }
       setState(() {
-        if (tx != null) {
-          _transaction = tx;
-          _detail = detail;
-          _error = null;
-        } else if (_transaction == null) {
-          _error = 'Transaction could not be loaded.';
-        }
+        _transaction = tx;
+        _detail = _matchingDetailFor(tx);
+        _error = null;
+        _isLoading = false;
       });
+      final detail = await _loadDetail(accountUuid, tx);
+      if (!_loadIsCurrent(generation, accountUuid)) return;
+      setState(() => _detail = detail);
     } catch (e, st) {
+      if (!_loadIsCurrent(generation, accountUuid)) return;
       log('MobileTransactionStatus: transaction load failed: $e\n$st');
-      if (!mounted) return;
       setState(() {
         _error = _transaction == null
             ? 'Transaction could not be loaded.'
             : 'Latest transaction status could not be refreshed.';
+        _isLoading = false;
       });
     }
   }
@@ -357,18 +395,43 @@ class _MobileTransactionStatusScreenState
     final colors = context.colors;
     final privacyModeEnabled = ref.watch(privacyModeProvider);
     final tx = _transaction;
-    final detail = _detail;
+    final detail = _matchingDetailFor(tx);
     final activeAccountUuid =
         ref.watch(accountProvider).value?.activeAccountUuid ??
         _activeAccountUuid;
     // The args metadata was resolved for the account that was active when the
     // row was tapped; under another account only that account's index counts.
-    final suppliedGiftCard =
-        _argsAccountUuid == null || _argsAccountUuid == activeAccountUuid
+    final suppliedGiftCard = _argsAccountUuid == activeAccountUuid
         ? widget.args.giftCard
         : null;
     final giftCard =
         _resolvedGiftCard(tx, activeAccountUuid) ?? suppliedGiftCard;
+    if (tx == null) {
+      return Scaffold(
+        body: SafeArea(
+          child: Column(
+            children: [
+              MobileTopNav.back(
+                title: 'Transaction',
+                onBack: () => Navigator.of(context).maybePop(),
+              ),
+              Expanded(
+                child: Center(
+                  child: Text(
+                    _isLoading
+                        ? 'Loading transaction…'
+                        : (_error ?? 'Transaction could not be loaded.'),
+                    style: AppTypography.bodyMedium.copyWith(
+                      color: colors.text.secondary,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     final failed = _phaseFor(giftCard) == _TxPhase.failed;
 
     final amountText = _amountText(
@@ -394,7 +457,7 @@ class _MobileTransactionStatusScreenState
         ? _addressPoolLabel(giftCard.displayPool, null)
         : _isIncoming
         ? _addressPoolLabel(sourcePool, sourceAddress)
-        : _addressPoolLabel(tx?.displayPool, primaryAddress);
+        : _addressPoolLabel(tx.displayPool, primaryAddress);
     final receivingPoolLabel = _addressPoolLabel(
       receivingOutput?.pool,
       receivingAddress,

@@ -183,7 +183,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     rust_sync.TransactionInfo transaction, {
     GiftCardActivityMetadata? giftCard,
   }) {
-    unawaited(_pushTransactionStatus(transaction, giftCard: giftCard));
+    _pushTransactionStatus(transaction, giftCard: giftCard);
   }
 
   String? _absorbedReceiveAmountText(rust_sync.TransactionInfo? transaction) {
@@ -233,18 +233,12 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
         .refreshOpenActivities(accountUuid: accountUuid, force: force);
   }
 
-  Future<void> _pushTransactionStatus(
+  void _pushTransactionStatus(
     rust_sync.TransactionInfo transaction, {
     GiftCardActivityMetadata? giftCard,
-  }) async {
+  }) {
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
-    final detail = await _loadTransactionDetail(transaction);
-    if (!mounted) return;
-    // The receipt takes this transaction and its Gift Card metadata as the
-    // active account's, so a switch during the load has to cancel the handoff.
-    if (accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
-      return;
-    }
+    if (accountUuid == null) return;
     context.push(
       Uri(
         path: '/activity/tx/${transaction.txidHex}',
@@ -254,36 +248,10 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
         txidHex: transaction.txidHex,
         txKind: transaction.txKind,
         initialTransaction: transaction,
-        initialDetail: detail,
+        sourceAccountUuid: accountUuid,
         giftCard: giftCard,
       ),
     );
-  }
-
-  Future<rust_sync.TransactionDetail?> _loadTransactionDetail(
-    rust_sync.TransactionInfo transaction,
-  ) async {
-    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
-    if (accountUuid == null) return null;
-
-    try {
-      final dbPath = await getWalletDbPath();
-      final endpoint = ref.read(rpcEndpointProvider);
-      if (!mounted ||
-          accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
-        return null;
-      }
-      return await rust_sync.getTransactionDetail(
-        dbPath: dbPath,
-        network: endpoint.networkName,
-        accountUuid: accountUuid,
-        txidHex: transaction.txidHex,
-        txKind: transaction.txKind,
-      );
-    } catch (e, st) {
-      log('Activity: transaction detail load failed: $e\n$st');
-      return null;
-    }
   }
 
   String _recentSignature(SyncState? sync) {
