@@ -524,7 +524,10 @@ history rows, so both describe one database state. Each entry carries:
 - `fee_state`: `Known`, `Unknown`, or `NotApplicable`. The raw fee is no
   longer coalesced to 0, and `fee` is 0 unless the state is `Known`. Receipts
   in Private queries mode show an unknown fee as "Unknown", and a receive
-  shows no fee.
+  shows no fee. When the account's fee is unknown but qualified private
+  evidence carries the transaction's exact whole fee, that fee is shown as the
+  network fee. It is display only: other funders may have shared it, so the
+  amounts never subtract or add it.
 - `details_complete`: whether the recipients, payment amounts, and memos are
   known. A missing recipient row does not mean there was no payment.
 - `provisional`: whether later discovery or enhancement can still change the
@@ -774,9 +777,11 @@ restack of the library stacks, and to `main` once they merge.
 
 - **#77** adds source-bound transparent transaction metadata and the
   `transaction_metadata`, `aggregate_payment`, and `account_movement` fields of
-  `TransactionHistoryDetails`. Activity does not read them yet: Public handles
-  have no recovery source that supplies them, and the account fee keeps its
-  `fee_state`. Two migrations add empty tables
+  `TransactionHistoryDetails`. Public handles have no recovery source that
+  supplies them. Under private recovery, Activity shows a reconstructed exact
+  payment and, where the account fee is unknown, the exact whole fee as a
+  display-only network fee; the account fee keeps its `fee_state` for every
+  amount. Two migrations add empty tables
   (`tpir_transaction_metadata`, `tpir_shared_derivations`); writing either
   raises the reader version, and neither changes policy, balances, or
   authority.
