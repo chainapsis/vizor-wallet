@@ -30,8 +30,14 @@ int32_t zcash_lightwalletd_latest_block_height(
     void* cancellation
 );
 
+/// Public lookups are authorized against the wallet at db_path. Returns
+/// ZCASH_STATUS_RESULT_INCONCLUSIVE when the wallet cannot be read, and
+/// ZCASH_STATUS_RESULT_UNSUPPORTED when its policy withholds the lookup. Both
+/// send nothing and leave output untouched.
 int32_t zcash_lightwalletd_observe_transaction(
     const char* lightwalletd_url,
+    const char* db_path,
+    const char* network,
     const uint8_t* transaction_id,
     uintptr_t transaction_id_len,
     CLightwalletdTransactionObservation* output,

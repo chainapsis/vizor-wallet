@@ -26,9 +26,7 @@ use zcash_client_backend::data_api::{status::TransactionStatusWork, WalletRead};
 use zcash_primitives::transaction::TxId;
 
 pub(crate) use private::PrivateStatusSource;
-#[cfg(test)]
-pub(crate) use public::gated;
-pub(crate) use public::lightwalletd_source;
+pub(crate) use public::{gated, lightwalletd_source};
 #[cfg(test)]
 pub(super) use store::persist_status_observation;
 
