@@ -471,6 +471,11 @@ class _ActivityTransactionStatusScreenState
     return _ReceiptContentColumn(
       child: ReceivedReceiptView(
         status: _receivedStatusFor(tx),
+        feeText:
+            tx.feeState == rust_sync.TransactionFeeState.known &&
+                tx.fee > BigInt.zero
+            ? _feeText(tx, privacyModeEnabled: privacyModeEnabled)
+            : null,
         amountText: _amountText(tx, privacyModeEnabled: privacyModeEnabled),
         timestampText: _timestampText(tx),
         txIdText: _truncatedDisplayTxid(tx.txidHex),

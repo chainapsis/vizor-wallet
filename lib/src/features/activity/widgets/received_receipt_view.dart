@@ -40,6 +40,7 @@ class ReceivedReceiptView extends StatelessWidget {
     this.isShieldedSource = false,
     this.receivingAddress,
     this.isShieldedReceivingAddress = false,
+    this.feeText,
     this.memoText,
     this.memoExpanded = false,
     this.onShowFullAddress,
@@ -78,6 +79,9 @@ class ReceivedReceiptView extends StatelessWidget {
   /// Pool glyph in front of [receivingAddress] — defaults to the
   /// transparent-balance glyph shown in the Figma mock.
   final bool isShieldedReceivingAddress;
+
+  /// Known transaction fee, formatted by the hosting screen.
+  final String? feeText;
 
   /// Memo display text; the Message row is omitted when null or empty.
   final String? memoText;
@@ -194,6 +198,8 @@ class ReceivedReceiptView extends StatelessWidget {
                     expanded: memoExpanded,
                     onToggle: onExpandMemo,
                   ),
+                if (feeText != null)
+                  ReviewListRow(label: 'Network fee', value: feeText!),
                 ReviewListRow(label: 'Timestamp', value: timestampText),
                 ReviewListRow(
                   label: 'Tx ID',

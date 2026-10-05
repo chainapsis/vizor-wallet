@@ -787,8 +787,11 @@ class _MobileTransactionStatusScreenState
     required bool privacyModeEnabled,
     GiftCardActivityMetadata? giftCard,
   }) {
-    // Receives, including redeemed cards, show no network fee.
-    if (tx == null || tx.txKind == 'received' || tx.txKind == 'receiving') {
+    if (tx == null || giftCard?.kind == GiftCardActivityKind.redeemed) {
+      return null;
+    }
+    if ((tx.txKind == 'received' || tx.txKind == 'receiving') &&
+        tx.feeState != rust_sync.TransactionFeeState.known) {
       return null;
     }
     if (_showUnknownFee(tx)) return kUnknownFeeText;
