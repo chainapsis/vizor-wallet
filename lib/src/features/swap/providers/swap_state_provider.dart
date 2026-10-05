@@ -773,7 +773,7 @@ class SwapNotifier extends Notifier<SwapState> {
           .quote(
             accountUuid,
             stagingAddress,
-            () => ref
+            (beforeSend) => ref
                 .read(swapIntentProvider)
                 .quote(
                   addressPlan.toQuoteRequest(
@@ -781,6 +781,7 @@ class SwapNotifier extends Notifier<SwapState> {
                     amount: amount,
                     amountText: amountText,
                     slippageBps: state.slippageBps,
+                    beforeSend: beforeSend,
                   ),
                 ),
           );

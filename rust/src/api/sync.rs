@@ -3178,6 +3178,29 @@ pub fn reserve_swap_receiving_address(
     })
 }
 
+/// Binds an accepted refund quote's deposit address to the refund key reserved for
+/// it, before the quote is shown. Funding requires this record.
+pub fn record_swap_refund_quote(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    refund_index: u64,
+    deposit_address: String,
+    deadline_seconds: i64,
+) -> Result<(), String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        crate::wallet::swap_receiving::record_refund_quote(
+            &db_path,
+            network,
+            &account_uuid,
+            refund_index,
+            &deposit_address,
+            deadline_seconds,
+        )
+    })
+}
+
 /// Persists the compact scanning deadline for an existing local swap operation.
 /// Only supported provider statuses may call this; transport errors preserve state.
 pub fn observe_swap_receiving_operation(

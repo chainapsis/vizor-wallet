@@ -56,13 +56,15 @@ pub fn prepare_receive_reservation(
     })
 }
 
-/// Persists an unknown outcome and scan watch before sending a provider quote request.
+/// Persists an unknown outcome and scan watch just before a provider quote request
+/// leaves the device. `deadline_seconds` is the deposit deadline the request sends.
 pub fn begin_receive_quote(
     db_path: String,
     network_name: String,
     account_uuid: String,
     reservation_id: i64,
     request_id: String,
+    deadline_seconds: i64,
 ) -> Result<(), ReceiveError> {
     receive::with_db(
         &db_path,
@@ -72,8 +74,14 @@ pub fn begin_receive_quote(
             crate::wallet::swap_receiving::require_new_address(keys::parse_network(
                 &network_name,
             )?)?;
-            db.begin_swap_receive_quote(a, reservation_id, &request_id, receive::now()?)
-                .map_err(ReceiveError::from)
+            db.begin_swap_receive_quote(
+                a,
+                reservation_id,
+                &request_id,
+                deadline_seconds,
+                receive::now()?,
+            )
+            .map_err(ReceiveError::from)
         },
     )
 }
@@ -123,12 +131,14 @@ pub fn reject_receive_quote(
     )
 }
 
-/// Locks the accepted draft before exposing provider funding instructions.
+/// Locks the accepted draft before exposing provider funding instructions. The quote
+/// is identified by its deposit address and memo.
 pub fn start_receive_quote(
     db_path: String,
     network_name: String,
     account_uuid: String,
     operation_id: String,
+    deposit_memo: Option<String>,
 ) -> Result<(), ReceiveError> {
     receive::with_db(
         &db_path,
@@ -141,7 +151,7 @@ pub fn start_receive_quote(
             {
                 return Ok(());
             }
-            db.start_swap_receive_quote(a, &operation_id)
+            db.start_swap_receive_quote(a, &operation_id, deposit_memo.as_deref())
                 .map_err(ReceiveError::from)
         },
     )

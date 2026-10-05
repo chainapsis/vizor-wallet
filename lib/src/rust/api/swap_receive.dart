@@ -23,19 +23,22 @@ Future<ReceiveReservation> prepareReceiveReservation({
   liveTip: liveTip,
 );
 
-/// Persists an unknown outcome and scan watch before sending a provider quote request.
+/// Persists an unknown outcome and scan watch just before a provider quote request
+/// leaves the device. `deadline_seconds` is the deposit deadline the request sends.
 Future<void> beginReceiveQuote({
   required String dbPath,
   required String networkName,
   required String accountUuid,
   required PlatformInt64 reservationId,
   required String requestId,
+  required PlatformInt64 deadlineSeconds,
 }) => RustLib.instance.api.crateApiSwapReceiveBeginReceiveQuote(
   dbPath: dbPath,
   networkName: networkName,
   accountUuid: accountUuid,
   reservationId: reservationId,
   requestId: requestId,
+  deadlineSeconds: deadlineSeconds,
 );
 
 /// Saves accepted payment instructions even if the requesting UI has changed.
@@ -70,17 +73,20 @@ Future<void> rejectReceiveQuote({
   requestId: requestId,
 );
 
-/// Locks the accepted draft before exposing provider funding instructions.
+/// Locks the accepted draft before exposing provider funding instructions. The quote
+/// is identified by its deposit address and memo.
 Future<void> startReceiveQuote({
   required String dbPath,
   required String networkName,
   required String accountUuid,
   required String operationId,
+  String? depositMemo,
 }) => RustLib.instance.api.crateApiSwapReceiveStartReceiveQuote(
   dbPath: dbPath,
   networkName: networkName,
   accountUuid: accountUuid,
   operationId: operationId,
+  depositMemo: depositMemo,
 );
 
 /// Returns operations whose provider status needs refreshing.

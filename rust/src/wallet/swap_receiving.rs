@@ -4,7 +4,7 @@ pub(crate) mod receive;
 
 use zakura_swap_receiving::{
     lifecycle::{near_observation, ProviderStatus},
-    KeyId, Purpose, RefundMemo,
+    Purpose,
 };
 use zcash_client_backend::data_api::{Account as _, AccountSource, WalletRead};
 use zcash_client_sqlite::AccountUuid;
@@ -35,29 +35,11 @@ pub(crate) fn require_new_address(network: WalletNetwork) -> Result<(), String> 
     }
     Ok(())
 }
-/// Incoming lookahead window, equal to the library's seed-recovery gap.
-pub(crate) const RECEIVE_LOOKAHEAD: u32 =
-    zcash_client_sqlite::wallet::swap_receiving::RECEIVE_GAP_LIMIT as u32;
-const MAX_RESERVATION_TIP_LAG: u64 = 10;
-
-/// Permit ordinary tip movement without treating a historical restore as ready.
-/// Memo enhancement must finish because confirmed funding records advance indices.
-fn reservation_scan_from(
-    scanned: Option<BlockHeight>,
-    known_tip: BlockHeight,
-    live_tip: u64,
-    pending_enhancement: bool,
-) -> Result<BlockHeight, String> {
-    let target = live_tip.max(u64::from(u32::from(known_tip)));
-    let scanned = scanned.ok_or("Finish wallet sync before requesting a swap address")?;
-    if scanned > known_tip
-        || target.saturating_sub(u64::from(u32::from(scanned))) > MAX_RESERVATION_TIP_LAG
-        || pending_enhancement
-    {
-        return Err("Finish wallet sync before requesting a swap address".into());
-    }
-    // Watch the unscanned tail as well as future blocks, including after reopen.
-    Ok(scanned + 1)
+/// The network tip a quote flow fetched, which address issuance checks scanning against.
+pub(crate) fn network_tip(live_tip: u64) -> Result<BlockHeight, String> {
+    u32::try_from(live_tip)
+        .map(BlockHeight::from_u32)
+        .map_err(|_| "Invalid chain tip".into())
 }
 
 /// Borrows a bridged provider status for the library. Unparseable amounts are
@@ -112,28 +94,13 @@ pub(crate) fn reserve(
         if !network.is_nu_active(NetworkUpgrade::Nu6_3, tip) {
             return Err("Swap receiving POC requires an active Ironwood chain".into());
         }
-        let scanned = db.block_fully_scanned().map_err(|e| e.to_string())?;
-        let scan_from = reservation_scan_from(
-            scanned.map(|block| block.block_height()),
-            tip,
-            live_tip,
-            refund
-                && db
-                    .swap_refund_memos_pending(account)
-                    .map_err(|e| e.to_string())?,
-        )?;
-        db.recover_swap_refund_memos(account)
-            .map_err(|e| e.to_string())?;
+        let purpose = if refund {
+            Purpose::Refund
+        } else {
+            Purpose::Receive
+        };
         let key = db
-            .reserve_swap_receiving_key(
-                account,
-                if refund {
-                    Purpose::Refund
-                } else {
-                    Purpose::Receive
-                },
-                scan_from,
-            )
+            .reserve_swap_receiving_key(account, purpose, network_tip(live_tip)?)
             .map_err(|e| e.to_string())?;
         let address = Address::Unified(
             UnifiedAddress::from_receivers(Some(key.receiver()), None, None)
@@ -145,61 +112,9 @@ pub(crate) fn reserve(
     })
 }
 
-/// Called under the wallet write lock before planning more scan work.
-/// Restore sweeps run independently of both privacy switches. Only new address
-/// issuance is opt-in.
-pub(crate) fn maintain_recovery(
-    db: &mut WalletDatabase,
-    network: WalletNetwork,
-) -> Result<(), String> {
-    if cfg!(ironwood_masquerade) {
-        return Ok(());
-    }
-    let Some(activation) = network.activation_height(NetworkUpgrade::Nu6_3) else {
-        return Ok(());
-    };
-    for account in db.get_account_ids().map_err(|e| e.to_string())? {
-        let details = db
-            .get_account(account)
-            .map_err(|e| e.to_string())?
-            .ok_or("Account not found")?;
-        if !matches!(details.source(), AccountSource::Derived { .. })
-            || super::keys::hardware_signer_kind(details.source()).is_some()
-        {
-            continue;
-        }
-        // A note a restore sweep finds later still needs its spend history,
-        // even when both privacy switches were off during ordinary scanning.
-        db.retain_swap_spend_history(account)
-            .map_err(|e| e.to_string())?;
-        let Some(scanned) = db.block_fully_scanned().map_err(|e| e.to_string())? else {
-            continue;
-        };
-        if Some(scanned.block_height()) != db.chain_height().map_err(|e| e.to_string())?
-            || scanned.block_height() < activation
-        {
-            continue;
-        }
-        db.recover_swap_refund_memos(account)
-            .map_err(|e| e.to_string())?;
-        let birthday = db
-            .get_account_birthday(account)
-            .map_err(|e| e.to_string())?;
-        db.maintain_swap_receive_lookahead(account, RECEIVE_LOOKAHEAD, birthday.max(activation))
-            .map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
-
-/// Stops scanning finished swap keys, under the wallet write lock. Call only once
-/// sync has revalidated the chain tip and scanned to it: before that, the stored
-/// tip can be a previous session's, and a key closed then would miss the blocks
-/// mined while the app was offline.
-pub(crate) fn close_finished_keys(db: &mut WalletDatabase) -> Result<(), String> {
-    if cfg!(ironwood_masquerade) {
-        return Ok(());
-    }
-    let now = receive::now()?;
+/// The software accounts that can spend with swap keys.
+fn software_accounts(db: &WalletDatabase) -> Result<Vec<AccountUuid>, String> {
+    let mut accounts = Vec::new();
     for account in db.get_account_ids().map_err(|e| e.to_string())? {
         let details = db
             .get_account(account)
@@ -208,9 +123,39 @@ pub(crate) fn close_finished_keys(db: &mut WalletDatabase) -> Result<(), String>
         if matches!(details.source(), AccountSource::Derived { .. })
             && super::keys::hardware_signer_kind(details.source()).is_none()
         {
-            db.close_finished_swap_keys(account, now)
-                .map_err(|e| e.to_string())?;
+            accounts.push(account);
         }
+    }
+    Ok(accounts)
+}
+
+/// Called under the wallet write lock before planning more scan work.
+/// Restore sweeps run independently of both privacy switches. Only new address
+/// issuance is opt-in.
+pub(crate) fn maintain_recovery(
+    db: &mut WalletDatabase,
+    network: WalletNetwork,
+) -> Result<(), String> {
+    if cfg!(ironwood_masquerade) || network.activation_height(NetworkUpgrade::Nu6_3).is_none() {
+        return Ok(());
+    }
+    for account in software_accounts(db)? {
+        db.maintain_swap_receiving(account)
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Stops scanning finished swap keys, under the wallet write lock, once sync has
+/// scanned to `tip`, the chain tip it revalidated this session.
+pub(crate) fn close_finished_keys(db: &mut WalletDatabase, tip: BlockHeight) -> Result<(), String> {
+    if cfg!(ironwood_masquerade) {
+        return Ok(());
+    }
+    let now = receive::now()?;
+    for account in software_accounts(db)? {
+        db.close_finished_swap_keys(account, now, tip)
+            .map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -221,17 +166,9 @@ pub(crate) fn finish_nullifier_recovery(
     db: &mut WalletDatabase,
     through: zakura_swap_receiving::lifecycle::ChainAnchor,
 ) -> Result<(), String> {
-    for account in db.get_account_ids().map_err(|e| e.to_string())? {
-        let details = db
-            .get_account(account)
-            .map_err(|e| e.to_string())?
-            .ok_or("Account not found")?;
-        if matches!(details.source(), AccountSource::Derived { .. })
-            && super::keys::hardware_signer_kind(details.source()).is_none()
-        {
-            db.finish_swap_nullifier_recovery(account, through, RECEIVE_LOOKAHEAD)
-                .map_err(|e| e.to_string())?;
-        }
+    for account in software_accounts(db)? {
+        db.finish_swap_nullifier_recovery(account, through)
+            .map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -280,34 +217,36 @@ pub(crate) fn observe_operation(
     })
 }
 
-/// Funding uses the reserved key and a normal internal memo, never a payout OVK.
-///
-/// The memo stores only the refund index. Recovery reads the deposit address
-/// from the funding transaction's only transparent output and re-encodes it, so
-/// the deposit must be a canonically encoded P2PKH or P2SH address on this network.
+/// Binds an accepted refund quote's deposit address to its reserved refund key,
+/// before the quote is shown. Funding requires this record.
+pub(crate) fn record_refund_quote(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    index: u64,
+    deposit: &str,
+    deadline: i64,
+) -> Result<(), String> {
+    with_wallet_db_write_lock("swap_receiving.refund_quote", || {
+        let mut db = open_wallet_db_with_timeout(db_path, network, WALLET_DB_BUSY_TIMEOUT)?;
+        let account = parse_account_uuid(account_uuid)?;
+        require_software_account(&db, account)?;
+        db.record_swap_refund_quote(account, index, deposit, deadline, receive::now()?)
+            .map_err(|e| e.to_string())
+    })
+}
+
+/// The recovery memo for funding a recorded refund quote. It goes on internal
+/// Ironwood change in the transaction paying `deposit`, never a payout OVK.
 pub(crate) fn funding_memo(
     db: &WalletDatabase,
-    network: WalletNetwork,
     account: AccountUuid,
     index: u64,
     deposit: &str,
 ) -> Result<MemoBytes, String> {
     require_software_account(db, account)?;
-    let key_id = KeyId::new(Purpose::Refund, index);
-    if !db
-        .get_swap_receiving_key(account, key_id)
-        .map_err(|e| e.to_string())?
-        .is_some_and(|key| key.advances_allocation())
-    {
-        return Err("Refund key was not reserved by this account".into());
-    }
-    let address = Address::decode(&network, deposit)
-        .filter(|address| address.encode(&network) == deposit)
-        .ok_or("Invalid swap deposit address for this network")?;
-    if !matches!(address, Address::Transparent(_)) {
-        return Err("Swap refund recovery requires a transparent deposit address".into());
-    }
-    MemoBytes::from_bytes(&RefundMemo::new(index).encode()).map_err(|e| e.to_string())
+    db.swap_funding_memo(account, index, deposit)
+        .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -315,28 +254,9 @@ mod tests {
     use super::*;
     use secrecy::SecretVec;
     use transparent::address::TransparentAddress;
+    use zakura_swap_receiving::RefundMemo;
     use zcash_client_backend::data_api::WalletWrite;
-    use zcash_protocol::consensus::BlockHeight;
-
-    #[test]
-    fn reservations_tolerate_tip_movement_but_require_recovery_progress() {
-        let height = BlockHeight::from_u32;
-        // A fresh RPC tip can be ahead of the DB without a quote changing the DB tip.
-        assert_eq!(
-            reservation_scan_from(Some(height(100)), height(100), 110, false).unwrap(),
-            height(101)
-        );
-        // Use the newer DB tip if the RPC response arrived after another sync update.
-        assert_eq!(
-            reservation_scan_from(Some(height(100)), height(110), 105, false).unwrap(),
-            height(101)
-        );
-        assert!(reservation_scan_from(Some(height(100)), height(100), 111, false).is_err());
-        assert!(reservation_scan_from(Some(height(100)), height(111), 100, false).is_err());
-        assert!(reservation_scan_from(None, height(100), 100, false).is_err());
-        assert!(reservation_scan_from(Some(height(100)), height(100), 100, true).is_err());
-        assert!(reservation_scan_from(Some(height(101)), height(100), 100, false).is_err());
-    }
+    use zcash_client_sqlite::wallet::swap_receiving::RECEIVE_GAP_LIMIT;
 
     /// Records `blocks` and marks the scan queue scanned from the birthday to `tip`.
     fn mark_scanned(path: &str, blocks: impl IntoIterator<Item = u32>, tip: u32) {
@@ -396,22 +316,23 @@ mod tests {
         };
         // Sync start runs this before it stores the new tip.
         maintain_recovery(&mut db, network).unwrap();
-        db.update_chain_tip(BlockHeight::from_u32(120)).unwrap();
-        close_finished_keys(&mut db).unwrap();
+        let tip = BlockHeight::from_u32(120);
+        db.update_chain_tip(tip).unwrap();
+        close_finished_keys(&mut db, tip).unwrap();
         assert!(scanning(&db));
         mark_scanned(path, 111..=120, 120);
-        close_finished_keys(&mut db).unwrap();
+        close_finished_keys(&mut db, tip).unwrap();
         assert!(!scanning(&db));
     }
 
     #[test]
-    fn funding_memo_requires_reserved_refund_key_after_reopen() {
+    fn funding_memo_requires_a_recorded_refund_quote_after_reopen() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("wallet.db");
         let path = path.to_str().unwrap();
         let network = WalletNetwork::Regtest;
         super::super::network::configure_regtest_nu6_3_activation_height(100).unwrap();
-        let (uuid, unified) = super::super::keys::init_db_and_create_account(
+        let (uuid, _) = super::super::keys::init_db_and_create_account(
             path,
             network,
             &SecretVec::new(vec![0; 32]),
@@ -423,35 +344,35 @@ mod tests {
         let deposit = Address::Transparent(TransparentAddress::PublicKeyHash([7; 20]));
         let deposit = deposit.encode(&network);
         let mut db = open_wallet_db_with_timeout(path, network, WALLET_DB_BUSY_TIMEOUT).unwrap();
-        assert!(funding_memo(&db, network, account, 0, &deposit).is_err());
-        db.reserve_swap_receiving_key(account, Purpose::Receive, BlockHeight::from_u32(100))
-            .unwrap();
-        // An incoming reservation cannot authorize a refund record at the same index.
-        assert!(funding_memo(&db, network, account, 0, &deposit).is_err());
-        db.reserve_swap_receiving_key(account, Purpose::Refund, BlockHeight::from_u32(100))
-            .unwrap();
+        let tip = BlockHeight::from_u32(100);
+        db.update_chain_tip(tip).unwrap();
+        mark_scanned(path, [100], 100);
+        let index = db
+            .reserve_swap_receiving_key(account, Purpose::Refund, tip)
+            .unwrap()
+            .key_id()
+            .index();
         drop(db);
-        let db = open_wallet_db_with_timeout(path, network, WALLET_DB_BUSY_TIMEOUT).unwrap();
-        let memo = funding_memo(&db, network, account, 0, &deposit).unwrap();
-        let decoded = RefundMemo::decode(memo.as_array()).unwrap().unwrap();
-        assert_eq!(decoded.index(), 0);
-        let p2sh = Address::Transparent(TransparentAddress::ScriptHash([7; 20]));
-        assert!(funding_memo(&db, network, account, 0, &p2sh.encode(&network)).is_ok());
-        assert!(funding_memo(&db, network, account, 1, &deposit).is_err());
-
-        let rejected = |bad: &str| funding_memo(&db, network, account, 0, bad).unwrap_err();
-        let tex = Address::Tex([7; 20]).encode(&network);
-        for bad in [unified.as_str(), tex.as_str()] {
-            let error = rejected(bad);
-            assert!(error.contains("requires a transparent deposit"), "{error}");
-        }
+        let deadline = receive::now().unwrap() + 60 * 60;
+        let funding = |deposit: &str| {
+            let db = open_wallet_db_with_timeout(path, network, WALLET_DB_BUSY_TIMEOUT).unwrap();
+            funding_memo(&db, account, index, deposit)
+        };
+        assert!(funding(&deposit).is_err());
+        record_refund_quote(path, network, &uuid, index, &deposit, deadline).unwrap();
+        let memo = funding(&deposit).unwrap();
+        assert_eq!(
+            RefundMemo::decode(memo.as_array())
+                .unwrap()
+                .unwrap()
+                .index(),
+            index
+        );
         let mainnet = Address::Transparent(TransparentAddress::PublicKeyHash([7; 20]))
             .encode(&WalletNetwork::Main);
-        let padded = format!(" {deposit}");
-        for bad in [mainnet.as_str(), padded.as_str(), "not an address"] {
-            let error = rejected(bad);
-            assert!(error.contains("Invalid swap deposit address"), "{error}");
-        }
+        let error =
+            record_refund_quote(path, network, &uuid, index, &mainnet, deadline).unwrap_err();
+        assert!(error.contains("invalid swap deposit address"), "{error}");
     }
 
     #[test]
@@ -486,7 +407,7 @@ mod tests {
         ).unwrap();
         maintain_recovery(&mut db, network).unwrap();
         let keys = db.get_swap_receiving_keys(account).unwrap();
-        assert_eq!(keys.len(), RECEIVE_LOOKAHEAD as usize);
+        assert_eq!(keys.len() as u64, RECEIVE_GAP_LIMIT);
         assert!(keys.iter().all(|key| !key.advances_allocation()));
         // Restored lookahead keys wait for a directory sweep; they are not scanned.
         assert!(db.get_swap_scanning_keys().unwrap().is_empty());
@@ -499,8 +420,8 @@ mod tests {
             open_wallet_db_with_timeout(path, network, WALLET_DB_BUSY_TIMEOUT).unwrap();
         maintain_recovery(&mut reopened, network).unwrap();
         assert_eq!(
-            reopened.get_swap_receiving_keys(account).unwrap().len(),
-            RECEIVE_LOOKAHEAD as usize
+            reopened.get_swap_receiving_keys(account).unwrap().len() as u64,
+            RECEIVE_GAP_LIMIT
         );
         let error = reserve(path, network, &uuid, true, 110).unwrap_err();
         assert!(error.contains("Enable Private queries"), "{error}");

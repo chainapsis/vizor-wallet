@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
-    show PlatformInt64;
+    show PlatformInt64, PlatformInt64Util;
 
 import '../../../../main.dart' show log;
 import '../../../providers/receive_address_provider.dart';
@@ -62,10 +62,26 @@ final swapZecStagingAddressServiceProvider =
         },
         quoteWithReservation: (account, address, fetch) =>
             address.reservationId == null
-            ? fetch()
+            ? fetch(null)
             : ref
                   .read(swapReceiveReservationServiceProvider)
                   .quote(account, address.reservationId!, fetch),
+        recordRefundQuote: (account, refundIndex, quote) async {
+          final deadline = quote.depositInstruction.deadline;
+          if (deadline == null) {
+            throw StateError('Provider omitted the deposit deadline.');
+          }
+          await rust_sync.recordSwapRefundQuote(
+            dbPath: await getWalletDbPath(),
+            network: ref.read(rpcEndpointFailoverProvider).current.networkName,
+            accountUuid: account,
+            refundIndex: refundIndex,
+            depositAddress: quote.depositInstruction.address,
+            deadlineSeconds: PlatformInt64Util.from(
+              deadline.millisecondsSinceEpoch ~/ 1000,
+            ),
+          );
+        },
         startQuote: (account, quote) => ref
             .read(swapReceiveReservationServiceProvider)
             .start(account, quote),
@@ -80,6 +96,14 @@ typedef ReserveSwapAddress =
       required String accountUuid,
       required SwapDirection direction,
     });
+
+/// Builds and sends a quote request, putting `beforeSend` on it when given.
+typedef FetchSwapQuote =
+    Future<SwapQuote> Function(SwapQuoteSendHook? beforeSend);
+
+/// Binds a refund quote's deposit address to its reserved refund key.
+typedef RecordRefundQuote =
+    Future<void> Function(String account, BigInt refundIndex, SwapQuote quote);
 
 class SwapZecStagingAddress {
   const SwapZecStagingAddress({
@@ -123,16 +147,14 @@ class SwapZecStagingAddressService {
   const SwapZecStagingAddressService({
     required ReserveOrchardAddress reserveFreshOrchardAddress,
     ReserveSwapAddress? reserveSwapAddress,
-    Future<SwapQuote> Function(
-      String,
-      SwapZecStagingAddress,
-      Future<SwapQuote> Function(),
-    )?
+    Future<SwapQuote> Function(String, SwapZecStagingAddress, FetchSwapQuote)?
     quoteWithReservation,
+    RecordRefundQuote? recordRefundQuote,
     Future<void> Function(String, SwapQuote)? startQuote,
   }) : _reserveFreshOrchardAddress = reserveFreshOrchardAddress,
        _reserveSwapAddress = reserveSwapAddress,
        _quoteWithReservation = quoteWithReservation,
+       _recordRefundQuote = recordRefundQuote,
        _startQuote = startQuote;
 
   final ReserveOrchardAddress _reserveFreshOrchardAddress;
@@ -140,16 +162,28 @@ class SwapZecStagingAddressService {
   final Future<SwapQuote> Function(
     String,
     SwapZecStagingAddress,
-    Future<SwapQuote> Function(),
+    FetchSwapQuote,
   )?
   _quoteWithReservation;
+  final RecordRefundQuote? _recordRefundQuote;
   final Future<void> Function(String, SwapQuote)? _startQuote;
 
+  /// Quotes with `address`. A refund quote for a reserved refund key is recorded
+  /// before it is returned, because funding requires that record.
   Future<SwapQuote> quote(
     String account,
     SwapZecStagingAddress address,
-    Future<SwapQuote> Function() fetch,
-  ) => _quoteWithReservation?.call(account, address, fetch) ?? fetch();
+    FetchSwapQuote fetch,
+  ) async {
+    final quote =
+        await (_quoteWithReservation?.call(account, address, fetch) ??
+            fetch(null));
+    final refundIndex = address.receivingIndex;
+    if (address.reservationId == null && refundIndex != null) {
+      await _recordRefundQuote?.call(account, refundIndex, quote);
+    }
+    return quote;
+  }
 
   Future<void> startQuote(String account, SwapQuote quote) async {
     await _startQuote?.call(account, quote);

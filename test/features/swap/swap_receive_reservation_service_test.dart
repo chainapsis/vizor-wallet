@@ -23,9 +23,12 @@ void main() {
   });
 
   test(
-    'persists unknown request before contacting provider and saves response',
+    'persists unknown request just before contacting provider and saves response',
     () async {
-      final quote = await service.quote('account', 1, () async {
+      final quote = await service.quote('account', 1, (beforeSend) async {
+        // Local validation and token lookups happen before anything is saved.
+        expect(store.events, isEmpty);
+        await beforeSend(_deadline);
         expect(store.events, ['begin']);
         store.events.add('network');
         return _quote;
@@ -34,6 +37,7 @@ void main() {
       expect(store.events, ['begin', 'network', 'record']);
       expect(store.requests, hasLength(1));
       expect(store.requests.single, hasLength(32));
+      expect(store.deadlines, [_deadline]);
     },
   );
 
@@ -41,7 +45,8 @@ void main() {
     'explicit amount rejection releases its watch but timeout stays unknown',
     () async {
       await expectLater(
-        service.quote('account', 1, () async {
+        service.quote('account', 1, (beforeSend) async {
+          await beforeSend(_deadline);
           throw const OneClickApiException(
             'amount too low',
             operation: 'quote',
@@ -53,7 +58,8 @@ void main() {
       expect(store.events, ['begin', 'reject']);
       store.events.clear();
       await expectLater(
-        service.quote('account', 1, () async {
+        service.quote('account', 1, (beforeSend) async {
+          await beforeSend(_deadline);
           throw TimeoutException('lost response');
         }),
         throwsA(isA<TimeoutException>()),
@@ -61,6 +67,28 @@ void main() {
       expect(store.events, ['begin']);
     },
   );
+
+  test('a request that never leaves the device saves nothing', () async {
+    await expectLater(
+      service.quote('account', 1, (_) async {
+        throw const OneClickApiException(
+          'Quote amount text is required',
+          operation: 'quote',
+        );
+      }),
+      throwsA(isA<OneClickApiException>()),
+    );
+    await expectLater(
+      service.quote('account', 1, (_) async => _quote),
+      throwsA(isA<StateError>()),
+    );
+    expect(store.events, isEmpty);
+  });
+
+  test('starting a quote matches its deposit memo', () async {
+    await service.start('account', _quote);
+    expect(store.events, ['start:deposit:memo']);
+  });
 
   test('polls orphan quotes, forwards deposit memo, then reaps', () async {
     store.pending.add(
@@ -126,7 +154,8 @@ void main() {
       );
       final contacted = Completer<void>();
       final result = Completer<SwapQuote>();
-      final quote = service.quote('account', 1, () {
+      final quote = service.quote('account', 1, (beforeSend) async {
+        await beforeSend(_deadline);
         contacted.complete();
         return result.future;
       });
@@ -144,6 +173,7 @@ void main() {
   );
 }
 
+final _deadline = DateTime.utc(2026, 10);
 final _quote = SwapQuote(
   direction: SwapDirection.externalToZec,
   sellAsset: SwapAsset.usdc,
@@ -160,7 +190,8 @@ final _quote = SwapQuote(
     address: 'deposit',
     expiresInLabel: '10:00',
     reuseWarning: '',
-    deadline: DateTime.utc(2026, 10),
+    memo: 'memo',
+    deadline: _deadline,
   ),
 );
 final _snapshot = SwapIntentSnapshot.fromQuote(_quote);
@@ -168,14 +199,20 @@ final _snapshot = SwapIntentSnapshot.fromQuote(_quote);
 class _Store implements ReceiveReservationStore {
   final events = <String>[];
   final requests = <String>[];
+  final deadlines = <DateTime>[];
   final pending = <api.ReceiveQuoteStatusRequest>[];
   @override
   Future<api.ReceiveReservation> prepare(BigInt tip) async =>
       api.ReceiveReservation(id: 1, index: BigInt.zero, address: 'u1test');
   @override
-  Future<void> begin(PlatformInt64 reservation, String request) async {
+  Future<void> begin(
+    PlatformInt64 reservation,
+    String request,
+    DateTime deadline,
+  ) async {
     events.add('begin');
     requests.add(request);
+    deadlines.add(deadline);
   }
 
   @override
@@ -190,8 +227,8 @@ class _Store implements ReceiveReservationStore {
   }
 
   @override
-  Future<void> start(String operation) async {
-    events.add('start');
+  Future<void> start(String operation, String? memo) async {
+    events.add('start:$operation:$memo');
   }
 
   @override

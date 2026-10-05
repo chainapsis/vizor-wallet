@@ -1247,6 +1247,24 @@ Future<SwapReceivingAddress> reserveSwapReceivingAddress({
   liveTip: liveTip,
 );
 
+/// Binds an accepted refund quote's deposit address to the refund key reserved for
+/// it, before the quote is shown. Funding requires this record.
+Future<void> recordSwapRefundQuote({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required BigInt refundIndex,
+  required String depositAddress,
+  required PlatformInt64 deadlineSeconds,
+}) => RustLib.instance.api.crateApiSyncRecordSwapRefundQuote(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  refundIndex: refundIndex,
+  depositAddress: depositAddress,
+  deadlineSeconds: deadlineSeconds,
+);
+
 /// Persists the compact scanning deadline for an existing local swap operation.
 /// Only supported provider statuses may call this; transport errors preserve state.
 Future<void> observeSwapReceivingOperation({

@@ -55,11 +55,14 @@ and the 48-hour, three-reservation, and 30-slot incoming-address policy.
    Existing reservations remain scanned; errors never roll back a key that may
    already have been sent to the provider. A retained address does not require
    another sync readiness check for each quote.
-2. Outgoing fee estimation and funding use the same normal proposal pipeline with
-   a binary recovery memo on ordinary internal Ironwood change. The proposal must
-   include that memo in the transaction paying the deposit address. A zero-value
-   change note is valid. Multi-step funding, non-transparent deposit addresses and
-   deposit instructions requiring a separate memo are rejected in this POC.
+2. An accepted refund quote records its deposit address against the reserved
+   refund key before it is shown, and funding requires that record. An unfunded
+   quote holds no key open. Outgoing fee estimation and funding use the same
+   normal proposal pipeline with a binary recovery memo on ordinary internal
+   Ironwood change. The proposal must include that memo in the transaction paying
+   the deposit address. A zero-value change note is valid. Multi-step funding,
+   non-transparent deposit addresses and deposit instructions requiring a
+   separate memo are rejected in this POC.
 3. Every software restore registers 30 incoming lookahead keys from the account
    birthday or Ironwood activation, whichever is later. Confirmed internal funding memos register refund
    keys only when the same account supplied an input to the transaction.
@@ -103,9 +106,9 @@ close/reopen, and mixed-input spending into ordinary change. Library tests cover
 compact scanning and private insertion. Vizor tests verify
 that disabling both settings still prepares receiver PIR discovery without queuing
 a historical block replay.
-Vizor tests cover reserved refund-key validation, restart, lookahead preparation,
-issuance during incomplete sync, direction mapping, and rejection without falling
-back to an ordinary address.
+Vizor tests cover recorded refund quotes after restart, lookahead preparation,
+direction mapping, and rejection without falling back to an ordinary address. The
+library tests cover issuance during incomplete sync.
 
 ```sh
 cargo test --manifest-path rust/Cargo.toml --features swap-receiving-poc wallet::swap_receiving::tests --lib

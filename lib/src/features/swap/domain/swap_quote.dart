@@ -6,6 +6,10 @@ import 'swap_fiat_value_basis.dart';
 /// inside this window is rejected because execution may not finish in time.
 const kSwapQuoteStartExpiryBuffer = Duration(seconds: 5);
 
+/// Runs once a quote request is ready to leave the device, with the deposit
+/// deadline it carries. If it fails, the request is not sent.
+typedef SwapQuoteSendHook = Future<void> Function(DateTime deadline);
+
 class SwapQuoteRequest {
   const SwapQuoteRequest({
     required this.direction,
@@ -20,6 +24,7 @@ class SwapQuoteRequest {
     this.dryRun = false,
     this.slippageBps,
     this.deadline,
+    this.beforeSend,
   }) : assert(
          amount != null || sellAmount != null,
          'SwapQuoteRequest amount is required',
@@ -37,6 +42,7 @@ class SwapQuoteRequest {
   final bool dryRun;
   final int? slippageBps;
   final Duration? deadline;
+  final SwapQuoteSendHook? beforeSend;
 
   SwapAsset get sellAsset => direction.fromAsset(externalAsset);
   SwapAsset get receiveAsset => direction.toAsset(externalAsset);

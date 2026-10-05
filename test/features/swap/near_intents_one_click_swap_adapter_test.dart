@@ -73,6 +73,67 @@ void main() {
     expect(quote.depositInstruction.deadline, DateTime.utc(2026, 5, 7, 12));
   });
 
+  test(
+    'quote runs beforeSend after local checks, just before posting',
+    () async {
+      final transport = _FakeOneClickTransport([
+        _FakeResponse.get('/v0/tokens', _tokensWithPrices('72.5')),
+        _FakeResponse.post(
+          '/v0/quote',
+          _quoteResponse(
+            originAsset: 'nep141:zec.omft.near',
+            destinationAsset: 'nep141:usdc.example',
+            amountIn: '150000000',
+            amountInFormatted: '1.5',
+            amountOutFormatted: '105.25',
+            minAmountOut: '104750000',
+            depositAddress: 't1deposit',
+            status: null,
+          ),
+        ),
+      ]);
+      final provider = NearIntentsOneClickSwapAdapter(
+        transport: transport,
+        now: () => DateTime.utc(2026, 5, 7, 10, 0, 0, 250),
+      );
+      final deadlines = <DateTime>[];
+      SwapQuoteRequest request({
+        String? amountText = '1.5',
+        SwapQuoteSendHook? beforeSend,
+      }) => SwapQuoteRequest(
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+        sellAmount: 1.5,
+        sellAmountText: amountText,
+        destination: '0xrecipient',
+        refundAddress: 'u1refund',
+        beforeSend:
+            beforeSend ??
+            (deadline) async {
+              // The token list is fetched first; the quote is not yet posted.
+              expect(transport.requests.map((r) => r.uri.path), ['/v0/tokens']);
+              deadlines.add(deadline);
+            },
+      );
+
+      await expectLater(
+        provider.quote(request(amountText: null)),
+        throwsA(isA<OneClickApiException>()),
+      );
+      expect(deadlines, isEmpty);
+      await provider.quote(request());
+      expect(deadlines, [DateTime.utc(2026, 5, 7, 12, 0, 0, 250)]);
+      expect(transport.requests.last.body?['deadline'], '2026-05-07T12:00:00Z');
+      await expectLater(
+        provider.quote(
+          request(beforeSend: (_) async => throw StateError('not ready')),
+        ),
+        throwsA(isA<StateError>()),
+      );
+      expect(transport.requests, hasLength(2));
+    },
+  );
+
   test('quote captures USDC token price from token response', () async {
     final transport = _FakeOneClickTransport([
       _FakeResponse.get(

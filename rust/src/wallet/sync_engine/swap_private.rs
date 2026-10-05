@@ -459,8 +459,8 @@ async fn run_inner(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::wallet::swap_receiving::RECEIVE_LOOKAHEAD;
     use zakura_pir_enhance::{AcceptedAnchor, GenerationAcceptance};
+    use zcash_client_sqlite::wallet::swap_receiving::RECEIVE_GAP_LIMIT;
 
     #[test]
     fn restore_checks_extended_window_without_rechecking_completed_keys() {
@@ -494,17 +494,22 @@ mod tests {
             [u32::from(height)],
         )
         .unwrap();
+        // Model completed ordinary scanning of the birthday block.
+        conn.execute("DELETE FROM scan_queue", []).unwrap();
+        conn.execute(
+            "INSERT INTO scan_queue(block_range_start,block_range_end,priority) VALUES(?1,?2,10)",
+            [u32::from(height), u32::from(height) + 1],
+        )
+        .unwrap();
         let through = ChainAnchor {
             height,
             hash: [0; 32],
         };
-        db.retain_swap_spend_history(account).unwrap();
-        db.maintain_swap_receive_lookahead(account, RECEIVE_LOOKAHEAD, height)
-            .unwrap();
+        db.maintain_swap_receiving(account).unwrap();
         assert!(!crate::api::sync::enhance_pir_enabled());
         assert!(!crate::api::sync::near_swap_privacy_enabled());
         let work = discovery_work(&mut db, through).unwrap().0;
-        assert_eq!(work.len(), RECEIVE_LOOKAHEAD as usize);
+        assert_eq!(work.len() as u64, RECEIVE_GAP_LIMIT);
         for (account, key) in work {
             db.queue_swap_lookup(account, key.key, through, &[])
                 .unwrap();
@@ -515,13 +520,12 @@ mod tests {
 
         // Model the registry advancement after a verified payment at the edge.
         // The library tests exercise the actual compact note decryption.
-        let edge = u64::from(RECEIVE_LOOKAHEAD) - 1;
+        let edge = RECEIVE_GAP_LIMIT - 1;
         db.recover_swap_receiving_key(account, KeyId::new(Purpose::Receive, edge), height)
             .unwrap();
-        db.maintain_swap_receive_lookahead(account, RECEIVE_LOOKAHEAD, height)
-            .unwrap();
+        db.maintain_swap_receiving(account).unwrap();
         let work = discovery_work(&mut db, through).unwrap().0;
-        assert_eq!(work.len(), RECEIVE_LOOKAHEAD as usize);
+        assert_eq!(work.len() as u64, RECEIVE_GAP_LIMIT);
         assert!(work.iter().all(|(_, key)| key.key.index() > edge));
         for (account, key) in work {
             db.queue_swap_lookup(account, key.key, through, &[])

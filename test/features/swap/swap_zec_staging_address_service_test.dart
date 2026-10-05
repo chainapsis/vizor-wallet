@@ -46,6 +46,56 @@ void main() {
     expect(purposes, SwapDirection.values);
   });
 
+  test('records refund quotes for reserved refund keys only', () async {
+    final recorded = <String>[];
+    final quoted = <String>[];
+    final service = SwapZecStagingAddressService(
+      reserveFreshOrchardAddress: ({required accountUuid}) async => 'ordinary',
+      quoteWithReservation: (account, address, fetch) {
+        quoted.add(address.address);
+        return fetch(null);
+      },
+      recordRefundQuote: (account, index, quote) async {
+        recorded.add('$account:$index:${quote.depositInstruction.address}');
+      },
+    );
+    final quote = SwapQuote(
+      direction: SwapDirection.zecToExternal,
+      sellAsset: SwapAsset.zec,
+      receiveAsset: SwapAsset.usdc,
+      externalAsset: SwapAsset.usdc,
+      sellAmount: 1,
+      receiveAmount: 70,
+      minimumReceiveAmount: 69,
+      providerLabel: 'NEAR Intents',
+      feeLabel: 'Included',
+      expiryLabel: '10:00',
+      depositInstruction: SwapDepositInstruction(
+        asset: SwapAsset.zec,
+        address: 't1deposit',
+        expiresInLabel: '10:00',
+        reuseWarning: '',
+        deadline: DateTime.utc(2026, 10),
+      ),
+    );
+    for (final address in [
+      SwapZecStagingAddress(address: 'refund', receivingIndex: BigInt.from(7)),
+      SwapZecStagingAddress(
+        address: 'incoming',
+        receivingIndex: BigInt.from(3),
+        reservationId: 1,
+      ),
+      const SwapZecStagingAddress(address: 'ordinary'),
+    ]) {
+      expect(
+        await service.quote('software', address, (_) async => quote),
+        quote,
+      );
+    }
+    expect(quoted, ['refund', 'incoming', 'ordinary']);
+    expect(recorded, ['software:7:t1deposit']);
+  });
+
   test(
     'failed POC reservation never falls back to the account address',
     () async {

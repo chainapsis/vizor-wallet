@@ -100,20 +100,7 @@ pub(crate) fn prepare(
     require_new_address(network)?;
     with_db(path, network, uuid, |db, account| {
         require_software_account(db, account)?;
-        let tip = db
-            .chain_height()
-            .map_err(ReceiveError::from)?
-            .ok_or("Sync before requesting a swap address")?;
-        let scan_from = reservation_scan_from(
-            db.block_fully_scanned()
-                .map_err(ReceiveError::from)?
-                .map(|b| b.block_height()),
-            tip,
-            live_tip,
-            false,
-        )?;
-        maintain_recovery(db, network)?;
-        db.prepare_swap_receive_reservation(account, now()?, scan_from)
+        db.prepare_swap_receive_reservation(account, now()?, network_tip(live_tip)?)
             .map_err(ReceiveError::from)
     })
 }
@@ -122,21 +109,7 @@ pub(crate) fn prepare(
 /// addresses local scanning shows are still empty. Returns the number reclaimed.
 pub(crate) fn reap(path: &str, network: WalletNetwork, uuid: &str) -> Result<u32, ReceiveError> {
     with_db(path, network, uuid, |db, account| {
-        let now = now()?;
-        db.close_received_swap_reservations(account, now)
-            .map_err(ReceiveError::from)?;
-        let mut reclaimed = 0;
-        for id in db
-            .swap_receive_reclaim_candidates(account, now)
-            .map_err(ReceiveError::from)?
-        {
-            if db
-                .reclaim_swap_receive_reservation(account, id, now)
-                .map_err(ReceiveError::from)?
-            {
-                reclaimed += 1;
-            }
-        }
-        Ok(reclaimed)
+        db.reap_swap_receive_reservations(account, now()?)
+            .map_err(ReceiveError::from)
     })
 }

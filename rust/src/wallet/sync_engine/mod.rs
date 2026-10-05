@@ -3713,8 +3713,10 @@ async fn run_sync_impl(
                         prefetch = None;
                         continue;
                     }
+                    let verified_tip =
+                        block_height_from_u64(current_tip_height, "verified chain tip")?;
                     with_wallet_db_write_lock("swap_receiving.close", || {
-                        crate::wallet::swap_receiving::close_finished_keys(&mut db)
+                        crate::wallet::swap_receiving::close_finished_keys(&mut db, verified_tip)
                     })
                     .map_err(SyncError::db)?;
                     let released = enhancement.take_ready_resubmission();

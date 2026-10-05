@@ -74,7 +74,10 @@ use zcash_client_backend::{
     wallet::{LockOwner, Note, OutputRef, OvkPolicy, ReceivedNote, WalletTransparentOutput},
     zip321::{Payment, TransactionRequest},
 };
-use zcash_client_sqlite::{wallet::commitment_tree, AccountUuid, ReceivedNoteId};
+use zcash_client_sqlite::{
+    wallet::{commitment_tree, swap_receiving::verify_swap_funding_proposal},
+    AccountUuid, ReceivedNoteId,
+};
 use zcash_keys::{address::Address, keys::UnifiedSpendingKey};
 use zcash_primitives::block::BlockHash;
 use zcash_primitives::transaction::TxVersion;
@@ -1127,7 +1130,7 @@ fn propose_request(
             swap_refund_index: Some(index),
             ..
         } => Some(crate::wallet::swap_receiving::funding_memo(
-            db, network, account_id, index, to_address,
+            db, account_id, index, to_address,
         )?),
         _ => None,
     };
@@ -1136,7 +1139,7 @@ fn propose_request(
         super::migration::migration_reserves_orchard_inputs(db_path, account_uuid, network)?,
     );
     let propose = |transaction_request: TransactionRequest, tx_version: Option<TxVersion>| {
-        propose_send_with_reserved_notes(
+        let proposal = propose_send_with_reserved_notes(
             db,
             network,
             account_id,
@@ -1147,7 +1150,13 @@ fn propose_request(
             tx_version,
             purpose.confirmations_policy(),
             change_memo.clone(),
-        )
+        )?;
+        // Keep payment and recovery record atomic. TEX/multi-step proposals must
+        // not silently move the marker into a different transaction.
+        if let (SendRequest::SwapFunding { to_address, .. }, Some(memo)) = (request, &change_memo) {
+            verify_swap_funding_proposal(&proposal, memo, to_address).map_err(|e| e.to_string())?;
+        }
+        Ok(proposal)
     };
     let pass1_proposal = propose(transaction_request.clone(), proposed_tx_version)?;
     let (proposal, tx_version) =
@@ -4117,21 +4126,6 @@ fn propose_send_with_reserved_notes(
             proposed_tx_version,
         )
         .map_err(|e| format!("Propose failed: {e}"))?;
-    if let Some(memo) = change_memo {
-        // Keep payment and recovery record atomic. TEX/multi-step proposals must
-        // not silently move the marker into a different transaction.
-        if proposal.steps().len() != 1
-            || !proposal.steps()[0]
-                .balance()
-                .proposed_change()
-                .iter()
-                .any(|change| {
-                    change.output_pool() == PoolType::IRONWOOD && change.memo() == Some(&memo)
-                })
-        {
-            return Err("Swap funding requires an internal Ironwood recovery memo in the payment transaction".into());
-        }
-    }
     Ok(proposal)
 }
 

@@ -58,10 +58,14 @@ final swapReceiveReservationServiceProvider = Provider((ref) {
 /// Persistence boundary used by the quote flow and the existing status refresh loop.
 abstract interface class ReceiveReservationStore {
   Future<api.ReceiveReservation> prepare(BigInt tip);
-  Future<void> begin(PlatformInt64 reservation, String request);
+  Future<void> begin(
+    PlatformInt64 reservation,
+    String request,
+    DateTime deadline,
+  );
   Future<void> record(String request, SwapQuote quote);
   Future<void> reject(String request);
-  Future<void> start(String operation);
+  Future<void> start(String operation, String? memo);
   Future<List<api.ReceiveQuoteStatusRequest>> due();
   Future<void> observe(
     String request,
@@ -86,14 +90,20 @@ class RustReceiveReservationStore implements ReceiveReservationStore {
         liveTip: tip,
       );
   @override
-  Future<void> begin(PlatformInt64 reservation, String request) =>
-      api.beginReceiveQuote(
-        dbPath: path,
-        networkName: network,
-        accountUuid: account,
-        reservationId: reservation,
-        requestId: request,
-      );
+  Future<void> begin(
+    PlatformInt64 reservation,
+    String request,
+    DateTime deadline,
+  ) => api.beginReceiveQuote(
+    dbPath: path,
+    networkName: network,
+    accountUuid: account,
+    reservationId: reservation,
+    requestId: request,
+    deadlineSeconds: PlatformInt64Util.from(
+      deadline.millisecondsSinceEpoch ~/ 1000,
+    ),
+  );
   @override
   Future<void> record(String request, SwapQuote quote) {
     final deadline = quote.depositInstruction.deadline;
@@ -121,11 +131,12 @@ class RustReceiveReservationStore implements ReceiveReservationStore {
     requestId: request,
   );
   @override
-  Future<void> start(String operation) => api.startReceiveQuote(
+  Future<void> start(String operation, String? memo) => api.startReceiveQuote(
     dbPath: path,
     networkName: network,
     accountUuid: account,
     operationId: operation,
+    depositMemo: memo,
   );
   @override
   Future<List<api.ReceiveQuoteStatusRequest>> due() => api.receiveQuotesDue(
@@ -200,10 +211,12 @@ class SwapReceiveReservationService {
       });
 
   /// A successful quote is persisted even when its UI generation was superseded.
+  /// `fetch` must put the hook on its request, so the unknown outcome is saved
+  /// only when the request is about to leave the device.
   Future<SwapQuote> quote(
     String account,
     PlatformInt64 reservation,
-    Future<SwapQuote> Function() fetch,
+    Future<SwapQuote> Function(SwapQuoteSendHook beforeSend) fetch,
   ) => _run(() async {
     final backend = await store(account);
     final random = Random.secure();
@@ -211,19 +224,26 @@ class SwapReceiveReservationService {
       16,
       (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'),
     ).join();
-    await backend.begin(reservation, request);
+    var sent = false;
     late final SwapQuote result;
     try {
-      result = await fetch();
+      result = await fetch((deadline) async {
+        await backend.begin(reservation, request, deadline);
+        sent = true;
+      });
     } catch (error) {
       // Only an explicit quote validation rejection establishes that no deposit
       // instructions were returned. Timeouts and malformed successes stay unknown.
-      if (error is OneClickApiException &&
+      if (sent &&
+          error is OneClickApiException &&
           error.operation == 'quote' &&
           (error.statusCode == 400 || error.statusCode == 422)) {
         await backend.reject(request);
       }
       rethrow;
+    }
+    if (!sent) {
+      throw StateError('The quote request skipped its receive reservation.');
     }
     await backend.record(request, result);
     return result;
@@ -234,8 +254,9 @@ class SwapReceiveReservationService {
       return;
     }
     await _run(
-      () async =>
-          (await store(account)).start(quote.depositInstruction.address),
+      () async => (await store(
+        account,
+      )).start(quote.depositInstruction.address, quote.depositInstruction.memo),
     );
   }
 

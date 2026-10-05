@@ -218,11 +218,12 @@ receiver daemon or ingestion job.
 
 Incoming swaps persist a reservation separately from received notes and UI activity.
 Retries and quote edits reuse the current draft, including after restart. Each
-request is recorded before contacting NEAR and each accepted deposit instruction
-is retained, even if the user leaves the review screen. An explicit quote
-validation rejection removes that request's scan watch; an uncertain outcome
-stays reserved. Starting a swap locks the draft and the next swap gets another
-eligible address. At most three distinct unfunded incoming reservations may be
+request is recorded with its deposit deadline just before it is sent to NEAR,
+after local validation, and each accepted deposit instruction is retained, even if
+the user leaves the review screen. An explicit quote validation rejection removes
+that request's scan watch; an uncertain outcome stays reserved until its deadline
+is 48 hours past. Starting a swap locks the draft whose quote matches both the
+deposit address and memo, and the next swap gets another eligible address. At most three distinct unfunded incoming reservations may be
 open for an account, across all source chains. Provider deposit evidence removes
 that reservation from the unfunded count.
 
@@ -232,7 +233,8 @@ accepted quote's deposit deadline. Every attempt must have a fresh successful
 provider check, with no pending or unknown funded operation. The key has been
 trial-decrypted since issuance, so reclamation then only requires the wallet to
 be scanned to its tip with no payment to that address. Provider errors, unknown
-quote outcomes, an unscanned tail, or a payment retain the reservation. Cleanup
+quote outcomes before their deadline has passed by 48 hours, an unscanned tail,
+or a payment retain the reservation. Cleanup
 runs while the app is active and before requesting another address; it does not
 need an operating-system service.
 

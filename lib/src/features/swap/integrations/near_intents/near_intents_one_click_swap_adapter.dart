@@ -87,6 +87,7 @@ class NearIntentsOneClickSwapAdapter
     final requestedSlippageBps = request.slippageBps ?? slippageBps;
     final requestedRefundTo = request.refundAddress!.trim();
     final requestedRecipient = request.destination.trim();
+    final deadline = _now().toUtc().add(request.deadline ?? quoteDeadline);
 
     final body = <String, Object?>{
       'dry': request.dryRun,
@@ -100,12 +101,13 @@ class NearIntentsOneClickSwapAdapter
       'refundType': 'ORIGIN_CHAIN',
       'recipient': requestedRecipient,
       'recipientType': 'DESTINATION_CHAIN',
-      'deadline': _deadlineIso(request.deadline ?? quoteDeadline),
+      'deadline': _deadlineIso(deadline),
       'depositMode': 'SIMPLE',
       'quoteWaitingTimeMs': quoteWaitingTimeMs,
       if (referral != null && referral!.isNotEmpty) 'referral': referral,
     };
 
+    await request.beforeSend?.call(deadline);
     final response = await transport.post(
       _endpoint('/v0/quote'),
       headers: _headers(contentType: true),
@@ -954,10 +956,8 @@ class NearIntentsOneClickSwapAdapter
         : uri.replace(queryParameters: queryParameters);
   }
 
-  String _deadlineIso(Duration offset) {
-    final deadline = _now().toUtc().add(offset);
-    return deadline.toIso8601String().replaceFirst(RegExp(r'\.\d+Z$'), 'Z');
-  }
+  String _deadlineIso(DateTime deadline) =>
+      deadline.toIso8601String().replaceFirst(RegExp(r'\.\d+Z$'), 'Z');
 }
 
 class _MinimumReceiveDisplay {
