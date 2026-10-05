@@ -1,8 +1,12 @@
-//! Shared cancellation-aware HTTPS transport for Enhance PIR and Status PIR.
+//! Shared cancellation-aware HTTPS transport for Enhance PIR, Status PIR and
+//! transparent PIR.
 
 mod cancellation;
 mod enhance_pir;
 mod status_pir;
+// The transparent PIR recovery source is its only caller and lands separately.
+#[cfg_attr(not(test), allow(dead_code))]
+mod transparent_pir;
 
 pub(super) use cancellation::cancelable;
 pub(super) use enhance_pir::client_protocol_error;
@@ -35,8 +39,8 @@ impl From<SyncError> for RoutedHttpError {
     }
 }
 
-#[derive(Clone, Copy)]
-enum RoutePolicy {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RoutePolicy {
     WalletPreference,
     ForceDirect,
 }
