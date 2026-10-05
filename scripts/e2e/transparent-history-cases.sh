@@ -136,6 +136,10 @@ if [[ "$FLUTTER_LAYERS" == "desktop" || "$FLUTTER_LAYERS" == "both" ]]; then
   set +e
   (
     cd "$ROOT"
+    # As in the Rust layer: every ephemeral (TEX) address check is due on each
+    # sync, so a fresh restore finds TEX leg 2 without the daily schedule
+    # (debug builds only; the macOS app inherits this environment).
+    ZCASH_E2E_EPHEMERAL_CHECKS_DUE_NOW=1 \
     fvm flutter test integration_test/regtest_transparent_history_cases_test.dart \
       -d macos \
       "${flutter_defines[@]}" \
