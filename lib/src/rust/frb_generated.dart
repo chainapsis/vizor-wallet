@@ -14561,8 +14561,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TransactionInfo dco_decode_transaction_info(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 14)
-      throw Exception('unexpected arr length: expect 14 but see ${arr.length}');
+    if (arr.length != 15)
+      throw Exception('unexpected arr length: expect 15 but see ${arr.length}');
     return TransactionInfo(
       txidHex: dco_decode_String(arr[0]),
       minedHeight: dco_decode_u_64(arr[1]),
@@ -14578,6 +14578,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       createdTime: dco_decode_u_64(arr[11]),
       detailsComplete: dco_decode_bool(arr[12]),
       provisional: dco_decode_bool(arr[13]),
+      amountIncludesFee: dco_decode_bool(arr[14]),
     );
   }
 
@@ -19530,6 +19531,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_createdTime = sse_decode_u_64(deserializer);
     var var_detailsComplete = sse_decode_bool(deserializer);
     var var_provisional = sse_decode_bool(deserializer);
+    var var_amountIncludesFee = sse_decode_bool(deserializer);
     return TransactionInfo(
       txidHex: var_txidHex,
       minedHeight: var_minedHeight,
@@ -19545,6 +19547,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       createdTime: var_createdTime,
       detailsComplete: var_detailsComplete,
       provisional: var_provisional,
+      amountIncludesFee: var_amountIncludesFee,
     );
   }
 
@@ -23782,6 +23785,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_64(self.createdTime, serializer);
     sse_encode_bool(self.detailsComplete, serializer);
     sse_encode_bool(self.provisional, serializer);
+    sse_encode_bool(self.amountIncludesFee, serializer);
   }
 
   @protected

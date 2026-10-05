@@ -11,8 +11,41 @@ const kIncompleteDetailsHelpText =
     'Some details of this transaction, such as its recipients, memos, or '
     'fee, are not known yet. The amount shown may change.';
 
+/// Titles the single line of an entry whose whole balance change is its
+/// network fee, such as a privately recovered self-shield.
+const kNetworkFeeText = 'Network fee';
+
+/// Labels an amount that is the account's balance change, network fee
+/// included.
+const kNetChangeIncludesFeeText = 'Net change (includes network fee)';
+
 bool transactionFeeIsUnknown(rust_sync.TransactionInfo tx) =>
     tx.feeState == rust_sync.TransactionFeeState.unknown;
+
+/// How an entry shows its amount and network fee, so the fee appears once.
+enum TransactionFeePresentation {
+  /// The amount excludes the fee, which keeps its own line.
+  separate,
+
+  /// The amount is the balance change with the fee in it
+  /// ([kNetChangeIncludesFeeText]); the fee keeps its own line.
+  includedInAmount,
+
+  /// The whole balance change is the fee: one [kNetworkFeeText] line, with no
+  /// separate amount or fee line.
+  feeOnly,
+}
+
+/// How [tx] shows its fee. Nothing is subtracted: an amount that includes the
+/// fee is shown as it is.
+TransactionFeePresentation transactionFeePresentation(
+  rust_sync.TransactionInfo tx,
+) {
+  if (!tx.amountIncludesFee) return TransactionFeePresentation.separate;
+  return tx.displayAmount == tx.fee
+      ? TransactionFeePresentation.feeOnly
+      : TransactionFeePresentation.includedInAmount;
+}
 
 /// Whether the entry is incomplete: its payment details are missing, or the
 /// wallet has not yet discovered all of its effects.

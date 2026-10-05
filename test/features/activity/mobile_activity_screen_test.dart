@@ -54,16 +54,21 @@ rust_sync.TransactionInfo _tx({
   bool expiredUnmined = false,
   BigInt? displayAmount,
   String displayPool = 'shielded',
+  BigInt? fee,
+  bool amountIncludesFee = false,
 }) {
   return rust_sync.TransactionInfo(
     txidHex: txidHex,
     minedHeight: minedHeight ?? BigInt.one,
     expiredUnmined: expiredUnmined,
     accountBalanceDelta: 0,
-    fee: BigInt.zero,
-    feeState: rust_sync.TransactionFeeState.notApplicable,
-    detailsComplete: true,
-    provisional: false,
+    fee: fee ?? BigInt.zero,
+    feeState: fee == null
+        ? rust_sync.TransactionFeeState.notApplicable
+        : rust_sync.TransactionFeeState.known,
+    detailsComplete: !amountIncludesFee,
+    provisional: amountIncludesFee,
+    amountIncludesFee: amountIncludesFee,
     blockTime: blockTime,
     isTransparent: false,
     txKind: kind,
@@ -290,6 +295,44 @@ void main() {
     expect(find.text('Sending...'), findsNothing);
     expect(find.text('Sent'), findsNothing);
     expect(find.text('Transparent'), findsNothing);
+  });
+
+  testWidgets('a fee-only entry reads as its network fee', (tester) async {
+    final blockTime = BigInt.from(
+      DateTime.now().millisecondsSinceEpoch ~/ 1000 - 60,
+    );
+    await tester.pumpWidget(
+      _app(
+        (_) async => [
+          // A recovered self-shield: the whole balance change is the fee.
+          _tx(
+            txidHex: 'aa',
+            blockTime: blockTime,
+            kind: 'sent',
+            displayPool: 'unknown',
+            displayAmount: BigInt.from(65000),
+            fee: BigInt.from(65000),
+            amountIncludesFee: true,
+          ),
+          // A net change that includes the fee keeps its sent row.
+          _tx(
+            txidHex: 'bb',
+            blockTime: blockTime,
+            kind: 'sent',
+            displayPool: 'unknown',
+            displayAmount: BigInt.from(70000000),
+            fee: BigInt.from(10000),
+            amountIncludesFee: true,
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Network fee'), findsOneWidget);
+    expect(find.text('-0.00065 ZEC'), findsOneWidget);
+    expect(find.text('Sent'), findsOneWidget);
+    expect(find.text('-0.7 ZEC'), findsOneWidget);
   });
 
   testWidgets('shows the empty state when history is empty', (tester) async {

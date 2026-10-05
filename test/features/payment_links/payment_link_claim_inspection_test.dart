@@ -582,6 +582,7 @@ rust_sync.TransactionInfo _transaction({
     feeState: rust_sync.TransactionFeeState.notApplicable,
     detailsComplete: true,
     provisional: false,
+    amountIncludesFee: false,
   );
 }
 

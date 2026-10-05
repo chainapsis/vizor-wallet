@@ -2679,8 +2679,8 @@ pub struct TransactionInfo {
     pub expired_unmined: bool,
     pub account_balance_delta: i64,
     /// The network fee shown for the transaction. Zero unless `fee_state` is
-    /// `Known`. Display only: it is never part of `display_amount` or
-    /// `account_balance_delta`.
+    /// `Known`. Display only: it is never subtracted from `display_amount`
+    /// or `account_balance_delta`.
     pub fee: u64,
     pub fee_state: TransactionFeeState,
     pub block_time: u64,
@@ -2694,6 +2694,11 @@ pub struct TransactionInfo {
     /// Whether later discovery or enhancement can still change this entry.
     /// A provisional debit is a net amount, not a payment amount.
     pub provisional: bool,
+    /// Whether `display_amount` already includes the shown `fee`: the amount
+    /// is the account's balance change and `fee` is the whole transaction's
+    /// fee from privately recovered metadata. Show the fee once: when
+    /// `display_amount` equals `fee`, the change is that fee alone.
+    pub amount_includes_fee: bool,
 }
 
 /// The network fee shown for a transaction.
@@ -2762,6 +2767,7 @@ pub fn get_transaction_history(
                 created_time: t.created_time,
                 details_complete: t.details_complete,
                 provisional: t.provisional,
+                amount_includes_fee: t.amount_includes_fee,
             })
             .collect())
     })

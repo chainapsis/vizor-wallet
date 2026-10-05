@@ -701,6 +701,7 @@ rust_sync.TransactionInfo _sentZecTransaction({
     feeState: rust_sync.TransactionFeeState.known,
     detailsComplete: true,
     provisional: false,
+    amountIncludesFee: false,
     blockTime: BigInt.from(1800000000),
     isTransparent: false,
     txKind: 'sent',
