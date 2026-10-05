@@ -43,6 +43,7 @@ impl From<zcash_client_sqlite::wallet::swap_receiving::ReservationPolicy> for Re
             P::Limit => ReceiveErrorCode::Limit,
             P::Stale => ReceiveErrorCode::Stale,
             P::Coverage => ReceiveErrorCode::Coverage,
+            P::Unreadable => ReceiveErrorCode::Other,
         };
         Self {
             code,

@@ -5,37 +5,6 @@ use futures::StreamExt;
 use std::num::NonZeroU32;
 use zcash_client_backend::data_api::{Account as _, AccountSource, WalletRead};
 
-/// A status response decides when a refund key stops scanning, never note
-/// ownership or balance. The deadline is the quote request's, as in the app's
-/// own quote handling, so a long-finished restored swap closes after its sweep.
-fn provider_status(bytes: &[u8]) -> Option<zakura_swap_receiving::lifecycle::Observation> {
-    let value: serde_json::Value = serde_json::from_slice(bytes).ok()?;
-    let refunded_amount = value
-        .pointer("/swapDetails/refundedAmount")
-        .and_then(|v| v.as_str())
-        .and_then(|v| v.parse::<u64>().ok())
-        .and_then(|v| zcash_protocol::value::Zatoshis::from_u64(v).ok());
-    let deadline = value
-        .pointer("/quoteResponse/quoteRequest/deadline")
-        .and_then(|v| v.as_str())
-        .and_then(|v| {
-            time::OffsetDateTime::parse(v, &time::format_description::well_known::Rfc3339).ok()
-        })
-        .map(|t| t.unix_timestamp());
-    zakura_swap_receiving::lifecycle::near_observation(
-        zakura_swap_receiving::Purpose::Refund,
-        &zakura_swap_receiving::lifecycle::ProviderStatus {
-            status: value.get("status")?.as_str()?,
-            swap_type: value
-                .pointer("/quoteResponse/quoteRequest/swapType")
-                .and_then(|v| v.as_str()),
-            refunded_amount,
-            amount_out: None,
-            deadline,
-        },
-    )
-}
-
 pub(super) async fn reconcile(
     db: &mut WalletDatabase,
     should_exit: &impl Fn() -> bool,
@@ -70,8 +39,13 @@ pub(super) async fn reconcile(
                         transport.bytes(http::Method::GET, url.as_str(), vec![], 64 * 1024),
                     )
                     .await;
+                    // A status response decides when a refund key stops scanning, never
+                    // note ownership or balance.
                     let terminal = match response {
-                        Ok(Ok(bytes)) => provider_status(&bytes),
+                        Ok(Ok(bytes)) => zakura_swap_receiving::lifecycle::near_status_observation(
+                            zakura_swap_receiving::Purpose::Refund,
+                            &bytes,
+                        ),
                         _ => None,
                     };
                     (key, deposit, terminal)
@@ -94,28 +68,4 @@ pub(super) async fn reconcile(
         }
     }
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use zakura_swap_receiving::lifecycle::{OperationStatus, ReceiptExpectation};
-
-    #[test]
-    fn status_response_yields_refund_expectation_and_deadline() {
-        let body = br#"{"status":"SUCCESS","swapDetails":{"refundedAmount":"1500"},
-            "quoteResponse":{"quoteRequest":{"swapType":"EXACT_INPUT",
-            "deadline":"2026-09-01T12:00:00Z"}}}"#;
-        let observation = super::provider_status(body).unwrap();
-        assert_eq!(
-            observation.status,
-            OperationStatus::Terminal(ReceiptExpectation::Positive(Some(
-                zcash_protocol::value::Zatoshis::const_from_u64(1500)
-            )))
-        );
-        assert_eq!(observation.deadline, Some(1_788_264_000));
-        let pending = br#"{"status":"PENDING_DEPOSIT"}"#;
-        let observation = super::provider_status(pending).unwrap();
-        assert_eq!(observation.status, OperationStatus::Active);
-        assert_eq!(observation.deadline, None);
-    }
 }

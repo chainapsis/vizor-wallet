@@ -4,27 +4,25 @@ use super::enhancement::transport::{RoutedHttpError, RoutedTransport};
 use super::WalletDatabase;
 use crate::wallet::{db::with_wallet_db_write_lock, network::WalletNetwork};
 use futures::StreamExt;
-use orchard::tree::{MerkleHashOrchard, MerklePath};
 use receiver_directory::Receiver;
 use receiver_pir::{
     transport::{DirectoryClient, Transport as ReceiverTransport},
     AcceptedCoverage,
 };
-use std::num::NonZeroU32;
+use std::{collections::BTreeMap, num::NonZeroU32};
 use zakura_pir_enhance::wallet::{self as enhance_wallet, Acceptance, PreparedWork};
 use zakura_pir_enhance::{
     transport::{PendingClient, Request, ResponseBody, Transport},
     ClientError, ClientResourceLimits,
 };
-use zakura_swap_receiving::{lifecycle::ChainAnchor, recovery::EncryptedNote};
+use zakura_swap_receiving::lifecycle::ChainAnchor;
 use zcash_client_backend::data_api::enhance_pir::{
     EnhancePirRead, EnhancePirWrite, TransactionEnhancementWork,
 };
 use zcash_client_backend::data_api::{Account as _, AccountSource, WalletRead};
 use zcash_client_sqlite::wallet::swap_receiving::{
-    DiscoveryWork, PaymentApplication, PendingPayment,
+    DirectoryPayment, DiscoveryWork, PaymentApplication,
 };
-use zcash_primitives::{block::BlockHash, transaction::TxId};
 use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
 
 // Use explicit HTTPS origins and never follow service redirects.
@@ -187,16 +185,15 @@ async fn receiver_client<T: ReceiverTransport>(
     db: &mut WalletDatabase,
     network: WalletNetwork,
     http: T,
+    through: ChainAnchor,
     remaining_lookups: usize,
 ) -> Result<(DirectoryClient<T>, AcceptedCoverage, ChainAnchor), String> {
     let advertised = DirectoryClient::fetch_manifest(RECEIVER_ORIGIN, &http)
         .await
         .map_err(error)?;
-    let height = BlockHeight::from(advertised.directory.end_height);
-    let hash = db
-        .get_block_hash(height)
-        .map_err(error)?
-        .ok_or("Directory anchor has not been scanned")?;
+    let anchor = db
+        .swap_publication_anchor(BlockHeight::from(advertised.directory.end_height), through)
+        .map_err(error)?;
     let activation = network
         .activation_height(NetworkUpgrade::Nu6_3)
         .ok_or("Ironwood inactive")?;
@@ -209,8 +206,8 @@ async fn receiver_client<T: ReceiverTransport>(
     let accepted = AcceptedCoverage {
         genesis,
         required_start: activation.into(),
-        height: height.into(),
-        hash: hash.0,
+        height: anchor.height.into(),
+        hash: anchor.hash,
     };
     let client = DirectoryClient::connect_manifest(
         RECEIVER_ORIGIN,
@@ -221,11 +218,23 @@ async fn receiver_client<T: ReceiverTransport>(
     )
     .await
     .map_err(error)?;
-    let anchor = ChainAnchor {
-        height,
-        hash: hash.0,
-    };
     Ok((client, accepted, anchor))
+}
+
+/// A directory payment as the wallet library takes it.
+fn directory_payment(payment: receiver_directory::Payment) -> DirectoryPayment {
+    DirectoryPayment {
+        height: payment.height,
+        block_hash: payment.block_hash,
+        txid: payment.txid,
+        tx_index: payment.tx_index,
+        action_index: payment.action_index,
+        position: payment.position,
+        action_nullifier: payment.action_nullifier,
+        cmx: payment.cmx,
+        ephemeral_key: payment.ephemeral_key,
+        ciphertext_prefix: payment.ciphertext_prefix,
+    }
 }
 
 async fn run_inner(
@@ -300,10 +309,7 @@ async fn run_inner(
         return Ok(());
     }
     let (mut client, accepted, anchor) =
-        receiver_client(db, network, &transport, remaining).await?;
-    if through.height < anchor.height || through.height - anchor.height > 100 {
-        return Err("Directory witness publication is stale".into());
-    }
+        receiver_client(db, network, &transport, through, remaining).await?;
     // Both modes fetch the same common proofs once for the entire revision.
     let witnesses = client.witnesses().await.map_err(error)?;
     let mut failures = 0usize;
@@ -313,125 +319,46 @@ async fn run_inner(
                 return Ok(());
             }
             let now = crate::wallet::swap_receiving::receive::now()?;
-            with_wallet_db_write_lock("swap_private.attempt", || {
-                db.begin_swap_discovery_attempt(account, work_item.key, now)
-                    .map_err(error)
-            })?;
             let result = async {
-                if work_item.target.height > anchor.height {
-                    return Err("Publication has not reached recovery target".to_owned());
-                }
                 let key = work_item.key;
+                with_wallet_db_write_lock("swap_private.attempt", || {
+                    db.begin_swap_discovery_attempt(account, key, anchor, now)
+                        .map_err(error)
+                })?;
                 if work_item.lookup.is_none() {
                     let receiver = Receiver::from_bytes(work_item.receiver).map_err(error)?;
-                    let payments = client
+                    let payments: Vec<_> = client
                         .lookup(receiver, NonZeroU32::new(32).unwrap(), accepted)
                         .await
+                        .map_err(error)?
+                        .into_iter()
+                        .map(directory_payment)
+                        .collect();
+                    let positions = db
+                        .swap_note_data_needed(account, key, &payments)
                         .map_err(error)?;
-                    let queued = db.pending_swap_payments(account, key).map_err(error)?;
-                    let mut candidates = Vec::new();
-                    let mut missing = Vec::new();
-                    for payment in payments {
-                        let position = payment.position.try_into().map_err(error)?;
-                        let txid = TxId::from_bytes(payment.txid);
-                        if db
-                            .has_swap_payment(
-                                account,
-                                key,
-                                txid,
-                                payment.action_index,
-                                payment.height.into(),
-                                BlockHash(payment.block_hash),
-                                position,
-                            )
-                            .map_err(error)?
-                        {
-                            continue;
-                        }
-                        if let Some(old) = queued
-                            .iter()
-                            .find(|p| p.txid == txid && p.action_index == payment.action_index)
-                        {
-                            if old.position != position
-                                || u32::from(old.height) != payment.height
-                                || old.block_hash.0 != payment.block_hash
-                                || !old.encrypted_note.matches_compact(
-                                    payment.action_nullifier,
-                                    payment.cmx,
-                                    payment.ephemeral_key,
-                                    payment.ciphertext_prefix,
-                                )
-                            {
-                                return Err("Conflicting queued payment".to_owned());
-                            }
-                            candidates.push(old.clone());
-                        } else {
-                            missing.push(payment);
-                        }
-                    }
                     // Enhance groups these positions into shared row requests internally.
-                    let stream = enhance
-                        .query_batch(&transport, missing.iter().map(|p| p.position))
-                        .map_err(error)?;
+                    let stream = enhance.query_batch(&transport, positions).map_err(error)?;
                     futures::pin_mut!(stream);
-                    let mut records = std::collections::HashMap::new();
+                    let mut note_data = BTreeMap::new();
                     while let Some(result) = stream.next().await {
-                        records.insert(result.position, result.record.map_err(error)?);
-                    }
-                    for payment in missing {
-                        let record = records
-                            .remove(&payment.position)
-                            .ok_or("Missing Enhance result")?;
-                        candidates.push(PendingPayment {
-                            txid: TxId::from_bytes(payment.txid),
-                            action_index: payment.action_index,
-                            height: payment.height.into(),
-                            block_hash: BlockHash(payment.block_hash),
-                            tx_index: payment.tx_index.try_into().map_err(error)?,
-                            position: payment.position.try_into().map_err(error)?,
-                            encrypted_note: EncryptedNote::from_parts(
-                                payment.action_nullifier,
-                                payment.cmx,
-                                payment.ephemeral_key,
-                                payment.ciphertext_prefix,
-                                record.enc_ciphertext_suffix(),
-                            ),
-                        });
+                        let record = result.record.map_err(error)?;
+                        note_data.insert(result.position, *record.enc_ciphertext_suffix());
                     }
                     with_wallet_db_write_lock("swap_private.queue", || {
-                        db.queue_swap_lookup(account, key, anchor, &candidates)
+                        db.queue_swap_directory_lookup(account, key, anchor, &payments, &note_data)
                             .map_err(error)
                     })?;
                 }
-                for candidate in db.pending_swap_payments(account, key).map_err(error)? {
-                    let cmx = candidate.encrypted_note.commitment();
-                    let raw_path = witnesses.path(candidate.position, cmx).map_err(error)?;
-                    let path = MerklePath::from_parts(
-                        candidate.position,
-                        raw_path.map(|h| MerkleHashOrchard::from_bytes(&h).unwrap()),
-                    );
-                    let result = with_wallet_db_write_lock("swap_private.apply", || {
-                        db.apply_pending_swap_payment(
-                            account,
-                            key,
-                            &candidate,
-                            through,
-                            Some((anchor, &path)),
-                        )
-                        .map_err(error)
-                    })?;
-                    if result != PaymentApplication::Applied {
-                        return Err(format!("Payment remains queued: {result:?}"));
-                    }
-                }
-                let coverage = db
-                    .swap_lookup_coverage(account, key)
-                    .map_err(error)?
-                    .ok_or("Missing lookup coverage")?;
-                with_wallet_db_write_lock("swap_private.finish", || {
-                    db.finish_swap_discovery_attempt(account, key, coverage)
-                        .map_err(error)
+                let applied = with_wallet_db_write_lock("swap_private.apply", || {
+                    db.apply_swap_sweep(account, key, through, anchor, |position, cmx| {
+                        witnesses.path(position, cmx).ok()
+                    })
+                    .map_err(error)
                 })?;
+                if applied != PaymentApplication::Applied {
+                    return Err(format!("Payment remains queued: {applied:?}"));
+                }
                 Ok::<(), String>(())
             }
             .await;

@@ -1,6 +1,7 @@
 //! Incoming swap reservation lifecycle. Refund allocation uses the existing API.
 use crate::wallet::swap_receiving::receive::ReceiveError;
 use crate::wallet::{keys, network::WalletNetwork, swap_receiving::receive};
+use zcash_client_sqlite::wallet::swap_receiving::{QuoteOutcome, ReceiveDeposit};
 use zcash_keys::address::{Address, UnifiedAddress};
 
 /// An account-scoped durable receive draft, whose key is scanned from issuance.
@@ -18,6 +19,13 @@ pub struct SwapProviderStatus {
     pub refunded_amount: Option<String>,
     pub amount_out: Option<String>,
     pub deadline_seconds: Option<i64>,
+}
+
+/// The deposit instructions of a started incoming quote: the only ones to show.
+pub struct ReceiveDepositInstruction {
+    pub address: String,
+    pub memo: Option<String>,
+    pub deadline_seconds: i64,
 }
 
 /// Provider lookup for a persisted quote, including quotes never started in the UI.
@@ -57,15 +65,15 @@ pub fn prepare_receive_reservation(
 }
 
 /// Persists an unknown outcome and scan watch just before a provider quote request
-/// leaves the device. `deadline_seconds` is the deposit deadline the request sends.
+/// leaves the device, and returns the request's identity. `deadline_seconds` is the
+/// deposit deadline the request sends.
 pub fn begin_receive_quote(
     db_path: String,
     network_name: String,
     account_uuid: String,
     reservation_id: i64,
-    request_id: String,
     deadline_seconds: i64,
-) -> Result<(), ReceiveError> {
+) -> Result<String, ReceiveError> {
     receive::with_db(
         &db_path,
         network(&db_path, &network_name)?,
@@ -74,14 +82,8 @@ pub fn begin_receive_quote(
             crate::wallet::swap_receiving::require_new_address(keys::parse_network(
                 &network_name,
             )?)?;
-            db.begin_swap_receive_quote(
-                a,
-                reservation_id,
-                &request_id,
-                deadline_seconds,
-                receive::now()?,
-            )
-            .map_err(ReceiveError::from)
+            db.begin_swap_receive_quote(a, reservation_id, deadline_seconds, receive::now()?)
+                .map_err(ReceiveError::from)
         },
     )
 }
@@ -101,14 +103,13 @@ pub fn record_receive_quote(
         network(&db_path, &network_name)?,
         &account_uuid,
         |db, a| {
-            db.record_swap_receive_quote(
-                a,
-                &request_id,
-                &operation_id,
-                deposit_memo.as_deref(),
-                deadline_seconds,
-            )
-            .map_err(ReceiveError::from)
+            let deposit = ReceiveDeposit {
+                address: operation_id,
+                memo: deposit_memo,
+                deadline: deadline_seconds,
+            };
+            db.finish_swap_receive_quote(a, &request_id, &QuoteOutcome::Accepted(deposit))
+                .map_err(ReceiveError::from)
         },
     )
 }
@@ -125,34 +126,33 @@ pub fn reject_receive_quote(
         network(&db_path, &network_name)?,
         &account_uuid,
         |db, a| {
-            db.reject_swap_receive_quote(a, &request_id)
+            db.finish_swap_receive_quote(a, &request_id, &QuoteOutcome::Rejected)
                 .map_err(ReceiveError::from)
         },
     )
 }
 
-/// Locks the accepted draft before exposing provider funding instructions. The quote
-/// is identified by its deposit address and memo.
+/// Locks the accepted draft before exposing provider funding instructions, and
+/// returns the instructions to show.
 pub fn start_receive_quote(
     db_path: String,
     network_name: String,
     account_uuid: String,
-    operation_id: String,
-    deposit_memo: Option<String>,
-) -> Result<(), ReceiveError> {
+    request_id: String,
+) -> Result<ReceiveDepositInstruction, ReceiveError> {
     receive::with_db(
         &db_path,
         network(&db_path, &network_name)?,
         &account_uuid,
         |db, a| {
-            if !db
-                .has_swap_receive_quote(a, &operation_id)
-                .map_err(ReceiveError::from)?
-            {
-                return Ok(());
-            }
-            db.start_swap_receive_quote(a, &operation_id, deposit_memo.as_deref())
-                .map_err(ReceiveError::from)
+            let deposit = db
+                .start_swap_receive_quote(a, &request_id)
+                .map_err(ReceiveError::from)?;
+            Ok(ReceiveDepositInstruction {
+                address: deposit.address,
+                memo: deposit.memo,
+                deadline_seconds: deposit.deadline,
+            })
         },
     )
 }

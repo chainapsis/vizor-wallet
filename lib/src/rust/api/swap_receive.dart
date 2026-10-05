@@ -24,20 +24,19 @@ Future<ReceiveReservation> prepareReceiveReservation({
 );
 
 /// Persists an unknown outcome and scan watch just before a provider quote request
-/// leaves the device. `deadline_seconds` is the deposit deadline the request sends.
-Future<void> beginReceiveQuote({
+/// leaves the device, and returns the request's identity. `deadline_seconds` is the
+/// deposit deadline the request sends.
+Future<String> beginReceiveQuote({
   required String dbPath,
   required String networkName,
   required String accountUuid,
   required PlatformInt64 reservationId,
-  required String requestId,
   required PlatformInt64 deadlineSeconds,
 }) => RustLib.instance.api.crateApiSwapReceiveBeginReceiveQuote(
   dbPath: dbPath,
   networkName: networkName,
   accountUuid: accountUuid,
   reservationId: reservationId,
-  requestId: requestId,
   deadlineSeconds: deadlineSeconds,
 );
 
@@ -73,20 +72,18 @@ Future<void> rejectReceiveQuote({
   requestId: requestId,
 );
 
-/// Locks the accepted draft before exposing provider funding instructions. The quote
-/// is identified by its deposit address and memo.
-Future<void> startReceiveQuote({
+/// Locks the accepted draft before exposing provider funding instructions, and
+/// returns the instructions to show.
+Future<ReceiveDepositInstruction> startReceiveQuote({
   required String dbPath,
   required String networkName,
   required String accountUuid,
-  required String operationId,
-  String? depositMemo,
+  required String requestId,
 }) => RustLib.instance.api.crateApiSwapReceiveStartReceiveQuote(
   dbPath: dbPath,
   networkName: networkName,
   accountUuid: accountUuid,
-  operationId: operationId,
-  depositMemo: depositMemo,
+  requestId: requestId,
 );
 
 /// Returns operations whose provider status needs refreshing.
@@ -129,6 +126,32 @@ Future<int> reapReceiveReservations({
   networkName: networkName,
   accountUuid: accountUuid,
 );
+
+/// The deposit instructions of a started incoming quote: the only ones to show.
+class ReceiveDepositInstruction {
+  final String address;
+  final String? memo;
+  final PlatformInt64 deadlineSeconds;
+
+  const ReceiveDepositInstruction({
+    required this.address,
+    this.memo,
+    required this.deadlineSeconds,
+  });
+
+  @override
+  int get hashCode =>
+      address.hashCode ^ memo.hashCode ^ deadlineSeconds.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ReceiveDepositInstruction &&
+          runtimeType == other.runtimeType &&
+          address == other.address &&
+          memo == other.memo &&
+          deadlineSeconds == other.deadlineSeconds;
+}
 
 /// Provider lookup for a persisted quote, including quotes never started in the UI.
 class ReceiveQuoteStatusRequest {

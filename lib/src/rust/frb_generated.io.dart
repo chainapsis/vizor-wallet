@@ -1067,6 +1067,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ProposalResult dco_decode_proposal_result(dynamic raw);
 
   @protected
+  ReceiveDepositInstruction dco_decode_receive_deposit_instruction(dynamic raw);
+
+  @protected
   ReceiveError dco_decode_receive_error(dynamic raw);
 
   @protected
@@ -2633,6 +2636,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ProposalResult sse_decode_proposal_result(SseDeserializer deserializer);
+
+  @protected
+  ReceiveDepositInstruction sse_decode_receive_deposit_instruction(
+    SseDeserializer deserializer,
+  );
 
   @protected
   ReceiveError sse_decode_receive_error(SseDeserializer deserializer);
@@ -4547,6 +4555,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_proposal_result(
     ProposalResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_receive_deposit_instruction(
+    ReceiveDepositInstruction self,
     SseSerializer serializer,
   );
 

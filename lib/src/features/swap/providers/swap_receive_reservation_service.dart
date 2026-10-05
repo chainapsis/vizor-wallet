@@ -1,5 +1,3 @@
-import 'dart:math';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
     show PlatformInt64, PlatformInt64Util;
@@ -58,14 +56,14 @@ final swapReceiveReservationServiceProvider = Provider((ref) {
 /// Persistence boundary used by the quote flow and the existing status refresh loop.
 abstract interface class ReceiveReservationStore {
   Future<api.ReceiveReservation> prepare(BigInt tip);
-  Future<void> begin(
-    PlatformInt64 reservation,
-    String request,
-    DateTime deadline,
-  );
+
+  /// Returns the request's identity.
+  Future<String> begin(PlatformInt64 reservation, DateTime deadline);
   Future<void> record(String request, SwapQuote quote);
   Future<void> reject(String request);
-  Future<void> start(String operation, String? memo);
+
+  /// Returns the deposit instructions the UI may show.
+  Future<api.ReceiveDepositInstruction> start(String request);
   Future<List<api.ReceiveQuoteStatusRequest>> due();
   Future<void> observe(
     String request,
@@ -90,20 +88,16 @@ class RustReceiveReservationStore implements ReceiveReservationStore {
         liveTip: tip,
       );
   @override
-  Future<void> begin(
-    PlatformInt64 reservation,
-    String request,
-    DateTime deadline,
-  ) => api.beginReceiveQuote(
-    dbPath: path,
-    networkName: network,
-    accountUuid: account,
-    reservationId: reservation,
-    requestId: request,
-    deadlineSeconds: PlatformInt64Util.from(
-      deadline.millisecondsSinceEpoch ~/ 1000,
-    ),
-  );
+  Future<String> begin(PlatformInt64 reservation, DateTime deadline) =>
+      api.beginReceiveQuote(
+        dbPath: path,
+        networkName: network,
+        accountUuid: account,
+        reservationId: reservation,
+        deadlineSeconds: PlatformInt64Util.from(
+          deadline.millisecondsSinceEpoch ~/ 1000,
+        ),
+      );
   @override
   Future<void> record(String request, SwapQuote quote) {
     final deadline = quote.depositInstruction.deadline;
@@ -131,13 +125,13 @@ class RustReceiveReservationStore implements ReceiveReservationStore {
     requestId: request,
   );
   @override
-  Future<void> start(String operation, String? memo) => api.startReceiveQuote(
-    dbPath: path,
-    networkName: network,
-    accountUuid: account,
-    operationId: operation,
-    depositMemo: memo,
-  );
+  Future<api.ReceiveDepositInstruction> start(String request) =>
+      api.startReceiveQuote(
+        dbPath: path,
+        networkName: network,
+        accountUuid: account,
+        requestId: request,
+      );
   @override
   Future<List<api.ReceiveQuoteStatusRequest>> due() => api.receiveQuotesDue(
     dbPath: path,
@@ -219,45 +213,49 @@ class SwapReceiveReservationService {
     Future<SwapQuote> Function(SwapQuoteSendHook beforeSend) fetch,
   ) => _run(() async {
     final backend = await store(account);
-    final random = Random.secure();
-    final request = List.generate(
-      16,
-      (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'),
-    ).join();
-    var sent = false;
+    String? request;
     late final SwapQuote result;
     try {
       result = await fetch((deadline) async {
-        await backend.begin(reservation, request, deadline);
-        sent = true;
+        request = await backend.begin(reservation, deadline);
       });
     } catch (error) {
       // Only an explicit quote validation rejection establishes that no deposit
       // instructions were returned. Timeouts and malformed successes stay unknown.
-      if (sent &&
+      final sent = request;
+      if (sent != null &&
           error is OneClickApiException &&
           error.operation == 'quote' &&
           (error.statusCode == 400 || error.statusCode == 422)) {
-        await backend.reject(request);
+        await backend.reject(sent);
       }
       rethrow;
     }
-    if (!sent) {
+    final sent = request;
+    if (sent == null) {
       throw StateError('The quote request skipped its receive reservation.');
     }
-    await backend.record(request, result);
-    return result;
+    await backend.record(sent, result);
+    return SwapQuote.withReceiveRequestId(result, sent);
   });
 
+  /// Locks the quote's reservation before its deposit instructions are shown, and
+  /// checks that they are the ones the wallet saved.
   Future<void> start(String account, SwapQuote quote) async {
-    if (!enabled() || !supportsAccount(account) || quote.direction.sendsZec) {
+    final request = quote.receiveRequestId;
+    if (!enabled() ||
+        !supportsAccount(account) ||
+        quote.direction.sendsZec ||
+        request == null) {
       return;
     }
-    await _run(
-      () async => (await store(
-        account,
-      )).start(quote.depositInstruction.address, quote.depositInstruction.memo),
-    );
+    await _run(() async {
+      final deposit = await (await store(account)).start(request);
+      if (deposit.address != quote.depositInstruction.address ||
+          deposit.memo != quote.depositInstruction.memo) {
+        throw StateError('These deposit instructions were not saved.');
+      }
+    });
   }
 
   /// Shares successful activity polls with reservation bookkeeping.

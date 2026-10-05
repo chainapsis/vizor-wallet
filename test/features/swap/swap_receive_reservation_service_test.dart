@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
-    show PlatformInt64;
+    show PlatformInt64, PlatformInt64Util;
 import 'package:zcash_wallet/src/features/ledger/services/ledger_operation_lifecycle.dart';
 import 'package:zcash_wallet/src/features/swap/domain/swap_contract.dart';
 import 'package:zcash_wallet/src/features/swap/integrations/near_intents/near_intents_one_click_swap_adapter.dart';
@@ -33,10 +33,9 @@ void main() {
         store.events.add('network');
         return _quote;
       });
-      expect(quote, same(_quote));
-      expect(store.events, ['begin', 'network', 'record']);
-      expect(store.requests, hasLength(1));
-      expect(store.requests.single, hasLength(32));
+      expect(quote.receiveRequestId, 'request-1');
+      expect(quote.depositInstruction, same(_quote.depositInstruction));
+      expect(store.events, ['begin', 'network', 'record:request-1']);
       expect(store.deadlines, [_deadline]);
     },
   );
@@ -85,9 +84,18 @@ void main() {
     expect(store.events, isEmpty);
   });
 
-  test('starting a quote matches its deposit memo', () async {
+  test('starting a quote checks the deposit instructions it saved', () async {
+    // A quote that never reserved an address has nothing to start.
     await service.start('account', _quote);
-    expect(store.events, ['start:deposit:memo']);
+    expect(store.events, isEmpty);
+    final quote = SwapQuote.withReceiveRequestId(_quote, 'request-1');
+    await service.start('account', quote);
+    expect(store.events, ['start:request-1']);
+    store.savedMemo = 'other-memo';
+    await expectLater(
+      service.start('account', quote),
+      throwsA(isA<StateError>()),
+    );
   });
 
   test('polls orphan quotes, forwards deposit memo, then reaps', () async {
@@ -167,7 +175,7 @@ void main() {
       result.complete(_quote);
       await quote;
       await drain;
-      expect(store.events, ['begin', 'record']);
+      expect(store.events, ['begin', 'record:request-1']);
       expect(drained, true);
     },
   );
@@ -201,24 +209,23 @@ class _Store implements ReceiveReservationStore {
   final requests = <String>[];
   final deadlines = <DateTime>[];
   final pending = <api.ReceiveQuoteStatusRequest>[];
+  String savedMemo = 'memo';
   @override
   Future<api.ReceiveReservation> prepare(BigInt tip) async =>
       api.ReceiveReservation(id: 1, index: BigInt.zero, address: 'u1test');
   @override
-  Future<void> begin(
-    PlatformInt64 reservation,
-    String request,
-    DateTime deadline,
-  ) async {
+  Future<String> begin(PlatformInt64 reservation, DateTime deadline) async {
     events.add('begin');
+    final request = 'request-${requests.length + 1}';
     requests.add(request);
     deadlines.add(deadline);
+    return request;
   }
 
   @override
   Future<void> record(String request, SwapQuote quote) async {
     expect(requests, contains(request));
-    events.add('record');
+    events.add('record:$request');
   }
 
   @override
@@ -227,8 +234,15 @@ class _Store implements ReceiveReservationStore {
   }
 
   @override
-  Future<void> start(String operation, String? memo) async {
-    events.add('start:$operation:$memo');
+  Future<api.ReceiveDepositInstruction> start(String request) async {
+    events.add('start:$request');
+    return api.ReceiveDepositInstruction(
+      address: 'deposit',
+      memo: savedMemo,
+      deadlineSeconds: PlatformInt64Util.from(
+        _deadline.millisecondsSinceEpoch ~/ 1000,
+      ),
+    );
   }
 
   @override

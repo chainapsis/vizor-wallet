@@ -152,6 +152,7 @@ class SwapQuote {
     this.providerRefundInfo,
     this.fiatValueBasis,
     this.swapRefundIndex,
+    this.receiveRequestId,
   });
 
   factory SwapQuote.estimate({
@@ -240,31 +241,51 @@ class SwapQuote {
   /// Local key identity. Never sent to the quote provider.
   final BigInt? swapRefundIndex;
 
+  /// Local identity of the incoming quote request that reserved this quote's
+  /// receive address. Never sent to the quote provider.
+  final String? receiveRequestId;
+
   SwapQuote.withSwapRefundIndex(SwapQuote quote, BigInt? index)
-    : direction = quote.direction,
-      sellAsset = quote.sellAsset,
-      receiveAsset = quote.receiveAsset,
-      externalAsset = quote.externalAsset,
-      mode = quote.mode,
-      sellAmount = quote.sellAmount,
-      receiveAmount = quote.receiveAmount,
-      minimumReceiveAmount = quote.minimumReceiveAmount,
-      providerLabel = quote.providerLabel,
-      feeLabel = quote.feeLabel,
-      totalFeesText = quote.totalFeesText,
-      expiryLabel = quote.expiryLabel,
-      quoteExpiresAt = quote.quoteExpiresAt,
-      depositInstruction = quote.depositInstruction,
-      providerQuoteId = quote.providerQuoteId,
-      sellAmountBaseUnits = quote.sellAmountBaseUnits,
-      sellAmountTextOverride = quote.sellAmountTextOverride,
-      receiveEstimateTextOverride = quote.receiveEstimateTextOverride,
-      minimumReceiveTextOverride = quote.minimumReceiveTextOverride,
-      slippageToleranceTextOverride = quote.slippageToleranceTextOverride,
-      rateTextOverride = quote.rateTextOverride,
-      providerRefundInfo = quote.providerRefundInfo,
-      fiatValueBasis = quote.fiatValueBasis,
-      swapRefundIndex = index;
+    : this._withLocalIdentity(
+        quote,
+        swapRefundIndex: index,
+        receiveRequestId: quote.receiveRequestId,
+      );
+
+  SwapQuote.withReceiveRequestId(SwapQuote quote, String requestId)
+    : this._withLocalIdentity(
+        quote,
+        swapRefundIndex: quote.swapRefundIndex,
+        receiveRequestId: requestId,
+      );
+
+  SwapQuote._withLocalIdentity(
+    SwapQuote quote, {
+    required this.swapRefundIndex,
+    required this.receiveRequestId,
+  }) : direction = quote.direction,
+       sellAsset = quote.sellAsset,
+       receiveAsset = quote.receiveAsset,
+       externalAsset = quote.externalAsset,
+       mode = quote.mode,
+       sellAmount = quote.sellAmount,
+       receiveAmount = quote.receiveAmount,
+       minimumReceiveAmount = quote.minimumReceiveAmount,
+       providerLabel = quote.providerLabel,
+       feeLabel = quote.feeLabel,
+       totalFeesText = quote.totalFeesText,
+       expiryLabel = quote.expiryLabel,
+       quoteExpiresAt = quote.quoteExpiresAt,
+       depositInstruction = quote.depositInstruction,
+       providerQuoteId = quote.providerQuoteId,
+       sellAmountBaseUnits = quote.sellAmountBaseUnits,
+       sellAmountTextOverride = quote.sellAmountTextOverride,
+       receiveEstimateTextOverride = quote.receiveEstimateTextOverride,
+       minimumReceiveTextOverride = quote.minimumReceiveTextOverride,
+       slippageToleranceTextOverride = quote.slippageToleranceTextOverride,
+       rateTextOverride = quote.rateTextOverride,
+       providerRefundInfo = quote.providerRefundInfo,
+       fiatValueBasis = quote.fiatValueBasis;
 
   /// Deadline used by review countdowns and the start gate. Provider quote
   /// expiries reserve [kSwapQuoteStartExpiryBuffer]; deposit-only deadlines
