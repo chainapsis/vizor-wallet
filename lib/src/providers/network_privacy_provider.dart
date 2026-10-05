@@ -202,7 +202,9 @@ Future<void> _excludeFromDeviceBackup(String directory) async {
 /// Companions record which of the wallet's transparent addresses had activity,
 /// and Rust rebuilds them, so a restore needs none. The iOS side creates the
 /// directory when it does not exist yet, so the mark is set before Rust writes
-/// the first companion.
+/// the first companion. Startup marks the current wallet's, and every sync
+/// start marks its wallet's again: deleting a wallet deletes the marked
+/// directory, and a reset names a new one.
 Future<void> excludeTransparentRecoveryCompanionsFromBackup(
   String dbPath, {
   bool privateTransparentRecovery = kZcashPrivateTransparentRecovery,

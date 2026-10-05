@@ -17,6 +17,8 @@ import 'account_provider.dart';
 import 'enhance_pir_provider.dart';
 import 'app_security_provider.dart';
 import 'chain_upgrade_provider.dart';
+import 'network_privacy_provider.dart'
+    show excludeTransparentRecoveryCompanionsFromBackup;
 import 'rpc_endpoint_failover_provider.dart';
 import 'sync_failure.dart';
 
@@ -822,13 +824,18 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     Future<String> Function()? walletDbPathResolver,
     IronwoodMigrationBackgroundLifecycle? recoveryLifecycle,
     Duration recoveryTransitionTimeout = const Duration(seconds: 120),
+    Future<void> Function(String dbPath)? excludeCompanionsFromBackup,
   }) : _walletDbPathResolver = walletDbPathResolver ?? getWalletDbPath,
        _recoveryLifecycle =
            recoveryLifecycle ?? IronwoodMigrationBackgroundLifecycle.instance,
-       _recoveryTransitionTimeout = recoveryTransitionTimeout;
+       _recoveryTransitionTimeout = recoveryTransitionTimeout,
+       _excludeCompanionsFromBackup =
+           excludeCompanionsFromBackup ??
+           excludeTransparentRecoveryCompanionsFromBackup;
 
   final IronwoodMigrationBackgroundLifecycle _recoveryLifecycle;
   final Duration _recoveryTransitionTimeout;
+  final Future<void> Function(String dbPath) _excludeCompanionsFromBackup;
 
   static const _authoritativeBalanceRecoveryDelays = <Duration>[
     Duration.zero,
@@ -1394,6 +1401,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _getDbPath()
         .then((dbPath) async {
           if (gen != _syncGen) return; // stopSync was called, abort
+          // Only Rust's sync writes companions, and a wallet created or
+          // replaced since launch has a directory nothing has marked yet.
+          await _keepCompanionsOutOfBackups(dbPath);
+          if (gen != _syncGen) return;
           try {
             final tip = await ref
                 .read(rpcEndpointFailoverProvider.notifier)
@@ -3474,6 +3485,17 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   bool _isDatabaseLockedError(Object error) {
     return error.toString().contains('database is locked');
+  }
+
+  /// Keeps the private transparent recovery companions of the wallet at
+  /// [dbPath] out of device backups before a sync can write them. Best
+  /// effort, as at startup: a failure is logged and the sync goes on.
+  Future<void> _keepCompanionsOutOfBackups(String dbPath) async {
+    try {
+      await _excludeCompanionsFromBackup(dbPath);
+    } catch (error) {
+      log('Sync: could not keep recovery companions out of backups: $error');
+    }
   }
 
   Future<String> _getDbPath() async {
