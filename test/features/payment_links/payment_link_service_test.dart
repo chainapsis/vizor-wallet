@@ -3180,6 +3180,7 @@ class _ClaimDestinationRustApi implements RustLibApi {
   }) async => rust_sync.WalletBalance(
     transparentAuthority: rust_sync.TransparentBalanceAuthority.current,
     availability: rust_sync.WalletBalanceAvailability.available,
+    transparentPrivate: false,
     transparent: BigInt.zero,
     sapling: BigInt.zero,
     orchard: BigInt.zero,

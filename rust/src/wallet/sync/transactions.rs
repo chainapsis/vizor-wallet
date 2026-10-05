@@ -26,11 +26,11 @@ use rusqlite::{types::Value, vtab::array::Array, OptionalExtension};
 use transparent::address::TransparentAddress;
 use zcash_client_backend::data_api::{
     transparent_ledger::{
-        DetailCompleteness, FeeState, HistoryClassification, TransactionHistoryDetails,
-        TransparentAuthority, TransparentLedgerBalance, TransparentLedgerMode,
-        TransparentLedgerRead, TransparentLedgerSnapshot,
+        DetailCompleteness, FeeState, HistoryClassification, RecoveryBlocker,
+        TransactionHistoryDetails, TransparentAuthority, TransparentLedgerBalance,
+        TransparentLedgerMode, TransparentLedgerRead, TransparentLedgerSnapshot,
     },
-    Balance, WalletRead, WalletWrite,
+    Account as _, Balance, WalletRead, WalletWrite,
 };
 use zcash_client_sqlite::{wallet::history::TransactionSummary, AccountUuid};
 use zcash_primitives::transaction::{Transaction, TxId};
@@ -40,9 +40,11 @@ use zcash_protocol::{
 };
 
 use crate::wallet::block_times::{self, BlockTimePoint};
-use crate::wallet::db::{wallet_db_on, with_wallet_db_write_lock};
-use crate::wallet::keys::parse_account_uuid;
+use crate::wallet::db::{wallet_db_on, with_wallet_db_write_lock, WalletDatabase};
+use crate::wallet::keys::{hardware_signer_kind, parse_account_uuid, HardwareSignerKind};
 use crate::wallet::network::WalletNetwork;
+use crate::wallet::sync_engine::enhancement::selects_private_recovery;
+use crate::wallet::sync_engine::transparent_ledger::{recovery_hold, HoldCause};
 
 use super::{open_readonly_conn, open_wallet_db, open_wallet_db_for_read};
 
@@ -74,14 +76,50 @@ pub(crate) enum TransparentBalanceAuthority {
     LastKnown,
     /// No current authority and no prior amount. Unknown, not zero.
     Unavailable,
+    /// No current authority, and private recovery will not restore it on its
+    /// own: `transparent_stop` says why. The transparent fields are zero, and
+    /// `transparent_last_known` holds the prior amount, if any.
+    Stopped,
+}
+
+/// Why private transparent recovery cannot restore an account's authority.
+///
+/// Reported only while the account has no current authority. The first that
+/// applies wins, in this order.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum TransparentStopReason {
+    /// An integrity failure quarantined the account or a source of its
+    /// evidence. Nothing clears a quarantine yet.
+    Quarantined,
+    /// A Ledger account under `PrivateRequired`. Recovery from its birthday
+    /// would miss earlier history, so it is not recovered privately.
+    Ledger,
+    /// Legacy public evidence that the complete private ledger cannot explain
+    /// blocks promotion. The account is held.
+    LegacyDiscrepancy,
+    /// The source withdrew a publication it had answered from. The account is
+    /// held.
+    Withdrawn,
+    /// Recovery stalled in consecutive runs. The account is held.
+    Stalled,
+    /// The wallet durably requires private recovery, which this build does
+    /// not run. Turning off private queries restores public lookups.
+    NotSelected,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct WalletBalance {
     pub availability: WalletBalanceAvailability,
     pub transparent_authority: TransparentBalanceAuthority,
-    /// The prior transparent total when `transparent_authority` is `LastKnown`.
+    /// The prior transparent total when `transparent_authority` is `LastKnown`
+    /// or `Stopped`.
     pub transparent_last_known: Option<u64>,
+    /// Why recovery is stopped, present only when `transparent_authority` is
+    /// `Stopped`.
+    pub transparent_stop: Option<TransparentStopReason>,
+    /// The wallet durably requires private transparent authority, so a current
+    /// amount lasts only while the private ledger covers the chain tip.
+    pub transparent_private: bool,
     pub transparent: u64,
     pub sapling: u64,
     pub orchard: u64,
@@ -100,12 +138,16 @@ pub(crate) struct WalletBalance {
 }
 
 impl WalletBalance {
-    fn unavailable(availability: WalletBalanceAvailability) -> Self {
+    fn unavailable(availability: WalletBalanceAvailability, private: bool) -> Self {
         debug_assert_ne!(availability, WalletBalanceAvailability::Available);
         Self::from_pools(
             availability,
-            TransparentBalanceAuthority::Unavailable,
-            None,
+            TransparentStatus {
+                authority: TransparentBalanceAuthority::Unavailable,
+                last_known: None,
+                stop: None,
+                private,
+            },
             PoolBalance::default(),
             [PoolBalance::default(); 3],
         )
@@ -115,16 +157,17 @@ impl WalletBalance {
     /// (Sapling, Orchard, Ironwood), deriving the cross-pool totals.
     fn from_pools(
         availability: WalletBalanceAvailability,
-        transparent_authority: TransparentBalanceAuthority,
-        transparent_last_known: Option<u64>,
+        status: TransparentStatus,
         transparent: PoolBalance,
         [sapling, orchard, ironwood]: [PoolBalance; 3],
     ) -> Self {
         let pools = [transparent, sapling, orchard, ironwood];
         Self {
             availability,
-            transparent_authority,
-            transparent_last_known,
+            transparent_authority: status.authority,
+            transparent_last_known: status.last_known,
+            transparent_stop: status.stop,
+            transparent_private: status.private,
             transparent: transparent.spendable,
             sapling: sapling.spendable,
             orchard: orchard.spendable,
@@ -142,6 +185,15 @@ impl WalletBalance {
             uneconomic_value: pools.iter().map(|p| p.uneconomic).sum(),
         }
     }
+}
+
+/// The transparent status fields of a [`WalletBalance`].
+#[derive(Clone, Copy, Debug)]
+struct TransparentStatus {
+    authority: TransparentBalanceAuthority,
+    last_known: Option<u64>,
+    stop: Option<TransparentStopReason>,
+    private: bool,
 }
 
 /// One pool's balance categories, in zatoshis.
@@ -204,7 +256,8 @@ pub(crate) fn get_wallet_balance(
 /// Under a private transparent ledger mode the summary carries no
 /// transparent funds, so the transparent fields come from each account's
 /// ledger snapshot: its authorized amounts, or none with the last-known
-/// amount when authority is unavailable. Durable private policy is respected
+/// amount when authority is unavailable, and why recovery is stopped when it
+/// will not restore authority on its own. Durable private policy is respected
 /// even when this build opens a Public handle after restart.
 pub(crate) fn get_wallet_balances(
     db_path: &str,
@@ -217,27 +270,49 @@ pub(crate) fn get_wallet_balances(
         .collect::<Result<Vec<_>, _>>()?;
 
     let mut db = open_wallet_db_for_read(db_path, network)?;
-    // Read durable policy, summary, and authority from one snapshot. A reopened
-    // Public handle must not label a private-policy summary's suppressed zero
-    // as current funds. Configuring this read handle does not change policy.
+    read_wallet_balances(&mut db, db_path, network, &target_ids)
+}
+
+/// [`get_wallet_balances`] on `db`, a handle on the wallet at `db_path`.
+pub(crate) fn read_wallet_balances(
+    db: &mut WalletDatabase,
+    db_path: &str,
+    network: WalletNetwork,
+    target_ids: &[AccountUuid],
+) -> Result<Vec<WalletBalance>, String> {
+    // Read durable policy, summary, and authority from one snapshot. A
+    // policy applied by another connection since `db` was opened must not
+    // label a private-policy summary's suppressed zero as current funds, so
+    // the handle adopts it here. Configuring this read handle does not change
+    // policy.
     db.transactionally(|db| {
-        match db.applied_transparent_policy() {
+        let durable = match db.applied_transparent_policy() {
             Err(
                 zcash_client_sqlite::error::SqliteClientError::TransparentLedgerPolicyConflict {
                     applied: TransparentLedgerMode::PrivateRequired,
                     ..
                 },
-            ) => db.set_transparent_ledger_mode(TransparentLedgerMode::PrivateRequired),
-            result => {
-                result?;
+            ) => {
+                db.set_transparent_ledger_mode(TransparentLedgerMode::PrivateRequired);
+                TransparentLedgerMode::PrivateRequired
             }
-        }
+            result => result?.mode,
+        };
+        let private = durable == TransparentLedgerMode::PrivateRequired;
+        // No run recovers a private wallet in a build that does not select
+        // private recovery.
+        let not_selected = private && !selects_private_recovery(db_path, network);
         let summary = db.get_wallet_summary(crate::wallet::confirmations_policy())?;
 
         let Some(summary) = summary else {
             return Ok(target_ids
                 .iter()
-                .map(|_| WalletBalance::unavailable(WalletBalanceAvailability::SummaryUnavailable))
+                .map(|_| {
+                    WalletBalance::unavailable(
+                        WalletBalanceAvailability::SummaryUnavailable,
+                        private,
+                    )
+                })
                 .collect());
         };
 
@@ -247,6 +322,7 @@ pub(crate) fn get_wallet_balances(
                 let Some(b) = summary.account_balances().get(target_id) else {
                     return Ok(WalletBalance::unavailable(
                         WalletBalanceAvailability::AccountUnavailable,
+                        private,
                     ));
                 };
                 let shielded = [
@@ -254,15 +330,22 @@ pub(crate) fn get_wallet_balances(
                     PoolBalance::of(b.orchard_balance()),
                     PoolBalance::of(b.ironwood_balance()),
                 ];
-                let (authority, last_known, transparent) =
-                    ledger_transparent_balance(&db.transparent_ledger_snapshot(
-                        *target_id,
-                        crate::wallet::confirmations_policy(),
-                    )?);
+                let snapshot = db.transparent_ledger_snapshot(
+                    *target_id,
+                    crate::wallet::confirmations_policy(),
+                )?;
+                let (mut status, transparent) = ledger_transparent_balance(&snapshot, private);
+                if status.authority != TransparentBalanceAuthority::Current {
+                    if let Some(reason) =
+                        transparent_stop_reason(&*db, db_path, &snapshot, not_selected)?
+                    {
+                        status.authority = TransparentBalanceAuthority::Stopped;
+                        status.stop = Some(reason);
+                    }
+                }
                 Ok(WalletBalance::from_pools(
                     WalletBalanceAvailability::Available,
-                    authority,
-                    last_known,
+                    status,
                     transparent,
                     shielded,
                 ))
@@ -275,29 +358,70 @@ pub(crate) fn get_wallet_balances(
 /// The transparent part of a balance under a private ledger mode.
 fn ledger_transparent_balance<A>(
     snapshot: &TransparentLedgerSnapshot<A>,
-) -> (TransparentBalanceAuthority, Option<u64>, PoolBalance) {
+    private: bool,
+) -> (TransparentStatus, PoolBalance) {
+    let status = |authority, last_known| TransparentStatus {
+        authority,
+        last_known,
+        stop: None,
+        private,
+    };
     match (snapshot.authority, &snapshot.authorized) {
         (TransparentAuthority::Public | TransparentAuthority::Private, Some(authorized)) => (
-            TransparentBalanceAuthority::Current,
-            None,
+            status(TransparentBalanceAuthority::Current, None),
             PoolBalance::of_transparent(authorized),
         ),
         _ => match &snapshot.last_known {
             Some(last_known) => (
-                TransparentBalanceAuthority::LastKnown,
-                Some(
-                    u64::from(last_known.balance.regular.total())
-                        + u64::from(last_known.balance.coinbase.total()),
+                status(
+                    TransparentBalanceAuthority::LastKnown,
+                    Some(
+                        u64::from(last_known.balance.regular.total())
+                            + u64::from(last_known.balance.coinbase.total()),
+                    ),
                 ),
                 PoolBalance::default(),
             ),
             None => (
-                TransparentBalanceAuthority::Unavailable,
-                None,
+                status(TransparentBalanceAuthority::Unavailable, None),
                 PoolBalance::default(),
             ),
         },
     }
+}
+
+/// Why private recovery will not restore authority to the account of
+/// `snapshot`, which has none, or `None` while recovery may still restore it.
+/// `not_selected` is whether this build leaves the durably private wallet
+/// unrecovered.
+fn transparent_stop_reason<W>(
+    db: &W,
+    db_path: &str,
+    snapshot: &TransparentLedgerSnapshot<AccountUuid>,
+    not_selected: bool,
+) -> Result<Option<TransparentStopReason>, W::Error>
+where
+    W: WalletRead<AccountId = AccountUuid>,
+{
+    if snapshot.blockers.contains(&RecoveryBlocker::Quarantined) {
+        return Ok(Some(TransparentStopReason::Quarantined));
+    }
+    // The coordinator pauses Ledger accounts under `PrivateRequired`.
+    if snapshot.mode == TransparentLedgerMode::PrivateRequired
+        && db.get_account(snapshot.account)?.is_some_and(|account| {
+            hardware_signer_kind(account.source()) == Some(HardwareSignerKind::Ledger)
+        })
+    {
+        return Ok(Some(TransparentStopReason::Ledger));
+    }
+    if let Some(cause) = recovery_hold(db_path, snapshot.account) {
+        return Ok(Some(match cause {
+            HoldCause::Withdrawn(_) => TransparentStopReason::Withdrawn,
+            HoldCause::LegacyDiscrepancy => TransparentStopReason::LegacyDiscrepancy,
+            HoldCause::Stalled => TransparentStopReason::Stalled,
+        }));
+    }
+    Ok(not_selected.then_some(TransparentStopReason::NotSelected))
 }
 
 // ======================== Transaction Enhancement Requests ========================
@@ -2412,8 +2536,9 @@ mod tests {
             WalletBalanceAvailability::SummaryUnavailable,
             WalletBalanceAvailability::AccountUnavailable,
         ] {
-            let balance = WalletBalance::unavailable(availability);
+            let balance = WalletBalance::unavailable(availability, false);
             assert_eq!(balance.availability, availability);
+            assert_eq!(balance.transparent_stop, None);
             assert_eq!(balance.transparent, 0);
             assert_eq!(balance.sapling, 0);
             assert_eq!(balance.orchard, 0);

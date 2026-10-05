@@ -9,12 +9,14 @@ import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/core/config/private_transparent_recovery_config.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/settings/screens/settings_screen.dart';
 import 'package:zcash_wallet/src/features/settings/settings_platform.dart';
+import 'package:zcash_wallet/src/features/settings/widgets/enhance_pir_privacy_control.dart';
 import 'package:zcash_wallet/src/features/settings/widgets/network_privacy_control.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_cards_provider.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
@@ -33,6 +35,49 @@ void main() {
     expect(
       find.textContaining('Experimental.', findRichText: true),
       findsOneWidget,
+    );
+  });
+
+  testWidgets('only a flag build describes private transparent recovery', (
+    tester,
+  ) async {
+    Future<String> description({bool? privateTransparentRecovery}) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AppTheme(
+            data: AppThemeData.dark,
+            child: privateTransparentRecovery == null
+                ? EnhancePirPrivacyControl(
+                    enabled: true,
+                    onToggle: () {},
+                    transition: null,
+                  )
+                : EnhancePirPrivacyControl(
+                    enabled: true,
+                    onToggle: () {},
+                    transition: null,
+                    privateTransparentRecovery: privateTransparentRecovery,
+                  ),
+          ),
+        ),
+      );
+      return tester
+          .widget<Text>(
+            find.byKey(const ValueKey('settings_enhance_pir_description')),
+          )
+          .data!;
+    }
+
+    final defaultCopy = await description();
+    expect(defaultCopy, startsWith('Experimental.'));
+    expect(
+      defaultCopy,
+      isNot(contains(kPrivateTransparentRecoverySettingsCopy)),
+    );
+    expect(await description(privateTransparentRecovery: false), defaultCopy);
+    expect(
+      await description(privateTransparentRecovery: true),
+      '$defaultCopy $kPrivateTransparentRecoverySettingsCopy',
     );
   });
 

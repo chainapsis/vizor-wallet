@@ -32,6 +32,9 @@ String friendlyShieldBalanceError(Object error) {
   if (isTransparentLedgerNeedsNewerBuildError(message)) {
     return transparentLedgerNeedsNewerBuildMessage;
   }
+  if (isTransparentRecoveryNotSelectedError(message)) {
+    return transparentRecoveryNotSelectedMessage;
+  }
   if (isTransparentRecoveryIncompleteError(message)) {
     return transparentRecoveryIncompleteMessage;
   }

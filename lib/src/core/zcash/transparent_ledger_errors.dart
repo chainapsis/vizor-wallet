@@ -22,3 +22,17 @@ const transparentRecoveryIncompleteMessage =
 /// and Vizor's shielding refusal share; the Rust guard test pins it.
 bool isTransparentRecoveryIncompleteError(String raw) =>
     raw.toLowerCase().contains('transparent funds are unavailable');
+
+/// User copy for a wallet that durably requires private transparent recovery
+/// in a build that does not run it.
+const transparentRecoveryNotSelectedMessage =
+    'Private transparent recovery is not available in this build. Turn off '
+    'Private queries to use transparent funds.';
+
+/// Whether [raw] is a refusal to use transparent funds because the wallet
+/// requires private recovery and this build does not run it, so no recovery
+/// will complete. Check it before [isTransparentRecoveryIncompleteError].
+///
+/// Matches Vizor's shielding refusal; the Rust status test pins the phrase.
+bool isTransparentRecoveryNotSelectedError(String raw) =>
+    raw.toLowerCase().contains('turn off private queries');

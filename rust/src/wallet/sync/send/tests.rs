@@ -3723,7 +3723,8 @@ fn many_utxo_shielding_builds_with_conservative_zip317_fee() {
 
     let shielding_threshold = Zatoshis::const_from_u64(SHIELDING_THRESHOLD_ZATOSHI);
     let (proposal, selected_value) =
-        build_shielding_proposal(&mut db, network, account_id, shielding_threshold).unwrap();
+        build_shielding_proposal(&mut db, db_path, network, account_id, shielding_threshold)
+            .unwrap();
     assert_eq!(u64::from(selected_value), 322_000_000);
 
     let seed = SecretVec::new(seed.expose_secret().to_vec());
@@ -3919,12 +3920,13 @@ fn ledger_shielding_limits_inputs_and_preserves_account_scope_paths() {
     assert!(get_ledger_shielding_progress(path, network, &uuid)
         .unwrap_err()
         .contains("incomplete"));
-    let progress = ledger_shielding_progress(&mut db, network, id).unwrap();
+    let progress = ledger_shielding_progress(&mut db, path, network, id).unwrap();
     assert_eq!(progress.input_limit, 32);
     assert_eq!(progress.input_count, 35);
     assert!(!progress.below_threshold);
     let (proposal, selected) =
-        build_shielding_proposal(&mut db, network, id, shielding_threshold().unwrap()).unwrap();
+        build_shielding_proposal(&mut db, path, network, id, shielding_threshold().unwrap())
+            .unwrap();
     assert_eq!(proposal.steps().head.transparent_inputs().len(), 32);
     assert_eq!(proposal.steps().head.balance().proposed_change().len(), 1);
     assert_eq!(selected, Zatoshis::const_from_u64(32_000_000));
@@ -3962,10 +3964,11 @@ fn ledger_shielding_limits_inputs_and_preserves_account_scope_paths() {
     for input in proposal.steps().head.transparent_inputs() {
         conn.execute("DELETE FROM transparent_received_outputs WHERE transaction_id IN (SELECT id_tx FROM transactions WHERE txid=?1) AND output_index=?2",params![input.outpoint().hash().as_slice(),input.outpoint().n()]).unwrap();
     }
-    let progress = ledger_shielding_progress(&mut db, network, id).unwrap();
+    let progress = ledger_shielding_progress(&mut db, path, network, id).unwrap();
     assert_eq!(progress.input_count, 3);
     let (next, _) =
-        build_shielding_proposal(&mut db, network, id, shielding_threshold().unwrap()).unwrap();
+        build_shielding_proposal(&mut db, path, network, id, shielding_threshold().unwrap())
+            .unwrap();
     assert_eq!(next.steps().head.transparent_inputs().len(), 3);
     let first = proposal
         .steps()
@@ -3983,7 +3986,7 @@ fn ledger_shielding_limits_inputs_and_preserves_account_scope_paths() {
     conn.execute("DELETE FROM transparent_received_outputs", [])
         .unwrap();
     assert_eq!(
-        ledger_shielding_progress(&mut db, network, id)
+        ledger_shielding_progress(&mut db, path, network, id)
             .unwrap()
             .input_count,
         0
@@ -4005,7 +4008,7 @@ fn ledger_shielding_limits_inputs_and_preserves_account_scope_paths() {
     )
     .unwrap();
     db.put_received_transparent_utxo(&dust).unwrap();
-    let progress = ledger_shielding_progress(&mut db, network, id).unwrap();
+    let progress = ledger_shielding_progress(&mut db, path, network, id).unwrap();
     assert_eq!(progress.input_count, 1);
     assert!(progress.below_threshold);
 }
@@ -4085,7 +4088,7 @@ fn durable_private_transparent_policy_blocks_shielding_and_survives_startup() {
     }
     let threshold = shielding_threshold().unwrap();
     // Under the public policy this build supports, the same wallet can shield.
-    build_shielding_proposal(&mut db, network, id, threshold).unwrap();
+    build_shielding_proposal(&mut db, path, network, id, threshold).unwrap();
 
     // A newer build durably applied PrivateRequired to this wallet.
     let conn = rusqlite::Connection::open(path).unwrap();
@@ -4106,7 +4109,7 @@ fn durable_private_transparent_policy_blocks_shielding_and_survives_startup() {
         .unwrap()
     };
 
-    let error = build_shielding_proposal(&mut db, network, id, threshold).unwrap_err();
+    let error = build_shielding_proposal(&mut db, path, network, id, threshold).unwrap_err();
     assert!(error.contains(AUTHORITY_UNAVAILABLE), "{error}");
     let utxo = WalletTransparentOutput::from_parts(
         OutPoint::new([0xaa; 32], 0),
@@ -4131,14 +4134,16 @@ fn durable_private_transparent_policy_blocks_shielding_and_survives_startup() {
     assert!(error.contains(NEEDS_NEWER_BUILD), "{error}");
 
     // Startup migration keeps the stricter policy. A fresh handle adopts it
-    // instead of failing on the conflict, and shielding stays refused.
+    // instead of failing on the conflict, and shielding stays refused. This
+    // build does not run private recovery, so the refusal says so instead of
+    // promising a recovery that will not come.
     keys::ensure_db_initialized(path, network).unwrap();
     assert_eq!(policy(&conn), (2, 0, 1));
     let mut reopened = open_wallet_db(path, network).unwrap();
-    let error = build_shielding_proposal(&mut reopened, network, id, threshold).unwrap_err();
-    assert!(
-        error.contains(crate::wallet::sync::send::TRANSPARENT_RECOVERY_INCOMPLETE),
-        "{error}"
+    let error = build_shielding_proposal(&mut reopened, path, network, id, threshold).unwrap_err();
+    assert_eq!(
+        error,
+        crate::wallet::sync::send::TRANSPARENT_RECOVERY_NOT_SELECTED
     );
     assert_eq!(policy(&conn), (2, 0, 1));
 }
