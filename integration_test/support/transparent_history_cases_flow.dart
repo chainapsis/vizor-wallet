@@ -1,8 +1,8 @@
 // Shared app-layer checks for the transparent history qualification suite
 // (scripts/e2e/transparent-history-cases.sh). Expectations come from the
-// independent oracle (scripts/e2e/transparent_history_oracle.py, public
-// profile) through the TH_EXPECTED_UI define; this file never derives an
-// expected value from the activity mapper.
+// independent oracle (scripts/e2e/transparent_history_oracle.py, under the
+// run's public or private profile) through the TH_EXPECTED_UI define; this
+// file never derives an expected value from the activity mapper.
 
 import 'dart:convert';
 
@@ -46,7 +46,13 @@ class ThUiRow {
       feeValues = [
         for (final v in (json['fee_values'] as List<Object?>? ?? const []))
           (v! as num).toInt(),
-      ];
+      ],
+      detailsIncomplete = json['details_incomplete'] as bool?,
+      amountValues = [
+        for (final v in (json['amount_values'] as List<Object?>? ?? const []))
+          (v! as num).toInt(),
+      ],
+      amountMax = (json['amount_max'] as num?)?.toInt();
 
   final String caseId;
 
@@ -78,8 +84,27 @@ class ThUiRow {
   /// may show its combined fee).
   final List<int> feeValues;
 
+  /// Private profile: whether the row and its receipt must mark the details
+  /// incomplete (true) or must not (false); null leaves it unchecked.
+  final bool? detailsIncomplete;
+
+  /// Private profile, honestly incomplete rows: the real amounts the row may
+  /// show, and the most it may show otherwise (the account's movement).
+  final List<int> amountValues;
+  final int? amountMax;
+
   bool acceptsFee(int? fee) =>
       fee != null && (fee == feeKnown || feeValues.contains(fee));
+
+  bool get checksHonestAmount => amountValues.isNotEmpty || amountMax != null;
+
+  /// Whether `zats`, as an activity row shows it, is a real amount or at most
+  /// the movement.
+  bool acceptsShownAmount(int zats, String ticker) =>
+      (amountMax != null && zats <= amountMax!) ||
+      amountValues.any(
+        (v) => thParseAmount(thActivityAmount(v, '', ticker), ticker) == zats,
+      );
 
   String get label => '$caseId $account ${txid.substring(0, 12)}:$role';
 }
@@ -98,7 +123,16 @@ Future<String> thAccountUuidAtOrder(int order) async {
   return accounts[order].uuid;
 }
 
-List<ThUiRow> thExpectedUiRows() {
+/// The oracle profile the expectations were derived under: `public` or
+/// `private`.
+String thExpectedUiProfile() => _expectedUiJson()['profile']! as String;
+
+List<ThUiRow> thExpectedUiRows() => [
+  for (final row in _expectedUiJson()['rows']! as List<Object?>)
+    ThUiRow(Map<String, Object?>.from(row! as Map)),
+];
+
+Map<String, Object?> _expectedUiJson() {
   if (_expectedUi.isEmpty) {
     fail(
       'TH_EXPECTED_UI is empty; run scripts/e2e/transparent-history-cases.sh '
@@ -108,13 +142,8 @@ List<ThUiRow> thExpectedUiRows() {
   if (thA0Mnemonic.isEmpty || thA1Mnemonic.isEmpty) {
     fail('TH_A0_MNEMONIC / TH_A1_MNEMONIC must come from the runner.');
   }
-  final decoded =
-      jsonDecode(utf8.decode(base64Decode(_expectedUi)))
-          as Map<String, Object?>;
-  return [
-    for (final row in decoded['rows']! as List<Object?>)
-      ThUiRow(Map<String, Object?>.from(row! as Map)),
-  ];
+  return jsonDecode(utf8.decode(base64Decode(_expectedUi)))
+      as Map<String, Object?>;
 }
 
 /// Activity-row amount format as specified for the product: up to four
@@ -138,6 +167,12 @@ int? thParseAmount(String text, String ticker) {
   final fraction = (match.group(2) ?? '').padRight(8, '0');
   return int.parse(match.group(1)!) * 100000000 + int.parse(fraction);
 }
+
+/// Private queries' marker on an activity row whose details are incomplete,
+/// and the receipt row that says so (product copy).
+const _incompleteRowText = 'Details incomplete';
+const _incompleteDetailLabel = 'Details';
+const _incompleteDetailValue = 'Incomplete';
 
 String _hhmm(int epochSeconds) {
   final time = DateTime.fromMillisecondsSinceEpoch(epochSeconds * 1000);
@@ -360,13 +395,38 @@ Future<List<String>> thVerifyActivity(
       if (row.failed && row.amountZats! > 0 && !texts.contains('Refunded')) {
         failures.add('${row.label}: failed row without "Refunded" in $texts');
       }
+      // The incomplete marker takes the timestamp's place on the row; the
+      // receipt's timestamp is checked below instead.
       if (row.blockTime > 0 &&
+          row.detailsIncomplete != true &&
           !texts.any((t) => t.contains(_hhmm(row.blockTime)))) {
         failures.add(
           '${row.label}: timestamp is not the block time '
           '${_hhmm(row.blockTime)}: $texts',
         );
       }
+    }
+    if (row.checksHonestAmount) {
+      final shown = texts
+          .map((t) => thParseAmount(t, ticker))
+          .whereType<int>()
+          .toList();
+      if (shown.isEmpty) {
+        failures.add('${row.label}: no amount in $texts');
+      } else if (!shown.any((zats) => row.acceptsShownAmount(zats, ticker))) {
+        failures.add(
+          '${row.label}: amount in $texts is neither a real amount '
+          '${row.amountValues} nor at most the movement ${row.amountMax}',
+        );
+      }
+    }
+    if (row.detailsIncomplete == true && !texts.contains(_incompleteRowText)) {
+      failures.add('${row.label}: no "$_incompleteRowText" marker in $texts');
+    }
+    if (row.detailsIncomplete == false && texts.contains(_incompleteRowText)) {
+      failures.add(
+        '${row.label}: a complete row is marked "$_incompleteRowText"',
+      );
     }
     // Tappable: the row opens its detail screen.
     await tester.tap(finder.first);
@@ -390,6 +450,25 @@ Future<List<String>> thVerifyActivity(
       final shown = reviewRows['Status'] ?? '';
       if (shown != status && !detailTexts.contains(status)) {
         failures.add('${row.label}: detail status "$status" not shown');
+      }
+    }
+    final markedIncomplete =
+        reviewRows[_incompleteDetailLabel] == _incompleteDetailValue;
+    if (row.detailsIncomplete == true && !markedIncomplete) {
+      failures.add(
+        '${row.label}: the receipt does not mark details incomplete',
+      );
+    }
+    if (row.detailsIncomplete == false && markedIncomplete) {
+      failures.add('${row.label}: a complete receipt marks details incomplete');
+    }
+    if (row.detailsIncomplete == true && row.blockTime > 0) {
+      final time = _hhmm(row.blockTime);
+      if (!detailTexts.any((t) => t.contains(time)) &&
+          !reviewRows.values.any((v) => v.contains(time))) {
+        failures.add(
+          '${row.label}: receipt timestamp is not the block time $time',
+        );
       }
     }
     final feeText = reviewRows['Tx fee'];
