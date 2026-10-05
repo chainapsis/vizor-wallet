@@ -168,7 +168,7 @@ features = ["wallet"]
 # crates.io package; see the `[patch.crates-io]` comment below.
 [dependencies.zakura-pir-transparent]
 git = "https://github.com/zakura-core/wallet-libraries"
-rev = "bdebaffcb5d52138c702fde6c78bd079293ebb3d"
+rev = "ba9901403fefb26ac4915504797c517aa7eedfac"
 default-features = false
 features = ["wallet"]
 
@@ -197,6 +197,17 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "test-util", "
 # The transparent PIR privacy tests match requests against the service routes
 # with the library's own expression. Already in the graph.
 regex = "1"
+
+# Builds wallets through real private recovery for the history mapping tests.
+[dev-dependencies.zcash_client_sqlite]
+package = "zakura-client-sqlite"
+version = "=0.1.0-rc7"
+features = ["test-dependencies"]
+
+[dev-dependencies.zcash_client_backend]
+package = "zakura-client-backend"
+version = "=0.1.0-rc7"
+features = ["test-dependencies"]
 
 [dev-dependencies.zcash_voting]
 version = "=5.1.1-rc.3"
@@ -240,15 +251,15 @@ assertions_on_constants = "allow"
 # equal to these so its path dependencies on the backend and SQLite crates
 # resolve to the patched sources.
 #
-# Pinned to the private transparent recovery head (claude/tpir-private-mode):
-# trusted qualification, the removed recovery-work query, and the adapter's
-# caller transports, wallet chain view, catalog, and explicit reconciliation of
-# resolved withdrawals.
+# Pinned to the head of zakura-core/wallet-libraries#108, on main 3fc2bf4:
+# private recovery keeps the memo and agreed fee of mixed transparent/Ironwood
+# transactions and reconstructs a transparent-to-Ironwood shielding. Repin to
+# its merge commit once merged.
 [patch.crates-io]
-zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries", rev = "bdebaffcb5d52138c702fde6c78bd079293ebb3d" }
-zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries", rev = "bdebaffcb5d52138c702fde6c78bd079293ebb3d" }
-zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries", rev = "bdebaffcb5d52138c702fde6c78bd079293ebb3d" }
-zakura-pir-enhance-types = { git = "https://github.com/zakura-core/wallet-libraries", rev = "bdebaffcb5d52138c702fde6c78bd079293ebb3d" }
+zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries", rev = "ba9901403fefb26ac4915504797c517aa7eedfac" }
+zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries", rev = "ba9901403fefb26ac4915504797c517aa7eedfac" }
+zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries", rev = "ba9901403fefb26ac4915504797c517aa7eedfac" }
+zakura-pir-enhance-types = { git = "https://github.com/zakura-core/wallet-libraries", rev = "ba9901403fefb26ac4915504797c517aa7eedfac" }
 
 # Flutter debug builds use Cargokit + Cargo's dev profile (`cargo build`
 # without `--release`). Rust crypto and voting flows are slow under the default
