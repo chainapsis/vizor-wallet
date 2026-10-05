@@ -1191,7 +1191,8 @@ mod tests {
             hash: 1,
         };
         let tip = BlockHeight::from_u32(2_600_000);
-        // This build's Public handle fails closed on the stricter wallet.
+        // A Public handle opened before the transition cannot read the
+        // stricter wallet, so discovery fails closed on it.
         assert!(
             run_with(&mut rpc, &mut db, &path, WalletNetwork::Main, tip, &|| {
                 false
@@ -1199,8 +1200,14 @@ mod tests {
             .await
             .is_err()
         );
-        // A handle configured for the durable policy skips discovery.
-        db.set_transparent_ledger_mode(TransparentLedgerMode::PrivateRequired);
+        // A handle opened after it adopts the durable policy, so discovery is
+        // withheld: it succeeds without a query.
+        let mut db = crate::wallet::db::open_wallet_db_with_timeout(
+            &path,
+            WalletNetwork::Main,
+            SYNC_DB_BUSY_TIMEOUT,
+        )
+        .unwrap();
         run_with(&mut rpc, &mut db, &path, WalletNetwork::Main, tip, &|| {
             false
         })

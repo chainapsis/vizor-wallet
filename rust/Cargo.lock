@@ -4916,6 +4916,7 @@ dependencies = [
  "rand 0.8.8",
  "rand_core 0.6.4",
  "redb",
+ "regex",
  "rusqlite",
  "rustls",
  "secp256k1",
