@@ -6398,7 +6398,8 @@ fn wire__crate__api__swap_receive__observe_receive_quote_impl(
             let api_network_name = <String>::sse_decode(&mut deserializer);
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_request_id = <String>::sse_decode(&mut deserializer);
-            let api_status = <String>::sse_decode(&mut deserializer);
+            let api_status =
+                <crate::api::swap_receive::SwapProviderStatus>::sse_decode(&mut deserializer);
             let api_funded = <bool>::sse_decode(&mut deserializer);
             let api_checked_at_seconds = <i64>::sse_decode(&mut deserializer);
             deserializer.end();
@@ -6448,7 +6449,8 @@ fn wire__crate__api__sync__observe_swap_receiving_operation_impl(
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_operation_id = <String>::sse_decode(&mut deserializer);
             let api_address = <String>::sse_decode(&mut deserializer);
-            let api_status = <String>::sse_decode(&mut deserializer);
+            let api_status =
+                <crate::api::swap_receive::SwapProviderStatus>::sse_decode(&mut deserializer);
             let api_observed_at_seconds = <i64>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
@@ -6888,7 +6890,7 @@ fn wire__crate__api__swap_receive__prepare_receive_reservation_impl(
     rust_vec_len_: i32,
     data_len_: i32,
 ) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
             debug_name: "prepare_receive_reservation",
             port: Some(port_),
@@ -6908,22 +6910,18 @@ fn wire__crate__api__swap_receive__prepare_receive_reservation_impl(
             let api_network_name = <String>::sse_decode(&mut deserializer);
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_live_tip = <u64>::sse_decode(&mut deserializer);
-            let api_lightwalletd_url = <String>::sse_decode(&mut deserializer);
             deserializer.end();
-            move |context| async move {
+            move |context| {
                 transform_result_sse::<_, crate::wallet::swap_receiving::receive::ReceiveError>(
-                    (move || async move {
+                    (move || {
                         let output_ok = crate::api::swap_receive::prepare_receive_reservation(
                             api_db_path,
                             api_network_name,
                             api_account_uuid,
                             api_live_tip,
-                            api_lightwalletd_url,
-                        )
-                        .await?;
+                        )?;
                         Ok(output_ok)
-                    })()
-                    .await,
+                    })(),
                 )
             }
         },
@@ -7286,7 +7284,7 @@ fn wire__crate__api__swap_receive__reap_receive_reservations_impl(
     rust_vec_len_: i32,
     data_len_: i32,
 ) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
             debug_name: "reap_receive_reservations",
             port: Some(port_),
@@ -7305,21 +7303,17 @@ fn wire__crate__api__swap_receive__reap_receive_reservations_impl(
             let api_db_path = <String>::sse_decode(&mut deserializer);
             let api_network_name = <String>::sse_decode(&mut deserializer);
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
-            let api_lightwalletd_url = <String>::sse_decode(&mut deserializer);
             deserializer.end();
-            move |context| async move {
+            move |context| {
                 transform_result_sse::<_, crate::wallet::swap_receiving::receive::ReceiveError>(
-                    (move || async move {
+                    (move || {
                         let output_ok = crate::api::swap_receive::reap_receive_reservations(
                             api_db_path,
                             api_network_name,
                             api_account_uuid,
-                            api_lightwalletd_url,
-                        )
-                        .await?;
+                        )?;
                         Ok(output_ok)
-                    })()
-                    .await,
+                    })(),
                 )
             }
         },
@@ -13116,6 +13110,17 @@ impl SseDecode for Option<f64> {
     }
 }
 
+impl SseDecode for Option<i64> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<i64>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
 impl SseDecode for Option<zcash_voting::share_policy::ImmediateShareKey> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -13632,8 +13637,7 @@ impl SseDecode for crate::wallet::swap_receiving::receive::ReceiveErrorCode {
             1 => crate::wallet::swap_receiving::receive::ReceiveErrorCode::Limit,
             2 => crate::wallet::swap_receiving::receive::ReceiveErrorCode::Stale,
             3 => crate::wallet::swap_receiving::receive::ReceiveErrorCode::Coverage,
-            4 => crate::wallet::swap_receiving::receive::ReceiveErrorCode::Recovery,
-            5 => crate::wallet::swap_receiving::receive::ReceiveErrorCode::Other,
+            4 => crate::wallet::swap_receiving::receive::ReceiveErrorCode::Other,
             _ => unreachable!("Invalid variant for ReceiveErrorCode: {}", inner),
         };
     }
@@ -14504,6 +14508,24 @@ impl SseDecode for zcash_voting::config::SupportedVersions {
             vote_protocol: var_voteProtocol,
             tally: var_tally,
             vote_server: var_voteServer,
+        };
+    }
+}
+
+impl SseDecode for crate::api::swap_receive::SwapProviderStatus {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_status = <String>::sse_decode(deserializer);
+        let mut var_swapType = <Option<String>>::sse_decode(deserializer);
+        let mut var_refundedAmount = <Option<String>>::sse_decode(deserializer);
+        let mut var_amountOut = <Option<String>>::sse_decode(deserializer);
+        let mut var_deadlineSeconds = <Option<i64>>::sse_decode(deserializer);
+        return crate::api::swap_receive::SwapProviderStatus {
+            status: var_status,
+            swap_type: var_swapType,
+            refunded_amount: var_refundedAmount,
+            amount_out: var_amountOut,
+            deadline_seconds: var_deadlineSeconds,
         };
     }
 }
@@ -18056,8 +18078,7 @@ impl flutter_rust_bridge::IntoDart for crate::wallet::swap_receiving::receive::R
             Self::Limit => 1.into_dart(),
             Self::Stale => 2.into_dart(),
             Self::Coverage => 3.into_dart(),
-            Self::Recovery => 4.into_dart(),
-            Self::Other => 5.into_dart(),
+            Self::Other => 4.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -19203,6 +19224,30 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<zcash_voting::config::Supporte
 {
     fn into_into_dart(self) -> FrbWrapper<zcash_voting::config::SupportedVersions> {
         self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::swap_receive::SwapProviderStatus {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.status.into_into_dart().into_dart(),
+            self.swap_type.into_into_dart().into_dart(),
+            self.refunded_amount.into_into_dart().into_dart(),
+            self.amount_out.into_into_dart().into_dart(),
+            self.deadline_seconds.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::swap_receive::SwapProviderStatus
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::swap_receive::SwapProviderStatus>
+    for crate::api::swap_receive::SwapProviderStatus
+{
+    fn into_into_dart(self) -> crate::api::swap_receive::SwapProviderStatus {
+        self
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
@@ -21957,6 +22002,16 @@ impl SseEncode for Option<f64> {
     }
 }
 
+impl SseEncode for Option<i64> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <i64>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for Option<zcash_voting::share_policy::ImmediateShareKey> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -22354,8 +22409,7 @@ impl SseEncode for crate::wallet::swap_receiving::receive::ReceiveErrorCode {
                 crate::wallet::swap_receiving::receive::ReceiveErrorCode::Limit => 1,
                 crate::wallet::swap_receiving::receive::ReceiveErrorCode::Stale => 2,
                 crate::wallet::swap_receiving::receive::ReceiveErrorCode::Coverage => 3,
-                crate::wallet::swap_receiving::receive::ReceiveErrorCode::Recovery => 4,
-                crate::wallet::swap_receiving::receive::ReceiveErrorCode::Other => 5,
+                crate::wallet::swap_receiving::receive::ReceiveErrorCode::Other => 4,
                 _ => {
                     unimplemented!("");
                 }
@@ -23026,6 +23080,17 @@ impl SseEncode for zcash_voting::config::SupportedVersions {
         <String>::sse_encode(self.vote_protocol, serializer);
         <String>::sse_encode(self.tally, serializer);
         <String>::sse_encode(self.vote_server, serializer);
+    }
+}
+
+impl SseEncode for crate::api::swap_receive::SwapProviderStatus {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.status, serializer);
+        <Option<String>>::sse_encode(self.swap_type, serializer);
+        <Option<String>>::sse_encode(self.refunded_amount, serializer);
+        <Option<String>>::sse_encode(self.amount_out, serializer);
+        <Option<i64>>::sse_encode(self.deadline_seconds, serializer);
     }
 }
 

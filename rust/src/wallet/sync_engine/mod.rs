@@ -60,27 +60,6 @@ mod tip_cache;
 mod transparent_recovery_tests;
 
 use enhancement::{queue_stored_transactions, EnhancementPolicy, EnhancementSession};
-/// Fetches a bounded verification tail without modifying the normal sync queue.
-/// The library validates canonical identities, counts, ownership, and coverage.
-pub(crate) async fn download_swap_verification_tail(
-    endpoint: &str,
-    network: WalletNetwork,
-    range: std::ops::Range<BlockHeight>,
-) -> Result<Vec<zcash_client_backend::proto::compact_formats::CompactBlock>, SyncError> {
-    if range.is_empty()
-        || range.end - range.start
-            > zcash_client_sqlite::wallet::swap_receiving::RECEIVE_VERIFICATION_MAX_LAG
-    {
-        return Err(SyncError::other("Invalid receive verification tail"));
-    }
-    let mut client = lwd::open_lwd_channel(endpoint).await?;
-    Ok(
-        lwd::download_blocks(&mut client, range.start, range.end - 1, network)
-            .await?
-            .into_blocks(),
-    )
-}
-
 pub(crate) use error::SyncError;
 use error::{RecoveryStrategy, MAX_REWINDS_PER_RUN};
 use lwd::{
@@ -2857,9 +2836,16 @@ async fn run_payment_link_claim_sync_once(
                     ));
                 }
                 RefreshedTipRelation::Unchanged | RefreshedTipRelation::UnchangedUnverified => {
-                    swap_private::run(&mut db, network, &should_exit, &mut client).await?;
+                    swap_private::run(&mut db, network, &should_exit).await;
                     if should_exit() {
                         return Ok(());
+                    }
+                    // A finished sweep can queue a rescan from its anchor.
+                    if payment_link_scan_ranges(&db, db_data_path)?
+                        .iter()
+                        .any(is_pending_scan_range)
+                    {
+                        continue;
                     }
                     ensure_complete_scan_state(&mut db, current_tip_height)?;
                     if allow_resubmit {
@@ -2890,12 +2876,6 @@ async fn run_payment_link_claim_sync_once(
                 current_tip_height,
                 "payment-link pending scan range starts after the observed tip",
             ));
-        };
-        let end = {
-            let (_, boundary) = db
-                .get_swap_scan_window(start)
-                .map_err(|e| SyncError::db(format!("swap scan window: {e}")))?;
-            boundary.map_or(end, |boundary| end.min(boundary))
         };
         let batch_blocks = u32::from(end).saturating_sub(u32::from(start)) as u64;
 
@@ -3704,10 +3684,25 @@ async fn run_sync_impl(
                         prefetch = None;
                         continue;
                     }
-                    swap_private::run(&mut db, network, &should_exit, &mut client).await?;
+                    swap_private::run(&mut db, network, &should_exit).await;
                     if should_exit() {
                         return Ok(());
                     }
+                    // A finished refund or lookahead sweep scans its key from the
+                    // sweep's anchor; scan that before declaring sync complete.
+                    if db
+                        .suggest_scan_ranges()
+                        .map_err(|e| SyncError::db(e.to_string()))?
+                        .iter()
+                        .any(is_pending_scan_range)
+                    {
+                        prefetch = None;
+                        continue;
+                    }
+                    with_wallet_db_write_lock("swap_receiving.close", || {
+                        crate::wallet::swap_receiving::close_finished_keys(&mut db)
+                    })
+                    .map_err(SyncError::db)?;
                     let released = enhancement.take_ready_resubmission();
                     // This path completes without a post-batch pass, so a
                     // transaction released by a final status observation is
@@ -3805,12 +3800,6 @@ async fn run_sync_impl(
                 current_tip_height,
             );
             break;
-        };
-        let end = {
-            let (_, boundary) = db
-                .get_swap_scan_window(start)
-                .map_err(|e| SyncError::db(format!("swap scan window: {e}")))?;
-            boundary.map_or(end, |boundary| end.min(boundary))
         };
         let batch_blocks = u32::from(end).saturating_sub(u32::from(start)) as u64;
         let display_scanned_height = progress_display_mode.batch_start_height(&ranges, start);

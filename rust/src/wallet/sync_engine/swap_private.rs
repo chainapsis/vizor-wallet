@@ -1,7 +1,7 @@
 //! Experimental receiver → Enhance PIR → verified wallet insertion.
 //! All chain acceptance and note mutation stays in the wallet library.
 use super::enhancement::transport::{RoutedHttpError, RoutedTransport};
-use super::{SyncError, WalletDatabase};
+use super::WalletDatabase;
 use crate::wallet::{db::with_wallet_db_write_lock, network::WalletNetwork};
 use futures::StreamExt;
 use orchard::tree::{MerkleHashOrchard, MerklePath};
@@ -38,9 +38,9 @@ fn allowed_enhance_route(url: &url::Url) -> bool {
         && url.password().is_none()
 }
 /// Both swap services use the same Tor-aware transport as ordinary Enhance PIR.
-pub(crate) struct SwapTransport<'a, F>(RoutedTransport<'a, F>);
+struct SwapTransport<'a, F>(RoutedTransport<'a, F>);
 impl<'a, F> SwapTransport<'a, F> {
-    pub(crate) fn new(should_exit: &'a F) -> Self {
+    fn new(should_exit: &'a F) -> Self {
         Self(RoutedTransport::new(should_exit))
     }
 }
@@ -89,20 +89,20 @@ fn error(e: impl std::fmt::Display) -> String {
     e.to_string()
 }
 
+/// Polls restored refunds and runs pending restore sweeps. Failures are logged and
+/// retried on the next sync; ordinary sync never waits for the directory.
 pub(super) async fn run(
     db: &mut WalletDatabase,
     network: WalletNetwork,
     should_exit: &impl Fn() -> bool,
-    lwd: &mut zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient<tonic::transport::Channel>,
-) -> Result<(), SyncError> {
+) {
     if network != WalletNetwork::Main || cfg!(ironwood_masquerade) {
-        return Ok(());
+        return;
     }
-    let Some(tip) = db
-        .block_fully_scanned()
-        .map_err(|e| SyncError::db(e.to_string()))?
-    else {
-        return Ok(());
+    let tip = match db.block_fully_scanned() {
+        Ok(Some(tip)) => tip,
+        Ok(None) => return,
+        Err(e) => return log::warn!("Swap recovery deferred: {e}"),
     };
     let through = ChainAnchor {
         height: tip.block_height(),
@@ -111,7 +111,7 @@ pub(super) async fn run(
     let started = std::time::Instant::now();
     let phase = async {
         let result = async {
-            run_inner(db, network, should_exit, lwd).await?;
+            run_inner(db, network, should_exit).await?;
             with_wallet_db_write_lock("swap_private.prune", || {
                 crate::wallet::swap_receiving::finish_nullifier_recovery(db, through)
             })?;
@@ -125,7 +125,7 @@ pub(super) async fn run(
                         .swap_history_pending(account, through.height)
                         .map_err(error)?
                 {
-                    return Err("Historical swap recovery remains pending".to_owned());
+                    return Err("restore sweeps remain pending".to_owned());
                 }
             }
             Ok::<(), String>(())
@@ -136,12 +136,16 @@ pub(super) async fn run(
             started.elapsed().as_micros(),
             result.is_ok()
         );
-        result.map_err(std::io::Error::other)
+        result
     };
     tokio::select! {
         biased;
-        _=super::watch_for_exit(should_exit)=>Ok(()),
-        result=phase=>result.map_err(|e|SyncError::net(format!("Private swap recovery pending: {e}"))),
+        _ = super::watch_for_exit(should_exit) => {}
+        result = phase => {
+            if let Err(e) = result {
+                log::warn!("Swap recovery deferred: {e}");
+            }
+        }
     }
 }
 
@@ -179,7 +183,7 @@ fn discovery_work(
 }
 
 /// Connects to a directory publication bound to locally accepted block history.
-pub(crate) async fn receiver_client<T: ReceiverTransport>(
+async fn receiver_client<T: ReceiverTransport>(
     db: &mut WalletDatabase,
     network: WalletNetwork,
     http: T,
@@ -228,7 +232,6 @@ async fn run_inner(
     db: &mut WalletDatabase,
     network: WalletNetwork,
     should_exit: &impl Fn() -> bool,
-    lwd: &mut zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient<tonic::transport::Channel>,
 ) -> Result<(), String> {
     let Some(tip) = db.block_fully_scanned().map_err(error)? else {
         return Ok(());
@@ -257,26 +260,7 @@ async fn run_inner(
     );
     let batches = prepared.batches_by_tx_and_row();
     super::swap_refund_status::reconcile(db, should_exit).await?;
-    let requested_at = crate::wallet::swap_receiving::receive::now()?;
-    let fresh = super::get_latest_block(lwd).await.map_err(error)?;
-    let relation = super::classify_refreshed_tip_with_fallback(
-        lwd,
-        u64::from(u32::from(through.height)),
-        Some(BlockHash(through.hash)),
-        fresh.height,
-        &fresh.hash,
-    )
-    .await
-    .map_err(error)?;
-    if relation != super::RefreshedTipRelation::Unchanged {
-        return Err("Swap completion is waiting for the newly refreshed chain tip".into());
-    }
-    with_wallet_db_write_lock("swap_private.anchor", || {
-        db.anchor_swap_observations(through, requested_at)
-            .map_err(error)
-    })?;
     if batches.is_empty() && discovery_work(db, through)?.0.is_empty() {
-        log::info!("swap_private: recovery covered locally; no PIR requests");
         return Ok(());
     }
     let transport = SwapTransport::new(should_exit);
@@ -445,7 +429,7 @@ async fn run_inner(
                     .map_err(error)?
                     .ok_or("Missing lookup coverage")?;
                 with_wallet_db_write_lock("swap_private.finish", || {
-                    db.finish_swap_discovery_attempt(account, key, coverage, now)
+                    db.finish_swap_discovery_attempt(account, key, coverage)
                         .map_err(error)
                 })?;
                 Ok::<(), String>(())
@@ -514,7 +498,7 @@ mod tests {
             height,
             hash: [0; 32],
         };
-        db.enable_private_swap_recovery(account).unwrap();
+        db.retain_swap_spend_history(account).unwrap();
         db.maintain_swap_receive_lookahead(account, RECEIVE_LOOKAHEAD, height)
             .unwrap();
         assert!(!crate::api::sync::enhance_pir_enabled());
@@ -522,7 +506,9 @@ mod tests {
         let work = discovery_work(&mut db, through).unwrap().0;
         assert_eq!(work.len(), RECEIVE_LOOKAHEAD as usize);
         for (account, key) in work {
-            db.mark_swap_directory_checked(account, key.key, through)
+            db.queue_swap_lookup(account, key.key, through, &[])
+                .unwrap();
+            db.finish_swap_discovery_attempt(account, key.key, through)
                 .unwrap();
         }
         assert!(discovery_work(&mut db, through).unwrap().0.is_empty());
@@ -538,7 +524,9 @@ mod tests {
         assert_eq!(work.len(), RECEIVE_LOOKAHEAD as usize);
         assert!(work.iter().all(|(_, key)| key.key.index() > edge));
         for (account, key) in work {
-            db.mark_swap_directory_checked(account, key.key, through)
+            db.queue_swap_lookup(account, key.key, through, &[])
+                .unwrap();
+            db.finish_swap_discovery_attempt(account, key.key, through)
                 .unwrap();
         }
         drop(db);

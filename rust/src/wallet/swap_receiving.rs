@@ -2,13 +2,17 @@
 
 pub(crate) mod receive;
 
-use zakura_swap_receiving::{KeyId, Purpose, RefundMemo};
+use zakura_swap_receiving::{
+    lifecycle::{near_observation, ProviderStatus},
+    KeyId, Purpose, RefundMemo,
+};
 use zcash_client_backend::data_api::{Account as _, AccountSource, WalletRead};
 use zcash_client_sqlite::AccountUuid;
 use zcash_keys::address::{Address, UnifiedAddress};
 use zcash_protocol::{
     consensus::{BlockHeight, NetworkUpgrade, Parameters},
     memo::MemoBytes,
+    value::Zatoshis,
 };
 
 use super::{
@@ -54,6 +58,26 @@ fn reservation_scan_from(
     }
     // Watch the unscanned tail as well as future blocks, including after reopen.
     Ok(scanned + 1)
+}
+
+/// Borrows a bridged provider status for the library. Unparseable amounts are
+/// treated as unreported.
+pub(crate) fn provider_status(
+    status: &crate::api::swap_receive::SwapProviderStatus,
+) -> ProviderStatus<'_> {
+    let amount = |value: &Option<String>| {
+        value
+            .as_deref()
+            .and_then(|v| v.parse::<u64>().ok())
+            .and_then(|v| Zatoshis::from_u64(v).ok())
+    };
+    ProviderStatus {
+        status: &status.status,
+        swap_type: status.swap_type.as_deref(),
+        refunded_amount: amount(&status.refunded_amount),
+        amount_out: amount(&status.amount_out),
+        deadline: status.deadline_seconds,
+    }
 }
 
 fn require_software_account(db: &WalletDatabase, account: AccountUuid) -> Result<(), String> {
@@ -122,8 +146,8 @@ pub(crate) fn reserve(
 }
 
 /// Called under the wallet write lock before planning more scan work.
-/// Refund and incoming-address discovery always use PIR, independently of both
-/// privacy switches. Only new address issuance is opt-in.
+/// Restore sweeps run independently of both privacy switches. Only new address
+/// issuance is opt-in.
 pub(crate) fn maintain_recovery(
     db: &mut WalletDatabase,
     network: WalletNetwork,
@@ -144,9 +168,9 @@ pub(crate) fn maintain_recovery(
         {
             continue;
         }
-        // A note found later through the directory still needs its spend history,
+        // A note a restore sweep finds later still needs its spend history,
         // even when both privacy switches were off during ordinary scanning.
-        db.enable_private_swap_recovery(account)
+        db.retain_swap_spend_history(account)
             .map_err(|e| e.to_string())?;
         let Some(scanned) = db.block_fully_scanned().map_err(|e| e.to_string())? else {
             continue;
@@ -163,6 +187,30 @@ pub(crate) fn maintain_recovery(
             .map_err(|e| e.to_string())?;
         db.maintain_swap_receive_lookahead(account, RECEIVE_LOOKAHEAD, birthday.max(activation))
             .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Stops scanning finished swap keys, under the wallet write lock. Call only once
+/// sync has revalidated the chain tip and scanned to it: before that, the stored
+/// tip can be a previous session's, and a key closed then would miss the blocks
+/// mined while the app was offline.
+pub(crate) fn close_finished_keys(db: &mut WalletDatabase) -> Result<(), String> {
+    if cfg!(ironwood_masquerade) {
+        return Ok(());
+    }
+    let now = receive::now()?;
+    for account in db.get_account_ids().map_err(|e| e.to_string())? {
+        let details = db
+            .get_account(account)
+            .map_err(|e| e.to_string())?
+            .ok_or("Account not found")?;
+        if matches!(details.source(), AccountSource::Derived { .. })
+            && super::keys::hardware_signer_kind(details.source()).is_none()
+        {
+            db.close_finished_swap_keys(account, now)
+                .map_err(|e| e.to_string())?;
+        }
     }
     Ok(())
 }
@@ -197,7 +245,7 @@ pub(crate) fn observe_operation(
     account_uuid: &str,
     operation: &str,
     address: &str,
-    status: &str,
+    status: &crate::api::swap_receive::SwapProviderStatus,
     observed_at: i64,
 ) -> Result<(), String> {
     with_wallet_db_write_lock("swap_receiving.operation", || {
@@ -222,10 +270,10 @@ pub(crate) fn observe_operation(
         else {
             return Ok(());
         };
-        if let Some(status) =
-            zakura_swap_receiving::lifecycle::near_status(key.key_id().purpose(), status)
+        if let Some(observation) =
+            near_observation(key.key_id().purpose(), &provider_status(status))
         {
-            db.record_swap_observation(account, key.key_id(), operation, status, observed_at, true)
+            db.record_swap_observation(account, key.key_id(), operation, observation, observed_at)
                 .map_err(|e| e.to_string())?;
         }
         Ok(())
@@ -288,6 +336,72 @@ mod tests {
         assert!(reservation_scan_from(None, height(100), 100, false).is_err());
         assert!(reservation_scan_from(Some(height(100)), height(100), 100, true).is_err());
         assert!(reservation_scan_from(Some(height(101)), height(100), 100, false).is_err());
+    }
+
+    /// Records `blocks` and marks the scan queue scanned from the birthday to `tip`.
+    fn mark_scanned(path: &str, blocks: impl IntoIterator<Item = u32>, tip: u32) {
+        let conn = rusqlite::Connection::open(path).unwrap();
+        for h in blocks {
+            conn.execute(
+                "INSERT INTO blocks(height,hash,time,sapling_tree) VALUES(?1,?2,0,X'000000')",
+                rusqlite::params![h, [h as u8; 32]],
+            )
+            .unwrap();
+        }
+        conn.execute("DELETE FROM scan_queue", []).unwrap();
+        conn.execute(
+            "INSERT INTO scan_queue(block_range_start,block_range_end,priority) VALUES(100,?1,10)",
+            [tip + 1],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn keys_close_only_after_offline_blocks_are_scanned() {
+        use zakura_swap_receiving::lifecycle::{Observation, OperationStatus};
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db");
+        let path = path.to_str().unwrap();
+        let network = WalletNetwork::Regtest;
+        super::super::network::configure_regtest_nu6_3_activation_height(100).unwrap();
+        let (uuid, _) = super::super::keys::init_db_and_create_account(
+            path,
+            network,
+            &SecretVec::new(vec![0; 32]),
+            Some(100),
+            "POC",
+        )
+        .unwrap();
+        let account = parse_account_uuid(&uuid).unwrap();
+        let mut db = open_wallet_db_with_timeout(path, network, WALLET_DB_BUSY_TIMEOUT).unwrap();
+        db.update_chain_tip(BlockHeight::from_u32(110)).unwrap();
+        mark_scanned(path, [110], 110);
+        let key = db
+            .reserve_swap_receiving_key(account, Purpose::Refund, BlockHeight::from_u32(111))
+            .unwrap()
+            .key_id();
+        // The quote's seven-day limit passed while the app was closed.
+        let deadline = receive::now().unwrap() - 8 * 24 * 60 * 60;
+        let pending = Observation {
+            status: OperationStatus::Active,
+            deadline: Some(deadline),
+        };
+        db.record_swap_observation(account, key, "deposit", pending, deadline - 60)
+            .unwrap();
+        let scanning = |db: &WalletDatabase| {
+            db.get_swap_scanning_keys()
+                .unwrap()
+                .iter()
+                .any(|k| k.key_id() == key)
+        };
+        // Sync start runs this before it stores the new tip.
+        maintain_recovery(&mut db, network).unwrap();
+        db.update_chain_tip(BlockHeight::from_u32(120)).unwrap();
+        close_finished_keys(&mut db).unwrap();
+        assert!(scanning(&db));
+        mark_scanned(path, 111..=120, 120);
+        close_finished_keys(&mut db).unwrap();
+        assert!(!scanning(&db));
     }
 
     #[test]
@@ -374,20 +488,12 @@ mod tests {
         let keys = db.get_swap_receiving_keys(account).unwrap();
         assert_eq!(keys.len(), RECEIVE_LOOKAHEAD as usize);
         assert!(keys.iter().all(|key| !key.advances_allocation()));
-        assert!(db
-            .get_swap_scan_window(BlockHeight::from_u32(111))
-            .unwrap()
-            .0
-            .is_empty());
+        // Restored lookahead keys wait for a directory sweep; they are not scanned.
+        assert!(db.get_swap_scanning_keys().unwrap().is_empty());
         assert_eq!(
             db.block_fully_scanned().unwrap().unwrap().block_height(),
             BlockHeight::from_u32(110)
         );
-        assert!(db
-            .get_swap_scan_window(BlockHeight::from_u32(100))
-            .unwrap()
-            .0
-            .is_empty());
         drop(db);
         let mut reopened =
             open_wallet_db_with_timeout(path, network, WALLET_DB_BUSY_TIMEOUT).unwrap();

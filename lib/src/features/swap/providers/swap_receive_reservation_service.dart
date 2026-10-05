@@ -50,7 +50,6 @@ final swapReceiveReservationServiceProvider = Provider((ref) {
         path,
         ref.read(rpcEndpointFailoverProvider).current.networkName,
         account,
-        ref.read(rpcEndpointFailoverProvider).current.lightwalletdUrl,
       );
     },
   );
@@ -73,16 +72,10 @@ abstract interface class ReceiveReservationStore {
 }
 
 class RustReceiveReservationStore implements ReceiveReservationStore {
-  const RustReceiveReservationStore(
-    this.path,
-    this.network,
-    this.account,
-    this.lightwalletdUrl,
-  );
+  const RustReceiveReservationStore(this.path, this.network, this.account);
   final String path;
   final String network;
   final String account;
-  final String lightwalletdUrl;
 
   @override
   Future<api.ReceiveReservation> prepare(BigInt tip) =>
@@ -91,7 +84,6 @@ class RustReceiveReservationStore implements ReceiveReservationStore {
         networkName: network,
         accountUuid: account,
         liveTip: tip,
-        lightwalletdUrl: lightwalletdUrl,
       );
   @override
   Future<void> begin(PlatformInt64 reservation, String request) =>
@@ -151,7 +143,18 @@ class RustReceiveReservationStore implements ReceiveReservationStore {
     networkName: network,
     accountUuid: account,
     requestId: request,
-    status: snapshot.providerStatusRaw ?? 'UNKNOWN',
+    status: api.SwapProviderStatus(
+      status: snapshot.providerStatusRaw ?? 'UNKNOWN',
+      swapType: snapshot.providerSwapType,
+      refundedAmount: snapshot.refundedAmountBaseUnits,
+      amountOut: snapshot.amountOutBaseUnits,
+      deadlineSeconds: switch (snapshot.depositInstruction.deadline) {
+        final deadline? => PlatformInt64Util.from(
+          deadline.millisecondsSinceEpoch ~/ 1000,
+        ),
+        null => null,
+      },
+    ),
     funded: swapHasProviderObservedDepositEvidence(
       status: snapshot.status,
       originChainTxHash: snapshot.originChainTxHash,
@@ -164,7 +167,6 @@ class RustReceiveReservationStore implements ReceiveReservationStore {
   @override
   Future<void> reap() async {
     await api.reapReceiveReservations(
-      lightwalletdUrl: lightwalletdUrl,
       dbPath: path,
       networkName: network,
       accountUuid: account,

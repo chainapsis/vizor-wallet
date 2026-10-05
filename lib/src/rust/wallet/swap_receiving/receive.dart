@@ -25,4 +25,4 @@ class ReceiveError implements FrbException {
 }
 
 /// Stable UI classification. Messages are display text, never a parsing protocol.
-enum ReceiveErrorCode { gap, limit, stale, coverage, recovery, other }
+enum ReceiveErrorCode { gap, limit, stale, coverage, other }

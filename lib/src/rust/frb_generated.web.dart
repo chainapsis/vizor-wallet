@@ -17,11 +17,15 @@ import 'api/sync.dart';
 import 'api/voting.dart';
 import 'api/voting_session.dart';
 import 'api/wallet.dart';
+
 import 'dart:async';
 import 'dart:convert';
+
 import 'frb_generated.dart';
 import 'network_privacy.dart';
+
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_web.dart';
+
 import 'third_party/zcash_voting/config.dart';
 import 'third_party/zcash_voting/delegate.dart';
 import 'third_party/zcash_voting/share_policy.dart';
@@ -266,6 +270,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   double dco_decode_box_autoadd_f_64(dynamic raw);
 
   @protected
+  PlatformInt64 dco_decode_box_autoadd_i_64(dynamic raw);
+
+  @protected
   ImmediateShareKey dco_decode_box_autoadd_immediate_share_key(dynamic raw);
 
   @protected
@@ -352,6 +359,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   SubmissionDiagnosticView dco_decode_box_autoadd_submission_diagnostic_view(
     dynamic raw,
   );
+
+  @protected
+  SwapProviderStatus dco_decode_box_autoadd_swap_provider_status(dynamic raw);
 
   @protected
   int dco_decode_box_autoadd_u_16(dynamic raw);
@@ -920,6 +930,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   double? dco_decode_opt_box_autoadd_f_64(dynamic raw);
 
   @protected
+  PlatformInt64? dco_decode_opt_box_autoadd_i_64(dynamic raw);
+
+  @protected
   ImmediateShareKey? dco_decode_opt_box_autoadd_immediate_share_key(
     dynamic raw,
   );
@@ -1225,6 +1238,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SupportedVersions dco_decode_supported_versions(dynamic raw);
+
+  @protected
+  SwapProviderStatus dco_decode_swap_provider_status(dynamic raw);
 
   @protected
   SwapReceivingAddress dco_decode_swap_receiving_address(dynamic raw);
@@ -1604,6 +1620,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   double sse_decode_box_autoadd_f_64(SseDeserializer deserializer);
 
   @protected
+  PlatformInt64 sse_decode_box_autoadd_i_64(SseDeserializer deserializer);
+
+  @protected
   ImmediateShareKey sse_decode_box_autoadd_immediate_share_key(
     SseDeserializer deserializer,
   );
@@ -1714,6 +1733,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SubmissionDiagnosticView sse_decode_box_autoadd_submission_diagnostic_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SwapProviderStatus sse_decode_box_autoadd_swap_provider_status(
     SseDeserializer deserializer,
   );
 
@@ -2440,6 +2464,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   double? sse_decode_opt_box_autoadd_f_64(SseDeserializer deserializer);
 
   @protected
+  PlatformInt64? sse_decode_opt_box_autoadd_i_64(SseDeserializer deserializer);
+
+  @protected
   ImmediateShareKey? sse_decode_opt_box_autoadd_immediate_share_key(
     SseDeserializer deserializer,
   );
@@ -2829,6 +2856,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SupportedVersions sse_decode_supported_versions(SseDeserializer deserializer);
+
+  @protected
+  SwapProviderStatus sse_decode_swap_provider_status(
+    SseDeserializer deserializer,
+  );
 
   @protected
   SwapReceivingAddress sse_decode_swap_receiving_address(
@@ -3298,6 +3330,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_box_autoadd_f_64(double self, SseSerializer serializer);
 
   @protected
+  void sse_encode_box_autoadd_i_64(
+    PlatformInt64 self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_immediate_share_key(
     ImmediateShareKey self,
     SseSerializer serializer,
@@ -3426,6 +3464,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_submission_diagnostic_view(
     SubmissionDiagnosticView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_swap_provider_status(
+    SwapProviderStatus self,
     SseSerializer serializer,
   );
 
@@ -4309,6 +4353,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_opt_box_autoadd_f_64(double? self, SseSerializer serializer);
 
   @protected
+  void sse_encode_opt_box_autoadd_i_64(
+    PlatformInt64? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_immediate_share_key(
     ImmediateShareKey? self,
     SseSerializer serializer,
@@ -4767,6 +4817,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_supported_versions(
     SupportedVersions self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_swap_provider_status(
+    SwapProviderStatus self,
     SseSerializer serializer,
   );
 

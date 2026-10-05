@@ -24,6 +24,9 @@ class SwapIntentRecord {
     this.minimumReceiveText,
     this.providerStatusRaw,
     this.nearIntentHash,
+    this.providerSwapType,
+    this.refundedAmountBaseUnits,
+    this.amountOutBaseUnits,
     this.originChainTxHash,
     this.destinationChainTxHash,
     this.providerRefundInfo,
@@ -67,6 +70,9 @@ class SwapIntentRecord {
       minimumReceiveText: intent.minimumReceiveText,
       providerStatusRaw: intent.providerStatusRaw,
       nearIntentHash: intent.nearIntentHash,
+      providerSwapType: intent.providerSwapType,
+      refundedAmountBaseUnits: intent.refundedAmountBaseUnits,
+      amountOutBaseUnits: intent.amountOutBaseUnits,
       originChainTxHash: intent.originChainTxHash,
       destinationChainTxHash: intent.destinationChainTxHash,
       providerRefundInfo: intent.providerRefundInfo,
@@ -109,6 +115,9 @@ class SwapIntentRecord {
   final String? minimumReceiveText;
   final String? providerStatusRaw;
   final String? nearIntentHash;
+  final String? providerSwapType;
+  final String? refundedAmountBaseUnits;
+  final String? amountOutBaseUnits;
   final String? originChainTxHash;
   final String? destinationChainTxHash;
   final SwapProviderRefundInfo? providerRefundInfo;
@@ -153,6 +162,9 @@ class SwapIntentRecord {
     String? minimumReceiveText,
     String? providerStatusRaw,
     String? nearIntentHash,
+    String? providerSwapType,
+    String? refundedAmountBaseUnits,
+    String? amountOutBaseUnits,
     String? originChainTxHash,
     String? destinationChainTxHash,
     SwapProviderRefundInfo? providerRefundInfo,
@@ -198,6 +210,10 @@ class SwapIntentRecord {
       minimumReceiveText: minimumReceiveText ?? this.minimumReceiveText,
       providerStatusRaw: providerStatusRaw ?? this.providerStatusRaw,
       nearIntentHash: nearIntentHash ?? this.nearIntentHash,
+      providerSwapType: providerSwapType ?? this.providerSwapType,
+      refundedAmountBaseUnits:
+          refundedAmountBaseUnits ?? this.refundedAmountBaseUnits,
+      amountOutBaseUnits: amountOutBaseUnits ?? this.amountOutBaseUnits,
       originChainTxHash: originChainTxHash ?? this.originChainTxHash,
       destinationChainTxHash:
           destinationChainTxHash ?? this.destinationChainTxHash,
@@ -249,6 +265,9 @@ class SwapIntent {
     this.minimumReceiveText,
     this.providerStatusRaw,
     this.nearIntentHash,
+    this.providerSwapType,
+    this.refundedAmountBaseUnits,
+    this.amountOutBaseUnits,
     this.originChainTxHash,
     this.destinationChainTxHash,
     this.providerRefundInfo,
@@ -290,6 +309,9 @@ class SwapIntent {
   final String? minimumReceiveText;
   final String? providerStatusRaw;
   final String? nearIntentHash;
+  final String? providerSwapType;
+  final String? refundedAmountBaseUnits;
+  final String? amountOutBaseUnits;
   final String? originChainTxHash;
   final String? destinationChainTxHash;
   final SwapProviderRefundInfo? providerRefundInfo;
@@ -348,6 +370,9 @@ class SwapIntent {
     String? minimumReceiveText,
     String? providerStatusRaw,
     String? nearIntentHash,
+    String? providerSwapType,
+    String? refundedAmountBaseUnits,
+    String? amountOutBaseUnits,
     String? originChainTxHash,
     String? destinationChainTxHash,
     SwapProviderRefundInfo? providerRefundInfo,
@@ -393,6 +418,10 @@ class SwapIntent {
       minimumReceiveText: minimumReceiveText ?? this.minimumReceiveText,
       providerStatusRaw: providerStatusRaw ?? this.providerStatusRaw,
       nearIntentHash: nearIntentHash ?? this.nearIntentHash,
+      providerSwapType: providerSwapType ?? this.providerSwapType,
+      refundedAmountBaseUnits:
+          refundedAmountBaseUnits ?? this.refundedAmountBaseUnits,
+      amountOutBaseUnits: amountOutBaseUnits ?? this.amountOutBaseUnits,
       originChainTxHash: originChainTxHash ?? this.originChainTxHash,
       destinationChainTxHash:
           destinationChainTxHash ?? this.destinationChainTxHash,

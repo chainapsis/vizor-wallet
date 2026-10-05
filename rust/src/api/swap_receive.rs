@@ -3,11 +3,21 @@ use crate::wallet::swap_receiving::receive::ReceiveError;
 use crate::wallet::{keys, network::WalletNetwork, swap_receiving::receive};
 use zcash_keys::address::{Address, UnifiedAddress};
 
-/// An account-scoped durable receive draft; its address has complete canonical discovery coverage.
+/// An account-scoped durable receive draft, whose key is scanned from issuance.
 pub struct ReceiveReservation {
     pub id: i64,
     pub index: u64,
     pub address: String,
+}
+
+/// The NEAR 1Click status fields that decide when a swap key stops scanning.
+/// Amounts are base-unit decimal strings, as the provider reports them.
+pub struct SwapProviderStatus {
+    pub status: String,
+    pub swap_type: Option<String>,
+    pub refunded_amount: Option<String>,
+    pub amount_out: Option<String>,
+    pub deadline_seconds: Option<i64>,
 }
 
 /// Provider lookup for a persisted quote, including quotes never started in the UI.
@@ -23,24 +33,16 @@ fn network(path: &str, value: &str) -> Result<WalletNetwork, String> {
     Ok(network)
 }
 
-/// Resumes a draft or reserves the lowest eligible index and verifies its history and recent tail.
+/// Resumes a draft or reserves the lowest eligible index, scanned from the next block.
 /// Does not start or restart ordinary wallet sync.
-pub async fn prepare_receive_reservation(
+pub fn prepare_receive_reservation(
     db_path: String,
     network_name: String,
     account_uuid: String,
     live_tip: u64,
-    lightwalletd_url: String,
 ) -> Result<ReceiveReservation, ReceiveError> {
     let network = network(&db_path, &network_name)?;
-    let r = receive::prepare(
-        &db_path,
-        network,
-        &account_uuid,
-        live_tip,
-        &lightwalletd_url,
-    )
-    .await?;
+    let r = receive::prepare(&db_path, network, &account_uuid, live_tip)?;
     let address = Address::Unified(
         UnifiedAddress::from_receivers(Some(r.key.receiver()), None, None)
             .ok_or("Invalid receive address")?,
@@ -176,7 +178,7 @@ pub fn observe_receive_quote(
     network_name: String,
     account_uuid: String,
     request_id: String,
-    status: String,
+    status: SwapProviderStatus,
     funded: bool,
     checked_at_seconds: i64,
 ) -> Result<(), ReceiveError> {
@@ -185,24 +187,18 @@ pub fn observe_receive_quote(
         network(&db_path, &network_name)?,
         &account_uuid,
         |db, a| {
+            let status = crate::wallet::swap_receiving::provider_status(&status);
             db.observe_swap_receive_quote(a, &request_id, &status, funded, checked_at_seconds)
                 .map_err(ReceiveError::from)
         },
     )
 }
 
-/// Rechecks eligible abandoned addresses against PIR and releases only verified empty ones.
-pub async fn reap_receive_reservations(
+/// Releases eligible abandoned addresses that local scanning shows are still unpaid.
+pub fn reap_receive_reservations(
     db_path: String,
     network_name: String,
     account_uuid: String,
-    lightwalletd_url: String,
 ) -> Result<u32, ReceiveError> {
-    receive::reap(
-        &db_path,
-        network(&db_path, &network_name)?,
-        &account_uuid,
-        &lightwalletd_url,
-    )
-    .await
+    receive::reap(&db_path, network(&db_path, &network_name)?, &account_uuid)
 }

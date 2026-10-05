@@ -327,6 +327,9 @@ class NearIntentsOneClickSwapAdapter
       destinationChainTxHash: response.swapDetails?.destinationChainTxHash,
       providerRefundInfo: providerRefundInfo,
       fiatValueBasis: quote.fiatValueBasis,
+      providerSwapType: request.swapTypeRaw,
+      refundedAmountBaseUnits: details?.refundedAmount,
+      amountOutBaseUnits: details?.amountOut,
     );
   }
 

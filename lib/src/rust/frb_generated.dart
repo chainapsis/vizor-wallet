@@ -14,13 +14,17 @@ import 'api/sync.dart';
 import 'api/voting.dart';
 import 'api/voting_session.dart';
 import 'api/wallet.dart';
+
 import 'dart:async';
 import 'dart:convert';
+
 import 'frb_generated.dart';
 import 'frb_generated.io.dart'
     if (dart.library.js_interop) 'frb_generated.web.dart';
 import 'network_privacy.dart';
+
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
+
 import 'third_party/zcash_voting/config.dart';
 import 'third_party/zcash_voting/delegate.dart';
 import 'third_party/zcash_voting/share_policy.dart';
@@ -1050,7 +1054,7 @@ abstract class RustLibApi extends BaseApi {
     required String networkName,
     required String accountUuid,
     required String requestId,
-    required String status,
+    required SwapProviderStatus status,
     required bool funded,
     required PlatformInt64 checkedAtSeconds,
   });
@@ -1061,7 +1065,7 @@ abstract class RustLibApi extends BaseApi {
     required String accountUuid,
     required String operationId,
     required String address,
-    required String status,
+    required SwapProviderStatus status,
     required PlatformInt64 observedAtSeconds,
   });
 
@@ -1143,7 +1147,6 @@ abstract class RustLibApi extends BaseApi {
     required String networkName,
     required String accountUuid,
     required BigInt liveTip,
-    required String lightwalletdUrl,
   });
 
   Future<String> crateApiVotingPrepareVotingParticipation({
@@ -1213,7 +1216,6 @@ abstract class RustLibApi extends BaseApi {
     required String dbPath,
     required String networkName,
     required String accountUuid,
-    required String lightwalletdUrl,
   });
 
   Future<List<ReceiveQuoteStatusRequest>> crateApiSwapReceiveReceiveQuotesDue({
@@ -8029,7 +8031,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String networkName,
     required String accountUuid,
     required String requestId,
-    required String status,
+    required SwapProviderStatus status,
     required bool funded,
     required PlatformInt64 checkedAtSeconds,
   }) {
@@ -8041,7 +8043,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(networkName, serializer);
           sse_encode_String(accountUuid, serializer);
           sse_encode_String(requestId, serializer);
-          sse_encode_String(status, serializer);
+          sse_encode_box_autoadd_swap_provider_status(status, serializer);
           sse_encode_bool(funded, serializer);
           sse_encode_i_64(checkedAtSeconds, serializer);
           pdeCallFfi(
@@ -8091,7 +8093,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String accountUuid,
     required String operationId,
     required String address,
-    required String status,
+    required SwapProviderStatus status,
     required PlatformInt64 observedAtSeconds,
   }) {
     return handler.executeNormal(
@@ -8103,7 +8105,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(accountUuid, serializer);
           sse_encode_String(operationId, serializer);
           sse_encode_String(address, serializer);
-          sse_encode_String(status, serializer);
+          sse_encode_box_autoadd_swap_provider_status(status, serializer);
           sse_encode_i_64(observedAtSeconds, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
@@ -8605,7 +8607,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String networkName,
     required String accountUuid,
     required BigInt liveTip,
-    required String lightwalletdUrl,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -8615,7 +8616,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(networkName, serializer);
           sse_encode_String(accountUuid, serializer);
           sse_encode_u_64(liveTip, serializer);
-          sse_encode_String(lightwalletdUrl, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -8628,7 +8628,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_receive_error,
         ),
         constMeta: kCrateApiSwapReceivePrepareReceiveReservationConstMeta,
-        argValues: [dbPath, networkName, accountUuid, liveTip, lightwalletdUrl],
+        argValues: [dbPath, networkName, accountUuid, liveTip],
         apiImpl: this,
       ),
     );
@@ -8637,13 +8637,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiSwapReceivePrepareReceiveReservationConstMeta =>
       const TaskConstMeta(
         debugName: "prepare_receive_reservation",
-        argNames: [
-          "dbPath",
-          "networkName",
-          "accountUuid",
-          "liveTip",
-          "lightwalletdUrl",
-        ],
+        argNames: ["dbPath", "networkName", "accountUuid", "liveTip"],
       );
 
   @override
@@ -9071,7 +9065,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String dbPath,
     required String networkName,
     required String accountUuid,
-    required String lightwalletdUrl,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -9080,7 +9073,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(dbPath, serializer);
           sse_encode_String(networkName, serializer);
           sse_encode_String(accountUuid, serializer);
-          sse_encode_String(lightwalletdUrl, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -9093,7 +9085,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_receive_error,
         ),
         constMeta: kCrateApiSwapReceiveReapReceiveReservationsConstMeta,
-        argValues: [dbPath, networkName, accountUuid, lightwalletdUrl],
+        argValues: [dbPath, networkName, accountUuid],
         apiImpl: this,
       ),
     );
@@ -9102,7 +9094,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiSwapReceiveReapReceiveReservationsConstMeta =>
       const TaskConstMeta(
         debugName: "reap_receive_reservations",
-        argNames: ["dbPath", "networkName", "accountUuid", "lightwalletdUrl"],
+        argNames: ["dbPath", "networkName", "accountUuid"],
       );
 
   @override
@@ -12280,6 +12272,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  PlatformInt64 dco_decode_box_autoadd_i_64(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_i_64(raw);
+  }
+
+  @protected
   ImmediateShareKey dco_decode_box_autoadd_immediate_share_key(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_immediate_share_key(raw);
@@ -12431,6 +12429,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_submission_diagnostic_view(raw);
+  }
+
+  @protected
+  SwapProviderStatus dco_decode_box_autoadd_swap_provider_status(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_swap_provider_status(raw);
   }
 
   @protected
@@ -14045,6 +14049,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  PlatformInt64? dco_decode_opt_box_autoadd_i_64(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_i_64(raw);
+  }
+
+  @protected
   ImmediateShareKey? dco_decode_opt_box_autoadd_immediate_share_key(
     dynamic raw,
   ) {
@@ -15067,6 +15077,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       voteProtocol: dco_decode_String(arr[1]),
       tally: dco_decode_String(arr[2]),
       voteServer: dco_decode_String(arr[3]),
+    );
+  }
+
+  @protected
+  SwapProviderStatus dco_decode_swap_provider_status(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    return SwapProviderStatus(
+      status: dco_decode_String(arr[0]),
+      swapType: dco_decode_opt_String(arr[1]),
+      refundedAmount: dco_decode_opt_String(arr[2]),
+      amountOut: dco_decode_opt_String(arr[3]),
+      deadlineSeconds: dco_decode_opt_box_autoadd_i_64(arr[4]),
     );
   }
 
@@ -16259,6 +16284,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  PlatformInt64 sse_decode_box_autoadd_i_64(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_i_64(deserializer));
+  }
+
+  @protected
   ImmediateShareKey sse_decode_box_autoadd_immediate_share_key(
     SseDeserializer deserializer,
   ) {
@@ -16436,6 +16467,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_submission_diagnostic_view(deserializer));
+  }
+
+  @protected
+  SwapProviderStatus sse_decode_box_autoadd_swap_provider_status(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_swap_provider_status(deserializer));
   }
 
   @protected
@@ -18674,6 +18713,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  PlatformInt64? sse_decode_opt_box_autoadd_i_64(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_i_64(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   ImmediateShareKey? sse_decode_opt_box_autoadd_immediate_share_key(
     SseDeserializer deserializer,
   ) {
@@ -20033,6 +20083,25 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  SwapProviderStatus sse_decode_swap_provider_status(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_status = sse_decode_String(deserializer);
+    var var_swapType = sse_decode_opt_String(deserializer);
+    var var_refundedAmount = sse_decode_opt_String(deserializer);
+    var var_amountOut = sse_decode_opt_String(deserializer);
+    var var_deadlineSeconds = sse_decode_opt_box_autoadd_i_64(deserializer);
+    return SwapProviderStatus(
+      status: var_status,
+      swapType: var_swapType,
+      refundedAmount: var_refundedAmount,
+      amountOut: var_amountOut,
+      deadlineSeconds: var_deadlineSeconds,
+    );
+  }
+
+  @protected
   SwapReceivingAddress sse_decode_swap_receiving_address(
     SseDeserializer deserializer,
   ) {
@@ -21187,6 +21256,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_i_64(
+    PlatformInt64 self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_64(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_immediate_share_key(
     ImmediateShareKey self,
     SseSerializer serializer,
@@ -21382,6 +21460,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_submission_diagnostic_view(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_swap_provider_status(
+    SwapProviderStatus self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_swap_provider_status(self, serializer);
   }
 
   @protected
@@ -23208,6 +23295,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_box_autoadd_i_64(
+    PlatformInt64? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_i_64(self, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_opt_box_autoadd_immediate_share_key(
     ImmediateShareKey? self,
     SseSerializer serializer,
@@ -24288,6 +24388,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.voteProtocol, serializer);
     sse_encode_String(self.tally, serializer);
     sse_encode_String(self.voteServer, serializer);
+  }
+
+  @protected
+  void sse_encode_swap_provider_status(
+    SwapProviderStatus self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.status, serializer);
+    sse_encode_opt_String(self.swapType, serializer);
+    sse_encode_opt_String(self.refundedAmount, serializer);
+    sse_encode_opt_String(self.amountOut, serializer);
+    sse_encode_opt_box_autoadd_i_64(self.deadlineSeconds, serializer);
   }
 
   @protected

@@ -3171,7 +3171,7 @@ pub fn observe_swap_receiving_operation(
     account_uuid: String,
     operation_id: String,
     address: String,
-    status: String,
+    status: crate::api::swap_receive::SwapProviderStatus,
     observed_at_seconds: i64,
 ) -> Result<(), String> {
     catch(|| {

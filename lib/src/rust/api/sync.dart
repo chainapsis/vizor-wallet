@@ -6,6 +6,7 @@
 import '../frb_generated.dart';
 import 'keystone.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
+import 'swap_receive.dart';
 
 // These functions are ignored because they are not marked as `pub`: `api_proposal_result`, `catch`, `enhance_pir_enabled`, `fetch_block_time`, `migration_status_from_balance`, `near_swap_setting`, `parse_network_and_migrate`, `payment_link_batch_pairs`, `run_full_sync_internal`, `to_wallet_action_sigs`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `MempoolObserverState`
@@ -1240,7 +1241,7 @@ Future<void> observeSwapReceivingOperation({
   required String accountUuid,
   required String operationId,
   required String address,
-  required String status,
+  required SwapProviderStatus status,
   required PlatformInt64 observedAtSeconds,
 }) => RustLib.instance.api.crateApiSyncObserveSwapReceivingOperation(
   dbPath: dbPath,

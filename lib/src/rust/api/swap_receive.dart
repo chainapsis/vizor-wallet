@@ -9,20 +9,18 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `network`
 
-/// Resumes a draft or reserves the lowest eligible index and verifies its history and recent tail.
+/// Resumes a draft or reserves the lowest eligible index, scanned from the next block.
 /// Does not start or restart ordinary wallet sync.
 Future<ReceiveReservation> prepareReceiveReservation({
   required String dbPath,
   required String networkName,
   required String accountUuid,
   required BigInt liveTip,
-  required String lightwalletdUrl,
 }) => RustLib.instance.api.crateApiSwapReceivePrepareReceiveReservation(
   dbPath: dbPath,
   networkName: networkName,
   accountUuid: accountUuid,
   liveTip: liveTip,
-  lightwalletdUrl: lightwalletdUrl,
 );
 
 /// Persists an unknown outcome and scan watch before sending a provider quote request.
@@ -102,7 +100,7 @@ Future<void> observeReceiveQuote({
   required String networkName,
   required String accountUuid,
   required String requestId,
-  required String status,
+  required SwapProviderStatus status,
   required bool funded,
   required PlatformInt64 checkedAtSeconds,
 }) => RustLib.instance.api.crateApiSwapReceiveObserveReceiveQuote(
@@ -115,17 +113,15 @@ Future<void> observeReceiveQuote({
   checkedAtSeconds: checkedAtSeconds,
 );
 
-/// Rechecks eligible abandoned addresses against PIR and releases only verified empty ones.
+/// Releases eligible abandoned addresses that local scanning shows are still unpaid.
 Future<int> reapReceiveReservations({
   required String dbPath,
   required String networkName,
   required String accountUuid,
-  required String lightwalletdUrl,
 }) => RustLib.instance.api.crateApiSwapReceiveReapReceiveReservations(
   dbPath: dbPath,
   networkName: networkName,
   accountUuid: accountUuid,
-  lightwalletdUrl: lightwalletdUrl,
 );
 
 /// Provider lookup for a persisted quote, including quotes never started in the UI.
@@ -154,7 +150,7 @@ class ReceiveQuoteStatusRequest {
           depositMemo == other.depositMemo;
 }
 
-/// An account-scoped durable receive draft; its address has complete canonical discovery coverage.
+/// An account-scoped durable receive draft, whose key is scanned from issuance.
 class ReceiveReservation {
   final PlatformInt64 id;
   final BigInt index;
@@ -177,4 +173,41 @@ class ReceiveReservation {
           id == other.id &&
           index == other.index &&
           address == other.address;
+}
+
+/// The NEAR 1Click status fields that decide when a swap key stops scanning.
+/// Amounts are base-unit decimal strings, as the provider reports them.
+class SwapProviderStatus {
+  final String status;
+  final String? swapType;
+  final String? refundedAmount;
+  final String? amountOut;
+  final PlatformInt64? deadlineSeconds;
+
+  const SwapProviderStatus({
+    required this.status,
+    this.swapType,
+    this.refundedAmount,
+    this.amountOut,
+    this.deadlineSeconds,
+  });
+
+  @override
+  int get hashCode =>
+      status.hashCode ^
+      swapType.hashCode ^
+      refundedAmount.hashCode ^
+      amountOut.hashCode ^
+      deadlineSeconds.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SwapProviderStatus &&
+          runtimeType == other.runtimeType &&
+          status == other.status &&
+          swapType == other.swapType &&
+          refundedAmount == other.refundedAmount &&
+          amountOut == other.amountOut &&
+          deadlineSeconds == other.deadlineSeconds;
 }

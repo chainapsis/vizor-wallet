@@ -8,6 +8,7 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../core/storage/wallet_paths.dart';
+import '../../../rust/api/swap_receive.dart' show SwapProviderStatus;
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../ledger/services/ledger_operation_lifecycle.dart';
 import '../models/swap_intent_presentation_mapper.dart';
@@ -89,7 +90,18 @@ final swapActivityTrackerProvider = Provider<SwapActivityTracker>((ref) {
           accountUuid: accountUuid,
           operationId: intent.depositAddress ?? intent.id,
           address: address,
-          status: status,
+          status: SwapProviderStatus(
+            status: status,
+            swapType: intent.providerSwapType,
+            refundedAmount: intent.refundedAmountBaseUnits,
+            amountOut: intent.amountOutBaseUnits,
+            deadlineSeconds: switch (intent.depositDeadline) {
+              final deadline? => PlatformInt64Util.from(
+                deadline.millisecondsSinceEpoch ~/ 1000,
+              ),
+              null => null,
+            },
+          ),
           observedAtSeconds: PlatformInt64Util.from(
             observedAt.millisecondsSinceEpoch ~/ 1000,
           ),
