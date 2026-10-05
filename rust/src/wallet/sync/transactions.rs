@@ -26,7 +26,7 @@ use rusqlite::{types::Value, vtab::array::Array, OptionalExtension};
 use transparent::address::TransparentAddress;
 use zcash_client_backend::data_api::{
     transparent_ledger::{
-        DetailCompleteness, FeeState, HistoryClassification, RecoveryBlocker,
+        AggregatePayment, DetailCompleteness, FeeState, HistoryClassification, RecoveryBlocker,
         TransactionHistoryDetails, TransparentAuthority, TransparentLedgerBalance,
         TransparentLedgerMode, TransparentLedgerRead, TransparentLedgerSnapshot,
     },
@@ -699,6 +699,12 @@ struct HistoryCompleteness {
     details_complete: bool,
     provisional: bool,
     fee: Fee,
+    /// The exact payment outside the account that the library reconstructed
+    /// from recovered transaction metadata (private recovery: the account
+    /// funded every transparent input of a transaction with no shielded
+    /// components, and the whole fee is known), when no local record exists.
+    /// The recipients themselves stay unknown.
+    inferred_payment: Option<u64>,
 }
 
 impl HistoryCompleteness {
@@ -713,6 +719,7 @@ impl HistoryCompleteness {
                 (true, Some(fee)) => Fee::Known(fee),
                 (true, None) => Fee::Unknown,
             },
+            inferred_payment: None,
         }
     }
 
@@ -731,6 +738,18 @@ impl HistoryCompleteness {
                 FeeState::Unknown => Fee::Unknown,
                 FeeState::NotApplicable => Fee::NotApplicable,
             },
+            inferred_payment: match details.aggregate_payment {
+                AggregatePayment::Exact(amount)
+                    if details.classification == HistoryClassification::Reconstructed
+                        && details
+                            .transaction_metadata
+                            .as_ref()
+                            .is_some_and(|e| !e.metadata.has_shielded_components) =>
+                {
+                    Some(amount.into_u64())
+                }
+                _ => None,
+            },
         }
     }
 
@@ -741,6 +760,7 @@ impl HistoryCompleteness {
             details_complete: false,
             provisional: true,
             fee: fee.map_or(Fee::Unknown, Fee::Known),
+            inferred_payment: None,
         }
     }
 
@@ -2058,6 +2078,23 @@ fn classify_history_tx(
         )];
     }
 
+    // Private recovery reconstructed the exact payment of a transparent-only
+    // debit the account fully funded, but not its recipients: no output it
+    // paid is visible, so the outputs it knows of are change and none of them
+    // is shown as a receive. The payment went to transparent outputs.
+    if let Some(payment) = base.history.inferred_payment {
+        if payment > 0 && base.account_balance_delta < 0 && summary.sent.output_count == 0 {
+            return vec![build_classified_tx(
+                base,
+                "sent",
+                payment,
+                "transparent",
+                true,
+                1,
+            )];
+        }
+    }
+
     // Discovery found this debit but not where the value went. The outputs it
     // knows of can only be change, so none of them is shown as a receive, and
     // the net debit less any recorded fee is all that can be shown of the
@@ -2779,6 +2816,7 @@ mod tests {
                 details_complete: true,
                 provisional: false,
                 fee: Fee::Known(20_000),
+                inferred_payment: None,
             },
         }
     }
@@ -2828,6 +2866,7 @@ mod tests {
             details_complete: false,
             provisional: true,
             fee: Fee::Unknown,
+            inferred_payment: None,
         });
         let mut summary = ActivitySummary::default();
         // The change arrived on an address that reads as a receive.
@@ -2913,6 +2952,7 @@ mod tests {
             details_complete: true,
             provisional: false,
             fee: Fee::Known(10_000),
+            inferred_payment: None,
         };
 
         let rows = classify_history_tx(&base, &summary, Fee::NotApplicable);
@@ -2920,6 +2960,95 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].info.tx_kind, "received");
         assert!(!rows[0].info.provisional);
+    }
+
+    /// Private recovery's view of a transparent-only send the account fully
+    /// funded: the library reconstructed the exact payment from the recovered
+    /// metadata, and only the change is visible.
+    #[test]
+    fn a_recovered_send_with_change_is_its_exact_payment_not_a_receive() {
+        let (mut base, summary) = provisional_debit();
+        base.history = HistoryCompleteness {
+            details_complete: false,
+            provisional: false,
+            fee: Fee::Known(10_000),
+            inferred_payment: Some(69_990_000),
+        };
+
+        let rows = classify_history_tx(&base, &summary, Fee::NotApplicable);
+
+        assert_eq!(rows.len(), 1);
+        let info = &rows[0].info;
+        assert_eq!(info.tx_kind, "sent");
+        assert_eq!(info.display_amount, 69_990_000);
+        assert_eq!(info.display_pool, "transparent");
+        assert_eq!(info.fee_state, TransactionFeeState::Known);
+        assert_eq!(info.fee, 10_000);
+        assert!(!info.details_complete, "the recipients stay unknown");
+
+        // Without change it is still the payment, never an unknown zero.
+        base.history.inferred_payment = Some(base.account_balance_delta.unsigned_abs() - 10_000);
+        let rows = classify_history_tx(&base, &ActivitySummary::default(), Fee::NotApplicable);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].info.tx_kind, "sent");
+        assert_eq!(rows[0].info.display_amount, 69_990_000);
+    }
+
+    #[test]
+    fn only_a_reconstructed_transparent_only_payment_is_inferred() {
+        use zcash_client_backend::data_api::transparent_ledger::{
+            AccountMovement, MetadataProvenance, TransactionMetadata, TransactionMetadataEvidence,
+            WholeTransactionFee,
+        };
+        use zcash_protocol::value::Zatoshis;
+
+        let evidence = |has_shielded_components| TransactionMetadataEvidence {
+            metadata: TransactionMetadata {
+                fee: WholeTransactionFee::Exact(Zatoshis::from_u64(10_000).unwrap()),
+                transparent_input_count: 1,
+                has_shielded_components,
+            },
+            provenance: vec![MetadataProvenance {
+                source: vec![1],
+                revision: vec![2],
+                lineage: 0,
+            }],
+        };
+        let mut details = TransactionHistoryDetails {
+            transaction_metadata: Some(evidence(false)),
+            aggregate_payment: AggregatePayment::Exact(Zatoshis::from_u64(50_000).unwrap()),
+            account_movement: AccountMovement {
+                received: 40_000,
+                spent: 100_000,
+                complete: true,
+            },
+            txid: TxId::from_bytes([1; 32]),
+            mined_height: None,
+            effects: vec![],
+            payment_details: DetailCompleteness::Incomplete,
+            fee: FeeState::Known(Zatoshis::from_u64(10_000).unwrap()),
+            classification: HistoryClassification::Reconstructed,
+            pending_private_details: vec![],
+        };
+        assert_eq!(
+            HistoryCompleteness::of(&details).inferred_payment,
+            Some(50_000)
+        );
+
+        // A local record's payment, a provisional one, public evidence, and
+        // shielded components are not a reconstructed transparent payment.
+        details.classification = HistoryClassification::LocalIntent;
+        assert_eq!(HistoryCompleteness::of(&details).inferred_payment, None);
+        details.classification = HistoryClassification::Provisional;
+        assert_eq!(HistoryCompleteness::of(&details).inferred_payment, None);
+        details.classification = HistoryClassification::Reconstructed;
+        details.transaction_metadata = None;
+        assert_eq!(HistoryCompleteness::of(&details).inferred_payment, None);
+        details.transaction_metadata = Some(evidence(true));
+        assert_eq!(HistoryCompleteness::of(&details).inferred_payment, None);
+        details.transaction_metadata = Some(evidence(false));
+        details.aggregate_payment = AggregatePayment::Partial(Zatoshis::from_u64(50_000).unwrap());
+        assert_eq!(HistoryCompleteness::of(&details).inferred_payment, None);
     }
 
     #[test]
@@ -3055,6 +3184,7 @@ mod tests {
             details_complete: false,
             provisional: true,
             fee: Fee::Unknown,
+            inferred_payment: None,
         });
         assert!(!base.is_shielding);
 
@@ -3064,6 +3194,7 @@ mod tests {
             details_complete: true,
             provisional: false,
             fee: Fee::Known(10_000),
+            inferred_payment: None,
         });
         assert!(base.is_shielding);
     }
