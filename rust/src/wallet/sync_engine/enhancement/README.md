@@ -749,15 +749,16 @@ there is no separate release gate.
 ## Library dependency
 
 The four patched library crates and the `zakura-pir-transparent` adapter share
-one wallet-libraries revision, `b877e37bf2246949acffbd4118473b8228d4f767`: the
-head of the private transparent recovery mega PR (`claude/tpir-private-mode`),
-which carries every library stack from main `8897057f0`. It adds the trusted
-operation `qualify_and_apply_transparent_ledger_commit` (#98), removes the
-unused recovery-work query (#99), and gives the adapter caller transports and
-a narrowed API (#100), the wallet chain view, birthday floor, publication-lag
+one wallet-libraries revision, `bdebaffcb5d52138c702fde6c78bd079293ebb3d`:
+merged `main` after #97–#103, which carry every library change this branch
+needs. It adds the trusted operation
+`qualify_and_apply_transparent_ledger_commit` (#98), removes the unused
+recovery-work query (#99), and gives the adapter caller transports and a
+narrowed API (#100), the wallet chain view, birthday floor, publication-lag
 clamp and mainnet check (#101), stable sources, published lineage, batch
-states and cache pruning (#102), and explicit reconciliation of resolved
-withdrawals. Trusted qualification, rather than candidate observation,
+states, cache pruning and explicit reconciliation of resolved withdrawals
+(#102), and the end-to-end test against an in-process shard service (#103).
+Trusted qualification, rather than candidate observation,
 authorizes provisional revision replacement; the replacement regression runs a
 trusted fixture under `PrivateRequired`. The pin adds no wallet migration and
 no reader-version change. Reader version 6 state is not supported by version 5
