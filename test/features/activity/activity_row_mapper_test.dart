@@ -10,6 +10,8 @@ import 'package:zcash_wallet/src/features/activity/models/activity_row_data.dart
 import 'package:zcash_wallet/src/features/activity/transaction_completeness.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
+import '../../fixtures/private_shielding_activity.dart';
+
 void main() {
   Future<ActivityRowData> mapRow(
     WidgetTester tester,
@@ -338,6 +340,33 @@ void main() {
     );
     expect(publicIncomplete.amountSubtitle, isNull);
   });
+
+  testWidgets(
+    'a privately recovered shielding is a complete Shielded row, not a Sent',
+    (tester) async {
+      final cases = loadPrivateShieldingCases(
+        txidHex: 'ab12cd34',
+        minedHeight: BigInt.from(3498120),
+        blockTime: BigInt.from(1790520240),
+      );
+      final expected = ['0.0018 ZEC', '0.004 ZEC'];
+      expect(cases, hasLength(expected.length));
+      for (final (index, shielding) in cases.indexed) {
+        final row = await mapRow(
+          tester,
+          shielding.transaction,
+          privateQueriesEnabled: true,
+        );
+        expect(row.title, 'Shielded');
+        expect(row.leadingIconName, AppIcons.shieldKeyholeOutline);
+        expect(
+          row.amountText,
+          activityAmountTextForFormFactor(expected[index]),
+        );
+        expect(row.amountSubtitle, isNull, reason: 'details are complete');
+      }
+    },
+  );
 
   testWidgets('a failed entry keeps its refund note', (tester) async {
     final row = await mapRow(
