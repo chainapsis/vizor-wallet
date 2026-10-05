@@ -134,6 +134,10 @@ The desktop app layer (`--profile private --flutter desktop`):
   directory and serves until the runner creates `tpir-stop` there; the app's
   requests and violations go to `pir-requests.json` under `app`. An app that
   makes no private query is a violation.
+- The app reaches lightwalletd through the Rust layer's recording proxy. Its
+  requests by method go to `pir-requests.json` under `app.lightwalletd`; any
+  that names a transparent subject (an address method or `GetTransaction`)
+  is a violation.
 - The runner passes the macOS app, which inherits `flutter test`'s
   environment, `ZCASH_E2E_REGTEST_PRIVATE_TRANSPARENT=1` and
   `VIZOR_TRANSPARENT_PIR_URL`, and builds it with

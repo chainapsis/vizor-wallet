@@ -366,7 +366,11 @@ Future<List<String>> thVerifyActivity(
   for (final row in rows.where((r) => r.account == account)) {
     final finder = _rowFinder(row);
     if (!await _reveal(tester, finder, dragAt)) {
-      if (!row.optional) failures.add('${row.label}: no activity row');
+      if (row.optional) {
+        debugPrint('[th-e2e] ${row.label}: optional row not shown');
+      } else {
+        failures.add('${row.label}: no activity row');
+      }
       continue;
     }
     final texts = _textsIn(tester, finder.first);

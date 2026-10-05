@@ -355,14 +355,16 @@ impl Suite {
 
     /// Hands the live chain to the Flutter layer: app-layer expectations from
     /// the oracle (fresh restore), plus a 0600 env file in the runner's
-    /// private directory with the runtime mnemonics and, in the private
-    /// profile, the transparent PIR origin `tpir_url` the app recovers from.
-    /// The runner deletes it as soon as it has read it; nothing under `out`
-    /// contains a mnemonic.
+    /// private directory with the runtime mnemonics, the lightwalletd origin
+    /// `lwd_url` the app syncs from and, in the private profile, the
+    /// transparent PIR origin `tpir_url` the app recovers from. The runner
+    /// deletes it as soon as it has read it; nothing under `out` contains a
+    /// mnemonic.
     pub fn handoff(
         &mut self,
         chain: &Chain,
         dir: &Path,
+        lwd_url: &str,
         a0: &Party,
         a1: &Party,
         tpir_url: Option<&str>,
@@ -392,7 +394,7 @@ impl Suite {
         let path = dir.join("handoff.env");
         let mut body = format!(
             "TH_LWD_URL='{}'\nTH_RPC_URL='{}'\nTH_A0_MNEMONIC='{}'\nTH_A1_MNEMONIC='{}'\nTH_EXPECTED_UI='{}'\n",
-            chain.lwd_url(),
+            lwd_url,
             chain.rpc_url(),
             a0.mnemonic,
             a1.mnemonic,

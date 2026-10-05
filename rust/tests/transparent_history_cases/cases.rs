@@ -24,6 +24,7 @@ use crate::{
     chain::Chain,
     faucet::Faucet,
     keys::{tex_address, Party, Scope},
+    proxy::{Proxy, RequestRecord},
     publication::Publisher,
     report::{Attribution, Suite},
     signer::{self, Coin, Out},
@@ -1023,6 +1024,9 @@ impl Ctx {
             ),
         )
         .unwrap();
+        // The private app layer reaches lightwalletd through a recording
+        // proxy, so its requests are checked like the Rust layer's.
+        let mut app_proxy = None;
         if let Ok(dir) = std::env::var("TH_FLUTTER_HANDOFF_DIR") {
             // An unmined receive the app's mempool observer should show as
             // in progress (H12 pending, app layer).
@@ -1032,12 +1036,18 @@ impl Ctx {
                 self.suite
                     .tx("H12", &txid, "Z", "pending_receive", Attribution::default());
             }
+            let tpir_url = crate::publication::global().map(Publisher::url);
+            app_proxy = tpir_url.map(|_| Proxy::start(&self.chain.lwd_url()));
+            let lwd_url = app_proxy
+                .as_ref()
+                .map_or_else(|| self.chain.lwd_url(), |proxy| proxy.url.clone());
             self.suite.handoff(
                 &self.chain,
                 Path::new(&dir),
+                &lwd_url,
                 &self.a0,
                 &self.a1,
-                crate::publication::global().map(Publisher::url),
+                tpir_url,
             );
         }
         for (label, elapsed) in &self.timings {
@@ -1073,14 +1083,29 @@ impl Ctx {
                     status.max(1)
                 };
                 if let Ok(dir) = std::env::var("TH_FLUTTER_HANDOFF_DIR") {
-                    let (routes, violations) = serve_app_layer(publisher, Path::new(&dir), status);
+                    let (routes, mut violations) =
+                        serve_app_layer(publisher, Path::new(&dir), status);
+                    let lightwalletd = app_proxy.as_ref().map(|proxy| {
+                        let summary = lightwalletd_summary(&proxy.take_requests());
+                        let named = summary["with_transparent_subject"].as_u64().unwrap_or(0);
+                        if named > 0 {
+                            violations.push(format!(
+                                "{named} lightwalletd requests named a transparent subject"
+                            ));
+                        }
+                        summary
+                    });
                     for violation in &violations {
                         eprintln!("[tpir] app layer privacy violation: {violation}");
                     }
                     if !violations.is_empty() {
                         status = status.max(1);
                     }
-                    requests["app"] = json!({"routes": routes, "violations": violations});
+                    requests["app"] = json!({
+                        "routes": routes,
+                        "violations": violations,
+                        "lightwalletd": lightwalletd,
+                    });
                     crate::report::write_json(&path, &requests);
                 }
                 status
@@ -1088,6 +1113,36 @@ impl Ctx {
             None => status,
         }
     }
+}
+
+/// lightwalletd methods that name a transparent subject: an address, or a
+/// txid (`GetTransaction`).
+const TRANSPARENT_SUBJECT_METHODS: &[&str] = &[
+    "GetAddressUtxos",
+    "GetAddressUtxosStream",
+    "GetTaddressTxids",
+    "GetTaddressTransactions",
+    "GetTaddressBalance",
+    "GetTaddressBalanceStream",
+    "GetTransaction",
+];
+
+/// The app layer's lightwalletd requests by method, and how many named a
+/// transparent subject.
+fn lightwalletd_summary(requests: &[RequestRecord]) -> serde_json::Value {
+    let mut methods = BTreeMap::<&str, usize>::new();
+    for request in requests {
+        *methods.entry(request.method.as_str()).or_default() += 1;
+    }
+    let named = requests
+        .iter()
+        .filter(|r| TRANSPARENT_SUBJECT_METHODS.contains(&r.method.as_str()))
+        .count();
+    json!({
+        "requests": requests.len(),
+        "with_transparent_subject": named,
+        "methods": methods,
+    })
 }
 
 /// Longest the Rust layer serves the app layer for a runner that never says
