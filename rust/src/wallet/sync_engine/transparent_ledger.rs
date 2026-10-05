@@ -94,7 +94,7 @@ const RUN_BUDGET: Duration = Duration::from_secs(180);
 const PASS_BACKSTOP: Duration = Duration::from_secs(pir::PASS_DEADLINE.as_secs() + 30);
 /// How long an account that cannot progress is skipped.
 const HOLD: Duration = Duration::from_secs(60 * 60);
-/// Consecutive stalled runs that hold an account.
+/// Stalled runs, since the account's last complete one, that hold it.
 const STALL_RUNS_BEFORE_HOLD: usize = 3;
 
 /// What a source is asked about one account.
@@ -241,7 +241,8 @@ pub(crate) enum HoldCause {
     /// Promotion found legacy public evidence the complete ledger cannot
     /// explain, which retrying does not change.
     LegacyDiscrepancy,
-    /// [`STALL_RUNS_BEFORE_HOLD`] runs in a row ended stalled.
+    /// [`STALL_RUNS_BEFORE_HOLD`] runs ended stalled since the account's last
+    /// complete one.
     Stalled,
 }
 
@@ -251,7 +252,8 @@ pub(crate) fn recovery_hold(db_path: &str, account: AccountUuid) -> Option<HoldC
     hold_at(db_path, account, Instant::now())
 }
 
-/// One account's hold and its count of consecutive stalled runs.
+/// One account's hold and its count of stalled runs since its last complete
+/// one.
 #[derive(Clone, Copy, Debug, Default)]
 struct Hold {
     held: Option<(HoldCause, Instant)>,
@@ -285,9 +287,10 @@ fn set_hold(db_path: &str, account: AccountUuid, cause: HoldCause, now: Instant)
         .held = Some((cause, now + HOLD));
 }
 
-/// Counts a run whose passes ended stalled. The last of
-/// [`STALL_RUNS_BEFORE_HOLD`] in a row holds the account and restarts the
-/// count. Returns whether it held the account.
+/// Counts a run whose passes ended stalled. Only a complete run clears the
+/// count, so a stall that persists while other runs end waiting for a lagging
+/// publication is still held. The [`STALL_RUNS_BEFORE_HOLD`]th holds the
+/// account and restarts the count. Returns whether it held the account.
 fn record_stall(db_path: &str, account: AccountUuid, now: Instant) -> bool {
     let mut holds = holds();
     let hold = holds.entry((db_path.to_owned(), account)).or_default();
