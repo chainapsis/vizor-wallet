@@ -577,6 +577,37 @@ async fn cancelling_a_pass_waits_for_the_blocking_task() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_dropped_pass_stops_at_its_next_request() {
+    let wallet = main_wallet(1);
+    let account = wallet.accounts[0].1;
+    let watch = watched_by(&wallet, account);
+    let finished = Arc::new(AtomicBool::new(false));
+    // The service answers the first request after the call is dropped, as
+    // when the coordinator's backstop abandons it.
+    let seam = test_transport::set(&wallet.path, {
+        let finished = finished.clone();
+        RequestObserver::answering(move |_| {
+            std::thread::sleep(Duration::from_millis(300));
+            finished.store(true, Ordering::SeqCst);
+            reply(200, shard_map(BIRTHDAY - 100))
+        })
+    });
+
+    let source = TransparentPirSource::new(&wallet.path, MAIN);
+    let stay = || false;
+    let call = source.recover(request(account, &watch, &stay));
+    assert!(tokio::time::timeout(Duration::from_millis(50), call)
+        .await
+        .is_err());
+    while !finished.load(Ordering::SeqCst) {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    // The detached pass sent nothing after the first answer.
+    assert_eq!(paths(&seam.seam.observer.requests()), [MAP]);
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_pass_past_its_deadline_fails_without_committing() {
     static ORIGIN: OnceLock<Instant> = OnceLock::new();
     static SKEW: AtomicU64 = AtomicU64::new(0);

@@ -23,10 +23,12 @@
 //! the same companion and nothing removes it in between.
 //!
 //! A pass runs on a blocking thread, over a read-only wallet handle for the
-//! chain view, and stops at cancellation or [`PASS_DEADLINE`]. The async side
-//! always waits for it, so no companion or wallet handle outlives a cancelled
-//! pass. Logs carry variant and cause names and lag in blocks, never
-//! identifiers, digests, scripts or adapter error text.
+//! chain view, and stops at cancellation or [`PASS_DEADLINE`], counted from
+//! the call. On cancellation the async side waits for it, so no companion or
+//! wallet handle outlives a cancelled pass; a call dropped before the pass
+//! returns, as at the coordinator's backstop, stops it at its next request.
+//! Logs carry variant and cause names and lag in blocks, never identifiers,
+//! digests, scripts or adapter error text.
 
 use std::collections::{BTreeSet, HashMap};
 use std::io;
@@ -64,8 +66,8 @@ const SOURCE: &[u8] = b"vizor/transparent-pir/v1";
 /// Appended to the wallet path to name its companion directory.
 pub(crate) const COMPANION_DIR_SUFFIX: &str = ".tpir";
 
-/// Wall-clock bound on one pass, a publication-change retry included. Requests
-/// stop at it, and the pass fails.
+/// Wall-clock bound on one pass, from the call, a companion-lock wait and a
+/// publication-change retry included. Requests stop at it, and the pass fails.
 pub(crate) const PASS_DEADLINE: Duration = Duration::from_secs(90);
 
 /// Watched scripts one pass may cover.
@@ -223,6 +225,9 @@ impl RecoverySource for TransparentPirSource {
         if should_exit() {
             return Err(SourceError::Cancelled);
         }
+        // Counted before any wait, so the pass always ends before the
+        // coordinator's backstop abandons the call.
+        let deadline = (self.clock)() + PASS_DEADLINE;
         let mut parked = self.parked.lock().await;
         let slot = match parked.remove(&account) {
             Some(held) => Slot::Parked(Box::new(held)),
@@ -237,6 +242,9 @@ impl RecoverySource for TransparentPirSource {
             }
         };
         let cancel = Arc::new(AtomicBool::new(false));
+        // A dropped call stops the pass at its next request instead of leaving
+        // it running detached.
+        let _cancel_on_drop = CancelOnDrop(cancel.clone());
         let pass = Pass {
             db_path: self.db_path.clone(),
             network: self.network,
@@ -246,7 +254,7 @@ impl RecoverySource for TransparentPirSource {
             handle: Handle::current(),
             cancel: cancel.clone(),
             clock: self.clock,
-            deadline: (self.clock)() + PASS_DEADLINE,
+            deadline,
             #[cfg(test)]
             transport,
         };
@@ -349,6 +357,15 @@ impl RecoverySource for TransparentPirSource {
             );
             SourceError::Failed
         })
+    }
+}
+
+/// Sets a pass's cancellation flag when dropped.
+struct CancelOnDrop(Arc<AtomicBool>);
+
+impl Drop for CancelOnDrop {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::SeqCst);
     }
 }
 
