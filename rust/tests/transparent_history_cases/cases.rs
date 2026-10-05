@@ -14,6 +14,7 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
+    path::Path,
     time::{Duration, Instant},
 };
 
@@ -1031,8 +1032,13 @@ impl Ctx {
                 self.suite
                     .tx("H12", &txid, "Z", "pending_receive", Attribution::default());
             }
-            self.suite
-                .handoff(&self.chain, std::path::Path::new(&dir), &self.a0, &self.a1);
+            self.suite.handoff(
+                &self.chain,
+                Path::new(&dir),
+                &self.a0,
+                &self.a1,
+                crate::publication::global().map(Publisher::url),
+            );
         }
         for (label, elapsed) in &self.timings {
             eprintln!("[timing] {label}: {:.1}s", elapsed.as_secs_f64());
@@ -1050,27 +1056,77 @@ impl Ctx {
             Some(publisher) => {
                 // Every request the transparent PIR service received, by
                 // route, and every privacy violation (which fails the run).
+                let path = self.suite.out.join("pir-requests.json");
                 let violations = publisher.privacy_violations();
-                crate::report::write_json(
-                    &self.suite.out.join("pir-requests.json"),
-                    &json!({
-                        "origin": publisher.url(),
-                        "routes": publisher.route_counts(),
-                        "violations": violations,
-                    }),
-                );
+                let mut requests = json!({
+                    "origin": publisher.url(),
+                    "routes": publisher.route_counts(),
+                    "violations": violations,
+                });
+                crate::report::write_json(&path, &requests);
                 for violation in &violations {
                     eprintln!("[tpir] privacy violation: {violation}");
                 }
-                if violations.is_empty() {
+                let mut status = if violations.is_empty() {
                     status
                 } else {
                     status.max(1)
+                };
+                if let Ok(dir) = std::env::var("TH_FLUTTER_HANDOFF_DIR") {
+                    let (routes, violations) = serve_app_layer(publisher, Path::new(&dir), status);
+                    for violation in &violations {
+                        eprintln!("[tpir] app layer privacy violation: {violation}");
+                    }
+                    if !violations.is_empty() {
+                        status = status.max(1);
+                    }
+                    requests["app"] = json!({"routes": routes, "violations": violations});
+                    crate::report::write_json(&path, &requests);
                 }
+                status
             }
             None => status,
         }
     }
+}
+
+/// Longest the Rust layer serves the app layer for a runner that never says
+/// it is done.
+const APP_LAYER_SERVICE_LIMIT: Duration = Duration::from_secs(3 * 60 * 60);
+
+/// Keeps the transparent PIR service up for the app layer once the Rust
+/// layer is done: the final publication on the same origin, H13's faults
+/// cleared, and a fresh request record. Writes `tpir-ready` (holding the Rust
+/// layer's status) to the runner's handoff directory `dir`, then serves
+/// until the runner creates `tpir-stop` there, removes the directory, or
+/// [`APP_LAYER_SERVICE_LIMIT`] passes. Returns the app layer's requests by
+/// route and its privacy violations, which include the positive controls: an
+/// app that made no private query is a violation.
+fn serve_app_layer(
+    publisher: &Publisher,
+    dir: &Path,
+    rust_status: i32,
+) -> (BTreeMap<String, usize>, Vec<String>) {
+    publisher.set_lag(0);
+    publisher.fail_queries(false);
+    publisher.catch_up();
+    publisher.reset_requests();
+    std::fs::write(dir.join("tpir-ready"), format!("{rust_status}\n"))
+        .expect("tell the runner the transparent PIR service is ready");
+    eprintln!(
+        "[tpir] serving the app layer on {} until the runner stops it",
+        publisher.url()
+    );
+    let deadline = Instant::now() + APP_LAYER_SERVICE_LIMIT;
+    while dir.is_dir() && !dir.join("tpir-stop").exists() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_secs(1));
+    }
+    let counts = publisher.route_counts();
+    eprintln!(
+        "[tpir] app layer: {} requests",
+        counts.values().sum::<usize>()
+    );
+    (counts, publisher.privacy_violations())
 }
 
 /// Observes every wallet, then has the oracle derive and compare.

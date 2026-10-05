@@ -355,9 +355,18 @@ impl Suite {
 
     /// Hands the live chain to the Flutter layer: app-layer expectations from
     /// the oracle (fresh restore), plus a 0600 env file in the runner's
-    /// private directory with the runtime mnemonics. The runner deletes it as
-    /// soon as it has read it; nothing under `out` contains a mnemonic.
-    pub fn handoff(&mut self, chain: &Chain, dir: &Path, a0: &Party, a1: &Party) {
+    /// private directory with the runtime mnemonics and, in the private
+    /// profile, the transparent PIR origin `tpir_url` the app recovers from.
+    /// The runner deletes it as soon as it has read it; nothing under `out`
+    /// contains a mnemonic.
+    pub fn handoff(
+        &mut self,
+        chain: &Chain,
+        dir: &Path,
+        a0: &Party,
+        a1: &Party,
+        tpir_url: Option<&str>,
+    ) {
         self.write_inputs();
         let ui = self.out.join("expected-ui.json");
         let (status, text) = self.oracle(&[
@@ -381,7 +390,7 @@ impl Suite {
         use base64::Engine as _;
         let encoded = base64::engine::general_purpose::STANDARD.encode(std::fs::read(&ui).unwrap());
         let path = dir.join("handoff.env");
-        let body = format!(
+        let mut body = format!(
             "TH_LWD_URL='{}'\nTH_RPC_URL='{}'\nTH_A0_MNEMONIC='{}'\nTH_A1_MNEMONIC='{}'\nTH_EXPECTED_UI='{}'\n",
             chain.lwd_url(),
             chain.rpc_url(),
@@ -389,6 +398,9 @@ impl Suite {
             a1.mnemonic,
             encoded
         );
+        if let Some(url) = tpir_url {
+            body.push_str(&format!("TH_TPIR_URL='{url}'\n"));
+        }
         {
             use std::io::Write as _;
             #[cfg(unix)]

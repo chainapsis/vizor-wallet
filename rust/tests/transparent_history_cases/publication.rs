@@ -25,6 +25,10 @@
 //! it arrives: it must take one of the service's routes, carry no query string,
 //! and carry none of Alice's scripts (bytes or hex) in its path, headers or
 //! body. Only route counts and violations are kept.
+//!
+//! With a Flutter layer to follow, the Rust layer's process keeps serving the
+//! final publication on the same origin after its gate, faults cleared, and
+//! records the app's requests apart from its own (`Ctx::finish`).
 
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -321,6 +325,24 @@ impl Publisher {
             None => violations.push("no watched script to check requests against".into()),
         }
         violations
+    }
+
+    /// Forgets every request received so far, so [`route_counts`] and
+    /// [`privacy_violations`] cover only later ones (the app layer's).
+    ///
+    /// [`route_counts`]: Self::route_counts
+    /// [`privacy_violations`]: Self::privacy_violations
+    pub fn reset_requests(&self) {
+        self.shared
+            .counts
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clear();
+        self.shared
+            .violations
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clear();
     }
 
     /// Requests received, by method and route template.
