@@ -5,13 +5,20 @@
 //! answers with a [`SourceBatch`]: a `Ready` batch's commits are applied in
 //! order, each in its own library transaction under the wallet write lock,
 //! and acknowledged to the source only once every one applied; a `Pending` or
-//! `Withdrawn` batch applies nothing.
+//! `Withdrawn` batch applies nothing and is never acknowledged.
 //!
 //! Under `PrivateRequired`, a trusted source's commits are qualified as they
 //! are applied (`qualify_and_apply_transparent_ledger_commit`): the
 //! trusted-indexer decision, which is what lets a recovered account be
 //! promoted. Commits of an untrusted source, or under `PrivateShadow`, are
 //! only applied, and never qualify an account for promotion.
+//!
+//! A `Ready` batch can resolve retired revisions, provisional revisions an
+//! earlier batch exported that its commits succeed. Only the trusted operation
+//! withdraws their evidence, so such a batch is acknowledged as reconciled
+//! only when every commit went through it. Otherwise the run acknowledges
+//! nothing and holds the account, and the source reports the retirements
+//! again until a trusted run reconciles them.
 //!
 //! A candidate account's state lives only in the library's `tpir_*` tables.
 //! It never changes balances, input selection, locks, address allocation, or
@@ -127,6 +134,11 @@ pub(crate) enum Continuation {
 pub(crate) enum SourceBatch {
     Ready {
         commits: Vec<TransparentLedgerCommit<AccountUuid>>,
+        /// The batch resolves retired revisions: provisional revisions an
+        /// earlier batch exported, each succeeded by one of `commits` for the
+        /// same source. It is acknowledged only as reconciled, after every
+        /// commit went through the trusted operation.
+        retired: bool,
         next: Continuation,
         /// Blocks between the watch set's target and the height the pass
         /// covered through.
@@ -168,9 +180,15 @@ pub(crate) trait RecoverySource {
     ) -> impl Future<Output = Result<SourceBatch, SourceError>> + Send;
 
     /// Settles `account`'s last `Ready` batch once every commit in it applied.
+    ///
+    /// `reconciled` confirms that every commit went through the trusted
+    /// operation, which resolves the batch's retired revisions. A batch with
+    /// retired revisions is settled only as reconciled; one without may be
+    /// settled either way.
     fn acknowledge(
         &self,
         account: AccountUuid,
+        reconciled: bool,
     ) -> impl Future<Output = Result<(), SourceError>> + Send;
 }
 
@@ -217,6 +235,9 @@ pub(crate) enum RunOutcome {
 pub(crate) enum HoldCause {
     /// The source withdrew a publication it had answered from.
     Withdrawn(WithdrawnCause),
+    /// A batch resolved retired revisions, but its commits did not go
+    /// through the trusted operation, the only one that reconciles them.
+    Unreconciled,
     /// Promotion found legacy public evidence the complete ledger cannot
     /// explain, which retrying does not change.
     LegacyDiscrepancy,
@@ -533,6 +554,7 @@ impl<S: RecoverySource> Run<'_, S> {
                 }
                 SourceBatch::Ready {
                     commits,
+                    retired,
                     next,
                     behind_by,
                 } => {
@@ -559,7 +581,19 @@ impl<S: RecoverySource> Run<'_, S> {
                         Applied::Skip => return Ok(AccountOutcome::Skipped),
                         Applied::Stop(outcome) => return Ok(AccountOutcome::Stop(outcome)),
                     };
-                    if self.source.acknowledge(account).await.is_err() {
+                    // Every commit of the run goes through the trusted
+                    // operation exactly when it qualifies. Without it nothing
+                    // withdrew the retired revisions' evidence, so nothing is
+                    // acknowledged, and the source reports them again.
+                    if retired && !self.qualify {
+                        log::warn!(
+                            "transparent ledger: retired revisions need trusted reconciliation; \
+                             holding the account"
+                        );
+                        set_hold(self.db_path, account, HoldCause::Unreconciled, clock());
+                        return Ok(AccountOutcome::Skipped);
+                    }
+                    if self.source.acknowledge(account, retired).await.is_err() {
                         log::warn!("transparent ledger: source refused an acknowledgment");
                         return Ok(AccountOutcome::Skipped);
                     }
