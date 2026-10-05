@@ -624,9 +624,11 @@ trusted, since every commit comes from the configured origin.
   companion and nothing removes it in between.
 - **Passes.** A pass runs on a blocking thread (`spawn_blocking`) over a
   read-only wallet handle, whose blocks answer the adapter's chain view up to
-  the watch set's target. It stops at cancellation or the 90 s pass deadline.
-  The async side always joins the thread, so no companion or handle outlives a
-  cancelled pass, and a pass that raced cancellation is discarded. A
+  the watch set's target. It stops at cancellation or the 90 s pass
+  deadline, counted from the call, so it ends before the coordinator's
+  backstop. On cancellation the async side joins the thread, so no companion
+  or handle outlives a cancelled pass, and a pass that raced cancellation is
+  discarded; a dropped call stops its pass at the next request. A
   publication whose set identity changed is retried once on the same
   companion, which the adapter has reset, keeping its catalog. The adapter's
   `retired_revisions()` becomes the batch's `retired` flag, and
