@@ -164,6 +164,14 @@ version = "=0.0.1-rc1"
 default-features = false
 features = ["wallet"]
 
+# Transparent PIR recovery adapter. A git dependency rather than a patched
+# crates.io package; see the `[patch.crates-io]` comment below.
+[dependencies.zakura-pir-transparent]
+git = "https://github.com/zakura-core/wallet-libraries"
+rev = "4e79d3a6591e1d72b163c9c703a198d6fef703d8"
+default-features = false
+features = ["wallet"]
+
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = { version = "3.7", features = ["OSX_10_15"] }
 
@@ -222,19 +230,28 @@ should_implement_trait = "allow"
 items_after_test_module = "allow"
 assertions_on_constants = "allow"
 
-# Phase 1 of the transparent PIR ledger is merged in wallet-libraries but not
-# released. Patch the crates.io packages rather than depending on git directly:
-# other dependencies (zakura-pir-enhance, zakura-transaction-status) reach
-# these crates through crates.io, and a direct git dependency would duplicate
-# them. `zakura-pczt` and `zakura-pir-enhance-types` are patched because the
-# git `zakura-client-backend` depends on them by path. Drop this once a release includes the revision.
-# Pinned to wallet-libraries main after PR #96: account-scoped history,
-# rewind re-confirmation, retained legacy projection, and spend discovery after expiry.
+# The transparent PIR ledger is in wallet-libraries but not released. Patch the
+# crates.io packages rather than depending on git directly: other dependencies
+# (zakura-pir-enhance, zakura-transaction-status) reach these crates through
+# crates.io, and a direct git dependency would duplicate them. `zakura-pczt`
+# and `zakura-pir-enhance-types` are patched because the git
+# `zakura-client-backend` depends on them by path. Drop this once a release
+# includes the revision.
+#
+# `zakura-pir-transparent` is the exception, a direct git dependency: it
+# depends on the wallet-pir transparent crates, which exist only in git (their
+# `pir-native` has `publish = false`), so it cannot be published. Keep its rev
+# equal to these so its path dependencies on the backend and SQLite crates
+# resolve to the patched sources.
+#
+# Pinned to the private transparent recovery integration base
+# (claude/tpir-pm-base): trusted qualification, the removed recovery-work
+# query, and the adapter's caller transports, wallet chain view and catalog.
 [patch.crates-io]
-zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries", rev = "8897057f0043b4c475e0da12340c4e0e426cea71" }
-zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries", rev = "8897057f0043b4c475e0da12340c4e0e426cea71" }
-zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries", rev = "8897057f0043b4c475e0da12340c4e0e426cea71" }
-zakura-pir-enhance-types = { git = "https://github.com/zakura-core/wallet-libraries", rev = "8897057f0043b4c475e0da12340c4e0e426cea71" }
+zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries", rev = "4e79d3a6591e1d72b163c9c703a198d6fef703d8" }
+zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries", rev = "4e79d3a6591e1d72b163c9c703a198d6fef703d8" }
+zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries", rev = "4e79d3a6591e1d72b163c9c703a198d6fef703d8" }
+zakura-pir-enhance-types = { git = "https://github.com/zakura-core/wallet-libraries", rev = "4e79d3a6591e1d72b163c9c703a198d6fef703d8" }
 
 # Flutter debug builds use Cargokit + Cargo's dev profile (`cargo build`
 # without `--release`). Rust crypto and voting flows are slow under the default
