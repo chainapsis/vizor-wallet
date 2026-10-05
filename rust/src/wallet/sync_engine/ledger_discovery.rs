@@ -25,7 +25,7 @@ use super::enhancement::EnhancementPolicy;
 use super::{next_stream_message, watch_for_exit, SyncError, TransparentLookupGate};
 use crate::wallet::{
     db::{
-        open_readonly_conn_with_timeout, open_wallet_raw_conn_with_timeout,
+        open_readonly_conn_with_timeout, open_wallet_raw_conn_with_timeout, wallet_db_on,
         with_wallet_db_write_lock, WalletDatabase, SYNC_DB_BUSY_TIMEOUT,
     },
     keys::{self, HardwareSignerKind},
@@ -65,7 +65,16 @@ fn table_exists(conn: &rusqlite::Connection) -> Result<bool, String> {
 }
 
 /// Read-only gate: a missing checkpoint means a Ledger import still needs recovery.
-pub(crate) fn is_ready(db_path: &str, account_id: AccountUuid) -> Result<bool, String> {
+///
+/// Ready while public transparent lookups are withheld from the wallet: its
+/// discovery cannot run then, and private recovery pauses the account, so
+/// waiting for it would block every sync. Its transparent funds stay
+/// unavailable, so its shielding gates still refuse.
+pub(crate) fn is_ready(
+    db_path: &str,
+    network: WalletNetwork,
+    account_id: AccountUuid,
+) -> Result<bool, String> {
     let conn = open_readonly_conn_with_timeout(db_path, Some(SYNC_DB_BUSY_TIMEOUT))?;
     let source: Option<String> = conn
         .query_row(
@@ -75,6 +84,14 @@ pub(crate) fn is_ready(db_path: &str, account_id: AccountUuid) -> Result<bool, S
         )
         .map_err(|e| e.to_string())?;
     if source.as_deref() != Some(keys::KEY_SOURCE_LEDGER) {
+        return Ok(true);
+    }
+    // A handle adopts a durable `PrivateRequired`, so it retains public
+    // authority only when neither the selection nor the wallet withholds it.
+    let mode = wallet_db_on(&conn, db_path, network)
+        .transparent_ledger_mode()
+        .map_err(|e| e.to_string())?;
+    if !mode.retains_public_authority() {
         return Ok(true);
     }
     if !table_exists(&conn)? {
@@ -329,7 +346,7 @@ async fn run_with<R: DiscoveryRpc>(
     }
     ensure_table(db_path)?;
     for id in accounts {
-        if is_ready(db_path, id).map_err(SyncError::db)? {
+        if is_ready(db_path, network, id).map_err(SyncError::db)? {
             continue;
         }
         for (scope_code, scope, gap) in [
@@ -926,7 +943,7 @@ mod tests {
             fail_address: None,
             hash: 1,
         };
-        assert!(!is_ready(&path, id).unwrap());
+        assert!(!is_ready(&path, WalletNetwork::Main, id).unwrap());
         run_with(
             &mut rpc,
             &mut db,
@@ -937,7 +954,7 @@ mod tests {
         )
         .await
         .unwrap();
-        assert!(is_ready(&path, id).unwrap());
+        assert!(is_ready(&path, WalletNetwork::Main, id).unwrap());
         assert_eq!(
             load(&path, id, 0).unwrap().unwrap().0,
             Progress {
@@ -1009,7 +1026,7 @@ mod tests {
                 unused: 3
             }
         );
-        assert!(!is_ready(&path, id).unwrap());
+        assert!(!is_ready(&path, WalletNetwork::Main, id).unwrap());
         drop(db);
         let mut db = crate::wallet::db::open_wallet_db_with_timeout(
             &path,
@@ -1030,7 +1047,7 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(rpc.queries.lock().unwrap().len(), 12);
-        assert!(is_ready(&path, id).unwrap());
+        assert!(is_ready(&path, WalletNetwork::Main, id).unwrap());
     }
     #[tokio::test]
     async fn cancelled_discovery_does_not_create_checkpoints() {
@@ -1051,7 +1068,7 @@ mod tests {
         )
         .await
         .unwrap();
-        assert!(!is_ready(&path, id).unwrap());
+        assert!(!is_ready(&path, WalletNetwork::Main, id).unwrap());
         assert!(rpc.queries.lock().unwrap().is_empty());
     }
 
@@ -1097,10 +1114,10 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(rpc.queries.lock().unwrap().len(), 15);
-        assert!(is_ready(&path, id).unwrap());
+        assert!(is_ready(&path, WalletNetwork::Main, id).unwrap());
         // Invalidation precedes the truncate, including when the wallet cannot rewind.
         let _ = truncate(&path, &mut db, BlockHeight::from_u32(2_599_999));
-        assert!(!is_ready(&path, id).unwrap());
+        assert!(!is_ready(&path, WalletNetwork::Main, id).unwrap());
         let conn = rusqlite::Connection::open(&path).unwrap();
         delete_account(&conn, id.expose_uuid().as_bytes()).unwrap();
         assert!(load(&path, id, 0).unwrap().is_none());
@@ -1135,7 +1152,7 @@ mod tests {
         .await
         .is_err());
         assert!(load(&path, id, 0).unwrap().unwrap().3);
-        assert!(!is_ready(&path, id).unwrap());
+        assert!(!is_ready(&path, WalletNetwork::Main, id).unwrap());
         rpc.hash = 2;
         rpc.fail_address = None;
         rpc.queries.lock().unwrap().clear();
@@ -1150,7 +1167,7 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(rpc.queries.lock().unwrap().len(), 15);
-        assert!(is_ready(&path, id).unwrap());
+        assert!(is_ready(&path, WalletNetwork::Main, id).unwrap());
     }
 
     #[tokio::test]
@@ -1191,10 +1208,24 @@ mod tests {
         .unwrap();
 
         assert!(rpc.queries.lock().unwrap().is_empty());
+        // Withheld discovery records no checkpoint, so it stays owed.
+        let conn = open_readonly_conn_with_timeout(&path, Some(SYNC_DB_BUSY_TIMEOUT)).unwrap();
         assert!(
-            !is_ready(&path, id).unwrap(),
+            !table_exists(&conn).unwrap(),
             "withheld scopes stay incomplete"
         );
+        // While lookups are withheld, the account does not hold back a sync.
+        assert!(is_ready(&path, WalletNetwork::Main, id).unwrap());
+        // Once they are public again, its discovery is owed.
+        crate::wallet::db::open_wallet_db_with_timeout(
+            &path,
+            WalletNetwork::Main,
+            SYNC_DB_BUSY_TIMEOUT,
+        )
+        .unwrap()
+        .apply_transparent_policy(TransparentLedgerMode::Public)
+        .unwrap();
+        assert!(!is_ready(&path, WalletNetwork::Main, id).unwrap());
     }
 
     #[tokio::test]
@@ -1235,6 +1266,6 @@ mod tests {
             Progress::default(),
             "answers after the transition are not checkpointed"
         );
-        assert!(!is_ready(&path, id).unwrap());
+        assert!(!is_ready(&path, WalletNetwork::Main, id).unwrap());
     }
 }

@@ -4529,45 +4529,11 @@ async fn run_sync_impl(
         .get_account_ids()
         .map_err(|e| SyncError::db(e.to_string()))?
     {
-        if !ledger_discovery::is_ready(db_data_path, id).map_err(SyncError::db)? {
+        if !ledger_discovery::is_ready(db_data_path, network, id).map_err(SyncError::db)? {
             return Err(SyncError::other(
                 "Ledger recovery was invalidated during sync; retrying",
             ));
         }
-    }
-    // Candidate transparent recovery runs at the fully scanned height, after
-    // the shielded scan settles. It keeps its own progress in the library and
-    // never fails the sync. A default build captures `Public`, so it returns
-    // before any read; with the development flag it may raise the durable
-    // policy, and the disabled source then stops it before any request.
-    match transparent_ledger::run(
-        &mut db,
-        db_data_path,
-        network,
-        enhancement.policy(),
-        &transparent_ledger::DisabledSource,
-        &should_exit,
-    )
-    .await
-    {
-        Ok(transparent_ledger::RunOutcome::Exited) => {
-            log::info!(
-                "[{}] sync: exiting during candidate transparent recovery",
-                elapsed()
-            );
-            return Ok(());
-        }
-        Ok(transparent_ledger::RunOutcome::NotEnabled) => {}
-        Ok(outcome) => log::info!(
-            "[{}] sync: candidate transparent recovery: {:?}",
-            elapsed(),
-            outcome
-        ),
-        Err(error) => log::warn!(
-            "[{}] sync: candidate transparent recovery failed: {}",
-            elapsed(),
-            error
-        ),
     }
     // Reconcile migration chain state only after the scan queue is fully
     // drained, then update generic wallet locks for denomination outputs that
@@ -4634,6 +4600,25 @@ async fn run_sync_impl(
         phase: String::new(),
     };
     progress_fn(final_progress);
+
+    // Private transparent recovery runs once completion is reported, so
+    // waiting for a lagging publication never delays the sync's own result.
+    if !should_exit() {
+        let first = current_active_sync_account(active_account_target)
+            .and_then(|uuid| keys::parse_account_uuid(&uuid).ok());
+        transparent_followup(
+            &mut db,
+            db_data_path,
+            network,
+            enhancement.policy(),
+            &transparent_ledger::TransparentPirSource::new(db_data_path, network),
+            first,
+            &should_exit,
+            progress_fn,
+            (final_scanned_height, final_tip_height),
+        )
+        .await;
+    }
 
     // Transparent receivers belonging to inactive accounts do not affect the
     // account-scoped balance shown for this completed foreground sync. Keep
@@ -4781,6 +4766,75 @@ async fn run_sync_impl(
     }
 
     Ok(())
+}
+
+/// Runs private transparent recovery once a sync has completed and reported
+/// completion at `completed` (scanned height, chain tip), then reports
+/// completion again, flagged with new transactions, so the UI re-reads the
+/// balances and shielding state the run may have restored.
+///
+/// Recovery keeps its own progress in the library and never fails the sync:
+/// errors and outcomes are only logged. A default build captures `Public`, so
+/// the run returns before any read, and nothing is re-reported; nor is it when
+/// the run exited.
+#[allow(clippy::too_many_arguments)]
+async fn transparent_followup<S: transparent_ledger::RecoverySource>(
+    db: &mut WalletDatabase,
+    db_data_path: &str,
+    network: WalletNetwork,
+    policy: EnhancementPolicy,
+    source: &S,
+    first: Option<AccountUuid>,
+    should_exit: &(dyn Fn() -> bool + Sync),
+    progress_fn: &(impl Fn(SyncProgressEvent) + Send + Sync),
+    completed: (u64, u64),
+) {
+    match transparent_ledger::run(
+        db,
+        db_data_path,
+        network,
+        policy,
+        source,
+        first,
+        std::time::Instant::now,
+        should_exit,
+    )
+    .await
+    {
+        Ok(transparent_ledger::RunOutcome::NotEnabled) => return,
+        Ok(transparent_ledger::RunOutcome::Exited) => {
+            log::info!(
+                "[{}] sync: exiting during private transparent recovery",
+                elapsed()
+            );
+            return;
+        }
+        Ok(outcome) => log::info!(
+            "[{}] sync: private transparent recovery: {:?}",
+            elapsed(),
+            outcome
+        ),
+        // Commits applied before the failure stay durable.
+        Err(error) => log::warn!(
+            "[{}] sync: private transparent recovery failed: {}",
+            elapsed(),
+            error
+        ),
+    }
+    let (scanned_height, chain_tip_height) = completed;
+    progress_fn(SyncProgressEvent {
+        scanned_height,
+        chain_tip_height,
+        percentage: 1.0,
+        display_target_percentage: 1.0,
+        display_target_blocks: 0,
+        is_syncing: false,
+        is_complete: true,
+        has_new_tx: true,
+        phase_completed_units: 0,
+        phase_total_units: 0,
+        phase: String::new(),
+    });
 }
 
 // ==================== Helpers ====================
