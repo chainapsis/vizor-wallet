@@ -12956,6 +12956,19 @@ impl SseDecode for Option<zcash_voting::wire::SubmissionDiagnosticView> {
     }
 }
 
+impl SseDecode for Option<crate::api::sync::TransparentStopReason> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::sync::TransparentStopReason>::sse_decode(
+                deserializer,
+            ));
+        } else {
+            return None;
+        }
+    }
+}
+
 impl SseDecode for Option<u16> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -14158,7 +14171,24 @@ impl SseDecode for crate::api::sync::TransparentBalanceAuthority {
             0 => crate::api::sync::TransparentBalanceAuthority::Current,
             1 => crate::api::sync::TransparentBalanceAuthority::LastKnown,
             2 => crate::api::sync::TransparentBalanceAuthority::Unavailable,
+            3 => crate::api::sync::TransparentBalanceAuthority::Stopped,
             _ => unreachable!("Invalid variant for TransparentBalanceAuthority: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::api::sync::TransparentStopReason {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::sync::TransparentStopReason::Quarantined,
+            1 => crate::api::sync::TransparentStopReason::Ledger,
+            2 => crate::api::sync::TransparentStopReason::LegacyDiscrepancy,
+            3 => crate::api::sync::TransparentStopReason::Withdrawn,
+            4 => crate::api::sync::TransparentStopReason::Stalled,
+            5 => crate::api::sync::TransparentStopReason::NotSelected,
+            _ => unreachable!("Invalid variant for TransparentStopReason: {}", inner),
         };
     }
 }
@@ -14395,6 +14425,9 @@ impl SseDecode for crate::api::sync::WalletBalance {
         let mut var_transparentAuthority =
             <crate::api::sync::TransparentBalanceAuthority>::sse_decode(deserializer);
         let mut var_transparentLastKnown = <Option<u64>>::sse_decode(deserializer);
+        let mut var_transparentStop =
+            <Option<crate::api::sync::TransparentStopReason>>::sse_decode(deserializer);
+        let mut var_transparentPrivate = <bool>::sse_decode(deserializer);
         let mut var_transparent = <u64>::sse_decode(deserializer);
         let mut var_sapling = <u64>::sse_decode(deserializer);
         let mut var_orchard = <u64>::sse_decode(deserializer);
@@ -14417,6 +14450,8 @@ impl SseDecode for crate::api::sync::WalletBalance {
             availability: var_availability,
             transparent_authority: var_transparentAuthority,
             transparent_last_known: var_transparentLastKnown,
+            transparent_stop: var_transparentStop,
+            transparent_private: var_transparentPrivate,
             transparent: var_transparent,
             sapling: var_sapling,
             orchard: var_orchard,
@@ -18822,6 +18857,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::TransparentBalanceAutho
             Self::Current => 0.into_dart(),
             Self::LastKnown => 1.into_dart(),
             Self::Unavailable => 2.into_dart(),
+            Self::Stopped => 3.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -18834,6 +18870,31 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::sync::TransparentBalanceAutho
     for crate::api::sync::TransparentBalanceAuthority
 {
     fn into_into_dart(self) -> crate::api::sync::TransparentBalanceAuthority {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::sync::TransparentStopReason {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Quarantined => 0.into_dart(),
+            Self::Ledger => 1.into_dart(),
+            Self::LegacyDiscrepancy => 2.into_dart(),
+            Self::Withdrawn => 3.into_dart(),
+            Self::Stalled => 4.into_dart(),
+            Self::NotSelected => 5.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::sync::TransparentStopReason
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::sync::TransparentStopReason>
+    for crate::api::sync::TransparentStopReason
+{
+    fn into_into_dart(self) -> crate::api::sync::TransparentStopReason {
         self
     }
 }
@@ -19093,6 +19154,8 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::WalletBalance {
             self.availability.into_into_dart().into_dart(),
             self.transparent_authority.into_into_dart().into_dart(),
             self.transparent_last_known.into_into_dart().into_dart(),
+            self.transparent_stop.into_into_dart().into_dart(),
+            self.transparent_private.into_into_dart().into_dart(),
             self.transparent.into_into_dart().into_dart(),
             self.sapling.into_into_dart().into_dart(),
             self.orchard.into_into_dart().into_dart(),
@@ -21647,6 +21710,16 @@ impl SseEncode for Option<zcash_voting::wire::SubmissionDiagnosticView> {
     }
 }
 
+impl SseEncode for Option<crate::api::sync::TransparentStopReason> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::sync::TransparentStopReason>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for Option<u16> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -22553,6 +22626,27 @@ impl SseEncode for crate::api::sync::TransparentBalanceAuthority {
                 crate::api::sync::TransparentBalanceAuthority::Current => 0,
                 crate::api::sync::TransparentBalanceAuthority::LastKnown => 1,
                 crate::api::sync::TransparentBalanceAuthority::Unavailable => 2,
+                crate::api::sync::TransparentBalanceAuthority::Stopped => 3,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::api::sync::TransparentStopReason {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::sync::TransparentStopReason::Quarantined => 0,
+                crate::api::sync::TransparentStopReason::Ledger => 1,
+                crate::api::sync::TransparentStopReason::LegacyDiscrepancy => 2,
+                crate::api::sync::TransparentStopReason::Withdrawn => 3,
+                crate::api::sync::TransparentStopReason::Stalled => 4,
+                crate::api::sync::TransparentStopReason::NotSelected => 5,
                 _ => {
                     unimplemented!("");
                 }
@@ -22763,6 +22857,11 @@ impl SseEncode for crate::api::sync::WalletBalance {
             serializer,
         );
         <Option<u64>>::sse_encode(self.transparent_last_known, serializer);
+        <Option<crate::api::sync::TransparentStopReason>>::sse_encode(
+            self.transparent_stop,
+            serializer,
+        );
+        <bool>::sse_encode(self.transparent_private, serializer);
         <u64>::sse_encode(self.transparent, serializer);
         <u64>::sse_encode(self.sapling, serializer);
         <u64>::sse_encode(self.orchard, serializer);

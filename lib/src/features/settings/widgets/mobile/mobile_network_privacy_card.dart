@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/config/private_transparent_recovery_config.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/mobile/mobile_surface_card.dart';
@@ -21,7 +22,13 @@ const _rowHeight = 44.0;
 /// stores, and its toggle geometry belongs to a settings page rather than a
 /// grouped card. The state machine behind both is the same provider.
 class MobileNetworkPrivacyCard extends ConsumerWidget {
-  const MobileNetworkPrivacyCard({super.key});
+  const MobileNetworkPrivacyCard({
+    this.privateTransparentRecovery = kZcashPrivateTransparentRecovery,
+    super.key,
+  });
+
+  /// Whether this build's private queries also recover transparent funds.
+  final bool privateTransparentRecovery;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -147,9 +154,12 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
             Text(
               // iOS background migration tracking cannot run privately, so it
               // stays off while this is on; say where confirmations happen.
-              defaultTargetPlatform == TargetPlatform.iOS
-                  ? 'Experimental. Queries and enhances transaction data without revealing their IDs to servers. While on, migration confirmations are checked only when Vizor is open.'
-                  : 'Experimental. Queries and enhances transaction data without revealing their IDs to servers.',
+              privateQueriesDescription(
+                defaultTargetPlatform == TargetPlatform.iOS
+                    ? 'Experimental. Queries and enhances transaction data without revealing their IDs to servers. While on, migration confirmations are checked only when Vizor is open.'
+                    : 'Experimental. Queries and enhances transaction data without revealing their IDs to servers.',
+                privateTransparentRecovery: privateTransparentRecovery,
+              ),
               key: const ValueKey('mobile_settings_enhance_pir_description'),
               style: AppTypography.bodyMedium.copyWith(
                 color: colors.text.secondary,

@@ -548,6 +548,9 @@ String friendlyProposeSendError(String raw) {
   if (isTransparentLedgerNeedsNewerBuildError(raw)) {
     return transparentLedgerNeedsNewerBuildMessage;
   }
+  if (isTransparentRecoveryNotSelectedError(raw)) {
+    return transparentRecoveryNotSelectedMessage;
+  }
   if (isTransparentRecoveryIncompleteError(raw)) {
     return transparentRecoveryIncompleteMessage;
   }

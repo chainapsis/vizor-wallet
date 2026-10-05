@@ -118,6 +118,8 @@ pub(crate) use send::ShieldTransparentResult;
 pub(crate) use send::ShieldTransparentStatus;
 #[allow(unused_imports)] // names reachable via `crate::wallet::sync::*`; pre-refactor surface
 pub(crate) use send::{KeystoneMigrationMessage, KeystoneMigrationSigningRequest};
+#[cfg(test)]
+pub(crate) use transactions::read_wallet_balances;
 pub use transactions::{
     decrypt_and_store_transaction, get_previous_transaction_count_for_address,
     set_transaction_status,
@@ -128,8 +130,8 @@ pub(crate) use transactions::{
     get_transaction_data_requests, get_transaction_detail, get_transaction_history,
     get_unmined_txids_with_mined_output_evidence, get_wallet_balance, get_wallet_balances,
     ExportBirthdayAnchor, TransactionDetail, TransactionDetailOutput, TransactionFeeState,
-    TransactionInfo, TransparentBalanceAuthority, TxDataRequest, WalletBalance,
-    WalletBalanceAvailability,
+    TransactionInfo, TransparentBalanceAuthority, TransparentStopReason, TxDataRequest,
+    WalletBalance, WalletBalanceAvailability,
 };
 
 pub(super) fn open_wallet_db(

@@ -2047,6 +2047,13 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         recordError('gift-card observer db cleanup', e, st);
       }
       try {
+        // The wallet's own companions went with it. No wallet is current
+        // now, so any left by an earlier one go too.
+        await deleteOrphanCompanionDirectories(null);
+      } catch (e, st) {
+        recordError('transparent recovery companion cleanup', e, st);
+      }
+      try {
         ref.read(votingHomeCacheProvider.notifier).clearForReset();
         await clearVotingCachesForReset();
       } catch (e, st) {
@@ -2881,7 +2888,16 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     return normalizedNetwork;
   }
 
+  /// Deletes the wallet database at [dbPath] and everything kept beside it.
+  /// Directories go first: when one cannot be deleted the database is still
+  /// intact, so the caller keeps its stored name and a retry finds it.
   Future<void> _deleteExistingDb(String dbPath) async {
+    for (final path in walletDbCleanupDirectories(dbPath)) {
+      final directory = Directory(path);
+      if (directory.existsSync()) {
+        directory.deleteSync(recursive: true);
+      }
+    }
     for (final path in walletDbCleanupPaths(dbPath)) {
       final file = File(path);
       if (file.existsSync()) {
@@ -3011,6 +3027,13 @@ Future<void> clearTorPrivacyStateForReset({
     log('resetWallet: tor route preference cleanup failed: $e\n$st');
   }
 }
+
+/// Directories kept beside the wallet database at [dbPath], deleted with it:
+/// private transparent recovery's companions.
+@visibleForTesting
+List<String> walletDbCleanupDirectories(String dbPath) => [
+  transparentRecoveryCompanionDirectory(dbPath),
+];
 
 @visibleForTesting
 List<String> walletDbCleanupPaths(String dbPath) {

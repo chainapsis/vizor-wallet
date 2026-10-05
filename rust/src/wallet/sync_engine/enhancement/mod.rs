@@ -45,8 +45,8 @@ pub(crate) use policy::test_mode;
 pub(crate) use policy::{
     adopt_durable_private, configure_private_transparent_recovery, may_raise,
     private_transparent_recovery, select_transparent_mode, selected_transparent_mode,
-    set_preference_confirmed, transparent_ledger_mode_for, EnhancementPolicy,
-    PublicTransparentLookups,
+    selects_private_recovery, set_preference_confirmed, transparent_ledger_mode_for,
+    EnhancementPolicy, PublicTransparentLookups,
 };
 pub(super) use transport::TransparentPirHttp;
 #[cfg(test)]

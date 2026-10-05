@@ -45,6 +45,59 @@ void main() {
       expect(display.text(_format), 'Unavailable');
       expect(display.amount, isNull);
       expect(display.visible, isTrue);
+      expect(display.hint, isNull);
+    });
+
+    test('a stopped recovery says why for each reason', () {
+      final hints = <String>{};
+      for (final reason in rust_sync.TransparentStopReason.values) {
+        final display = TransparentBalanceDisplay.of(
+          SyncState(
+            transparentAuthority: rust_sync.TransparentBalanceAuthority.stopped,
+            transparentStop: reason,
+          ),
+        );
+        expect(display.text(_format), 'Recovery stopped', reason: '$reason');
+        expect(display.amount, isNull, reason: '$reason');
+        expect(display.visible, isTrue, reason: '$reason');
+        final hint = display.hint;
+        expect(hint, isNotNull, reason: '$reason');
+        hints.add(hint!);
+      }
+      expect(hints, hasLength(rust_sync.TransparentStopReason.values.length));
+    });
+
+    test('a build that cannot recover says to turn off Private queries', () {
+      final display = TransparentBalanceDisplay.of(
+        SyncState(
+          transparentAuthority: rust_sync.TransparentBalanceAuthority.stopped,
+          transparentStop: rust_sync.TransparentStopReason.notSelected,
+        ),
+      );
+      expect(
+        display.hint,
+        'Private transparent recovery is not available in this build. Turn '
+        'off Private queries to restore public lookups.',
+      );
+      expect(display.hint, isNot(contains('until private recovery')));
+    });
+
+    test('a stopped recovery never reads as a spendable amount', () {
+      final display = TransparentBalanceDisplay.of(
+        SyncState(
+          transparentAuthority: rust_sync.TransparentBalanceAuthority.stopped,
+          transparentStop: rust_sync.TransparentStopReason.stalled,
+          transparentLastKnownBalance: BigInt.from(9),
+          // Nothing is spendable without authority.
+          transparentBalance: BigInt.zero,
+        ),
+      );
+      expect(display.text(_format), '9zat (last known, recovery stopped)');
+      expect(
+        display.authority,
+        isNot(rust_sync.TransparentBalanceAuthority.current),
+      );
+      expect(display.visible, isTrue);
     });
   });
 
@@ -77,6 +130,41 @@ void main() {
       },
     );
 
+    test('a fetched balance carries its stop reason and private policy', () {
+      final stopped = SyncState().withFetchedAccountData(
+        balance: _balance(
+          rust_sync.TransparentBalanceAuthority.stopped,
+          lastKnown: BigInt.from(9),
+          stop: rust_sync.TransparentStopReason.notSelected,
+          private: true,
+        ),
+        syncComplete: true,
+      );
+      expect(
+        stopped.transparentStop,
+        rust_sync.TransparentStopReason.notSelected,
+      );
+      expect(stopped.transparentPrivate, isTrue);
+      // An unrelated update keeps both.
+      final updated = stopped.copyWith(percentage: 0.5);
+      expect(
+        updated.transparentStop,
+        rust_sync.TransparentStopReason.notSelected,
+      );
+      expect(updated.transparentPrivate, isTrue);
+
+      // Restored authority clears the stop reason.
+      final current = stopped.withFetchedAccountData(
+        balance: _balance(
+          rust_sync.TransparentBalanceAuthority.current,
+          private: true,
+        ),
+        syncComplete: true,
+      );
+      expect(current.transparentStop, isNull);
+      expect(current.transparentPrivate, isTrue);
+    });
+
     test('an unrelated update keeps the authority', () {
       final state = SyncState(
         transparentAuthority: rust_sync.TransparentBalanceAuthority.lastKnown,
@@ -98,6 +186,11 @@ void main() {
     const shieldingRefusal =
         'Transparent recovery is incomplete; transparent funds are '
         'unavailable until it completes';
+    // Vizor's shielding refusal for a private wallet in a build that does not
+    // recover it; the Rust status test pins its phrase.
+    const notSelectedRefusal =
+        'Private transparent recovery is not available in this build; turn '
+        'off private queries to use transparent funds';
 
     test('match the recovery-incomplete copy', () {
       expect(isTransparentRecoveryIncompleteError(libraryRefusal), isTrue);
@@ -114,16 +207,31 @@ void main() {
         transparentRecoveryIncompleteMessage,
       );
     });
+
+    test('a build that cannot recover never promises recovery', () {
+      expect(isTransparentRecoveryNotSelectedError(notSelectedRefusal), isTrue);
+      expect(isTransparentRecoveryIncompleteError(notSelectedRefusal), isFalse);
+      expect(isTransparentRecoveryNotSelectedError(shieldingRefusal), isFalse);
+      expect(isTransparentRecoveryNotSelectedError(libraryRefusal), isFalse);
+      final copy = friendlyShieldBalanceError(Exception(notSelectedRefusal));
+      expect(copy, transparentRecoveryNotSelectedMessage);
+      expect(copy, contains('Turn off Private queries'));
+      expect(copy, isNot(contains('until private recovery completes')));
+    });
   });
 }
 
 rust_sync.WalletBalance _balance(
   rust_sync.TransparentBalanceAuthority authority, {
   BigInt? lastKnown,
+  rust_sync.TransparentStopReason? stop,
+  bool private = false,
 }) {
   return rust_sync.WalletBalance(
     availability: rust_sync.WalletBalanceAvailability.available,
     transparentAuthority: authority,
+    transparentPrivate: private,
+    transparentStop: stop,
     transparentLastKnown: lastKnown,
     transparent: BigInt.zero,
     sapling: BigInt.zero,

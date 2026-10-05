@@ -502,14 +502,43 @@ pub enum TransparentBalanceAuthority {
     LastKnown,
     /// No current authority and no prior amount. Show as unavailable, never 0.
     Unavailable,
+    /// No current authority, and private recovery will not restore it on its
+    /// own: `transparent_stop` says why. The transparent fields are zero, and
+    /// `transparent_last_known` holds the prior amount, if any.
+    Stopped,
+}
+
+/// Why private transparent recovery cannot restore an account's authority.
+pub enum TransparentStopReason {
+    /// An integrity failure quarantined the account's evidence.
+    Quarantined,
+    /// A Ledger account, which private recovery does not cover.
+    Ledger,
+    /// Legacy public evidence the private ledger cannot explain.
+    LegacyDiscrepancy,
+    /// The service withdrew a publication the account was recovered from.
+    Withdrawn,
+    /// Recovery stalled repeatedly.
+    Stalled,
+    /// The wallet requires private recovery, which this build does not run.
+    /// Turning off private queries restores public lookups.
+    NotSelected,
 }
 
 pub struct WalletBalance {
     pub availability: WalletBalanceAvailability,
     pub transparent_authority: TransparentBalanceAuthority,
     /// Informational prior transparent total, present only with
-    /// `TransparentBalanceAuthority::LastKnown`. It never authorizes a spend.
+    /// `TransparentBalanceAuthority::LastKnown` or `Stopped`. It never
+    /// authorizes a spend.
     pub transparent_last_known: Option<u64>,
+    /// Why recovery is stopped, present only with
+    /// `TransparentBalanceAuthority::Stopped`.
+    pub transparent_stop: Option<TransparentStopReason>,
+    /// The wallet durably requires private transparent authority, so a
+    /// current amount lasts only until the chain moves past the private
+    /// ledger's coverage.
+    pub transparent_private: bool,
     pub transparent: u64,
     pub sapling: u64,
     pub orchard: u64,
@@ -775,7 +804,20 @@ pub fn get_balance(
             wallet_sync::TransparentBalanceAuthority::Unavailable => {
                 TransparentBalanceAuthority::Unavailable
             }
+            wallet_sync::TransparentBalanceAuthority::Stopped => {
+                TransparentBalanceAuthority::Stopped
+            }
         };
+        let transparent_stop = b.transparent_stop.map(|reason| match reason {
+            wallet_sync::TransparentStopReason::Quarantined => TransparentStopReason::Quarantined,
+            wallet_sync::TransparentStopReason::Ledger => TransparentStopReason::Ledger,
+            wallet_sync::TransparentStopReason::LegacyDiscrepancy => {
+                TransparentStopReason::LegacyDiscrepancy
+            }
+            wallet_sync::TransparentStopReason::Withdrawn => TransparentStopReason::Withdrawn,
+            wallet_sync::TransparentStopReason::Stalled => TransparentStopReason::Stalled,
+            wallet_sync::TransparentStopReason::NotSelected => TransparentStopReason::NotSelected,
+        });
         let spendable = b.sapling + b.orchard + b.ironwood;
         let total_spendable = b.transparent + b.sapling + b.orchard + b.ironwood;
         let locked = b.transparent_locked + b.sapling_locked + b.orchard_locked + b.ironwood_locked;
@@ -785,6 +827,8 @@ pub fn get_balance(
             availability,
             transparent_authority,
             transparent_last_known: b.transparent_last_known,
+            transparent_stop,
+            transparent_private: b.transparent_private,
             transparent: b.transparent,
             sapling: b.sapling,
             orchard: b.orchard,

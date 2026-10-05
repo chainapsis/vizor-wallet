@@ -272,10 +272,16 @@ async fn reopened_public_handle_displays_durable_private_authority() {
         .db
         .update_chain_tip(BlockHeight::from_u32(TIP + 1))
         .unwrap();
+    // Nothing in a build that opens Public handles recovers the wallet, so
+    // the prior amount is shown as stopped rather than awaiting recovery.
     let stale = balance(&wallet, &wallet.uuid);
     assert_eq!(
         stale.transparent_authority,
-        TransparentBalanceAuthority::LastKnown
+        TransparentBalanceAuthority::Stopped
+    );
+    assert_eq!(
+        stale.transparent_stop,
+        Some(crate::wallet::sync::TransparentStopReason::NotSelected)
     );
     assert_eq!(stale.transparent, 0);
     assert_eq!(stale.transparent_last_known, Some(VALUE));

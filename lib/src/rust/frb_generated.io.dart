@@ -350,6 +350,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  TransparentStopReason dco_decode_box_autoadd_transparent_stop_reason(
+    dynamic raw,
+  );
+
+  @protected
   int dco_decode_box_autoadd_u_16(dynamic raw);
 
   @protected
@@ -999,6 +1004,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   dco_decode_opt_box_autoadd_submission_diagnostic_view(dynamic raw);
 
   @protected
+  TransparentStopReason? dco_decode_opt_box_autoadd_transparent_stop_reason(
+    dynamic raw,
+  );
+
+  @protected
   int? dco_decode_opt_box_autoadd_u_16(dynamic raw);
 
   @protected
@@ -1225,6 +1235,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   TransparentBalanceAuthority dco_decode_transparent_balance_authority(
     dynamic raw,
   );
+
+  @protected
+  TransparentStopReason dco_decode_transparent_stop_reason(dynamic raw);
 
   @protected
   TxDataRequest dco_decode_tx_data_request(dynamic raw);
@@ -1696,6 +1709,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SubmissionDiagnosticView sse_decode_box_autoadd_submission_diagnostic_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  TransparentStopReason sse_decode_box_autoadd_transparent_stop_reason(
     SseDeserializer deserializer,
   );
 
@@ -2531,6 +2549,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  TransparentStopReason? sse_decode_opt_box_autoadd_transparent_stop_reason(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   int? sse_decode_opt_box_autoadd_u_16(SseDeserializer deserializer);
 
   @protected
@@ -2817,6 +2840,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   TransparentBalanceAuthority sse_decode_transparent_balance_authority(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  TransparentStopReason sse_decode_transparent_stop_reason(
     SseDeserializer deserializer,
   );
 
@@ -3392,6 +3420,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_submission_diagnostic_view(
     SubmissionDiagnosticView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_transparent_stop_reason(
+    TransparentStopReason self,
     SseSerializer serializer,
   );
 
@@ -4395,6 +4429,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_transparent_stop_reason(
+    TransparentStopReason? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_u_16(int? self, SseSerializer serializer);
 
   @protected
@@ -4745,6 +4785,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_transparent_balance_authority(
     TransparentBalanceAuthority self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_transparent_stop_reason(
+    TransparentStopReason self,
     SseSerializer serializer,
   );
 

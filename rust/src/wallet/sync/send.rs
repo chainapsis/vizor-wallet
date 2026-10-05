@@ -105,6 +105,7 @@ use crate::wallet::db::{
 use crate::wallet::keys::parse_account_uuid;
 use crate::wallet::network::WalletNetwork;
 use crate::wallet::sync_engine;
+use crate::wallet::sync_engine::enhancement::selects_private_recovery;
 use crate::wallet::{confirmations_policy, payment_link_claim_confirmations_policy};
 
 use super::migration::MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI;
@@ -1169,7 +1170,7 @@ pub(crate) fn get_shield_transparent_status(
         });
     }
 
-    match build_shielding_proposal(&mut db, network, account_id, shielding_threshold) {
+    match build_shielding_proposal(&mut db, db_path, network, account_id, shielding_threshold) {
         Ok((proposal, _)) => Ok(ShieldTransparentStatus {
             can_shield: true,
             fee_zatoshi: proposal_fee_zatoshi(&proposal),
@@ -1204,11 +1205,12 @@ pub(crate) fn get_ledger_shielding_progress(
     if !sync_engine::ledger_discovery::is_ready(db_path, network, id)? {
         return Err("Ledger transparent recovery is incomplete".into());
     }
-    ledger_shielding_progress(&mut db, network, id)
+    ledger_shielding_progress(&mut db, db_path, network, id)
 }
 
 fn ledger_shielding_progress(
     db: &mut WalletDatabase,
+    db_path: &str,
     network: WalletNetwork,
     id: AccountUuid,
 ) -> Result<LedgerShieldingProgress, String> {
@@ -1225,7 +1227,7 @@ fn ledger_shielding_progress(
         .chain_height()
         .map_err(|e| e.to_string())?
         .ok_or("Wallet must sync before shielding")?;
-    let balances = transparent_shielding_balances(db, id, (tip + 1).into())?;
+    let balances = transparent_shielding_balances(db, db_path, network, id, (tip + 1).into())?;
     let mut progress = LedgerShieldingProgress {
         input_count: 0,
         input_limit: crate::wallet::ledger::MAX_TRANSPARENT_INPUTS as u32,
@@ -1252,7 +1254,7 @@ fn ledger_shielding_progress(
     progress.below_threshold = round_value < shielding_threshold()?;
     if !progress.below_threshold {
         // Use the real planner to detect fee, anchor and policy failures.
-        build_shielding_proposal(db, network, id, shielding_threshold()?)?;
+        build_shielding_proposal(db, db_path, network, id, shielding_threshold()?)?;
     }
     Ok(progress)
 }
@@ -1297,7 +1299,7 @@ fn create_shield_transparent_pczt_with_expiry(
             return Err("Ledger transparent recovery is incomplete".into());
         }
         let (proposal, _) =
-            build_shielding_proposal(&mut db, network, account_id, shielding_threshold)?;
+            build_shielding_proposal(&mut db, db_path, network, account_id, shielding_threshold)?;
         let fee_zatoshi = proposal_fee_zatoshi(&proposal);
         let shielded_zatoshi = proposal_shielded_zatoshi(&proposal);
 
@@ -1379,8 +1381,13 @@ pub(crate) async fn shield_transparent_balance(
                 .map_err(|e| format!("{e}"))?
                 .ok_or("Account not found")?;
 
-            let (proposal, _) =
-                build_shielding_proposal(&mut db, network, account_id, shielding_threshold)?;
+            let (proposal, _) = build_shielding_proposal(
+                &mut db,
+                db_path,
+                network,
+                account_id,
+                shielding_threshold,
+            )?;
             let fee_zatoshi = proposal_fee_zatoshi(&proposal);
             let shielded_zatoshi = proposal_shielded_zatoshi(&proposal);
 
@@ -3752,15 +3759,27 @@ fn active_ironwood_migrations() -> &'static Mutex<HashSet<String>> {
 pub(crate) const TRANSPARENT_RECOVERY_INCOMPLETE: &str =
     "Transparent recovery is incomplete; transparent funds are unavailable until it completes";
 
-/// Spendable transparent balances by receiver for shielding at `target`.
+/// Why shielding is unavailable for a wallet that durably requires private
+/// transparent recovery in a build that does not run it: no recovery will
+/// complete, and only turning off private queries restores public lookups.
+/// Shares no phrase with [`TRANSPARENT_RECOVERY_INCOMPLETE`], so the app tells
+/// the two apart.
+pub(crate) const TRANSPARENT_RECOVERY_NOT_SELECTED: &str =
+    "Private transparent recovery is not available in this build; turn off private queries to use transparent funds";
+
+/// Spendable transparent balances by receiver for shielding at `target`, in
+/// the wallet at `db_path`.
 ///
 /// Under public authority these are the wallet's transparent balances. Under
 /// a private ledger mode the library withholds that per-address read, so the
 /// balances are summed from the library's gated selector, which admits only
 /// outputs its private authority covers. With no current authority, shielding
-/// reports recovery as incomplete rather than a zero balance.
+/// reports recovery as incomplete rather than a zero balance, or as not
+/// available when this build does not recover the wallet privately.
 fn transparent_shielding_balances(
     db: &WalletDatabase,
+    db_path: &str,
+    network: WalletNetwork,
     account: AccountUuid,
     target: TargetHeight,
 ) -> Result<TransparentBalances, String> {
@@ -3780,7 +3799,14 @@ fn transparent_shielding_balances(
         .transparent_ledger_snapshot(account, confirmations)
         .map_err(|e| format!("Failed to read transparent ledger: {e}"))?;
     if snapshot.authority != TransparentAuthority::Private {
-        return Err(TRANSPARENT_RECOVERY_INCOMPLETE.into());
+        // A private handle here comes from this build's selection or from
+        // adopting the wallet's durable `PrivateRequired`.
+        return Err(if selects_private_recovery(db_path, network) {
+            TRANSPARENT_RECOVERY_INCOMPLETE
+        } else {
+            TRANSPARENT_RECOVERY_NOT_SELECTED
+        }
+        .into());
     }
     let receivers = db
         .get_transparent_receivers(account, true, true)
@@ -3823,6 +3849,7 @@ fn shielding_threshold() -> Result<Zatoshis, String> {
 
 fn build_shielding_proposal(
     db: &mut WalletDatabase,
+    db_path: &str,
     network: WalletNetwork,
     account_id: AccountUuid,
     shielding_threshold: Zatoshis,
@@ -3831,7 +3858,13 @@ fn build_shielding_proposal(
         .chain_height()
         .map_err(|e| format!("Failed to read chain height: {e}"))?
         .ok_or("Wallet must sync before shielding transparent funds")?;
-    let balances = transparent_shielding_balances(db, account_id, (chain_height + 1).into())?;
+    let balances = transparent_shielding_balances(
+        db,
+        db_path,
+        network,
+        account_id,
+        (chain_height + 1).into(),
+    )?;
     let (from_addrs, selected_value) = select_shielding_sources(balances, shielding_threshold)?;
 
     let account = db

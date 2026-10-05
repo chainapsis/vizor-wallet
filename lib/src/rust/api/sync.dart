@@ -2968,6 +2968,33 @@ enum TransparentBalanceAuthority {
 
   /// No current authority and no prior amount. Show as unavailable, never 0.
   unavailable,
+
+  /// No current authority, and private recovery will not restore it on its
+  /// own: `transparent_stop` says why. The transparent fields are zero, and
+  /// `transparent_last_known` holds the prior amount, if any.
+  stopped,
+}
+
+/// Why private transparent recovery cannot restore an account's authority.
+enum TransparentStopReason {
+  /// An integrity failure quarantined the account's evidence.
+  quarantined,
+
+  /// A Ledger account, which private recovery does not cover.
+  ledger,
+
+  /// Legacy public evidence the private ledger cannot explain.
+  legacyDiscrepancy,
+
+  /// The service withdrew a publication the account was recovered from.
+  withdrawn,
+
+  /// Recovery stalled repeatedly.
+  stalled,
+
+  /// The wallet requires private recovery, which this build does not run.
+  /// Turning off private queries restores public lookups.
+  notSelected,
 }
 
 class TxDataRequest {
@@ -3010,8 +3037,18 @@ class WalletBalance {
   final TransparentBalanceAuthority transparentAuthority;
 
   /// Informational prior transparent total, present only with
-  /// `TransparentBalanceAuthority::LastKnown`. It never authorizes a spend.
+  /// `TransparentBalanceAuthority::LastKnown` or `Stopped`. It never
+  /// authorizes a spend.
   final BigInt? transparentLastKnown;
+
+  /// Why recovery is stopped, present only with
+  /// `TransparentBalanceAuthority::Stopped`.
+  final TransparentStopReason? transparentStop;
+
+  /// The wallet durably requires private transparent authority, so a
+  /// current amount lasts only until the chain moves past the private
+  /// ledger's coverage.
+  final bool transparentPrivate;
   final BigInt transparent;
   final BigInt sapling;
   final BigInt orchard;
@@ -3047,6 +3084,8 @@ class WalletBalance {
     required this.availability,
     required this.transparentAuthority,
     this.transparentLastKnown,
+    this.transparentStop,
+    required this.transparentPrivate,
     required this.transparent,
     required this.sapling,
     required this.orchard,
@@ -3072,6 +3111,8 @@ class WalletBalance {
       availability.hashCode ^
       transparentAuthority.hashCode ^
       transparentLastKnown.hashCode ^
+      transparentStop.hashCode ^
+      transparentPrivate.hashCode ^
       transparent.hashCode ^
       sapling.hashCode ^
       orchard.hashCode ^
@@ -3099,6 +3140,8 @@ class WalletBalance {
           availability == other.availability &&
           transparentAuthority == other.transparentAuthority &&
           transparentLastKnown == other.transparentLastKnown &&
+          transparentStop == other.transparentStop &&
+          transparentPrivate == other.transparentPrivate &&
           transparent == other.transparent &&
           sapling == other.sapling &&
           orchard == other.orchard &&

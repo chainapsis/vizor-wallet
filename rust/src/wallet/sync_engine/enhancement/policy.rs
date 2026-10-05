@@ -86,6 +86,15 @@ pub(crate) fn transparent_ledger_mode_for(
     selected_transparent_mode(network)
 }
 
+/// Whether this build recovers the wallet at `db_path` privately: only a
+/// `PrivateRequired` selection runs private recovery. A wallet that durably
+/// requires it in a build that does not select it keeps the stricter policy,
+/// so its transparent funds stay unavailable until private queries are turned
+/// off.
+pub(crate) fn selects_private_recovery(db_path: &str, network: WalletNetwork) -> bool {
+    transparent_ledger_mode_for(db_path, network) == TransparentLedgerMode::PrivateRequired
+}
+
 /// Whether a durable policy may be raised to `PrivateRequired` for the wallet
 /// at `db_path` without an explicit toggle: the selection is `PrivateRequired`
 /// and the preference behind it was read, not assumed. An unreadable

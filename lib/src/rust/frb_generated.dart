@@ -11898,6 +11898,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  TransparentStopReason dco_decode_box_autoadd_transparent_stop_reason(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_transparent_stop_reason(raw);
+  }
+
+  @protected
   int dco_decode_box_autoadd_u_16(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as int;
@@ -13682,6 +13690,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  TransparentStopReason? dco_decode_opt_box_autoadd_transparent_stop_reason(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null
+        ? null
+        : dco_decode_box_autoadd_transparent_stop_reason(raw);
+  }
+
+  @protected
   int? dco_decode_opt_box_autoadd_u_16(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_u_16(raw);
@@ -14580,6 +14598,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  TransparentStopReason dco_decode_transparent_stop_reason(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return TransparentStopReason.values[raw as int];
+  }
+
+  @protected
   TxDataRequest dco_decode_tx_data_request(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -14748,30 +14772,34 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   WalletBalance dco_decode_wallet_balance(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 21)
-      throw Exception('unexpected arr length: expect 21 but see ${arr.length}');
+    if (arr.length != 23)
+      throw Exception('unexpected arr length: expect 23 but see ${arr.length}');
     return WalletBalance(
       availability: dco_decode_wallet_balance_availability(arr[0]),
       transparentAuthority: dco_decode_transparent_balance_authority(arr[1]),
       transparentLastKnown: dco_decode_opt_box_autoadd_u_64(arr[2]),
-      transparent: dco_decode_u_64(arr[3]),
-      sapling: dco_decode_u_64(arr[4]),
-      orchard: dco_decode_u_64(arr[5]),
-      ironwood: dco_decode_u_64(arr[6]),
-      transparentLocked: dco_decode_u_64(arr[7]),
-      saplingLocked: dco_decode_u_64(arr[8]),
-      orchardLocked: dco_decode_u_64(arr[9]),
-      ironwoodLocked: dco_decode_u_64(arr[10]),
-      transparentPending: dco_decode_u_64(arr[11]),
-      saplingPending: dco_decode_u_64(arr[12]),
-      orchardPending: dco_decode_u_64(arr[13]),
-      ironwoodPending: dco_decode_u_64(arr[14]),
-      changePendingConfirmation: dco_decode_u_64(arr[15]),
-      valuePendingSpendability: dco_decode_u_64(arr[16]),
-      uneconomicValue: dco_decode_u_64(arr[17]),
-      spendable: dco_decode_u_64(arr[18]),
-      locked: dco_decode_u_64(arr[19]),
-      total: dco_decode_u_64(arr[20]),
+      transparentStop: dco_decode_opt_box_autoadd_transparent_stop_reason(
+        arr[3],
+      ),
+      transparentPrivate: dco_decode_bool(arr[4]),
+      transparent: dco_decode_u_64(arr[5]),
+      sapling: dco_decode_u_64(arr[6]),
+      orchard: dco_decode_u_64(arr[7]),
+      ironwood: dco_decode_u_64(arr[8]),
+      transparentLocked: dco_decode_u_64(arr[9]),
+      saplingLocked: dco_decode_u_64(arr[10]),
+      orchardLocked: dco_decode_u_64(arr[11]),
+      ironwoodLocked: dco_decode_u_64(arr[12]),
+      transparentPending: dco_decode_u_64(arr[13]),
+      saplingPending: dco_decode_u_64(arr[14]),
+      orchardPending: dco_decode_u_64(arr[15]),
+      ironwoodPending: dco_decode_u_64(arr[16]),
+      changePendingConfirmation: dco_decode_u_64(arr[17]),
+      valuePendingSpendability: dco_decode_u_64(arr[18]),
+      uneconomicValue: dco_decode_u_64(arr[19]),
+      spendable: dco_decode_u_64(arr[20]),
+      locked: dco_decode_u_64(arr[21]),
+      total: dco_decode_u_64(arr[22]),
     );
   }
 
@@ -15857,6 +15885,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_submission_diagnostic_view(deserializer));
+  }
+
+  @protected
+  TransparentStopReason sse_decode_box_autoadd_transparent_stop_reason(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_transparent_stop_reason(deserializer));
   }
 
   @protected
@@ -18377,6 +18413,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  TransparentStopReason? sse_decode_opt_box_autoadd_transparent_stop_reason(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_transparent_stop_reason(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   int? sse_decode_opt_box_autoadd_u_16(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -19529,6 +19578,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  TransparentStopReason sse_decode_transparent_stop_reason(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return TransparentStopReason.values[inner];
+  }
+
+  @protected
   TxDataRequest sse_decode_tx_data_request(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_requestType = sse_decode_String(deserializer);
@@ -19737,6 +19795,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_transparentLastKnown = sse_decode_opt_box_autoadd_u_64(
       deserializer,
     );
+    var var_transparentStop =
+        sse_decode_opt_box_autoadd_transparent_stop_reason(deserializer);
+    var var_transparentPrivate = sse_decode_bool(deserializer);
     var var_transparent = sse_decode_u_64(deserializer);
     var var_sapling = sse_decode_u_64(deserializer);
     var var_orchard = sse_decode_u_64(deserializer);
@@ -19759,6 +19820,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       availability: var_availability,
       transparentAuthority: var_transparentAuthority,
       transparentLastKnown: var_transparentLastKnown,
+      transparentStop: var_transparentStop,
+      transparentPrivate: var_transparentPrivate,
       transparent: var_transparent,
       sapling: var_sapling,
       orchard: var_orchard,
@@ -20782,6 +20845,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_submission_diagnostic_view(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_transparent_stop_reason(
+    TransparentStopReason self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_transparent_stop_reason(self, serializer);
   }
 
   @protected
@@ -22869,6 +22941,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_box_autoadd_transparent_stop_reason(
+    TransparentStopReason? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_transparent_stop_reason(self, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_opt_box_autoadd_u_16(int? self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -23733,6 +23818,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_transparent_stop_reason(
+    TransparentStopReason self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
   void sse_encode_tx_data_request(
     TxDataRequest self,
     SseSerializer serializer,
@@ -23899,6 +23993,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       serializer,
     );
     sse_encode_opt_box_autoadd_u_64(self.transparentLastKnown, serializer);
+    sse_encode_opt_box_autoadd_transparent_stop_reason(
+      self.transparentStop,
+      serializer,
+    );
+    sse_encode_bool(self.transparentPrivate, serializer);
     sse_encode_u_64(self.transparent, serializer);
     sse_encode_u_64(self.sapling, serializer);
     sse_encode_u_64(self.orchard, serializer);
