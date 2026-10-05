@@ -22,7 +22,11 @@ fn has_public_payload_work(db: &mut WalletDatabase, txid: TxId) -> bool {
 #[path = "transparent_recovery_regtest.rs"]
 mod regtest;
 
-fn legacy_transaction(prevout: OutPoint, recipient: TransparentAddress, value: u64) -> Transaction {
+pub(super) fn legacy_transaction(
+    prevout: OutPoint,
+    recipient: TransparentAddress,
+    value: u64,
+) -> Transaction {
     // A pre-Overwinter v1 transparent transaction. These synthetic transactions
     // exercise wallet parsing/storage; the regtest covers consensus validation.
     let mut bytes = 1u32.to_le_bytes().to_vec();
@@ -40,7 +44,11 @@ fn legacy_transaction(prevout: OutPoint, recipient: TransparentAddress, value: u
     Transaction::read(&bytes[..], BranchId::Sprout).unwrap()
 }
 
-fn downloaded(account: &str, tx: &Transaction, height: u32) -> DownloadedTransparentRefresh {
+pub(super) fn downloaded(
+    account: &str,
+    tx: &Transaction,
+    height: u32,
+) -> DownloadedTransparentRefresh {
     DownloadedTransparentRefresh {
         refresh: TransparentRefresh {
             addresses: Vec::new(),
@@ -895,10 +903,12 @@ mod private_transparent_policy {
         f.apply(TransparentLedgerMode::PrivateRequired);
         let mut lwd = CapturingLwd::start(f.history_tx.clone()).await;
 
-        // This build's Public handle cannot operate on the stricter wallet.
+        // A Public handle opened before the transition cannot operate on the
+        // stricter wallet, so the refresh fails closed.
         assert!(refresh(&mut f, &mut lwd).await.is_err());
-        // A handle configured for the durable policy resolves to withheld.
-        f.db.set_transparent_ledger_mode(TransparentLedgerMode::PrivateRequired);
+        // A handle opened after it adopts the durable policy, so the refresh
+        // is withheld: it succeeds, sends nothing, and reports no balance.
+        f.db = open_wallet_db_with_timeout(&f.path, f.network, SYNC_DB_BUSY_TIMEOUT).unwrap();
         assert!(refresh(&mut f, &mut lwd).await.unwrap().withheld);
 
         assert_eq!(lwd.requests(), Vec::<String>::new());

@@ -1818,6 +1818,8 @@ async fn the_followup_reemits_completion_after_recovery() {
 }
 
 mod activation;
+mod live;
 mod pir;
 mod policy;
+mod qualification;
 mod status;

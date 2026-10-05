@@ -138,7 +138,7 @@ impl<'a, F: Fn() -> bool> TransparentPirHttp<'a, F> {
         let answer = self
             .observer
             .as_ref()
-            .map(|observer| observer.observe(&method, &path, &body));
+            .and_then(|observer| observer.observe(&method, &path, &body));
         let url = format!("{}{path}", self.origin);
         let exchange = async {
             #[cfg(test)]
@@ -463,14 +463,16 @@ type Answer = std::sync::Arc<
 >;
 
 /// Test view of every request a transport dispatches, which it answers in
-/// place of the network. The transport is HTTPS-only over public roots, so no
-/// in-process server can stand in for the service; the observer sits after
-/// route construction and cancellation, where the network would be.
+/// place of the network, or only records on its way there. The transport is
+/// HTTPS-only over public roots, so no in-process server can stand in for the
+/// service; the observer sits after route construction and cancellation,
+/// where the network would be.
 #[cfg(test)]
 #[derive(Clone)]
 pub(crate) struct RequestObserver {
     requests: std::sync::Arc<std::sync::Mutex<Vec<ObservedRequest>>>,
-    answer: Answer,
+    /// `None` sends every request on to the network.
+    answer: Option<Answer>,
 }
 
 #[cfg(test)]
@@ -483,7 +485,16 @@ impl RequestObserver {
     ) -> Self {
         Self {
             requests: Default::default(),
-            answer: std::sync::Arc::new(answer),
+            answer: Some(std::sync::Arc::new(answer)),
+        }
+    }
+
+    /// Records every request and lets it reach the network: the opt-in live
+    /// test's view of the real service.
+    pub(crate) fn recording() -> Self {
+        Self {
+            requests: Default::default(),
+            answer: None,
         }
     }
 
@@ -492,18 +503,19 @@ impl RequestObserver {
         self.requests.lock().unwrap().clone()
     }
 
+    /// Records the request, and answers it unless this observer only records.
     fn observe(
         &self,
         method: &Method,
         path: &str,
         body: &[u8],
-    ) -> http::Response<http_body_util::Full<Bytes>> {
+    ) -> Option<http::Response<http_body_util::Full<Bytes>>> {
         let request = ObservedRequest {
             method: method.clone(),
             path: path.to_owned(),
             body: body.to_vec(),
         };
-        let response = (self.answer)(&request);
+        let response = self.answer.as_ref().map(|answer| answer(&request));
         self.requests.lock().unwrap().push(request);
         response
     }

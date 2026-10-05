@@ -22,22 +22,22 @@ use crate::wallet::sync_engine::enhancement::{ObservedRequest, RequestObserver, 
 const MAIN: WalletNetwork = WalletNetwork::Main;
 /// Every mainnet wallet's birthday, below the live service's publications so
 /// that no fixture height is mistaken for a real one.
-const BIRTHDAY: u32 = 3_000_000;
+pub(super) const BIRTHDAY: u32 = 3_000_000;
 /// The highest scanned block in every mainnet wallet.
-const TOP: u32 = BIRTHDAY + 9;
-const MAP: &str = "/v1/filters/shards";
-const INIT: &str = "/v1/shards/init";
+pub(super) const TOP: u32 = BIRTHDAY + 9;
+pub(super) const MAP: &str = "/v1/filters/shards";
+pub(super) const INIT: &str = "/v1/shards/init";
 
-struct MainWallet {
+pub(super) struct MainWallet {
     _dir: tempfile::TempDir,
-    path: String,
+    pub(super) path: String,
     /// Each account's UUID text and id, in creation order.
-    accounts: Vec<(String, AccountUuid)>,
+    pub(super) accounts: Vec<(String, AccountUuid)>,
 }
 
 /// A mainnet wallet with `accounts` software accounts, scanned from
 /// [`BIRTHDAY`] through [`TOP`].
-fn main_wallet(accounts: usize) -> MainWallet {
+pub(super) fn main_wallet(accounts: usize) -> MainWallet {
     // The app installs the TLS provider at startup; transports need it.
     let _ = rustls::crypto::ring::default_provider().install_default();
     let dir = tempfile::tempdir().unwrap();
@@ -90,7 +90,7 @@ fn watched_by(wallet: &MainWallet, account: AccountUuid) -> TransparentWatchSet<
 
 /// A one-shard mainnet publication from `start` through [`TOP`], ending on
 /// the wallet's block there.
-fn shard_map(start: u32) -> Vec<u8> {
+pub(super) fn shard_map(start: u32) -> Vec<u8> {
     serde_json::to_vec(&serde_json::json!({
         "genesis_hash": "00040fe8ec8471911baa1db1266ea15dd06b4a8a5c453883c000b031973dce08",
         "network": "main",
@@ -130,7 +130,7 @@ fn reply(status: u16, body: Vec<u8>) -> http::Response<Full<Bytes>> {
 
 /// A service that publishes `map` and the adapter's schema, and answers every
 /// other request with a bare 503: a failure, not a capacity refusal.
-fn service(map: Arc<Mutex<Vec<u8>>>) -> RequestObserver {
+pub(super) fn service(map: Arc<Mutex<Vec<u8>>>) -> RequestObserver {
     RequestObserver::answering(move |request| match request.path.as_str() {
         MAP => reply(200, map.lock().unwrap().clone()),
         INIT => reply(
@@ -144,6 +144,56 @@ fn service(map: Arc<Mutex<Vec<u8>>>) -> RequestObserver {
 /// A service that refuses everything.
 fn refusing() -> RequestObserver {
     RequestObserver::answering(|_| reply(503, vec![]))
+}
+
+/// The service's six routes, as `METHOD path`: the library's end-to-end
+/// check, verbatim.
+pub(super) const ROUTES: &str = r"^(GET /v1/(filters/shards(/[0-9]+/filter)?|shards/init|shards/[0-9]+/revisions/[0-9a-f]{64}/(manifest|setup/(directory|pages)/[0-9]+))|POST /v1/shards/[0-9]+/revisions/[0-9a-f]{64}/query/(directory|pages))$";
+
+/// Asserts that every request used one of the service's routes with that
+/// route's method, with no query string, and that no path or body carries
+/// any of `secrets`, in bytes or in hex. A failure names the request by its
+/// index, never by its path, which holds shard ids and digests.
+pub(super) fn assert_private(requests: &[ObservedRequest], secrets: &[Vec<u8>]) {
+    let routes = regex::Regex::new(ROUTES).unwrap();
+    let needles: Vec<Vec<u8>> = secrets
+        .iter()
+        .flat_map(|secret| {
+            [
+                secret.clone(),
+                hex::encode(secret).into_bytes(),
+                hex::encode_upper(secret).into_bytes(),
+            ]
+        })
+        .collect();
+    let carries = |bytes: &[u8]| {
+        needles
+            .iter()
+            .any(|needle| bytes.windows(needle.len()).any(|window| window == needle))
+    };
+    // Positive control: a script holding a secret, in bytes or in hex, would
+    // be caught.
+    let probe = secrets.first().expect("a secret to look for");
+    assert!(carries(
+        &[&[0x76, 0xa9, 20][..], probe, &[0x88, 0xac]].concat()
+    ));
+    assert!(carries(format!("/{}", hex::encode_upper(probe)).as_bytes()));
+    for (index, request) in requests.iter().enumerate() {
+        let line = format!("{} {}", request.method, request.path);
+        assert!(
+            routes.is_match(&line),
+            "request {index} ({}) is not a service route",
+            request.method
+        );
+        assert!(
+            !carries(request.path.as_bytes()),
+            "request {index} carries a secret in its path"
+        );
+        assert!(
+            !carries(&request.body),
+            "request {index} carries a secret in its body"
+        );
+    }
 }
 
 fn paths(requests: &[ObservedRequest]) -> Vec<&str> {

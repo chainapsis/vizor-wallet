@@ -12,7 +12,7 @@ use crate::wallet::sync_engine::lwd::transparent_lookup::TransparentLookupGate;
 
 /// Checkpoints every note commitment tree at `height`, as scanning would, so
 /// that proposals can find an anchor.
-fn checkpoint_trees(wallet: &mut Wallet, height: u32) {
+pub(super) fn checkpoint_trees(wallet: &mut Wallet, height: u32) {
     use shardtree::error::ShardTreeError;
     use zcash_client_backend::data_api::WalletCommitmentTrees;
     use zcash_client_sqlite::wallet::commitment_tree::Error;
