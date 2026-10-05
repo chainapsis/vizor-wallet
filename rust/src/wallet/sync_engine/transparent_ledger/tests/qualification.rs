@@ -23,7 +23,9 @@ use zcash_primitives::transaction::Transaction;
 
 use super::super::pir::{test_transport, TransparentPirSource};
 use super::activation::checkpoint_trees;
-use super::pir::{assert_private, main_wallet, service, shard_map, BIRTHDAY, INIT, MAP, TOP};
+use super::pir::{
+    assert_private, main_wallet, service, shard_map, MainWallet, BIRTHDAY, INIT, MAP, TOP,
+};
 use super::*;
 use crate::wallet::sync::{get_shield_transparent_status, get_transaction_history};
 use crate::wallet::sync::{TransactionFeeState, TransparentStopReason};
@@ -37,6 +39,8 @@ use crate::wallet::sync_engine::{
 
 /// Where public discovery found the legacy receipt.
 const LEGACY_HEIGHT: u32 = 150;
+/// Where public discovery found the mainnet lane wallet's legacy receipt.
+const MAIN_LEGACY_HEIGHT: u32 = BIRTHDAY + 5;
 
 /// Lightwalletd calls that disclose a transparent address, script, outpoint,
 /// or txid.
@@ -654,6 +658,38 @@ fn import_main_ledger(path: &str) -> String {
     .0
 }
 
+/// A mainnet wallet with a Ledger account beside its software one, scanned
+/// through [`TOP`], and a legacy receipt to the software account's first
+/// external address stored the way public discovery stores it, which leaves
+/// public follow-on work queued. Returns the wallet, that address, and the
+/// receipt.
+fn lane_wallet() -> (MainWallet, TransparentAddress, Transaction) {
+    let wallet = main_wallet(1);
+    let (uuid, account) = wallet.accounts[0].clone();
+    import_main_ledger(&wallet.path);
+    let floor: u32 = count(&wallet.path, "SELECT MIN(birthday_height) FROM accounts")
+        .try_into()
+        .unwrap();
+    scan(&wallet.path, floor, floor, TOP, 0);
+    let mut db =
+        open_wallet_db_with_timeout(&wallet.path, WalletNetwork::Main, SYNC_DB_BUSY_TIMEOUT)
+            .unwrap();
+    let address = first_external(&db, account);
+    let tx = legacy_transaction(OutPoint::new([0xaa; 32], 0), address, VALUE);
+    store_publicly(&mut db, WalletNetwork::Main, &uuid, &tx, MAIN_LEGACY_HEIGHT);
+    (wallet, address, tx)
+}
+
+/// Lightwalletd answering any request that reaches it with a payment to
+/// `address`, at a tip of [`TOP`].
+async fn lightwalletd_paying(address: TransparentAddress) -> CapturingLwd {
+    let mut history_tx = Vec::new();
+    legacy_transaction(OutPoint::new([0xcc; 32], 0), address, VALUE)
+        .write(&mut history_tx)
+        .unwrap();
+    CapturingLwd::start_with(history_tx, u64::from(TOP), |_| {}).await
+}
+
 /// A mainnet wallet in a build with the development flag and private queries
 /// on, with public follow-on work queued before activation and a Ledger
 /// account beside the software one: startup, every sync lane, import,
@@ -667,20 +703,10 @@ fn import_main_ledger(path: &str) -> String {
 #[tokio::test(flavor = "multi_thread")]
 async fn an_activated_wallet_discloses_nothing_through_any_lane_including_the_pir_source() {
     const MAIN: WalletNetwork = WalletNetwork::Main;
-    const LEGACY: u32 = BIRTHDAY + 5;
     let _route = crate::network_privacy::test_route_policy::lock_route_policy();
-    let wallet = main_wallet(1);
+    let (wallet, address, tx) = lane_wallet();
     let path = wallet.path.clone();
     let (uuid, account) = wallet.accounts[0].clone();
-    import_main_ledger(&path);
-    let floor: u32 = count(&path, "SELECT MIN(birthday_height) FROM accounts")
-        .try_into()
-        .unwrap();
-    scan(&path, floor, floor, TOP, 0);
-    let mut db = open_wallet_db_with_timeout(&path, MAIN, SYNC_DB_BUSY_TIMEOUT).unwrap();
-    let address = first_external(&db, account);
-    let tx = legacy_transaction(OutPoint::new([0xaa; 32], 0), address, VALUE);
-    store_publicly(&mut db, MAIN, &uuid, &tx, LEGACY);
 
     let queued = || count(&path, "SELECT COUNT(*) FROM tx_retrieval_queue");
     let unchecked_history = || count(&path, "SELECT COUNT(*) FROM transparent_spend_search_queue");
@@ -702,12 +728,14 @@ async fn an_activated_wallet_discloses_nothing_through_any_lane_including_the_pi
         .unwrap()
         .expect("startup raises the public wallet");
     assert_eq!(raised.mode, TransparentLedgerMode::PrivateRequired);
-    db = open_wallet_db_with_timeout(&path, MAIN, SYNC_DB_BUSY_TIMEOUT).unwrap();
+    let mut db = open_wallet_db_with_timeout(&path, MAIN, SYNC_DB_BUSY_TIMEOUT).unwrap();
 
     // A trusted recovery promotes the software account; the Ledger account
     // pauses.
     let fixture = FixtureSource::new(main_hash);
-    fixture.receive(reported_at(address, &tx, LEGACY)).trust();
+    fixture
+        .receive(reported_at(address, &tx, MAIN_LEGACY_HEIGHT))
+        .trust();
     let RunOutcome::Finished(stats) = run(
         &mut db,
         &path,
@@ -729,22 +757,21 @@ async fn an_activated_wallet_discloses_nothing_through_any_lane_including_the_pi
         (TransparentBalanceAuthority::Current, VALUE)
     );
 
-    let mut history_tx = Vec::new();
-    legacy_transaction(OutPoint::new([0xcc; 32], 0), address, VALUE)
-        .write(&mut history_tx)
-        .unwrap();
-    let mut lwd = CapturingLwd::start_with(history_tx, u64::from(TOP), |_| {}).await;
+    let mut lwd = lightwalletd_paying(address).await;
     let tip = BlockHeight::from_u32(TOP);
 
-    // Both this build's captured policy and the flag build's.
+    // Both a default build's captured policy and the flag build's: once the
+    // wallet is raised, its durable policy withholds lookups in every build.
     for policy in [EnhancementPolicy::current(MAIN), required] {
         let mut db = open_wallet_db_with_timeout(&path, MAIN, SYNC_DB_BUSY_TIMEOUT).unwrap();
 
         // Sync: Ledger discovery, the UTXO refresh, and the deferred refresh
         // of inactive accounts.
-        ledger_discovery::run(&mut lwd.client, &mut db, &path, MAIN, tip, &|| false)
-            .await
-            .unwrap();
+        ledger_discovery::run(&mut lwd.client, &mut db, &path, MAIN, policy, tip, &|| {
+            false
+        })
+        .await
+        .unwrap();
         for selection in [
             TransparentAccountSelection::All,
             TransparentAccountSelection::Except(&uuid),
@@ -755,6 +782,7 @@ async fn an_activated_wallet_discloses_nothing_through_any_lane_including_the_pi
                 &path,
                 &mut db,
                 MAIN,
+                policy,
                 tip,
                 selection,
                 None,
@@ -861,6 +889,7 @@ async fn an_activated_wallet_discloses_nothing_through_any_lane_including_the_pi
         &path,
         &mut followup_db,
         MAIN,
+        required,
         tip,
         TransparentAccountSelection::Except(&uuid),
         None,
@@ -934,6 +963,7 @@ async fn an_activated_wallet_discloses_nothing_through_any_lane_including_the_pi
         &path,
         &mut db,
         MAIN,
+        EnhancementPolicy::for_inputs(MAIN, false, true),
         tip,
         TransparentAccountSelection::All,
         None,
@@ -951,4 +981,192 @@ async fn an_activated_wallet_discloses_nothing_through_any_lane_including_the_pi
                 || path.ends_with("/GetAddressUtxosStream")),
         "the control sends public UTXO lookups"
     );
+}
+
+/// The window before a flag build raises the wallet: private queries are on
+/// but not yet read from storage, so nothing may raise the wallet, and its
+/// durable policy is still `Public`. As for a new wallet before its first
+/// follow-up, only the policy each lane captured withholds its lookups.
+///
+/// Under the flag build's policy, Ledger discovery, the UTXO refresh and the
+/// deferred refresh, ephemeral checks, import discovery and the preview, the
+/// follow-up with the real transparent PIR source, and the iOS observe ABI
+/// send lightwalletd nothing that discloses a transparent address, script,
+/// outpoint, or txid. The follow-up does not raise the wallet, so it sends the
+/// service nothing, creates no companion, and reports nothing again. The
+/// queued work stays durable.
+#[cfg(not(ironwood_masquerade))]
+#[tokio::test(flavor = "multi_thread")]
+async fn a_flag_build_discloses_nothing_before_it_raises_the_wallet() {
+    use crate::api::wallet::{
+        discover_used_software_accounts, import_gate, preview_transparent_balance_for_addresses,
+    };
+    const MAIN: WalletNetwork = WalletNetwork::Main;
+    let _route = crate::network_privacy::test_route_policy::lock_route_policy();
+    let (wallet, address, tx) = lane_wallet();
+    let path = wallet.path.clone();
+    let (uuid, account) = wallet.accounts[0].clone();
+    let queued = || count(&path, "SELECT COUNT(*) FROM tx_retrieval_queue");
+    let unchecked_history = || count(&path, "SELECT COUNT(*) FROM transparent_spend_search_queue");
+    let (queued_before, history_before) = (queued(), unchecked_history());
+    assert!(queued_before > 0);
+    let before = applied(&path, MAIN);
+    assert_eq!(before.mode, TransparentLedgerMode::Public);
+
+    // The development flag with private queries on, the preference unread.
+    let _mode = test_mode::select(&path, TransparentLedgerMode::PrivateRequired, false);
+    let flag = EnhancementPolicy::for_inputs(MAIN, true, true);
+    assert_eq!(
+        flag.transparent_mode(),
+        TransparentLedgerMode::PrivateRequired
+    );
+    let mut lwd = lightwalletd_paying(address).await;
+    let tip = BlockHeight::from_u32(TOP);
+    let mut db = open_wallet_db_with_timeout(&path, MAIN, SYNC_DB_BUSY_TIMEOUT).unwrap();
+
+    // Sync: Ledger discovery and the UTXO refresh.
+    ledger_discovery::run(&mut lwd.client, &mut db, &path, MAIN, flag, tip, &|| false)
+        .await
+        .unwrap();
+    let mut received = false;
+    let refreshed = refresh_utxos(
+        &mut lwd.client,
+        &path,
+        &mut db,
+        MAIN,
+        flag,
+        tip,
+        TransparentAccountSelection::All,
+        None,
+        &mut received,
+        None,
+        &|| false,
+    )
+    .await
+    .unwrap();
+    assert!(refreshed.withheld && !received);
+
+    // Payload recovery and the status and history checkpoint, under the flag
+    // build's transparent mode. Its private payload and status routes would
+    // reach the live services, so these run with public routes instead, which
+    // only adds requests lightwalletd could see.
+    let public_routes = EnhancementPolicy::for_preference(MAIN, false)
+        .with_transparent_mode(TransparentLedgerMode::PrivateRequired);
+    let mut session = EnhancementSession::with_policy(MAIN, &path, public_routes);
+    let _ = session
+        .run_payload_recovery(&mut db, &mut lwd.client, None, &|| false)
+        .await;
+    let _ = session
+        .run_checkpoint(&mut db, &mut lwd.client, None, &|| false)
+        .await;
+    let mut changed = false;
+    ephemeral_checks::run(
+        &lwd.url,
+        &mut db,
+        &path,
+        MAIN,
+        flag,
+        tip,
+        &mut changed,
+        &|| false,
+    )
+    .await
+    .unwrap();
+    assert!(!changed);
+
+    // Import into this wallet and as a first account: discovery and preview.
+    let seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
+    for first_account in [false, true] {
+        let gate = import_gate(MAIN, &path, first_account, flag).unwrap();
+        assert!(!gate.is_allowed());
+        assert!(discover_used_software_accounts(
+            MAIN,
+            &seed,
+            Some(u64::from(BIRTHDAY)),
+            &lwd.url,
+            &gate
+        )
+        .await
+        .is_empty());
+        let addresses = keys::software_account_transparent_addresses(MAIN, &seed, 0, 2).unwrap();
+        assert!(
+            preview_transparent_balance_for_addresses(&lwd.url, addresses, &gate)
+                .await
+                .is_err(),
+            "a withheld preview is not a balance"
+        );
+    }
+
+    // The private recovery follow-up with the real source, then the deferred
+    // refresh after it.
+    let seam = test_transport::set(
+        &path,
+        service(Arc::new(Mutex::new(shard_map(BIRTHDAY - 100)))),
+    );
+    let events = Mutex::new(Vec::<SyncProgressEvent>::new());
+    let progress = |event: SyncProgressEvent| events.lock().unwrap().push(event);
+    let source = TransparentPirSource::new(&path, MAIN);
+    transparent_followup(
+        &mut db,
+        &path,
+        MAIN,
+        flag,
+        &source,
+        Some(account),
+        &|| false,
+        &progress,
+        (u64::from(TOP), u64::from(TOP) + 1),
+    )
+    .await;
+    drop(source);
+    assert!(
+        events.lock().unwrap().is_empty(),
+        "nothing is reported again"
+    );
+    assert!(seam.seam.observer.requests().is_empty());
+    assert!(!std::path::Path::new(&format!("{path}.tpir")).exists());
+    let mut received = false;
+    let deferred = refresh_utxos(
+        &mut lwd.client,
+        &path,
+        &mut db,
+        MAIN,
+        flag,
+        tip,
+        TransparentAccountSelection::Except(&uuid),
+        None,
+        &mut received,
+        None,
+        &|| false,
+    )
+    .await
+    .unwrap();
+    assert!(deferred.withheld && !received);
+
+    // The iOS observe ABI, on its own runtime.
+    let (url, wallet_path, txid) = (lwd.url.clone(), path.clone(), tx.txid());
+    let observed = tokio::task::spawn_blocking(move || {
+        let mut output = crate::ffi::CLightwalletdTransactionObservation {
+            state: 99,
+            mined_height: 99,
+        };
+        let code = crate::ffi::observe_public_transaction(
+            &url,
+            &wallet_path,
+            MAIN,
+            flag,
+            txid,
+            &mut output,
+            None,
+        );
+        (code, output.state)
+    })
+    .await
+    .unwrap();
+    assert_eq!(observed, (crate::ffi::STATUS_RESULT_UNSUPPORTED, 99));
+
+    assert_eq!(disclosing(&lwd), Vec::<String>::new());
+    assert_eq!(applied(&path, MAIN), before, "nothing raised the wallet");
+    assert_eq!(queued(), queued_before, "queued work stays durable");
+    assert_eq!(unchecked_history(), history_before);
 }

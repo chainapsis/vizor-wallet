@@ -883,6 +883,7 @@ mod private_transparent_policy {
             &f.path,
             &mut f.db,
             f.network,
+            enhancement::EnhancementPolicy::current(f.network),
             BlockHeight::from_u32(200),
             TransparentAccountSelection::All,
             None,
