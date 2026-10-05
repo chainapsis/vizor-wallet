@@ -6,13 +6,16 @@
 use std::sync::atomic::AtomicUsize;
 use std::time::Duration;
 
+use super::super::pir::{test_transport, TransparentPirSource};
 use super::activation::hardware_tx;
+use super::pir::refusing;
 use super::*;
 use crate::wallet::db::{
     open_wallet_db_for_read_with_timeout, open_wallet_db_readonly_with_timeout, wallet_db_on,
 };
 use crate::wallet::sync_engine::enhancement::{may_raise, PublicTransparentLookups};
 use crate::wallet::sync_engine::lwd::transparent_lookup::TransparentLookupGate;
+use crate::wallet::sync_engine::transparent_followup;
 
 const MAIN: WalletNetwork = WalletNetwork::Main;
 
@@ -344,25 +347,35 @@ async fn a_default_build_with_the_setting_on_writes_nothing_and_sends_nothing() 
         None
     );
     assert_eq!(std::fs::read(&not_a_wallet).unwrap(), b"not a wallet");
-    let source = FixtureSource::new(main_hash);
-    assert_eq!(
-        run(
-            &mut db,
-            &path,
-            MAIN,
-            default_build,
-            &source,
-            None,
-            now,
-            &|| false
-        )
-        .await
-        .unwrap(),
-        RunOutcome::NotEnabled
-    );
+    // The sync's follow-up with the production source, whose transport would
+    // record any request in place of the service.
+    let seam = test_transport::set(&path, refusing());
+    let source = TransparentPirSource::new(&path, MAIN);
+    let events = std::sync::Mutex::new(Vec::<SyncProgressEvent>::new());
+    let progress = |event: SyncProgressEvent| events.lock().unwrap().push(event);
+    transparent_followup(
+        &mut db,
+        &path,
+        MAIN,
+        default_build,
+        &source,
+        None,
+        &|| false,
+        &progress,
+        (0, 0),
+    )
+    .await;
+    drop(source);
 
     assert_eq!(applied(&path, MAIN), before);
-    assert_eq!(source.calls(), 0, "no private request");
+    assert!(
+        events.lock().unwrap().is_empty(),
+        "completion is not reported again"
+    );
+    assert!(
+        seam.seam.observer.requests().is_empty(),
+        "no private request"
+    );
     assert!(!std::path::Path::new(&format!("{path}.tpir")).exists());
     // Transparent lookups stay public.
     assert_eq!(

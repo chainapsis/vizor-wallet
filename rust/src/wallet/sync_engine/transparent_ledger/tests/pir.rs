@@ -142,7 +142,7 @@ pub(super) fn service(map: Arc<Mutex<Vec<u8>>>) -> RequestObserver {
 }
 
 /// A service that refuses everything.
-fn refusing() -> RequestObserver {
+pub(super) fn refusing() -> RequestObserver {
     RequestObserver::answering(|_| reply(503, vec![]))
 }
 
