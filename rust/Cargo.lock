@@ -531,6 +531,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4c7f02d4ea65f2c1853089ffd8d2787bdbc63de2f0d29dedbcf8ccdfa0ccd4cf"
 
 [[package]]
+name = "base58ck"
+version = "0.1.101"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "365c0acd5b2e8dd0111a46c4faea83fb3cfb6e39a49a7c73a06e090db7b2eff0"
+dependencies = [
+ "bitcoin_hashes 0.14.101",
+]
+
+[[package]]
 name = "base64"
 version = "0.21.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -616,10 +625,61 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5e764a1d40d510daf35e07be9eb06e75770908c27d411ee6c92109c9840eaaf7"
 
 [[package]]
+name = "bitcoin"
+version = "0.32.102"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bb0ce8bd5baaa0d303a19915a6d93afed161f528654e42da2a7a97d05c59499a"
+dependencies = [
+ "base58ck",
+ "bech32",
+ "bitcoin-io",
+ "bitcoin-units",
+ "bitcoin_hashes 0.14.101",
+ "hex-conservative 0.2.3",
+ "hex_lit",
+ "secp256k1",
+]
+
+[[package]]
+name = "bitcoin-consensus-encoding"
+version = "1.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9daa31138eb443d5751b207f3f64154e2bb09cd59960562ccc7a7112be38147f"
+dependencies = [
+ "bitcoin-internals",
+ "hex-conservative 1.3.0",
+ "serde",
+]
+
+[[package]]
+name = "bitcoin-internals"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e8bea3a9f0cfece4564e37cb49a38cc245ca5184719e50d7d0dda3268722c4e2"
+
+[[package]]
+name = "bitcoin-io"
+version = "0.1.101"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bb5de036369d1ac59d3c1819ebc4d850f89466f5401c571a285b6ed564a4cb78"
+dependencies = [
+ "bitcoin-consensus-encoding",
+]
+
+[[package]]
 name = "bitcoin-private"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73290177011694f38ec25e165d0387ab7ea749a4b81cd4c80dae5988229f7a57"
+
+[[package]]
+name = "bitcoin-units"
+version = "0.1.101"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9cb95693f371d089a4b5b6fc41c6f3ea6e01ee8c15388335dfac8ea685173b51"
+dependencies = [
+ "bitcoin-consensus-encoding",
+]
 
 [[package]]
 name = "bitcoin_hashes"
@@ -628,6 +688,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d7066118b13d4b20b23645932dfb3a81ce7e29f95726c2036fa33cd7b092501"
 dependencies = [
  "bitcoin-private",
+]
+
+[[package]]
+name = "bitcoin_hashes"
+version = "0.14.101"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bca4c7abb40c8817d77403c880988cfd484f23ab2365726afb2f798363e2c4a2"
+dependencies = [
+ "bitcoin-io",
+ "hex-conservative 0.2.3",
 ]
 
 [[package]]
@@ -2545,6 +2615,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
+name = "hex-conservative"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "db3fef046dca3ca91ee1408a8c1b80ab777e80a4d308d1bf4e7adb3fcb047e08"
+dependencies = [
+ "arrayvec",
+]
+
+[[package]]
+name = "hex-conservative"
+version = "1.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "271e0d19bcb473b6675739a2b536076b24a082316cb5199ad918edce10c599e8"
+dependencies = [
+ "arrayvec",
+]
+
+[[package]]
+name = "hex_lit"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3011d1213f159867b13cfd6ac92d2cd5f1345762c63be3554e84092d85a50bbd"
+
+[[package]]
 name = "hidapi"
 version = "2.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3005,6 +3099,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "inspiring"
+version = "0.1.0-rc.2"
+source = "git+https://github.com/valargroup/ipir-sp.git?tag=v0.1.0-rc.6#1f2aec654d42d8c180373036eb1f6d30ff4ad30c"
+dependencies = [
+ "bytemuck",
+ "memmap2",
+ "rand_chacha 0.3.1",
+ "rayon",
+ "thiserror 1.0.69",
+ "valar-spiral-rs",
+]
+
+[[package]]
 name = "inventory"
 version = "0.3.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3022,17 +3129,39 @@ dependencies = [
  "clap",
  "env_logger",
  "fastrand",
- "inspiring",
+ "inspiring 0.1.0-rc.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "log",
  "rand 0.9.5",
  "rand_chacha 0.3.1",
  "rayon",
- "reinspiring",
+ "reinspiring 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde",
  "serde_json",
  "sha1",
  "sha2 0.10.9",
- "simplepir-kernel",
+ "simplepir-kernel 0.1.0-rc.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "valar-spiral-rs",
+]
+
+[[package]]
+name = "ipir-sp"
+version = "0.1.0-rc.6"
+source = "git+https://github.com/valargroup/ipir-sp.git?tag=v0.1.0-rc.6#1f2aec654d42d8c180373036eb1f6d30ff4ad30c"
+dependencies = [
+ "clap",
+ "env_logger",
+ "fastrand",
+ "inspiring 0.1.0-rc.2 (git+https://github.com/valargroup/ipir-sp.git?tag=v0.1.0-rc.6)",
+ "log",
+ "rand 0.9.5",
+ "rand_chacha 0.3.1",
+ "rayon",
+ "reinspiring 0.1.2 (git+https://github.com/valargroup/ipir-sp.git?tag=v0.1.0-rc.6)",
+ "serde",
+ "serde_json",
+ "sha1",
+ "sha2 0.10.9",
+ "simplepir-kernel 0.1.0-rc.3 (git+https://github.com/valargroup/ipir-sp.git?tag=v0.1.0-rc.6)",
  "valar-spiral-rs",
 ]
 
@@ -3165,7 +3294,7 @@ version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0a08a7e0ccd113dac19485c5c0fe87c70b663f896c48e4493814e446175078d4"
 dependencies = [
- "bitcoin_hashes",
+ "bitcoin_hashes 0.12.0",
  "crc",
  "minicbor",
  "phf 0.11.3",
@@ -4049,6 +4178,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "pir-native"
+version = "0.1.0"
+source = "git+https://github.com/valargroup/wallet-pir?rev=648264bb4801ae8faf7a61f4638ea049edb167cf#648264bb4801ae8faf7a61f4638ea049edb167cf"
+dependencies = [
+ "ipir-sp 0.1.0-rc.6 (git+https://github.com/valargroup/ipir-sp.git?tag=v0.1.0-rc.6)",
+ "rand 0.8.8",
+ "rand_chacha 0.3.1",
+ "rayon",
+ "reinspiring 0.1.2 (git+https://github.com/valargroup/ipir-sp.git?tag=v0.1.0-rc.6)",
+]
+
+[[package]]
 name = "pir-types"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4684,7 +4825,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2637107860b7b9083f89143736c5a750c8fdeea1f3376f3f2b0eba9269b97da8"
 dependencies = [
  "bytemuck",
- "inspiring",
+ "inspiring 0.1.0-rc.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "memmap2",
+ "rand 0.8.8",
+ "rand_chacha 0.3.1",
+ "rayon",
+ "sha2 0.10.9",
+ "thiserror 1.0.69",
+ "valar-spiral-rs",
+ "zeroize",
+]
+
+[[package]]
+name = "reinspiring"
+version = "0.1.2"
+source = "git+https://github.com/valargroup/ipir-sp.git?tag=v0.1.0-rc.6#1f2aec654d42d8c180373036eb1f6d30ff4ad30c"
+dependencies = [
+ "bytemuck",
+ "inspiring 0.1.0-rc.2 (git+https://github.com/valargroup/ipir-sp.git?tag=v0.1.0-rc.6)",
  "memmap2",
  "rand 0.8.8",
  "rand_chacha 0.3.1",
@@ -4821,7 +4979,7 @@ dependencies = [
  "hyper-util",
  "ics23",
  "incrementalmerkletree",
- "ipir-sp",
+ "ipir-sp 0.1.0-rc.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "ledger-transport",
  "ledger-transport-hid",
  "log",
@@ -4866,6 +5024,7 @@ dependencies = [
  "zakura-pczt",
  "zakura-pir-enhance",
  "zakura-pir-status",
+ "zakura-pir-transparent",
  "zakura-primitives",
  "zakura-proofs",
  "zakura-protocol",
@@ -5089,6 +5248,7 @@ version = "0.29.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9465315bc9d4566e1724f0fffcbcc446268cb522e60f9a27bcded6b19c108113"
 dependencies = [
+ "bitcoin_hashes 0.12.0",
  "secp256k1-sys",
 ]
 
@@ -5410,7 +5570,17 @@ version = "0.1.0-rc.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "30dd16e9b8bd35b6598faad9b793f53333e652140b46bd0f1769365f12ad9cc6"
 dependencies = [
- "inspiring",
+ "inspiring 0.1.0-rc.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rayon",
+ "valar-spiral-rs",
+]
+
+[[package]]
+name = "simplepir-kernel"
+version = "0.1.0-rc.3"
+source = "git+https://github.com/valargroup/ipir-sp.git?tag=v0.1.0-rc.6#1f2aec654d42d8c180373036eb1f6d30ff4ad30c"
+dependencies = [
+ "inspiring 0.1.0-rc.2 (git+https://github.com/valargroup/ipir-sp.git?tag=v0.1.0-rc.6)",
  "rayon",
  "valar-spiral-rs",
 ]
@@ -7224,6 +7394,86 @@ dependencies = [
 ]
 
 [[package]]
+name = "transparent-events"
+version = "0.1.0"
+source = "git+https://github.com/valargroup/wallet-pir?rev=648264bb4801ae8faf7a61f4638ea049edb167cf#648264bb4801ae8faf7a61f4638ea049edb167cf"
+dependencies = [
+ "hex",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "transparent-filter"
+version = "0.1.0"
+source = "git+https://github.com/valargroup/wallet-pir?rev=648264bb4801ae8faf7a61f4638ea049edb167cf#648264bb4801ae8faf7a61f4638ea049edb167cf"
+dependencies = [
+ "bitcoin",
+ "hex",
+ "serde",
+ "sha2 0.10.9",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "transparent-native"
+version = "0.1.0"
+source = "git+https://github.com/valargroup/wallet-pir?rev=648264bb4801ae8faf7a61f4638ea049edb167cf#648264bb4801ae8faf7a61f4638ea049edb167cf"
+dependencies = [
+ "hex",
+ "pir-native",
+ "rayon",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+]
+
+[[package]]
+name = "transparent-shard"
+version = "0.1.0"
+source = "git+https://github.com/valargroup/wallet-pir?rev=648264bb4801ae8faf7a61f4638ea049edb167cf#648264bb4801ae8faf7a61f4638ea049edb167cf"
+dependencies = [
+ "base64 0.22.1",
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror 2.0.21",
+ "transparent-events",
+ "transparent-filter",
+]
+
+[[package]]
+name = "transparent-wallet"
+version = "0.1.0"
+source = "git+https://github.com/valargroup/wallet-pir?rev=648264bb4801ae8faf7a61f4638ea049edb167cf#648264bb4801ae8faf7a61f4638ea049edb167cf"
+dependencies = [
+ "base64 0.22.1",
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror 2.0.21",
+ "transparent-events",
+ "transparent-filter",
+ "transparent-native",
+ "transparent-shard",
+]
+
+[[package]]
+name = "transparent-wallet-store"
+version = "0.1.0"
+source = "git+https://github.com/valargroup/wallet-pir?rev=648264bb4801ae8faf7a61f4638ea049edb167cf#648264bb4801ae8faf7a61f4638ea049edb167cf"
+dependencies = [
+ "hex",
+ "rusqlite",
+ "serde_json",
+ "thiserror 2.0.21",
+ "transparent-events",
+ "transparent-shard",
+ "transparent-wallet",
+]
+
+[[package]]
 name = "try-lock"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7314,7 +7564,7 @@ name = "ur"
 version = "0.3.0"
 source = "git+https://github.com/KeystoneHQ/ur-rs?tag=0.3.3#81b8bb3b6b3a823128489c81ffee5bb4001ba2ae"
 dependencies = [
- "bitcoin_hashes",
+ "bitcoin_hashes 0.12.0",
  "crc",
  "minicbor",
  "phf 0.11.3",
@@ -8178,7 +8428,7 @@ dependencies = [
 [[package]]
 name = "zakura-client-backend"
 version = "0.1.0-rc7"
-source = "git+https://github.com/zakura-core/wallet-libraries?rev=8897057f0043b4c475e0da12340c4e0e426cea71#8897057f0043b4c475e0da12340c4e0e426cea71"
+source = "git+https://github.com/zakura-core/wallet-libraries?rev=4e79d3a6591e1d72b163c9c703a198d6fef703d8#4e79d3a6591e1d72b163c9c703a198d6fef703d8"
 dependencies = [
  "ambassador",
  "arti-client",
@@ -8254,7 +8504,7 @@ dependencies = [
 [[package]]
 name = "zakura-client-sqlite"
 version = "0.1.0-rc7"
-source = "git+https://github.com/zakura-core/wallet-libraries?rev=8897057f0043b4c475e0da12340c4e0e426cea71#8897057f0043b4c475e0da12340c4e0e426cea71"
+source = "git+https://github.com/zakura-core/wallet-libraries?rev=4e79d3a6591e1d72b163c9c703a198d6fef703d8#4e79d3a6591e1d72b163c9c703a198d6fef703d8"
 dependencies = [
  "ambassador",
  "bip32",
@@ -8462,7 +8712,7 @@ dependencies = [
 [[package]]
 name = "zakura-pczt"
 version = "0.1.0-rc4"
-source = "git+https://github.com/zakura-core/wallet-libraries?rev=8897057f0043b4c475e0da12340c4e0e426cea71#8897057f0043b4c475e0da12340c4e0e426cea71"
+source = "git+https://github.com/zakura-core/wallet-libraries?rev=4e79d3a6591e1d72b163c9c703a198d6fef703d8#4e79d3a6591e1d72b163c9c703a198d6fef703d8"
 dependencies = [
  "blake2b_simd",
  "document-features",
@@ -8497,10 +8747,10 @@ dependencies = [
  "base64 0.22.1",
  "futures-util",
  "hex",
- "ipir-sp",
+ "ipir-sp 0.1.0-rc.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.8.8",
  "rand_chacha 0.3.1",
- "reinspiring",
+ "reinspiring 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -8516,7 +8766,7 @@ dependencies = [
 [[package]]
 name = "zakura-pir-enhance-types"
 version = "0.0.1-rc0"
-source = "git+https://github.com/zakura-core/wallet-libraries?rev=8897057f0043b4c475e0da12340c4e0e426cea71#8897057f0043b4c475e0da12340c4e0e426cea71"
+source = "git+https://github.com/zakura-core/wallet-libraries?rev=4e79d3a6591e1d72b163c9c703a198d6fef703d8#4e79d3a6591e1d72b163c9c703a198d6fef703d8"
 
 [[package]]
 name = "zakura-pir-native"
@@ -8524,10 +8774,10 @@ version = "0.0.1-rc0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c105d07f735e7499bfc8d41bcf9e0475fd3df0c44a20a90feb424e3134bf658"
 dependencies = [
- "ipir-sp",
+ "ipir-sp 0.1.0-rc.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.8.8",
  "rand_chacha 0.3.1",
- "reinspiring",
+ "reinspiring 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -8543,6 +8793,27 @@ dependencies = [
  "sha2 0.10.9",
  "thiserror 2.0.21",
  "zakura-pir-native",
+]
+
+[[package]]
+name = "zakura-pir-transparent"
+version = "0.0.1-rc0"
+source = "git+https://github.com/zakura-core/wallet-libraries?rev=4e79d3a6591e1d72b163c9c703a198d6fef703d8#4e79d3a6591e1d72b163c9c703a198d6fef703d8"
+dependencies = [
+ "hex",
+ "rusqlite",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror 2.0.21",
+ "transparent-events",
+ "transparent-filter",
+ "transparent-wallet",
+ "transparent-wallet-store",
+ "url",
+ "zakura-client-backend",
+ "zakura-primitives",
+ "zakura-protocol",
+ "zakura-transparent",
 ]
 
 [[package]]
