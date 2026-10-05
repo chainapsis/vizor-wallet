@@ -123,7 +123,7 @@ const LIGHTWALLETD_RESULT_CANCELLED: i32 = 3;
 /// No observation was made and none was sent; a later attempt may conclude.
 const STATUS_RESULT_INCONCLUSIVE: i32 = 4;
 /// The lookup is not authorized through this ABI. Nothing was sent.
-const STATUS_RESULT_UNSUPPORTED: i32 = 5;
+pub(crate) const STATUS_RESULT_UNSUPPORTED: i32 = 5;
 const LIGHTWALLETD_CANCELLATION_POLL_INTERVAL: Duration = Duration::from_millis(25);
 
 #[repr(C)]

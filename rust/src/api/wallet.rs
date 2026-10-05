@@ -1922,10 +1922,11 @@ mod tests {
                 is_first_wallet_account,
             )
         };
-        // This build's Public handle fails closed on the stricter wallet.
-        assert!(
-            preview(false).is_err(),
-            "an unavailable preview is not a balance"
+        // The opener adopts the stricter durable policy, so the preview is
+        // withheld: unavailable, never a zero balance.
+        assert_eq!(
+            preview(false),
+            Err(TRANSPARENT_PREVIEW_UNAVAILABLE.to_string())
         );
 
         listener.set_nonblocking(true).unwrap();

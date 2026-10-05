@@ -815,8 +815,9 @@ async fn withheld_lookups_send_and_reschedule_nothing() {
     .unwrap();
     assert_eq!(fetched.get(), 0);
     assert!(!changed);
-    // This build's Public handle cannot read the stricter wallet, and the
-    // production entry point fails closed on it instead of querying.
+    // A Public handle opened before the transition cannot read the stricter
+    // wallet, and the production entry point fails closed on it instead of
+    // querying.
     assert!(ephemeral_checks::run(
         "http://127.0.0.1:9",
         &mut w.db,
@@ -829,4 +830,21 @@ async fn withheld_lookups_send_and_reschedule_nothing() {
     )
     .await
     .is_err());
+    // A handle opened after it adopts the durable policy, so the production
+    // entry point withholds the check: it succeeds without connecting to the
+    // unreachable endpoint and changes nothing.
+    let mut adopted = open_wallet_db_with_timeout(&path, w.network, SYNC_DB_BUSY_TIMEOUT).unwrap();
+    ephemeral_checks::run(
+        "http://127.0.0.1:9",
+        &mut adopted,
+        &path,
+        w.network,
+        EnhancementPolicy::current(w.network),
+        BlockHeight::from_u32(TIP),
+        &mut changed,
+        &|| false,
+    )
+    .await
+    .unwrap();
+    assert!(!changed);
 }
