@@ -11,7 +11,9 @@ layer (`integration_test/regtest_transparent_history_cases_test.dart`, the
 macOS app) in both modes.
 
 Runs: 2026-10-05, branch `claude/tpir-private-history` on #839 `c65418c33`
-(D1 and D2 fixed), wallet-libraries main `bdebaffcb`.
+(D1 and D2 fixed), wallet-libraries main `bdebaffcb`. The private desktop run
+`private-desktop-final` is on #839 `d08f87bf0` (D3 fixed, and a private row's
+fee presented once); the Private app column is from it.
 
 | Run | Commit | Output | Time | Exit |
 |---|---|---|---|---|
@@ -19,6 +21,7 @@ Runs: 2026-10-05, branch `claude/tpir-private-history` on #839 `c65418c33`
 | Public, Rust layer | `b889501a2` | `public3` | 192 s | 101 (G1-G5) |
 | Public, Rust and desktop app layers | `552b96b3e` | `public-desktop` | 133 s + 456 s | 101, 1 |
 | Private, Rust and desktop app layers | `51649c973` | `private-desktop` | 237 s + 172 s | 0, 0 |
+| Private, Rust and desktop app layers | `12eb8d684` | `private-desktop-final` | 300 s + 223 s | 0, 1 (D4) |
 
 `552b96b3e` changes only the desktop runner's environment, so the Rust results
 at `b889501a2` stand for it; the desktop run's Rust matrix is identical to
@@ -38,7 +41,8 @@ to a synced wallet); #818 adds it. **App** is a fresh restore (N) in the
 macOS app, checking each expected activity row's title, amount, pool label,
 detail status and whole fee: 49 rows over 11 cases in public mode; in
 private mode 47 rows over the same cases, three of them optional, also
-checking the "Details incomplete" marker on the row and the receipt.
+checking the "Details incomplete" marker on the row and the receipt, and
+that a spend's receipt shows its fee once (see Fee presentation).
 
 Cell values:
 
@@ -64,18 +68,18 @@ Cell values:
 
 | Case | Public R | Public O | Public N | Public faults | Public app | Private R | Private O | Private N | Private faults | Private app |
 |---|---|---|---|---|---|---|---|---|---|---|
-| H01 Transparent-only send | - | pass | fail (G1) | - | fail (G1) | - | pass; details incomplete by design: send | pass; details incomplete by design: send | - | pass (2 rows); details incomplete by design: send |
-| H02 Several inputs or recipients | - | pass | fail (G1) | - | fail (G1) | - | pass; details incomplete by design: send | pass; details incomplete by design: send | - | pass (4 rows); details incomplete by design: send |
+| H01 Transparent-only send | - | pass | fail (G1) | - | fail (G1) | - | pass; details incomplete by design: send | pass; details incomplete by design: send | - | pass (2 rows); details incomplete by design: send; fee separate |
+| H02 Several inputs or recipients | - | pass | fail (G1) | - | fail (G1) | - | pass; details incomplete by design: send | pass; details incomplete by design: send | - | pass (4 rows); details incomplete by design: send; fee separate |
 | H03 Ordinary transparent receive | pass | pass | pass | - | pass | pass | pass | pass | - | pass (3 rows) |
 | H04 Retained local transaction | pass | pass | pass | - | - | pass | pass | pass | - | - |
-| H05 Shared funding | - | fail (G2) | fail (G2) | - | pass (row and fee only) | - | pass; incomplete by design: shared funding (details, pool, provisional) | pass; incomplete by design: shared funding (details, pool, provisional) | - | pass (6 rows); 3 marked incomplete |
-| H06 Self/cross-account transfer | pass | - | fail (G3) | - | fail (G3) | pass; details incomplete by design: cross-account send; incomplete by design: self-transfer (details) | - | pass; details incomplete by design: cross-account send; incomplete by design: cross-account from Orchard (details, fee, pool, provisional), self-transfer (details) | - | pass (8 rows); 4 marked incomplete |
-| H07 Owned shielding/unshielding | pass | pass | pass | - | pass | pass | pass | pass; incomplete by design: shield, self-unshield (details, pool, provisional) | - | pass (4 rows); 3 marked incomplete |
+| H05 Shared funding | - | fail (G2) | fail (G2) | - | pass (row and fee only) | - | pass; incomplete by design: shared funding (details, pool, provisional) | pass; incomplete by design: shared funding (details, pool, provisional) | - | pass (6 rows); 3 marked incomplete; 3 net change, Tx fee 15,000 |
+| H06 Self/cross-account transfer | pass | - | fail (G3) | - | fail (G3) | pass; details incomplete by design: cross-account send; incomplete by design: self-transfer (details) | - | pass; details incomplete by design: cross-account send; incomplete by design: cross-account from Orchard (details, fee, pool, provisional), self-transfer (details) | - | fail (D4): the self-transfer reads "Received +1.9999", not "Network fee -0.0001"; the other 7 rows pass; 4 marked incomplete |
+| H07 Owned shielding/unshielding | pass | pass | pass | - | pass | pass | pass | pass; incomplete by design: shield, self-unshield (details, pool, provisional) | - | pass (4 rows); 3 marked incomplete; shield and self-unshield read "Network fee" (65,000, 15,000) |
 | H08 External transparent unshielding | pass | - | pass | - | pass | pass | - | pass; incomplete by design: unshield to Bob (details, fee, pool, provisional) | - | pass (2 rows); 2 marked incomplete |
-| H09 Other mixed-pool transaction | - | - | fail (G1) | - | fail (G6) | - | - | pass; incomplete by design: mixed-pool send (details, pool, provisional) | - | pass (2 rows); 1 marked incomplete |
-| H10 TEX/multi-step operation | pass | - | pass | - | pass | pass | - | pass; details incomplete by design: TEX leg 2; incomplete by design: TEX leg 1 (details, pool, provisional) | - | pass (4 rows; both TEX leg 1 rows, optional, shown); 3 marked incomplete |
+| H09 Other mixed-pool transaction | - | - | fail (G1) | - | fail (G6) | - | - | pass; incomplete by design: mixed-pool send (details, pool, provisional) | - | pass (2 rows); 1 marked incomplete; net change, Tx fee 15,000 |
+| H10 TEX/multi-step operation | pass | - | pass | - | pass | pass | - | pass; details incomplete by design: TEX leg 2; incomplete by design: TEX leg 1 (details, pool, provisional) | - | pass (4 rows; both optional rows, TEX leg 1 and its return, shown); 3 marked incomplete; TEX leg 1 reads "Network fee" 15,000 |
 | H11 Swap/gift-card operation | pass | - | pass | - | pass | pass; incomplete by design: gift-card claim (details) | - | pass; incomplete by design: gift-card claim (details), gift-card create (details, fee, pool, provisional), swap deposit (details, fee, pool, provisional) | - | pass (5 rows); 5 marked incomplete |
-| H12 Pending/expired/conflicted | pass (pending, pre-reorg, final) | - | fail (G4) | N_pending: pass | fail (G4) | pass (pending, pre-reorg, final); details incomplete by design: conflicting spend (pre-reorg, final) | - | pass; details incomplete by design: conflicting spend; incomplete by design: pending shield (details, pool, provisional) | N_pending: pass | pass (6 rows; the unmined receive, optional, not shown); 3 marked incomplete |
+| H12 Pending/expired/conflicted | pass (pending, pre-reorg, final) | - | fail (G4) | N_pending: pass | fail (G4) | pass (pending, pre-reorg, final); details incomplete by design: conflicting spend (pre-reorg, final) | - | pass; details incomplete by design: conflicting spend; incomplete by design: pending shield (details, pool, provisional) | N_pending: pass | pass (7 rows; the unmined receive, optional, not shown); 3 marked incomplete; pending shield reads "Network fee" 20,000 |
 | H13 Incomplete coverage | - | - | - | N_cut: fail (G5)<br>N_pre: pass<br>N_utxo_fail: pass | - | - | - | - | N_lag: pass<br>N_pir_fail: pass<br>N_pre: pass | - |
 
 Gate verdicts. Private: all 13 cases pass. Public: H03, H04, H07, H08, H10
@@ -83,14 +87,37 @@ and H11 pass; H01, H02, H05, H06, H09, H12 and H13 fail on G1-G5. In every
 run all four negative controls (a wrong fee, a wrong input count, an omitted
 ledger event, a wrong ownership mapping) make the comparison fail, as
 required. Public app layer: 8 of 49 rows fail, in H01, H02, H06, H09 and H12.
-Private app layer: all 47 rows pass, and the "Details incomplete" marker
-appears on exactly the rows marked above. Its sent rows in H01, H02, H06 and
+Private app layer (`private-desktop-final`): 46 of 47 rows pass; H06's
+self-transfer fails on D4. The "Details incomplete" marker appears on exactly
+the rows marked above. Its sent rows in H01, H02, H06 and
 H12 carry the Transparent pool label, so G1 does not appear. The unmined H12
 receive is optional and not shown: private recovery reads mined blocks, and
 the mempool observer matches shielded outputs only
 (`rust/src/wallet/sync_engine/mempool.rs`).
-For shared funding (H05) the app layer checks only that a row exists and that
-a shown fee is the whole fee; the Rust layer checks its amount.
+For shared funding (H05) the app layer checks that a row exists, that its
+receipt labels the movement as a net change and shows the whole fee; the Rust
+layer checks its amount.
+
+## Fee presentation
+
+Since #839 `d08f87bf0`, a private row whose amount is the account's movement
+with the whole fee in it (the account's own fee is unknown, so nothing is
+subtracted) shows the fee once. When the movement is the whole fee, the
+activity row reads "Network fee" with the signed fee and no pool, and the
+receipt, titled "Transaction", has one "Network fee" line and no "Amount" or
+"Tx fee" line. Otherwise the receipt labels the amount "Net change (includes
+network fee)" and keeps "Tx fee" with the whole fee. Public rows are
+unchanged. The private profile derives which presentation each spend's
+receipt may have from the account's movement and the whole fee, not from the
+app (`fee_presentations` in `scripts/e2e/transparent_history_profile_private.py`):
+fee only where the movement is the whole fee, net change where a known whole
+fee sits in a larger movement, and separate where no whole fee is shown or the
+reconstructed payment excludes it. In `private-desktop-final` the fee-only rows
+are H07's shield and self-unshield, H10's TEX leg 1 and H12's pending shield;
+the net-change rows are H05's three shared-funding rows and H09's mixed-pool
+send. H06's cross-account send from Orchard may show either a net change or,
+its fee unknown, an amount; it shows an amount. H06's self-transfer is
+expected fee only and fails (D4).
 
 ## Request capture
 
@@ -99,7 +126,8 @@ transparent subject is an address method (`GetAddressUtxosStream`,
 `GetTaddressTxids`) or a `GetTransaction`: a request that names a transparent
 address or a txid to lightwalletd. Public and Private are the Rust layer
 (`public3`, `private3`); Private app is the macOS app's fresh restore in
-`private-desktop`, which reaches lightwalletd through a recording proxy.
+`private-desktop-final`, which reaches lightwalletd through a recording proxy.
+`private-desktop` captured the same app totals.
 
 | | Public | Private | Private app |
 |---|---|---|---|
@@ -122,9 +150,9 @@ broadcasts); the public app layer's own requests are not captured.
 For the private app layer, a request with a transparent subject fails the run;
 other methods are recorded. `GetMempoolStream` streams the whole mempool and
 names no address or txid; it is outside that policy only because the Rust
-layer does not use it. The `private-desktop` run's Rust layer made 341
-lightwalletd requests, none with a transparent subject, and 1,648 PIR
-requests with no privacy violation.
+layer does not use it. The Rust layers of `private-desktop` and
+`private-desktop-final` each made 341 lightwalletd requests, none with a
+transparent subject, and 1,648 PIR requests with no privacy violation.
 
 ## Product defects
 
@@ -160,9 +188,28 @@ H09 N 15,000; H10 N leg 1 15,000; H12 N pending shield 20,000. Rows where the
 account took part only through shielded notes keep an unknown fee: H06's
 cross-account from Orchard, H08's unshield to Bob, H11's gift-card create and
 swap deposit. On these incomplete rows the amount is the account's movement,
-which already includes the fee, so the shown fee overlaps it (H07 N shield:
-amount 65,000, fee 65,000; H05 N A1: 150,015,000 and fee 15,000). No list row
-adds the two; only the gift-card batch detail sums amount and fee.
+which already includes the fee, so the receipt showed the fee twice (H07 N
+shield: amount 65,000, fee 65,000). #839 `d08f87bf0` shows it once (see Fee
+presentation).
+
+**D4, open: a privately recovered self-transfer reads as a receive of its
+gross outputs.** H06's self-transfer (A0 spends 2 ZEC of its own transparent
+funds to its own external address, 1.2 ZEC, and change, 0.7999 ZEC;
+transparent only) changes A0's balance by -10,000, the whole fee. The desktop
+app's fresh restore shows "Received +1.9999 TAZ", Transparent, details
+incomplete, and a receipt with an "Amount" line, where the private profile
+expects "Network fee -0.0001" and a fee-only receipt. Vizor's history row
+(Rust layer, N) is `tx_kind` received, `account_balance_delta` -10,000,
+`display_amount` 199,990,000, fee 10,000 known, not provisional (so
+`amount_includes_fee` is false). In `classify_history_tx`
+(`rust/src/wallet/sync/transactions.rs`) there is no inferred payment, since
+every output is A0's and none is an external payment; the row is not
+provisional, so it is not a movement debit; its owned outputs then become a
+received row. The fee-only presentation covers only movement debits whose
+account fee is unknown, and here the account's fee is known. This is public
+G3's symptom in private mode. The private Rust layer accepts the row (the
+gross of owned outputs is a real owned amount), so only the app layer's
+fee-presentation check catches it. Not fixed.
 
 **D3, fixed in #839 (`0b08b3659`): a reorged-away receive's detail failed in
 private R and O.** H12's receive that a reorg returned to the mempool showed
@@ -251,8 +298,9 @@ TH_OUT_DIR="$PWD/rust/target/transparent-history-cases/public3" \
   scripts/e2e/transparent-history-cases.sh --profile public
 TH_OUT_DIR="$PWD/rust/target/transparent-history-cases/public-desktop" \
   scripts/e2e/transparent-history-cases.sh --profile public --flutter desktop
-TH_OUT_DIR="$PWD/rust/target/transparent-history-cases/private-desktop" \
+TH_OUT_DIR="$PWD/rust/target/transparent-history-cases/private-desktop-final" \
   scripts/e2e/transparent-history-cases.sh --profile private --flutter desktop
+python3 scripts/e2e/test_transparent_history_oracle.py
 ```
 
 Each writes `results.json` (case by variant matrix, negative controls) and the
