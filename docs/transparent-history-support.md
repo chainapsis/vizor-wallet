@@ -12,8 +12,8 @@ macOS app) in both modes.
 
 Runs: 2026-10-05, branch `claude/tpir-private-history` on #839 `c65418c33`
 (D1 and D2 fixed), wallet-libraries main `bdebaffcb`. The private desktop run
-`private-desktop-final` is on #839 `d08f87bf0` (D3 fixed, and a private row's
-fee presented once); the Private app column is from it.
+`private-desktop-d4` is on #839 `86d08ad59` (D3 and D4 fixed, and a private
+row's fee presented once); the Private app column is from it.
 
 | Run | Commit | Output | Time | Exit |
 |---|---|---|---|---|
@@ -22,6 +22,7 @@ fee presented once); the Private app column is from it.
 | Public, Rust and desktop app layers | `552b96b3e` | `public-desktop` | 133 s + 456 s | 101, 1 |
 | Private, Rust and desktop app layers | `51649c973` | `private-desktop` | 237 s + 172 s | 0, 0 |
 | Private, Rust and desktop app layers | `12eb8d684` | `private-desktop-final` | 300 s + 223 s | 0, 1 (D4) |
+| Private, Rust and desktop app layers | `e2c1d0e90` | `private-desktop-d4` | 287 s + 233 s | 0, 0 |
 
 `552b96b3e` changes only the desktop runner's environment, so the Rust results
 at `b889501a2` stand for it; the desktop run's Rust matrix is identical to
@@ -73,7 +74,7 @@ Cell values:
 | H03 Ordinary transparent receive | pass | pass | pass | - | pass | pass | pass | pass | - | pass (3 rows) |
 | H04 Retained local transaction | pass | pass | pass | - | - | pass | pass | pass | - | - |
 | H05 Shared funding | - | fail (G2) | fail (G2) | - | pass (row and fee only) | - | pass; incomplete by design: shared funding (details, pool, provisional) | pass; incomplete by design: shared funding (details, pool, provisional) | - | pass (6 rows); 3 marked incomplete; 3 net change, Tx fee 15,000 |
-| H06 Self/cross-account transfer | pass | - | fail (G3) | - | fail (G3) | pass; details incomplete by design: cross-account send; incomplete by design: self-transfer (details) | - | pass; details incomplete by design: cross-account send; incomplete by design: cross-account from Orchard (details, fee, pool, provisional), self-transfer (details) | - | fail (D4): the self-transfer reads "Received +1.9999", not "Network fee -0.0001"; the other 7 rows pass; 4 marked incomplete |
+| H06 Self/cross-account transfer | pass | - | fail (G3) | - | fail (G3) | pass; details incomplete by design: cross-account send; incomplete by design: self-transfer (details) | - | pass; details incomplete by design: cross-account send; incomplete by design: cross-account from Orchard (details, fee, pool, provisional), self-transfer (details) | - | pass (8 rows); 4 marked incomplete; the self-transfer reads "Network fee -0.0001" |
 | H07 Owned shielding/unshielding | pass | pass | pass | - | pass | pass | pass | pass; incomplete by design: shield, self-unshield (details, pool, provisional) | - | pass (4 rows); 3 marked incomplete; shield and self-unshield read "Network fee" (65,000, 15,000) |
 | H08 External transparent unshielding | pass | - | pass | - | pass | pass | - | pass; incomplete by design: unshield to Bob (details, fee, pool, provisional) | - | pass (2 rows); 2 marked incomplete |
 | H09 Other mixed-pool transaction | - | - | fail (G1) | - | fail (G6) | - | - | pass; incomplete by design: mixed-pool send (details, pool, provisional) | - | pass (2 rows); 1 marked incomplete; net change, Tx fee 15,000 |
@@ -87,8 +88,8 @@ and H11 pass; H01, H02, H05, H06, H09, H12 and H13 fail on G1-G5. In every
 run all four negative controls (a wrong fee, a wrong input count, an omitted
 ledger event, a wrong ownership mapping) make the comparison fail, as
 required. Public app layer: 8 of 49 rows fail, in H01, H02, H06, H09 and H12.
-Private app layer (`private-desktop-final`): 46 of 47 rows pass; H06's
-self-transfer fails on D4. The "Details incomplete" marker appears on exactly
+Private app layer (`private-desktop-d4`): 47 of 47 rows pass. The "Details
+incomplete" marker appears on exactly
 the rows marked above. Its sent rows in H01, H02, H06 and
 H12 carry the Transparent pool label, so G1 does not appear. The unmined H12
 receive is optional and not shown: private recovery reads mined blocks, and
@@ -112,12 +113,12 @@ receipt may have from the account's movement and the whole fee, not from the
 app (`fee_presentations` in `scripts/e2e/transparent_history_profile_private.py`):
 fee only where the movement is the whole fee, net change where a known whole
 fee sits in a larger movement, and separate where no whole fee is shown or the
-reconstructed payment excludes it. In `private-desktop-final` the fee-only rows
-are H07's shield and self-unshield, H10's TEX leg 1 and H12's pending shield;
+reconstructed payment excludes it. In `private-desktop-d4` the fee-only rows
+are H06's self-transfer, H07's shield and self-unshield, H10's TEX leg 1 and
+H12's pending shield;
 the net-change rows are H05's three shared-funding rows and H09's mixed-pool
 send. H06's cross-account send from Orchard may show either a net change or,
-its fee unknown, an amount; it shows an amount. H06's self-transfer is
-expected fee only and fails (D4).
+its fee unknown, an amount; it shows an amount.
 
 ## Request capture
 
@@ -126,12 +127,13 @@ transparent subject is an address method (`GetAddressUtxosStream`,
 `GetTaddressTxids`) or a `GetTransaction`: a request that names a transparent
 address or a txid to lightwalletd. Public and Private are the Rust layer
 (`public3`, `private3`); Private app is the macOS app's fresh restore in
-`private-desktop-final`, which reaches lightwalletd through a recording proxy.
-`private-desktop` captured the same app totals.
+`private-desktop-d4`, which reaches lightwalletd through a recording proxy.
+The earlier private desktop runs captured the same totals within a few
+`GetLatestBlock` polls.
 
 | | Public | Private | Private app |
 |---|---|---|---|
-| lightwalletd requests | 868 | 332 | 44 |
+| lightwalletd requests | 868 | 332 | 46 |
 | with a transparent subject | 529 (226 `GetAddressUtxosStream`, 80 `GetTaddressTxids`, 223 `GetTransaction`) | 0 | 0 |
 | block and tree data (`GetLatestBlock`, `GetBlock`, `GetBlockRange`, `GetTreeState`, `GetSubtreeRoots`) | 313 | 303 | 38 (26, 4, 2, 2, 4) |
 | server info and mempool (`GetLightdInfo`, `GetMempoolStream`) | 0 | 0 | 6 (3, 3) |
@@ -192,24 +194,17 @@ which already includes the fee, so the receipt showed the fee twice (H07 N
 shield: amount 65,000, fee 65,000). #839 `d08f87bf0` shows it once (see Fee
 presentation).
 
-**D4, open: a privately recovered self-transfer reads as a receive of its
-gross outputs.** H06's self-transfer (A0 spends 2 ZEC of its own transparent
-funds to its own external address, 1.2 ZEC, and change, 0.7999 ZEC;
-transparent only) changes A0's balance by -10,000, the whole fee. The desktop
-app's fresh restore shows "Received +1.9999 TAZ", Transparent, details
-incomplete, and a receipt with an "Amount" line, where the private profile
-expects "Network fee -0.0001" and a fee-only receipt. Vizor's history row
-(Rust layer, N) is `tx_kind` received, `account_balance_delta` -10,000,
-`display_amount` 199,990,000, fee 10,000 known, not provisional (so
-`amount_includes_fee` is false). In `classify_history_tx`
-(`rust/src/wallet/sync/transactions.rs`) there is no inferred payment, since
-every output is A0's and none is an external payment; the row is not
-provisional, so it is not a movement debit; its owned outputs then become a
-received row. The fee-only presentation covers only movement debits whose
-account fee is unknown, and here the account's fee is known. This is public
-G3's symptom in private mode. The private Rust layer accepts the row (the
-gross of owned outputs is a real owned amount), so only the app layer's
-fee-presentation check catches it. Not fixed.
+**D4, fixed in #839 (`86d08ad59`): a privately recovered self-transfer read as
+a receive of its gross outputs.** H06's self-transfer (A0 spends 2 ZEC of its
+own transparent funds to its own external address, 1.2 ZEC, and change, 0.7999
+ZEC; transparent only) changes A0's balance by -10,000, the whole fee. The app
+showed "Received +1.9999 TAZ": `classify_history_tx` found no external payment
+and the row was not a provisional movement debit, so its owned outputs became a
+received row (public G3's symptom). The fix uses the library's private facts
+only: when the exact reconstructed payment is 0 and the balance change equals
+the exact whole fee, the row is one fee-only sent row, "Network fee -0.0001",
+with no pool label. Public rows and inexact cases are unchanged; public G3
+remains #818's.
 
 **D3, fixed in #839 (`0b08b3659`): a reorged-away receive's detail failed in
 private R and O.** H12's receive that a reorg returned to the mempool showed
@@ -298,7 +293,7 @@ TH_OUT_DIR="$PWD/rust/target/transparent-history-cases/public3" \
   scripts/e2e/transparent-history-cases.sh --profile public
 TH_OUT_DIR="$PWD/rust/target/transparent-history-cases/public-desktop" \
   scripts/e2e/transparent-history-cases.sh --profile public --flutter desktop
-TH_OUT_DIR="$PWD/rust/target/transparent-history-cases/private-desktop-final" \
+TH_OUT_DIR="$PWD/rust/target/transparent-history-cases/private-desktop-d4" \
   scripts/e2e/transparent-history-cases.sh --profile private --flutter desktop
 python3 scripts/e2e/test_transparent_history_oracle.py
 ```
