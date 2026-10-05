@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+
 import '../src/features/payment_links/widgets/payment_link_archive_header.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/features/payment_links/widgets/payment_link_desktop_views.dart';
@@ -8,6 +9,7 @@ import '../src/core/layout/app_desktop_shell.dart';
 import '../src/core/layout/app_form_factor.dart';
 import '../src/features/payment_links/services/payment_link_received_store.dart';
 import '../src/features/payment_links/widgets/payment_link_claim_outcome_view.dart';
+import '../src/features/payment_links/widgets/payment_link_copy.dart';
 
 Widget buildClaimNoBalanceUseCase(BuildContext context) =>
     _outcome(PaymentLinkAvailability.noBalance);
@@ -18,12 +20,15 @@ Widget buildClaimFailedUseCase(BuildContext context) =>
 Widget buildClaimCheckingUseCase(BuildContext context) =>
     _outcome(PaymentLinkAvailability.checking);
 Widget _outcome(PaymentLinkAvailability availability) {
+  final removable = availability == PaymentLinkAvailability.claimedElsewhere;
   final view = PaymentLinkClaimOutcomeView(
     availability: availability,
     onBack: () {},
     onCheck: () {},
+    onRemove: removable ? () {} : null,
     onArchive:
-        availability == PaymentLinkAvailability.checking ||
+        removable ||
+            availability == PaymentLinkAvailability.checking ||
             availability == PaymentLinkAvailability.rejected
         ? null
         : () {},
@@ -43,7 +48,7 @@ Widget buildClaimBusyUseCase(BuildContext context) => _wrapOutcome(
 );
 Widget buildClaimArchivedUseCase(BuildContext context) => _wrapOutcome(
   PaymentLinkClaimOutcomeView(
-    availability: PaymentLinkAvailability.claimedElsewhere,
+    availability: PaymentLinkAvailability.noBalance,
     archived: true,
     onBack: () {},
     onCheck: () {},
@@ -66,13 +71,19 @@ Widget buildClaimArchiveOpenUseCase(BuildContext context) =>
     _outcomeList(archive: true, expanded: true);
 
 Widget _outcomeList({bool archive = false, bool expanded = false}) {
-  Widget row(String label, String action, {bool loading = false}) {
-    final image = Image.asset(
+  Widget row(
+    String label,
+    String? action, {
+    bool loading = false,
+    bool dimmed = false,
+  }) {
+    final artwork = Image.asset(
       PaymentLinkCardArtwork.ruby.assetPath,
       width: 48,
       height: 48,
       fit: BoxFit.cover,
     );
+    final image = dimmed ? PaymentLinkDimmedArtwork(child: artwork) : artwork;
     return kAppFormFactor == AppFormFactor.mobile
         ? PaymentLinkCardListMobileRow(
             thumbnail: image,
@@ -101,11 +112,16 @@ Widget _outcomeList({bool archive = false, bool expanded = false}) {
         row('Checking result', 'Check status', loading: true),
         if (!archive) ...[
           row('Claim failed', 'Check status'),
-          row('Already claimed', 'View card'),
           row('No balance', 'Check status'),
         ],
       ],
     ),
+    // The group names the state, so the row's trailing label is the action.
+    if (!archive)
+      PaymentLinkCardsSection(
+        label: kPaymentLinkClaimedElsewhereLabel,
+        cards: [row('Remove', null, dimmed: true)],
+      ),
     if (archive)
       PaymentLinkCardsSection(
         label: 'Archived',
@@ -114,7 +130,7 @@ Widget _outcomeList({bool archive = false, bool expanded = false}) {
           expanded: expanded,
           onToggle: () {},
         ),
-        cards: [if (expanded) row('Already claimed', 'View card')],
+        cards: [if (expanded) row('No balance', 'View card')],
       ),
   ];
   return _wrapOutcome(

@@ -787,7 +787,7 @@ void main() {
     },
   );
 
-  testWidgets('refunded external->ZEC swap labels the external asset refund', (
+  testWidgets('refunded external->ZEC swap shows the recorded refund', (
     tester,
   ) async {
     ActivityRowData? row;
@@ -805,6 +805,7 @@ void main() {
                   providerLabel: 'NEAR Intents',
                   sellAmountText: '101.23 USDC',
                   receiveEstimateText: '4.12 ZEC',
+                  refundedAmountText: '100.9 USDC',
                   status: SwapIntentStatus.refunded,
                   direction: SwapDirection.externalToZec,
                   externalAsset: SwapAsset.usdc,
@@ -818,9 +819,11 @@ void main() {
       ),
     );
 
-    expect(row!.title, 'Swap failed');
-    expect(row!.subtitle, 'USDC Refunded');
-    expect(row!.amountIconName, AppIcons.uturnUp);
+    expect(row!.title, 'Swap refunded');
+    expect(row!.subtitle, 'USDC on Ethereum');
+    expect(row!.amountText, '100.9 USDC');
+    // The status line carries the refund icon; the amount stays plain.
+    expect(row!.amountIconName, isNull);
     expect(row!.statusText, 'Refunded');
     expect(row!.statusIconName, AppIcons.uturnUp);
     expect(row!.leadingProgressValue, isNull);
@@ -858,8 +861,10 @@ void main() {
       ),
     );
 
-    expect(row!.title, 'Swap failed');
-    expect(row!.subtitle, 'ZEC Refunded');
+    expect(row!.title, 'Swap refunded');
+    expect(row!.subtitle, 'ZEC Zcash');
+    // Without a recorded refund amount the row keeps the deposit amount.
+    expect(row!.amountText, '0.9000 ZEC');
     expect(row!.statusText, 'Refunded');
     expect(row!.childRows, isEmpty);
   });

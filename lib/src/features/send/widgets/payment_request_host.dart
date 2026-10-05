@@ -14,6 +14,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/feedback/app_review.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../../providers/account_models.dart';
@@ -107,26 +108,30 @@ class PaymentRequestHost extends ConsumerWidget {
       // A slow release leaves the app usable underneath; a navigation made
       // meanwhile wins over the hand-back.
       final origin = _location(router);
-      unawaited(() async {
-        switch (await notifier.editHandingBack()) {
-          case PaymentRequestEditReady(:final prefill):
-            if (_location(router) != origin) return;
-            _releaseRetainedSendStatus(ref);
-            // Both `/send` pages are keyed on the prefill's id, so this
-            // remounts the composer and discards anything already typed
-            // there. That is intended: Edit is the user asking for this
-            // request to be loaded, and a composer that kept half of a
-            // different payment's fields would be the more dangerous outcome
-            // of the two.
-            router.go('/send', extra: prefill);
-          case PaymentRequestEditOvertaken():
-            // A newer link owns the card now, and it carries the replaced
-            // notice that accounts for this tap.
-            break;
-          case PaymentRequestEditUnavailable():
-            break;
-        }
-      }());
+      // The card clears before release completes. Keep reviews blocked through
+      // that wait (including release retries) and the resulting navigation.
+      unawaited(
+        duringAppReviewBusy(ref, () async {
+          switch (await notifier.editHandingBack()) {
+            case PaymentRequestEditReady(:final prefill):
+              if (_location(router) != origin) return;
+              _releaseRetainedSendStatus(ref);
+              // Both `/send` pages are keyed on the prefill's id, so this
+              // remounts the composer and discards anything already typed
+              // there. That is intended: Edit is the user asking for this
+              // request to be loaded, and a composer that kept half of a
+              // different payment's fields would be the more dangerous outcome
+              // of the two.
+              router.go('/send', extra: prefill);
+            case PaymentRequestEditOvertaken():
+              // A newer link owns the card now, and it carries the replaced
+              // notice that accounts for this tap.
+              break;
+            case PaymentRequestEditUnavailable():
+              break;
+          }
+        }),
+      );
     }
 
     void review() {
@@ -145,22 +150,24 @@ class PaymentRequestHost extends ConsumerWidget {
         // funds sit in those inputs would answer that quote with "not enough
         // ZEC" for the very payment the card just found affordable.
         final origin = _location(router);
-        unawaited(() async {
-          switch (await notifier.reviewHandingBack()) {
-            case PaymentRequestReviewReady(:final args):
-              if (_location(router) != origin) return;
-              _releaseRetainedSendStatus(ref);
-              router.go('/send/review', extra: _mobileDraftFor(args));
-            case PaymentRequestReviewOvertaken():
-              // A newer link owns the card now, and it carries the replaced
-              // notice that accounts for this tap. Opening the first
-              // request's review under it would be a send the user did not
-              // choose, behind a card they are about to dismiss.
-              break;
-            case PaymentRequestReviewUnavailable():
-              break;
-          }
-        }());
+        unawaited(
+          duringAppReviewBusy(ref, () async {
+            switch (await notifier.reviewHandingBack()) {
+              case PaymentRequestReviewReady(:final args):
+                if (_location(router) != origin) return;
+                _releaseRetainedSendStatus(ref);
+                router.go('/send/review', extra: _mobileDraftFor(args));
+              case PaymentRequestReviewOvertaken():
+                // A newer link owns the card now, and it carries the replaced
+                // notice that accounts for this tap. Opening the first
+                // request's review under it would be a send the user did not
+                // choose, behind a card they are about to dismiss.
+                break;
+              case PaymentRequestReviewUnavailable():
+                break;
+            }
+          }),
+        );
         return;
       }
       final args = notifier.review();

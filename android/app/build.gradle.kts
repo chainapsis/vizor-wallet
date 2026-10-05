@@ -38,6 +38,14 @@ val dartDefines: Map<String, String> = providers.gradleProperty("dart-defines")
     ?.toMap()
     .orEmpty()
 
+// One compile-time switch controls both Dart behavior and native packaging.
+// Local and Play builds keep Google Play by default; direct/F-Droid opt out.
+val vizorDegoogledValue = dartDefines["VIZOR_DEGOOGLED"] ?: "false"
+require(vizorDegoogledValue == "true" || vizorDegoogledValue == "false") {
+    "VIZOR_DEGOOGLED must be true or false."
+}
+val vizorDegoogled = vizorDegoogledValue == "true"
+
 val defaultVizorDeeplinkBaseUrl = "https://link.vizor.cash"
 val vizorDeeplinkBaseUrl = (
     dartDefines["VIZOR_DEEPLINK_BASE_URL"] ?: defaultVizorDeeplinkBaseUrl
@@ -91,6 +99,14 @@ if (
 
 android {
     namespace = "com.keplr.vizor"
+    sourceSets {
+        getByName("main").java.srcDir(
+            if (vizorDegoogled) "src/degoogled/kotlin" else "src/play/kotlin"
+        )
+        getByName("test").java.srcDir(
+            if (vizorDegoogled) "src/testDegoogled/kotlin" else "src/testPlay/kotlin"
+        )
+    }
     // Keep the Android toolchain explicit so upstream and F-Droid builds do
     // not silently diverge when Flutter changes its defaults.
     compileSdk = 36
@@ -171,6 +187,9 @@ flutter {
 }
 
 dependencies {
+    if (!vizorDegoogled) {
+        implementation("com.google.android.play:review:2.0.2")
+    }
     implementation("io.github.ledgerhq:device-management-kit:0.0.4")
     // DMK exposes OpenApplicationDeviceAction's FlowRedux supertype publicly.
     implementation("com.freeletics.flowredux:flowredux:1.2.2")

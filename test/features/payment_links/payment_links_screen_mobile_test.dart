@@ -6,6 +6,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/formatting/zec_amount.dart';
@@ -33,6 +34,7 @@ void main() {
   final haptics = <String>[];
   const hapticsChannel = MethodChannel('com.zcash.wallet/haptics');
   setUp(() {
+    FlutterSecureStorage.setMockInitialValues({});
     haptics.clear();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(hapticsChannel, (call) async {
@@ -734,7 +736,7 @@ void main() {
   }
 
   for (final outcome in [
-    (PaymentLinkAvailability.claimedElsewhere, 'Already claimed'),
+    (PaymentLinkAvailability.claimedElsewhere, 'Claimed elsewhere'),
     (PaymentLinkAvailability.noBalance, 'No balance'),
     (PaymentLinkAvailability.failed, 'Claim failed'),
   ]) {
@@ -1208,6 +1210,34 @@ void main() {
     },
   );
 
+  testWidgets('mobile rechecking a completed Card discards its claim wallet', (
+    tester,
+  ) async {
+    final operations = FakePaymentLinkOperations(
+      receivedRecords: [
+        PaymentLinkReceivedRecord.fromLink(incomingLink).copyWith(
+          status: PaymentLinkReceivedStatus.received,
+          claimLink: null,
+          destinationAccountUuid: 'account-1',
+          claimTxids: 'claim-tx',
+          claimSubmittedAt: DateTime.utc(2026, 10, 1),
+        ),
+      ],
+      claimable: false,
+    );
+
+    await _openReceivedCard(tester, operations);
+
+    expect(operations.discardedClaimAddresses, [incomingLink.address]);
+    expect(operations.retainedClaimAddresses, isEmpty);
+    expect(
+      operations.receivedRecords.single.status,
+      PaymentLinkReceivedStatus.received,
+    );
+    expect(operations.receivedRecords.single.claimTxids, 'claim-tx');
+    expect(tester.takeException(), isNull);
+  });
+
   for (final waiting in [false, true]) {
     testWidgets(
       'closing a scanned ${waiting ? 'waiting' : 'claimable'} card leaves no Received entry',
@@ -1263,6 +1293,84 @@ void main() {
       },
     );
   }
+
+  testWidgets(
+    'early account selection preserves a setup recipient discovered during preparation',
+    (tester) async {
+      final gate = Completer<void>();
+      final accounts = SwitchablePaymentLinkAccountNotifier(
+        twoAccountState.copyWith(activeAccountUuid: 'account-2'),
+      );
+      final operations = _SetupClaimOperations(prepareClaimGates: {1: gate});
+      await pumpPaymentLinksScreen(
+        tester,
+        logicalSize: const Size(390, 844),
+        operations: operations,
+        accountNotifier: accounts,
+        clipboard: FakePaymentLinkClipboard(
+          text: incomingLink.toUri().toString(),
+        ),
+      );
+      await tester.tap(find.text('Redeem a card'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Paste card link'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Claim the gift'));
+      await tester.pumpAndSettle();
+      expect(find.text('Choose receiving account'), findsOneWidget);
+      await tester.tap(find.text('Claim gift'));
+      await tester.pump();
+      expect(operations.claimedSessions, isEmpty);
+      gate.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('Choose receiving account'), findsNothing);
+      expect(operations.claimedSessions, isEmpty);
+      expect(operations.preparedLinks, hasLength(1));
+      expect(operations.discardedClaimAddresses, isEmpty);
+      expect(accounts.switchedAccounts, isEmpty);
+
+      await tester.tap(find.text('Claim the gift'));
+      await tester.pumpAndSettle();
+      expect(find.text('Choose receiving account'), findsNothing);
+      expect(
+        operations.claimedSessions.single.destinationAccountUuid,
+        'account-1',
+      );
+      expect(accounts.current.activeAccountUuid, 'account-2');
+      expect(accounts.switchedAccounts, isEmpty);
+    },
+  );
+
+  testWidgets(
+    'setup card retry keeps its receiver when the active account changes',
+    (tester) async {
+      final accounts = SwitchablePaymentLinkAccountNotifier();
+      final operations = _SetupClaimOperations();
+      final router = await _openReceivedCard(
+        tester,
+        operations,
+        accountNotifier: accounts,
+      );
+      accounts.setActiveAccount('account-2');
+      await tester.pumpAndSettle();
+      expect(find.text('You’ve received a gift!'), findsOneWidget);
+      expect(find.textContaining('Active account changed.'), findsNothing);
+      await tester.tap(
+        find.byKey(const ValueKey('payment_link_mobile_claim_button')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('payment_link_claim_account_sheet')),
+        findsNothing,
+      );
+      expect(
+        operations.claimedSessions.single.destinationAccountUuid,
+        'account-1',
+      );
+      expect(accounts.current.activeAccountUuid, 'account-2');
+      expect(router.routerDelegate.currentConfiguration.uri.path, '/home');
+    },
+  );
 
   testWidgets(
     'claim defaults to the active account and cancellation keeps it',
@@ -1425,6 +1533,43 @@ void main() {
     expect(operations.claimedSessions, isEmpty);
     expect(operations.discardedClaimAddresses, [incomingLink.address]);
     expect(router.routerDelegate.currentConfiguration.uri.path, '/settings');
+  });
+
+  testWidgets('pasted card shows its preview only after clipboard parsing', (
+    tester,
+  ) async {
+    final clipboardRead = Completer<String?>();
+    final prepare = Completer<void>();
+    final operations = FakePaymentLinkOperations(
+      prepareClaimGates: {1: prepare},
+    );
+    await pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      clipboard: FakePaymentLinkClipboard(readCompleter: clipboardRead),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('payment_links_mobile_redeem_button')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Paste card link'));
+    await tester.pump();
+    final skeleton = find.byKey(
+      const ValueKey('payment_link_mobile_loading_card'),
+    );
+    expect(skeleton, findsNothing);
+    expect(find.text('Paste card link'), findsOneWidget);
+    clipboardRead.complete(incomingLink.toUri().toString());
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(operations.preparedLinks, hasLength(1));
+    expect(skeleton, findsNothing);
+    expect(find.text('4.45'), findsOneWidget);
+    expect(operations.claimedSessions, isEmpty);
+    prepare.complete();
+    await tester.pumpAndSettle();
+    expect(skeleton, findsNothing);
+    expect(find.text('4.45'), findsOneWidget);
   });
 
   testWidgets('mobile confirms before checking a Gift Card with a long scan', (
@@ -1854,6 +1999,71 @@ void main() {
     );
     expect(find.text('Receiving…'), findsOneWidget);
   });
+
+  testWidgets('mobile row removes a card claimed elsewhere on confirm', (
+    tester,
+  ) async {
+    final operations = FakePaymentLinkOperations(
+      receivedRecords: [
+        PaymentLinkReceivedRecord.fromLink(
+          incomingLink,
+        ).copyWith(availability: PaymentLinkAvailability.claimedElsewhere),
+      ],
+    );
+    await pumpPaymentLinksScreen(tester, operations: operations);
+    await tester.tap(
+      find.byKey(const ValueKey('payment_links_mobile_received_tab')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Claimed elsewhere'), findsOneWidget);
+    expect(find.text('Received'), findsOneWidget);
+    await tester.tap(find.text('Remove'));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('payment_link_remove_card_sheet')),
+      findsOneWidget,
+    );
+    expect(operations.removedReceivedAddresses, isEmpty);
+    await tester.tap(
+      find.byKey(
+        const ValueKey('payment_link_remove_card_sheet_confirm_button'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(operations.removedReceivedAddresses, [incomingLink.address]);
+    expect(find.text('Claimed elsewhere'), findsNothing);
+    expect(operations.claimedLinks, isEmpty);
+  });
+}
+
+class _SetupClaimOperations extends FakePaymentLinkOperations {
+  _SetupClaimOperations({super.prepareClaimGates})
+    : super(readClaimDestination: () => twoAccountState);
+
+  @override
+  Future<PaymentLinkClaimSession> prepareClaim(
+    VizorPaymentLink link, {
+    bool allowLongSync = false,
+  }) async {
+    final session = await super.prepareClaim(
+      link,
+      allowLongSync: allowLongSync,
+    );
+    return PaymentLinkClaimSession(
+      link: session.link,
+      destinationAddress: session.destinationAddress,
+      destinationAccountUuid: session.destinationAccountUuid,
+      directory: session.directory,
+      dbPath: session.dbPath,
+      accountUuid: session.accountUuid,
+      totalZatoshi: session.totalZatoshi,
+      claimableZatoshi: session.claimableZatoshi,
+      feeZatoshi: session.feeZatoshi,
+      availability: session.availability,
+      isSetupClaim: true,
+    );
+  }
 }
 
 class _PendingCardPrice implements ZecMarketDataSource {

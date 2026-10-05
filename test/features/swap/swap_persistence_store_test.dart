@@ -55,6 +55,7 @@ void main() {
       providerRefundInfo: const SwapProviderRefundInfo(
         minimumDepositText: '1.485 ZEC',
         refundFeeText: '0.0001 ZEC',
+        recordedRefundFeeText: '0.0001 ZEC',
         depositedAmountText: '1.5 ZEC',
         refundedAmountText: '0.01 ZEC',
         refundReason: 'UNUSED_INPUT',
@@ -106,6 +107,10 @@ void main() {
     expect(restored.single.destinationChainTxHash, 'destination-chain-tx-1');
     expect(restored.single.providerRefundInfo?.minimumDepositText, '1.485 ZEC');
     expect(restored.single.providerRefundInfo?.refundFeeText, '0.0001 ZEC');
+    expect(
+      restored.single.providerRefundInfo?.recordedRefundFeeText,
+      '0.0001 ZEC',
+    );
     expect(restored.single.providerRefundInfo?.depositedAmountText, '1.5 ZEC');
     expect(restored.single.providerRefundInfo?.refundedAmountText, '0.01 ZEC');
     expect(restored.single.providerRefundInfo?.refundReason, 'UNUSED_INPUT');

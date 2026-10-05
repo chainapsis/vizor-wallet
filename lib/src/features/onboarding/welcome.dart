@@ -9,6 +9,7 @@ import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_icon.dart';
 import '../../core/widgets/app_pane_modal_overlay.dart';
 import '../../core/widgets/app_tooltip.dart';
+import '../../providers/enhance_pir_provider.dart';
 import '../settings/widgets/custom_endpoint_settings_panel.dart';
 import '../ledger/ledger_capability.dart';
 import 'shared/onboarding_welcome_art.dart';
@@ -70,14 +71,20 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
           });
         },
         onDismissEndpointSettings: () {
+          if (ref.read(enhancePirTransitionProvider) == 'Changing setting…') {
+            return;
+          }
           setState(() {
             _showEndpointSettings = false;
           });
         },
-        child: _Content(
-          allowLedgerConnect: ref
-              .watch(ledgerStaticCapabilityProvider)
-              .supported,
+        child: ExcludeFocus(
+          excluding: _showEndpointSettings,
+          child: _Content(
+            allowLedgerConnect: ref
+                .watch(ledgerStaticCapabilityProvider)
+                .supported,
+          ),
         ),
       ),
     );
@@ -551,7 +558,7 @@ class _OrDivider extends StatelessWidget {
           Expanded(child: _OrDividerLine(color: colors.border.regular)),
           const SizedBox(width: AppSpacing.s),
           Text(
-            'OR',
+            'Or',
             style: AppTypography.labelSmall.copyWith(
               color: colors.text.secondary,
             ),

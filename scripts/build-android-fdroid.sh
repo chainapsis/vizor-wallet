@@ -115,6 +115,7 @@ if [[ "${dry_run}" == "true" ]]; then
     --build-number "${version_code_base}" \
     --release-version "${version}" \
     --signing unsigned \
+    --degoogled \
     --target-abi "${expected_abi}" \
     --offline \
     --dry-run
@@ -125,6 +126,7 @@ fi
   --build-number "${version_code_base}" \
   --release-version "${version}" \
   --signing unsigned \
+  --degoogled \
   --target-abi "${expected_abi}" \
   --offline
 

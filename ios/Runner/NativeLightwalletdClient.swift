@@ -47,6 +47,7 @@ enum NativeLightwalletdError: Error, Equatable {
   case invalidHTTPStatus(Int)
   case grpcStatus(String)
   case grpcStatusUnavailable
+  case coverageIncomplete
   case malformedResponse
   case missingHeight
   case missingSendResponse
@@ -189,6 +190,10 @@ enum NativeLightwalletdClient {
 
   static func transaction(
     endpoint: String,
+    dbPath: String,
+    privateStatus: Bool,
+    network: String,
+    requiredThrough: UInt32,
     transactionId: Data,
     cancellation: BackgroundMigrationCancellation
   ) -> Result<
@@ -196,7 +201,7 @@ enum NativeLightwalletdClient {
     NativeLightwalletdError
   > {
     guard transactionId.count == 32,
-      rpcURL(endpoint: endpoint, methodPath: getTransactionPath) != nil
+      (privateStatus || rpcURL(endpoint: endpoint, methodPath: getTransactionPath) != nil)
     else {
       return .failure(.invalidEndpoint)
     }
@@ -207,8 +212,25 @@ enum NativeLightwalletdClient {
       state: 0,
       mined_height: 0
     )
-    let code = endpoint.withCString { endpointPointer in
-      transactionId.withUnsafeBytes { transactionPointer in
+    let code = transactionId.withUnsafeBytes { transactionPointer in
+      if privateStatus {
+        return dbPath.withCString { dbPathPointer in
+          network.withCString { networkPointer in
+            zcash_status_pir_observe_transaction_v2(
+              dbPathPointer,
+              transactionPointer.bindMemory(to: UInt8.self).baseAddress,
+              UInt(transactionId.count),
+              networkPointer,
+              privateStatus,
+              true,
+              requiredThrough,
+              &nativeObservation,
+              cancellation.lightwalletdCancellationHandle
+            )
+          }
+        }
+      }
+      return endpoint.withCString { endpointPointer in
         zcash_lightwalletd_observe_transaction(
           endpointPointer,
           transactionPointer.bindMemory(to: UInt8.self).baseAddress,
@@ -223,8 +245,10 @@ enum NativeLightwalletdClient {
     else {
       return .failure(.cancelled)
     }
+    if code == ZCASH_STATUS_RESULT_INCONCLUSIVE { return .failure(.coverageIncomplete) }
     guard code == 0 else {
-      return .failure(.transport("Rust lightwalletd transaction lookup failed (code \(code))"))
+      let source = privateStatus ? "Status PIR" : "lightwalletd"
+      return .failure(.transport("Rust \(source) transaction lookup failed (code \(code))"))
     }
     switch nativeObservation.state {
     case 0:

@@ -9,9 +9,6 @@ import '../../../core/widgets/review_list_row.dart';
 import '../../../core/widgets/review_wrap_card.dart';
 import '../../send/widgets/send_review_layout.dart';
 
-const _receivedFeeHelpTooltip =
-    'Network fee paid by the sender to process this transaction.';
-
 /// Display status of a received transaction on the redesigned receipt.
 ///
 /// Mirrors the send status phases ([inProgress] follows the send-in-progress
@@ -41,7 +38,6 @@ class ReceivedReceiptView extends StatelessWidget {
     this.fromRecipient,
     this.unknownFromKind,
     this.isShieldedSource = false,
-    this.feeText,
     this.receivingAddress,
     this.isShieldedReceivingAddress = false,
     this.memoText,
@@ -49,7 +45,6 @@ class ReceivedReceiptView extends StatelessWidget {
     this.onShowFullAddress,
     this.onExpandMemo,
     this.onTxIdPressed,
-    this.onFeeHelpPressed,
     super.key,
   });
 
@@ -76,10 +71,6 @@ class ReceivedReceiptView extends StatelessWidget {
   /// vs transparent (transparent-balance glyph + "Transparent").
   final bool isShieldedSource;
 
-  /// Pre-formatted network fee ("0.012 ZEC"); the Network fee row and its
-  /// divider are omitted when null.
-  final String? feeText;
-
   /// Full address the funds arrived on, shown as the Amount row sub-line;
   /// the sub-line is omitted when null.
   final String? receivingAddress;
@@ -102,9 +93,6 @@ class ReceivedReceiptView extends StatelessWidget {
 
   /// Tx ID row explorer-link affordance.
   final VoidCallback? onTxIdPressed;
-
-  /// Network fee row help affordance.
-  final VoidCallback? onFeeHelpPressed;
 
   @override
   Widget build(BuildContext context) {
@@ -215,17 +203,6 @@ class ReceivedReceiptView extends StatelessWidget {
                 ),
               ],
             ),
-            if (feeText != null) ...[
-              const ReviewWrapDivider(),
-              ReviewListRow(
-                label: 'Network fee',
-                value: feeText!,
-                trailingIconName: AppIcons.help,
-                trailingIconColor: colors.text.secondary,
-                trailingIconTooltip: _receivedFeeHelpTooltip,
-                onPressed: onFeeHelpPressed,
-              ),
-            ],
           ],
         ),
       ],

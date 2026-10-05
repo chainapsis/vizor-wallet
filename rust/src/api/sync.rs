@@ -12,6 +12,7 @@ use crate::wallet::{keys, network::WalletNetwork, secret_store, sync as wallet_s
 // ======================== Sync Mode ========================
 // 0 = None, 1 = Foreground, 2 = Background
 pub(crate) static DESIRED_SYNC_MODE: AtomicU8 = AtomicU8::new(0);
+static ENHANCE_PIR_ENABLED: AtomicBool = AtomicBool::new(false);
 static ACTIVE_SYNC_ACCOUNT: std::sync::LazyLock<sync_engine::ActiveSyncAccountTarget> =
     std::sync::LazyLock::new(|| Arc::new(RwLock::new(None)));
 static PAYMENT_LINK_CLAIM_SYNCS: std::sync::LazyLock<Mutex<HashMap<String, Arc<AtomicBool>>>> =
@@ -37,6 +38,16 @@ pub fn set_active_sync_account(account_uuid: Option<String>) {
     *ACTIVE_SYNC_ACCOUNT
         .write()
         .unwrap_or_else(|poisoned| poisoned.into_inner()) = account_uuid;
+}
+
+/// Enable private Ironwood transaction enhancement for future sync work.
+#[frb(sync)]
+pub fn set_enhance_pir_enabled(enabled: bool) {
+    ENHANCE_PIR_ENABLED.store(enabled, Ordering::SeqCst);
+}
+
+pub(crate) fn enhance_pir_enabled() -> bool {
+    ENHANCE_PIR_ENABLED.load(Ordering::SeqCst)
 }
 
 // ======================== Full Sync ========================
@@ -2646,6 +2657,21 @@ pub fn get_export_birthday_height(
     })
 }
 
+/// Header time of block `height`, answered without any network request:
+/// the scanned block's time, or on mainnet an estimate from the compiled-in
+/// block-time table. `None` means no local answer exists (off mainnet, before
+/// the block is scanned); callers may then fall back to [`get_block_time`].
+pub fn get_local_block_time(
+    db_path: String,
+    network: String,
+    height: u64,
+) -> Result<Option<u64>, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        wallet_sync::get_local_block_time(&db_path, network, height)
+    })
+}
+
 pub fn get_block_time(lightwalletd_url: String, height: u64) -> Result<u64, String> {
     catch(|| fetch_block_time(&lightwalletd_url, height))
 }
@@ -3075,4 +3101,23 @@ pub fn get_payment_link_spend_evidence(
 /// Durable signed or submitted transactions are retained for recovery.
 pub fn shutdown_signing_reservations() -> Result<(), String> {
     wallet_sync::shutdown_signing_reservations()
+}
+
+/// Durable pending work, including obligations that cannot currently be retried.
+pub struct EnhanceRecoveryStatus {
+    pub queries: u32,
+    pub rediscovery: u32,
+    pub suspended: u32,
+    /// Private transaction-status obligations still awaiting Status PIR. A
+    /// deferred private status failure leaves these durable without payload
+    /// work, so they count toward a recovery-only sync restart.
+    pub status: u32,
+    pub service_state: String,
+}
+pub fn get_enhance_recovery_status(
+    db_path: String,
+    network: String,
+) -> Result<EnhanceRecoveryStatus, String> {
+    let network = keys::parse_network(&network)?;
+    sync_engine::enhance_recovery_status(&db_path, network)
 }

@@ -57,6 +57,7 @@ import '../widgets/payment_link_bulk_desktop_flow.dart';
 import '../widgets/payment_link_card_selector_rail.dart';
 import '../widgets/payment_link_claim_outcome_view.dart';
 import '../widgets/payment_link_confetti.dart';
+import '../widgets/payment_link_confirm_modal.dart';
 import '../widgets/payment_link_copy.dart';
 import '../widgets/payment_link_desktop_views.dart';
 import '../widgets/payment_link_gift_card.dart';
@@ -76,9 +77,14 @@ part 'payment_links_batch_creation.dart';
 /// [PaymentLinkOperations]. Artwork and message are carried by the v1
 /// presentation payload.
 class PaymentLinksScreen extends ConsumerStatefulWidget {
-  const PaymentLinksScreen({this.initialCards, super.key});
+  const PaymentLinksScreen({
+    this.initialCards,
+    this.initialReceivedCardAddress,
+    super.key,
+  });
 
   final PaymentLinkCardsSnapshot? initialCards;
+  final String? initialReceivedCardAddress;
 
   @override
   ConsumerState<PaymentLinksScreen> createState() => _PaymentLinksScreenState();
@@ -281,6 +287,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
   final Set<String> _exportingBatchIds = {};
   bool _checkingBatchStatus = false;
   List<PaymentLinkRecoveryRecord>? _exportConfirmMembers;
+  PaymentLinkReceivedRecord? _removeConfirmRecord;
 
   @override
   void initState() {
@@ -507,6 +514,15 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       unawaited(_refreshFundingProgress(records: initialCards.created));
       unawaited(_refreshReceivedClaims(records: initialCards.received));
     }
+    final address = widget.initialReceivedCardAddress;
+    if (address != null) {
+      final card = _receivedCards
+          .where((r) => r.address == address)
+          .firstOrNull;
+      setState(() => _activeCardsTab = PaymentLinkCardsTab.received);
+      if (card != null) _openReceivedCard(card);
+      return;
+    }
     await _consumePendingPaymentLink();
   }
 
@@ -690,10 +706,12 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     }
   }
 
-  /// Only a Card already in Received owns a durable claim wallet. Scanning
-  /// a new Card is a preview, including while its funding is still confirming.
-  bool _shouldKeepCard(PaymentLinkClaimSession session) =>
-      _receivedCards.any((record) => record.address == session.link.address);
+  /// Saved Cards own a claim wallet while they retain recovery material.
+  /// Receipts after recovery and new previews do not retain inspection wallets.
+  bool _shouldKeepCard(PaymentLinkClaimSession session) => _receivedCards.any(
+    (record) =>
+        record.address == session.link.address && record.claimLink != null,
+  );
 
   /// Keeps the link for retry after the recipient explicitly confirms a claim
   /// but preparing it for the selected account fails.
@@ -708,7 +726,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
   }
 
   /// An empty scan cannot prove that a Card will never receive funds. Keep
-  /// listed Cards and their wallets for retry; new previews remain disposable.
+  /// recoverable Cards and their wallets for retry; new previews are disposable.
   Future<void> _releaseUnavailableClaim(PaymentLinkClaimSession session) async {
     final epoch = _mobileNavigationEpoch;
     final availability =
@@ -831,35 +849,101 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
           await _checkPaymentLink(link);
         }
       },
-      onArchive: record != null && (record.canArchive || record.archived)
+      onRemove: record != null && record.canRemove
+          ? () => _requestRemoveReceivedCard(record)
+          : null,
+      onArchive:
+          record != null &&
+              !record.canRemove &&
+              (record.canArchive || record.archived)
           ? () => _setCardArchived(record, !record.archived)
           : null,
     );
   }
 
+  /// Removing a Card cannot be undone from the list, so it is confirmed first.
+  Future<void> _requestRemoveReceivedCard(
+    PaymentLinkReceivedRecord record,
+  ) async {
+    if (_operationInProgress) return;
+    if (kAppFormFactor == AppFormFactor.desktop) {
+      setState(() => _removeConfirmRecord = record);
+      return;
+    }
+    final epoch = _mobileNavigationEpoch;
+    final confirmed = await showPaymentLinkConfirmSheet(
+      context,
+      iconName: AppIcons.trash,
+      title: kPaymentLinkRemoveCardTitle,
+      body: kPaymentLinkClaimedElsewhereDescription,
+      supporting: kPaymentLinkRemoveCardSupporting,
+      confirmLabel: kPaymentLinkRemoveCardLabel,
+      cancelLabel: 'Cancel',
+      sheetKey: const ValueKey('payment_link_remove_card_sheet'),
+      confirmKey: const ValueKey(
+        'payment_link_remove_card_sheet_confirm_button',
+      ),
+    );
+    if (!confirmed || !mounted || !_isCurrentNavigation(epoch)) return;
+    await _removeReceivedCard(record);
+  }
+
+  void _cancelRemoveReceivedCard() =>
+      setState(() => _removeConfirmRecord = null);
+
+  Future<void> _confirmRemoveReceivedCard() async {
+    final record = _removeConfirmRecord;
+    if (record == null) return;
+    setState(() => _removeConfirmRecord = null);
+    await _removeReceivedCard(record);
+  }
+
+  Future<void> _removeReceivedCard(PaymentLinkReceivedRecord record) =>
+      _updateReceivedCard(
+        () => _paymentLinkOperations.removeReceivedCard(record.address),
+        errorText: 'Card could not be removed. Try again.',
+      );
+
   Future<void> _setCardArchived(
     PaymentLinkReceivedRecord record,
     bool archived,
-  ) async {
+  ) => _updateReceivedCard(
+    () => _paymentLinkOperations.setReceivedCardArchived(
+      record.address,
+      archived,
+    ),
+    errorText: 'Card could not be updated. Try again.',
+  );
+
+  /// Applies one change to a received Card, then shows the list as stored. A
+  /// refused change reloads too: the stored Card may have moved on, and a
+  /// stale row would only offer the same failing action again.
+  Future<void> _updateReceivedCard(
+    Future<void> Function() update, {
+    required String errorText,
+  }) async {
     if (_operationInProgress) return;
     final epoch = _mobileNavigationEpoch;
     setState(() => _operationInProgress = true);
     try {
-      await _paymentLinkOperations.setReceivedCardArchived(
-        record.address,
-        archived,
-      );
+      var updated = true;
+      try {
+        await update();
+      } catch (_) {
+        updated = false;
+      }
       final records = await _paymentLinkOperations.loadReceivedLinkRecoveries();
       if (!mounted || !_isCurrentNavigation(epoch)) return;
       setState(() {
         _receivedCards = records;
-        _outcomeLink = null;
-        _page = PaymentLinksLocalPage.home;
+        if (updated) {
+          _outcomeLink = null;
+          _page = PaymentLinksLocalPage.home;
+        }
       });
+      if (!updated) _showError(errorText);
     } catch (_) {
-      if (mounted && _isCurrentNavigation(epoch)) {
-        _showError('Card could not be updated. Try again.');
-      }
+      if (mounted && _isCurrentNavigation(epoch)) _showError(errorText);
     } finally {
       if (mounted) setState(() => _operationInProgress = false);
     }
@@ -1106,7 +1190,11 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       setState(() => _pendingClaim = null);
     }
     final session = _receivedClaimSession;
-    if (session == null || session.destinationAccountUuid == current) return;
+    if (session == null ||
+        session.isSetupClaim ||
+        session.destinationAccountUuid == current) {
+      return;
+    }
     final link = _receivedLink;
     final keepCard = _shouldKeepCard(session);
     setState(() {
@@ -1646,7 +1734,6 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     final epoch = _mobileNavigationEpoch;
     setState(() {
       _operationInProgress = true;
-      _redeemState = PaymentLinkRedeemVisualState.loading;
       _retryLink = null;
       _redeemFromQrCode = false;
     });
@@ -1661,6 +1748,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       }
       final link = VizorPaymentLink.parse(rawLink);
       if (!mounted) return;
+      setState(() => _redeemState = PaymentLinkRedeemVisualState.loading);
       await _prepareDecodedPaymentLink(link);
     } catch (_) {
       if (mounted && _isCurrentNavigation(epoch)) {
@@ -1796,6 +1884,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
           ?.activeAccountUuid;
       if (activeAccountUuid != null &&
           activeAccountUuid != session.destinationAccountUuid &&
+          !session.isSetupClaim &&
           (session.waitingForFundingConfirmations || session.canClaim)) {
         _receivedClaimSession = session;
         _receivedLink = session.link;
@@ -1962,16 +2051,14 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
   }
 
   /// A refresh opens a second session over the same claim wallet; delete it
-  /// only when neither the live session nor a listed Card still owns it.
+  /// only when neither the live session nor a recoverable Card still owns it.
   Future<void> _discardRefreshedClaim(PaymentLinkClaimSession refreshed) async {
     final directory = paymentLinkClaimWalletDirectoryName(refreshed.link);
     final live = _receivedClaimSession;
     final stillOwned =
         (live != null &&
             paymentLinkClaimWalletDirectoryName(live.link) == directory) ||
-        _receivedCards.any(
-          (record) => record.address == refreshed.link.address,
-        );
+        _shouldKeepCard(refreshed);
     if (stillOwned) return;
     await _paymentLinkOperations.discardClaimSession(refreshed);
   }
@@ -2000,8 +2087,8 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     }
   }
 
-  /// A Card that stays in the Received list keeps its scanned claim wallet; an
-  /// abandoned preview deletes it.
+  /// A Card retaining recovery material keeps its scanned claim wallet;
+  /// an abandoned preview deletes it.
   void _releaseClaimSession(
     PaymentLinkClaimSession session, {
     required bool keepCard,
@@ -2089,7 +2176,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     final accountState = ref.read(accountProvider).value;
     final activeAccountUuid = accountState?.activeAccountUuid;
     if (accountState == null || activeAccountUuid == null) return;
-    if (accountState.accounts.length == 1) {
+    if (session?.isSetupClaim == true || accountState.accounts.length == 1) {
       _claimReceivedLink();
       return;
     }
@@ -2121,6 +2208,10 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
               (!cardVerified && _receivedClaimSession?.canClaim != true)) {
             return false;
           }
+          // Preparation can discover a saved setup recipient after this early
+          // picker opened. Close it without rebinding; the next claim request
+          // follows the setup session's saved recipient above.
+          if (_receivedClaimSession?.isSetupClaim == true) return false;
           cardVerified = true;
           try {
             await _prepareMobileClaimDestination(_receivedLink!, uuid);
@@ -2546,6 +2637,21 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
             onConfirm: _confirmLongSyncWarning,
             onCancel: _cancelLongSyncWarning,
           )
+        : _removeConfirmRecord != null
+        ? PaymentLinkConfirmModal(
+            iconName: AppIcons.trash,
+            title: kPaymentLinkRemoveCardTitle,
+            body: kPaymentLinkClaimedElsewhereDescription,
+            supporting: kPaymentLinkRemoveCardSupporting,
+            confirmLabel: kPaymentLinkRemoveCardLabel,
+            cancelLabel: 'Cancel',
+            onConfirm: () => unawaited(_confirmRemoveReceivedCard()),
+            onCancel: _cancelRemoveReceivedCard,
+            confirmKey: const ValueKey(
+              'payment_link_remove_card_confirm_button',
+            ),
+            cancelKey: const ValueKey('payment_link_remove_card_cancel_button'),
+          )
         : null;
     final pane = overlay != null
         ? Stack(fit: StackFit.expand, children: [currentPage, overlay])
@@ -2704,31 +2810,40 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
           ),
       ];
     }
+    // A Card another wallet claimed never reached this wallet, so it stays in
+    // its own group, hidden or not, until the user removes it.
+    final claimedElsewhereCards = _visibleReceivedCards
+        .where((r) => r.canRemove)
+        .toList();
+    final receivedCards = _visibleReceivedCards
+        .where((r) => !r.canRemove && !r.archived)
+        .toList();
+    final archivedCards = _visibleReceivedCards
+        .where((r) => !r.canRemove && r.archived)
+        .toList();
     return <PaymentLinkCardsSection>[
-      PaymentLinkCardsSection(
-        label: kPaymentLinkReceivedTabLabel,
-        cards: _visibleReceivedCards.any((r) => !r.archived)
-            ? _visibleReceivedCards
-                  .where((r) => !r.archived)
-                  .map(receivedRow)
-                  .toList()
-            : emptyReceivedCards,
-      ),
-      if (_visibleReceivedCards.any((r) => r.archived))
+      if (receivedCards.isNotEmpty || claimedElsewhereCards.isEmpty)
+        PaymentLinkCardsSection(
+          label: kPaymentLinkReceivedTabLabel,
+          cards: receivedCards.isNotEmpty
+              ? receivedCards.map(receivedRow).toList()
+              : emptyReceivedCards,
+        ),
+      if (claimedElsewhereCards.isNotEmpty)
+        PaymentLinkCardsSection(
+          label: kPaymentLinkClaimedElsewhereLabel,
+          cards: claimedElsewhereCards.map(receivedRow).toList(),
+        ),
+      if (archivedCards.isNotEmpty)
         PaymentLinkCardsSection(
           label: 'Archived',
           header: PaymentLinkArchiveHeader(
-            count: _visibleReceivedCards.where((r) => r.archived).length,
+            count: archivedCards.length,
             expanded: _showArchivedCards,
             onToggle: () =>
                 setState(() => _showArchivedCards = !_showArchivedCards),
           ),
-          cards: [
-            if (_showArchivedCards)
-              ..._visibleReceivedCards
-                  .where((r) => r.archived)
-                  .map(receivedRow),
-          ],
+          cards: [if (_showArchivedCards) ...archivedCards.map(receivedRow)],
         ),
     ];
   }
@@ -2753,11 +2868,28 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     );
   }
 
-  /// The received Card's effective status, folding an in-flight submission
-  /// the store has not caught up with into `Receiving...`.
-  ({String statusText, bool canClaim, bool showLoader}) _receivedRowState(
-    PaymentLinkReceivedRecord record,
-  ) {
+  /// The received Card's effective status and action, shared by the desktop
+  /// and mobile rows. An in-flight submission the store has not caught up with
+  /// reads as `Receiving...`.
+  ({
+    String statusText,
+    String? actionLabel,
+    VoidCallback? onAction,
+    bool showLoader,
+  })
+  _receivedRowState(PaymentLinkReceivedRecord record) {
+    // The Claimed elsewhere group names the state, so the row keeps two lines
+    // and its trailing label is the action: nothing is left to claim.
+    if (record.canRemove) {
+      return (
+        statusText: 'Remove',
+        actionLabel: null,
+        onAction: _operationInProgress
+            ? null
+            : () => unawaited(_requestRemoveReceivedCard(record)),
+        showLoader: false,
+      );
+    }
     final submissionInProgress = ref
         .read(paymentLinkClaimCoordinatorProvider)
         .isSubmitting(record.address);
@@ -2775,13 +2907,32 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
               : 'Receiving…',
         PaymentLinkReceivedStatus.received => 'Received',
       },
-      canClaim:
+      actionLabel:
+          record.status == PaymentLinkReceivedStatus.received ||
+              record.availability == PaymentLinkAvailability.unchecked ||
+              record.availability == PaymentLinkAvailability.available
+          ? null
+          : record.archived
+          ? 'View card'
+          : 'Check status',
+      onAction:
           (effectiveStatus == PaymentLinkReceivedStatus.readyToClaim ||
-              record.availability == PaymentLinkAvailability.checking ||
-              record.availability == PaymentLinkAvailability.rejected) &&
-          effectiveStatus != PaymentLinkReceivedStatus.received &&
-          record.claimLink != null &&
-          !_operationInProgress,
+                  record.availability == PaymentLinkAvailability.checking ||
+                  record.availability == PaymentLinkAvailability.rejected) &&
+              effectiveStatus != PaymentLinkReceivedStatus.received &&
+              record.claimLink != null &&
+              !_operationInProgress
+          ? () {
+              if (!record.isClaimInFlight &&
+                  !record.archived &&
+                  (record.availability == PaymentLinkAvailability.noBalance ||
+                      record.availability == PaymentLinkAvailability.failed)) {
+                unawaited(_checkPaymentLink(record.claimLink!));
+              } else {
+                _openReceivedCard(record);
+              }
+            }
+          : null,
       showLoader:
           effectiveStatus == PaymentLinkReceivedStatus.submitting ||
           effectiveStatus == PaymentLinkReceivedStatus.receiving,
@@ -3112,12 +3263,13 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     );
   }
 
-  Widget _cardThumbnail(String? artworkId) {
-    return Image.asset(
+  Widget _cardThumbnail(String? artworkId, {bool dimmed = false}) {
+    final image = Image.asset(
       PaymentLinkCardArtwork.fromProtocolId(artworkId).assetPath,
       fit: BoxFit.cover,
       excludeFromSemantics: true,
     );
+    return dimmed ? PaymentLinkDimmedArtwork(child: image) : image;
   }
 
   Future<void> _openShareQr(PaymentLinkRecoveryRecord record) async {
@@ -3267,34 +3419,15 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     final state = _receivedRowState(record);
     return PaymentLinkCardListRow(
       key: ValueKey('payment_link_received_${record.address}'),
-      thumbnail: _cardThumbnail(record.artworkId),
+      thumbnail: _cardThumbnail(record.artworkId, dimmed: record.canRemove),
       amountText: hideAmountIfPrivacyMode(
         '${formatZecAmount(record.amountZatoshi)} ZEC',
         privacyModeEnabled: ref.watch(privacyModeProvider),
       ),
       dateText: _formatCardDate(record.createdAt),
       statusText: state.statusText,
-      actionLabel:
-          record.status == PaymentLinkReceivedStatus.received ||
-              record.availability == PaymentLinkAvailability.unchecked ||
-              record.availability == PaymentLinkAvailability.available
-          ? null
-          : record.availability == PaymentLinkAvailability.claimedElsewhere ||
-                record.archived
-          ? 'View card'
-          : 'Check status',
-      onAction: state.canClaim
-          ? () {
-              if (!record.isClaimInFlight &&
-                  !record.archived &&
-                  (record.availability == PaymentLinkAvailability.noBalance ||
-                      record.availability == PaymentLinkAvailability.failed)) {
-                unawaited(_checkPaymentLink(record.claimLink!));
-              } else {
-                _openReceivedCard(record);
-              }
-            }
-          : null,
+      actionLabel: state.actionLabel,
+      onAction: state.onAction,
       showLoader: state.showLoader,
     );
   }
@@ -3303,34 +3436,15 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     final state = _receivedRowState(record);
     return PaymentLinkCardListMobileRow(
       key: ValueKey('payment_link_mobile_received_${record.address}'),
-      thumbnail: _cardThumbnail(record.artworkId),
+      thumbnail: _cardThumbnail(record.artworkId, dimmed: record.canRemove),
       amountText: hideAmountIfPrivacyMode(
         '${formatZecAmount(record.amountZatoshi)} ZEC',
         privacyModeEnabled: ref.watch(privacyModeProvider),
       ),
       dateText: _formatCardDate(record.createdAt),
       statusText: state.statusText,
-      actionLabel:
-          record.status == PaymentLinkReceivedStatus.received ||
-              record.availability == PaymentLinkAvailability.unchecked ||
-              record.availability == PaymentLinkAvailability.available
-          ? null
-          : record.availability == PaymentLinkAvailability.claimedElsewhere ||
-                record.archived
-          ? 'View card'
-          : 'Check status',
-      onAction: state.canClaim
-          ? () {
-              if (!record.isClaimInFlight &&
-                  !record.archived &&
-                  (record.availability == PaymentLinkAvailability.noBalance ||
-                      record.availability == PaymentLinkAvailability.failed)) {
-                unawaited(_checkPaymentLink(record.claimLink!));
-              } else {
-                _openReceivedCard(record);
-              }
-            }
-          : null,
+      actionLabel: state.actionLabel,
+      onAction: state.onAction,
       showLoader: state.showLoader,
     );
   }

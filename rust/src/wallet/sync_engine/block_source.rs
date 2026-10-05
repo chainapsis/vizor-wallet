@@ -36,6 +36,12 @@ pub(super) struct MemoryBlockSource {
 }
 
 impl MemoryBlockSource {
+    pub(super) fn block_at(&self, height: BlockHeight) -> Option<&CompactBlock> {
+        self.blocks
+            .iter()
+            .find(|block| block.height == u64::from(u32::from(height)))
+    }
+
     pub(super) fn new(blocks: Vec<CompactBlock>) -> Self {
         Self { blocks }
     }

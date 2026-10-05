@@ -4,7 +4,10 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_toast.dart';
 
+import '../../figma_compare/figma_compare_font_loader.dart';
+
 void main() {
+  setUpAll(loadFigmaCompareFonts);
   testWidgets('AppToast uses inverse neutral tokens in light mode', (
     tester,
   ) async {
@@ -33,7 +36,7 @@ void main() {
       find.descendant(of: toastFinder, matching: find.byType(Padding)),
     );
     expect(
-      padding.padding,
+      padding.padding.resolve(TextDirection.ltr),
       const EdgeInsets.symmetric(
         horizontal: AppSpacing.s,
         vertical: AppSpacing.xs,
@@ -240,6 +243,183 @@ void main() {
 
     expect(find.text('Parent Context Toast'), findsOneWidget);
   });
+
+  testWidgets(
+    'actionable notice stays readable and dismissible at large text',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(320, 640));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final semantics = tester.ensureSemantics();
+      try {
+        late BuildContext toastContext;
+        var openedCard = false;
+        await tester.pumpWidget(
+          _ThemedHarness(
+            theme: AppThemeData.light,
+            child: MediaQuery(
+              data: const MediaQueryData(textScaler: TextScaler.linear(2)),
+              child: AppToastHost(
+                child: Builder(
+                  builder: (context) {
+                    toastContext = context;
+                    return const SizedBox.expand();
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+        void showNotice() => showAppToast(
+          toastContext,
+          'Couldn’t redeem your gift card.',
+          duration: null,
+          action: AppToastAction(
+            label: 'View card',
+            onPressed: () => openedCard = true,
+          ),
+        );
+        showNotice();
+        await tester.pump(const Duration(seconds: 30));
+        expect(tester.takeException(), isNull);
+        expect(find.text('Couldn’t redeem your gift card.'), findsOneWidget);
+        final message = tester.widget<Text>(
+          find.text('Couldn’t redeem your gift card.'),
+        );
+        expect(message.maxLines, isNull);
+        final action = find.widgetWithText(TextButton, 'View card');
+        expect(tester.getSize(action).height, greaterThanOrEqualTo(44));
+        expect(
+          tester.getSize(find.byType(IconButton)).width,
+          greaterThanOrEqualTo(44),
+        );
+        expect(
+          tester.getSemantics(find.byType(AppToast)),
+          matchesSemantics(isLiveRegion: true),
+        );
+        await tester.tap(find.bySemanticsLabel('Dismiss notification'));
+        await tester.pump();
+        expect(find.byType(AppToast), findsNothing);
+        expect(openedCard, isFalse);
+        showNotice();
+        await tester.pump();
+        await tester.tap(action);
+        await tester.pump();
+        expect(openedCard, isTrue);
+        expect(find.byType(AppToast), findsNothing);
+      } finally {
+        semantics.dispose();
+      }
+    },
+  );
+
+  testWidgets('screen dismissal does not remove a replacement toast', (
+    tester,
+  ) async {
+    late BuildContext toastContext;
+    await tester.pumpWidget(
+      _ThemedHarness(
+        theme: AppThemeData.light,
+        child: AppToastHost(
+          child: Builder(
+            builder: (context) {
+              toastContext = context;
+              return const SizedBox.expand();
+            },
+          ),
+        ),
+      ),
+    );
+    final dismiss = showAppToast(toastContext, 'Old notice', duration: null);
+    showAppToast(toastContext, 'Address copied');
+    dismiss?.call();
+    await tester.pump();
+    expect(find.text('Address copied'), findsOneWidget);
+  });
+
+  for (final direction in TextDirection.values) {
+    testWidgets('toast controls share one axis in $direction', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(393, 640));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        _ThemedHarness(
+          theme: AppThemeData.light,
+          child: Directionality(
+            textDirection: direction,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+              child: Center(
+                child: AppToast(
+                  message: 'Couldn’t redeem your gift card.',
+                  iconName: AppIcons.warning,
+                  action: AppToastAction(label: 'View card', onPressed: () {}),
+                  onDismiss: () {},
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(tester.takeException(), isNull);
+      final messageCenter = tester
+          .getCenter(find.text('Couldn’t redeem your gift card.'))
+          .dy;
+      for (final control in [
+        find.widgetWithText(TextButton, 'View card'),
+        find.byType(IconButton),
+        find.byType(AppIcon).first,
+      ]) {
+        expect(tester.getCenter(control).dy, moreOrLessEquals(messageCenter));
+      }
+      final toastRect = tester.getRect(find.byType(AppToast));
+      final iconRect = tester.getRect(find.byType(AppIcon).first);
+      final dismissIconRect = tester.getRect(find.byType(AppIcon).last);
+      final leadingInset = direction == TextDirection.ltr
+          ? iconRect.left - toastRect.left
+          : toastRect.right - iconRect.right;
+      final trailingInset = direction == TextDirection.ltr
+          ? toastRect.right - dismissIconRect.right
+          : dismissIconRect.left - toastRect.left;
+      expect(leadingInset, moreOrLessEquals(trailingInset));
+
+      // Large text moves the action below the same logical leading edge.
+      await tester.pumpWidget(
+        _ThemedHarness(
+          theme: AppThemeData.dark,
+          child: MediaQuery(
+            data: const MediaQueryData(textScaler: TextScaler.linear(2)),
+            child: Directionality(
+              textDirection: direction,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+                child: Center(
+                  child: AppToast(
+                    message: 'Couldn’t redeem your gift card.',
+                    action: AppToastAction(
+                      label: 'View card',
+                      onPressed: () {},
+                    ),
+                    onDismiss: () {},
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(tester.takeException(), isNull);
+      final messageRect = tester.getRect(
+        find.text('Couldn’t redeem your gift card.'),
+      );
+      final actionRect = tester.getRect(find.text('View card'));
+      expect(actionRect.top, greaterThanOrEqualTo(messageRect.bottom));
+      expect(
+        direction == TextDirection.ltr ? actionRect.left : actionRect.right,
+        moreOrLessEquals(
+          direction == TextDirection.ltr ? messageRect.left : messageRect.right,
+        ),
+      );
+    });
+  }
 
   testWidgets(
     'active host fallback restores parent after nested host disposes',

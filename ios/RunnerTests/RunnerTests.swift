@@ -1689,21 +1689,60 @@ class RunnerTests: XCTestCase {
 
   func testMigrationPreparationContinuedTaskTracksOnlyDenominationConfirmations() {
     XCTAssertEqual(
-      migrationPreparationContinuedTaskDisposition(.continuedProcessing),
+      migrationPreparationContinuedTaskDisposition(
+        .continuedProcessing, privateRecovery: false),
       .trackConfirmations
     )
     XCTAssertEqual(
-      migrationPreparationContinuedTaskDisposition(.backgroundProcessing),
+      migrationPreparationContinuedTaskDisposition(
+        .backgroundProcessing, privateRecovery: false),
       .foregroundOnly
     )
     XCTAssertEqual(
-      migrationPreparationContinuedTaskDisposition(.idle),
+      migrationPreparationContinuedTaskDisposition(.idle, privateRecovery: false),
       .complete
     )
     XCTAssertEqual(
-      migrationPreparationContinuedTaskDisposition(.terminal),
+      migrationPreparationContinuedTaskDisposition(.terminal, privateRecovery: false),
       .complete
     )
+  }
+
+  func testPrivateRecoveryHandsConfirmationTrackingToForeground() {
+    XCTAssertEqual(
+      migrationPreparationContinuedTaskDisposition(
+        .continuedProcessing, privateRecovery: true),
+      .foregroundOnly
+    )
+    XCTAssertEqual(
+      migrationPreparationContinuedTaskDisposition(
+        .backgroundProcessing, privateRecovery: true),
+      .foregroundOnly
+    )
+    XCTAssertEqual(
+      migrationPreparationContinuedTaskDisposition(.idle, privateRecovery: true),
+      .complete
+    )
+    XCTAssertEqual(
+      migrationPreparationContinuedTaskDisposition(.terminal, privateRecovery: true),
+      .complete
+    )
+  }
+
+  func testPrivateRecoveryFailsClosedWhenUnset() {
+    XCTAssertTrue(migrationPreparationPrivateRecoveryEnabled(storedValue: nil))
+    XCTAssertTrue(migrationPreparationPrivateRecoveryEnabled(storedValue: "on"))
+    XCTAssertTrue(migrationPreparationPrivateRecoveryEnabled(storedValue: "garbage"))
+    XCTAssertFalse(migrationPreparationPrivateRecoveryEnabled(storedValue: "off"))
+
+    let suite = "vizor.tests.private_recovery.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    XCTAssertTrue(BackgroundMigrationPrivateRecovery.isEnabled(defaults: defaults))
+    BackgroundMigrationPrivateRecovery.set(false, defaults: defaults)
+    XCTAssertFalse(BackgroundMigrationPrivateRecovery.isEnabled(defaults: defaults))
+    BackgroundMigrationPrivateRecovery.set(true, defaults: defaults)
+    XCTAssertTrue(BackgroundMigrationPrivateRecovery.isEnabled(defaults: defaults))
   }
 
   func testMigrationPreparationConfirmationProgressRequiresEveryTransactionAtThreeConfirmations() {

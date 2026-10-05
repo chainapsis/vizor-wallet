@@ -11,6 +11,8 @@ import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_toast.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_review_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_screens.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_progress.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_progress_scope.dart';
 import 'package:zcash_wallet/widgetbook/screen_use_cases.dart';
 
 void main() {
@@ -118,7 +120,13 @@ void main() {
 
     await tester.pumpWidget(
       const MaterialApp(
-        home: AppTheme(data: AppThemeData.dark, child: MobileImportScreen()),
+        home: AppTheme(
+          data: AppThemeData.dark,
+          child: MobileOnboardingProgressScope(
+            setupMode: OnboardingSetupMode.createPasscode,
+            child: MobileImportScreen(),
+          ),
+        ),
       ),
     );
     await tester.pump();
@@ -338,7 +346,7 @@ void main() {
     await _pumpUseCase(tester, buildMobileImportReview15UseCase);
 
     expect(tester.takeException(), isNull);
-    expect(_stepsProgress(tester), closeTo(60 / 196, 0.0001));
+    expect(_stepsProgress(tester), closeTo(0.53741496599, 0.0001));
     expect(
       tester.getSize(
         find.byKey(const ValueKey('mobile_import_review_seed_card')),

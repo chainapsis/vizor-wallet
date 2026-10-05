@@ -7,6 +7,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_progress_scope.dart';
+
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_onboarding_routes.dart';
 import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
@@ -29,9 +32,15 @@ Widget _app(String initialLocation) {
     routes: mobileOnboardingRoutes(),
   );
   return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+    ],
     child: MaterialApp.router(
       routerConfig: router,
-      builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
+      builder: (_, child) => AppTheme(
+        data: AppThemeData.light,
+        child: MobileOnboardingProgressFrame(child: child!),
+      ),
     ),
   );
 }
@@ -44,22 +53,31 @@ Widget _entryAppWithBirthdayProbe() {
       GoRoute(
         path: '/import/review',
         builder: (_, state) => MobileImportReviewScreen(
-          args: state.extra as ImportSecretPassphraseArgs,
+          args:
+              mobileOnboardingPayload(state.extra)
+                  as ImportSecretPassphraseArgs,
         ),
       ),
       GoRoute(
         path: '/import/birthday',
         builder: (_, state) {
-          final args = state.extra as ImportBirthdayArgs;
+          final args =
+              mobileOnboardingPayload(state.extra) as ImportBirthdayArgs;
           return Scaffold(body: Text('Birthday: ${args.mnemonic}'));
         },
       ),
     ],
   );
   return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+    ],
     child: MaterialApp.router(
       routerConfig: router,
-      builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
+      builder: (_, child) => AppTheme(
+        data: AppThemeData.light,
+        child: MobileOnboardingProgressFrame(child: child!),
+      ),
     ),
   );
 }
@@ -84,15 +102,23 @@ Widget _stackedPasteApp() {
       GoRoute(
         path: '/import/review',
         builder: (_, state) => MobileImportReviewScreen(
-          args: state.extra as ImportSecretPassphraseArgs,
+          args:
+              mobileOnboardingPayload(state.extra)
+                  as ImportSecretPassphraseArgs,
         ),
       ),
     ],
   );
   return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+    ],
     child: MaterialApp.router(
       routerConfig: router,
-      builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
+      builder: (_, child) => AppTheme(
+        data: AppThemeData.light,
+        child: MobileOnboardingProgressFrame(child: child!),
+      ),
     ),
   );
 }
@@ -101,13 +127,20 @@ Widget _reviewApp({
   Stream<void>? screenshotStream,
   SensitivePrivacyOverlayController? privacyOverlayController,
 }) {
-  return MaterialApp(
-    home: AppTheme(
-      data: AppThemeData.light,
-      child: MobileImportReviewScreen(
-        args: const ImportSecretPassphraseArgs(mnemonic: _validMnemonic),
-        screenshotStream: screenshotStream,
-        privacyOverlayController: privacyOverlayController,
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+    ],
+    child: MaterialApp(
+      home: AppTheme(
+        data: AppThemeData.light,
+        child: MobileOnboardingProgressFrame(
+          child: MobileImportReviewScreen(
+            args: const ImportSecretPassphraseArgs(mnemonic: _validMnemonic),
+            screenshotStream: screenshotStream,
+            privacyOverlayController: privacyOverlayController,
+          ),
+        ),
       ),
     ),
   );
@@ -131,9 +164,15 @@ Widget _manualScreenshotApp({
     ],
   );
   return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+    ],
     child: MaterialApp.router(
       routerConfig: router,
-      builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
+      builder: (_, child) => AppTheme(
+        data: AppThemeData.light,
+        child: MobileOnboardingProgressFrame(child: child!),
+      ),
     ),
   );
 }
@@ -382,11 +421,20 @@ void main() {
     _mockClipboard(tester, _validMnemonic);
     await tester.pumpWidget(_entryAppWithBirthdayProbe());
     await tester.pumpAndSettle();
+    final entryProgress = tester
+        .widget<FractionallySizedBox>(find.byType(FractionallySizedBox).first)
+        .widthFactor!;
 
     await tester.tap(find.byKey(const ValueKey('mobile_import_paste')));
     await tester.pumpAndSettle();
 
     expect(find.text('Review Import'), findsOneWidget);
+    expect(
+      tester
+          .widget<FractionallySizedBox>(find.byType(FractionallySizedBox).first)
+          .widthFactor,
+      greaterThan(entryProgress),
+    );
     expect(
       find.byKey(const ValueKey('mobile_import_review_seed_card')),
       findsOneWidget,

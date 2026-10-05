@@ -35,6 +35,12 @@ void main() {
       ),
       isFalse,
     );
+    expect(
+      shouldFallbackFromLightwalletdError(
+        'private status coverage incomplete',
+      ),
+      isFalse,
+    );
   });
 
   test('checkRpcEndpointHealth rejects wrong-network endpoints', () async {

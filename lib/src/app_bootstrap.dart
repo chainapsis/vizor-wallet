@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:flutter/material.dart' show ThemeMode;
@@ -12,6 +13,7 @@ import 'core/config/rpc_endpoint_config.dart';
 import 'core/config/swap_remote_enable_config.dart';
 import 'core/config/zcash_explorer.dart';
 import 'core/storage/app_secure_store.dart';
+import 'core/storage/enhance_pir_preference_store.dart';
 import 'core/storage/wallet_paths.dart';
 import 'core/storage/secure_storage_diagnostics.dart';
 import 'providers/account_models.dart';
@@ -61,6 +63,7 @@ class AppBootstrapState {
     this.biometricUnlockEnabled = false,
     this.syncKeepAwakeEnabled = false,
     this.syncKeepAwakePromptSeen = false,
+    this.enhancePirEnabled = false,
     this.failureKind,
     this.failureMessage,
   });
@@ -76,6 +79,7 @@ class AppBootstrapState {
   final bool swapEnabledOverrideCachedForRelease;
   final bool syncKeepAwakeEnabled;
   final bool syncKeepAwakePromptSeen;
+  final bool enhancePirEnabled;
 
   /// Whether biometric unlock was enabled at startup, read synchronously from
   /// secure storage. The unlock screen uses this to paint the biometric
@@ -214,8 +218,10 @@ class AppSyncSnapshot {
   );
 }
 
-Future<AppBootstrapState> loadAppBootstrap() async {
-  final storage = AppSecureStore.instance;
+Future<AppBootstrapState> loadAppBootstrap({
+  AppSecureStore? secureStore,
+}) async {
+  final storage = secureStore ?? AppSecureStore.instance;
 
   try {
     log('bootstrap: loading startup snapshot');
@@ -258,8 +264,9 @@ Future<AppBootstrapState> loadAppBootstrap() async {
       key: kSyncKeepAwakePromptSeenKey,
       label: 'sync keep-awake prompt seen flag',
     );
-    final isPasswordConfigured = await storage.isPasswordConfigured();
-    final isUnlocked = storage.hasSessionPassword;
+    final enhancePirEnabled = await readEnhancePirEnabledPreference(storage);
+    var isPasswordConfigured = await storage.isPasswordConfigured();
+    var isUnlocked = storage.hasSessionPassword;
     final dbPath = await _getDbPath();
     final databaseExists = rust_wallet.walletExists(dbPath: dbPath);
     if (databaseExists) {
@@ -281,6 +288,20 @@ Future<AppBootstrapState> loadAppBootstrap() async {
       }
     }
     final storedAccounts = await _readStoredAccounts(storage);
+    // Only presence is needed while locked; never decrypt the setup journal
+    // before the user unlocks an account that was actually created.
+    final hasPendingGiftMnemonic =
+        await storage.readPlain(kPendingAccountMnemonicStorageKey) != null;
+    final hasStartedGiftSetup =
+        await storage.readPlain(kGiftWalletSetupStartedStorageKey) != null;
+    // Import prepares the ordinary password rather than the Gift creation
+    // marker. Its handoff must also keep an interrupted walletless setup from
+    // skipping passcode setup after restart. Leave the bearer journal for import
+    // recovery; only credentials without a durable account are discarded.
+    final hasPendingGiftImport =
+        await storage.readPlain(kGiftClaimImportHandoffStorageKey) != null;
+    final hasPendingGiftSetup =
+        hasStartedGiftSetup || hasPendingGiftMnemonic || hasPendingGiftImport;
     final storedAccountsByUuid = {
       for (final account in storedAccounts) account.uuid: account,
     };
@@ -294,7 +315,7 @@ Future<AppBootstrapState> loadAppBootstrap() async {
 
     var rustAccounts = <AccountInfo>[];
     final rustAddressesByUuid = <String, String>{};
-    if (rust_wallet.walletExists(dbPath: dbPath)) {
+    if (databaseExists) {
       try {
         final legacyHardwareAccounts = legacyHardwareAccountsForBackfill(
           storedAccounts,
@@ -344,10 +365,47 @@ Future<AppBootstrapState> loadAppBootstrap() async {
         log('bootstrap: rust accounts=${rustAccounts.length}');
       } catch (e) {
         log('bootstrap: failed to list Rust accounts: $e');
+        // An unreadable DB is not an empty DB. Preserve the setup records and
+        // stop startup rather than discard credentials or reopen onboarding.
+        if (hasPendingGiftSetup) rethrow;
       }
     }
 
     final accounts = rustAccounts.isNotEmpty ? rustAccounts : storedAccounts;
+    if (hasPendingGiftSetup && accounts.isEmpty) {
+      if (!databaseExists) {
+        // walletExists uses a filesystem existence check, which can also be
+        // false when the file cannot be inspected. Confirm its absence before
+        // removing the password that would protect a created account.
+        final dbFile = File(dbPath);
+        final dbIsPresent = await dbFile.parent
+            .list(followLinks: false)
+            .any((entry) => entry.path == dbPath);
+        if (dbIsPresent) {
+          throw StateError(
+            'The pending Gift wallet DB could not be inspected.',
+          );
+        }
+      }
+      // No account was created. Leave a setup record until credential deletes
+      // finish so another interruption can repeat cleanup on the next launch.
+      await storage.clearPasswordConfiguration();
+      isPasswordConfigured = await storage.isPasswordConfigured();
+      isUnlocked = storage.hasSessionPassword;
+      log('bootstrap: discarded Gift setup before account creation');
+    } else if (hasStartedGiftSetup &&
+        !hasPendingGiftMnemonic &&
+        accounts.isNotEmpty) {
+      // The account is durable and journal cleanup already finished. Removing
+      // the remaining plain marker must not alter its password or account data.
+      try {
+        await storage.delete(kGiftWalletSetupStartedStorageKey);
+      } catch (error) {
+        // This marker contains no recovery material. Keep the usable account
+        // available and retry marker cleanup on a later launch.
+        log('bootstrap: completed Gift setup marker cleanup failed: $error');
+      }
+    }
     final activeAccountUuid = _resolveActiveUuid(storedActiveUuid, accounts);
     final activeAddress = !isUnlocked || activeAccountUuid == null
         ? null
@@ -399,6 +457,7 @@ Future<AppBootstrapState> loadAppBootstrap() async {
       biometricUnlockEnabled: biometricUnlockEnabled,
       syncKeepAwakeEnabled: syncKeepAwakeEnabled,
       syncKeepAwakePromptSeen: syncKeepAwakePromptSeen,
+      enhancePirEnabled: enhancePirEnabled,
       isPasswordConfigured: isPasswordConfigured,
       isUnlocked: isUnlocked,
       passwordRotationRecoveryFailed: passwordRotationRecoveryFailed,
@@ -500,6 +559,10 @@ AccountInfo mergeBootstrappedAccountInfo({
     ledgerDeviceId: storedAccount?.ledgerDeviceId,
     ledgerDeviceName: storedAccount?.ledgerDeviceName,
     ledgerDeviceModel: storedAccount?.ledgerDeviceModel,
+    setupPending: storedAccount?.setupPending ?? false,
+    giftEducationPending: storedAccount?.giftEducationPending ?? false,
+    backupReminderSnoozedUntilUtc: storedAccount?.backupReminderSnoozedUntilUtc,
+    backupReminderSnoozeCount: storedAccount?.backupReminderSnoozeCount ?? 0,
   );
 }
 
@@ -592,6 +655,57 @@ Future<bool> _readPlainBool(
     log('bootstrap: failed to read $label: $e');
     return false;
   }
+}
+
+/// Reads the install-scoped private queries preference.
+///
+/// The preference used to live in the secure-store plaintext lane, which a
+/// wallet reset wipes wholesale. On the first launch after that move the saved
+/// value is carried over into shared preferences and the legacy key is dropped,
+/// so an upgrading install keeps the choice it already made.
+///
+/// A preference read must never block bootstrap, but an unreadable value is
+/// unknown, not off. It resolves to private for this launch only: nothing is
+/// written back, so the next launch that can read the saved choice uses it.
+/// Resolving to off would release native background work from its private
+/// default and send public lookups for a user who opted in.
+@visibleForTesting
+Future<bool> readEnhancePirEnabledPreference(
+  AppSecureStore storage, {
+  EnhancePirPreferenceStore preferences =
+      const SharedPreferencesEnhancePirStore(),
+}) async {
+  try {
+    final saved = await preferences.readEnabled();
+    if (saved != null) return saved;
+  } catch (e) {
+    log(
+      'bootstrap: failed to read private queries preference; '
+      'using private for this launch: $e',
+    );
+    return true;
+  }
+  var legacyEnabled = false;
+  try {
+    legacyEnabled =
+        (await storage.readPlain(kLegacyEnhancePirEnabledKey)) == 'true';
+  } catch (e) {
+    // Leave the legacy key in place so a later launch can still migrate it.
+    log(
+      'bootstrap: failed to read legacy private queries flag; '
+      'using private for this launch: $e',
+    );
+    return true;
+  }
+  try {
+    await preferences.writeEnabled(legacyEnabled);
+    await storage.delete(kLegacyEnhancePirEnabledKey);
+  } catch (e) {
+    // The value is still correct for this launch; the migration retries on the
+    // next one, and any explicit toggle finishes it.
+    log('bootstrap: failed to migrate private queries flag: $e');
+  }
+  return legacyEnabled;
 }
 
 Future<bool> _readSwapEnabledOverrideCachedForRelease() async {

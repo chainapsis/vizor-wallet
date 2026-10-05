@@ -96,14 +96,46 @@ No detached background task or new persistent scheduling state is introduced.
 This reduces duplicate requests and overlaps network waits; it does not lower
 spend-check frequency or promise a fourfold overall sync speedup.
 
+## Returned TEX funds
+
+ZIP 320 requires recognizing funds a TEX recipient returns to the pair's
+ephemeral source. The backend queues an unbounded check per ephemeral address
+and randomizes when each becomes due (about once a day). At the end of a sync,
+`ephemeral_checks` services at most one due check for an ephemeral address that
+a mined transaction funded, over its own channel (an isolated circuit when Tor is
+enabled), stores any transactions, and moves only that address's next check
+forward. The backend reschedule runs only when no used address is overdue,
+because it would otherwise push overdue checks into the future. Ephemeral
+addresses with no mined output, including those funded only by a first leg that
+never mined, are not queried. Debug builds treat scheduled checks as due
+when `ZCASH_E2E_EPHEMERAL_CHECKS_DUE_NOW` is set; the TEX send E2E uses this.
+
+A first leg's output stays unspendable until a check sees it unspent past the
+leg's expiry, which is how the wallet recovers funds a failed second leg left
+behind. The backend records that only for outputs without a stored spend, so a
+second leg that was stored before broadcast and then expired would strand them;
+the check also records outputs whose every stored spend expired unmined. A
+check that makes an output spendable is reported like one that stores a
+transaction, so the balance refreshes.
+
+The backend reserves the next ephemeral address whenever a TEX pair is built
+and never returns it. It reserves at most ten past the last address a mined
+transaction used, so ten cancelled hardware approvals in a row would block TEX
+sends from the account. `proposal_locks` therefore records the address a
+hardware TEX request reserved and returns it when the request is released before
+its outbox checkpoint or first broadcast. After that boundary the address may be
+known to the network and stays reserved. A reservation that did reach the
+network but was never mined still counts toward the ten.
+
 ## Limits
 
 This searches addresses already generated within the wallet's supported gap
 windows. Newly generated children are eligible on a following sync. It does not
 reconstruct the use of fully spent historical addresses to cross arbitrary gaps.
 Software additional-account discovery still uses its existing birthday-bounded
-first-address history check. Ephemeral address scheduling, arbitrary derivation
-paths, Sprout shielded funds, and Keystone device signing are outside this change.
+first-address history check. Returned funds to ephemeral addresses used by
+another wallet sharing the seed, arbitrary derivation paths, Sprout shielded
+funds, and Keystone device signing are outside this change.
 
 ## Validation
 

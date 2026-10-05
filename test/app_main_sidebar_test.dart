@@ -37,6 +37,7 @@ void main() {
   });
 
   const failureLabels = {
+    SyncFailureKind.privateStatusCoverage: 'Syncing failed. Private lookup...',
     SyncFailureKind.endpoint: 'Syncing failed. Endpoint error...',
     SyncFailureKind.databaseBusy: 'Syncing failed. Wallet data busy...',
     SyncFailureKind.databaseFatal: 'Syncing failed. Wallet data error...',
@@ -1008,7 +1009,6 @@ void main() {
             kind: SyncFailureKind.network,
             rawMessage: 'network failed',
             userMessage: 'Network connection lost.',
-            showSettingsAction: false,
           ),
         ),
       ),
@@ -1122,7 +1122,6 @@ void main() {
             kind: SyncFailureKind.network,
             rawMessage: 'network failed',
             userMessage: 'Network connection lost.',
-            showSettingsAction: false,
           ),
         ),
         themeData: AppThemeData.dark,
@@ -1142,7 +1141,6 @@ void main() {
               kind: entry.key,
               rawMessage: 'failure',
               userMessage: 'Sync failed.',
-              showSettingsAction: false,
             ),
           ),
         ),
@@ -1387,7 +1385,6 @@ SyncState _networkFailureSyncState() {
       kind: SyncFailureKind.network,
       rawMessage: 'network failed',
       userMessage: 'Network connection lost.',
-      showSettingsAction: false,
     ),
   );
 }

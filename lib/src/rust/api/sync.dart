@@ -7,7 +7,7 @@ import '../frb_generated.dart';
 import 'keystone.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `api_proposal_result`, `catch`, `fetch_block_time`, `migration_status_from_balance`, `parse_network_and_migrate`, `payment_link_batch_pairs`, `run_full_sync_internal`, `to_wallet_action_sigs`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
+// These functions are ignored because they are not marked as `pub`: `api_proposal_result`, `catch`, `enhance_pir_enabled`, `fetch_block_time`, `migration_status_from_balance`, `parse_network_and_migrate`, `payment_link_batch_pairs`, `run_full_sync_internal`, `to_wallet_action_sigs`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `MempoolObserverState`
 
 /// Set the desired sync mode. 0=none, 1=foreground, 2=background.
@@ -22,6 +22,10 @@ int getSyncMode() => RustLib.instance.api.crateApiSyncGetSyncMode();
 /// should be scheduled first. Requests already in flight are not interrupted.
 void setActiveSyncAccount({String? accountUuid}) => RustLib.instance.api
     .crateApiSyncSetActiveSyncAccount(accountUuid: accountUuid);
+
+/// Enable private Ironwood transaction enhancement for future sync work.
+void setEnhancePirEnabled({required bool enabled}) =>
+    RustLib.instance.api.crateApiSyncSetEnhancePirEnabled(enabled: enabled);
 
 /// Start a full sync. Streams progress events to Dart via StreamSink.
 /// mode: 1=foreground, 2=background. Sync exits if desired mode changes.
@@ -976,6 +980,20 @@ Future<BigInt> getExportBirthdayHeight({
   accountUuid: accountUuid,
 );
 
+/// Header time of block `height`, answered without any network request:
+/// the scanned block's time, or on mainnet an estimate from the compiled-in
+/// block-time table. `None` means no local answer exists (off mainnet, before
+/// the block is scanned); callers may then fall back to [`get_block_time`].
+Future<BigInt?> getLocalBlockTime({
+  required String dbPath,
+  required String network,
+  required BigInt height,
+}) => RustLib.instance.api.crateApiSyncGetLocalBlockTime(
+  dbPath: dbPath,
+  network: network,
+  height: height,
+);
+
 Future<BigInt> getBlockTime({
   required String lightwalletdUrl,
   required BigInt height,
@@ -1202,6 +1220,14 @@ Future<PaymentLinkSpendEvidence> getPaymentLinkSpendEvidence({
 Future<void> shutdownSigningReservations() =>
     RustLib.instance.api.crateApiSyncShutdownSigningReservations();
 
+Future<EnhanceRecoveryStatus> getEnhanceRecoveryStatus({
+  required String dbPath,
+  required String network,
+}) => RustLib.instance.api.crateApiSyncGetEnhanceRecoveryStatus(
+  dbPath: dbPath,
+  network: network,
+);
+
 /// Flat address-validation result for the Dart side.
 ///
 /// `wrong_network` marks the one case where `is_valid` is false but the input
@@ -1376,6 +1402,46 @@ class BlockMetaInfo {
           time == other.time &&
           saplingOutputsCount == other.saplingOutputsCount &&
           orchardActionsCount == other.orchardActionsCount;
+}
+
+/// Durable pending work, including obligations that cannot currently be retried.
+class EnhanceRecoveryStatus {
+  final int queries;
+  final int rediscovery;
+  final int suspended;
+
+  /// Private transaction-status obligations still awaiting Status PIR. A
+  /// deferred private status failure leaves these durable without payload
+  /// work, so they count toward a recovery-only sync restart.
+  final int status;
+  final String serviceState;
+
+  const EnhanceRecoveryStatus({
+    required this.queries,
+    required this.rediscovery,
+    required this.suspended,
+    required this.status,
+    required this.serviceState,
+  });
+
+  @override
+  int get hashCode =>
+      queries.hashCode ^
+      rediscovery.hashCode ^
+      suspended.hashCode ^
+      status.hashCode ^
+      serviceState.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is EnhanceRecoveryStatus &&
+          runtimeType == other.runtimeType &&
+          queries == other.queries &&
+          rediscovery == other.rediscovery &&
+          suspended == other.suspended &&
+          status == other.status &&
+          serviceState == other.serviceState;
 }
 
 class ExecuteProposalResult {

@@ -4,6 +4,7 @@ enum SyncFailureKind {
   /// The Tor bootstrap failed. Unlike [network], nothing retries on its own:
   /// the notice has to offer a Tor retry or turning Tor off.
   torUnavailable,
+  privateStatusCoverage,
   endpoint,
   databaseBusy,
   databaseFatal,
@@ -16,16 +17,22 @@ class SyncFailure {
   final SyncFailureKind kind;
   final String rawMessage;
   final String userMessage;
-  final bool showSettingsAction;
 
   const SyncFailure({
     required this.kind,
     required this.rawMessage,
     required this.userMessage,
-    required this.showSettingsAction,
   });
 
+  bool get showSettingsAction => settingsRoute != null;
+
   String get actionLabel => showSettingsAction ? 'Settings' : 'Retry';
+
+  String? get settingsRoute => switch (kind) {
+    SyncFailureKind.privateStatusCoverage => '/settings',
+    SyncFailureKind.endpoint => '/settings/endpoint',
+    _ => null,
+  };
 
   /// Whether "Retry" should re-run the Tor bootstrap rather than the sync.
   bool get retriesTorRoute => kind == SyncFailureKind.torUnavailable;
@@ -40,7 +47,6 @@ SyncFailure classifySyncFailure(Object error) {
     kind: kind,
     rawMessage: rawMessage,
     userMessage: _syncFailureUserMessage(kind),
-    showSettingsAction: kind == SyncFailureKind.endpoint,
   );
 }
 
@@ -54,6 +60,9 @@ String _errorText(Object error) {
 }
 
 SyncFailureKind _classifySyncFailureKind(String lower) {
+  if (lower.contains('private status coverage incomplete')) {
+    return SyncFailureKind.privateStatusCoverage;
+  }
   if (_looksLikeEndpointFailure(lower)) {
     return SyncFailureKind.endpoint;
   }
@@ -139,6 +148,8 @@ String _syncFailureUserMessage(SyncFailureKind kind) {
       "Network connection lost. We'll keep trying automatically.",
     SyncFailureKind.torUnavailable =>
       "Tor couldn't connect. Retry, or turn Tor off in Settings.",
+    SyncFailureKind.privateStatusCoverage =>
+      "Private transaction lookup couldn't determine a transaction's status. Turn off experimental private queries in Settings to continue syncing.",
     SyncFailureKind.endpoint =>
       'Cannot reach the configured Zcash endpoint. Check your endpoint settings.',
     SyncFailureKind.databaseBusy =>

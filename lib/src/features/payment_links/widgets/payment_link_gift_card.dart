@@ -69,6 +69,27 @@ List<PaymentLinkCardArtwork> paymentLinkMixedArtworks(
   return artworks.sublist(0, count);
 }
 
+/// A Card's artwork faded to grayscale, for a Card another wallet claimed: the
+/// design stays recognisable but reads as out of play.
+class PaymentLinkDimmedArtwork extends StatelessWidget {
+  const PaymentLinkDimmedArtwork({required this.child, super.key});
+
+  final Widget child;
+
+  static const _grayscale = ColorFilter.matrix(<double>[
+    0.2126, 0.7152, 0.0722, 0, 0, //
+    0.2126, 0.7152, 0.0722, 0, 0, //
+    0.2126, 0.7152, 0.0722, 0, 0, //
+    0, 0, 0, 1, 0, //
+  ]);
+
+  @override
+  Widget build(BuildContext context) => Opacity(
+    opacity: 0.45,
+    child: ColorFiltered(colorFilter: _grayscale, child: child),
+  );
+}
+
 /// Figma `_CARD` presentation component.
 ///
 /// [amountText] selects a static front state: null renders the default prompt,
@@ -732,7 +753,7 @@ class _PaymentLinkStaticAmountRow extends StatelessWidget {
               amount,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: AppTypography.headlineLarge.copyWith(color: cardTextColor),
+              style: AppTypography.displayLarge.copyWith(color: cardTextColor),
             ),
           ),
           const SizedBox(width: AppSpacing.xxs),
@@ -752,6 +773,7 @@ class _PaymentLinkStaticAmountRow extends StatelessWidget {
           _PaymentLinkCurrencyLabel(
             currencySymbol: currencySymbol,
             cardTextColor: cardTextColor,
+            valueStyle: true,
           ),
       ],
     );
@@ -916,10 +938,12 @@ class _PaymentLinkCurrencyLabel extends StatelessWidget {
   const _PaymentLinkCurrencyLabel({
     required this.currencySymbol,
     required this.cardTextColor,
+    this.valueStyle = false,
   });
 
   final String currencySymbol;
   final Color cardTextColor;
+  final bool valueStyle;
 
   @override
   Widget build(BuildContext context) {
@@ -932,9 +956,11 @@ class _PaymentLinkCurrencyLabel extends StatelessWidget {
         child: Text(
           currencySymbol,
           maxLines: 1,
-          style: AppTypography.headlineMedium.copyWith(
-            color: cardTextColor.withValues(alpha: 0.55),
-          ),
+          style:
+              (valueStyle
+                      ? AppTypography.headlineLarge
+                      : AppTypography.headlineMedium)
+                  .copyWith(color: cardTextColor.withValues(alpha: 0.55)),
         ),
       ),
     );

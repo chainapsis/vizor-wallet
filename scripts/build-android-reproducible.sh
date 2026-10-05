@@ -8,12 +8,15 @@ Usage: scripts/build-android-reproducible.sh \
   --build-number CODE \
   --release-version VERSION \
   --signing required|unsigned \
-  [--target-abi all|arm64-v8a|armeabi-v7a|x86_64] [--offline] [--dry-run]
+  [--target-abi all|arm64-v8a|armeabi-v7a|x86_64] [--degoogled] [--offline] [--dry-run]
 
 Builds Android APKs from a clean copy of HEAD under Vizor's canonical Linux
 build path. The default target is all three ABIs. Direct Release and F-Droid
 must both use this entry point so Flutter and Rust embed the same source/cache
 paths.
+
+Google Play integrations are included by default. Pass --degoogled for Direct
+Release and F-Droid to exclude them with VIZOR_DEGOOGLED=true.
 
 Set FLUTTER_BIN to an absolute Flutter executable in F-Droid. It defaults to
 the repository's required `fvm flutter` command for Direct/local builds.
@@ -27,6 +30,7 @@ signing=""
 target_abi="all"
 offline="false"
 dry_run="false"
+degoogled="false"
 
 while (($# > 0)); do
   case "$1" in
@@ -49,6 +53,10 @@ while (($# > 0)); do
     --target-abi)
       target_abi="${2:-}"
       shift 2
+      ;;
+    --degoogled)
+      degoogled="true"
+      shift
       ;;
     --offline)
       offline="true"
@@ -139,6 +147,9 @@ build_args=(
   --dart-define=VIZOR_COINGECKO_PRICE_BASE_URL=https://functions.vizor.cash/api/v3
   --dart-define=VIZOR_WALLET_LINK_BACKEND_URL=https://functions.vizor.cash
 )
+if [[ "${degoogled}" == "true" ]]; then
+  build_args+=(--dart-define=VIZOR_DEGOOGLED=true)
+fi
 
 printf 'Reproducible Android build: name=%s number=%s release=%s signing=%s targetAbi=%s offline=%s\n' \
   "${build_name}" "${build_number}" "${release_version}" "${signing}" "${target_abi}" "${offline}"

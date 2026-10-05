@@ -413,6 +413,7 @@ if (-not (Test-Path $mainExe)) {
 
 $packArgs = @(
   "pack",
+  "--verbose",
   "--packId", $PackId,
   "--packTitle", $PackTitle,
   "--packVersion", $Version,
