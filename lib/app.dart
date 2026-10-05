@@ -313,8 +313,8 @@ Future<void> applyEnhancePirPolicy(
 /// wallet's out of device backups before Rust writes into it.
 ///
 /// Best effort: a failure is logged and startup continues. A leftover
-/// directory is swept on a later launch, and the backup mark is retried on
-/// each.
+/// directory is swept on a later launch, and the backup mark is set again at
+/// every sync start.
 @visibleForTesting
 Future<void> prepareTransparentRecoveryCompanions({
   Future<String> Function() resolveDbPath = getWalletDbPath,
