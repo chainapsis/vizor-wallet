@@ -29,6 +29,7 @@ class SwapIntentSnapshot {
     this.providerSwapType,
     this.refundedAmountBaseUnits,
     this.amountOutBaseUnits,
+    this.statusOnly = false,
   });
 
   factory SwapIntentSnapshot.fromQuote(
@@ -84,6 +85,11 @@ class SwapIntentSnapshot {
   final String? providerSwapType;
   final String? refundedAmountBaseUnits;
   final String? amountOutBaseUnits;
+
+  /// Whether this reports only the provider status, because the provider no
+  /// longer lists one of the swap's tokens. Its pair and amounts are placeholders,
+  /// so a stored swap keeps its own.
+  final bool statusOnly;
 }
 
 class SwapPricingSnapshot {

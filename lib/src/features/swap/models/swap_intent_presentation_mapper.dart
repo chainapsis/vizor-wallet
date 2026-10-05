@@ -268,19 +268,21 @@ SwapIntent updateSwapIntentFromSnapshot(
     providerRefundInfo,
   );
   final nextAction = _nextActionForResolvedStatus(status, snapshot);
+  // Null fields leave the stored values in place.
+  final presentation = snapshot.statusOnly ? null : snapshot;
   final record = SwapIntentRecord.fromIntent(intent).copyWith(
-    providerLabel: snapshot.providerLabel,
-    pairText: snapshot.pairText,
-    sellAmountText: snapshot.sellAmountText,
-    receiveEstimateText: snapshot.receiveEstimateText,
+    providerLabel: presentation?.providerLabel,
+    pairText: presentation?.pairText,
+    sellAmountText: presentation?.sellAmountText,
+    receiveEstimateText: presentation?.receiveEstimateText,
     status: status,
     nextAction: nextAction,
-    sellAmountBaseUnits: snapshot.sellAmountBaseUnits,
-    swapFeeText: snapshot.swapFeeText,
-    totalFeesText: snapshot.totalFeesText,
-    realisedSlippageText: snapshot.realisedSlippageText,
-    slippageToleranceText: snapshot.slippageToleranceText,
-    minimumReceiveText: snapshot.minimumReceiveText,
+    sellAmountBaseUnits: presentation?.sellAmountBaseUnits,
+    swapFeeText: presentation?.swapFeeText,
+    totalFeesText: presentation?.totalFeesText,
+    realisedSlippageText: presentation?.realisedSlippageText,
+    slippageToleranceText: presentation?.slippageToleranceText,
+    minimumReceiveText: presentation?.minimumReceiveText,
     providerStatusRaw: snapshot.providerStatusRaw,
     nearIntentHash: snapshot.nearIntentHash,
     providerSwapType: snapshot.providerSwapType,
