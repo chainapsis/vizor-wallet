@@ -8,7 +8,7 @@ history qualification (H01-H13, wallet-libraries
 the H01-H13 suite on an isolated regtest chain: its Rust layer
 (`rust/tests/transparent_history_cases`) in both profiles, and its desktop app
 layer (`integration_test/regtest_transparent_history_cases_test.dart`, the
-macOS app) in public mode.
+macOS app) in both modes.
 
 Runs: 2026-10-05, branch `claude/tpir-private-history` on #839 `c65418c33`
 (D1 and D2 fixed), wallet-libraries main `bdebaffcb`.
@@ -18,7 +18,7 @@ Runs: 2026-10-05, branch `claude/tpir-private-history` on #839 `c65418c33`
 | Private, Rust layer | `b889501a2` | `private3` | 298 s | 0 |
 | Public, Rust layer | `b889501a2` | `public3` | 192 s | 101 (G1-G5) |
 | Public, Rust and desktop app layers | `552b96b3e` | `public-desktop` | 133 s + 456 s | 101, 1 |
-| Private, desktop app layer | - | not run | - | - |
+| Private, Rust and desktop app layers | `51649c973` | `private-desktop` | 237 s + 172 s | 0, 0 |
 
 `552b96b3e` changes only the desktop runner's environment, so the Rust results
 at `b889501a2` stand for it; the desktop run's Rust matrix is identical to
@@ -36,7 +36,9 @@ history streams cut) and **N_utxo_fail** (UTXO requests fail); private injects
 private query answered 500). The suite has no N_seq variant (adding an account
 to a synced wallet); #818 adds it. **App** is a fresh restore (N) in the
 macOS app, checking each expected activity row's title, amount, pool label,
-detail status and whole fee: 49 rows over 11 cases.
+detail status and whole fee: 49 rows over 11 cases in public mode; in
+private mode 47 rows over the same cases, three of them optional, also
+checking the "Details incomplete" marker on the row and the receipt.
 
 Cell values:
 
@@ -62,18 +64,18 @@ Cell values:
 
 | Case | Public R | Public O | Public N | Public faults | Public app | Private R | Private O | Private N | Private faults | Private app |
 |---|---|---|---|---|---|---|---|---|---|---|
-| H01 Transparent-only send | - | pass | fail (G1) | - | fail (G1) | - | pass; details incomplete by design: send | pass; details incomplete by design: send | - | not run |
-| H02 Several inputs or recipients | - | pass | fail (G1) | - | fail (G1) | - | pass; details incomplete by design: send | pass; details incomplete by design: send | - | not run |
-| H03 Ordinary transparent receive | pass | pass | pass | - | pass | pass | pass | pass | - | not run |
+| H01 Transparent-only send | - | pass | fail (G1) | - | fail (G1) | - | pass; details incomplete by design: send | pass; details incomplete by design: send | - | pass (2 rows); details incomplete by design: send |
+| H02 Several inputs or recipients | - | pass | fail (G1) | - | fail (G1) | - | pass; details incomplete by design: send | pass; details incomplete by design: send | - | pass (4 rows); details incomplete by design: send |
+| H03 Ordinary transparent receive | pass | pass | pass | - | pass | pass | pass | pass | - | pass (3 rows) |
 | H04 Retained local transaction | pass | pass | pass | - | - | pass | pass | pass | - | - |
-| H05 Shared funding | - | fail (G2) | fail (G2) | - | pass (row and fee only) | - | pass; incomplete by design: shared funding (details, pool, provisional) | pass; incomplete by design: shared funding (details, pool, provisional) | - | not run |
-| H06 Self/cross-account transfer | pass | - | fail (G3) | - | fail (G3) | pass; details incomplete by design: cross-account send; incomplete by design: self-transfer (details) | - | pass; details incomplete by design: cross-account send; incomplete by design: cross-account from Orchard (details, fee, pool, provisional), self-transfer (details) | - | not run |
-| H07 Owned shielding/unshielding | pass | pass | pass | - | pass | pass | pass | pass; incomplete by design: shield, self-unshield (details, pool, provisional) | - | not run |
-| H08 External transparent unshielding | pass | - | pass | - | pass | pass | - | pass; incomplete by design: unshield to Bob (details, fee, pool, provisional) | - | not run |
-| H09 Other mixed-pool transaction | - | - | fail (G1) | - | fail (G6) | - | - | pass; incomplete by design: mixed-pool send (details, pool, provisional) | - | not run |
-| H10 TEX/multi-step operation | pass | - | pass | - | pass | pass | - | pass; details incomplete by design: TEX leg 2; incomplete by design: TEX leg 1 (details, pool, provisional) | - | not run |
-| H11 Swap/gift-card operation | pass | - | pass | - | pass | pass; incomplete by design: gift-card claim (details) | - | pass; incomplete by design: gift-card claim (details), gift-card create (details, fee, pool, provisional), swap deposit (details, fee, pool, provisional) | - | not run |
-| H12 Pending/expired/conflicted | pass (pending, pre-reorg, final) | - | fail (G4) | N_pending: pass | fail (G4) | pass (pending, pre-reorg, final); details incomplete by design: conflicting spend (pre-reorg, final) | - | pass; details incomplete by design: conflicting spend; incomplete by design: pending shield (details, pool, provisional) | N_pending: pass | not run |
+| H05 Shared funding | - | fail (G2) | fail (G2) | - | pass (row and fee only) | - | pass; incomplete by design: shared funding (details, pool, provisional) | pass; incomplete by design: shared funding (details, pool, provisional) | - | pass (6 rows); 3 marked incomplete |
+| H06 Self/cross-account transfer | pass | - | fail (G3) | - | fail (G3) | pass; details incomplete by design: cross-account send; incomplete by design: self-transfer (details) | - | pass; details incomplete by design: cross-account send; incomplete by design: cross-account from Orchard (details, fee, pool, provisional), self-transfer (details) | - | pass (8 rows); 4 marked incomplete |
+| H07 Owned shielding/unshielding | pass | pass | pass | - | pass | pass | pass | pass; incomplete by design: shield, self-unshield (details, pool, provisional) | - | pass (4 rows); 3 marked incomplete |
+| H08 External transparent unshielding | pass | - | pass | - | pass | pass | - | pass; incomplete by design: unshield to Bob (details, fee, pool, provisional) | - | pass (2 rows); 2 marked incomplete |
+| H09 Other mixed-pool transaction | - | - | fail (G1) | - | fail (G6) | - | - | pass; incomplete by design: mixed-pool send (details, pool, provisional) | - | pass (2 rows); 1 marked incomplete |
+| H10 TEX/multi-step operation | pass | - | pass | - | pass | pass | - | pass; details incomplete by design: TEX leg 2; incomplete by design: TEX leg 1 (details, pool, provisional) | - | pass (4 rows, TEX leg 1 shown); 3 marked incomplete |
+| H11 Swap/gift-card operation | pass | - | pass | - | pass | pass; incomplete by design: gift-card claim (details) | - | pass; incomplete by design: gift-card claim (details), gift-card create (details, fee, pool, provisional), swap deposit (details, fee, pool, provisional) | - | pass (5 rows); 5 marked incomplete |
+| H12 Pending/expired/conflicted | pass (pending, pre-reorg, final) | - | fail (G4) | N_pending: pass | fail (G4) | pass (pending, pre-reorg, final); details incomplete by design: conflicting spend (pre-reorg, final) | - | pass; details incomplete by design: conflicting spend; incomplete by design: pending shield (details, pool, provisional) | N_pending: pass | pass (6 rows; the unmined receive, optional, not shown); 3 marked incomplete |
 | H13 Incomplete coverage | - | - | - | N_cut: fail (G5)<br>N_pre: pass<br>N_utxo_fail: pass | - | - | - | - | N_lag: pass<br>N_pir_fail: pass<br>N_pre: pass | - |
 
 Gate verdicts. Private: all 13 cases pass. Public: H03, H04, H07, H08, H10
@@ -81,6 +83,9 @@ and H11 pass; H01, H02, H05, H06, H09, H12 and H13 fail on G1-G5. In every
 run all four negative controls (a wrong fee, a wrong input count, an omitted
 ledger event, a wrong ownership mapping) make the comparison fail, as
 required. Public app layer: 8 of 49 rows fail, in H01, H02, H06, H09 and H12.
+Private app layer: every row passes. The unmined H12 receive is optional and
+not shown: private recovery reads mined blocks, and the mempool observer
+matches shielded outputs only.
 For shared funding (H05) the app layer checks only that a row exists and that
 a shown fee is the whole fee; the Rust layer checks its amount.
 
@@ -104,9 +109,17 @@ The private request policy allows block and tree data and the wallet's own
 broadcasts only; any other method fails the run. Under `PrivateRequired` the
 lookup gate withholds every transparent lookup, in every variant including
 the faults. The private capture is identical to the run before D2's fix, which
-changes display only. The desktop run's Rust layer made 871 requests (525 with
-a transparent subject: 229, 75 and 221; 320 block and tree; 26 broadcasts);
-the app layer's own requests are not captured.
+changes display only. The public desktop run's Rust layer made 871 requests
+(525 with a transparent subject: 229, 75 and 221; 320 block and tree; 26
+broadcasts); the public app layer's own requests are not captured.
+
+The private app layer reaches lightwalletd through a recording proxy
+(`private-desktop`, whose Rust layer made 341 requests, none with a
+transparent subject). The app made 44 lightwalletd requests, none with a
+transparent subject: 26 `GetLatestBlock`, 4 `GetBlock`, 2 `GetBlockRange`, 2
+`GetTreeState`, 4 `GetSubtreeRoots`, 3 `GetLightdInfo` and 3
+`GetMempoolStream` (the whole mempool, no subject). It made 78 transparent PIR
+requests (56 directory and 2 page queries), with no privacy violation.
 
 ## Product defects
 
@@ -213,11 +226,8 @@ it has not recurred, and it is not fixed.
   that.
 - Private: N_pre is weak: nothing is held, so its snapshot follows the first
   sync.
-- Private app layer not run yet. `--profile private --flutter desktop` now
-  runs it: private app-layer expectations, the Rust layer's process serving
-  the final publication to the app, a debug-only regtest allowance for
-  private queries in the app, and app-layer checks for rows incomplete by
-  design (see the harness README).
+- Private app layer: desktop only. The simulator's app does not inherit the
+  runner's environment, which carries the Rust switches.
 - The mobile app layer was not run in either profile.
 - Debug builds only: the regtest switches
   (`ZCASH_E2E_REGTEST_PRIVATE_TRANSPARENT`, the loopback HTTP transport,
@@ -236,6 +246,8 @@ TH_OUT_DIR="$PWD/rust/target/transparent-history-cases/public3" \
   scripts/e2e/transparent-history-cases.sh --profile public
 TH_OUT_DIR="$PWD/rust/target/transparent-history-cases/public-desktop" \
   scripts/e2e/transparent-history-cases.sh --profile public --flutter desktop
+TH_OUT_DIR="$PWD/rust/target/transparent-history-cases/private-desktop" \
+  scripts/e2e/transparent-history-cases.sh --profile private --flutter desktop
 ```
 
 Each writes `results.json` (case by variant matrix, negative controls) and the
