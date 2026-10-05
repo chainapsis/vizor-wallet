@@ -237,6 +237,12 @@ def account_checks(context):
         if "no_synchronized_claim" in check["assert"]:
             check = dict(check)
             check["assert"] = ["no_spendable_claim"]
+        if "balance" in check["assert"]:
+            # The transparent balance is the recovered, confirmed ledger. A
+            # receive the wallet holds only as unmined (H12 R's reorged-away
+            # receive, back in the mempool) needs a status lane to count as
+            # pending, and regtest has none: it does not count.
+            check = dict(check, pending_receives=False)
         checks.append(check)
     return checks
 

@@ -387,8 +387,14 @@ def account(mempool_receives=(), mempool_spends=()):
     }
 
 
-def balance_problems(exp, view_ledger, transparent):
-    check = {"variant": "R", "account": "A0", "assert": ["balance"], "authority": ["current"]}
+def balance_problems(exp, view_ledger, transparent, pending_receives=True):
+    check = {
+        "variant": "R",
+        "account": "A0",
+        "assert": ["balance"],
+        "authority": ["current"],
+        "pending_receives": pending_receives,
+    }
     expected = {"accounts": {"A0": exp}}
     view = {
         "ledger": view_ledger,
@@ -424,6 +430,25 @@ class MempoolAwareBalanceTest(unittest.TestCase):
         ledger = [ledger_entry("aa", 0, 70_000_000, 200, spenders=["cc"])]
         self.assertEqual(balance_problems(exp, ledger, 0), [])
         self.assertEqual(len(balance_problems(exp, ledger, 70_000_000)), 1)
+
+    def test_a_mode_without_pending_receives_counts_only_mined_outputs(self):
+        # Private profile: the reorged-away receive is recorded but unmined.
+        exp = account(mempool_receives=[REORGED])
+        ledger = [ledger_entry("aa", 0, 70_000_000, 200), ledger_entry("bb", 0, 99_990_000, None)]
+        self.assertEqual(balance_problems(exp, ledger, 70_000_000, pending_receives=False), [])
+        self.assertEqual(
+            len(balance_problems(exp, ledger, 169_990_000, pending_receives=False)), 1
+        )
+
+    def test_the_private_profile_counts_no_pending_receive(self):
+        context = {
+            "checkpoint": "final",
+            "alice_accounts": ["A0"],
+            "cases": {"cases": {"H12": {"checkpoints": {"final": ["R"]}}}},
+        }
+        balance = [c for c in private.account_checks(context) if "balance" in c["assert"]]
+        self.assertTrue(balance)
+        self.assertTrue(all(c["pending_receives"] is False for c in balance))
 
     def test_an_overstated_balance_still_fails(self):
         # Gap 5a stays visible: an output a mined conflicting spend consumed

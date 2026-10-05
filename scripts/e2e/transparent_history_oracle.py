@@ -320,7 +320,7 @@ def mempool_state(chain, ownership, account):
     return {"receives": receives, "spends": spends}
 
 
-def expected_transparent_balance(exp, view):
+def expected_transparent_balance(exp, view, pending_receives=True):
     """The transparent balance the wallet should report, from the chain plus
     the mempool.
 
@@ -329,7 +329,9 @@ def expected_transparent_balance(exp, view):
     the wallet recorded them: public sync learns an unmined transaction only by
     building it or by having seen it mined before a reorg, so a pending
     transaction the wallet never saw is not required. Every pending fact the
-    wallet does count must be in the mempool now."""
+    wallet does count must be in the mempool now. A profile whose mode has no
+    pending-receive evidence passes `pending_receives=False`: unmined receives
+    then never count."""
     pending = exp.get("mempool") or {"receives": [], "spends": []}
     mempool_spender = {(s["txid"], s["index"]): s["spent_by"] for s in pending["spends"]}
     mined_spent = {(e["txid"], e["index"]) for e in exp["ledger"] if e["spent_by"]}
@@ -342,7 +344,7 @@ def expected_transparent_balance(exp, view):
     total = sum(
         e["value"] for e in exp["utxos"] if not recorded_spend((e["txid"], e["index"]))
     )
-    for receive in pending["receives"]:
+    for receive in pending["receives"] if pending_receives else []:
         key = (receive["txid"], receive["index"])
         entry = recorded.get(key)
         if entry is None or entry.get("receive_mined_height") is not None:
@@ -849,7 +851,9 @@ def account_problems(check, view, expected, observed, views):
         if balance is None:
             problems.append((f"balance unavailable: {view.get('balance_error')}", []))
         else:
-            want_balance = expected_transparent_balance(exp, view)
+            want_balance = expected_transparent_balance(
+                exp, view, check.get("pending_receives", True)
+            )
             if balance["transparent"] != want_balance:
                 # Attribute to the outputs the wallet and the chain disagree
                 # on: wallet-unspent (mined or not) versus chain UTXOs.
