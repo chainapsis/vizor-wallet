@@ -460,7 +460,12 @@ pub fn discover_software_wallet_import_accounts(
         let primary_account_already_exists = existing_seed_accounts
             .as_ref()
             .is_some_and(|state| state.contains(0));
-        let gate = import_gate(network, &db_path, is_first_wallet_account)?;
+        let gate = import_gate(
+            network,
+            &db_path,
+            is_first_wallet_account,
+            EnhancementPolicy::current(network),
+        )?;
 
         let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
         let discovered_accounts = rt.block_on(discover_used_software_accounts(
@@ -511,7 +516,12 @@ pub fn preview_software_account_transparent_balance(
         } else {
             parse_network_and_migrate(&db_path, &network)?
         };
-        let gate = import_gate(network, &db_path, is_first_wallet_account)?;
+        let gate = import_gate(
+            network,
+            &db_path,
+            is_first_wallet_account,
+            EnhancementPolicy::current(network),
+        )?;
         let seed = keys::mnemonic_to_seed_with_passphrase(&mnemonic, &bip39_passphrase)?;
         let addresses = keys::software_account_transparent_addresses(
             network,
@@ -817,15 +827,16 @@ fn import_discovered_software_wallet_accounts(
     })
 }
 
-/// Gates import-time lookups. A first account has no wallet database, so only
-/// the captured mode applies; an existing wallet's durably applied policy may
-/// be stricter and wins, and a transition by another connection revokes it.
-fn import_gate(
+/// Gates import-time lookups under `policy`, captured for the request. A first
+/// account has no wallet database, so only the captured mode applies; an
+/// existing wallet's durably applied policy may be stricter and wins, and a
+/// transition by another connection revokes it.
+pub(crate) fn import_gate(
     network: WalletNetwork,
     db_path: &str,
     is_first_wallet_account: bool,
+    policy: EnhancementPolicy,
 ) -> Result<TransparentLookupGate, String> {
-    let policy = EnhancementPolicy::current(network);
     if is_first_wallet_account {
         return Ok(TransparentLookupGate::pre_db(
             policy.pre_db_public_transparent_lookups(),
@@ -842,7 +853,7 @@ fn import_gate(
 /// account's first transparent address to lightwalletd, so `gate` authorizes
 /// every probe and the first withheld one ends discovery with the accounts
 /// found so far.
-async fn discover_used_software_accounts(
+pub(crate) async fn discover_used_software_accounts(
     network: WalletNetwork,
     seed: &secrecy::SecretVec<u8>,
     birthday_height: Option<u64>,
@@ -1006,7 +1017,7 @@ fn discovery_start_height(network: WalletNetwork, birthday_height: Option<u64>) 
 
 /// Opening the channel yields, so the gate authorizes the RPC after it; the
 /// captured check before it only avoids opening a channel for nothing.
-async fn preview_transparent_balance_for_addresses(
+pub(crate) async fn preview_transparent_balance_for_addresses(
     lightwalletd_url: &str,
     addresses: Vec<String>,
     gate: &TransparentLookupGate,
@@ -1989,7 +2000,7 @@ mod tests {
             .unwrap();
         // Authorized when captured, revoked before the RPC: the captured check
         // lets the channel open, and the dispatch check reads the new policy.
-        let gate = import_gate(network, path, false).unwrap();
+        let gate = import_gate(network, path, false, EnhancementPolicy::current(network)).unwrap();
         crate::wallet::db::open_wallet_db_with_timeout(
             path,
             network,
@@ -2021,7 +2032,7 @@ mod tests {
         let seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
         keys::init_db_and_create_account(path, network, &seed, Some(2_000_000), "existing")
             .unwrap();
-        let gate = import_gate(network, path, false).unwrap();
+        let gate = import_gate(network, path, false, EnhancementPolicy::current(network)).unwrap();
         // Every probe finds history, so an unrevoked run probes every index.
         // PrivateShadow keeps public authority; only the generation revokes.
         let lwd = CapturingLwd::start_with(
