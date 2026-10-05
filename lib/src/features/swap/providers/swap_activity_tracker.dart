@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
     show PlatformInt64Util;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -302,8 +304,22 @@ class SwapActivityTracker {
       accountUuid: scopedAccountUuid,
     );
     final intents = _intentsFromRecords(records);
-    await _onIntentsPersisted?.call(scopedAccountUuid, intents);
+    _replayStatuses(scopedAccountUuid, intents);
     return intents;
+  }
+
+  /// Replays provider statuses into the wallet without holding up the activity
+  /// they describe, since the wallet write can wait behind sync. The replay stays
+  /// registered with the lifecycle, so wallet changes still wait for it, and a
+  /// failure is retried on the next load or save.
+  void _replayStatuses(String accountUuid, List<SwapIntent> intents) {
+    final replay = _onIntentsPersisted;
+    if (replay == null) return;
+    unawaited(
+      _run(() => replay(accountUuid, intents)).catchError((Object error) {
+        log('Swap: status replay deferred error=$error');
+      }),
+    );
   }
 
   Future<void> saveIntents({
@@ -328,7 +344,7 @@ class SwapActivityTracker {
             ),
       ],
     );
-    await _onIntentsPersisted?.call(
+    _replayStatuses(
       scopedAccountUuid,
       intents
           .where(

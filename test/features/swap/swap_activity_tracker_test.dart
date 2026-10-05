@@ -80,6 +80,28 @@ void main() {
   );
 
   test(
+    'loads activity while the wallet status replay waits or fails',
+    () async {
+      final store = _MemorySwapActivityStore()
+        ..savedRecords = [
+          SwapIntentRecord.fromIntent(_intent(id: 'open', depositAddress: 'a')),
+        ];
+      final stalled = SwapActivityTracker(
+        activityStore: store,
+        swapProvider: _StatusSwapProvider({}),
+        onIntentsPersisted: (account, intents) => Completer<void>().future,
+      );
+      expect(await stalled.loadIntents(accountUuid: 'account-1'), hasLength(1));
+      final failing = SwapActivityTracker(
+        activityStore: store,
+        swapProvider: _StatusSwapProvider({}),
+        onIntentsPersisted: (account, intents) async => throw StateError('db'),
+      );
+      expect(await failing.loadIntents(accountUuid: 'account-1'), hasLength(1));
+    },
+  );
+
+  test(
     'reconciles abandoned reservations even without visible activity',
     () async {
       var reconciled = 0;
@@ -96,7 +118,6 @@ void main() {
       expect(reconciled, 1);
     },
   );
-
 
   test(
     'automatic refresh skips unsigned ZEC deposits but tracks created ones',
