@@ -1003,6 +1003,11 @@ pub fn list_account_uuids_from_db(db_path: &str) -> Result<Vec<String>, String> 
 /// rows. Vizor cleanup shares the caller-owned transaction; any refusal or cleanup
 /// failure rolls back both. Cache eviction and process-local cleanup follow commit.
 /// The UI handles deleting the last account as a full wallet reset.
+///
+/// The account's transparent PIR companions are deleted after the wallet write
+/// lock is released: a recovery source holding one may be waiting for that lock
+/// to apply its commits. A companion left behind is deleted when another
+/// account's companion is next opened.
 pub fn delete_account(
     db_path: &str,
     network: WalletNetwork,
@@ -1026,8 +1031,15 @@ pub fn delete_account(
                 "Failed to discard Keystone migration requests after deleting account: {error}"
             );
         }
-        Ok(())
-    })
+        Ok::<_, String>(())
+    })?;
+    if let Err(error) = crate::wallet::sync_engine::transparent_ledger::pir::remove_companions(
+        db_path,
+        account_uuid,
+    ) {
+        log::warn!("Failed to delete transparent PIR companions after deleting account: {error}");
+    }
+    Ok(())
 }
 
 fn delete_account_rows(
