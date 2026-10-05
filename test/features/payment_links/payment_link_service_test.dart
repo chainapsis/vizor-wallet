@@ -3109,6 +3109,7 @@ rust_sync.TransactionInfo _transaction({
     feeState: rust_sync.TransactionFeeState.notApplicable,
     detailsComplete: true,
     provisional: false,
+    amountIncludesFee: false,
     blockTime: BigInt.from(blockTime),
     isTransparent: false,
     txKind: txKind,

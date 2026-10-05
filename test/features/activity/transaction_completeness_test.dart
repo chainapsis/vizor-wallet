@@ -47,6 +47,39 @@ void main() {
     };
     expect(signatures, hasLength(4));
   });
+
+  test('a fee the amount includes is presented once', () {
+    TransactionFeePresentation presentation({
+      required bool amountIncludesFee,
+      required int displayAmount,
+    }) => transactionFeePresentation(
+      _transaction(
+        'aa',
+        'sent',
+        amountIncludesFee: amountIncludesFee,
+        displayAmount: BigInt.from(displayAmount),
+      ),
+    );
+
+    // The fee is 10000 zatoshis.
+    expect(
+      presentation(amountIncludesFee: false, displayAmount: 100000),
+      TransactionFeePresentation.separate,
+    );
+    expect(
+      presentation(amountIncludesFee: false, displayAmount: 10000),
+      TransactionFeePresentation.separate,
+      reason: 'a payment equal to the fee is still a payment',
+    );
+    expect(
+      presentation(amountIncludesFee: true, displayAmount: 100000),
+      TransactionFeePresentation.includedInAmount,
+    );
+    expect(
+      presentation(amountIncludesFee: true, displayAmount: 10000),
+      TransactionFeePresentation.feeOnly,
+    );
+  });
 }
 
 rust_sync.TransactionInfo _transaction(
@@ -55,6 +88,8 @@ rust_sync.TransactionInfo _transaction(
   bool detailsComplete = true,
   bool provisional = false,
   rust_sync.TransactionFeeState feeState = rust_sync.TransactionFeeState.known,
+  bool amountIncludesFee = false,
+  BigInt? displayAmount,
 }) {
   return rust_sync.TransactionInfo(
     txidHex: txid,
@@ -65,10 +100,11 @@ rust_sync.TransactionInfo _transaction(
     feeState: feeState,
     detailsComplete: detailsComplete,
     provisional: provisional,
+    amountIncludesFee: amountIncludesFee,
     blockTime: BigInt.from(1750000000),
     isTransparent: false,
     txKind: kind,
-    displayAmount: BigInt.from(100000),
+    displayAmount: displayAmount ?? BigInt.from(100000),
     displayPool: 'shielded',
     createdTime: BigInt.from(1750000000),
   );
