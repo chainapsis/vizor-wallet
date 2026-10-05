@@ -58,12 +58,21 @@ ActivityRowData buildTransactionActivityRow({
       ? transactionActivityPool(transaction)
       : giftCardDisplayPool ?? transactionActivityPool(transaction);
   final signedAmount = isSent ? -amount : amount;
+  // A privately recovered entry whose whole balance change is its network
+  // fee reads as that fee, not as a payment, so it shows no pool.
+  final isFeeOnly =
+      giftCardKind == null &&
+      giftCardAmountZatoshi == null &&
+      transactionFeePresentation(transaction) ==
+          TransactionFeePresentation.feeOnly;
   final replacesPool =
       showPendingEstimate && isPending && (isInbound || isSent);
   final subtitle = replacesPool
       ? pendingLabel ?? 'Checking status'
       : isMigration
       ? 'Orchard → Ironwood'
+      : isFeeOnly
+      ? null
       : isInbound || isSent
       ? _poolLabel(normalizeActivityPool(displayPool), ordinary: isPayment)
       : null;
@@ -72,13 +81,6 @@ ActivityRowData buildTransactionActivityRow({
   // in the leading slot and a progressive title, per the Content Line
   // pending variant in the design.
   final isInFlight = isPending && (isInbound || isSent || isMigration);
-  // A privately recovered entry whose whole balance change is its network
-  // fee reads as that fee, not as a payment.
-  final isFeeOnly =
-      giftCardKind == null &&
-      giftCardAmountZatoshi == null &&
-      transactionFeePresentation(transaction) ==
-          TransactionFeePresentation.feeOnly;
 
   return ActivityRowData(
     stableId:
@@ -118,6 +120,8 @@ ActivityRowData buildTransactionActivityRow({
                   subtitle == 'Taking longer'
               ? AppIcons.time
               : null)
+: isFeeOnly
+        ? null
         : _poolIcon(normalizeActivityPool(displayPool), ordinary: isPayment),
     amountText: activityAmountTextForFormFactor(
       _transactionAmountText(
