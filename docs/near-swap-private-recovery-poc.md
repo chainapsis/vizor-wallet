@@ -3,7 +3,13 @@
 This software-wallet build restores refund and incoming swap notes through the
 receiver directory and Enhance PIR. Use a separate mainnet test wallet identity.
 The earlier POC wallets remain intact. The application rejects their prerelease
-schema until its upgrade path is qualified.
+schema until its upgrade path is qualified. Databases from later prerelease
+builds of this branch cannot migrate either; restore those wallets from the
+recovery phrase into a new database.
+
+Swap keys issued on this device never use the directory. They are trial-decrypted
+from issuance until their swap closes, including while catching up after time
+offline. The directory is used only for keys recovered from the seed.
 
 ## Recovery flow
 
@@ -13,22 +19,23 @@ schema until its upgrade path is qualified.
 2. At the accepted tip, authenticate pending Ironwood memos through ordinary
    enhancement, following the general Private queries setting.
    Funding memos register refund keys. Incoming recovery registers 30 lookahead
-   keys. Historical key registration uses private discovery rather than queuing
-   another block scan.
+   keys. Each key gets one private directory sweep instead of a block rescan.
 3. Accept the receiver publication against a locally scanned block. Download its
-   common witness file and privately query the registered receivers. Fetch each
+   common witness file and privately query the swept receivers. Fetch each
    matching payment's ciphertext suffix through Enhance PIR.
 4. In a database transaction, authenticate ownership and memo, check the position
    and inclusion path against local chain state, and establish spend status from
    retained history. Store the note, key, memo, witness and known spend together.
    Missing evidence leaves a candidate pending without crediting balance.
-5. Record completed directory checks by key and block anchor. Paid incoming
-   indices extend the lookahead. Check the extended window before completing sync.
-   Rewinds invalidate affected candidates, spend coverage and directory checks.
-6. After all funding memos, own-send evidence, lookahead, directory checks and
-   candidate imports are resolved, release old unrelated Ironwood spend evidence.
-   Normal recent history and wallet-owned spend links remain. New scans retain
-   their evidence until the next completed recovery pass.
+5. Complete each sweep at its block anchor. A refund key then scans from the next
+   block until its swap closes, and an unpaid incoming key for 24 hours, to
+   catch a payout from a swap in flight at restore. Paid incoming indices extend
+   the lookahead, and the new keys are swept too. Rewinds below a sweep reopen it
+   and invalidate affected candidates and spend coverage.
+6. After all funding memos, own-send evidence, lookahead, sweeps and candidate
+   imports are resolved, release old unrelated Ironwood spend evidence. Normal
+   recent history and wallet-owned spend links remain. New scans retain their
+   evidence until the next completed recovery pass.
 
 The shared witness file contains deduplicated Merkle sibling hashes for all
 published payments. Every participating wallet downloads identical bytes before
@@ -61,9 +68,8 @@ Requests are bounded, redirects are disabled, and Enhance routes must remain
 on that exact HTTPS origin with standard TLS validation. Receiver and Enhance
 requests reuse ordinary Enhance PIR's route-aware HTTPS transport, including Tor,
 cancellation and bounded responses. Manifest, setup, query and witness requests
-all follow the same route. Incoming-address verification uses the same client.
-There is no direct fallback when Tor fails and no public transaction fallback
-when PIR fails.
+all follow the same route. There is no direct fallback when Tor fails and no
+public transaction fallback when PIR fails.
 
 Signing, bundle identity and secure-store overrides stay local. Record the app
 path, bundle ID, secure-store service and new wallet DB path before opening it.
@@ -80,30 +86,34 @@ POC database with this build or reuse its secure-store namespace.
   test evidence. The spent refund must remain spent. Unspent receipts must appear
   exactly once after closing and reopening the application.
 - Interrupt the private phase once and reopen. Queued candidates and completed
-  key checks must resume without duplicate balances.
+  sweeps must resume without duplicate balances.
 - For an unspent privately recovered note, review an ordinary software send,
   confirm that note is selected, then let the user authorize the send. Verify its
   change belongs to the ordinary internal key.
 
 ## POC boundaries
 
-New local operations use temporary compact scanning with no key-count cap.
-Restored funding memos register directory work without adding historical keys to
-trial decryption. Supported pending statuses keep a local watch active. A terminal
-observation is persisted immediately, then a later fresh chain request anchors
-ten more scanning blocks. Repeated observations preserve that horizon. Cached UI
-status and failed polls do not refresh the observation time.
+Keys issued on this device are trial-decrypted with no key-count cap until their
+swap closes. A key closes 24 hours after its final provider status once the
+expected Zcash receipts are found, or seven days after its quote deadline
+whatever the provider reports. Refunds, positive `refundedAmount` values and
+exact-output `SUCCESS` leftovers are expected receipts for refund keys; an
+incoming key expects `amountOut`. Incoming source-chain refunds do not imply a
+Zcash receipt. A `FAILED` status is inconclusive, so that key closes only by the
+seven-day limit or a later definitive status. Cached UI status and failed polls
+do not record an observation. Keys close only at the end of a sync, once the tip
+is revalidated and scanned, so blocks mined while the app was offline are
+checked first.
 
-After two days without a supported observation, an unknown local operation moves
-to directory follow-ups without being marked complete. Follow-ups back off from
-one to twelve hours. Terminal operations also require a separate check twelve
-hours after the first terminal observation. An expected Zcash refund cannot close
-with an empty lookup. Incoming source-chain refunds do not imply a Zcash receipt.
+A restored key scans new blocks after its sweep only as described in the
+recovery flow. Issuing a restored incoming key later starts at the tip without a
+rescan. A payment that arrives after a key closes needs an explicit later
+recovery; swap addresses are not permanent receive addresses.
 
-The retention floor follows processed coverage and pending candidates, independent
+The retention floor follows unfinished sweeps and pending candidates, independent
 of provider completion. Missing memos or unavailable directory data can extend
 temporary retention. Sapling and Orchard keep their ordinary policies. Reorgs
-rewind affected coverage. Pruning permits SQLite to reuse rows without forcing a
+reopen affected sweeps. Pruning permits SQLite to reuse rows without forcing a
 vacuum.
 
 If an authenticated, included candidate needs pruned spend history, the library
@@ -143,12 +153,16 @@ Complete lookup results and authenticated ciphertexts are persisted atomically.
 A restart resumes queued notes without another receiver lookup or ciphertext
 retrieval. Already imported output identities are checked rather than imported
 again. Inclusion, witness and spend validation still precede balance changes.
-Processed coverage and final scheduling are committed together. Backoff and an
+A sweep completes only after its candidates are applied. Backoff and an
 unavailable publication never make incomplete historical recovery appear complete.
+Failed key lookups back off from one minute to twelve hours, and an unavailable
+service is retried on the next sync; neither fails ordinary sync. When a finished
+sweep starts a key scanning from its anchor, sync scans those blocks before it
+completes.
 
-New memos and paid receive indices extend recovery. Completed work makes no routine
-requests. Both issuance settings may be off during recovery. File mode sends no
-receiver-dependent public ranges, and PIR failure has no public fallback.
+New memos and paid receive indices extend recovery. Completed sweeps make no
+further requests. Both issuance settings may be off during recovery. File mode
+sends no receiver-dependent public ranges, and PIR failure has no public fallback.
 
 Funding memo recovery now persists completion per note together with its key and
 provider watch. Maintenance retries missing memos and missing own-send evidence,
@@ -157,13 +171,12 @@ make a record eligible again. The forward migration starts with no inferred
 completion. Registry lookup by key ID, receiver or reservation derives only the
 selected key. Scanning reuses that validated derivation.
 
-The SQLite scanner splits a batch at a watch boundary and derives only active keys.
-Retirement removes trial decryption, preserving key IDs, note ownership, witnesses,
-and nullifiers needed to spend recovered notes. Reorgs invalidate affected PIR
-anchors and scan coverage; replay below a saved deadline uses that bounded watch.
-The operation's deadline is a height budget, not a claim that its observed block
-can never reorg. Late payments after the completed one-time closeout need a later
-explicit recovery; swap addresses are not permanent receive addresses.
+Every compact scan batch includes all active keys and derives only those.
+Activating a key queues a rescan of blocks already scanned from its start height,
+and a batch that missed a newly activated key requeues its range. Closing a key
+removes trial decryption, preserving key IDs, note ownership, witnesses, and
+nullifiers needed to spend recovered notes. Reorgs invalidate affected sweep
+anchors and candidates.
 
 NEAR activity persistence and loading both replay supported statuses into the
 wallet DB. The wallet deletion drain covers the status request and its resulting
@@ -216,53 +229,41 @@ that reservation from the unfunded count.
 The existing status refresh loop also checks reservations absent from the activity
 UI. An unpaid slot can be reclaimed after 48 hours from creation and from every
 accepted quote's deposit deadline. Every attempt must have a fresh successful
-provider check, with no pending or unknown funded operation. Reclamation then
-requires a fresh complete empty receiver PIR lookup plus verified per-address
-coverage through the wallet's accepted tip. The publication may lag by at most
-five blocks only when those missing blocks have also been checked with this key.
-Provider errors, unknown quote outcomes, incomplete PIR coverage, or a payment
-retain the reservation. Cleanup runs while the app is active and before requesting
-another address; it does not need an operating-system service.
+provider check, with no pending or unknown funded operation. The key has been
+trial-decrypted since issuance, so reclamation then only requires the wallet to
+be scanned to its tip with no payment to that address. Provider errors, unknown
+quote outcomes, an unscanned tail, or a payment retain the reservation. Cleanup
+runs while the app is active and before requesting another address; it does not
+need an operating-system service.
 
 Allocation picks the lowest eligible never-paid index. A sticky used marker keeps
 paid addresses excluded after spending or a rewind. Reclaimed reservations and
 quote associations remain in the database for late-payment attribution. Address
 reuse does not invalidate old deposit instructions and cannot prove that no future
-payment will arrive. A late payment still belongs to the same key; receipt during
-an active watch is detected locally, while receipt after final PIR closeout needs
-an explicit later recovery as described above.
+payment will arrive. A reclaimed key keeps scanning, so the slot is reissued with
+no gap in its history and a late payment is still found locally.
 
 The seed-recovery gap is 30, and issuance may not exceed 30 slots after the highest
 canonical receipt (indices 0 through 29 before the first receipt). Provider deposit
 status and local issuance do not advance that boundary. This bound is enforced
-before a draft is resumed as well as before a new reservation is created. Every
-address must have complete verified history before quoting, with no sync restart.
-An existing draft reuses its durable empty-address check when continuous per-key
-scanning covers the tail. That evidence is independent of PIR closeout checkpoints
-and survives quote edits and restart. A newly checked or reclaimed address can use
-a publication up to five blocks behind if its local scan ranges cover the gap.
-Otherwise the wallet downloads and checks all missing compact blocks with that
-key, bounded to five blocks. This uses the same trusted lightwalletd source as
-normal compact scanning. It checks canonical hashes, predecessor links and action
-counts before accepting the result. A discovered payment permanently excludes
-the address and queues private recovery without crediting balance prematurely.
+before a draft is resumed as well as before a new reservation is created. New
+reservations wait for incoming restore sweeps, which may reveal paid indices.
 
-Quote issuance rechecks used markers and coverage atomically. Rewinds invalidate
-affected address checks. Missing blocks, malformed responses or coverage holes
-hold the reservation. These address checks do not relax full seed recovery or
-fixed retirement targets, and do not add permanent scanning keys. Missing old
-outgoing enhancement metadata no longer blocks incoming address preparation;
-refund allocation still waits for unresolved internal funding memos.
+Quoting requires the address to be unpaid, with no queued candidate, and the
+wallet scanned to its tip. This needs no directory lookup or extra block download.
+A discovered payment permanently excludes
+the address and is credited through ordinary scanning. Quote issuance rechecks
+these conditions atomically. Missing old outgoing enhancement metadata does not
+block incoming address preparation; refund allocation still waits for unresolved
+internal funding memos.
 
-Older allocated unpaid keys without durable quote records are conservatively
-reserved during migration. They are not automatically reclaimed based on missing
-history. Independent installations of the same seed do not share local pending
+Independent installations of the same seed do not share local pending
 reservations; coordinating concurrent issuance across devices remains outside
 this POC.
 
 Automated tests cover the paid/empty/paid/paid/paid example, restart, explicit quote
 rejection versus lost responses, the three-reservation cap, the 30-slot bound,
-late-payment races, stale statuses, canonical anchors, and deletion draining.
+late-payment races, stale statuses, reissuing a swept key, and deletion draining.
 For a manual check, start three small incoming attempts without funding them and
 confirm a fourth is blocked; quote refreshes should keep the same receive slot.
 Fund one existing attempt and check that provider deposit evidence permits another.

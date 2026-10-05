@@ -22,8 +22,8 @@ A quote already issued keeps its reserved address and funding recovery memo.
 
 Receiver discovery, its common witness file and swap note enhancement use the
 same route-aware HTTPS transport as ordinary Enhance PIR. They honor Tor and
-cancellation without a direct fallback. Incoming-address verification uses it too.
-An unavailable private service leaves recovery pending.
+cancellation without a direct fallback. An unavailable private service leaves
+recovery pending without failing ordinary sync.
 
 The dependencies use exact Git revisions and published PIR math crates. No sibling
 compatibility checkout or compile-time privacy environment variable is needed.
@@ -43,15 +43,16 @@ and the 48-hour, three-reservation, and 30-slot incoming-address policy.
 1. The first quote obtains the live chain height without updating the wallet tip
    or starting sync. A new reservation requires contiguous scanning within ten
    blocks of the newer RPC/DB tip and no pending transaction enhancement. It
-   recovers confirmed funding records, then reserves the next index, watching
-   from the first unscanned block. This is a near-tip policy, not a guarantee
-   that an independently restored wallet has discovered allocations in the tail.
+   recovers confirmed funding records, then reserves the next index, scanning it
+   from the first unscanned block until its swap closes. This is a near-tip
+   policy, not a guarantee that an independently restored wallet has discovered
+   allocations in the tail.
    Refunds and incoming payments use independent sequences. Quote errors, amount
    edits, and refreshes retain the same reservation for the current account and
    direction, including while address preparation is in flight. Starting a swap,
    requesting a quote for another account/direction, or restarting the app
    requires a new reservation.
-   Existing reservations remain watched; errors never roll back a key that may
+   Existing reservations remain scanned; errors never roll back a key that may
    already have been sent to the provider. A retained address does not require
    another sync readiness check for each quote.
 2. Outgoing fee estimation and funding use the same normal proposal pipeline with
@@ -62,23 +63,22 @@ and the 48-hour, three-reservation, and 30-slot incoming-address policy.
 3. Every software restore registers 30 incoming lookahead keys from the account
    birthday or Ironwood activation, whichever is later. Confirmed internal funding memos register refund
    keys only when the same account supplied an input to the transaction.
-4. After ordinary scanning, refund keys and incoming lookahead use PIR discovery.
-   Payments extend incoming lookahead until 30 consecutive indices are empty.
-   Finish the extended window before reporting recovery complete. Each restored key
-   keeps a fixed recovery height, so new blocks do not restart completed checks.
-   Funding memos also restore a pending watch for the deposit address, which comes
-   from the funding transaction's transparent output. An initial PIR check covers
-   existing history while that watch covers new blocks. Vizor checks NEAR status
-   during sync, at most once per minute per pending refund.
-   Terminal status saves the ten-block grace deadline, followed by PIR closeout.
-   Failures and unknown statuses keep the watch active. Reopening preserves both
-   polling times and deadlines.
+4. After ordinary scanning, restored refund keys and incoming lookahead each get
+   one PIR sweep. Payments extend incoming lookahead until 30 consecutive indices
+   are empty. Finish the extended window before reporting recovery complete. Each
+   sweep keeps a fixed target, so new blocks do not restart completed sweeps.
+   Funding memos also restore NEAR status polling for the deposit address, which
+   comes from the funding transaction's transparent output. After its sweep, a
+   refund key scans new blocks until it closes, and an unpaid incoming key for
+   24 hours. Vizor checks NEAR status during sync, at most once per minute per
+   pending refund. Failures, `FAILED` and unknown statuses keep a key scanning up
+   to the seven-day limit. Reopening preserves polling times and observations.
 5. Received notes retain their derived key for reconstruction and software spending.
    Change returns to the ordinary internal key.
 
 Software accounts temporarily retain Ironwood spend evidence already downloaded
 by normal compact scanning. Recovery releases old unrelated evidence after funding
-memos, lookahead, directory checks and note imports complete. Other pools keep
+memos, lookahead, sweeps and note imports complete. Other pools keep
 ordinary retention. Interrupted recovery keeps its cache across restarts. A long
 restore or stalled operation can still need a large temporary cache.
 
@@ -122,7 +122,7 @@ exercise. Record the funding and payout transaction IDs and scan heights.
 - Restore the seed into another fresh wallet with a birthday before funding and
   NEAR swap privacy off. Test once with Private queries on and once with it off.
   Confirm both runs use receiver PIR and recover the same notes without duplicates.
-  Follow the tip afterward and confirm completed empty windows are not checked again.
+  Follow the tip afterward and confirm completed sweeps are not repeated.
 - Spend recovered notes together with ordinary funds. Confirm the spend mines and
   the change is found by the ordinary internal key.
 - Confirm hardware accounts continue to use their existing address flow.
