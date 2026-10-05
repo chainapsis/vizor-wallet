@@ -1027,6 +1027,22 @@ void main() {
       isTrue,
     );
   });
+  test('regtest has private queries only under the harness allowance', () {
+    bool available(String network, {bool masquerade = false}) =>
+        isEnhancePirAvailableForNetwork(
+          network,
+          isMasquerade: masquerade,
+          regtestHarness: true,
+        );
+    expect(
+      isEnhancePirAvailableForNetwork('regtest', isMasquerade: false),
+      isFalse,
+    );
+    expect(available('regtest'), isTrue);
+    expect(available('regtest', masquerade: true), isFalse);
+    expect(available('test'), isFalse);
+    expect(available('main'), isTrue);
+  });
 
   test(
     'wallet mutation drains admitted status reads and blocks new ones',

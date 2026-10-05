@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 /// Development builds pass
 /// --dart-define=ZCASH_PRIVATE_TRANSPARENT_RECOVERY=true so that "Private
 /// queries" on mainnet also recovers transparent funds privately. Default
@@ -9,6 +11,22 @@ const kZcashPrivateTransparentRecovery = bool.fromEnvironment(
   kZcashPrivateTransparentRecoveryEnvKey,
   defaultValue: false,
 );
+
+/// Debug builds only, for the transparent history harness
+/// (`scripts/e2e/transparent-history-cases.sh --profile private --flutter
+/// desktop`): --dart-define=ZCASH_E2E_PRIVATE_TRANSPARENT_REGTEST=true makes
+/// "Private queries" available on regtest, where the harness runs its own
+/// transparent PIR service. Off without the define, and constant `false` in
+/// profile and release builds. Rust selects private recovery on regtest only
+/// under its own debug-only switch, `ZCASH_E2E_REGTEST_PRIVATE_TRANSPARENT`.
+const kZcashE2ePrivateTransparentRegtestEnvKey =
+    'ZCASH_E2E_PRIVATE_TRANSPARENT_REGTEST';
+const kZcashE2ePrivateTransparentRegtest =
+    kDebugMode &&
+    bool.fromEnvironment(
+      kZcashE2ePrivateTransparentRegtestEnvKey,
+      defaultValue: false,
+    );
 
 /// What "Private queries" adds in a build with the flag. Transparent funds
 /// have no authority between turning it on and the first private recovery,
