@@ -19,10 +19,12 @@
 //! build can qualify one, so production never promotes. An active account's
 //! later commits project into the wallet in the same transaction.
 //!
-//! Production has no private source: it captures `Public` and passes
-//! [`DisabledSource`], so [`run`] returns before any read or request. The
-//! coordinator takes no lightwalletd client, so it cannot make a public
-//! request.
+//! Production has no private source. A default build captures `Public`, so
+//! [`run`] returns before any read or request. With the development flag,
+//! private queries capture `PrivateRequired`: [`run`] raises the wallet's
+//! durable policy from a confirmed preference, then [`DisabledSource`] stops
+//! the run before any request. The coordinator takes no lightwalletd client,
+//! so it cannot make a public request.
 
 use std::future::Future;
 use std::time::Duration;
@@ -38,14 +40,19 @@ use zcash_client_backend::data_api::{
 };
 use zcash_client_sqlite::{error::SqliteClientError, AccountUuid};
 
-use super::enhancement::EnhancementPolicy;
+use super::enhancement::{may_raise, EnhancementPolicy};
 use super::{watch_for_exit, SyncError};
 use crate::wallet::db::{with_wallet_db_write_lock, WalletDatabase};
+use crate::wallet::network::WalletNetwork;
 
 #[cfg(test)]
 pub(crate) mod fixture;
+mod policy;
 #[cfg(test)]
 mod tests;
+
+use policy::raise_to_required;
+pub(crate) use policy::set_transparent_policy;
 
 /// Passes per account in one run. Each pass after the first needs new work:
 /// a grown window, a changed watch set, or progress on open pages.
@@ -178,11 +185,16 @@ enum AccountOutcome {
 /// `PrivateRequired`, offers each recovered candidate account for promotion.
 ///
 /// Runs only when both the captured mode and the wallet's durable policy
-/// permit private recovery (`PrivateShadow` or `PrivateRequired`). Holds the
-/// wallet write lock only for each commit or promotion, never across a source
-/// call.
+/// permit private recovery (`PrivateShadow` or `PrivateRequired`). Under a
+/// captured `PrivateRequired`, a weaker durable policy is first raised behind
+/// the policy fence, but only while [`may_raise`] holds for the wallet at
+/// `db_path`: an unconfirmed preference or a concurrent toggle-off raises
+/// nothing. Holds the wallet write lock only for each commit or promotion,
+/// never across a source call.
 pub(crate) async fn run<S: RecoverySource>(
     db: &mut WalletDatabase,
+    db_path: &str,
+    network: WalletNetwork,
     policy: EnhancementPolicy,
     source: &S,
     should_exit: &impl Fn() -> bool,
@@ -191,6 +203,11 @@ pub(crate) async fn run<S: RecoverySource>(
         return Ok(RunOutcome::NotEnabled);
     }
     policy.configure_db(db);
+    if policy.transparent_mode() == TransparentLedgerMode::PrivateRequired
+        && raise_to_required(db, || may_raise(db_path, network)).await?
+    {
+        log::info!("transparent policy: applied PrivateRequired");
+    }
     if !durably_permitted(db)? {
         return Ok(RunOutcome::NotEnabled);
     }

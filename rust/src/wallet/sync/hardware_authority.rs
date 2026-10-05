@@ -27,7 +27,10 @@ use zcash_protocol::consensus::BlockHeight;
 use crate::wallet::{
     db::{open_wallet_raw_conn_with_timeout, READ_DB_BUSY_TIMEOUT},
     network::WalletNetwork,
-    sync_engine::{enhancement::transparent_ledger_mode_for, Dispatched},
+    sync_engine::{
+        enhancement::{adopt_durable_private, transparent_ledger_mode_for},
+        Dispatched,
+    },
 };
 
 /// Reservations held at least this long are logged, as evidence for whether
@@ -67,9 +70,11 @@ where
     conn.execute_batch("BEGIN IMMEDIATE")
         .map_err(|e| format!("Reserve transparent broadcast authority: {e}"))?;
     let reserved = Instant::now();
-    let db = WalletDb::from_connection(conn, network, SystemClock, OsRng)
-        .with_transparent_ledger_mode(transparent_ledger_mode_for(db_path));
-    // Checking the mode also rejects a weaker handle on a durable private wallet.
+    let mut db = WalletDb::from_connection(conn, network, SystemClock, OsRng)
+        .with_transparent_ledger_mode(transparent_ledger_mode_for(db_path, network));
+    // Read under the reservation, so the adopted mode is the one authorized.
+    adopt_durable_private(&mut db);
+    // Checking the mode also rejects an unreadable or incompatible policy.
     use zcash_client_backend::data_api::transparent_ledger::TransparentLedgerRead;
     db.transparent_ledger_mode()
         .map_err(|e| format!("Transparent broadcast authority unavailable: {e}"))?;
