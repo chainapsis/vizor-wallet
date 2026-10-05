@@ -2044,6 +2044,20 @@ fn classify_history_tx(
                 1,
             )];
         }
+        // A reconstructed payment of zero whose debit is exactly the whole
+        // transaction's fee is a self-transfer: every output is the account's
+        // own, so none is a receive, and the whole balance change is the fee.
+        let debit = base.account_balance_delta.unsigned_abs();
+        if payment == 0
+            && base.account_balance_delta < 0
+            && summary.sent.output_count == 0
+            && base.history.whole_fee == Some(debit)
+            && base.history.shown_fee() == Fee::Known(debit)
+        {
+            let mut row = build_classified_tx(base, "sent", debit, "transparent", true, 1);
+            row.info.amount_includes_fee = true;
+            return vec![row];
+        }
     }
 
     // Discovery found this debit but not where the value went. The outputs it
@@ -2938,6 +2952,100 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].info.tx_kind, "sent");
         assert_eq!(rows[0].info.display_amount, 69_990_000);
+    }
+
+    /// A transparent-only self-transfer: the account spent 2 ZEC and every
+    /// output (1.2 ZEC and 0.7999 ZEC change) is its own, so its balance
+    /// changed by the fee alone.
+    fn self_transfer(history: HistoryCompleteness) -> (TxBase, ActivitySummary) {
+        let mut base = tx_base_for_history();
+        base.spent_orchard_note = false;
+        base.fee = Some(10_000);
+        base.account_balance_delta = -10_000;
+        base.total_spent = 200_000_000;
+        base.total_received = 199_990_000;
+        base.attach_history(history);
+        let mut summary = ActivitySummary::default();
+        summary.received.amount = 199_990_000;
+        summary.received.output_count = 2;
+        summary.received.has_transparent = true;
+        (base, summary)
+    }
+
+    #[test]
+    fn a_recovered_self_transfer_is_its_network_fee() {
+        let (base, summary) = self_transfer(HistoryCompleteness {
+            details_complete: false,
+            provisional: false,
+            fee: Fee::Known(10_000),
+            whole_fee: Some(10_000),
+            inferred_payment: Some(0),
+        });
+
+        let rows = classify_history_tx(&base, &summary, Fee::NotApplicable);
+
+        assert_eq!(rows.len(), 1);
+        let info = &rows[0].info;
+        assert_eq!(info.tx_kind, "sent");
+        assert_eq!(info.display_amount, 10_000);
+        assert_eq!(info.fee, 10_000);
+        assert_eq!(info.fee_state, TransactionFeeState::Known);
+        assert!(info.amount_includes_fee, "the whole movement is the fee");
+        assert_eq!(info.display_pool, "transparent");
+        assert!(info.is_transparent);
+        assert!(!info.provisional);
+    }
+
+    #[test]
+    fn a_public_self_transfer_keeps_its_classification() {
+        let (base, summary) = self_transfer(HistoryCompleteness {
+            details_complete: false,
+            provisional: false,
+            fee: Fee::Known(10_000),
+            whole_fee: None,
+            inferred_payment: None,
+        });
+
+        let rows = classify_history_tx(&base, &summary, Fee::NotApplicable);
+
+        assert_eq!(rows.len(), 1);
+        let info = &rows[0].info;
+        assert_eq!(info.tx_kind, "received");
+        assert_eq!(info.display_amount, 199_990_000);
+        assert!(!info.amount_includes_fee);
+    }
+
+    #[test]
+    fn an_inexact_self_transfer_is_not_shown_as_its_fee() {
+        let received = |history| {
+            let (base, summary) = self_transfer(history);
+            let rows = classify_history_tx(&base, &summary, Fee::NotApplicable);
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].info.tx_kind, "received");
+            assert!(!rows[0].info.amount_includes_fee);
+        };
+        let exact = HistoryCompleteness {
+            details_complete: false,
+            provisional: false,
+            fee: Fee::Known(10_000),
+            whole_fee: Some(10_000),
+            inferred_payment: Some(0),
+        };
+        // No exact payment.
+        received(HistoryCompleteness {
+            inferred_payment: None,
+            ..exact
+        });
+        // No exact whole fee.
+        received(HistoryCompleteness {
+            whole_fee: None,
+            ..exact
+        });
+        // A whole fee that is not the movement.
+        received(HistoryCompleteness {
+            whole_fee: Some(20_000),
+            ..exact
+        });
     }
 
     #[test]
