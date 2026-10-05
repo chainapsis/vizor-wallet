@@ -18,7 +18,7 @@ Runs: 2026-10-05, branch `claude/tpir-private-history` on #839 `c65418c33`
 | Private, Rust layer | `b889501a2` | `private3` | 298 s | 0 |
 | Public, Rust layer | `b889501a2` | `public3` | 192 s | 101 (G1-G5) |
 | Public, Rust and desktop app layers | `552b96b3e` | `public-desktop` | 133 s + 456 s | 101, 1 |
-| Private, desktop app layer | - | not run | - | 2 (refused) |
+| Private, desktop app layer | - | not run | - | - |
 
 `552b96b3e` changes only the desktop runner's environment, so the Rust results
 at `b889501a2` stand for it; the desktop run's Rust matrix is identical to
@@ -213,17 +213,17 @@ it has not recurred, and it is not fixed.
   that.
 - Private: N_pre is weak: nothing is held, so its snapshot follows the first
   sync.
-- Private app layer not run: the runner refuses `--flutter` with
-  `--profile private`. It needs private app-layer expectations (`ui_rows`
-  refuses), a transparent PIR service that outlives the Rust layer's test
-  process, private mode in the app on regtest (private queries are
-  mainnet-only, `lib/src/providers/enhance_pir_provider.dart`, and startup
-  turns them off on regtest, `lib/app.dart`), and app-layer checks for rows
-  incomplete by design.
+- Private app layer not run yet. `--profile private --flutter desktop` now
+  runs it: private app-layer expectations, the Rust layer's process serving
+  the final publication to the app, a debug-only regtest allowance for
+  private queries in the app, and app-layer checks for rows incomplete by
+  design (see the harness README).
 - The mobile app layer was not run in either profile.
 - Debug builds only: the regtest switches
   (`ZCASH_E2E_REGTEST_PRIVATE_TRANSPARENT`, the loopback HTTP transport,
-  `ZCASH_E2E_EPHEMERAL_CHECKS_DUE_NOW`) are not compiled into release builds.
+  `ZCASH_E2E_EPHEMERAL_CHECKS_DUE_NOW`) are not compiled into release builds,
+  and the app's `ZCASH_E2E_PRIVATE_TRANSPARENT_REGTEST` is `kDebugMode` and
+  the define, constant false in profile and release builds.
 
 ## Reproduce
 

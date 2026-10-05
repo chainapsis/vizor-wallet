@@ -9,7 +9,7 @@ desktop and mobile. Two expectation profiles:
   production today. Rust and app layers.
 - **private**: `PrivateRequired`, transparent recovery from a transparent PIR
   service the harness publishes from the chain (see "Private profile").
-  Rust layer only, debug builds only.
+  Rust layer and desktop app layer, debug builds only.
 
 Run it:
 
@@ -19,6 +19,7 @@ scripts/e2e/transparent-history-cases.sh --profile private  # Rust layer, privat
 scripts/e2e/transparent-history-cases.sh --flutter desktop  # + macOS app (window hidden)
 scripts/e2e/transparent-history-cases.sh --flutter mobile   # + iOS simulator
 scripts/e2e/transparent-history-cases.sh --flutter both
+scripts/e2e/transparent-history-cases.sh --profile private --flutter desktop
 ```
 
 `TH_PROFILE=private` selects the profile too. Each profile is one test
@@ -34,9 +35,9 @@ lightwalletd images, own ports and config) and never touches
 controls), `report-<checkpoint>.json`, `expected-*.json`, `observed-*.json`,
 `manifest.json`, `timings.json`, and the logs; the private profile adds
 `pir-requests.json` (requests the transparent PIR service received, by route,
-and privacy violations, which fail the run) and the served shard set under
-`publication/`. `TH_CASES=H01,H03` narrows a development run; anything short
-of H01–H13 fails the gate by design.
+and privacy violations, which fail the run; the app layer's under `app`) and
+the served shard set under `publication/`. `TH_CASES=H01,H03` narrows a
+development run; anything short of H01–H13 fails the gate by design.
 
 The oracle's self-tests need no chain:
 `python3 scripts/e2e/test_transparent_history_oracle.py`.
@@ -125,6 +126,33 @@ What the run sets, all before the first wallet exists:
   the production toggle-on path, so it requires private recovery before its
   first sync.
 
+The desktop app layer (`--profile private --flutter desktop`):
+
+- The Rust layer's test process keeps serving after its gate: the final
+  publication on the same origin, H13's faults cleared, and a fresh request
+  record. It writes `tpir-ready` (its own status) to the runner's handoff
+  directory and serves until the runner creates `tpir-stop` there; the app's
+  requests and violations go to `pir-requests.json` under `app`. An app that
+  makes no private query is a violation.
+- The runner passes the macOS app, which inherits `flutter test`'s
+  environment, `ZCASH_E2E_REGTEST_PRIVATE_TRANSPARENT=1` and
+  `VIZOR_TRANSPARENT_PIR_URL`, and builds it with
+  `ZCASH_PRIVATE_TRANSPARENT_RECOVERY=true` and
+  `ZCASH_E2E_PRIVATE_TRANSPARENT_REGTEST=true`, a debug-only allowance
+  (`kDebugMode` and the define) that makes private queries available on
+  regtest.
+- The test turns private queries on before the app bootstraps, so every
+  wallet handle selects `PrivateRequired` from the restored wallet's creation
+  and its first sync raises the durable policy before recovery: the
+  production path for a wallet imported with private queries on.
+- `ui_rows` applies the profile's categories: transparent receives exact and
+  unmarked; a fully funded transparent-only send exact (amount, pool, whole
+  fee) and marked "Details incomplete"; any other row present unless it may
+  fold, marked incomplete on the row and its receipt, with a real amount or
+  at most the movement, a shown fee that is the whole fee and never zero, and
+  a fee shown when its state is known. The receive the runner leaves unmined
+  is optional.
+
 Recovery runs as in production: each sync runs it after the scan
 (`transparent_followup`). Before each sync the publisher catches up with the
 chain (one unsealed tail shard over `[1, tip]`, a new revision whenever the
@@ -147,7 +175,8 @@ Limits to state with any private result:
   say which rows are exact, which keep exact amount and fee with incomplete
   details, and which are honestly incomplete.
 - N_pre is weak here: nothing is held, so its snapshot follows the first sync.
-- No app layer: `--flutter` is refused with `--profile private`.
+- App layer: desktop only (the simulator's app does not inherit the runner's
+  environment), and an unmined transparent receive need not show.
 
 Not covered (future extensions): hardware wallets (Ledger/Speculos variants of
 H07 and H10, which exercise the hardware broadcast-authority check; Keystone
