@@ -15,6 +15,10 @@
 //! Nothing is retried and no filter is memoized. wallet-pir's sync decides what
 //! a refusal is worth, and a republished tail reuses its shard id with a new
 //! filter. Logs name the route template, never a shard id, digest or body.
+//!
+//! Debug builds have one exception to HTTPS, for the regtest transparent
+//! history harness: [`TransparentPirHttp::regtest_loopback`] talks plain HTTP
+//! to a loopback origin. Release builds compile none of it.
 
 use bytes::Bytes;
 use http::{header::RETRY_AFTER, Method, StatusCode};
@@ -48,9 +52,19 @@ pub(crate) struct TransparentPirHttp<'a, F> {
     origin: String,
     handle: Handle,
     response_limit: usize,
+    /// Plain HTTP to the regtest harness's loopback service, replacing the
+    /// routed transport. Debug builds only.
+    #[cfg(debug_assertions)]
+    loopback: Option<LoopbackClient>,
     #[cfg(test)]
     observer: Option<RequestObserver>,
 }
+
+#[cfg(debug_assertions)]
+type LoopbackClient = hyper_util::client::legacy::Client<
+    hyper_util::client::legacy::connect::HttpConnector,
+    http_body_util::Full<Bytes>,
+>;
 
 /// The public half: the shard map and filters.
 pub(crate) struct PirFilters<'t, 'a, F> {
@@ -83,6 +97,39 @@ impl<'a, F: Fn() -> bool> TransparentPirHttp<'a, F> {
             origin: origin.trim_end_matches('/').to_owned(),
             handle,
             response_limit,
+            #[cfg(debug_assertions)]
+            loopback: None,
+            #[cfg(test)]
+            observer: None,
+        })
+    }
+
+    /// The regtest history harness's transport: plain HTTP to `origin`, which
+    /// must be exactly `http://127.0.0.1:<port>` or `http://[::1]:<port>`.
+    ///
+    /// Debug builds only, and only while the harness's switch is set (see
+    /// [`regtest_private_e2e`](crate::wallet::sync_engine::enhancement::regtest_private_e2e))
+    /// and the wallet does not want Tor; the caller checks the network.
+    /// `None` otherwise, for [`new`](Self::new) to decide.
+    #[cfg(debug_assertions)]
+    pub(crate) fn regtest_loopback(
+        origin: &str,
+        should_exit: &'a F,
+        handle: Handle,
+        response_limit: usize,
+    ) -> Option<Self> {
+        if !is_loopback_http_origin(origin) || crate::network_privacy::is_tor_desired() {
+            return None;
+        }
+        Some(Self {
+            route: RoutedTransport::new(should_exit),
+            origin: origin.trim_end_matches('/').to_owned(),
+            handle,
+            response_limit,
+            loopback: Some(
+                hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
+                    .build_http(),
+            ),
             #[cfg(test)]
             observer: None,
         })
@@ -143,6 +190,25 @@ impl<'a, F: Fn() -> bool> TransparentPirHttp<'a, F> {
         let exchange = async {
             #[cfg(test)]
             if let Some(response) = answer {
+                return read(response, route, self.response_limit).await;
+            }
+            #[cfg(debug_assertions)]
+            if let Some(client) = &self.loopback {
+                let request = http::Request::builder()
+                    .method(method)
+                    .uri(&url)
+                    .header(http::header::CONTENT_TYPE, "application/octet-stream")
+                    .body(http_body_util::Full::new(Bytes::from(body)))
+                    .map_err(|error| {
+                        PirHttpError::Route(SyncError::parse(format!(
+                            "build loopback transparent PIR request: {error}"
+                        )))
+                    })?;
+                let response = client.request(request).await.map_err(|error| {
+                    PirHttpError::Route(SyncError::net(format!(
+                        "loopback transparent PIR request failed: {error}"
+                    )))
+                })?;
                 return read(response, route, self.response_limit).await;
             }
             let response = routed_response(
@@ -400,6 +466,25 @@ fn classify(
     Err(refused.unwrap_or_else(|| PirHttpError::Status(status).into()))
 }
 
+/// Whether `origin` is exactly a plain-HTTP loopback origin with a port:
+/// `http://127.0.0.1:<port>` or `http://[::1]:<port>`, with no user info,
+/// path or query. `localhost` is refused: it resolves through the system.
+#[cfg(debug_assertions)]
+fn is_loopback_http_origin(origin: &str) -> bool {
+    let Ok(uri) = origin.parse::<http::Uri>() else {
+        return false;
+    };
+    let Some(authority) = uri.authority() else {
+        return false;
+    };
+    uri.scheme_str() == Some("http")
+        && !authority.as_str().contains('@')
+        && matches!(authority.host(), "127.0.0.1" | "[::1]")
+        && authority.port_u16().is_some()
+        && uri.path() == "/"
+        && uri.query().is_none()
+}
+
 /// A failure the service did not phrase as a refusal the sync acts on.
 ///
 /// Carries no URL, shard id, digest or body text.
@@ -641,6 +726,46 @@ mod tests {
         .unwrap();
         assert_eq!(http.origin, ORIGIN);
         assert_eq!(http.route_policy(), RoutePolicy::WalletPreference);
+    }
+
+    /// Debug builds admit plain HTTP to an exact loopback origin for the
+    /// regtest harness; nothing else, and `new` still refuses it.
+    #[cfg(debug_assertions)]
+    #[test]
+    fn only_an_exact_loopback_origin_may_be_plain_http() {
+        for origin in [
+            "http://127.0.0.1:8080",
+            "http://[::1]:8080",
+            "http://127.0.0.1:8080/",
+        ] {
+            assert!(is_loopback_http_origin(origin), "refused {origin}");
+        }
+        for origin in [
+            "http://localhost:8080",
+            "http://10.0.0.1:8080",
+            "http://127.0.0.2:8080",
+            "http://127.0.0.1",
+            "http://user@127.0.0.1:8080",
+            "http://127.0.0.1:8080?route=1",
+            "http://127.0.0.1:8080/v1",
+            "https://127.0.0.1:8080",
+            "127.0.0.1:8080",
+        ] {
+            assert!(!is_loopback_http_origin(origin), "accepted {origin}");
+        }
+        let runtime = runtime();
+        let exit = || false;
+        let handle = runtime.handle().clone();
+        assert!(
+            TransparentPirHttp::new("http://127.0.0.1:8080", &exit, handle.clone(), LIMIT).is_err()
+        );
+        assert!(TransparentPirHttp::regtest_loopback(
+            "http://localhost:8080",
+            &exit,
+            handle,
+            LIMIT
+        )
+        .is_none());
     }
 
     #[test]
