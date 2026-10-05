@@ -4537,10 +4537,13 @@ async fn run_sync_impl(
     }
     // Candidate transparent recovery runs at the fully scanned height, after
     // the shielded scan settles. It keeps its own progress in the library and
-    // never fails the sync. Production captures `Public`, so it returns before
-    // any read.
+    // never fails the sync. A default build captures `Public`, so it returns
+    // before any read; with the development flag it may raise the durable
+    // policy, and the disabled source then stops it before any request.
     match transparent_ledger::run(
         &mut db,
+        db_data_path,
+        network,
         enhancement.policy(),
         &transparent_ledger::DisabledSource,
         &should_exit,

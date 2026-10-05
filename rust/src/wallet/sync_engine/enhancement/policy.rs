@@ -1,41 +1,129 @@
 //! One immutable source-selection decision for a transaction-data operation.
 
+use std::borrow::Borrow;
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use zcash_client_backend::data_api::status::TransactionStatusMode;
 
 use zcash_client_backend::data_api::enhance_pir::EnhancementMode;
 use zcash_client_backend::data_api::transparent_ledger::{
     AppliedTransparentPolicy, TransparentLedgerMode, TransparentLedgerRead,
 };
+use zcash_client_sqlite::{error::SqliteClientError, WalletDb};
+use zcash_protocol::consensus;
 
 use crate::wallet::network::WalletNetwork;
 use crate::wallet::sync_engine::{SyncError, WalletDatabase};
 
-/// Transparent ledger mode for every wallet handle this build opens.
+/// The `ZCASH_PRIVATE_TRANSPARENT_RECOVERY` development flag, pushed once at
+/// runtime start. Default builds leave it off and never select a private
+/// transparent mode.
+static PRIVATE_TRANSPARENT_RECOVERY: AtomicBool = AtomicBool::new(false);
+
+/// Whether the private-queries preference in effect was read from storage,
+/// not assumed private because the read failed. Only a confirmed preference
+/// may durably raise a wallet's transparent policy.
+static PREFERENCE_CONFIRMED: AtomicBool = AtomicBool::new(false);
+
+/// Records the build's development flag. Called once at runtime start.
+pub(crate) fn configure_private_transparent_recovery(enabled: bool) {
+    PRIVATE_TRANSPARENT_RECOVERY.store(enabled, Ordering::SeqCst);
+}
+
+/// Whether this build may select private transparent recovery.
+pub(crate) fn private_transparent_recovery() -> bool {
+    PRIVATE_TRANSPARENT_RECOVERY.load(Ordering::SeqCst)
+}
+
+/// Records whether the private-queries preference was read from storage.
+pub(crate) fn set_preference_confirmed(confirmed: bool) {
+    PREFERENCE_CONFIRMED.store(confirmed, Ordering::SeqCst);
+}
+
+/// The transparent ledger mode that `preference` selects on `network` in a
+/// build whose development flag is `build_flag`.
 ///
-/// Always `Public`: this build has no private transparent recovery, so it
-/// keeps public transparent authority. A wallet whose durably applied policy is
-/// stricter stays blocked instead of being weakened. Private modes will derive
-/// from the private-queries preference once transparent PIR recovery exists.
-pub(crate) fn transparent_ledger_mode() -> TransparentLedgerMode {
-    TransparentLedgerMode::Public
+/// `PrivateRequired` only on mainnet, with private queries on and the flag
+/// set, outside masquerade builds; otherwise `Public`. The selection never
+/// weakens a wallet: openers adopt a stricter durable policy, and only an
+/// explicit toggle-off lowers one.
+pub(crate) fn select_transparent_mode(
+    network: WalletNetwork,
+    preference: bool,
+    build_flag: bool,
+) -> TransparentLedgerMode {
+    if network == WalletNetwork::Main && preference && build_flag && !cfg!(ironwood_masquerade) {
+        TransparentLedgerMode::PrivateRequired
+    } else {
+        TransparentLedgerMode::Public
+    }
+}
+
+/// The selection from the live preference and development flag.
+pub(crate) fn selected_transparent_mode(network: WalletNetwork) -> TransparentLedgerMode {
+    select_transparent_mode(
+        network,
+        crate::api::sync::enhance_pir_enabled(),
+        private_transparent_recovery(),
+    )
 }
 
 /// Transparent ledger mode for a handle on the wallet at `db_path`.
 ///
-/// Production always returns [`transparent_ledger_mode`]. Tests can select a
-/// stricter mode for one wallet file, so private activation runs through the
-/// same handle openers, balance reads, and spend paths as production.
-pub(crate) fn transparent_ledger_mode_for(db_path: &str) -> TransparentLedgerMode {
+/// Production returns [`selected_transparent_mode`]. Tests select a mode for
+/// one wallet file through [`test_mode`], so private activation runs through
+/// the same handle openers, balance reads, and spend paths as production
+/// without touching the process-wide preference or flag.
+pub(crate) fn transparent_ledger_mode_for(
+    db_path: &str,
+    network: WalletNetwork,
+) -> TransparentLedgerMode {
     #[cfg(test)]
-    if let Some(mode) = test_mode::get(db_path) {
-        return mode;
+    if let Some(selection) = test_mode::get(db_path) {
+        return selection.mode;
     }
     let _ = db_path;
-    transparent_ledger_mode()
+    selected_transparent_mode(network)
 }
 
-/// Test seam: a per-wallet-file override of the handle mode. Keyed by path, so
-/// parallel tests on other wallets are unaffected.
+/// Whether a durable policy may be raised to `PrivateRequired` for the wallet
+/// at `db_path` without an explicit toggle: the selection is `PrivateRequired`
+/// and the preference behind it was read, not assumed. An unreadable
+/// preference still selects private handles for the launch, which withholds
+/// public lookups, but never writes a policy.
+pub(crate) fn may_raise(db_path: &str, network: WalletNetwork) -> bool {
+    #[cfg(test)]
+    if let Some(selection) = test_mode::get(db_path) {
+        return selection.mode == TransparentLedgerMode::PrivateRequired && selection.confirmed;
+    }
+    let _ = db_path;
+    selected_transparent_mode(network) == TransparentLedgerMode::PrivateRequired
+        && PREFERENCE_CONFIRMED.load(Ordering::SeqCst)
+}
+
+/// Raises `db` to `PrivateRequired` when the wallet durably requires it, so
+/// a handle is never weaker than its wallet, whatever this build selects.
+///
+/// Reacts only to that conflict. Any other error leaves the handle as
+/// configured, for its first ledger read to report.
+pub(crate) fn adopt_durable_private<C, P, CL, R>(db: &mut WalletDb<C, P, CL, R>)
+where
+    C: Borrow<rusqlite::Connection>,
+    P: consensus::Parameters,
+{
+    if let Err(SqliteClientError::TransparentLedgerPolicyConflict {
+        applied: TransparentLedgerMode::PrivateRequired,
+        ..
+    }) = db.transparent_ledger_mode()
+    {
+        db.set_transparent_ledger_mode(TransparentLedgerMode::PrivateRequired);
+    }
+}
+
+/// Test seam: a per-wallet-file selection, standing in for the live
+/// preference, development flag, and confirmation. Keyed by path, so parallel
+/// tests on other wallets are unaffected and no test changes the
+/// process-wide values.
 #[cfg(test)]
 pub(crate) mod test_mode {
     use std::collections::HashMap;
@@ -43,12 +131,20 @@ pub(crate) mod test_mode {
 
     use zcash_client_backend::data_api::transparent_ledger::TransparentLedgerMode;
 
-    fn overrides() -> &'static Mutex<HashMap<String, TransparentLedgerMode>> {
-        static OVERRIDES: OnceLock<Mutex<HashMap<String, TransparentLedgerMode>>> = OnceLock::new();
+    #[derive(Clone, Copy, Debug)]
+    pub(crate) struct Selection {
+        /// The mode handles on the wallet are opened with.
+        pub(crate) mode: TransparentLedgerMode,
+        /// Whether the preference behind `mode` counts as read from storage.
+        pub(crate) confirmed: bool,
+    }
+
+    fn overrides() -> &'static Mutex<HashMap<String, Selection>> {
+        static OVERRIDES: OnceLock<Mutex<HashMap<String, Selection>>> = OnceLock::new();
         OVERRIDES.get_or_init(Default::default)
     }
 
-    pub(crate) fn get(db_path: &str) -> Option<TransparentLedgerMode> {
+    pub(crate) fn get(db_path: &str) -> Option<Selection> {
         overrides()
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -56,12 +152,23 @@ pub(crate) mod test_mode {
             .copied()
     }
 
-    /// Handles opened on `db_path` use `mode` until the guard drops.
+    /// Handles opened on `db_path` use `mode`, from a confirmed preference,
+    /// until the guard drops.
     pub(crate) fn set(db_path: &str, mode: TransparentLedgerMode) -> ModeOverride {
+        select(db_path, mode, true)
+    }
+
+    /// Handles opened on `db_path` use `mode` until the guard drops; whether
+    /// the preference behind it was read is `confirmed`.
+    pub(crate) fn select(
+        db_path: &str,
+        mode: TransparentLedgerMode,
+        confirmed: bool,
+    ) -> ModeOverride {
         overrides()
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .insert(db_path.to_owned(), mode);
+            .insert(db_path.to_owned(), Selection { mode, confirmed });
         ModeOverride(db_path.to_owned())
     }
 
@@ -80,9 +187,8 @@ pub(crate) mod test_mode {
 /// Resolves the install preference once so status and payload retrieval cannot
 /// observe different values during the same operation.
 ///
-/// The transparent ledger mode is captured with it. Production always captures
-/// [`transparent_ledger_mode`]; the private-queries preference selects only the
-/// status and payload sources.
+/// The transparent ledger mode is captured with it, from the same preference
+/// and the build's development flag: see [`select_transparent_mode`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct EnhancementPolicy {
     private: bool,
@@ -94,17 +200,22 @@ impl EnhancementPolicy {
         Self::for_preference(network, crate::api::sync::enhance_pir_enabled())
     }
 
+    /// The policy `private_preference` selects in this build.
     pub(crate) fn for_preference(network: WalletNetwork, private_preference: bool) -> Self {
+        Self::for_inputs(network, private_preference, private_transparent_recovery())
+    }
+
+    /// The policy `preference` selects in a build whose development flag is
+    /// `build_flag`.
+    pub(crate) fn for_inputs(network: WalletNetwork, preference: bool, build_flag: bool) -> Self {
         Self {
-            private: network == WalletNetwork::Main
-                && private_preference
-                && !cfg!(ironwood_masquerade),
-            transparent: transparent_ledger_mode(),
+            private: network == WalletNetwork::Main && preference && !cfg!(ironwood_masquerade),
+            transparent: select_transparent_mode(network, preference, build_flag),
         }
     }
 
-    /// Test seam for the stricter transparent path, which production cannot
-    /// select before private transparent recovery exists.
+    /// Test seam for a transparent mode this build would not select for the
+    /// test's network.
     #[cfg(test)]
     pub(crate) fn with_transparent_mode(self, transparent: TransparentLedgerMode) -> Self {
         Self {
@@ -138,8 +249,12 @@ impl EnhancementPolicy {
         }
     }
 
+    /// Configures `db` for this operation. The handle then adopts a durable
+    /// `PrivateRequired`, so a weaker captured mode pauses transparent work on
+    /// a private wallet instead of failing every read against it.
     pub(crate) fn configure_db(self, db: &mut WalletDatabase) {
         db.set_transparent_ledger_mode(self.transparent);
+        adopt_durable_private(db);
         db.set_enhancement_mode(self.payload_mode());
         db.set_status_mode(self.status_mode());
     }
@@ -227,6 +342,44 @@ impl PublicTransparentLookups {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn select_transparent_mode_needs_flag_preference_and_mainnet() {
+        let private = if cfg!(ironwood_masquerade) {
+            TransparentLedgerMode::Public
+        } else {
+            TransparentLedgerMode::PrivateRequired
+        };
+        for network in [
+            WalletNetwork::Main,
+            WalletNetwork::Test,
+            WalletNetwork::Regtest,
+        ] {
+            for preference in [false, true] {
+                for build_flag in [false, true] {
+                    let expected = if network == WalletNetwork::Main && preference && build_flag {
+                        private
+                    } else {
+                        TransparentLedgerMode::Public
+                    };
+                    assert_eq!(
+                        select_transparent_mode(network, preference, build_flag),
+                        expected,
+                        "{network:?}, preference {preference}, flag {build_flag}"
+                    );
+                    // The captured policy agrees with the handles' selection,
+                    // and the flag never changes status or payload routing.
+                    let policy = EnhancementPolicy::for_inputs(network, preference, build_flag);
+                    assert_eq!(policy.transparent_mode(), expected);
+                    assert_eq!(
+                        policy.is_private(),
+                        EnhancementPolicy::for_inputs(network, preference, !build_flag)
+                            .is_private()
+                    );
+                }
+            }
+        }
+    }
 
     #[cfg(not(ironwood_masquerade))]
     #[test]

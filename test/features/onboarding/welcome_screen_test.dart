@@ -366,6 +366,8 @@ Widget _welcomeScreen({
         privacyStore ?? _PrivacyStore(),
       ),
       enhancePirBackgroundSinkProvider.overrideWithValue((_) async {}),
+      // No wallet exists before onboarding; nothing to reconcile.
+      transparentPolicyReconcilerProvider.overrideWithValue((_) async => false),
       syncProvider.overrideWith(_OnboardingSync.new),
       networkPrivacyProvider.overrideWith(
         () => _FakeNetworkPrivacyNotifier(networkPrivacyCalls ?? <bool>[]),
@@ -411,6 +413,10 @@ class _PrivacyApi extends RustLibApi {
   @override
   void crateApiSyncSetEnhancePirEnabled({required bool enabled}) =>
       this.enabled.add(enabled);
+  @override
+  void crateApiSyncSetEnhancePirPreferenceConfirmed({
+    required bool confirmed,
+  }) {}
   @override
   bool crateApiSyncIsSyncRunning() => false;
   @override

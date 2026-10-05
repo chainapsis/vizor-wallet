@@ -8,10 +8,10 @@
 //! A per-RPC check alone cannot close the window between the check and the
 //! request: a transition could commit in between. The in-process policy fence
 //! closes it. Every dispatch holds a shared lease from its check until its
-//! request has been sent, and [`apply_transparent_policy_fenced`], the only
-//! way this build applies a transparent policy, takes the exclusive side. A
-//! waiting transition blocks new leases, waits for in-flight requests to
-//! drain, and only then commits, so no request authorized under the old
+//! request has been sent, and [`apply_transparent_policy_fenced_if`], the
+//! only way this build applies a transparent policy, takes the exclusive
+//! side. A waiting transition blocks new leases, waits for in-flight requests
+//! to drain, and only then commits, so no request authorized under the old
 //! policy is sent after the new one applies. A transition made by another
 //! process is outside the fence; the per-RPC check still bounds it to the
 //! requests already in flight.
@@ -41,28 +41,50 @@ use crate::wallet::{
 /// leases queue behind it.
 static POLICY_FENCE: RwLock<()> = RwLock::const_new(());
 
-/// Durably applies `mode` as the wallet's transparent policy behind the fence.
+/// Durably applies `mode` as the wallet's transparent policy behind the fence,
+/// if `still` holds for `db` when it is checked there.
 ///
 /// Blocks new public lookups at once, waits up to `drain` for requests already
-/// in flight, then commits. If they do not drain in time, nothing is applied
-/// and the error says so; the caller retries. Lookups resumed after the
-/// transition re-check the new policy and are withheld unless it keeps public
-/// authority under the generation they captured, which it never does.
-// Production never applies a transparent policy until private recovery ships;
-// private activation fixtures do.
-#[cfg_attr(not(test), allow(dead_code))]
+/// in flight, then checks `still` and commits. The check runs after those
+/// lookups drained and before any other fenced transition can commit, so a
+/// decision it makes, including one read from `db`, cannot be overtaken by a
+/// concurrent transition. If the lookups do not drain in time, nothing is
+/// applied and the error says so; the caller retries. Lookups resumed after
+/// the transition re-check the new policy and are withheld unless it keeps
+/// public authority under the generation they captured, which it never does.
+///
+/// Returns `None`, having applied nothing, when `still` does not hold. An
+/// error from `still` also applies nothing.
+pub(crate) async fn apply_transparent_policy_fenced_if(
+    db: &mut WalletDatabase,
+    mode: TransparentLedgerMode,
+    drain: Duration,
+    still: impl FnOnce(&WalletDatabase) -> Result<bool, SyncError>,
+) -> Result<Option<AppliedTransparentPolicy>, SyncError> {
+    let _fence = tokio::time::timeout(drain, POLICY_FENCE.write())
+        .await
+        .map_err(|_| SyncError::db("transparent policy: public lookups did not drain in time"))?;
+    if !still(db)? {
+        return Ok(None);
+    }
+    with_wallet_db_write_lock("sync_engine.transparent_policy.apply", || {
+        db.apply_transparent_policy(mode)
+    })
+    .map(Some)
+    .map_err(|error| SyncError::db(format!("apply_transparent_policy: {error}")))
+}
+
+/// [`apply_transparent_policy_fenced_if`] without a condition.
+#[cfg(test)]
 pub(crate) async fn apply_transparent_policy_fenced(
     db: &mut WalletDatabase,
     mode: TransparentLedgerMode,
     drain: Duration,
 ) -> Result<AppliedTransparentPolicy, SyncError> {
-    let _fence = tokio::time::timeout(drain, POLICY_FENCE.write())
-        .await
-        .map_err(|_| SyncError::db("transparent policy: public lookups did not drain in time"))?;
-    with_wallet_db_write_lock("sync_engine.transparent_policy.apply", || {
-        db.apply_transparent_policy(mode)
-    })
-    .map_err(|error| SyncError::db(format!("apply_transparent_policy: {error}")))
+    match apply_transparent_policy_fenced_if(db, mode, drain, |_| Ok(true)).await? {
+        Some(applied) => Ok(applied),
+        None => unreachable!("an unconditional transition always applies"),
+    }
 }
 
 use super::super::{enhancement::PublicTransparentLookups, SyncError, WalletDatabase};
