@@ -128,6 +128,7 @@ async fn held_accounts_report_their_stop_reason() {
             HoldCause::Withdrawn(WithdrawnCause::Equivocation),
             TransparentStopReason::Withdrawn,
         ),
+        (HoldCause::Unreconciled, TransparentStopReason::Withdrawn),
         (
             HoldCause::LegacyDiscrepancy,
             TransparentStopReason::LegacyDiscrepancy,
