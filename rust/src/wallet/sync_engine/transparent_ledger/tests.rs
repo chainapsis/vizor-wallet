@@ -427,8 +427,10 @@ async fn fixture_recovery_converges_to_the_exact_set() {
         panic!("recovery did not finish");
     };
     assert_eq!((stats.accounts, stats.stale_retries), (1, 0));
-    // Every pass's batch was applied and acknowledged.
+    // Every pass's batch was applied and acknowledged, as applied: none
+    // resolved retired revisions.
     assert_eq!(source.acknowledged(), source.calls());
+    assert_eq!(source.reconciled(), 0);
     assert_complete(&wallet, &source);
     let recovery = wallet
         .db
@@ -856,6 +858,7 @@ impl RecoverySource for Silent {
     fn acknowledge(
         &self,
         _account: AccountUuid,
+        _reconciled: bool,
     ) -> impl Future<Output = Result<(), SourceError>> + Send {
         std::future::ready(Err(SourceError::Failed))
     }
@@ -1360,6 +1363,125 @@ async fn a_batch_is_acknowledged_only_after_every_commit_applies() {
             "SELECT COUNT(*) FROM tpir_revisions WHERE lineage = 2"
         ),
         1
+    );
+}
+
+/// Coverage the fixture's first revision supports, which a replacement
+/// retires.
+const RETIRED_COVERAGE: &str = "SELECT COUNT(*) FROM tpir_coverage c
+     JOIN tpir_revisions r ON r.id = c.revision_id WHERE r.lineage = 1";
+
+/// A batch that resolves retired revisions is acknowledged as reconciled, once
+/// every commit went through the trusted operation, which withdrew the retired
+/// revision's provisional evidence. Batches without retirements are
+/// acknowledged as applied.
+#[tokio::test]
+async fn retired_revisions_are_acknowledged_after_trusted_reconciliation() {
+    let mut wallet = wallet();
+    let _mode = activate(&mut wallet).await;
+    let path = wallet.path.clone();
+    let address = derived(&wallet, TransparentKeyScope::EXTERNAL, 0);
+    let funding = receive(1, address, 50_000, 150);
+    let source = FixtureSource::new(main_hash);
+    source
+        .receive(funding.clone())
+        .spend(spend(2, &funding, 170))
+        .trust();
+    run_required(&mut wallet, &source).await;
+    assert_eq!(lifecycle(&wallet, wallet.account), AccountLifecycle::Active);
+    assert_eq!(
+        (source.acknowledged(), source.reconciled()),
+        (source.calls(), 0)
+    );
+
+    // The publication replaces its revision, and its batches name the
+    // retired one until a reconciled acknowledgment. At each acknowledgment:
+    // the qualified revisions, and the retired revision's coverage.
+    let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+    source.on_acknowledge({
+        let (seen, path) = (seen.clone(), path.clone());
+        move || {
+            seen.lock().unwrap().push((
+                count(&path, "SELECT COUNT(*) FROM tpir_qualified_revisions"),
+                count(&path, RETIRED_COVERAGE),
+            ));
+        }
+    });
+    source
+        .replace_events(vec![funding.clone()], vec![])
+        .retire();
+    let (calls, acknowledged) = (source.calls(), source.acknowledged());
+    let RunOutcome::Finished(stats) = run_required(&mut wallet, &source).await else {
+        panic!("recovery finishes");
+    };
+    assert_eq!(stats.qualified, stats.commits);
+    assert_eq!(source.reconciled(), 1);
+    assert_eq!(
+        source.acknowledged() - acknowledged,
+        source.calls() - calls,
+        "every batch was acknowledged"
+    );
+    assert_eq!(
+        seen.lock().unwrap()[0],
+        (2, 0),
+        "the successor was qualified and the retired evidence withdrawn first"
+    );
+    assert_eq!(recovery_hold(&path, wallet.account), None);
+    assert_complete(&wallet, &source);
+}
+
+/// Without the trusted operation, a batch that resolves retired revisions is
+/// applied but never acknowledged, and its account is held.
+#[tokio::test]
+async fn unreconciled_retirements_acknowledge_nothing_and_hold_the_account() {
+    // The trusted origin under `PrivateShadow`, which qualifies nothing.
+    let mut shadowed = shadow_wallet();
+    let source = funded_source(&shadowed);
+    recover(&mut shadowed, &source).await;
+    let acknowledged = source.acknowledged();
+    assert_eq!(acknowledged, source.calls());
+    source.replace_events(vec![], vec![]).retire();
+    let RunOutcome::Finished(stats) = recover(&mut shadowed, &source).await else {
+        panic!("recovery finishes");
+    };
+    assert!(stats.commits > 0);
+    assert_eq!(stats.qualified, 0);
+    assert_eq!(source.acknowledged(), acknowledged);
+    // Only reconciliation withdraws the retired revision's evidence.
+    assert!(count(&shadowed.path, RETIRED_COVERAGE) > 0);
+    assert_eq!(
+        recovery_hold(&shadowed.path, shadowed.account),
+        Some(HoldCause::Unreconciled)
+    );
+    // The held account is skipped without asking the source.
+    let calls = source.calls();
+    let RunOutcome::Finished(stats) = recover(&mut shadowed, &source).await else {
+        panic!("recovery finishes");
+    };
+    assert_eq!(stats.held, 1);
+    assert_eq!(source.calls(), calls);
+
+    // An untrusted source under `PrivateRequired` is held the same way, and
+    // its account stays a candidate.
+    let mut wallet = wallet();
+    let _mode = activate(&mut wallet).await;
+    let untrusted = FixtureSource::new(main_hash);
+    untrusted
+        .receive(receive(1, external(&wallet, 0), VALUE, 150))
+        .retire();
+    let RunOutcome::Finished(stats) = run_required(&mut wallet, &untrusted).await else {
+        panic!("recovery finishes");
+    };
+    assert!(stats.commits > 0);
+    assert_eq!((stats.qualified, stats.promoted), (0, 0));
+    assert_eq!(untrusted.acknowledged(), 0);
+    assert_eq!(
+        recovery_hold(&wallet.path, wallet.account),
+        Some(HoldCause::Unreconciled)
+    );
+    assert_eq!(
+        lifecycle(&wallet, wallet.account),
+        AccountLifecycle::Candidate
     );
 }
 

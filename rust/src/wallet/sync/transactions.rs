@@ -416,7 +416,7 @@ where
     }
     if let Some(cause) = recovery_hold(db_path, snapshot.account) {
         return Ok(Some(match cause {
-            HoldCause::Withdrawn(_) => TransparentStopReason::Withdrawn,
+            HoldCause::Withdrawn(_) | HoldCause::Unreconciled => TransparentStopReason::Withdrawn,
             HoldCause::LegacyDiscrepancy => TransparentStopReason::LegacyDiscrepancy,
             HoldCause::Stalled => TransparentStopReason::Stalled,
         }));

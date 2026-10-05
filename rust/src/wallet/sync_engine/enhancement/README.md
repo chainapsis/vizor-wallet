@@ -582,7 +582,10 @@ The four patched library crates and the `zakura-pir-transparent` adapter use
 wallet-libraries revision `b877e37bf2246949acffbd4118473b8228d4f767`, the head
 of the private transparent recovery stack (`claude/tpir-private-mode`, from
 main `8897057f0`). Trusted qualification, rather than candidate observation,
-authorizes provisional revision replacement. The replacement regression explicitly
+authorizes provisional revision replacement, so the coordinator acknowledges an
+adapter batch that resolves retired revisions only after applying every commit
+through the trusted operation, and otherwise holds the account. The
+replacement regression explicitly
 qualifies fixture revisions at that boundary. Reader version 6 state is not
 supported by version 5 rollback readers; this pin is unreleased, and private
 activation stays behind the development flag.
