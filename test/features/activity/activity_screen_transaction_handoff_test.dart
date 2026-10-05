@@ -340,6 +340,7 @@ final _transaction = rust_sync.TransactionInfo(
   expiredUnmined: false,
   accountBalanceDelta: 0,
   fee: BigInt.zero,
+  amountIncludesFee: false,
   blockTime: BigInt.from(1764150000),
   isTransparent: false,
   txKind: 'received',

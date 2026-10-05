@@ -325,6 +325,15 @@ class _MobileTransactionStatusScreenState
 
   bool get _isSent => (_transaction?.txKind ?? widget.args.txKind) == 'sent';
 
+  /// The fee presentation of the shown entry. A Gift Card shows its own
+  /// amount, so its fee stays separate.
+  TransactionFeePresentation _feePresentationFor(
+    rust_sync.TransactionInfo? tx,
+    GiftCardActivityMetadata? giftCard,
+  ) => tx == null || giftCard != null
+      ? TransactionFeePresentation.separate
+      : transactionFeePresentation(tx);
+
   _TxPhase _phaseFor(GiftCardActivityMetadata? giftCard) {
     if (giftCard?.isClaimInFlight == true) {
       return _TxPhase.pending;
@@ -352,8 +361,13 @@ class _MobileTransactionStatusScreenState
     if (_isIncoming) {
       return _phase == _TxPhase.pending ? 'Receiving...' : 'Received';
     }
-    // An unclassified tx stays neutral, like the desktop fallback receipt.
-    if (!_isSent) return 'Transaction';
+    // An unclassified tx stays neutral, like the desktop fallback receipt, and
+    // so does an entry whose whole balance change is its network fee.
+    if (!_isSent ||
+        _feePresentationFor(_transaction, null) ==
+            TransactionFeePresentation.feeOnly) {
+      return 'Transaction';
+    }
     return switch (_phase) {
       _TxPhase.pending => 'Sending...',
       _TxPhase.succeeded => 'Sent successfully',
@@ -464,12 +478,18 @@ class _MobileTransactionStatusScreenState
       );
     }
     final failed = _phaseFor(giftCard) == _TxPhase.failed;
+    // The fee appears once: a fee-only entry is its one fee line, and an
+    // amount that includes the fee says so.
+    final feePresentation = _feePresentationFor(tx, giftCard);
+    final feeOnly = feePresentation == TransactionFeePresentation.feeOnly;
 
-    final amountText = _amountText(
-      tx,
-      giftCardAmountZatoshi: giftCard?.amountZatoshi,
-      privacyModeEnabled: privacyModeEnabled,
-    );
+    final amountText = feeOnly
+        ? _feeText(tx, privacyModeEnabled: privacyModeEnabled) ?? '--'
+        : _amountText(
+            tx,
+            giftCardAmountZatoshi: giftCard?.amountZatoshi,
+            privacyModeEnabled: privacyModeEnabled,
+          );
     // A Gift Card's counterparty is the single-use link address, so the
     // receipt drops the address row and its verify affordance.
     final primaryAddress = giftCard != null
@@ -550,7 +570,12 @@ class _MobileTransactionStatusScreenState
           )
         : null;
     final amountRow = MobileReviewInfoRow(
-      label: 'Amount',
+      label: switch (feePresentation) {
+        TransactionFeePresentation.separate => 'Amount',
+        TransactionFeePresentation.includedInAmount =>
+          kNetChangeIncludesFeeText,
+        TransactionFeePresentation.feeOnly => kNetworkFeeText,
+      },
       value: amountText,
       leading: const MobileReviewZecBadge(),
       // With no counterparty row (shielded senders are unknown), the
@@ -817,12 +842,15 @@ class _MobileTransactionStatusScreenState
                         onOpenExplorer: () => unawaited(_openExplorer()),
                         isCardCreation:
                             giftCard?.kind == GiftCardActivityKind.created,
-                        feeText: _feeText(
-                          tx,
-                          giftCard: giftCard,
-                          privacyModeEnabled: privacyModeEnabled,
-                        ),
-                        detailsIncomplete: _showIncompleteDetails(tx),
+                        feeText: feeOnly
+                            ? null
+                            : _feeText(
+                                tx,
+                                giftCard: giftCard,
+                                privacyModeEnabled: privacyModeEnabled,
+                              ),
+                        detailsIncomplete:
+                            _showIncompleteDetails(tx),
                       ),
                       if (_error != null) ...[
                         const SizedBox(height: AppSpacing.sm),
