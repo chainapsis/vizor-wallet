@@ -95,6 +95,10 @@ pub struct LedgerEntry {
 pub struct Balance {
     pub availability: String,
     pub transparent_authority: String,
+    /// Why private recovery cannot restore transparent authority (`stopped`).
+    pub transparent_stop: Option<String>,
+    /// Whether the wallet's transparent funds are under private recovery.
+    pub transparent_private: bool,
     pub transparent_last_known: Option<u64>,
     pub transparent: u64,
     pub transparent_pending: u64,
@@ -451,8 +455,23 @@ impl VizorWallet {
                             sync_api::TransparentBalanceAuthority::Current => "current",
                             sync_api::TransparentBalanceAuthority::LastKnown => "last_known",
                             sync_api::TransparentBalanceAuthority::Unavailable => "unavailable",
+                            sync_api::TransparentBalanceAuthority::Stopped => "stopped",
                         }
                         .into(),
+                        transparent_stop: b.transparent_stop.map(|reason| {
+                            match reason {
+                                sync_api::TransparentStopReason::Quarantined => "quarantined",
+                                sync_api::TransparentStopReason::Ledger => "ledger",
+                                sync_api::TransparentStopReason::LegacyDiscrepancy => {
+                                    "legacy_discrepancy"
+                                }
+                                sync_api::TransparentStopReason::Withdrawn => "withdrawn",
+                                sync_api::TransparentStopReason::Stalled => "stalled",
+                                sync_api::TransparentStopReason::NotSelected => "not_selected",
+                            }
+                            .into()
+                        }),
+                        transparent_private: b.transparent_private,
                         transparent_last_known: b.transparent_last_known,
                         transparent: b.transparent,
                         transparent_pending: b.transparent_pending,
