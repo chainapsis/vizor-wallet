@@ -1,18 +1,23 @@
 #!/usr/bin/env bash
-# Transparent history qualification suite (H01-H13), public profile.
+# Transparent history qualification suite (H01-H13).
 #
 # Builds one isolated Docker regtest chain (pinned zcashd + lightwalletd, its
 # own ports and config; the shared scripts/regtest stack is never touched),
 # runs every case through Vizor's Rust API, and checks the results against
-# the independent oracle (scripts/e2e/transparent_history_oracle.py).
+# the independent oracle (scripts/e2e/transparent_history_oracle.py) under one
+# expectation profile: public (lightwalletd discovery, the default) or private
+# (PrivateRequired: transparent PIR recovery from an in-process service the
+# harness publishes from the chain; debug builds only, Rust layer only).
 #
 # Usage:
-#   scripts/e2e/transparent-history-cases.sh                 # Rust layer
+#   scripts/e2e/transparent-history-cases.sh                 # Rust layer, public
+#   scripts/e2e/transparent-history-cases.sh --profile private
 #   scripts/e2e/transparent-history-cases.sh --flutter desktop
 #   scripts/e2e/transparent-history-cases.sh --flutter mobile
 #   scripts/e2e/transparent-history-cases.sh --flutter both
 #
 # Env:
+#   TH_PROFILE   public (default) or private; --profile overrides it.
 #   TH_OUT_DIR   output directory (default rust/target/transparent-history-cases/run-<ts>)
 #   TH_CASES     comma list for development runs; anything short of H01-H13
 #                fails the gate by design.
@@ -26,14 +31,19 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FLUTTER_LAYERS=""
+PROFILE="${TH_PROFILE:-public}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --flutter)
       FLUTTER_LAYERS="$2"
       shift 2
       ;;
+    --profile)
+      PROFILE="$2"
+      shift 2
+      ;;
     -h | --help)
-      sed -n '2,25p' "$0"
+      sed -n '2,28p' "$0"
       exit 0
       ;;
     *)
@@ -42,6 +52,20 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+case "$PROFILE" in
+  public | private) ;;
+  *)
+    echo "unknown profile: $PROFILE (public or private)" >&2
+    exit 2
+    ;;
+esac
+if [[ "$PROFILE" == "private" && -n "$FLUTTER_LAYERS" ]]; then
+  # The app layer has no private expectations, and the in-process transparent
+  # PIR service ends with the Rust layer.
+  echo "--flutter is not supported with --profile private" >&2
+  exit 2
+fi
 
 OUT="${TH_OUT_DIR:-$ROOT/rust/target/transparent-history-cases/run-$(date +%Y%m%d-%H%M%S)}"
 mkdir -p "$OUT"
@@ -71,16 +95,18 @@ if [[ -n "$FLUTTER_LAYERS" ]]; then
   export TH_FLUTTER_HANDOFF_DIR="$HANDOFF_DIR"
 fi
 
-echo "== Rust layer (output: $OUT)"
+echo "== Rust layer, $PROFILE profile (output: $OUT)"
 rust_started=$(date +%s)
 set +e
 (
   cd "$ROOT/rust"
-  cargo test --test transparent_history_cases -- --ignored --nocapture --test-threads=1
+  # One profile per process: the private profile's switches are process-wide.
+  cargo test --test transparent_history_cases -- --ignored --nocapture --test-threads=1 \
+    --exact "${PROFILE}_profile_h01_to_h13"
 ) 2>&1 | tee "$OUT/rust.log"
 rust_status=${PIPESTATUS[0]}
 set -e
-echo "rust_layer_seconds=$(( $(date +%s) - rust_started )) status=$rust_status" | tee -a "$OUT/runtime.txt"
+echo "profile=$PROFILE rust_layer_seconds=$(( $(date +%s) - rust_started )) status=$rust_status" | tee -a "$OUT/runtime.txt"
 
 if [[ -z "$FLUTTER_LAYERS" ]]; then
   exit "$rust_status"

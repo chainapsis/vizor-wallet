@@ -199,6 +199,16 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "test-util", "
 # The transparent PIR privacy tests match requests against the service routes
 # with the library's own expression. Already in the graph.
 regex = "1"
+# The transparent history harness (rust/tests/transparent_history_cases)
+# publishes a regtest transparent PIR shard set and serves it in process, as
+# the adapter's own end-to-end test does. Same wallet-pir rev as the adapter,
+# so the shared crates resolve once.
+transparent-events = { git = "https://github.com/valargroup/wallet-pir", rev = "648264bb4801ae8faf7a61f4638ea049edb167cf" }
+transparent-filter = { git = "https://github.com/valargroup/wallet-pir", rev = "648264bb4801ae8faf7a61f4638ea049edb167cf" }
+transparent-shard = { git = "https://github.com/valargroup/wallet-pir", rev = "648264bb4801ae8faf7a61f4638ea049edb167cf" }
+transparent-shard-server = { git = "https://github.com/valargroup/wallet-pir", rev = "648264bb4801ae8faf7a61f4638ea049edb167cf" }
+axum = "0.7"
+tower = { version = "0.5", features = ["util"] }
 
 # Builds wallets through real private recovery for the history mapping tests.
 [dev-dependencies.zcash_client_sqlite]
@@ -270,4 +280,12 @@ zakura-pir-enhance-types = { git = "https://github.com/zakura-core/wallet-librar
 opt-level = 3
 
 [profile.dev.package."*"]
+opt-level = 3
+
+# valar-spiral-rs's reduction wraps by design, which debug overflow checks turn
+# into a panic in the PIR server the transparent history harness runs in
+# process. Test builds only, as in wallet-pir and wallet-libraries; a named
+# package entry does not inherit `package."*"`, so repeat its opt-level.
+[profile.test.package.valar-spiral-rs]
+overflow-checks = false
 opt-level = 3

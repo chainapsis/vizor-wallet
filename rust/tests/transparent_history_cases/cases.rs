@@ -23,6 +23,7 @@ use crate::{
     chain::Chain,
     faucet::Faucet,
     keys::{tex_address, Party, Scope},
+    publication::Publisher,
     report::{Attribution, Suite},
     signer::{self, Coin, Out},
     vizor::{GiftCard, Observation, VizorWallet},
@@ -105,6 +106,23 @@ impl Ctx {
         let started = Instant::now();
         // H03's coinbase: block 1 pays A0 external index 1.
         let chain = Chain::start(&a0.address(Scope::External, 1), 1, 150);
+        if crate::report::profile() == "private" {
+            // The private profile's transparent PIR service. Vizor reads its
+            // origin on every sync (debug builds only); no request it receives
+            // may carry one of Alice's scripts.
+            let publisher = crate::publication::install(Publisher::start(
+                chain.rpc_port,
+                &suite.out.join("publication"),
+            ));
+            let alice: Vec<Vec<u8>> = suite
+                .ownership
+                .iter()
+                .filter(|(_, owner)| owner.wallet == "alice")
+                .map(|(script, _)| hex::decode(script).expect("hex script"))
+                .collect();
+            publisher.watch(&alice);
+            std::env::set_var("VIZOR_TRANSPARENT_PIR_URL", publisher.url());
+        }
         let faucet = Faucet::new(&chain);
         let r = VizorWallet::import("R", &chain, &a0, &a1);
         let mut ctx = Ctx {
@@ -208,15 +226,30 @@ impl Ctx {
                 ("final", &["R", "N"]),
             ],
         );
-        self.suite.case(
-            "H13",
-            "Incomplete coverage",
-            &[
-                ("final_pre", &["N_pre"]),
-                ("h13_cut", &["N_cut"]),
-                ("h13_utxo_fail", &["N_utxo_fail"]),
-            ],
-        );
+        if crate::report::profile() == "private" {
+            // Faults of the private source: a lagging publication and failing
+            // private queries. N_pre stays, but private mode holds no
+            // enrichment, so its snapshot follows the whole first sync.
+            self.suite.case(
+                "H13",
+                "Incomplete coverage",
+                &[
+                    ("final_pre", &["N_pre"]),
+                    ("h13_lag", &["N_lag"]),
+                    ("h13_pir_fail", &["N_pir_fail"]),
+                ],
+            );
+        } else {
+            self.suite.case(
+                "H13",
+                "Incomplete coverage",
+                &[
+                    ("final_pre", &["N_pre"]),
+                    ("h13_cut", &["N_cut"]),
+                    ("h13_utxo_fail", &["N_utxo_fail"]),
+                ],
+            );
+        }
         for case in crate::report::REQUIRED_CASES {
             if !self.on(case) {
                 self.suite.note(case, "not run: excluded by TH_CASES");
@@ -264,7 +297,11 @@ impl Ctx {
         }
         self.timed("final", |ctx| ctx.final_checkpoint());
         if self.on("H13") {
-            self.timed("H13", |ctx| ctx.h13());
+            if crate::report::profile() == "private" {
+                self.timed("H13", |ctx| ctx.h13_private());
+            } else {
+                self.timed("H13", |ctx| ctx.h13());
+            }
         }
     }
 
@@ -944,6 +981,36 @@ impl Ctx {
         );
     }
 
+    /// H13 (private profile): fresh restores while the transparent PIR
+    /// service lags the chain by 60 blocks (H12's activity unpublished; the
+    /// sync waits out the coordinator's budget for it), then while it fails
+    /// every private query.
+    fn h13_private(&mut self) {
+        let publisher = crate::publication::global().expect("the private profile's publisher");
+        let lag = VizorWallet::import("N_lag", &self.chain, &self.a0, &self.a1);
+        publisher.set_lag(60);
+        let lag_result = lag.sync().err();
+        publisher.set_lag(0);
+        checkpoint(
+            &self.chain,
+            &mut self.suite,
+            "h13_lag",
+            &[(&lag, "N_lag")],
+            BTreeMap::from([("N_lag".to_string(), lag_result)]),
+        );
+        let fail = VizorWallet::import("N_pir_fail", &self.chain, &self.a0, &self.a1);
+        publisher.fail_queries(true);
+        let fail_result = fail.sync().err();
+        publisher.fail_queries(false);
+        checkpoint(
+            &self.chain,
+            &mut self.suite,
+            "h13_pir_fail",
+            &[(&fail, "N_pir_fail")],
+            BTreeMap::from([("N_pir_fail".to_string(), fail_result)]),
+        );
+    }
+
     pub fn finish(&mut self) -> i32 {
         std::fs::write(
             self.suite.out.join("chain.env"),
@@ -978,7 +1045,31 @@ impl Ctx {
                 .map(|(l, d)| (l.clone(), d.as_secs_f64()))
                 .collect::<BTreeMap<_, _>>(),
         );
-        self.suite.finish(&self.chain)
+        let status = self.suite.finish(&self.chain);
+        match crate::publication::global() {
+            Some(publisher) => {
+                // Every request the transparent PIR service received, by
+                // route, and every privacy violation (which fails the run).
+                let violations = publisher.privacy_violations();
+                crate::report::write_json(
+                    &self.suite.out.join("pir-requests.json"),
+                    &json!({
+                        "origin": publisher.url(),
+                        "routes": publisher.route_counts(),
+                        "violations": violations,
+                    }),
+                );
+                for violation in &violations {
+                    eprintln!("[tpir] privacy violation: {violation}");
+                }
+                if violations.is_empty() {
+                    status
+                } else {
+                    status.max(1)
+                }
+            }
+            None => status,
+        }
     }
 }
 

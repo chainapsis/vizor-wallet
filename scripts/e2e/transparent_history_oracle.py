@@ -533,6 +533,15 @@ def check_constraints(item, rows, view, expected):
                     problems.append(
                         f"display_amount {row['display_amount']} exceeds {constraint['value']}"
                     )
+        elif name == "amount_in_or_le":
+            # A real amount, or no more than the movement: never an invented one.
+            for row in rows:
+                amount = row["display_amount"]
+                if amount not in constraint["values"] and amount > constraint["value"]:
+                    problems.append(
+                        f"display_amount {amount} is neither a real amount "
+                        f"{constraint['values']} nor at most {constraint['value']}"
+                    )
         elif name == "amounts_in":
             for row in rows:
                 if row["display_amount"] not in constraint["values"]:

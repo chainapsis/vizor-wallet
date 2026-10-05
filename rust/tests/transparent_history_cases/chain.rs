@@ -44,6 +44,41 @@ fn docker(args: &[&str]) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&result.stdout).trim().to_string())
 }
 
+/// [`Chain::rpc`] against the zcashd RPC port `port`, for helpers that hold
+/// no [`Chain`] (the transparent PIR publisher).
+pub fn rpc_at(port: u16, method: &str, params: Value) -> Result<Value, String> {
+    let body =
+        json!({"jsonrpc": "1.0", "id": "th", "method": method, "params": params}).to_string();
+    let auth =
+        base64::engine::general_purpose::STANDARD.encode(format!("{RPC_USER}:{RPC_PASSWORD}"));
+    let mut stream =
+        TcpStream::connect(("127.0.0.1", port)).map_err(|e| format!("rpc connect: {e}"))?;
+    stream.set_read_timeout(Some(Duration::from_secs(300))).ok();
+    let request = format!(
+        "POST / HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Basic {auth}\r\n\
+         Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    stream
+        .write_all(request.as_bytes())
+        .map_err(|e| format!("rpc write: {e}"))?;
+    let mut response = Vec::new();
+    stream
+        .read_to_end(&mut response)
+        .map_err(|e| format!("rpc read: {e}"))?;
+    let response = String::from_utf8_lossy(&response);
+    let body = response
+        .split_once("\r\n\r\n")
+        .map(|(_, b)| b)
+        .ok_or_else(|| format!("rpc {method}: malformed response {response}"))?;
+    let value: Value =
+        serde_json::from_str(body.trim()).map_err(|e| format!("rpc {method}: {e}: {body}"))?;
+    if !value["error"].is_null() {
+        return Err(format!("rpc {method}: {}", value["error"]));
+    }
+    Ok(value["result"].clone())
+}
+
 fn free_port() -> u16 {
     TcpListener::bind("127.0.0.1:0")
         .and_then(|l| l.local_addr())
@@ -229,36 +264,7 @@ impl Chain {
 
     /// Minimal JSON-RPC over HTTP/1.1 (zcashd closes the connection per call).
     pub fn rpc(&self, method: &str, params: Value) -> Result<Value, String> {
-        let body =
-            json!({"jsonrpc": "1.0", "id": "th", "method": method, "params": params}).to_string();
-        let auth =
-            base64::engine::general_purpose::STANDARD.encode(format!("{RPC_USER}:{RPC_PASSWORD}"));
-        let mut stream = TcpStream::connect(("127.0.0.1", self.rpc_port))
-            .map_err(|e| format!("rpc connect: {e}"))?;
-        stream.set_read_timeout(Some(Duration::from_secs(300))).ok();
-        let request = format!(
-            "POST / HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Basic {auth}\r\n\
-             Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-            body.len()
-        );
-        stream
-            .write_all(request.as_bytes())
-            .map_err(|e| format!("rpc write: {e}"))?;
-        let mut response = Vec::new();
-        stream
-            .read_to_end(&mut response)
-            .map_err(|e| format!("rpc read: {e}"))?;
-        let response = String::from_utf8_lossy(&response);
-        let body = response
-            .split_once("\r\n\r\n")
-            .map(|(_, b)| b)
-            .ok_or_else(|| format!("rpc {method}: malformed response {response}"))?;
-        let value: Value =
-            serde_json::from_str(body.trim()).map_err(|e| format!("rpc {method}: {e}: {body}"))?;
-        if !value["error"].is_null() {
-            return Err(format!("rpc {method}: {}", value["error"]));
-        }
-        Ok(value["result"].clone())
+        rpc_at(self.rpc_port, method, params)
     }
 
     pub fn rpc_ok(&self, method: &str, params: Value) -> Value {

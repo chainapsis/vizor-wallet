@@ -180,6 +180,12 @@ impl VizorWallet {
             Some(1),
         )
         .expect("add A1");
+        if crate::report::profile() == "private" {
+            // The production toggle-on path: the wallet durably requires
+            // private recovery before its first sync.
+            sync_api::reconcile_transparent_policy(db.clone(), NET.into(), true)
+                .expect("raise the transparent policy to private recovery");
+        }
         VizorWallet {
             label: label.into(),
             _dir: dir,
@@ -234,7 +240,12 @@ impl VizorWallet {
             .unwrap_or_else(|| panic!("no account {name}"))
     }
 
+    /// One production sync. The private profile's publication first catches
+    /// up with the chain, so it covers the tip the wallet scans to.
     pub fn sync(&self) -> Result<(), String> {
+        if let Some(publisher) = crate::publication::global() {
+            publisher.catch_up();
+        }
         sync_api::run_full_sync_blocking(self.db.clone(), self.proxy.url.clone(), NET.into(), 1)
     }
 

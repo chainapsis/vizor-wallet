@@ -20,10 +20,30 @@ use crate::{
     vizor::Observation,
 };
 
-/// The expectation profile this run qualifies. Only `public` exists; a
-/// `private` profile is a new oracle profile module plus a mode switch in
-/// [`crate::vizor::VizorWallet::import`], with no case changes.
-pub const PROFILE: &str = "public";
+/// The expectation profile this run qualifies: `public` (transparent
+/// discovery through lightwalletd) or `private` (transparent PIR recovery,
+/// `PrivateRequired`). Each names the oracle module
+/// `scripts/e2e/transparent_history_profile_<profile>.py`. Set once per
+/// process, before the run, by the test that runs it.
+static PROFILE: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
+
+/// The profile this run qualifies; `public` until one is set.
+pub fn profile() -> &'static str {
+    PROFILE.get().copied().unwrap_or("public")
+}
+
+/// Selects the run's profile. Once per process.
+pub fn set_profile(profile: &'static str) {
+    assert!(
+        matches!(profile, "public" | "private"),
+        "unknown profile {profile}"
+    );
+    assert!(
+        PROFILE.set(profile).is_ok() || self::profile() == profile,
+        "the profile is already {}",
+        self::profile()
+    );
+}
 
 pub const REQUIRED_CASES: [&str; 13] = [
     "H01", "H02", "H03", "H04", "H05", "H06", "H07", "H08", "H09", "H10", "H11", "H12", "H13",
@@ -91,11 +111,15 @@ pub struct CaseRecord {
 }
 
 /// How much evidence a variant has when observed: `complete` (settled sync),
-/// `pre_enrichment` (GetTransaction held), or `fault` (injected transport faults).
-pub const VARIANT_KINDS: [(&str, &str); 3] = [
+/// `pre_enrichment` (GetTransaction held), or `fault` (injected transport
+/// faults: lightwalletd in the public profile, the transparent PIR service in
+/// the private one).
+pub const VARIANT_KINDS: [(&str, &str); 5] = [
     ("N_pre", "pre_enrichment"),
     ("N_cut", "fault"),
     ("N_utxo_fail", "fault"),
+    ("N_lag", "fault"),
+    ("N_pir_fail", "fault"),
 ];
 
 pub struct Suite {
@@ -234,7 +258,7 @@ impl Suite {
         write_json(
             &self.out.join("cases.json"),
             &json!({
-                "profile": PROFILE,
+                "profile": profile(),
                 "required_cases": REQUIRED_CASES,
                 "variant_kinds": VARIANT_KINDS.iter().cloned().collect::<BTreeMap<_, _>>(),
                 "cases": self.cases,
@@ -282,7 +306,7 @@ impl Suite {
             "--checkpoint",
             &label,
             "--profile",
-            PROFILE,
+            profile(),
             "--out",
             expected.to_str().unwrap(),
         ]);
@@ -301,7 +325,7 @@ impl Suite {
                 "--checkpoint",
                 &label,
                 "--profile",
-                PROFILE,
+                profile(),
                 "--mutate-ownership",
                 "--out",
                 mutated.to_str().unwrap(),
@@ -347,7 +371,7 @@ impl Suite {
             "--checkpoint",
             "flutter",
             "--profile",
-            PROFILE,
+            profile(),
             "--out",
             self.out.join("expected-flutter.json").to_str().unwrap(),
             "--ui-out",
