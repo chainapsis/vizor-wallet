@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/config/private_transparent_recovery_config.dart';
 import '../core/layout/app_form_factor.dart';
 import '../core/layout/app_process_work_policy.dart';
 import '../core/network/network_http_client.dart';
@@ -192,6 +193,23 @@ Future<void> _excludeFromDeviceBackup(String directory) async {
   } on MissingPluginException {
     // Test hosts and older builds have no native side to ask.
   }
+}
+
+/// Keeps the private transparent recovery companions of the wallet at
+/// [dbPath] out of device backups, in a build whose flag is
+/// [privateTransparentRecovery]; other builds never create them.
+///
+/// Companions record which of the wallet's transparent addresses had activity,
+/// and Rust rebuilds them, so a restore needs none. The iOS side creates the
+/// directory when it does not exist yet, so the mark is set before Rust writes
+/// the first companion.
+Future<void> excludeTransparentRecoveryCompanionsFromBackup(
+  String dbPath, {
+  bool privateTransparentRecovery = kZcashPrivateTransparentRecovery,
+  Future<void> Function(String directory) exclude = _excludeFromDeviceBackup,
+}) async {
+  if (!privateTransparentRecovery) return;
+  await exclude(transparentRecoveryCompanionDirectory(dbPath));
 }
 
 abstract interface class NetworkPrivacyNativeUpdateCoordinator {
