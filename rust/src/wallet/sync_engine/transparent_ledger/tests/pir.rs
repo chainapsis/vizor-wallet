@@ -177,6 +177,19 @@ fn touch(path: &Path) {
     std::fs::write(path, b"companion").unwrap();
 }
 
+/// A request for one pass over `account` from `watch`.
+fn request<'a>(
+    account: AccountUuid,
+    watch: &'a TransparentWatchSet<AccountUuid>,
+    should_exit: &'a (dyn Fn() -> bool + Sync),
+) -> SourceRequest<'a> {
+    SourceRequest {
+        account,
+        watch,
+        should_exit,
+    }
+}
+
 /// The `Ready` answer of a pass that needed no retrieval.
 const COMPLETE: SourceBatch = SourceBatch::Ready {
     commits: vec![],
@@ -214,7 +227,7 @@ async fn new_selects_the_origin_gates_mainnet_and_uses_the_wallet_route() {
     // Off mainnet a pass sends nothing and creates nothing.
     let testnet = TransparentPirSource::new(&wallet.path, WalletNetwork::Test);
     assert_eq!(
-        testnet.recover(account, &watch, &|| false).await,
+        testnet.recover(request(account, &watch, &|| false)).await,
         Err(SourceError::Unavailable)
     );
     assert!(seam.seam.observer.requests().is_empty());
@@ -224,7 +237,7 @@ async fn new_selects_the_origin_gates_mainnet_and_uses_the_wallet_route() {
     // request fails, and the pass with it.
     let source = TransparentPirSource::new(&wallet.path, MAIN);
     assert_eq!(
-        source.recover(account, &watch, &|| false).await,
+        source.recover(request(account, &watch, &|| false)).await,
         Err(SourceError::Failed)
     );
     assert_eq!(paths(&seam.seam.observer.requests()), [MAP]);
@@ -247,7 +260,9 @@ async fn companions_are_per_account_and_bound_to_origin_and_schema() {
     );
     for account in [a, b] {
         assert_eq!(
-            source.recover(account, &bare(account), &|| false).await,
+            source
+                .recover(request(account, &bare(account), &|| false))
+                .await,
             Ok(COMPLETE)
         );
     }
@@ -328,7 +343,10 @@ async fn opening_prunes_stale_origin_and_deleted_account_companions() {
     }
 
     let source = TransparentPirSource::new(&wallet.path, MAIN);
-    assert_eq!(source.recover(a, &bare(a), &|| false).await, Ok(COMPLETE));
+    assert_eq!(
+        source.recover(request(a, &bare(a), &|| false)).await,
+        Ok(COMPLETE)
+    );
 
     assert!(companion(&wallet.path, &a_uuid).exists());
     for path in &doomed {
@@ -348,7 +366,9 @@ async fn deleting_an_account_removes_its_companion_and_sidecars() {
     let source = TransparentPirSource::new(&wallet.path, MAIN);
     for account in [a, b] {
         assert_eq!(
-            source.recover(account, &bare(account), &|| false).await,
+            source
+                .recover(request(account, &bare(account), &|| false))
+                .await,
             Ok(COMPLETE)
         );
     }
@@ -387,7 +407,7 @@ async fn a_publication_change_retries_once_keeping_the_companion() {
     // then the service refuses the rest.
     let first = TransparentPirSource::new(&wallet.path, MAIN);
     assert_eq!(
-        first.recover(account, &watch, &|| false).await,
+        first.recover(request(account, &watch, &|| false)).await,
         Err(SourceError::Failed)
     );
     let bound = observer.requests().len();
@@ -404,7 +424,7 @@ async fn a_publication_change_retries_once_keeping_the_companion() {
     *map.lock().unwrap() = shard_map(BIRTHDAY - 50);
     let second = TransparentPirSource::new(&wallet.path, MAIN);
     assert_eq!(
-        second.recover(account, &watch, &|| false).await,
+        second.recover(request(account, &watch, &|| false)).await,
         Err(SourceError::Failed)
     );
     assert_eq!(paths(&observer.requests()[bound..]), [MAP, INIT, MAP, INIT]);
@@ -438,7 +458,7 @@ async fn a_failed_pass_reports_failed_and_sends_nothing_public() {
 
     let source = TransparentPirSource::new(&wallet.path, MAIN);
     assert_eq!(
-        source.recover(account, &watch, &|| false).await,
+        source.recover(request(account, &watch, &|| false)).await,
         Err(SourceError::Failed)
     );
     // Nothing is retried, and nothing reaches the wallet: the pass reads it
@@ -475,7 +495,7 @@ async fn cancelling_a_pass_waits_for_the_blocking_task() {
     let source = TransparentPirSource::new(&wallet.path, MAIN);
     let should_exit = || exit.load(Ordering::SeqCst);
     assert_eq!(
-        source.recover(account, &watch, &should_exit).await,
+        source.recover(request(account, &watch, &should_exit)).await,
         Err(SourceError::Cancelled)
     );
     // The pass returned only once its blocking work had, and it sent nothing
@@ -486,7 +506,9 @@ async fn cancelling_a_pass_waits_for_the_blocking_task() {
     // parked again for the next pass.
     assert_eq!(source.acknowledge(account).await, Err(SourceError::Failed));
     assert_eq!(
-        source.recover(account, &bare(account), &|| false).await,
+        source
+            .recover(request(account, &bare(account), &|| false))
+            .await,
         Ok(COMPLETE)
     );
 }
@@ -513,7 +535,7 @@ async fn a_pass_past_its_deadline_fails_without_committing() {
 
     let source = TransparentPirSource::new(&wallet.path, MAIN).with_clock(clock);
     assert_eq!(
-        source.recover(account, &watch, &|| false).await,
+        source.recover(request(account, &watch, &|| false)).await,
         Err(SourceError::Failed)
     );
     // Nothing is requested after the deadline, and nothing can be applied.
@@ -558,7 +580,9 @@ async fn passes_and_acknowledgments_on_one_companion_are_serialized() {
     // A source parks the companion of a ready pass with its lock.
     let first = TransparentPirSource::new(&wallet.path, MAIN);
     assert_eq!(
-        first.recover(account, &bare(account), &|| false).await,
+        first
+            .recover(request(account, &bare(account), &|| false))
+            .await,
         Ok(COMPLETE)
     );
 
@@ -566,7 +590,11 @@ async fn passes_and_acknowledgments_on_one_companion_are_serialized() {
     let second = Arc::new(TransparentPirSource::new(&wallet.path, MAIN));
     let mut waiting = tokio::spawn({
         let second = second.clone();
-        async move { second.recover(account, &bare(account), &|| false).await }
+        async move {
+            second
+                .recover(request(account, &bare(account), &|| false))
+                .await
+        }
     });
     assert!(
         tokio::time::timeout(Duration::from_millis(300), &mut waiting)
