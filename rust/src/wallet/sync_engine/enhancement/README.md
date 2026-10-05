@@ -553,9 +553,10 @@ private history approaches public-history completeness. With Private queries
 disabled, the existing presentation is preserved: no completeness notice and
 the previous placeholder or omitted fee row for an unrecorded fee. History
 refreshes on the sync events that already
-refresh it (`hasNewTx` or `isComplete`); recovery runs before a pass completes,
-so its commits are visible on the next refresh. No history gap starts any
-public lookup.
+refresh it (`hasNewTx` or `isComplete`). Private recovery runs after
+completion is reported and then reports completion again, flagged with new
+transactions, so its commits refresh history on that event. No history gap
+starts any public lookup.
 
 Under `Public` handles, which is every default build, transparent effects
 count as settled, so an entry is provisional only while a shielded pool is not
