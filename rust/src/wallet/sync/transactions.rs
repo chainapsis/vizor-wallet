@@ -3049,6 +3049,52 @@ mod tests {
     }
 
     #[test]
+    fn a_recovered_zero_payment_keeps_the_fee_not_a_false_receive() {
+        let (mut base, mut summary) = provisional_debit();
+        base.account_balance_delta = -10_000;
+        base.total_spent = 110_000;
+        base.total_received = 100_000;
+        base.history = HistoryCompleteness {
+            details_complete: false,
+            provisional: false,
+            fee: Fee::Known(10_000),
+            whole_fee: Some(10_000),
+            inferred_payment: Some(0),
+        };
+        summary.received.amount = 100_000;
+        summary.received.output_count = 1;
+
+        let rows = classify_history_tx(&base, &summary, Fee::NotApplicable);
+
+        assert_eq!(rows.len(), 1, "keep the transaction visible");
+        let info = &rows[0].info;
+        assert_eq!(info.tx_kind, "sent");
+        assert_eq!(
+            info.display_amount, 10_000,
+            "returned funds are not a receipt"
+        );
+        assert!(info.amount_includes_fee, "the movement is the fee alone");
+        assert_eq!(info.display_pool, "transparent");
+        assert!(info.is_transparent);
+        assert_eq!(info.fee_state, TransactionFeeState::Known);
+        assert_eq!(info.fee, 10_000);
+        assert_eq!(info.account_balance_delta, -10_000);
+        assert!(!info.provisional);
+        assert!(!info.details_complete, "recipient details remain unknown");
+
+        // An explicitly recorded zero-value output still has its sent row.
+        summary.sent.output_count = 1;
+        summary.sent.has_transparent = true;
+        summary.received = ActivityAmounts::default();
+        let rows = classify_history_tx(&base, &summary, Fee::NotApplicable);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].info.tx_kind, "sent");
+        assert_eq!(rows[0].info.display_amount, 0);
+        assert_eq!(rows[0].info.fee, 10_000);
+        assert!(!rows[0].info.amount_includes_fee);
+    }
+
+    #[test]
     fn only_a_reconstructed_transparent_only_payment_is_inferred() {
         use zcash_client_backend::data_api::transparent_ledger::{
             AccountMovement, MetadataProvenance, TransactionMetadata, TransactionMetadataEvidence,
@@ -3087,6 +3133,10 @@ mod tests {
             HistoryCompleteness::of(&details).inferred_payment,
             Some(50_000)
         );
+
+        details.aggregate_payment = AggregatePayment::Exact(Zatoshis::ZERO);
+        assert_eq!(HistoryCompleteness::of(&details).inferred_payment, Some(0));
+        details.aggregate_payment = AggregatePayment::Exact(Zatoshis::from_u64(50_000).unwrap());
 
         // A local record's payment, a provisional one, public evidence, and
         // shielded components are not a reconstructed transparent payment.
@@ -7199,11 +7249,10 @@ mod tests {
         let (uuid, _) =
             crate::wallet::keys::init_db_and_create_account(&path, network, &seed, Some(100), "a")
                 .unwrap();
-        let address = crate::wallet::keys::software_account_transparent_addresses(
-            network, &seed, 0, 1,
-        )
-        .unwrap()
-        .swap_remove(0);
+        let address =
+            crate::wallet::keys::software_account_transparent_addresses(network, &seed, 0, 1)
+                .unwrap()
+                .swap_remove(0);
         let address = TransparentAddress::decode(&network, &address).unwrap();
         let output = WalletTransparentOutput::from_parts(
             OutPoint::new([0x51; 32], 0),
