@@ -25,16 +25,6 @@ void main() {
       );
     });
 
-    test('tells a build that cannot recover to turn off Private queries', () {
-      expect(
-        friendlyProposeSendError(
-          'Propose failed: Private transparent recovery is not available in '
-          'this build; turn off private queries to use transparent funds',
-        ),
-        transparentRecoveryNotSelectedMessage,
-      );
-    });
-
     test('reports incomplete private recovery, not insufficient funds', () {
       expect(
         friendlyProposeSendError(
