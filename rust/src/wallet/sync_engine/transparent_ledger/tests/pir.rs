@@ -193,6 +193,7 @@ fn request<'a>(
 /// The `Ready` answer of a pass that needed no retrieval.
 const COMPLETE: SourceBatch = SourceBatch::Ready {
     commits: vec![],
+    retired: false,
     next: Continuation::Complete,
     behind_by: 0,
 };
@@ -411,6 +412,7 @@ async fn a_publication_change_retries_once_keeping_the_companion() {
         Err(SourceError::Failed)
     );
     let bound = observer.requests().len();
+    assert!(bound > 2, "the first pass got past the service's init");
     assert_eq!(paths(&observer.requests()[..2]), [MAP, INIT]);
     drop(first);
     let path = companion(&wallet.path, &uuid);
@@ -420,14 +422,19 @@ async fn a_publication_change_retries_once_keeping_the_companion() {
         .unwrap();
 
     // The publication restarts at another height: a new set identity. The
-    // pass retries once on the same companion, and no more.
+    // adapter resets the companion's store, keeping its catalog, and the pass
+    // retries once on the same companion: from the reset store it binds the
+    // new set and sends the first pass's requests again, and no more.
     *map.lock().unwrap() = shard_map(BIRTHDAY - 50);
     let second = TransparentPirSource::new(&wallet.path, MAIN);
     assert_eq!(
         second.recover(request(account, &watch, &|| false)).await,
         Err(SourceError::Failed)
     );
-    assert_eq!(paths(&observer.requests()[bound..]), [MAP, INIT, MAP, INIT]);
+    let requests = observer.requests();
+    let mut expected = vec![MAP, INIT];
+    expected.extend(paths(&requests[..bound]));
+    assert_eq!(paths(&requests[bound..]), expected);
     drop(second);
     let marker: i64 = rusqlite::Connection::open(&path)
         .unwrap()
@@ -470,7 +477,10 @@ async fn a_failed_pass_reports_failed_and_sends_nothing_public() {
         tpir_before
     );
     // A failed pass leaves nothing to acknowledge.
-    assert_eq!(source.acknowledge(account).await, Err(SourceError::Failed));
+    assert_eq!(
+        source.acknowledge(account, false).await,
+        Err(SourceError::Failed)
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -504,7 +514,10 @@ async fn cancelling_a_pass_waits_for_the_blocking_task() {
     assert_eq!(paths(&seam.seam.observer.requests()), [MAP]);
     // A cancelled pass leaves nothing to acknowledge, and its companion is
     // parked again for the next pass.
-    assert_eq!(source.acknowledge(account).await, Err(SourceError::Failed));
+    assert_eq!(
+        source.acknowledge(account, false).await,
+        Err(SourceError::Failed)
+    );
     assert_eq!(
         source
             .recover(request(account, &bare(account), &|| false))
@@ -540,7 +553,10 @@ async fn a_pass_past_its_deadline_fails_without_committing() {
     );
     // Nothing is requested after the deadline, and nothing can be applied.
     assert_eq!(paths(&seam.seam.observer.requests()), [MAP]);
-    assert_eq!(source.acknowledge(account).await, Err(SourceError::Failed));
+    assert_eq!(
+        source.acknowledge(account, false).await,
+        Err(SourceError::Failed)
+    );
 }
 
 #[test]
@@ -609,11 +625,15 @@ async fn passes_and_acknowledgments_on_one_companion_are_serialized() {
     assert!(companion(&wallet.path, &uuid).exists());
 
     // The holder acknowledges under its own lock, once.
-    assert_eq!(first.acknowledge(account).await, Ok(()));
-    assert_eq!(first.acknowledge(account).await, Err(SourceError::Failed));
+    assert_eq!(first.acknowledge(account, false).await, Ok(()));
+    assert_eq!(
+        first.acknowledge(account, false).await,
+        Err(SourceError::Failed)
+    );
 
     // Dropping it releases the companion to the waiting pass.
     drop(first);
     assert_eq!(waiting.await.unwrap(), Ok(COMPLETE));
-    assert_eq!(second.acknowledge(account).await, Ok(()));
+    // A batch without retired revisions may also be settled as reconciled.
+    assert_eq!(second.acknowledge(account, true).await, Ok(()));
 }

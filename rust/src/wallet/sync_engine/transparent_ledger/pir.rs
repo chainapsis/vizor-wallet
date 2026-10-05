@@ -289,9 +289,11 @@ impl RecoverySource for TransparentPirSource {
                     Ok(match batch.state {
                         BatchState::Ready => {
                             let commits = std::mem::take(&mut batch.commits);
+                            let retired = !batch.retired_revisions().is_empty();
                             held.batch = Some(batch);
                             SourceBatch::Ready {
                                 commits,
+                                retired,
                                 next,
                                 behind_by: behind,
                             }
@@ -307,12 +309,15 @@ impl RecoverySource for TransparentPirSource {
         answer
     }
 
-    /// Settles `account`'s last `Ready` batch after every commit applied.
+    /// Settles `account`'s last `Ready` batch after every commit applied:
+    /// as reconciled when every commit went through the trusted operation,
+    /// otherwise as applied, which the adapter refuses for a batch with
+    /// retired revisions.
     ///
     /// Runs on a blocking thread under the companion's parked lock. Fails when
     /// no unacknowledged `Ready` batch is parked for the account, or when the
     /// adapter refuses it.
-    async fn acknowledge(&self, account: AccountUuid) -> Result<(), SourceError> {
+    async fn acknowledge(&self, account: AccountUuid, reconciled: bool) -> Result<(), SourceError> {
         let mut parked = self.parked.lock().await;
         let Some(mut held) = parked.remove(&account) else {
             log::warn!("transparent PIR: nothing to acknowledge");
@@ -324,7 +329,11 @@ impl RecoverySource for TransparentPirSource {
             return Err(SourceError::Failed);
         };
         let joined = tokio::task::spawn_blocking(move || {
-            let acknowledged = held.companion.acknowledge_applied(&batch);
+            let acknowledged = if reconciled {
+                held.companion.acknowledge_reconciled(&batch)
+            } else {
+                held.companion.acknowledge_applied(&batch)
+            };
             (held, acknowledged)
         })
         .await;
@@ -445,7 +454,9 @@ impl Pass {
     }
 
     /// One adapter pass, retried once on the same companion if the
-    /// publication's set identity changed.
+    /// publication's set identity changed. The adapter has then reset the
+    /// companion's store and kept its catalog, which still records the
+    /// revisions the wallet holds, so the companion is never recreated.
     fn recover(
         &self,
         db: &crate::wallet::db::WalletDatabase,

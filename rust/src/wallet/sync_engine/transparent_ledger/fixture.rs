@@ -4,9 +4,11 @@
 //! with one `Ready` commit per pass. Its revisions use [`FIXTURE_SOURCE`] as
 //! their source id. It is untrusted unless [`FixtureSource::trust`] makes it
 //! trusted, as the transparent PIR source is, so the coordinator qualifies its
-//! revisions only when a test asks for it.
+//! revisions only when a test asks for it. Its acknowledgments follow the
+//! adapter's: a batch that resolves retired revisions is settled only as
+//! reconciled.
 
-use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::future::Future;
 use std::sync::{Arc, Mutex};
 
@@ -56,6 +58,9 @@ struct State {
     /// Replaces the continuation of every `Ready` answer.
     next: Option<Continuation>,
     trusted: bool,
+    /// Every `Ready` answer resolves retired revisions until one is
+    /// acknowledged as reconciled, as the adapter's do.
+    retiring: bool,
     /// Run one per call, before answering: a test's concurrent change.
     hooks: VecDeque<Hook>,
     /// Runs at every acknowledgment, before it is answered.
@@ -63,9 +68,11 @@ struct State {
     revision: Option<RecoveryRevision>,
     /// The account of each call, in order.
     calls: Vec<AccountUuid>,
-    /// Accounts whose last answer was a `Ready` batch not yet acknowledged.
-    unacknowledged: HashSet<AccountUuid>,
+    /// Accounts whose last answer was a `Ready` batch not yet acknowledged,
+    /// with whether that batch resolves retired revisions.
+    unacknowledged: HashMap<AccountUuid, bool>,
     acknowledged: usize,
+    reconciled: usize,
 }
 
 impl FixtureSource {
@@ -86,12 +93,14 @@ impl FixtureSource {
                 withdrawn: HashMap::new(),
                 next: None,
                 trusted: false,
+                retiring: false,
                 hooks: VecDeque::new(),
                 on_acknowledge: None,
                 revision: None,
                 calls: Vec::new(),
-                unacknowledged: HashSet::new(),
+                unacknowledged: HashMap::new(),
                 acknowledged: 0,
+                reconciled: 0,
             }),
         }
     }
@@ -191,6 +200,13 @@ impl FixtureSource {
         self.with(|state| state.trusted = true)
     }
 
+    /// Answers as a publication that retired revisions an earlier batch
+    /// exported: every `Ready` answer resolves them until one is acknowledged
+    /// as reconciled.
+    pub(crate) fn retire(&self) -> &Self {
+        self.with(|state| state.retiring = true)
+    }
+
     /// Runs `hook` at the start of a later call, one hook per call in order.
     pub(crate) fn on_call(&self, hook: impl FnOnce() + Send + 'static) -> &Self {
         self.with(|state| state.hooks.push_back(Box::new(hook)))
@@ -217,6 +233,11 @@ impl FixtureSource {
     /// Acknowledgments of `Ready` batches the source accepted.
     pub(crate) fn acknowledged(&self) -> usize {
         self.state.lock().unwrap().acknowledged
+    }
+
+    /// Of those, acknowledgments that confirmed trusted reconciliation.
+    pub(crate) fn reconciled(&self) -> usize {
+        self.state.lock().unwrap().reconciled
     }
 
     /// The mined receives and spends a complete recovery through `height`
@@ -265,17 +286,28 @@ impl RecoverySource for FixtureSource {
     fn acknowledge(
         &self,
         account: AccountUuid,
+        reconciled: bool,
     ) -> impl Future<Output = Result<(), SourceError>> + Send {
         let hook = self.state.lock().unwrap().on_acknowledge.clone();
         if let Some(hook) = hook {
             hook();
         }
         let mut state = self.state.lock().unwrap();
-        std::future::ready(if state.unacknowledged.remove(&account) {
-            state.acknowledged += 1;
-            Ok(())
-        } else {
-            Err(SourceError::Failed)
+        std::future::ready(match state.unacknowledged.get(&account).copied() {
+            // As the adapter's `acknowledge_applied`, refuse a batch with
+            // retired revisions and keep it for a reconciled acknowledgment.
+            Some(true) if !reconciled => Err(SourceError::Failed),
+            Some(retired) => {
+                state.unacknowledged.remove(&account);
+                state.acknowledged += 1;
+                state.reconciled += usize::from(reconciled);
+                // Reconciliation resolved the retirements.
+                if retired {
+                    state.retiring = false;
+                }
+                Ok(())
+            }
+            None => Err(SourceError::Failed),
         })
     }
 }
@@ -343,9 +375,10 @@ impl State {
                     .min(anchor.height),
                 through: anchor.height,
             });
-            self.unacknowledged.insert(request.account);
+            self.unacknowledged.insert(request.account, self.retiring);
             return Ok(SourceBatch::Ready {
                 commits: vec![commit],
+                retired: self.retiring,
                 next: self.next.unwrap_or(Continuation::More),
                 behind_by,
             });
@@ -391,9 +424,10 @@ impl State {
         if let Some(fixed) = self.next {
             next = fixed;
         }
-        self.unacknowledged.insert(request.account);
+        self.unacknowledged.insert(request.account, self.retiring);
         Ok(SourceBatch::Ready {
             commits,
+            retired: self.retiring,
             next,
             behind_by,
         })
