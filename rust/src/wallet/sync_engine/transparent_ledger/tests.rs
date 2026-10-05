@@ -1649,6 +1649,26 @@ async fn three_stalled_runs_hold_the_account() {
         recover(&mut other, &source).await;
     }
     assert_eq!(recovery_hold(&other.path, other.account), None);
+
+    // A run that ends waiting for a lagging publication does not: the stall
+    // it interrupts is still held.
+    let mut lagging = shadow_wallet();
+    let source = FixtureSource::new(main_hash);
+    let past_the_wait_cap = Continuation::RetryAfter(PUBLICATION_WAIT_CAP * 2);
+    for next in [
+        Continuation::Stalled,
+        past_the_wait_cap,
+        Continuation::Stalled,
+        past_the_wait_cap,
+        Continuation::Stalled,
+    ] {
+        source.next(Some(next));
+        recover(&mut lagging, &source).await;
+    }
+    assert_eq!(
+        recovery_hold(&lagging.path, lagging.account),
+        Some(HoldCause::Stalled)
+    );
 }
 
 #[tokio::test]
