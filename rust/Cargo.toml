@@ -170,7 +170,7 @@ features = ["wallet"]
 # crates.io package; see the `[patch.crates-io]` comment below.
 [dependencies.zakura-pir-transparent]
 git = "https://github.com/zakura-core/wallet-libraries"
-rev = "4e79d3a6591e1d72b163c9c703a198d6fef703d8"
+rev = "b877e37bf2246949acffbd4118473b8228d4f767"
 default-features = false
 features = ["wallet"]
 
@@ -239,14 +239,15 @@ assertions_on_constants = "allow"
 # equal to these so its path dependencies on the backend and SQLite crates
 # resolve to the patched sources.
 #
-# Pinned to the private transparent recovery integration base
-# (claude/tpir-pm-base): trusted qualification, the removed recovery-work
-# query, and the adapter's caller transports, wallet chain view and catalog.
+# Pinned to the private transparent recovery head (claude/tpir-private-mode):
+# trusted qualification, the removed recovery-work query, and the adapter's
+# caller transports, wallet chain view, catalog, and explicit reconciliation of
+# resolved withdrawals.
 [patch.crates-io]
-zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries", rev = "4e79d3a6591e1d72b163c9c703a198d6fef703d8" }
-zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries", rev = "4e79d3a6591e1d72b163c9c703a198d6fef703d8" }
-zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries", rev = "4e79d3a6591e1d72b163c9c703a198d6fef703d8" }
-zakura-pir-enhance-types = { git = "https://github.com/zakura-core/wallet-libraries", rev = "4e79d3a6591e1d72b163c9c703a198d6fef703d8" }
+zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries", rev = "b877e37bf2246949acffbd4118473b8228d4f767" }
+zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries", rev = "b877e37bf2246949acffbd4118473b8228d4f767" }
+zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries", rev = "b877e37bf2246949acffbd4118473b8228d4f767" }
+zakura-pir-enhance-types = { git = "https://github.com/zakura-core/wallet-libraries", rev = "b877e37bf2246949acffbd4118473b8228d4f767" }
 
 # Flutter debug builds use Cargokit + Cargo's dev profile (`cargo build`
 # without `--release`). Rust crypto and voting flows are slow under the default
