@@ -1,27 +1,26 @@
 //! A deterministic in-memory [`RecoverySource`] for tests.
 //!
-//! It answers from a configurable set of mined receives and spends. Its revisions use
-//! [`FIXTURE_SOURCE`] as their source id. Only the library's test-only hook
-//! can qualify one ([`FixtureSource::qualified_in`]), so a fixture revision can
-//! never qualify a production account.
+//! It answers from a configurable set of mined receives and spends, by default
+//! with one `Ready` commit per pass. Its revisions use [`FIXTURE_SOURCE`] as
+//! their source id. It is untrusted unless [`FixtureSource::trust`] makes it
+//! trusted, as the transparent PIR source is, so the coordinator qualifies its
+//! revisions only when a test asks for it.
 
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::future::Future;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use transparent::address::TransparentAddress;
+use zakura_pir_transparent::{Outcome, WithdrawnCause};
 use zcash_client_backend::data_api::transparent_ledger::{
     AddressRange, ChainPoint, PageRequest, PublicationAnchor, ReceiveEvent, RecoveryRevision,
-    SpendEvent,
+    SpendEvent, TransparentLedgerCommit,
 };
+use zcash_client_sqlite::AccountUuid;
 use zcash_primitives::block::BlockHash;
 use zcash_protocol::consensus::BlockHeight;
 
-use super::{RecoverySource, SourceBounds, SourceError, SourceRequest, SourceResult};
-use crate::wallet::{
-    db::{open_wallet_db_with_timeout, with_wallet_db_write_lock, SYNC_DB_BUSY_TIMEOUT},
-    network::WalletNetwork,
-};
+use super::{Continuation, RecoverySource, SourceBatch, SourceError, SourceRequest};
 
 pub(crate) const FIXTURE_SOURCE: &[u8] = b"vizor-fixture";
 const PAGE: &[u8] = b"fixture-page";
@@ -45,14 +44,28 @@ struct State {
     /// Open one page before answering, then complete it on the next call.
     split_pages: bool,
     page_answered: bool,
+    /// Answer with two commits, splitting the watched addresses between them.
+    split_commits: bool,
+    /// Append a malformed commit to every `Ready` batch.
+    then_invalid: bool,
     failure: Option<SourceError>,
+    /// Answer `Pending` with this continuation instead of `Ready`.
+    pending: Option<Continuation>,
+    /// Accounts whose publication the source withdraws, and why.
+    withdrawn: HashMap<AccountUuid, WithdrawnCause>,
+    /// Replaces the continuation of every `Ready` answer.
+    next: Option<Continuation>,
+    trusted: bool,
     /// Run one per call, before answering: a test's concurrent change.
     hooks: VecDeque<Hook>,
+    /// Runs at every acknowledgment, before it is answered.
+    on_acknowledge: Option<Arc<dyn Fn() + Send + Sync>>,
     revision: Option<RecoveryRevision>,
-    /// The wallet in which each new revision is qualified, as a verifier would.
-    qualify_in: Option<(String, WalletNetwork)>,
-    calls: usize,
-    bounds: Option<SourceBounds>,
+    /// The account of each call, in order.
+    calls: Vec<AccountUuid>,
+    /// Accounts whose last answer was a `Ready` batch not yet acknowledged.
+    unacknowledged: HashSet<AccountUuid>,
+    acknowledged: usize,
 }
 
 impl FixtureSource {
@@ -66,12 +79,19 @@ impl FixtureSource {
                 published: None,
                 split_pages: false,
                 page_answered: false,
+                split_commits: false,
+                then_invalid: false,
                 failure: None,
+                pending: None,
+                withdrawn: HashMap::new(),
+                next: None,
+                trusted: false,
                 hooks: VecDeque::new(),
+                on_acknowledge: None,
                 revision: None,
-                qualify_in: None,
-                calls: 0,
-                bounds: None,
+                calls: Vec::new(),
+                unacknowledged: HashSet::new(),
+                acknowledged: 0,
             }),
         }
     }
@@ -111,7 +131,9 @@ impl FixtureSource {
         })
     }
 
-    /// Answers as a source that has indexed only through `height`.
+    /// Answers as a source that has indexed only through `height`: anchored
+    /// there, and asking to be retried as the transparent PIR source does
+    /// when its publication is behind.
     pub(crate) fn published_through(&self, height: Option<u32>) -> &Self {
         self.with(|state| state.published = height.map(BlockHeight::from_u32))
     }
@@ -126,8 +148,47 @@ impl FixtureSource {
         self.with(|state| state.split_pages = true)
     }
 
+    /// Answers each pass with two commits, splitting the watched addresses
+    /// between them.
+    pub(crate) fn split_commits(&self) -> &Self {
+        self.with(|state| state.split_commits = true)
+    }
+
+    /// Appends, or stops appending, a malformed commit to every `Ready` batch.
+    pub(crate) fn then_invalid(&self, invalid: bool) -> &Self {
+        self.with(|state| state.then_invalid = invalid)
+    }
+
     pub(crate) fn fail(&self, failure: Option<SourceError>) -> &Self {
         self.with(|state| state.failure = failure)
+    }
+
+    /// Answers `Pending` with `next` instead of `Ready`, until cleared.
+    pub(crate) fn pending(&self, next: Option<Continuation>) -> &Self {
+        self.with(|state| state.pending = next)
+    }
+
+    /// Withdraws `account`'s publication for `cause`, until cleared.
+    pub(crate) fn withdraw(&self, account: AccountUuid, cause: Option<WithdrawnCause>) -> &Self {
+        self.with(|state| match cause {
+            Some(cause) => {
+                state.withdrawn.insert(account, cause);
+            }
+            None => {
+                state.withdrawn.remove(&account);
+            }
+        })
+    }
+
+    /// Replaces the continuation of every `Ready` answer, until cleared.
+    pub(crate) fn next(&self, next: Option<Continuation>) -> &Self {
+        self.with(|state| state.next = next)
+    }
+
+    /// Makes the source trusted: under `PrivateRequired` the coordinator
+    /// qualifies each of its revisions as it applies them.
+    pub(crate) fn trust(&self) -> &Self {
+        self.with(|state| state.trusted = true)
     }
 
     /// Runs `hook` at the start of a later call, one hook per call in order.
@@ -135,19 +196,27 @@ impl FixtureSource {
         self.with(|state| state.hooks.push_back(Box::new(hook)))
     }
 
-    /// Qualifies each new revision in the wallet at `path` before answering
-    /// with it, through the library's test-only hook.
-    pub(crate) fn qualified_in(&self, path: &str, network: WalletNetwork) -> &Self {
-        self.with(|state| state.qualify_in = Some((path.to_owned(), network)))
+    /// Runs `hook` at every acknowledgment, before answering it.
+    pub(crate) fn on_acknowledge(&self, hook: impl Fn() + Send + Sync + 'static) -> &Self {
+        self.with(|state| state.on_acknowledge = Some(Arc::new(hook)))
     }
 
     pub(crate) fn calls(&self) -> usize {
-        self.state.lock().unwrap().calls
+        self.state.lock().unwrap().calls.len()
     }
 
-    /// The bounds of the latest call.
-    pub(crate) fn bounds(&self) -> Option<SourceBounds> {
-        self.state.lock().unwrap().bounds
+    /// The account of each call, in order.
+    pub(crate) fn order(&self) -> Vec<AccountUuid> {
+        self.state.lock().unwrap().calls.clone()
+    }
+
+    pub(crate) fn calls_for(&self, account: AccountUuid) -> usize {
+        self.order().into_iter().filter(|a| *a == account).count()
+    }
+
+    /// Acknowledgments of `Ready` batches the source accepted.
+    pub(crate) fn acknowledged(&self) -> usize {
+        self.state.lock().unwrap().acknowledged
     }
 
     /// The mined receives and spends a complete recovery through `height`
@@ -174,37 +243,75 @@ impl FixtureSource {
 }
 
 impl RecoverySource for FixtureSource {
+    fn trusted(&self) -> bool {
+        self.state.lock().unwrap().trusted
+    }
+
     fn recover(
         &self,
         request: SourceRequest<'_>,
-    ) -> impl Future<Output = Result<SourceResult, SourceError>> + Send {
+    ) -> impl Future<Output = Result<SourceBatch, SourceError>> + Send {
         let hook = {
             let mut state = self.state.lock().unwrap();
-            state.calls += 1;
-            state.bounds = Some(request.bounds);
+            state.calls.push(request.account);
             state.hooks.pop_front()
         };
         if let Some(hook) = hook {
             hook();
         }
-        std::future::ready(self.state.lock().unwrap().answer(request))
+        std::future::ready(self.state.lock().unwrap().answer(&request))
+    }
+
+    fn acknowledge(
+        &self,
+        account: AccountUuid,
+    ) -> impl Future<Output = Result<(), SourceError>> + Send {
+        let hook = self.state.lock().unwrap().on_acknowledge.clone();
+        if let Some(hook) = hook {
+            hook();
+        }
+        let mut state = self.state.lock().unwrap();
+        std::future::ready(if state.unacknowledged.remove(&account) {
+            state.acknowledged += 1;
+            Ok(())
+        } else {
+            Err(SourceError::Failed)
+        })
     }
 }
 
 impl State {
-    fn answer(&mut self, request: SourceRequest<'_>) -> Result<SourceResult, SourceError> {
+    fn answer(&mut self, request: &SourceRequest<'_>) -> Result<SourceBatch, SourceError> {
         if let Some(failure) = &self.failure {
             return Err(failure.clone());
         }
+        if let Some(cause) = self.withdrawn.get(&request.account) {
+            return Ok(SourceBatch::Withdrawn(*cause));
+        }
+        if let Some(next) = self.pending {
+            return Ok(SourceBatch::Pending { next });
+        }
+        let watch = request.watch;
+        let context = watch
+            .context()
+            .expect("the coordinator asks only with a local target");
+        let target = context.target;
         let anchor = match self.published {
-            Some(height) if height < request.target.height => ChainPoint {
+            Some(height) if height < target.height => ChainPoint {
                 height,
                 hash: (self.hash)(height.into()),
             },
-            _ => request.target,
+            _ => target,
+        };
+        let behind_by = u32::from(target.height) - u32::from(anchor.height);
+        let mut next = if behind_by > 0 {
+            super::pir::continuation(Outcome::Behind)
+        } else {
+            Continuation::Complete
         };
         let revision = self.revision_at(anchor);
-        let mut result = SourceResult {
+        let mut commit = TransparentLedgerCommit {
+            context,
             revision: revision.clone(),
             anchor,
             receives: Vec::new(),
@@ -214,19 +321,20 @@ impl State {
             opened_pages: Vec::new(),
             completed_pages: Vec::new(),
         };
-        let own_page = request
+        let own_page = watch
             .pending_pages
             .iter()
             .any(|page| page.revision == revision && page.request.page == PAGE);
         if own_page {
-            result.completed_pages.push(PAGE.to_vec());
+            commit.completed_pages.push(PAGE.to_vec());
             self.page_answered = true;
         } else if self.split_pages && !self.page_answered {
-            // Retrieval started but not finished: no facts for these addresses yet.
-            result.opened_pages.push(PageRequest {
+            // Retrieval started but not finished: no facts for these
+            // addresses yet, and the next pass resumes the page.
+            commit.opened_pages.push(PageRequest {
                 page: PAGE.to_vec(),
-                addresses: request.addresses.iter().map(|a| a.address).collect(),
-                from: request
+                addresses: watch.addresses.iter().map(|a| a.address).collect(),
+                from: watch
                     .addresses
                     .iter()
                     .map(|a| a.required_from)
@@ -235,23 +343,28 @@ impl State {
                     .min(anchor.height),
                 through: anchor.height,
             });
-            return Ok(result);
+            self.unacknowledged.insert(request.account);
+            return Ok(SourceBatch::Ready {
+                commits: vec![commit],
+                next: self.next.unwrap_or(Continuation::More),
+                behind_by,
+            });
         }
 
-        let watched: BTreeSet<_> = request.addresses.iter().map(|a| a.address).collect();
-        result.receives = self
+        let watched: BTreeSet<_> = watch.addresses.iter().map(|a| a.address).collect();
+        commit.receives = self
             .receives
             .iter()
             .filter(|r| watched.contains(&r.address) && r.mined_height <= anchor.height)
             .cloned()
             .collect();
-        result.spends = self
+        commit.spends = self
             .spends
             .iter()
             .filter(|s| watched.contains(&s.prevout_address) && s.mined_height <= anchor.height)
             .cloned()
             .collect();
-        for watched in request.addresses {
+        for watched in &watch.addresses {
             if watched.required_from > anchor.height {
                 continue;
             }
@@ -261,12 +374,29 @@ impl State {
                 through: anchor.height,
             };
             if self.unsupported.contains(&watched.address) {
-                result.unsupported.push(range);
+                commit.unsupported.push(range);
             } else {
-                result.coverage.push(range);
+                commit.coverage.push(range);
             }
         }
-        Ok(result)
+        let mut commits = if self.split_commits {
+            split(commit)
+        } else {
+            vec![commit]
+        };
+        if self.then_invalid {
+            let malformed = invalid(&commits);
+            commits.push(malformed);
+        }
+        if let Some(fixed) = self.next {
+            next = fixed;
+        }
+        self.unacknowledged.insert(request.account);
+        Ok(SourceBatch::Ready {
+            commits,
+            next,
+            behind_by,
+        })
     }
 
     /// One provisional revision per publication; a new publication replaces
@@ -276,7 +406,7 @@ impl State {
             height: anchor.height,
             hash: anchor.hash,
         };
-        let revision = match &self.revision {
+        match &self.revision {
             Some(revision) if revision.publication == publication => revision.clone(),
             previous => {
                 let lineage = previous.as_ref().map_or(1, |r| r.lineage + 1);
@@ -290,17 +420,61 @@ impl State {
                 self.revision = Some(revision.clone());
                 revision
             }
-        };
-        // Replacements may advance lineage without changing the publication
-        // anchor. Every returned revision still needs trusted qualification.
-        if let Some((path, network)) = &self.qualify_in {
-            let mut db = open_wallet_db_with_timeout(path, *network, SYNC_DB_BUSY_TIMEOUT)
-                .expect("open fixture wallet");
-            with_wallet_db_write_lock("test.transparent_ledger.qualify", || {
-                db.qualify_transparent_revision(&revision)
-            })
-            .expect("qualify fixture revision");
         }
-        revision
+    }
+}
+
+/// `commit` as two commits of its revision: the first holds the facts of the
+/// first half of its addresses and its pages, the second the rest.
+fn split(
+    commit: TransparentLedgerCommit<AccountUuid>,
+) -> Vec<TransparentLedgerCommit<AccountUuid>> {
+    let addresses: Vec<_> = commit
+        .coverage
+        .iter()
+        .chain(&commit.unsupported)
+        .map(|range| range.address)
+        .collect();
+    let first: BTreeSet<_> = addresses[..addresses.len() / 2].iter().copied().collect();
+    let in_first = |address: &TransparentAddress| first.contains(address);
+    let mut rest = TransparentLedgerCommit {
+        opened_pages: Vec::new(),
+        completed_pages: Vec::new(),
+        ..commit.clone()
+    };
+    let mut head = commit;
+    head.receives.retain(|r| in_first(&r.address));
+    head.spends.retain(|s| in_first(&s.prevout_address));
+    head.coverage.retain(|r| in_first(&r.address));
+    head.unsupported.retain(|r| in_first(&r.address));
+    rest.receives.retain(|r| !in_first(&r.address));
+    rest.spends.retain(|s| !in_first(&s.prevout_address));
+    rest.coverage.retain(|r| !in_first(&r.address));
+    rest.unsupported.retain(|r| !in_first(&r.address));
+    vec![head, rest]
+}
+
+/// A commit of the same revision as `batch` that the library refuses as
+/// malformed: its one range ends before it starts.
+fn invalid(batch: &[TransparentLedgerCommit<AccountUuid>]) -> TransparentLedgerCommit<AccountUuid> {
+    let like = &batch[0];
+    let address = batch
+        .iter()
+        .flat_map(|commit| commit.coverage.iter().chain(&commit.unsupported))
+        .map(|range| range.address)
+        .next()
+        .expect("a fixture batch covers an address");
+    TransparentLedgerCommit {
+        receives: Vec::new(),
+        spends: Vec::new(),
+        coverage: vec![AddressRange {
+            address,
+            from: like.anchor.height,
+            through: like.anchor.height - 1,
+        }],
+        unsupported: Vec::new(),
+        opened_pages: Vec::new(),
+        completed_pages: Vec::new(),
+        ..like.clone()
     }
 }

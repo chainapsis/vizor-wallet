@@ -1172,7 +1172,7 @@ pub(crate) fn get_shield_transparent_status(
     let mut db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
 
-    if !sync_engine::ledger_discovery::is_ready(db_path, account_id)? {
+    if !sync_engine::ledger_discovery::is_ready(db_path, network, account_id)? {
         return Ok(ShieldTransparentStatus {
             can_shield: false,
             fee_zatoshi: 0,
@@ -1213,7 +1213,7 @@ pub(crate) fn get_ledger_shielding_progress(
 ) -> Result<LedgerShieldingProgress, String> {
     let mut db = open_wallet_db_for_read(db_path, network)?;
     let id = parse_account_uuid(account_uuid)?;
-    if !sync_engine::ledger_discovery::is_ready(db_path, id)? {
+    if !sync_engine::ledger_discovery::is_ready(db_path, network, id)? {
         return Err("Ledger transparent recovery is incomplete".into());
     }
     ledger_shielding_progress(&mut db, network, id)
@@ -1305,7 +1305,7 @@ fn create_shield_transparent_pczt_with_expiry(
     with_wallet_db_write_lock("send.create_shield_transparent_pczt", || {
         let mut db = open_wallet_db(db_path, network)?;
         let account_id = parse_account_uuid(account_uuid)?;
-        if !sync_engine::ledger_discovery::is_ready(db_path, account_id)? {
+        if !sync_engine::ledger_discovery::is_ready(db_path, network, account_id)? {
             return Err("Ledger transparent recovery is incomplete".into());
         }
         let (proposal, _) =

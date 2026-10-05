@@ -4,62 +4,11 @@
 
 use std::time::Duration;
 
-use zcash_client_backend::data_api::transparent_ledger::{
-    AccountLifecycle, RecoveryBlocker, TransparentAuthority,
-};
+use zcash_client_backend::data_api::transparent_ledger::TransparentAuthority;
 
 use super::*;
-use crate::wallet::sync::{
-    get_shield_transparent_status, get_wallet_balance, TransparentBalanceAuthority,
-};
-use crate::wallet::sync_engine::enhancement::test_mode;
-use crate::wallet::sync_engine::lwd::transparent_lookup::{
-    apply_transparent_policy_fenced, TransparentLookupGate,
-};
-
-const VALUE: u64 = 2_000_000;
-
-fn required() -> EnhancementPolicy {
-    policy(TransparentLedgerMode::PrivateRequired)
-}
-
-/// Moves a wallet to `PrivateRequired` the only way this build applies a
-/// transparent policy, and configures every handle opened on it for that
-/// mode until the guard drops.
-async fn activate(wallet: &mut Wallet) -> test_mode::ModeOverride {
-    let mut db = open_wallet_db_with_timeout(&wallet.path, NETWORK, SYNC_DB_BUSY_TIMEOUT).unwrap();
-    apply_transparent_policy_fenced(
-        &mut db,
-        TransparentLedgerMode::PrivateRequired,
-        Duration::from_secs(5),
-    )
-    .await
-    .unwrap();
-    let guard = test_mode::set(&wallet.path, TransparentLedgerMode::PrivateRequired);
-    wallet.db = open_wallet_db_with_timeout(&wallet.path, NETWORK, SYNC_DB_BUSY_TIMEOUT).unwrap();
-    guard
-}
-
-async fn run_required(wallet: &mut Wallet, source: &FixtureSource) -> RunOutcome {
-    run(
-        &mut wallet.db,
-        &wallet.path,
-        NETWORK,
-        required(),
-        source,
-        &|| false,
-    )
-    .await
-    .unwrap()
-}
-
-fn lifecycle(wallet: &Wallet, account: AccountUuid) -> AccountLifecycle {
-    wallet.db.transparent_watch_set(account).unwrap().lifecycle
-}
-
-fn balance(wallet: &Wallet, uuid: &str) -> crate::wallet::sync::WalletBalance {
-    get_wallet_balance(&wallet.path, NETWORK, uuid).unwrap()
-}
+use crate::wallet::sync::get_shield_transparent_status;
+use crate::wallet::sync_engine::lwd::transparent_lookup::TransparentLookupGate;
 
 /// Checkpoints every note commitment tree at `height`, as scanning would, so
 /// that proposals can find an anchor.
@@ -80,16 +29,6 @@ fn checkpoint_trees(wallet: &mut Wallet, height: u32) {
         .db
         .with_ironwood_tree_mut::<_, _, ShardTreeError<Error>>(|tree| tree.checkpoint(height))
         .unwrap();
-}
-
-/// A qualified fixture holding one mined receive at the account's first
-/// external address.
-fn funded_source(wallet: &Wallet) -> FixtureSource {
-    let source = FixtureSource::new(main_hash);
-    source
-        .receive(receive(1, external(wallet, 0), VALUE, 150))
-        .qualified_in(&wallet.path, NETWORK);
-    source
 }
 
 #[tokio::test]
