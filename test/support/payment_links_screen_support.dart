@@ -544,6 +544,18 @@ class FakePaymentLinkOperations implements PaymentLinkOperations {
     );
   }
 
+  final removedReceivedAddresses = <String>[];
+
+  /// Refuses removal, as the service does once the stored Card has moved on.
+  bool refuseRemoval = false;
+
+  @override
+  Future<void> removeReceivedCard(String address) async {
+    if (refuseRemoval) throw StateError('Card is no longer removable');
+    removedReceivedAddresses.add(address);
+    receivedRecords.removeWhere((record) => record.address == address);
+  }
+
   @override
   Future<PaymentLinkFundingQuote> quoteMaxFunding({
     required String sourceAccountUuid,
@@ -718,6 +730,22 @@ class FakePaymentLinkOperations implements PaymentLinkOperations {
     }
     return List.unmodifiable(receivedRecords);
   }
+
+  @override
+  Future<PaymentLinkClaimInspection> inspectClaim(
+    VizorPaymentLink link, {
+    bool allowLongSync = false,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<PaymentLinkClaimSession> bindClaimDestination(
+    PaymentLinkClaimInspection inspection, {
+    required String destinationAccountUuid,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<void> discardClaimInspection(PaymentLinkClaimInspection inspection) =>
+      throw UnimplementedError();
 
   @override
   Future<PaymentLinkClaimSession> prepareClaim(

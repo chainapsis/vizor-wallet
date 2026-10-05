@@ -2110,6 +2110,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       );
     }
     await updateTransport();
+    // Welcome can change Tor before a wallet exists. The transport is ready,
+    // but there is no account to sync or poll yet.
+    if (_getActiveAccountUuid() == null) return;
     startSync();
     _startPolling();
   }

@@ -97,7 +97,9 @@ class LedgerOnboardingShell extends ConsumerWidget {
 enum _LedgerConnectPhase { idle, awaitingApproval }
 
 class LedgerConnectScreen extends ConsumerStatefulWidget {
-  const LedgerConnectScreen({super.key});
+  const LedgerConnectScreen({this.backTarget, super.key});
+
+  final OnboardingBackTarget? backTarget;
 
   @override
   ConsumerState<LedgerConnectScreen> createState() =>
@@ -237,10 +239,12 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
     final readiness = ref.watch(ledgerAppReadinessStateProvider);
     return LedgerOnboardingShell(
       activeStep: LedgerOnboardingStep.connect,
-      backTarget: const OnboardingBackTarget.route(
-        label: 'Add account',
-        routePath: '/add-account',
-      ),
+      backTarget:
+          widget.backTarget ??
+          const OnboardingBackTarget.route(
+            label: 'Add account',
+            routePath: '/add-account',
+          ),
       child: Center(
         child: SingleChildScrollView(
           child: SizedBox(

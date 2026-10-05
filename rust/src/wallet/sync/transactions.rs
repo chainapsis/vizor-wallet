@@ -31,6 +31,7 @@ use zcash_protocol::{
     memo::{Memo, MemoBytes},
 };
 
+use crate::wallet::block_times::{self, BlockTimePoint};
 use crate::wallet::db::with_wallet_db_write_lock;
 use crate::wallet::keys::parse_account_uuid;
 use crate::wallet::network::WalletNetwork;
@@ -440,6 +441,7 @@ impl TxOutput {
 #[derive(Default, Clone)]
 struct ActivityAmounts {
     amount: u64,
+    output_count: usize,
     has_transparent: bool,
     has_shielded: bool,
     has_ironwood: bool,
@@ -448,6 +450,7 @@ struct ActivityAmounts {
 impl ActivityAmounts {
     fn add_output(&mut self, output: &TxOutput) {
         self.amount = self.amount.saturating_add(output.value);
+        self.output_count += 1;
         match output.output_pool {
             TRANSPARENT_POOL => self.has_transparent = true,
             SAPLING_POOL | ORCHARD_POOL => self.has_shielded = true,
@@ -590,10 +593,6 @@ fn assemble_history(
         visible.extend(classify_history_tx(base, &summary, extra_sent_fee));
     }
 
-    visible.retain(|tx| {
-        tx.info.display_amount > 0 || tx.info.tx_kind == "unknown" || tx.info.tx_kind == "shielded"
-    });
-
     visible.sort_by(|a, b| {
         b.sort_pending_rank
             .cmp(&a.sort_pending_rank)
@@ -703,6 +702,60 @@ pub(crate) fn get_export_birthday_anchor(
     get_account_birthday_height(db_path, account_uuid)?
         .map(|block_height| ExportBirthdayAnchor { block_height })
         .ok_or_else(|| "Account birthday not found".to_string())
+}
+
+/// Header time of block `height`, from local data only.
+///
+/// Returns the exact time when the wallet has scanned that block. Otherwise,
+/// where [`block_times::table_covers`] the network (real mainnet), estimates
+/// it from the compiled-in block-time table, anchored past the table by the
+/// wallet's highest scanned block. Returns `None` elsewhere, including Ironwood
+/// masquerade builds, when the block is not stored locally.
+///
+/// Callers pass the height they already display, so the returned time always
+/// belongs to that height even if the wallet's data changes in between.
+pub(crate) fn get_local_block_time(
+    db_path: &str,
+    network: WalletNetwork,
+    height: u64,
+) -> Result<Option<u64>, String> {
+    let conn = open_readonly_conn(db_path)?;
+    let exact = conn
+        .query_row(
+            "SELECT time FROM blocks WHERE height = ?1",
+            [height],
+            |row| row.get::<_, Option<u32>>(0),
+        )
+        .optional()
+        .map_err(|e| format!("Block time query error: {e}"))?
+        .flatten();
+    if let Some(time) = exact {
+        return Ok(Some(u64::from(time)));
+    }
+    if !block_times::table_covers(network) {
+        return Ok(None);
+    }
+
+    let highest_scanned = conn
+        .query_row(
+            "SELECT height, time FROM blocks
+             WHERE time IS NOT NULL
+             ORDER BY height DESC
+             LIMIT 1",
+            [],
+            |row| {
+                Ok(BlockTimePoint {
+                    height: row.get(0)?,
+                    time: row.get(1)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(|e| format!("Highest scanned block query error: {e}"))?;
+    Ok(Some(u64::from(block_times::mainnet_time_for_height(
+        height,
+        highest_scanned,
+    ))))
 }
 
 fn get_account_birthday_height(db_path: &str, account_uuid: &str) -> Result<Option<u64>, String> {
@@ -1604,8 +1657,10 @@ fn classify_history_tx(
         )];
     }
 
+    // A visible output makes a row even at zero value: zero-value outputs are
+    // how memo-only payments travel.
     let mut rows = Vec::new();
-    if summary.sent.amount > 0 {
+    if summary.sent.output_count > 0 {
         rows.push(build_classified_tx_with_fee(
             base,
             "sent",
@@ -1616,7 +1671,13 @@ fn classify_history_tx(
             base.fee.saturating_add(extra_sent_fee),
         ));
     }
-    if summary.received.amount > 0 {
+    // Before enhancement links our zero-value change to its send, the change
+    // looks like an external receipt, so a zero-value receipt needs a tx that
+    // spent nothing or also produced a sent row.
+    let zero_value_receipt_allowed = base.total_spent == 0 || summary.sent.output_count > 0;
+    if summary.received.amount > 0
+        || (summary.received.output_count > 0 && zero_value_receipt_allowed)
+    {
         rows.push(build_classified_tx(
             base,
             receiving_tx_kind(base),
@@ -3199,6 +3260,119 @@ mod tests {
         assert_eq!(got.block_height, 333_100);
     }
 
+    fn add_blocks_table(db: &NamedTempFile, rows: &[(u32, u32)]) {
+        let conn = rusqlite::Connection::open(db.path()).unwrap();
+        conn.execute(
+            "CREATE TABLE blocks (height INTEGER PRIMARY KEY, time INTEGER)",
+            [],
+        )
+        .unwrap();
+        for (height, time) in rows {
+            conn.execute(
+                "INSERT INTO blocks (height, time) VALUES (?1, ?2)",
+                rusqlite::params![height, time],
+            )
+            .unwrap();
+        }
+    }
+
+    #[test]
+    fn local_block_time_uses_the_scanned_block_exactly() {
+        let db = fresh_history_db();
+        add_blocks_table(&db, &[(2_000_000, 1_677_600_000)]);
+
+        for network in [WalletNetwork::Main, WalletNetwork::Test] {
+            let got =
+                get_local_block_time(db.path().to_str().unwrap(), network, 2_000_000).unwrap();
+            assert_eq!(got, Some(1_677_600_000));
+        }
+    }
+
+    #[test]
+    fn local_block_time_answers_for_the_requested_height_only() {
+        // The export anchor would now resolve to the mined transaction at
+        // 2,500,000, but the caller asks about the height it already shows.
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        set_account_birthday(&db, account, 2_000_000);
+        insert_history_tx(
+            &db,
+            account,
+            &fake_txid(0x93),
+            Some(2_500_000),
+            0,
+            None,
+            1,
+            0,
+            1,
+            false,
+            None,
+        );
+        add_blocks_table(
+            &db,
+            &[(2_000_000, 1_677_600_000), (2_500_000, 1_715_296_781)],
+        );
+
+        let got = get_local_block_time(db.path().to_str().unwrap(), WalletNetwork::Main, 2_000_000)
+            .unwrap();
+        assert_eq!(got, Some(1_677_600_000));
+    }
+
+    #[cfg(not(ironwood_masquerade))]
+    #[test]
+    fn local_block_time_estimates_unscanned_mainnet_blocks() {
+        let db = fresh_history_db();
+        add_blocks_table(&db, &[]);
+        let path = db.path().to_str().unwrap();
+
+        let got = get_local_block_time(path, WalletNetwork::Main, 2_000_000)
+            .unwrap()
+            .unwrap();
+        // Mainnet block 2,000,000 was mined at 1,677,602,242.
+        assert!(got.abs_diff(1_677_602_242) <= 6 * 60 * 60, "{got}");
+
+        assert_eq!(
+            get_local_block_time(path, WalletNetwork::Test, 2_000_000).unwrap(),
+            None
+        );
+    }
+
+    #[cfg(ironwood_masquerade)]
+    #[test]
+    fn local_block_time_never_estimates_masquerade_chain_blocks() {
+        let db = fresh_history_db();
+        add_blocks_table(&db, &[(1_000, 1_790_000_000)]);
+        let path = db.path().to_str().unwrap();
+
+        // Unscanned heights fall back to the chain's own endpoint.
+        assert_eq!(
+            get_local_block_time(path, WalletNetwork::Main, 400).unwrap(),
+            None
+        );
+        // Scanned heights still answer exactly.
+        assert_eq!(
+            get_local_block_time(path, WalletNetwork::Main, 1_000).unwrap(),
+            Some(1_790_000_000)
+        );
+    }
+
+    #[cfg(not(ironwood_masquerade))]
+    #[test]
+    fn local_block_time_anchors_past_the_table_on_the_highest_scanned_block() {
+        let db = fresh_history_db();
+        add_blocks_table(&db, &[(900_000_100, 4_000_000_000)]);
+
+        let got = get_local_block_time(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Main,
+            900_000_000,
+        )
+        .unwrap()
+        .unwrap();
+        assert!(got < 4_000_000_000);
+        assert!(got > 3_999_000_000, "{got}");
+    }
+
     /// Read `TxBase` from a synthetic `v_transactions` table.
     ///
     /// This is needed because the synthetic `v_transactions` table
@@ -4645,6 +4819,319 @@ mod tests {
             assert_eq!(got.outputs[0].pool, label);
             assert_eq!(got.outputs[0].uses_orchard_receiver, uses_orchard);
         }
+    }
+
+    fn zero_value_history(db: &NamedTempFile, account: uuid::Uuid) -> Vec<TransactionInfo> {
+        history_from_fixture(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            None,
+            &account.to_string(),
+        )
+        .unwrap()
+    }
+
+    fn zero_value_detail(
+        db: &NamedTempFile,
+        account: uuid::Uuid,
+        txid: &[u8],
+        tx_kind: &str,
+    ) -> TransactionDetail {
+        get_transaction_detail(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            &account.to_string(),
+            &hex::encode(txid),
+            tx_kind,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn history_shows_zero_value_receipt_and_its_memo() {
+        for (mined_height, tx_kind) in [(Some(1_000_000), "received"), (None, "receiving")] {
+            let db = fresh_history_db();
+            let account = test_account_uuid();
+            let txid = fake_txid(0xE1);
+
+            insert_history_tx(
+                &db,
+                account,
+                &txid,
+                mined_height,
+                1,
+                Some(1_000_100),
+                0,
+                0,
+                0,
+                false,
+                None,
+            );
+            insert_output_with_address_and_memo(
+                &db,
+                &txid,
+                ORCHARD_POOL,
+                None,
+                Some(account),
+                0,
+                false,
+                Some("u-own"),
+                Some(0),
+                Some(b"memo-only payment"),
+            );
+
+            let got = zero_value_history(&db, account);
+            assert_eq!(got.len(), 1);
+            assert_eq!(got[0].tx_kind, tx_kind);
+            assert_eq!(got[0].display_amount, 0);
+            assert_eq!(got[0].display_pool, "shielded");
+
+            let detail = zero_value_detail(&db, account, &txid, tx_kind);
+            assert_eq!(detail.memo.as_deref(), Some("memo-only payment"));
+            assert_eq!(detail.outputs.len(), 1);
+            assert_eq!(detail.outputs[0].amount_zatoshi, 0);
+        }
+    }
+
+    #[test]
+    fn history_shows_zero_value_receipt_without_text_memo() {
+        for (output_pool, memo, pool_label) in [
+            (ORCHARD_POOL, None, "shielded"),
+            (ORCHARD_POOL, Some(&[0xFF_u8][..]), "shielded"),
+            (TRANSPARENT_POOL, None, "transparent"),
+        ] {
+            let db = fresh_history_db();
+            let account = test_account_uuid();
+            let txid = fake_txid(0xE2);
+
+            insert_history_tx(
+                &db,
+                account,
+                &txid,
+                Some(1_000_000),
+                1,
+                Some(1_000_100),
+                0,
+                0,
+                0,
+                false,
+                None,
+            );
+            insert_output_with_address_and_memo(
+                &db,
+                &txid,
+                output_pool,
+                None,
+                Some(account),
+                0,
+                false,
+                Some("own-address"),
+                Some(0),
+                memo,
+            );
+
+            let got = zero_value_history(&db, account);
+            assert_eq!(got.len(), 1);
+            assert_eq!(got[0].tx_kind, "received");
+            assert_eq!(got[0].display_amount, 0);
+            assert_eq!(got[0].display_pool, pool_label);
+            assert_eq!(
+                zero_value_detail(&db, account, &txid, "received").memo,
+                None
+            );
+        }
+    }
+
+    #[test]
+    fn history_shows_zero_value_send_and_its_memo() {
+        for with_change in [true, false] {
+            let db = fresh_history_db();
+            let account = test_account_uuid();
+            let txid = fake_txid(0xE3);
+            let (total_spent, change) = if with_change {
+                (100_000, 90_000)
+            } else {
+                (10_000, 0)
+            };
+
+            insert_history_tx(
+                &db,
+                account,
+                &txid,
+                Some(1_000_000),
+                1,
+                Some(1_000_100),
+                -10_000,
+                total_spent,
+                change,
+                false,
+                Some("2026-09-29T09:00:00Z"),
+            );
+            set_history_fee(&db, &txid, 10_000);
+            insert_output_with_address_and_memo(
+                &db,
+                &txid,
+                ORCHARD_POOL,
+                Some(account),
+                None,
+                0,
+                false,
+                Some("u-recipient"),
+                None,
+                Some(b"memo-only payment"),
+            );
+            if with_change {
+                insert_output_with_address(
+                    &db,
+                    &txid,
+                    ORCHARD_POOL,
+                    Some(account),
+                    Some(account),
+                    change,
+                    true,
+                    Some("u-change"),
+                    Some(1),
+                );
+            }
+
+            let got = zero_value_history(&db, account);
+            assert_eq!(got.len(), 1, "with_change={with_change}");
+            assert_eq!(got[0].tx_kind, "sent");
+            assert_eq!(got[0].display_amount, 0);
+            assert_eq!(got[0].display_pool, "shielded");
+            assert_eq!(got[0].fee, 10_000);
+
+            let detail = zero_value_detail(&db, account, &txid, "sent");
+            assert_eq!(detail.primary_address.as_deref(), Some("u-recipient"));
+            assert_eq!(detail.memo.as_deref(), Some("memo-only payment"));
+            assert_eq!(detail.outputs.len(), 1);
+            assert_eq!(detail.outputs[0].amount_zatoshi, 0);
+        }
+    }
+
+    #[test]
+    fn history_splits_zero_value_memo_to_self() {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let txid = fake_txid(0xE4);
+
+        insert_history_tx(
+            &db,
+            account,
+            &txid,
+            Some(1_000_000),
+            1,
+            Some(1_000_100),
+            -10_000,
+            100_000,
+            90_000,
+            false,
+            Some("2026-09-29T09:00:00Z"),
+        );
+        set_history_fee(&db, &txid, 10_000);
+        insert_output_with_address_and_memo(
+            &db,
+            &txid,
+            ORCHARD_POOL,
+            Some(account),
+            Some(account),
+            0,
+            true,
+            Some("u-self"),
+            Some(0),
+            Some(b"note to self"),
+        );
+        insert_output_with_address(
+            &db,
+            &txid,
+            ORCHARD_POOL,
+            Some(account),
+            Some(account),
+            90_000,
+            true,
+            Some("u-change"),
+            Some(1),
+        );
+
+        let got = zero_value_history(&db, account);
+        assert_eq!(got.len(), 2);
+        assert_eq!(got[0].tx_kind, "sent");
+        assert_eq!(got[0].display_amount, 0);
+        assert_eq!(got[1].tx_kind, "received");
+        assert_eq!(got[1].display_amount, 0);
+    }
+
+    #[test]
+    fn history_keeps_unenhanced_zero_value_change_unknown() {
+        // Before enhancement our zero-value change has no sent-note link, so
+        // it arrives with no sender like an external receipt.
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let txid = fake_txid(0xE5);
+
+        insert_history_tx(
+            &db,
+            account,
+            &txid,
+            Some(1_000_000),
+            1,
+            Some(1_000_100),
+            -100_000,
+            100_000,
+            0,
+            false,
+            None,
+        );
+        insert_output_with_address(
+            &db,
+            &txid,
+            ORCHARD_POOL,
+            None,
+            Some(account),
+            0,
+            true,
+            Some("u-change"),
+            Some(1),
+        );
+
+        let got = zero_value_history(&db, account);
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].tx_kind, "unknown");
+    }
+
+    #[test]
+    fn history_omits_unmatched_funding_step() {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let txid = fake_txid(0xE6);
+
+        insert_history_tx(
+            &db,
+            account,
+            &txid,
+            None,
+            1,
+            Some(1_000_100),
+            -10_000,
+            1_010_000,
+            1_000_000,
+            false,
+            Some("2026-09-29T09:00:00Z"),
+        );
+        set_history_fee(&db, &txid, 10_000);
+        insert_output_with_address(
+            &db,
+            &txid,
+            TRANSPARENT_POOL,
+            Some(account),
+            Some(account),
+            1_000_000,
+            false,
+            Some("t-ephemeral"),
+            Some(2),
+        );
+
+        assert!(zero_value_history(&db, account).is_empty());
     }
 
     #[test]

@@ -165,6 +165,12 @@ String giftCardActivityTitle(
   };
 }
 
+/// Shared by the activity row and the transaction receipts. Memo-only
+/// payments carry zero value, so a zero send or receipt shows `0 ZEC`; other
+/// kinds keep `--` because their zero means the amount is unknown.
+bool transactionShowsZeroAmount(String kind) =>
+    kind == 'sent' || kind == 'received' || kind == 'receiving';
+
 String _stableTransactionRole(String kind) {
   return switch (kind) {
     'receiving' => 'received',
@@ -187,7 +193,11 @@ String _transactionAmountText({
       maskLength: _activityAmountPrivacyMaskLength,
     );
   }
-  if (amount == BigInt.zero) return '--';
+  if (amount == BigInt.zero) {
+    return transactionShowsZeroAmount(kind)
+        ? ZecAmount.fromZatoshi(amount).activity.toString()
+        : '--';
+  }
   if (isFailed || isUnsignedAmount) {
     return ZecAmount.fromZatoshi(amount).activity.toString();
   }

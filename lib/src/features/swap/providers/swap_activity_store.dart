@@ -294,6 +294,7 @@ Map<String, Object?>? _providerRefundInfoToJson(SwapProviderRefundInfo? info) {
   return {
     'minimumDepositText': info.minimumDepositText,
     'refundFeeText': info.refundFeeText,
+    'recordedRefundFeeText': info.recordedRefundFeeText,
     'depositedAmountText': info.depositedAmountText,
     'refundedAmountText': info.refundedAmountText,
     'refundReason': info.refundReason,
@@ -305,6 +306,7 @@ SwapProviderRefundInfo? _providerRefundInfoFromJson(Object? value) {
   final info = SwapProviderRefundInfo(
     minimumDepositText: _optionalString(value['minimumDepositText']),
     refundFeeText: _optionalString(value['refundFeeText']),
+    recordedRefundFeeText: _optionalString(value['recordedRefundFeeText']),
     depositedAmountText: _optionalString(value['depositedAmountText']),
     refundedAmountText: _optionalString(value['refundedAmountText']),
     refundReason: _optionalString(value['refundReason']),

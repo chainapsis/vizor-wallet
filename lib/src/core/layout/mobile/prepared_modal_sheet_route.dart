@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
+import 'controlled_modal_sheet_route.dart';
+
 /// Lays out the sheet at its final position without painting, then runs the
 /// normal Material entrance after its initial corners are ready.
-class PreparedModalSheetRoute<T> extends ModalBottomSheetRoute<T> {
+class PreparedModalSheetRoute<T> extends ControlledModalSheetRoute<T> {
   PreparedModalSheetRoute({
     required super.builder,
     required super.capturedThemes,
@@ -11,6 +13,7 @@ class PreparedModalSheetRoute<T> extends ModalBottomSheetRoute<T> {
     required super.barrierOnTapHint,
     required super.isDismissible,
     required super.enableDrag,
+    super.canDismiss,
   }) : super(
          isScrollControlled: true,
          useSafeArea: true,
@@ -51,9 +54,10 @@ class PreparedModalSheetRoute<T> extends ModalBottomSheetRoute<T> {
 
   @override
   bool didPop(T? result) {
+    if (!super.didPop(result)) return false;
     _waiting = false;
     _popped = true;
-    return super.didPop(result);
+    return true;
   }
 
   @override

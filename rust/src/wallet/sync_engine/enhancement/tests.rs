@@ -120,6 +120,7 @@ mod tests {
 
     fn scanned_transaction_missing_fee_test_db(
         mined_height: BlockHeight,
+        wallet_funded: bool,
     ) -> (tempfile::NamedTempFile, WalletDatabase, Transaction) {
         let (tx, raw) = transparent_fee_test_tx_and_bytes();
         let txid = tx.txid();
@@ -159,6 +160,33 @@ mod tests {
             rusqlite::params![txid.as_ref()],
         )
         .unwrap();
+        if wallet_funded {
+            // The transaction spends a note the wallet received earlier.
+            conn.execute(
+                "INSERT INTO transactions (txid, mined_height, min_observed_height)
+                 VALUES (?1, ?2, ?2)",
+                rusqlite::params![[3u8; 32].as_slice(), u32::from(mined_height) - 1],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO sapling_received_notes
+                    (transaction_id, output_index, account_id, diversifier, value,
+                     rcm, is_change, commitment_tree_position, recipient_key_scope)
+                 SELECT id_tx, 0, 1, X'00', 2, X'00', 0, 0, 0
+                 FROM transactions WHERE txid = ?1",
+                rusqlite::params![[3u8; 32].as_slice()],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO sapling_received_note_spends (sapling_received_note_id, transaction_id)
+                 SELECT n.id, t.id_tx
+                 FROM sapling_received_notes n, transactions t
+                 WHERE n.transaction_id = (SELECT id_tx FROM transactions WHERE txid = ?1)
+                 AND t.txid = ?2",
+                rusqlite::params![[3u8; 32].as_slice(), txid.as_ref()],
+            )
+            .unwrap();
+        }
         conn.execute(
             "INSERT INTO tx_retrieval_queue (txid, query_type)
              VALUES (?1, 0)",
@@ -184,7 +212,7 @@ mod tests {
     fn observation_does_not_hydrate_payload_or_fees() {
         use crate::wallet::transaction_data::TransactionObservation;
         let (file, mut db, tx) =
-            scanned_transaction_missing_fee_test_db(BlockHeight::from_u32(100));
+            scanned_transaction_missing_fee_test_db(BlockHeight::from_u32(100), false);
         let conn = rusqlite::Connection::open(file.path()).unwrap();
         conn.execute(
             "UPDATE transactions SET raw = NULL, mined_height = NULL",
@@ -206,7 +234,7 @@ mod tests {
     fn status_observation_preserves_pending_payload_work() {
         use crate::wallet::transaction_data::TransactionObservation;
         let (file, mut db, tx) =
-            scanned_transaction_missing_fee_test_db(BlockHeight::from_u32(100));
+            scanned_transaction_missing_fee_test_db(BlockHeight::from_u32(100), false);
         let conn = rusqlite::Connection::open(file.path()).unwrap();
         conn.execute(
             "UPDATE transactions SET raw = NULL, mined_height = NULL",
@@ -238,7 +266,7 @@ mod tests {
         use crate::wallet::transaction_data::TransactionObservation;
         for status_first in [false, true] {
             let (file, mut db, tx) =
-                scanned_transaction_missing_fee_test_db(BlockHeight::from_u32(100));
+                scanned_transaction_missing_fee_test_db(BlockHeight::from_u32(100), false);
             let conn = rusqlite::Connection::open(file.path()).unwrap();
             conn.execute(
                 "UPDATE transactions SET raw = NULL, mined_height = NULL",
@@ -298,7 +326,7 @@ mod tests {
         use std::sync::atomic::{AtomicUsize, Ordering};
 
         let (file, mut db, tx) =
-            scanned_transaction_missing_fee_test_db(BlockHeight::from_u32(100));
+            scanned_transaction_missing_fee_test_db(BlockHeight::from_u32(100), false);
         let conn = rusqlite::Connection::open(file.path()).unwrap();
         conn.execute(
             "UPDATE transactions SET raw = NULL, mined_height = NULL",
@@ -417,27 +445,31 @@ mod tests {
         .unwrap()
     }
 
-    fn transparent_fee_test_db(
-        tx: &Transaction,
-        account_balance_delta: i64,
-    ) -> tempfile::NamedTempFile {
-        transparent_fee_test_db_with_optional_wallet_row(tx, Some(account_balance_delta))
+    fn transparent_fee_test_db(tx: &Transaction, total_spent: i64) -> tempfile::NamedTempFile {
+        transparent_fee_test_db_with_optional_wallet_row(tx, Some(total_spent))
     }
 
     fn transparent_fee_test_db_with_optional_wallet_row(
         tx: &Transaction,
-        account_balance_delta: Option<i64>,
+        total_spent: Option<i64>,
     ) -> tempfile::NamedTempFile {
         let file = tempfile::NamedTempFile::new().unwrap();
         let conn = rusqlite::Connection::open(file.path()).unwrap();
         conn.execute_batch(
             "CREATE TABLE transactions (
+                 id_tx INTEGER PRIMARY KEY,
                  txid BLOB NOT NULL UNIQUE,
+                 raw BLOB,
                  fee INTEGER
              );
              CREATE TABLE v_transactions (
                  txid BLOB NOT NULL,
-                 account_balance_delta INTEGER NOT NULL
+                 total_spent INTEGER NOT NULL
+             );
+             CREATE TABLE transparent_received_outputs (
+                 transaction_id INTEGER NOT NULL,
+                 output_index INTEGER NOT NULL,
+                 value_zat INTEGER NOT NULL
              );",
         )
         .unwrap();
@@ -446,11 +478,10 @@ mod tests {
             rusqlite::params![tx.txid().as_ref()],
         )
         .unwrap();
-        if let Some(account_balance_delta) = account_balance_delta {
+        if let Some(total_spent) = total_spent {
             conn.execute(
-                "INSERT INTO v_transactions (txid, account_balance_delta)
-                 VALUES (?1, ?2)",
-                rusqlite::params![tx.txid().as_ref(), account_balance_delta],
+                "INSERT INTO v_transactions (txid, total_spent) VALUES (?1, ?2)",
+                rusqlite::params![tx.txid().as_ref(), total_spent],
             )
             .unwrap();
         }
@@ -487,7 +518,7 @@ mod tests {
     #[test]
     fn scanned_transaction_missing_fee_is_selected_when_status_request_is_dormant() {
         let mined_height = BlockHeight::from_u32(500);
-        let (file, db, tx) = scanned_transaction_missing_fee_test_db(mined_height);
+        let (file, db, tx) = scanned_transaction_missing_fee_test_db(mined_height, true);
         let txid = tx.txid();
 
         assert!(!db
@@ -505,7 +536,7 @@ mod tests {
     #[test]
     fn coinbase_transaction_is_not_selected_for_fee_backfill() {
         let mined_height = BlockHeight::from_u32(500);
-        let (file, _db, tx) = scanned_transaction_missing_fee_test_db(mined_height);
+        let (file, _db, tx) = scanned_transaction_missing_fee_test_db(mined_height, true);
         let conn = rusqlite::Connection::open(file.path()).unwrap();
         conn.execute(
             "UPDATE transactions SET tx_index = 0 WHERE txid = ?1",
@@ -578,17 +609,17 @@ mod tests {
     }
 
     #[test]
-    fn transparent_fee_backfill_allows_positive_wallet_delta() {
+    fn received_transaction_fee_is_not_wanted() {
         let tx = transparent_fee_test_tx();
-        let db = transparent_fee_test_db(&tx, 1_000_000);
+        let db = transparent_fee_test_db(&tx, 0);
 
-        assert!(should_fill_missing_fee(db.path().to_str().unwrap(), &tx).unwrap());
+        assert!(!should_fill_missing_fee(db.path().to_str().unwrap(), &tx).unwrap());
     }
 
     #[test]
-    fn transparent_fee_backfill_allows_negative_wallet_delta() {
+    fn wallet_funded_transaction_fee_is_wanted() {
         let tx = transparent_fee_test_tx();
-        let db = transparent_fee_test_db(&tx, -40_000);
+        let db = transparent_fee_test_db(&tx, 12_449_548);
 
         assert!(should_fill_missing_fee(db.path().to_str().unwrap(), &tx).unwrap());
     }
@@ -769,7 +800,7 @@ mod tests {
     async fn incomplete_private_status_trips_feedback_gate_without_public_fallback() {
         use zakura_transaction_status::{StatusError, StatusObservation};
         let (file, mut db, tx) =
-            scanned_transaction_missing_fee_test_db(BlockHeight::from_u32(100));
+            scanned_transaction_missing_fee_test_db(BlockHeight::from_u32(100), false);
         rusqlite::Connection::open(file.path())
             .unwrap()
             .execute(
@@ -818,7 +849,7 @@ mod tests {
     #[test]
     fn recovery_status_counts_private_status_obligations() {
         let (file, mut db, tx) =
-            scanned_transaction_missing_fee_test_db(BlockHeight::from_u32(100));
+            scanned_transaction_missing_fee_test_db(BlockHeight::from_u32(100), false);
         let conn = rusqlite::Connection::open(file.path()).unwrap();
         conn.execute("UPDATE transactions SET mined_height = NULL", [])
             .unwrap();
@@ -848,7 +879,7 @@ mod tests {
         use zcash_client_backend::data_api::enhance_pir::EnhancePirRead;
         use zcash_client_backend::data_api::status::TransactionStatusWrite;
         let (_file, mut db, _tx) =
-            scanned_transaction_missing_fee_test_db(BlockHeight::from_u32(100));
+            scanned_transaction_missing_fee_test_db(BlockHeight::from_u32(100), false);
         let txid = TxId::from_bytes([0x5a; 32]);
         db.record_transaction_created(txid, BlockHeight::from_u32(90))
             .unwrap();
@@ -886,7 +917,7 @@ mod tests {
 
     fn private_status_work_db() -> (tempfile::NamedTempFile, WalletDatabase, TxId) {
         let (file, mut db, tx) =
-            scanned_transaction_missing_fee_test_db(BlockHeight::from_u32(100));
+            scanned_transaction_missing_fee_test_db(BlockHeight::from_u32(100), false);
         rusqlite::Connection::open(file.path())
             .unwrap()
             .execute(
@@ -1069,5 +1100,96 @@ mod tests {
         );
         assert_eq!(public_requests.lock().unwrap().len(), 1);
         assert_eq!(private_requests.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn received_transaction_is_not_selected_for_fee_backfill() {
+        let mined_height = BlockHeight::from_u32(500);
+        let (file, _db, _tx) = scanned_transaction_missing_fee_test_db(mined_height, false);
+
+        assert!(
+            stored_transaction_ids_missing_fee(file.path().to_str().unwrap())
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    fn stored_fee(db: &tempfile::NamedTempFile, tx: &Transaction) -> Option<i64> {
+        rusqlite::Connection::open(db.path())
+            .unwrap()
+            .query_row(
+                "SELECT fee FROM transactions WHERE txid = ?1",
+                rusqlite::params![tx.txid().as_ref()],
+                |row| row.get(0),
+            )
+            .unwrap()
+    }
+
+    fn transparent_parent_raw(value: u64) -> Vec<u8> {
+        // A v1 transaction whose only output is the requested prevout value.
+        let mut parent = 1u32.to_le_bytes().to_vec();
+        parent.push(1);
+        parent.extend_from_slice(&[9; 32]);
+        parent.extend_from_slice(&0u32.to_le_bytes());
+        parent.push(0);
+        parent.extend_from_slice(&u32::MAX.to_le_bytes());
+        parent.push(1);
+        parent.extend_from_slice(&value.to_le_bytes());
+        parent.push(0);
+        parent.extend_from_slice(&0u32.to_le_bytes());
+        parent
+    }
+
+    #[test]
+    fn transparent_fee_comes_from_wallet_output_already_known() {
+        let tx = transparent_fee_test_tx();
+        let db = transparent_fee_test_db(&tx, 12_449_548);
+        let prevout = tx.transparent_bundle().unwrap().vin[0].prevout().clone();
+        let conn = rusqlite::Connection::open(db.path()).unwrap();
+        conn.execute(
+            "INSERT INTO transactions (txid, raw, fee) VALUES (?1, NULL, NULL)",
+            rusqlite::params![prevout.hash().as_slice()],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO transparent_received_outputs (transaction_id, output_index, value_zat)
+             VALUES (?1, ?2, ?3)",
+            rusqlite::params![conn.last_insert_rowid(), prevout.n(), 12_449_548u64],
+        )
+        .unwrap();
+        drop(conn);
+
+        fill_fee_from_local(db.path().to_str().unwrap(), &tx).unwrap();
+        assert_eq!(stored_fee(&db, &tx), Some(40_000));
+    }
+
+    #[test]
+    fn transparent_fee_comes_from_parent_raw_already_stored() {
+        let tx = transparent_fee_test_tx();
+        let db = transparent_fee_test_db(&tx, 12_449_548);
+        let prevout = tx.transparent_bundle().unwrap().vin[0].prevout().clone();
+        assert_eq!(prevout.n(), 0);
+        rusqlite::Connection::open(db.path())
+            .unwrap()
+            .execute(
+                "INSERT INTO transactions (txid, raw, fee) VALUES (?1, ?2, NULL)",
+                rusqlite::params![
+                    prevout.hash().as_slice(),
+                    transparent_parent_raw(12_449_548)
+                ],
+            )
+            .unwrap();
+
+        fill_fee_from_local(db.path().to_str().unwrap(), &tx).unwrap();
+        assert_eq!(stored_fee(&db, &tx), Some(40_000));
+    }
+
+    #[test]
+    fn missing_parent_leaves_transparent_fee_unknown() {
+        let tx = transparent_fee_test_tx();
+        let db = transparent_fee_test_db(&tx, 12_449_548);
+
+        fill_fee_from_local(db.path().to_str().unwrap(), &tx).unwrap();
+        assert_eq!(stored_fee(&db, &tx), None);
     }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/layout/app_form_factor.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/activity/activity_amount_text.dart';
@@ -49,7 +50,7 @@ void main() {
         giftCardKind: GiftCardActivityKind.redeemed,
         giftCardClaimInFlight: true,
       );
-      expect(pending.title, 'Redeeming a card ...');
+      expect(pending.title, _pendingTitle('Redeeming a card'));
       expect(pending.statusText, 'In progress');
       expect(pending.leadingIconName, AppIcons.loader);
       final completed = await mapRow(
@@ -79,7 +80,7 @@ void main() {
       giftCardKind: GiftCardActivityKind.redeemed,
       giftCardClaimInFlight: true,
     );
-    expect(row.title, 'Redeeming a card ...');
+    expect(row.title, _pendingTitle('Redeeming a card'));
     expect(row.statusText, 'In progress');
     expect(row.amountSubtitle, isNot('Refunded'));
     final ordinary = await mapRow(tester, tx);
@@ -99,7 +100,7 @@ void main() {
       tester,
       _transaction(txKind: 'sent', minedHeight: BigInt.zero),
     );
-    expect(row.title, 'Sending ...');
+    expect(row.title, _pendingTitle('Sending'));
     expect(row.leadingIconName, AppIcons.loader);
     expect(row.statusText, 'In progress');
   });
@@ -130,7 +131,7 @@ void main() {
       tester,
       _transaction(txKind: 'receiving', minedHeight: BigInt.zero),
     );
-    expect(row.title, 'Receiving ...');
+    expect(row.title, _pendingTitle('Receiving'));
     expect(row.leadingIconName, AppIcons.loader);
   });
 
@@ -191,7 +192,7 @@ void main() {
         isFailed: false,
         batchCount: 20,
       ),
-      'Creating 20 cards ...',
+      _pendingTitle('Creating 20 cards'),
     );
     expect(
       giftCardActivityTitle(
@@ -230,7 +231,7 @@ void main() {
       ),
     );
 
-    expect(row.title, 'Migrating to Ironwood ...');
+    expect(row.title, _pendingTitle('Migrating to Ironwood'));
     expect(row.leadingIconName, AppIcons.loader);
     expect(row.statusText, 'In progress');
   });
@@ -248,6 +249,38 @@ void main() {
     );
     expect(row.title, 'Send failed');
     expect(row.leadingIconName, isNot(AppIcons.loader));
+  });
+
+  testWidgets('zero-value sends and receipts show 0 ZEC', (tester) async {
+    for (final kind in ['sent', 'received', 'receiving']) {
+      final row = await mapRow(
+        tester,
+        _transaction(txKind: kind, displayAmount: BigInt.zero),
+      );
+      expect(
+        row.amountText,
+        activityAmountTextForFormFactor('0 ZEC'),
+        reason: kind,
+      );
+    }
+
+    final failedSend = await mapRow(
+      tester,
+      _transaction(
+        txKind: 'sent',
+        minedHeight: BigInt.zero,
+        expiredUnmined: true,
+        displayAmount: BigInt.zero,
+      ),
+    );
+    expect(failedSend.title, 'Send failed');
+    expect(failedSend.amountSubtitle, isNull);
+
+    final unknown = await mapRow(
+      tester,
+      _transaction(txKind: 'unknown', displayAmount: BigInt.zero),
+    );
+    expect(unknown.amountText, activityAmountTextForFormFactor('--'));
   });
 
   testWidgets('transaction rows route the amount through the form-factor gate', (
@@ -285,3 +318,7 @@ rust_sync.TransactionInfo _transaction({
     createdTime: BigInt.from(1750000000),
   );
 }
+
+/// Mobile drops the space before a pending title's ellipsis.
+String _pendingTitle(String verb) =>
+    kAppFormFactor == AppFormFactor.mobile ? '$verb...' : '$verb ...';

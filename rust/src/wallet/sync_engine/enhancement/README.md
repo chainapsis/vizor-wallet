@@ -278,10 +278,10 @@ A range is acknowledged only after every streamed transaction has been stored
 and the stream has completed. Decode, storage, transport, or completion-write
 failure leaves the range retryable.
 
-Fee enrichment is best effort after transaction ingestion. Transactions with
-transparent inputs require their parent outputs; fully shielded transactions
-can compute their fee without parent requests. Fee persistence updates only a
-still-missing fee.
+Fee enrichment is best effort after transaction ingestion. Only wallet-funded transactions are selected. Transparent input values come
+from wallet outputs or locally stored parent transactions; missing values leave
+the fee unknown without network lookups. Fully shielded transactions can compute
+their fee locally. Fee persistence updates only a still-missing fee.
 
 ## Transport and cancellation
 

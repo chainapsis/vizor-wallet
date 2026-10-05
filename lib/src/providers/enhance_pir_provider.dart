@@ -77,7 +77,7 @@ class EnhancePirNotifier extends Notifier<bool> {
       });
       transition.update(null);
     } catch (_) {
-      transition.update('Could not change setting. Try again.');
+      transition.update('Setting unchanged. Try again.');
     }
   }
 
@@ -134,7 +134,7 @@ class NearSwapPrivacyNotifier extends Notifier<bool> {
       });
       transition.update(null);
     } catch (_) {
-      transition.update('Could not change setting. Try again.');
+      transition.update('Setting unchanged. Try again.');
     }
   }
 

@@ -1,11 +1,12 @@
 import 'package:flutter/services.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme_host.dart';
 
 void main() {
   test('light theme puts both bars on light window with dark icons', () {
-    final style = androidSystemBarsStyleFor(Brightness.light);
+    final style = appSystemBarsStyleFor(Brightness.light);
     expect(style.statusBarColor, AppColors.light.background.window);
     expect(style.statusBarIconBrightness, Brightness.dark);
     expect(style.systemStatusBarContrastEnforced, isFalse);
@@ -19,7 +20,7 @@ void main() {
   });
 
   test('dark theme puts both bars on dark window with light icons', () {
-    final style = androidSystemBarsStyleFor(Brightness.dark);
+    final style = appSystemBarsStyleFor(Brightness.dark);
     expect(style.statusBarColor, AppColors.dark.background.window);
     expect(style.statusBarIconBrightness, Brightness.light);
     expect(style.systemStatusBarContrastEnforced, isFalse);
@@ -32,15 +33,42 @@ void main() {
     expect(style.systemNavigationBarContrastEnforced, isFalse);
   });
 
-  test('statusBarBrightness stays unset — that field is iOS-side', () {
+  test('iOS status bar follows the resolved theme', () {
     expect(
-      androidSystemBarsStyleFor(Brightness.light).statusBarBrightness,
-      isNull,
+      appSystemBarsStyleFor(Brightness.light).statusBarBrightness,
+      Brightness.light,
     );
     expect(
-      androidSystemBarsStyleFor(Brightness.dark).statusBarBrightness,
-      isNull,
+      appSystemBarsStyleFor(Brightness.dark).statusBarBrightness,
+      Brightness.dark,
     );
+  });
+
+  testWidgets('leaving a dark Welcome override restores light system bars', (
+    tester,
+  ) async {
+    Widget app({required bool welcome}) => MaterialApp(
+      builder: (_, _) => AppThemeHost(
+        themeMode: ThemeMode.light,
+        child: welcome
+            ? const AnnotatedRegion<SystemUiOverlayStyle>(
+                value: SystemUiOverlayStyle(
+                  statusBarBrightness: Brightness.dark,
+                  statusBarIconBrightness: Brightness.light,
+                ),
+                child: SizedBox.expand(),
+              )
+            : const SizedBox.expand(),
+      ),
+    );
+    await tester.pumpWidget(app(welcome: true));
+    await tester.pump();
+    expect(SystemChrome.latestStyle?.statusBarIconBrightness, Brightness.light);
+    expect(SystemChrome.latestStyle?.statusBarBrightness, Brightness.dark);
+    await tester.pumpWidget(app(welcome: false));
+    await tester.pump();
+    expect(SystemChrome.latestStyle?.statusBarIconBrightness, Brightness.dark);
+    expect(SystemChrome.latestStyle?.statusBarBrightness, Brightness.light);
   });
 
   test('launch theme hexes in styles.xml match the window tokens', () {

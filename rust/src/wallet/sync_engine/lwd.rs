@@ -315,7 +315,7 @@ pub(crate) async fn get_latest_block(
 /// optional hash in a `GetLatestBlock` response. A server that also omits
 /// [`CompactBlock::hash`] cannot safely prove tip continuity, so this helper
 /// returns an incompatibility error.
-pub(super) async fn get_compact_block_hash(
+pub(crate) async fn get_compact_block_hash(
     client: &mut CompactTxStreamerClient<Channel>,
     height: u64,
 ) -> Result<BlockHash, SyncError> {

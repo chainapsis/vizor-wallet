@@ -80,8 +80,23 @@ using ManagerPtr = std::unique_ptr<vpkc_update_manager_t, ManagerDeleter>;
 using UpdateInfoPtr = std::unique_ptr<vpkc_update_info_t, UpdateInfoDeleter>;
 
 std::mutex g_update_mutex;
-ManagerPtr g_manager;
-UpdateInfoPtr g_update_info;
+struct ChannelContext {
+  std::string channel;
+  std::string arch;
+  windows_update::CheckResult result = windows_update::CheckResult::kError;
+  std::string error;
+};
+
+// Keep callback user_data alive until after the manager and update are freed.
+struct UpdateSession {
+  ChannelContext context;
+  ManagerPtr manager;
+  UpdateInfoPtr update;
+};
+std::unique_ptr<UpdateSession> g_session;
+std::string g_installed_arch;
+std::string g_network;
+windows_update::Channels g_channels = {false, false};
 
 UpdateStatus g_status = UpdateStatus::kIdle;
 bool g_supported = true;
@@ -91,8 +106,6 @@ bool g_pending_restart = false;
 int32_t g_download_progress = 0;
 std::string g_current_version = FLUTTER_VERSION;
 std::string g_app_id;
-std::string g_update_channel;
-std::string g_update_arch;
 std::string g_available_version;
 std::string g_message;
 std::mutex g_source_error_mutex;
@@ -413,7 +426,7 @@ bool CrackUrl(const std::string& url,
   return !host->empty() && !path->empty();
 }
 
-bool QueryStatusOk(HINTERNET request) {
+bool QueryStatusOk(HINTERNET request, DWORD* response_status) {
   DWORD status_code = 0;
   DWORD status_size = sizeof(status_code);
   if (!WinHttpQueryHeaders(request,
@@ -423,6 +436,7 @@ bool QueryStatusOk(HINTERNET request) {
                            &status_size, WINHTTP_NO_HEADER_INDEX)) {
     return false;
   }
+  if (response_status) *response_status = status_code;
   return status_code >= 200 && status_code < 300;
 }
 
@@ -438,7 +452,9 @@ uint64_t QueryContentLength(HINTERNET request) {
 }
 
 template <typename ChunkWriter>
-bool HttpGetStream(const std::string& url, ChunkWriter writer) {
+bool HttpGetStream(const std::string& url, ChunkWriter writer,
+                   DWORD* response_status = nullptr, int timeout_ms = 0) {
+  if (response_status) *response_status = 0;
   std::wstring scheme;
   std::wstring host;
   std::wstring path;
@@ -457,13 +473,13 @@ bool HttpGetStream(const std::string& url, ChunkWriter writer) {
     return false;
   }
 
-  if (TorProxyReady()) {
-    constexpr int kTorUpdateTimeoutMs = 2 * 60 * 60 * 1000;
-    if (!WinHttpSetTimeouts(session, kTorUpdateTimeoutMs,
-                            kTorUpdateTimeoutMs, kTorUpdateTimeoutMs,
-                            kTorUpdateTimeoutMs)) {
+  if (timeout_ms > 0 || TorProxyReady()) {
+    const int effective_timeout = timeout_ms > 0 ? timeout_ms : 2 * 60 * 60 * 1000;
+    if (!WinHttpSetTimeouts(session, effective_timeout,
+                            effective_timeout, effective_timeout,
+                            effective_timeout)) {
       WinHttpCloseHandle(session);
-      SetSourceError("Could not configure Tor update HTTP timeouts.");
+      SetSourceError("Could not configure update HTTP timeouts.");
       return false;
     }
   }
@@ -494,7 +510,7 @@ bool HttpGetStream(const std::string& url, ChunkWriter writer) {
   bool ok = WinHttpSendRequest(
                 request, headers, static_cast<DWORD>(-1), WINHTTP_NO_REQUEST_DATA,
                 0, 0, 0) &&
-            WinHttpReceiveResponse(request, nullptr) && QueryStatusOk(request);
+            WinHttpReceiveResponse(request, nullptr) && QueryStatusOk(request, response_status);
 
   const uint64_t total = ok ? QueryContentLength(request) : 0;
   uint64_t received = 0;
@@ -545,13 +561,14 @@ bool HttpGetStream(const std::string& url, ChunkWriter writer) {
   return ok;
 }
 
-bool HttpGetString(const std::string& url, std::string* body) {
+bool HttpGetString(const std::string& url, std::string* body, DWORD* response_status) {
   body->clear();
+  // Feed probes must not inherit the multi-hour package timeout on Tor.
   return HttpGetStream(url, [body](const uint8_t* data, DWORD size,
                                    uint64_t received, uint64_t total) {
     body->append(reinterpret_cast<const char*>(data), size);
     return true;
-  });
+  }, response_status, TorProxyReady() ? 120000 : 30000);
 }
 
 bool HttpDownloadFile(const std::string& url,
@@ -595,10 +612,10 @@ bool HttpDownloadFile(const std::string& url,
 
 std::string AssetString(const char* value) { return value ? value : ""; }
 
-bool ValidateUpdateAsset(const vpkc_asset_t* asset) {
+bool ValidateUpdateAsset(const ChannelContext& context, const vpkc_asset_t* asset) {
   if (!asset || !windows_update::ValidAsset(AssetString(asset->PackageId),
       AssetString(asset->Version), AssetString(asset->Type), AssetString(asset->FileName),
-      AssetString(asset->SHA256), g_app_id, g_update_channel)) {
+      AssetString(asset->SHA256), g_app_id, context.channel)) {
     SetSourceError("The update package does not match this app, network, or architecture.");
     return false;
   }
@@ -613,15 +630,15 @@ std::wstring PowerShellLiteral(const std::wstring& value) {
   return result + L"'";
 }
 
-bool ValidatePackageFile(const std::filesystem::path& path, const vpkc_asset_t* asset) {
-  if (!ValidateUpdateAsset(asset)) return false;
+bool ValidatePackageFile(const ChannelContext& context, const std::filesystem::path& path, const vpkc_asset_t* asset) {
+  if (!ValidateUpdateAsset(context, asset)) return false;
   SetSourceError("Update package verification failed. Please download the update again.");
   std::wstring script = kUpdatePackageScript;
   script += L"\ntry { Assert-VizorUpdatePackage -Path " + PowerShellLiteral(path.wstring()) +
       L" -Id " + PowerShellLiteral(WideFromUtf8(asset->PackageId)) +
       L" -Version " + PowerShellLiteral(WideFromUtf8(asset->Version)) +
-      L" -Channel " + PowerShellLiteral(WideFromUtf8(g_update_channel)) +
-      L" -Arch " + PowerShellLiteral(WideFromUtf8(g_update_arch)) +
+      L" -Channel " + PowerShellLiteral(WideFromUtf8(context.channel)) +
+      L" -Arch " + PowerShellLiteral(WideFromUtf8(context.arch)) +
       L" -Sha256 " + PowerShellLiteral(WideFromUtf8(asset->SHA256)) +
       L"; exit 0 } catch { exit 1 }";
   const auto bytes = static_cast<DWORD>(script.size() * sizeof(wchar_t));
@@ -655,8 +672,8 @@ bool ValidatePackageFile(const std::filesystem::path& path, const vpkc_asset_t* 
   return code == 0;
 }
 
-bool ValidateCachedPackage(const vpkc_asset_t* asset) {
-  if (!ValidateUpdateAsset(asset)) return false;
+bool ValidateCachedPackage(const ChannelContext& context, const vpkc_asset_t* asset) {
+  if (!ValidateUpdateAsset(context, asset)) return false;
   // These are the two cache locations used by the pinned Velopack default
   // locator (per-user install/portable root, and unwritable-root MSI fallback).
   wchar_t module[32768] = {};
@@ -676,7 +693,7 @@ bool ValidateCachedPackage(const vpkc_asset_t* asset) {
     std::error_code error;
     if (std::filesystem::exists(path, error)) {
       found = true;
-      if (!ValidatePackageFile(path, asset)) {
+      if (!ValidatePackageFile(context, path, asset)) {
         // Only this signed feed's exact safe cache filename is removed. Never
         // delete the packages directory or any application/user data.
         std::filesystem::remove(path, error);
@@ -690,12 +707,14 @@ bool ValidateCachedPackage(const vpkc_asset_t* asset) {
 
 char* SignedReleaseFeedCallback(void* user_data,
                                 const char* releases_name) {
+  auto& context = *static_cast<ChannelContext*>(user_data);
+  context.result = windows_update::CheckResult::kError;
   if (releases_name == nullptr || std::strlen(releases_name) == 0) {
     SetSourceError("Velopack did not request a release feed name.");
     return nullptr;
   }
 
-  if (std::string(releases_name) != "releases." + g_update_channel + ".json") {
+  if (std::string(releases_name) != "releases." + context.channel + ".json") {
     SetSourceError("Unexpected update channel.");
     return nullptr;
   }
@@ -704,8 +723,15 @@ char* SignedReleaseFeedCallback(void* user_data,
 
   std::string feed;
   std::string signature;
-  if (!HttpGetString(feed_url, &feed) ||
-      !HttpGetString(signature_url, &signature)) {
+  DWORD status = 0;
+  if (!HttpGetString(feed_url, &feed, &status)) {
+    context.result = windows_update::FeedFailure(status, false);
+    SetSourceError("Could not retrieve update feed (HTTP " + std::to_string(status) + ").");
+    return nullptr;
+  }
+  if (!HttpGetString(signature_url, &signature, &status)) {
+    context.result = windows_update::FeedFailure(status, true);
+    SetSourceError("Could not retrieve update feed signature (HTTP " + std::to_string(status) + ").");
     return nullptr;
   }
 
@@ -732,17 +758,18 @@ bool SignedDownloadAssetCallback(void* user_data,
                                  const vpkc_asset_t* asset,
                                  const char* local_path,
                                  size_t progress_callback_id) {
+  const auto& context = *static_cast<ChannelContext*>(user_data);
   if (asset == nullptr || asset->FileName == nullptr ||
       std::strlen(asset->FileName) == 0 || local_path == nullptr) {
     SetSourceError("Velopack did not provide an update package filename.");
     return false;
   }
 
-  if (!ValidateUpdateAsset(asset)) return false;
+  if (!ValidateUpdateAsset(context, asset)) return false;
   // Validate before Velopack extracts the new updater from the download.
   return HttpDownloadFile(ReleaseAssetUrl(asset->FileName), local_path,
                           progress_callback_id) &&
-      ValidatePackageFile(std::filesystem::path(WideFromUtf8(local_path)), asset);
+      ValidatePackageFile(context, std::filesystem::path(WideFromUtf8(local_path)), asset);
 }
 
 using ManagerStringReader =
@@ -804,72 +831,92 @@ void SetUnavailableLocked(const std::string& message) {
   g_message = CoalesceMessage(message);
 }
 
-bool EnsureManagerLocked() {
-  if (g_manager) {
-    return true;
-  }
+std::unique_ptr<UpdateSession> CreateSession(const std::string& arch) {
+  auto session = std::make_unique<UpdateSession>();
+  session->context.arch = arch;
+  session->context.channel = windows_update::Channel(arch, g_network);
+  auto* source = vpkc_new_source_custom_callback(
+      SignedReleaseFeedCallback, FreeSignedReleaseFeedCallback,
+      SignedDownloadAssetCallback, &session->context);
+  if (!source) return nullptr;
+  vpkc_update_options_t options = {};
+  options.AllowVersionDowngrade = false;
+  options.ExplicitChannel = session->context.channel.data();
+  options.MaximumDeltasBeforeFallback = -1;
+  vpkc_update_manager_t* manager = nullptr;
+  const bool created = vpkc_new_update_manager_with_source(source, &options, nullptr, &manager);
+  vpkc_free_source(source);
+  session->manager.reset(manager);
+  if (!created || !manager) return nullptr;
+  return session;
+}
 
+bool EnsureManagerLocked() {
+  if (g_session) return true;
   if (DecodeBase64(VIZOR_UPDATE_FEED_PUBLIC_KEY_B64).size() != 64) {
     SetUnavailableLocked("Signed update feed public key is not configured.");
     return false;
   }
-
-  vpkc_update_source_t* source = vpkc_new_source_custom_callback(
-      SignedReleaseFeedCallback, FreeSignedReleaseFeedCallback,
-      SignedDownloadAssetCallback, nullptr);
-  if (source == nullptr) {
-    SetUnavailableLocked(LastVelopackError());
-    return false;
-  }
-
-  vpkc_update_options_t options = {};
-  options.AllowVersionDowngrade = false;
-  // Native machine, not the emulated process ABI. Unknown/failed detection
-  // leaves Velopack on the installed channel (validated below against this build).
   USHORT native_machine = 0, process_machine = 0;
   using IsWow64Process2Fn = BOOL(WINAPI*)(HANDLE, USHORT*, USHORT*);
   const auto detect = reinterpret_cast<IsWow64Process2Fn>(
       GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "IsWow64Process2"));
   if (!detect || !detect(GetCurrentProcess(), &process_machine, &native_machine)) native_machine = 0;
 #if defined(_M_ARM64)
-  const std::string installed_arch = "arm64";
+  g_installed_arch = "arm64";
 #else
-  const std::string installed_arch = "x64";
+  g_installed_arch = "x64";
 #endif
-  const std::string network = std::string(VIZOR_WINDOWS_STORAGE_PREFIX) == "Vizor" ? "mainnet" : "testnet";
-  g_update_channel = windows_update::Channel(native_machine, installed_arch, network);
-  g_update_arch = g_update_channel.find("win-arm64-") == 0 ? "arm64" : "x64";
-  options.ExplicitChannel = (native_machine == 0xaa64 || native_machine == 0x8664)
-      ? g_update_channel.data() : nullptr;
-  options.MaximumDeltasBeforeFallback = -1;
-
-  vpkc_update_manager_t* manager = nullptr;
-  const bool created =
-      vpkc_new_update_manager_with_source(source, &options, nullptr, &manager);
-  vpkc_free_source(source);
-
-  if (!created || manager == nullptr) {
+  g_network = std::string(VIZOR_WINDOWS_STORAGE_PREFIX) == "Vizor" ? "mainnet" : "testnet";
+  g_channels = windows_update::ChannelsForMachine(native_machine, g_installed_arch);
+  g_session = CreateSession(g_installed_arch);
+  if (!g_session) {
     SetUnavailableLocked(LastVelopackError());
     return false;
   }
-
-  g_manager.reset(manager);
-  g_supported = true;
-  g_status = UpdateStatus::kIdle;
-  g_message.clear();
-  g_current_version =
-      ReadManagerString(g_manager.get(), vpkc_get_current_version);
-  if (g_current_version.empty()) {
-    g_current_version = FLUTTER_VERSION;
-  }
-  g_app_id = ReadManagerString(g_manager.get(), vpkc_get_app_id);
-  const std::string expected_id = network == "mainnet" ? "com.keplr.vizor" : "com.keplr.vizor.testnet";
+  g_current_version = ReadManagerString(g_session->manager.get(), vpkc_get_current_version);
+  if (g_current_version.empty()) g_current_version = FLUTTER_VERSION;
+  g_app_id = ReadManagerString(g_session->manager.get(), vpkc_get_app_id);
+  const std::string expected_id = g_network == "mainnet" ? "com.keplr.vizor" : "com.keplr.vizor.testnet";
   if (g_app_id != expected_id) {
-    g_manager.reset();
+    g_session.reset();
     SetUnavailableLocked("Installed package identity does not match this app.");
     return false;
   }
+  g_supported = true;
+  g_status = UpdateStatus::kIdle;
+  g_message.clear();
   return true;
+}
+
+std::unique_ptr<UpdateSession> CheckChannel(const std::string& arch) {
+  auto session = CreateSession(arch);
+  if (!session) return nullptr;
+  auto& context = session->context;
+  SetSourceError("");
+  vpkc_update_info_t* update = nullptr;
+  const auto check = vpkc_check_for_updates(session->manager.get(), &update);
+  session->update.reset(update);
+  if (check == UPDATE_AVAILABLE) {
+    if (update && ValidateUpdateAsset(context, update->TargetFullRelease)) {
+      context.result = windows_update::CheckResult::kAvailable;
+    } else {
+      context.result = windows_update::CheckResult::kError;
+    }
+  } else if (check == NO_UPDATE_AVAILABLE || check == REMOTE_IS_EMPTY) {
+    context.result = windows_update::CheckResult::kNone;
+  }
+  if (context.result != windows_update::CheckResult::kAvailable &&
+      context.result != windows_update::CheckResult::kNone) {
+    std::string source_error;
+    {
+      std::lock_guard<std::mutex> lock(g_source_error_mutex);
+      source_error = g_source_error;
+    }
+    context.error = context.channel + ": " +
+        CoalesceMessage(source_error.empty() ? LastVelopackError() : source_error);
+  }
+  return session;
 }
 
 flutter::EncodableMap BuildStateMapLocked() {
@@ -909,61 +956,58 @@ void DownloadProgress(void* user_data, size_t progress) {
 }
 
 UpdateOperationStartResult StartCheckForUpdates() {
-  vpkc_update_manager_t* manager = nullptr;
   {
     std::lock_guard<std::mutex> lock(g_update_mutex);
-    if (!EnsureManagerLocked() || g_busy) {
-      return UpdateOperationStartResult::kHandled;
-    }
-    if (g_update_route_transition_reserved) {
-      return UpdateOperationStartResult::kRouteTransitionReserved;
-    }
-    if (g_status == UpdateStatus::kReady) {
-      return UpdateOperationStartResult::kHandled;
-    }
+    if (g_busy || !EnsureManagerLocked()) return UpdateOperationStartResult::kHandled;
+    if (g_update_route_transition_reserved) return UpdateOperationStartResult::kRouteTransitionReserved;
+    if (g_status == UpdateStatus::kReady) return UpdateOperationStartResult::kHandled;
+    // An unsuccessful recheck must never leave a previous candidate downloadable.
+    g_session->update.reset();
+    g_available_version.clear();
+    g_pending_restart = false;
     g_busy = true;
     g_status = UpdateStatus::kChecking;
     g_message.clear();
     g_download_progress = 0;
-    manager = g_manager.get();
   }
 
-  std::thread([manager]() {
-    vpkc_update_info_t* update = nullptr;
-    vpkc_update_check_t check = vpkc_check_for_updates(manager, &update);
-    if (check == UPDATE_AVAILABLE && (!update || !ValidateUpdateAsset(update->TargetFullRelease))) {
-      check = UPDATE_ERROR;
-    }
-    std::string error;
-    if (check == UPDATE_ERROR) {
-      error = LastVelopackError();
-    }
-
+  std::thread([]() {
+    using windows_update::CheckResult;
+    auto x64 = g_channels.x64 ? CheckChannel("x64") : nullptr;
+    const std::string x64_error = x64 ? x64->context.error :
+        (g_channels.x64 ? LastVelopackError() : "");
+    auto arm64 = g_channels.arm64 ? CheckChannel("arm64") : nullptr;
+    const std::string arm64_error = arm64 ? arm64->context.error :
+        (g_channels.arm64 ? LastVelopackError() : "");
+    const auto x64_result = x64 ? x64->context.result :
+        (g_channels.x64 ? CheckResult::kError : CheckResult::kSkipped);
+    const auto arm64_result = arm64 ? arm64->context.result :
+        (g_channels.arm64 ? CheckResult::kError : CheckResult::kSkipped);
+    const auto version = [](const std::unique_ptr<UpdateSession>& session) {
+      return session && session->update ? AssetVersion(session->update->TargetFullRelease) : "";
+    };
+    const auto choice = windows_update::ChooseUpdate(
+        x64_result, version(x64), arm64_result, version(arm64));
     std::lock_guard<std::mutex> lock(g_update_mutex);
     g_busy = false;
-    if (check == UPDATE_AVAILABLE && update != nullptr) {
-      g_update_info.reset(update);
-      g_pending_restart = false;
-      g_available_version = AssetVersion(g_update_info->TargetFullRelease);
+    if (choice == windows_update::Choice::kX64 || choice == windows_update::Choice::kArm64) {
+      if (x64_result == CheckResult::kTransient || arm64_result == CheckResult::kTransient) {
+        const std::string diagnostic = "Vizor update: using the verified alternative after " +
+            (x64_result == CheckResult::kTransient ? x64_error : arm64_error) + "\n";
+        OutputDebugStringA(diagnostic.c_str());
+      }
+      g_session = choice == windows_update::Choice::kArm64 ? std::move(arm64) : std::move(x64);
+      g_available_version = AssetVersion(g_session->update->TargetFullRelease);
       g_status = UpdateStatus::kAvailable;
-      g_message.clear();
-      return;
-    }
-
-    if (update != nullptr) {
-      vpkc_free_update_info(update);
-    }
-
-    if (check == UPDATE_ERROR) {
+    } else if (choice == windows_update::Choice::kError) {
       g_status = UpdateStatus::kFailed;
-      g_message = CoalesceMessage(LastSourceOrVelopackError(error));
-      return;
+      // Prefer integrity/configuration failures over a transient failure on the other channel.
+      g_message = CoalesceMessage(x64_result == CheckResult::kError ? x64_error :
+          arm64_result == CheckResult::kError ? arm64_error :
+          !x64_error.empty() ? x64_error : arm64_error);
+    } else {
+      g_status = UpdateStatus::kNoUpdate;
     }
-
-    g_update_info.reset();
-    g_available_version.clear();
-    g_status = UpdateStatus::kNoUpdate;
-    g_message.clear();
   }).detach();
   return UpdateOperationStartResult::kHandled;
 }
@@ -979,7 +1023,7 @@ UpdateOperationStartResult StartDownloadUpdate() {
     if (g_update_route_transition_reserved) {
       return UpdateOperationStartResult::kRouteTransitionReserved;
     }
-    if (!g_update_info) {
+    if (!g_session->update) {
       g_status = UpdateStatus::kFailed;
       g_message = "No update is ready to download.";
       return UpdateOperationStartResult::kHandled;
@@ -988,8 +1032,8 @@ UpdateOperationStartResult StartDownloadUpdate() {
     g_status = UpdateStatus::kDownloading;
     g_message.clear();
     g_download_progress = 0;
-    manager = g_manager.get();
-    update = g_update_info.get();
+    manager = g_session->manager.get();
+    update = g_session->update.get();
   }
 
   std::thread([manager, update]() {
@@ -1000,7 +1044,7 @@ UpdateOperationStartResult StartDownloadUpdate() {
       error = LastVelopackError();
     }
 
-    const bool verified = downloaded && ValidateCachedPackage(update->TargetFullRelease);
+    const bool verified = downloaded && ValidateCachedPackage(g_session->context, update->TargetFullRelease);
     std::lock_guard<std::mutex> lock(g_update_mutex);
     g_busy = false;
     if (!verified) {
@@ -1029,8 +1073,8 @@ UpdateOperationStartResult StartApplyUpdateAndRestart() {
     if (g_update_route_transition_reserved) {
       return UpdateOperationStartResult::kRouteTransitionReserved;
     }
-    if (g_pending_restart && g_update_info && g_update_info->TargetFullRelease != nullptr) {
-      asset = g_update_info->TargetFullRelease;
+    if (g_pending_restart && g_session->update && g_session->update->TargetFullRelease != nullptr) {
+      asset = g_session->update->TargetFullRelease;
     }
 
     if (asset == nullptr) {
@@ -1042,12 +1086,12 @@ UpdateOperationStartResult StartApplyUpdateAndRestart() {
     g_busy = true;
     g_status = UpdateStatus::kApplying;
     g_message.clear();
-    manager = g_manager.get();
+    manager = g_session->manager.get();
   }
 
   std::thread([manager, asset]() {
     // Revalidate cached bytes against the signed feed immediately before apply.
-    const bool started = ValidateCachedPackage(asset) &&
+    const bool started = ValidateCachedPackage(g_session->context, asset) &&
         vpkc_wait_exit_then_apply_updates(manager, asset, false, true, nullptr, 0);
     if (started) {
       ::ExitProcess(0);

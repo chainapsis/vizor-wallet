@@ -225,11 +225,46 @@ fn draft_replay_uses_persisted_targets_instead_of_legacy_schedule_order() {
 }
 
 #[test]
-fn migration_stop_preserves_zero_as_the_no_expiry_sentinel() {
-    assert!(!migration_stop_candidate_is_expired(0, u32::MAX));
-    assert!(!migration_stop_candidate_is_expired(200, 199));
-    assert!(migration_stop_candidate_is_expired(200, 200));
-    assert!(migration_stop_candidate_is_expired(200, 201));
+fn migration_stop_discards_only_what_local_scanning_proves_dead() {
+    use MigrationStopDisposition::{Block, Discard, Tracked};
+
+    assert_eq!(classify_migration_stop_candidate(true, 200, None), Tracked);
+    assert_eq!(classify_migration_stop_candidate(true, 0, None), Tracked);
+    assert_eq!(
+        classify_migration_stop_candidate(false, 200, Some(200)),
+        Discard
+    );
+    assert_eq!(
+        classify_migration_stop_candidate(false, 200, Some(201)),
+        Discard
+    );
+    assert_eq!(
+        classify_migration_stop_candidate(false, 200, Some(199)),
+        Block
+    );
+    assert_eq!(classify_migration_stop_candidate(false, 200, None), Block);
+    // Zero is the legacy no-expiry sentinel and never proves absence.
+    assert_eq!(
+        classify_migration_stop_candidate(false, 0, Some(u32::MAX)),
+        Block
+    );
+}
+
+#[test]
+fn stored_migration_transaction_holds_inputs_only_while_unexpired() {
+    use migration::stop_evidence_holds_inputs as holds;
+
+    // Scanning alone records no expiry, so it never holds the inputs.
+    assert!(!holds(true, false, 200, Some(100)));
+    assert!(!holds(true, false, 0, Some(100)));
+    // A stored, mined transaction holds them whatever the expiry.
+    assert!(holds(true, true, 200, Some(500)));
+    // Stored bytes hold them only while the wallet counts it unexpired.
+    assert!(holds(false, true, 200, Some(199)));
+    assert!(holds(false, true, 0, Some(500)));
+    assert!(!holds(false, true, 200, Some(200)));
+    assert!(!holds(false, true, 200, None));
+    assert!(!holds(false, false, 200, Some(100)));
 }
 
 #[test]
@@ -1430,23 +1465,449 @@ fn stop_skips_network_for_transactions_that_were_never_attempted() {
         .unwrap();
 }
 
-#[test]
-fn native_attempt_state_requires_network_reconciliation() {
-    let (_temp_dir, db_path, run_id, pending_txid) = create_outbox_receipt_test_run(69_120);
-    let runtime = tokio::runtime::Runtime::new().unwrap();
+/// An outbox run inside a real wallet schema, which stop reads for local
+/// evidence.
+fn stop_candidate_test_run() -> (tempfile::TempDir, String, String, String) {
+    let run = create_outbox_receipt_test_run(69_120);
+    crate::wallet::keys::ensure_db_initialized(&run.1, WalletNetwork::Test).unwrap();
+    run
+}
 
-    let error = runtime
-        .block_on(reconcile_scheduled_migration_txs_before_abandon(
-            &db_path,
-            "not-a-lightwalletd-url",
+/// Answers stop's chain reads from fixed values and records every block-hash
+/// request. It never answers the chain tip: none of these cases need it.
+#[derive(Default)]
+struct FakeStopChain {
+    current_hash: Option<zcash_primitives::block::BlockHash>,
+    hash_requests: Vec<u32>,
+}
+
+impl MigrationStopChain for FakeStopChain {
+    async fn tip_height(&mut self) -> Result<u32, String> {
+        panic!("stop must not read the chain tip without a legacy row")
+    }
+
+    async fn block_hash(
+        &mut self,
+        height: u32,
+    ) -> Result<zcash_primitives::block::BlockHash, String> {
+        self.hash_requests.push(height);
+        self.current_hash
+            .ok_or_else(|| "lightwalletd unavailable".to_string())
+    }
+}
+
+fn stop_with_native_attempts(
+    chain: &mut FakeStopChain,
+    db_path: &str,
+    run_id: &str,
+    attempted: &[String],
+) -> Result<migration::StopEvidence, String> {
+    tokio::runtime::Runtime::new()
+        .unwrap()
+        .block_on(reconcile_migration_stop_candidates(
+            chain,
+            db_path,
             WalletNetwork::Test,
             MIGRATION_TEST_ACCOUNT,
-            &run_id,
-            &[pending_txid],
+            run_id,
+            attempted,
         ))
-        .unwrap_err();
+}
 
-    assert!(error.starts_with("Open migration stop reconciliation endpoint:"));
+fn remaining_stop_candidate_txids(db_path: &str, run_id: &str) -> Vec<String> {
+    migration::scheduled_migration_stop_candidates(
+        db_path,
+        MIGRATION_TEST_ACCOUNT,
+        WalletNetwork::Test,
+        run_id,
+    )
+    .unwrap()
+    .into_iter()
+    .map(|candidate| candidate.txid_hex)
+    .collect()
+}
+
+fn seed_local_transaction_bytes(db_path: &str, txid_hex: &str) {
+    Connection::open(db_path)
+        .unwrap()
+        .execute(
+            "INSERT INTO transactions (txid, raw, expiry_height, min_observed_height)
+             VALUES (?1, ?2, 69120, 100)
+             ON CONFLICT(txid) DO UPDATE SET raw = excluded.raw,
+                 expiry_height = excluded.expiry_height,
+                 min_observed_height = excluded.min_observed_height",
+            params![hex::decode(txid_hex).unwrap(), vec![5u8, 6, 7, 8]],
+        )
+        .unwrap();
+}
+
+const SEEDED_BLOCK_HASH: [u8; 32] = [0x42; 32];
+
+fn seed_block(conn: &Connection, height: u32) {
+    conn.execute(
+        "INSERT INTO blocks (height, hash, time, sapling_tree, sapling_commitment_tree_size)
+         VALUES (?1, ?2, 0, X'', 0)",
+        params![height, SEEDED_BLOCK_HASH.to_vec()],
+    )
+    .unwrap();
+}
+
+/// Sets the wallet's chain tip, which decides whether a stored transaction
+/// has expired, without marking any block scanned.
+fn seed_chain_tip(db_path: &str, height: u32) {
+    Connection::open(db_path)
+        .unwrap()
+        .execute(
+            "INSERT INTO scan_queue (block_range_start, block_range_end, priority)
+             VALUES (0, ?1, 0)
+             ON CONFLICT (block_range_start) DO UPDATE SET block_range_end = excluded.block_range_end",
+            params![height + 1],
+        )
+        .unwrap();
+}
+
+fn seed_local_mined_transaction(db_path: &str, txid_hex: &str, height: u32) {
+    let conn = Connection::open(db_path).unwrap();
+    seed_block(&conn, height);
+    conn.execute(
+        "INSERT INTO transactions (txid, block, mined_height, min_observed_height)
+         VALUES (?1, ?2, ?2, ?2)",
+        params![hex::decode(txid_hex).unwrap(), height],
+    )
+    .unwrap();
+}
+
+/// Makes `block_fully_scanned` report `height`: a wallet birthday, one
+/// Scanned range starting at it, and the range's terminal block.
+fn seed_fully_scanned_through(db_path: &str, height: u32) {
+    let seed =
+        crate::wallet::keys::mnemonic_to_seed(&crate::wallet::keys::generate_mnemonic()).unwrap();
+    crate::wallet::keys::init_db_and_create_account(
+        db_path,
+        WalletNetwork::Test,
+        &seed,
+        Some(100),
+        "scanned",
+    )
+    .unwrap();
+    let conn = Connection::open(db_path).unwrap();
+    conn.execute("DELETE FROM scan_queue", []).unwrap();
+    conn.execute(
+        "INSERT INTO scan_queue (block_range_start, block_range_end, priority)
+         VALUES (100, ?1, 10)",
+        params![height + 1],
+    )
+    .unwrap();
+    seed_block(&conn, height);
+}
+
+#[test]
+fn attempted_stop_candidate_without_local_evidence_blocks_without_network() {
+    let (_temp_dir, db_path, run_id, pending_txid) = stop_candidate_test_run();
+    let mut chain = FakeStopChain::default();
+
+    let error = stop_with_native_attempts(
+        &mut chain,
+        &db_path,
+        &run_id,
+        std::slice::from_ref(&pending_txid),
+    )
+    .unwrap_err();
+
+    assert!(
+        error.starts_with(&format!(
+            "Migration cannot stop until transaction {pending_txid} is recorded locally or expires at block 69120."
+        )),
+        "{error}"
+    );
+    assert!(chain.hash_requests.is_empty());
+}
+
+#[test]
+fn stop_accepts_an_attempted_transaction_the_wallet_already_stores() {
+    let (_temp_dir, db_path, run_id, pending_txid) = stop_candidate_test_run();
+    seed_local_transaction_bytes(&db_path, &pending_txid);
+    seed_chain_tip(&db_path, 100);
+    let mut chain = FakeStopChain::default();
+
+    let evidence = stop_with_native_attempts(
+        &mut chain,
+        &db_path,
+        &run_id,
+        std::slice::from_ref(&pending_txid),
+    )
+    .unwrap();
+
+    assert_eq!(evidence.tracked, vec![tracked_pending(&pending_txid)]);
+    assert!(chain.hash_requests.is_empty());
+}
+
+#[test]
+fn stop_blocks_on_a_split_known_only_from_scanning() {
+    let (_temp_dir, db_path, run_id, _) = stop_candidate_test_run();
+    let stage_txid = "10".repeat(32);
+    seed_local_mined_transaction(&db_path, &stage_txid, 95);
+    seed_chain_tip(&db_path, 100);
+    let mut chain = FakeStopChain::default();
+
+    // Scanning records no expiry, so a reorg that unmines it would release the
+    // inputs long before the transaction expires.
+    let error = stop_with_native_attempts(
+        &mut chain,
+        &db_path,
+        &run_id,
+        std::slice::from_ref(&stage_txid),
+    )
+    .unwrap_err();
+
+    assert!(
+        error.contains("recorded locally or expires at block 120"),
+        "{error}"
+    );
+    assert!(remaining_stop_candidate_txids(&db_path, &run_id).contains(&stage_txid));
+    assert!(chain.hash_requests.is_empty());
+}
+
+#[test]
+fn stored_stop_transaction_holds_inputs_through_its_expiry_after_a_reorg() {
+    let (_temp_dir, db_path, run_id, pending_txid) = stop_candidate_test_run();
+    seed_block(&Connection::open(&db_path).unwrap(), 101);
+    Connection::open(&db_path)
+        .unwrap()
+        .execute(
+            "INSERT INTO transactions (txid, raw, block, mined_height, expiry_height, min_observed_height)
+             VALUES (?1, X'05060708', 101, 101, 69120, 100)
+             ON CONFLICT(txid) DO UPDATE SET raw = excluded.raw,
+                 block = excluded.block, mined_height = excluded.mined_height,
+                 expiry_height = excluded.expiry_height,
+                 min_observed_height = excluded.min_observed_height",
+            params![hex::decode(&pending_txid).unwrap()],
+        )
+        .unwrap();
+    seed_chain_tip(&db_path, 110);
+    let evidence = stop_with_native_attempts(
+        &mut FakeStopChain::default(),
+        &db_path,
+        &run_id,
+        std::slice::from_ref(&pending_txid),
+    )
+    .unwrap();
+    assert_eq!(evidence.tracked, vec![tracked_pending(&pending_txid)]);
+
+    // A reorg unmines it, and the tip moves past the default expiry window
+    // counted from its first sighting, but not past its own expiry.
+    let conn = Connection::open(&db_path).unwrap();
+    conn.execute(
+        "UPDATE transactions SET block = NULL, mined_height = NULL WHERE txid = ?1",
+        params![hex::decode(&pending_txid).unwrap()],
+    )
+    .unwrap();
+    seed_chain_tip(&db_path, 100 + 41);
+
+    // The wallet keeps its actual expiry, so its inputs stay spent.
+    let expiry: Option<u32> = conn
+        .query_row(
+            "SELECT expiry_height FROM transactions WHERE txid = ?1",
+            params![hex::decode(&pending_txid).unwrap()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(expiry, Some(69_120));
+    assert!(
+        migration::stop_candidate_holds_inputs(&conn, &pending_txid, 69_120, Some(141)).unwrap()
+    );
+    abandon_with(&db_path, &run_id, &evidence).unwrap();
+}
+
+#[test]
+fn stop_discards_a_transaction_absent_through_its_expiry_on_the_current_chain() {
+    let (_temp_dir, db_path, run_id, pending_txid) = stop_candidate_test_run();
+    seed_fully_scanned_through(&db_path, 69_120);
+    let mut chain = FakeStopChain {
+        current_hash: Some(zcash_primitives::block::BlockHash(SEEDED_BLOCK_HASH)),
+        ..FakeStopChain::default()
+    };
+
+    stop_with_native_attempts(&mut chain, &db_path, &run_id, &[pending_txid]).unwrap();
+
+    // Only the wallet's scanned height is sent, never a transaction ID.
+    assert_eq!(chain.hash_requests, vec![69_120]);
+}
+
+#[test]
+fn stop_blocks_when_a_reorg_replaced_the_scanned_blocks() {
+    let (_temp_dir, db_path, run_id, pending_txid) = stop_candidate_test_run();
+    seed_fully_scanned_through(&db_path, 69_120);
+    let mut chain = FakeStopChain {
+        current_hash: Some(zcash_primitives::block::BlockHash([0x43; 32])),
+        ..FakeStopChain::default()
+    };
+
+    let error =
+        stop_with_native_attempts(&mut chain, &db_path, &run_id, &[pending_txid]).unwrap_err();
+
+    assert!(error.contains("syncs the current chain"), "{error}");
+}
+
+#[test]
+fn stop_checks_the_current_chain_for_a_stored_transaction_past_its_expiry() {
+    let (_temp_dir, db_path, run_id, pending_txid) = stop_candidate_test_run();
+    seed_local_transaction_bytes(&db_path, &pending_txid);
+    // The wallet's tip has passed the expiry, so it no longer holds the inputs.
+    seed_fully_scanned_through(&db_path, 69_120);
+
+    let mut reorged = FakeStopChain {
+        current_hash: Some(zcash_primitives::block::BlockHash([0x43; 32])),
+        ..FakeStopChain::default()
+    };
+    let error = stop_with_native_attempts(
+        &mut reorged,
+        &db_path,
+        &run_id,
+        std::slice::from_ref(&pending_txid),
+    )
+    .unwrap_err();
+    assert!(error.contains("syncs the current chain"), "{error}");
+
+    let mut current = FakeStopChain {
+        current_hash: Some(zcash_primitives::block::BlockHash(SEEDED_BLOCK_HASH)),
+        ..FakeStopChain::default()
+    };
+    stop_with_native_attempts(&mut current, &db_path, &run_id, &[pending_txid]).unwrap();
+    assert_eq!(current.hash_requests, vec![69_120]);
+}
+
+fn tracked_pending(txid_hex: &str) -> migration::TrackedStopTransaction {
+    migration::TrackedStopTransaction {
+        kind: migration::MigrationStopCandidateKind::MigrationTransaction,
+        txid_hex: txid_hex.to_string(),
+        expiry_height: 69_120,
+    }
+}
+
+fn abandon_with(
+    db_path: &str,
+    run_id: &str,
+    evidence: &migration::StopEvidence,
+) -> Result<(), String> {
+    migration::abandon_run(
+        db_path,
+        MIGRATION_TEST_ACCOUNT,
+        WalletNetwork::Test,
+        run_id,
+        evidence,
+    )
+}
+
+#[test]
+fn abandon_accepts_stop_evidence_that_still_holds() {
+    let (_temp_dir, db_path, run_id, pending_txid) = stop_candidate_test_run();
+    seed_local_transaction_bytes(&db_path, &pending_txid);
+    seed_chain_tip(&db_path, 100);
+    let evidence = stop_with_native_attempts(
+        &mut FakeStopChain::default(),
+        &db_path,
+        &run_id,
+        std::slice::from_ref(&pending_txid),
+    )
+    .unwrap();
+
+    abandon_with(&db_path, &run_id, &evidence).unwrap();
+
+    // Abandon keeps the tracked transaction's row as broadcasted.
+    let status: String = Connection::open(&db_path)
+        .unwrap()
+        .query_row(
+            "SELECT status FROM vizor_migration_pending_txs WHERE txid_hex = ?1",
+            params![pending_txid],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(status, "broadcasted");
+}
+
+#[test]
+fn abandon_rechecks_that_a_stored_transaction_is_still_unexpired() {
+    let (_temp_dir, db_path, run_id, pending_txid) = stop_candidate_test_run();
+    seed_local_transaction_bytes(&db_path, &pending_txid);
+    seed_chain_tip(&db_path, 100);
+    let evidence = stop_with_native_attempts(
+        &mut FakeStopChain::default(),
+        &db_path,
+        &run_id,
+        std::slice::from_ref(&pending_txid),
+    )
+    .unwrap();
+    assert_eq!(evidence.tracked, vec![tracked_pending(&pending_txid)]);
+
+    // A sync moves the wallet's tip past the expiry before abandon runs, so
+    // the wallet no longer holds the inputs.
+    seed_chain_tip(&db_path, 69_120);
+
+    let error = abandon_with(&db_path, &run_id, &evidence).unwrap_err();
+    assert!(error.contains("chain changed"), "{error}");
+
+    // The failed attempt left the transaction unmarked, so a retry must prove
+    // it again instead of skipping it.
+    assert!(remaining_stop_candidate_txids(&db_path, &run_id).contains(&pending_txid));
+    let error = stop_with_native_attempts(
+        &mut FakeStopChain::default(),
+        &db_path,
+        &run_id,
+        std::slice::from_ref(&pending_txid),
+    )
+    .unwrap_err();
+    assert!(error.contains("expires at block 69120"), "{error}");
+}
+
+#[test]
+fn abandon_rechecks_the_verified_scanned_block() {
+    let (_temp_dir, db_path, run_id, pending_txid) = stop_candidate_test_run();
+    seed_fully_scanned_through(&db_path, 69_120);
+    let mut chain = FakeStopChain {
+        current_hash: Some(zcash_primitives::block::BlockHash(SEEDED_BLOCK_HASH)),
+        ..FakeStopChain::default()
+    };
+    let evidence =
+        stop_with_native_attempts(&mut chain, &db_path, &run_id, &[pending_txid]).unwrap();
+    assert_eq!(evidence.verified_scan, Some((69_120, SEEDED_BLOCK_HASH)));
+
+    // A reorg replaces the verified block before abandon runs.
+    Connection::open(&db_path)
+        .unwrap()
+        .execute(
+            "UPDATE blocks SET hash = ?1 WHERE height = 69120",
+            params![vec![0x43u8; 32]],
+        )
+        .unwrap();
+
+    let error = abandon_with(&db_path, &run_id, &evidence).unwrap_err();
+    assert!(error.contains("chain changed"), "{error}");
+}
+
+#[test]
+fn stop_blocks_when_the_current_chain_cannot_be_read() {
+    let (_temp_dir, db_path, run_id, pending_txid) = stop_candidate_test_run();
+    seed_fully_scanned_through(&db_path, 69_120);
+    let mut chain = FakeStopChain::default();
+
+    let error =
+        stop_with_native_attempts(&mut chain, &db_path, &run_id, &[pending_txid]).unwrap_err();
+
+    assert_eq!(error, "lightwalletd unavailable");
+}
+
+#[test]
+fn stop_blocks_while_scanning_has_not_reached_the_expiry() {
+    let (_temp_dir, db_path, run_id, pending_txid) = stop_candidate_test_run();
+    seed_fully_scanned_through(&db_path, 69_119);
+    let mut chain = FakeStopChain::default();
+
+    let error =
+        stop_with_native_attempts(&mut chain, &db_path, &run_id, &[pending_txid]).unwrap_err();
+
+    assert!(error.contains("expires at block 69120"), "{error}");
+    assert!(chain.hash_requests.is_empty());
 }
 
 #[test]
@@ -1460,13 +1921,23 @@ fn legacy_attempt_state_reconciles_only_after_its_broadcast_height() {
     };
 
     assert!(!migration_stop_candidate_requires_reconciliation(
-        &candidate, false, 199,
+        &candidate,
+        false,
+        Some(199),
     ));
     assert!(migration_stop_candidate_requires_reconciliation(
-        &candidate, false, 200,
+        &candidate,
+        false,
+        Some(200),
     ));
     assert!(migration_stop_candidate_requires_reconciliation(
-        &candidate, true, 199,
+        &candidate,
+        true,
+        Some(199),
+    ));
+    // Without a tip, a legacy row fails closed as attempted.
+    assert!(migration_stop_candidate_requires_reconciliation(
+        &candidate, false, None,
     ));
 }
 
@@ -3447,7 +3918,9 @@ fn ledger_shielding_limits_inputs_and_preserves_account_scope_paths() {
             .unwrap()
             .contains("incomplete")
     );
-    assert!(get_ledger_shielding_progress(path, network, &uuid).unwrap_err().contains("incomplete"));
+    assert!(get_ledger_shielding_progress(path, network, &uuid)
+        .unwrap_err()
+        .contains("incomplete"));
     let progress = ledger_shielding_progress(&mut db, network, id).unwrap();
     assert_eq!(progress.input_limit, 32);
     assert_eq!(progress.input_count, 35);
@@ -3509,20 +3982,34 @@ fn ledger_shielding_limits_inputs_and_preserves_account_scope_paths() {
         .transparent_inputs()
         .iter()
         .all(|u| !first.contains(u.outpoint())));
-    conn.execute("DELETE FROM transparent_received_outputs", []).unwrap();
-    assert_eq!(ledger_shielding_progress(&mut db, network, id).unwrap().input_count, 0);
-    let dust_address = external.derive_address(NonHardenedChildIndex::ZERO).unwrap();
+    conn.execute("DELETE FROM transparent_received_outputs", [])
+        .unwrap();
+    assert_eq!(
+        ledger_shielding_progress(&mut db, network, id)
+            .unwrap()
+            .input_count,
+        0
+    );
+    let dust_address = external
+        .derive_address(NonHardenedChildIndex::ZERO)
+        .unwrap();
     let dust = WalletTransparentOutput::from_parts(
         OutPoint::new([240; 32], 0),
         // Above the spendable-output fee floor, below the shielding threshold.
-        TxOut::new(Zatoshis::const_from_u64(50_000), dust_address.script().into()),
-        Some(tip), None, None, None,
-    ).unwrap();
+        TxOut::new(
+            Zatoshis::const_from_u64(50_000),
+            dust_address.script().into(),
+        ),
+        Some(tip),
+        None,
+        None,
+        None,
+    )
+    .unwrap();
     db.put_received_transparent_utxo(&dust).unwrap();
     let progress = ledger_shielding_progress(&mut db, network, id).unwrap();
     assert_eq!(progress.input_count, 1);
     assert!(progress.below_threshold);
-
 }
 #[test]
 fn gift_card_ledger_preflight_counts_pool_actions_at_the_consensus_version() {

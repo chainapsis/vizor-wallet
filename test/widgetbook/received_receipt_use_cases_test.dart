@@ -23,7 +23,8 @@ void main() {
     expect(find.text('t1Z9N3o ... DgHXyo'), findsOneWidget);
     expect(find.text('Completed'), findsOneWidget);
     expect(find.text('Zcash is a privacy-focused ...'), findsOneWidget);
-    expect(find.text('Network fee'), findsOneWidget);
+    // The sender paid the fee, so a receive shows none.
+    expect(find.text('Network fee'), findsNothing);
   });
 
   testWidgets('transparent-to-shielded use case renders both pools', (
@@ -73,7 +74,6 @@ void main() {
     expect(find.byType(ReceivedReceiptView), findsOneWidget);
     expect(find.text('Receive in progress...'), findsOneWidget);
     expect(find.text('In progress'), findsOneWidget);
-    // No fee row on a live inbound transaction.
     expect(find.text('From'), findsOneWidget);
     expect(find.text('Unknown sender'), findsOneWidget);
     expect(find.text('Network fee'), findsNothing);

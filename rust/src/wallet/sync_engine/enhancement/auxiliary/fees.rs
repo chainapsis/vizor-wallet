@@ -1,5 +1,6 @@
 //! Fee enrichment shared by public payload and transparent-history paths.
 
+use rusqlite::OptionalExtension as _;
 use std::collections::BTreeMap;
 
 use tonic::transport::Channel;
@@ -11,15 +12,11 @@ use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::consensus::BranchId;
 use zcash_protocol::value::{BalanceError, Zatoshis};
 
-use crate::wallet::{
-    db::{with_wallet_db_write_lock, SYNC_DB_BUSY_TIMEOUT},
-    transaction_data::payload::get_transaction_payload,
+use crate::wallet::db::{
+    open_readonly_conn_with_timeout, with_wallet_db_write_lock, SYNC_DB_BUSY_TIMEOUT,
 };
 
-use super::{
-    super::super::{SyncError, WalletDatabase},
-    super::transport::cancelable,
-};
+use super::super::super::{SyncError, WalletDatabase};
 
 /// Backfills fees for stored transactions whose status requests are dormant
 /// while their mined heights are known.
@@ -69,6 +66,7 @@ pub(in crate::wallet::sync_engine::enhancement) fn stored_transaction_ids_missin
                  SELECT 1
                  FROM v_transactions vt
                  WHERE vt.txid = t.txid
+                 AND vt.total_spent > 0
              )",
         )
         .map_err(|e| SyncError::db(format!("prepare missing fee scan: {e}")))?;
@@ -81,104 +79,15 @@ pub(in crate::wallet::sync_engine::enhancement) fn stored_transaction_ids_missin
 }
 
 pub(in crate::wallet::sync_engine::enhancement) async fn fill_missing_fee(
-    client: &mut CompactTxStreamerClient<Channel>,
+    _client: &mut CompactTxStreamerClient<Channel>,
     db_path: &str,
     tx: &Transaction,
     should_exit: &impl Fn() -> bool,
 ) -> Result<(), SyncError> {
-    if !should_fill_missing_fee(db_path, tx)? {
+    if should_exit() {
         return Ok(());
     }
-
-    // Fully shielded transactions need no parent lookup: their fee is
-    // determined entirely by the public shielded-pool value balances. Persist
-    // that fee too so these rows do not remain in the backfill query forever.
-    let prevout_values = match tx.transparent_bundle() {
-        Some(bundle) if !bundle.vin.is_empty() => {
-            let values = fetch_transparent_prevout_values(client, tx, should_exit).await?;
-            if values.is_empty() {
-                return Ok(());
-            }
-            values
-        }
-        _ => BTreeMap::new(),
-    };
-
-    let Some(fee) = fee_from_prevout_values(tx, &prevout_values)
-        .map_err(|e| SyncError::parse(format!("fee computation failed: {e:?}")))?
-    else {
-        return Ok(());
-    };
-
-    persist_fee_if_missing(db_path, tx, fee)
-}
-
-async fn fetch_transparent_prevout_values(
-    client: &mut CompactTxStreamerClient<Channel>,
-    tx: &Transaction,
-    should_exit: &impl Fn() -> bool,
-) -> Result<BTreeMap<OutPoint, Zatoshis>, SyncError> {
-    let Some(bundle) = tx.transparent_bundle() else {
-        return Ok(BTreeMap::new());
-    };
-
-    let mut prevout_values = BTreeMap::new();
-    for txin in &bundle.vin {
-        let outpoint = txin.prevout();
-        if is_null_outpoint(outpoint) {
-            return Ok(BTreeMap::new());
-        }
-        if prevout_values.contains_key(outpoint) {
-            continue;
-        }
-
-        let parent_raw = match cancelable(
-            get_transaction_payload(client, TxId::from_bytes(*outpoint.hash())),
-            should_exit,
-        )
-        .await
-        {
-            Ok(raw) => raw,
-            Err(e) => {
-                log::warn!(
-                    "sync: could not fetch transparent prevout {}:{} for fee on {}: {e}",
-                    hex::encode(outpoint.hash()),
-                    outpoint.n(),
-                    tx.txid()
-                );
-                return Ok(BTreeMap::new());
-            }
-        };
-        if parent_raw.data.is_empty() {
-            return Ok(BTreeMap::new());
-        }
-
-        let parent_tx = match Transaction::read(&parent_raw.data[..], BranchId::Sapling) {
-            Ok(tx) => tx,
-            Err(e) => {
-                log::warn!(
-                    "sync: could not parse transparent prevout transaction {} for fee on {}: {e}",
-                    hex::encode(outpoint.hash()),
-                    tx.txid()
-                );
-                return Ok(BTreeMap::new());
-            }
-        };
-
-        let Some(parent_bundle) = parent_tx.transparent_bundle() else {
-            return Ok(BTreeMap::new());
-        };
-        let Ok(output_index) = usize::try_from(outpoint.n()) else {
-            return Ok(BTreeMap::new());
-        };
-        let Some(parent_output) = parent_bundle.vout.get(output_index) else {
-            return Ok(BTreeMap::new());
-        };
-
-        prevout_values.insert(outpoint.clone(), parent_output.value());
-    }
-
-    Ok(prevout_values)
+    fill_fee_from_local(db_path, tx)
 }
 
 pub(in crate::wallet::sync_engine::enhancement) fn should_fill_missing_fee(
@@ -190,9 +99,8 @@ pub(in crate::wallet::sync_engine::enhancement) fn should_fill_missing_fee(
     conn.busy_timeout(SYNC_DB_BUSY_TIMEOUT)
         .map_err(|e| SyncError::db(format!("configure fee lookup busy timeout: {e}")))?;
 
-    // Backfill transaction fees for every wallet-relevant transaction,
-    // including receives. Received receipts label this separately as a network
-    // fee because the sender paid it.
+    // Only transactions the wallet funded show a fee. A received transaction's
+    // fee needs its sender's parent transactions, which the wallet does not hold.
     let fillable_rows: i64 = conn
         .query_row(
             "SELECT COUNT(*)
@@ -203,6 +111,7 @@ pub(in crate::wallet::sync_engine::enhancement) fn should_fill_missing_fee(
                  SELECT 1
                  FROM v_transactions vt
                  WHERE vt.txid = t.txid
+                 AND vt.total_spent > 0
              )",
             rusqlite::params![tx.txid().as_ref()],
             |row| row.get(0),
@@ -249,4 +158,79 @@ pub(in crate::wallet::sync_engine::enhancement) fn persist_fee_if_missing(
     })?;
 
     Ok(())
+}
+
+pub(in crate::wallet::sync_engine::enhancement) fn fill_fee_from_local(
+    db_path: &str,
+    tx: &Transaction,
+) -> Result<(), SyncError> {
+    if !should_fill_missing_fee(db_path, tx)? {
+        return Ok(());
+    }
+    let Some(prevout_values) = local_prevout_values(db_path, tx)? else {
+        return Ok(());
+    };
+    let Some(fee) = fee_from_prevout_values(tx, &prevout_values)
+        .map_err(|e| SyncError::parse(format!("fee computation failed: {e:?}")))?
+    else {
+        return Ok(());
+    };
+    persist_fee_if_missing(db_path, tx, fee)
+}
+
+fn local_prevout_values(
+    db_path: &str,
+    tx: &Transaction,
+) -> Result<Option<BTreeMap<OutPoint, Zatoshis>>, SyncError> {
+    let mut values = BTreeMap::new();
+    let Some(bundle) = tx.transparent_bundle() else {
+        return Ok(Some(values));
+    };
+    let conn = open_readonly_conn_with_timeout(db_path, Some(SYNC_DB_BUSY_TIMEOUT))
+        .map_err(|e| SyncError::db(format!("open wallet DB for local fee lookup: {e}")))?;
+    for txin in &bundle.vin {
+        let outpoint = txin.prevout();
+        if is_null_outpoint(outpoint) {
+            return Ok(None);
+        }
+        let parent = outpoint.hash().as_slice();
+        let wallet_value = conn
+            .query_row(
+                "SELECT tro.value_zat
+                 FROM transparent_received_outputs tro
+                 JOIN transactions parent ON parent.id_tx = tro.transaction_id
+                 WHERE parent.txid = ?1 AND tro.output_index = ?2",
+                rusqlite::params![parent, outpoint.n()],
+                |row| row.get::<_, u64>(0),
+            )
+            .optional()
+            .map_err(|e| SyncError::db(format!("query wallet prevout value: {e}")))?
+            .and_then(|value| Zatoshis::from_u64(value).ok());
+        let value = match wallet_value {
+            Some(value) => Some(value),
+            None => conn
+                .query_row(
+                    "SELECT raw FROM transactions WHERE txid = ?1 AND raw IS NOT NULL",
+                    rusqlite::params![parent],
+                    |row| row.get::<_, Vec<u8>>(0),
+                )
+                .optional()
+                .map_err(|e| SyncError::db(format!("query stored parent raw: {e}")))?
+                .and_then(|raw| output_value(&raw, outpoint.n())),
+        };
+        let Some(value) = value else {
+            return Ok(None);
+        };
+        values.insert(outpoint.clone(), value);
+    }
+    Ok(Some(values))
+}
+
+fn output_value(parent: &[u8], index: u32) -> Option<Zatoshis> {
+    let parent = Transaction::read(parent, BranchId::Sapling).ok()?;
+    let output = parent
+        .transparent_bundle()?
+        .vout
+        .get(usize::try_from(index).ok()?)?;
+    Some(output.value())
 }

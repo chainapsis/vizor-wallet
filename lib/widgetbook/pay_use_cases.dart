@@ -2,6 +2,7 @@
 // widgetbook is dev-only; see `widgetbook.dart` for the boundary.
 
 import 'package:flutter/widgets.dart';
+import 'package:widgetbook/widgetbook.dart';
 
 import '../src/core/layout/app_desktop_shell.dart';
 import '../src/core/layout/app_pane_scroll_scaffold.dart';
@@ -21,6 +22,7 @@ import '../src/features/pay/widgets/pay_review_step.dart';
 import '../src/features/pay/widgets/pay_wizard_page.dart';
 import '../src/features/swap/models/swap_models.dart';
 import '../src/features/swap/models/swap_activity_status_mapper.dart';
+import '../src/features/swap/models/swap_intent_presentation_mapper.dart';
 import '../src/features/swap/widgets/pay_activity_status_content.dart';
 import '../src/features/swap/widgets/swap_asset_selector_modal.dart';
 
@@ -94,6 +96,36 @@ Widget buildPayCompletedUseCase(BuildContext context) {
   return const _PayDesktopFrame(
     child: _PayStatusPreview(phase: PayActivityStatusPhase.completed),
   );
+}
+
+Widget buildPayFailedOrRefundedUseCase(BuildContext context) {
+  final scenario = context.knobs.object.dropdown<_PayFailureScenario>(
+    label: 'Outcome',
+    options: _PayFailureScenario.values,
+    initialOption: _PayFailureScenario.failed,
+    labelBuilder: (scenario) => scenario.label,
+  );
+  return _PayDesktopFrame(child: _PayStatusPreview(phase: scenario.phase));
+}
+
+Widget buildPayFailedCaptureUseCase(BuildContext context) =>
+    const _PayDesktopFrame(
+      child: _PayStatusPreview(phase: PayActivityStatusPhase.failed),
+    );
+
+Widget buildPayRefundedCaptureUseCase(BuildContext context) =>
+    const _PayDesktopFrame(
+      child: _PayStatusPreview(phase: PayActivityStatusPhase.refunded),
+    );
+
+enum _PayFailureScenario {
+  failed('Failed · no refund', PayActivityStatusPhase.failed),
+  refunded('Refunded · amount recorded', PayActivityStatusPhase.refunded);
+
+  const _PayFailureScenario(this.label, this.phase);
+
+  final String label;
+  final PayActivityStatusPhase phase;
 }
 
 class _PayDesktopFrame extends StatelessWidget {
@@ -366,6 +398,11 @@ class _PayStatusPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final failurePresentation = switch (phase) {
+      PayActivityStatusPhase.failed ||
+      PayActivityStatusPhase.refunded => _payFailurePresentation(phase),
+      _ => null,
+    };
     return AppPaneScrollScaffold(
       toolbar: AppPaneToolbar(
         leading: AppBackLink(label: 'Activity', minWidth: 60, onTap: () {}),
@@ -377,18 +414,20 @@ class _PayStatusPreview extends StatelessWidget {
       child: Align(
         alignment: Alignment.topCenter,
         child: PayActivityStatusContent(
-          status: PayActivityStatusPresentation(
-            phase: phase,
-            timestampText: '25 May, 13:30',
-            txIdText: '0123123124512512',
-            convertedFromText: '2.45125 ZEC',
-            // Synthetic Figma fixture. Production shows this only after the
-            // matching ZEC deposit transaction is confirmed in wallet history.
-            transactionFeeText: '0.012 ZEC',
-          ),
+          status:
+              failurePresentation?.payStatus ??
+              PayActivityStatusPresentation(
+                phase: phase,
+                timestampText: '25 May, 13:30',
+                txIdText: '0123123124512512',
+                convertedFromText: '2.45125 ZEC',
+                // Synthetic Figma fixture. Production shows this only after the
+                // matching ZEC deposit transaction is confirmed in wallet history.
+                transactionFeeText: '0.012 ZEC',
+              ),
           amountAsset: SwapAsset.usdc,
-          amountText: '990 USDC',
-          amountFiatText: r'$990.12',
+          amountText: failurePresentation?.receiveAmountText ?? '990 USDC',
+          amountFiatText: failurePresentation?.receiveFiatText ?? r'$990.12',
           recipientAddress: _newRecipientAddress,
           onShowFullAddress: () {},
           onOpenExplorer: () {},
@@ -396,6 +435,56 @@ class _PayStatusPreview extends StatelessWidget {
       ),
     );
   }
+}
+
+SwapActivityStatusPresentation _payFailurePresentation(
+  PayActivityStatusPhase phase,
+) {
+  final refunded = phase == PayActivityStatusPhase.refunded;
+  final rawIntent = SwapIntent(
+    id: 'widgetbook-pay-failure',
+    pair: 'ZEC -> USDC',
+    sellAmount: '2.45125 ZEC',
+    receiveEstimate: '990 USDC',
+    provider: 'NEAR Intents',
+    status: SwapIntentStatus.failed,
+    nextAction: 'Payment failed',
+    providerStatusRaw: 'FAILED',
+    direction: SwapDirection.zecToExternal,
+    externalAsset: SwapAsset.usdc,
+    depositAddress: '0123123124512512',
+    oneClickRecipient: _newRecipientAddress,
+    oneClickRefundTo: 'u1widgetbookpayrefundaddress',
+    providerRefundInfo: SwapProviderRefundInfo(
+      depositedAmountText: '2.45125 ZEC',
+      refundedAmountText: refunded ? '2.45115 ZEC' : '0 ZEC',
+      recordedRefundFeeText: refunded ? '0.0001 ZEC' : null,
+    ),
+    fiatValueBasis: SwapFiatValueBasis(
+      sellUsdUnitPrice: 990.12 / 2.45125,
+      receiveUsdUnitPrice: 990.12 / 990,
+      capturedAt: DateTime.utc(2026, 5, 25, 13, 30),
+    ),
+    payMode: true,
+    createdAt: DateTime.utc(2026, 5, 25, 13, 30),
+    completedAt: DateTime.utc(2026, 5, 25, 13, 30),
+  );
+  final intent = swapIntentsFromRecords([
+    SwapIntentRecord.fromIntent(rawIntent),
+  ]).single;
+  final state = SwapState(
+    direction: SwapDirection.zecToExternal,
+    quoteMode: SwapQuoteMode.exactOutput,
+    amountText: '',
+    receiveAmountText: '',
+    receiveFiatText: '',
+    destinationText: '',
+    externalAsset: SwapAsset.usdc,
+    reviewVisible: false,
+    intents: [intent],
+    payMode: true,
+  );
+  return swapActivityStatusPresentationForIntent(state, intent);
 }
 
 class _PreviewSlippageControl extends StatelessWidget {

@@ -5,9 +5,56 @@ import 'package:flutter/material.dart' show MaterialApp;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/widgetbook/screen_use_cases.dart';
 
 void main() {
+  for (final (builder, action, removedMenu) in [
+    (
+      buildMobileAccountsUnbackedUpRemoveUseCase,
+      'Remove',
+      'mobile_accounts_menu_preview-account-3',
+    ),
+    (
+      buildMobileAccountsUnbackedUpResetUseCase,
+      'Reset Vizor',
+      'mobile_accounts_menu_preview-account-1',
+    ),
+  ]) {
+    testWidgets('unbacked account preview supports $action without storage', (
+      tester,
+    ) async {
+      await _pumpMobileAccountsUseCase(tester, builder);
+      expect(
+        find.byKey(const ValueKey('mobile_account_remove_backup_warning')),
+        findsOneWidget,
+      );
+      expect(find.text(action), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(ValueKey(removedMenu)), findsOneWidget);
+
+      await tester.tap(find.byKey(ValueKey(removedMenu)));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Remove account'));
+      await tester.pumpAndSettle();
+      final confirm = find.byKey(
+        const ValueKey('mobile_account_remove_confirm'),
+      );
+      expect(
+        tester.widget<AppButton>(confirm).variant,
+        AppButtonVariant.destructive,
+      );
+      await tester.tap(confirm);
+      await tester.pumpAndSettle();
+      expect(find.byKey(ValueKey(removedMenu)), findsNothing);
+      if (action == 'Reset Vizor') {
+        expect(find.text('Navigated to /welcome'), findsOneWidget);
+      }
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('mobile accounts menu hides the shortcut for Keystone', (
     tester,
   ) async {

@@ -230,9 +230,23 @@ fn stopping_a_run_discards_only_unsubmitted_work() {
     .unwrap();
     drop(conn);
 
-    abandon_run(&db_path, "account-1", WalletNetwork::Regtest, "run-stop").unwrap();
+    abandon_run(
+        &db_path,
+        "account-1",
+        WalletNetwork::Regtest,
+        "run-stop",
+        &StopEvidence::default(),
+    )
+    .unwrap();
     // Repeating an already-completed stop is safe for UI retries.
-    abandon_run(&db_path, "account-1", WalletNetwork::Regtest, "run-stop").unwrap();
+    abandon_run(
+        &db_path,
+        "account-1",
+        WalletNetwork::Regtest,
+        "run-stop",
+        &StopEvidence::default(),
+    )
+    .unwrap();
 
     let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
     let phase = conn

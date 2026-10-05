@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A9E010010000000000000001 /* AppReviewHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E010010000000000000002 /* AppReviewHandler.swift */; };
 		C0A0E0010000000000000001 /* ModalCornerHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0A0E0010000000000000002 /* ModalCornerHandler.swift */; };
 		1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */ = {isa = PBXBuildFile; fileRef = 1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */; };
 		1C17EF09E57FB1CC13229F6C /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 13C168564DA439E9BD411F5A /* Pods_RunnerTests.framework */; };
@@ -87,6 +88,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		A9E010010000000000000002 /* AppReviewHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppReviewHandler.swift; sourceTree = "<group>"; };
 		C0A0E0010000000000000002 /* ModalCornerHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModalCornerHandler.swift; sourceTree = "<group>"; };
 		13C168564DA439E9BD411F5A /* Pods_RunnerTests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_RunnerTests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		1498D2321E8E86230040F4C2 /* GeneratedPluginRegistrant.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GeneratedPluginRegistrant.h; sourceTree = "<group>"; };
@@ -296,6 +298,7 @@
 				KEYMIG000000000000000001 /* KeychainAccessibilityMigrator.swift */,
 				LEDGERIOS000000000000001 /* LedgerMobileHandler.swift */,
 				NUMPADIOS000000000000001 /* NumericKeyboardHandler.swift */,
+				A9E010010000000000000002 /* AppReviewHandler.swift */,
 				ZSYNC000ED2DC5600515810 /* zcash_sync.h */,
 				7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
@@ -571,6 +574,7 @@
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,
 				LEDGERIOS010000000000001 /* LedgerMobileHandler.swift in Sources */,
 				NUMPADIOS010000000000001 /* NumericKeyboardHandler.swift in Sources */,
+				A9E010010000000000000001 /* AppReviewHandler.swift in Sources */,
 				OUTBOX010000000000000001 /* BackgroundMigrationOutbox.swift in Sources */,
 				OUTBOX010000000000000002 /* BackgroundMigrationOutboxStore.swift in Sources */,
 				OUTBOX010000000000000004 /* BackgroundMigrationOutboxRunner.swift in Sources */,

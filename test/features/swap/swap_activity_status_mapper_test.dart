@@ -169,11 +169,167 @@ void main() {
     );
     expect(
       presentation.details.map((detail) => detail.label),
+      isNot(contains('Refund fee')),
+    );
+    expect(
+      presentation.details.map((detail) => detail.label),
       isNot(contains('Slippage tolerance')),
     );
     expect(
       presentation.details.map((detail) => detail.label),
       isNot(contains('Guaranteed minimum')),
+    );
+  });
+
+  test('shows only the recorded refund fee after a swap is refunded', () {
+    final presentation = swapActivityStatusPresentationForIntent(
+      _state(),
+      _intent(
+        status: SwapIntentStatus.refunded,
+        direction: SwapDirection.externalToZec,
+        externalAsset: SwapAsset.usdc,
+        totalFeesText: '0.01794 USDC',
+        oneClickRefundTo: '0xrefund-address',
+        providerRefundInfo: const SwapProviderRefundInfo(
+          depositedAmountText: '2.3 USDC',
+          refundedAmountText: '2.2976 USDC',
+          refundFeeText: '0.0024 USDC',
+          recordedRefundFeeText: '0.0024 USDC',
+        ),
+      ),
+    );
+
+    expect(_detailValue(presentation.details, 'Refund fee'), '0.0024 USDC');
+    expect(
+      _detailValue(presentation.details, 'Refunded amount'),
+      '2.2976 USDC',
+    );
+    expect(presentation.payLabel, 'Deposit amount');
+    expect(presentation.receiveLabel, 'Expected to receive');
+    expect(presentation.payDetailCopyText, '0xrefund-address');
+    expect(
+      presentation.details.map((detail) => detail.label),
+      isNot(contains('Refund to')),
+    );
+    expect(
+      presentation.details.map((detail) => detail.label),
+      isNot(contains('Total fees')),
+    );
+  });
+
+  test('keeps the refund address for a refunded ZEC-sourced swap', () {
+    final presentation = swapActivityStatusPresentationForIntent(
+      _state(),
+      _intent(
+        status: SwapIntentStatus.refunded,
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+        oneClickRecipient: '0xrecipient',
+        oneClickRefundTo: 'u1refund-address',
+        providerRefundInfo: const SwapProviderRefundInfo(
+          refundedAmountText: '0.0499 ZEC',
+          recordedRefundFeeText: '0.0001 ZEC',
+        ),
+      ),
+    );
+
+    expect(presentation.payDetailCopyText, isNull);
+    expect(
+      _detailRow(presentation.details, 'Refund to').copyText,
+      'u1refund-address',
+    );
+  });
+
+  test('restores the refund address in the terminal swap summary', () {
+    final presentation = swapActivityStatusPresentationForIntent(
+      _state(),
+      _intent(
+        status: SwapIntentStatus.failed,
+        direction: SwapDirection.externalToZec,
+        externalAsset: SwapAsset.usdc,
+        sellAmount: '2.3 USDC',
+        oneClickRefundTo: '0xrefund-address',
+        fiatValueBasis: SwapFiatValueBasis(
+          sellUsdUnitPrice: 1,
+          capturedAt: DateTime.utc(2026, 5, 20),
+        ),
+      ),
+    );
+
+    expect(presentation.payDetailText, contains('Refund to:'));
+    expect(presentation.payDetailCopyText, '0xrefund-address');
+    expect(presentation.payLabel, 'Deposit amount');
+    expect(presentation.receiveLabel, 'Expected to receive');
+    expect(
+      _detailRow(presentation.details, 'Refund to').copyText,
+      '0xrefund-address',
+    );
+  });
+
+  test('refunded Pay shows the refund without repeating the quote', () {
+    final presentation = swapActivityStatusPresentationForIntent(
+      _state(),
+      _intent(
+        status: SwapIntentStatus.refunded,
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+        sellAmount: '0.05 ZEC',
+        receiveEstimate: '2.3 USDC',
+        oneClickRefundTo: 'u1refund-address',
+        providerRefundInfo: const SwapProviderRefundInfo(
+          depositedAmountText: '0.05 ZEC',
+          refundedAmountText: '0.0499 ZEC',
+          recordedRefundFeeText: '0.0001 ZEC',
+        ),
+        payMode: true,
+      ),
+    );
+
+    expect(presentation.title, 'Payment refunded');
+    expect(presentation.statusLabel, 'Refunded');
+    expect(presentation.badgeKind, SwapStatusBadgeKind.refunded);
+    expect(presentation.receiveLabel, 'Amount');
+    expect(presentation.payLabel, 'You paid');
+    expect(presentation.payStatus?.phase, PayActivityStatusPhase.refunded);
+    expect(presentation.payStatus?.refundAddress, 'u1refund-address');
+    expect(presentation.payStatus?.refundedAmountText, '0.0499 ZEC');
+    expect(presentation.payStatus?.refundFeeText, '0.0001 ZEC');
+    expect(presentation.details.map((row) => row.label), [
+      'Refunded amount',
+      'Refund fee',
+      'Refund to',
+    ]);
+    expect(_detailValue(presentation.details, 'Refunded amount'), '0.0499 ZEC');
+    expect(_detailValue(presentation.details, 'Refund fee'), '0.0001 ZEC');
+  });
+
+  test('does not show a quoted fee when a failed swap has no refund', () {
+    final presentation = swapActivityStatusPresentationForIntent(
+      _state(),
+      _intent(
+        status: SwapIntentStatus.failed,
+        direction: SwapDirection.externalToZec,
+        externalAsset: SwapAsset.usdc,
+        totalFeesText: '0.335 SOL',
+        providerRefundInfo: const SwapProviderRefundInfo(
+          refundedAmountText: '0 USDC',
+          refundFeeText: '0.014 USDC',
+          recordedRefundFeeText: '0.014 USDC',
+        ),
+      ),
+    );
+
+    expect(
+      presentation.details.map((detail) => detail.label),
+      isNot(contains('Total fees')),
+    );
+    expect(
+      presentation.details.map((detail) => detail.label),
+      isNot(contains('Refund fee')),
+    );
+    expect(
+      presentation.details.map((detail) => detail.label),
+      isNot(contains('Refunded amount')),
     );
   });
 
@@ -227,8 +383,9 @@ void main() {
     );
   });
 
-  test('reserves Recipient received for completed Pay activity', () {
+  test('uses a neutral amount label for unsuccessful Pay activity', () {
     for (final status in const [
+      SwapIntentStatus.incompleteDeposit,
       SwapIntentStatus.failed,
       SwapIntentStatus.refunded,
       SwapIntentStatus.expired,
@@ -246,7 +403,7 @@ void main() {
         ),
       );
 
-      expect(presentation.receiveLabel, 'Recipient gets', reason: status.name);
+      expect(presentation.receiveLabel, 'Amount', reason: status.name);
     }
   });
 
@@ -269,7 +426,10 @@ void main() {
 
     final undeposited = presentation();
     expect(undeposited.payLabel, 'You pay');
-    expect(undeposited.details.map((row) => row.label), contains('You pay'));
+    expect(
+      undeposited.details.map((row) => row.label),
+      isNot(contains('You pay')),
+    );
     expect(
       undeposited.details.map((row) => row.label),
       isNot(contains('You paid')),
@@ -277,7 +437,10 @@ void main() {
 
     final deposited = presentation(depositTxHash: 'zec-deposit-txid');
     expect(deposited.payLabel, 'You paid');
-    expect(deposited.details.map((row) => row.label), contains('You paid'));
+    expect(
+      deposited.details.map((row) => row.label),
+      isNot(contains('You paid')),
+    );
   });
 
   test('failed Pay copy requires provider-observed deposit evidence', () {
@@ -346,11 +509,12 @@ void main() {
     ]) {
       final result = presentation(status);
       expect(result.payLabel, 'You paid', reason: status.name);
-      expect(
-        result.details.map((row) => row.label),
-        contains('You paid'),
-        reason: status.name,
-      );
+      final paidDetail = result.details.map((row) => row.label);
+      if (status == SwapIntentStatus.refunded) {
+        expect(paidDetail, isNot(contains('You paid')));
+      } else {
+        expect(paidDetail, contains('You paid'));
+      }
     }
   });
 
@@ -690,25 +854,18 @@ void main() {
     expect(presentation.badgeKind, SwapStatusBadgeKind.failed);
     expect(presentation.progressIndex, 3);
     expect(presentation.showTabs, isFalse);
-    expect(_detailValue(presentation.details, 'Total fees'), '0.00002 ZEC');
     expect(
-      _detailRow(presentation.details, 'Total fees').helpTooltip,
-      swapTotalFeesTooltip,
+      presentation.details.map((detail) => detail.label),
+      isNot(contains('Total fees')),
     );
     expect(
       presentation.details.map((detail) => detail.label),
       isNot(contains('Realized slippage')),
     );
+    expect(_detailValue(presentation.details, 'Refund to'), contains('u1'));
+    expect(_detailRow(presentation.details, 'Refund to').copyable, isTrue);
     expect(
-      _detailValue(presentation.details, 'ZEC refunded to'),
-      contains('u1'),
-    );
-    expect(
-      _detailRow(presentation.details, 'ZEC refunded to').copyable,
-      isTrue,
-    );
-    expect(
-      _detailRow(presentation.details, 'ZEC refunded to').copyText,
+      _detailRow(presentation.details, 'Refund to').copyText,
       'u1refund-address',
     );
     expect(

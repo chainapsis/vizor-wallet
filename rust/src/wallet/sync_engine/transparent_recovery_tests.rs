@@ -470,8 +470,8 @@ async fn checkpoint_drains_parent_payload_discovered_by_address_history() {
 
     assert_eq!(
         parent_calls.load(Ordering::SeqCst),
-        history_calls.load(Ordering::SeqCst) + 1,
-        "each history result performs fee completion and the checkpoint adds one routed payload dispatch"
+        1,
+        "only routed payload recovery queries the parent; fee completion stays local"
     );
 }
 

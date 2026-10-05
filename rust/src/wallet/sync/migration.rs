@@ -4623,13 +4623,16 @@ pub(crate) fn retire_run_for_rebuild(
     reconcile_wallet_locks_for_run(db_path, network, run_id)
 }
 
+/// Abandons the run after rechecking `evidence` in the same write
+/// transaction, so a concurrent sync cannot invalidate it first.
 pub(crate) fn abandon_run(
     db_path: &str,
     account_uuid: &str,
     network: WalletNetwork,
     expected_run_id: &str,
+    evidence: &StopEvidence,
 ) -> Result<(), String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    let mut conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     let run = conn
         .query_row(
@@ -4663,9 +4666,12 @@ pub(crate) fn abandon_run(
     }
 
     let now = now_ms()?;
+    // IMMEDIATE takes the write lock before the evidence is read, so sync
+    // cannot move the chain between the recheck and the transition.
     let tx = conn
-        .unchecked_transaction()
+        .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|e| format!("Begin migration stop transition: {e}"))?;
+    verify_stop_evidence(&tx, evidence)?;
     let transitioned = tx
         .execute(
             &format!(
@@ -4684,6 +4690,27 @@ pub(crate) fn abandon_run(
         .map_err(|e| format!("Mark migration stopped: {e}"))?;
     if transitioned != 1 {
         return Err("Migration phase changed while stopping; retry.".to_string());
+    }
+
+    // Only now, after the recheck, record that the wallet tracks these. Doing
+    // it earlier would hide them from a retry after a failed recheck.
+    for tracked in &evidence.tracked {
+        match tracked.kind {
+            MigrationStopCandidateKind::MigrationTransaction => {
+                tx.execute(
+                    &format!(
+                        "UPDATE {PENDING_TXS_TABLE}
+                         SET status = 'broadcasted'
+                         WHERE run_id = ?1 AND txid_hex = ?2 AND status = 'scheduled'"
+                    ),
+                    params![expected_run_id, tracked.txid_hex],
+                )
+                .map_err(|e| format!("Keep tracked migration transaction: {e}"))?;
+            }
+            MigrationStopCandidateKind::DenominationStage => {
+                mark_denomination_stage_broadcasted(&tx, expected_run_id, &tracked.txid_hex)?;
+            }
+        }
     }
 
     // A prepared child PCZT has not reached the network. Once the run is
@@ -7602,6 +7629,104 @@ pub(crate) fn local_denomination_chain_identity(
 
     #[cfg(not(test))]
     Err("Wallet schema cannot provide canonical denomination block identities".to_string())
+}
+
+/// Local evidence a migration stop relied on.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct StopEvidence {
+    /// Attempted transactions that stop let the wallet's own records protect.
+    pub tracked: Vec<TrackedStopTransaction>,
+    /// The scanned block, by height and hash, that stop matched against the
+    /// current chain before discarding transactions.
+    pub verified_scan: Option<(u32, [u8; 32])>,
+}
+
+/// An attempted transaction whose inputs the wallet's own records hold.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct TrackedStopTransaction {
+    pub kind: MigrationStopCandidateKind,
+    pub txid_hex: String,
+    pub expiry_height: u32,
+}
+
+/// The chain tip the wallet judges expiry against, as librustzcash computes
+/// it: scan ranges are end-exclusive.
+pub(crate) fn wallet_chain_tip(conn: &rusqlite::Connection) -> Result<Option<u32>, String> {
+    conn.query_row("SELECT MAX(block_range_end) FROM scan_queue", [], |row| {
+        row.get::<_, Option<u32>>(0)
+    })
+    .map(|end| end.map(|end| end.saturating_sub(1)))
+    .map_err(|e| format!("Read wallet chain tip: {e}"))
+}
+
+/// Whether the wallet's records treat an attempted transaction's inputs as
+/// spent. The wallet must store the transaction's bytes: they record its
+/// expiry, which keeps the inputs spent even if a reorg later unmines it.
+/// A transaction known only from compact-block scanning has no recorded
+/// expiry, so after a reorg the wallet would release its inputs within the
+/// default expiry window, long before a ZIP 318 migration expires. A stored
+/// transaction holds its inputs while it is mined, or while it is unexpired
+/// at `chain_tip_height`. Zero is the legacy no-expiry sentinel.
+pub(crate) fn stop_evidence_holds_inputs(
+    mined: bool,
+    stored: bool,
+    expiry_height: u32,
+    chain_tip_height: Option<u32>,
+) -> bool {
+    let unexpired = expiry_height == 0 || chain_tip_height.is_some_and(|tip| expiry_height > tip);
+    stored && (mined || unexpired)
+}
+
+/// [`stop_evidence_holds_inputs`] for one transaction's local records.
+pub(crate) fn stop_candidate_holds_inputs(
+    conn: &rusqlite::Connection,
+    txid_hex: &str,
+    expiry_height: u32,
+    chain_tip_height: Option<u32>,
+) -> Result<bool, String> {
+    Ok(stop_evidence_holds_inputs(
+        local_denomination_chain_identity(conn, txid_hex)?.is_some(),
+        local_transaction_raw(conn, txid_hex)?.is_some(),
+        expiry_height,
+        chain_tip_height,
+    ))
+}
+
+fn verify_stop_evidence(
+    conn: &rusqlite::Connection,
+    evidence: &StopEvidence,
+) -> Result<(), String> {
+    const CHANGED: &str =
+        "The wallet's chain changed while the migration was stopping. Try stopping again.";
+    if !evidence.tracked.is_empty() {
+        let chain_tip_height = wallet_chain_tip(conn)?;
+        for tracked in &evidence.tracked {
+            if !stop_candidate_holds_inputs(
+                conn,
+                &tracked.txid_hex,
+                tracked.expiry_height,
+                chain_tip_height,
+            )? {
+                return Err(CHANGED.to_string());
+            }
+        }
+    }
+    if let Some((height, hash)) = evidence.verified_scan {
+        // Truncation removes every block above its target, so an unchanged
+        // block here leaves the whole verified scan below it in place.
+        let local_hash = conn
+            .query_row(
+                "SELECT hash FROM blocks WHERE height = ?1",
+                params![height],
+                |row| row.get::<_, Vec<u8>>(0),
+            )
+            .optional()
+            .map_err(|e| format!("Read verified scanned block: {e}"))?;
+        if local_hash.as_deref() != Some(hash.as_slice()) {
+            return Err(CHANGED.to_string());
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn local_transaction_raw(

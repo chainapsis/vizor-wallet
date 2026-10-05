@@ -59,11 +59,13 @@ class _Api extends RustLibApi {
 class _Store implements EnhancePirPreferenceStore {
   bool? value;
   bool fail = false;
+  Completer<void>? pending;
   List<String>? events;
   @override
   Future<bool?> readEnabled() async => value;
   @override
   Future<void> writeEnabled(bool enabled) async {
+    if (pending != null) await pending!.future;
     if (fail) throw StateError('disk full');
     events?.add('store:$enabled');
     value = enabled;
@@ -140,11 +142,13 @@ class _RestartSync extends SyncNotifier {
 /// instead of reaching Rust.
 class _GuardedSync extends SyncNotifier {
   int attempts = 0;
+  VoidCallback? onAttempt;
   @override
   Future<SyncState> build() async => SyncState();
   @override
   void startSync({int? latestTipHeight}) {
     attempts++;
+    onAttempt?.call();
     super.startSync(latestTipHeight: latestTipHeight);
   }
 }
@@ -205,6 +209,35 @@ void main() {
         enhancePirBackgroundSinkProvider.overrideWithValue(background.call),
     ],
   );
+  test(
+    'first sync requested during preference save resumes with private policy',
+    () async {
+      final store = _Store()..pending = Completer<void>();
+      final policiesAtStart = <List<bool>>[];
+      final sync = _GuardedSync()
+        ..onAttempt = () => policiesAtStart.add(List.of(api.values));
+      final container = setup(store, sync, hasAccount: true);
+      addTearDown(container.dispose);
+      await container.read(syncProvider.future);
+      final change = container.read(enhancePirProvider.notifier).set(true);
+      await Future<void>.delayed(Duration.zero);
+      // Stop at the duplicate-sync guard after the production pause guards,
+      // avoiding network access in this test.
+      api.running = true;
+      sync.startSync();
+      expect(sync.attempts, 1);
+      expect(api.values, isEmpty);
+      store.pending!.complete();
+      await change;
+      expect(store.value, isTrue);
+      expect(policiesAtStart, [
+        <bool>[],
+        [true],
+      ]);
+      expect(container.read(enhancePirProvider), isTrue);
+    },
+  );
+
   for (final stalled in [false, true]) {
     test(
       'real transition: native ${stalled ? "timeout and retry" : "pause before cancellation and commit"}',

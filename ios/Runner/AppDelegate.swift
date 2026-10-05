@@ -54,6 +54,12 @@ import UIKit
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
 
     let messenger = engineBridge.applicationRegistrar.messenger()
+    let reviewRegistrar = engineBridge.pluginRegistry.registrar(forPlugin: "VizorAppReview")
+    let appReviewHandler = AppReviewHandler {
+      reviewRegistrar?.viewController
+    }
+    FlutterMethodChannel(name: "com.zcash.wallet/app_review", binaryMessenger: messenger)
+      .setMethodCallHandler { call, result in appReviewHandler.handle(call, result: result) }
     numericKeyboardHandler = NumericKeyboardHandler(messenger: messenger)
 
     let modalCorners = ModalCornerHandler()

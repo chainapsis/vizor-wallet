@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart' show TextInputAction, TextInputType;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,10 +11,12 @@ import '../../../core/widgets/app_icon_hover_button.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_text_field.dart';
+import '../../../providers/enhance_pir_provider.dart';
 import '../../../providers/rpc_endpoint_latency_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import 'network_privacy_control.dart';
+import 'enhance_pir_privacy_control.dart';
 
 class CustomEndpointSettingsPanel extends ConsumerStatefulWidget {
   const CustomEndpointSettingsPanel({
@@ -54,7 +58,10 @@ class _CustomEndpointSettingsPanelState
   }
 
   bool _canUpdate(RpcEndpointConfig current) {
-    if (_isSubmitting) return false;
+    if (_isSubmitting ||
+        ref.read(enhancePirTransitionProvider) == 'Changing setting…') {
+      return false;
+    }
     try {
       final normalized = normalizeRpcEndpointUrl(
         _controller.text,
@@ -121,6 +128,10 @@ class _CustomEndpointSettingsPanelState
     final isDark = AppTheme.of(context) == AppThemeData.dark;
     final current = ref.watch(rpcEndpointProvider);
     final latencyState = ref.watch(rpcEndpointLatencyProvider);
+    final available = ref.watch(enhancePirAvailableProvider);
+    final enabled = ref.watch(enhancePirProvider);
+    final transition = ref.watch(enhancePirTransitionProvider);
+    final changingRecovery = transition == 'Changing setting…';
 
     return DecoratedBox(
       key: const ValueKey('network_settings_panel_surface'),
@@ -130,43 +141,75 @@ class _CustomEndpointSettingsPanelState
         border: Border.all(color: colors.border.subtle),
       ),
       child: ConstrainedBox(
-        constraints: BoxConstraints.tightFor(width: widget.width),
+        constraints: BoxConstraints(
+          minWidth: widget.width,
+          maxWidth: widget.width,
+          maxHeight: (MediaQuery.sizeOf(context).height - AppSpacing.md * 2)
+              .clamp(0.0, double.infinity),
+        ),
         child: Padding(
           padding: const EdgeInsets.all(AppSpacing.md),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _PanelHeader(onClose: widget.onClose),
+              _PanelHeader(onClose: changingRecovery ? null : widget.onClose),
               const SizedBox(height: AppSpacing.sm),
-              const NetworkPrivacyControl(),
-              const SizedBox(height: AppSpacing.md),
-              CurrentEndpointText(current: current, latencyState: latencyState),
-              const SizedBox(height: AppSpacing.sm),
-              SizedBox(
-                width: 352,
-                child: CustomEndpointForm(
-                  controller: _controller,
-                  messageText: _customMessageText(),
-                  onChanged: (_) => setState(() {
-                    _submitError = null;
-                  }),
-                  onSubmit: _submit,
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const NetworkPrivacyControl(),
+                      if (available) ...[
+                        const SizedBox(height: AppSpacing.sm),
+                        EnhancePirPrivacyControl(
+                          enabled: enabled,
+                          transition: transition,
+                          onToggle: changingRecovery || _isSubmitting
+                              ? null
+                              : () => unawaited(
+                                  ref
+                                      .read(enhancePirProvider.notifier)
+                                      .toggle(),
+                                ),
+                        ),
+                      ],
+                      const SizedBox(height: AppSpacing.md),
+                      CurrentEndpointText(
+                        current: current,
+                        latencyState: latencyState,
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      SizedBox(
+                        width: 352,
+                        child: CustomEndpointForm(
+                          controller: _controller,
+                          messageText: _customMessageText(),
+                          onChanged: (_) => setState(() {
+                            _submitError = null;
+                          }),
+                          onSubmit: _submit,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      if (_submitError != null) ...[
+                        SizedBox(
+                          width: 352,
+                          child: Text(
+                            _submitError!,
+                            textAlign: TextAlign.center,
+                            style: AppTypography.bodyMedium.copyWith(
+                              color: colors.text.destructive,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.xs),
+                      ],
+                    ],
+                  ),
                 ),
               ),
               const SizedBox(height: AppSpacing.sm),
-              if (_submitError != null) ...[
-                SizedBox(
-                  width: 352,
-                  child: Text(
-                    _submitError!,
-                    textAlign: TextAlign.center,
-                    style: AppTypography.bodyMedium.copyWith(
-                      color: colors.text.destructive,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.xs),
-              ],
               AppButton(
                 onPressed: _canUpdate(current) ? _submit : null,
                 variant: AppButtonVariant.primary,

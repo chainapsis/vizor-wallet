@@ -22,7 +22,11 @@ class MobileOnboardingStepScaffold extends StatelessWidget {
     this.aboveTitle,
     this.titleStyle,
     this.contentGap = AppSpacing.md,
+    this.topNavHeight = kMobileTopNavHeight,
+    this.topNavProgressOffset = Offset.zero,
+    this.topNavProgressTrackColor,
     this.showBackButton = true,
+    this.showProgress = true,
     this.scrollable = true,
     super.key,
   });
@@ -55,9 +59,15 @@ class MobileOnboardingStepScaffold extends StatelessWidget {
   /// Space between the heading group and the step content.
   final double contentGap;
 
+  /// Screen-specific steps-nav geometry; defaults match the shared component.
+  final double topNavHeight;
+  final Offset topNavProgressOffset;
+  final Color? topNavProgressTrackColor;
+
   /// The steps nav normally reserves the leading back affordance; terminal
   /// opt-in steps can hide it when there is no valid previous action.
   final bool showBackButton;
+  final bool showProgress;
 
   /// Keeps the default onboarding behavior scrollable. Screens with a
   /// live camera viewport can opt out so the viewport resizes instead of
@@ -67,9 +77,9 @@ class MobileOnboardingStepScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final contentPadding = const EdgeInsets.fromLTRB(
+    final contentPadding = EdgeInsets.fromLTRB(
       AppSpacing.xs,
-      AppSpacing.md,
+      showProgress ? AppSpacing.md : AppSpacing.s,
       AppSpacing.xs,
       AppSpacing.md,
     );
@@ -114,11 +124,21 @@ class MobileOnboardingStepScaffold extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              MobileTopNav.steps(
-                progress: progress,
-                onBack: onBack,
-                showBackButton: showBackButton,
-              ),
+              if (!showProgress)
+                MobileTopNav.back(
+                  title: '',
+                  height: kMobileTopNavHeight,
+                  onBack: showBackButton ? onBack : null,
+                )
+              else
+                MobileTopNav.steps(
+                  progress: progress,
+                  height: topNavHeight,
+                  progressOffset: topNavProgressOffset,
+                  progressTrackColor: topNavProgressTrackColor,
+                  onBack: onBack,
+                  showBackButton: showBackButton,
+                ),
               Expanded(
                 child: scrollable
                     ? SingleChildScrollView(

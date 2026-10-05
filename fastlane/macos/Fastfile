@@ -250,6 +250,11 @@ def configure_sparkle_info_plist!(plist_path, metadata)
 end
 
 def sparkle_tool_path(tool_name)
+  # Flutter 3.47+ explicitly places Swift packages in the project build cache.
+  project_tool = File.join(workspace_root, "build", "macos", "SourcePackages", "artifacts", "sparkle", "Sparkle", "bin", tool_name)
+  return project_tool if File.file?(project_tool)
+
+  # Older Flutter versions resolve packages under Xcode's default DerivedData.
   candidates = Dir.glob(File.expand_path("~/Library/Developer/Xcode/DerivedData/*/SourcePackages/artifacts/sparkle/Sparkle/bin/#{tool_name}"))
   tool_path = candidates.max_by { |path| File.mtime(path) }
   UI.user_error!("Could not locate Sparkle tool #{tool_name}. Resolve Swift package dependencies first.") unless tool_path
