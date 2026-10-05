@@ -29,6 +29,7 @@
 use std::future::Future;
 use std::time::Duration;
 
+use zakura_pir_transparent::WithdrawnCause;
 use zcash_client_backend::data_api::{
     transparent_ledger::{
         AccountLifecycle, AddressRange, ChainPoint, CommitRejection, PageRequest, PendingPage,
@@ -47,6 +48,10 @@ use crate::wallet::network::WalletNetwork;
 
 #[cfg(test)]
 pub(crate) mod fixture;
+// The coordinator becomes its caller when it moves to batch sources; until
+// then only account deletion reaches it, through `remove_companions`.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) mod pir;
 mod policy;
 #[cfg(test)]
 mod tests;
@@ -112,6 +117,41 @@ pub(crate) struct SourceResult {
     pub(crate) completed_pages: Vec<Vec<u8>>,
 }
 
+/// When to ask a batch source about an account again.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Continuation {
+    /// Every watched address is covered through the target.
+    Complete,
+    /// A pass budget stopped the source; the next pass resumes at once.
+    More,
+    /// The source cannot progress yet: its publication ends below the target,
+    /// or its service refused for capacity. Ask again after the wait.
+    RetryAfter(Duration),
+    /// Progress needs more than a retry, such as an unknown block or spends
+    /// the watch set cannot resolve.
+    Stalled,
+}
+
+/// One pass of a batch source over one account.
+///
+/// Only `Ready` carries commits. They are applied in order, each through the
+/// trusted operation when the source is trusted, and acknowledged only after
+/// every one applied.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum SourceBatch {
+    Ready {
+        commits: Vec<TransparentLedgerCommit<AccountUuid>>,
+        next: Continuation,
+        /// Blocks between the watch set's target and the height the pass
+        /// covered through.
+        behind_by: u32,
+    },
+    /// The publication is behind what the source recorded. Apply nothing.
+    Pending { next: Continuation },
+    /// The publication contradicts what the source recorded. Apply nothing.
+    Withdrawn(WithdrawnCause),
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum SourceError {
     /// No private source is configured or reachable. Nothing was sent.
@@ -119,8 +159,9 @@ pub(crate) enum SourceError {
     /// The call failed. Earlier commits stay durable; the account is retried
     /// in a later run. It carries no detail: a private source's errors can
     /// name addresses, outpoints, or pages, and must not reach logs.
-    #[cfg_attr(not(test), allow(dead_code))]
     Failed,
+    /// Cancellation stopped the call. Nothing it retrieved may be applied.
+    Cancelled,
 }
 
 /// A private transparent recovery source. Implementations must not fall back
@@ -269,6 +310,9 @@ async fn recover_account<S: RecoverySource>(
             Ok(Err(SourceError::Failed)) => {
                 log::warn!("transparent ledger: source call failed");
                 return Ok(AccountOutcome::Skipped);
+            }
+            Ok(Err(SourceError::Cancelled)) => {
+                return Ok(AccountOutcome::Stop(RunOutcome::Exited));
             }
             Err(_) => {
                 log::warn!("transparent ledger: source call timed out");

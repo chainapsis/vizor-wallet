@@ -4,13 +4,14 @@
 mod cancellation;
 mod enhance_pir;
 mod status_pir;
-// The transparent PIR recovery source is its only caller and lands separately.
-#[cfg_attr(not(test), allow(dead_code))]
 mod transparent_pir;
 
 pub(super) use cancellation::cancelable;
 pub(super) use enhance_pir::client_protocol_error;
 pub(crate) use status_pir::StatusPirTransport;
+pub(in crate::wallet::sync_engine) use transparent_pir::TransparentPirHttp;
+#[cfg(test)]
+pub(in crate::wallet::sync_engine) use transparent_pir::{ObservedRequest, RequestObserver};
 
 use bytes::Bytes;
 use http::{Method, Request, StatusCode};

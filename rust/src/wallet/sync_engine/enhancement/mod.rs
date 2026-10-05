@@ -48,6 +48,9 @@ pub(crate) use policy::{
     set_preference_confirmed, transparent_ledger_mode_for, EnhancementPolicy,
     PublicTransparentLookups,
 };
+pub(super) use transport::TransparentPirHttp;
+#[cfg(test)]
+pub(super) use transport::{ObservedRequest, RequestObserver, RoutePolicy};
 
 use std::collections::HashSet;
 use tonic::transport::Channel;

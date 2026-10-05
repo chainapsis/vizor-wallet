@@ -984,4 +984,5 @@ async fn a_flag_off_build_pauses_a_private_wallet_without_weakening_it() {
 }
 
 mod activation;
+mod pir;
 mod policy;
