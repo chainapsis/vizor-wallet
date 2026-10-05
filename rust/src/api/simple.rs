@@ -27,3 +27,10 @@ pub fn configure_regtest_ironwood_activation_height(height: u32) -> Result<(), S
 pub fn configure_fast_testnet_migration(enabled: bool) {
     crate::wallet::sync::configure_fast_testnet_migration(enabled);
 }
+
+/// Records the `ZCASH_PRIVATE_TRANSPARENT_RECOVERY` development flag. Without
+/// it, private queries never select private transparent recovery and no
+/// transparent policy is raised; an explicit toggle-off still lowers one.
+pub fn configure_private_transparent_recovery(enabled: bool) {
+    crate::wallet::sync_engine::enhancement::configure_private_transparent_recovery(enabled);
+}

@@ -22,3 +22,11 @@ Future<void> configureFastTestnetMigration({required bool enabled}) => RustLib
     .instance
     .api
     .crateApiSimpleConfigureFastTestnetMigration(enabled: enabled);
+
+/// Records the `ZCASH_PRIVATE_TRANSPARENT_RECOVERY` development flag. Without
+/// it, private queries never select private transparent recovery and no
+/// transparent policy is raised; an explicit toggle-off still lowers one.
+Future<void> configurePrivateTransparentRecovery({required bool enabled}) =>
+    RustLib.instance.api.crateApiSimpleConfigurePrivateTransparentRecovery(
+      enabled: enabled,
+    );

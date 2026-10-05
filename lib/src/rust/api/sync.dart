@@ -27,6 +27,32 @@ void setActiveSyncAccount({String? accountUuid}) => RustLib.instance.api
 void setEnhancePirEnabled({required bool enabled}) =>
     RustLib.instance.api.crateApiSyncSetEnhancePirEnabled(enabled: enabled);
 
+/// Record whether the private queries setting in effect was read from
+/// storage. An unreadable setting is private for the launch but unconfirmed:
+/// it withholds public transparent lookups and never raises a wallet's
+/// transparent policy.
+void setEnhancePirPreferenceConfirmed({required bool confirmed}) => RustLib
+    .instance
+    .api
+    .crateApiSyncSetEnhancePirPreferenceConfirmed(confirmed: confirmed);
+
+/// Reconcile the wallet's durable transparent policy with the private queries
+/// setting. `true` raises it to private recovery when this build selects that
+/// mode; `false` lowers it to public in every build. Returns whether the
+/// policy changed, so a rollback restores only what it changed. Waits up to
+/// 30 s for public lookups already in flight, and changes nothing on failure.
+/// A missing wallet is left alone. It never confirms the setting: callers do
+/// that only for a value read from storage.
+Future<bool> reconcileTransparentPolicy({
+  required String dbPath,
+  required String network,
+  required bool privateQueries,
+}) => RustLib.instance.api.crateApiSyncReconcileTransparentPolicy(
+  dbPath: dbPath,
+  network: network,
+  privateQueries: privateQueries,
+);
+
 /// Start a full sync. Streams progress events to Dart via StreamSink.
 /// mode: 1=foreground, 2=background. Sync exits if desired mode changes.
 Stream<ApiSyncProgressEvent> startFullSync({

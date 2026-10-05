@@ -41,9 +41,16 @@ async fn activate(wallet: &mut Wallet) -> test_mode::ModeOverride {
 }
 
 async fn run_required(wallet: &mut Wallet, source: &FixtureSource) -> RunOutcome {
-    run(&mut wallet.db, required(), source, &|| false)
-        .await
-        .unwrap()
+    run(
+        &mut wallet.db,
+        &wallet.path,
+        NETWORK,
+        required(),
+        source,
+        &|| false,
+    )
+    .await
+    .unwrap()
 }
 
 fn lifecycle(wallet: &Wallet, account: AccountUuid) -> AccountLifecycle {
@@ -353,7 +360,7 @@ async fn reopened_public_handle_never_labels_candidate_funds_current() {
 
 // Authorization tests use finalized transaction effects; signature/proof validation
 // remains in the PCZT preparation layer before this shared dispatch boundary.
-fn hardware_tx(inputs: Vec<OutPoint>) -> zcash_primitives::transaction::Transaction {
+pub(super) fn hardware_tx(inputs: Vec<OutPoint>) -> zcash_primitives::transaction::Transaction {
     use transparent::{
         address::Script,
         bundle::{Authorized, Bundle, TxIn, TxOut},

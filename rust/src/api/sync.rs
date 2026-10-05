@@ -50,6 +50,42 @@ pub(crate) fn enhance_pir_enabled() -> bool {
     ENHANCE_PIR_ENABLED.load(Ordering::SeqCst)
 }
 
+/// Record whether the private queries setting in effect was read from
+/// storage. An unreadable setting is private for the launch but unconfirmed:
+/// it withholds public transparent lookups and never raises a wallet's
+/// transparent policy.
+#[frb(sync)]
+pub fn set_enhance_pir_preference_confirmed(confirmed: bool) {
+    sync_engine::enhancement::set_preference_confirmed(confirmed);
+}
+
+/// Reconcile the wallet's durable transparent policy with the private queries
+/// setting. `true` raises it to private recovery when this build selects that
+/// mode; `false` lowers it to public in every build. Returns whether the
+/// policy changed, so a rollback restores only what it changed. Waits up to
+/// 30 s for public lookups already in flight, and changes nothing on failure.
+/// A missing wallet is left alone. It never confirms the setting: callers do
+/// that only for a value read from storage.
+pub fn reconcile_transparent_policy(
+    db_path: String,
+    network: String,
+    private_queries: bool,
+) -> Result<bool, String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
+        let applied = rt
+            .block_on(sync_engine::transparent_ledger::set_transparent_policy(
+                &db_path,
+                network,
+                private_queries,
+                sync_engine::enhancement::private_transparent_recovery(),
+            ))
+            .map_err(|e| e.to_string())?;
+        Ok(applied.is_some())
+    })
+}
+
 // ======================== Full Sync ========================
 
 /// Progress event streamed to Dart during sync.
