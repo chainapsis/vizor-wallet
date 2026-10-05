@@ -2678,7 +2678,9 @@ pub struct TransactionInfo {
     pub mined_height: u64,
     pub expired_unmined: bool,
     pub account_balance_delta: i64,
-    /// The recorded fee. Zero unless `fee_state` is `Known`.
+    /// The network fee shown for the transaction. Zero unless `fee_state` is
+    /// `Known`. Display only: it is never part of `display_amount` or
+    /// `account_balance_delta`.
     pub fee: u64,
     pub fee_state: TransactionFeeState,
     pub block_time: u64,
@@ -2694,12 +2696,14 @@ pub struct TransactionInfo {
     pub provisional: bool,
 }
 
-/// The fee of a transaction as it concerns the account.
+/// The network fee shown for a transaction.
 pub enum TransactionFeeState {
-    /// The account paid the recorded `fee`.
+    /// `fee` is known: the fee the account paid or, when that is not recorded,
+    /// the exact fee of the whole transaction from privately recovered
+    /// metadata, which other funders may have shared.
     Known,
-    /// The account spent funds, or may have, but the fee is not recorded.
-    /// Show it as unknown, never as zero.
+    /// The account spent funds, or may have, but neither its fee nor the
+    /// whole transaction's is known. Show it as unknown, never as zero.
     Unknown,
     /// The account spent nothing, so it paid no fee.
     NotApplicable,

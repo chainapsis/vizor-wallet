@@ -2842,13 +2842,15 @@ class TransactionDetailOutput {
           usesOrchardReceiver == other.usesOrchardReceiver;
 }
 
-/// The fee of a transaction as it concerns the account.
+/// The network fee shown for a transaction.
 enum TransactionFeeState {
-  /// The account paid the recorded `fee`.
+  /// `fee` is known: the fee the account paid or, when that is not recorded,
+  /// the exact fee of the whole transaction from privately recovered
+  /// metadata, which other funders may have shared.
   known,
 
-  /// The account spent funds, or may have, but the fee is not recorded.
-  /// Show it as unknown, never as zero.
+  /// The account spent funds, or may have, but neither its fee nor the
+  /// whole transaction's is known. Show it as unknown, never as zero.
   unknown,
 
   /// The account spent nothing, so it paid no fee.
@@ -2861,7 +2863,9 @@ class TransactionInfo {
   final bool expiredUnmined;
   final PlatformInt64 accountBalanceDelta;
 
-  /// The recorded fee. Zero unless `fee_state` is `Known`.
+  /// The network fee shown for the transaction. Zero unless `fee_state` is
+  /// `Known`. Display only: it is never part of `display_amount` or
+  /// `account_balance_delta`.
   final BigInt fee;
   final TransactionFeeState feeState;
   final BigInt blockTime;
