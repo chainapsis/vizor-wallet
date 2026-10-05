@@ -36,6 +36,10 @@ Incomplete-evidence variants (N_pre, and the faults N_lag and N_pir_fail)
 keep the public honesty constraints. Fault variants assert no spendable claim
 from incomplete evidence; private sync reports success by design and states
 transparent authority separately, so there is no synchronized-claim check.
+
+`ui_rows` applies the same categories to the app layer's fresh restore, where
+private queries are on and the app marks every row whose details are
+incomplete.
 """
 
 import os
@@ -141,16 +145,38 @@ def other_account_owns_script(context, txid, account):
     )
 
 
+def whole_fees(record, facts, context):
+    """Every fee a row of this transaction may show: its whole fee, and for a
+    TEX leg the two legs' together (a grouped operation)."""
+    fees = [facts["fee"]] if facts.get("fee") is not None else []
+    other = (record.get("links") or {}).get("other_leg")
+    if fees and other and context["facts"].get(other, {}).get("fee") is not None:
+        fees.append(facts["fee"] + context["facts"][other]["fee"])
+    return fees
+
+
+def fee_states(record, effect, context, account):
+    """The fee states an honestly incomplete row of a spend may have: known
+    when the account owns a transparent script in it, unknown when its part is
+    shielded only and no other Alice account owns a script in it. None when
+    the account spent nothing."""
+    if not effect["spent"]:
+        return None
+    if owns_script(effect):
+        return ["known"]
+    if other_account_owns_script(context, record["txid"], account):
+        # Another Alice account's recovered event carries the whole fee.
+        return ["known", "unknown"]
+    return ["unknown"]
+
+
 def incomplete(item, record, facts, effect, context):
     """Constraints for an honestly incomplete row (see the module docs)."""
     account = item["account"]
     attribution = record.get("attribution", {})
     finals = [row for rows in (item["row_sets"] or []) for row in rows]
     folds = any(rows == [] for rows in (item["row_sets"] or []))
-    fees = [facts["fee"]] if facts.get("fee") is not None else []
-    other = (record.get("links") or {}).get("other_leg")
-    if fees and other and context["facts"].get(other, {}).get("fee") is not None:
-        fees.append(facts["fee"] + context["facts"][other]["fee"])
+    fees = whole_fees(record, facts, context)
     delta = effect["delta"]
     constraints = [c for c in item["constraints"] if c["name"] in KEPT_CONSTRAINTS]
     if not any(c["name"] == "delta_is" for c in constraints):
@@ -168,14 +194,8 @@ def incomplete(item, record, facts, effect, context):
             "value": abs(delta),
         },
     ]
-    if effect["spent"]:
-        if owns_script(effect):
-            states = ["known"]
-        elif other_account_owns_script(context, record["txid"], account):
-            # Another Alice account's recovered event carries the whole fee.
-            states = ["known", "unknown"]
-        else:
-            states = ["unknown"]
+    states = fee_states(record, effect, context, account)
+    if states:
         constraints.append({"name": "fee_state_in", "values": states})
     return dict(item, row_sets=None, constraints=constraints)
 
@@ -253,8 +273,68 @@ def request_policy(context, alice_addresses, related_txids):
     return policy
 
 
+def incomplete_ui_row(record, facts, effect, account, context):
+    """The app-layer check of an honestly incomplete row: one row of the
+    transaction, of any role, present unless the public profile allows folding
+    it (TEX leg 1); marked incomplete; a real owned amount, the sole funder's
+    real payment, or at most the movement; a shown fee is a whole fee, never
+    zero, and a known fee state shows one."""
+    row_sets, _ = public.expectations(record["intent"], facts, effect, record, account, context)
+    states = fee_states(record, effect, context, account)
+    return {
+        "case": record["case"],
+        "intent": record["intent"],
+        "account": account,
+        "txid": bytes.fromhex(record["txid"])[::-1].hex(),
+        "role": None,
+        "optional": any(rows == [] for rows in row_sets or []),
+        "details_incomplete": True,
+        "status": "Completed",
+        "block_time": facts["block_time"],
+        "amount_values": honest_amounts(facts, effect, account, record.get("attribution", {})),
+        "amount_max": abs(effect["delta"]),
+        "fee_known": facts["fee"] if states == ["known"] else None,
+        "fee_values": whole_fees(record, facts, context),
+    }
+
+
 def ui_rows(context):
-    raise SystemExit(
-        "private profile: no app-layer expectations; run the Rust layer only "
-        "(the runner refuses --flutter with --profile private)"
-    )
+    """App-layer expectations for a fresh restore (variant N), by the rules of
+    `activity`. Private queries are on, so the app marks a row whose details
+    are incomplete ("Details incomplete" on the row, "Details: Incomplete" on
+    its receipt); `details_incomplete` says which way each row must show.
+
+    * exact (transparent receives): the public rows, unmarked;
+    * aggregate (a fully funded transparent-only send): the public row, with
+      its exact amount, pool and whole fee, marked incomplete;
+    * honestly incomplete: one row per transaction and account
+      (`incomplete_ui_row`).
+
+    The unmined receive the runner adds for the app layer is optional: private
+    recovery reads mined blocks, and nothing else in private mode is required
+    to show a transparent receive before it is mined. If shown, it must be
+    right.
+    """
+    public_rows = {}
+    for row in public.ui_rows(context):
+        public_rows.setdefault((row["txid"], row["account"]), []).append(row)
+    rows = []
+    for record in context["cases"]["txs"]:
+        facts = context["facts"][record["txid"]]
+        internal = bytes.fromhex(record["txid"])[::-1].hex()
+        for account in context["alice_accounts"]:
+            shown = public_rows.get((internal, account), [])
+            if facts["status"] != "mined":
+                rows += [dict(row, optional=True) for row in shown]
+                continue
+            effect = context["effects"][f"{record['txid']}:{account}"]
+            if not effect["involved"]:
+                continue
+            which = category(record, facts, effect)
+            if which == "exact":
+                rows += [dict(row, details_incomplete=False) for row in shown]
+            elif which == "aggregate":
+                rows += [dict(row, details_incomplete=True) for row in shown]
+            else:
+                rows.append(incomplete_ui_row(record, facts, effect, account, context))
+    return rows

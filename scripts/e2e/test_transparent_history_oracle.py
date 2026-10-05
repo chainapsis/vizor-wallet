@@ -293,9 +293,66 @@ class PrivatePolicy(unittest.TestCase):
             ],
         )
 
-    def test_there_are_no_app_layer_expectations(self):
-        with self.assertRaises(SystemExit):
-            private.ui_rows(context())
+
+class PrivateUiRows(unittest.TestCase):
+    """The app layer's fresh restore (variant N) under the private profile."""
+
+    def setUp(self):
+        self.rows = private.ui_rows(context())
+
+    def rows_for(self, txid, account="A0"):
+        internal = bytes.fromhex(txid)[::-1].hex()
+        return [r for r in self.rows if r["txid"] == internal and r["account"] == account]
+
+    def test_a_transparent_receive_keeps_the_public_row_unmarked(self):
+        (row,) = self.rows_for("aa" * 32)
+        (want,) = [r for r in public.ui_rows(context()) if r["txid"] == row["txid"]]
+        self.assertEqual(row, dict(want, details_incomplete=False))
+
+    def test_a_fully_funded_transparent_send_is_exact_and_marked_incomplete(self):
+        (row,) = self.rows_for("bb" * 32)
+        self.assertEqual((row["role"], row["amount_zats"], row["fee_known"]), ("sent", ZEC, FEE))
+        self.assertEqual(row["pool_labels"], ["Transparent"])
+        self.assertTrue(row["details_incomplete"])
+        self.assertFalse(row["optional"])
+
+    def test_an_incomplete_row_is_marked_with_honest_amounts_and_whole_fees(self):
+        (row,) = self.rows_for("dd" * 32)
+        self.assertIsNone(row["role"])
+        self.assertTrue(row["details_incomplete"])
+        self.assertFalse(row["optional"])
+        self.assertEqual(row["status"], "Completed")
+        self.assertEqual((row["fee_known"], row["fee_values"]), (FEE, [FEE]))
+        self.assertEqual(row["amount_max"], FEE)
+        self.assertIn(2 * ZEC - FEE, row["amount_values"])
+
+    def test_a_shielded_only_spend_requires_no_fee(self):
+        (row,) = self.rows_for("ee" * 32)
+        self.assertIsNone(row["fee_known"])
+        self.assertEqual(row["fee_values"], [FEE])
+
+    def test_a_self_transfer_offers_no_gross_payment(self):
+        (row,) = self.rows_for("cc" * 32)
+        self.assertNotIn(2 * ZEC, row["amount_values"])
+        self.assertIn(ZEC, row["amount_values"])
+        self.assertEqual(row["amount_max"], FEE)
+
+    def test_the_receiving_account_of_a_cross_account_send_is_exact(self):
+        (row,) = self.rows_for("ff" * 32, "A1")
+        self.assertEqual((row["role"], row["amount_zats"]), ("received", ZEC))
+        self.assertFalse(row["details_incomplete"])
+        (sender,) = self.rows_for("ff" * 32)
+        self.assertTrue(sender["details_incomplete"])
+        self.assertIsNone(sender["fee_known"])
+
+    def test_the_unmined_receive_is_optional_and_unmarked(self):
+        (row,) = self.rows_for("22" * 32)
+        self.assertTrue(row["optional"])
+        self.assertTrue(row["pending"])
+        self.assertNotIn("details_incomplete", row)
+
+    def test_an_uninvolved_account_has_no_rows(self):
+        self.assertEqual(self.rows_for("bb" * 32, "A1"), [])
 
 
 class AmountConstraint(unittest.TestCase):
