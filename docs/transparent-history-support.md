@@ -146,13 +146,13 @@ which already includes the fee, so the shown fee overlaps it (H07 N shield:
 amount 65,000, fee 65,000; H05 N A1: 150,015,000 and fee 15,000). No list row
 adds the two; only the gift-card batch detail sums amount and fee.
 
-**D3, open, not checked by the suite: a reorged-away receive's detail fails
-in private R and O.** H12's receive that a reorg returned to the mempool shows
-correctly in the list, but its transaction detail read fails with "Invalid
+**D3, fixed in #839 (`0b08b3659`): a reorged-away receive's detail failed in
+private R and O.** H12's receive that a reorg returned to the mempool showed
+correctly in the list, but its transaction detail read failed with "Invalid
 column type Null at index: 3, name: expired_unmined":
-`read_history_base_by_txid` (`rust/src/wallet/sync/transactions.rs`) reads
-`v_transactions.expired_unmined` as a non-null bool. It is also in the run
-before D2's fix and in no public run.
+`read_history_base_by_txid` read `v_transactions.expired_unmined` as a non-null
+bool. The fix applies #836's change and regression test to this path; the suite
+does not open detail screens, so it does not check this row.
 
 **G1** (H01, H02, H09 N): a restored wallet's send has pool unknown,
 incomplete details and a provisional mark after enrichment; in the app, the
