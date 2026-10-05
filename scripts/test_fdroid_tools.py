@@ -229,6 +229,7 @@ class FdroidBuildScriptTest(unittest.TestCase):
         self.assertIn("--target-platform android-arm64", command_output)
         self.assertNotIn("android-arm64,android-arm,android-x64", command_output)
         self.assertIn("--dart-define=VIZOR_FORM_FACTOR=mobile", command_output)
+        self.assertIn("--dart-define=VIZOR_DEGOOGLED=true", command_output)
         self.assertIn(
             "--dart-define=VIZOR_COINGECKO_PRICE_BASE_URL=https://functions.vizor.cash/api/v3",
             command_output,
@@ -298,6 +299,22 @@ class FdroidBuildScriptTest(unittest.TestCase):
 
 
 class AndroidReproducibleBuildScriptTest(unittest.TestCase):
+    def test_degoogle_is_an_explicit_opt_out(self) -> None:
+        command = [
+            str(REPRODUCIBLE_BUILD_PATH),
+            "--build-name", "0.0.35",
+            "--build-number", "350999",
+            "--release-version", "0.0.35",
+            "--signing", "required",
+            "--dry-run",
+        ]
+        default = subprocess.run(command, check=True, capture_output=True, text=True)
+        direct = subprocess.run(
+            command + ["--degoogled"], check=True, capture_output=True, text=True
+        )
+        self.assertNotIn("VIZOR_DEGOOGLED", default.stdout)
+        self.assertIn("--dart-define=VIZOR_DEGOOGLED=true", direct.stdout)
+
     def test_dry_run_centralizes_release_inputs(self) -> None:
         result = subprocess.run(
             [

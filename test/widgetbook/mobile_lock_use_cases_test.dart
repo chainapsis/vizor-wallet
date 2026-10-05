@@ -2,6 +2,7 @@
 library;
 
 import 'dart:io';
+import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart' show Icons, MaterialApp;
@@ -23,6 +24,48 @@ import 'package:zcash_wallet/widgetbook/screen_use_cases.dart';
 
 void main() {
   setUpAll(_loadAppFonts);
+
+  testWidgets('forgot passcode actions remain reachable with enlarged text', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(375, 667);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 1.3;
+    addTearDown(tester.view.reset);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          paymentLinkClaimsInFlightProvider.overrideWith((ref) async => 1),
+        ],
+        child: MaterialApp(
+          builder: (context, child) =>
+              AppTheme(data: AppThemeData.light, child: child!),
+          home: Builder(
+            builder: (context) => AppButton(
+              onPressed: () => showAppMobileSheet<bool>(
+                context: context,
+                builder: (_) => const ForgotPasscodeSheet(),
+              ),
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    final scroll = find.descendant(
+      of: find.byType(ForgotPasscodeSheet),
+      matching: find.byType(SingleChildScrollView),
+    );
+    expect(scroll, findsOneWidget);
+    await tester.drag(scroll, const Offset(0, -600));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.text('Cancel').hitTestable(), findsOneWidget);
+  });
 
   testWidgets('mobile lock use cases render method-specific variants', (
     tester,
@@ -261,8 +304,8 @@ void main() {
   ) async {
     await _pumpMobileLockUseCase(
       tester,
-      buildMobileForgotPasscodeSheetUseCase,
-      claimsInFlight: 1,
+      (context) =>
+          buildMobileForgotPasscodeSheetUseCase(context, claimsInFlight: 1),
     );
 
     // Warned, never blocked: this is the only way back into a wallet whose

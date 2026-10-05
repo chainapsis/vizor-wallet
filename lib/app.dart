@@ -9,8 +9,11 @@ import 'package:desktop_window_bootstrap/desktop_window_bootstrap.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'src/core/input/caps_lock_monitor.dart';
+import 'src/core/feedback/app_review.dart';
+import 'src/core/feedback/app_review_host.dart';
 import 'src/core/input/app_password_input_source.dart';
 import 'src/app_bootstrap.dart';
+import 'src/providers/account_provider.dart';
 import 'src/core/lifecycle/signing_shutdown_host.dart';
 import 'src/core/lifecycle/app_shutdown_signal.dart';
 import 'src/core/config/swap_feature_config.dart';
@@ -24,6 +27,7 @@ import 'src/core/navigation/payment_uri_busy_surface_provider.dart';
 import 'src/core/navigation/payment_uri_drain_policy.dart';
 import 'src/core/navigation/payload_page_key.dart';
 import 'src/core/motion/onboarding_motion.dart';
+import 'src/core/security/background_auto_lock_host.dart';
 import 'src/core/theme/app_theme.dart';
 import 'src/core/theme/app_theme_host.dart';
 import 'src/core/theme/legacy_material_theme.dart';
@@ -76,11 +80,14 @@ import 'src/features/onboarding/storage_unavailable_screen.dart';
 import 'src/features/onboarding/mobile/mobile_unlock_screen.dart';
 import 'src/features/onboarding/unlock_screen.dart';
 import 'src/features/onboarding/welcome.dart';
+import 'src/features/onboarding/providers/welcome_network_settings_provider.dart';
 import 'src/features/pay/screens/pay_screen.dart';
+import 'src/features/payment_links/widgets/gift_claim_failure_toast_listener.dart';
 import 'src/features/payment_links/models/vizor_payment_link.dart';
 import 'src/features/payment_links/providers/payment_link_cards_provider.dart';
 import 'src/features/payment_links/providers/payment_link_claim_coordinator_provider.dart';
 import 'src/features/payment_links/providers/payment_link_intake_provider.dart';
+import 'src/features/payment_links/providers/gift_claim_flow_provider.dart';
 import 'src/features/payment_links/screens/payment_links_screen.dart';
 import 'src/features/payment_links/services/payment_link_entry_policy.dart';
 import 'src/features/receive/screens/receive_screen.dart';
@@ -258,6 +265,11 @@ Future<void> applyEnhancePirPolicy(
   }
 }
 
+final _productionAppReviewController = AppReviewController(
+  store: PreferencesAppReviewStore(),
+  native: MethodChannelAppReviewNative(),
+);
+
 /// Shared production configuration for immediate and Linux keyring startup.
 /// Preview/test builders remain opted out of native input monitoring.
 Future<BootstrappedZcashWalletApp> buildProductionZcashWalletApp({
@@ -271,6 +283,19 @@ Future<BootstrappedZcashWalletApp> buildProductionZcashWalletApp({
     initialBootstrap: bootstrap,
     overrides: [
       capsLockMonitoringEnabledProvider.overrideWithValue(true),
+      appReviewEnabledProvider.overrideWithValue(
+        isNativeAppReviewEnabled(
+          isIOS: Platform.isIOS,
+          isAndroid: Platform.isAndroid,
+        ),
+      ),
+      appReviewControllerProvider.overrideWithValue(
+        _productionAppReviewController,
+      ),
+      appReviewStartupWalletProvider.overrideWith((ref) {
+        final startup = ref.watch(appBootstrapProvider);
+        return startup.hasBlockingFailure ? null : startup.hasWallet;
+      }),
       appPasswordInputSourceProvider.overrideWith((ref) {
         final service = AppPasswordInputSource.production();
         ref.onDispose(service.dispose);
@@ -414,7 +439,7 @@ final _routerProvider = Provider<_AppRouter>((ref) {
                   .clearAfterNavigation(),
             ),
           ]
-        : const [],
+        : [ref.watch(appReviewRouteObserverProvider)],
     initialLocation: bootstrap.initialLocation,
     refreshListenable: refresh,
     redirect: (context, state) =>
@@ -519,6 +544,26 @@ String? appRedirect({
     if (!hasWallet) return '/welcome';
     return requiresUnlock ? '/unlock' : '/home';
   }
+  // Creating the account does not finish its storage. Keep that setup
+  // actionable on this screen; locking still takes precedence.
+  if (hasWallet &&
+      kAppFormFactor == AppFormFactor.mobile &&
+      ref.read(giftClaimFlowProvider)?.walletSetupInProgress == true &&
+      state.matchedLocation == '/gift/customise') {
+    return requiresUnlock ? '/unlock' : null;
+  }
+  if (_isRouteOrChild(state.matchedLocation, '/gift')) {
+    if (kAppFormFactor != AppFormFactor.mobile) return '/';
+    if (hasWallet) {
+      if (requiresUnlock) return '/unlock';
+      if (state.matchedLocation == '/gift' &&
+          state.uri.queryParameters['addAccount'] == 'true') {
+        return null;
+      }
+      return '/payment-links';
+    }
+    return null;
+  }
   if (!hasWallet && isUnlockFlow) return '/welcome';
   if (!hasWallet && !isOnboarding && !isPublicLegal && !isUninstall) {
     return '/welcome';
@@ -573,7 +618,12 @@ List<RouteBase> appAuthRoutes(
     path: '/storage-unavailable',
     builder: (_, _) => const StorageUnavailableScreen(),
   ),
-  GoRoute(path: '/unlock', builder: (_, _) => unlockScreen),
+  // No transition: a sliding unlock page would show the wallet behind it.
+  GoRoute(
+    path: '/unlock',
+    pageBuilder: (_, state) =>
+        NoTransitionPage(key: state.pageKey, child: unlockScreen),
+  ),
   GoRoute(
     path: '/lost-password',
     builder: (_, _) => const LostPasswordScreen(),
@@ -595,6 +645,16 @@ List<RouteBase> appAuthRoutes(
           ),
   ),
 ];
+
+OnboardingBackTarget _desktopOnboardingEntryBackTarget(Ref ref) {
+  final hasWallet =
+      ref.read(walletProvider).value?.hasWallet ??
+      ref.read(appBootstrapProvider).hasWallet;
+  return OnboardingBackTarget.route(
+    label: hasWallet ? 'Add account' : 'Welcome',
+    routePath: hasWallet ? '/add-account' : '/welcome',
+  );
+}
 
 /// Desktop onboarding tree: welcome, the create/import/keystone
 /// split-view shells, and the keystone entry aliases. The mobile tree
@@ -638,7 +698,9 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
       key: state.pageKey,
       transitionDuration: kOnboardingForwardDuration,
       reverseTransitionDuration: kOnboardingReverseDuration,
-      child: const LedgerConnectScreen(),
+      child: LedgerConnectScreen(
+        backTarget: _desktopOnboardingEntryBackTarget(ref),
+      ),
       transitionsBuilder: _onboardingFadeTransition,
     ),
   ),
@@ -777,7 +839,7 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
                 await securityNotifier.preparePasswordSetup(pendingPassword);
                 passwordPrepared = true;
                 await importAccount();
-                securityNotifier.commitPasswordSetup();
+                await securityNotifier.completePasswordSetup();
                 passwordCommitted = true;
                 unawaited(
                   inputSourceService.remember(args.passwordInputSource),
@@ -785,9 +847,13 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
                 if (!context.mounted) return;
                 context.go('/home');
               });
-            } catch (_) {
+            } catch (error) {
               if (passwordPrepared && !passwordCommitted) {
-                await securityNotifier.rollbackPasswordSetup();
+                await securityNotifier.finishPasswordSetupAfterFailure(
+                  accountMayExist:
+                      error is WalletAccountSetupInterruptedException ||
+                      (ref.read(accountProvider).value?.hasAccounts ?? false),
+                );
               }
               rethrow;
             }
@@ -913,7 +979,9 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
           key: state.pageKey,
           transitionDuration: kOnboardingForwardDuration,
           reverseTransitionDuration: kOnboardingReverseDuration,
-          child: const KeystoneHowToConnectScreen(),
+          child: KeystoneHowToConnectScreen(
+            backTarget: _desktopOnboardingEntryBackTarget(ref),
+          ),
           transitionsBuilder: _onboardingFadeTransition,
         ),
       ),
@@ -1025,7 +1093,10 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
             key: state.pageKey,
             transitionDuration: kOnboardingForwardDuration,
             reverseTransitionDuration: kOnboardingReverseDuration,
-            child: ImportSecretPassphraseScreen(args: args),
+            child: ImportSecretPassphraseScreen(
+              args: args,
+              backTarget: _desktopOnboardingEntryBackTarget(ref),
+            ),
             transitionsBuilder: _onboardingFadeTransition,
           );
         },
@@ -1173,6 +1244,7 @@ List<RouteBase> _desktopRoutes(Ref ref) => [
   GoRoute(
     path: '/payment-links',
     builder: (_, state) => PaymentLinksScreen(
+      initialReceivedCardAddress: state.uri.queryParameters['received'],
       initialCards: state.extra is PaymentLinkCardsSnapshot
           ? state.extra! as PaymentLinkCardsSnapshot
           : null,
@@ -1572,7 +1644,13 @@ class ZcashWalletApp extends ConsumerWidget {
                                       router: router,
                                       child: LedgerOperationRecoveryHost(
                                         child: MobileNumericKeyboardToolbar(
-                                          child: child!,
+                                          child: BackgroundAutoLockHost(
+                                            router: router,
+                                            child: AppReviewHost(
+                                              router: router,
+                                              child: child!,
+                                            ),
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -1684,7 +1762,7 @@ const _kIncomingLinkNoticeDuration = Duration(seconds: 4);
 
 class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
   StreamSubscription<String>? _subscription;
-  ProviderSubscription<VizorPaymentLink?>? _intakeSubscription;
+  ProviderSubscription<List<VizorPaymentLink>>? _intakeSubscription;
 
   // --- gift card lane ---
   VizorPaymentLink? _lastDeferredLink;
@@ -1714,9 +1792,9 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
         ref.read(appBootstrapProvider).hasWallet;
     widget.router.routerDelegate.addListener(_handleRouteChanged);
     _intakeSubscription = ref.listenManual(
-      paymentLinkIntakeProvider.select((state) => state.pendingLink),
-      (_, link) {
-        if (link != null) _openPendingPaymentLink();
+      paymentLinkIntakeProvider.select((state) => state.pendingLinks),
+      (_, links) {
+        if (links.isNotEmpty) _openPendingPaymentLink();
       },
     );
     final service = ref.read(incomingUriServiceProvider);
@@ -1742,6 +1820,12 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(
+      welcomeNetworkSettingsPresentedProvider,
+      (_, _) => _openPendingPaymentLink(),
+    );
+    ref.listen(networkPrivacyProvider, (_, _) => _openPendingPaymentLink());
+
     ref.listen<AsyncValue<WalletState>>(walletProvider, (_, next) {
       final wallet = next.value;
       if (wallet != null) {
@@ -1787,7 +1871,12 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
     // navigation for a parked prefill (claim + present the card). Draining
     // here on unlock too would race and clobber that navigation. The wallet
     // listener still covers the loading -> loaded transition.
-    return AppToastHost(child: widget.child);
+    return AppToastHost(
+      child: GiftClaimFailureToastListener(
+        router: widget.router,
+        child: widget.child,
+      ),
+    );
   }
 
   String get _currentLocation =>
@@ -1858,7 +1947,31 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
     // owns intake while it is already visible, including its local wizard.
     if (location == '/' ||
         location == '/unlock' ||
-        location == '/payment-links') {
+        location == '/payment-links' ||
+        _isRouteOrChild(location, '/gift')) {
+      return;
+    }
+    if (kAppFormFactor == AppFormFactor.mobile &&
+        location == '/welcome' &&
+        !(ref.read(walletProvider).value?.hasWallet ??
+            ref.read(appBootstrapProvider).hasWallet)) {
+      if (ref.read(welcomeNetworkSettingsPresentedProvider) ||
+          !welcomeNetworkReady(ref.read(networkPrivacyProvider))) {
+        return;
+      }
+      _navigationScheduled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _navigationScheduled = false;
+        if (!mounted ||
+            widget.router.state.matchedLocation != '/welcome' ||
+            ref.read(paymentLinkIntakeProvider).pendingLink == null ||
+            ref.read(appSecurityProvider).requiresUnlock ||
+            ref.read(welcomeNetworkSettingsPresentedProvider) ||
+            !welcomeNetworkReady(ref.read(networkPrivacyProvider))) {
+          return;
+        }
+        widget.router.push('/gift');
+      });
       return;
     }
     final deferredMessage = paymentLinkEntryDeferredMessageAtLocation(
@@ -1866,7 +1979,12 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
       paymentRequestCardPresented: _paymentRequestCardPresented,
     );
     if (deferredMessage != null) {
-      _showDeferredPaymentLinkMessage(pendingLink, deferredMessage);
+      final setupLink = ref.read(giftClaimSetupReturnProvider)?.link;
+      for (final queued in ref.read(paymentLinkIntakeProvider).pendingLinks) {
+        if (setupLink?.hasSameCanonicalPayload(queued) == true) continue;
+        _showDeferredPaymentLinkMessage(queued, deferredMessage);
+        break;
+      }
       return;
     }
     _lastDeferredLink = null;
@@ -2634,6 +2752,18 @@ class _NetworkPrivacyStartupToastBridgeState
         if (next == null || next == previous) return;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!context.mounted) return;
+          // Walletless mobile Welcome owns this failure in its network
+          // sheet, including on the first frame before the modal is pushed.
+          // Keep the existing startup toast for locked/existing wallets.
+          if (kAppFormFactor == AppFormFactor.mobile &&
+              next == kTorStartupFailureNotice &&
+              ref.read(_routerProvider).router.state.matchedLocation ==
+                  '/welcome' &&
+              !(ref.read(walletProvider).value?.hasWallet ??
+                  ref.read(appBootstrapProvider).hasWallet)) {
+            ref.read(networkPrivacyProvider.notifier).clearStartupNotice();
+            return;
+          }
           showNetworkFallbackToast(
             context,
             next,

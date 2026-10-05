@@ -2,10 +2,13 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_signed_operation_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_lifecycle_revision.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_reconciler.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
+import 'package:zcash_wallet/src/providers/rpc_endpoint_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 void main() {
@@ -684,6 +687,49 @@ void main() {
     });
   });
 
+  for (final network in ['test', 'regtest', 'main']) {
+    test(
+      'removal warning respects the Ledger network gate on $network',
+      () async {
+        var ledgerReads = 0;
+        final container = ProviderContainer(
+          retry: (_, _) => null,
+          overrides: [
+            rpcEndpointProvider.overrideWith(
+              () => _NetworkRpcNotifier(network),
+            ),
+            paymentLinkRecoveryStoreProvider.overrideWithValue(
+              PaymentLinkRecoveryStore(_MemoryStorage()),
+            ),
+            ledgerSignedOperationServiceProvider.overrideWith((ref) {
+              ledgerReads++;
+              throw StateError('unreadable Ledger outbox');
+            }),
+          ],
+        );
+        addTearDown(container.dispose);
+        final count = container.read(
+          paymentLinkUnsharedFundedCountProvider('source-account').future,
+        );
+        if (network == 'main') {
+          await expectLater(
+            count,
+            throwsA(
+              predicate<Object>(
+                (error) =>
+                    error.toString().contains('unreadable Ledger outbox'),
+              ),
+            ),
+          );
+          expect(ledgerReads, 1);
+        } else {
+          expect(await count, 0);
+          expect(ledgerReads, 0);
+        }
+      },
+    );
+  }
+
   test('refreshes the cached unshared count after lifecycle writes', () async {
     final reconciler = _CountingRecoveryReconciler();
     final container = ProviderContainer(
@@ -710,6 +756,17 @@ void main() {
       0,
     );
   });
+}
+
+class _NetworkRpcNotifier extends RpcEndpointNotifier {
+  _NetworkRpcNotifier(this.network);
+  final String network;
+
+  @override
+  RpcEndpointConfig build() => RpcEndpointConfig(
+    networkName: network,
+    lightwalletdUrl: 'https://example.invalid',
+  );
 }
 
 const _preparedTxid =

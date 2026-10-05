@@ -186,6 +186,7 @@ class MobileExitBackDispatcher extends RootBackButtonDispatcher {
     '/migration',
     '/send',
     '/payment-links',
+    '/gift',
   ];
 
   static bool _routeLayerHandlesRootBack(String location) {

@@ -123,11 +123,11 @@ pub use transactions::{
 };
 #[allow(unused_imports)] // ditto
 pub(crate) use transactions::{
-    get_export_birthday_anchor, get_oldest_mined_transaction_anchor, get_transaction_data_requests,
-    get_transaction_detail, get_transaction_history, get_unmined_txids_with_mined_output_evidence,
-    get_wallet_balance, get_wallet_balances, ExportBirthdayAnchor, TransactionDetail,
-    TransactionDetailOutput, TransactionInfo, TxDataRequest, WalletBalance,
-    WalletBalanceAvailability,
+    get_export_birthday_anchor, get_local_block_time,
+    get_oldest_mined_transaction_anchor, get_transaction_data_requests, get_transaction_detail,
+    get_transaction_history, get_unmined_txids_with_mined_output_evidence, get_wallet_balance,
+    get_wallet_balances, ExportBirthdayAnchor, TransactionDetail, TransactionDetailOutput,
+    TransactionInfo, TxDataRequest, WalletBalance, WalletBalanceAvailability,
 };
 
 pub(super) fn open_wallet_db(
@@ -738,7 +738,7 @@ fn unlock_stored_proposal_locked(
         current.owner,
     )
     .map_err(|e| format!("Unlock abandoned send proposal inputs: {e}"))?;
-    proposal_locks::remove_with_timeout(&current.db_path, current.owner, metadata_timeout)?;
+    proposal_locks::release_with_timeout(&current.db_path, current.owner, metadata_timeout)?;
     store.locks.remove(&proposal_id);
     Ok(())
 }

@@ -27,7 +27,7 @@ use crate::wallet::{
     },
     keys,
     network::WalletNetwork,
-    sync, transparent_receive_cache,
+    sync, transparent_receive_cache, tree_states,
 };
 
 use {
@@ -49,6 +49,9 @@ mod address_history;
 mod block_source;
 mod claim_roots;
 pub(crate) mod enhancement;
+mod ephemeral_checks;
+#[cfg(test)]
+mod ephemeral_checks_tests;
 mod error;
 pub(crate) mod ledger_discovery;
 mod lwd;
@@ -2355,15 +2358,16 @@ async fn download_scan_batch(
     network: WalletNetwork,
 ) -> Result<ScanBatch, SyncError> {
     let mut tree_state_client = client.clone();
-    let use_empty_state = should_use_empty_chain_state(&network, start)?;
+    let local_state = local_batch_start_state(network, start)?;
+    let uses_compiled_checkpoint =
+        local_state.is_some() && !should_use_empty_chain_state(&network, start)?;
     let tree_state = async move {
-        if use_empty_state {
-            Ok(chain::ChainState::empty(start - 1, BlockHash([0u8; 32])))
-        } else {
-            get_tree_state(&mut tree_state_client, u64::from(u32::from(start - 1)))
+        match local_state {
+            Some(state) => Ok(state),
+            None => get_tree_state(&mut tree_state_client, u64::from(u32::from(start - 1)))
                 .await?
                 .to_chain_state()
-                .map_err(|e| SyncError::parse(format!("parse tree state: {e}")))
+                .map_err(|e| SyncError::parse(format!("parse tree state: {e}"))),
         }
     };
 
@@ -2371,6 +2375,16 @@ async fn download_scan_batch(
         join_scan_batch_inputs(download_blocks(client, start, end, network), tree_state).await?;
     if block_source.starts_after(&from_state) {
         return Ok((block_source, from_state));
+    }
+    if uses_compiled_checkpoint {
+        // A forked or non-mainnet server behind a `main` endpoint, or a bad
+        // table entry. The hash-pinned lookup below reveals only the
+        // checkpoint's bucket, and keeps the wallet syncing.
+        log::error!(
+            "sync: compiled tree state at {} does not precede the served block {start}; \
+             fetching the served predecessor's state",
+            u32::from(start - 1)
+        );
     }
 
     let predecessor_hash = match block_source
@@ -4645,6 +4659,43 @@ async fn run_sync_impl(
         }
     }
 
+    if !should_exit() {
+        let mut changed = false;
+        if let Err(error) = ephemeral_checks::run(
+            lightwalletd_url,
+            &mut db,
+            db_data_path,
+            network,
+            BlockHeight::from_u32(final_tip_height as u32),
+            &mut changed,
+            &should_exit,
+        )
+        .await
+        {
+            log::warn!(
+                "[{}] sync: ephemeral address check failed; it will retry on a later sync: {}",
+                elapsed(),
+                error,
+            );
+        }
+        // Refresh even after a failure that followed stored transactions.
+        if changed && !should_exit() {
+            progress_fn(SyncProgressEvent {
+                scanned_height: final_scanned_height,
+                chain_tip_height: final_tip_height,
+                percentage: 1.0,
+                display_target_percentage: 1.0,
+                display_target_blocks: 0,
+                is_syncing: false,
+                is_complete: true,
+                has_new_tx: true,
+                phase_completed_units: 0,
+                phase_total_units: 0,
+                phase: String::new(),
+            });
+        }
+    }
+
     Ok(())
 }
 
@@ -4737,6 +4788,27 @@ fn clear_unmined_note_commitment_positions(db_data_path: &str) -> Result<usize, 
     tx.commit()
         .map_err(|e| SyncError::db(format!("commit unmined note position repair: {e}")))?;
     Ok(cleared)
+}
+
+/// The chain state preceding a scan batch that starts at `start`, when it is
+/// known without asking lightwalletd: empty at Sapling activation, or a
+/// compiled mainnet checkpoint (see [`tree_states`]). Account birthdays are
+/// rounded to the checkpoint grid, so a restored account's first batch gets one
+/// whenever its bucket is in the table.
+fn local_batch_start_state(
+    network: WalletNetwork,
+    start: BlockHeight,
+) -> Result<Option<chain::ChainState>, SyncError> {
+    if should_use_empty_chain_state(&network, start)? {
+        return Ok(Some(chain::ChainState::empty(
+            start - 1,
+            BlockHash([0u8; 32]),
+        )));
+    }
+    Ok(tree_states::mainnet_chain_state(
+        network,
+        u64::from(u32::from(start - 1)),
+    ))
 }
 
 fn should_use_empty_chain_state(
@@ -5640,6 +5712,52 @@ mod tests {
         );
     }
 
+    #[cfg(not(ironwood_masquerade))]
+    #[test]
+    fn first_batch_of_a_rounded_mainnet_birthday_needs_no_tree_state_request() {
+        use zcash_client_backend::proto::compact_formats::{ChainMetadata, CompactBlock};
+
+        let start = BlockHeight::from_u32(2_340_001);
+        let state = local_batch_start_state(WalletNetwork::Main, start)
+            .unwrap()
+            .expect("compiled checkpoint below a rounded birthday");
+        assert_eq!(state.block_height(), BlockHeight::from_u32(2_340_000));
+
+        // A served block that continues the checkpoint passes the same
+        // continuity check `download_scan_batch` applies.
+        let mut block = CompactBlock {
+            height: 2_340_001,
+            prev_hash: state.block_hash().0.to_vec(),
+            chain_metadata: Some(ChainMetadata {
+                sapling_commitment_tree_size: state.final_sapling_tree().tree_size() as u32,
+                orchard_commitment_tree_size: state.final_orchard_tree().tree_size() as u32,
+                ironwood_commitment_tree_size: state.final_ironwood_tree().tree_size() as u32,
+            }),
+            ..Default::default()
+        };
+        assert!(block_source::MemoryBlockSource::new(vec![block.clone()]).starts_after(&state));
+        // A block from another chain fails it, so the batch falls back to the
+        // hash-pinned lookup of the served predecessor.
+        block.prev_hash = vec![7u8; 32];
+        assert!(!block_source::MemoryBlockSource::new(vec![block]).starts_after(&state));
+
+        // Batches that don't start right after a checkpoint, and other
+        // networks, still fetch the state.
+        assert!(
+            local_batch_start_state(WalletNetwork::Main, BlockHeight::from_u32(2_340_002))
+                .unwrap()
+                .is_none()
+        );
+        for network in [WalletNetwork::Test, WalletNetwork::Regtest] {
+            assert!(local_batch_start_state(network, start).unwrap().is_none());
+        }
+        assert!(
+            local_batch_start_state(WalletNetwork::Main, BlockHeight::from_u32(419_200))
+                .unwrap()
+                .is_some()
+        );
+    }
+
     #[test]
     fn scannable_batch_end_clamps_to_current_tip() {
         assert_eq!(
@@ -6379,3 +6497,6 @@ fn recovery_status_for(
         service_state,
     })
 }
+
+#[cfg(test)]
+mod birthday_rpc_tests;

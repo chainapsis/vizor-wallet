@@ -1,7 +1,7 @@
 import '../../../core/config/rpc_endpoint_config.dart';
 import '../../../rust/api/network_privacy.dart' as rust_network_privacy;
 
-const _importBirthdaySafetyMargin = Duration(days: 15);
+const _importBirthdaySafetyMargin = Duration(days: 7);
 
 DateTime importBirthdaySearchDate(DateTime selectedDate) => DateTime(
   selectedDate.year,

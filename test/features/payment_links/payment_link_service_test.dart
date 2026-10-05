@@ -11,6 +11,8 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
+import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/gift_claim_import_store.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_provider.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
@@ -192,9 +194,15 @@ void main() {
         _PaymentLinkServiceReceivedStorage(),
       );
       final link = _link();
-      for (final entry in [('deleted', 'main'), ('existing', 'main')]) {
+      for (final entry in [
+        ('deleted', 'deleted', true),
+        ('existing', 'existing', true),
+        ('ready-deleted', 'deleted', false),
+        ('ready-existing', 'existing', false),
+        ('unbound', null, false),
+      ]) {
         final scoped = VizorPaymentLink(
-          network: entry.$2,
+          network: 'main',
           address: entry.$1,
           amountZatoshi: link.amountZatoshi,
           mnemonic: link.mnemonic,
@@ -202,14 +210,18 @@ void main() {
           label: link.label,
           createdAt: link.createdAt,
         );
-        await store.saveReady(scoped);
+        await store.saveReady(
+          scoped,
+          setupAccountUuid: entry.$3 ? null : entry.$2,
+        );
+        if (!entry.$3) continue;
         await store.markClaimStarted(
           address: scoped.address,
-          destinationAccountUuid: scoped.address,
+          destinationAccountUuid: entry.$2!,
         );
         await store.markReceiving(
           address: scoped.address,
-          destinationAccountUuid: scoped.address,
+          destinationAccountUuid: entry.$2!,
           claimTxids: 'claim-${scoped.address}',
         );
         await store.markReceived(address: scoped.address);
@@ -225,7 +237,7 @@ void main() {
           return true;
         },
       );
-      expect(onOtherNetwork, hasLength(2));
+      expect(onOtherNetwork, hasLength(5));
       expect(attempted, isEmpty);
       final eligible = await discardPaymentLinkClaimsForDeletedAccounts(
         records: await store.load(),
@@ -237,9 +249,14 @@ void main() {
           return false;
         },
       );
-      expect(eligible.map((r) => r.address), ['existing']);
-      expect(attempted, ['deleted']);
+      expect(eligible.map((r) => r.address), [
+        'existing',
+        'ready-existing',
+        'unbound',
+      ]);
+      expect(attempted, ['deleted', 'ready-deleted']);
       expect((await store.find('deleted'))!.needsClaimRecovery, isTrue);
+      expect(await store.find('ready-deleted'), isNotNull);
       await discardPaymentLinkClaimsForDeletedAccounts(
         records: await store.load(),
         network: 'main',
@@ -250,8 +267,17 @@ void main() {
           return true;
         },
       );
-      expect(attempted, ['deleted', 'deleted']);
-      expect((await store.load()).map((r) => r.address), ['existing']);
+      expect(attempted, [
+        'deleted',
+        'ready-deleted',
+        'deleted',
+        'ready-deleted',
+      ]);
+      expect((await store.load()).map((r) => r.address), [
+        'existing',
+        'ready-existing',
+        'unbound',
+      ]);
     },
   );
 
@@ -510,7 +536,10 @@ void main() {
                 (await container.read(paymentLinkRecoveryStoreProvider).load())
                     .single;
             expect(record.link.address, link.address);
-            expect(link.birthdayHeight, prefetchedHeight ?? 100);
+            expect(
+              link.birthdayHeight,
+              prefetchedHeight ?? _link().birthdayHeight + 1,
+            );
             expect(api.heightLookups, prefetchedHeight == null ? 1 : 0);
             expect(record.state, PaymentLinkRecoveryState.draft);
             expect(record.usage.accountUuid, isNull);
@@ -523,6 +552,32 @@ void main() {
         },
       );
     }
+
+    test(
+      'recovery removes a ready setup card and its wallet after recipient deletion',
+      () async {
+        api.poolFixture = true; // The wallet DB still contains another account.
+        final link = _link();
+        final store = container.read(paymentLinkReceivedStoreProvider);
+        await store.saveReady(link, setupAccountUuid: 'deleted-account');
+        final directory = Directory(
+          '${supportDirectory.path}/${paymentLinkClaimWalletDirectoryName(link)}',
+        );
+        await directory.create();
+        await File(
+          '${directory.path}/zcash_wallet.db',
+        ).writeAsString('claim DB');
+
+        final records = await container.read(
+          paymentLinkClaimRecoveryRunnerProvider,
+        )();
+
+        expect(records, isEmpty);
+        expect(await store.load(), isEmpty);
+        expect(await directory.exists(), isFalse);
+        expect(api.claimSyncCalls, 0);
+      },
+    );
 
     for (final address in ['u1legacy', 'u1current', 'u1legacy-projection']) {
       test('completed receipt $address survives secret cleanup', () async {
@@ -736,6 +791,158 @@ void main() {
         );
       }
     }
+
+    test('a Card claimed elsewhere is removed only after its wallet', () async {
+      final store = container.read(paymentLinkReceivedStoreProvider);
+      final wallet = container.read(Provider(PaymentLinkClaimWallet.new));
+      final record = await store.saveReady(_link());
+      await store.setAvailability(
+        record.address,
+        PaymentLinkAvailability.claimedElsewhere,
+      );
+      final directory = (await wallet.locate(_link())).directory;
+      await directory.create(recursive: true);
+
+      // A wallet that cannot be deleted keeps the Card for another try.
+      Process.runSync('chmod', ['a-w', supportDirectory.path]);
+      try {
+        await expectLater(
+          service.removeReceivedCard(record.address),
+          throwsStateError,
+        );
+      } finally {
+        Process.runSync('chmod', ['u+w', supportDirectory.path]);
+      }
+      expect(await directory.exists(), isTrue);
+      expect(await store.find(record.address), isNotNull);
+
+      await service.removeReceivedCard(record.address);
+      expect(api.cancelledClaimSyncs, [
+        paymentLinkClaimWalletDirectoryName(_link()),
+        paymentLinkClaimWalletDirectoryName(_link()),
+      ]);
+      expect(await directory.exists(), isFalse);
+      expect(await store.find(record.address), isNull);
+    });
+
+    test(
+      'removing a Card also cancels its interrupted import journal',
+      () async {
+        final link = _link();
+        final store = container.read(paymentLinkReceivedStoreProvider);
+        final journal = container.read(giftClaimImportStoreProvider);
+        final handoff = GiftClaimImportHandoff(
+          link: link,
+          accountUuidsBeforeSetup: const {},
+        );
+        await journal.save(handoff);
+        journal.resetMemory();
+        await store.saveReady(link);
+        await store.setAvailability(
+          link.address,
+          PaymentLinkAvailability.claimedElsewhere,
+        );
+        // Capture the handoff before deletion to model a queued recovery.
+        final previouslyLoaded = (await journal.load())!;
+        await service.removeReceivedCard(link.address);
+        var recovered = false;
+        await journal.transferToReceived(previouslyLoaded, () async {
+          recovered = true;
+          await store.saveReady(link);
+          return true;
+        });
+        expect(recovered, isFalse);
+        expect(await journal.load(), isNull);
+        expect(await store.find(link.address), isNull);
+      },
+    );
+
+    for (final setupCard in [false, true]) {
+      test(
+        'an unfunded inspection keeps an automatic setup Card retryable=$setupCard',
+        () async {
+          final link = _link();
+          api
+            ..poolFixture = true
+            ..emptyClaimWallet = true
+            ..claimHistory = [];
+          final wallet = container.read(Provider(PaymentLinkClaimWallet.new));
+          final location = await wallet.locate(link);
+          await location.directory.create(recursive: true);
+          await File(location.dbPath).writeAsString('claim DB fixture');
+          final store = container.read(paymentLinkReceivedStoreProvider);
+          await store.saveReady(
+            link,
+            setupAccountUuid: setupCard ? 'receiver' : null,
+          );
+          final inspection = await service.inspectClaim(
+            link,
+            allowLongSync: true,
+          );
+          expect(inspection.availability, PaymentLinkAvailability.noBalance);
+          expect(inspection.waitingForFundingConfirmations, isTrue);
+          expect(
+            (await store.find(link.address))!.availability,
+            setupCard
+                ? PaymentLinkAvailability.unchecked
+                : PaymentLinkAvailability.noBalance,
+          );
+        },
+      );
+    }
+
+    for (final pendingSetup in [false, true]) {
+      test(
+        'inspection cleanup preserves a partial account journal=$pendingSetup',
+        () async {
+          final link = _link();
+          final wallet = container.read(Provider(PaymentLinkClaimWallet.new));
+          final directory = (await wallet.locate(link)).directory;
+          await directory.create(recursive: true);
+          if (pendingSetup) {
+            await const FlutterSecureStorage().write(
+              key: kPendingAccountMnemonicStorageKey,
+              value: 'pending encrypted account setup',
+            );
+          }
+          await service.discardClaimInspection(
+            PaymentLinkClaimInspection(
+              link: link,
+              directory: directory,
+              dbPath: '${directory.path}/zcash_wallet.db',
+              accountUuid: 'claim-account',
+              totalZatoshi: link.amountZatoshi,
+              claimableZatoshi: link.amountZatoshi,
+              feeZatoshi: BigInt.from(10000),
+              fundingConfirmationCount: 2,
+              waitingForFundingConfirmations: false,
+              availability: PaymentLinkAvailability.available,
+            ),
+          );
+          expect(await directory.exists(), pendingSetup);
+        },
+      );
+    }
+
+    test('a Card that may still hold funds is not removed', () async {
+      final store = container.read(paymentLinkReceivedStoreProvider);
+      final wallet = container.read(Provider(PaymentLinkClaimWallet.new));
+      final record = await store.saveReady(_link());
+      await store.setAvailability(
+        record.address,
+        PaymentLinkAvailability.noBalance,
+      );
+      final directory = (await wallet.locate(_link())).directory;
+      await directory.create(recursive: true);
+
+      await expectLater(
+        service.removeReceivedCard(record.address),
+        throwsStateError,
+      );
+      expect(api.cancelledClaimSyncs, isEmpty);
+      expect(await directory.exists(), isTrue);
+      expect(await store.find(record.address), isNotNull);
+    });
 
     for (final currentExists in [false, true]) {
       test(
@@ -2386,6 +2593,7 @@ void main() {
       final container = ProviderContainer(
         overrides: [
           accountProvider.overrideWith(_HardwareAccountNotifier.new),
+          rpcEndpointProvider.overrideWith(_ClaimDestinationRpcNotifier.new),
           paymentLinkRecoveryStoreProvider.overrideWithValue(
             PaymentLinkRecoveryStore(storage),
           ),
@@ -2470,6 +2678,8 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         appSecurityProvider.overrideWith(_UnlockedSecurityNotifier.new),
+        accountProvider.overrideWith(_ClaimDestinationAccountNotifier.new),
+        rpcEndpointProvider.overrideWith(_ClaimDestinationRpcNotifier.new),
         paymentLinkClaimRecoveryRunnerProvider.overrideWithValue(
           () async => const [],
         ),
@@ -2642,7 +2852,7 @@ class _ClaimDestinationRustApi extends FakeGiftLinkRustApi {
     required String network,
   }) async {
     heightLookups++;
-    return BigInt.from(100);
+    return BigInt.from(_link().birthdayHeight + 1);
   }
 
   int heightLookups = 0;
@@ -2653,6 +2863,7 @@ class _ClaimDestinationRustApi extends FakeGiftLinkRustApi {
   Completer<String>? lookupGate;
   int failures = 0;
   bool poolFixture = false;
+  bool emptyClaimWallet = false;
   List<String> localClaimTxids = [];
   List<String> conflictedTxids = [];
   List<rust_sync.TransactionInfo>? claimHistory;
@@ -2664,6 +2875,7 @@ class _ClaimDestinationRustApi extends FakeGiftLinkRustApi {
   var syncStarted = Completer<void>();
   int claimSyncCalls = 0;
   List<bool> claimSyncModes = [];
+  final cancelledClaimSyncs = <String>[];
   final claimSyncDbPaths = <String>[];
   final validGiftAddresses = <String>{};
   int giftVariantLookups = 0;
@@ -2676,9 +2888,39 @@ class _ClaimDestinationRustApi extends FakeGiftLinkRustApi {
     required String accountUuid,
     required String toAddress,
   }) {
+    if (emptyClaimWallet) {
+      return Future.error(StateError('Insufficient balance'));
+    }
     estimateStarted.complete();
     return estimateGate!.future;
   }
+
+  @override
+  Future<rust_sync.WalletBalance> crateApiSyncGetBalance({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+  }) async => rust_sync.WalletBalance(
+    availability: rust_sync.WalletBalanceAvailability.available,
+    transparent: BigInt.zero,
+    sapling: BigInt.zero,
+    orchard: BigInt.zero,
+    ironwood: BigInt.zero,
+    transparentLocked: BigInt.zero,
+    saplingLocked: BigInt.zero,
+    orchardLocked: BigInt.zero,
+    ironwoodLocked: BigInt.zero,
+    transparentPending: BigInt.zero,
+    saplingPending: BigInt.zero,
+    orchardPending: BigInt.zero,
+    ironwoodPending: BigInt.zero,
+    changePendingConfirmation: BigInt.zero,
+    valuePendingSpendability: BigInt.zero,
+    uneconomicValue: BigInt.zero,
+    spendable: BigInt.zero,
+    locked: BigInt.zero,
+    total: BigInt.zero,
+  );
 
   @override
   Future<List<rust_wallet.AccountInfo>> crateApiWalletListAccounts({
@@ -2713,6 +2955,11 @@ class _ClaimDestinationRustApi extends FakeGiftLinkRustApi {
     localClaimTxids: localClaimTxids,
     verifiedHeight: BigInt.from(100),
   );
+
+  @override
+  void crateApiSyncCancelPaymentLinkClaimSync({required String claimId}) {
+    cancelledClaimSyncs.add(claimId);
+  }
 
   @override
   Future<void> crateApiSyncRunPaymentLinkClaimSync({
@@ -2787,11 +3034,13 @@ class _ClaimDestinationRustApi extends FakeGiftLinkRustApi {
   void reset() {
     heightLookups = 0;
     requestedAccounts.clear();
+    cancelledClaimSyncs.clear();
     validatedAddresses.clear();
     lookupStarted = Completer<void>();
     lookupGate = null;
     failures = 0;
     poolFixture = false;
+    emptyClaimWallet = false;
     localClaimTxids = [];
     conflictedTxids = [];
     claimHistory = null;

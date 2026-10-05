@@ -92,6 +92,22 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
     ]);
   }
 
+  /// iOS presents no new frame until the app is active again, so a prompt
+  /// raised while returning from the background covers the pre-background
+  /// screen instead of this backdrop.
+  Future<void> _waitUntilResumed() async {
+    final state = WidgetsBinding.instance.lifecycleState;
+    if (state == null || state == AppLifecycleState.resumed) return;
+    final resumed = Completer<void>();
+    final listener = AppLifecycleListener(
+      onResume: () {
+        if (!resumed.isCompleted) resumed.complete();
+      },
+    );
+    await resumed.future;
+    listener.dispose();
+  }
+
   Future<void> _waitForBiometricBackdropFrame() async {
     await _waitForBackdropFrame().timeout(
       _biometricBackdropMaxWait,
@@ -162,6 +178,8 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
   }
 
   Future<void> _tryBiometricUnlockAfterBackdropFrame() async {
+    await _waitUntilResumed();
+    if (!mounted) return;
     await _waitForBiometricBackdropFrame();
     if (!mounted) return;
 

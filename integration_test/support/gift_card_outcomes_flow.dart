@@ -258,7 +258,7 @@ Future<void> prepareGiftOutcome(
     expect(record.claimLink, isNotNull);
     await minePaymentLinkRegtestBlocks(1);
     await checkOutcome(tester);
-    await expectOutcomeText(tester, 'Already claimed');
+    await expectOutcomeText(tester, 'Claimed elsewhere');
     record = await outcomeRecord(tester);
     expect(record.isClaimInFlight, isFalse);
     expect(record.availability, PaymentLinkAvailability.claimedElsewhere);
@@ -282,11 +282,13 @@ Future<void> prepareGiftOutcome(
     );
     final sends = proxy.sendTransactionCount;
     await checkOutcome(tester);
-    await expectOutcomeText(tester, 'Already claimed');
+    await expectOutcomeText(tester, 'Claimed elsewhere');
     expect(proxy.sendTransactionCount, sends);
     await expectFreshObserver(link);
-    await tapPaymentLinkText(tester, 'Hide card');
-    expect((await outcomeRecord(tester)).archived, isTrue);
+    // Nothing is left to redeem, so the Card offers removal, not hiding.
+    // Scenario 3 removes it after a restart.
+    expect(find.text('Hide card'), findsNothing);
+    expect(find.text('Remove card'), findsOneWidget);
   }
   await writePaymentLinkRestartManifest(
     PaymentLinkRestartManifest(
@@ -299,7 +301,7 @@ Future<void> prepareGiftOutcome(
   retained = true;
   e2eLog(
     competition
-        ? 'SCENARIO 1 PASS: one winner; loser resolved and archived for scenario 3'
+        ? 'SCENARIO 1 PASS: one winner; loser resolved and kept for scenario 3'
         : 'SCENARIO 2 PREPARED: accepted transaction response lost; restart next',
   );
 }

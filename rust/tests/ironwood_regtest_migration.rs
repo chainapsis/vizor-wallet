@@ -8,6 +8,8 @@ const MNEMONIC: &str = "winter shiver fetch refuse absurd mail pistol eight mark
 const PENDING_PASSWORD: &str = "ironwood-regtest-password";
 const PENDING_SALT_BASE64: &str = "AAECAwQFBgcICQoLDA0ODw==";
 const TRUSTED_CONFIRMATIONS: u32 = 10;
+/// Blocks past the last scheduled height before a waiting part fails the test.
+const SCHEDULE_SLACK_BLOCKS: u64 = 10;
 
 #[test]
 #[ignore = "requires the Dockerized Ironwood zcashd/lightwalletd regtest stack"]
@@ -69,6 +71,18 @@ fn orchard_funds_migrate_after_controlled_nu6_3_activation() {
     assert_eq!(after.lightwalletd_consensus_branch_id, "37a5165b");
 
     sync(&db);
+    let plan = sync_api::get_orchard_migration_private_plan(
+        db.clone(),
+        NETWORK.to_string(),
+        wallet.account_uuid.clone(),
+        false,
+    )
+    .expect("read migration plan")
+    .expect("funded Orchard must produce a migration plan");
+    assert_eq!(
+        plan.total_migratable_zatoshi,
+        plan.target_values_zatoshi.iter().sum::<u64>()
+    );
     let split = migrate(&db, &wallet.account_uuid);
     assert_eq!(split.status, "waiting_denom_confirmations");
     assert!(
@@ -87,7 +101,40 @@ fn orchard_funds_migrate_after_controlled_nu6_3_activation() {
         migration.status,
         migration.message
     );
-    assert!(migration.broadcasted_count > 0);
+
+    // ZIP 318 spreads the parts over scheduled heights counted from the block
+    // that finalized the run, so the call that creates them usually broadcasts
+    // none. Mine through the schedule and broadcast due parts each block, as
+    // the foreground app does.
+    let scheduled = migration_status(&db, &wallet.account_uuid).scheduled_broadcasts;
+    assert_eq!(scheduled.len() as u32, migration.total_count);
+    let last_scheduled_height = scheduled
+        .iter()
+        .map(|part| u64::from(part.scheduled_height))
+        .max()
+        .expect("migration must schedule its parts");
+    loop {
+        let status = migration_status(&db, &wallet.account_uuid);
+        let tip = latest_height();
+        for part in &status.scheduled_broadcasts {
+            assert!(
+                part.status == "scheduled" || u64::from(part.scheduled_height) <= tip,
+                "part {} left the schedule before its height {} (tip {tip})",
+                part.txid_hex,
+                part.scheduled_height
+            );
+        }
+        if status.phase != "broadcast_scheduled" {
+            break;
+        }
+        assert!(
+            tip <= last_scheduled_height + SCHEDULE_SLACK_BLOCKS,
+            "scheduled parts were still waiting at height {tip}: {:?}",
+            status.message
+        );
+        mine_and_sync(&db, 1);
+        broadcast_due(&db, &wallet.account_uuid);
+    }
 
     mine_and_sync(&db, TRUSTED_CONFIRMATIONS);
     let status = sync_api::get_orchard_migration_status(
@@ -103,22 +150,22 @@ fn orchard_funds_migrate_after_controlled_nu6_3_activation() {
     );
 
     let migrated = balance(&db, &wallet.account_uuid);
-    assert!(
-        migrated.ironwood >= orchard_funded.orchard * 99 / 100,
-        "migrated value must be spendable in Ironwood: orchard={}, ironwood={}, total={}",
-        migrated.orchard,
-        migrated.ironwood,
-        migrated.total
-    );
-    assert!(
-        migrated.ironwood < orchard_funded.orchard,
-        "migration fees must reduce the migrated value: before={}, after={}",
-        orchard_funded.orchard,
-        migrated.ironwood
-    );
     assert_eq!(
-        migrated.orchard, 0,
-        "the deterministic migration must consume all funded Orchard value"
+        migrated.ironwood, plan.total_migratable_zatoshi,
+        "every planned ZIP 318 denomination must reach Ironwood: orchard={}, ironwood={}, total={}",
+        migrated.orchard, migrated.ironwood, migrated.total
+    );
+    // Value below the canonical denominations stays in Orchard as planned change.
+    assert_eq!(
+        migrated.orchard,
+        plan.orchard_change_zatoshi.unwrap_or(0),
+        "only the planned change may stay in Orchard"
+    );
+    assert!(
+        migrated.total < orchard_funded.orchard,
+        "migration fees must reduce the wallet total: before={}, after={}",
+        orchard_funded.orchard,
+        migrated.total
     );
 }
 
@@ -199,6 +246,27 @@ fn balance(db_path: &str, account_uuid: &str) -> sync_api::WalletBalance {
         account_uuid.to_string(),
     )
     .expect("wallet balance")
+}
+
+fn migration_status(db_path: &str, account_uuid: &str) -> sync_api::MigrationStatus {
+    sync_api::get_orchard_migration_status(
+        db_path.to_string(),
+        NETWORK.to_string(),
+        account_uuid.to_string(),
+    )
+    .expect("read migration status")
+}
+
+fn broadcast_due(db_path: &str, account_uuid: &str) {
+    sync_api::broadcast_due_orchard_migration_transactions(
+        db_path.to_string(),
+        lightwalletd_url(),
+        NETWORK.to_string(),
+        account_uuid.to_string(),
+        PENDING_PASSWORD.to_string(),
+        PENDING_SALT_BASE64.to_string(),
+    )
+    .expect("broadcast due migration parts");
 }
 
 fn migrate(db_path: &str, account_uuid: &str) -> sync_api::IronwoodMigrationResult {

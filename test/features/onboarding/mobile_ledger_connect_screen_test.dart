@@ -8,6 +8,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_progress_scope.dart';
+
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
@@ -22,7 +24,7 @@ import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_serv
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_ledger_connect_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_ledger_device_sheet.dart';
-import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_method_selection_screen.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_hardware_selection_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/ledger/ledger_setup_args.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -36,13 +38,13 @@ void main() {
       ..devicePixelRatio = 1;
   });
 
-  group('mobile method selection Ledger visibility', () {
+  group('mobile hardware selection Ledger visibility', () {
     testWidgets('shows Ledger for iOS and Android mainnet software wallets', (
       tester,
     ) async {
       for (final platform in [TargetPlatform.android, TargetPlatform.iOS]) {
         await tester.pumpWidget(
-          _methodHarness(
+          _hardwareHarness(
             bootstrap: _bootstrap(
               accounts: const [
                 AccountInfo(uuid: 'software', name: 'Main', order: 0),
@@ -65,7 +67,7 @@ void main() {
       tester,
     ) async {
       await tester.pumpWidget(
-        _methodHarness(
+        _hardwareHarness(
           bootstrap: _bootstrap(
             accounts: const [
               AccountInfo(
@@ -96,7 +98,7 @@ void main() {
         ),
       ]) {
         await tester.pumpWidget(
-          _methodHarness(
+          _hardwareHarness(
             bootstrap: bootstrap,
             platform: TargetPlatform.android,
           ),
@@ -111,7 +113,7 @@ void main() {
     ) async {
       const account = AccountInfo(uuid: 'software', name: 'Main', order: 0);
       await tester.pumpWidget(
-        _methodHarness(
+        _hardwareHarness(
           bootstrap: _bootstrap(accounts: const [account]),
           platform: TargetPlatform.windows,
         ),
@@ -120,7 +122,7 @@ void main() {
       expect(find.text('Connect Ledger'), findsNothing);
 
       await tester.pumpWidget(
-        _methodHarness(
+        _hardwareHarness(
           bootstrap: _bootstrap(accounts: const [account], network: 'test'),
           platform: TargetPlatform.android,
         ),
@@ -180,8 +182,10 @@ void main() {
           ],
           child: MaterialApp.router(
             routerConfig: router,
-            builder: (_, child) =>
-                AppTheme(data: AppThemeData.light, child: child!),
+            builder: (_, child) => AppTheme(
+              data: AppThemeData.light,
+              child: MobileOnboardingProgressFrame(child: child!),
+            ),
           ),
         ),
       );
@@ -706,7 +710,7 @@ void main() {
   });
 }
 
-Widget _methodHarness({
+Widget _hardwareHarness({
   required AppBootstrapState bootstrap,
   required TargetPlatform platform,
 }) => ProviderScope(
@@ -717,7 +721,7 @@ Widget _methodHarness({
   ],
   child: AppTheme(
     data: AppThemeData.light,
-    child: const MaterialApp(home: MobileMethodSelectionScreen()),
+    child: const MaterialApp(home: MobileHardwareSelectionScreen()),
   ),
 );
 
@@ -735,7 +739,8 @@ Widget _ledgerHarness({
       GoRoute(
         path: '/onboarding/ledger/birthday',
         builder: (_, state) {
-          final args = state.extra! as LedgerBirthdayArgs;
+          final args =
+              mobileOnboardingPayload(state.extra)! as LedgerBirthdayArgs;
           return Text(
             'birthday-route-${args.account.transport.name}-${args.account.device?.model}',
             key: ValueKey(args.account.accountIndex),
@@ -776,7 +781,10 @@ Widget _ledgerHarness({
     ],
     child: MaterialApp.router(
       routerConfig: router,
-      builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
+      builder: (_, child) => AppTheme(
+        data: AppThemeData.light,
+        child: MobileOnboardingProgressFrame(child: child!),
+      ),
     ),
   );
 }

@@ -38,7 +38,10 @@ import '../../../send/widgets/send_review_layout.dart'
     show SendReviewContactRecipient;
 import '../../../swap/models/swap_fiat_value_formatting.dart';
 import '../../activity_row_mapper.dart'
-    show formatActivityTimestamp, giftCardActivityTitle;
+    show
+        formatActivityTimestamp,
+        giftCardActivityTitle,
+        transactionShowsZeroAmount;
 import '../../gift_card_activity_index.dart';
 
 /// Route arguments for [MobileTransactionStatusScreen]. The row that
@@ -257,6 +260,8 @@ class _MobileTransactionStatusScreenState
   bool get _isMigration =>
       (_transaction?.txKind ?? widget.args.txKind) == 'migration';
 
+  bool get _isSent => (_transaction?.txKind ?? widget.args.txKind) == 'sent';
+
   _TxPhase _phaseFor(GiftCardActivityMetadata? giftCard) {
     if (giftCard?.isClaimInFlight == true) {
       return _TxPhase.pending;
@@ -284,6 +289,8 @@ class _MobileTransactionStatusScreenState
     if (_isIncoming) {
       return _phase == _TxPhase.pending ? 'Receiving...' : 'Received';
     }
+    // An unclassified tx stays neutral, like the desktop fallback receipt.
+    if (!_isSent) return 'Transaction';
     return switch (_phase) {
       _TxPhase.pending => 'Sending...',
       _TxPhase.succeeded => 'Sent successfully',
@@ -734,7 +741,10 @@ class _MobileTransactionStatusScreenState
       return hideAmountIfPrivacyMode('', privacyModeEnabled: true);
     }
     final amountZatoshi = giftCardAmountZatoshi ?? tx.displayAmount;
-    if (amountZatoshi == BigInt.zero) return '--';
+    if (amountZatoshi == BigInt.zero &&
+        !transactionShowsZeroAmount(tx.txKind)) {
+      return '--';
+    }
     return ZecAmount.fromZatoshi(amountZatoshi).activityDetail.toString();
   }
 

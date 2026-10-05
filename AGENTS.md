@@ -122,6 +122,24 @@ Untagged tests may run in either lane and must be lane-agnostic:
   `fvm flutter run -t lib/widgetbook.dart --dart-define=VIZOR_FORM_FACTOR=mobile`.
   Only `lib/main.dart` asserts the match.
 
+## Google Play opt-out (VIZOR_DEGOOGLED)
+
+Android builds include Google Play integrations by default. Direct APK and
+F-Droid builds explicitly pass `--dart-define=VIZOR_DEGOOGLED=true`; the
+reproducible APK builder exposes this as `--degoogled`. Dart and Gradle read
+the same define. When enabled, Android review scheduling is disabled and the
+Google Play review SDK and implementation are excluded from the build. iOS
+reviews and desktop behavior are unaffected. F-Droid's wrapper always passes
+`--degoogled` to match deployment's direct APK build inputs.
+
+Mobile review eligibility is classified once from the first successful startup
+snapshot and persisted in `vizor_app_review_history_v1`. Existing wallet users
+skip the three-launch wait; new users retain it even after creating a wallet.
+Both require explicit usage and two idle seconds on home, with at most two API
+attempts and a seven-day retry interval. Legacy history keeps its attempt budget
+and dates when the classification field is added. Blocked startup must not be
+classified as a new user; retry recovery supplies the successful snapshot.
+
 ## Deep-link Host (VIZOR_DEEPLINK_BASE_URL)
 
 The HTTPS origin Vizor claims for incoming links has **one** knob on
@@ -146,6 +164,19 @@ Android and Dart: `--dart-define=VIZOR_DEEPLINK_BASE_URL` (default
   `/payment-links/open` all open the app. Path filtering belongs to
   Dart's `classifyIncomingLink`, which drops unknown paths on the origin
   silently.
+
+## Mainnet Block-Time Table
+
+On mainnet, wallet birthday conversions (import date to height, seed-phrase
+screen height to date) never send lightwalletd a wallet-derived height. They
+read `rust/src/wallet/block_times/mainnet_data.rs`, a generated table of
+header times every 1,000 blocks. The only request left is the chain tip.
+
+- The weekly `Update mainnet block times` workflow appends entries after two
+  endpoints agree, and opens a PR for a person to merge.
+- Bootstrap or refresh before a release cut with
+  `scripts/update-mainnet-block-times.py` (needs `grpcurl`); validate offline
+  with `--check`. Never edit the data file by hand.
 
 ## Editing Figma
 
@@ -701,6 +732,10 @@ or the first broadcast attempt. Wallet-owned PCZTs carry the reservation owner;
 strip that metadata from device signer views. Ledger checkpoint insertion and
 reservation transfer must commit in the same SQLite transaction. Keystone marks
 retention before the first network submission, including TEX's first round.
+A hardware TEX request's ZIP 320 ephemeral address follows the same boundary:
+releasing the request before that boundary returns the address, so cancelled
+approvals cannot exhaust the ephemeral gap limit; after it the address stays
+reserved.
 Normal app exit closes the proposal gate, requests sync cancellation, and hides
 its desktop window before awaiting reservation cleanup. Rust allows 250ms to
 acquire the wallet write lock and drain accepted DB creators, then releases only
@@ -710,7 +745,9 @@ recovery. It does not interrupt an active DB operation. Dart bounds its cleanup
 wait at 300ms. On macOS, the exit-only `desktop_exit` channel orders the window
 out synchronously and suppresses last-window auto-quit while Dart is preparing
 its exit reply; ordinary window visibility still uses `window_manager`.
-Backgrounding or hiding a window by itself does not end the session.
+Backgrounding or hiding a window by itself does not end the session, except
+that mobile returning after 15 minutes in the background locks it through the
+sign-out sequence (`BackgroundAutoLockHost`).
 Before the first balance read after restart, the DB migration gate recovers
 abandoned process-scoped reservations without network access. Legacy retained,
 signed, and ambiguous-broadcast reservations keep their expiry-based recovery.
@@ -840,6 +877,22 @@ discard_proposal}` with FRB wrappers in `rust/src/api/sync.rs`.
 ### Wallet Creation
 
 `create_wallet()` fetches chain tip from lightwalletd as birthday height before creating the account. This prevents new wallets from doing a full chain scan. Birthday fetch failure blocks wallet creation (network required).
+
+On mainnet, the wallet API (`rust/src/api/wallet.rs`, `restored_birthday`)
+stores every restored birthday rounded down to one past a 10,000-block grid
+point (`tree_states::restore_birthday`), so lightwalletd learns only the bucket.
+When the grid point is a compiled checkpoint (`rust/src/wallet/tree_states.rs`)
+the first scan batch reads its state locally instead of sending
+`GetTreeState`; a restore newer than the table fetches the grid point's state.
+Restores are the discovery import
+(`import_software_wallet_with_account_discovery`), wallet-link import
+(`import_software_account_at_index`), and hardware import
+(`import_hardware_account`). Newly created accounts (`create_wallet`,
+`add_account`, and `import_wallet` from onboarding's reveal-then-confirm
+flow), payment-link claims (`import_wallet`), and Gift Card observers keep the
+exact height; testnet, regtest, and masquerade builds are unchanged. Code that queries lightwalletd from a restored birthday must use the
+rounded value, never the exact requested height. The weekly
+`update-mainnet-chain-tables.yml` workflow appends checkpoints.
 
 ### Rust API Design Constraint
 

@@ -84,9 +84,8 @@ String mobileSwapActivityTitle(SwapState state, SwapIntent? intent) {
     return switch (intent.status) {
       SwapIntentStatus.complete => 'Paid',
       SwapIntentStatus.incompleteDeposit => 'Payment incomplete',
-      SwapIntentStatus.failed ||
-      SwapIntentStatus.refunded ||
-      SwapIntentStatus.expired => 'Payment failed',
+      SwapIntentStatus.refunded => 'Payment refunded',
+      SwapIntentStatus.failed || SwapIntentStatus.expired => 'Payment failed',
       _ => 'Paying ...',
     };
   }

@@ -10,6 +10,41 @@ import '../../figma_compare/figma_compare_font_loader.dart';
 void main() {
   setUpAll(loadFigmaCompareFonts);
 
+  testWidgets('offers removal instead of hiding when nothing is left', (
+    tester,
+  ) async {
+    var removes = 0;
+    var archives = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppTheme(
+          data: AppThemeData.dark,
+          child: Scaffold(
+            body: PaymentLinkClaimOutcomeView(
+              availability: PaymentLinkAvailability.claimedElsewhere,
+              onBack: () {},
+              onArchive: () => archives++,
+              onRemove: () => removes++,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Claimed elsewhere'), findsOneWidget);
+    expect(
+      find.text(
+        "This card was claimed in another wallet first. Your balance hasn't changed.",
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Hide card'), findsNothing);
+    await tester.tap(find.text('Remove card'));
+    expect(removes, 1);
+    expect(archives, 0);
+  });
+
   for (final availability in [
     PaymentLinkAvailability.claimedElsewhere,
     PaymentLinkAvailability.failed,

@@ -3,6 +3,7 @@
 
 import 'package:flutter/widgets.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
+import 'package:widgetbook/widgetbook.dart';
 
 import '../src/core/layout/app_desktop_shell.dart';
 import '../src/core/layout/app_pane_scroll_scaffold.dart';
@@ -13,6 +14,8 @@ import '../src/core/widgets/app_button.dart';
 import '../src/core/widgets/app_icon.dart';
 import '../src/core/widgets/app_pane_modal_overlay.dart';
 import '../src/features/swap/models/swap_fiat_amount.dart';
+import '../src/features/swap/models/swap_activity_status_mapper.dart';
+import '../src/features/swap/models/swap_intent_presentation_mapper.dart';
 import '../src/features/swap/models/swap_models.dart';
 import '../src/features/address_scan/widgets/address_qr_scan_modal.dart';
 import '../src/features/address_scan/widgets/mobile_address_scan_card.dart';
@@ -457,6 +460,7 @@ Widget buildSwapStatusCapturedFiatUseCase(BuildContext context) {
     backLabel: 'Activity',
     child: _SwapStatusPreview(
       title: 'Swap completed',
+      statusLabel: 'Completed',
       badgeKind: SwapStatusBadgeKind.completed,
       showTabs: false,
       steps: const [],
@@ -499,17 +503,124 @@ Widget buildSwapStatusCompletedUseCase(BuildContext context) {
 }
 
 Widget buildSwapStatusFailedUseCase(BuildContext context) {
-  return _SwapStatusPageFrame(
-    backLabel: 'Activity',
-    child: _SwapStatusPreview(
-      title: 'Swap failed',
-      badgeKind: SwapStatusBadgeKind.failed,
-      statusLabel: 'Failed',
-      showTabs: false,
-      steps: const [],
-      details: _designFailedDetails,
-    ),
+  final scenario = context.knobs.object.dropdown<_SwapFailureScenario>(
+    label: 'Outcome',
+    options: _SwapFailureScenario.values,
+    initialOption: _SwapFailureScenario.failedNoRefund,
+    labelBuilder: (scenario) => scenario.label,
   );
+  return _SwapFailureBranchesPreview(scenario: scenario);
+}
+
+Widget buildSwapStatusFailedCaptureUseCase(BuildContext context) =>
+    const _SwapFailureBranchesPreview(
+      scenario: _SwapFailureScenario.failedNoRefund,
+    );
+
+Widget buildSwapStatusRefundedCaptureUseCase(BuildContext context) =>
+    const _SwapFailureBranchesPreview(
+      scenario: _SwapFailureScenario.refundedWithAmount,
+    );
+
+enum _SwapFailureScenario {
+  failedNoRefund('Failed · no refund'),
+  refundedWithAmount('Refunded · amount recorded'),
+  refundedWithoutAmount('Refunded · amount missing');
+
+  const _SwapFailureScenario(this.label);
+
+  final String label;
+}
+
+class _SwapFailureBranchesPreview extends StatelessWidget {
+  const _SwapFailureBranchesPreview({required this.scenario});
+
+  final _SwapFailureScenario scenario;
+
+  @override
+  Widget build(BuildContext context) {
+    final intent = _swapFailureIntent(scenario);
+    final presentation = swapActivityStatusPresentationForIntent(
+      const SwapState(
+        direction: SwapDirection.externalToZec,
+        amountText: '',
+        receiveAmountText: '',
+        destinationText: '',
+        externalAsset: SwapAsset.usdc,
+        reviewVisible: false,
+        intents: [],
+      ),
+      intent,
+    );
+    return _SwapStatusPageFrame(
+      backLabel: 'Activity',
+      child: SwapStatusPageContent(
+        title: presentation.title,
+        payAsset: presentation.payAsset,
+        receiveAsset: presentation.receiveAsset,
+        payAmountText: presentation.payAmountText,
+        receiveAmountText: presentation.receiveAmountText,
+        payLabel: presentation.payLabel,
+        receiveLabel: presentation.receiveLabel,
+        payDetailText: presentation.payDetailText,
+        receiveDetailText: presentation.receiveDetailText,
+        payDetailCopyText: presentation.payDetailCopyText,
+        receiveDetailCopyText: presentation.receiveDetailCopyText,
+        statusLabel: presentation.statusLabel,
+        badgeKind: presentation.badgeKind,
+        progressIndex: presentation.progressIndex,
+        steps: presentation.steps,
+        details: presentation.details,
+        paymentMode: presentation.paymentMode,
+        showTabs: presentation.showTabs,
+        onCopy: (_) {},
+      ),
+    );
+  }
+}
+
+SwapIntent _swapFailureIntent(_SwapFailureScenario scenario) {
+  final refundedWithoutAmount =
+      scenario == _SwapFailureScenario.refundedWithoutAmount;
+  final hasRefund = scenario == _SwapFailureScenario.refundedWithAmount;
+  final rawStatus = refundedWithoutAmount
+      ? SwapIntentStatus.refunded
+      : SwapIntentStatus.failed;
+  final intent = SwapIntent(
+    id: 'widgetbook-swap-failure',
+    pair: 'USDC -> ZEC',
+    sellAmount: '2.3 USDC',
+    receiveEstimate: '0.0115 ZEC',
+    provider: 'NEAR Intents',
+    status: rawStatus,
+    nextAction: refundedWithoutAmount
+        ? 'Refund sent to your refund address'
+        : 'Swap failed',
+    providerStatusRaw: refundedWithoutAmount ? 'REFUNDED' : 'FAILED',
+    direction: SwapDirection.externalToZec,
+    externalAsset: SwapAsset.usdc,
+    depositAddress: '0x123kjhc4e984ac1832f10aa4x98g20',
+    depositTxHash: '0x9f1c000000000000000000000000000000003b7e',
+    oneClickRefundTo: '0x123kjhc000000000000000000004x98g20',
+    providerRefundInfo: SwapProviderRefundInfo(
+      depositedAmountText: '2.3 USDC',
+      refundedAmountText: hasRefund
+          ? '2.2976 USDC'
+          : refundedWithoutAmount
+          ? null
+          : '0 USDC',
+      recordedRefundFeeText: hasRefund ? '0.0024 USDC' : null,
+    ),
+    fiatValueBasis: SwapFiatValueBasis(
+      sellUsdUnitPrice: 1,
+      receiveUsdUnitPrice: 200,
+      capturedAt: DateTime.utc(2026, 5, 20, 13, 20),
+    ),
+    depositDeadline: DateTime.utc(2026, 5, 20, 13, 20),
+    createdAt: DateTime.utc(2026, 5, 20, 11, 20),
+    completedAt: DateTime.utc(2026, 5, 20, 13, 20),
+  );
+  return swapIntentsFromRecords([SwapIntentRecord.fromIntent(intent)]).single;
 }
 
 Widget buildSwapStatusIncompleteDepositUseCase(BuildContext context) {
@@ -864,20 +975,6 @@ const _designCompletedDetails = <SwapStatusDetailRowData>[
     label: 'Realized slippage',
     value: '0.25 USDC (0.27%)',
   ),
-  SwapStatusDetailRowData(label: 'Timestamp', value: 'May 20, 2026 13:20'),
-];
-
-const _designFailedDetails = <SwapStatusDetailRowData>[
-  SwapStatusDetailRowData(
-    label: 'Account',
-    value: 'John',
-    accountProfilePictureId: _designAccountProfilePictureId,
-  ),
-  SwapStatusDetailRowData(
-    label: 'USDC refunded to',
-    value: '0x123kjhc ... 4x98g20',
-  ),
-  SwapStatusDetailRowData(label: 'Total fees', value: '~0.25 USDC', help: true),
   SwapStatusDetailRowData(label: 'Timestamp', value: 'May 20, 2026 13:20'),
 ];
 
@@ -1885,4 +1982,60 @@ SwapState _withDerivedFiatTexts(
             tokenAmountText: state.receiveAmountText,
           ),
   );
+}
+
+Widget buildSwapGuidanceDepositDesktopUseCase(BuildContext context) =>
+    _SwapFlowPageFrame(
+      backLabel: 'Review',
+      child: _guidanceDepositPage(mobile: false),
+    );
+
+Widget buildSwapGuidanceDepositMobileUseCase(BuildContext context) =>
+    _MobilePhoneFrame(child: _guidanceDepositPage(mobile: true));
+
+Widget _guidanceDepositPage({required bool mobile}) =>
+    SwapDepositTokensPageContent(
+      asset: SwapAsset.usdc,
+      amountText: '150 USDC',
+      depositAddress: '0x123kjhc4e984ac1832f10aa4x98g20',
+      expiresInLabel: '14:59',
+      mobile: mobile,
+      onDeposited: () {},
+    );
+
+/// 393×852 phone canvas with the app ground and horizontal page padding, for
+/// mobile page content that the host screen normally wraps.
+class _MobilePhoneFrame extends StatelessWidget {
+  const _MobilePhoneFrame({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Center(
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: SizedBox(
+          width: 393,
+          height: 852,
+          child: MediaQuery(
+            data: const MediaQueryData(size: Size(393, 852)),
+            child: ColoredBox(
+              color: colors.background.base,
+              child: SafeArea(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.sm,
+                    vertical: AppSpacing.md,
+                  ),
+                  child: child,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

@@ -18,6 +18,9 @@ class PendingClaimPaymentLinkOperations implements PaymentLinkOperations {
   Future<void> setReceivedCardArchived(String address, bool archived) async {}
 
   @override
+  Future<void> removeReceivedCard(String address) async {}
+
+  @override
   Future<PaymentLinkFundingQuote> quoteMaxFunding({
     required String sourceAccountUuid,
   }) => throw UnimplementedError();
@@ -40,6 +43,22 @@ class PendingClaimPaymentLinkOperations implements PaymentLinkOperations {
     List<PaymentLinkReceivedRecord> records, {
     bool allowResubmit = true,
   }) async => records;
+
+  @override
+  Future<PaymentLinkClaimInspection> inspectClaim(
+    VizorPaymentLink link, {
+    bool allowLongSync = false,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<PaymentLinkClaimSession> bindClaimDestination(
+    PaymentLinkClaimInspection inspection, {
+    required String destinationAccountUuid,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<void> discardClaimInspection(PaymentLinkClaimInspection inspection) =>
+      throw UnimplementedError();
 
   @override
   Future<PaymentLinkClaimSession> prepareClaim(

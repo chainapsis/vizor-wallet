@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'mobile_onboarding_progress.dart';
+import 'mobile_onboarding_progress_scope.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../../../main.dart' show log;
@@ -36,7 +38,9 @@ class MobileKeystoneIntroScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MobileOnboardingStepScaffold(
-      progress: 0.2,
+      progress: MobileOnboardingProgressScope.of(
+        context,
+      ).at(OnboardingFlow.keystone, OnboardingStage.deviceIntro).value,
       onBack: () => Navigator.of(context).maybePop(),
       title: 'Connect Keystone',
       subtitle: 'Prepare your Keystone wallet',
@@ -44,7 +48,7 @@ class MobileKeystoneIntroScreen extends StatelessWidget {
         key: const ValueKey('mobile_keystone_intro_continue'),
         expand: true,
         onPressed: () =>
-            context.push(KeystoneOnboardingStep.scanQrCode.routePath),
+            context.pushOnboarding(KeystoneOnboardingStep.scanQrCode.routePath),
         trailing: const AppIcon(AppIcons.chevronForward),
         child: const Text('Continue'),
       ),
@@ -293,7 +297,9 @@ class _MobileKeystoneScanScreenState
       // scan screen. Reset the UR session/progress on return so a second
       // Keystone QR can be scanned — otherwise the scanner stays in its
       // completed state and ignores new frames.
-      await context.push(KeystoneOnboardingStep.selectAccount.routePath);
+      await context.pushOnboarding(
+        KeystoneOnboardingStep.selectAccount.routePath,
+      );
       if (!mounted) return;
       setState(() {
         _scanProgress = 0;
@@ -385,7 +391,9 @@ class _MobileKeystoneScanScreenState
       fit: StackFit.expand,
       children: [
         MobileOnboardingStepScaffold(
-          progress: 0.4,
+          progress: MobileOnboardingProgressScope.of(
+            context,
+          ).at(OnboardingFlow.keystone, OnboardingStage.deviceScan).value,
           onBack: () => Navigator.of(context).maybePop(),
           title: 'Scan QR Code',
           subtitle: 'Prepare your Keystone wallet',
@@ -437,7 +445,9 @@ class MobileKeystoneSelectAccountScreen extends ConsumerWidget {
     }
 
     return MobileOnboardingStepScaffold(
-      progress: 0.6,
+      progress: MobileOnboardingProgressScope.of(
+        context,
+      ).at(OnboardingFlow.keystone, OnboardingStage.accountSelection).value,
       onBack: () => Navigator.of(context).maybePop(),
       title: 'Select account',
       subtitle: 'Prepare your Keystone wallet',
@@ -446,7 +456,7 @@ class MobileKeystoneSelectAccountScreen extends ConsumerWidget {
         expand: true,
         onPressed: selected == null
             ? null
-            : () => context.push(
+            : () => context.pushOnboarding(
                 KeystoneOnboardingStep.walletBirthdayHeight.routePath,
               ),
         child: const Text('Select account'),
@@ -624,7 +634,7 @@ class MobileKeystoneBirthdayScreen extends ConsumerWidget {
     final account = ref.read(keystoneOnboardingProvider).selectedAccount;
     if (account == null) {
       if (context.mounted) {
-        context.go(KeystoneOnboardingStep.selectAccount.routePath);
+        context.goOnboarding(KeystoneOnboardingStep.selectAccount.routePath);
       }
       return;
     }
@@ -632,7 +642,7 @@ class MobileKeystoneBirthdayScreen extends ConsumerWidget {
     final security = ref.read(appSecurityProvider);
     if (!security.isPasswordConfigured) {
       if (!context.mounted) return;
-      context.push(
+      context.pushOnboarding(
         '/onboarding/set-passcode',
         extra: SetPasswordScreenArgs.importKeystone(
           name: account.name,
@@ -652,7 +662,7 @@ class MobileKeystoneBirthdayScreen extends ConsumerWidget {
       zip32Index: account.index,
       birthdayHeight: height,
     );
-    context.push(
+    context.pushOnboarding(
       '/onboarding/customise-account',
       extra: CustomiseAccountArgs(setupArgs: setupArgs),
     );
@@ -662,7 +672,9 @@ class MobileKeystoneBirthdayScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return MobileImportBirthdayScreen(
       args: const ImportBirthdayArgs(mnemonic: ''),
-      progress: 0.8,
+      position: MobileOnboardingProgressScope.of(
+        context,
+      ).at(OnboardingFlow.keystone, OnboardingStage.birthday),
       onHeightConfirmed: (height) => _confirm(context, ref, height),
     );
   }
