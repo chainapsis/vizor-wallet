@@ -420,10 +420,10 @@ until an account is promoted.
   abandoned 30 s after the pass deadline.
 - **Holds.** A withdrawal, unreconciled retirements, legacy evidence the
   complete ledger cannot explain (`LegacyDiscrepancy`), or three stalled runs
-  in a row hold the account for an hour. Holds live in memory, so a restart
-  retries once. Held and quarantined accounts, and under `PrivateRequired`
-  Ledger accounts, are skipped without a source call. The balance read
-  reports why as the account's stop reason.
+  since the last complete one hold the account for an hour. Holds live in
+  memory, so a restart retries once. Held and quarantined accounts, and under
+  `PrivateRequired` Ledger accounts, are skipped without a source call. The
+  balance read reports why as the account's stop reason.
 - **Raise and confirmation.** A default build captures `Public`, so `run`
   returns `NotEnabled` before any read. Under a captured `PrivateRequired` it
   first raises a weaker durable policy behind the policy fence, only while
