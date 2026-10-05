@@ -1948,7 +1948,8 @@ final class BackgroundMigrationPreparationManager {
         case .failure(.cancelled):
           return .cancelled
         case .failure(.coverageIncomplete):
-          // No observation was made. Retry this wave without failing background work.
+          // No observation was made, for example because the wallet's policy
+          // withholds public lookups. Retry this wave without failing background work.
           queryFailed = true
         case .failure(let error):
           print("[BGPreparation] transaction status query failed error=\(error)")

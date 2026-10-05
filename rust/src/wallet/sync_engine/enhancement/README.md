@@ -296,10 +296,11 @@ migration recovery runs before retiring a run. The raw `GetAddressUtxos`,
 lane cannot reach them any other way; the public status source is wrapped by
 `status::lightwalletd_source`. Fee enrichment and migration stop send no
 transaction identifiers, so they need no gate. The iOS FFI
-`zcash_lightwalletd_observe_transaction` has no wallet context and stays out of
-scope: gating it needs wallet context across the C ABI and Swift. Production
-keeps `Public` authority throughout preparation, so it cannot disclose under a
-private policy yet, but it is a blocker for production private activation.
+`zcash_lightwalletd_observe_transaction` takes the wallet's path and network:
+it opens the wallet read-only, adopts a durable `PrivateRequired`, and returns
+`STATUS_RESULT_UNSUPPORTED` without sending anything when lookups are withheld
+or the transaction's status work is private. An unreadable wallet is
+`STATUS_RESULT_INCONCLUSIVE`. Otherwise its request goes through the gate.
 
 A lane captures `EnhancementPolicy::public_transparent_lookups` once: the
 stricter of the captured mode and the policy durably applied to the wallet,

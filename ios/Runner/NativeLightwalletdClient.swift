@@ -231,13 +231,19 @@ enum NativeLightwalletdClient {
         }
       }
       return endpoint.withCString { endpointPointer in
-        zcash_lightwalletd_observe_transaction(
-          endpointPointer,
-          transactionPointer.bindMemory(to: UInt8.self).baseAddress,
-          UInt(transactionId.count),
-          &nativeObservation,
-          cancellation.lightwalletdCancellationHandle
-        )
+        dbPath.withCString { dbPathPointer in
+          network.withCString { networkPointer in
+            zcash_lightwalletd_observe_transaction(
+              endpointPointer,
+              dbPathPointer,
+              networkPointer,
+              transactionPointer.bindMemory(to: UInt8.self).baseAddress,
+              UInt(transactionId.count),
+              &nativeObservation,
+              cancellation.lightwalletdCancellationHandle
+            )
+          }
+        }
       }
     }
     guard code != ZCASH_LIGHTWALLETD_RESULT_CANCELLED,
@@ -246,6 +252,11 @@ enum NativeLightwalletdClient {
       return .failure(.cancelled)
     }
     if code == ZCASH_STATUS_RESULT_INCONCLUSIVE { return .failure(.coverageIncomplete) }
+    // The wallet withholds public lookups or routes this status privately.
+    // Nothing was sent.
+    if !privateStatus, code == ZCASH_STATUS_RESULT_UNSUPPORTED {
+      return .failure(.coverageIncomplete)
+    }
     guard code == 0 else {
       let source = privateStatus ? "Status PIR" : "lightwalletd"
       return .failure(.transport("Rust \(source) transaction lookup failed (code \(code))"))
