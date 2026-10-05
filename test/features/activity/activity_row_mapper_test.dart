@@ -524,6 +524,27 @@ void main() {
     expect(feeOnly.title, kNetworkFeeText);
     expect(feeOnly.amountText, activityAmountTextForFormFactor('-0.00065 ZEC'));
 
+    // A recovered self-transfer keeps its transparent pool in the entry, but
+    // a fee shows no pool.
+    final selfTransfer = await mapRow(
+      tester,
+      _transaction(
+        txKind: 'sent',
+        displayPool: 'transparent',
+        detailsComplete: false,
+        displayAmount: BigInt.from(10000),
+        fee: BigInt.from(10000),
+        amountIncludesFee: true,
+      ),
+    );
+    expect(selfTransfer.title, kNetworkFeeText);
+    expect(
+      selfTransfer.amountText,
+      activityAmountTextForFormFactor('-0.0001 ZEC'),
+    );
+    expect(selfTransfer.subtitle, isNull);
+    expect(selfTransfer.subtitleIconName, isNull);
+
     // A net change keeps its sent row and its whole amount: a row has no fee
     // line to repeat the fee in.
     final netChange = await mapRow(
