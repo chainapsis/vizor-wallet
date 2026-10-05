@@ -578,12 +578,14 @@ there is no separate release gate.
 
 ## Library dependency
 
-The four patched library crates use wallet-libraries main revision
-`6c7dbb0d8d0ee0d8a1c21c915e4a011d0845e242` (main after #86). Trusted qualification, rather than candidate observation, authorizes
-provisional revision replacement. The replacement regression explicitly
+The four patched library crates and the `zakura-pir-transparent` adapter use
+wallet-libraries revision `b877e37bf2246949acffbd4118473b8228d4f767`, the head
+of the private transparent recovery stack (`claude/tpir-private-mode`, from
+main `8897057f0`). Trusted qualification, rather than candidate observation,
+authorizes provisional revision replacement. The replacement regression explicitly
 qualifies fixture revisions at that boundary. Reader version 6 state is not
-supported by version 5 rollback readers; this pin remains preparatory work,
-with production private activation and real-source verification deferred.
+supported by version 5 rollback readers; this pin is unreleased, and private
+activation stays behind the development flag.
 
 - **#77** adds source-bound transparent transaction metadata and the
   `transaction_metadata`, `aggregate_payment`, and `account_movement` fields of
