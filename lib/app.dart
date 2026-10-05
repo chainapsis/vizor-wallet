@@ -18,6 +18,7 @@ import 'src/core/lifecycle/signing_shutdown_host.dart';
 import 'src/core/lifecycle/app_shutdown_signal.dart';
 import 'src/core/config/swap_feature_config.dart';
 import 'src/core/config/network_config.dart';
+import 'src/core/config/private_transparent_recovery_config.dart';
 import 'src/core/layout/app_layout.dart';
 import 'src/core/navigation/mobile_exit_back_guard.dart';
 import 'src/core/navigation/mobile_onboarding_routes.dart';
@@ -208,6 +209,9 @@ Future<void> initializeZcashWalletRuntime() async {
   await rust_simple.configureFastTestnetMigration(
     enabled: kZcashFastTestnetMigration,
   );
+  await rust_simple.configurePrivateTransparentRecovery(
+    enabled: kZcashPrivateTransparentRecovery,
+  );
   if (kZcashDefaultNetworkName == ZcashNetwork.regtest.name &&
       kZcashRegtestIronwoodActivationHeight > 1) {
     await rust_simple.configureRegtestIronwoodActivationHeight(
@@ -250,21 +254,41 @@ Future<Widget> buildBootstrappedZcashWalletApp({
 /// private to public while the app cannot run. Native keeps its last value, or
 /// private when it never received one, and Rust stays public with no sync
 /// running until a retried bootstrap succeeds.
+///
+/// An unreadable setting applies as private for this launch, but is not
+/// confirmed, so it never raises the wallet's transparent policy. A saved
+/// `true` raises it before native work is applied. Startup never lowers it:
+/// only an explicit toggle-off does. A failed raise leaves both sides private
+/// and the next sync retries it.
 @visibleForTesting
 Future<void> applyEnhancePirPolicy(
   AppBootstrapState bootstrap, {
   void Function(bool enabled)? setRustEnabled,
+  void Function(bool confirmed)? setPreferenceConfirmed,
+  TransparentPolicyReconciler? reconcileTransparentPolicy,
   Future<void> Function(bool enabled)? setNativePrivateRecovery,
 }) async {
   if (bootstrap.hasBlockingFailure) {
     log('bootstrap: blocked; leaving private recovery policy unchanged');
     return;
   }
+  final saved = bootstrap.enhancePirEnabled;
   final enabled =
-      bootstrap.enhancePirEnabled &&
-      isEnhancePirAvailableForNetwork(bootstrap.network);
+      (saved ?? true) && isEnhancePirAvailableForNetwork(bootstrap.network);
   (setRustEnabled ??
       (enabled) => rust_sync.setEnhancePirEnabled(enabled: enabled))(enabled);
+  (setPreferenceConfirmed ??
+      (confirmed) => rust_sync.setEnhancePirPreferenceConfirmed(
+        confirmed: confirmed,
+      ))(saved != null);
+  if (enabled && saved == true) {
+    try {
+      await (reconcileTransparentPolicy ??
+          walletTransparentPolicyReconciler(bootstrap.network))(true);
+    } catch (error) {
+      log('bootstrap: could not apply private transparent policy: $error');
+    }
+  }
   try {
     await (setNativePrivateRecovery ??
         IronwoodMigrationBackgroundLifecycle.instance.setPrivateRecovery)(

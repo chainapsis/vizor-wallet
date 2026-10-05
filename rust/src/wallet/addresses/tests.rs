@@ -71,7 +71,10 @@ fn old_wallet(db_path: &str) -> WalletDatabase {
     // A plain handle deliberately retains the upstream AllAvailableKeys default.
     WalletDb::from_connection(conn, WalletNetwork::Main, SystemClock, OsRng)
         .with_transparent_ledger_mode(
-            crate::wallet::sync_engine::enhancement::transparent_ledger_mode(),
+            crate::wallet::sync_engine::enhancement::transparent_ledger_mode_for(
+                db_path,
+                WalletNetwork::Main,
+            ),
         )
 }
 

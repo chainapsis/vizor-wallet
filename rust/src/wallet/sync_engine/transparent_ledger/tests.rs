@@ -7,8 +7,8 @@ use secrecy::SecretVec;
 use transparent::{address::TransparentAddress, bundle::OutPoint, keys::TransparentKeyScope};
 use zcash_client_backend::data_api::{
     transparent_ledger::{
-        CandidateBlocker, ReceiveEvent, SpendEvent, TransparentLedgerMode, TransparentLedgerRead,
-        TransparentLedgerWrite, WatchOrigin,
+        AppliedTransparentPolicy, CandidateBlocker, ReceiveEvent, SpendEvent,
+        TransparentLedgerMode, TransparentLedgerRead, TransparentLedgerWrite, WatchOrigin,
     },
     WalletWrite,
 };
@@ -18,6 +18,7 @@ use zcash_protocol::{consensus::BlockHeight, value::Zatoshis};
 
 use super::fixture::{FixtureSource, FIXTURE_SOURCE};
 use super::*;
+use crate::wallet::sync_engine::enhancement::test_mode;
 use crate::wallet::{
     db::{open_wallet_db_with_timeout, SYNC_DB_BUSY_TIMEOUT},
     keys,
@@ -116,6 +117,25 @@ fn apply_policy(path: &str, mode: TransparentLedgerMode) {
     .unwrap();
 }
 
+/// The wallet's durable policy, read through a production handle.
+fn applied(path: &str, network: WalletNetwork) -> AppliedTransparentPolicy {
+    open_wallet_db_with_timeout(path, network, SYNC_DB_BUSY_TIMEOUT)
+        .unwrap()
+        .applied_transparent_policy()
+        .unwrap()
+}
+
+/// An unscanned mainnet wallet, for selections only mainnet makes. Returns
+/// its directory guard, path, and an open handle.
+fn main_wallet() -> (tempfile::TempDir, String, WalletDatabase) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("wallet.db").to_str().unwrap().to_owned();
+    let seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
+    keys::init_db_and_create_account(&path, WalletNetwork::Main, &seed, None, "tpir").unwrap();
+    let db = open_wallet_db_with_timeout(&path, WalletNetwork::Main, SYNC_DB_BUSY_TIMEOUT).unwrap();
+    (dir, path, db)
+}
+
 /// A wallet whose durable policy permits private recovery.
 fn shadow_wallet() -> Wallet {
     let wallet = wallet();
@@ -124,9 +144,16 @@ fn shadow_wallet() -> Wallet {
 }
 
 async fn recover(wallet: &mut Wallet, source: &FixtureSource) -> RunOutcome {
-    run(&mut wallet.db, shadow(), source, &|| false)
-        .await
-        .unwrap()
+    run(
+        &mut wallet.db,
+        &wallet.path,
+        NETWORK,
+        shadow(),
+        source,
+        &|| false,
+    )
+    .await
+    .unwrap()
 }
 
 fn watched(wallet: &Wallet) -> Vec<WatchedAddress> {
@@ -258,16 +285,32 @@ async fn public_policy_and_disabled_source_send_nothing() {
 
     // Production: the captured mode is Public, so nothing is read.
     let public = policy(TransparentLedgerMode::Public);
-    let outcome = run(&mut wallet.db, public, &source, &exit).await.unwrap();
+    let outcome = run(
+        &mut wallet.db,
+        &wallet.path,
+        NETWORK,
+        public,
+        &source,
+        &exit,
+    )
+    .await
+    .unwrap();
     assert_eq!(outcome, RunOutcome::NotEnabled);
     // A private handle on a durably Public wallet does not start either.
     assert_eq!(recover(&mut wallet, &source).await, RunOutcome::NotEnabled);
     assert_eq!(source.calls(), 0);
 
     apply_policy(&wallet.path, TransparentLedgerMode::PrivateShadow);
-    let outcome = run(&mut wallet.db, shadow(), &DisabledSource, &exit)
-        .await
-        .unwrap();
+    let outcome = run(
+        &mut wallet.db,
+        &wallet.path,
+        NETWORK,
+        shadow(),
+        &DisabledSource,
+        &exit,
+    )
+    .await
+    .unwrap();
     assert_eq!(outcome, RunOutcome::SourceUnavailable);
     assert_eq!(
         count(&wallet.path, "SELECT COUNT(*) FROM tpir_revisions"),
@@ -430,9 +473,16 @@ async fn cancellation_keeps_committed_passes() {
         .on_call(|| {})
         .on_call(move || flag.store(true, Ordering::SeqCst));
     let should_exit = || exit.load(Ordering::SeqCst);
-    let outcome = run(&mut wallet.db, shadow(), &source, &should_exit)
-        .await
-        .unwrap();
+    let outcome = run(
+        &mut wallet.db,
+        &wallet.path,
+        NETWORK,
+        shadow(),
+        &source,
+        &should_exit,
+    )
+    .await
+    .unwrap();
     assert_eq!(outcome, RunOutcome::Exited);
     assert_eq!(source.calls(), 2);
     // The first pass's open page is durable; the cancelled answer is not.
@@ -695,9 +745,16 @@ impl RecoverySource for Silent {
 #[tokio::test(start_paused = true)]
 async fn a_source_past_its_time_bound_commits_nothing() {
     let mut wallet = shadow_wallet();
-    let outcome = run(&mut wallet.db, shadow(), &Silent, &|| false)
-        .await
-        .unwrap();
+    let outcome = run(
+        &mut wallet.db,
+        &wallet.path,
+        NETWORK,
+        shadow(),
+        &Silent,
+        &|| false,
+    )
+    .await
+    .unwrap();
     assert_eq!(
         outcome,
         RunOutcome::Finished(RunStats {
@@ -711,4 +768,220 @@ async fn a_source_past_its_time_bound_commits_nothing() {
     );
 }
 
+#[tokio::test]
+async fn raise_needs_a_confirmed_preference() {
+    use crate::wallet::sync_engine::lwd::transparent_lookup::TransparentLookupGate;
+
+    let mut wallet = wallet();
+    let before = applied(&wallet.path, NETWORK);
+    let required = policy(TransparentLedgerMode::PrivateRequired);
+    // A public lookup in flight, which a raise waiting at the fence would
+    // wait for.
+    let lookups = policy(TransparentLedgerMode::Public)
+        .public_transparent_lookups(&wallet.db)
+        .unwrap();
+    let gate = TransparentLookupGate::for_wallet(lookups, &wallet.path, NETWORK).unwrap();
+    let (release, released) = tokio::sync::oneshot::channel::<()>();
+    let in_flight =
+        tokio::spawn(async move { gate.dispatch(async { released.await.unwrap() }).await });
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    // A preference that could not be read selects private handles for the
+    // launch, but writes nothing, and never takes the fence: it does not
+    // wait for the lookup.
+    let unconfirmed =
+        test_mode::select(&wallet.path, TransparentLedgerMode::PrivateRequired, false);
+    let outcome = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        run(
+            &mut wallet.db,
+            &wallet.path,
+            NETWORK,
+            required,
+            &DisabledSource,
+            &|| false,
+        ),
+    )
+    .await
+    .expect("a raise that cannot apply does not wait at the fence")
+    .unwrap();
+    assert_eq!(outcome, RunOutcome::NotEnabled);
+    assert_eq!(applied(&wallet.path, NETWORK), before);
+    drop(unconfirmed);
+    release.send(()).unwrap();
+    assert_eq!(in_flight.await.unwrap().unwrap(), Some(()));
+
+    let _confirmed = test_mode::set(&wallet.path, TransparentLedgerMode::PrivateRequired);
+    let outcome = run(
+        &mut wallet.db,
+        &wallet.path,
+        NETWORK,
+        required,
+        &DisabledSource,
+        &|| false,
+    )
+    .await
+    .unwrap();
+    // Raised, then stopped by the disabled source before any request.
+    assert_eq!(outcome, RunOutcome::SourceUnavailable);
+    assert_eq!(
+        applied(&wallet.path, NETWORK),
+        AppliedTransparentPolicy {
+            mode: TransparentLedgerMode::PrivateRequired,
+            generation: before.generation + 1,
+        }
+    );
+}
+
+#[tokio::test]
+async fn raise_does_not_override_a_concurrent_toggle_off() {
+    use crate::wallet::sync_engine::lwd::transparent_lookup::TransparentLookupGate;
+
+    let mut wallet = wallet();
+    let before = applied(&wallet.path, NETWORK);
+    // A public lookup in flight keeps the raise waiting at the fence.
+    let lookups = policy(TransparentLedgerMode::Public)
+        .public_transparent_lookups(&wallet.db)
+        .unwrap();
+    let gate = TransparentLookupGate::for_wallet(lookups, &wallet.path, NETWORK).unwrap();
+    let (release, released) = tokio::sync::oneshot::channel::<()>();
+    let in_flight = tokio::spawn({
+        let gate = gate.clone();
+        async move { gate.dispatch(async { released.await.unwrap() }).await }
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    let selected = test_mode::set(&wallet.path, TransparentLedgerMode::PrivateRequired);
+    let path = wallet.path.clone();
+    let toggle_off = async move {
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        // Turning the setting off clears the live selection first, then
+        // reconciles the wallet.
+        drop(selected);
+        let off = test_mode::set(&path, TransparentLedgerMode::Public);
+        release.send(()).unwrap();
+        let lowered = set_transparent_policy(&path, NETWORK, false, true)
+            .await
+            .unwrap();
+        (lowered, off)
+    };
+    let (outcome, (lowered, _off)) = tokio::join!(
+        run(
+            &mut wallet.db,
+            &wallet.path,
+            NETWORK,
+            policy(TransparentLedgerMode::PrivateRequired),
+            &DisabledSource,
+            &|| false,
+        ),
+        toggle_off,
+    );
+
+    assert_eq!(in_flight.await.unwrap().unwrap(), Some(()));
+    assert_eq!(outcome.unwrap(), RunOutcome::NotEnabled);
+    assert_eq!(lowered, None, "nothing was raised");
+    assert_eq!(applied(&wallet.path, NETWORK), before);
+}
+
+/// A toggle-off that arrives after a raise decided to apply, while the raise
+/// still holds the fence, waits for it and lowers what it applied instead of
+/// reading the policy from before the raise and leaving it private.
+#[tokio::test]
+async fn a_toggle_off_behind_a_raise_lowers_what_it_applied() {
+    let wallet = wallet();
+    let path = wallet.path.clone();
+    let before = applied(&path, NETWORK);
+    let (decided, raise_decided) = tokio::sync::oneshot::channel::<()>();
+    let (commit, may_commit) = std::sync::mpsc::channel::<()>();
+    // The raise runs on its own thread, so its check under the fence can hold
+    // it there while this runtime starts the toggle-off.
+    let raise = std::thread::spawn({
+        let path = path.clone();
+        move || {
+            let mut db = open_wallet_db_with_timeout(&path, NETWORK, SYNC_DB_BUSY_TIMEOUT).unwrap();
+            db.set_transparent_ledger_mode(TransparentLedgerMode::PrivateRequired);
+            let checks = std::sync::atomic::AtomicUsize::new(0);
+            let decided = std::sync::Mutex::new(Some(decided));
+            // The first check runs before the fence, the second under it.
+            let may_raise = || {
+                if checks.fetch_add(1, Ordering::SeqCst) == 1 {
+                    decided.lock().unwrap().take().unwrap().send(()).unwrap();
+                    may_commit.recv().unwrap();
+                }
+                true
+            };
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(raise_to_required(&mut db, may_raise))
+                .unwrap()
+        }
+    });
+    raise_decided.await.unwrap();
+
+    let toggle_off = tokio::spawn({
+        let path = path.clone();
+        async move { set_transparent_policy(&path, NETWORK, false, true).await }
+    });
+    // Long enough for the toggle-off to open the wallet and reach the fence.
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    assert!(!toggle_off.is_finished(), "waiting behind the raise");
+    commit.send(()).unwrap();
+    let raised = tokio::task::spawn_blocking(move || raise.join().unwrap())
+        .await
+        .unwrap();
+    assert!(raised);
+
+    let lowered = toggle_off.await.unwrap().unwrap();
+    let expected = AppliedTransparentPolicy {
+        mode: TransparentLedgerMode::Public,
+        generation: before.generation + 2,
+    };
+    assert_eq!(lowered, Some(expected));
+    assert_eq!(applied(&path, NETWORK), expected);
+}
+
+#[tokio::test]
+async fn a_flag_off_build_pauses_a_private_wallet_without_weakening_it() {
+    let network = WalletNetwork::Main;
+    let (_dir, path, mut db) = main_wallet();
+    with_wallet_db_write_lock("test.transparent_ledger.policy", || {
+        db.apply_transparent_policy(TransparentLedgerMode::PrivateRequired)
+    })
+    .unwrap();
+    let before = applied(&path, network);
+    // Private queries on in a build without the development flag.
+    let flag_off = EnhancementPolicy::for_inputs(network, true, false);
+    assert_eq!(flag_off.transparent_mode(), TransparentLedgerMode::Public);
+    let source = FixtureSource::new(main_hash);
+
+    let outcome = run(&mut db, &path, network, flag_off, &source, &|| false)
+        .await
+        .unwrap();
+    assert_eq!(outcome, RunOutcome::NotEnabled);
+    assert_eq!(source.calls(), 0);
+    // Startup in this build reconciles only upward, and selects nothing.
+    assert_eq!(
+        set_transparent_policy(&path, network, true, false)
+            .await
+            .unwrap(),
+        None
+    );
+    assert_eq!(applied(&path, network), before);
+
+    // Handles keep the wallet's policy, so public lookups stay withheld.
+    let mut reopened = open_wallet_db_with_timeout(&path, network, SYNC_DB_BUSY_TIMEOUT).unwrap();
+    flag_off.configure_db(&mut reopened);
+    assert_eq!(
+        reopened.transparent_ledger_mode().unwrap(),
+        TransparentLedgerMode::PrivateRequired
+    );
+    assert_eq!(
+        flag_off.public_transparent_lookups(&reopened).unwrap(),
+        crate::wallet::sync_engine::enhancement::PublicTransparentLookups::Withheld
+    );
+}
+
 mod activation;
+mod policy;

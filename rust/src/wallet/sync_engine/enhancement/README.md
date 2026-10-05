@@ -334,7 +334,7 @@ Per-RPC checks narrow the check-to-dispatch window but cannot close it alone: a
 transition could commit between a check and its request, and a disclosure
 cannot be undone. The in-process **policy fence** closes it. Every dispatch
 holds a shared lease from its check until its request has been sent, and
-`apply_transparent_policy_fenced`, the only way this build applies a
+`apply_transparent_policy_fenced_if`, the only way this build applies a
 transparent policy, takes the exclusive side. A waiting transition blocks new
 leases at once, waits up to its drain deadline for in-flight requests, and only
 then commits; if they do not drain in time it applies nothing and fails, and
@@ -342,13 +342,19 @@ the caller retries. Lookups queued behind it resume under the new generation
 and are withheld. No wallet-libraries hook is needed: the fence lives beside
 the only code that sends lookups. A transition made by another process is
 outside the fence, and the per-RPC check still bounds it to requests already in
-flight. Production never applies a transition yet; fixture activation does.
+flight. The private queries setting and the coordinator's raise are the only
+transitions (`transparent_ledger/policy.rs`). Both decide under the fence, so
+neither acts on a policy the other is about to change: a toggle-off that lands
+while a raise waits wins, and one that waits behind a raise lowers what it
+applied. A raise that cannot apply checks first and never takes the fence.
 
-- This build's Public handle cannot read a wallet whose durable policy is
-  `PrivateRequired`; the gate then returns an error, which also sends nothing.
-- Production always captures `Public`. `PrivateRequired` is reachable only in
-  tests (`EnhancementPolicy::with_transparent_mode`) until private transparent
-  recovery exists.
+- Every handle opener selects a mode, then adopts a durable `PrivateRequired`,
+  so lookups on such a wallet are withheld in every build. A handle opened
+  before the transition cannot read it; the gate then returns an error, which
+  also sends nothing.
+- A default build captures `Public`. With the
+  `ZCASH_PRIVATE_TRANSPARENT_RECOVERY` development flag, private queries on
+  mainnet capture `PrivateRequired`.
 
 ## Private transparent recovery and activation
 
@@ -387,9 +393,12 @@ balances, input selection, locks, address allocation and history ignore it.
   logged and never fail the sync. It has its own progress, retries and
   completion, and it does not touch UTXO refresh, the `.receive.redb` cache, or
   the shielded checkpoints; neither of those becomes private evidence.
-- **Production is unchanged.** Production captures `Public` and passes
-  `DisabledSource`, so the coordinator returns `NotEnabled` before any read. A
-  private handle on a durably `Public` wallet does not start either.
+- **Production has no source.** A default build captures `Public`, so the
+  coordinator returns `NotEnabled` before any read. With the development flag
+  it first raises a weaker durable policy to `PrivateRequired`, only from a
+  confirmed preference, and `DisabledSource` then stops the run before any
+  request. A private handle on a durably `Public` wallet that it may not
+  raise does not start.
 - **Diagnostics.** Logs carry only outcome counts. Rejection payloads, which
   name addresses and outpoints, are never logged. Candidate amounts from
   `transparent_candidate_recovery` are unverified: they can be above or below

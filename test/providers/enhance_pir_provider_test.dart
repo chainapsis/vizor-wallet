@@ -15,6 +15,10 @@ import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
 class _Api extends RustLibApi {
   final values = <bool>[];
+
+  /// Shared with the store, background sink and reconciler when a test checks
+  /// the order across all of them.
+  List<String>? events;
   bool running = false;
   int cancellations = 0;
   int statusReads = 0;
@@ -32,8 +36,16 @@ class _Api extends RustLibApi {
   }
 
   @override
-  void crateApiSyncSetEnhancePirEnabled({required bool enabled}) =>
-      values.add(enabled);
+  void crateApiSyncSetEnhancePirEnabled({required bool enabled}) {
+    values.add(enabled);
+    events?.add('rust:$enabled');
+  }
+
+  @override
+  void crateApiSyncSetEnhancePirPreferenceConfirmed({
+    required bool confirmed,
+  }) => events?.add('confirmed:$confirmed');
+
   @override
   Future<EnhanceRecoveryStatus> crateApiSyncGetEnhanceRecoveryStatus({
     required String dbPath,
@@ -69,6 +81,26 @@ class _Store implements EnhancePirPreferenceStore {
     if (fail) throw StateError('disk full');
     events?.add('store:$enabled');
     value = enabled;
+  }
+}
+
+/// Records transparent policy reconciliation, which can fail per direction.
+class _Reconciler {
+  _Reconciler([this.events]);
+  final List<String>? events;
+  final calls = <bool>[];
+  bool failRaise = false;
+  bool failLower = false;
+
+  /// Whether lowering finds a private wallet to lower.
+  bool lowers = true;
+  Future<bool> call(bool privateQueries) async {
+    calls.add(privateQueries);
+    events?.add('reconcile:$privateQueries');
+    if (privateQueries ? failRaise : failLower) {
+      throw StateError('public lookups did not drain');
+    }
+    return privateQueries || lowers;
   }
 }
 
@@ -168,6 +200,7 @@ void main() {
   tearDownAll(RustLib.dispose);
   setUp(() {
     api.values.clear();
+    api.events = null;
     api.running = false;
     api.cancellations = 0;
     api.statusReads = 0;
@@ -176,9 +209,10 @@ void main() {
   ProviderContainer setup(
     _Store store,
     SyncNotifier sync, {
-    bool initialEnabled = false,
+    bool? initialEnabled = false,
     bool hasAccount = false,
     _Background? background,
+    _Reconciler? reconciler,
   }) => ProviderContainer(
     overrides: [
       appBootstrapProvider.overrideWithValue(
@@ -204,6 +238,9 @@ void main() {
         ),
       ),
       enhancePirPreferenceStoreProvider.overrideWithValue(store),
+      transparentPolicyReconcilerProvider.overrideWithValue(
+        (reconciler ?? _Reconciler()).call,
+      ),
       syncProvider.overrideWith(() => sync),
       if (background != null)
         enhancePirBackgroundSinkProvider.overrideWithValue(background.call),
@@ -333,27 +370,39 @@ void main() {
     },
   );
   test(
-    'background work turns private before commit and public after it',
+    'enabling and disabling apply the stricter state first on every side',
     () async {
       final events = <String>[];
+      api.events = events;
       final store = _Store()..events = events;
       final background = _Background(events);
       final sync = _Sync()..gate.complete();
-      final container = setup(store, sync, background: background);
+      final container = setup(
+        store,
+        sync,
+        background: background,
+        reconciler: _Reconciler(events),
+      );
       addTearDown(container.dispose);
       final notifier = container.read(enhancePirProvider.notifier);
 
       await notifier.set(true);
+      expect(container.read(enhancePirProvider), isTrue);
       await notifier.set(false);
 
       expect(events, [
         'native:true',
         'store:true',
+        'rust:true',
+        'confirmed:true',
+        'reconcile:true',
+        'rust:false',
+        'reconcile:false',
         'store:false',
         'native:false',
       ]);
-      expect(api.values, [true, false]);
       expect(container.read(enhancePirProvider), isFalse);
+      expect(container.read(enhancePirTransitionProvider), isNull);
     },
   );
   test(
@@ -362,8 +411,14 @@ void main() {
       final events = <String>[];
       final store = _Store()..events = events;
       final background = _Background(events)..failEnable = true;
+      final reconciler = _Reconciler();
       final sync = _Sync()..gate.complete();
-      final container = setup(store, sync, background: background);
+      final container = setup(
+        store,
+        sync,
+        background: background,
+        reconciler: reconciler,
+      );
       addTearDown(container.dispose);
 
       await container.read(enhancePirProvider.notifier).set(true);
@@ -371,6 +426,7 @@ void main() {
       expect(events, isEmpty);
       expect(store.value, isNull);
       expect(api.values, isEmpty);
+      expect(reconciler.calls, isEmpty);
       expect(container.read(enhancePirProvider), isFalse);
       expect(
         container.read(enhancePirTransitionProvider),
@@ -378,6 +434,137 @@ void main() {
       );
     },
   );
+  test(
+    'a failed raise on enable turns Rust and the saved setting back off',
+    () async {
+      final events = <String>[];
+      api.events = events;
+      final store = _Store()..events = events;
+      final sync = _Sync()..gate.complete();
+      final container = setup(
+        store,
+        sync,
+        background: _Background(events),
+        reconciler: _Reconciler(events)..failRaise = true,
+      );
+      addTearDown(container.dispose);
+
+      await container.read(enhancePirProvider.notifier).set(true);
+
+      expect(events, [
+        'native:true',
+        'store:true',
+        'rust:true',
+        'confirmed:true',
+        'reconcile:true',
+        'rust:false',
+        'store:false',
+      ]);
+      expect(store.value, isFalse);
+      expect(container.read(enhancePirProvider), isFalse);
+      expect(
+        container.read(enhancePirTransitionProvider),
+        'Setting unchanged. Try again.',
+      );
+    },
+  );
+  test(
+    'a failed lowering on disable turns Rust back on and saves nothing',
+    () async {
+      final events = <String>[];
+      api.events = events;
+      final store = _Store()..events = events;
+      final sync = _Sync()..gate.complete();
+      final container = setup(
+        store,
+        sync,
+        initialEnabled: true,
+        background: _Background(events),
+        reconciler: _Reconciler(events)..failLower = true,
+      );
+      addTearDown(container.dispose);
+
+      await container.read(enhancePirProvider.notifier).set(false);
+
+      expect(events, ['rust:false', 'reconcile:false', 'rust:true']);
+      expect(store.value, isNull);
+      expect(container.read(enhancePirProvider), isTrue);
+      expect(
+        container.read(enhancePirTransitionProvider),
+        'Setting unchanged. Try again.',
+      );
+    },
+  );
+  test('a failed save on disable raises the wallet again', () async {
+    final events = <String>[];
+    api.events = events;
+    final store = _Store()
+      ..events = events
+      ..fail = true;
+    final sync = _Sync()..gate.complete();
+    final container = setup(
+      store,
+      sync,
+      initialEnabled: true,
+      background: _Background(events),
+      reconciler: _Reconciler(events),
+    );
+    addTearDown(container.dispose);
+
+    await container.read(enhancePirProvider.notifier).set(false);
+
+    // The saved setting is still on, so the wallet is made private again and
+    // native background work is never released.
+    expect(events, [
+      'rust:false',
+      'reconcile:false',
+      'rust:true',
+      'reconcile:true',
+    ]);
+    expect(store.value, isNull);
+    expect(container.read(enhancePirProvider), isTrue);
+    expect(
+      container.read(enhancePirTransitionProvider),
+      'Setting unchanged. Try again.',
+    );
+  });
+  test(
+    'a failed save on disable raises nothing that the disable did not lower',
+    () async {
+      final events = <String>[];
+      api.events = events;
+      final store = _Store()
+        ..events = events
+        ..fail = true;
+      final sync = _Sync()..gate.complete();
+      final container = setup(
+        store,
+        sync,
+        // Unreadable at launch: on for the launch, but never raised.
+        initialEnabled: null,
+        background: _Background(events),
+        reconciler: _Reconciler(events)..lowers = false,
+      );
+      addTearDown(container.dispose);
+
+      await container.read(enhancePirProvider.notifier).set(false);
+
+      // The wallet was still public, so it stays public, and the rollback
+      // never confirms a setting that was not read.
+      expect(events, ['rust:false', 'reconcile:false', 'rust:true']);
+      expect(store.value, isNull);
+      expect(container.read(enhancePirProvider), isTrue);
+      expect(
+        container.read(enhancePirTransitionProvider),
+        'Setting unchanged. Try again.',
+      );
+    },
+  );
+  test('an unreadable saved setting is on for this launch', () {
+    final container = setup(_Store(), _Sync(), initialEnabled: null);
+    addTearDown(container.dispose);
+    expect(container.read(enhancePirProvider), isTrue);
+  });
   test('disabling commits even when background work stays private', () async {
     final events = <String>[];
     final store = _Store()..events = events;

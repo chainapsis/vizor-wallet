@@ -9,30 +9,44 @@ import 'package:zcash_wallet/src/core/storage/enhance_pir_preference_store.dart'
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 
-AppBootstrapState _ready({required bool enabled}) => AppBootstrapState(
-  initialLocation: '/home',
-  initialAccountState: const AccountState(),
-  initialSyncSnapshot: AppSyncSnapshot.empty,
-  network: 'main',
-  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
-  themeMode: ThemeMode.system,
-  privacyModeEnabled: false,
-  isPasswordConfigured: true,
-  isUnlocked: true,
-  passwordRotationRecoveryFailed: false,
-  enhancePirEnabled: enabled,
-);
+AppBootstrapState _ready({required bool? enabled, String network = 'main'}) =>
+    AppBootstrapState(
+      initialLocation: '/home',
+      initialAccountState: const AccountState(),
+      initialSyncSnapshot: AppSyncSnapshot.empty,
+      network: network,
+      rpcEndpointConfig: defaultRpcEndpointConfig(network),
+      themeMode: ThemeMode.system,
+      privacyModeEnabled: false,
+      isPasswordConfigured: true,
+      isUnlocked: true,
+      passwordRotationRecoveryFailed: false,
+      enhancePirEnabled: enabled,
+    );
 
 void main() {
   late List<String> applied;
+  late bool failRaise;
 
   Future<void> apply(AppBootstrapState bootstrap) => applyEnhancePirPolicy(
     bootstrap,
     setRustEnabled: (enabled) => applied.add('rust:$enabled'),
+    setPreferenceConfirmed: (confirmed) => applied.add('confirmed:$confirmed'),
+    reconcileTransparentPolicy: (privateQueries) async {
+      applied.add('reconcile:$privateQueries');
+      if (failRaise) throw StateError('public lookups did not drain');
+      return true;
+    },
     setNativePrivateRecovery: (enabled) async => applied.add('native:$enabled'),
   );
 
-  setUp(() => applied = []);
+  setUp(() {
+    applied = [];
+    failRaise = false;
+  });
+
+  // Masquerade builds never enable the production service.
+  final available = isEnhancePirAvailableForNetwork('main');
 
   for (final kind in AppBootstrapFailureKind.values) {
     test(
@@ -47,36 +61,63 @@ void main() {
 
         await apply(blocked);
 
-        expect(applied, isEmpty);
+        expect(applied, isEmpty, reason: 'nothing confirmed or reconciled');
       },
     );
   }
 
   test(
-    'a ready bootstrap applies the saved preference to both sides',
+    'a saved preference is confirmed and raised before native is applied',
     () async {
       await apply(_ready(enabled: true));
-      // Masquerade builds never enable the production service.
-      final expected = isEnhancePirAvailableForNetwork('main');
-      expect(applied, ['rust:$expected', 'native:$expected']);
+      expect(applied, [
+        'rust:$available',
+        'confirmed:true',
+        if (available) 'reconcile:true',
+        'native:$available',
+      ]);
     },
   );
 
-  test('an unreadable preference keeps both sides private', () async {
-    // What bootstrap builds when the saved preference cannot be read.
-    final unreadable = await readEnhancePirEnabledPreference(
-      _UnusedSecureStore(),
-      preferences: _UnreadablePreferences(),
-    );
-    await apply(_ready(enabled: unreadable));
-    final expected = isEnhancePirAvailableForNetwork('main');
-    expect(applied, ['rust:$expected', 'native:$expected']);
-    expect(applied, isNot(contains('native:false')));
+  test('a failed raise keeps both sides private', () async {
+    failRaise = true;
+    await apply(_ready(enabled: true));
+    expect(applied, [
+      'rust:$available',
+      'confirmed:true',
+      if (available) 'reconcile:true',
+      'native:$available',
+    ]);
   });
 
-  test('a ready bootstrap applies a disabled preference', () async {
+  test(
+    'an unreadable preference keeps both sides private, unconfirmed',
+    () async {
+      // What bootstrap builds when the saved preference cannot be read.
+      final unreadable = await readEnhancePirEnabledPreference(
+        _UnusedSecureStore(),
+        preferences: _UnreadablePreferences(),
+      );
+      expect(unreadable, isNull);
+      await apply(_ready(enabled: unreadable));
+      expect(applied, [
+        'rust:$available',
+        'confirmed:false',
+        'native:$available',
+      ]);
+      expect(applied, isNot(contains('native:false')));
+    },
+  );
+
+  test('startup applies a disabled preference but never demotes', () async {
     await apply(_ready(enabled: false));
-    expect(applied, ['rust:false', 'native:false']);
+    // Only an explicit toggle-off lowers the transparent policy.
+    expect(applied, ['rust:false', 'confirmed:true', 'native:false']);
+  });
+
+  test('a network without the service reconciles nothing', () async {
+    await apply(_ready(enabled: true, network: 'test'));
+    expect(applied, ['rust:false', 'confirmed:true', 'native:false']);
   });
 }
 

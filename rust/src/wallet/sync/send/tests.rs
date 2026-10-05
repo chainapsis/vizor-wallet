@@ -4130,12 +4130,16 @@ fn durable_private_transparent_policy_blocks_shielding_and_survives_startup() {
         .to_string();
     assert!(error.contains(NEEDS_NEWER_BUILD), "{error}");
 
-    // Startup migration keeps the stricter policy, and a fresh handle stays blocked.
+    // Startup migration keeps the stricter policy. A fresh handle adopts it
+    // instead of failing on the conflict, and shielding stays refused.
     keys::ensure_db_initialized(path, network).unwrap();
     assert_eq!(policy(&conn), (2, 0, 1));
     let mut reopened = open_wallet_db(path, network).unwrap();
     let error = build_shielding_proposal(&mut reopened, network, id, threshold).unwrap_err();
-    assert!(error.contains(AUTHORITY_UNAVAILABLE), "{error}");
+    assert!(
+        error.contains(crate::wallet::sync::send::TRANSPARENT_RECOVERY_INCOMPLETE),
+        "{error}"
+    );
     assert_eq!(policy(&conn), (2, 0, 1));
 }
 
