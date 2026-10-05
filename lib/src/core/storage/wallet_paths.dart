@@ -83,6 +83,61 @@ Future<void> deletePaymentLinkClaimWalletDirectories({
   }
 }
 
+/// Suffix of the directory beside a wallet database that holds its private
+/// transparent recovery companions (`{dbPath}.tpir`). Rust creates it lazily
+/// and owns its contents; they are rebuildable, so deleting it loses no funds.
+const kTransparentRecoveryCompanionSuffix = '.tpir';
+
+/// The companion directory of the wallet database at [dbPath].
+String transparentRecoveryCompanionDirectory(String dbPath) =>
+    '$dbPath$kTransparentRecoveryCompanionSuffix';
+
+/// Deletes companion directories in the wallet support directory that belong
+/// to no current wallet: every `*.tpir` directory except that of
+/// [currentDbPath], or all of them when it is null.
+///
+/// Companions record which transparent addresses had activity, so one left
+/// behind by an earlier wallet is not kept. Attempts every directory and then
+/// rethrows the first failure.
+Future<void> deleteOrphanCompanionDirectories(
+  String? currentDbPath, {
+  Future<Directory> Function() resolveSupportDirectory =
+      getWalletSupportDirectory,
+  Future<void> Function(Directory directory)? deleteDirectory,
+}) async {
+  final current = currentDbPath == null
+      ? null
+      : transparentRecoveryCompanionDirectory(
+          currentDbPath,
+        ).split(Platform.pathSeparator).last;
+  final supportDirectory = await resolveSupportDirectory();
+  if (!await supportDirectory.exists()) return;
+
+  Object? firstError;
+  StackTrace? firstStackTrace;
+  await for (final entity in supportDirectory.list(followLinks: false)) {
+    if (entity is! Directory) continue;
+    final directoryName = entity.path.split(Platform.pathSeparator).last;
+    if (!directoryName.endsWith(kTransparentRecoveryCompanionSuffix) ||
+        directoryName == current) {
+      continue;
+    }
+    try {
+      if (deleteDirectory == null) {
+        await entity.delete(recursive: true);
+      } else {
+        await deleteDirectory(entity);
+      }
+    } catch (error, stackTrace) {
+      firstError ??= error;
+      firstStackTrace ??= stackTrace;
+    }
+  }
+  if (firstError != null) {
+    Error.throwWithStackTrace(firstError, firstStackTrace!);
+  }
+}
+
 /// Scoped to both the wallet instance and network; never overlaps claim DBs.
 Future<String> getGiftCardTrackingDbPath(String network) async {
   if (!RegExp(r'^[a-z0-9]+$').hasMatch(network)) {

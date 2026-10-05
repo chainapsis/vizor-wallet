@@ -42,6 +42,7 @@ import 'package:zcash_wallet/src/providers/sync_failure.dart';
 import 'package:zcash_wallet/src/providers/sync_keep_awake_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
+import 'package:zcash_wallet/src/core/widgets/app_tooltip.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import '../../fakes/fake_sync_notifier.dart';
@@ -2454,6 +2455,41 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Shield'), findsOneWidget);
+  });
+
+  testWidgets('shows a stopped recovery with its reason on tap', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          percentage: 1.0,
+          orchardBalance: BigInt.from(14312000000),
+          transparentAuthority: rust_sync.TransparentBalanceAuthority.stopped,
+          transparentLastKnownBalance: BigInt.from(242000000),
+          transparentStop: rust_sync.TransparentStopReason.ledger,
+          transparentPrivate: true,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+      find.text('Transparent: 2.42 (last known, recovery stopped) ZEC'),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('mobile_home_shield_balance_button')),
+      findsNothing,
+    );
+    final hint = tester.widget<AppTooltip>(
+      find.byKey(const ValueKey('mobile_home_transparent_balance_hint')),
+    );
+    expect(hint.message, contains('Ledger transparent funds'));
+    expect(hint.tapToShow, isTrue);
   });
 
   testWidgets('Ledger shielding opens the dedicated mobile Ledger route', (

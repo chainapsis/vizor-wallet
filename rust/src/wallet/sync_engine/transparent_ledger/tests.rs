@@ -1698,3 +1698,4 @@ async fn the_followup_reemits_completion_after_recovery() {
 mod activation;
 mod pir;
 mod policy;
+mod status;

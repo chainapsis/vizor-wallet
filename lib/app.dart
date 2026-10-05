@@ -141,6 +141,7 @@ import 'src/providers/voting/voting_share_tracking_restorer_provider.dart';
 import 'src/providers/wallet_provider.dart';
 import 'src/providers/windows_update_provider.dart';
 import 'src/core/storage/secure_storage_diagnostics.dart';
+import 'src/core/storage/wallet_paths.dart';
 import 'src/core/widgets/linux_keyring_gate.dart';
 import 'src/rust/api/sync.dart' as rust_sync;
 import 'src/rust/api/voting.dart' as rust_voting;
@@ -247,6 +248,9 @@ Future<Widget> buildBootstrappedZcashWalletApp({
 /// `true` raises it before native work is applied. Startup never lowers it:
 /// only an explicit toggle-off does. A failed raise leaves both sides private
 /// and the next sync retries it.
+///
+/// Last, it prepares private transparent recovery's companion storage; see
+/// [prepareTransparentRecoveryCompanions].
 @visibleForTesting
 Future<void> applyEnhancePirPolicy(
   AppBootstrapState bootstrap, {
@@ -254,6 +258,7 @@ Future<void> applyEnhancePirPolicy(
   void Function(bool confirmed)? setPreferenceConfirmed,
   TransparentPolicyReconciler? reconcileTransparentPolicy,
   Future<void> Function(bool enabled)? setNativePrivateRecovery,
+  Future<void> Function()? prepareCompanions,
 }) async {
   if (bootstrap.hasBlockingFailure) {
     log('bootstrap: blocked; leaving private recovery policy unchanged');
@@ -286,6 +291,41 @@ Future<void> applyEnhancePirPolicy(
     log(
       'bootstrap: could not apply private recovery to background work: $error',
     );
+  }
+  await (prepareCompanions ?? prepareTransparentRecoveryCompanions)();
+}
+
+/// Deletes companion directories that belong to no current wallet and, in a
+/// build with the private transparent recovery flag, keeps the current
+/// wallet's out of device backups before Rust writes into it.
+///
+/// Best effort: a failure is logged and startup continues. A leftover
+/// directory is swept on a later launch, and the backup mark is retried on
+/// each.
+@visibleForTesting
+Future<void> prepareTransparentRecoveryCompanions({
+  Future<String> Function() resolveDbPath = getWalletDbPath,
+  Future<void> Function(String? currentDbPath) sweep =
+      deleteOrphanCompanionDirectories,
+  Future<void> Function(String dbPath) excludeFromBackup =
+      excludeTransparentRecoveryCompanionsFromBackup,
+}) async {
+  final String dbPath;
+  try {
+    dbPath = await resolveDbPath();
+  } catch (error) {
+    log('bootstrap: could not resolve the wallet for its companions: $error');
+    return;
+  }
+  try {
+    await sweep(dbPath);
+  } catch (error) {
+    log('bootstrap: could not delete orphan recovery companions: $error');
+  }
+  try {
+    await excludeFromBackup(dbPath);
+  } catch (error) {
+    log('bootstrap: could not keep recovery companions out of backups: $error');
   }
 }
 

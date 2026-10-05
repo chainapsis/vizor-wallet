@@ -225,8 +225,7 @@ pub(crate) enum HoldCause {
 }
 
 /// The cause of `account`'s hold in the wallet at `db_path`, while it lasts.
-// The balance read reports it as the account's stop reason.
-#[cfg_attr(not(test), allow(dead_code))]
+/// The balance read reports it as the account's stop reason.
 pub(crate) fn recovery_hold(db_path: &str, account: AccountUuid) -> Option<HoldCause> {
     hold_at(db_path, account, Instant::now())
 }

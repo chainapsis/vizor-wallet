@@ -38,6 +38,7 @@ void main() {
       return true;
     },
     setNativePrivateRecovery: (enabled) async => applied.add('native:$enabled'),
+    prepareCompanions: () async => applied.add('companions'),
   );
 
   setUp(() {
@@ -75,6 +76,7 @@ void main() {
         'confirmed:true',
         if (available) 'reconcile:true',
         'native:$available',
+        'companions',
       ]);
     },
   );
@@ -87,6 +89,7 @@ void main() {
       'confirmed:true',
       if (available) 'reconcile:true',
       'native:$available',
+      'companions',
     ]);
   });
 
@@ -104,6 +107,7 @@ void main() {
         'rust:$available',
         'confirmed:false',
         'native:$available',
+        'companions',
       ]);
       expect(applied, isNot(contains('native:false')));
     },
@@ -112,12 +116,47 @@ void main() {
   test('startup applies a disabled preference but never demotes', () async {
     await apply(_ready(enabled: false));
     // Only an explicit toggle-off lowers the transparent policy.
-    expect(applied, ['rust:false', 'confirmed:true', 'native:false']);
+    expect(applied, [
+      'rust:false',
+      'confirmed:true',
+      'native:false',
+      'companions',
+    ]);
   });
 
   test('a network without the service reconciles nothing', () async {
     await apply(_ready(enabled: true, network: 'test'));
-    expect(applied, ['rust:false', 'confirmed:true', 'native:false']);
+    expect(applied, [
+      'rust:false',
+      'confirmed:true',
+      'native:false',
+      'companions',
+    ]);
+  });
+
+  test('startup sweeps orphan companions and marks the current ones', () async {
+    final steps = <String>[];
+    await prepareTransparentRecoveryCompanions(
+      resolveDbPath: () async => '/support/zcash_wallet.db',
+      sweep: (current) async {
+        steps.add('sweep:$current');
+        throw StateError('a directory could not be deleted');
+      },
+      excludeFromBackup: (dbPath) async => steps.add('exclude:$dbPath'),
+    );
+    // A failed sweep does not stop the backup mark, or startup.
+    expect(steps, [
+      'sweep:/support/zcash_wallet.db',
+      'exclude:/support/zcash_wallet.db',
+    ]);
+
+    steps.clear();
+    await prepareTransparentRecoveryCompanions(
+      resolveDbPath: () async => throw StateError('storage unavailable'),
+      sweep: (current) async => steps.add('sweep:$current'),
+      excludeFromBackup: (dbPath) async => steps.add('exclude:$dbPath'),
+    );
+    expect(steps, isEmpty, reason: 'no wallet path, nothing to touch');
   });
 }
 

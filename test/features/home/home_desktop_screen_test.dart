@@ -30,6 +30,7 @@ import 'package:zcash_wallet/src/features/send/screens/send_screen.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/pay_selected_asset_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
+import 'package:zcash_wallet/src/core/widgets/app_tooltip.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
@@ -1097,6 +1098,41 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Shield now'), findsOneWidget);
+  });
+
+  testWidgets('home desktop shows a stopped recovery with its reason', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          orchardBalance: BigInt.from(14_312_000_000),
+          transparentAuthority: rust_sync.TransparentBalanceAuthority.stopped,
+          transparentStop: rust_sync.TransparentStopReason.notSelected,
+          transparentPrivate: true,
+          spendableBalance: BigInt.from(14_312_000_000),
+          totalBalance: BigInt.from(14_312_000_000),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('home_desktop_transparent_balance_strip')),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('Transparent: Recovery stopped'),
+      findsOneWidget,
+    );
+    expect(find.text('Shield now'), findsNothing);
+    final hint = tester.widget<AppTooltip>(
+      find.byKey(const ValueKey('home_transparent_balance_hint')),
+    );
+    expect(hint.message, contains('Turn off Private queries'));
   });
 
   testWidgets('Ledger hardware account opens direct shielding approval', (

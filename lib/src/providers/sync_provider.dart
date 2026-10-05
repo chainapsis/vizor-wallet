@@ -112,8 +112,17 @@ class SyncState {
   final rust_sync.TransparentBalanceAuthority transparentAuthority;
 
   /// Prior transparent total, present only when [transparentAuthority] is
-  /// `lastKnown`. It never authorizes a spend.
+  /// `lastKnown` or `stopped`. It never authorizes a spend.
   final BigInt? transparentLastKnownBalance;
+
+  /// Why private recovery stopped, present only when [transparentAuthority]
+  /// is `stopped`.
+  final rust_sync.TransparentStopReason? transparentStop;
+
+  /// Whether the wallet durably requires private transparent authority. A
+  /// current amount then lasts only while the private ledger covers the chain
+  /// tip, so it is not carried into a new sync as current.
+  final bool transparentPrivate;
   final BigInt saplingPendingBalance;
   final BigInt orchardPendingBalance;
   final BigInt ironwoodPendingBalance;
@@ -313,6 +322,8 @@ class SyncState {
       transparentPendingBalance: balance?.transparentPending,
       transparentAuthority: balance?.transparentAuthority,
       transparentLastKnownBalance: balance?.transparentLastKnown,
+      transparentStop: balance?.transparentStop,
+      transparentPrivate: balance?.transparentPrivate,
       saplingPendingBalance: balance?.saplingPending,
       orchardPendingBalance: balance?.orchardPending,
       ironwoodPendingBalance: balance?.ironwoodPending,
@@ -384,6 +395,8 @@ class SyncState {
     BigInt? transparentPendingBalance,
     rust_sync.TransparentBalanceAuthority? transparentAuthority,
     this.transparentLastKnownBalance,
+    this.transparentStop,
+    bool? transparentPrivate,
     BigInt? saplingPendingBalance,
     BigInt? orchardPendingBalance,
     BigInt? ironwoodPendingBalance,
@@ -421,6 +434,7 @@ class SyncState {
        transparentAuthority =
            transparentAuthority ??
            rust_sync.TransparentBalanceAuthority.current,
+       transparentPrivate = transparentPrivate ?? false,
        saplingPendingBalance = saplingPendingBalance ?? BigInt.zero,
        orchardPendingBalance = orchardPendingBalance ?? BigInt.zero,
        ironwoodPendingBalance = ironwoodPendingBalance ?? BigInt.zero,
@@ -475,6 +489,8 @@ class SyncState {
     BigInt? transparentPendingBalance,
     rust_sync.TransparentBalanceAuthority? transparentAuthority,
     BigInt? transparentLastKnownBalance,
+    rust_sync.TransparentStopReason? transparentStop,
+    bool? transparentPrivate,
     BigInt? saplingPendingBalance,
     BigInt? orchardPendingBalance,
     BigInt? ironwoodPendingBalance,
@@ -529,11 +545,15 @@ class SyncState {
       transparentPendingBalance:
           transparentPendingBalance ?? this.transparentPendingBalance,
       transparentAuthority: transparentAuthority ?? this.transparentAuthority,
-      // The last-known amount travels with its authority: a new authority
-      // replaces it, including with none.
+      // The last-known amount and stop reason travel with their authority: a
+      // new authority replaces them, including with none.
       transparentLastKnownBalance: transparentAuthority != null
           ? transparentLastKnownBalance
           : this.transparentLastKnownBalance,
+      transparentStop: transparentAuthority != null
+          ? transparentStop
+          : this.transparentStop,
+      transparentPrivate: transparentPrivate ?? this.transparentPrivate,
       saplingPendingBalance:
           saplingPendingBalance ?? this.saplingPendingBalance,
       orchardPendingBalance:
@@ -1059,6 +1079,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       transparentLastKnownBalance: initialBelongsToActiveAccount
           ? initial.transparentLastKnownBalance
           : null,
+      transparentStop: initialBelongsToActiveAccount
+          ? initial.transparentStop
+          : null,
+      transparentPrivate:
+          initialBelongsToActiveAccount && initial.transparentPrivate,
       saplingPendingBalance: initialBelongsToActiveAccount
           ? initial.saplingPendingBalance
           : BigInt.zero,
@@ -1272,6 +1297,18 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         : math.max(previousChainTipHeight, latestTipHeight);
     final canPreserveCompletedSpendable =
         SyncState.shouldPreserveCompletedSpendable(scopedPrev);
+    // A durably private wallet's transparent amount is current only while its
+    // private ledger covers the tip, and this sync moves the tip. Carry it as
+    // last known, and stop offering to shield it, until a balance read after
+    // the sync reports authority again.
+    final demotedPrivateTransparent =
+        scopedPrev != null &&
+            scopedPrev.transparentPrivate &&
+            scopedPrev.transparentAuthority ==
+                rust_sync.TransparentBalanceAuthority.current
+        ? scopedPrev.transparentBalance + scopedPrev.transparentPendingBalance
+        : null;
+    final demotePrivateTransparent = demotedPrivateTransparent != null;
     state = AsyncData(
       SyncState(
         accountUuid: accountUuid,
@@ -1284,19 +1321,30 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         percentage: 0.0,
         scannedHeight: previousScannedHeight,
         chainTipHeight: nextChainTipHeight,
-        transparentBalance: scopedPrev?.transparentBalance,
+        transparentBalance: demotePrivateTransparent
+            ? BigInt.zero
+            : scopedPrev?.transparentBalance,
         saplingBalance: scopedPrev?.saplingBalance,
         orchardBalance: scopedPrev?.orchardBalance,
         ironwoodBalance: scopedPrev?.ironwoodBalance,
         orchardLockedBalance: scopedPrev?.orchardLockedBalance,
-        transparentPendingBalance: scopedPrev?.transparentPendingBalance,
-        transparentAuthority: scopedPrev?.transparentAuthority,
-        transparentLastKnownBalance: scopedPrev?.transparentLastKnownBalance,
+        transparentPendingBalance: demotePrivateTransparent
+            ? BigInt.zero
+            : scopedPrev?.transparentPendingBalance,
+        transparentAuthority: demotePrivateTransparent
+            ? rust_sync.TransparentBalanceAuthority.lastKnown
+            : scopedPrev?.transparentAuthority,
+        transparentLastKnownBalance:
+            demotedPrivateTransparent ??
+            scopedPrev?.transparentLastKnownBalance,
+        transparentStop: scopedPrev?.transparentStop,
+        transparentPrivate: scopedPrev?.transparentPrivate,
         saplingPendingBalance: scopedPrev?.saplingPendingBalance,
         orchardPendingBalance: scopedPrev?.orchardPendingBalance,
         ironwoodPendingBalance: scopedPrev?.ironwoodPendingBalance,
         canShieldTransparentBalance:
-            scopedPrev?.canShieldTransparentBalance ?? false,
+            !demotePrivateTransparent &&
+            (scopedPrev?.canShieldTransparentBalance ?? false),
         shieldTransparentFee: scopedPrev?.shieldTransparentFee,
         shieldTransparentAmount: scopedPrev?.shieldTransparentAmount,
         spendableBalance: scopedPrev?.spendableBalance,
@@ -1655,6 +1703,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         transparentPendingBalance: scopedPrev?.transparentPendingBalance,
         transparentAuthority: scopedPrev?.transparentAuthority,
         transparentLastKnownBalance: scopedPrev?.transparentLastKnownBalance,
+        transparentStop: scopedPrev?.transparentStop,
+        transparentPrivate: scopedPrev?.transparentPrivate,
         saplingPendingBalance: scopedPrev?.saplingPendingBalance,
         orchardPendingBalance: scopedPrev?.orchardPendingBalance,
         ironwoodPendingBalance: scopedPrev?.ironwoodPendingBalance,
@@ -1774,6 +1824,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         transparentPendingBalance: scopedPrev?.transparentPendingBalance,
         transparentAuthority: scopedPrev?.transparentAuthority,
         transparentLastKnownBalance: scopedPrev?.transparentLastKnownBalance,
+        transparentStop: scopedPrev?.transparentStop,
+        transparentPrivate: scopedPrev?.transparentPrivate,
         saplingPendingBalance: scopedPrev?.saplingPendingBalance,
         orchardPendingBalance: scopedPrev?.orchardPendingBalance,
         ironwoodPendingBalance: scopedPrev?.ironwoodPendingBalance,
@@ -2436,6 +2488,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     BigInt? transparentPending;
     rust_sync.TransparentBalanceAuthority? transparentAuthority;
     BigInt? transparentLastKnown;
+    rust_sync.TransparentStopReason? transparentStop;
+    bool? transparentPrivate;
     BigInt? saplingPending;
     BigInt? orchardPending;
     BigInt? ironwoodPending;
@@ -2469,6 +2523,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           transparentPending = balance.transparentPending;
           transparentAuthority = balance.transparentAuthority;
           transparentLastKnown = balance.transparentLastKnown;
+          transparentStop = balance.transparentStop;
+          transparentPrivate = balance.transparentPrivate;
           saplingPending = balance.saplingPending;
           orchardPending = balance.orchardPending;
           ironwoodPending = balance.ironwoodPending;
@@ -2639,6 +2695,12 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         transparentLastKnownBalance: useFetchedBalance
             ? transparentLastKnown
             : stateScopedPrev?.transparentLastKnownBalance,
+        transparentStop: useFetchedBalance
+            ? transparentStop
+            : stateScopedPrev?.transparentStop,
+        transparentPrivate: useFetchedBalance
+            ? transparentPrivate
+            : stateScopedPrev?.transparentPrivate,
         saplingPendingBalance: useFetchedBalance
             ? saplingPending
             : stateScopedPrev?.saplingPendingBalance,
@@ -3045,6 +3107,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     BigInt? transparentPending;
     rust_sync.TransparentBalanceAuthority? transparentAuthority;
     BigInt? transparentLastKnown;
+    rust_sync.TransparentStopReason? transparentStop;
+    bool? transparentPrivate;
     BigInt? saplingPending;
     BigInt? orchardPending;
     BigInt? ironwoodPending;
@@ -3087,6 +3151,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         transparentPending = balance.transparentPending;
         transparentAuthority = balance.transparentAuthority;
         transparentLastKnown = balance.transparentLastKnown;
+        transparentStop = balance.transparentStop;
+        transparentPrivate = balance.transparentPrivate;
         saplingPending = balance.saplingPending;
         orchardPending = balance.orchardPending;
         ironwoodPending = balance.ironwoodPending;
@@ -3235,6 +3301,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         transparentLastKnownBalance: transparentAuthority != null
             ? transparentLastKnown
             : accountFallback?.transparentLastKnownBalance,
+        transparentStop: transparentAuthority != null
+            ? transparentStop
+            : accountFallback?.transparentStop,
+        transparentPrivate:
+            transparentPrivate ?? accountFallback?.transparentPrivate,
         saplingPendingBalance:
             saplingPending ?? accountFallback?.saplingPendingBalance,
         orchardPendingBalance:
