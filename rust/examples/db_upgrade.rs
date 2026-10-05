@@ -52,12 +52,33 @@ const MINED_HEIGHT: i64 = 5;
 const OLD_BUILD_HEIGHT: u32 = 12;
 const OLD_BUILD_PAYMENT_ZAT: u64 = 9_000_000;
 
-/// The ledger schema, ledger policy generation, and ZIP 318 schema drop. The
-/// pre-bump feature build applied them already; older bases did not.
-const LEDGER_MIGRATIONS: [&str; 3] = [
+/// The ledger schema, ledger policy generation, ZIP 318 schema drop, and the
+/// transparent recovery and activation schemas. The pre-bump feature build
+/// applied them already; older bases did not.
+const LEDGER_MIGRATIONS: [&str; 5] = [
     "772a06323d0e4dffb1f8c64863eefaaa",
     "8f290af0eb5a4f1e88d43550fc0ff911",
     "b7c4e2a19d3f4e8ba6c51f0e8d7c6b5a",
+    "9302bbcf425a426b9074084d626e45bd",
+    "88cad11149144382a78fd85bb3507c5c",
+];
+/// Tables the recovery and activation schemas add. An upgrade creates them
+/// empty: no candidate evidence, coverage, activation, or quarantine exists
+/// until private recovery runs.
+const RECOVERY_TABLES: [&str; 13] = [
+    "tpir_candidate_windows",
+    "tpir_revisions",
+    "tpir_coverage",
+    "tpir_receive_events",
+    "tpir_receive_observations",
+    "tpir_spend_events",
+    "tpir_spend_observations",
+    "tpir_pending_pages",
+    "tpir_pending_page_scripts",
+    "tpir_active_accounts",
+    "tpir_qualified_revisions",
+    "tpir_quarantined_sources",
+    "tpir_quarantined_accounts",
 ];
 /// Transparent activity metadata and shared derivations, from the
 /// wallet-libraries bump. No supported base has applied them.
@@ -619,14 +640,23 @@ fn expected_spendable(manifest: &Manifest) -> BTreeSet<(String, u32, u64)> {
     }
 }
 
-/// The ledger starts public (generation 0, reader version 1), and every
-/// transparent record carries legacy-public provenance, plus local provenance
-/// where the wallet created the transaction. Neither is private coverage.
-/// The upgrade runner uses only records stored before the upgrade.
+/// The ledger starts public (generation 0, reader version 1) with no recovery
+/// or activation state, and every transparent record carries legacy-public
+/// provenance, plus local provenance where the wallet created the
+/// transaction. Neither is private coverage. The upgrade runner uses only
+/// records stored before the upgrade.
 fn assert_transparent_ledger(db_path: &str, after_old: Option<&AfterOld>) {
     let conn = rusqlite::Connection::open(db_path).expect("open upgraded DB");
     for table in ["tpir_meta", "tpir_output_origins", "tpir_spend_origins"] {
         assert!(object_exists(&conn, "table", table), "missing {table}");
+    }
+    for table in RECOVERY_TABLES {
+        assert!(object_exists(&conn, "table", table), "missing {table}");
+        assert_eq!(
+            scalar_i64(&conn, &format!("SELECT COUNT(*) FROM {table}")),
+            0,
+            "{table} is not empty after the upgrade"
+        );
     }
     let meta: (i64, i64, i64) = conn
         .query_row(
