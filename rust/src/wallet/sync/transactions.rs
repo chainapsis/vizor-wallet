@@ -6374,6 +6374,82 @@ mod tests {
         assert_eq!(detail.outputs[0].amount_zatoshi, 129_985_000);
     }
 
+    /// The H09 shape with the shielded output paid to another wallet account:
+    /// that output is money the sender paid away, so it stays in the sender's
+    /// sent row, and the other account shows it as its receive.
+    #[test]
+    fn history_mixed_pool_payment_to_another_account_stays_sent() {
+        let db = fresh_history_db();
+        let sender = test_account_uuid();
+        let recipient = second_test_account_uuid();
+        let tx = fake_txid(0xCA);
+
+        insert_history_tx(
+            &db,
+            sender,
+            &tx,
+            Some(1_000_000),
+            1,
+            Some(1_000_100),
+            -200_000_000,
+            200_000_000,
+            0,
+            false,
+            None,
+        );
+        {
+            // The recipient's row of the same transaction.
+            let conn = rusqlite::Connection::open(db.path()).unwrap();
+            ensure_account_row(&conn, recipient);
+            conn.execute(
+                "INSERT INTO v_transactions (
+                     account_uuid, txid, raw, mined_height, expired_unmined,
+                     account_balance_delta, fee_paid, block_time, total_spent,
+                     total_received, is_shielding, expiry_height, tx_index
+                 ) VALUES (?1, ?2, NULL, 1000000, 0, 70000000, 0, 0, 0, 70000000, 0, 1000100, 1)",
+                rusqlite::params![recipient.as_bytes().as_slice(), &tx[..]],
+            )
+            .unwrap();
+        }
+        insert_output_with_address(
+            &db,
+            &tx,
+            0,
+            Some(sender),
+            None,
+            129_985_000,
+            false,
+            Some("t-external-b"),
+            None,
+        );
+        insert_output_with_address(
+            &db,
+            &tx,
+            3,
+            Some(sender),
+            Some(recipient),
+            70_000_000,
+            false,
+            Some("u-recipient-external"),
+            Some(0),
+        );
+
+        let path = db.path().to_str().unwrap();
+        let sent =
+            history_from_fixture(path, WalletNetwork::Test, None, &sender.to_string()).unwrap();
+        assert_eq!(sent.len(), 1);
+        assert_eq!(sent[0].tx_kind, "sent");
+        assert_eq!(sent[0].display_amount, 199_985_000);
+        assert_eq!(sent[0].display_pool, "mixed");
+
+        let received =
+            history_from_fixture(path, WalletNetwork::Test, None, &recipient.to_string()).unwrap();
+        assert_eq!(received.len(), 1);
+        assert_eq!(received[0].tx_kind, "received");
+        assert_eq!(received[0].display_amount, 70_000_000);
+        assert_eq!(received[0].display_pool, "shielded");
+    }
+
     #[test]
     fn history_hides_change_only_internal_tx() {
         let db = fresh_history_db();
