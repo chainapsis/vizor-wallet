@@ -273,6 +273,28 @@ def request_policy(context, alice_addresses, related_txids):
     return policy
 
 
+def fee_presentations(facts, effect, states):
+    """How the receipt of an honestly incomplete row may show its fee, so it
+    appears once. A row of a spend shows the account's movement with nothing
+    subtracted (its own fee share is unknown), so a shown whole fee is part of
+    that amount:
+
+    * `fee_only`: the movement is the whole fee (a recovered self-shield or
+      self-transfer): one "Network fee" line, and no amount or "Tx fee" line;
+    * `net_change`: the whole fee is shown and the movement is more than it:
+      the amount reads "Net change (includes network fee)" and "Tx fee" shows
+      the whole fee;
+    * `separate`: no whole fee is shown: an "Amount" line.
+
+    A fee state that may be known or unknown allows the presentation of
+    either. None when the account spent nothing."""
+    if not states:
+        return None
+    fee_only = facts.get("fee") is not None and abs(effect["delta"]) == facts["fee"]
+    shown = ["fee_only" if fee_only else "net_change"] if "known" in states else []
+    return shown + (["separate"] if "unknown" in states else [])
+
+
 def incomplete_ui_row(record, facts, effect, account, context):
     """The app-layer check of an honestly incomplete row: one row of the
     transaction, of any role, present unless the public profile allows folding
@@ -295,6 +317,7 @@ def incomplete_ui_row(record, facts, effect, account, context):
         "amount_max": abs(effect["delta"]),
         "fee_known": facts["fee"] if states == ["known"] else None,
         "fee_values": whole_fees(record, facts, context),
+        "fee_presentations": fee_presentations(facts, effect, states),
     }
 
 
@@ -306,9 +329,11 @@ def ui_rows(context):
 
     * exact (transparent receives): the public rows, unmarked;
     * aggregate (a fully funded transparent-only send): the public row, with
-      its exact amount, pool and whole fee, marked incomplete;
+      its exact amount, pool and whole fee, marked incomplete, its fee
+      separate from the amount;
     * honestly incomplete: one row per transaction and account
-      (`incomplete_ui_row`).
+      (`incomplete_ui_row`), with the fee presentations its receipt may have
+      (`fee_presentations`).
 
     The unmined receive the runner adds for the app layer is optional: private
     recovery reads mined blocks, and nothing else in private mode is required
@@ -334,7 +359,12 @@ def ui_rows(context):
             if which == "exact":
                 rows += [dict(row, details_incomplete=False) for row in shown]
             elif which == "aggregate":
-                rows += [dict(row, details_incomplete=True) for row in shown]
+                # The reconstructed payment excludes the fee: an "Amount" line
+                # and a separate "Tx fee".
+                rows += [
+                    dict(row, details_incomplete=True, fee_presentations=["separate"])
+                    for row in shown
+                ]
             else:
                 rows.append(incomplete_ui_row(record, facts, effect, account, context))
     return rows

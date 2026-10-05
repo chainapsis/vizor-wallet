@@ -354,6 +354,34 @@ class PrivateUiRows(unittest.TestCase):
     def test_an_uninvolved_account_has_no_rows(self):
         self.assertEqual(self.rows_for("bb" * 32, "A1"), [])
 
+    def test_a_movement_that_is_the_whole_fee_is_fee_only(self):
+        for txid in ("cc" * 32, "dd" * 32):
+            (row,) = self.rows_for(txid)
+            self.assertEqual(row["fee_presentations"], ["fee_only"], txid[:2])
+
+    def test_a_reconstructed_payment_keeps_its_fee_separate(self):
+        (row,) = self.rows_for("bb" * 32)
+        self.assertEqual(row["fee_presentations"], ["separate"])
+
+    def test_an_unknown_whole_fee_keeps_the_amount_line(self):
+        (row,) = self.rows_for("ee" * 32)
+        self.assertEqual(row["fee_presentations"], ["separate"])
+
+    def test_a_fee_another_account_may_supply_allows_a_net_change(self):
+        (sender,) = self.rows_for("ff" * 32)
+        self.assertEqual(sender["fee_presentations"], ["net_change", "separate"])
+
+    def test_a_known_whole_fee_inside_a_larger_movement_is_a_net_change(self):
+        effect = {"delta": -(ZEC + FEE)}
+        self.assertEqual(
+            private.fee_presentations({"fee": FEE}, effect, ["known"]), ["net_change"]
+        )
+        self.assertIsNone(private.fee_presentations({"fee": FEE}, effect, None))
+
+    def test_a_receive_has_no_fee_presentation(self):
+        (row,) = self.rows_for("aa" * 32)
+        self.assertNotIn("fee_presentations", row)
+
 
 class AmountConstraint(unittest.TestCase):
     def problems(self, amount):

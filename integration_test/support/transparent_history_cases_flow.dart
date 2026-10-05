@@ -12,6 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/core/widgets/review_list_row.dart';
+import 'package:zcash_wallet/src/features/activity/transaction_completeness.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
@@ -52,7 +53,12 @@ class ThUiRow {
         for (final v in (json['amount_values'] as List<Object?>? ?? const []))
           (v! as num).toInt(),
       ],
-      amountMax = (json['amount_max'] as num?)?.toInt();
+      amountMax = (json['amount_max'] as num?)?.toInt(),
+      feePresentations = [
+        for (final v
+            in (json['fee_presentations'] as List<Object?>? ?? const []))
+          v! as String,
+      ];
 
   final String caseId;
 
@@ -92,6 +98,11 @@ class ThUiRow {
   /// show, and the most it may show otherwise (the account's movement).
   final List<int> amountValues;
   final int? amountMax;
+
+  /// Private profile: how the receipt may show the fee so it appears once
+  /// (`fee_only`, `net_change` or `separate`, derived from the account's
+  /// movement and the whole fee); empty leaves it unchecked.
+  final List<String> feePresentations;
 
   bool acceptsFee(int? fee) =>
       fee != null && (fee == feeKnown || feeValues.contains(fee));
@@ -173,6 +184,79 @@ int? thParseAmount(String text, String ticker) {
 const _incompleteRowText = 'Details incomplete';
 const _incompleteDetailLabel = 'Details';
 const _incompleteDetailValue = 'Incomplete';
+
+/// Pool labels an activity row may show (product copy).
+const _poolLabels = {'Transparent', 'Shielded', 'Ironwood', 'Mixed'};
+
+/// Checks that the receipt shows the fee once, in a presentation the oracle
+/// allows for the row (see `fee_presentations` in
+/// scripts/e2e/transparent_history_profile_private.py). On desktop the amount
+/// line is a ReviewInfoRow and "Tx fee" a ReviewListRow; mobile renders both
+/// as plain texts, so labels are matched among the receipt's texts.
+List<String> _feePresentationFailures(
+  ThUiRow row,
+  Set<String> detailTexts,
+  Map<String, String> reviewRows,
+  String ticker,
+) {
+  final failures = <String>[];
+  final shown = detailTexts.contains(kNetworkFeeText)
+      ? 'fee_only'
+      : detailTexts.contains(kNetChangeIncludesFeeText)
+      ? 'net_change'
+      : 'separate';
+  if (!row.feePresentations.contains(shown)) {
+    failures.add(
+      '${row.label}: receipt fee presentation is $shown, '
+      'expected one of ${row.feePresentations}',
+    );
+    return failures;
+  }
+  final hasTxFee =
+      reviewRows.containsKey('Tx fee') || detailTexts.contains('Tx fee');
+  final amounts = detailTexts
+      .map((t) => thParseAmount(t, ticker))
+      .whereType<int>()
+      .toSet();
+  switch (shown) {
+    case 'fee_only':
+      if (!detailTexts.contains('Transaction')) {
+        failures.add(
+          '${row.label}: fee-only receipt is not titled Transaction',
+        );
+      }
+      if (detailTexts.contains('Amount')) {
+        failures.add('${row.label}: fee-only receipt shows an Amount line');
+      }
+      if (hasTxFee) {
+        failures.add('${row.label}: fee-only receipt shows a Tx fee line');
+      }
+      if (row.amountMax == null || !amounts.contains(row.amountMax)) {
+        failures.add(
+          '${row.label}: fee-only receipt does not show the whole fee '
+          '${row.amountMax}: $detailTexts',
+        );
+      }
+    case 'net_change':
+      final feeText = reviewRows['Tx fee'];
+      final feeShown = feeText != null
+          ? row.acceptsFee(thParseAmount(feeText, ticker))
+          : detailTexts.contains('Tx fee') && amounts.any(row.acceptsFee);
+      if (!feeShown) {
+        failures.add(
+          '${row.label}: net-change receipt has no Tx fee with the whole fee '
+          '${row.feeValues}',
+        );
+      }
+      if (row.amountMax != null && !amounts.contains(row.amountMax)) {
+        failures.add(
+          '${row.label}: net change is not the movement ${row.amountMax}: '
+          '$detailTexts',
+        );
+      }
+  }
+  return failures;
+}
 
 String _hhmm(int epochSeconds) {
   final time = DateTime.fromMillisecondsSinceEpoch(epochSeconds * 1000);
@@ -432,6 +516,28 @@ Future<List<String>> thVerifyActivity(
         '${row.label}: a complete row is marked "$_incompleteRowText"',
       );
     }
+    // A fee-only row reads as its fee: "Network fee" (in-flight and failed
+    // rows keep their phase titles), the signed whole fee, and no pool.
+    if (row.feePresentations.length == 1 &&
+        row.feePresentations.single == 'fee_only' &&
+        row.amountMax != null) {
+      final title = row.failed
+          ? 'Send failed'
+          : row.pending
+          ? (mobile ? 'Sending...' : 'Sending ...')
+          : kNetworkFeeText;
+      if (!texts.contains(title)) {
+        failures.add('${row.label}: fee-only title "$title" not in $texts');
+      }
+      final amount = thActivityAmount(row.amountMax!, '-', ticker);
+      if (!texts.any((t) => t == amount || t.startsWith(amount))) {
+        failures.add('${row.label}: fee-only amount "$amount" not in $texts');
+      }
+      final pools = texts.where(_poolLabels.contains).toList();
+      if (pools.isNotEmpty) {
+        failures.add('${row.label}: fee-only row shows a pool $pools');
+      }
+    }
     // Tappable: the row opens its detail screen.
     await tester.tap(finder.first);
     await tester.pump(const Duration(milliseconds: 600));
@@ -504,6 +610,11 @@ Future<List<String>> thVerifyActivity(
         row.feeKnown! > 0 &&
         row.role == 'sent') {
       failures.add('${row.label}: known fee ${row.feeKnown} not shown');
+    }
+    if (row.feePresentations.isNotEmpty) {
+      failures.addAll(
+        _feePresentationFailures(row, detailTexts, reviewRows, ticker),
+      );
     }
     if (detailTexts.any(
           (t) => RegExp(r'^0(\.0+)? ' + ticker + r'$').hasMatch(t),
