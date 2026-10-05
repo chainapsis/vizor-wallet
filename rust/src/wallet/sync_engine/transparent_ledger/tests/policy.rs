@@ -155,12 +155,15 @@ async fn an_unconfirmed_preference_withholds_lookups_but_never_raises() {
 
     // But nothing raises the durable policy.
     assert!(!may_raise(&wallet.path, NETWORK));
+    let source = unavailable();
     let outcome = run(
         &mut wallet.db,
         &wallet.path,
         NETWORK,
         required,
-        &DisabledSource,
+        &source,
+        None,
+        now,
         &|| false,
     )
     .await
@@ -343,9 +346,18 @@ async fn a_default_build_with_the_setting_on_writes_nothing_and_sends_nothing() 
     assert_eq!(std::fs::read(&not_a_wallet).unwrap(), b"not a wallet");
     let source = FixtureSource::new(main_hash);
     assert_eq!(
-        run(&mut db, &path, MAIN, default_build, &source, &|| false)
-            .await
-            .unwrap(),
+        run(
+            &mut db,
+            &path,
+            MAIN,
+            default_build,
+            &source,
+            None,
+            now,
+            &|| false
+        )
+        .await
+        .unwrap(),
         RunOutcome::NotEnabled
     );
 

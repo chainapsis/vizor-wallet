@@ -45,7 +45,7 @@ use zakura_pir_transparent::{
 use zcash_client_backend::data_api::{transparent_ledger::TransparentWatchSet, WalletRead};
 use zcash_client_sqlite::AccountUuid;
 
-use super::{Continuation, SourceBatch, SourceError};
+use super::{Continuation, RecoverySource, SourceBatch, SourceError, SourceRequest};
 use crate::wallet::db::{open_wallet_db_readonly_with_timeout, READ_DB_BUSY_TIMEOUT};
 use crate::wallet::network::WalletNetwork;
 use crate::wallet::sync_engine::enhancement::TransparentPirHttp;
@@ -187,8 +187,16 @@ impl TransparentPirSource {
         self.clock = clock;
         self
     }
+}
 
-    /// One pass over `account` from `watch`.
+impl RecoverySource for TransparentPirSource {
+    /// Every commit comes from the configured origin: the trusted-indexer
+    /// decision.
+    fn trusted(&self) -> bool {
+        true
+    }
+
+    /// One pass over the request's account from its watch set.
     ///
     /// Opens the account's companion on its first pass, then retrieves on a
     /// blocking thread until the adapter returns, `should_exit` holds, or
@@ -198,12 +206,12 @@ impl TransparentPirSource {
     /// applied; a later pass on the account supersedes an unacknowledged one.
     /// Cancellation waits for the blocking work and returns
     /// [`SourceError::Cancelled`], discarding whatever it retrieved.
-    pub(crate) async fn recover(
-        &self,
-        account: AccountUuid,
-        watch: &TransparentWatchSet<AccountUuid>,
-        should_exit: &(dyn Fn() -> bool + Sync),
-    ) -> Result<SourceBatch, SourceError> {
+    async fn recover(&self, request: SourceRequest<'_>) -> Result<SourceBatch, SourceError> {
+        let SourceRequest {
+            account,
+            watch,
+            should_exit,
+        } = request;
         let Some(origin) = self.origin.clone() else {
             return Err(SourceError::Unavailable);
         };
@@ -304,7 +312,7 @@ impl TransparentPirSource {
     /// Runs on a blocking thread under the companion's parked lock. Fails when
     /// no unacknowledged `Ready` batch is parked for the account, or when the
     /// adapter refuses it.
-    pub(crate) async fn acknowledge(&self, account: AccountUuid) -> Result<(), SourceError> {
+    async fn acknowledge(&self, account: AccountUuid) -> Result<(), SourceError> {
         let mut parked = self.parked.lock().await;
         let Some(mut held) = parked.remove(&account) else {
             log::warn!("transparent PIR: nothing to acknowledge");
