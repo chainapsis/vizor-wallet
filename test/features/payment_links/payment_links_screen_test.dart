@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'package:zcash_wallet/src/features/payment_links/providers/gift_card_check_progress_provider.dart';
+import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -39,6 +41,62 @@ import '../../support/payment_links_screen_support.dart';
 
 void main() {
   registerGiftCardPrivacyChecks(mobile: false);
+  testWidgets(
+    'shows the discovered gift with disabled progress before the claim check finishes',
+    (tester) async {
+      final gate = Completer<void>();
+      final operations = FakePaymentLinkOperations(
+        prepareClaimGates: {1: gate},
+      );
+      await pumpPaymentLinksScreen(
+        tester,
+        operations: operations,
+        clipboard: FakePaymentLinkClipboard(
+          text: incomingLink.toUri().toString(),
+        ),
+      );
+      await tester.tap(find.text('Redeem a card'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Paste card link'));
+      await tester.pump();
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(MaterialApp).first),
+      );
+      container
+          .read(giftCardCheckProgressProvider.notifier)
+          .update(
+            incomingLink,
+            rust_sync.ApiGiftCardCheckProgress(
+              phase: 'checking',
+              completed: BigInt.from(50),
+              total: BigInt.from(100),
+              fundingHeight: incomingLink.birthdayHeight + 1,
+              checkedHeight: incomingLink.birthdayHeight + 50,
+              totalZatoshi: incomingLink.amountZatoshi + BigInt.from(10000),
+              unspentZatoshi: incomingLink.amountZatoshi + BigInt.from(10000),
+              complete: false,
+            ),
+          );
+      await tester.pump();
+      expect(find.text('Checking the gift… 50%'), findsOneWidget);
+      final button = tester.widget<AppButton>(
+        find.ancestor(
+          of: find.text('Checking the gift… 50%'),
+          matching: find.byType(AppButton),
+        ),
+      );
+      expect(button.onPressed, isNull);
+      expect(find.byType(PaymentLinkGiftCard), findsWidgets);
+      gate.complete();
+      container
+          .read(giftCardCheckProgressProvider.notifier)
+          .clear(incomingLink);
+      await tester.pumpAndSettle();
+      expect(find.text('Claim the gift card'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets(
     'gift amount normalizes leading separators and preserves precision',
     (tester) async {

@@ -767,10 +767,11 @@ void main() {
       expect(await store.find(record.address), isNotNull);
 
       await service.removeReceivedCard(record.address);
-      expect(api.cancelledClaimSyncs, [
-        paymentLinkClaimWalletDirectoryName(_link()),
-        paymentLinkClaimWalletDirectoryName(_link()),
-      ]);
+      expect(api.cancelledClaimSyncs, isNotEmpty);
+      expect(
+        api.cancelledClaimSyncs,
+        everyElement(paymentLinkClaimWalletDirectoryName(_link())),
+      );
       expect(await directory.exists(), isFalse);
       expect(await store.find(record.address), isNull);
     });
@@ -1047,10 +1048,48 @@ void main() {
         expect(restored.status, PaymentLinkReceivedStatus.readyToClaim);
         expect(restored.availability, PaymentLinkAvailability.failed);
         expect(restored.claimLink, isNotNull);
-        expect(api.claimSyncModes, [false]);
+        expect(api.claimSyncModes, isEmpty);
         expect(await store.countReceivingForAccount('receiver'), 0);
       },
     );
+
+    test('an unreadable card does not block another observed receipt', () async {
+      api.poolFixture = true;
+      api.observedConfirmations = 1;
+      api.unreadableClaims.add('broken');
+      final store = container.read(paymentLinkReceivedStoreProvider);
+      final links = [
+        _link(),
+        _link().withResolvedMetadata(address: 'u1secondcard'),
+      ];
+      api.validGiftAddresses.add('u1secondcard');
+      for (var i = 0; i < links.length; i++) {
+        await store.saveReady(links[i]);
+        await store.markReceiving(
+          address: links[i].address,
+          destinationAccountUuid: 'receiver',
+          claimTxids: i == 0 ? 'broken' : 'good',
+          claimSubmittedAt: DateTime.utc(2026, 10, 6),
+        );
+      }
+      final directory = Directory(
+        '${supportDirectory.path}/${paymentLinkClaimWalletDirectoryName(_link())}',
+      );
+      await directory.create();
+      await File('${directory.path}/zcash_wallet.db').writeAsString('retained');
+      final records = await service.inspectReceivedLinkClaims(
+        await store.load(),
+        allowResubmit: false,
+      );
+      expect(
+        records.firstWhere((r) => r.claimTxids == 'broken').status,
+        PaymentLinkReceivedStatus.receiving,
+      );
+      expect(
+        records.firstWhere((r) => r.claimTxids == 'good').status,
+        PaymentLinkReceivedStatus.received,
+      );
+    });
 
     test(
       'legacy receiving with saved txids still reconciles its receipt',
@@ -2221,6 +2260,57 @@ void main() {
   );
 
   test(
+    'card observation finalizes independently and retries partial cleanup after restart',
+    () async {
+      final storage = _PaymentLinkServiceReceivedStorage();
+      var store = PaymentLinkReceivedStore(storage);
+      final link = _link();
+      await store.saveReady(link);
+      await store.markReceiving(
+        address: link.address,
+        destinationAccountUuid: 'receiver',
+        claimTxids: 'a,b',
+        claimSubmittedAt: DateTime.utc(2026, 10, 6),
+      );
+      var failDeletion = true;
+      var calls = 0;
+      Future<void> reconcile(int confirmations) async {
+        await reconcileObservedPaymentLinkClaimReceipt(
+          record: (await store.load()).single,
+          confirmationCount: confirmations,
+          store: store,
+          deleteRetainedWallet: (_) async {
+            calls++;
+            return !failDeletion;
+          },
+        );
+      }
+
+      await reconcile(1);
+      expect(
+        (await store.load()).single.status,
+        PaymentLinkReceivedStatus.received,
+      );
+      expect((await store.load()).single.claimLink, isNotNull);
+      await reconcile(5);
+      expect(calls, 0);
+      await reconcile(6);
+      expect((await store.load()).single.claimRecoveryConfirmed, isTrue);
+      expect((await store.load()).single.claimLink, isNotNull);
+      store = PaymentLinkReceivedStore(
+        storage,
+      ); // Persisted checkpoint outlives DB deletion failure.
+      failDeletion = false;
+      await reconcile(
+        0,
+      ); // No new chain data is needed to retry confirmed cleanup.
+      expect(calls, 2);
+      expect((await store.load()).single.claimLink, isNull);
+      expect((await store.load()).single.claimTxids, 'a,b');
+    },
+  );
+
+  test(
     'one confirmation completes the receipt; six finalizes recovery',
     () async {
       final storage = _PaymentLinkServiceReceivedStorage();
@@ -2804,6 +2894,9 @@ class _ClaimDestinationRustApi implements RustLibApi {
   var estimateStarted = Completer<void>();
   Completer<void>? syncGate;
   var syncStarted = Completer<void>();
+  int? observedConfirmations;
+  final unreadableClaims = <String>{};
+  int claimCheckCalls = 0;
   int claimSyncCalls = 0;
   List<bool> claimSyncModes = [];
   final cancelledClaimSyncs = <String>[];
@@ -2899,6 +2992,42 @@ class _ClaimDestinationRustApi implements RustLibApi {
   }
 
   @override
+  Future<int?> crateApiSyncGetPaymentLinkClaimConfirmations({
+    required String dbPath,
+    required String claimTxids,
+  }) async {
+    if (unreadableClaims.contains(claimTxids)) {
+      throw StateError('Unreadable retained DB');
+    }
+    return observedConfirmations; // null preserves deliberate legacy fixtures.
+  }
+
+  @override
+  Stream<rust_sync.ApiGiftCardCheckProgress>
+  crateApiSyncRunPaymentLinkClaimCheck({
+    required bool allowResubmit,
+    required String claimId,
+    required String dbPath,
+    required String lightwalletdUrl,
+    required List<String> fallbackUrls,
+    required String network,
+  }) async* {
+    claimCheckCalls++;
+    if (!syncStarted.isCompleted) syncStarted.complete();
+    await syncGate?.future;
+    yield rust_sync.ApiGiftCardCheckProgress(
+      phase: 'complete',
+      completed: BigInt.one,
+      total: BigInt.one,
+      fundingHeight: 0,
+      checkedHeight: _link().birthdayHeight + 1,
+      totalZatoshi: BigInt.zero,
+      unspentZatoshi: BigInt.zero,
+      complete: true,
+    );
+  }
+
+  @override
   Future<void> crateApiSyncRunPaymentLinkClaimSync({
     required bool allowResubmit,
     required String claimId,
@@ -2986,6 +3115,9 @@ class _ClaimDestinationRustApi implements RustLibApi {
     estimateStarted = Completer<void>();
     syncGate = null;
     syncStarted = Completer<void>();
+    observedConfirmations = null;
+    unreadableClaims.clear();
+    claimCheckCalls = 0;
     claimSyncCalls = 0;
     claimSyncModes = [];
     claimSyncDbPaths.clear();

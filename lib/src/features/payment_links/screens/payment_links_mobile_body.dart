@@ -36,6 +36,7 @@ class PaymentLinksMobileBody extends StatelessWidget {
     required this.redeemState,
     this.claimOutcome,
     required this.operationInProgress,
+    this.claimPreparationLabel,
     required this.redeemActionLabel,
     required this.redeemFromQrCode,
     required this.keystoneOverlay,
@@ -101,6 +102,7 @@ class PaymentLinksMobileBody extends StatelessWidget {
   final PaymentLinkRedeemVisualState redeemState;
   final Widget? claimOutcome;
   final bool operationInProgress;
+  final String? claimPreparationLabel;
   final String redeemActionLabel;
   final bool redeemFromQrCode;
 
@@ -506,11 +508,13 @@ class PaymentLinksMobileBody extends StatelessWidget {
       decoration: const PaymentLinkConfetti(),
       onRevealMessage: hasCardMessage ? onToggleReceivedBack : null,
       onClaim: operationInProgress ? null : onClaimReceivedLink,
-      claimLabel: operationInProgress
-          ? 'Claiming…'
-          : receivedClaimSession == null
-          ? 'Try again'
-          : 'Claim the gift',
+      claimLabel:
+          claimPreparationLabel ??
+          (operationInProgress
+              ? 'Claiming…'
+              : receivedClaimSession == null
+              ? 'Try again'
+              : 'Claim the gift'),
     );
   }
 }

@@ -97,3 +97,45 @@ discardPaymentLinkClaimsForDeletedAccounts({
   }
   return eligible;
 }
+
+/// Card observation covers confirmations independently of the recipient DB.
+Future<void> reconcileObservedPaymentLinkClaimReceipt({
+  required PaymentLinkReceivedRecord record,
+  required int confirmationCount,
+  required PaymentLinkReceivedStore store,
+  required Future<bool> Function(PaymentLinkReceivedRecord)
+  deleteRetainedWallet,
+}) async {
+  if (record.claimRecoveryConfirmed) {
+    await finalizeConfirmedPaymentLinkClaim(
+      record: record,
+      deleteRetainedWallet: deleteRetainedWallet,
+      clearClaimSecret: (address) =>
+          store.clearConfirmedClaimSecret(address: address),
+    );
+    return;
+  }
+  if (confirmationCount == 0) {
+    if (record.status == PaymentLinkReceivedStatus.received) {
+      await store.markReceiving(
+        expected: record,
+        address: record.address,
+        destinationAccountUuid: record.destinationAccountUuid!,
+        claimTxids: record.claimTxids!,
+      );
+    }
+    return;
+  }
+  var received = record;
+  if (received.status != PaymentLinkReceivedStatus.received) {
+    received = await store.markReceived(address: received.address);
+  }
+  if (confirmationCount < kPaymentLinkClaimRecoveryConfirmationTarget) return;
+  final checkpoint = await store.markClaimRecoveryConfirmed(received);
+  await finalizeConfirmedPaymentLinkClaim(
+    record: checkpoint,
+    deleteRetainedWallet: deleteRetainedWallet,
+    clearClaimSecret: (address) =>
+        store.clearConfirmedClaimSecret(address: address),
+  );
+}

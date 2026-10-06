@@ -252,6 +252,102 @@ pub fn run_payment_link_claim_sync(
     result
 }
 
+/// Independent single-funding Gift Card preparation / post-submit observation.
+pub struct ApiGiftCardCheckProgress {
+    pub phase: String,
+    pub completed: u64,
+    pub total: u64,
+    pub funding_height: u32,
+    pub checked_height: u32,
+    pub total_zatoshi: u64,
+    pub unspent_zatoshi: u64,
+    pub complete: bool,
+}
+
+pub fn run_payment_link_claim_check(
+    claim_id: String,
+    db_path: String,
+    lightwalletd_url: String,
+    fallback_urls: Vec<String>,
+    network: String,
+    allow_resubmit: bool,
+    sink: StreamSink<ApiGiftCardCheckProgress>,
+) -> Result<(), String> {
+    if claim_id.trim().is_empty() {
+        return Err("Gift Card claim ID required".into());
+    }
+    let cancel = Arc::new(AtomicBool::new(false));
+    {
+        let mut active = PAYMENT_LINK_CLAIM_SYNCS
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        if active.contains_key(&claim_id) {
+            return Err("Gift Card check already running".into());
+        }
+        active.insert(claim_id.clone(), cancel.clone());
+    }
+    let result = catch(panic::AssertUnwindSafe(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let runtime = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
+        runtime.block_on(async {
+            for attempt in 0..3 {
+                let result = sync_engine::gift_card_claim::run(
+                    &db_path,
+                    &lightwalletd_url,
+                    &fallback_urls,
+                    network,
+                    cancel.clone(),
+                    allow_resubmit,
+                    |phase, completed, total, state| {
+                        if sink
+                            .add(ApiGiftCardCheckProgress {
+                                phase: phase.into(),
+                                completed,
+                                total,
+                                funding_height: state.funding_height,
+                                checked_height: state.checked_height,
+                                total_zatoshi: state.total,
+                                unspent_zatoshi: state.unspent,
+                                complete: phase == "complete",
+                            })
+                            .is_err()
+                        {
+                            cancel.store(true, Ordering::Relaxed);
+                        }
+                    },
+                )
+                .await;
+                match result {
+                    Err(error)
+                        if attempt < 2
+                            && !cancel.load(Ordering::Relaxed)
+                            && (error.contains("observation restart required")
+                                || error.contains("range is not contiguous")
+                                || error.contains("tip changed during inspection")) =>
+                    {
+                        continue
+                    }
+                    result => return result.map(|_| ()),
+                }
+            }
+            unreachable!()
+        })
+    }));
+    PAYMENT_LINK_CLAIM_SYNCS
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .remove(&claim_id);
+    result
+}
+
+/// None identifies a retained claim from a version using ordinary wallet sync.
+pub fn get_payment_link_claim_confirmations(
+    db_path: String,
+    claim_txids: String,
+) -> Result<Option<i32>, String> {
+    catch(|| sync_engine::gift_card_claim::confirmations(&db_path, &claim_txids))
+}
+
 /// Cancels only the isolated scan associated with `claim_id`.
 #[frb(sync)]
 pub fn cancel_payment_link_claim_sync(claim_id: String) {

@@ -2,6 +2,9 @@
 library;
 
 import 'dart:async';
+import 'package:zcash_wallet/src/features/payment_links/providers/gift_card_check_progress_provider.dart';
+import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+
 import 'package:zcash_wallet/src/features/payment_links/providers/gift_card_entry_price_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/mobile/payment_link_scan_sheet.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/mobile/payment_link_mobile_views.dart';
@@ -1518,6 +1521,49 @@ void main() {
     expect(operations.discarded, hasLength(1));
     expect(container.read(paymentLinkIntakeProvider).pendingLink, isNull);
   });
+
+  testWidgets(
+    'funding is visible with a disabled percentage button before checking finishes',
+    (tester) async {
+      final container = await pumpWelcome(tester);
+      final gate = Completer<void>();
+      operations.inspectionGate = gate;
+      final link = paymentLinkNavigationLink;
+      container
+          .read(paymentLinkIntakeProvider.notifier)
+          .receive(link.toUri().toString());
+      await pumpUntilPresent(tester, find.text('Checking the gift…'));
+      container
+          .read(giftCardCheckProgressProvider.notifier)
+          .update(
+            link,
+            rust_sync.ApiGiftCardCheckProgress(
+              phase: 'checking',
+              completed: BigInt.from(50),
+              total: BigInt.from(100),
+              fundingHeight: link.birthdayHeight + 1,
+              checkedHeight: link.birthdayHeight + 50,
+              totalZatoshi: link.amountZatoshi + BigInt.from(10000),
+              unspentZatoshi: link.amountZatoshi + BigInt.from(10000),
+              complete: false,
+            ),
+          );
+      await tester.pump();
+      expect(find.text('Checking the gift… 50%'), findsWidgets);
+      final button = tester.widget<AppButton>(
+        find.ancestor(
+          of: find.text('Checking the gift… 50%'),
+          matching: find.byType(AppButton),
+        ),
+      );
+      expect(button.onPressed, isNull);
+      gate.complete();
+      container.read(giftCardCheckProgressProvider.notifier).clear(link);
+      await tester.pumpAndSettle();
+      expect(find.text('Create a wallet to claim'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   for (final (description, error, exitLabel) in [
     ('network error', const SocketException('offline'), 'Close'),

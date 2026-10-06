@@ -17,6 +17,42 @@ void main() {
   setUp(() => FlutterSecureStorage.setMockInitialValues({}));
 
   test(
+    'reset cancels native checks and drains account-free preparations',
+    () async {
+      final container = ProviderContainer(
+        overrides: [
+          appSecurityProvider.overrideWith(_UnlockedSecurityNotifier.new),
+          paymentLinkClaimRecoveryRunnerProvider.overrideWithValue(
+            () async => const [],
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final coordinator = container.read(paymentLinkClaimCoordinatorProvider);
+      final release = Completer<void>();
+      var cancelled = false;
+      final unregister = coordinator.registerCheckCancellation(() async {
+        cancelled = true;
+      });
+      final work = coordinator.trackPreparation(() => release.future);
+      var drained = false;
+      final drain = coordinator.quiesceAndDrain().then((_) => drained = true);
+      await Future<void>.delayed(Duration.zero);
+      expect(cancelled, isTrue);
+      expect(drained, isFalse);
+      await expectLater(
+        coordinator.trackPreparation(() async {}),
+        throwsStateError,
+      );
+      release.complete();
+      await work;
+      await drain;
+      unregister();
+      expect(drained, isTrue);
+    },
+  );
+
+  test(
     'different claims submit concurrently while duplicate claims join',
     () async {
       final first = Completer<PaymentLinkClaimResult>();

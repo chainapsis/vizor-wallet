@@ -33,6 +33,7 @@ import '../providers/gift_card_tracking_provider.dart';
 import '../providers/payment_link_cards_provider.dart';
 import '../providers/payment_link_claim_coordinator_provider.dart';
 import '../providers/payment_link_intake_provider.dart';
+import '../providers/gift_card_check_progress_provider.dart';
 import '../services/payment_link_clipboard.dart';
 import '../services/payment_link_batch_export.dart';
 import '../services/payment_link_batch_limits.dart';
@@ -241,6 +242,22 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       _receivedCards = initialCards.received;
       _initialCardsLoaded = true;
     }
+    ref.listenManual(giftCardCheckProgressProvider, (_, next) {
+      final link = _receivedLink;
+      if (!mounted || link == null || !_operationInProgress) return;
+      final progress = next[paymentLinkClaimWalletDirectoryName(link)];
+      if (progress == null || !progress.hasFunding || progress.event.complete) {
+        return;
+      }
+      if (_page != PaymentLinksLocalPage.redeem &&
+          _page != PaymentLinksLocalPage.received) {
+        return;
+      }
+      setState(() {
+        _receivedLink = progress.link;
+        _page = PaymentLinksLocalPage.received;
+      });
+    });
     _amountFocusNode.addListener(_handleAmountFocus);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -1758,6 +1775,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     bool allowLongSync = false,
   }) async {
     final epoch = _mobileNavigationEpoch;
+    _receivedLink = link;
     final previousSession = _receivedClaimSession;
     if (previousSession != null &&
         paymentLinkClaimWalletDirectoryName(previousSession.link) !=
@@ -2428,6 +2446,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
         receivedFiatText: _savedCardFiatText(_receivedLink),
         receivedShowsBack: _receivedShowsBack,
         receivedClaimSession: _receivedClaimSession,
+        claimPreparationLabel: _claimCheckLabel,
         linkWaitLabel: _estimatedLinkWaitLabel,
         claimWaitLabel: _estimatedClaimWaitLabel,
         availableSoonRemainingConfirmations:
@@ -2510,6 +2529,15 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(padding: EdgeInsets.zero, child: pane),
     );
+  }
+
+  String? get _claimCheckLabel {
+    final link = _receivedLink;
+    if (link == null) return null;
+    final progress = ref.watch(
+      giftCardCheckProgressProvider,
+    )[paymentLinkClaimWalletDirectoryName(link)];
+    return progress != null && !progress.event.complete ? progress.label : null;
   }
 
   Widget _buildCurrentPage({
@@ -3532,7 +3560,9 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       onRevealMessage: hasMessage
           ? () => setState(() => _receivedShowsBack = !_receivedShowsBack)
           : null,
-      claimLabel: _operationInProgress ? 'Claiming…' : 'Claim the gift card',
+      claimLabel:
+          _claimCheckLabel ??
+          (_operationInProgress ? 'Claiming…' : 'Claim the gift card'),
     );
   }
 

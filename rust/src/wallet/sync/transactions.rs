@@ -540,7 +540,27 @@ pub(crate) fn get_transaction_history(
     let read_tx = conn
         .unchecked_transaction()
         .map_err(|e| format!("SQL error: {e}"))?;
-    let bases = read_history_bases(&read_tx, &uuid_bytes)?;
+    let mut bases = read_history_bases(&read_tx, &uuid_bytes)?;
+    if let Some(state) = crate::wallet::sync_engine::gift_card_claim::snapshot_from_conn(&read_tx)?
+    {
+        for base in &mut bases {
+            if base.created.is_some() {
+                base.mined_height = read_tx
+                    .query_row(
+                        "SELECT height FROM vizor_giftcard_mined WHERE txid=?1",
+                        [&base.txid],
+                        |r| r.get(0),
+                    )
+                    .optional()
+                    .map_err(|e| e.to_string())?;
+                base.expired_unmined = state.complete
+                    && base.mined_height.is_none()
+                    && base
+                        .expiry_height
+                        .is_some_and(|h| h > 0 && h as u64 + 5 <= state.checked_height as u64);
+            }
+        }
+    }
     if bases.is_empty() {
         return Ok(Vec::new());
     }
@@ -6100,11 +6120,10 @@ mod tests {
         let (uuid, _) =
             crate::wallet::keys::init_db_and_create_account(&path, network, &seed, Some(100), "a")
                 .unwrap();
-        let address = crate::wallet::keys::software_account_transparent_addresses(
-            network, &seed, 0, 1,
-        )
-        .unwrap()
-        .swap_remove(0);
+        let address =
+            crate::wallet::keys::software_account_transparent_addresses(network, &seed, 0, 1)
+                .unwrap()
+                .swap_remove(0);
         let address = TransparentAddress::decode(&network, &address).unwrap();
         let output = WalletTransparentOutput::from_parts(
             OutPoint::new([0x51; 32], 0),

@@ -758,22 +758,24 @@ pub(super) async fn download_blocks(
     .await
     .map_err(|e| status_to_network_error("get_block_range", e))?;
 
-    let blocks = collect_compact_blocks(
+    let blocks = collect_compact_blocks_bounded(
         &mut stream,
         start_height,
         end_height,
         LIGHTWALLETD_STREAM_IDLE_TIMEOUT,
+        None,
     )
     .await?;
 
     Ok(MemoryBlockSource::new(blocks))
 }
 
-async fn collect_compact_blocks<S>(
+async fn collect_compact_blocks_bounded<S>(
     stream: &mut S,
     start_height: u64,
     end_height: u64,
     idle_timeout: Duration,
+    byte_limit: Option<usize>,
 ) -> Result<Vec<CompactBlock>, SyncError>
 where
     S: Stream<Item = Result<CompactBlock, Status>> + Unpin,
@@ -784,6 +786,7 @@ where
         .try_reserve_exact(expected_count)
         .map_err(|_| SyncError::other("get_block_range request is too large"))?;
 
+    let mut byte_count = 0usize;
     loop {
         let next = await_stream_message("get_block_range stream", idle_timeout, async {
             match stream.next().await {
@@ -814,6 +817,10 @@ where
                  request {start_height}..={end_height}",
                 block.height,
             )));
+        }
+        byte_count += prost::Message::encoded_len(&block);
+        if byte_limit.is_some_and(|limit| byte_count > limit) {
+            return Err(SyncError::other("Gift Card range exceeds memory limit"));
         }
         blocks.push(block);
     }
@@ -1131,6 +1138,22 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn card_stream_stops_when_the_memory_budget_is_exceeded() {
+        let mut stream = futures::stream::iter([Ok(compact_block(10)), Ok(compact_block(11))]);
+        let limit = prost::Message::encoded_len(&compact_block(10));
+        let error = collect_compact_blocks_bounded(
+            &mut stream,
+            10,
+            11,
+            Duration::from_secs(1),
+            Some(limit),
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("range exceeds memory limit"));
+    }
+
+    #[tokio::test]
     async fn compact_block_stream_propagates_status_and_idle_timeout() {
         let mut failed_stream = futures::stream::iter([
             Ok(compact_block(10)),
@@ -1153,4 +1176,84 @@ mod tests {
             matches!(timeout_error, SyncError::Network(message) if message.contains("timed out"))
         );
     }
+}
+
+/// Nullifier-only compact blocks for Gift Card observation. The caller probes
+/// Ironwood content against a full block before accepting this endpoint.
+#[allow(deprecated)]
+pub(super) async fn download_nullifiers(
+    client: &mut CompactTxStreamerClient<Channel>,
+    start: u32,
+    end: u32,
+) -> Result<Vec<CompactBlock>, SyncError> {
+    let mut stream = await_tonic_stream(
+        "get_block_range_nullifiers",
+        LIGHTWALLETD_STREAM_START_TIMEOUT,
+        client.get_block_range_nullifiers(Request::new(BlockRange {
+            start: Some(BlockId {
+                height: start as u64,
+                hash: vec![],
+            }),
+            end: Some(BlockId {
+                height: end as u64,
+                hash: vec![],
+            }),
+            pool_types: vec![service::PoolType::Ironwood as i32],
+        })),
+    )
+    .await
+    .map_err(|e| status_to_network_error("get_block_range_nullifiers", e))?;
+    collect_compact_blocks_bounded(
+        &mut stream,
+        start as u64,
+        end as u64,
+        LIGHTWALLETD_STREAM_IDLE_TIMEOUT,
+        Some(16 * 1024 * 1024),
+    )
+    .await
+}
+
+#[cfg(test)]
+async fn collect_compact_blocks<S>(
+    stream: &mut S,
+    start: u64,
+    end: u64,
+    idle: Duration,
+) -> Result<Vec<CompactBlock>, SyncError>
+where
+    S: Stream<Item = Result<CompactBlock, Status>> + Unpin,
+{
+    collect_compact_blocks_bounded(stream, start, end, idle, None).await
+}
+
+pub(super) async fn download_card_blocks(
+    client: &mut CompactTxStreamerClient<Channel>,
+    start: u32,
+    end: u32,
+) -> Result<Vec<CompactBlock>, SyncError> {
+    let mut stream = await_tonic_stream(
+        "gift_card_block_range",
+        LIGHTWALLETD_STREAM_START_TIMEOUT,
+        client.get_block_range(Request::new(BlockRange {
+            start: Some(BlockId {
+                height: start as u64,
+                hash: vec![],
+            }),
+            end: Some(BlockId {
+                height: end as u64,
+                hash: vec![],
+            }),
+            pool_types: vec![service::PoolType::Ironwood as i32],
+        })),
+    )
+    .await
+    .map_err(|e| status_to_network_error("gift_card_block_range", e))?;
+    collect_compact_blocks_bounded(
+        &mut stream,
+        start as u64,
+        end as u64,
+        LIGHTWALLETD_STREAM_IDLE_TIMEOUT,
+        Some(16 * 1024 * 1024),
+    )
+    .await
 }

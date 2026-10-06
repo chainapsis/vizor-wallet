@@ -125,6 +125,35 @@ class PaymentLinkClaimCoordinator {
   @visibleForTesting
   int get activeSetupPreparationCount => _setupPreparations.length;
 
+  final Set<Future<Object?>> _preparations = {};
+  final Set<Future<void> Function()> _checkCancellations = {};
+
+  VoidCallback registerCheckCancellation(Future<void> Function() cancel) {
+    _checkCancellations.add(cancel);
+    return () => _checkCancellations.remove(cancel);
+  }
+
+  Future<void> _cancelChecks() =>
+      Future.wait(_checkCancellations.toList().map((cancel) => cancel()));
+  bool get acceptsPreparation => !_resetQuiesced && !_disposed;
+
+  /// Register before invoking work, including inspections with no receiving account.
+  Future<T> trackPreparation<T>(Future<T> Function() action) {
+    if (!acceptsPreparation) {
+      return Future.error(StateError('Gift Card preparation is paused.'));
+    }
+    final completer = Completer<T>();
+    late final Future<T> tracked;
+    tracked = completer.future.whenComplete(
+      () => _preparations.remove(tracked),
+    );
+    _preparations.add(tracked);
+    Future<T>.sync(
+      action,
+    ).then(completer.complete, onError: completer.completeError);
+    return tracked;
+  }
+
   bool isSubmitting(String address) => _submissions.containsKey(address);
 
   /// Shares the first setup-account preparation for a Card between its screen
@@ -427,6 +456,9 @@ class PaymentLinkClaimCoordinator {
 
   void pause() {
     _enabled = false;
+    if (!_disposed) {
+      unawaited(_cancelChecks());
+    }
     _retryTimer?.cancel();
     _retryTimer = null;
   }
@@ -440,12 +472,15 @@ class PaymentLinkClaimCoordinator {
   Future<void> quiesceAndDrain() async {
     _resetQuiesced = true;
     pause();
-    while (_submissions.isNotEmpty ||
+    await _cancelChecks();
+    while (_preparations.isNotEmpty ||
+        _submissions.isNotEmpty ||
         _setupPreparations.isNotEmpty ||
         _setupHandoffs.isNotEmpty ||
         _retentions.isNotEmpty ||
         _recoveryInFlight != null) {
       final pending = <Future<Object?>>[
+        ..._preparations,
         ..._submissions.values.map((submission) => submission.future),
         ..._setupPreparations.values.map((preparation) => preparation.future),
         ..._setupHandoffs.values.map((handoff) => handoff.future),

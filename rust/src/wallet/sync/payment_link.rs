@@ -16,6 +16,22 @@ pub(crate) fn payment_link_spend_evidence(
 ) -> Result<SpendEvidence, String> {
     let uuid = uuid::Uuid::parse_str(account_uuid).map_err(|e| e.to_string())?;
     let conn = super::open_readonly_conn(db_path)?;
+    let exists: bool = conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM accounts WHERE uuid=?1)",
+            [uuid.as_bytes()],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if !exists {
+        return Err("Gift Card account not found".into());
+    }
+    if let Some(evidence) =
+        crate::wallet::sync_engine::gift_card_claim::spend_evidence(db_path, claim_txids)?
+    {
+        return Ok(evidence);
+    }
+
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
     inspect(&tx, uuid.as_bytes(), claim_txids).map_err(|e| e.to_string())
 }

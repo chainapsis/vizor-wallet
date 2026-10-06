@@ -16,6 +16,7 @@ import '../../../core/widgets/app_toast.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/zec_price_change_provider.dart';
 import '../providers/gift_card_entry_price_provider.dart';
+import '../providers/gift_card_check_progress_provider.dart';
 import '../../../providers/account_provider.dart';
 import '../../swap/models/swap_fiat_value_formatting.dart';
 import '../models/vizor_payment_link.dart';
@@ -246,6 +247,9 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
         ),
       );
     }
+    final checkProgress = ref.watch(
+      giftCardCheckProgressProvider,
+    )[paymentLinkClaimWalletDirectoryName(flow.link)];
     final waitingForCheck =
         flow.phase == GiftClaimPhase.checking ||
         flow.phase == GiftClaimPhase.longSyncConfirmation;
@@ -323,7 +327,8 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
                           children: [
                             const SizedBox(height: 42),
                             const SizedBox(height: AppSpacing.md),
-                            if (waitingForCheck)
+                            if (waitingForCheck &&
+                                !(checkProgress?.hasFunding ?? false))
                               const FittedBox(
                                 fit: BoxFit.scaleDown,
                                 child: PaymentLinkLoadingMobileCard(),
@@ -677,15 +682,24 @@ class _GiftArrivalHeading extends StatelessWidget {
 }
 
 /// What the check found, always as text rather than color alone.
-class _GiftClaimStatus extends StatelessWidget {
+class _GiftClaimStatus extends ConsumerWidget {
   const _GiftClaimStatus({required this.flow, required this.addingAccount});
 
   final GiftClaimFlowState flow;
   final bool addingAccount;
 
   @override
-  Widget build(BuildContext context) {
-    final (title, detail, tone) = _describe(flow, addingAccount: addingAccount);
+  Widget build(BuildContext context, WidgetRef ref) {
+    final (originalTitle, detail, tone) = _describe(
+      flow,
+      addingAccount: addingAccount,
+    );
+    final progress = ref.watch(
+      giftCardCheckProgressProvider,
+    )[paymentLinkClaimWalletDirectoryName(flow.link)];
+    final title = flow.phase == GiftClaimPhase.checking && progress != null
+        ? progress.label
+        : originalTitle;
     final colors = context.colors;
     return Semantics(
       liveRegion: true,
@@ -813,12 +827,16 @@ class _GiftClaimActions extends ConsumerWidget {
         ((inspection.claimableZatoshi > BigInt.zero &&
                 !inspection.waitingForFundingConfirmations) ||
             inspection.waitingForFundingConfirmations);
+    final progress = ref.watch(
+      giftCardCheckProgressProvider,
+    )[paymentLinkClaimWalletDirectoryName(flow.link)];
     final List<Widget> actions = switch (flow.phase) {
       GiftClaimPhase.checking || GiftClaimPhase.longSyncConfirmation => [
         _primary(
-          addingAccount
-              ? 'Create an account to claim'
-              : 'Create a wallet to claim',
+          progress?.label ??
+              (addingAccount
+                  ? 'Create an account to claim'
+                  : 'Create a wallet to claim'),
           null,
         ),
         _secondary('Claim with an existing wallet', null),
