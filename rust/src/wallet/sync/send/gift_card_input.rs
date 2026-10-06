@@ -4,15 +4,14 @@ use super::*;
 use crate::wallet::sync_engine::gift_card_claim;
 use zcash_client_backend::data_api::{wallet::input_selection::InputSelectorError, PoolMeta};
 
-pub(super) struct CardInput<'a> {
-    db: &'a WalletDatabase,
+pub(super) struct CardInput {
     account: AccountUuid,
     state: gift_card_claim::Snapshot,
     notes: Vec<ReceivedNote<ReceivedNoteId, orchard::Note>>,
 }
-impl<'a> CardInput<'a> {
+impl CardInput {
     pub(super) fn load(
-        db: &'a WalletDatabase,
+        db: &WalletDatabase,
         path: &str,
         account: AccountUuid,
     ) -> Result<Option<Self>, String> {
@@ -54,7 +53,6 @@ impl<'a> CardInput<'a> {
             }
         }
         Ok(Some(Self {
-            db,
             account,
             state,
             notes,
@@ -82,12 +80,15 @@ impl<'a> CardInput<'a> {
         >,
     > {
         let (change, selector) = zip317_helper::<Self>(None, false);
+        // The pinned transparent-ledger backend uses the selector API without
+        // migration parameters. This source selects only Ironwood notes at the
+        // card's retained anchor and explicitly proposes V6, so no Orchard
+        // migration policy is involved.
         selector.propose_transaction(
             &network,
             self,
             BlockHeight::from_u32(self.state.checked_height + 1).into(),
             BlockHeight::from_u32(self.state.anchor_height),
-            &self.db.pool_migration_params(),
             payment_link_claim_confirmations_policy(),
             self.account,
             request,
@@ -151,15 +152,10 @@ impl<'a> CardInput<'a> {
         )
     }
 }
-impl InputSource for CardInput<'_> {
+impl InputSource for CardInput {
     type Error = String;
     type AccountId = AccountUuid;
     type NoteRef = ReceivedNoteId;
-    fn anchor_computable(&self, pool: ShieldedPool, height: BlockHeight) -> Result<bool, String> {
-        self.db
-            .anchor_computable(pool, height)
-            .map_err(|e| e.to_string())
-    }
     fn get_spendable_note(
         &self,
         id: &TxId,
