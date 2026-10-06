@@ -57,9 +57,10 @@ design decision at the user's request; it is unchanged here.
 All six runners below passed, covering seven native test executions because
 Gift restart uses separate prepare/resume processes. They ran serially against
 fresh local regtest chains with the macOS window hidden, on code commit
-`64cdbe03aab903f7c92bb5baf99122d80aae3d9c`. The initial create-action failure
-above was fixed before rerunning the entire selection. Temporary regtest
-containers/state were cleaned after the run.
+`066de87fe2629f754bc0bfc92f5083fcc1389331`. The initial create-action failure
+above was fixed, and the entire selection passed again after restoring per-file
+interaction helpers. Temporary regtest containers/state were cleaned after
+the run.
 
 | Runner | Verified outcome |
 | --- | --- |
@@ -71,9 +72,10 @@ containers/state were cleaned after the run.
 | `flutter-macos-regtest-shield-transparent-retry.sh` | Ordinary creation plus failed shield broadcast, retry and confirmed history |
 
 Logs and machine-readable results are in
-`.regtest-logs/desktop-onboarding-validation/native/`. The remaining widget and
-provider regression suite passed 270 tests, and full Flutter analysis found no
-issues. Reproduction commands:
+`.regtest-logs/desktop-onboarding-validation/native/per-file-helpers/`. The
+widget/provider regression suite passed 270 tests before the per-file correction.
+After that correction, all 23 desktop route tests passed again and full Flutter
+analysis found no issues. Reproduction commands:
 
 ```bash
 # First-wallet software import, BIP39 passphrase, sync and fixed balances.
