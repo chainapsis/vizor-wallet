@@ -125,6 +125,7 @@ class _SettingsSeedPhraseScreenState
   final _passwordController = TextEditingController();
   bool _isSubmitting = false;
   bool _savingBackup = false;
+  bool _sidebarNavigationPending = false;
   String? _backupError;
   _SettingsSeedPhraseStage _stage = _SettingsSeedPhraseStage.password;
   String? _passwordError;
@@ -495,7 +496,7 @@ class _SettingsSeedPhraseScreenState
   }
 
   Future<void> _saveBackup(String uuid, {required bool snooze}) async {
-    if (_savingBackup) return;
+    if (_savingBackup || _sidebarNavigationPending) return;
     setState(() {
       _savingBackup = true;
       _backupError = null;
@@ -565,7 +566,7 @@ class _SettingsSeedPhraseScreenState
           AppButton(
             key: const ValueKey('desktop_seed_backup_intro_continue'),
             minWidth: 196,
-            onPressed: _savingBackup
+            onPressed: _savingBackup || _sidebarNavigationPending
                 ? null
                 : () => setState(
                     () => _stage = _SettingsSeedPhraseStage.password,
@@ -578,7 +579,7 @@ class _SettingsSeedPhraseScreenState
               key: const ValueKey('desktop_seed_backup_remind_later'),
               variant: AppButtonVariant.ghost,
               minWidth: 196,
-              onPressed: _savingBackup
+              onPressed: _savingBackup || _sidebarNavigationPending
                   ? null
                   : () => _saveBackup(account.uuid, snooze: true),
               child: const Text('Remind me later'),
@@ -588,7 +589,7 @@ class _SettingsSeedPhraseScreenState
           AppButton(
             key: const ValueKey('desktop_seed_backed_up'),
             minWidth: 196,
-            onPressed: _savingBackup
+            onPressed: _savingBackup || _sidebarNavigationPending
                 ? null
                 : () => _saveBackup(account!.uuid, snooze: false),
             child: const Text('I’ve written it down'),
@@ -626,7 +627,12 @@ class _SettingsSeedPhraseScreenState
             : const SettingsPaneBackdrop(art: SettingsBackdropArt.castle),
         sidebar: _BackupNavigationGuard(
           blocked: _savingBackup,
-          child: const AppMainSidebar(),
+          child: AppMainSidebar(
+            onNavigationPendingChanged: (pending) {
+              if (!mounted) return;
+              setState(() => _sidebarNavigationPending = pending);
+            },
+          ),
         ),
         pane: SensitivePrivacyOverlay(
           sensitiveContentVisible:

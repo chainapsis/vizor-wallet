@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
 import 'package:zcash_wallet/src/core/security/software_wallet_secret.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
@@ -19,6 +20,8 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_secret_passphrase_screen.dart'
     show SecretPassphraseRevealWarningCard;
 import 'package:zcash_wallet/src/features/settings/screens/settings_seed_phrase_screen.dart';
+import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -41,6 +44,153 @@ const _accountState = AccountState(
 );
 
 void main() {
+  for (final completeBackup in [false, true]) {
+    testWidgets(
+      'accepted account switch prevents backup ${completeBackup ? 'completion' : 'deferral'} from starting',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(1080, 720));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        final privacy = SensitivePrivacyOverlayController(initiallySafe: true);
+        addTearDown(privacy.dispose);
+        final account = _FakeAccountNotifier(backupPending: true)
+          ..pendingSwitch = Completer<void>()
+          ..backupSave = Completer<void>();
+        await tester.pumpWidget(
+          _harness(
+            privacyController: privacy,
+            accountNotifier: () => account,
+            showBackupIntro: !completeBackup,
+          ),
+        );
+        await tester.pumpAndSettle();
+        if (completeBackup) {
+          await tester.enterText(find.byType(EditableText), 'Correct123!');
+          await tester.pump();
+          await tester.tap(find.bySemanticsLabel('Confirm password'));
+          await tester.pumpAndSettle();
+        }
+        final action = find.byKey(
+          ValueKey(
+            completeBackup
+                ? 'desktop_seed_backed_up'
+                : 'desktop_seed_backup_remind_later',
+          ),
+        );
+        final acceptedSave = tester.widget<AppButton>(action).onPressed!;
+        await tester.tap(find.byKey(const ValueKey('sidebar_accounts_button')));
+        await tester.pump();
+        await tester.tap(
+          find.byKey(const ValueKey('sidebar_account_popover_row_account-2')),
+        );
+        await tester.pump();
+        expect(account.switched, ['account-2']);
+        expect(
+          find.byKey(const ValueKey('sidebar_accounts_popover')),
+          findsNothing,
+        );
+        expect(tester.widget<AppButton>(action).onPressed, isNull);
+        // A callback accepted before the rebuild must check the pending
+        // navigation too, rather than starting persistence behind it.
+        acceptedSave();
+        await tester.tap(action);
+        await tester.pump();
+        expect(account.backupWriteAttempts, isEmpty);
+        expect(find.byType(SettingsSeedPhraseScreen), findsOneWidget);
+
+        account.pendingSwitch!.complete();
+        await tester.pumpAndSettle();
+        expect(find.text('home-destination'), findsOneWidget);
+        expect(account.backupWriteAttempts, isEmpty);
+        expect(account.state.requireValue.accounts.last.setupPending, isTrue);
+      },
+    );
+  }
+
+  testWidgets('all accepted Pay entries settle before backup can be retried', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1080, 720));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final privacy = SensitivePrivacyOverlayController(initiallySafe: true);
+    addTearDown(privacy.dispose);
+    final account = _FakeAccountNotifier(backupPending: true)
+      ..failBackupSave = true;
+    final swap = _FakeSwapNotifier();
+    await tester.pumpWidget(
+      _harness(
+        privacyController: privacy,
+        accountNotifier: () => account,
+        swapNotifier: swap,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(EditableText), 'Correct123!');
+    await tester.pump();
+    await tester.tap(find.bySemanticsLabel('Confirm password'));
+    await tester.pumpAndSettle();
+    final action = find.byKey(const ValueKey('desktop_seed_backed_up'));
+    for (var i = 0; i < 2; i++) {
+      await tester.tap(find.byKey(const ValueKey('sidebar_pay_button')));
+      await tester.pump();
+    }
+    expect(swap.pendingEntries, hasLength(2));
+    expect(tester.widget<AppButton>(action).onPressed, isNull);
+    swap.pendingEntries.first.complete(null);
+    await tester.pumpAndSettle();
+    expect(tester.widget<AppButton>(action).onPressed, isNull);
+    await tester.tap(action);
+    await tester.pump();
+    expect(account.backupWriteAttempts, isEmpty);
+
+    swap.pendingEntries.last.complete(null);
+    await tester.pumpAndSettle();
+    expect(tester.widget<AppButton>(action).onPressed, isNotNull);
+    await tester.tap(action);
+    await tester.pumpAndSettle();
+    expect(find.text('Couldn’t save that. Try again.'), findsOneWidget);
+    expect(find.text('abandon'), findsOneWidget);
+    expect(find.text('pay-destination'), findsNothing);
+    account.failBackupSave = false;
+    await tester.tap(action);
+    await tester.pumpAndSettle();
+    expect(account.completed, ['account-2']);
+    expect(find.text('home-destination'), findsOneWidget);
+  });
+
+  testWidgets('accepted Pay navigation leaves before a backup write starts', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1080, 720));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final privacy = SensitivePrivacyOverlayController(initiallySafe: true);
+    addTearDown(privacy.dispose);
+    final account = _FakeAccountNotifier(backupPending: true);
+    final swap = _FakeSwapNotifier();
+    await tester.pumpWidget(
+      _harness(
+        privacyController: privacy,
+        accountNotifier: () => account,
+        swapNotifier: swap,
+        showBackupIntro: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('sidebar_pay_button')));
+    await tester.pump();
+    final action = find.byKey(
+      const ValueKey('desktop_seed_backup_remind_later'),
+    );
+    expect(tester.widget<AppButton>(action).onPressed, isNull);
+    await tester.tap(action);
+    await tester.pump();
+    expect(account.backupWriteAttempts, isEmpty);
+    swap.pendingEntries.single.complete(SwapAsset.usdc);
+    await tester.pumpAndSettle();
+    expect(find.text('pay-destination'), findsOneWidget);
+    expect(account.backupWriteAttempts, isEmpty);
+    expect(account.state.requireValue.accounts.last.setupPending, isTrue);
+  });
+
   for (final completeBackup in [false, true]) {
     testWidgets(
       'pending backup ${completeBackup ? 'completion' : 'deferral'} blocks exits and retains a late failure',
@@ -593,6 +743,7 @@ Widget _harness({
   bool showBackupIntro = false,
   bool passwordValid = true,
   bool startAtHome = false,
+  _FakeSwapNotifier? swapNotifier,
 }) {
   final router = GoRouter(
     initialLocation: startAtHome ? '/home' : '/settings/secret-passphrase',
@@ -613,6 +764,7 @@ Widget _harness({
         builder: (_, _) => const Text('settings-destination'),
       ),
       GoRoute(path: '/home', builder: (_, _) => const Text('home-destination')),
+      GoRoute(path: '/pay', builder: (_, _) => const Text('pay-destination')),
     ],
   );
 
@@ -626,6 +778,10 @@ Widget _harness({
         () => _FakeSecurityNotifier(valid: passwordValid),
       ),
       syncProvider.overrideWith(_FakeSyncNotifier.new),
+      if (swapNotifier != null) ...[
+        swapFeatureEnabledProvider.overrideWithValue(true),
+        swapStateProvider.overrideWith(() => swapNotifier),
+      ],
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -660,6 +816,9 @@ class _FakeAccountNotifier extends AccountNotifier {
   final bool backupPending;
   bool failBackupSave = false;
   Completer<void>? backupSave;
+  Completer<void>? pendingSwitch;
+  final switched = <String>[];
+  final backupWriteAttempts = <String>[];
   final completed = <String>[];
   final snoozed = <String>[];
   final requestedMnemonicUuids = <String>[];
@@ -674,6 +833,7 @@ class _FakeAccountNotifier extends AccountNotifier {
 
   @override
   Future<void> markBackedUp(String uuid) async {
+    backupWriteAttempts.add(uuid);
     if (failBackupSave) throw StateError('write failed');
     await backupSave?.future;
     completed.add(uuid);
@@ -689,9 +849,17 @@ class _FakeAccountNotifier extends AccountNotifier {
 
   @override
   Future<void> snoozeBackupReminder(String uuid, {DateTime? now}) async {
+    backupWriteAttempts.add(uuid);
     if (failBackupSave) throw StateError('write failed');
     await backupSave?.future;
     snoozed.add(uuid);
+  }
+
+  @override
+  Future<void> switchAccount(String uuid) async {
+    switched.add(uuid);
+    await pendingSwitch?.future;
+    state = AsyncData(state.requireValue.copyWith(activeAccountUuid: uuid));
   }
 
   @override
@@ -729,4 +897,37 @@ class _FakeSyncNotifier extends SyncNotifier {
   @override
   Future<SyncState> build() async =>
       SyncState(accountUuid: 'account-1', hasAccountScopedData: true);
+
+  @override
+  Future<void> refreshAfterAccountSwitch() async {}
+}
+
+class _FakeSwapNotifier extends SwapNotifier {
+  final pendingEntries = <Completer<SwapAsset?>>[];
+
+  @override
+  SwapState build() => const SwapState(
+    direction: SwapDirection.zecToExternal,
+    amountText: '',
+    receiveAmountText: '',
+    destinationText: '',
+    externalAsset: SwapAsset.usdc,
+    reviewVisible: false,
+    intents: [],
+  );
+
+  @override
+  Future<SwapAsset?> resolvePaySelectedAssetForEntry({
+    required String accountUuid,
+  }) {
+    final entry = Completer<SwapAsset?>();
+    pendingEntries.add(entry);
+    return entry.future;
+  }
+
+  @override
+  bool preparePayFromShieldedZec({
+    SwapAsset? preferredAsset,
+    String? expectedAccountUuid,
+  }) => true;
 }
