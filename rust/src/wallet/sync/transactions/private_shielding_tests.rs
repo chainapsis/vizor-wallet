@@ -175,8 +175,20 @@ struct Recovered {
 }
 
 /// Recovers a shielding of `inputs` into `shielded` with a 20,000-zatoshi fee
-/// by private queries only, and returns a copy of the resulting wallet.
+/// by private queries only, and returns a copy of the resulting wallet. The
+/// Enhance PIR record carries the whole fee and reports no transparent output.
 fn privately_recovered_shielding(inputs: [u64; 2], shielded: u64) -> Recovered {
+    privately_recovered(inputs, shielded, Some(FEE), false)
+}
+
+/// Like [`privately_recovered_shielding`], with the Enhance PIR record's fee
+/// and transparent-output flag chosen by the caller.
+fn privately_recovered(
+    inputs: [u64; 2],
+    shielded: u64,
+    record_fee: Option<u64>,
+    transparent_outputs: bool,
+) -> Recovered {
     configure_regtest_nu6_3_activation_height(NU6_3).unwrap();
     let mut st = TestBuilder::new()
         .with_network(regtest())
@@ -286,8 +298,8 @@ fn privately_recovered_shielding(inputs: [u64; 2], shielded: u64) -> Recovered {
     assert_eq!(requests.len(), 1);
     let request = requests[0];
 
-    // The service's record: the authentic ciphertext of the scanned note, a
-    // transparent-input flag, and the whole-transaction fee.
+    // The service's record: the authentic ciphertext of the scanned note, its
+    // transparent shape flags, and its transaction metadata.
     let (diversifier, value, rho, rseed): ([u8; 11], i64, [u8; 32], [u8; 32]) = st
         .wallet()
         .conn()
@@ -313,8 +325,8 @@ fn privately_recovered_shielding(inputs: [u64; 2], shielded: u64) -> Recovered {
         cv_net: [0; 32],
         out_ciphertext: [0; 80],
         has_transparent_inputs: true,
-        has_transparent_outputs: false,
-        metadata: EnhanceTransactionMetadata::new(0, Some(FEE)).unwrap(),
+        has_transparent_outputs: transparent_outputs,
+        metadata: EnhanceTransactionMetadata::new(0, record_fee).unwrap(),
     });
     assert_eq!(
         st.wallet_mut()
@@ -445,4 +457,53 @@ fn a_privately_recovered_shielding_shows_as_shielded_with_the_network_fee() {
     let fixture: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(DISPLAY_FIXTURE).unwrap()).unwrap();
     assert_eq!(displayed, fixture, "desktop fixture is stale");
+}
+
+/// The library's provisional result for the same owned effects, as Vizor shows
+/// it: never a shielding, never complete. Both are the library's evidence
+/// gates, not display choices.
+fn assert_not_a_shielding(recovered: &Recovered) {
+    let row = history_row(recovered);
+    assert_ne!(row.tx_kind, "shielded");
+    assert!(row.provisional);
+    assert!(!row.details_complete);
+    assert_eq!(row.account_balance_delta, -(FEE as i64));
+    let detail = get_transaction_detail(
+        &recovered.path,
+        NETWORK,
+        &recovered.account.expose_uuid().to_string(),
+        &recovered.txid_hex,
+        &row.tx_kind,
+    )
+    .unwrap();
+    assert_ne!(detail.tx_kind, "shielded");
+    assert!(detail.provisional);
+    assert!(!detail.details_complete);
+}
+
+/// The Enhance publisher reports no fee for a transaction with transparent
+/// data, so its records recover the memo and shape but not the fee the library
+/// cross-checks: the history stays provisional, and Vizor keeps showing its
+/// provisional fallback rather than a shielding.
+#[test]
+fn a_shielding_whose_enhance_record_carries_no_fee_is_not_shown_as_shielded() {
+    assert_not_a_shielding(&privately_recovered(
+        [120_000, 80_000],
+        180_000,
+        None,
+        false,
+    ));
+}
+
+/// A record reporting transparent outputs: the account's side balances as a
+/// shielding would, but value left through a transparent output, so it is not
+/// one.
+#[test]
+fn a_transaction_with_transparent_outputs_is_not_shown_as_shielded() {
+    assert_not_a_shielding(&privately_recovered(
+        [120_000, 80_000],
+        180_000,
+        Some(FEE),
+        true,
+    ));
 }
