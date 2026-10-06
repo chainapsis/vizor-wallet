@@ -170,7 +170,7 @@ features = ["wallet"]
 # crates.io package; see the `[patch.crates-io]` comment below.
 [dependencies.zakura-pir-transparent]
 git = "https://github.com/zakura-core/wallet-libraries"
-rev = "9a26479831b7fc1fc11cc487e0fd187a5dac61b0"
+rev = "0f66a8ba30b2594da808ed03e9c12f3c0721f8c1"
 default-features = false
 features = ["wallet"]
 
@@ -256,10 +256,10 @@ assertions_on_constants = "allow"
 # Pinned to wallet-libraries main after #111: private mixed shielding recovery
 # uses qualified fee metadata and explicit transparent-output shape evidence.
 [patch.crates-io]
-zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries", rev = "9a26479831b7fc1fc11cc487e0fd187a5dac61b0" }
-zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries", rev = "9a26479831b7fc1fc11cc487e0fd187a5dac61b0" }
-zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries", rev = "9a26479831b7fc1fc11cc487e0fd187a5dac61b0" }
-zakura-pir-enhance-types = { git = "https://github.com/zakura-core/wallet-libraries", rev = "9a26479831b7fc1fc11cc487e0fd187a5dac61b0" }
+zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries", rev = "0f66a8ba30b2594da808ed03e9c12f3c0721f8c1" }
+zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries", rev = "0f66a8ba30b2594da808ed03e9c12f3c0721f8c1" }
+zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries", rev = "0f66a8ba30b2594da808ed03e9c12f3c0721f8c1" }
+zakura-pir-enhance-types = { git = "https://github.com/zakura-core/wallet-libraries", rev = "0f66a8ba30b2594da808ed03e9c12f3c0721f8c1" }
 
 # Flutter debug builds use Cargokit + Cargo's dev profile (`cargo build`
 # without `--release`). Rust crypto and voting flows are slow under the default
