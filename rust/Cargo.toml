@@ -170,7 +170,7 @@ features = ["wallet"]
 # crates.io package; see the `[patch.crates-io]` comment below.
 [dependencies.zakura-pir-transparent]
 git = "https://github.com/zakura-core/wallet-libraries"
-rev = "43e364f687721248de699ad402b46e55963f3cd0"
+rev = "1ecf8fd785fa685648499517791158b4e288ec55"
 default-features = false
 features = ["wallet"]
 
@@ -253,13 +253,13 @@ assertions_on_constants = "allow"
 # equal to these so its path dependencies on the backend and SQLite crates
 # resolve to the patched sources.
 #
-# Pinned to wallet-libraries main after #111: private mixed shielding recovery
-# uses qualified fee metadata and explicit transparent-output shape evidence.
+# Pinned to wallet-libraries #113: expose the recovered transparent-output shape
+# assertion to activity consumers independently of payment completeness.
 [patch.crates-io]
-zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries", rev = "43e364f687721248de699ad402b46e55963f3cd0" }
-zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries", rev = "43e364f687721248de699ad402b46e55963f3cd0" }
-zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries", rev = "43e364f687721248de699ad402b46e55963f3cd0" }
-zakura-pir-enhance-types = { git = "https://github.com/zakura-core/wallet-libraries", rev = "43e364f687721248de699ad402b46e55963f3cd0" }
+zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries", rev = "1ecf8fd785fa685648499517791158b4e288ec55" }
+zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries", rev = "1ecf8fd785fa685648499517791158b4e288ec55" }
+zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries", rev = "1ecf8fd785fa685648499517791158b4e288ec55" }
+zakura-pir-enhance-types = { git = "https://github.com/zakura-core/wallet-libraries", rev = "1ecf8fd785fa685648499517791158b4e288ec55" }
 
 # Flutter debug builds use Cargokit + Cargo's dev profile (`cargo build`
 # without `--release`). Rust crypto and voting flows are slow under the default
