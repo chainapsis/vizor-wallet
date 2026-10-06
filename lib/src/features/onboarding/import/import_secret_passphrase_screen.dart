@@ -14,6 +14,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 
+import 'desktop_import_navigation.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/privacy/sensitive_privacy_overlay.dart';
 import '../../../core/theme/app_theme.dart';
@@ -516,7 +517,7 @@ class _ImportSecretPassphraseScreenState
 
     if (!mounted) return;
     context.go(
-      '/import/birthday',
+      desktopImportLocation(context, '/import/birthday'),
       extra: ImportBirthdayArgs(
         mnemonic: _mnemonic,
         bip39Passphrase: _bip39Passphrase,
