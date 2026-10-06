@@ -79,12 +79,12 @@ class FigmaCompareScenario {
 const figmaCompareScenarios = <FigmaCompareScenario>[
   FigmaCompareScenario(
     id: 'gift-card-claim-checking',
-    description: 'Discovered Gift Card with disabled claim and 50% progress',
+    description: 'Discovered Gift Card on the checking surface at 50%',
     builder: buildPaymentLinkReceivedCheckingUseCase,
   ),
   FigmaCompareScenario(
     id: 'mobile-gift-card-claim-checking',
-    description: 'Discovered Gift Card with disabled claim and 50% progress',
+    description: 'Discovered Gift Card on the checking surface at 50%',
     builder: buildMobilePaymentLinkReceivedCheckingUseCase,
     desktop: false,
     mobile: true,

@@ -722,6 +722,21 @@ class _MobileReceivedFixtureState extends State<_MobileReceivedFixture> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.checking) {
+      return PaymentLinkReadyMobileView(
+        state: PaymentLinkReadyMobileState.checking,
+        card: const PaymentLinkGiftCard(
+          artwork: PaymentLinkCardArtwork.knightMagic,
+          cardWidth: _cardWidth,
+          cardHeight: _cardHeight,
+          amountText: _fixtureAmount,
+          supportingText: r'$142.23',
+          showCaret: false,
+        ),
+        onHome: _noop,
+        waitingStatusLabel: 'Checking the gift… 50%',
+      );
+    }
     return PaymentLinkReceivedMobileView(
       card: PaymentLinkCardFlip(
         showBack: _showBack,
@@ -743,8 +758,7 @@ class _MobileReceivedFixtureState extends State<_MobileReceivedFixture> {
       ),
       hasMessage: true,
       onClose: _noop,
-      onClaim: widget.checking ? null : _noop,
-      claimLabel: widget.checking ? 'Checking the gift… 50%' : 'Claim the gift',
+      onClaim: _noop,
       decoration: const PaymentLinkConfetti(),
       onRevealMessage: () => setState(() => _showBack = !_showBack),
     );

@@ -1295,6 +1295,20 @@ class _PaymentLinkReceivedPreviewState
 
   @override
   Widget build(BuildContext context) {
+    if (widget.checking) {
+      return PaymentLinkReadyDesktopView(
+        state: PaymentLinkReadyVisualState.checking,
+        card: const PaymentLinkGiftCard(
+          artwork: PaymentLinkCardArtwork.ruby,
+          amountText: '4.45',
+          supportingText: r'$1,210.20',
+          showCaret: false,
+        ),
+        onBack: _noop,
+        onCopy: null,
+        waitingStatusLabel: 'Checking the gift… 50%',
+      );
+    }
     if (!widget.hasMessage) {
       return PaymentLinkReceivedDesktopView(
         card: const PaymentLinkGiftCard(
@@ -1305,10 +1319,7 @@ class _PaymentLinkReceivedPreviewState
         ),
         decoration: const PaymentLinkConfetti(),
         onBack: _noop,
-        onClaim: widget.checking ? null : _noop,
-        claimLabel: widget.checking
-            ? 'Checking the gift… 50%'
-            : 'Claim the gift card',
+        onClaim: _noop,
       );
     }
     return PaymentLinkReceivedDesktopView(

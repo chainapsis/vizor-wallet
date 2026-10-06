@@ -480,6 +480,14 @@ class PaymentLinksMobileBody extends StatelessWidget {
           )
         : front;
     final session = receivedClaimSession;
+    if (claimPreparationLabel != null) {
+      return PaymentLinkReadyMobileView(
+        state: PaymentLinkReadyMobileState.checking,
+        card: card,
+        onHome: onAbandonReceivedPreview,
+        waitingStatusLabel: claimPreparationLabel!,
+      );
+    }
     if (session?.waitingForFundingConfirmations ?? false) {
       final remaining =
           kPaymentLinkClaimConfirmationTarget -
@@ -508,13 +516,11 @@ class PaymentLinksMobileBody extends StatelessWidget {
       decoration: const PaymentLinkConfetti(),
       onRevealMessage: hasCardMessage ? onToggleReceivedBack : null,
       onClaim: operationInProgress ? null : onClaimReceivedLink,
-      claimLabel:
-          claimPreparationLabel ??
-          (operationInProgress
-              ? 'Claiming…'
-              : receivedClaimSession == null
-              ? 'Try again'
-              : 'Claim the gift'),
+      claimLabel: (operationInProgress
+          ? 'Claiming…'
+          : receivedClaimSession == null
+          ? 'Try again'
+          : 'Claim the gift'),
     );
   }
 }

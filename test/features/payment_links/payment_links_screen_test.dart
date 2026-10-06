@@ -36,13 +36,15 @@ import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 import '../../support/gift_card_privacy_checks.dart';
+import '../../support/gift_card_claim_checking_checks.dart';
 import '../../support/leading_decimal_input.dart';
 import '../../support/payment_links_screen_support.dart';
 
 void main() {
   registerGiftCardPrivacyChecks(mobile: false);
+  registerGiftCardClaimCheckingChecks(mobile: false);
   testWidgets(
-    'shows the discovered gift with disabled progress before the claim check finishes',
+    'shows the discovered gift on a waiting surface until the claim is prepared',
     (tester) async {
       final gate = Completer<void>();
       final operations = FakePaymentLinkOperations(
@@ -79,14 +81,35 @@ void main() {
           );
       await tester.pump();
       expect(find.text('Checking the gift… 50%'), findsOneWidget);
-      final button = tester.widget<AppButton>(
+      expect(find.text('Checking your\ngift card'), findsOneWidget);
+      expect(find.text('Claim the gift card'), findsNothing);
+      expect(find.byType(PaymentLinkConfetti), findsNothing);
+      expect(
         find.ancestor(
           of: find.text('Checking the gift… 50%'),
           matching: find.byType(AppButton),
         ),
+        findsNothing,
       );
-      expect(button.onPressed, isNull);
       expect(find.byType(PaymentLinkGiftCard), findsWidgets);
+      container
+          .read(giftCardCheckProgressProvider.notifier)
+          .update(
+            incomingLink,
+            rust_sync.ApiGiftCardCheckProgress(
+              phase: 'checking',
+              completed: BigInt.from(100),
+              total: BigInt.from(100),
+              fundingHeight: incomingLink.birthdayHeight + 1,
+              checkedHeight: incomingLink.birthdayHeight + 100,
+              totalZatoshi: incomingLink.amountZatoshi + BigInt.from(10000),
+              unspentZatoshi: incomingLink.amountZatoshi + BigInt.from(10000),
+              complete: true,
+            ),
+          );
+      await tester.pump();
+      expect(find.text('Checking the gift… 100%'), findsOneWidget);
+      expect(find.text('Claim the gift card'), findsNothing);
       gate.complete();
       container
           .read(giftCardCheckProgressProvider.notifier)

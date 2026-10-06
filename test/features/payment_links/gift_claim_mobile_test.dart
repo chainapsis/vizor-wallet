@@ -39,6 +39,7 @@ import 'package:zcash_wallet/src/features/payment_links/services/payment_link_cl
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_copy.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_confetti.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/gift_claim_failure_notice_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_claim_coordinator_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/gift_claim_import_store.dart';
@@ -1523,7 +1524,7 @@ void main() {
   });
 
   testWidgets(
-    'funding is visible with a disabled percentage button before checking finishes',
+    'funding is visible on a waiting surface without actions before checking finishes',
     (tester) async {
       final container = await pumpWelcome(tester);
       final gate = Completer<void>();
@@ -1550,13 +1551,17 @@ void main() {
           );
       await tester.pump();
       expect(find.text('Checking the gift… 50%'), findsWidgets);
-      final button = tester.widget<AppButton>(
+      expect(find.text('Checking your\ngift card'), findsOneWidget);
+      expect(find.text('Create a wallet to claim'), findsNothing);
+      expect(find.text('Claim with an existing wallet'), findsNothing);
+      expect(find.byType(PaymentLinkConfetti), findsNothing);
+      expect(
         find.ancestor(
           of: find.text('Checking the gift… 50%'),
           matching: find.byType(AppButton),
         ),
+        findsNothing,
       );
-      expect(button.onPressed, isNull);
       gate.complete();
       container.read(giftCardCheckProgressProvider.notifier).clear(link);
       await tester.pumpAndSettle();

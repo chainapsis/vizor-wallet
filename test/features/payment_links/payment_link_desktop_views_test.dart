@@ -14,12 +14,53 @@ import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_bat
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_selector_rail.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_confetti.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_desktop_views.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_copy.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_qr_share_card.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
 import 'package:zcash_wallet/widgetbook/payment_link_use_cases.dart';
 
 void main() {
   setUpAll(_loadAppFonts);
+
+  testWidgets('checking content stays ordered with large text', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1080, 720));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      MaterialApp(
+        builder: (context, child) => AppTheme(
+          data: AppThemeData.dark,
+          child: MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: const TextScaler.linear(2)),
+            child: child!,
+          ),
+        ),
+        home: PaymentLinkReadyDesktopView(
+          state: PaymentLinkReadyVisualState.checking,
+          card: const SizedBox(width: 360, height: 225),
+          onBack: () {},
+          onCopy: null,
+          waitingStatusLabel: 'Checking the gift… 50%',
+        ),
+      ),
+    );
+    final heading = find.text(kPaymentLinkClaimCheckingHeading);
+    final description = find.text(kPaymentLinkClaimCheckingDescription);
+    final progress = find.text('Checking the gift… 50%');
+    expect(
+      tester.getRect(heading).bottom,
+      lessThan(tester.getRect(description).top),
+    );
+    expect(
+      tester.getRect(description).bottom,
+      lessThan(tester.getRect(progress).top),
+    );
+    await tester.ensureVisible(progress);
+    await tester.pumpAndSettle();
+    expect(tester.getRect(progress).bottom, lessThanOrEqualTo(720));
+    expect(tester.takeException(), isNull);
+  });
 
   for (final state in PaymentLinkPreviewState.values) {
     testWidgets('renders the ${state.name} desktop fixture', (tester) async {
@@ -1572,7 +1613,9 @@ void main() {
     // The new guidance uses the existing gap above the actions.
     expect(
       tester
-          .getTopLeft(find.byKey(const ValueKey('payment_link_copy_link_button')))
+          .getTopLeft(
+            find.byKey(const ValueKey('payment_link_copy_link_button')),
+          )
           .dy,
       closeTo(596.5, 1),
     );
