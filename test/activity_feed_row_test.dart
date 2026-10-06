@@ -26,7 +26,7 @@ void main() {
         ],
         onRows: (_) {},
       );
-      expect(find.text('In progress'), findsOneWidget);
+      expect(find.text('Checking status'), findsOneWidget);
       expect(
         find.byWidgetPredicate(
           (widget) =>

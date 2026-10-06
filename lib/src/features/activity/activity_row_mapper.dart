@@ -59,7 +59,7 @@ ActivityRowData buildTransactionActivityRow({
   final replacesPool =
       showPendingEstimate && isPending && (isInbound || isSent);
   final subtitle = replacesPool
-      ? pendingLabel ?? 'In progress'
+      ? pendingLabel ?? 'Checking status'
       : isMigration
       ? 'Orchard → Ironwood'
       : isInbound || isSent
@@ -102,7 +102,11 @@ ActivityRowData buildTransactionActivityRow({
     leadingIconColor: colors.icon.regular,
     subtitle: subtitle,
     subtitleIconName: replacesPool
-        ? null
+        ? (subtitle == 'Est. 1–3 min' ||
+                  subtitle == 'Est. 2–6 min' ||
+                  subtitle == 'Taking longer'
+              ? AppIcons.migrationTimer
+              : null)
         : _poolIcon(displayPool, ordinary: isOrdinaryTransaction),
     amountText: activityAmountTextForFormFactor(
       _transactionAmountText(

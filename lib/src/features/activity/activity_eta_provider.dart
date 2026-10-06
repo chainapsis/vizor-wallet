@@ -5,10 +5,58 @@ import '../../providers/account_provider.dart';
 import '../../providers/pending_activity_evidence_provider.dart';
 import '../../providers/rpc_endpoint_provider.dart';
 import '../../providers/sync_provider.dart';
+import '../../providers/sync_failure.dart';
 import '../../rust/api/sync.dart' as rust_sync;
 import '../swap/providers/swap_activity_store.dart';
 import 'gift_card_activity_index.dart';
 import '../swap/models/swap_chain_txid.dart';
+
+/// Stale observations and local recovery do not imply a lost connection.
+final activityPendingFallbackLabelProvider = Provider<String>((ref) {
+  final connectionFailed = ref.watch(
+    pendingActivityEvidenceProvider.select((s) => s.connectionFailed),
+  );
+  final failure = ref.watch(syncProvider.select((s) => s.value?.failure?.kind));
+  return connectionFailed ||
+          failure == SyncFailureKind.network ||
+          failure == SyncFailureKind.torUnavailable
+      ? 'Waiting for connection'
+      : 'Checking status';
+});
+
+/// Identity of the successful sync snapshot against which history was read.
+/// A completed sync can recover transaction status even at unchanged heights;
+/// a simple history refresh within that snapshot may retain the prior estimate.
+(int?, int?, DateTime?) activityHistorySnapshot(SyncState? sync) =>
+    (sync?.scannedHeight, sync?.chainTipHeight, sync?.lastSyncCompletedAt);
+
+/// Stable values avoid reloads when resume merely recreates the same list.
+String activityHistoryStatusSignature(
+  Iterable<rust_sync.TransactionInfo> transactions,
+) => transactions
+    .map(
+      (tx) =>
+          '${tx.txidHex}:${tx.minedHeight}:${tx.expiredUnmined}:${tx.txKind}:'
+          '${tx.displayAmount}:${tx.fundingParentTxid}:'
+          '${tx.fundingParentMinedHeight}:${tx.fundingParentExpired}',
+    )
+    .join('|');
+
+typedef ActivityEtaClaimHistoryLoader =
+    Future<List<rust_sync.TransactionInfo>> Function(
+      String accountUuid,
+      String network,
+    );
+
+final activityEtaClaimHistoryLoaderProvider =
+    Provider<ActivityEtaClaimHistoryLoader>(
+      (ref) =>
+          (accountUuid, network) async => rust_sync.getTransactionHistory(
+            dbPath: await getWalletDbPath(),
+            network: network,
+            accountUuid: accountUuid,
+          ),
+    );
 
 String _fundingKey(String txid) => 'funding:${activityTxidKey(txid)}';
 
@@ -55,18 +103,18 @@ final activityEtaClaimHistoryProvider =
           (s) => (
             s.value?.accountUuid,
             s.value?.isSyncing,
-            s.value?.lastSyncCompletedAt,
-            s.value?.recentTransactions,
+            activityHistorySnapshot(s.value),
+            activityHistoryStatusSignature(
+              s.value?.recentTransactions ?? const [],
+            ),
           ),
         ),
       );
       if (sync.$1 != account || sync.$2 != false) return const [];
       final endpoint = ref.watch(rpcEndpointProvider);
-      final dbPath = await getWalletDbPath();
-      return rust_sync.getTransactionHistory(
-        dbPath: dbPath,
-        network: endpoint.networkName,
-        accountUuid: account,
+      return ref.watch(activityEtaClaimHistoryLoaderProvider)(
+        account,
+        endpoint.networkName,
       );
     });
 
@@ -179,5 +227,5 @@ String? giftCardClaimEtaLabel({
     remaining.add(label);
   }
   if (remaining.isEmpty) return null;
-  return remaining.contains('Taking longer') ? 'Taking longer' : '~1–3 min';
+  return remaining.contains('Taking longer') ? 'Taking longer' : 'Est. 1–3 min';
 }

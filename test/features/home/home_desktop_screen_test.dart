@@ -933,7 +933,7 @@ void main() {
       _appHarness(
         '/home',
         swapEnabled: false,
-        etaLabels: const {'pending-receive': '~1–3 min'},
+        etaLabels: const {'pending-receive': 'Est. 1–3 min'},
         syncState: SyncState(
           accountUuid: 'account-1',
           hasAccountScopedData: true,
@@ -942,7 +942,7 @@ void main() {
       ),
     );
     await _pumpUntilPresent(tester, find.text('Receiving ...'));
-    expect(find.text('~1–3 min'), findsOneWidget);
+    expect(find.text('Est. 1–3 min'), findsOneWidget);
     expect(find.text('Shielded'), findsNothing);
     expect(tester.takeException(), isNull);
   });

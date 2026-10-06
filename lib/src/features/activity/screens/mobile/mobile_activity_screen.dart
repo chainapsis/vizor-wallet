@@ -49,7 +49,7 @@ class MobileActivityScreen extends ConsumerStatefulWidget {
 class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
   List<rust_sync.TransactionInfo>? _transactions;
   String? _transactionsAccountUuid;
-  DateTime? _transactionsSyncCompletedAt;
+  (int?, int?, DateTime?)? _transactionsSnapshot;
   bool _hasFreshTransactionHistory = false;
   bool _isLoading = true;
   String? _error;
@@ -79,13 +79,19 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
 
   Future<void> _loadTransactions({bool showLoading = false}) async {
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
-    final syncCompletedAt = ref.read(syncProvider).value?.lastSyncCompletedAt;
+    final historySnapshot = activityHistorySnapshot(
+      ref.read(syncProvider).value,
+    );
     final generation = ++_transactionLoadGeneration;
     _activeAccountUuid = accountUuid;
 
     if (mounted) {
       setState(() {
-        _hasFreshTransactionHistory = false;
+        _hasFreshTransactionHistory =
+            _hasFreshTransactionHistory &&
+            _transactionsAccountUuid == accountUuid &&
+            _transactionsSnapshot == historySnapshot &&
+            !showLoading;
         if (showLoading) {
           _isLoading = true;
           _error = null;
@@ -112,7 +118,7 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
       }
       setState(() {
         _transactions = txs;
-        _transactionsSyncCompletedAt = syncCompletedAt;
+        _transactionsSnapshot = historySnapshot;
         _hasFreshTransactionHistory = true;
         _transactionsAccountUuid = accountUuid;
         _isLoading = false;
@@ -127,6 +133,7 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
       }
       setState(() {
         _isLoading = false;
+        _hasFreshTransactionHistory = false;
         _error = "Couldn't load activity. Try again in a moment.";
       });
     }
@@ -191,15 +198,16 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
             .watch(activityEtaExcludedTxidsProvider)
             .contains(activityTxidKey(transaction.txidHex)),
         pendingLabel:
-            _hasFreshTransactionHistory &&
-                _transactionsSyncCompletedAt ==
-                    ref.watch(syncProvider).value?.lastSyncCompletedAt
-            ? activityEtaLabelFor(
-                transaction: transaction,
-                labels: ref.watch(activityEtaLabelsProvider),
-                giftCard: giftCard,
-              )
-            : null,
+            (_hasFreshTransactionHistory &&
+                    _transactionsSnapshot ==
+                        activityHistorySnapshot(ref.watch(syncProvider).value)
+                ? activityEtaLabelFor(
+                    transaction: transaction,
+                    labels: ref.watch(activityEtaLabelsProvider),
+                    giftCard: giftCard,
+                  )
+                : null) ??
+            ref.watch(activityPendingFallbackLabelProvider),
         giftCardKind: giftCard?.kind,
         giftCardAmountZatoshi: giftCard?.amountZatoshi,
         giftCardClaimInFlight: giftCard?.isClaimInFlight ?? false,
@@ -239,16 +247,10 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
   }
 
   String _recentSignature(SyncState? sync) {
-    final recent =
-        sync?.recentTransactions
-            .map(
-              (tx) =>
-                  '${tx.txidHex}:${tx.minedHeight}:${tx.expiredUnmined}:'
-                  '${tx.txKind}:${tx.displayAmount}',
-            )
-            .join('|') ??
-        '';
-    return '${sync?.lastSyncCompletedAt}|$recent';
+    final recent = activityHistoryStatusSignature(
+      sync?.recentTransactions ?? const [],
+    );
+    return '${activityHistorySnapshot(sync)}|$recent';
   }
 
   @override

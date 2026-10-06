@@ -821,6 +821,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   AppLifecycleListener? _lifecycleListener;
   Timer? _pollTimer;
   bool _pollCheckInFlight = false;
+  bool _resumeTipCheckPending = false;
   int _sensitiveStateEpoch = 0;
   int _progressEventVersion = 0;
   int _balanceReadVersion = 0;
@@ -930,21 +931,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     shutdown.addListener(_stopForAppExit);
     ref.onDispose(() => shutdown.removeListener(_stopForAppExit));
     _lifecycleListener = AppLifecycleListener(
-      onResume: () {
-        if (shutdown.isShuttingDown) return;
-        _isInForeground = true;
-        ref.read(pendingActivityEvidenceProvider.notifier).setForeground(true);
-        unawaited(_refreshBalanceAfterResume());
-        _checkAndSync();
-      },
-      onHide: () {
-        _isInForeground = false;
-        ref.read(pendingActivityEvidenceProvider.notifier).setForeground(false);
-        _foregroundEpoch++;
-        if (!canRunAppProcessWork(isInForeground: _isInForeground)) {
-          _stopPolling();
-        }
-      },
+      onResume: _handleAppResume,
+      onHide: _handleAppHide,
     );
 
     ref.onDispose(() {
@@ -1172,6 +1160,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   /// Quiesce scan/poll work without waiting on network I/O or cancelling durable
   /// sends. Generation changes also reject preflight completions already queued.
   void _stopForAppExit() {
+    _resumeTipCheckPending = false;
     ++_syncGen;
     ++_sensitiveStateEpoch;
     ++_progressEventVersion;
@@ -1707,6 +1696,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   }
 
   void stopSync() {
+    _resumeTipCheckPending = false;
     _syncStartDeferred = false;
     _deferredSyncLatestTipHeight = null;
     ++_syncGen; // invalidate pending startSync callbacks
@@ -1988,6 +1978,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   }
 
   Future<void> clearSensitiveStateForLock() async {
+    _resumeTipCheckPending = false;
     ref.read(pendingActivityEvidenceProvider.notifier).clear();
     _recoveryRestartGate.reset();
     _pendingMutationRestartSync = false;
@@ -2136,6 +2127,26 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     );
   }
 
+  void _handleAppResume() {
+    if (_isShuttingDown) return;
+    _isInForeground = true;
+    ref.read(pendingActivityEvidenceProvider.notifier).setForeground(true);
+    unawaited(_refreshBalanceAfterResume());
+    // Coalesce repeated focus/resume events. An old mobile check spanning
+    // backgrounding cannot certify foreground freshness; follow it immediately.
+    _resumeTipCheckPending = true;
+    unawaited(_checkAndSync());
+  }
+
+  void _handleAppHide() {
+    _isInForeground = false;
+    ref.read(pendingActivityEvidenceProvider.notifier).setForeground(false);
+    ++_foregroundEpoch;
+    if (!canRunAppProcessWork(isInForeground: _isInForeground)) {
+      _stopPolling();
+    }
+  }
+
   void _startPolling() {
     _pollTimer?.cancel();
     if (_isShuttingDown) return;
@@ -2144,6 +2155,14 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       return;
     }
     if (!canRunAppProcessWork(isInForeground: _isInForeground)) return;
+    if (_resumeTipCheckPending &&
+        !_pollCheckInFlight &&
+        !_isSyncing &&
+        !_requiresUnlock &&
+        (ref.read(accountProvider).value?.hasAccounts ?? false)) {
+      unawaited(_checkAndSync());
+      return;
+    }
     _pollTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
       try {
         await _checkAndSync();
@@ -2177,6 +2196,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       return;
     }
     _pollCheckInFlight = true;
+    _resumeTipCheckPending = false;
     _stopPolling();
     try {
       final tip = await ref
@@ -2190,10 +2210,15 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         log('AutoSync: skipping restart after lock transition');
         return;
       }
-      if (foregroundEpoch == _foregroundEpoch && _isInForeground) {
+      if (canRunAppProcessWork(isInForeground: false) ||
+          (foregroundEpoch == _foregroundEpoch && _isInForeground)) {
+        _resumeTipCheckPending = false;
         ref
             .read(pendingActivityEvidenceProvider.notifier)
-            .networkChecked(tip.toInt());
+            .networkChecked(
+              tip.toInt(),
+              allowBackground: canRunAppProcessWork(isInForeground: false),
+            );
       }
       // Skip the status read entirely when the tip or an incomplete previous
       // sync already calls for a restart: that sync runs recovery anyway.
@@ -2226,7 +2251,14 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       }
     } catch (e) {
       if (ref.mounted && gen == _syncGen && epoch == _sensitiveStateEpoch) {
-        ref.read(pendingActivityEvidenceProvider.notifier).invalidateNetwork();
+        final kind = classifySyncFailure(e).kind;
+        ref
+            .read(pendingActivityEvidenceProvider.notifier)
+            .invalidateNetwork(
+              connectionFailed:
+                  kind == SyncFailureKind.network ||
+                  kind == SyncFailureKind.torUnavailable,
+            );
       }
       log('AutoSync: tip check failed: $e');
     } finally {
@@ -3399,6 +3431,18 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _cachedDbPath = await _walletDbPathResolver();
     return _cachedDbPath!;
   }
+
+  @visibleForTesting
+  void handleAppResumeForTesting() => _handleAppResume();
+
+  @visibleForTesting
+  void handleAppHideForTesting() => _handleAppHide();
+
+  @visibleForTesting
+  void stopTipChecksForTesting() => _stopPolling();
+
+  @visibleForTesting
+  Future<void> checkTipForTesting() => _checkAndSync();
 
   @visibleForTesting
   Future<void> handleSyncProgressForTesting(SyncProgressEvent event) =>

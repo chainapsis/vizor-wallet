@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/activity/activity_eta_provider.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/pending_activity_evidence_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/providers/sync_failure.dart';
 
 import '../fakes/fake_sync_notifier.dart';
 import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
@@ -22,6 +24,127 @@ class _Accounts extends AccountNotifier {
 
 void main() {
   final started = DateTime.utc(2026, 10, 6);
+
+  test('resume and repeated focus retain original freshness deadline', () {
+    var now = started;
+    final container = ProviderContainer(
+      overrides: [activityEtaClockProvider.overrideWithValue(() => now)],
+    );
+    addTearDown(container.dispose);
+    final evidence = container.read(pendingActivityEvidenceProvider.notifier);
+    String? label() => container
+        .read(pendingActivityEvidenceProvider)
+        .labelFor('a', 'tx', 100);
+    evidence.observe(accountUuid: 'a', txids: ['tx']);
+    evidence.networkChecked(100);
+    evidence.setForeground(false);
+    now = started.add(const Duration(seconds: 12));
+    evidence.setForeground(true);
+    expect(label(), 'Est. 1–3 min');
+    now = started.add(const Duration(seconds: 29));
+    evidence.setForeground(true);
+    expect(label(), 'Est. 1–3 min');
+    now = started.add(const Duration(seconds: 30));
+    evidence.setForeground(true);
+    expect(label(), isNull);
+    expect(
+      container.read(pendingActivityEvidenceProvider).networkCheckedAt,
+      started,
+    );
+    now = started.add(const Duration(minutes: 2));
+    evidence.setForeground(false);
+    evidence.setForeground(true);
+    expect(label(), isNull);
+  });
+
+  test(
+    'background checks need explicit desktop permission and retain hidden state',
+    () {
+      var now = started;
+      final container = ProviderContainer(
+        overrides: [activityEtaClockProvider.overrideWithValue(() => now)],
+      );
+      addTearDown(container.dispose);
+      final controller = container.read(
+        pendingActivityEvidenceProvider.notifier,
+      );
+      controller.observe(accountUuid: 'a', txids: ['tx']);
+      controller.networkChecked(100);
+      controller.setForeground(false);
+      now = started.add(const Duration(minutes: 1));
+      controller.networkChecked(101);
+      expect(
+        container.read(pendingActivityEvidenceProvider).networkCheckedAt,
+        started,
+      );
+      controller.networkChecked(100, allowBackground: true);
+      expect(
+        container.read(pendingActivityEvidenceProvider).foreground,
+        isFalse,
+      );
+      expect(
+        container
+            .read(pendingActivityEvidenceProvider)
+            .labelFor('a', 'tx', 100),
+        isNull,
+      );
+      controller.setForeground(true);
+      expect(
+        container
+            .read(pendingActivityEvidenceProvider)
+            .labelFor('a', 'tx', 100),
+        'Est. 1–3 min',
+      );
+    },
+  );
+
+  test(
+    'only observed connectivity failures use the connection fallback',
+    () async {
+      final sync = FakeSyncNotifier(SyncState());
+      final container = ProviderContainer(
+        overrides: [syncProvider.overrideWith(() => sync)],
+      );
+      addTearDown(container.dispose);
+      await container.read(syncProvider.future);
+      final evidence = container.read(pendingActivityEvidenceProvider.notifier);
+      expect(
+        container.read(activityPendingFallbackLabelProvider),
+        'Checking status',
+      );
+      evidence.invalidateNetwork(connectionFailed: true);
+      evidence.setForeground(false);
+      evidence.setForeground(true);
+      expect(
+        container.read(activityPendingFallbackLabelProvider),
+        'Waiting for connection',
+      );
+      evidence.networkChecked(100);
+      expect(
+        container.read(activityPendingFallbackLabelProvider),
+        'Checking status',
+      );
+      for (final message in [
+        'database is locked',
+        'private status coverage incomplete',
+        'chain continuity broken',
+        'invalid url',
+      ]) {
+        sync.emit(SyncState(failure: classifySyncFailure(message)));
+        expect(
+          container.read(activityPendingFallbackLabelProvider),
+          'Checking status',
+        );
+      }
+      sync.emit(
+        SyncState(failure: classifySyncFailure('network connection refused')),
+      );
+      expect(
+        container.read(activityPendingFallbackLabelProvider),
+        'Waiting for connection',
+      );
+    },
+  );
 
   test(
     'estimate requires propagation, a fresh tip, and scanning through it',
@@ -42,7 +165,7 @@ void main() {
       expect(evidence(checked: started).labelFor('a', 'tx', 100), isNull);
       expect(evidence(observed: started).labelFor('a', 'tx', 100), isNull);
       final ready = evidence(checked: started, observed: started);
-      expect(ready.labelFor('a', 'tx', 100), '~1–3 min');
+      expect(ready.labelFor('a', 'tx', 100), 'Est. 1–3 min');
       expect(ready.labelFor('other-account', 'tx', 100), isNull);
       expect(ready.labelFor('a', 'other-tx', 100), isNull);
       expect(ready.labelFor('a', 'tx', 99), isNull);
@@ -74,7 +197,7 @@ void main() {
   );
 
   testWidgets(
-    'shared clock expires ETA, duplicate observations preserve wait, and lifecycle invalidates it',
+    'shared clock expires ETA, duplicate observations preserve wait, and short lifecycle transitions preserve it',
     (tester) async {
       var now = started;
       final container = ProviderContainer(
@@ -89,7 +212,7 @@ void main() {
           .labelFor('a', 'tx', 100);
       controller.observe(accountUuid: 'a', txids: ['tx']);
       controller.networkChecked(100);
-      expect(label(), '~1–3 min');
+      expect(label(), 'Est. 1–3 min');
       now = started.add(kActivityEtaFreshness);
       await tester.pump(const Duration(seconds: 30));
       expect(label(), isNull);
@@ -100,7 +223,7 @@ void main() {
       controller.setForeground(false);
       expect(label(), isNull);
       controller.setForeground(true);
-      expect(label(), isNull);
+      expect(label(), 'Taking longer');
       controller.networkChecked(100);
       expect(label(), 'Taking longer');
       controller.invalidateNetwork();
@@ -129,7 +252,7 @@ void main() {
         at(
           const Duration(minutes: 5),
         ).labelFor('a', 'tx', 100, waitingForFunding: true),
-        '~2–6 min',
+        'Est. 2–6 min',
       );
       expect(
         at(
@@ -175,20 +298,20 @@ void main() {
             parentHeight: height,
             parentExpired: expired,
           );
-      const labels = {'child': '~1–3 min', 'funding:child': '~2–6 min'};
+      const labels = {'child': 'Est. 1–3 min', 'funding:child': 'Est. 2–6 min'};
       expect(
         activityEtaLabelFor(
           transaction: tx(height: BigInt.zero),
           labels: labels,
         ),
-        '~2–6 min',
+        'Est. 2–6 min',
       );
       expect(
         activityEtaLabelFor(
           transaction: tx(height: BigInt.one),
           labels: labels,
         ),
-        '~1–3 min',
+        'Est. 1–3 min',
       );
       expect(
         activityEtaLabelFor(
@@ -212,18 +335,18 @@ void main() {
       labels: labels,
     );
     expect(
-      label([_tx('first', mined: BigInt.from(99))], {'second': '~1–3 min'}),
-      '~1–3 min',
+      label([_tx('first', mined: BigInt.from(99))], {'second': 'Est. 1–3 min'}),
+      'Est. 1–3 min',
     );
     expect(label([_tx('first', mined: BigInt.from(99))], {}), isNull);
     expect(
-      label([], {'first': '~1–3 min', 'second': 'Taking longer'}),
+      label([], {'first': 'Est. 1–3 min', 'second': 'Taking longer'}),
       'Taking longer',
     );
     expect(
       label(
         [_tx('first', expired: true)],
-        {'first': '~1–3 min', 'second': '~1–3 min'},
+        {'first': 'Est. 1–3 min', 'second': 'Est. 1–3 min'},
       ),
       isNull,
     );
@@ -235,13 +358,16 @@ void main() {
       isNull,
     );
     expect(
-      label([_tx('first', mined: BigInt.from(101))], {'second': '~1–3 min'}),
+      label(
+        [_tx('first', mined: BigInt.from(101))],
+        {'second': 'Est. 1–3 min'},
+      ),
       isNull,
     );
   });
 
   test(
-    'multi-leg Card ETA waits for successful complete-history recovery',
+    'multi-leg Card ETA survives identical resume lists and rechecks changed status',
     () async {
       final link = VizorPaymentLink(
         label: 'Gift card',
@@ -265,6 +391,8 @@ void main() {
       );
       for (final fail in [false, true]) {
         final completer = Completer<List<rust_sync.TransactionInfo>>();
+        final refreshed = Completer<List<rust_sync.TransactionInfo>>();
+        var reads = 0;
         final sync = FakeSyncNotifier(
           SyncState(
             accountUuid: 'a',
@@ -272,10 +400,15 @@ void main() {
             isSyncComplete: true,
             scannedHeight: 100,
             chainTipHeight: 100,
+            recentTransactions: [
+              _tx('first', mined: BigInt.from(99)),
+              _tx('second'),
+            ],
           ),
         );
         final container = ProviderContainer(
           overrides: [
+            appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
             accountProvider.overrideWith(_Accounts.new),
             syncProvider.overrideWith(() => sync),
             activityEtaClockProvider.overrideWithValue(() => started),
@@ -283,9 +416,14 @@ void main() {
               'a',
             ).overrideWith((ref) async => index),
             swapActivityRecordsProvider('a').overrideWith((ref) async => []),
-            activityEtaClaimHistoryProvider.overrideWith(
-              (ref) => completer.future,
-            ),
+            activityEtaClaimHistoryLoaderProvider.overrideWithValue((
+              account,
+              network,
+            ) {
+              expect(account, 'a');
+              reads++;
+              return reads == 1 ? completer.future : refreshed.future;
+            }),
           ],
         );
         addTearDown(container.dispose);
@@ -315,8 +453,50 @@ void main() {
         }
         expect(
           container.read(activityEtaLabelsProvider)['gift-card:card'],
-          fail ? isNull : '~1–3 min',
+          fail ? isNull : 'Est. 1–3 min',
         );
+        if (!fail) {
+          final snapshot = container.read(syncProvider).value!;
+          sync.emit(
+            snapshot.copyWith(
+              recentTransactions: [
+                _tx('first', mined: BigInt.from(99)),
+                _tx('second'),
+              ],
+            ),
+          );
+          await container.pump();
+          expect(reads, 1);
+          expect(
+            container.read(activityEtaLabelsProvider)['gift-card:card'],
+            'Est. 1–3 min',
+          );
+          sync.emit(
+            snapshot.copyWith(
+              recentTransactions: [
+                _tx('first', mined: BigInt.from(99)),
+                _tx('second', mined: BigInt.from(100)),
+              ],
+            ),
+          );
+          expect(
+            container.read(activityEtaLabelsProvider)['gift-card:card'],
+            isNull,
+          );
+          final nextRead = container.read(
+            activityEtaClaimHistoryProvider.future,
+          );
+          expect(reads, 2);
+          refreshed.complete([
+            _tx('first', mined: BigInt.from(99)),
+            _tx('second', mined: BigInt.from(100)),
+          ]);
+          await nextRead;
+          expect(
+            container.read(activityEtaLabelsProvider)['gift-card:card'],
+            isNull,
+          );
+        }
         controller.clear();
       }
     },
@@ -390,7 +570,7 @@ void main() {
       evidence.networkChecked(100);
       await container.read(giftCardActivityIndexProvider('a').future);
       await container.read(swapActivityRecordsProvider('a').future);
-      expect(container.read(activityEtaLabelsProvider)['tx'], '~1–3 min');
+      expect(container.read(activityEtaLabelsProvider)['tx'], 'Est. 1–3 min');
       for (final unavailable in [
         synced.copyWith(isSyncing: true),
         synced.copyWith(isSyncComplete: false),

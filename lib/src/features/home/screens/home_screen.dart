@@ -760,11 +760,13 @@ class _HomePaneState extends ConsumerState<_HomePane> {
         showPendingEstimate: !ref
             .watch(activityEtaExcludedTxidsProvider)
             .contains(activityTxidKey(transaction.txidHex)),
-        pendingLabel: activityEtaLabelFor(
-          transaction: transaction,
-          labels: ref.watch(activityEtaLabelsProvider),
-          giftCard: giftCard,
-        ),
+        pendingLabel:
+            activityEtaLabelFor(
+              transaction: transaction,
+              labels: ref.watch(activityEtaLabelsProvider),
+              giftCard: giftCard,
+            ) ??
+            ref.watch(activityPendingFallbackLabelProvider),
         giftCardKind: giftCard?.kind,
         giftCardAmountZatoshi: giftCard?.amountZatoshi,
         giftCardBatchCount: giftCard?.batchCount,

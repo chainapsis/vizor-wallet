@@ -47,7 +47,7 @@ class ActivityScreen extends ConsumerStatefulWidget {
 class _ActivityScreenState extends ConsumerState<ActivityScreen> {
   List<rust_sync.TransactionInfo>? _transactions;
   String? _transactionsAccountUuid;
-  DateTime? _transactionsSyncCompletedAt;
+  (int?, int?, DateTime?)? _transactionsSnapshot;
   bool _hasFreshTransactionHistory = false;
   bool _isLoading = true;
   String? _error;
@@ -94,14 +94,20 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     bool clearExisting = false,
   }) async {
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
-    final syncCompletedAt = ref.read(syncProvider).value?.lastSyncCompletedAt;
+    final historySnapshot = activityHistorySnapshot(
+      ref.read(syncProvider).value,
+    );
     final generation = ++_transactionLoadGeneration;
     _pendingTransactionRefresh = false;
     _activeAccountUuid = accountUuid;
 
     if (mounted) {
       setState(() {
-        _hasFreshTransactionHistory = false;
+        _hasFreshTransactionHistory =
+            _hasFreshTransactionHistory &&
+            _transactionsAccountUuid == accountUuid &&
+            _transactionsSnapshot == historySnapshot &&
+            !showLoading;
         if (showLoading) {
           _isLoading = true;
           _error = null;
@@ -131,7 +137,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
       }
       setState(() {
         _transactions = txs;
-        _transactionsSyncCompletedAt = syncCompletedAt;
+        _transactionsSnapshot = historySnapshot;
         _hasFreshTransactionHistory = true;
         _transactionsAccountUuid = accountUuid;
         _isLoading = false;
@@ -145,9 +151,14 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
       }
       final hasExistingTransactions =
           _transactionsAccountUuid == accountUuid && _transactions != null;
-      if (hasExistingTransactions && !clearExisting) return;
+      if (hasExistingTransactions && !clearExisting) {
+        setState(() => _hasFreshTransactionHistory = false);
+        _runPendingTransactionRefreshIfNeeded(generation, accountUuid);
+        return;
+      }
       setState(() {
         _transactionsAccountUuid = accountUuid;
+        _hasFreshTransactionHistory = false;
         _error = 'Activity could not be loaded.';
         _isLoading = false;
       });
@@ -295,15 +306,10 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
   }
 
   String _recentSignature(SyncState? sync) {
-    final recent =
-        sync?.recentTransactions
-            .map(
-              (tx) =>
-                  '${tx.txidHex}:${tx.minedHeight}:${tx.expiredUnmined}:${tx.txKind}:${tx.displayAmount}',
-            )
-            .join('|') ??
-        '';
-    return '${sync?.lastSyncCompletedAt}|$recent';
+    final recent = activityHistoryStatusSignature(
+      sync?.recentTransactions ?? const [],
+    );
+    return '${activityHistorySnapshot(sync)}|$recent';
   }
 
   @override
@@ -372,15 +378,18 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
                   .watch(activityEtaExcludedTxidsProvider)
                   .contains(activityTxidKey(tx.txidHex)),
               pendingLabel:
-                  _hasFreshTransactionHistory &&
-                      _transactionsSyncCompletedAt ==
-                          ref.watch(syncProvider).value?.lastSyncCompletedAt
-                  ? activityEtaLabelFor(
-                      transaction: tx,
-                      labels: ref.watch(activityEtaLabelsProvider),
-                      giftCard: giftCard,
-                    )
-                  : null,
+                  (_hasFreshTransactionHistory &&
+                          _transactionsSnapshot ==
+                              activityHistorySnapshot(
+                                ref.watch(syncProvider).value,
+                              )
+                      ? activityEtaLabelFor(
+                          transaction: tx,
+                          labels: ref.watch(activityEtaLabelsProvider),
+                          giftCard: giftCard,
+                        )
+                      : null) ??
+                  ref.watch(activityPendingFallbackLabelProvider),
               giftCardKind: giftCard?.kind,
               giftCardAmountZatoshi: giftCard?.amountZatoshi,
               giftCardBatchCount: giftCard?.batchCount,

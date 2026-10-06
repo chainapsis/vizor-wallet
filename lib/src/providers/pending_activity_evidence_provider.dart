@@ -31,6 +31,7 @@ class PendingActivityEvidence {
     this.networkCheckedAt,
     this.checkedTip,
     this.foreground = true,
+    this.connectionFailed = false,
     this.observedAt = const {},
     this.unavailableHistoryAccounts = const {},
   });
@@ -39,6 +40,7 @@ class PendingActivityEvidence {
   final DateTime? networkCheckedAt;
   final int? checkedTip;
   final bool foreground;
+  final bool connectionFailed;
   final Map<(String, String), DateTime> observedAt;
   final Set<String> unavailableHistoryAccounts;
 
@@ -71,8 +73,8 @@ class PendingActivityEvidence {
     return elapsed >= longWait
         ? 'Taking longer'
         : waitingForFunding
-        ? '~2–6 min'
-        : '~1–3 min';
+        ? 'Est. 2–6 min'
+        : 'Est. 1–3 min';
   }
 }
 
@@ -115,12 +117,13 @@ class PendingActivityEvidenceController
       networkCheckedAt: state.networkCheckedAt,
       checkedTip: state.checkedTip,
       foreground: state.foreground,
+      connectionFailed: state.connectionFailed,
     );
     _scheduleClock();
   }
 
-  void networkChecked(int tip) {
-    if (!state.foreground) return;
+  void networkChecked(int tip, {bool allowBackground = false}) {
+    if (!state.foreground && !allowBackground) return;
     final now = _clock();
     state = PendingActivityEvidence(
       now: now,
@@ -128,15 +131,17 @@ class PendingActivityEvidenceController
       unavailableHistoryAccounts: state.unavailableHistoryAccounts,
       networkCheckedAt: now,
       checkedTip: tip,
+      foreground: state.foreground,
     );
   }
 
-  void invalidateNetwork() {
+  void invalidateNetwork({bool connectionFailed = false}) {
     state = PendingActivityEvidence(
       now: _clock(),
       observedAt: state.observedAt,
       unavailableHistoryAccounts: state.unavailableHistoryAccounts,
       foreground: state.foreground,
+      connectionFailed: connectionFailed,
     );
   }
 
@@ -146,6 +151,9 @@ class PendingActivityEvidenceController
       observedAt: state.observedAt,
       unavailableHistoryAccounts: state.unavailableHistoryAccounts,
       foreground: foreground,
+      networkCheckedAt: state.networkCheckedAt,
+      checkedTip: state.checkedTip,
+      connectionFailed: state.connectionFailed,
     );
     _scheduleClock();
   }
@@ -160,6 +168,7 @@ class PendingActivityEvidenceController
       networkCheckedAt: state.networkCheckedAt,
       checkedTip: state.checkedTip,
       foreground: state.foreground,
+      connectionFailed: state.connectionFailed,
     );
   }
 
@@ -185,6 +194,7 @@ class PendingActivityEvidenceController
         networkCheckedAt: state.networkCheckedAt,
         checkedTip: state.checkedTip,
         foreground: state.foreground,
+        connectionFailed: state.connectionFailed,
       );
     });
   }

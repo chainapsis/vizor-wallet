@@ -54,7 +54,7 @@ void main() {
       final initialRow = tester.widget<ActivityFeedRow>(cardFinder).row;
       final initialState = tester.state(cardFinder);
       expect(initialRow.timestampText, isNot('--'));
-      expect(initialRow.subtitle, 'In progress');
+      expect(initialRow.subtitle, 'Checking status');
       expect(initialRow.subtitleIconName, isNull);
       for (var stage = 1; stage <= 4; stage++) {
         await tester.tap(find.byKey(ValueKey('gift_card_stage_$stage')));
@@ -74,7 +74,7 @@ void main() {
         );
         expect(
           row.subtitle,
-          stage >= 2 ? 'Ironwood' : 'In progress',
+          stage >= 2 ? 'Ironwood' : 'Checking status',
           reason: 'stage $stage subtitle',
         );
         expect(row.subtitleIconName, stage >= 2 ? isNotNull : isNull);

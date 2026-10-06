@@ -686,14 +686,14 @@ void main() {
           orchardBalance: BigInt.from(100000000),
         ).copyWith(recentTransactions: [pending]),
         showVoting: false,
-        etaLabels: const {'pending-receive': '~1–3 min'},
+        etaLabels: const {'pending-receive': 'Est. 1–3 min'},
       ),
     );
     for (var i = 0; i < 10; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
     expect(find.text('Receiving...'), findsOneWidget);
-    expect(find.text('~1–3 min'), findsOneWidget);
+    expect(find.text('Est. 1–3 min'), findsOneWidget);
     expect(find.text('Shielded'), findsNothing);
     expect(tester.takeException(), isNull);
   });
@@ -2923,7 +2923,7 @@ void main() {
       for (final row in [placeholder, actualUnmined, actualMined]) {
         expect(row.row.stableId, 'gift-card:home-continuity-card');
         expect(row.row.timestampText, isNot('--'));
-        expect(row.row.subtitle, 'In progress');
+        expect(row.row.subtitle, 'Checking status');
         expect(row.row.amountText, '+4.45 ZEC');
       }
       expect(actualUnmined.row.timestampText, placeholder.row.timestampText);

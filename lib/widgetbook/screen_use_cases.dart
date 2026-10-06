@@ -1968,6 +1968,7 @@ List<rust_sync.TransactionInfo> _etaTransactions() => [
     ('tex', 'transparent', 'sent'),
     ('gift-created', 'ironwood', 'sent'),
     ('gift-redeemed', 'ironwood', 'receiving'),
+    ('connection', 'orchard', 'receiving'),
     ('unknown', 'orchard', 'receiving'),
   ])
     rust_sync.TransactionInfo(
@@ -2023,11 +2024,12 @@ Widget _buildActivityEtaUseCase({required bool home}) {
   );
   final previewChild = home ? null : _ActivityEtaPreviewRouter(mobile: mobile);
   const etaLabels = {
-    'preview-eta': '~1–3 min',
+    'preview-eta': 'Est. 1–3 min',
     'preview-long': 'Taking longer',
-    'funding:preview-tex': '~2–6 min',
-    'preview-gift-created': '~1–3 min',
-    'gift-card:preview-card': '~1–3 min',
+    'preview-connection': 'Waiting for connection',
+    'funding:preview-tex': 'Est. 2–6 min',
+    'preview-gift-created': 'Est. 1–3 min',
+    'gift-card:preview-card': 'Est. 1–3 min',
   };
   return mobile
       ? _buildMobileHomeUseCase(

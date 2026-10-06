@@ -4,6 +4,8 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
@@ -184,89 +186,140 @@ void main() {
             return isRefreshing ? refreshing.future : [pending];
           },
           syncNotifier: sync,
-          etaLabels: const {'pending': '~1–3 min'},
+          etaLabels: const {'pending': 'Est. 1–3 min'},
         ),
       );
       await tester.pump(const Duration(milliseconds: 300));
       await tester.pump(const Duration(milliseconds: 300));
-      expect(find.text('~1–3 min'), findsOneWidget);
+      expect(find.text('Est. 1–3 min'), findsOneWidget);
       final initialReads = reads;
       isRefreshing = true;
       sync.emit(before.copyWith(recentTransactions: [pending]));
       await tester.pump(const Duration(milliseconds: 300));
       expect(reads, initialReads + 1);
-      expect(find.text('~1–3 min'), findsNothing);
-      expect(find.text('In progress'), findsOneWidget);
+      expect(find.text('Est. 1–3 min'), findsOneWidget);
+      expect(find.text('Checking status'), findsNothing);
       refreshing.completeError(StateError('history unavailable'));
       await tester.pump(const Duration(milliseconds: 300));
-      expect(find.text('~1–3 min'), findsNothing);
+      expect(find.text('Est. 1–3 min'), findsNothing);
       isRefreshing = false;
       sync.emit(before.copyWith(recentTransactions: []));
       await tester.pump(const Duration(milliseconds: 300));
       expect(reads, initialReads + 2);
-      expect(find.text('~1–3 min'), findsOneWidget);
+      expect(find.text('Est. 1–3 min'), findsOneWidget);
     },
   );
 
-  testWidgets(
-    'sync completion refreshes older history and hides ETA until its read completes',
-    (tester) async {
-      final before = SyncState(
-        accountUuid: 'account-1',
-        hasAccountScopedData: true,
-        isSyncComplete: true,
-        lastSyncCompletedAt: DateTime.utc(2026, 10, 6),
+  for (final newBlock in [false, true]) {
+    testWidgets(
+      'sync completion refreshes older history (new block: $newBlock)',
+      (tester) async {
+        final before = SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+          lastSyncCompletedAt: DateTime.utc(2026, 10, 6),
+        );
+        final sync = FakeSyncNotifier(before);
+        var reads = 0;
+        var refreshing = false;
+        final refreshed = Completer<List<rust_sync.TransactionInfo>>();
+        await tester.pumpWidget(
+          _app(
+            (_) async {
+              reads++;
+              if (!refreshing) {
+                return [
+                  _tx(
+                    txidHex: 'old-pending',
+                    blockTime: BigInt.zero,
+                    minedHeight: BigInt.zero,
+                    kind: 'sent',
+                  ),
+                ];
+              }
+              return refreshed.future;
+            },
+            syncNotifier: sync,
+            etaLabels: const {'old-pending': 'Est. 1–3 min'},
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 300));
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(find.text('Est. 1–3 min'), findsOneWidget);
+        final initialReads = reads;
+        refreshing = true;
+        // The recent-ten history is unchanged (empty); this older transaction mined.
+        sync.emit(
+          before.copyWith(
+            scannedHeight: newBlock ? 101 : before.scannedHeight,
+            chainTipHeight: newBlock ? 101 : before.chainTipHeight,
+            lastSyncCompletedAt: DateTime.utc(2026, 10, 6, 0, 1),
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(reads, initialReads + 1);
+        expect(find.text('Est. 1–3 min'), findsNothing);
+        expect(find.text('Checking status'), findsOneWidget);
+        refreshed.complete([
+          _tx(
+            txidHex: 'old-pending',
+            blockTime: BigInt.from(1800000000),
+            kind: 'sent',
+          ),
+        ]);
+        await tester.pump(const Duration(milliseconds: 300));
+        await tester.pumpAndSettle();
+        expect(find.text('Sent'), findsOneWidget);
+        expect(find.text('Est. 1–3 min'), findsNothing);
+      },
+    );
+  }
+
+  testWidgets('ETA and status subtitles fit a standard mobile activity row', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(393, 852));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await (FontLoader(
+      'Geist',
+    )..addFont(rootBundle.load('assets/fonts/Geist-Regular.ttf'))).load();
+    final labels = [
+      'Est. 1–3 min',
+      'Est. 2–6 min',
+      'Taking longer',
+      'Checking status',
+      'Waiting for connection',
+    ];
+    await tester.pumpWidget(
+      _app(
+        (_) async => [
+          for (var i = 0; i < labels.length; i++)
+            _tx(
+              txidHex: 'pending-$i',
+              blockTime: BigInt.zero,
+              minedHeight: BigInt.zero,
+              kind: 'sent',
+            ),
+        ],
+        etaLabels: {
+          for (var i = 0; i < labels.length; i++) 'pending-$i': labels[i],
+        },
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 300));
+    for (final label in labels) {
+      expect(
+        tester
+            .renderObject<RenderParagraph>(find.text(label))
+            .didExceedMaxLines,
+        isFalse,
+        reason: label,
       );
-      final sync = FakeSyncNotifier(before);
-      var reads = 0;
-      var refreshing = false;
-      final refreshed = Completer<List<rust_sync.TransactionInfo>>();
-      await tester.pumpWidget(
-        _app(
-          (_) async {
-            reads++;
-            if (!refreshing) {
-              return [
-                _tx(
-                  txidHex: 'old-pending',
-                  blockTime: BigInt.zero,
-                  minedHeight: BigInt.zero,
-                  kind: 'sent',
-                ),
-              ];
-            }
-            return refreshed.future;
-          },
-          syncNotifier: sync,
-          etaLabels: const {'old-pending': '~1–3 min'},
-        ),
-      );
-      await tester.pump(const Duration(milliseconds: 300));
-      await tester.pump(const Duration(milliseconds: 300));
-      expect(find.text('~1–3 min'), findsOneWidget);
-      final initialReads = reads;
-      refreshing = true;
-      // The recent-ten history is unchanged (empty); this older transaction mined.
-      sync.emit(
-        before.copyWith(lastSyncCompletedAt: DateTime.utc(2026, 10, 6, 0, 1)),
-      );
-      await tester.pump(const Duration(milliseconds: 300));
-      expect(reads, initialReads + 1);
-      expect(find.text('~1–3 min'), findsNothing);
-      expect(find.text('In progress'), findsOneWidget);
-      refreshed.complete([
-        _tx(
-          txidHex: 'old-pending',
-          blockTime: BigInt.from(1800000000),
-          kind: 'sent',
-        ),
-      ]);
-      await tester.pump(const Duration(milliseconds: 300));
-      await tester.pumpAndSettle();
-      expect(find.text('Sent'), findsOneWidget);
-      expect(find.text('~1–3 min'), findsNothing);
-    },
-  );
+    }
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('Activity replaces the pending pool with ETA', (tester) async {
     await tester.binding.setSurfaceSize(const Size(393, 852));
@@ -282,13 +335,13 @@ void main() {
           ),
           _tx(txidHex: 'mined', blockTime: BigInt.from(1800000000)),
         ],
-        etaLabels: const {'pending': '~1–3 min', 'mined': '~1–3 min'},
+        etaLabels: const {'pending': 'Est. 1–3 min', 'mined': 'Est. 1–3 min'},
       ),
     );
     await tester.pump(const Duration(milliseconds: 300));
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('Sending...'), findsOneWidget);
-    expect(find.text('~1–3 min'), findsOneWidget);
+    expect(find.text('Est. 1–3 min'), findsOneWidget);
     expect(find.text('Shielded'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });

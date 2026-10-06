@@ -44,21 +44,45 @@ void main() {
     return row;
   }
 
+  testWidgets(
+    'estimates and long waits use a static clock; fallback copy has no icon',
+    (tester) async {
+      final tx = _transaction(txKind: 'sent', minedHeight: BigInt.zero);
+      for (final label in [
+        'Est. 1–3 min',
+        'Est. 2–6 min',
+        'Taking longer',
+        'Checking status',
+        'Waiting for connection',
+      ]) {
+        final row = await mapRow(tester, tx, pendingLabel: label);
+        expect(row.subtitle, label);
+        expect(
+          row.subtitleIconName,
+          label.startsWith('Est.') || label == 'Taking longer'
+              ? AppIcons.migrationTimer
+              : isNull,
+        );
+        expect(row.leadingIconName, AppIcons.loader);
+      }
+    },
+  );
+
   testWidgets('pending ETA replaces only the pool subtitle and its icon', (
     tester,
   ) async {
     for (final kind in ['sent', 'received', 'receiving']) {
       final pending = _transaction(txKind: kind, minedHeight: BigInt.zero);
-      final row = await mapRow(tester, pending, pendingLabel: '~1–3 min');
-      expect(row.subtitle, '~1–3 min');
-      expect(row.subtitleIconName, isNull);
+      final row = await mapRow(tester, pending, pendingLabel: 'Est. 1–3 min');
+      expect(row.subtitle, 'Est. 1–3 min');
+      expect(row.subtitleIconName, AppIcons.migrationTimer);
       expect(row.timestampText, (await mapRow(tester, pending)).timestampText);
-      expect((await mapRow(tester, pending)).subtitle, 'In progress');
+      expect((await mapRow(tester, pending)).subtitle, 'Checking status');
       expect(
         (await mapRow(
           tester,
           _transaction(txKind: kind),
-          pendingLabel: '~1–3 min',
+          pendingLabel: 'Est. 1–3 min',
         )).subtitle,
         'Shielded',
       );
@@ -70,7 +94,7 @@ void main() {
             minedHeight: BigInt.zero,
             expiredUnmined: true,
           ),
-          pendingLabel: '~1–3 min',
+          pendingLabel: 'Est. 1–3 min',
         )).subtitle,
         'Shielded',
       );
@@ -85,16 +109,16 @@ void main() {
           minedHeight: BigInt.zero,
         ),
         giftCardKind: giftKind,
-        pendingLabel: '~1–3 min',
+        pendingLabel: 'Est. 1–3 min',
       );
-      expect(row.subtitle, '~1–3 min');
-      expect(row.subtitleIconName, isNull);
+      expect(row.subtitle, 'Est. 1–3 min');
+      expect(row.subtitleIconName, AppIcons.migrationTimer);
     }
     expect(
       (await mapRow(
         tester,
         _transaction(txKind: 'migration', minedHeight: BigInt.zero),
-        pendingLabel: '~1–3 min',
+        pendingLabel: 'Est. 1–3 min',
       )).subtitle,
       'Orchard → Ironwood',
     );
@@ -102,7 +126,7 @@ void main() {
       (await mapRow(
         tester,
         _transaction(txKind: 'shielded', minedHeight: BigInt.zero),
-        pendingLabel: '~1–3 min',
+        pendingLabel: 'Est. 1–3 min',
       )).subtitle,
       isNull,
     );

@@ -56,82 +56,89 @@ void main() {
         tester,
         transaction: pending,
         syncNotifier: sync,
-        etaLabels: const {'pending': '~1–3 min'},
+        etaLabels: const {'pending': 'Est. 1–3 min'},
         historyLoader: (_) async {
           reads++;
           return isRefreshing ? refreshing.future : [pending];
         },
       );
-      expect(find.text('~1–3 min'), findsOneWidget);
+      expect(find.text('Est. 1–3 min'), findsOneWidget);
       final initialReads = reads;
       isRefreshing = true;
       sync.emit(before.copyWith(recentTransactions: [_transaction]));
       await tester.pump(const Duration(milliseconds: 300));
       expect(reads, initialReads + 1);
-      expect(find.text('~1–3 min'), findsNothing);
-      expect(find.text('In progress'), findsOneWidget);
+      expect(find.text('Est. 1–3 min'), findsOneWidget);
+      expect(find.text('Checking status'), findsNothing);
       refreshing.completeError(StateError('history unavailable'));
       await tester.pump(const Duration(milliseconds: 300));
-      expect(find.text('~1–3 min'), findsNothing);
+      expect(find.text('Est. 1–3 min'), findsNothing);
       isRefreshing = false;
       sync.emit(before.copyWith(recentTransactions: [pending]));
       await tester.pump(const Duration(milliseconds: 300));
       expect(reads, initialReads + 2);
-      expect(find.text('~1–3 min'), findsOneWidget);
+      expect(find.text('Est. 1–3 min'), findsOneWidget);
     },
   );
 
-  testWidgets('sync completion refreshes pending rows outside the recent ten', (
-    tester,
-  ) async {
-    final pending = rust_sync.TransactionInfo(
-      txidHex: 'pending',
-      minedHeight: BigInt.zero,
-      expiredUnmined: false,
-      accountBalanceDelta: 100000000,
-      fee: BigInt.zero,
-      blockTime: BigInt.zero,
-      isTransparent: false,
-      txKind: 'receiving',
-      displayAmount: BigInt.from(100000000),
-      displayPool: 'shielded',
-      createdTime: BigInt.zero,
-    );
-    final before = SyncState(
-      accountUuid: 'account-1',
-      hasAccountScopedData: true,
-      isSyncComplete: true,
-      lastSyncCompletedAt: DateTime.utc(2026, 10, 6),
-    );
-    final sync = FakeSyncNotifier(before);
-    var reads = 0;
-    var refreshing = false;
-    final refreshed = Completer<List<rust_sync.TransactionInfo>>();
-    await _pumpActivityScreen(
-      tester,
-      transaction: pending,
-      syncNotifier: sync,
-      etaLabels: const {'pending': '~1–3 min'},
-      historyLoader: (_) async {
-        reads++;
-        return refreshing ? refreshed.future : [pending];
+  for (final newBlock in [false, true]) {
+    testWidgets(
+      'sync completion refreshes older pending rows (new block: $newBlock)',
+      (tester) async {
+        final pending = rust_sync.TransactionInfo(
+          txidHex: 'pending',
+          minedHeight: BigInt.zero,
+          expiredUnmined: false,
+          accountBalanceDelta: 100000000,
+          fee: BigInt.zero,
+          blockTime: BigInt.zero,
+          isTransparent: false,
+          txKind: 'receiving',
+          displayAmount: BigInt.from(100000000),
+          displayPool: 'shielded',
+          createdTime: BigInt.zero,
+        );
+        final before = SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+          lastSyncCompletedAt: DateTime.utc(2026, 10, 6),
+        );
+        final sync = FakeSyncNotifier(before);
+        var reads = 0;
+        var refreshing = false;
+        final refreshed = Completer<List<rust_sync.TransactionInfo>>();
+        await _pumpActivityScreen(
+          tester,
+          transaction: pending,
+          syncNotifier: sync,
+          etaLabels: const {'pending': 'Est. 1–3 min'},
+          historyLoader: (_) async {
+            reads++;
+            return refreshing ? refreshed.future : [pending];
+          },
+        );
+        expect(find.text('Est. 1–3 min'), findsOneWidget);
+        final initialReads = reads;
+        refreshing = true;
+        sync.emit(
+          before.copyWith(
+            scannedHeight: newBlock ? 101 : before.scannedHeight,
+            chainTipHeight: newBlock ? 101 : before.chainTipHeight,
+            lastSyncCompletedAt: DateTime.utc(2026, 10, 6, 0, 1),
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(reads, initialReads + 1);
+        expect(find.text('Est. 1–3 min'), findsNothing);
+        expect(find.text('Checking status'), findsOneWidget);
+        refreshed.complete([_transaction]);
+        await tester.pumpAndSettle();
+        expect(find.text('Received'), findsOneWidget);
+        expect(find.text('Est. 1–3 min'), findsNothing);
       },
     );
-    expect(find.text('~1–3 min'), findsOneWidget);
-    final initialReads = reads;
-    refreshing = true;
-    sync.emit(
-      before.copyWith(lastSyncCompletedAt: DateTime.utc(2026, 10, 6, 0, 1)),
-    );
-    await tester.pump(const Duration(milliseconds: 300));
-    expect(reads, initialReads + 1);
-    expect(find.text('~1–3 min'), findsNothing);
-    expect(find.text('In progress'), findsOneWidget);
-    refreshed.complete([_transaction]);
-    await tester.pumpAndSettle();
-    expect(find.text('Received'), findsOneWidget);
-    expect(find.text('~1–3 min'), findsNothing);
-  });
+  }
 
   testWidgets('Activity replaces the pending pool with ETA', (tester) async {
     await _pumpActivityScreen(
@@ -149,9 +156,9 @@ void main() {
         displayPool: 'shielded',
         createdTime: BigInt.zero,
       ),
-      etaLabels: const {'pending': '~1–3 min'},
+      etaLabels: const {'pending': 'Est. 1–3 min'},
     );
-    expect(find.text('~1–3 min'), findsOneWidget);
+    expect(find.text('Est. 1–3 min'), findsOneWidget);
     expect(find.text('Shielded'), findsNothing);
     expect(tester.takeException(), isNull);
   });
