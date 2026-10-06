@@ -1,3 +1,5 @@
+import '../src/features/onboarding/import/desktop_import_method_selection_screen.dart';
+import '../src/features/onboarding/import/desktop_hardware_selection_screen.dart';
 import '../src/providers/enhance_pir_provider.dart';
 // ignore_for_file: depend_on_referenced_packages
 // widgetbook is dev-only; see `widgetbook.dart` for the boundary.
@@ -4063,9 +4065,22 @@ class _WelcomeHarnessState extends State<_WelcomeHarness> {
               const _PreviewRoutePlaceholder(label: '/onboarding/intro'),
         ),
         GoRoute(
+          path: '/import/method',
+          builder: (_, _) => const DesktopImportMethodSelectionScreen(),
+        ),
+        GoRoute(
+          path: '/import/hardware',
+          builder: (_, _) => const DesktopHardwareSelectionScreen(),
+        ),
+        GoRoute(
           path: '/import',
           builder: (_, _) => const _PreviewRoutePlaceholder(label: '/import'),
         ),
+        for (final path in ['/onboarding/keystone', '/onboarding/ledger'])
+          GoRoute(
+            path: path,
+            builder: (_, _) => _PreviewRoutePlaceholder(label: path),
+          ),
       ],
     );
   }

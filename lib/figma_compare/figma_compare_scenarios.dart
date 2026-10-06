@@ -1,3 +1,4 @@
+import 'desktop_onboarding_selection_capture.dart';
 import 'mobile_welcome_capture.dart';
 import '../src/features/payment_links/widgets/payment_link_gift_card.dart';
 import 'ledger_pairing_capture.dart';
@@ -77,6 +78,16 @@ class FigmaCompareScenario {
 /// storage, network, wallet, and Rust state. Widgetbook fixtures are preferred
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
+  FigmaCompareScenario(
+    id: 'desktop-onboarding-import',
+    description: 'Desktop onboarding import method selection',
+    builder: buildDesktopOnboardingImportCapture,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-onboarding-hardware',
+    description: 'Desktop onboarding hardware wallet selection',
+    builder: buildDesktopOnboardingHardwareCapture,
+  ),
   FigmaCompareScenario(
     id: 'gift-card-value',
     description: 'Gift card value typography and optional fiat amount',
