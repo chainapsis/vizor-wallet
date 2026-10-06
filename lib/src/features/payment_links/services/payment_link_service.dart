@@ -1323,6 +1323,7 @@ class PaymentLinkService
 
     final legacyAwaitingReceipt = <PaymentLinkReceivedRecord>[];
     for (final record in awaitingReceipt) {
+      int? confirmations;
       try {
         final link = record.claimLink;
         if (link == null) {
@@ -1336,25 +1337,38 @@ class PaymentLinkService
           legacyAwaitingReceipt.add(record);
           continue;
         }
-        final confirmations = await rust_sync.getPaymentLinkClaimConfirmations(
+        confirmations = await rust_sync.getPaymentLinkClaimConfirmations(
           dbPath: location.dbPath,
           claimTxids: record.claimTxids!,
         );
-        if (confirmations == null) {
-          legacyAwaitingReceipt.add(record);
-        } else if (confirmations >= 0) {
+      } catch (error, stackTrace) {
+        log(
+          'PaymentLinkService: receipt observation failed for '
+          '${record.address}: $error\n$stackTrace',
+        );
+        // An unreadable retained cache has the same recovery path as a
+        // missing legacy cache: verify the saved txids in recipient history.
+        legacyAwaitingReceipt.add(record);
+        continue;
+      }
+      if (confirmations == null) {
+        legacyAwaitingReceipt.add(record);
+      } else if (confirmations >= 0) {
+        try {
           await reconcileObservedPaymentLinkClaimReceipt(
             record: record,
             confirmationCount: confirmations,
             store: _receivedStore,
             deleteRetainedWallet: _claimWallet.deleteRetained,
           );
+        } catch (error, stackTrace) {
+          // Persistence/cleanup failures retry their own checkpoint. They
+          // must not be mistaken for observer read failures.
+          log(
+            'PaymentLinkService: observed receipt reconciliation failed for '
+            '${record.address}: $error\n$stackTrace',
+          );
         }
-      } catch (error, stackTrace) {
-        log(
-          'PaymentLinkService: receipt observation failed for '
-          '${record.address}: $error\n$stackTrace',
-        );
       }
     }
     if (legacyAwaitingReceipt.isEmpty) return _receivedStore.load();

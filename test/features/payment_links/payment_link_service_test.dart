@@ -1091,48 +1091,138 @@ void main() {
       );
     });
 
+    for (final unreadable in [false, true]) {
+      test(
+        'legacy receiving reconciles its receipt with unreadable cache=$unreadable',
+        () async {
+          api.poolFixture = true;
+          if (unreadable) api.unreadableClaims.add('a,b');
+          api.localClaimTxids = ['a', 'b'];
+          final store = container.read(paymentLinkReceivedStoreProvider);
+          final link = _link();
+          await store.saveReady(link);
+          await store.markClaimStarted(
+            address: link.address,
+            destinationAccountUuid: 'receiver',
+          );
+          await store.markReceiving(
+            address: link.address,
+            destinationAccountUuid: 'receiver',
+            claimTxids: 'a,b',
+          );
+          final payload =
+              jsonDecode(receivedStorage.value!) as Map<String, dynamic>;
+          final row =
+              (payload['records'] as List).single as Map<String, dynamic>;
+          for (final field in ['availability', 'archived', 'claimPriorTxids']) {
+            row.remove(field);
+          }
+          receivedStorage.value = jsonEncode(payload);
+          final directory = Directory(
+            '${supportDirectory.path}/${paymentLinkClaimWalletDirectoryName(link)}',
+          );
+          await directory.create();
+          await File(
+            '${directory.path}/zcash_wallet.db',
+          ).writeAsString('keep claim wallet');
+          await container.read(syncProvider.future);
+          final restored = (await service.inspectReceivedLinkClaims(
+            await store.load(),
+            allowResubmit: false,
+          )).single;
+          expect(restored.status, PaymentLinkReceivedStatus.received);
+          expect(restored.claimTxids, 'a,b');
+          expect(restored.claimPriorTxids, isNull);
+          expect(
+            restored.claimLink,
+            isNotNull,
+          ); // Only one confirmation so far.
+          expect(api.claimSyncModes, unreadable ? isEmpty : [false]);
+          expect(await store.countReceivingForAccount('receiver'), 0);
+        },
+      );
+    }
+
+    for (final observation in [null, -1]) {
+      test(
+        'receipt fallback distinguishes legacy from incomplete observation: $observation',
+        () async {
+          api.poolFixture = true;
+          api.observedConfirmations = observation;
+          api.localClaimTxids = ['a', 'b'];
+          final store = container.read(paymentLinkReceivedStoreProvider);
+          final link = _link();
+          await store.saveReady(link);
+          await store.markReceiving(
+            address: link.address,
+            destinationAccountUuid: 'receiver',
+            claimTxids: 'a,b',
+            claimSubmittedAt: DateTime.utc(2026, 10, 7),
+          );
+          final directory = Directory(
+            '${supportDirectory.path}/${paymentLinkClaimWalletDirectoryName(link)}',
+          );
+          await directory.create();
+          final db = File('${directory.path}/zcash_wallet.db');
+          await db.writeAsString('keep claim wallet');
+          await container.read(syncProvider.future);
+          final restored = (await service.inspectReceivedLinkClaims(
+            await store.load(),
+            allowResubmit: false,
+          )).single;
+          expect(
+            restored.status,
+            observation == null
+                ? PaymentLinkReceivedStatus.received
+                : PaymentLinkReceivedStatus.receiving,
+          );
+          expect(restored.claimLink, isNotNull);
+          expect(await db.exists(), isTrue);
+        },
+      );
+    }
+
     test(
-      'legacy receiving with saved txids still reconciles its receipt',
+      'unreadable legacy cache cleans up only after six verified confirmations',
       () async {
         api.poolFixture = true;
         api.localClaimTxids = ['a', 'b'];
+        api.unreadableClaims.add('a,b');
         final store = container.read(paymentLinkReceivedStoreProvider);
         final link = _link();
         await store.saveReady(link);
-        await store.markClaimStarted(
-          address: link.address,
-          destinationAccountUuid: 'receiver',
-        );
         await store.markReceiving(
           address: link.address,
           destinationAccountUuid: 'receiver',
           claimTxids: 'a,b',
+          claimSubmittedAt: DateTime.utc(2026, 10, 7),
         );
-        final payload =
-            jsonDecode(receivedStorage.value!) as Map<String, dynamic>;
-        final row = (payload['records'] as List).single as Map<String, dynamic>;
-        for (final field in ['availability', 'archived', 'claimPriorTxids']) {
-          row.remove(field);
-        }
-        receivedStorage.value = jsonEncode(payload);
         final directory = Directory(
           '${supportDirectory.path}/${paymentLinkClaimWalletDirectoryName(link)}',
         );
         await directory.create();
-        await File(
-          '${directory.path}/zcash_wallet.db',
-        ).writeAsString('keep claim wallet');
+        final db = File('${directory.path}/zcash_wallet.db');
+        await db.writeAsString('keep claim wallet');
         await container.read(syncProvider.future);
-        final restored = (await service.inspectReceivedLinkClaims(
+        final sync = container.read(syncProvider.notifier) as FakeSyncNotifier;
+        // Tip alone must not authorize destruction of recovery data.
+        sync.emit(SyncState(scannedHeight: 104, chainTipHeight: 105));
+        final waiting = (await service.inspectReceivedLinkClaims(
           await store.load(),
           allowResubmit: false,
         )).single;
-        expect(restored.status, PaymentLinkReceivedStatus.received);
-        expect(restored.claimTxids, 'a,b');
-        expect(restored.claimPriorTxids, isNull);
-        expect(restored.claimLink, isNotNull); // Only one confirmation so far.
-        expect(api.claimSyncModes, [false]);
-        expect(await store.countReceivingForAccount('receiver'), 0);
+        expect(waiting.status, PaymentLinkReceivedStatus.received);
+        expect(waiting.claimLink, isNotNull);
+        expect(await db.exists(), isTrue);
+        sync.emit(SyncState(scannedHeight: 105, chainTipHeight: 105));
+        final settled = (await service.inspectReceivedLinkClaims(
+          await store.load(),
+          allowResubmit: false,
+        )).single;
+        expect(settled.status, PaymentLinkReceivedStatus.received);
+        expect(settled.claimTxids, 'a,b');
+        expect(settled.claimLink, isNull);
+        expect(await db.exists(), isFalse);
       },
     );
 
