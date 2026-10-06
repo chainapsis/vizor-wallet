@@ -93,19 +93,20 @@ rust_sync.TransactionInfo _tx({
   bool provisional = false,
   bool amountIncludesFee = false,
   BigInt? displayAmount,
+  int accountBalanceDelta = 0,
 }) {
   return rust_sync.TransactionInfo(
     txidHex: txid,
     minedHeight: minedHeight ?? BigInt.from(2500000),
     expiredUnmined: expired,
-    accountBalanceDelta: 0,
+    accountBalanceDelta: accountBalanceDelta,
     fee: fee ?? BigInt.from(15000),
     feeState: feeState,
     detailsComplete: detailsComplete,
     provisional: provisional,
     amountIncludesFee: amountIncludesFee,
     blockTime: blockTime ?? BigInt.from(1750000000),
-    isTransparent: false,
+    isTransparent: displayPool == 'transparent',
     txKind: kind,
     displayAmount: displayAmount ?? BigInt.from(12312000000),
     displayPool: displayPool,
@@ -802,14 +803,14 @@ void main() {
   );
 
   testWidgets('a fee-only entry is one network fee line', (tester) async {
-    // A recovered self-shield: the whole balance change is the network fee.
+    // Reconstructed zero external payment; recipient details can be missing.
     final tx = _tx(
       fee: BigInt.from(65000),
       displayAmount: BigInt.from(65000),
-      displayPool: 'unknown',
+      displayPool: 'transparent',
       amountIncludesFee: true,
       detailsComplete: false,
-      provisional: true,
+      accountBalanceDelta: -65000,
     );
     await tester.pumpWidget(
       _app(
@@ -832,6 +833,43 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets(
+    'a provisional fee-sized movement keeps its net change and fee explanation',
+    (tester) async {
+      // A mixed-pool balance decrease does not establish a fee-only activity.
+      final tx = _tx(
+        fee: BigInt.from(20000),
+        displayAmount: BigInt.from(20000),
+        displayPool: 'unknown',
+        amountIncludesFee: true,
+        detailsComplete: false,
+        provisional: true,
+        accountBalanceDelta: -20000,
+      );
+      await tester.pumpWidget(
+        _app(
+          tx,
+          detail: _detail(hasRecipient: false),
+          privateQueriesEnabled: true,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Transaction'), findsNothing);
+      expect(find.text('Sent successfully'), findsOneWidget);
+      expect(find.text(kNetworkFeeText), findsNothing);
+      expect(find.text(kNetChangeIncludesFeeText), findsOneWidget);
+      expect(find.text('0.0002 ZEC'), findsNWidgets(2));
+      expect(find.text('Amount'), findsNothing);
+      expect(find.text('Tx fee'), findsOneWidget);
+      expect(find.text('To'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('mobile_tx_status_details_incomplete')),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('an amount that includes the fee is labelled a net change', (
     tester,
@@ -1055,9 +1093,7 @@ void main() {
     expect(find.text('Transparent'), findsNothing);
   });
 
-  testWidgets('gift card receipt keeps pool details hidden', (
-    tester,
-  ) async {
+  testWidgets('gift card receipt keeps pool details hidden', (tester) async {
     for (final pool in ['ironwood', 'shielded', 'orchard', 'sapling']) {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpWidget(

@@ -57,6 +57,8 @@ void main() {
         'aa',
         'sent',
         amountIncludesFee: amountIncludesFee,
+        displayPool: 'transparent',
+        accountBalanceDelta: -displayAmount,
         displayAmount: BigInt.from(displayAmount),
       ),
     );
@@ -80,6 +82,102 @@ void main() {
       TransactionFeePresentation.feeOnly,
     );
   });
+  test('net movement equal to the whole fee does not establish fee-only', () {
+    // A mixed-pool movement can be provisional or settled without its payment
+    // role being established. Neither becomes a fee-only transparent transfer.
+    for (final provisional in [true, false]) {
+      final tx = _transaction(
+        'aa',
+        'sent',
+        detailsComplete: false,
+        provisional: provisional,
+        amountIncludesFee: true,
+        displayAmount: BigInt.from(20000),
+        fee: BigInt.from(20000),
+        accountBalanceDelta: -20000,
+        displayPool: 'unknown',
+      );
+      expect(
+        transactionFeePresentation(tx),
+        TransactionFeePresentation.includedInAmount,
+      );
+      expect(transactionDetailsIncomplete(tx), isTrue);
+    }
+  });
+
+  test('established self-transfer can lack recipient details', () {
+    final tx = _transaction(
+      'aa',
+      'sent',
+      detailsComplete: false,
+      amountIncludesFee: true,
+      displayAmount: BigInt.from(10000),
+      accountBalanceDelta: -10000,
+      displayPool: 'transparent',
+    );
+    expect(transactionFeePresentation(tx), TransactionFeePresentation.feeOnly);
+    expect(transactionDetailsIncomplete(tx), isTrue);
+  });
+
+  test('an unsettled transparent transfer is not established fee-only', () {
+    final tx = _transaction(
+      'aa',
+      'sent',
+      provisional: true,
+      amountIncludesFee: true,
+      displayAmount: BigInt.from(10000),
+      accountBalanceDelta: -10000,
+      displayPool: 'transparent',
+    );
+    expect(
+      transactionFeePresentation(tx),
+      TransactionFeePresentation.includedInAmount,
+    );
+  });
+
+  test('fee-only requires a known fee attributed to the account debit', () {
+    for (final state in [
+      rust_sync.TransactionFeeState.unknown,
+      rust_sync.TransactionFeeState.notApplicable,
+    ]) {
+      final tx = _transaction(
+        'aa',
+        'sent',
+        feeState: state,
+        amountIncludesFee: true,
+        displayPool: 'transparent',
+        accountBalanceDelta: -10000,
+        displayAmount: BigInt.from(10000),
+      );
+      expect(
+        transactionFeePresentation(tx),
+        TransactionFeePresentation.includedInAmount,
+      );
+    }
+    final sharedFee = _transaction(
+      'aa',
+      'sent',
+      amountIncludesFee: true,
+      displayPool: 'transparent',
+      accountBalanceDelta: -5000,
+      displayAmount: BigInt.from(10000),
+    );
+    expect(
+      transactionFeePresentation(sharedFee),
+      TransactionFeePresentation.includedInAmount,
+    );
+  });
+
+  test('complete shielding keeps its transfer amount and separate fee', () {
+    final tx = _transaction(
+      'aa',
+      'shielded',
+      displayAmount: BigInt.from(400000),
+      fee: BigInt.from(20000),
+      accountBalanceDelta: -20000,
+    );
+    expect(transactionFeePresentation(tx), TransactionFeePresentation.separate);
+  });
 }
 
 rust_sync.TransactionInfo _transaction(
@@ -90,22 +188,25 @@ rust_sync.TransactionInfo _transaction(
   rust_sync.TransactionFeeState feeState = rust_sync.TransactionFeeState.known,
   bool amountIncludesFee = false,
   BigInt? displayAmount,
+  BigInt? fee,
+  int accountBalanceDelta = 0,
+  String displayPool = 'shielded',
 }) {
   return rust_sync.TransactionInfo(
     txidHex: txid,
     minedHeight: BigInt.from(2500000),
     expiredUnmined: false,
-    accountBalanceDelta: 0,
-    fee: BigInt.from(10000),
+    accountBalanceDelta: accountBalanceDelta,
+    fee: fee ?? BigInt.from(10000),
     feeState: feeState,
     detailsComplete: detailsComplete,
     provisional: provisional,
     amountIncludesFee: amountIncludesFee,
     blockTime: BigInt.from(1750000000),
-    isTransparent: false,
+    isTransparent: displayPool == 'transparent',
     txKind: kind,
     displayAmount: displayAmount ?? BigInt.from(100000),
-    displayPool: 'shielded',
+    displayPool: displayPool,
     createdTime: BigInt.from(1750000000),
   );
 }
