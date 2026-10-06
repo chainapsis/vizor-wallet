@@ -444,7 +444,7 @@ enum _KeystoneDenominationSignStage {
 // no card lands between the two halves of a round.
 class _IronwoodMigrationKeystonePrivateSignScreenState
     extends ConsumerState<_IronwoodMigrationKeystonePrivateSignScreen>
-    with PaymentUriBusySurfaceHoldMixin {
+    with ExternalActionGuardHoldMixin {
   _KeystoneDenominationSignStage _stage =
       _KeystoneDenominationSignStage.preparing;
   late final IronwoodMigrationService _migrationService;

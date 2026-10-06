@@ -16,7 +16,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/formatting/zec_amount.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
-import 'package:zcash_wallet/src/core/navigation/payment_uri_busy_surface_provider.dart';
+import 'package:zcash_wallet/src/core/navigation/external_action_guard_provider.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
@@ -2071,7 +2071,7 @@ void main() {
       final container = ProviderScope.containerOf(
         tester.element(find.byType(MobileSendScreen)),
       );
-      expect(container.read(paymentUriBusySurfaceProvider), 0);
+      expect(container.read(externalActionGuardProvider).activeHoldCount, 0);
 
       await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
       await tester.pump();
@@ -2079,7 +2079,7 @@ void main() {
       // A `zcash:` link arriving now must park rather than land as a card
       // that would outlive the coming route change.
       expect(find.text('Preparing...'), findsOneWidget);
-      expect(container.read(paymentUriBusySurfaceProvider), 1);
+      expect(container.read(externalActionGuardProvider).activeHoldCount, 1);
 
       proposalCompleter.complete(
         ProposalResult(
@@ -2092,7 +2092,7 @@ void main() {
 
       expect(find.text('status can pop'), findsOneWidget);
       expect(
-        container.read(paymentUriBusySurfaceProvider),
+        container.read(externalActionGuardProvider).activeHoldCount,
         0,
         reason:
             'the status route is on screen, so the drain policy can '
@@ -2135,7 +2135,7 @@ void main() {
       tester.element(find.byType(MobileSendScreen)),
     );
     expect(find.text('Confirm with Keystone'), findsOneWidget);
-    expect(container.read(paymentUriBusySurfaceProvider), 0);
+    expect(container.read(externalActionGuardProvider).activeHoldCount, 0);
 
     await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
     await tester.pumpAndSettle();
@@ -2146,7 +2146,7 @@ void main() {
       reason: 'the proposal is made and handed to the signing route',
     );
     expect(
-      container.read(paymentUriBusySurfaceProvider),
+      container.read(externalActionGuardProvider).activeHoldCount,
       1,
       reason:
           'a `zcash:` link arriving while the device is signing must park, '
@@ -2164,14 +2164,14 @@ void main() {
 
     expect(find.text('Review Send'), findsOneWidget);
     expect(
-      container.read(paymentUriBusySurfaceProvider),
+      container.read(externalActionGuardProvider).activeHoldCount,
       1,
       reason: 'the proposal is still being released',
     );
 
     discardGate.complete();
     await tester.pumpAndSettle();
-    expect(container.read(paymentUriBusySurfaceProvider), 0);
+    expect(container.read(externalActionGuardProvider).activeHoldCount, 0);
   });
 
   testWidgets(
@@ -2199,13 +2199,13 @@ void main() {
       expect(find.text('Review Send'), findsOneWidget);
       expect(_confirmButton(tester).onPressed, isNull);
       expect(sync.refreshCalls, 0);
-      expect(container.read(paymentUriBusySurfaceProvider), 1);
+      expect(container.read(externalActionGuardProvider).activeHoldCount, 1);
 
       _discardGate!.complete();
       await tester.pumpAndSettle();
       expect(sync.refreshCalls, 1);
       expect(_confirmButton(tester).onPressed, isNull);
-      expect(container.read(paymentUriBusySurfaceProvider), 1);
+      expect(container.read(externalActionGuardProvider).activeHoldCount, 1);
       expect(_proposeCalls, 1);
 
       sync.refreshGate!.complete();
@@ -2213,7 +2213,7 @@ void main() {
       expect(find.text('Not enough ZEC'), findsNothing);
       expect(find.text('Confirm with Keystone'), findsOneWidget);
       expect(_confirmButton(tester).onPressed, isNotNull);
-      expect(container.read(paymentUriBusySurfaceProvider), 0);
+      expect(container.read(externalActionGuardProvider).activeHoldCount, 0);
       await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
       await tester.pumpAndSettle();
       expect(find.text('keystone sign'), findsOneWidget);
@@ -2246,13 +2246,13 @@ void main() {
     expect(find.text('Review Send'), findsOneWidget);
     expect(_confirmButton(tester).onPressed, isNull);
     expect(sync.refreshCalls, 0);
-    expect(container.read(paymentUriBusySurfaceProvider), 1);
+    expect(container.read(externalActionGuardProvider).activeHoldCount, 1);
 
     _discardGate!.complete();
     await tester.pumpAndSettle();
     expect(sync.refreshCalls, 1);
     expect(_confirmButton(tester).onPressed, isNull);
-    expect(container.read(paymentUriBusySurfaceProvider), 1);
+    expect(container.read(externalActionGuardProvider).activeHoldCount, 1);
     expect(_proposeCalls, 1);
 
     sync.refreshGate!.complete();
@@ -2260,7 +2260,7 @@ void main() {
     expect(find.text('Not enough ZEC'), findsNothing);
     expect(find.text('Confirm with Ledger'), findsOneWidget);
     expect(_confirmButton(tester).onPressed, isNotNull);
-    expect(container.read(paymentUriBusySurfaceProvider), 0);
+    expect(container.read(externalActionGuardProvider).activeHoldCount, 0);
     await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
     await tester.pumpAndSettle();
     expect(find.text('ledger sign'), findsOneWidget);
@@ -2448,7 +2448,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('status can pop'), findsNothing);
-    expect(container.read(paymentUriBusySurfaceProvider), 0);
+    expect(container.read(externalActionGuardProvider).activeHoldCount, 0);
   });
 
   testWidgets('route-step review ignores back while preparing send', (

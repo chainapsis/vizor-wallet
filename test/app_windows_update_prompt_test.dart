@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/navigation/external_action_guard_provider.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/onboarding/unlock_screen.dart';
 import 'package:zcash_wallet/src/features/settings/screens/settings_seed_phrase_screen.dart';
@@ -19,6 +20,39 @@ import 'package:zcash_wallet/src/providers/windows_update_provider.dart';
 import 'fakes/fake_sync_notifier.dart';
 
 void main() {
+  testWidgets(
+    'protection hides updates and rejects an already captured restart',
+    (tester) async {
+      final updates = _RecordingReadyWindowsUpdateNotifier();
+      await tester.pumpWidget(
+        _appHarness(
+          windowsUpdateOverride: windowsUpdateProvider.overrideWith(
+            () => updates,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final restart = tester
+          .widget<AppButton>(find.widgetWithText(AppButton, 'Restart'))
+          .onPressed!;
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(UnlockScreen)),
+        listen: false,
+      );
+      final lease = container
+          .read(externalActionGuardProvider.notifier)
+          .tryProtect()!;
+      restart();
+      await tester.pumpAndSettle();
+      expect(updates.restarts, 0);
+      expect(find.text('Update ready'), findsNothing);
+      lease.release();
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(AppButton, 'Restart'));
+      expect(updates.restarts, 1);
+    },
+  );
+
   for (final status in [
     WindowsUpdateStatus.available,
     WindowsUpdateStatus.ready,
@@ -563,3 +597,13 @@ class _TorUpdatesUnavailablePrivacyNotifier extends NetworkPrivacyNotifier {
 
 List<String> downloadsFrom(List<String> events) =>
     events.where((event) => event == 'download').toList();
+
+class _RecordingReadyWindowsUpdateNotifier
+    extends _AvailableWindowsUpdateNotifier {
+  _RecordingReadyWindowsUpdateNotifier()
+    : super(status: WindowsUpdateStatus.ready);
+  int restarts = 0;
+
+  @override
+  Future<void> applyUpdateAndRestart() async => restarts++;
+}

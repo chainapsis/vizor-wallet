@@ -9,8 +9,8 @@ import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
-import 'package:zcash_wallet/src/core/navigation/payment_uri_busy_surface_hold.dart';
-import 'package:zcash_wallet/src/core/navigation/payment_uri_busy_surface_provider.dart';
+import 'package:zcash_wallet/src/core/navigation/external_action_guard_hold.dart';
+import 'package:zcash_wallet/src/core/navigation/external_action_guard_provider.dart';
 import 'package:zcash_wallet/src/features/send/services/payment_request_precheck.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -54,7 +54,7 @@ void main() {
         // the protected session.
         GoRoute(
           path: '/busy',
-          builder: (_, _) => const PaymentUriBusySurfaceHold(
+          builder: (_, _) => const ExternalActionGuardHold(
             child: Scaffold(body: Text('screen /busy')),
           ),
         ),
@@ -111,7 +111,7 @@ void main() {
 
       // Built this frame; its page transition has not brought it on stage.
       expect(find.text('screen /busy', skipOffstage: false), findsOneWidget);
-      expect(container.read(paymentUriBusySurfaceProvider), 1);
+      expect(container.read(externalActionGuardProvider).activeHoldCount, 1);
       expect(
         container.read(paymentRequestFlowProvider),
         isNull,
@@ -127,7 +127,7 @@ void main() {
       router.go('/home');
       await tester.pumpAndSettle();
 
-      expect(container.read(paymentUriBusySurfaceProvider), 0);
+      expect(container.read(externalActionGuardProvider).activeHoldCount, 0);
       expect(container.read(paymentRequestFlowProvider), isNotNull);
       expect(container.read(paymentUriPrefillProvider), isNull);
     },

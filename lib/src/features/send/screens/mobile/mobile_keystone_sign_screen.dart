@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
-import '../../../../core/navigation/payment_uri_busy_surface_hold.dart';
+import '../../../../core/navigation/external_action_guard_hold.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/storage/wallet_paths.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
@@ -73,7 +73,7 @@ class MobileKeystoneSigningRounds {
 // rounds and let a parked link through in the gap.
 class _MobileKeystoneSignScreenState
     extends ConsumerState<MobileKeystoneSignScreen>
-    with PaymentUriBusySurfaceHoldMixin {
+    with ExternalActionGuardHoldMixin {
   bool _proposalOwnershipTransferred = false;
   bool _cancelRequested = false;
   Future<Object?>? _proposalConsumption;
