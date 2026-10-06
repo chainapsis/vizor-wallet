@@ -40,8 +40,8 @@ offline. The directory is used only for keys recovered from the seed.
 The shared witness file contains deduplicated Merkle sibling hashes for all
 published payments. Every participating wallet downloads identical bytes before
 receiver lookup. At height 3,497,852 it was 4,033,115 bytes. The 32 MiB directory
-row file stays on the server. The wallet verifies each proof against its own
-accepted root. It never trusts the file's root on its own.
+row file is downloaded only for large jobs (see below). The wallet verifies each
+proof against its own accepted root. It never trusts the file's root on its own.
 
 ## Build and services
 
@@ -96,22 +96,27 @@ POC database with this build or reuse its secure-store namespace.
 Keys issued on this device are trial-decrypted with no key-count cap until their
 swap closes. A key closes 24 hours after its final provider status once the
 expected Zcash receipts are found, or seven days after its quote deadline
-whatever the provider reports. Refunds, positive `refundedAmount` values and
-exact-output `SUCCESS` leftovers are expected receipts for refund keys; an
-incoming key expects `amountOut`. Incoming source-chain refunds do not imply a
-Zcash receipt. A `FAILED` status is inconclusive, so that key closes only by the
-seven-day limit or a later definitive status. Cached UI status and failed polls
-do not record an observation. Keys close only at the end of a sync, once the tip
-is revalidated and scanned, so blocks mined while the app was offline are
-checked first.
+whatever the provider reports, extended by 30 days while a promised receipt has
+not arrived. Refunds, positive `refundedAmount` values and exact-output `SUCCESS`
+leftovers are expected receipts for refund keys; an incoming key expects
+`amountOut`. Incoming source-chain refunds do not imply a Zcash receipt. A
+`FAILED` status is inconclusive, so that key closes by the seven-day limit or a
+later definitive status. After it closes, its NEAR status is still checked once a
+day for 30 days, and a later promise of ZEC sweeps the key for the time it was
+closed and reopens it. Cached UI status and failed polls do not record an
+observation. Keys close only at the end of a sync, once the tip is revalidated
+and scanned, so blocks mined while the app was offline are checked first.
+Closing uses the earlier of the device clock and the tip's block time, so a
+clock that runs fast cannot close a key early.
 
 A restored key scans new blocks after its sweep only as described in the
-recovery flow. Issuing a restored incoming key later starts at the tip without a
-rescan. A payment that arrives after a key closes needs an explicit later
-recovery; swap addresses are not permanent receive addresses.
+recovery flow. Issuing a closed restored incoming key later starts at the tip and
+sweeps the time it was closed in the background. Any other payment that arrives
+after a key closes is found by a later seed restore; swap addresses are not
+permanent receive addresses.
 
-The retention floor follows unfinished sweeps and pending candidates, independent
-of provider completion. Missing memos or unavailable directory data can extend
+The retention floor follows unfinished sweeps, pending candidates and closed
+refund keys on a late status watch, independent of provider completion. Missing memos or unavailable directory data can extend
 temporary retention. Sapling and Orchard keep their ordinary policies. Reorgs
 reopen affected sweeps. Pruning permits SQLite to reuse rows without forcing a
 vacuum.
@@ -160,8 +165,8 @@ service is retried on the next sync; neither fails ordinary sync. When a finishe
 sweep starts a key scanning from its anchor, sync scans those blocks before it
 completes.
 
-New memos and paid receive indices extend recovery. Completed sweeps make no
-further requests. Both issuance settings may be off during recovery. File mode
+New memos and paid receive indices extend recovery. A completed sweep makes no
+further requests unless its key reopens after closing. Both issuance settings may be off during recovery. File mode
 sends no receiver-dependent public ranges, and PIR failure has no public fallback.
 
 Funding memo recovery now persists completion per note together with its key and

@@ -75,7 +75,9 @@ and the 24-hour, 15-reservation, and 30-slot incoming-address policy.
    refund key scans new blocks until it closes, and an unpaid incoming key for
    24 hours. Vizor checks NEAR status during sync, at most once per minute per
    pending refund. Failures, `FAILED` and unknown statuses keep a key scanning up
-   to the seven-day limit. Reopening preserves polling times and observations.
+   to the seven-day limit, and then a daily check for 30 days; a later promise of
+   ZEC sweeps and reopens the key. Reopening preserves polling times and
+   observations.
 5. Received notes retain their derived key for reconstruction and software spending.
    Change returns to the ordinary internal key.
 

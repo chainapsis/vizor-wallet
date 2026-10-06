@@ -235,10 +235,12 @@ mod tests {
     /// Records `blocks` and marks the scan queue scanned from the birthday to `tip`.
     fn mark_scanned(path: &str, blocks: impl IntoIterator<Item = u32>, tip: u32) {
         let conn = rusqlite::Connection::open(path).unwrap();
+        // Key closing reads the tip's block time, so the blocks are stamped now.
+        let now = receive::now().unwrap();
         for h in blocks {
             conn.execute(
-                "INSERT INTO blocks(height,hash,time,sapling_tree) VALUES(?1,?2,0,X'000000')",
-                rusqlite::params![h, [h as u8; 32]],
+                "INSERT INTO blocks(height,hash,time,sapling_tree) VALUES(?1,?2,?3,X'000000')",
+                rusqlite::params![h, [h as u8; 32], now],
             )
             .unwrap();
         }

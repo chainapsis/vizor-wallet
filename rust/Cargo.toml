@@ -10,7 +10,7 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 # These receiver and swap crates are not published yet.
 receiver-pir = { git = "https://github.com/valargroup/wallet-pir.git", rev = "48a6c2a55603fdc5eeb1823cc8102588fc561d0f" }
 receiver-directory = { git = "https://github.com/valargroup/wallet-pir.git", rev = "48a6c2a55603fdc5eeb1823cc8102588fc561d0f" }
-zakura-swap-receiving = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "fc4f6f8a26c64fad19d3828e7a1453a734c5c246" }
+zakura-swap-receiving = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "6e8fd5f09fe031933c3f46dfdcc8f1c11f8c838a" }
 zakura-pir-status = { version = "=0.0.1-rc0" }
 zakura-transaction-status = { version = "=0.0.1-rc0" }
 zcash_note_encryption = "0.4"
@@ -232,12 +232,12 @@ opt-level = 3
 
 # Experimental wallet changes share one exact source revision.
 [patch.crates-io]
-zakura-pir-native = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "fc4f6f8a26c64fad19d3828e7a1453a734c5c246" }
-zakura-pir-enhance-types = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "fc4f6f8a26c64fad19d3828e7a1453a734c5c246" }
-zakura-pir-enhance = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "fc4f6f8a26c64fad19d3828e7a1453a734c5c246" }
-zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "fc4f6f8a26c64fad19d3828e7a1453a734c5c246" }
-zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "fc4f6f8a26c64fad19d3828e7a1453a734c5c246" }
-zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "fc4f6f8a26c64fad19d3828e7a1453a734c5c246" }
+zakura-pir-native = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "6e8fd5f09fe031933c3f46dfdcc8f1c11f8c838a" }
+zakura-pir-enhance-types = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "6e8fd5f09fe031933c3f46dfdcc8f1c11f8c838a" }
+zakura-pir-enhance = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "6e8fd5f09fe031933c3f46dfdcc8f1c11f8c838a" }
+zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "6e8fd5f09fe031933c3f46dfdcc8f1c11f8c838a" }
+zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "6e8fd5f09fe031933c3f46dfdcc8f1c11f8c838a" }
+zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "6e8fd5f09fe031933c3f46dfdcc8f1c11f8c838a" }
 
 # Receiver PIR uses the same published math family as Private queries.
 [patch."https://github.com/valargroup/ipir-sp.git"]
