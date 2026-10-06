@@ -112,6 +112,7 @@ class _TitleBlock extends StatelessWidget {
           child: Text(
             'The Shielded World',
             style: AppTypography.displayLarge.copyWith(
+              fontWeight: FontWeight.w500,
               color: colors.text.accent,
             ),
             textAlign: TextAlign.center,
