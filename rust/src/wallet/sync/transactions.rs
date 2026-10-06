@@ -734,9 +734,9 @@ impl HistoryCompleteness {
                 | HistoryClassification::Reconstructed
                 | HistoryClassification::NetReconstructed => false,
             } || details
-                    .effects
-                    .iter()
-                    .any(|effect| !effect.completeness.is_settled()),
+                .effects
+                .iter()
+                .any(|effect| !effect.completeness.is_settled()),
             fee: match details.fee {
                 FeeState::Known(fee) => Fee::Known(fee.into()),
                 FeeState::Unknown => Fee::Unknown,
