@@ -10,6 +10,7 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/input/app_password_input_source.dart';
+import 'package:zcash_wallet/src/core/storage/linux_keyring_coordinator.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_toast.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
@@ -83,6 +84,7 @@ void main() {
   late PaymentLinkReceivedStore received;
   late FakePlatform inputPlatform;
   late FakeStore inputStore;
+  late LinuxKeyringCoordinator keyring;
 
   Future<void> pump(
     WidgetTester tester, {
@@ -103,6 +105,8 @@ void main() {
     security = _Security(existing: existing);
     inputPlatform = FakePlatform();
     inputStore = FakeStore();
+    keyring = LinuxKeyringCoordinator.testing();
+    addTearDown(keyring.dispose);
     final inputSource = AppPasswordInputSource(
       enabled: true,
       platform: inputPlatform,
@@ -117,6 +121,7 @@ void main() {
         accountProvider.overrideWith(() => accounts),
         appSecurityProvider.overrideWith(() => security),
         appPasswordInputSourceProvider.overrideWithValue(inputSource),
+        linuxKeyringCoordinatorProvider.overrideWithValue(keyring),
         syncProvider.overrideWith(_IdleSync.new),
         giftCardEntryPriceProvider.overrideWith((_) async => null),
         paymentLinkOperationsProvider.overrideWithValue(operations),
@@ -151,6 +156,19 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(keyed('gift_desktop_paste_button'));
     await tester.pump();
+  }
+
+  Future<void> openFirstAccountCustomise(WidgetTester tester) async {
+    await paste(tester);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Create a wallet to claim'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(EditableText).at(0), 'Password1!');
+    await tester.enterText(find.byType(EditableText).at(1), 'Password1!');
+    await tester.pump();
+    await tester.tap(keyed('set_password_submit_button'));
+    await tester.pumpAndSettle();
+    expect(container.read(_routerProvider).state.uri.path, '/gift/customise');
   }
 
   testWidgets('invalid card remains on the desktop entry with paste retry', (
@@ -322,6 +340,7 @@ void main() {
         expect(accounts.creationCalls, 1);
         expect(security.prepareCalls, existing ? 0 : 1);
         expect(security.state.isUnlocked, isTrue);
+        expect(keyring.hasPendingMutation, isFalse);
         expect(inputStore.writes, existing ? 0 : 1);
         if (!existing) {
           expect(jsonDecode(inputStore.value!)['source'], source);
@@ -366,6 +385,7 @@ void main() {
       expect(accounts.creationCalls, 0);
       expect(inputStore.writes, 0);
       expect(security.state.isUnlocked, isFalse);
+      expect(keyring.hasPendingMutation, isFalse);
 
       inputPlatform.current = const {
         'platform': 'windows',
@@ -377,8 +397,88 @@ void main() {
       expect(find.text('Gift Home'), findsOneWidget);
       expect(accounts.creationCalls, 1);
       expect(security.state.isUnlocked, isTrue);
+      expect(keyring.hasPendingMutation, isFalse);
       expect(inputStore.writes, 1);
       expect(jsonDecode(inputStore.value!)['source'], submittedSource);
+      container.read(paymentLinkClaimCoordinatorProvider).pause();
+    },
+  );
+
+  for (final recovering in [false, true]) {
+    testWidgets(
+      'Linux Gift rejects setup before password work while busy, recovering=$recovering',
+      (tester) async {
+        await pump(tester, clipboard: incomingLink.toUri().toString());
+        await openFirstAccountCustomise(tester);
+        final otherWork = Completer<void>();
+        Future<void>? pending;
+        if (recovering) {
+          keyring.setStateForTesting(
+            const LinuxKeyringState(phase: LinuxKeyringPhase.keyringLocked),
+          );
+        } else {
+          pending = keyring.runMutation(() => otherWork.future);
+        }
+
+        await tester.tap(keyed('customise_account_finish_button'));
+        await tester.pumpAndSettle();
+        expect(security.prepareCalls, 0);
+        expect(accounts.creationCalls, 0);
+        expect(inputStore.writes, 0);
+        expect(
+          container.read(_routerProvider).state.uri.path,
+          '/gift/customise',
+        );
+        expect(
+          find.text(
+            'Finish the current wallet operation before starting another.',
+          ),
+          findsOneWidget,
+        );
+
+        if (recovering) {
+          keyring.setStateForTesting(const LinuxKeyringState());
+        } else {
+          otherWork.complete();
+          await pending;
+        }
+        await tester.tap(keyed('customise_account_finish_button'));
+        await tester.pumpAndSettle();
+        expect(find.text('Gift Home'), findsOneWidget);
+        expect(security.prepareCalls, 1);
+        expect(accounts.creationCalls, 1);
+        expect(keyring.hasPendingMutation, isFalse);
+        container.read(paymentLinkClaimCoordinatorProvider).pause();
+      },
+    );
+  }
+
+  testWidgets(
+    'Linux Gift owns preparation through commit and releases after Home',
+    (tester) async {
+      await pump(tester, clipboard: incomingLink.toUri().toString());
+      await openFirstAccountCustomise(tester);
+      final preparation = Completer<void>();
+      security.prepareGate = preparation;
+      await tester.tap(keyed('customise_account_finish_button'));
+      await tester.pump();
+      expect(security.prepareCalls, 1);
+      expect(accounts.creationCalls, 0);
+      expect(keyring.hasPendingMutation, isTrue);
+      await expectLater(
+        keyring.runMutation(() async => fail('interleaved wallet mutation')),
+        throwsA(isA<LinuxWalletMutationBusyException>()),
+      );
+      preparation.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('Gift Home'), findsOneWidget);
+      expect(accounts.creationCalls, 1);
+      expect(security.committedUnderOwnership, isTrue);
+      expect(keyring.hasPendingMutation, isFalse);
+      expect(
+        await keyring.runMutation(() async => 'next operation'),
+        'next operation',
+      );
       container.read(paymentLinkClaimCoordinatorProvider).pause();
     },
   );
@@ -555,7 +655,7 @@ class _NoAccounts extends AccountNotifier {
     required String name,
     required String profilePictureId,
     required VizorPaymentLink link,
-  }) async {
+  }) => ref.read(linuxKeyringCoordinatorProvider).runMutation(() async {
     creationCalls++;
     if (creationError?.accountUuid == null && creationError != null) {
       throw creationError!;
@@ -582,7 +682,7 @@ class _NoAccounts extends AccountNotifier {
         .read(paymentLinkReceivedStoreProvider)
         .saveReady(link, setupAccountUuid: 'new-account');
     return 'new-account';
-  }
+  });
 }
 
 class _Security extends AppSecurityNotifier {
@@ -598,6 +698,8 @@ class _Security extends AppSecurityNotifier {
   int prepareCalls = 0;
   int rollbackCalls = 0;
   Object? prepareError;
+  Completer<void>? prepareGate;
+  bool committedUnderOwnership = false;
   @override
   Future<void> rollbackPasswordSetup() async {
     rollbackCalls++;
@@ -612,6 +714,7 @@ class _Security extends AppSecurityNotifier {
   Future<void> preparePasswordSetup(String password) async {
     prepareCalls++;
     if (prepareError case final error?) throw error;
+    await prepareGate?.future;
     _passcode = password;
   }
 
@@ -622,10 +725,15 @@ class _Security extends AppSecurityNotifier {
   Future<void> completePasswordSetup() async => commitPasswordSetup();
 
   @override
-  void commitPasswordSetup() => state = const AppSecurityState(
-    isPasswordConfigured: true,
-    isUnlocked: true,
-  );
+  void commitPasswordSetup() {
+    committedUnderOwnership = ref
+        .read(linuxKeyringCoordinatorProvider)
+        .hasPendingMutation;
+    state = const AppSecurityState(
+      isPasswordConfigured: true,
+      isUnlocked: true,
+    );
+  }
 }
 
 class _IdleSync extends FakeSyncNotifier {

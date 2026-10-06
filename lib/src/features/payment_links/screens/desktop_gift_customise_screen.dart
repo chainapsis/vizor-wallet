@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../core/storage/linux_keyring_coordinator.dart';
 import '../../../providers/account_provider.dart';
 
 import '../../onboarding/create/customise_account_screen.dart';
@@ -45,27 +46,28 @@ class _DesktopGiftCustomiseState
   Widget build(BuildContext context) => CustomiseAccountScreen.gift(
     random: widget.random,
     configuresPassword: widget.args.passcode != null,
-    onFinish: (name, profilePictureId) async {
-      try {
-        await completeGiftClaimWalletSetup(
-          ref,
-          password: widget.args.passcode,
-          passwordInputSource: widget.args.passwordInputSource,
-          accountName: name,
-          profilePictureId: profilePictureId,
-          inspection: widget.args.inspection,
-          onComplete: () {
-            if (context.mounted) context.go('/home');
-          },
-        );
-      } on GiftClaimAccountCreatedException catch (error) {
-        // The account is durable. Use desktop startup/unlock recovery so a
-        // retry cannot prepare the password or create another account.
-        throw WalletAccountSetupInterruptedException(
-          error.accountUuid,
-          error.cause,
-        );
-      }
-    },
+    onFinish: (name, profilePictureId) =>
+        ref.read(linuxKeyringCoordinatorProvider).runMutation(() async {
+          try {
+            await completeGiftClaimWalletSetup(
+              ref,
+              password: widget.args.passcode,
+              passwordInputSource: widget.args.passwordInputSource,
+              accountName: name,
+              profilePictureId: profilePictureId,
+              inspection: widget.args.inspection,
+              onComplete: () {
+                if (context.mounted) context.go('/home');
+              },
+            );
+          } on GiftClaimAccountCreatedException catch (error) {
+            // The account is durable. Use desktop startup/unlock recovery so a
+            // retry cannot prepare the password or create another account.
+            throw WalletAccountSetupInterruptedException(
+              error.accountUuid,
+              error.cause,
+            );
+          }
+        }),
   );
 }
