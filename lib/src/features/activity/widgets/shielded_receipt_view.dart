@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/review_info_row.dart';
+import '../../../core/widgets/receipt_loading_skeleton.dart';
 import '../../../core/widgets/review_list_row.dart';
 import '../../../core/widgets/review_wrap_card.dart';
 import '../../send/widgets/send_review_layout.dart';
@@ -25,6 +26,7 @@ class ShieldedReceiptView extends StatelessWidget {
     this.feeText,
     this.memoText,
     this.memoExpanded = false,
+    this.memoLoading = false,
     this.onExpandMemo,
     this.onTxIdPressed,
     this.onFeeHelpPressed,
@@ -38,6 +40,9 @@ class ShieldedReceiptView extends StatelessWidget {
   final String? feeText;
   final String? memoText;
   final bool memoExpanded;
+
+  /// Reserves the collapsed message row until the detail read completes.
+  final bool memoLoading;
   final VoidCallback? onExpandMemo;
   final VoidCallback? onTxIdPressed;
   final VoidCallback? onFeeHelpPressed;
@@ -129,7 +134,9 @@ class ShieldedReceiptView extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (memo != null && memo.isNotEmpty)
+                if (memoLoading)
+                  const ReceiptMemoSkeleton()
+                else if (memo != null && memo.isNotEmpty)
                   ReviewMemoRows(
                     memoText: memo,
                     expanded: memoExpanded,

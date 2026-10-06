@@ -17,6 +17,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_profile_picture.dart';
 import '../../../../core/widgets/app_toast.dart';
+import '../../../../core/widgets/receipt_loading_skeleton.dart';
 import '../../../../core/widgets/mobile/mobile_address_verify_sheet.dart';
 import '../../../../core/widgets/mobile/mobile_review_row.dart';
 import '../../../../core/widgets/mobile/mobile_tx_fee_info_sheet.dart';
@@ -116,6 +117,9 @@ class _MobileTransactionStatusScreenState
   rust_sync.TransactionDetail? _detail;
   String? _error;
   bool _isLoading = true;
+  // A null detail can mean pending, unavailable, or failed. Keep the read
+  // state separate, and show placeholders only without a matching cached detail.
+  bool _detailsPending = true;
   String? _activeAccountUuid;
   String? _argsAccountUuid;
   int _loadGeneration = 0;
@@ -173,6 +177,9 @@ class _MobileTransactionStatusScreenState
       generation == _loadGeneration &&
       accountUuid == ref.read(accountProvider).value?.activeAccountUuid;
 
+  bool get _detailsLoading =>
+      _detailsPending && _matchingDetailFor(_transaction) == null;
+
   rust_sync.TransactionDetail? _matchingDetailFor(
     rust_sync.TransactionInfo? tx,
   ) {
@@ -191,18 +198,20 @@ class _MobileTransactionStatusScreenState
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     final accountChanged = accountUuid != _activeAccountUuid;
     _activeAccountUuid = accountUuid;
-    if (accountChanged) {
-      setState(() {
+    setState(() {
+      _detailsPending = true;
+      if (accountChanged) {
         _transaction = null;
         _detail = null;
         _messageExpanded = false;
         _error = null;
         _isLoading = true;
-      });
-    }
+      }
+    });
     if (accountUuid == null) {
       setState(() {
         _isLoading = false;
+        _detailsPending = false;
         _error = 'No active account.';
       });
       return;
@@ -218,6 +227,7 @@ class _MobileTransactionStatusScreenState
               ? 'Transaction could not be loaded.'
               : 'Latest transaction status could not be refreshed.';
           _isLoading = false;
+          _detailsPending = false;
         });
         return;
       }
@@ -229,7 +239,10 @@ class _MobileTransactionStatusScreenState
       });
       final detail = await _loadDetail(accountUuid, tx);
       if (!_loadIsCurrent(generation, accountUuid)) return;
-      setState(() => _detail = detail);
+      setState(() {
+        _detail = detail ?? _detail;
+        _detailsPending = false;
+      });
     } catch (e, st) {
       if (!_loadIsCurrent(generation, accountUuid)) return;
       log('MobileTransactionStatus: transaction load failed: $e\n$st');
@@ -238,6 +251,7 @@ class _MobileTransactionStatusScreenState
             ? 'Transaction could not be loaded.'
             : 'Latest transaction status could not be refreshed.';
         _isLoading = false;
+        _detailsPending = false;
       });
     }
   }
@@ -406,6 +420,7 @@ class _MobileTransactionStatusScreenState
         : null;
     final giftCard =
         _resolvedGiftCard(tx, activeAccountUuid) ?? suppliedGiftCard;
+    final detailsLoading = giftCard == null && _detailsLoading;
     if (tx == null) {
       return Scaffold(
         body: SafeArea(
@@ -507,7 +522,7 @@ class _MobileTransactionStatusScreenState
             ),
             text: _truncateAddress(receivingAddress),
           )
-        : !hasAddress && poolLabel != null
+        : !hasAddress && !(_isSent && detailsLoading) && poolLabel != null
         ? _BottomInfoRow(
             iconName: _poolIconNameFor(poolLabel),
             iconColor: _poolIconColorFor(context, poolLabel),
@@ -521,7 +536,12 @@ class _MobileTransactionStatusScreenState
       // With no counterparty row (shielded senders are unknown), the
       // pool tag moves under the amount — Figma `Received` keeps the
       // pool on the bottom strip.
-      bottom: amountBottom,
+      bottom: detailsLoading && _isIncoming
+          ? const Align(
+              alignment: Alignment.centerLeft,
+              child: ReceiptValueSkeleton(),
+            )
+          : amountBottom,
     );
     final addressRow = (address == null || address.isEmpty)
         ? null
@@ -591,7 +611,14 @@ class _MobileTransactionStatusScreenState
     // Sent flows read top-down as amount -> recipient; received flows as
     // sender source -> amount, with the receiving output attached under
     // Amount (Figma `Received` 4752:75264).
-    final fromRow = _isIncoming ? addressRow ?? unknownFromRow : null;
+    final fromRow = _isIncoming
+        ? detailsLoading
+              ? const ReceiptCounterpartySkeleton(label: 'From')
+              : addressRow ?? unknownFromRow
+        : null;
+    final toRow = _isSent && detailsLoading
+        ? const ReceiptCounterpartySkeleton(label: 'To')
+        : addressRow;
     // Self-shield (own transparent -> own shielded) has no external
     // counterparty: mirror the desktop ShieldedReceiptView two-row flow,
     // "From transparent balance" -> "Shielded balance". No Figma frame for
@@ -655,9 +682,9 @@ class _MobileTransactionStatusScreenState
             if (fromRow != null) ...[fromRow, const MobileReviewFlowArrow()],
             amountRow,
           ]
-        : addressRow == null
+        : toRow == null
         ? <Widget>[amountRow]
-        : <Widget>[amountRow, const MobileReviewFlowArrow(), addressRow];
+        : <Widget>[amountRow, const MobileReviewFlowArrow(), toRow];
 
     return Scaffold(
       backgroundColor: colors.background.window,
@@ -750,6 +777,9 @@ class _MobileTransactionStatusScreenState
                               },
                         failed: failed,
                         memo: memo,
+                        memoLoading:
+                            detailsLoading &&
+                            (_isSent || _isIncoming || _isShielding),
                         messageExpanded: _messageExpanded,
                         onToggleMessage: () => setState(
                           () => _messageExpanded = !_messageExpanded,
@@ -1071,6 +1101,7 @@ class _DetailCard extends StatelessWidget {
     this.statusText,
     required this.failed,
     required this.memo,
+    this.memoLoading = false,
     required this.messageExpanded,
     required this.onToggleMessage,
     required this.timestampText,
@@ -1084,6 +1115,7 @@ class _DetailCard extends StatelessWidget {
   final String? statusText;
   final bool failed;
   final String? memo;
+  final bool memoLoading;
   final bool messageExpanded;
   final VoidCallback onToggleMessage;
   final String timestampText;
@@ -1114,7 +1146,10 @@ class _DetailCard extends StatelessWidget {
             value: _StatusChip(phase: phase, statusText: statusText),
           ),
           const SizedBox(height: AppSpacing.sm),
-          if (memoText != null && memoText.isNotEmpty) ...[
+          if (memoLoading) ...[
+            const ReceiptMemoSkeleton(),
+            const SizedBox(height: AppSpacing.xs),
+          ] else if (memoText != null && memoText.isNotEmpty) ...[
             _ListRow(
               label: 'Message',
               value: _ValueWithIcon(

@@ -8,6 +8,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/receipt_loading_skeleton.dart';
 import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_transaction_status_screen.dart';
 import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_transaction_status_screen.dart';
@@ -19,6 +20,7 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../figma_compare/figma_compare_font_loader.dart';
 
 const _txid =
     'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
@@ -47,6 +49,7 @@ rust_sync.TransactionDetail _detail(String memo, {String kind = 'received'}) =>
     );
 
 void transactionLoadingTests({required bool mobile}) {
+  setUpAll(loadFigmaCompareFonts);
   final receivedTitle = mobile ? 'Received' : 'Received successfully';
   testWidgets('summary appears while history and detail remain unresolved', (
     tester,
@@ -75,11 +78,115 @@ void transactionLoadingTests({required bool mobile}) {
     await tester.pump();
     expect(detailReads, 1);
     expect(find.text(receivedTitle), findsOneWidget);
-    expect(find.text('Message'), findsNothing);
+    expect(find.byType(ReceiptMemoSkeleton), findsOneWidget);
     detail.complete(_detail('Loaded memo'));
     await tester.pump();
     await tester.pump();
     expect(find.text('Loaded memo'), findsOneWidget);
+    expect(find.byType(ReceiptValueSkeleton), findsNothing);
+  });
+
+  for (final kind in ['sent', 'received', 'shielded']) {
+    for (final hasMemo in [true, false]) {
+      testWidgets('$kind detail skeleton preserves layout with memo=$hasMemo', (
+        tester,
+      ) async {
+        final history = Completer<List<rust_sync.TransactionInfo>>();
+        final detail = Completer<rust_sync.TransactionDetail?>();
+        await _pump(
+          tester,
+          mobile: mobile,
+          kind: kind,
+          history: (_) => history.future,
+          detail: (_, _) => detail.future,
+        );
+        double y(String label) => tester.getTopLeft(find.text(label).first).dy;
+        final amountY = y('Amount');
+        final statusY = y('Status');
+        final timestampY = y('Timestamp');
+        final txidY = y('Tx ID');
+        expect(find.byType(ReceiptMemoSkeleton), findsOneWidget);
+        for (final element in find.byType(ReceiptValueSkeleton).evaluate()) {
+          final size = tester.getSize(find.byWidget(element.widget));
+          expect(size.width, greaterThan(0));
+          expect(size.height, greaterThan(0));
+        }
+        expect(find.text('Show full address'), findsNothing);
+        if (kind == 'sent') {
+          expect(find.text('Sent successfully'), findsOneWidget);
+          expect(find.text('Shielded'), findsNothing);
+        }
+        history.complete([_tx(kind: kind)]);
+        await tester.pump();
+        await tester.pump();
+        expect(y('Status'), statusY);
+        expect(find.byType(ReceiptMemoSkeleton), findsOneWidget);
+        detail.complete(
+          _completeDetail(kind: kind, memo: hasMemo ? 'Loaded memo' : null),
+        );
+        await tester.pump();
+        await tester.pump();
+        expect(find.byType(ReceiptValueSkeleton), findsNothing);
+        expect(y('Amount'), amountY);
+        expect(y('Status'), statusY);
+        if (hasMemo) {
+          expect(y('Timestamp'), timestampY);
+          expect(y('Tx ID'), txidY);
+        } else {
+          expect(find.text('Message'), findsNothing);
+        }
+        expect(tester.takeException(), isNull);
+      });
+    }
+  }
+
+  testWidgets('null detail ends skeleton without inventing address or pool', (
+    tester,
+  ) async {
+    final detail = Completer<rust_sync.TransactionDetail?>();
+    await _pump(
+      tester,
+      mobile: mobile,
+      kind: 'sent',
+      history: (_) async => [_tx(kind: 'sent')],
+      detail: (_, _) => detail.future,
+    );
+    expect(find.byType(ReceiptCounterpartySkeleton), findsOneWidget);
+    detail.complete(null);
+    await tester.pump();
+    await tester.pump();
+    expect(find.byType(ReceiptValueSkeleton), findsNothing);
+    expect(find.text('Show full address'), findsNothing);
+    expect(find.text('To'), findsNothing);
+    expect(find.text('Message'), findsNothing);
+  });
+
+  testWidgets('refresh keeps loaded detail without restarting skeleton', (
+    tester,
+  ) async {
+    final detail = Completer<rust_sync.TransactionDetail?>();
+    final sync = FakeSyncNotifier(_sync());
+    await _pump(
+      tester,
+      mobile: mobile,
+      sync: sync,
+      initialDetail: _completeDetail(kind: 'received', memo: 'Existing memo'),
+      history: (_) async => [_tx()],
+      detail: (_, _) => detail.future,
+    );
+    expect(find.byType(ReceiptValueSkeleton), findsNothing);
+    final statusY = tester.getTopLeft(find.text('Status')).dy;
+    sync.emit(_sync(height: 101));
+    await tester.pump();
+    await tester.pump();
+    expect(find.byType(ReceiptValueSkeleton), findsNothing);
+    expect(tester.getTopLeft(find.text('Status')).dy, statusY);
+    detail.complete(null);
+    await tester.pump();
+    await tester.pump();
+    expect(find.byType(ReceiptValueSkeleton), findsNothing);
+    expect(find.text('Existing memo'), findsOneWidget);
+    expect(tester.getTopLeft(find.text('Status')).dy, statusY);
   });
 
   for (final kind in ['received', 'sent']) {
@@ -125,6 +232,7 @@ void transactionLoadingTests({required bool mobile}) {
             find.text('Latest transaction status could not be refreshed.'),
             findsOneWidget,
           );
+          expect(find.byType(ReceiptValueSkeleton), findsNothing);
         },
       );
     }
@@ -285,6 +393,29 @@ void transactionLoadingTests({required bool mobile}) {
     expect(tester.takeException(), isNull);
   });
 }
+
+rust_sync.TransactionDetail _completeDetail({
+  required String kind,
+  String? memo,
+}) => rust_sync.TransactionDetail(
+  txidHex: _txid,
+  txKind: kind,
+  primaryAddress: kind == 'sent'
+      ? 'u1syntheticrecipientaddress123456789'
+      : null,
+  sourcePool: kind == 'received' ? 'shielded' : null,
+  memo: memo,
+  outputs: kind == 'received'
+      ? [
+          rust_sync.TransactionDetailOutput(
+            address: 'u1syntheticreceivingaddress123456789',
+            amountZatoshi: BigInt.from(100000000),
+            pool: 'shielded',
+            usesOrchardReceiver: true,
+          ),
+        ]
+      : const [],
+);
 
 SyncState _sync({int height = 100}) => SyncState(
   accountUuid: 'account-1',
