@@ -4,7 +4,7 @@ The desktop UI slices are merged into `rowan/desktop-onboarding-umbrella`
 through #852 (`3864582fb3180385aa9dcdee6c2e05b4955862b4`). This validation
 slice aligns the existing native E2E entry paths with those production routes.
 
-## Import entry correction
+## Desktop entry corrections
 
 Desktop Welcome and Add account now open `/import/method`. Software import
 requires clicking **Import secret passphrase** before `/import` and its phrase
@@ -19,9 +19,16 @@ regtest scenarios and `desktop_regtest_flow.dart`. The scenario-specific
 mnemonics, birthdays, passwords, funding, balance, send, and recovery assertions
 remain in their existing tests.
 
-Two widget tests execute that exact E2E helper against the production desktop
-onboarding routes. They verify phrase input, the `entry=import-method` context,
-the additional-account origin, and Back returning to the correct selector.
+Native execution also found that the Welcome create key now belongs to a
+`Semantics` wrapper. The two shield runners still cast that wrapper to
+`AppButton`, so their enablement wait timed out before creation started.
+`openDesktopWalletCreation` locates the wrapper's actual `AppButton` and drives
+its enabled action. Both creation runners use this helper.
+
+Four widget tests execute these exact E2E helpers against the production desktop
+onboarding routes. They verify first/additional-account creation entry, phrase
+input, the `entry=import-method` context, the additional-account origin, and Back
+returning to the correct selector.
 The native Welcome smoke test also checks the create, import, and Gift controls
 using their stable keys.
 
@@ -45,13 +52,28 @@ Visual evidence remains attached to the respective UI slices #828, #844–#847,
 initial-importing carousel differs from mobile and is deferred for a later
 design decision at the user's request; it is unchanged here.
 
-## Native validation remaining
+## Native validation — 2026-10-06
 
-Native regtest execution has not been performed for this validation slice.
-`AGENTS.md` requires an explicit request to run these heavy integration tests.
-The runners use network-scoped disposable wallet state and reset the local
-regtest chain by default. Once execution is requested, run them serially with
-the macOS window hidden unless a visible walkthrough is required:
+All six runners below passed, covering seven native test executions because
+Gift restart uses separate prepare/resume processes. They ran serially against
+fresh local regtest chains with the macOS window hidden, on code commit
+`64cdbe03aab903f7c92bb5baf99122d80aae3d9c`. The initial create-action failure
+above was fixed before rerunning the entire selection. Temporary regtest
+containers/state were cleaned after the run.
+
+| Runner | Verified outcome |
+| --- | --- |
+| `flutter-macos-regtest-import-sync.sh` | Method selector, BIP39 passphrase, password/customisation, real sync, shielded 1.25 and transparent 0.75 TAZ |
+| `flutter-macos-regtest-shield-transparent.sh` | Ordinary wallet creation, external funding, shielding and transaction history |
+| `flutter-macos-regtest-multi-account-send.sh` | First/additional import, account switch, real inter-account send and history |
+| `flutter-macos-regtest-payment-link-round-trip.sh` | Gift creation, funding, additional recipient import, actual claim and persisted receipt |
+| `flutter-macos-regtest-payment-link.sh` | Two retained Gift claims recovered after a real process restart and native unlock |
+| `flutter-macos-regtest-shield-transparent-retry.sh` | Ordinary creation plus failed shield broadcast, retry and confirmed history |
+
+Logs and machine-readable results are in
+`.regtest-logs/desktop-onboarding-validation/native/`. The remaining widget and
+provider regression suite passed 270 tests, and full Flutter analysis found no
+issues. Reproduction commands:
 
 ```bash
 # First-wallet software import, BIP39 passphrase, sync and fixed balances.
@@ -59,6 +81,7 @@ scripts/e2e/flutter-macos-regtest-import-sync.sh
 
 # Ordinary creation through password/customisation, then a real shield send.
 scripts/e2e/flutter-macos-regtest-shield-transparent.sh
+scripts/e2e/flutter-macos-regtest-shield-transparent-retry.sh
 
 # First/additional imports, account switching and a real send.
 scripts/e2e/flutter-macos-regtest-multi-account-send.sh
@@ -67,6 +90,8 @@ scripts/e2e/flutter-macos-regtest-multi-account-send.sh
 scripts/e2e/flutter-macos-regtest-payment-link-round-trip.sh
 scripts/e2e/flutter-macos-regtest-payment-link.sh
 ```
+
+## Native gates remaining
 
 These existing Gift runners do not cover walletless desktop Gift setup. Before
 the umbrella is considered fully validated, also verify desktop Gift first and
