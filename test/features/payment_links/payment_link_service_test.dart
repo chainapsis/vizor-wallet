@@ -44,6 +44,8 @@ void main() {
             expectedAmountZatoshi: BigInt.one,
             details: [
               rust_sync.TransactionDetail(
+                detailsComplete: true,
+                provisional: false,
                 txidHex: 'a',
                 txKind: 'sent',
                 outputs: [
@@ -72,6 +74,8 @@ void main() {
         expectedAmountZatoshi: BigInt.from(100),
         details: [
           rust_sync.TransactionDetail(
+            detailsComplete: true,
+            provisional: false,
             txidHex: 'a',
             txKind: 'sent',
             outputs: [
@@ -100,6 +104,8 @@ void main() {
         details: [
           for (final (txid, pool) in [('a', 'orchard'), ('b', null)])
             rust_sync.TransactionDetail(
+              detailsComplete: true,
+              provisional: false,
               txidHex: txid,
               txKind: 'sent',
               outputs: [
@@ -1644,6 +1650,9 @@ void main() {
           api.poolFixture = true;
           api.recipientHistory = [
             rust_sync.TransactionInfo(
+              detailsComplete: true,
+              provisional: false,
+              feeState: rust_sync.TransactionFeeState.notApplicable,
               txidHex: 'a',
               minedHeight: BigInt.from(100),
               expiredUnmined: false,
