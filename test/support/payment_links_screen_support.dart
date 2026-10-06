@@ -119,8 +119,10 @@ Future<void> pumpPaymentLinksScreen(
           paymentLinkQrImageSaverProvider.overrideWithValue(qrImageSaver),
         if (qrShareHandler != null)
           paymentLinkQrShareHandlerProvider.overrideWithValue(qrShareHandler),
-        if (giftImportStore != null)
-          giftClaimImportStoreProvider.overrideWithValue(giftImportStore),
+        giftClaimImportStoreProvider.overrideWithValue(
+          giftImportStore ??
+              GiftClaimImportStore(storage: _MemoryGiftImportStorage()),
+        ),
         if (scanner != null)
           paymentLinkScannerProvider.overrideWithValue(scanner),
         if (ledgerFunding != null)
@@ -199,6 +201,19 @@ Future<void> pumpPaymentLinksScreen(
     await tester.pump(const Duration(milliseconds: 50));
   }
   await tester.pump(const Duration(milliseconds: 100));
+}
+
+class _MemoryGiftImportStorage implements GiftClaimImportStorage {
+  String? value;
+
+  @override
+  Future<String?> read() async => value;
+
+  @override
+  Future<void> write(String value) async => this.value = value;
+
+  @override
+  Future<void> delete() async => value = null;
 }
 
 class _PaymentLinksTestMarketDataSource implements ZecMarketDataSource {

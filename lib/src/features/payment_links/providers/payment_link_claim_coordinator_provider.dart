@@ -4,7 +4,6 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/storage/app_secure_store.dart';
-import '../../../core/layout/app_form_factor.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../models/vizor_payment_link.dart';
@@ -273,7 +272,7 @@ class PaymentLinkClaimCoordinator {
     String accountUuid, {
     _SetupClaimFailurePhase? failurePhase,
   }) async {
-    if (kAppFormFactor != AppFormFactor.mobile || !_canRunRecovery) return;
+    if (!_canRunRecovery) return;
     final store = _ref.read(paymentLinkReceivedStoreProvider);
     final record = await store.find(link.address);
     if (!_canRunRecovery ||

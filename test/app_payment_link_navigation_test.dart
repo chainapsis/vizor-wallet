@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -8,8 +10,13 @@ import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/features/onboarding/welcome.dart';
+import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
+import 'package:zcash_wallet/src/features/payment_links/providers/gift_card_entry_price_provider.dart';
+import 'package:zcash_wallet/src/features/payment_links/providers/gift_claim_flow_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_intake_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/screens/payment_links_screen.dart';
+import 'package:zcash_wallet/src/features/payment_links/screens/gift_claim_screen.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_entry_policy.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -19,6 +26,8 @@ import 'package:zcash_wallet/src/services/incoming_uri_service.dart';
 
 import 'fakes/fake_sync_notifier.dart';
 import 'support/payment_link_navigation_support.dart';
+import 'support/payment_links_screen_support.dart'
+    show loadPaymentLinksTestFonts;
 
 void main() {
   test('blocks incoming Gift Cards on transactional and setup routes', () {
@@ -133,10 +142,17 @@ void main() {
     expect(find.text('Payment link could not be opened.'), findsOneWidget);
   });
 
-  testWidgets('opens a queued Gift Card after wallet onboarding reaches Home', (
+  testWidgets('opens Gift onboarding immediately from a walletless Welcome', (
     tester,
   ) async {
     final accountNotifier = _OnboardingAccountNotifier();
+    final operations = _WalletlessGiftOperations();
+    await loadPaymentLinksTestFonts();
+    await (FontLoader(
+      'YoungSerif',
+    )..addFont(rootBundle.load('assets/fonts/YoungSerif-Regular.ttf'))).load();
+    await tester.binding.setSurfaceSize(const Size(1280, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
 
     await tester.pumpWidget(
       ProviderScope(
@@ -144,9 +160,8 @@ void main() {
           appBootstrapProvider.overrideWithValue(_emptyBootstrap),
           accountProvider.overrideWith(() => accountNotifier),
           syncProvider.overrideWith(() => FakeSyncNotifier(SyncState())),
-          paymentLinkOperationsProvider.overrideWithValue(
-            PendingClaimPaymentLinkOperations(),
-          ),
+          paymentLinkOperationsProvider.overrideWithValue(operations),
+          giftCardEntryPriceProvider.overrideWith((_) async => null),
         ],
         child: const ZcashWalletApp(),
       ),
@@ -162,17 +177,34 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(find.byType(WelcomeScreen), findsOneWidget);
+    await pumpUntilPresent(tester, find.byType(GiftClaimScreen));
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(find.byType(WelcomeScreen), findsNothing);
+    expect(find.byType(GiftClaimScreen), findsOneWidget);
     expect(
-      find.text(kPaymentLinkDeferredByAccountSetupMessage),
-      findsOneWidget,
+      GoRouterState.of(tester.element(find.byType(GiftClaimScreen))).uri.path,
+      '/gift',
     );
+    expect(find.text(kPaymentLinkDeferredByAccountSetupMessage), findsNothing);
+    // Intake retains the Card until setup owns its durable handoff.
     expect(container.read(paymentLinkIntakeProvider).pendingLink, isNotNull);
+    expect(
+      container.read(giftClaimFlowProvider)?.phase,
+      GiftClaimPhase.checking,
+    );
+    expect(operations.inspectionCalls, 1);
+    expect(container.read(accountProvider).value?.hasAccounts, isFalse);
 
-    accountNotifier.completeOnboarding();
-    await pumpUntilPresent(tester, find.byType(PaymentLinksScreen));
-
-    expect(find.byType(PaymentLinksScreen), findsOneWidget);
+    operations.finishInspection();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(
+      container.read(giftClaimFlowProvider)?.phase,
+      GiftClaimPhase.inspected,
+    );
+    expect(find.byType(GiftClaimScreen), findsOneWidget);
+    expect(container.read(accountProvider).value?.hasAccounts, isFalse);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('defers a Gift Card until the active send flow is left', (
@@ -226,16 +258,40 @@ void main() {
 class _OnboardingAccountNotifier extends AccountNotifier {
   @override
   AccountState build() => const AccountState();
+}
 
-  void completeOnboarding() {
-    state = const AsyncData(
-      AccountState(
-        accounts: [AccountInfo(uuid: 'account-1', name: 'Account 1', order: 0)],
-        activeAccountUuid: 'account-1',
-        activeAddress: 'u1testaddress',
-      ),
-    );
+class _WalletlessGiftOperations extends PendingClaimPaymentLinkOperations {
+  final _inspection = Completer<PaymentLinkClaimInspection>();
+  int inspectionCalls = 0;
+
+  @override
+  Future<PaymentLinkClaimInspection> inspectClaim(
+    VizorPaymentLink link, {
+    bool allowLongSync = false,
+  }) {
+    inspectionCalls++;
+    return _inspection.future;
   }
+
+  void finishInspection() => _inspection.complete(
+    PaymentLinkClaimInspection(
+      link: paymentLinkNavigationLink,
+      directory: Directory('/tmp/vizor-walletless-gift-navigation-test'),
+      dbPath: '/tmp/vizor-walletless-gift-navigation-test/wallet.db',
+      accountUuid: 'gift-account',
+      totalZatoshi: BigInt.from(110000),
+      claimableZatoshi: BigInt.from(100000),
+      feeZatoshi: BigInt.from(10000),
+      fundingConfirmationCount: kPaymentLinkClaimConfirmationTarget,
+      waitingForFundingConfirmations: false,
+      availability: PaymentLinkAvailability.available,
+    ),
+  );
+
+  @override
+  Future<void> discardClaimInspection(
+    PaymentLinkClaimInspection inspection,
+  ) async {}
 }
 
 class _FakeIncomingUriService extends IncomingUriService {
