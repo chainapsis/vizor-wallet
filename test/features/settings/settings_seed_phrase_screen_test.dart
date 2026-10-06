@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -12,6 +13,8 @@ import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/storage/linux_secret_operation_guard.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
+import 'package:zcash_wallet/src/core/widgets/app_back_link.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_secret_passphrase_screen.dart'
     show SecretPassphraseRevealWarningCard;
@@ -38,6 +41,144 @@ const _accountState = AccountState(
 );
 
 void main() {
+  for (final completeBackup in [false, true]) {
+    testWidgets(
+      'pending backup ${completeBackup ? 'completion' : 'deferral'} blocks exits and retains a late failure',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(1080, 720));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        final privacy = SensitivePrivacyOverlayController(initiallySafe: true);
+        addTearDown(privacy.dispose);
+        final account = _FakeAccountNotifier(backupPending: true)
+          ..backupSave = Completer<void>();
+        await tester.pumpWidget(
+          _harness(
+            privacyController: privacy,
+            accountNotifier: () => account,
+            showBackupIntro: !completeBackup,
+            startAtHome: true,
+          ),
+        );
+        await tester.pumpAndSettle();
+        final router = GoRouter.of(
+          tester.element(find.text('home-destination')),
+        );
+        unawaited(router.push('/settings/secret-passphrase'));
+        await tester.pumpAndSettle();
+        if (completeBackup) {
+          await tester.enterText(find.byType(EditableText), 'Correct123!');
+          await tester.pump();
+          await tester.tap(find.bySemanticsLabel('Confirm password'));
+          await tester.pumpAndSettle();
+        }
+        final backLink = find.byType(AppBackLink);
+        final backFocus = Focus.of(
+          tester.element(
+            find.descendant(of: backLink, matching: find.text('Home')),
+          ),
+        );
+        await tester.tap(
+          find.byKey(
+            ValueKey(
+              completeBackup
+                  ? 'desktop_seed_backed_up'
+                  : 'desktop_seed_backup_remind_later',
+            ),
+          ),
+        );
+        await tester.pump();
+
+        await tester.tap(backLink, warnIfMissed: false);
+        await tester.pump();
+        expect(
+          find.byType(SettingsSeedPhraseScreen),
+          findsOneWidget,
+          reason: 'toolbar must stay blocked',
+        );
+        for (final label in ['Home', 'Settings']) {
+          await tester.tap(
+            find.byWidgetPredicate(
+              (widget) => widget is AppSidebarItem && widget.label == label,
+            ),
+            warnIfMissed: false,
+          );
+          await tester.pump();
+          expect(
+            find.byType(SettingsSeedPhraseScreen),
+            findsOneWidget,
+            reason: '$label must stay blocked',
+          );
+        }
+        backFocus.requestFocus();
+        await tester.pump();
+        expect(backFocus.hasFocus, isFalse);
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.pump();
+        expect(
+          find.byType(SettingsSeedPhraseScreen),
+          findsOneWidget,
+          reason: 'keyboard must stay blocked',
+        );
+        await tester.binding.handlePopRoute();
+        await tester.pump();
+        expect(find.byType(SettingsSeedPhraseScreen), findsOneWidget);
+        expect(find.text('home-destination'), findsNothing);
+
+        account.backupSave!.completeError(StateError('late write failure'));
+        await tester.pumpAndSettle();
+        expect(find.text('Couldn’t save that. Try again.'), findsOneWidget);
+        expect(account.state.requireValue.accounts.last.setupPending, isTrue);
+        expect(account.completed, isEmpty);
+        expect(account.snoozed, isEmpty);
+        if (completeBackup) expect(find.text('abandon'), findsOneWidget);
+
+        await tester.tap(backLink);
+        await tester.pumpAndSettle();
+        expect(find.text('home-destination'), findsOneWidget);
+      },
+    );
+  }
+
+  testWidgets(
+    'successful backup write returns to the previous Settings route',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1080, 720));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final privacy = SensitivePrivacyOverlayController(initiallySafe: true);
+      addTearDown(privacy.dispose);
+      final account = _FakeAccountNotifier(backupPending: true)
+        ..backupSave = Completer<void>();
+      await tester.pumpWidget(
+        _harness(
+          privacyController: privacy,
+          accountNotifier: () => account,
+          startAtHome: true,
+        ),
+      );
+      await tester.pumpAndSettle();
+      final router = GoRouter.of(tester.element(find.text('home-destination')));
+      router.go('/settings');
+      await tester.pumpAndSettle();
+      unawaited(router.push('/settings/secret-passphrase'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(EditableText), 'Correct123!');
+      await tester.pump();
+      await tester.tap(find.bySemanticsLabel('Confirm password'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('desktop_seed_backed_up')));
+      await tester.pump();
+      await tester.binding.handlePopRoute();
+      await tester.pump();
+      expect(find.text('settings-destination'), findsNothing);
+      account.backupSave!.complete();
+      await tester.pumpAndSettle();
+      expect(account.completed, ['account-2']);
+      expect(account.state.requireValue.accounts.last.setupPending, isFalse);
+      expect(router.canPop(), isFalse);
+      expect(find.text('settings-destination'), findsOneWidget);
+    },
+  );
+
   testWidgets('backup warning still requires a valid password before reveal', (
     tester,
   ) async {
@@ -451,9 +592,10 @@ Widget _harness({
   AppSecureStore? secureStore,
   bool showBackupIntro = false,
   bool passwordValid = true,
+  bool startAtHome = false,
 }) {
   final router = GoRouter(
-    initialLocation: '/settings/secret-passphrase',
+    initialLocation: startAtHome ? '/home' : '/settings/secret-passphrase',
     routes: [
       GoRoute(
         path: '/settings/secret-passphrase',
@@ -461,10 +603,15 @@ Widget _harness({
           accountUuid: 'account-2',
           showBackupIntro: showBackupIntro,
           privacyOverlayController: privacyController,
+          birthdayHeightLoader: (_) async => 3428019,
+          birthdayBlockTimeLoader: (_) async => 1785196800,
         ),
       ),
       GoRoute(path: '/accounts', builder: (_, _) => const SizedBox()),
-      GoRoute(path: '/settings', builder: (_, _) => const SizedBox()),
+      GoRoute(
+        path: '/settings',
+        builder: (_, _) => const Text('settings-destination'),
+      ),
       GoRoute(path: '/home', builder: (_, _) => const Text('home-destination')),
     ],
   );
@@ -580,5 +727,6 @@ class _FakeSecurityNotifier extends AppSecurityNotifier {
 
 class _FakeSyncNotifier extends SyncNotifier {
   @override
-  Future<SyncState> build() async => SyncState();
+  Future<SyncState> build() async =>
+      SyncState(accountUuid: 'account-1', hasAccountScopedData: true);
 }
