@@ -9,12 +9,15 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/navigation/external_action_guard_provider.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/features/onboarding/welcome.dart';
+import 'package:zcash_wallet/src/features/settings/widgets/custom_endpoint_settings_panel.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_intake_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_entry_policy.dart';
 import 'package:zcash_wallet/src/features/send/services/payment_request_precheck.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/payment_request_flow_provider.dart';
 import 'package:zcash_wallet/src/providers/payment_uri_prefill_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -22,6 +25,8 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/services/incoming_uri_service.dart';
 
 import 'fakes/fake_sync_notifier.dart';
+import 'support/payment_links_screen_support.dart'
+    show loadPaymentLinksTestFonts;
 
 // Both link products arrive on one native channel and are now dispatched by
 // one host. Two things have to hold at once:
@@ -32,6 +37,7 @@ import 'fakes/fake_sync_notifier.dart';
 //     which would tear a ZIP-321 request card off the screen mid-answer, so
 //     it waits for the card and opens when the card is gone.
 void main() {
+  setUpAll(loadPaymentLinksTestFonts);
   const account = AccountInfo(
     uuid: 'account-1',
     name: 'Account 1',
@@ -46,13 +52,19 @@ void main() {
   );
 
   Future<(ProviderContainer, GoRouter, _FakeIncomingUriService)> pumpHost(
-    WidgetTester tester,
-  ) async {
+    WidgetTester tester, {
+    bool hasWallet = true,
+    bool connecting = false,
+  }) async {
+    if (!hasWallet) {
+      await tester.binding.setSurfaceSize(const Size(1080, 720));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+    }
     final incomingUris = _FakeIncomingUriService();
     addTearDown(incomingUris.dispose);
 
     final router = GoRouter(
-      initialLocation: '/home',
+      initialLocation: hasWallet ? '/home' : '/welcome',
       routes: [
         for (final path in [
           '/home',
@@ -60,10 +72,13 @@ void main() {
           '/welcome',
           '/unlock',
           '/payment-links',
+          '/gift',
         ])
           GoRoute(
             path: path,
-            builder: (_, _) => Scaffold(body: Text('screen $path')),
+            builder: (_, _) => !hasWallet && path == '/welcome'
+                ? const WelcomeScreen(animateBackground: false)
+                : Scaffold(body: Text('screen $path')),
           ),
       ],
     );
@@ -74,11 +89,19 @@ void main() {
       ProviderScope(
         overrides: [
           appBootstrapProvider.overrideWithValue(
-            _unlockedBootstrapWithWallet(walletState),
+            hasWallet
+                ? _unlockedBootstrapWithWallet(walletState)
+                : AppBootstrapState.empty,
           ),
           accountProvider.overrideWith(
-            () => _ControllableAccountNotifier(walletState),
+            () => _ControllableAccountNotifier(
+              hasWallet ? walletState : const AccountState(),
+            ),
           ),
+          if (!hasWallet)
+            networkPrivacyProvider.overrideWith(
+              () => _WelcomePrivacy(connecting: connecting),
+            ),
           syncProvider.overrideWith(FakeSyncNotifier.new),
           paymentRequestPrecheckProvider.overrideWithValue(_readyPrecheck()),
           incomingUriServiceProvider.overrideWithValue(incomingUris),
@@ -103,6 +126,56 @@ void main() {
     await tester.pumpAndSettle();
     return (container, router, incomingUris);
   }
+
+  testWidgets('a Gift link enters desktop setup from an empty Welcome', (
+    tester,
+  ) async {
+    final (_, router, incomingUris) = await pumpHost(tester, hasWallet: false);
+    incomingUris.emit(_paymentLink.toUri().toString());
+    await tester.pumpAndSettle();
+    expect(router.state.uri.path, '/gift');
+  });
+
+  testWidgets('Gift entry waits for the desktop network editor to close', (
+    tester,
+  ) async {
+    final (container, router, incomingUris) = await pumpHost(
+      tester,
+      hasWallet: false,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('welcome_endpoint_settings_button')),
+    );
+    await tester.pump();
+    incomingUris.emit(_paymentLink.toUri().toString());
+    await tester.pumpAndSettle();
+    expect(router.state.uri.path, '/welcome');
+    expect(container.read(paymentLinkIntakeProvider).pendingLink, isNotNull);
+    tester
+        .widget<CustomEndpointSettingsPanel>(
+          find.byType(CustomEndpointSettingsPanel),
+        )
+        .onClose!();
+    await tester.pumpAndSettle();
+    expect(router.state.uri.path, '/gift');
+  });
+
+  testWidgets('Gift entry resumes when Welcome transport becomes ready', (
+    tester,
+  ) async {
+    final (container, router, incomingUris) = await pumpHost(
+      tester,
+      hasWallet: false,
+      connecting: true,
+    );
+    incomingUris.emit(_paymentLink.toUri().toString());
+    await tester.pumpAndSettle();
+    expect(router.state.uri.path, '/welcome');
+    (container.read(networkPrivacyProvider.notifier) as _WelcomePrivacy)
+        .ready();
+    await tester.pumpAndSettle();
+    expect(router.state.uri.path, '/gift');
+  });
 
   testWidgets('a Gift Card waits for protection and resumes after release', (
     tester,
@@ -328,4 +401,19 @@ class _ControllableAccountNotifier extends AccountNotifier {
 
   @override
   FutureOr<AccountState> build() => _initial;
+}
+
+class _WelcomePrivacy extends NetworkPrivacyNotifier {
+  _WelcomePrivacy({required this.connecting});
+  final bool connecting;
+
+  @override
+  NetworkPrivacyState build() => connecting
+      ? const NetworkPrivacyState(
+          torEnabled: true,
+          status: NetworkPrivacyConnectionStatus.connecting,
+        )
+      : const NetworkPrivacyState.off();
+
+  void ready() => state = const NetworkPrivacyState.off();
 }

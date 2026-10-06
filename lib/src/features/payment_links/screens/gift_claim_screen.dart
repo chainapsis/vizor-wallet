@@ -8,11 +8,14 @@ import 'package:go_router/go_router.dart';
 import '../../../../main.dart' show log;
 import '../../../core/config/swap_feature_config.dart';
 import '../../../core/formatting/zec_amount.dart';
+import '../../../core/layout/app_form_factor.dart';
+import '../../../core/widgets/app_back_link.dart';
+import '../../../core/widgets/app_toast.dart';
+import '../../onboarding/shared/onboarding_auth_shell.dart';
 import '../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
-import '../../../core/widgets/app_toast.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/zec_price_change_provider.dart';
 import '../providers/gift_card_entry_price_provider.dart';
@@ -57,6 +60,7 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
   bool _reading = false;
   bool _invalidPaste = false;
   bool _handingOff = false;
+  GiftClaimFlowState? _desktopLongSyncWarning;
 
   @override
   void initState() {
@@ -111,6 +115,10 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
   }
 
   Future<void> _showLongSyncWarning(GiftClaimFlowState flow) async {
+    if (kAppFormFactor == AppFormFactor.desktop) {
+      setState(() => _desktopLongSyncWarning = flow);
+      return;
+    }
     final confirmed = await showPaymentLinkLongSyncWarningSheet(context);
     if (!mounted || !identical(ref.read(giftClaimFlowProvider), flow)) return;
     if (confirmed) {
@@ -171,7 +179,11 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
         ref.read(giftClaimFlowProvider.notifier).beginWalletSetup(inspection);
         context.push('/gift/customise');
       } else {
-        context.push('/gift/passcode');
+        context.push(
+          kAppFormFactor == AppFormFactor.mobile
+              ? '/gift/passcode'
+              : '/gift/set-password',
+        );
       }
     } catch (_) {
       if (mounted) {
@@ -228,6 +240,7 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
   Widget build(BuildContext context) {
     ref.watch(giftCardEntryPriceProvider);
     final flow = ref.watch(giftClaimFlowProvider);
+    if (kAppFormFactor == AppFormFactor.desktop) return _buildDesktop(flow);
     if (flow == null) {
       return _guardBack(
         Scaffold(
@@ -356,6 +369,159 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
     );
   }
 
+  Widget _buildDesktop(GiftClaimFlowState? flow) {
+    final checking =
+        flow?.phase == GiftClaimPhase.checking ||
+        flow?.phase == GiftClaimPhase.longSyncConfirmation;
+    final canContinue =
+        flow?.phase == GiftClaimPhase.inspected &&
+        (flow!.inspection!.claimableZatoshi > BigInt.zero ||
+            flow.inspection!.waitingForFundingConfirmations);
+    return _guardBack(
+      Stack(
+        fit: StackFit.expand,
+        children: [
+          OnboardingAuthShell(
+            card: Padding(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              child: SizedBox(
+                width: 500,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (!checking)
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: AppBackLink(
+                            key: const ValueKey('gift_claim_close_button'),
+                            label: flow == null
+                                ? (widget.addingAccount
+                                      ? 'Add account'
+                                      : 'Welcome')
+                                : 'Go back',
+                            onTap: _close,
+                          ),
+                        ),
+                      const SizedBox(height: AppSpacing.md),
+                      if (flow == null) ...[
+                        Text(
+                          widget.addingAccount
+                              ? 'Receive a gift card'
+                              : 'Create a wallet with a gift card',
+                          textAlign: TextAlign.center,
+                          style: AppTypography.displayLarge.copyWith(
+                            color: context.colors.text.accent,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        Text(
+                          'Paste the card link you received to check its balance.',
+                          textAlign: TextAlign.center,
+                          style: AppTypography.bodyMedium.copyWith(
+                            color: context.colors.text.secondary,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        SizedBox(
+                          width: 396,
+                          height: 220,
+                          child: CustomPaint(
+                            painter: PaymentLinkDashedBorderPainter(
+                              color: context.colors.border.regular,
+                              radius: 32,
+                              strokeWidth: 2,
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.all(AppSpacing.md),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  if (_invalidPaste) ...[
+                                    Text(
+                                      kPaymentLinkInvalidTitle,
+                                      style: AppTypography.bodyMediumStrong
+                                          .copyWith(
+                                            color:
+                                                context.colors.text.destructive,
+                                          ),
+                                    ),
+                                    const SizedBox(height: AppSpacing.sm),
+                                  ],
+                                  AppButton(
+                                    key: const ValueKey(
+                                      'gift_desktop_paste_button',
+                                    ),
+                                    onPressed: _reading ? null : _paste,
+                                    leading: const AppIcon(AppIcons.paste),
+                                    child: const Text('Paste card link'),
+                                  ),
+                                  const SizedBox(height: AppSpacing.xs),
+                                  AppButton(
+                                    key: const ValueKey(
+                                      'gift_desktop_scan_button',
+                                    ),
+                                    onPressed: _reading ? null : _scan,
+                                    variant: AppButtonVariant.secondary,
+                                    leading: const AppIcon(AppIcons.qr),
+                                    child: const Text('Scan QR code'),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ] else ...[
+                        if (canContinue) const _GiftArrivalHeading(),
+                        const SizedBox(height: AppSpacing.md),
+                        if (checking)
+                          const PaymentLinkLoadingMobileCard()
+                        else
+                          _card(flow.link, celebrate: canContinue),
+                        const SizedBox(height: AppSpacing.md),
+                        _GiftClaimStatus(
+                          flow: flow,
+                          addingAccount: widget.addingAccount,
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        SizedBox(
+                          width: 396,
+                          child: _GiftClaimActions(
+                            flow: flow,
+                            addingAccount: widget.addingAccount,
+                            onCreate: _createGiftWallet,
+                            onExisting: null,
+                            onClose: _close,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          if (_desktopLongSyncWarning != null)
+            PaymentLinkLongSyncWarningModal(
+              onConfirm: () {
+                final warning = _desktopLongSyncWarning;
+                setState(() => _desktopLongSyncWarning = null);
+                if (identical(ref.read(giftClaimFlowProvider), warning)) {
+                  ref
+                      .read(giftClaimFlowProvider.notifier)
+                      .recheck(allowLongSync: true);
+                }
+              },
+              onCancel: () {
+                setState(() => _desktopLongSyncWarning = null);
+                unawaited(_close());
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _guardBack(Widget child) {
     final phase = ref.watch(giftClaimFlowProvider)?.phase;
     final hasHandoff = ref.watch(giftClaimSetupReturnProvider) != null;
@@ -448,7 +614,9 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
         if (message.isNotEmpty) ...[
           const SizedBox(height: AppSpacing.xs),
           Text(
-            'Tap on the card to reveal the message.',
+            kAppFormFactor == AppFormFactor.mobile
+                ? 'Tap on the card to reveal the message.'
+                : 'Click on the card to reveal the message.',
             textAlign: TextAlign.center,
             style: AppTypography.bodySmall.copyWith(
               color: context.colors.text.secondary,
@@ -801,7 +969,7 @@ class _GiftClaimActions extends ConsumerWidget {
   final GiftClaimFlowState flow;
   final bool addingAccount;
   final VoidCallback onCreate;
-  final VoidCallback onExisting;
+  final VoidCallback? onExisting;
   final VoidCallback onClose;
 
   @override

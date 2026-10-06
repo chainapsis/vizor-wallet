@@ -413,16 +413,15 @@ the poster; playback follows route visibility and app lifecycle.
 Get started opens ordinary creation. Import wallet opens the selectors above,
 including the additional-account return context. Initial Welcome retains network
 settings; additional-account Welcome retains Back. The initial Welcome Gift
-button is disabled until the later desktop Gift integration; Gift account
-creation and claim paths are not activated by this visual slice.
+button now opens desktop Gift setup. Additional-account Welcome offers the same
+entry without preparing a second password.
 
 Widgetbook has Large and Add account Welcome entries. Deterministic captures use
 `desktop-onboarding-welcome` and `desktop-onboarding-add-account-welcome`.
 
 The Figma Welcome reference (`8648:104679`, 1080 × 720) includes a Terms/Privacy
 footer that is not implemented in this slice. Record it as a remaining visual
-difference in review; the initial Gift action also remains disabled until the
-later Gift integration slice.
+difference in review. Gift setup is integrated by the later new-account slice.
 
 ### Desktop interrupted setup recovery
 
@@ -476,3 +475,33 @@ Deterministic desktop captures cover `desktop-backup-intro`,
 `desktop-backup-defer-pending`, and `desktop-settings-phrase`. Capture credentials,
 masked words, birthday values, and writes are local fixtures; they use no wallet
 DB, production secrets, network, or Rust state.
+
+### Desktop Gift into a new account
+
+Welcome and Add account now open `/gift` for paste or QR inspection. A fresh
+wallet continues to `/gift/set-password`, then `/gift/customise`. An unlocked
+existing wallet goes directly to Customise to add the receiving account. Both
+use the shared Gift setup coordinator, account journal, and claim runner.
+
+The Gift is inspected before account creation. During a long scan, the user
+explicitly chooses whether to continue. Invalid links keep paste/scan retry
+available; network errors offer another inspection. Wallet/password setup
+completes and the checked Card is retained with its destination before Home;
+Home does not wait for claim broadcast or confirmations. Interrupted persistence
+uses desktop startup/unlock recovery without creating another account.
+
+Incoming Gift links can enter the empty desktop Welcome when transport is ready.
+An open network editor or connecting transport keeps the link queued; the
+existing listeners resume entry after the editor closes or transport becomes
+ready. Existing-wallet links retain the Received Gift Card entry policy.
+
+The imported-wallet branch and recipient selection remain the next child PR.
+`Claim with an existing wallet` stays disabled on this desktop entry until that
+branch is connected; mobile retains its existing import action.
+
+Widgetbook: Screens -> Onboarding -> Gift onboarding - Desktop. Deterministic desktop captures
+cover `desktop-gift-entry`, `desktop-gift-checking`, `desktop-gift-inspected`,
+`desktop-gift-password`, `desktop-gift-customise`,
+`desktop-gift-additional-customise`, `desktop-gift-check-error`, and
+`desktop-gift-long-scan` in both themes. These fixtures use no production wallet
+state, storage, network, camera, or Rust operations.

@@ -4084,6 +4084,10 @@ class _WelcomeHarnessState extends State<_WelcomeHarness> {
           path: '/home',
           builder: (_, _) => const _PreviewRoutePlaceholder(label: '/home'),
         ),
+        GoRoute(
+          path: '/gift',
+          builder: (_, _) => const _PreviewRoutePlaceholder(label: '/gift'),
+        ),
         // Stub destinations so buttons in the preview don't throw when
         // tapped. They render nothing meaningful — the point is just to
         // satisfy the router.

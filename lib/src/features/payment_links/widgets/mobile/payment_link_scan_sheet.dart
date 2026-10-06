@@ -1,9 +1,11 @@
 import 'dart:async';
 
+import 'package:flutter/material.dart' show showDialog;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import '../../../../core/layout/app_form_factor.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../services/qr_scanner.dart';
 import '../../../address_scan/widgets/mobile_address_scan_card.dart';
@@ -17,6 +19,22 @@ typedef PaymentLinkScanner =
 
 final paymentLinkScannerProvider = Provider<PaymentLinkScanner>((ref) {
   return (context, {required networkName}) {
+    if (kAppFormFactor == AppFormFactor.desktop) {
+      return showDialog<VizorPaymentLink>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => Center(
+          child: SizedBox(
+            width: 360,
+            child: PaymentLinkScanSheet(
+              networkName: networkName,
+              onScanned: (link) => Navigator.of(dialogContext).pop(link),
+              onClose: () => Navigator.of(dialogContext).pop(),
+            ),
+          ),
+        ),
+      );
+    }
     return showAppMobileSheet<VizorPaymentLink>(
       context: context,
       builder: (context) => PaymentLinkScanSheet(
@@ -61,6 +79,7 @@ class _PaymentLinkScanSheetState extends State<PaymentLinkScanSheet> {
     _controller =
         widget.controller ??
         MobileScannerController(
+          facing: defaultQrScannerFacing,
           formats: QrScanner.formats,
           detectionSpeed: QrScanner.detectionSpeed,
         );

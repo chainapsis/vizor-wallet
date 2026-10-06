@@ -28,6 +28,7 @@ import '../shared/onboarding_error_messages.dart';
 import '../shared/onboarding_flow_args.dart';
 import 'account_persona_generator.dart';
 import 'onboarding_split_view.dart';
+import '../../payment_links/widgets/desktop_gift_setup_shell.dart';
 
 typedef CustomiseAccountFinishCallback =
     Future<void> Function(String accountName, String profilePictureId);
@@ -39,7 +40,9 @@ class CustomiseAccountScreen extends ConsumerStatefulWidget {
     this.random,
     super.key,
   }) : ledgerPresentation = false,
-       ledgerBackTarget = null;
+       ledgerBackTarget = null,
+       giftPresentation = false,
+       giftConfiguresPassword = false;
 
   const CustomiseAccountScreen.ledger({
     required this.onFinish,
@@ -47,8 +50,23 @@ class CustomiseAccountScreen extends ConsumerStatefulWidget {
     this.random,
     super.key,
   }) : args = null,
-       ledgerPresentation = true;
+       ledgerPresentation = true,
+       giftPresentation = false,
+       giftConfiguresPassword = false;
 
+  const CustomiseAccountScreen.gift({
+    required this.onFinish,
+    required bool configuresPassword,
+    this.random,
+    super.key,
+  }) : args = null,
+       ledgerPresentation = false,
+       ledgerBackTarget = null,
+       giftPresentation = true,
+       giftConfiguresPassword = configuresPassword;
+
+  final bool giftPresentation;
+  final bool giftConfiguresPassword;
   final CustomiseAccountArgs? args;
 
   /// Optional preview/test seam. Production routes leave this null and use the
@@ -335,6 +353,14 @@ class _CustomiseAccountScreenState
           )
         : null;
 
+    if (widget.giftPresentation) {
+      return DesktopGiftSetupShell(
+        step: DesktopGiftSetupStep.customise,
+        showPasswordStep: widget.giftConfiguresPassword,
+        overlay: profilePictureOverlay,
+        child: _buildContent(),
+      );
+    }
     if (widget.ledgerPresentation) {
       return LedgerOnboardingShell(
         activeStep: LedgerOnboardingStep.customiseAccount,
