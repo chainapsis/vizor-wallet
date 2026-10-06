@@ -3,6 +3,30 @@ import Foundation
 import UIKit
 import UserNotifications
 
+/// App-wide private queries setting as last applied by Dart.
+///
+/// Dart writes the effective value (preference and network availability) at
+/// startup and on every toggle. A missing or unreadable value counts as private,
+/// so a background pass never issues a public transaction lookup the app did not
+/// authorize.
+enum BackgroundMigrationPrivateRecovery {
+  static let defaultsKey = "vizor.background_migration.private_recovery"
+
+  static func isEnabled(defaults: UserDefaults = .standard) -> Bool {
+    migrationPreparationPrivateRecoveryEnabled(
+      storedValue: defaults.string(forKey: defaultsKey)
+    )
+  }
+
+  static func set(_ enabled: Bool, defaults: UserDefaults = .standard) {
+    defaults.set(enabled ? "on" : "off", forKey: defaultsKey)
+  }
+}
+
+func migrationPreparationPrivateRecoveryEnabled(storedValue: String?) -> Bool {
+  storedValue != "off"
+}
+
 enum BackgroundMigrationPreparationPassResult: Equatable {
   case completed
   case waitingForConfirmations
@@ -524,12 +548,16 @@ func migrationPreparationResumeTarget(
   return .idle
 }
 
+/// With private recovery on, confirmations are observed by the foreground app.
+/// A background pass cannot advance the wallet's scanned state, so it can never
+/// accept a Status PIR anchor, and it must not fall back to public lookups.
 func migrationPreparationContinuedTaskDisposition(
-  _ resumeTarget: BackgroundMigrationPreparationResumeTarget
+  _ resumeTarget: BackgroundMigrationPreparationResumeTarget,
+  privateRecovery: Bool
 ) -> BackgroundMigrationPreparationContinuedTaskDisposition {
   switch resumeTarget {
   case .continuedProcessing:
-    return .trackConfirmations
+    return privateRecovery ? .foregroundOnly : .trackConfirmations
   case .backgroundProcessing:
     return .foregroundOnly
   case .idle, .terminal:
@@ -1115,7 +1143,8 @@ final class BackgroundMigrationPreparationManager {
       // Only take over a pending request when background tracking cannot make
       // progress on it anyway.
       let canTrackInBackground = migrationPreparationContinuedTaskDisposition(
-        self.preparationResumeTarget()
+        self.preparationResumeTarget(),
+        privateRecovery: BackgroundMigrationPrivateRecovery.isEnabled()
       ) == .trackConfirmations
       BGTaskScheduler.shared.getPendingTaskRequests { requests in
         let hasPendingRequest = requests.contains {
@@ -1247,8 +1276,11 @@ final class BackgroundMigrationPreparationManager {
     completion: @escaping (Bool) -> Void
   ) {
     pruneForegroundContinuationScopes()
+    let resumeTarget = preparationResumeTarget()
+    let privateRecovery = BackgroundMigrationPrivateRecovery.isEnabled()
     switch migrationPreparationContinuedTaskDisposition(
-      preparationResumeTarget()
+      resumeTarget,
+      privateRecovery: privateRecovery
     ) {
     case .trackConfirmations:
       break
@@ -1256,7 +1288,10 @@ final class BackgroundMigrationPreparationManager {
       BGTaskScheduler.shared.cancel(
         taskRequestWithIdentifier: Self.taskIdentifier
       )
-      recordSchedulingState("foreground_only")
+      recordSchedulingState(
+        privateRecovery && resumeTarget == .continuedProcessing
+          ? "blocked_private_recovery" : "foreground_only"
+      )
       cancelWatchdog()
       completion(false)
       return
@@ -1535,7 +1570,8 @@ final class BackgroundMigrationPreparationManager {
       submissionInFlight = false
     }
     let disposition = migrationPreparationContinuedTaskDisposition(
-      preparationResumeTarget()
+      preparationResumeTarget(),
+      privateRecovery: BackgroundMigrationPrivateRecovery.isEnabled()
     )
     switch disposition {
     case .trackConfirmations:
@@ -1901,17 +1937,21 @@ final class BackgroundMigrationPreparationManager {
       for transactionId in transactionIds {
         switch transactionObservation(
           endpoint: manifest.lightwalletdUrl,
+          dbPath: manifest.dbPath,
+          network: manifest.network,
           transactionIdHex: transactionId,
+          requiredThrough: tip,
           cancellation: cancellation
         ) {
         case .success(let observation):
           observations.append(observation)
         case .failure(.cancelled):
           return .cancelled
+        case .failure(.coverageIncomplete):
+          // No observation was made. Retry this wave without failing background work.
+          queryFailed = true
         case .failure(let error):
-          print(
-            "[BGPreparation] tx query failed txid=\(transactionId) error=\(error)"
-          )
+          print("[BGPreparation] transaction status query failed error=\(error)")
           queryFailed = true
         }
         if queryFailed { break }
@@ -1991,18 +2031,34 @@ final class BackgroundMigrationPreparationManager {
 
   private func transactionObservation(
     endpoint: String,
+    dbPath: String,
+    network: String,
     transactionIdHex: String,
+    requiredThrough: UInt64,
     cancellation: BackgroundMigrationCancellation
   ) -> Result<
     NativeLightwalletdTransactionObservation,
     NativeLightwalletdError
   > {
-    guard let storedOrder = Self.transactionIdData(transactionIdHex) else {
+    guard let requiredThrough = UInt32(exactly: requiredThrough),
+      let storedOrder = Self.transactionIdData(transactionIdHex) else {
       return .failure(.malformedResponse)
     }
     let protocolOrder = Data(storedOrder.reversed())
+    // Tracking is skipped in private mode; a pass that races a toggle to private
+    // makes no lookup at all rather than a private query that cannot conclude.
+    let privateStatus = network.withCString {
+      zcash_status_pir_is_enabled($0, BackgroundMigrationPrivateRecovery.isEnabled())
+    }
+    if privateStatus {
+      return .failure(.coverageIncomplete)
+    }
     let first = NativeLightwalletdClient.transaction(
       endpoint: endpoint,
+      dbPath: dbPath,
+      privateStatus: false,
+      network: network,
+      requiredThrough: requiredThrough,
       transactionId: protocolOrder,
       cancellation: cancellation
     )
@@ -2013,6 +2069,10 @@ final class BackgroundMigrationPreparationManager {
     }
     let second = NativeLightwalletdClient.transaction(
       endpoint: endpoint,
+      dbPath: dbPath,
+      privateStatus: false,
+      network: network,
+      requiredThrough: requiredThrough,
       transactionId: storedOrder,
       cancellation: cancellation
     )

@@ -45,22 +45,23 @@ scripts/e2e/flutter-macos-regtest-payment-link.sh
 # Retry a failed claim broadcast and survive a reorg.
 scripts/e2e/flutter-macos-regtest-payment-link-recovery.sh
 
-# Competition, lost-response recovery, and archive/restore (three scenarios).
+# Competition, lost-response recovery, and removal after restart (three scenarios).
 scripts/e2e/flutter-macos-regtest-gift-card-outcomes.sh
 ```
 
 The outcomes runner uses four process phases for three scenarios: competition
-leaves a real losing card archived, the next process restores it, and a separate
+leaves a real losing card, the next process removes it, and a separate
 prepare/resume pair recovers a transaction whose accepted response was dropped.
 It checks five versus six confirmations, winner/loser balances, a fresh
 observer's spend evidence, retained secrets and claim databases, and zero
 transmissions during a manual status check. A fully spent competing card resolves
-to `Already claimed`; `Claim failed` is reserved for other settled failures.
+to `Claimed elsewhere` and can be removed; `Claim failed` is reserved for other
+settled failures.
 Automatic claim recovery is gated only during the manual-check measurement,
 then released to execute the production recovery path.
 
 Run this suite serially: it uses the shared Docker regtest chain and resets it
-between the competition/archive and response-loss scenarios by default. The
+between the competition/removal and response-loss scenarios by default. The
 fault proxy and node are pinned to local ports 19068 and 18232. macOS windows
 remain hidden by default. Logs are saved to `.regtest-logs/gift-card-outcomes.log`;
 the chain remains available for inspection afterward. As with the other runners,
@@ -81,6 +82,9 @@ My Gift Cards surface:
 ```bash
 # Create, open, and claim a card between two accounts, on the simulator.
 scripts/e2e/flutter-ios-regtest-mobile-payment-link-round-trip.sh
+
+# First-wallet Gift creation/import, receipt, Home setup, and recipient removal.
+scripts/e2e/flutter-ios-regtest-mobile-gift-onboarding.sh
 ```
 
 It is part of `scripts/e2e/flutter-ios-regtest-mobile-full.sh` and follows
@@ -89,6 +93,17 @@ the mobile lane rules: `run_mobile_e2e` injects `VIZOR_FORM_FACTOR=mobile`,
 runner passes `VIZOR_PAYMENT_LINK_REGTEST_ENABLED=true` — without which
 payment links stay gated off — plus `VIZOR_DEEPLINK_BASE_URL`. Set
 `SIMULATOR_UDID` when more than one simulator is booted.
+
+The onboarding runner funds fresh external Gift addresses through the existing
+Python driver, then drives **Activate gift card → Paste card link** in a walletless
+app. It verifies account/passcode persistence, real claim transactions and Home
+Activity, six-confirmation bearer/temporary DB cleanup, manual setup carousel,
+backup deferral/completion and birthday, education, first-wallet passphrase
+import, and deletion of a waiting card with its removed recipient. The runner
+passes the mobile tag/define and opts into skipped mobile tests. It does not
+capture recovery words or bearer links, and skips native biometric enrollment.
+Both Gift runners reset the disposable regtest chain by default; run them
+serially. `E2E_DRIVER_PORT` selects the onboarding driver's port.
 
 Both the desktop and simulator Gift Card runs drive the app's **Redeem a
 card → Paste card link** path rather than opening a universal link. macOS

@@ -419,6 +419,9 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
   Future<void> setReceivedCardArchived(String address, bool archived) async {}
 
   @override
+  Future<void> removeReceivedCard(String address) async {}
+
+  @override
   Future<void> retainPendingClaim(PaymentLinkClaimSession session) async {}
 
   @override
@@ -492,6 +495,22 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
     List<PaymentLinkReceivedRecord> records, {
     bool allowResubmit = true,
   }) async => const [];
+
+  @override
+  Future<PaymentLinkClaimInspection> inspectClaim(
+    VizorPaymentLink link, {
+    bool allowLongSync = false,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<PaymentLinkClaimSession> bindClaimDestination(
+    PaymentLinkClaimInspection inspection, {
+    required String destinationAccountUuid,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<void> discardClaimInspection(PaymentLinkClaimInspection inspection) =>
+      throw UnimplementedError();
 
   @override
   Future<PaymentLinkClaimSession> prepareClaim(

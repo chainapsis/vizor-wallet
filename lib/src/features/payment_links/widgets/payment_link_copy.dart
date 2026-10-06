@@ -18,6 +18,12 @@ const kPaymentLinkReceivedTabLabel = 'Received';
 const kPaymentLinkPendingSectionLabel = 'Pending';
 const kPaymentLinkUnusedSectionLabel = 'Unused';
 const kPaymentLinkUsedSectionLabel = 'Used';
+const kPaymentLinkClaimedElsewhereLabel = 'Claimed elsewhere';
+const kPaymentLinkClaimedElsewhereDescription =
+    "This card was claimed in another wallet first. Your balance hasn't changed.";
+const kPaymentLinkRemoveCardTitle = 'Remove this card?';
+const kPaymentLinkRemoveCardLabel = 'Remove card';
+const kPaymentLinkRemoveCardSupporting = "This can't be undone.";
 const kPaymentLinkNoCreatedCardsText = 'No created cards yet.';
 const kPaymentLinkNoReceivedCardsText = 'No received cards yet.';
 const kPaymentLinkFundingIncompleteStatus = 'Funding incomplete';

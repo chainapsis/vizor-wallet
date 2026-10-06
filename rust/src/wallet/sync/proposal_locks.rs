@@ -4,8 +4,12 @@
 //! owns live in SQLite. This side table records enough generic `OutputRef`
 //! information to release locks left by a previous process without touching
 //! long-lived migration owners.
+//!
+//! A hardware TEX request also reserves a ZIP 320 ephemeral address. The
+//! backend never returns one, so repeated cancelled approvals would exhaust
+//! the ephemeral gap limit; a request released before submission returns it.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     LazyLock,
@@ -28,6 +32,9 @@ use crate::wallet::{
 use super::open_wallet_db;
 
 const TABLE: &str = "vizor_send_proposal_locks";
+const EPHEMERAL_TABLE: &str = "vizor_send_ephemeral_reservations";
+/// `KeyScope::Ephemeral` as encoded in the `addresses.key_scope` column.
+const EPHEMERAL_KEY_SCOPE: i64 = 2;
 // Kept only on the wallet-owned PCZT, never the device signer view.
 pub(crate) const OWNER_KEY: &str = "vizor:send-lock-owner-v1";
 static SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
@@ -109,7 +116,12 @@ pub(crate) fn ensure_schema(conn: &Connection) -> Result<(), String> {
             PRIMARY KEY (owner, txid, pool, output_index)
         );
         CREATE INDEX IF NOT EXISTS idx_vizor_send_proposal_locks_session
-            ON {TABLE}(session_id, retain_until_expiry);"
+            ON {TABLE}(session_id, retain_until_expiry);
+        CREATE TABLE IF NOT EXISTS {EPHEMERAL_TABLE} (
+            owner BLOB NOT NULL,
+            address TEXT NOT NULL,
+            PRIMARY KEY (owner, address)
+        );"
     ))
     .map_err(|e| format!("Initialize send proposal lock recovery schema: {e}"))?;
     // A legacy retained row might already have reached the network. Never
@@ -178,13 +190,129 @@ pub(super) fn remove_with_timeout(
     owner: LockOwner,
     timeout: std::time::Duration,
 ) -> Result<(), String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, timeout)?;
+    delete_owner_rows(db_path, owner, timeout, false)
+}
+
+/// Like [`remove_with_timeout`], for a request abandoned before submission:
+/// also returns its ephemeral address reservation.
+pub(super) fn release_with_timeout(
+    db_path: &str,
+    owner: LockOwner,
+    timeout: std::time::Duration,
+) -> Result<(), String> {
+    delete_owner_rows(db_path, owner, timeout, true)
+}
+
+fn delete_owner_rows(
+    db_path: &str,
+    owner: LockOwner,
+    timeout: std::time::Duration,
+    return_ephemeral: bool,
+) -> Result<(), String> {
+    let mut conn = open_wallet_raw_conn_with_timeout(db_path, timeout)?;
     ensure_schema(&conn)?;
-    conn.execute(
+    let tx = conn
+        .transaction()
+        .map_err(|e| format!("Begin send proposal lock removal: {e}"))?;
+    if return_ephemeral {
+        return_ephemeral_reservations(&tx, owner)?;
+    }
+    tx.execute(
+        &format!("DELETE FROM {EPHEMERAL_TABLE} WHERE owner = ?1"),
+        params![owner.as_bytes().as_slice()],
+    )
+    .map_err(|e| format!("Remove ephemeral reservation rows: {e}"))?;
+    tx.execute(
         &format!("DELETE FROM {TABLE} WHERE owner = ?1"),
         params![owner.as_bytes().as_slice()],
     )
     .map_err(|e| format!("Remove send proposal lock recovery rows: {e}"))?;
+    tx.commit()
+        .map_err(|e| format!("Commit send proposal lock removal: {e}"))
+}
+
+/// Ephemeral addresses the wallet has reserved so far. Caller holds the
+/// wallet write lock across this snapshot and [`record_ephemeral_reservations`].
+pub(super) fn reserved_ephemeral_addresses(db_path: &str) -> Result<HashSet<String>, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    read_reserved_ephemeral_addresses(&conn)
+}
+
+fn read_reserved_ephemeral_addresses(conn: &Connection) -> Result<HashSet<String>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT cached_transparent_receiver_address
+             FROM addresses
+             WHERE key_scope = ?1
+               AND exposed_at_height IS NOT NULL
+               AND cached_transparent_receiver_address IS NOT NULL",
+        )
+        .map_err(|e| format!("Prepare ephemeral reservation query: {e}"))?;
+    let addresses = stmt
+        .query_map(params![EPHEMERAL_KEY_SCOPE], |row| row.get(0))
+        .map_err(|e| format!("Query ephemeral reservations: {e}"))?
+        .collect::<Result<HashSet<String>, _>>()
+        .map_err(|e| format!("Read ephemeral reservation: {e}"))?;
+    Ok(addresses)
+}
+
+/// Attributes the ephemeral addresses reserved since `before` to `owner`.
+/// Records a reservation even when PCZT construction failed after making it.
+pub(super) fn record_ephemeral_reservations(
+    db_path: &str,
+    owner: LockOwner,
+    before: &HashSet<String>,
+) -> Result<(), String> {
+    let mut conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let reserved = read_reserved_ephemeral_addresses(&conn)?;
+    let tx = conn
+        .transaction()
+        .map_err(|e| format!("Begin ephemeral reservation record: {e}"))?;
+    for address in reserved.difference(before) {
+        tx.execute(
+            &format!("INSERT OR IGNORE INTO {EPHEMERAL_TABLE} (owner, address) VALUES (?1, ?2)"),
+            params![owner.as_bytes().as_slice(), address],
+        )
+        .map_err(|e| format!("Record ephemeral reservation: {e}"))?;
+    }
+    tx.commit()
+        .map_err(|e| format!("Commit ephemeral reservation record: {e}"))
+}
+
+/// Only while the owner is still in the pre-submission `session` phase: after
+/// the outbox checkpoint or broadcast boundary the network may know the address.
+fn return_ephemeral_reservations(conn: &Connection, owner: LockOwner) -> Result<(), String> {
+    let has_rows: bool = conn
+        .query_row(
+            &format!("SELECT EXISTS(SELECT 1 FROM {EPHEMERAL_TABLE} WHERE owner = ?1)"),
+            params![owner.as_bytes().as_slice()],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("Read ephemeral reservation rows: {e}"))?;
+    if !has_rows {
+        return Ok(());
+    }
+    conn.execute(
+        &format!(
+            "UPDATE addresses
+             SET exposed_at_height = NULL
+             WHERE key_scope = ?2
+               AND exposed_at_height IS NOT NULL
+               AND cached_transparent_receiver_address IN (
+                   SELECT address FROM {EPHEMERAL_TABLE} WHERE owner = ?1
+               )
+               AND NOT EXISTS (
+                   SELECT 1 FROM transparent_received_outputs tro
+                   WHERE tro.address_id = addresses.id
+               )
+               AND EXISTS (
+                   SELECT 1 FROM {TABLE} WHERE owner = ?1 AND phase = 'session'
+               )"
+        ),
+        params![owner.as_bytes().as_slice(), EPHEMERAL_KEY_SCOPE],
+    )
+    .map_err(|e| format!("Return ephemeral address reservation: {e}"))?;
     Ok(())
 }
 
@@ -408,12 +536,22 @@ fn recover(db_path: &str, network: WalletNetwork, check_expiry: bool) -> Result<
             .transaction()
             .map_err(|e| format!("Begin orphan send lock cleanup: {e}"))?;
         for owner in owners_to_remove {
+            return_ephemeral_reservations(&tx, owner)?;
             tx.execute(
                 &format!("DELETE FROM {TABLE} WHERE owner = ?1"),
                 params![owner.as_bytes().as_slice()],
             )
             .map_err(|e| format!("Delete recovered send lock rows: {e}"))?;
         }
+        // Rows whose owner no longer has input locks cannot prove they were
+        // never submitted; forget them without returning the address.
+        tx.execute(
+            &format!(
+                "DELETE FROM {EPHEMERAL_TABLE} WHERE owner NOT IN (SELECT owner FROM {TABLE})"
+            ),
+            [],
+        )
+        .map_err(|e| format!("Delete orphan ephemeral reservation rows: {e}"))?;
         tx.commit()
             .map_err(|e| format!("Commit orphan send lock cleanup: {e}"))?;
         Ok(())
@@ -873,6 +1011,240 @@ mod tests {
             )
             .unwrap();
         assert!(retain);
+    }
+
+    struct EphemeralWallet {
+        _directory: tempfile::TempDir,
+        path: String,
+        account: zcash_client_sqlite::AccountUuid,
+    }
+
+    fn ephemeral_wallet() -> EphemeralWallet {
+        use zcash_client_backend::data_api::WalletWrite;
+
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("wallet.db");
+        let path = path.to_str().unwrap().to_owned();
+        let seed = crate::wallet::keys::mnemonic_to_seed(&crate::wallet::keys::generate_mnemonic())
+            .unwrap();
+        let (uuid, _) = crate::wallet::keys::init_db_and_create_account(
+            &path,
+            WalletNetwork::Test,
+            &seed,
+            Some(2_000_000),
+            "test",
+        )
+        .unwrap();
+        let mut db = open_wallet_db(&path, WalletNetwork::Test).unwrap();
+        db.update_chain_tip(BlockHeight::from_u32(2_000_010))
+            .unwrap();
+        EphemeralWallet {
+            _directory: directory,
+            account: crate::wallet::keys::parse_account_uuid(&uuid).unwrap(),
+            path,
+        }
+    }
+
+    /// Mirrors `create_tex_pczts_from_proposal`: a session-phase owner reserves
+    /// one ephemeral address and records it.
+    fn reserve_for(wallet: &EphemeralWallet, owner: LockOwner) -> Result<String, String> {
+        use zcash_client_backend::data_api::WalletWrite;
+        use zcash_keys::encoding::AddressCodec as _;
+
+        let output = OutputRef::new(TxId::from_bytes(*owner.as_bytes()), PoolType::ORCHARD, 0);
+        persist(
+            &wallet.path,
+            owner,
+            &[output],
+            BlockHeight::from_u32(2_000_100),
+        )?;
+        let before = reserved_ephemeral_addresses(&wallet.path)?;
+        let mut db = open_wallet_db(&wallet.path, WalletNetwork::Test)?;
+        let reserved = db
+            .reserve_next_n_ephemeral_addresses(wallet.account, 1)
+            .map_err(|e| e.to_string());
+        drop(db);
+        record_ephemeral_reservations(&wallet.path, owner, &before)?;
+        Ok(reserved?[0].0.encode(&WalletNetwork::Test))
+    }
+
+    fn is_reserved(wallet: &EphemeralWallet, address: &str) -> bool {
+        reserved_ephemeral_addresses(&wallet.path)
+            .unwrap()
+            .contains(address)
+    }
+
+    #[test]
+    fn cancelled_tex_requests_return_their_ephemeral_address() {
+        let wallet = ephemeral_wallet();
+        let mut first = None;
+        // Well past the backend's gap limit of ten unmined reservations.
+        for n in 0..25u8 {
+            let owner = LockOwner::new([n + 1; 32]);
+            let address = reserve_for(&wallet, owner).unwrap();
+            assert_eq!(address, *first.get_or_insert_with(|| address.clone()));
+            release_with_timeout(&wallet.path, owner, READ_DB_BUSY_TIMEOUT).unwrap();
+            assert!(!is_reserved(&wallet, &address));
+        }
+
+        // Control: without the return the account runs out after ten.
+        let reservations = (0..11u8)
+            .map(|n| reserve_for(&wallet, LockOwner::new([100 + n; 32])))
+            .collect::<Vec<_>>();
+        assert!(reservations[..10].iter().all(Result::is_ok));
+        assert!(reservations[10].is_err());
+    }
+
+    #[test]
+    fn submitted_or_stored_ephemeral_reservations_stay_reserved() {
+        use transparent::{
+            address::TransparentAddress,
+            bundle::{OutPoint, TxOut},
+        };
+        use zcash_client_backend::{data_api::WalletWrite, wallet::WalletTransparentOutput};
+        use zcash_keys::encoding::AddressCodec as _;
+        use zcash_protocol::value::Zatoshis;
+
+        let wallet = ephemeral_wallet();
+        let broadcast = LockOwner::new([1; 32]);
+        let signed = LockOwner::new([2; 32]);
+        let stored = LockOwner::new([3; 32]);
+        let broadcast_address = reserve_for(&wallet, broadcast).unwrap();
+        let signed_address = reserve_for(&wallet, signed).unwrap();
+        let stored_address = reserve_for(&wallet, stored).unwrap();
+
+        mark_retain_until_expiry(&wallet.path, broadcast).unwrap();
+        let conn = Connection::open(&wallet.path).unwrap();
+        checkpoint_owner(&conn, signed, "signed-op").unwrap();
+        // The wallet stored a transaction paying the address.
+        let script = TransparentAddress::decode(&WalletNetwork::Test, &stored_address)
+            .unwrap()
+            .script();
+        let utxo = WalletTransparentOutput::from_parts(
+            OutPoint::new([5; 32], 0),
+            TxOut::new(Zatoshis::const_from_u64(100_000), script.into()),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let mut db = open_wallet_db(&wallet.path, WalletNetwork::Test).unwrap();
+        db.put_received_transparent_utxo(&utxo).unwrap();
+        drop(db);
+
+        for owner in [broadcast, signed, stored] {
+            release_with_timeout(&wallet.path, owner, READ_DB_BUSY_TIMEOUT).unwrap();
+        }
+        for address in [&broadcast_address, &signed_address, &stored_address] {
+            assert!(is_reserved(&wallet, address), "{address}");
+        }
+        let next = reserve_for(&wallet, LockOwner::new([4; 32])).unwrap();
+        assert!(![broadcast_address, signed_address, stored_address].contains(&next));
+    }
+
+    #[test]
+    fn restart_returns_only_abandoned_ephemeral_reservations() {
+        let wallet = ephemeral_wallet();
+        let abandoned = LockOwner::new([1; 32]);
+        let submitted = LockOwner::new([2; 32]);
+        let abandoned_address = reserve_for(&wallet, abandoned).unwrap();
+        let submitted_address = reserve_for(&wallet, submitted).unwrap();
+        mark_retain_until_expiry(&wallet.path, submitted).unwrap();
+        let conn = Connection::open(&wallet.path).unwrap();
+        conn.execute(&format!("UPDATE {TABLE} SET session_id = zeroblob(16)"), [])
+            .unwrap();
+        // An orphan row cannot prove it was never submitted.
+        conn.execute(
+            &format!("INSERT INTO {EPHEMERAL_TABLE} (owner, address) VALUES (?1, ?2)"),
+            params![[9u8; 32].as_slice(), &submitted_address],
+        )
+        .unwrap();
+
+        recover_before_balance(&wallet.path, WalletNetwork::Test).unwrap();
+
+        assert!(!is_reserved(&wallet, &abandoned_address));
+        assert!(is_reserved(&wallet, &submitted_address));
+        let remaining: Vec<Vec<u8>> = conn
+            .prepare(&format!("SELECT owner FROM {EPHEMERAL_TABLE}"))
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(remaining, vec![submitted.as_bytes().to_vec()]);
+    }
+
+    #[test]
+    fn discarding_a_signing_request_returns_its_ephemeral_address() {
+        use super::super::{discard_stored_proposal, StoredProposalLock, PROPOSAL_STORE};
+        use transparent::{
+            address::TransparentAddress,
+            bundle::{OutPoint, TxOut},
+        };
+        use zcash_client_backend::{
+            data_api::wallet::ConfirmationsPolicy,
+            fees::TransactionBalance,
+            proposal::Proposal,
+            wallet::WalletTransparentOutput,
+            zip321::{Payment, TransactionRequest},
+        };
+        use zcash_keys::address::Address;
+        use zcash_protocol::value::Zatoshis;
+
+        let wallet = ephemeral_wallet();
+        let owner = LockOwner::new([61; 32]);
+        let address = reserve_for(&wallet, owner).unwrap();
+        let recipient = TransparentAddress::PublicKeyHash([7; 20]);
+        let utxo = WalletTransparentOutput::from_parts(
+            OutPoint::new([9; 32], 0),
+            TxOut::new(Zatoshis::const_from_u64(100_000), recipient.script().into()),
+            Some(BlockHeight::from_u32(1)),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let payment = Payment::new(
+            Address::Transparent(recipient).to_zcash_address(&WalletNetwork::Test),
+            Some(Zatoshis::const_from_u64(90_000)),
+            None,
+            None,
+            None,
+            vec![],
+        )
+        .unwrap();
+        let proposal = Proposal::single_step(
+            TransactionRequest::new(vec![payment]).unwrap(),
+            BTreeMap::from([(0, PoolType::TRANSPARENT)]),
+            vec![utxo],
+            None,
+            BlockHeight::from_u32(1),
+            TransactionBalance::new(vec![], Zatoshis::const_from_u64(10_000)).unwrap(),
+            super::super::send::ConservativeZip317FeeRule,
+            BlockHeight::from_u32(2).into(),
+            ConfirmationsPolicy::default(),
+            false,
+            false,
+        )
+        .unwrap();
+        let id = 9_200_001u64;
+        let flow = "ephemeral-return-flow";
+        PROPOSAL_STORE.lock().unwrap().locks.insert(
+            id,
+            StoredProposalLock {
+                proposal,
+                network: WalletNetwork::Test,
+                db_path: wallet.path.clone(),
+                owner,
+                send_flow_id: flow.to_string(),
+            },
+        );
+
+        discard_stored_proposal(id, flow).unwrap();
+
+        assert!(!PROPOSAL_STORE.lock().unwrap().locks.contains_key(&id));
+        assert!(!is_reserved(&wallet, &address));
     }
 
     #[test]

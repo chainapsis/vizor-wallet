@@ -320,8 +320,8 @@ void main() {
     );
     expect(action, findsOneWidget);
     final actionStyle = tester.widget<Text>(actionText).style!;
-    expect(actionStyle.fontSize, 14);
-    expect(actionStyle.height, 16 / 14);
+    expect(actionStyle.fontSize, AppTypography.labelLarge.fontSize);
+    expect(actionStyle.height, AppTypography.labelLarge.height);
 
     final actionSemantics = find.semantics.byLabel('Use max: 142.23 ZEC');
     expect(actionSemantics, findsOne);

@@ -84,6 +84,7 @@ rust_sync.TransactionInfo _tx({
   String displayPool = 'shielded',
   BigInt? blockTime,
   BigInt? createdTime,
+  BigInt? displayAmount,
 }) {
   return rust_sync.TransactionInfo(
     txidHex: txid,
@@ -94,7 +95,7 @@ rust_sync.TransactionInfo _tx({
     blockTime: blockTime ?? BigInt.from(1750000000),
     isTransparent: false,
     txKind: kind,
-    displayAmount: BigInt.from(12312000000),
+    displayAmount: displayAmount ?? BigInt.from(12312000000),
     displayPool: displayPool,
     createdTime: createdTime ?? BigInt.from(1750000000),
   );
@@ -276,7 +277,7 @@ void main() {
     },
   );
 
-  testWidgets('redeemed receipt refreshes when only the network fee arrives', (
+  testWidgets('redeemed receipt shows no fee before or after the fee arrives', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(393, 1000));
@@ -303,7 +304,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('--'), findsOneWidget);
+    expect(find.text('Tx fee'), findsNothing);
     final enriched = _tx(kind: 'received', fee: BigInt.from(15000));
     history[0] = enriched;
     notifier.setSyncState(
@@ -314,12 +315,12 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('0.00015 ZEC'), findsOneWidget);
-    expect(find.text('--'), findsNothing);
+    expect(find.text('Tx fee'), findsNothing);
+    expect(find.text('0.00015 ZEC'), findsNothing);
   });
 
   for (final fee in [0, 15000]) {
-    testWidgets('redeemed card keeps the fee row with fee $fee', (
+    testWidgets('redeemed card shows no fee row with fee $fee', (
       tester,
     ) async {
       await tester.binding.setSurfaceSize(const Size(393, 1000));
@@ -332,9 +333,10 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('Redeemed a gift card'), findsOneWidget);
-      expect(find.text('Tx fee'), findsOneWidget);
+      // Redeeming a card is a receive, so it shows no network fee.
+      expect(find.text('Tx fee'), findsNothing);
       expect(find.text('Card fee'), findsNothing);
-      expect(find.text(fee == 0 ? '--' : '0.00015 ZEC'), findsOneWidget);
+      expect(find.text('0.00015 ZEC'), findsNothing);
       // The sender's reserve must not be substituted or added here.
       expect(find.text('0.0002 ZEC'), findsNothing);
       expect(find.text('0.00035 ZEC'), findsNothing);
@@ -813,6 +815,73 @@ void main() {
     expect(previewText.maxLines, 1);
     expect(previewText.overflow, TextOverflow.ellipsis);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('zero-value receipt shows 0 ZEC and its memo', (tester) async {
+    const memo = 'Zcash is a privacy protecting digital currency.';
+    await tester.pumpWidget(
+      _app(
+        _tx(kind: 'received', fee: BigInt.zero, displayAmount: BigInt.zero),
+        detail: _detail(kind: 'received', sourcePool: 'shielded', memo: memo),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Received'), findsOneWidget);
+    expect(find.text('0.00 ZEC'), findsOneWidget);
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_tx_status_message_toggle')),
+    );
+    await tester.pump();
+    expect(find.text(memo), findsOneWidget);
+  });
+
+  testWidgets('zero-value send shows 0 ZEC with its fee and memo', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        _tx(displayAmount: BigInt.zero),
+        detail: _detail(memo: 'Memo-only payment'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Sent successfully'), findsOneWidget);
+    expect(find.text('0.00 ZEC'), findsOneWidget);
+    expect(find.text('0.00015 ZEC'), findsOneWidget);
+    expect(find.text('Message'), findsOneWidget);
+  });
+
+  testWidgets('unknown tx keeps a neutral title instead of a send outcome', (
+    tester,
+  ) async {
+    for (final minedHeight in [BigInt.from(2500000), BigInt.zero]) {
+      final tx = _tx(
+        kind: 'unknown',
+        minedHeight: minedHeight,
+        displayAmount: BigInt.zero,
+      );
+      await tester.pumpWidget(
+        _app(
+          tx,
+          detail: rust_sync.TransactionDetail(
+            txidHex: tx.txidHex,
+            txKind: 'unknown',
+            outputs: const [],
+          ),
+        ),
+      );
+      // A pending tx spins a loader, so pump instead of settling.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.text('Transaction'), findsOneWidget);
+      expect(find.text('Sent successfully'), findsNothing);
+      expect(find.text('Sending...'), findsNothing);
+      expect(find.text('To'), findsNothing);
+      expect(find.text('--'), findsOneWidget);
+    }
   });
 
   testWidgets('no memo means no message row', (tester) async {

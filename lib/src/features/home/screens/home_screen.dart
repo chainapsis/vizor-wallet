@@ -683,7 +683,7 @@ class _HomePaneState extends ConsumerState<_HomePane> {
         message: syncFailure.userMessage,
         actionLabel: syncFailure.actionLabel,
         onTap: syncFailure.showSettingsAction
-            ? () => context.push('/settings/endpoint')
+            ? () => context.push(syncFailure.settingsRoute!)
             : syncFailure.retriesTorRoute &&
                   ref.watch(networkPrivacyProvider).torRouteRetained
             // A sync restart against a failed Tor route fails again at once,

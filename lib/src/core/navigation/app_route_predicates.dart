@@ -33,6 +33,7 @@ bool isRouteOrChild(String matchedLocation, String routePath) =>
 bool isOnboardingLocation(String matchedLocation) =>
     matchedLocation == '/welcome' ||
     matchedLocation == '/add-account' ||
+    isRouteOrChild(matchedLocation, '/gift') ||
     matchedLocation.startsWith('/onboarding/') ||
     matchedLocation.startsWith('/import');
 

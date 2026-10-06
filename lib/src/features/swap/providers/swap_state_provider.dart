@@ -1020,11 +1020,21 @@ class SwapNotifier extends Notifier<SwapState> {
     if (selected == null) return;
     if (selected.depositClaimedAt != null) return;
     if (selected.status != SwapIntentStatus.awaitingExternalDeposit) return;
+    final accountUuid = _activeAccountUuidOrNull;
     final updated = selected.copyWith(depositClaimedAt: DateTime.now().toUtc());
     state = state.copyWith(
       intents: state.intents.replaceSwapIntent(selected.id, updated),
     );
     await _persistCurrentIntents();
+    if (_activeAccountUuidOrNull != accountUuid ||
+        state.intents.swapIntentById(selected.id) == null) {
+      return;
+    }
+    await _refreshIntentStatuses(
+      intentIds: [selected.id],
+      showBusy: true,
+      includeTerminal: true,
+    );
   }
 
   void selectIntent(String intentId) {

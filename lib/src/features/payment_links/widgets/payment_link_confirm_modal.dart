@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import '../../../core/layout/app_desktop_shell.dart';
+import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -115,6 +116,70 @@ class PaymentLinkConfirmModal extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Mobile counterpart of [PaymentLinkConfirmModal]; resolves to whether the
+/// action was confirmed.
+Future<bool> showPaymentLinkConfirmSheet(
+  BuildContext context, {
+  required String iconName,
+  required String title,
+  required String body,
+  required String confirmLabel,
+  required String cancelLabel,
+  String? supporting,
+  Key? sheetKey,
+  Key? confirmKey,
+}) async {
+  final confirmed = await showAppMobileSheet<bool>(
+    context: context,
+    builder: (sheetContext) {
+      final colors = sheetContext.colors;
+      final navigator = Navigator.of(sheetContext);
+      return MobileModalScaffold(
+        key: sheetKey,
+        title: title,
+        leading: PaymentLinkModalIcon(iconName),
+        onClose: () => navigator.pop(false),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              body,
+              style: AppTypography.bodyMedium.copyWith(
+                color: colors.text.accent,
+              ),
+            ),
+            if (supporting != null) ...[
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                supporting,
+                style: AppTypography.bodyMedium.copyWith(
+                  color: colors.text.secondary,
+                ),
+              ),
+            ],
+            const SizedBox(height: AppSpacing.md),
+            AppButton(
+              key: confirmKey,
+              expand: true,
+              onPressed: () => navigator.pop(true),
+              child: Text(confirmLabel),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            AppButton(
+              variant: AppButtonVariant.ghost,
+              expand: true,
+              onPressed: () => navigator.pop(false),
+              child: Text(cancelLabel),
+            ),
+          ],
+        ),
+      );
+    },
+  );
+  return confirmed == true;
 }
 
 /// Icon in a subtle circle that leads a gift card modal title.

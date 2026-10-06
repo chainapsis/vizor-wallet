@@ -41,6 +41,91 @@ void main() {
     expect(intent.minimumReceiveText, '0.2079 USDC');
   });
 
+  test(
+    'restored FAILED records with a positive refund display as refunded',
+    () {
+      const record = SwapIntentRecord(
+        id: 'refunded-swap',
+        providerLabel: 'NEAR Intents',
+        pairText: 'USDC -> ZEC',
+        sellAmountText: '2.3 USDC',
+        receiveEstimateText: '0.0115 ZEC',
+        status: SwapIntentStatus.failed,
+        nextAction: 'Swap failed',
+        providerStatusRaw: 'FAILED',
+        providerRefundInfo: SwapProviderRefundInfo(
+          refundedAmountText: '2.2976 USDC',
+        ),
+      );
+
+      final intent = _intentFromRecord(record);
+      final activityRecord = resolveSwapRecordForDisplay(record);
+
+      expect(intent.status, SwapIntentStatus.refunded);
+      expect(intent.nextAction, 'Refund sent to your refund address');
+      expect(intent.providerStatusRaw, 'FAILED');
+      expect(activityRecord.status, SwapIntentStatus.refunded);
+      expect(activityRecord.providerStatusRaw, 'FAILED');
+    },
+  );
+
+  test('FAILED without a positive refund remains failed', () {
+    const record = SwapIntentRecord(
+      id: 'failed-swap',
+      providerLabel: 'NEAR Intents',
+      pairText: 'USDC -> ZEC',
+      sellAmountText: '2.3 USDC',
+      receiveEstimateText: '0.0115 ZEC',
+      status: SwapIntentStatus.failed,
+      nextAction: 'Swap failed',
+      providerStatusRaw: 'FAILED',
+      providerRefundInfo: SwapProviderRefundInfo(refundedAmountText: '0 USDC'),
+    );
+
+    expect(_intentFromRecord(record).status, SwapIntentStatus.failed);
+    expect(resolveSwapRecordForDisplay(record).status, SwapIntentStatus.failed);
+  });
+
+  test('new FAILED snapshot with a refund resolves to refunded', () {
+    final intent = _intentFromRecord(
+      const SwapIntentRecord(
+        id: 'refunded-swap',
+        providerLabel: 'NEAR Intents',
+        pairText: 'USDC -> ZEC',
+        sellAmountText: '2.3 USDC',
+        receiveEstimateText: '0.0115 ZEC',
+        status: SwapIntentStatus.processing,
+        nextAction: 'Swap is processing',
+      ),
+    );
+    final updated = updateSwapIntentFromSnapshot(
+      intent,
+      const SwapIntentSnapshot(
+        id: 'refunded-swap',
+        providerLabel: 'NEAR Intents',
+        pairText: 'USDC -> ZEC',
+        sellAmountText: '2.3 USDC',
+        receiveEstimateText: '0.0115 ZEC',
+        status: SwapIntentStatus.failed,
+        nextAction: 'Swap failed',
+        depositInstruction: SwapDepositInstruction(
+          asset: SwapAsset.usdc,
+          address: '0xdeposit',
+          expiresInLabel: 'expired',
+          reuseWarning: 'Do not reuse',
+        ),
+        providerStatusRaw: 'FAILED',
+        providerRefundInfo: SwapProviderRefundInfo(
+          refundedAmountText: '2.2976 USDC',
+        ),
+      ),
+    );
+
+    expect(updated.status, SwapIntentStatus.refunded);
+    expect(updated.nextAction, 'Refund sent to your refund address');
+    expect(updated.providerStatusRaw, 'FAILED');
+  });
+
   test('updates raw lifecycle facts from provider status snapshots', () {
     final createdAt = DateTime.utc(2026, 5, 7, 10);
     final checkedAt = DateTime.utc(2026, 5, 7, 10, 30);

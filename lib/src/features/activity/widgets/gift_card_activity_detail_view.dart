@@ -36,7 +36,7 @@ class GiftCardActivityDetailView extends StatelessWidget {
     required this.statusColor,
     required this.timestampText,
     required this.txIdText,
-    required String this.feeText,
+    required this.feeText,
     required this.onTxIdPressed,
     this.isInFlight = false,
     this.isFailed = false,
@@ -81,6 +81,8 @@ class GiftCardActivityDetailView extends StatelessWidget {
   final Color statusColor;
   final String timestampText;
   final String txIdText;
+
+  /// The fee row value; the row and its divider are omitted when null.
   final String? feeText;
   final String? message;
   final bool messageExpanded;
@@ -178,8 +180,9 @@ class GiftCardActivityDetailView extends StatelessWidget {
                       ),
                     ],
                   ),
-                  const ReviewWrapDivider(),
-                  if (batch == null)
+                  if (batch != null || feeText != null)
+                    const ReviewWrapDivider(),
+                  if (batch == null && feeText != null)
                     ReviewListRow(
                       label: kind == GiftCardActivityKind.created
                           ? 'Card fee'
@@ -191,7 +194,7 @@ class GiftCardActivityDetailView extends StatelessWidget {
                           ? kPaymentLinkCardFeeHelpText
                           : kTxFeeHelpTooltip,
                     )
-                  else
+                  else if (batch != null)
                     ReviewListRow(
                       label: batch.totalLabel,
                       value: '${batch.totalText} ZEC',

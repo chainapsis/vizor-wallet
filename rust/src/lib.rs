@@ -1,3 +1,6 @@
+// The PIR transport's nested async types exceed the default layout query depth.
+#![recursion_limit = "256"]
+
 pub mod api;
 pub mod ffi;
 mod frb_generated;

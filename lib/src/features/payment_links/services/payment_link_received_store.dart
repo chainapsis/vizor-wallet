@@ -92,6 +92,7 @@ class PaymentLinkReceivedRecord {
     this.availability = PaymentLinkAvailability.unchecked,
     this.archived = false,
     this.claimPriorTxids = const [],
+    this.setupAccountUuid,
   });
 
   factory PaymentLinkReceivedRecord.fromLink(
@@ -151,11 +152,22 @@ class PaymentLinkReceivedRecord {
   /// Null means an older record has no baseline; [] is a known empty baseline.
   final List<String>? claimPriorTxids;
 
+  /// The recipient chosen during Gift setup, so an interrupted setup reopens
+  /// the same account. Removing it also forgets an unclaimed setup Card.
+  /// [destinationAccountUuid] scopes submitted Cards in the Received list.
+  final String? setupAccountUuid;
+
   bool get canArchive =>
       !isClaimInFlight &&
       (availability == PaymentLinkAvailability.noBalance ||
           availability == PaymentLinkAvailability.claimedElsewhere ||
           availability == PaymentLinkAvailability.failed);
+
+  /// A Card another wallet claimed first has nothing left to recover, so it
+  /// can be removed outright instead of kept among the received Cards.
+  bool get canRemove =>
+      !isClaimInFlight &&
+      availability == PaymentLinkAvailability.claimedElsewhere;
 
   bool get isClaimInFlight =>
       status == PaymentLinkReceivedStatus.submitting ||
@@ -185,6 +197,7 @@ class PaymentLinkReceivedRecord {
     Object? claimPriorTxids = _fieldNotProvided,
   }) {
     return PaymentLinkReceivedRecord(
+      setupAccountUuid: setupAccountUuid,
       network: network,
       address: address,
       amountZatoshi: amountZatoshi,
@@ -360,10 +373,18 @@ class PaymentLinkReceivedStore {
   Future<PaymentLinkReceivedRecord> saveReady(
     VizorPaymentLink link, {
     DateTime? updatedAt,
+    String? setupAccountUuid,
   }) {
     return _runExclusive(() async {
       final records = await _loadUnlocked();
       final existing = _findByAddress(records, link.address);
+      if (setupAccountUuid != null &&
+          existing?.setupAccountUuid != null &&
+          existing!.setupAccountUuid != setupAccountUuid) {
+        throw StateError(
+          'The Gift Card already belongs to another setup account.',
+        );
+      }
       if (existing?.status == PaymentLinkReceivedStatus.received) {
         return existing!;
       }
@@ -395,6 +416,7 @@ class PaymentLinkReceivedStore {
             existing?.availability ?? PaymentLinkAvailability.unchecked,
         archived: existing?.archived ?? false,
         claimPriorTxids: existing == null ? const [] : existing.claimPriorTxids,
+        setupAccountUuid: setupAccountUuid ?? existing?.setupAccountUuid,
       );
       await _writeRecords(_replaceByAddress(records, record));
       return record;
@@ -427,6 +449,10 @@ class PaymentLinkReceivedStore {
       }
       final records = await _loadUnlocked();
       final existing = _findRequired(records, address);
+      if (existing.setupAccountUuid != null &&
+          existing.setupAccountUuid != destinationAccountUuid.trim()) {
+        throw StateError('The Gift Card must use its saved setup account.');
+      }
       if (expected != null &&
           (existing.status != expected.status ||
               existing.claimTxids != expected.claimTxids ||
@@ -447,6 +473,7 @@ class PaymentLinkReceivedStore {
         );
       }
       final updated = PaymentLinkReceivedRecord(
+        setupAccountUuid: existing.setupAccountUuid,
         network: existing.network,
         address: existing.address,
         amountZatoshi: existing.amountZatoshi,
@@ -493,6 +520,10 @@ class PaymentLinkReceivedStore {
       if (existing.status == PaymentLinkReceivedStatus.received) {
         return existing;
       }
+      if (existing.setupAccountUuid != null &&
+          existing.setupAccountUuid != normalizedAccountUuid) {
+        throw StateError('The Gift Card must use its saved setup account.');
+      }
       if (existing.status != PaymentLinkReceivedStatus.readyToClaim ||
           existing.claimLink == null) {
         throw StateError('Only a ready Gift Card claim can be started.');
@@ -524,6 +555,7 @@ class PaymentLinkReceivedStore {
       final records = await _loadUnlocked();
       final existing = _findRequired(records, address);
       final updated = PaymentLinkReceivedRecord(
+        setupAccountUuid: existing.setupAccountUuid,
         network: existing.network,
         address: existing.address,
         amountZatoshi: existing.amountZatoshi,
@@ -611,6 +643,7 @@ class PaymentLinkReceivedStore {
         );
       }
       final updated = PaymentLinkReceivedRecord(
+        setupAccountUuid: existing.setupAccountUuid,
         network: existing.network,
         address: existing.address,
         amountZatoshi: existing.amountZatoshi,
@@ -803,6 +836,7 @@ Map<String, Object?> _recordToJson(PaymentLinkReceivedRecord record) {
     'updatedAt': record.updatedAt.toUtc().toIso8601String(),
     'claimSubmittedAt': record.claimSubmittedAt?.toUtc().toIso8601String(),
     'claimDestinationPool': record.claimDestinationPool,
+    'setupAccountUuid': record.setupAccountUuid,
   };
 }
 
@@ -829,6 +863,7 @@ PaymentLinkReceivedRecord _recordFromJson(Object? value) {
   final updatedAtRaw = value['updatedAt'];
   final claimSubmittedAtRaw = value['claimSubmittedAt'];
   final claimDestinationPool = value['claimDestinationPool'];
+  final setupAccountUuid = value['setupAccountUuid'];
   if (network is! String ||
       network.isEmpty ||
       address is! String ||
@@ -844,7 +879,8 @@ PaymentLinkReceivedRecord _recordFromJson(Object? value) {
       (claimTxids != null && claimTxids is! String) ||
       updatedAtRaw is! String ||
       (claimSubmittedAtRaw != null && claimSubmittedAtRaw is! String) ||
-      (claimDestinationPool != null && claimDestinationPool is! String)) {
+      (claimDestinationPool != null && claimDestinationPool is! String) ||
+      (setupAccountUuid != null && setupAccountUuid is! String)) {
     throw const PaymentLinkReceivedStoreFormatException(
       'Received-card record fields are invalid.',
     );
@@ -981,5 +1017,6 @@ PaymentLinkReceivedRecord _recordFromJson(Object? value) {
     updatedAt: updatedAt.toUtc(),
     claimSubmittedAt: claimSubmittedAt?.toUtc(),
     claimDestinationPool: claimDestinationPool as String?,
+    setupAccountUuid: setupAccountUuid as String?,
   );
 }

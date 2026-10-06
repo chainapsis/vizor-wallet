@@ -156,10 +156,11 @@ class NetworkPrivacyControl extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(width: AppSpacing.xs),
-                _NetworkPrivacyToggle(
+                PrivacyToggle(
                   key: const ValueKey('network_privacy_toggle'),
+                  trackKey: const ValueKey('network_privacy_toggle_track'),
                   enabled: state.torEnabled,
-                  action: toggleAction,
+                  semanticsLabel: toggleAction.semanticsLabel,
                   onToggle: toggleAction.isInteractive
                       ? () => unawaited(
                           ref
@@ -268,25 +269,27 @@ class NetworkPrivacyControl extends ConsumerWidget {
   }
 }
 
-class _NetworkPrivacyToggle extends StatefulWidget {
-  const _NetworkPrivacyToggle({
+class PrivacyToggle extends StatefulWidget {
+  const PrivacyToggle({
     required this.enabled,
-    required this.action,
+    required this.trackKey,
+    required this.semanticsLabel,
     required this.onToggle,
     super.key,
   });
 
   final bool enabled;
+  final Key trackKey;
 
-  final NetworkPrivacyToggleAction action;
+  final String semanticsLabel;
 
   final VoidCallback? onToggle;
 
   @override
-  State<_NetworkPrivacyToggle> createState() => _NetworkPrivacyToggleState();
+  State<PrivacyToggle> createState() => _PrivacyToggleState();
 }
 
-class _NetworkPrivacyToggleState extends State<_NetworkPrivacyToggle> {
+class _PrivacyToggleState extends State<PrivacyToggle> {
   bool _focused = false;
 
   void _activate() => widget.onToggle?.call();
@@ -298,7 +301,7 @@ class _NetworkPrivacyToggleState extends State<_NetworkPrivacyToggle> {
     final track = AnimatedContainer(
       duration: const Duration(milliseconds: 160),
       curve: Curves.easeOut,
-      key: const ValueKey('network_privacy_toggle_track'),
+      key: widget.trackKey,
       width: 44,
       height: 20,
       padding: const EdgeInsets.all(2),
@@ -355,7 +358,7 @@ class _NetworkPrivacyToggleState extends State<_NetworkPrivacyToggle> {
       button: true,
       enabled: interactive,
       toggled: widget.enabled,
-      label: widget.action.semanticsLabel,
+      label: widget.semanticsLabel,
       excludeSemantics: true,
       child: MouseRegion(
         cursor: interactive

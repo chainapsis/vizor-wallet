@@ -10,12 +10,20 @@ import 'package:zcash_wallet/src/features/swap/domain/swap_asset.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_activity_status_mapper.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_detail_tooltips.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart'
-    show SwapDirection, SwapIntent, SwapIntentStatus;
+    show
+        SwapDirection,
+        SwapIntent,
+        SwapIntentStatus,
+        SwapProviderRefundInfo,
+        SwapQuoteMode,
+        SwapState;
 import 'package:zcash_wallet/src/features/swap/models/swap_status_presentation.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_review_header.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_status_content.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_activity_panel.dart'
-    show mobileSwapStatusRecipientFullAddress;
+    show mobileSwapStatusHeaderLabels, mobileSwapStatusRecipientFullAddress;
+
+import '../../figma_compare/figma_compare_font_loader.dart';
 
 Widget _harness(Widget child) {
   return MaterialApp(
@@ -122,6 +130,93 @@ SwapIntent _intent({
 }
 
 void main() {
+  testWidgets('compact progress descriptions grow instead of overflowing', (
+    tester,
+  ) async {
+    await loadFigmaCompareFonts();
+    tester.view.physicalSize = const Size(320, 568);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    const description =
+        'Confirm waiting for the source chain and provider to recognise the deposit';
+    await tester.pumpWidget(
+      _harness(
+        SingleChildScrollView(
+          child: _content(
+            showTabs: true,
+            activeTab: SwapStatusTab.progress,
+            steps: const [
+              SwapStatusStepData(
+                title: 'Deposit confirmation',
+                state: SwapStatusStepState.active,
+                lastCheckedLabel: 'Last check: 1m ago',
+                description: description,
+              ),
+              SwapStatusStepData(
+                title: 'Swap',
+                state: SwapStatusStepState.pending,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    final step = tester.getRect(
+      find.byKey(const ValueKey('swap_activity_route_step_0_active')),
+    );
+    expect(
+      tester.getRect(find.text(description)).bottom,
+      lessThanOrEqualTo(step.bottom),
+    );
+  });
+
+  test('mobile failed and refunded headers do not imply delivery', () {
+    for (final status in [SwapIntentStatus.failed, SwapIntentStatus.refunded]) {
+      final labels = mobileSwapStatusHeaderLabels(status);
+      expect(labels.pay, 'Deposit amount');
+      expect(labels.receive, 'Expected to receive');
+    }
+    expect(
+      mobileSwapStatusHeaderLabels(SwapIntentStatus.complete).receive,
+      'You received',
+    );
+  });
+
+  test('refunded mobile swap keeps its copyable refund address in details', () {
+    final intent =
+        _intent(
+          direction: SwapDirection.externalToZec,
+          recipient: 'u1recipient-address',
+        ).copyWith(
+          status: SwapIntentStatus.refunded,
+          providerRefundInfo: const SwapProviderRefundInfo(
+            depositedAmountText: '100.00 USDC',
+            refundedAmountText: '99.99 USDC',
+          ),
+        );
+    final state = SwapState(
+      direction: SwapDirection.externalToZec,
+      quoteMode: SwapQuoteMode.exactInput,
+      amountText: '',
+      receiveAmountText: '',
+      receiveFiatText: '',
+      destinationText: '',
+      externalAsset: SwapAsset.usdc,
+      reviewVisible: false,
+      intents: [intent],
+    );
+
+    final presentation = swapActivityStatusPresentationForIntent(state, intent);
+    final refund = presentation.details.singleWhere(
+      (row) => row.label == 'Refund to',
+    );
+    expect(refund.copyable, isTrue);
+    expect(refund.copyText, '0xrefund-address');
+  });
+
   const details = [
     SwapStatusDetailRowData(
       label: 'Total fees',
@@ -181,6 +276,66 @@ void main() {
     // The terminal card itself still renders.
     expect(find.text('Completed'), findsOneWidget);
     expect(_tooltipWithMessage(swapTotalFeesTooltip), findsOneWidget);
+  });
+
+  testWidgets('refunded terminal status shows Refunded instead of Failed', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _harness(
+        SingleChildScrollView(
+          child: _content(
+            showTabs: false,
+            badgeKind: SwapStatusBadgeKind.refunded,
+            details: const [
+              SwapStatusDetailRowData(
+                label: 'Refunded amount',
+                value: '2.2976 USDC',
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Refunded'), findsOneWidget);
+    expect(find.text('Failed'), findsNothing);
+    expect(find.text('2.2976 USDC'), findsOneWidget);
+  });
+
+  testWidgets('refund amount and fee share the group below the divider', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _harness(
+        SingleChildScrollView(
+          child: _content(
+            showTabs: false,
+            badgeKind: SwapStatusBadgeKind.refunded,
+            details: const [
+              SwapStatusDetailRowData(
+                label: 'Timestamp',
+                value: 'May 20, 2026 13:20',
+              ),
+              SwapStatusDetailRowData(
+                label: 'Refunded amount',
+                value: '2.2976 USDC',
+              ),
+              SwapStatusDetailRowData(
+                label: 'Refund fee',
+                value: '0.0024 USDC',
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final timestamp = tester.getRect(find.text('Timestamp'));
+    final refunded = tester.getRect(find.text('Refunded amount'));
+    final fee = tester.getRect(find.text('Refund fee'));
+    // The divider sits before the refund amount, not between it and the fee.
+    expect(refunded.top - timestamp.top, greaterThan(fee.top - refunded.top));
   });
 
   testWidgets('in-progress (details tab) omits the View on Near Intents link', (

@@ -15,9 +15,10 @@ import '../../../core/widgets/app_icon.dart';
 import '../shared/onboarding_flow_args.dart';
 import '../../settings/screens/mobile/mobile_seed_phrase_screen.dart'
     show MobileSeedScreenshotWarningSheet;
+import 'mobile_onboarding_progress.dart';
+import 'mobile_onboarding_progress_scope.dart';
 import 'mobile_onboarding_scaffold.dart';
 
-const _kImportReviewProgress = 60 / 196;
 const _kImportReviewSeedCardHeight = 385.0;
 const _kImportReviewSeedChipWidth = 90.0;
 const _kImportReviewSeedColumns = 3;
@@ -108,7 +109,7 @@ class _MobileImportReviewScreenState extends State<MobileImportReviewScreen>
   }
 
   void _continue(BuildContext context) {
-    context.push(
+    context.pushOnboarding(
       '/import/birthday',
       extra: ImportBirthdayArgs(
         mnemonic: widget.args.mnemonic,
@@ -122,7 +123,7 @@ class _MobileImportReviewScreenState extends State<MobileImportReviewScreen>
       context.pop(MobileImportReviewResult.clear);
       return;
     }
-    context.go('/import');
+    context.goOnboarding('/import');
   }
 
   @override
@@ -132,7 +133,9 @@ class _MobileImportReviewScreenState extends State<MobileImportReviewScreen>
       sensitiveContentVisible: words.isNotEmpty && !isCoveredByNextRoute,
       controller: _privacyController,
       child: MobileOnboardingStepScaffold(
-        progress: _kImportReviewProgress,
+        progress: MobileOnboardingProgressScope.of(
+          context,
+        ).at(OnboardingFlow.importWallet, OnboardingStage.phraseReview).value,
         onBack: () => Navigator.of(context).maybePop(),
         title: 'Review Import',
         subtitle: 'Review your secret passphrase\nbefore import starts.',

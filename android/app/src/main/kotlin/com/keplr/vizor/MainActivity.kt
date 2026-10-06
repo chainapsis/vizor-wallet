@@ -96,6 +96,11 @@ class MainActivity : FlutterFragmentActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        val appReviewHandler = AppReviewHandler(this)
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            AppReviewHandler.CHANNEL
+        ).setMethodCallHandler { call, result -> appReviewHandler.handle(call, result) }
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             HAPTICS_CHANNEL

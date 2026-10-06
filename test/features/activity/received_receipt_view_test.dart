@@ -31,7 +31,6 @@ void main() {
         memoText: 'Zcash is a privacy-focused ...',
         timestampText: '25 May, 13:30',
         txIdText: '0123123124512512',
-        feeText: '0.012 ZEC',
       ),
     );
 
@@ -48,14 +47,14 @@ void main() {
     expect(find.text('t1Z9N3o ... DgHXyo'), findsOneWidget);
 
     expect(find.byType(ReviewWrapCard), findsOneWidget);
-    expect(find.byType(ReviewWrapDivider), findsOneWidget);
+    expect(find.byType(ReviewWrapDivider), findsNothing);
     expect(find.text('Status'), findsOneWidget);
     expect(find.text('Completed'), findsOneWidget);
     expect(find.text('Zcash is a privacy-focused ...'), findsOneWidget);
     expect(find.text('25 May, 13:30'), findsOneWidget);
     expect(find.text('0123123124512512'), findsOneWidget);
-    expect(find.text('Network fee'), findsOneWidget);
-    expect(find.text('0.012 ZEC'), findsOneWidget);
+    // The sender paid the fee, so a receive shows none.
+    expect(find.text('Network fee'), findsNothing);
 
     final statusText = tester.widget<Text>(find.text('Completed'));
     expect(
@@ -78,7 +77,6 @@ void main() {
         memoText: 'Memo',
         timestampText: '25 May, 13:30',
         txIdText: '0123123124512512',
-        feeText: '0.012 ZEC',
       ),
     );
 
@@ -109,7 +107,6 @@ void main() {
         memoText: 'Memo',
         timestampText: '25 May, 13:30',
         txIdText: '0123123124512512',
-        feeText: '0.012 ZEC',
       ),
     );
 
@@ -134,7 +131,6 @@ void main() {
         isShieldedReceivingAddress: true,
         timestampText: '25 May, 13:30',
         txIdText: '0123123124512512',
-        feeText: '0.012 ZEC',
       ),
     );
 
@@ -239,7 +235,7 @@ void main() {
     expect(statusText.style?.color, AppThemeData.light.colors.text.destructive);
   });
 
-  testWidgets('hides the tx fee row and divider when feeText is null', (
+  testWidgets('shows no network fee row or divider', (
     tester,
   ) async {
     await _pump(
@@ -265,7 +261,6 @@ void main() {
         receivingAddress: _transparentReceivingAddress,
         timestampText: '25 May, 13:30',
         txIdText: '0123123124512512',
-        feeText: '0.012 ZEC',
       ),
     );
 
@@ -286,7 +281,6 @@ void main() {
     var fullAddress = 0;
     var message = 0;
     var txId = 0;
-    var feeHelp = 0;
     await _pump(
       tester,
       ReceivedReceiptView(
@@ -298,24 +292,20 @@ void main() {
         memoText: 'Memo',
         timestampText: '25 May, 13:30',
         txIdText: '0123123124512512',
-        feeText: '0.012 ZEC',
         onShowFullAddress: () => fullAddress++,
         onExpandMemo: () => message++,
         onTxIdPressed: () => txId++,
-        onFeeHelpPressed: () => feeHelp++,
       ),
     );
 
     await tester.tap(find.text('Show full address'));
     await tester.tap(find.text('Memo'));
     await tester.tap(find.text('0123123124512512'));
-    await tester.tap(find.text('0.012 ZEC'));
     await tester.pump();
 
     expect(fullAddress, 1);
     expect(message, 1);
     expect(txId, 1);
-    expect(feeHelp, 1);
   });
 }
 

@@ -6,6 +6,15 @@ import 'wallet_link_completion_crypto.dart';
 
 const _bestEffortCompletionTimeout = Duration(seconds: 10);
 
+typedef WalletLinkCompletionCallback =
+    Future<void> Function({
+      required String packageId,
+      required String completionToken,
+      required List<int> keyBytes,
+      required int importedAccountCount,
+      required int importedContactCount,
+    });
+
 Future<void> completeWalletLinkPackageBestEffort({
   required String packageId,
   required String completionToken,

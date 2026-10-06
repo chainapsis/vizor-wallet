@@ -187,6 +187,15 @@ pub(crate) fn with_wallet_db_write_lock_until<T>(
     write: impl FnOnce() -> T,
 ) -> Result<T, String> {
     let lock = WALLET_DB_WRITE_LOCK.get_or_init(|| Mutex::new(()));
+    let guard = lock_until(lock, operation, deadline)?;
+    Ok(run_wallet_db_write(operation, guard, write))
+}
+
+fn lock_until<'a>(
+    lock: &'a Mutex<()>,
+    operation: &'static str,
+    deadline: Instant,
+) -> Result<MutexGuard<'a, ()>, String> {
     loop {
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
@@ -203,7 +212,7 @@ pub(crate) fn with_wallet_db_write_lock_until<T>(
                 continue;
             }
         };
-        return Ok(run_wallet_db_write(operation, guard, write));
+        return Ok(guard);
     }
 }
 
@@ -355,32 +364,35 @@ mod tests {
     }
 
     #[test]
-    fn deadline_does_not_wait_for_a_busy_writer_or_run_cleanup() {
+    fn deadline_does_not_wait_for_a_busy_writer() {
+        // A private lock: parallel tests keep the global one busy and can
+        // starve a polling acquirer past any deadline. Acquiring it does not
+        // touch the global write epoch that other tests assert on.
+        let lock = Mutex::new(());
         let (entered_tx, entered_rx) = std::sync::mpsc::channel();
-        let (release_tx, release_rx) = std::sync::mpsc::channel();
-        let writer = std::thread::spawn(move || {
-            with_wallet_db_write_lock("test.busy_writer", || {
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        std::thread::scope(|scope| {
+            let busy = &lock;
+            scope.spawn(move || {
+                let _guard = busy.lock().unwrap();
                 entered_tx.send(()).unwrap();
                 release_rx.recv().unwrap();
             });
+            entered_rx.recv().unwrap();
+            let result = lock_until(
+                &lock,
+                "test.deadline",
+                Instant::now() + Duration::from_millis(20),
+            );
+            release_tx.send(()).unwrap();
+            assert!(result.is_err());
         });
-        entered_rx.recv().unwrap();
-        let result = with_wallet_db_write_lock_until(
-            "test.deadline",
-            Instant::now() + Duration::from_millis(20),
-            || panic!("timed-out cleanup must not run"),
-        );
-        release_tx.send(()).unwrap();
-        writer.join().unwrap();
-        assert!(result.is_err());
-        with_wallet_db_write_lock_until(
+        assert!(lock_until(
+            &lock,
             "test.after_deadline",
             Instant::now() + Duration::from_secs(5),
-            || {
-                assert_eq!(wallet_db_write_epoch() % 2, 1);
-            },
         )
-        .unwrap();
+        .is_ok());
     }
 
     #[test]

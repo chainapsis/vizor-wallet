@@ -1,6 +1,8 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../src/features/onboarding/mobile/mobile_onboarding_progress.dart';
+import '../src/features/onboarding/mobile/mobile_onboarding_progress_scope.dart';
 import '../src/features/onboarding/mobile/mobile_passcode_screen.dart';
 import '../src/features/onboarding/mobile/mobile_unlock_screen.dart';
 import '../src/features/onboarding/shared/onboarding_flow_args.dart';
@@ -11,8 +13,11 @@ import '../src/services/biometric_unlock.dart';
 /// The comparison test enters six fixture digits to reach confirmation.
 Widget buildPasscodeReviewCreate(BuildContext context) => _frame(
   context,
-  MobilePasscodeScreen(
-    args: SetPasswordScreenArgs.create(mnemonic: 'visual fixture only'),
+  MobileOnboardingProgressScope(
+    setupMode: OnboardingSetupMode.createPasscode,
+    child: MobilePasscodeScreen(
+      args: SetPasswordScreenArgs.create(mnemonic: 'visual fixture only'),
+    ),
   ),
 );
 

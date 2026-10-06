@@ -507,6 +507,7 @@ mod ledger_ironwood_fixture_tests {
                 consensus::NetworkUpgrade::Nu6_1 => 8,
                 consensus::NetworkUpgrade::Nu6_2 => 9,
                 consensus::NetworkUpgrade::Nu6_3 => 10,
+                consensus::NetworkUpgrade::Nu7 => return None,
             }))
         }
     }

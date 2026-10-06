@@ -36,6 +36,7 @@ class MobilePasscodeLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
+    resizeToAvoidBottomInset: false,
     backgroundColor: context.colors.background.window,
     body: SafeArea(
       child: LayoutBuilder(

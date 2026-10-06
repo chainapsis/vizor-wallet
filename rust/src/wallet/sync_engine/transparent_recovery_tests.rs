@@ -2,8 +2,22 @@ use super::*;
 use zcash_client_backend::data_api::{
     wallet::decrypt_and_store_transaction, TransactionDataRequest,
 };
-use zcash_primitives::transaction::Transaction;
+use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::consensus::BranchId;
+
+/// Whether the wallet's routed payload snapshot holds a public request for `txid`.
+fn has_public_payload_work(db: &mut WalletDatabase, txid: TxId) -> bool {
+    use zcash_client_backend::data_api::{
+        enhance_pir::{EnhancePirRead, EnhancementMode, TransactionEnhancementWork},
+        PublicTransactionEnhancementRequest,
+    };
+    db.set_enhancement_mode(EnhancementMode::Standard);
+    db.transaction_enhancement_work()
+        .unwrap()
+        .contains(&TransactionEnhancementWork::Public(
+            PublicTransactionEnhancementRequest::new(txid),
+        ))
+}
 
 #[path = "transparent_recovery_regtest.rs"]
 mod regtest;
@@ -70,16 +84,15 @@ fn pre_sapling_external_and_internal_outputs_survive_retry_and_track_external_sp
         let batches = vec![downloaded(&uuid, &tx, 100)];
         store_transparent_outputs(&mut db, &batches).unwrap();
         store_transparent_outputs(&mut db, &batches).unwrap();
-        assert!(db.transaction_data_requests().unwrap().iter().any(
-            |request| matches!(request, TransactionDataRequest::Enhancement(id) if id == &tx.txid())
-        ));
+        assert!(has_public_payload_work(&mut db, tx.txid()));
         // The real enhancement handler feeds the full transaction here.
         decrypt_and_store_transaction(&network, &mut db, &tx, Some(BlockHeight::from_u32(100)))
             .unwrap();
         store_transparent_outputs(&mut db, &batches).unwrap();
-        assert!(!db.transaction_data_requests().unwrap().iter().any(
-            |request| matches!(request, TransactionDataRequest::Enhancement(id) if id == &tx.txid())
-        ), "known transaction bytes must not be fetched again");
+        assert!(
+            !has_public_payload_work(&mut db, tx.txid()),
+            "known transaction bytes must not be fetched again"
+        );
         let spend_tip = tip + 1;
         db.update_chain_tip(spend_tip).unwrap();
         let request = db
@@ -349,6 +362,119 @@ fn address_history_real_utxo_queue_coalesces_and_advances_after_storage() {
     assert_eq!(next[0][0].block_range_start(), tip + 2);
 }
 
+#[tokio::test]
+async fn checkpoint_drains_parent_payload_discovered_by_address_history() {
+    use bytes::Bytes;
+    use http_body_util::{BodyExt, Full};
+    use hyper::service::service_fn;
+    use prost::Message;
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+    use zcash_client_backend::proto::service::{RawTransaction, TxFilter};
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("wallet.db");
+    let path = path.to_str().unwrap();
+    let network = WalletNetwork::Regtest;
+    let seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
+    let (uuid, _) =
+        keys::init_db_and_create_account(path, network, &seed, Some(100), "history").unwrap();
+    let address =
+        keys::software_account_transparent_addresses(network, &seed, 0, 1).unwrap()[0].clone();
+    let address = TransparentAddress::decode(&network, &address).unwrap();
+    let mut db = open_wallet_db_with_timeout(path, network, SYNC_DB_BUSY_TIMEOUT).unwrap();
+    let receipt = legacy_transaction(OutPoint::new([1; 32], 0), address, 1_000_000);
+    store_transparent_outputs(&mut db, &[downloaded(&uuid, &receipt, 100)]).unwrap();
+    decrypt_and_store_transaction(
+        &network,
+        &mut db,
+        &receipt,
+        Some(BlockHeight::from_u32(100)),
+    )
+    .unwrap();
+    db.update_chain_tip(BlockHeight::from_u32(200)).unwrap();
+    assert!(!address_history::plan(&db.transaction_data_requests().unwrap()).is_empty());
+
+    let parent_txid = [9u8; 32];
+    let discovered = legacy_transaction(OutPoint::new(parent_txid, 0), address, 900_000);
+    let mut discovered_bytes = Vec::new();
+    discovered.write(&mut discovered_bytes).unwrap();
+    let parent_calls = Arc::new(AtomicUsize::new(0));
+    let parent_calls_for_server = parent_calls.clone();
+    let history_calls = Arc::new(AtomicUsize::new(0));
+    let history_calls_for_server = history_calls.clone();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        let io = hyper_util::rt::TokioIo::new(stream);
+        let service = service_fn(move |request: hyper::Request<hyper::body::Incoming>| {
+            let discovered_bytes = discovered_bytes.clone();
+            let parent_calls = parent_calls_for_server.clone();
+            let history_calls = history_calls_for_server.clone();
+            async move {
+                let path = request.uri().path().to_owned();
+                if path.ends_with("/GetTaddressTxids") {
+                    history_calls.fetch_add(1, Ordering::SeqCst);
+                    let raw = RawTransaction {
+                        data: discovered_bytes,
+                        height: 150,
+                    };
+                    let message = raw.encode_to_vec();
+                    let mut frame = vec![0];
+                    frame.extend_from_slice(&(message.len() as u32).to_be_bytes());
+                    frame.extend_from_slice(&message);
+                    return Ok::<_, std::convert::Infallible>(
+                        hyper::Response::builder()
+                            .header("content-type", "application/grpc")
+                            .header("grpc-status", "0")
+                            .body(Full::new(Bytes::from(frame)))
+                            .unwrap(),
+                    );
+                }
+                assert!(path.ends_with("/GetTransaction"));
+                let body = request.into_body().collect().await.unwrap().to_bytes();
+                let filter = TxFilter::decode(&body[5..]).unwrap();
+                if filter.hash == parent_txid {
+                    parent_calls.fetch_add(1, Ordering::SeqCst);
+                }
+                Ok(hyper::Response::builder()
+                    .header("content-type", "application/grpc")
+                    .header("grpc-status", "5")
+                    .header("grpc-message", "not found")
+                    .body(Full::new(Bytes::new()))
+                    .unwrap())
+            }
+        });
+        hyper::server::conn::http2::Builder::new(hyper_util::rt::TokioExecutor::new())
+            .serve_connection(io, service)
+            .await
+            .unwrap();
+    });
+
+    let channel = tonic::transport::Endpoint::from_shared(format!("http://{endpoint}"))
+        .unwrap()
+        .connect()
+        .await
+        .unwrap();
+    let mut client = CompactTxStreamerClient::new(channel);
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let mut enhancement = enhancement::EnhancementSession::new(network, path);
+    assert!(!enhancement
+        .run_checkpoint(&mut db, &mut client, None, &|| false)
+        .await
+        .unwrap());
+    server.abort();
+
+    assert_eq!(
+        parent_calls.load(Ordering::SeqCst),
+        1,
+        "only routed payload recovery queries the parent; fee completion stays local"
+    );
+}
+
 fn public_rewind_fixture(corrupt_cache: bool) {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("wallet.db");
@@ -564,8 +690,7 @@ fn scan_enhancement_restores_shared_send_after_account_reimport() {
     store_transparent_outputs(&mut db, &[downloaded(&reimported, &funding, 2_000_001)]).unwrap();
     decrypt_and_store_transaction(&network, &mut db, &funding, Some(2_000_001u32.into())).unwrap();
     assert_eq!(sent_amount(&reimported), 0);
-    assert!(!db.transaction_data_requests().unwrap().iter().any(|request|
-        matches!(request, TransactionDataRequest::Enhancement(id) if id == &payment.txid())));
+    assert!(!has_public_payload_work(&mut db, payment.txid()));
 
     let blocks = super::block_source::MemoryBlockSource::new(vec![CompactBlock {
         height: 2_000_010,
@@ -574,14 +699,12 @@ fn scan_enhancement_restores_shared_send_after_account_reimport() {
         ..Default::default()
     }]);
     with_wallet_db_write_lock("test.scan_enhancement", || {
-        enhance::queue_stored_transactions(path, &blocks)
+        enhancement::queue_stored_transactions(path, &blocks)
     })
     .unwrap();
-    assert!(db.transaction_data_requests().unwrap().iter().any(|request|
-        matches!(request, TransactionDataRequest::Enhancement(id) if id == &payment.txid())));
+    assert!(has_public_payload_work(&mut db, payment.txid()));
     // The existing enhancement handler performs this operation after scanning.
     decrypt_and_store_transaction(&network, &mut db, &payment, Some(2_000_010u32.into())).unwrap();
     assert_eq!(sent_amount(&reimported), 900_000);
-    assert!(!db.transaction_data_requests().unwrap().iter().any(|request|
-        matches!(request, TransactionDataRequest::Enhancement(id) if id == &payment.txid())));
+    assert!(!has_public_payload_work(&mut db, payment.txid()));
 }

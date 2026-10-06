@@ -19,6 +19,23 @@ void main() {
     expect(failure.actionLabel, 'Settings');
   });
 
+  test(
+    'classifies incomplete private status coverage as privacy settings action',
+    () {
+      final failure = classifySyncFailure('private status coverage incomplete');
+
+      expect(failure.kind, SyncFailureKind.privateStatusCoverage);
+      expect(failure.showSettingsAction, isTrue);
+      expect(failure.settingsRoute, '/settings');
+      expect(failure.actionLabel, 'Settings');
+      expect(
+        failure.userMessage,
+        "Private transaction lookup couldn't determine a transaction's status. "
+        'Turn off experimental private queries in Settings to continue syncing.',
+      );
+    },
+  );
+
   test('classifies temporary database lock', () {
     final failure = classifySyncFailure(
       'other: scan: SQLite lock contention: database is locked',

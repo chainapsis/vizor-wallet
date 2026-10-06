@@ -443,6 +443,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   DelegationSubmissionWire dco_decode_delegation_submission_wire(dynamic raw);
 
   @protected
+  EnhanceRecoveryStatus dco_decode_enhance_recovery_status(dynamic raw);
+
+  @protected
   ExecuteProposalResult dco_decode_execute_proposal_result(dynamic raw);
 
   @protected
@@ -1800,6 +1803,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   DelegationSubmissionWire sse_decode_delegation_submission_wire(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  EnhanceRecoveryStatus sse_decode_enhance_recovery_status(
     SseDeserializer deserializer,
   );
 
@@ -3509,6 +3517,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_delegation_submission_wire(
     DelegationSubmissionWire self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_enhance_recovery_status(
+    EnhanceRecoveryStatus self,
     SseSerializer serializer,
   );
 

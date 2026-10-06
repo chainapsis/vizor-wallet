@@ -8,6 +8,9 @@ import 'package:flutter/cupertino.dart' show CupertinoPage;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_progress_scope.dart';
+
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
@@ -59,7 +62,13 @@ void main() {
 
     await tester.pumpWidget(
       _harness(
-        MobileCustomiseAccountScreen(progress: 0.75, onFinish: failImport),
+        MobileCustomiseAccountScreen(
+          position: OnboardingProgressPlan.forFlow(
+            OnboardingFlow.ledger,
+            setupMode: OnboardingSetupMode.createPasscode,
+          ).at(OnboardingStage.customiseAccount),
+          onFinish: failImport,
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -218,7 +227,7 @@ void main() {
 
     expect(find.text('Customise Account'), findsOneWidget);
     expect(find.text('Windborne Wardbearer'), findsOneWidget);
-    expect(_stepsProgress(tester), closeTo(mobileCreateProgress(8), 0.0001));
+    expect(_stepsProgress(tester), closeTo(0.88435374150, 0.0001));
     expect(random.nextIntCallCount, 3);
     expect(
       tester.getSize(
@@ -253,6 +262,32 @@ void main() {
       find.byKey(const ValueKey('mobile_customise_account_edit_glyph')),
     );
     expect(editGlyph.size, 12);
+    final randomise = find.byKey(
+      const ValueKey('mobile_customise_account_randomise'),
+    );
+    final randomiseVisual = find.byKey(
+      const ValueKey('mobile_customise_account_randomise_visual'),
+    );
+    expect(tester.getSize(randomise), const Size.square(44));
+    expect(tester.getSize(randomiseVisual), const Size.square(28));
+    expect(
+      tester
+          .widget<AppIcon>(
+            find.descendant(
+              of: randomiseVisual,
+              matching: find.byType(AppIcon),
+            ),
+          )
+          .size,
+      16,
+    );
+    expect(
+      tester.getTopLeft(randomiseVisual) -
+          tester.getTopLeft(
+            find.byKey(const ValueKey('mobile_customise_account_card')),
+          ),
+      const Offset(325, 8),
+    );
 
     await tester.binding.setSurfaceSize(const Size(430, 932));
     await tester.pump();
@@ -265,6 +300,91 @@ void main() {
     await tester.pump();
     expect(submittedName, 'Windborne Wardbearer');
     expect(submittedProfilePictureId, 'pfp-03');
+  });
+
+  testWidgets('repeatedly randomises the name and profile picture together', (
+    tester,
+  ) async {
+    final random = _SequenceRandom([0, 1, 2, 3, 4, 5, 6, 7, 8]);
+    String? submittedName;
+    String? submittedProfilePictureId;
+
+    await tester.pumpWidget(
+      _harness(
+        MobileCustomiseAccountScreen(
+          args: const CustomiseAccountArgs(
+            setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
+          ),
+          random: random,
+          onFinish: (name, profilePictureId) async {
+            submittedName = name;
+            submittedProfilePictureId = profilePictureId;
+          },
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Windborne Wardbearer'), findsOneWidget);
+    expect(
+      find.bySemanticsLabel('Randomise account name and profile picture'),
+      findsOneWidget,
+    );
+
+    final randomise = find.byKey(
+      const ValueKey('mobile_customise_account_randomise'),
+    );
+    // The padding around the 28px circle remains part of the 44px tap target.
+    await tester.tapAt(tester.getTopLeft(randomise) + const Offset(2, 22));
+    await tester.pump();
+
+    expect(find.text('Valiant Wayfinder'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_customise_account_randomise')),
+    );
+    await tester.pump();
+
+    expect(find.text('Resolute Herald'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_customise_account_continue')),
+    );
+    await tester.pump();
+    expect(submittedName, 'Resolute Herald');
+    expect(submittedProfilePictureId, 'pfp-09');
+  });
+
+  testWidgets('keeps the randomise action at the logical end in RTL', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _harness(
+        Directionality(
+          textDirection: TextDirection.rtl,
+          child: MobileCustomiseAccountScreen(
+            args: const CustomiseAccountArgs(
+              setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
+            ),
+            random: _SequenceRandom([0, 1, 2]),
+            onFinish: (_, _) async {},
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      tester.getTopLeft(
+            find.byKey(
+              const ValueKey('mobile_customise_account_randomise_visual'),
+            ),
+          ) -
+          tester.getTopLeft(
+            find.byKey(const ValueKey('mobile_customise_account_card')),
+          ),
+      const Offset(8, 8),
+    );
   });
 
   testWidgets('uses the shared account name validation', (tester) async {
@@ -359,6 +479,14 @@ void main() {
       (widget) => widget is PopScope<void>,
     );
     expect(tester.widget<PopScope<void>>(popScope).canPop, isFalse);
+    expect(
+      tester
+          .widget<AppButton>(
+            find.byKey(const ValueKey('mobile_customise_account_randomise')),
+          )
+          .onPressed,
+      isNull,
+    );
 
     finish.complete();
     await tester.pump();
@@ -443,6 +571,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
           accountProvider.overrideWith(_RecordingAccountNotifier.new),
           syncProvider.overrideWith(_NoopSyncNotifier.new),
           ledgerAccountImporterProvider.overrideWithValue(({
@@ -459,8 +588,10 @@ void main() {
         ],
         child: MaterialApp.router(
           routerConfig: router,
-          builder: (_, child) =>
-              AppTheme(data: AppThemeData.dark, child: child!),
+          builder: (_, child) => AppTheme(
+            data: AppThemeData.dark,
+            child: MobileOnboardingProgressFrame(child: child!),
+          ),
         ),
       ),
     );
@@ -514,13 +645,17 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
           accountProvider.overrideWith(() => accountNotifier),
           appSecurityProvider.overrideWith(() => securityNotifier),
           syncProvider.overrideWith(_NoopSyncNotifier.new),
         ],
         child: MaterialApp.router(
           routerConfig: router,
-          builder: (_, c) => AppTheme(data: AppThemeData.dark, child: c!),
+          builder: (_, c) => AppTheme(
+            data: AppThemeData.dark,
+            child: MobileOnboardingProgressFrame(child: c!),
+          ),
         ),
       ),
     );
@@ -564,12 +699,16 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
           accountProvider.overrideWith(() => accountNotifier),
           syncProvider.overrideWith(_NoopSyncNotifier.new),
         ],
         child: MaterialApp.router(
           routerConfig: router,
-          builder: (_, c) => AppTheme(data: AppThemeData.dark, child: c!),
+          builder: (_, c) => AppTheme(
+            data: AppThemeData.dark,
+            child: MobileOnboardingProgressFrame(child: c!),
+          ),
         ),
       ),
     );
@@ -611,12 +750,16 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
           accountProvider.overrideWith(() => accountNotifier),
           syncProvider.overrideWith(_NoopSyncNotifier.new),
         ],
         child: MaterialApp.router(
           routerConfig: router,
-          builder: (_, c) => AppTheme(data: AppThemeData.dark, child: c!),
+          builder: (_, c) => AppTheme(
+            data: AppThemeData.dark,
+            child: MobileOnboardingProgressFrame(child: c!),
+          ),
         ),
       ),
     );
@@ -662,12 +805,16 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
           accountProvider.overrideWith(() => accountNotifier),
           syncProvider.overrideWith(_NoopSyncNotifier.new),
         ],
         child: MaterialApp.router(
           routerConfig: router,
-          builder: (_, c) => AppTheme(data: AppThemeData.dark, child: c!),
+          builder: (_, c) => AppTheme(
+            data: AppThemeData.dark,
+            child: MobileOnboardingProgressFrame(child: c!),
+          ),
         ),
       ),
     );
@@ -698,8 +845,14 @@ AppButton _continueButton(WidgetTester tester) => tester.widget<AppButton>(
 
 Widget _harness(Widget child) {
   return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+    ],
     child: MaterialApp(
-      builder: (_, c) => AppTheme(data: AppThemeData.dark, child: c!),
+      builder: (_, c) => AppTheme(
+        data: AppThemeData.dark,
+        child: MobileOnboardingProgressFrame(child: c!),
+      ),
       home: child,
     ),
   );
@@ -707,9 +860,15 @@ Widget _harness(Widget child) {
 
 Widget _routerHarness(GoRouter router) {
   return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+    ],
     child: MaterialApp.router(
       routerConfig: router,
-      builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
+      builder: (_, child) => AppTheme(
+        data: AppThemeData.dark,
+        child: MobileOnboardingProgressFrame(child: child!),
+      ),
     ),
   );
 }
@@ -814,6 +973,9 @@ class _RecordingSecurityNotifier extends AppSecurityNotifier {
   void commitPasswordSetup() {
     committed = true;
   }
+
+  @override
+  Future<void> completePasswordSetup() async => commitPasswordSetup();
 
   @override
   Future<void> rollbackPasswordSetup() async {}

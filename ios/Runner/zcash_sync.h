@@ -38,6 +38,24 @@ int32_t zcash_lightwalletd_observe_transaction(
     void* cancellation
 );
 
+bool zcash_status_pir_is_enabled(const char* network, bool private_preference);
+int32_t zcash_status_pir_observe_transaction(
+    const char* db_path,
+    const uint8_t* transaction_id,
+    uintptr_t transaction_id_len,
+    CLightwalletdTransactionObservation* output,
+    void* cancellation
+);
+#define ZCASH_STATUS_RESULT_UNSUPPORTED 5
+#define ZCASH_STATUS_RESULT_INCONCLUSIVE 4
+int32_t zcash_status_pir_observe_transaction_v2(
+    const char* db_path, const uint8_t* transaction_id, uintptr_t transaction_id_len,
+    const char* network, bool private_preference,
+    bool has_required_through, uint32_t required_through,
+    CLightwalletdTransactionObservation* output,
+    const void* cancellation);
+
+
 int32_t zcash_lightwalletd_send_transaction(
     const char* lightwalletd_url,
     const uint8_t* raw_transaction,
