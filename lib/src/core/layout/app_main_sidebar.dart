@@ -22,6 +22,8 @@ import '../../features/migration/providers/ironwood_migration_announcement_provi
 import '../../features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import '../../features/swap/models/swap_activity_navigation.dart';
 import '../../features/swap/providers/swap_state_provider.dart';
+import '../navigation/external_action_guard_provider.dart';
+import '../navigation/external_action_guard_hold.dart';
 import '../config/network_config.dart';
 import '../config/swap_feature_config.dart';
 import '../formatting/number_format.dart';
@@ -87,7 +89,6 @@ class AppMainSidebar extends ConsumerStatefulWidget {
   const AppMainSidebar({
     this.disabledRoutePaths = const {},
     this.suppressActiveSelection = false,
-    this.onNavigationPendingChanged,
     super.key,
   });
 
@@ -95,10 +96,6 @@ class AppMainSidebar extends ConsumerStatefulWidget {
 
   /// Keeps navigation interactive while rendering every section inactive.
   final bool suppressActiveSelection;
-
-  /// Lets the current screen defer writes until accepted sidebar navigation
-  /// has settled, including operations started before input is blocked.
-  final ValueChanged<bool>? onNavigationPendingChanged;
 
   @override
   ConsumerState<AppMainSidebar> createState() => _AppMainSidebarState();
@@ -109,7 +106,6 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
 
   bool _isSigningOut = false;
   bool _isCopyingAddress = false;
-  int _pendingNavigationCount = 0;
   OverlayEntry? _accountMenuEntry;
 
   String get _matchedLocation => GoRouterState.of(context).matchedLocation;
@@ -150,6 +146,11 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
   }
 
   void _navigateTo(String routePath) {
+    if (ref
+        .read(externalActionGuardProvider)
+        .blocks(ExternalAction.navigation)) {
+      return;
+    }
     if (widget.disabledRoutePaths.contains(routePath)) return;
     if (_matches(routePath)) {
       if (routePath == '/voting') {
@@ -166,16 +167,31 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
   }
 
   void _openAddAccount() {
+    if (ref
+        .read(externalActionGuardProvider)
+        .blocks(ExternalAction.navigation)) {
+      return;
+    }
     _closeAccountMenu();
     context.go('/add-account');
   }
 
   void _openActivity() {
+    if (ref
+        .read(externalActionGuardProvider)
+        .blocks(ExternalAction.navigation)) {
+      return;
+    }
     if (_matchedLocation == '/activity') return;
     context.go('/activity');
   }
 
   void _openSettings() {
+    if (ref
+        .read(externalActionGuardProvider)
+        .blocks(ExternalAction.navigation)) {
+      return;
+    }
     if (_matchedLocation == '/settings') return;
     context.go('/settings');
   }
@@ -214,20 +230,8 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
     });
   }
 
-  Future<void> _trackPendingNavigation(Future<void> Function() action) async {
-    _pendingNavigationCount++;
-    if (_pendingNavigationCount == 1) {
-      widget.onNavigationPendingChanged?.call(true);
-    }
-    try {
-      await action();
-    } finally {
-      _pendingNavigationCount--;
-      if (mounted && _pendingNavigationCount == 0) {
-        widget.onNavigationPendingChanged?.call(false);
-      }
-    }
-  }
+  Future<void> _trackPendingNavigation(Future<void> Function() action) =>
+      ref.read(externalActionGuardProvider.notifier).runNavigation(action);
 
   void _toggleAccountMenu({
     required List<AccountInfo> accounts,
@@ -479,7 +483,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
         ? null
         : migrationCoordinator.statuses[activeAccountUuid];
 
-    return AppDesktopSidebarSurface(
+    final sidebar = AppDesktopSidebarSurface(
       glass: true,
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -638,6 +642,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
         },
       ),
     );
+    return ExternalActionNavigationGuard(child: sidebar);
   }
 }
 

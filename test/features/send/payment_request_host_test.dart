@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/config/network_config.dart';
+import 'package:zcash_wallet/src/core/navigation/external_action_guard_provider.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
@@ -507,6 +508,36 @@ void main() {
     expect(_location(container), '/home');
   });
 
+  for (final label in ['Review', 'Edit']) {
+    testWidgets('captured $label action rejects protected navigation', (
+      tester,
+    ) async {
+      final container = await _pumpHost(tester);
+      container
+          .read(paymentRequestFlowProvider.notifier)
+          .present(_request, source: PaymentRequestSource.link);
+      await tester.pumpAndSettle();
+      final action = tester
+          .widget<AppButton>(find.widgetWithText(AppButton, label))
+          .onPressed!;
+      final lease = container
+          .read(externalActionGuardProvider.notifier)
+          .tryProtect()!;
+      action();
+      await tester.pumpAndSettle();
+      expect(_location(container), '/home');
+      expect(container.read(paymentRequestFlowProvider), isNotNull);
+      expect(_discarded, isEmpty);
+      lease.release();
+      action();
+      await tester.pumpAndSettle();
+      expect(
+        _location(container),
+        label == 'Review' ? '/send/review' : '/send',
+      );
+    });
+  }
+
   testWidgets('Review routes to the review screen and keeps the proposal', (
     tester,
   ) async {
@@ -564,11 +595,19 @@ void main() {
     expect(container.read(paymentRequestFlowProvider), isNull);
     expect(_discarded, [BigInt.from(11)]);
     expect(_location(container), '/home');
+    expect(
+      container.read(externalActionGuardProvider.notifier).tryProtect(),
+      isNull,
+    );
 
     gate.complete();
     await tester.pumpAndSettle();
 
     expect(_location(container), '/send');
+    expect(
+      container.read(externalActionGuardProvider).pendingNavigationCount,
+      0,
+    );
   });
 
   testWidgets('Cancel dismisses the card and releases the proposal', (

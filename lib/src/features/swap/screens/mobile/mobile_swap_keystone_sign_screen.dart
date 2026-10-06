@@ -7,7 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
-import '../../../../core/navigation/payment_uri_busy_surface_hold.dart';
+import '../../../../core/navigation/external_action_guard_hold.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
@@ -79,7 +79,7 @@ class MobileSwapKeystoneSignScreen extends ConsumerStatefulWidget {
 // camera reads, then the signed result scanned back. The hold covers both.
 class _MobileSwapKeystoneSignScreenState
     extends ConsumerState<MobileSwapKeystoneSignScreen>
-    with PaymentUriBusySurfaceHoldMixin {
+    with ExternalActionGuardHoldMixin {
   SwapHardwareSigningService? _signingService;
   SwapHardwarePcztDraft? _draft;
   Future<SwapHardwarePcztDraft>? _draftCreation;

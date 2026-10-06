@@ -9,7 +9,7 @@ import 'package:zcash_wallet/app.dart' show buildIncomingLinkHostForTest;
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
-import 'package:zcash_wallet/src/core/navigation/payment_uri_busy_surface_provider.dart';
+import 'package:zcash_wallet/src/core/navigation/external_action_guard_provider.dart';
 import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
 import 'package:zcash_wallet/src/core/security/software_wallet_secret.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
@@ -59,7 +59,7 @@ void main() {
   for (final completeBackup in [false, true]) {
     for (final failSave in [false, true]) {
       testWidgets(
-        'incoming payment request waits for backup ${completeBackup ? 'completion' : 'deferral'} ${failSave ? 'failure' : 'success'}',
+        'incoming links cannot interrupt backup ${completeBackup ? 'completion' : 'deferral'} ${failSave ? 'failure' : 'success'}',
         (tester) async {
           await tester.binding.setSurfaceSize(const Size(1080, 720));
           addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -99,12 +99,18 @@ void main() {
           );
           await tester.tap(action);
           await tester.pump();
+          incomingUris.emit('https://link.vizor.cash');
+          await tester.pumpAndSettle();
+          expect(find.byType(SettingsSeedPhraseScreen), findsOneWidget);
           incomingUris.emit('zcash:u1recipient');
           await tester.pumpAndSettle();
           expect(find.byType(PaymentRequestSurface), findsNothing);
           expect(find.text('Enter amount'), findsNothing);
           expect(find.byType(SettingsSeedPhraseScreen), findsOneWidget);
-          expect(container.read(paymentUriBusySurfaceProvider), 1);
+          expect(
+            container.read(externalActionGuardProvider).activeHoldCount,
+            1,
+          );
           expect(container.read(paymentUriPrefillProvider), isNotNull);
 
           if (failSave) {
@@ -113,7 +119,10 @@ void main() {
             account.backupSave!.complete();
           }
           await tester.pumpAndSettle();
-          expect(container.read(paymentUriBusySurfaceProvider), 0);
+          expect(
+            container.read(externalActionGuardProvider).activeHoldCount,
+            0,
+          );
           expect(container.read(paymentUriPrefillProvider), isNull);
           expect(find.byType(PaymentRequestSurface), findsOneWidget);
           if (failSave) {
@@ -127,10 +136,16 @@ void main() {
             account.backupSave = Completer<void>();
             await tester.tap(action);
             await tester.pump();
-            expect(container.read(paymentUriBusySurfaceProvider), 1);
+            expect(
+              container.read(externalActionGuardProvider).activeHoldCount,
+              1,
+            );
             account.backupSave!.complete();
             await tester.pumpAndSettle();
-            expect(container.read(paymentUriBusySurfaceProvider), 0);
+            expect(
+              container.read(externalActionGuardProvider).activeHoldCount,
+              0,
+            );
             expect(find.text('home-destination'), findsOneWidget);
           } else {
             expect(find.text('home-destination'), findsOneWidget);
@@ -166,22 +181,23 @@ void main() {
     final screen = tester.element(find.byType(SettingsSeedPhraseScreen));
     final router = GoRouter.of(screen);
     final container = ProviderScope.containerOf(screen, listen: false);
-    final otherHolder = container.read(paymentUriBusySurfaceProvider.notifier);
-    otherHolder.acquire();
+    final otherHolder = container
+        .read(externalActionGuardProvider.notifier)
+        .acquire();
     await tester.tap(
       find.byKey(const ValueKey('desktop_seed_backup_remind_later')),
     );
     await tester.pump();
-    expect(container.read(paymentUriBusySurfaceProvider), 2);
+    expect(container.read(externalActionGuardProvider).activeHoldCount, 2);
     router.go('/home');
     await tester.pumpAndSettle();
     expect(find.byType(SettingsSeedPhraseScreen), findsNothing);
-    expect(container.read(paymentUriBusySurfaceProvider), 2);
+    expect(container.read(externalActionGuardProvider).activeHoldCount, 2);
     account.backupSave!.completeError(StateError('failure after unmount'));
     await tester.pumpAndSettle();
-    expect(container.read(paymentUriBusySurfaceProvider), 1);
+    expect(container.read(externalActionGuardProvider).activeHoldCount, 1);
     otherHolder.release();
-    expect(container.read(paymentUriBusySurfaceProvider), 0);
+    expect(container.read(externalActionGuardProvider).activeHoldCount, 0);
     expect(tester.takeException(), isNull);
   });
 
@@ -363,6 +379,7 @@ void main() {
           await tester.pumpAndSettle();
         }
         final backLink = find.byType(AppBackLink);
+        final backNavigation = tester.widget<AppBackLink>(backLink).onTap;
         final backFocus = Focus.of(
           tester.element(
             find.descendant(of: backLink, matching: find.text('Home')),
@@ -379,6 +396,9 @@ void main() {
         );
         await tester.pump();
 
+        await backNavigation();
+        await tester.pump();
+        expect(find.byType(SettingsSeedPhraseScreen), findsOneWidget);
         await tester.tap(backLink, warnIfMissed: false);
         await tester.pump();
         expect(

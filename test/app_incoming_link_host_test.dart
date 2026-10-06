@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/navigation/external_action_guard_provider.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_intake_provider.dart';
@@ -102,6 +103,48 @@ void main() {
     await tester.pumpAndSettle();
     return (container, router, incomingUris);
   }
+
+  testWidgets('a Gift Card waits for protection and resumes after release', (
+    tester,
+  ) async {
+    final (container, router, incomingUris) = await pumpHost(tester);
+    final lease = container
+        .read(externalActionGuardProvider.notifier)
+        .tryProtect()!;
+    incomingUris.emit(_paymentLink.toUri().toString());
+    await tester.pumpAndSettle();
+    expect(router.routerDelegate.currentConfiguration.uri.path, '/home');
+    expect(container.read(paymentLinkIntakeProvider).pendingLink, isNotNull);
+    lease.release();
+    await tester.pumpAndSettle();
+    expect(
+      router.routerDelegate.currentConfiguration.uri.path,
+      '/payment-links',
+    );
+  });
+
+  testWidgets(
+    'scheduled Gift Card navigation rechecks protection before going',
+    (tester) async {
+      final (container, router, _) = await pumpHost(tester);
+      container
+          .read(paymentLinkIntakeProvider.notifier)
+          .receive(_paymentLink.toUri().toString());
+      // Intake schedules navigation for the next frame. Persistence starts in
+      // the same turn, before that callback runs.
+      final lease = container
+          .read(externalActionGuardProvider.notifier)
+          .tryProtect()!;
+      await tester.pumpAndSettle();
+      expect(router.routerDelegate.currentConfiguration.uri.path, '/home');
+      lease.release();
+      await tester.pumpAndSettle();
+      expect(
+        router.routerDelegate.currentConfiguration.uri.path,
+        '/payment-links',
+      );
+    },
+  );
 
   testWidgets('one host routes each link kind to its own intake', (
     tester,
