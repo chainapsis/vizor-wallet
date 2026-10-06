@@ -594,7 +594,24 @@ async fn partial_expiry_preserves_the_ledger_deposit_result_for_acknowledgement(
     let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
     crate::network_privacy::disable_tor();
     for kind in ["swap_deposit", "pay_deposit"] {
-        let wallet = Wallet::new(true);
+        let mut wallet = Wallet::new(true);
+        use zcash_client_backend::wallet::{LockOwner, OutputRef};
+        let owner = LockOwner::new([42; 32]);
+        proposal_locks::persist(
+            &wallet.path,
+            owner,
+            &[OutputRef::new(
+                wallet.signed[0].tx.txid(),
+                zcash_protocol::PoolType::TRANSPARENT,
+                0,
+            )],
+            wallet.signed[0].tx.expiry_height(),
+        )
+        .unwrap();
+        wallet.signed[0].proof =
+            proposal_locks::bind_pczt(pczt::Pczt::parse(&wallet.signed[0].proof).unwrap(), owner)
+                .serialize()
+                .unwrap();
         wallet.store(0, Some(&wallet.signed[0].raw), Some(201));
         wallet.checkpoint("partial-op", kind);
         let (url, service, handle) = server(1_000, 0).await;
@@ -620,6 +637,32 @@ async fn partial_expiry_preserves_the_ledger_deposit_result_for_acknowledgement(
             .unwrap()
             .contains(&wallet.signed[0].tx.txid().to_string()));
         assert_eq!(*service.calls.lock().unwrap(), ["tip"]);
+        let conn = rusqlite::Connection::open(&wallet.path).unwrap();
+        let durable = || {
+            conn.query_row("SELECT phase = 'signed' AND retain_until_expiry FROM vizor_send_proposal_locks WHERE owner = ?1", [owner.as_bytes().as_slice()], |r| r.get::<_, bool>(0)).unwrap()
+        };
+        assert!(durable());
+        assert!(acknowledge(&wallet.path, WalletNetwork::Regtest, "missing-op").is_err());
+        conn.execute_batch("CREATE TRIGGER refuse_release BEFORE UPDATE ON vizor_send_proposal_locks BEGIN SELECT RAISE(ABORT, 'release failed'); END;").unwrap();
+        assert!(acknowledge(&wallet.path, WalletNetwork::Regtest, "partial-op").is_err());
+        assert_eq!(
+            list(&wallet.path, WalletNetwork::Regtest, None)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(durable());
+        conn.execute_batch("DROP TRIGGER refuse_release;").unwrap();
+        acknowledge(&wallet.path, WalletNetwork::Regtest, "partial-op").unwrap();
+        assert!(list(&wallet.path, WalletNetwork::Regtest, None)
+            .unwrap()
+            .is_empty());
+        let reservations: u32 = conn
+            .query_row("SELECT COUNT(*) FROM vizor_send_proposal_locks", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(reservations, 0, "same-process reservation cleanup");
         handle.abort();
     }
 }

@@ -343,27 +343,49 @@ pub(crate) fn acknowledge(
     operation_id: &str,
 ) -> Result<(), String> {
     validate_identifier("operation ID", operation_id)?;
-    let network = network_name(network);
-    with_wallet_db_write_lock("ledger.operations.acknowledge", || {
-        let conn = open_wallet_raw_conn_with_timeout(db_path, WALLET_DB_BUSY_TIMEOUT)?;
-        ensure_table(&conn)?;
-        let deleted = conn
-            .execute(
+    let release = with_wallet_db_write_lock("ledger.operations.acknowledge", || {
+        let mut connection = open_wallet_raw_conn_with_timeout(db_path, WALLET_DB_BUSY_TIMEOUT)?;
+        ensure_table(&connection)?;
+        proposal_locks::ensure_schema(&connection)?;
+        let conn = connection.transaction().map_err(|e| e.to_string())?;
+        let status: Option<String> = conn
+            .query_row(
                 &format!(
                     "DELETE FROM {TABLE}
-                     WHERE network = ?1 AND operation_id = ?2 AND state = ?3"
+                     WHERE network = ?1 AND operation_id = ?2 AND state = ?3
+                     RETURNING status"
                 ),
-                params![network, operation_id, STATE_RESULT_PENDING_ACK],
+                params![
+                    network_name(network),
+                    operation_id,
+                    STATE_RESULT_PENDING_ACK
+                ],
+                |row| row.get(0),
             )
-            .map_err(|e| format!("Acknowledge Ledger operation: {e}"))?;
-        if deleted == 1 {
-            Ok(())
-        } else {
-            Err(format!(
+            .optional()
+            .map_err(|e| format!("Acknowledge Ledger operation: {e}"))?
+            .ok_or_else(|| {
+                format!(
                 "Ledger operation {operation_id} has no broadcast result awaiting acknowledgment"
-            ))
+            )
+            })?;
+        // Partial results are terminal after caller persistence. Keep ambiguous
+        // broadcast reservations until expiry, as before.
+        let release = status.as_deref() == Some("partial_broadcast");
+        if release {
+            proposal_locks::release_operation(&conn, operation_id)?;
         }
-    })
+        conn.commit()
+            .map_err(|e| format!("Commit Ledger acknowledgment: {e}"))?;
+        Ok::<_, String>(release)
+    })?;
+    if release {
+        // A durable release remains recoverable if wallet cleanup fails.
+        if let Err(error) = proposal_locks::recover_before_balance(db_path, network) {
+            log::warn!("Ledger reservation cleanup pending after acknowledgment: {error}");
+        }
+    }
+    Ok(())
 }
 
 fn load_for_broadcast(

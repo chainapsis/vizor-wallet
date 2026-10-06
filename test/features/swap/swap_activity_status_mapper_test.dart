@@ -443,6 +443,44 @@ void main() {
     );
   });
 
+  test(
+    'partial Pay needs provider deposit evidence before showing paid copy',
+    () {
+      for (final status in [
+        SwapIntentStatus.awaitingDeposit,
+        SwapIntentStatus.expired,
+        SwapIntentStatus.processing,
+      ]) {
+        final intent = _intent(
+          status: status,
+          direction: SwapDirection.zecToExternal,
+          externalAsset: SwapAsset.usdc,
+          depositTxHash: 'accepted-parent-rejected-deposit',
+          payMode: true,
+        ).copyWith(broadcastStatus: 'partial_broadcast');
+        // Account deletion remains conservative about the accepted parent.
+        expect(intent.hasConfirmedDepositEvidence, isTrue);
+        final presentation = swapActivityStatusPresentationForIntent(
+          _state(),
+          intent,
+        );
+        final paid = status == SwapIntentStatus.processing;
+        expect(presentation.payLabel, paid ? 'You paid' : 'You pay');
+        expect(
+          presentation.details.map((row) => row.label),
+          paid ? contains('You paid') : isNot(contains('You paid')),
+        );
+        final observed = intent.copyWith(
+          originChainTxHash: 'provider-observed-deposit',
+        );
+        expect(
+          swapActivityStatusPresentationForIntent(_state(), observed).payLabel,
+          'You paid',
+        );
+      }
+    },
+  );
+
   test('failed Pay copy requires provider-observed deposit evidence', () {
     SwapActivityStatusPresentation presentation({
       String? depositTxHash,
