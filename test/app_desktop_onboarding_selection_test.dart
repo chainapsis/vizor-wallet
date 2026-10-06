@@ -68,6 +68,26 @@ void main() {
   }
 
   for (final hasWallet in [false, true]) {
+    testWidgets('E2E create helper opens the intro: hasWallet=$hasWallet', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        location: hasWallet ? '/add-account' : '/welcome',
+        hasWallet: hasWallet,
+      );
+      await openDesktopWalletCreation(tester);
+      await tester.pumpAndSettle();
+      expect(find.text('The Shielded World'), findsOneWidget);
+      expect(
+        GoRouter.of(
+          tester.element(find.text('The Shielded World')),
+        ).state.uri.path,
+        '/onboarding/intro',
+      );
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets(
       'E2E import helper reaches phrase input: hasWallet=$hasWallet',
       (tester) async {
