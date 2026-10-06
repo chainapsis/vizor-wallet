@@ -344,6 +344,7 @@ pub(crate) struct TransactionInfo {
     pub tx_kind: String,
     pub display_amount: u64,
     pub display_pool: String,
+    pub activity_pool: Option<String>,
     pub created_time: u64,
 }
 
@@ -443,7 +444,8 @@ struct ActivityAmounts {
     amount: u64,
     output_count: usize,
     has_transparent: bool,
-    has_shielded: bool,
+    has_sapling: bool,
+    has_orchard: bool,
     has_ironwood: bool,
 }
 
@@ -453,18 +455,40 @@ impl ActivityAmounts {
         self.output_count += 1;
         match output.output_pool {
             TRANSPARENT_POOL => self.has_transparent = true,
-            SAPLING_POOL | ORCHARD_POOL => self.has_shielded = true,
+            SAPLING_POOL => self.has_sapling = true,
+            ORCHARD_POOL => self.has_orchard = true,
             IRONWOOD_POOL => self.has_ironwood = true,
             _ => {}
         }
     }
 
     fn display_pool(&self) -> &'static str {
-        match (self.has_transparent, self.has_shielded, self.has_ironwood) {
+        // Preserve the legacy grouping used by Gift Card activity.
+        match (
+            self.has_transparent,
+            self.has_sapling || self.has_orchard,
+            self.has_ironwood,
+        ) {
             (true, false, false) => "transparent",
             (false, true, false) => "shielded",
             (false, false, true) => "ironwood",
             (false, false, false) => "unknown",
+            _ => "mixed",
+        }
+    }
+
+    fn activity_pool(&self) -> &'static str {
+        match (
+            self.has_transparent,
+            self.has_sapling,
+            self.has_orchard,
+            self.has_ironwood,
+        ) {
+            (true, false, false, false) => "transparent",
+            (false, true, false, false) => "sapling",
+            (false, false, true, false) => "orchard",
+            (false, false, false, true) => "ironwood",
+            (false, false, false, false) => "unknown",
             _ => "mixed",
         }
     }
@@ -1661,7 +1685,7 @@ fn classify_history_tx(
     // how memo-only payments travel.
     let mut rows = Vec::new();
     if summary.sent.output_count > 0 {
-        rows.push(build_classified_tx_with_fee(
+        let mut row = build_classified_tx_with_fee(
             base,
             "sent",
             summary.sent.amount,
@@ -1669,7 +1693,9 @@ fn classify_history_tx(
             summary.sent.has_transparent,
             1,
             base.fee.saturating_add(extra_sent_fee),
-        ));
+        );
+        row.info.activity_pool = Some(summary.sent.activity_pool().to_string());
+        rows.push(row);
     }
     // Before enhancement links our zero-value change to its send, the change
     // looks like an external receipt, so a zero-value receipt needs a tx that
@@ -1678,14 +1704,16 @@ fn classify_history_tx(
     if summary.received.amount > 0
         || (summary.received.output_count > 0 && zero_value_receipt_allowed)
     {
-        rows.push(build_classified_tx(
+        let mut row = build_classified_tx(
             base,
             receiving_tx_kind(base),
             summary.received.amount,
             summary.received.display_pool(),
             summary.received.has_transparent,
             2,
-        ));
+        );
+        row.info.activity_pool = Some(summary.received.activity_pool().to_string());
+        rows.push(row);
     }
 
     if rows.is_empty() {
@@ -1784,6 +1812,7 @@ fn build_classified_tx_with_fee(
             tx_kind: tx_kind.to_string(),
             display_amount,
             display_pool: display_pool.to_string(),
+            activity_pool: None,
             created_time: base.created_time,
         },
         sort_pending_rank: u8::from(base.mined_height.is_none() && !base.expired_unmined),
@@ -2346,6 +2375,7 @@ mod tests {
         assert_eq!(rows[0].info.tx_kind, "migration");
         assert_eq!(rows[0].info.display_amount, 624_980_000);
         assert_eq!(rows[0].info.display_pool, "ironwood");
+        assert_eq!(rows[0].info.activity_pool, None);
     }
 
     #[test]
@@ -2391,6 +2421,79 @@ mod tests {
 
     fn second_test_account_uuid() -> uuid::Uuid {
         uuid::Uuid::from_u128(0x3eb4ded306b74bf2a5393f1b78d792a6)
+    }
+
+    #[test]
+    fn history_exposes_activity_pools_without_changing_legacy_grouping() {
+        let cases: &[(&[i64], &str, &str)] = &[
+            (&[TRANSPARENT_POOL], "transparent", "transparent"),
+            (&[SAPLING_POOL], "sapling", "shielded"),
+            (&[ORCHARD_POOL], "orchard", "shielded"),
+            (&[IRONWOOD_POOL], "ironwood", "ironwood"),
+            (&[SAPLING_POOL, ORCHARD_POOL], "mixed", "shielded"),
+            (&[ORCHARD_POOL, IRONWOOD_POOL], "mixed", "mixed"),
+            (&[TRANSPARENT_POOL, SAPLING_POOL], "mixed", "mixed"),
+            (&[TRANSPARENT_POOL, IRONWOOD_POOL], "mixed", "mixed"),
+        ];
+        for &(pools, activity_pool, legacy_pool) in cases {
+            let db = fresh_history_db();
+            let account = test_account_uuid();
+            let txid = fake_txid(0xB0);
+            let amount = pools.len() as i64 * 100_000;
+            insert_history_tx(
+                &db,
+                account,
+                &txid,
+                Some(1_000_000),
+                1,
+                None,
+                0,
+                amount,
+                amount,
+                false,
+                None,
+            );
+            for &pool in pools {
+                insert_output_with_address(
+                    &db,
+                    &txid,
+                    pool,
+                    Some(account),
+                    Some(account),
+                    100_000,
+                    false,
+                    Some("self-address"),
+                    Some(0),
+                );
+            }
+            let rows = history_from_fixture(
+                db.path().to_str().unwrap(),
+                WalletNetwork::Test,
+                None,
+                &account.to_string(),
+            )
+            .unwrap();
+            assert_eq!(rows.len(), 2, "pools: {pools:?}");
+            assert_eq!(rows[0].tx_kind, "sent");
+            assert_eq!(rows[1].tx_kind, "received");
+            for row in rows {
+                assert_eq!(row.activity_pool.as_deref(), Some(activity_pool));
+                assert_eq!(row.display_pool, legacy_pool);
+                assert_eq!(row.display_amount, amount as u64);
+            }
+        }
+    }
+
+    #[test]
+    fn history_unknown_pool_fallback_has_no_exact_activity_pool() {
+        let mut base = tx_base_for_history();
+        base.total_spent = 0;
+        base.account_balance_delta = 50_000;
+        let rows = classify_history_tx(&base, &ActivitySummary::default(), 0);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].info.tx_kind, "received");
+        assert_eq!(rows[0].info.display_pool, "unknown");
+        assert_eq!(rows[0].info.activity_pool, None);
     }
 
     #[test]

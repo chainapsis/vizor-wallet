@@ -14412,8 +14412,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TransactionInfo dco_decode_transaction_info(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 11)
-      throw Exception('unexpected arr length: expect 11 but see ${arr.length}');
+    if (arr.length != 12)
+      throw Exception('unexpected arr length: expect 12 but see ${arr.length}');
     return TransactionInfo(
       txidHex: dco_decode_String(arr[0]),
       minedHeight: dco_decode_u_64(arr[1]),
@@ -14425,7 +14425,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       txKind: dco_decode_String(arr[7]),
       displayAmount: dco_decode_u_64(arr[8]),
       displayPool: dco_decode_String(arr[9]),
-      createdTime: dco_decode_u_64(arr[10]),
+      activityPool: dco_decode_opt_String(arr[10]),
+      createdTime: dco_decode_u_64(arr[11]),
     );
   }
 
@@ -19320,6 +19321,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_txKind = sse_decode_String(deserializer);
     var var_displayAmount = sse_decode_u_64(deserializer);
     var var_displayPool = sse_decode_String(deserializer);
+    var var_activityPool = sse_decode_opt_String(deserializer);
     var var_createdTime = sse_decode_u_64(deserializer);
     return TransactionInfo(
       txidHex: var_txidHex,
@@ -19332,6 +19334,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       txKind: var_txKind,
       displayAmount: var_displayAmount,
       displayPool: var_displayPool,
+      activityPool: var_activityPool,
       createdTime: var_createdTime,
     );
   }
@@ -23502,6 +23505,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.txKind, serializer);
     sse_encode_u_64(self.displayAmount, serializer);
     sse_encode_String(self.displayPool, serializer);
+    sse_encode_opt_String(self.activityPool, serializer);
     sse_encode_u_64(self.createdTime, serializer);
   }
 

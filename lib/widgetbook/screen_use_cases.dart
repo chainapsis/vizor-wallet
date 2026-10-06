@@ -1685,6 +1685,7 @@ rust_sync.TransactionInfo _zeroValueTx(String kind) {
     txKind: kind,
     displayAmount: BigInt.zero,
     displayPool: 'shielded',
+    activityPool: 'orchard',
     createdTime: seconds,
   );
 }
@@ -4670,6 +4671,7 @@ rust_sync.TransactionInfo _homeTx(int index) {
     txKind: 'received',
     displayAmount: BigInt.from(index) * BigInt.from(100000000),
     displayPool: 'shielded',
+    activityPool: 'orchard',
     createdTime: seconds,
   );
 }

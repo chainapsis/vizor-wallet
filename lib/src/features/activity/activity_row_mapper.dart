@@ -49,12 +49,15 @@ ActivityRowData buildTransactionActivityRow({
   final isShielded = kind == 'shielded';
   final isMigration = kind == 'migration';
   final isInbound = isReceived || isReceiving;
-  final displayPool = giftCardDisplayPool ?? transaction.displayPool;
+  final isOrdinaryTransaction = giftCardKind == null && (isInbound || isSent);
+  final displayPool = isOrdinaryTransaction
+      ? transactionActivityPool(transaction)
+      : giftCardDisplayPool ?? transaction.displayPool;
   final signedAmount = isSent ? -amount : amount;
   final subtitle = isMigration
       ? 'Orchard → Ironwood'
       : isInbound || isSent
-      ? _poolLabel(displayPool)
+      ? _poolLabel(displayPool, ordinary: isOrdinaryTransaction)
       : null;
 
   // Unconfirmed sends/receives render as in-flight rows: a pulsing loader
@@ -92,7 +95,7 @@ ActivityRowData buildTransactionActivityRow({
     leadingBackgroundColor: colors.background.neutralSubtleOpacity,
     leadingIconColor: colors.icon.regular,
     subtitle: subtitle,
-    subtitleIconName: _poolIcon(displayPool),
+    subtitleIconName: _poolIcon(displayPool, ordinary: isOrdinaryTransaction),
     amountText: activityAmountTextForFormFactor(
       _transactionAmountText(
         amount: amount,
@@ -170,6 +173,13 @@ String giftCardActivityTitle(
 /// kinds keep `--` because their zero means the amount is unknown.
 bool transactionShowsZeroAmount(String kind) =>
     kind == 'sent' || kind == 'received' || kind == 'receiving';
+
+/// Pool labels for ordinary sends/receipts. Gift Cards keep `displayPool`;
+/// shielding, migration, and sender-source labels retain their own semantics.
+String transactionActivityPool(rust_sync.TransactionInfo transaction) {
+  final pool = transaction.activityPool ?? transaction.displayPool;
+  return pool == 'ironwood' ? 'shielded' : pool;
+}
 
 String _stableTransactionRole(String kind) {
   return switch (kind) {
@@ -255,20 +265,23 @@ String _txIcon(String kind, {required bool isPending}) {
   };
 }
 
-String? _poolLabel(String pool) {
+String? _poolLabel(String pool, {bool ordinary = false}) {
   return switch (pool) {
     'transparent' => 'Transparent',
     'shielded' => 'Shielded',
+    'orchard' when ordinary => 'Orchard',
+    'sapling' when ordinary => 'Sapling',
     'ironwood' => 'Ironwood',
     'mixed' => 'Mixed',
     _ => null,
   };
 }
 
-String? _poolIcon(String pool) {
+String? _poolIcon(String pool, {bool ordinary = false}) {
   return switch (pool) {
     'transparent' => AppIcons.transparentBalance,
     'shielded' => AppIcons.shieldKeyholeOutline,
+    'orchard' || 'sapling' when ordinary => AppIcons.shieldKeyholeOutline,
     'ironwood' => AppIcons.shieldKeyholeOutline,
     _ => null,
   };

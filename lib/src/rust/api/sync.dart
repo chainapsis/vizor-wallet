@@ -2815,6 +2815,10 @@ class TransactionInfo {
   final String txKind;
   final BigInt displayAmount;
   final String displayPool;
+
+  /// Exact output pool for ordinary Activity labels. The legacy display pool
+  /// remains available for Gift Cards; shielding and migration leave this unset.
+  final String? activityPool;
   final BigInt createdTime;
 
   const TransactionInfo({
@@ -2828,6 +2832,7 @@ class TransactionInfo {
     required this.txKind,
     required this.displayAmount,
     required this.displayPool,
+    this.activityPool,
     required this.createdTime,
   });
 
@@ -2843,6 +2848,7 @@ class TransactionInfo {
       txKind.hashCode ^
       displayAmount.hashCode ^
       displayPool.hashCode ^
+      activityPool.hashCode ^
       createdTime.hashCode;
 
   @override
@@ -2860,6 +2866,7 @@ class TransactionInfo {
           txKind == other.txKind &&
           displayAmount == other.displayAmount &&
           displayPool == other.displayPool &&
+          activityPool == other.activityPool &&
           createdTime == other.createdTime;
 }
 

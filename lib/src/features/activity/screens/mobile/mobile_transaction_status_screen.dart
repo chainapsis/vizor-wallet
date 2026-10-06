@@ -41,6 +41,7 @@ import '../../activity_row_mapper.dart'
     show
         formatActivityTimestamp,
         giftCardActivityTitle,
+        transactionActivityPool,
         transactionShowsZeroAmount;
 import '../../gift_card_activity_index.dart';
 
@@ -228,7 +229,7 @@ class _MobileTransactionStatusScreenState
     for (final tx in sync?.recentTransactions ?? const []) {
       if (_txidsMatch(widget.args.txidHex, tx.txidHex)) {
         return '${tx.txidHex}:${tx.minedHeight}:${tx.expiredUnmined}:'
-            '${tx.txKind}:${tx.displayAmount}:${tx.fee}';
+            '${tx.txKind}:${tx.displayAmount}:${tx.fee}:${tx.activityPool}';
       }
     }
     return '';
@@ -394,7 +395,13 @@ class _MobileTransactionStatusScreenState
         ? _addressPoolLabel(giftCard.displayPool, null)
         : _isIncoming
         ? _addressPoolLabel(sourcePool, sourceAddress)
-        : _addressPoolLabel(tx?.displayPool, primaryAddress);
+        : _addressPoolLabel(
+            tx != null && _isSent
+                ? transactionActivityPool(tx)
+                : tx?.displayPool,
+            primaryAddress,
+            ordinary: _isSent,
+          );
     final receivingPoolLabel = _addressPoolLabel(
       receivingOutput?.pool,
       receivingAddress,
@@ -777,20 +784,26 @@ class _MobileTransactionStatusScreenState
     return ZecAmount.fromZatoshi(fee).fee.toString();
   }
 
-  String? _poolLabel(String? pool) {
+  String? _poolLabel(String? pool, {bool ordinary = false}) {
     return switch (pool) {
       'transparent' => 'Transparent',
       'shielded' => 'Shielded',
+      'orchard' when ordinary => 'Orchard',
+      'sapling' when ordinary => 'Sapling',
       'ironwood' => 'Ironwood',
       'mixed' => 'Mixed',
       _ => null,
     };
   }
 
-  String? _addressPoolLabel(String? pool, String? address) {
+  String? _addressPoolLabel(
+    String? pool,
+    String? address, {
+    bool ordinary = false,
+  }) {
     final lower = address?.trim().toLowerCase();
     if (lower != null && lower.startsWith('tex')) return 'TEX';
-    return _poolLabel(pool);
+    return _poolLabel(pool, ordinary: ordinary);
   }
 
   String _poolIconNameFor(String? poolLabel, {String? address}) {
