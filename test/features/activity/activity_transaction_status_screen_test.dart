@@ -30,6 +30,7 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../fixtures/private_shielding_activity.dart';
 import '../../fakes/fake_enhance_pir_notifier.dart';
 import '../../figma_compare/figma_compare_font_loader.dart';
 
@@ -1070,6 +1071,41 @@ void main() {
     expect(find.text('Tx fee'), findsOneWidget);
     expect(find.text('0.00203209 ZEC'), findsOneWidget);
   });
+
+  testWidgets(
+    'a privately recovered shielding has a shielding receipt with the network fee',
+    (tester) async {
+      final cases = loadPrivateShieldingCases(
+        txidHex: _txidHex,
+        minedHeight: BigInt.from(3498120),
+        blockTime: _blockTime,
+      );
+      final expected = ['0.0018 ZEC', '0.004 ZEC'];
+      expect(cases, hasLength(expected.length));
+      for (final (index, shielding) in cases.indexed) {
+        await _pumpScreen(
+          tester,
+          privateQueriesEnabled: true,
+          args: ActivityTransactionStatusArgs(
+            txidHex: _txidHex,
+            txKind: 'shielded',
+            initialTransaction: shielding.transaction,
+            initialDetail: shielding.detail,
+          ),
+          historyLoader: (_) async => [shielding.transaction],
+          detailLoader: (_, _) async => shielding.detail,
+        );
+
+        expect(find.byType(ShieldedReceiptView), findsOneWidget);
+        expect(find.byType(SendStatusContentView), findsNothing);
+        expect(find.text('Shielded successfully'), findsOneWidget);
+        expect(find.text(expected[index]), findsOneWidget);
+        expect(find.text('Tx fee'), findsOneWidget);
+        expect(find.text('0.0002 ZEC'), findsOneWidget);
+        expect(find.text(kUnknownFeeText), findsNothing);
+      }
+    },
+  );
 
   testWidgets('renders the Orchard to Ironwood migration receipt', (
     tester,
