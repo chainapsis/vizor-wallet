@@ -503,7 +503,9 @@ void main() {
     expect(publicIncomplete.amountSubtitle, isNull);
   });
 
-  testWidgets('a fee-only entry reads as its network fee', (tester) async {
+  testWidgets('fee-sized net changes keep their incomplete sent row', (
+    tester,
+  ) async {
     rust_sync.TransactionInfo recovered({
       required int displayAmount,
       required int fee,
@@ -516,36 +518,18 @@ void main() {
       displayAmount: BigInt.from(displayAmount),
       fee: BigInt.from(fee),
       amountIncludesFee: amountIncludesFee,
+      accountBalanceDelta: -displayAmount,
     );
 
-    // A recovered self-shield: the whole balance change is the fee.
-    final feeOnly = await mapRow(
+    // A provisional mixed-pool debit cannot establish a fee-only activity.
+    final movement = await mapRow(
       tester,
-      recovered(displayAmount: 65000, fee: 65000),
+      recovered(displayAmount: 20000, fee: 20000),
+      privateQueriesEnabled: true,
     );
-    expect(feeOnly.title, kNetworkFeeText);
-    expect(feeOnly.amountText, activityAmountTextForFormFactor('-0.00065 ZEC'));
-
-    // A recovered self-transfer keeps its transparent pool in the entry, but
-    // a fee shows no pool.
-    final selfTransfer = await mapRow(
-      tester,
-      _transaction(
-        txKind: 'sent',
-        displayPool: 'transparent',
-        detailsComplete: false,
-        displayAmount: BigInt.from(10000),
-        fee: BigInt.from(10000),
-        amountIncludesFee: true,
-      ),
-    );
-    expect(selfTransfer.title, kNetworkFeeText);
-    expect(
-      selfTransfer.amountText,
-      activityAmountTextForFormFactor('-0.0001 ZEC'),
-    );
-    expect(selfTransfer.subtitle, isNull);
-    expect(selfTransfer.subtitleIconName, isNull);
+    expect(movement.title, 'Sent');
+    expect(movement.amountText, activityAmountTextForFormFactor('-0.0002 ZEC'));
+    expect(movement.amountSubtitle, kIncompleteDetailsText);
 
     // A net change keeps its sent row and its whole amount: a row has no fee
     // line to repeat the fee in.
@@ -561,6 +545,32 @@ void main() {
       recovered(displayAmount: 65000, fee: 65000, amountIncludesFee: false),
     );
     expect(payment.title, 'Sent', reason: 'a payment equal to its fee');
+  });
+
+  testWidgets('established self-transfer reads as its network fee', (
+    tester,
+  ) async {
+    // A recovered self-transfer keeps its transparent pool in the entry, but
+    // a fee shows no pool.
+    final selfTransfer = await mapRow(
+      tester,
+      _transaction(
+        txKind: 'sent',
+        displayPool: 'transparent',
+        accountBalanceDelta: -10000,
+        detailsComplete: false,
+        displayAmount: BigInt.from(10000),
+        fee: BigInt.from(10000),
+        amountIncludesFee: true,
+      ),
+    );
+    expect(selfTransfer.title, kNetworkFeeText);
+    expect(
+      selfTransfer.amountText,
+      activityAmountTextForFormFactor('-0.0001 ZEC'),
+    );
+    expect(selfTransfer.subtitle, isNull);
+    expect(selfTransfer.subtitleIconName, isNull);
   });
 
   testWidgets(
@@ -615,12 +625,13 @@ rust_sync.TransactionInfo _transaction({
   String? activityPool,
   BigInt? fee,
   bool amountIncludesFee = false,
+  int accountBalanceDelta = 0,
 }) {
   return rust_sync.TransactionInfo(
     txidHex: 'ab12cd34',
     minedHeight: minedHeight ?? BigInt.from(2500000),
     expiredUnmined: expiredUnmined,
-    accountBalanceDelta: 0,
+    accountBalanceDelta: accountBalanceDelta,
     fee: fee ?? BigInt.zero,
     feeState: fee == null
         ? rust_sync.TransactionFeeState.notApplicable
@@ -629,7 +640,7 @@ rust_sync.TransactionInfo _transaction({
     provisional: provisional,
     amountIncludesFee: amountIncludesFee,
     blockTime: BigInt.from(1750000000),
-    isTransparent: false,
+    isTransparent: displayPool == 'transparent',
     txKind: txKind,
     displayAmount: displayAmount ?? BigInt.from(12000000000),
     displayPool: displayPool,
