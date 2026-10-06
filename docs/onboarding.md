@@ -399,5 +399,27 @@ without changing typed route extras. Cancel returns to the originating Welcome
 or Add account screen; direct import/device entry retains its original fallback.
 
 Preview the selectors from Widgetbook's desktop Welcome use case by clicking
-Import a wallet. The `desktop-onboarding-import` and
+Import wallet. The `desktop-onboarding-import` and
 `desktop-onboarding-hardware` capture scenarios render deterministic content.
+
+### Desktop Welcome
+
+Welcome uses the desktop video and static WebP poster with the adjusted gradient
+and shared accent-button effects. macOS uses the existing video player;
+Windows/Linux use animated WebP without another player dependency. Both animation
+assets contain the loop crossfade. Reduced motion and deterministic captures use
+the poster; playback follows route visibility and app lifecycle.
+
+Get started opens ordinary creation. Import wallet opens the selectors above,
+including the additional-account return context. Initial Welcome retains network
+settings; additional-account Welcome retains Back. The initial Welcome Gift
+button is disabled until the later desktop Gift integration; Gift account
+creation and claim paths are not activated by this visual slice.
+
+Widgetbook has Large and Add account Welcome entries. Deterministic captures use
+`desktop-onboarding-welcome` and `desktop-onboarding-add-account-welcome`.
+
+The Figma Welcome reference (`8648:104679`, 1080 × 720) includes a Terms/Privacy
+footer that is not implemented in this slice. Record it as a remaining visual
+difference in review; the initial Gift action also remains disabled until the
+later Gift integration slice.
