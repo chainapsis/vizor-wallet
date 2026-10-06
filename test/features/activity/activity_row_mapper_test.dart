@@ -158,18 +158,17 @@ void main() {
     }
   });
 
-  testWidgets('gift cards keep legacy and persisted pool labels', (
+  testWidgets('gift cards use exact activity and persisted destination pools', (
     tester,
   ) async {
     for (final kind in GiftCardActivityKind.values) {
       for (final (legacyPool, activityPool, label) in [
-        ('ironwood', 'ironwood', 'Ironwood'),
-        ('shielded', 'orchard', 'Shielded'),
-        ('shielded', 'sapling', 'Shielded'),
-        ('shielded', 'mixed', 'Shielded'),
-        ('mixed', 'mixed', 'Mixed'),
-        ('orchard', 'orchard', null),
-        ('sapling', 'sapling', null),
+        ('ironwood', 'ironwood', 'Shielded'),
+        ('shielded', 'orchard', 'Orchard'),
+        ('shielded', 'sapling', 'Sapling'),
+        ('shielded', 'mixed', 'Mixed'),
+        ('transparent', 'transparent', 'Transparent'),
+        ('shielded', null, 'Shielded'),
       ]) {
         final transaction = _transaction(
           txKind: kind == GiftCardActivityKind.created ? 'sent' : 'received',
@@ -178,14 +177,41 @@ void main() {
         );
         final row = await mapRow(tester, transaction, giftCardKind: kind);
         expect(row.subtitle, label);
-        if (label == null) expect(row.subtitleIconName, isNull);
-        final overridden = await mapRow(
+        expect(
+          row.subtitleIconName,
+          label == 'Mixed'
+              ? isNull
+              : label == 'Transparent'
+              ? AppIcons.transparentBalance
+              : AppIcons.shieldKeyholeOutline,
+        );
+        for (final (pool, expected) in [
+          ('ironwood', 'Shielded'),
+          ('orchard', 'Orchard'),
+          ('sapling', 'Sapling'),
+        ]) {
+          final overridden = await mapRow(
+            tester,
+            transaction,
+            giftCardKind: kind,
+            giftCardDisplayPool: pool,
+          );
+          expect(overridden.subtitle, expected);
+          expect(overridden.subtitleIconName, AppIcons.shieldKeyholeOutline);
+        }
+        final pending = await mapRow(
           tester,
-          transaction,
+          _transaction(
+            txKind: kind == GiftCardActivityKind.created ? 'sent' : 'received',
+            minedHeight: BigInt.zero,
+            activityPool: activityPool,
+          ),
           giftCardKind: kind,
           giftCardDisplayPool: 'ironwood',
+          pendingLabel: 'Est. 1–3 min',
         );
-        expect(overridden.subtitle, 'Ironwood');
+        expect(pending.subtitle, 'Est. 1–3 min');
+        expect(pending.subtitleIconName, AppIcons.time);
       }
     }
   });

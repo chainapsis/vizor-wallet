@@ -331,7 +331,10 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     if (accountUuid != null) {
       for (final tx in giftCardActivityIndex.withPendingClaims(transactions)) {
         if (absorption.absorbs(tx)) continue;
-        final giftCard = giftCardActivityIndex.metadataFor(tx);
+        final giftCard = giftCardActivityIndex.metadataFor(
+          tx,
+          transactions: transactions,
+        );
         entries.add(
           _ActivityEntry(
             sortKey: activitySortKeyForTransaction(

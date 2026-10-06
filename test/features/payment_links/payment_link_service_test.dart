@@ -33,6 +33,91 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 void main() {
+  for (final exactPool in ['orchard', 'sapling', 'ironwood']) {
+    test(
+      'claim details persist the exact $exactPool pool instead of the legacy label',
+      () {
+        expect(
+          paymentLinkClaimDestinationPoolFromDetails(
+            claimTxids: 'a',
+            destinationAddress: 'destination',
+            expectedAmountZatoshi: BigInt.one,
+            details: [
+              rust_sync.TransactionDetail(
+                txidHex: 'a',
+                txKind: 'sent',
+                outputs: [
+                  rust_sync.TransactionDetailOutput(
+                    address: 'destination',
+                    amountZatoshi: BigInt.one,
+                    pool: 'shielded',
+                    activityPool: exactPool,
+                    usesOrchardReceiver: exactPool != 'sapling',
+                  ),
+                ],
+              ),
+            ],
+          ),
+          exactPool,
+        );
+      },
+    );
+  }
+
+  test('split destination outputs in one claim leg show Mixed', () {
+    expect(
+      paymentLinkClaimDestinationPoolFromDetails(
+        claimTxids: 'a',
+        destinationAddress: 'destination',
+        expectedAmountZatoshi: BigInt.from(100),
+        details: [
+          rust_sync.TransactionDetail(
+            txidHex: 'a',
+            txKind: 'sent',
+            outputs: [
+              for (final pool in ['orchard', 'sapling'])
+                rust_sync.TransactionDetailOutput(
+                  address: 'destination',
+                  amountZatoshi: BigInt.from(50),
+                  pool: 'shielded',
+                  activityPool: pool,
+                  usesOrchardReceiver: pool == 'orchard',
+                ),
+            ],
+          ),
+        ],
+      ),
+      'mixed',
+    );
+  });
+
+  test('a generic shielded pool cannot prove a mix with Orchard', () {
+    expect(
+      paymentLinkClaimDestinationPoolFromDetails(
+        claimTxids: 'a,b',
+        destinationAddress: 'destination',
+        expectedAmountZatoshi: BigInt.from(100),
+        details: [
+          for (final (txid, pool) in [('a', 'orchard'), ('b', null)])
+            rust_sync.TransactionDetail(
+              txidHex: txid,
+              txKind: 'sent',
+              outputs: [
+                rust_sync.TransactionDetailOutput(
+                  address: 'destination',
+                  amountZatoshi: BigInt.from(50),
+                  pool: 'shielded',
+                  activityPool: pool,
+                  usesOrchardReceiver: true,
+                ),
+              ],
+            ),
+        ],
+      ),
+      isNull,
+    );
+  });
+
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test('address-free gifts reuse a retained legacy address identity', () async {
@@ -375,7 +460,7 @@ void main() {
         isNull,
       );
       expect(pool([detail('a', 'ironwood'), detail('a', 'ironwood')]), isNull);
-      expect(pool([detail('a', 'ironwood'), detail('b', 'orchard')]), isNull);
+      expect(pool([detail('a', 'ironwood'), detail('b', 'orchard')]), 'mixed');
       expect(pool([detail('a', 'ironwood'), detail('b', '')]), isNull);
       expect(
         pool([
@@ -1545,6 +1630,58 @@ void main() {
         expect(pending.claimTxids, 'fresh');
       },
     );
+
+    for (final exactPool in ['orchard', 'sapling']) {
+      test(
+        'settled legacy card enriches $exactPool from receiver history without claim cache',
+        () async {
+          api.poolFixture = true;
+          api.recipientHistory = [
+            rust_sync.TransactionInfo(
+              txidHex: 'a',
+              minedHeight: BigInt.from(100),
+              expiredUnmined: false,
+              accountBalanceDelta: 50000,
+              fee: BigInt.zero,
+              blockTime: BigInt.one,
+              isTransparent: false,
+              txKind: 'received',
+              displayAmount: BigInt.from(50000),
+              displayPool: 'shielded',
+              activityPool: exactPool,
+              createdTime: BigInt.one,
+            ),
+          ];
+          final store = container.read(paymentLinkReceivedStoreProvider);
+          final link = _link();
+          await store.saveReady(link);
+          await store.markClaimStarted(
+            address: link.address,
+            destinationAccountUuid: 'receiver',
+          );
+          await store.markReceiving(
+            address: link.address,
+            destinationAccountUuid: 'receiver',
+            claimTxids: 'a',
+            claimDestinationPool: 'shielded',
+          );
+          await store.markReceived(address: link.address);
+          await store.markClaimRecoveryConfirmed((await store.load()).single);
+          await store.clearConfirmedClaimSecret(address: link.address);
+          final before = (await store.load()).single;
+          final after = (await service.inspectReceivedLinkClaims(
+            await store.load(),
+          )).single;
+          expect(after.claimDestinationPool, exactPool);
+          expect(after.status, PaymentLinkReceivedStatus.received);
+          expect(after.claimLink, isNull);
+          expect(after.updatedAt, before.updatedAt);
+          expect(after.claimSubmittedAt, before.claimSubmittedAt);
+          expect(api.claimSyncCalls, 0);
+          expect(api.detailLookups, 0);
+        },
+      );
+    }
 
     for (final missing in ['history', 'detail']) {
       test(
@@ -2978,6 +3115,8 @@ class _ClaimDestinationRustApi implements RustLibApi {
   List<String> localClaimTxids = [];
   List<String> conflictedTxids = [];
   List<rust_sync.TransactionInfo>? claimHistory;
+  List<rust_sync.TransactionInfo>? recipientHistory;
+  String? detailActivityPool;
   Set<String> failingDetailTxids = {};
   int detailLookups = 0;
   Completer<rust_sync.SendMaxEstimateResult>? estimateGate;
@@ -3143,6 +3282,7 @@ class _ClaimDestinationRustApi implements RustLibApi {
     if (!poolFixture) throw StateError('Unexpected history lookup');
     final isClaimWallet = accountUuid == 'claim-wallet';
     if (isClaimWallet && claimHistory != null) return claimHistory!;
+    if (!isClaimWallet && recipientHistory != null) return recipientHistory!;
     return [
       for (final txid in isClaimWallet ? localClaimTxids : ['a', 'b'])
         _transaction(
@@ -3175,6 +3315,7 @@ class _ClaimDestinationRustApi implements RustLibApi {
           address: 'u1receiveraddress',
           amountZatoshi: BigInt.from(50000),
           pool: 'ironwood',
+          activityPool: detailActivityPool,
         ),
       ],
     );
@@ -3199,6 +3340,8 @@ class _ClaimDestinationRustApi implements RustLibApi {
     localClaimTxids = [];
     conflictedTxids = [];
     claimHistory = null;
+    recipientHistory = null;
+    detailActivityPool = null;
     failingDetailTxids = {};
     detailLookups = 0;
     estimateGate = null;

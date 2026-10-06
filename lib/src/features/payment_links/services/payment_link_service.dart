@@ -432,7 +432,49 @@ List<String> paymentLinkClaimDetailTxids({
   }.toList();
 }
 
-/// Chooses a destination output pool only when all matching claim legs agree.
+/// Exact recipient history can enrich old metadata after the claim cache is gone.
+/// Missing, expired, or unresolved legs must not be inferred from another leg.
+String? paymentLinkClaimDestinationPoolFromHistory({
+  required String claimTxids,
+  required Iterable<rust_sync.TransactionInfo> transactions,
+}) {
+  final txids = claimTxids
+      .split(',')
+      .map((id) => id.trim())
+      .where((id) => id.isNotEmpty)
+      .toSet();
+  if (txids.isEmpty) return null;
+  final history = transactions.toList();
+  final pools = <String>{};
+  for (final txid in txids) {
+    final matches = history.where(
+      (tx) =>
+          (tx.txKind == 'received' || tx.txKind == 'receiving') &&
+          !tx.expiredUnmined &&
+          paymentLinkTxidsMatch(txid, tx.txidHex),
+    );
+    if (matches.isEmpty) return null;
+    for (final tx in matches) {
+      final pool = tx.activityPool ?? tx.displayPool;
+      if (!{
+        'ironwood',
+        'orchard',
+        'sapling',
+        'transparent',
+        'mixed',
+      }.contains(pool)) {
+        return null;
+      }
+      pools.add(pool);
+    }
+  }
+  return pools.length == 1 ? pools.single : 'mixed';
+}
+
+bool paymentLinkClaimPoolNeedsEnrichment(String? pool) =>
+    pool == null || pool == 'shielded' || pool == 'unknown';
+
+/// Chooses a destination output pool only after observing every claim leg.
 /// This keeps a partial/multi-leg claim from displaying a pool inferred from
 /// an unrelated input or an arbitrary output.
 @visibleForTesting
@@ -450,7 +492,7 @@ String? paymentLinkClaimDestinationPoolFromDetails({
       .toSet();
   if (expectedTxids.isEmpty) return null;
   final availableDetails = details.toList();
-  String? observedPool;
+  final observedPools = <String>{};
   for (final txid in expectedTxids) {
     final matchingDetails = availableDetails.where(
       (detail) => paymentLinkTxidsMatch(txid, detail.txidHex),
@@ -467,19 +509,22 @@ String? paymentLinkClaimDestinationPoolFromDetails({
           sameOrchardReceiver?.call(outputAddress, destinationAddress) == true;
     }).toList();
     if (matchingOutputs.isEmpty) return null;
-    var selectedOutput = matchingOutputs.first;
-    for (final output in matchingOutputs) {
-      if (output.amountZatoshi == expectedAmountZatoshi) {
-        selectedOutput = output;
-        break;
-      }
+    final fullAmountOutputs = matchingOutputs
+        .where((output) => output.amountZatoshi == expectedAmountZatoshi)
+        .toList();
+    // A split claim may have no output carrying the full Card amount. In that
+    // case every matching destination output contributes to the pool label.
+    for (final output
+        in fullAmountOutputs.isEmpty ? matchingOutputs : fullAmountOutputs) {
+      final pool = (output.activityPool ?? output.pool).trim();
+      if (pool.isEmpty || pool == 'unknown') return null;
+      observedPools.add(pool);
     }
-    final pool = selectedOutput.pool.trim();
-    if (pool.isEmpty) return null;
-    if (observedPool != null && observedPool != pool) return null;
-    observedPool = pool;
   }
-  return observedPool;
+  if (observedPools.length > 1 && observedPools.contains('shielded')) {
+    return null;
+  }
+  return observedPools.length == 1 ? observedPools.single : 'mixed';
 }
 
 @visibleForTesting
@@ -1241,7 +1286,10 @@ class PaymentLinkService
           (record) =>
               (record.status == PaymentLinkReceivedStatus.receiving ||
                   record.status == PaymentLinkReceivedStatus.received &&
-                      record.needsClaimRecovery) &&
+                      (record.needsClaimRecovery ||
+                          paymentLinkClaimPoolNeedsEnrichment(
+                            record.claimDestinationPool,
+                          ))) &&
               record.destinationAccountUuid != null &&
               record.claimTxids != null &&
               record.claimTxids!.trim().isNotEmpty,
@@ -1257,6 +1305,10 @@ class PaymentLinkService
     final retryableAddresses = <String>{};
     await Future.wait(
       currentNetworkRecords.map((record) async {
+        if (record.status == PaymentLinkReceivedStatus.received &&
+            !record.needsClaimRecovery) {
+          return;
+        }
         try {
           if (record.claimRecoveryConfirmed) {
             await reconcileObservedPaymentLinkClaimReceipt(
@@ -1300,14 +1352,26 @@ class PaymentLinkService
     // must never alter the claim's lifecycle status.
     await Future.wait(
       awaitingReceipt
-          .where((record) => record.claimDestinationPool == null)
+          .where(
+            (record) => paymentLinkClaimPoolNeedsEnrichment(
+              record.claimDestinationPool,
+            ),
+          )
           .map((record) async {
             try {
-              final pool = await _loadRetainedClaimDestinationPool(
+              final retainedPool = await _loadRetainedClaimDestinationPool(
                 record: record,
                 network: endpoint.networkName,
               );
-              if (pool == null) return;
+              final pool = paymentLinkClaimPoolNeedsEnrichment(retainedPool)
+                  ? await _loadRecipientClaimDestinationPool(
+                          record: record,
+                          dbPath: dbPath,
+                          network: endpoint.networkName,
+                        ) ??
+                        retainedPool
+                  : retainedPool;
+              if (pool == null || pool == record.claimDestinationPool) return;
               await _receivedStore.updateClaimDestinationPool(
                 address: record.address,
                 claimDestinationPool: pool,
@@ -1323,6 +1387,10 @@ class PaymentLinkService
 
     final legacyAwaitingReceipt = <PaymentLinkReceivedRecord>[];
     for (final record in awaitingReceipt) {
+      if (record.status == PaymentLinkReceivedStatus.received &&
+          !record.needsClaimRecovery) {
+        continue;
+      }
       int? confirmations;
       try {
         final link = record.claimLink;
@@ -2552,6 +2620,26 @@ class PaymentLinkService
       );
     }
     return pool;
+  }
+
+  Future<String?> _loadRecipientClaimDestinationPool({
+    required PaymentLinkReceivedRecord record,
+    required String dbPath,
+    required String network,
+  }) async {
+    final accountUuid = record.destinationAccountUuid;
+    final txids = record.claimTxids;
+    if (accountUuid == null || txids == null) return null;
+    final history = await rust_sync.getTransactionHistory(
+      dbPath: dbPath,
+      network: network,
+      accountUuid: accountUuid,
+      limit: null,
+    );
+    return paymentLinkClaimDestinationPoolFromHistory(
+      claimTxids: txids,
+      transactions: history,
+    );
   }
 
   Future<String?> _loadRetainedClaimDestinationPool({

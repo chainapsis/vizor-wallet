@@ -11,6 +11,77 @@ import 'package:zcash_wallet/src/features/payment_links/services/payment_link_re
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 void main() {
+  test(
+    'legacy received card pools require every claim leg before enrichment',
+    () {
+      final record = PaymentLinkReceivedRecord.fromLink(_link('legacy-pool'))
+          .copyWith(
+            status: PaymentLinkReceivedStatus.received,
+            destinationAccountUuid: 'account-1',
+            claimTxids: 'first,second',
+            claimSubmittedAt: DateTime.utc(2026, 10, 7),
+            claimDestinationPool: 'shielded',
+          );
+      final index = GiftCardActivityIndex.forAccount(
+        accountUuid: 'account-1',
+        createdRecords: [],
+        receivedRecords: [record],
+      );
+      final first = _transaction(
+        txidHex: 'first',
+        txKind: 'received',
+        activityPool: 'orchard',
+      );
+      final second = _transaction(
+        txidHex: 'second',
+        txKind: 'received',
+        activityPool: 'orchard',
+      );
+      expect(
+        index.metadataFor(first, transactions: [first])!.displayPool,
+        'shielded',
+      );
+      final enriched = index.metadataFor(first, transactions: [first, second])!;
+      expect(enriched.displayPool, 'orchard');
+      expect(enriched.claimTxids, ['first', 'second']);
+      expect(enriched.stableId, 'gift-card:legacy-pool');
+      expect(enriched.amountZatoshi, record.amountZatoshi);
+      expect(
+        index
+            .metadataFor(
+              first,
+              transactions: [
+                first,
+                _transaction(
+                  txidHex: 'second',
+                  txKind: 'received',
+                  activityPool: 'sapling',
+                ),
+              ],
+            )!
+            .displayPool,
+        'mixed',
+      );
+      expect(
+        index
+            .metadataFor(
+              first,
+              transactions: [
+                first,
+                _transaction(
+                  txidHex: 'second',
+                  txKind: 'received',
+                  activityPool: 'sapling',
+                  expiredUnmined: true,
+                ),
+              ],
+            )!
+            .displayPool,
+        'shielded',
+      );
+    },
+  );
+
   test('one funding transaction describes the whole created batch', () {
     final members = List.generate(
       3,
@@ -375,6 +446,7 @@ rust_sync.TransactionInfo _transaction({
   required String txidHex,
   required String txKind,
   bool expiredUnmined = false,
+  String? activityPool,
 }) {
   return rust_sync.TransactionInfo(
     txidHex: txidHex,
@@ -387,6 +459,7 @@ rust_sync.TransactionInfo _transaction({
     txKind: txKind,
     displayAmount: BigInt.from(100000000),
     displayPool: 'shielded',
+    activityPool: activityPool,
     createdTime: BigInt.from(1800000000),
   );
 }

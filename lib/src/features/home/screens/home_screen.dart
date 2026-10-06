@@ -724,7 +724,12 @@ class _HomePaneState extends ConsumerState<_HomePane> {
           _homeTransactionActivityEntry(
             context,
             tx,
-            giftCardActivityIndex.metadataFor(tx),
+            giftCardActivityIndex.metadataFor(
+              tx,
+              transactions: widget.hasActivitySyncData
+                  ? widget.sync.recentTransactions
+                  : const [],
+            ),
           ),
       for (final item in swapItems)
         _HomeActivityEntry(

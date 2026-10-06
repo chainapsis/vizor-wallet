@@ -44,6 +44,23 @@ class GiftCardActivityMetadata {
   final BigInt? amountPerCardZatoshi;
   final List<String> claimTxids;
 
+  GiftCardActivityMetadata withDisplayPool(String pool) =>
+      GiftCardActivityMetadata(
+        kind: kind,
+        amountZatoshi: amountZatoshi,
+        artworkId: artworkId,
+        message: message,
+        isClaimInFlight: isClaimInFlight,
+        stableId: stableId,
+        activityTimestamp: activityTimestamp,
+        displayPool: pool,
+        fiatSnapshot: fiatSnapshot,
+        claimFeeReserveZatoshi: claimFeeReserveZatoshi,
+        batchCount: batchCount,
+        amountPerCardZatoshi: amountPerCardZatoshi,
+        claimTxids: claimTxids,
+      );
+
   BigInt detailFeeZatoshi(BigInt transactionFee) {
     if (kind == GiftCardActivityKind.redeemed) return transactionFee;
     // Gift Card creation uses one funding transaction, so its fee plus the
@@ -225,7 +242,10 @@ class GiftCardActivityIndex {
     return null;
   }
 
-  GiftCardActivityMetadata? metadataFor(rust_sync.TransactionInfo transaction) {
+  GiftCardActivityMetadata? metadataFor(
+    rust_sync.TransactionInfo transaction, {
+    Iterable<rust_sync.TransactionInfo>? transactions,
+  }) {
     final kind = kindFor(transaction);
     if (kind == null) return null;
     final metadata = kind == GiftCardActivityKind.created
@@ -236,7 +256,18 @@ class GiftCardActivityIndex {
         entry.key,
         transaction.txidHex,
       )) {
-        return entry.value;
+        final card = entry.value;
+        if (kind == GiftCardActivityKind.redeemed &&
+            paymentLinkClaimPoolNeedsEnrichment(card.displayPool) &&
+            card.claimTxids.isNotEmpty) {
+          final pool = paymentLinkClaimDestinationPoolFromHistory(
+            claimTxids: card.claimTxids.join(','),
+            transactions: transactions ?? [transaction],
+          );
+          // An incomplete multi-leg claim must not inherit its representative's pool.
+          return card.withDisplayPool(pool ?? card.displayPool ?? 'unknown');
+        }
+        return card;
       }
     }
     return GiftCardActivityMetadata(

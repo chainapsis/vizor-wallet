@@ -2850,12 +2850,16 @@ class TransactionDetailOutput {
   final String? address;
   final BigInt amountZatoshi;
   final String pool;
+
+  /// Exact output pool for activity and Gift Card destination metadata.
+  final String? activityPool;
   final bool usesOrchardReceiver;
 
   const TransactionDetailOutput({
     this.address,
     required this.amountZatoshi,
     required this.pool,
+    this.activityPool,
     required this.usesOrchardReceiver,
   });
 
@@ -2864,6 +2868,7 @@ class TransactionDetailOutput {
       address.hashCode ^
       amountZatoshi.hashCode ^
       pool.hashCode ^
+      activityPool.hashCode ^
       usesOrchardReceiver.hashCode;
 
   @override
@@ -2874,6 +2879,7 @@ class TransactionDetailOutput {
           address == other.address &&
           amountZatoshi == other.amountZatoshi &&
           pool == other.pool &&
+          activityPool == other.activityPool &&
           usesOrchardReceiver == other.usesOrchardReceiver;
 }
 

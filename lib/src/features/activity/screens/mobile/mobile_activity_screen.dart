@@ -277,7 +277,7 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
           _transactionEntry(
             context,
             tx,
-            giftCardActivityIndex.metadataFor(tx),
+            giftCardActivityIndex.metadataFor(tx, transactions: transactions),
             privacyModeEnabled: privacyModeEnabled,
           ),
       for (final item in swapItems)

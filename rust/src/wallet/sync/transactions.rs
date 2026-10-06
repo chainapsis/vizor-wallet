@@ -365,6 +365,8 @@ pub(crate) struct TransactionDetailOutput {
     pub address: Option<String>,
     pub amount_zatoshi: u64,
     pub pool: String,
+    /// Exact output pool for activity and Gift Card destination metadata.
+    pub activity_pool: Option<String>,
     pub uses_orchard_receiver: bool,
 }
 
@@ -901,6 +903,7 @@ pub(crate) fn get_transaction_detail(
             address: output.detail_address(tx_kind),
             amount_zatoshi: output.value,
             pool: output_pool_label(output.output_pool).to_string(),
+            activity_pool: exact_output_pool_label(output.output_pool).map(str::to_string),
             uses_orchard_receiver: matches!(output.output_pool, ORCHARD_POOL | IRONWOOD_POOL),
         })
         .collect();
@@ -1527,6 +1530,16 @@ fn detail_includes_output(
 
 fn is_shielded_pool(output_pool: i64) -> bool {
     matches!(output_pool, SAPLING_POOL | ORCHARD_POOL | IRONWOOD_POOL)
+}
+
+fn exact_output_pool_label(output_pool: i64) -> Option<&'static str> {
+    match output_pool {
+        TRANSPARENT_POOL => Some("transparent"),
+        SAPLING_POOL => Some("sapling"),
+        ORCHARD_POOL => Some("orchard"),
+        IRONWOOD_POOL => Some("ironwood"),
+        _ => None,
+    }
 }
 
 fn output_pool_label(output_pool: i64) -> &'static str {
@@ -4950,10 +4963,10 @@ mod tests {
 
     #[test]
     fn detail_sent_row_returns_recipient_address_and_memo() {
-        for (output_pool, label, uses_orchard) in [
-            (SAPLING_POOL, "shielded", false),
-            (ORCHARD_POOL, "shielded", true),
-            (IRONWOOD_POOL, "ironwood", true),
+        for (output_pool, label, activity_pool, uses_orchard) in [
+            (SAPLING_POOL, "shielded", "sapling", false),
+            (ORCHARD_POOL, "shielded", "orchard", true),
+            (IRONWOOD_POOL, "ironwood", "ironwood", true),
         ] {
             let db = fresh_history_db();
             let account = test_account_uuid();
@@ -5002,6 +5015,7 @@ mod tests {
             assert_eq!(got.outputs[0].address.as_deref(), Some("u-recipient"));
             assert_eq!(got.outputs[0].amount_zatoshi, 1_000_000);
             assert_eq!(got.outputs[0].pool, label);
+            assert_eq!(got.outputs[0].activity_pool.as_deref(), Some(activity_pool));
             assert_eq!(got.outputs[0].uses_orchard_receiver, uses_orchard);
         }
     }

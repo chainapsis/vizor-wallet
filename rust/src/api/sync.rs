@@ -2697,6 +2697,8 @@ pub struct TransactionDetailOutput {
     pub address: Option<String>,
     pub amount_zatoshi: u64,
     pub pool: String,
+    /// Exact output pool for activity and Gift Card destination metadata.
+    pub activity_pool: Option<String>,
     pub uses_orchard_receiver: bool,
 }
 
@@ -2834,6 +2836,7 @@ pub fn get_transaction_detail(
                     address: output.address,
                     amount_zatoshi: output.amount_zatoshi,
                     pool: output.pool,
+                    activity_pool: output.activity_pool,
                     uses_orchard_receiver: output.uses_orchard_receiver,
                 })
                 .collect(),

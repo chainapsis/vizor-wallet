@@ -1099,7 +1099,10 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
             context,
             ref,
             tx,
-            giftCardActivityIndex.metadataFor(tx),
+            giftCardActivityIndex.metadataFor(
+              tx,
+              transactions: sync.recentTransactions,
+            ),
             privacyModeEnabled: privacyModeEnabled,
           ),
       for (final item in swapItems)

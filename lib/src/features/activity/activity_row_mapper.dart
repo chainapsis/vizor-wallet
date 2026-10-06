@@ -51,10 +51,10 @@ ActivityRowData buildTransactionActivityRow({
   final isShielded = kind == 'shielded';
   final isMigration = kind == 'migration';
   final isInbound = isReceived || isReceiving;
-  final isOrdinaryTransaction = giftCardKind == null && (isInbound || isSent);
-  final displayPool = isOrdinaryTransaction
+  final isPayment = isInbound || isSent;
+  final displayPool = giftCardKind == null
       ? transactionActivityPool(transaction)
-      : giftCardDisplayPool ?? transaction.displayPool;
+      : giftCardDisplayPool ?? transactionActivityPool(transaction);
   final signedAmount = isSent ? -amount : amount;
   final replacesPool =
       showPendingEstimate && isPending && (isInbound || isSent);
@@ -63,7 +63,7 @@ ActivityRowData buildTransactionActivityRow({
       : isMigration
       ? 'Orchard → Ironwood'
       : isInbound || isSent
-      ? _poolLabel(displayPool, ordinary: isOrdinaryTransaction)
+      ? _poolLabel(normalizeActivityPool(displayPool), ordinary: isPayment)
       : null;
 
   // Unconfirmed sends/receives render as in-flight rows: a pulsing loader
@@ -107,7 +107,7 @@ ActivityRowData buildTransactionActivityRow({
                   subtitle == 'Taking longer'
               ? AppIcons.time
               : null)
-        : _poolIcon(displayPool, ordinary: isOrdinaryTransaction),
+        : _poolIcon(normalizeActivityPool(displayPool), ordinary: isPayment),
     amountText: activityAmountTextForFormFactor(
       _transactionAmountText(
         amount: amount,
@@ -186,12 +186,15 @@ String giftCardActivityTitle(
 bool transactionShowsZeroAmount(String kind) =>
     kind == 'sent' || kind == 'received' || kind == 'receiving';
 
-/// Pool labels for ordinary sends/receipts. Gift Cards keep `displayPool`;
-/// shielding, migration, and sender-source labels retain their own semantics.
+/// Pool labels for sends/receipts, including Gift Cards. Migration and
+/// sender-source labels retain their own semantics.
 String transactionActivityPool(rust_sync.TransactionInfo transaction) {
   final pool = transaction.activityPool ?? transaction.displayPool;
-  return pool == 'ironwood' ? 'shielded' : pool;
+  return normalizeActivityPool(pool);
 }
+
+String normalizeActivityPool(String pool) =>
+    pool == 'ironwood' ? 'shielded' : pool;
 
 String _stableTransactionRole(String kind) {
   return switch (kind) {
