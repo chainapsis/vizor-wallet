@@ -39,6 +39,8 @@ use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::{
     consensus::{BlockHeight, BranchId},
     memo::{Memo, MemoBytes},
+    value::Zatoshis,
+    PoolType,
 };
 
 use crate::wallet::block_times::{self, BlockTimePoint};
@@ -56,6 +58,9 @@ const TRANSPARENT_POOL: i64 = 0;
 const SAPLING_POOL: i64 = 2;
 const ORCHARD_POOL: i64 = 3;
 const IRONWOOD_POOL: i64 = 4;
+/// The key scope of the account's ephemeral transparent addresses, which
+/// carry a TEX send's funds from its funding step to the send.
+const EPHEMERAL_KEY_SCOPE: i64 = 2;
 
 // ======================== Balance ========================
 
@@ -660,6 +665,8 @@ struct TxBase {
     created: Option<String>,
     created_time: u64,
     spent_orchard_note: bool,
+    /// How many of the account's recorded inputs the transaction spends.
+    spent_note_count: u32,
     history: HistoryCompleteness,
 }
 
@@ -720,6 +727,9 @@ struct HistoryCompleteness {
     /// movement but no attributed fee or payment; see
     /// [`Self::justifies_shielding`].
     classification: Option<HistoryClassification>,
+    /// Whether every effect of the transaction on the account is settled, so
+    /// its balance change is final whatever the classification.
+    effects_settled: bool,
     /// The fee as it concerns the account: never [`Fee::Whole`].
     fee: Fee,
     /// The exact fee of the whole transaction, reconciled by the library
@@ -727,6 +737,13 @@ struct HistoryCompleteness {
     /// Other funders may have shared it, so it is shown as the network fee
     /// when the account's fee is unknown and never charged to the account.
     whole_fee: Option<u64>,
+    /// Whether the recovered metadata counts exactly the account's own
+    /// transparent inputs: none when it spent no transparent funds, all of
+    /// its inputs when it spent only transparent funds. No other party then
+    /// funded a transparent input that could have paid what the account's
+    /// funds seem to have paid, so a settled balance change equal to the
+    /// whole fee shows that nothing else left the account.
+    sole_transparent_funder: bool,
     /// The exact payment outside the account that the library reconstructed
     /// from recovered transaction metadata (private recovery: the account
     /// funded every transparent input of a transaction with no shielded
@@ -746,12 +763,14 @@ impl HistoryCompleteness {
             details_complete: true,
             provisional: false,
             classification: Some(HistoryClassification::Reconstructed),
+            effects_settled: true,
             fee: match (base.total_spent > 0, base.fee) {
                 (false, _) => Fee::NotApplicable,
                 (true, Some(fee)) => Fee::Known(fee),
                 (true, None) => Fee::Unknown,
             },
             whole_fee: None,
+            sole_transparent_funder: false,
             inferred_payment: None,
             inferred_outgoing: None,
         }
@@ -759,7 +778,23 @@ impl HistoryCompleteness {
 
     /// Local intent can know every payment detail before scanning discovers
     /// all owned effects. Public discovery still counts as settled.
-    fn of(details: &TransactionHistoryDetails) -> Self {
+    /// `spent_note_count` is the account's recorded inputs in the transaction.
+    fn of(details: &TransactionHistoryDetails, spent_note_count: u32) -> Self {
+        let effects_settled = details
+            .effects
+            .iter()
+            .all(|effect| effect.completeness.is_settled());
+        let spent_in = |transparent: bool| {
+            details.effects.iter().any(|effect| {
+                (effect.pool == PoolType::Transparent) == transparent
+                    && effect.spent > Zatoshis::ZERO
+            })
+        };
+        let own_transparent_inputs = match (spent_in(true), spent_in(false)) {
+            (false, _) => Some(0),
+            (true, false) => Some(spent_note_count),
+            (true, true) => None,
+        };
         Self {
             has_transparent_outputs: details.has_transparent_outputs,
             details_complete: details.payment_details == DetailCompleteness::Complete,
@@ -772,10 +807,8 @@ impl HistoryCompleteness {
                 HistoryClassification::LocalIntent
                 | HistoryClassification::Reconstructed
                 | HistoryClassification::NetReconstructed => false,
-            } || details
-                .effects
-                .iter()
-                .any(|effect| !effect.completeness.is_settled()),
+            } || !effects_settled,
+            effects_settled,
             fee: match details.fee {
                 FeeState::Known(fee) => Fee::Known(fee.into()),
                 FeeState::Unknown => Fee::Unknown,
@@ -788,6 +821,9 @@ impl HistoryCompleteness {
                 .filter(|_| details.account_movement.spent > 0)
                 .map(|fee| fee.into_u64()),
             inferred_outgoing: details.inferred_outgoing.map(|amount| amount.into_u64()),
+            sole_transparent_funder: details.transaction_metadata.as_ref().is_some_and(|e| {
+                own_transparent_inputs == Some(e.metadata.transparent_input_count)
+            }),
             inferred_payment: match details.aggregate_payment {
                 AggregatePayment::Exact(amount)
                     if details.classification == HistoryClassification::Reconstructed
@@ -811,8 +847,10 @@ impl HistoryCompleteness {
             details_complete: false,
             provisional: true,
             classification: None,
+            effects_settled: false,
             fee: fee.map_or(Fee::Unknown, Fee::Known),
             whole_fee: None,
+            sole_transparent_funder: false,
             inferred_payment: None,
             inferred_outgoing: None,
         }
@@ -825,6 +863,22 @@ impl HistoryCompleteness {
         match (self.fee, self.whole_fee) {
             (Fee::Unknown, Some(whole)) => Fee::Whole(whole),
             (fee, _) => fee,
+        }
+    }
+
+    /// The exact fee a settled balance change can be compared with: the
+    /// account's own fee or, when that is unknown, the whole transaction's,
+    /// but only when the account alone funded its transparent side. Another
+    /// funder could otherwise have paid the fee while the account's funds paid
+    /// someone else as much as it received back.
+    fn exact_fee(self) -> Option<u64> {
+        if !self.effects_settled {
+            return None;
+        }
+        match self.fee {
+            Fee::Known(fee) | Fee::Whole(fee) => Some(fee),
+            Fee::Unknown => self.whole_fee.filter(|_| self.sole_transparent_funder),
+            Fee::NotApplicable => None,
         }
     }
 
@@ -963,10 +1017,17 @@ struct ActivitySummary {
     received_transparent: ActivityAmounts,
     /// Owned transparent change/funding excluded from the visible outgoing residual.
     internal_transparent: ActivityAmounts,
+    /// The account's own outputs at its visible addresses (external or
+    /// foreign, or with a recorded recipient), whoever funded them. Change and
+    /// intermediate outputs are not among them.
+    visible_own: ActivityAmounts,
     shielded: ActivityAmounts,
     internal_ironwood_transition: ActivityAmounts,
     own_transparent_output_amount: u64,
     has_own_transparent_output: bool,
+    /// An output pays one of the account's ephemeral addresses: the
+    /// transaction funds a TEX send.
+    has_own_ephemeral_output: bool,
     has_external_transparent_send: bool,
 }
 
@@ -975,9 +1036,15 @@ type FundingStepMatchKey = (String, i64, u64);
 #[derive(Default)]
 struct SuppressedFundingStepFees {
     suppressed_funding_txids: HashSet<i64>,
-    extra_fee_by_external_txid: HashMap<i64, Fee>,
-    funding_parent_by_external_txid: HashMap<i64, i64>,
+    /// The fees of the funding steps folded into each send.
+    extra_fee_by_send_txid: HashMap<i64, Fee>,
+    /// The funding step folded into each send.
+    funding_parent_by_send_txid: HashMap<i64, i64>,
 }
+
+/// Which transactions spend each transaction's outputs to the account's
+/// ephemeral addresses, by txid.
+type EphemeralSpends = HashMap<Vec<u8>, Vec<Vec<u8>>>;
 
 struct ClassifiedTx {
     info: TransactionInfo,
@@ -1048,11 +1115,17 @@ fn read_transaction_history(
         uuid_bytes,
         bases.iter().map(|base| base.txid.as_slice()),
     )?;
+    let ephemeral_spends = read_ephemeral_spends(
+        &read_tx,
+        uuid_bytes,
+        bases.iter().map(|base| base.txid.as_slice()),
+    )?;
     drop(read_tx);
 
     Ok(assemble_history(
         &bases,
         &outputs_by_txid,
+        &ephemeral_spends,
         uuid_bytes,
         limit,
     ))
@@ -1082,14 +1155,13 @@ fn attach_history_details(
             .transaction_history_details(account, batch)
             .map_err(|e| format!("Failed to read history details: {e}"))?
         {
-            read.insert(
-                details.txid.as_ref().to_vec(),
-                HistoryCompleteness::of(&details),
-            );
+            read.insert(details.txid.as_ref().to_vec(), details);
         }
     }
     for base in bases {
-        let history = read.get(&base.txid).copied().unwrap_or(base.history);
+        let history = read.get(&base.txid).map_or(base.history, |details| {
+            HistoryCompleteness::of(details, base.spent_note_count)
+        });
         base.attach_history(history);
     }
     Ok(())
@@ -1113,6 +1185,7 @@ fn txid_of(bytes: &[u8]) -> Result<TxId, String> {
 fn assemble_history(
     bases: &[TxBase],
     outputs_by_txid: &HashMap<Vec<u8>, Vec<TxOutput>>,
+    ephemeral_spends: &EphemeralSpends,
     uuid_bytes: &[u8],
     limit: Option<u32>,
 ) -> Vec<TransactionInfo> {
@@ -1132,6 +1205,12 @@ fn assemble_history(
     let external_send_keys = build_external_send_keys(bases, &summaries);
     let suppressed_funding_step_fees =
         build_suppressed_funding_step_fees(bases, &summaries, &external_send_keys);
+    let linked_funding_step_fees = link_funding_steps(
+        bases,
+        &summaries,
+        ephemeral_spends,
+        &suppressed_funding_step_fees.suppressed_funding_txids,
+    );
 
     let bases_by_id: HashMap<i64, &TxBase> = bases
         .iter()
@@ -1143,24 +1222,39 @@ fn assemble_history(
         if suppressed_funding_step_fees
             .suppressed_funding_txids
             .contains(&base.transaction_id)
+            || linked_funding_step_fees
+                .suppressed_funding_txids
+                .contains(&base.transaction_id)
         {
             continue;
         }
 
         let extra_sent_fee = if summary.has_external_transparent_send {
             suppressed_funding_step_fees
-                .extra_fee_by_external_txid
+                .extra_fee_by_send_txid
                 .get(&base.transaction_id)
                 .copied()
                 .unwrap_or(Fee::NotApplicable)
         } else {
             Fee::NotApplicable
-        };
+        }
+        .plus(
+            linked_funding_step_fees
+                .extra_fee_by_send_txid
+                .get(&base.transaction_id)
+                .copied()
+                .unwrap_or(Fee::NotApplicable),
+        );
 
         let mut rows = classify_history_tx(base, &summary, extra_sent_fee);
         if let Some(parent_id) = suppressed_funding_step_fees
-            .funding_parent_by_external_txid
+            .funding_parent_by_send_txid
             .get(&base.transaction_id)
+            .or_else(|| {
+                linked_funding_step_fees
+                    .funding_parent_by_send_txid
+                    .get(&base.transaction_id)
+            })
         {
             if let Some(parent) = bases_by_id.get(parent_id) {
                 for row in &mut rows {
@@ -1602,7 +1696,8 @@ fn read_history_base_by_txid(
                     ON spent_note.id = spent.orchard_received_note_id
                 WHERE spent_tx.txid = vt.txid
                   AND spent_note.note_version = ?3
-            ) AS spent_orchard_note
+            ) AS spent_orchard_note,
+            COALESCE(vt.spent_note_count, 0) AS spent_note_count
         FROM v_transactions vt
         LEFT JOIN transactions tx ON tx.txid = vt.txid
         WHERE vt.account_uuid = ?1
@@ -1633,6 +1728,7 @@ fn read_history_base_by_txid(
                     created: row.get(12)?,
                     created_time: row.get::<_, i64>(13)?.unsigned_abs(),
                     spent_orchard_note: row.get(14)?,
+                    spent_note_count: row.get(15)?,
                     history: HistoryCompleteness::unread(fee),
                 })
             },
@@ -1677,6 +1773,7 @@ impl From<TransactionSummary> for TxBase {
             created: summary.created,
             created_time: summary.created_time.map(i64::unsigned_abs).unwrap_or(0),
             spent_orchard_note: summary.has_orchard_spend,
+            spent_note_count: summary.spent_note_count,
             history: HistoryCompleteness::unread(summary.fee),
         }
     }
@@ -1776,6 +1873,51 @@ fn read_history_outputs<'a>(
         outputs.entry(output.txid.clone()).or_default().push(output);
     }
     Ok(outputs)
+}
+
+/// Reads which transactions spend the account's outputs to its ephemeral
+/// addresses that `txids` created. A TEX send spends the output its funding
+/// step created; restored wallets have no creation time to match them by.
+fn read_ephemeral_spends<'a>(
+    conn: &rusqlite::Connection,
+    account_uuid: &[u8],
+    txids: impl IntoIterator<Item = &'a [u8]>,
+) -> Result<EphemeralSpends, String> {
+    let txid_array: Array = Rc::new(
+        txids
+            .into_iter()
+            .map(|txid| Value::Blob(txid.to_vec()))
+            .collect(),
+    );
+    let mut stmt = conn
+        .prepare(
+            r#"
+        SELECT DISTINCT funding.txid, spending.txid
+        FROM transparent_received_outputs tro
+        JOIN accounts acc ON acc.id = tro.account_id
+        JOIN addresses a ON a.id = tro.address_id
+        JOIN transactions funding ON funding.id_tx = tro.transaction_id
+        JOIN rarray(?2) AS active_tx ON active_tx.value = funding.txid
+        JOIN transparent_received_output_spends s
+            ON s.transparent_received_output_id = tro.id
+        JOIN transactions spending ON spending.id_tx = s.transaction_id
+        WHERE acc.uuid = ?1
+          AND a.key_scope = ?3
+        "#,
+        )
+        .map_err(|e| format!("SQL error: {e}"))?;
+    let rows = stmt
+        .query_map(
+            rusqlite::params![account_uuid, txid_array, EPHEMERAL_KEY_SCOPE],
+            |row| Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, Vec<u8>>(1)?)),
+        )
+        .map_err(|e| format!("Query error: {e}"))?;
+    let mut spends = EphemeralSpends::new();
+    for row in rows {
+        let (funding, spending) = row.map_err(|e| format!("Row error: {e}"))?;
+        spends.entry(funding).or_default().push(spending);
+    }
+    Ok(spends)
 }
 
 fn read_outputs_for_tx(
@@ -1900,6 +2042,17 @@ fn summarize_activity_outputs(
         if from_own && to_own && base.spent_orchard_note && is_ironwood_output(output) {
             summary.internal_ironwood_transition.add_output(output);
             continue;
+        }
+
+        if to_own && is_user_visible_self_output(output) {
+            summary.visible_own.add_output(output);
+        }
+
+        if output.output_pool == TRANSPARENT_POOL
+            && to_own
+            && output.to_key_scope == Some(EPHEMERAL_KEY_SCOPE)
+        {
+            summary.has_own_ephemeral_output = true;
         }
 
         if output.output_pool == 0 && from_own && to_own {
@@ -2128,13 +2281,13 @@ fn build_suppressed_funding_step_fees(
             external_index += 1;
 
             matched
-                .funding_parent_by_external_txid
+                .funding_parent_by_send_txid
                 .insert(external_transaction_id, funding_transaction_id);
             matched
                 .suppressed_funding_txids
                 .insert(funding_transaction_id);
             let entry = matched
-                .extra_fee_by_external_txid
+                .extra_fee_by_send_txid
                 .entry(external_transaction_id)
                 .or_insert(Fee::NotApplicable);
             *entry = entry.plus(funding_fee);
@@ -2142,6 +2295,87 @@ fn build_suppressed_funding_step_fees(
     }
 
     matched
+}
+
+/// Folds TEX funding steps into the send that spends their ephemeral output,
+/// matched by that output rather than by creation time, which a restored
+/// wallet does not have. A step folds only when the account moved its own
+/// funds in it and only its fee left ([`is_pure_funding_step`]), so the step
+/// is the send's cost and no payment of its own, and only into a send that
+/// shows a sent row with a known fee to carry the step's. Otherwise it keeps
+/// its own row. Of several spenders, a mined one is the send, then one that
+/// has not expired: an expired attempt's output was spent again.
+fn link_funding_steps(
+    bases: &[TxBase],
+    summaries: &HashMap<Vec<u8>, ActivitySummary>,
+    ephemeral_spends: &EphemeralSpends,
+    already_suppressed: &HashSet<i64>,
+) -> SuppressedFundingStepFees {
+    let by_txid: HashMap<&[u8], &TxBase> = bases
+        .iter()
+        .map(|base| (base.txid.as_slice(), base))
+        .collect();
+    let summary_of = |base: &TxBase| summaries.get(&base.txid).cloned().unwrap_or_default();
+    let mut linked = SuppressedFundingStepFees::default();
+    for step in bases {
+        if step.transaction_id < 0
+            || already_suppressed.contains(&step.transaction_id)
+            || !is_pure_funding_step(step, &summary_of(step))
+        {
+            continue;
+        }
+        let Some(send) = ephemeral_spends
+            .get(&step.txid)
+            .into_iter()
+            .flatten()
+            .filter_map(|txid| by_txid.get(txid.as_slice()).copied())
+            .filter(|send| send.transaction_id >= 0 && send.txid != step.txid)
+            .min_by_key(|send| {
+                (
+                    send.mined_height.is_none(),
+                    send.expired_unmined,
+                    send.transaction_id,
+                )
+            })
+        else {
+            continue;
+        };
+        // A send whose own fee is unknown would hide the step's in its
+        // unknown total: the step keeps its row.
+        if send.history.shown_fee() == Fee::Unknown {
+            continue;
+        }
+        let send_shows_a_sent_row =
+            classify_history_tx(send, &summary_of(send), Fee::NotApplicable)
+                .iter()
+                .any(|row| row.info.tx_kind == "sent");
+        if !send_shows_a_sent_row {
+            continue;
+        }
+        linked.suppressed_funding_txids.insert(step.transaction_id);
+        linked
+            .funding_parent_by_send_txid
+            .entry(send.transaction_id)
+            .or_insert(step.transaction_id);
+        let fee = linked
+            .extra_fee_by_send_txid
+            .entry(send.transaction_id)
+            .or_insert(Fee::NotApplicable);
+        *fee = fee.plus(step.history.shown_fee());
+    }
+    linked
+}
+
+/// Whether `base` only funds the account's ephemeral outputs: it pays no
+/// recorded or visible output, and its settled balance change is exactly the
+/// fee it paid, so nothing else left the account.
+fn is_pure_funding_step(base: &TxBase, summary: &ActivitySummary) -> bool {
+    !base.is_shielding
+        && base.account_balance_delta < 0
+        && summary.has_own_ephemeral_output
+        && summary.sent.output_count == 0
+        && summary.visible_own.output_count == 0
+        && base.history.exact_fee() == Some(base.account_balance_delta.unsigned_abs())
 }
 
 fn external_send_key(base: &TxBase, summary: &ActivitySummary) -> Option<FundingStepMatchKey> {
@@ -2219,13 +2453,14 @@ fn classify_history_tx(
     // is shown as a receive. The payment went to transparent outputs.
     if let Some(payment) = base.history.inferred_payment {
         if payment > 0 && base.account_balance_delta < 0 && summary.sent.output_count == 0 {
-            return vec![build_classified_tx(
+            return vec![build_classified_tx_with_fee(
                 base,
                 "sent",
                 payment,
                 "transparent",
                 true,
                 1,
+                base.history.shown_fee().plus(extra_sent_fee),
             )];
         }
         // Without a known visible self-payment, the only amount we can show
@@ -2240,7 +2475,15 @@ fn classify_history_tx(
                 Fee::Known(fee) | Fee::Whole(fee) if fee == debit
             )
         {
-            let mut row = build_classified_tx(base, "sent", debit, "transparent", true, 1);
+            let mut row = build_classified_tx_with_fee(
+                base,
+                "sent",
+                debit,
+                "transparent",
+                true,
+                1,
+                base.history.shown_fee().plus(extra_sent_fee),
+            );
             row.info.amount_is_net_change = true;
             return vec![row];
         }
@@ -2335,6 +2578,12 @@ fn classify_history_tx(
             && base.account_balance_delta.unsigned_abs() > base.history.fee.known_or_zero()
         {
             rows.push(build_unsettled_debit_row(base, extra_sent_fee));
+            return rows;
+        }
+        // A TEX funding step that no send carries the fee of: the fee was
+        // still paid, so it keeps a row.
+        if summary.has_own_ephemeral_output && base.account_balance_delta < 0 {
+            rows.push(build_movement_debit_row(base, extra_sent_fee));
             return rows;
         }
         if base.total_spent > 0 && base.total_received > 0 {
@@ -3052,13 +3301,16 @@ mod tests {
             created: None,
             created_time: 0,
             spent_orchard_note: true,
+            spent_note_count: 1,
             history: HistoryCompleteness {
                 has_transparent_outputs: None,
                 details_complete: true,
                 classification: Some(HistoryClassification::Reconstructed),
                 provisional: false,
+                effects_settled: true,
                 fee: Fee::Known(20_000),
                 whole_fee: None,
+                sole_transparent_funder: false,
                 inferred_payment: None,
                 inferred_outgoing: None,
             },
@@ -3207,8 +3459,10 @@ mod tests {
             details_complete: false,
             classification: None,
             provisional: true,
+            effects_settled: true,
             fee: Fee::Unknown,
             whole_fee: None,
+            sole_transparent_funder: false,
             inferred_payment: None,
             inferred_outgoing: None,
         });
@@ -3547,8 +3801,10 @@ mod tests {
             details_complete: true,
             classification: Some(HistoryClassification::Reconstructed),
             provisional: false,
+            effects_settled: true,
             fee: Fee::Known(10_000),
             whole_fee: None,
+            sole_transparent_funder: false,
             inferred_payment: None,
             inferred_outgoing: None,
         };
@@ -3571,8 +3827,10 @@ mod tests {
             details_complete: false,
             classification: None,
             provisional: false,
+            effects_settled: true,
             fee: Fee::Known(10_000),
             whole_fee: None,
+            sole_transparent_funder: false,
             inferred_payment: Some(69_990_000),
             inferred_outgoing: None,
         };
@@ -3674,8 +3932,10 @@ mod tests {
             details_complete: false,
             classification: None,
             provisional: false,
+            effects_settled: true,
             fee: Fee::Known(10_000),
             whole_fee: Some(10_000),
+            sole_transparent_funder: true,
             inferred_payment: Some(0),
             inferred_outgoing: None,
         });
@@ -3701,8 +3961,10 @@ mod tests {
             details_complete: false,
             classification: None,
             provisional: false,
+            effects_settled: true,
             fee: Fee::Unknown,
             whole_fee: Some(10_000),
+            sole_transparent_funder: true,
             inferred_payment: Some(0),
         });
         let rows = classify_history_tx(&base, &summary, Fee::NotApplicable);
@@ -3726,8 +3988,10 @@ mod tests {
             details_complete: false,
             classification: None,
             provisional: false,
+            effects_settled: true,
             fee: Fee::Known(10_000),
             whole_fee: None,
+            sole_transparent_funder: false,
             inferred_payment: None,
             inferred_outgoing: None,
         });
@@ -3755,8 +4019,10 @@ mod tests {
             details_complete: false,
             classification: None,
             provisional: false,
+            effects_settled: true,
             fee: Fee::Known(10_000),
             whole_fee: Some(10_000),
+            sole_transparent_funder: true,
             inferred_payment: Some(0),
             inferred_outgoing: None,
         };
@@ -3789,8 +4055,10 @@ mod tests {
             details_complete: false,
             classification: None,
             provisional: false,
+            effects_settled: true,
             fee: Fee::Known(10_000),
             whole_fee: Some(10_000),
+            sole_transparent_funder: true,
             inferred_payment: Some(0),
             inferred_outgoing: None,
         };
@@ -3866,28 +4134,28 @@ mod tests {
             pending_private_details: vec![],
         };
         assert_eq!(
-            HistoryCompleteness::of(&details).inferred_payment,
+            HistoryCompleteness::of(&details, 1).inferred_payment,
             Some(50_000)
         );
 
         details.aggregate_payment = AggregatePayment::Exact(Zatoshis::ZERO);
-        assert_eq!(HistoryCompleteness::of(&details).inferred_payment, Some(0));
+        assert_eq!(HistoryCompleteness::of(&details, 1).inferred_payment, Some(0));
         details.aggregate_payment = AggregatePayment::Exact(Zatoshis::from_u64(50_000).unwrap());
 
         // A local record's payment, a provisional one, public evidence, and
         // shielded components are not a reconstructed transparent payment.
         details.classification = HistoryClassification::LocalIntent;
-        assert_eq!(HistoryCompleteness::of(&details).inferred_payment, None);
+        assert_eq!(HistoryCompleteness::of(&details, 1).inferred_payment, None);
         details.classification = HistoryClassification::Provisional;
-        assert_eq!(HistoryCompleteness::of(&details).inferred_payment, None);
+        assert_eq!(HistoryCompleteness::of(&details, 1).inferred_payment, None);
         details.classification = HistoryClassification::Reconstructed;
         details.transaction_metadata = None;
-        assert_eq!(HistoryCompleteness::of(&details).inferred_payment, None);
+        assert_eq!(HistoryCompleteness::of(&details, 1).inferred_payment, None);
         details.transaction_metadata = Some(evidence(true));
-        assert_eq!(HistoryCompleteness::of(&details).inferred_payment, None);
+        assert_eq!(HistoryCompleteness::of(&details, 1).inferred_payment, None);
         details.transaction_metadata = Some(evidence(false));
         details.aggregate_payment = AggregatePayment::Partial(Zatoshis::from_u64(50_000).unwrap());
-        assert_eq!(HistoryCompleteness::of(&details).inferred_payment, None);
+        assert_eq!(HistoryCompleteness::of(&details, 1).inferred_payment, None);
     }
 
     const WHOLE_FEE: u64 = 10_000;
@@ -3971,7 +4239,7 @@ mod tests {
     #[test]
     fn a_shared_funding_debit_shows_the_whole_fee_without_charging_it() {
         let details = shared_funding_details(exact_whole_fee());
-        let history = HistoryCompleteness::of(&details);
+        let history = HistoryCompleteness::of(&details, 1);
         assert_eq!(
             history.fee,
             Fee::Unknown,
@@ -4015,7 +4283,7 @@ mod tests {
         }
         details.payment_details = DetailCompleteness::Complete;
         details.classification = HistoryClassification::NetReconstructed;
-        let history = HistoryCompleteness::of(&details);
+        let history = HistoryCompleteness::of(&details, 1);
         assert!(history.justifies_shielding());
         assert_eq!(history.fee, Fee::Unknown);
         assert_eq!(history.whole_fee, Some(WHOLE_FEE));
@@ -4034,18 +4302,18 @@ mod tests {
         }
         details.classification = HistoryClassification::NetReconstructed;
         details.payment_details = DetailCompleteness::Incomplete;
-        assert!(!HistoryCompleteness::of(&details).justifies_shielding());
+        assert!(!HistoryCompleteness::of(&details, 1).justifies_shielding());
 
         details.payment_details = DetailCompleteness::Complete;
         details.classification = HistoryClassification::Provisional;
-        assert!(!HistoryCompleteness::of(&details).justifies_shielding());
+        assert!(!HistoryCompleteness::of(&details, 1).justifies_shielding());
 
         assert!(!HistoryCompleteness::unread(Some(WHOLE_FEE)).justifies_shielding());
 
         // A net reconstruction never charges the whole fee to the account, and
         // a shielding row built from it shows the receipt, not the movement.
         details.classification = HistoryClassification::NetReconstructed;
-        let history = HistoryCompleteness::of(&details);
+        let history = HistoryCompleteness::of(&details, 1);
         let mut base = tx_base_for_history();
         base.spent_orchard_note = false;
         base.fee = None;
@@ -4094,7 +4362,7 @@ mod tests {
         base.account_balance_delta = -(WHOLE_FEE as i64);
         base.total_spent = 100_000_000;
         base.total_received = 100_000_000 - WHOLE_FEE;
-        base.attach_history(HistoryCompleteness::of(&details));
+        base.attach_history(HistoryCompleteness::of(&details, 1));
         let mut summary = ActivitySummary::default();
         summary.shielded.amount = base.total_received;
 
@@ -4121,7 +4389,7 @@ mod tests {
         details.whole_fee = None;
         let (mut base, summary) = provisional_debit();
         let before = classify_history_tx(&base, &summary, Fee::NotApplicable);
-        base.attach_history(HistoryCompleteness::of(&details));
+        base.attach_history(HistoryCompleteness::of(&details, 1));
 
         let rows = classify_history_tx(&base, &summary, Fee::NotApplicable);
 
@@ -4168,7 +4436,7 @@ mod tests {
         let shown = |whole, fee| {
             let mut details = shared_funding_details(whole);
             details.fee = fee;
-            HistoryCompleteness::of(&details).shown_fee()
+            HistoryCompleteness::of(&details, 1).shown_fee()
         };
         let known = |fee| FeeState::Known(zcash_protocol::value::Zatoshis::from_u64(fee).unwrap());
 
@@ -4214,7 +4482,7 @@ mod tests {
         base.account_balance_delta = -(WHOLE_FEE as i64);
         base.total_spent = 100_000_000;
         base.total_received = 100_000_000 - WHOLE_FEE;
-        base.attach_history(HistoryCompleteness::of(&details));
+        base.attach_history(HistoryCompleteness::of(&details, 1));
         assert!(
             !base.is_shielding,
             "incomplete details justify no shielding"
@@ -4245,9 +4513,11 @@ mod tests {
                 details_complete,
                 has_transparent_outputs: None,
                 provisional: false,
+                effects_settled: true,
                 classification: details_complete.then_some(HistoryClassification::Reconstructed),
                 fee: Fee::Unknown,
                 whole_fee: Some(WHOLE_FEE),
+                sole_transparent_funder: true,
                 inferred_payment: None,
                 inferred_outgoing: None,
             };
@@ -4303,8 +4573,10 @@ mod tests {
             details_complete: false,
             classification: None,
             provisional: true,
+            effects_settled: true,
             fee: Fee::Unknown,
             whole_fee: Some(WHOLE_FEE),
+            sole_transparent_funder: true,
             inferred_payment: None,
             inferred_outgoing: None,
         };
@@ -4412,7 +4684,7 @@ mod tests {
             classification: HistoryClassification::LocalIntent,
             pending_private_details: vec![],
         };
-        let pending = HistoryCompleteness::of(&details);
+        let pending = HistoryCompleteness::of(&details, 1);
         assert!(pending.details_complete);
         assert!(pending.provisional);
         assert_eq!(pending.fee, Fee::Known(10_000));
@@ -4429,7 +4701,7 @@ mod tests {
 
         details.effects[0].received = Zatoshis::from_u64(190_000).unwrap();
         details.effects[0].completeness = EffectCompleteness::Complete;
-        let scanned = HistoryCompleteness::of(&details);
+        let scanned = HistoryCompleteness::of(&details, 1);
         assert!(scanned.details_complete);
         assert!(!scanned.provisional);
         assert_eq!(scanned.fee, pending.fee);
@@ -4487,11 +4759,16 @@ mod tests {
             ] {
                 // The unsettled effect need not be the first one.
                 details.effects[1].completeness = completeness;
-                let mapped = HistoryCompleteness::of(&details);
+                let mapped = HistoryCompleteness::of(&details, 1);
                 assert_eq!(
                     mapped.provisional,
                     classification == HistoryClassification::Provisional
                         || completeness == EffectCompleteness::Incomplete,
+                    "{classification:?} with {completeness:?}"
+                );
+                assert_eq!(
+                    mapped.effects_settled,
+                    completeness != EffectCompleteness::Incomplete,
                     "{classification:?} with {completeness:?}"
                 );
                 assert!(mapped.details_complete);
@@ -4504,7 +4781,7 @@ mod tests {
         details.effects[1].completeness = EffectCompleteness::PublicDiscovery;
         details.payment_details = DetailCompleteness::Incomplete;
         details.fee = FeeState::Unknown;
-        let mapped = HistoryCompleteness::of(&details);
+        let mapped = HistoryCompleteness::of(&details, 1);
         assert!(!mapped.details_complete);
         assert!(!mapped.provisional);
         assert_eq!(mapped.fee, Fee::Unknown);
@@ -4519,8 +4796,10 @@ mod tests {
             details_complete: false,
             classification: None,
             provisional: true,
+            effects_settled: true,
             fee: Fee::Unknown,
             whole_fee: None,
+            sole_transparent_funder: false,
             inferred_payment: None,
             inferred_outgoing: None,
         });
@@ -4533,8 +4812,10 @@ mod tests {
             details_complete: true,
             classification: Some(HistoryClassification::Reconstructed),
             provisional: false,
+            effects_settled: true,
             fee: Fee::Known(10_000),
             whole_fee: None,
+            sole_transparent_funder: false,
             inferred_payment: None,
             inferred_outgoing: None,
         });
@@ -4756,7 +5037,8 @@ mod tests {
                  total_received INTEGER,
                  is_shielding INTEGER,
                  expiry_height INTEGER,
-                 tx_index INTEGER
+                 tx_index INTEGER,
+                 spent_note_count INTEGER
              );
              CREATE TABLE transactions (
                  id_tx INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -4781,6 +5063,16 @@ mod tests {
              );
              CREATE TABLE orchard_received_note_spends (
                  orchard_received_note_id INTEGER NOT NULL,
+                 transaction_id INTEGER NOT NULL
+             );
+             CREATE TABLE transparent_received_outputs (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 transaction_id INTEGER NOT NULL,
+                 account_id INTEGER NOT NULL,
+                 address_id INTEGER NOT NULL
+             );
+             CREATE TABLE transparent_received_output_spends (
+                 transparent_received_output_id INTEGER NOT NULL,
                  transaction_id INTEGER NOT NULL
              );
              CREATE TABLE v_tx_outputs (
@@ -5690,7 +5982,8 @@ mod tests {
                         ON spent_note.id = spent.orchard_received_note_id
                     WHERE spent_tx.txid = vt.txid
                       AND spent_note.note_version = ?2
-                ) AS spent_orchard_note
+                ) AS spent_orchard_note,
+                COALESCE(vt.spent_note_count, 0) AS spent_note_count
             FROM v_transactions vt
             LEFT JOIN transactions tx ON tx.txid = vt.txid
             WHERE vt.account_uuid = ?1
@@ -5719,6 +6012,7 @@ mod tests {
                         created: row.get(12)?,
                         created_time: row.get::<_, i64>(13)?.unsigned_abs(),
                         spent_orchard_note: row.get(14)?,
+                        spent_note_count: row.get(15)?,
                         history: HistoryCompleteness::unread(fee),
                     })
                 },
@@ -5781,11 +6075,17 @@ mod tests {
             &uuid_bytes,
             bases.iter().map(|base| base.txid.as_slice()),
         )?;
+        let ephemeral_spends = read_ephemeral_spends(
+            &read_tx,
+            &uuid_bytes,
+            bases.iter().map(|base| base.txid.as_slice()),
+        )?;
         drop(read_tx);
 
         Ok(assemble_history(
             &bases,
             &outputs_by_txid,
+            &ephemeral_spends,
             &uuid_bytes,
             limit,
         ))
@@ -7584,8 +7884,10 @@ mod tests {
         assert_eq!(got[0].tx_kind, "unknown");
     }
 
+    /// A TEX funding step no send carries the fee of keeps a row: the fee
+    /// was paid, and it is all the step moved out of the account.
     #[test]
-    fn history_omits_unmatched_funding_step() {
+    fn history_keeps_an_unmatched_funding_step_as_its_fee() {
         let db = fresh_history_db();
         let account = test_account_uuid();
         let txid = fake_txid(0xE6);
@@ -7613,10 +7915,877 @@ mod tests {
             1_000_000,
             false,
             Some("t-ephemeral"),
-            Some(2),
+            Some(EPHEMERAL_KEY_SCOPE),
         );
 
-        assert!(zero_value_history(&db, account).is_empty());
+        let rows = zero_value_history(&db, account);
+        assert_eq!(rows.len(), 1);
+        let row = &rows[0];
+        assert_eq!(row.tx_kind, "sent");
+        assert_eq!(
+            (row.display_amount, row.fee_state, row.fee),
+            (10_000, TransactionFeeState::Known, 10_000),
+            "the account's own fee is the whole change"
+        );
+        assert!(row.amount_is_net_change);
+        assert_eq!(row.display_pool, "unknown");
+    }
+
+    /// Roman's private 38c60b4a and 71c0e25d: a TEX send to his own
+    /// transparent address, known only from private recovery. The funding step
+    /// moves Ironwood funds to an ephemeral address with Ironwood change, its
+    /// fee only the transaction's whole fee; the send spends that output to
+    /// his own external address with its own fee. The step folds into the
+    /// send, which carries both fees. (How the send's move itself reads is
+    /// left to the library's owned transparent outputs, wallet-libraries
+    /// #112: here it is the zero-payment self-transfer row.)
+    #[test]
+    fn a_private_tex_send_to_self_folds_its_funding_step() {
+        let account = test_account_uuid();
+        let uuid = account.as_bytes().to_vec();
+        let (step_txid, send_txid) = (fake_txid(0xF1).to_vec(), fake_txid(0xF2).to_vec());
+        let output = |txid: &[u8], pool, from_own: bool, scope, value| TxOutput {
+            txid: txid.to_vec(),
+            output_pool: pool,
+            output_index: 0,
+            from_account_uuid: from_own.then(|| uuid.clone()),
+            to_account_uuid: Some(uuid.clone()),
+            to_address: None,
+            sent_to_address: None,
+            transparent_receiver_address: None,
+            to_key_scope: Some(scope),
+            value,
+            memo: None,
+            note_version: None,
+        };
+        let base = |txid: &[u8], id, delta: i64, spent, history| {
+            let mut base = tx_base_for_history();
+            base.txid = txid.to_vec();
+            base.transaction_id = id;
+            base.spent_orchard_note = false;
+            base.fee = None;
+            base.account_balance_delta = delta;
+            base.total_spent = spent;
+            base.total_received = spent - delta.unsigned_abs();
+            base.attach_history(history);
+            base
+        };
+        let bases = [
+            base(
+                &step_txid,
+                1,
+                -15_000,
+                107_670_000,
+                HistoryCompleteness {
+                    details_complete: false,
+                    provisional: true,
+                    classification: None,
+                    effects_settled: true,
+                    fee: Fee::Unknown,
+                    whole_fee: Some(15_000),
+                    sole_transparent_funder: true,
+                    inferred_payment: None,
+                },
+            ),
+            base(
+                &send_txid,
+                2,
+                -10_000,
+                110_000,
+                HistoryCompleteness {
+                    details_complete: false,
+                    provisional: false,
+                    classification: None,
+                    effects_settled: true,
+                    fee: Fee::Known(10_000),
+                    whole_fee: Some(10_000),
+                    sole_transparent_funder: true,
+                    inferred_payment: Some(0),
+                },
+            ),
+        ];
+        let outputs = HashMap::from([
+            (
+                step_txid.clone(),
+                vec![
+                    output(
+                        &step_txid,
+                        TRANSPARENT_POOL,
+                        false,
+                        EPHEMERAL_KEY_SCOPE,
+                        110_000,
+                    ),
+                    output(&step_txid, IRONWOOD_POOL, true, 1, 107_545_000),
+                ],
+            ),
+            (
+                send_txid.clone(),
+                vec![output(&send_txid, TRANSPARENT_POOL, false, 0, 100_000)],
+            ),
+        ]);
+        let rows = |spends: &EphemeralSpends| {
+            assemble_history(&bases, &outputs, spends, &uuid, None)
+                .into_iter()
+                .map(|row| {
+                    (
+                        row.txid_hex == hex::encode(&send_txid),
+                        row.tx_kind,
+                        row.display_amount,
+                        row.display_pool,
+                        row.fee_state,
+                        row.fee,
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+
+        let whole = TransactionFeeState::WholeTransaction;
+        assert_eq!(
+            rows(&HashMap::from([(
+                step_txid.clone(),
+                vec![send_txid.clone()]
+            )])),
+            [(
+                true,
+                "sent".into(),
+                10_000,
+                "transparent".into(),
+                whole,
+                25_000
+            )],
+            "one row of the send, with both fees"
+        );
+        // Unlinked, the step keeps a row with its fee, never a receipt of its
+        // intermediate output.
+        let step_rows = |rows: Vec<(bool, String, u64, String, TransactionFeeState, u64)>| {
+            rows.into_iter().filter(|row| !row.0).collect::<Vec<_>>()
+        };
+        assert_eq!(
+            step_rows(rows(&EphemeralSpends::new())),
+            [(
+                false,
+                "sent".into(),
+                15_000,
+                "unknown".into(),
+                whole,
+                15_000
+            )]
+        );
+
+        // A step whose balance change is more than its fee also paid
+        // something: it is no mere cost of the send and keeps its own row.
+        let mut paid = bases.clone();
+        paid[0].account_balance_delta = -25_000;
+        let linked = HashMap::from([(step_txid.clone(), vec![send_txid.clone()])]);
+        let shown = assemble_history(&paid, &outputs, &linked, &uuid, None);
+        assert_eq!(
+            shown
+                .iter()
+                .filter(|row| row.txid_hex == hex::encode(&step_txid))
+                .map(|row| (row.display_amount, row.amount_is_net_change))
+                .collect::<Vec<_>>(),
+            [(25_000, true)]
+        );
+        assert_eq!(
+            shown
+                .iter()
+                .filter(|row| row.txid_hex == hex::encode(&send_txid) && row.tx_kind == "sent")
+                .map(|row| row.fee)
+                .collect::<Vec<_>>(),
+            [10_000],
+            "the send carries only its own fee"
+        );
+    }
+
+    /// Records that `spending` spends the output `funding` paid to the
+    /// account's `address`.
+    fn link_transparent_spend(
+        db: &NamedTempFile,
+        account: uuid::Uuid,
+        funding: &[u8],
+        address: &str,
+        spending: &[u8],
+    ) {
+        let conn = rusqlite::Connection::open(db.path()).unwrap();
+        let account_id = ensure_account_row(&conn, account);
+        let id_of = |txid: &[u8]| -> i64 {
+            conn.query_row(
+                "SELECT id_tx FROM transactions WHERE txid = ?1",
+                rusqlite::params![txid],
+                |row| row.get(0),
+            )
+            .unwrap()
+        };
+        let address_id: i64 = conn
+            .query_row(
+                "SELECT id FROM addresses WHERE account_id = ?1 AND address = ?2 LIMIT 1",
+                rusqlite::params![account_id, address],
+                |row| row.get(0),
+            )
+            .unwrap();
+        conn.execute(
+            "INSERT INTO transparent_received_outputs (transaction_id, account_id, address_id)
+             VALUES (?1, ?2, ?3)",
+            rusqlite::params![id_of(funding), account_id, address_id],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO transparent_received_output_spends
+                 (transparent_received_output_id, transaction_id)
+             VALUES (?1, ?2)",
+            rusqlite::params![conn.last_insert_rowid(), id_of(spending)],
+        )
+        .unwrap();
+    }
+
+    /// A restored wallet's TEX send (Roman's ae3e57d0 and 3fb9fe13): the
+    /// funding step moves Orchard funds to an ephemeral address with change,
+    /// and the send spends that output to the TEX recipient. Neither has a
+    /// creation time, so the step is matched by the output the send spends:
+    /// its fee folds into the send's, and it has no row of its own.
+    #[test]
+    fn history_folds_a_restored_funding_step_into_the_send_spending_its_output() {
+        let history = |linked: bool| {
+            let db = fresh_history_db();
+            let account = test_account_uuid();
+            let funding_step = fake_txid(0xE7);
+            let send = fake_txid(0xE8);
+            insert_history_tx(
+                &db,
+                account,
+                &funding_step,
+                Some(1_000),
+                1,
+                Some(1_040),
+                -15_000,
+                1_000_000,
+                985_000,
+                false,
+                None,
+            );
+            set_history_fee(&db, &funding_step, 15_000);
+            insert_output_with_address(
+                &db,
+                &funding_step,
+                TRANSPARENT_POOL,
+                Some(account),
+                Some(account),
+                20_000,
+                false,
+                Some("t-ephemeral"),
+                Some(EPHEMERAL_KEY_SCOPE),
+            );
+            insert_output_with_address(
+                &db,
+                &funding_step,
+                ORCHARD_POOL,
+                Some(account),
+                Some(account),
+                965_000,
+                true,
+                Some("u-change"),
+                Some(1),
+            );
+            insert_history_tx(
+                &db,
+                account,
+                &send,
+                Some(1_000),
+                2,
+                Some(1_040),
+                -20_000,
+                20_000,
+                0,
+                false,
+                None,
+            );
+            set_history_fee(&db, &send, 10_000);
+            insert_output(
+                &db,
+                &send,
+                TRANSPARENT_POOL,
+                Some(account),
+                None,
+                10_000,
+                false,
+            );
+            if linked {
+                link_transparent_spend(&db, account, &funding_step, "t-ephemeral", &send);
+            }
+            zero_value_history(&db, account)
+                .into_iter()
+                .map(|row| {
+                    (
+                        row.txid_hex == hex::encode(send),
+                        row.tx_kind,
+                        row.display_amount,
+                        row.display_pool,
+                        row.fee,
+                        row.funding_parent_txid == Some(hex::encode(funding_step)),
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(
+            history(true),
+            [(
+                true,
+                "sent".into(),
+                10_000,
+                "transparent".into(),
+                25_000,
+                true
+            )],
+            "one send, both legs' fees, funded by the step"
+        );
+        // Unlinked, neither leg's fee is lost.
+        let mut unlinked = history(false);
+        unlinked.sort();
+        assert_eq!(
+            unlinked,
+            [
+                (
+                    false,
+                    "sent".into(),
+                    15_000,
+                    "unknown".into(),
+                    15_000,
+                    false
+                ),
+                (
+                    true,
+                    "sent".into(),
+                    10_000,
+                    "transparent".into(),
+                    10_000,
+                    false
+                ),
+            ]
+        );
+    }
+
+    /// A retained wallet's TEX send matched to its funding step both by
+    /// creation time and by the output it spends: the step's fee joins the
+    /// send once.
+    #[test]
+    fn a_funding_step_matched_both_ways_folds_once() {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let (step, send) = (fake_txid(0xEB), fake_txid(0xEC));
+        insert_zip320_history_pair(
+            &db,
+            account,
+            &step,
+            &send,
+            "2026-04-28T13:03:00Z",
+            1,
+            2,
+            200,
+            500_000,
+            15_000,
+            10_000,
+        );
+        link_transparent_spend(&db, account, &step, "t-ephemeral", &send);
+
+        let rows = zero_value_history(&db, account);
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!((rows[0].tx_kind.as_str(), rows[0].fee), ("sent", 25_000));
+        assert_eq!(rows[0].funding_parent_txid, Some(hex::encode(step)));
+    }
+
+    /// Only the spend of a step's ephemeral output is its send: its
+    /// transparent change spent by another transaction carries no fee of it.
+    #[test]
+    fn a_funding_step_folds_into_the_spender_of_its_ephemeral_output_only() {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let (step, sweep, send) = (fake_txid(0xED), fake_txid(0xEE), fake_txid(0xEF));
+        insert_history_tx(
+            &db,
+            account,
+            &step,
+            Some(1_000),
+            1,
+            Some(1_040),
+            -15_000,
+            1_000_000,
+            985_000,
+            false,
+            None,
+        );
+        set_history_fee(&db, &step, 15_000);
+        insert_output_with_address(
+            &db,
+            &step,
+            TRANSPARENT_POOL,
+            Some(account),
+            Some(account),
+            20_000,
+            false,
+            Some("t-ephemeral"),
+            Some(EPHEMERAL_KEY_SCOPE),
+        );
+        insert_output_with_address(
+            &db,
+            &step,
+            TRANSPARENT_POOL,
+            Some(account),
+            Some(account),
+            965_000,
+            true,
+            Some("t-change"),
+            Some(1),
+        );
+        // The change is spent first, by a transaction of its own.
+        for (txid, index, spent, fee) in [(&sweep, 2, 965_000, 10_000), (&send, 3, 20_000, 10_000)]
+        {
+            insert_history_tx(
+                &db,
+                account,
+                txid,
+                Some(1_001),
+                index,
+                Some(1_041),
+                -spent,
+                spent,
+                0,
+                false,
+                None,
+            );
+            set_history_fee(&db, txid, fee);
+            insert_output(
+                &db,
+                txid,
+                TRANSPARENT_POOL,
+                Some(account),
+                None,
+                spent - fee,
+                false,
+            );
+        }
+        link_transparent_spend(&db, account, &step, "t-change", &sweep);
+        link_transparent_spend(&db, account, &step, "t-ephemeral", &send);
+
+        let rows = zero_value_history(&db, account);
+
+        let known = TransactionFeeState::Known;
+        assert_eq!(fees_of(&rows, &send), [(known, 25_000, false)]);
+        assert_eq!(fees_of(&rows, &sweep), [(known, 10_000, false)]);
+        assert!(fees_of(&rows, &step).is_empty());
+    }
+
+    /// A transaction and its outputs for the funding-step folding tests.
+    fn funding_base(txid: &[u8], id: i64, delta: i64, history: HistoryCompleteness) -> TxBase {
+        let mut base = tx_base_for_history();
+        base.txid = txid.to_vec();
+        base.transaction_id = id;
+        base.spent_orchard_note = false;
+        base.fee = None;
+        base.account_balance_delta = delta;
+        base.total_spent = 1_000_000;
+        base.total_received = 1_000_000 - delta.unsigned_abs();
+        base.attach_history(history);
+        base
+    }
+
+    fn funding_output(txid: &[u8], uuid: &[u8], to_own: bool, scope: Option<i64>) -> TxOutput {
+        TxOutput {
+            txid: txid.to_vec(),
+            output_pool: TRANSPARENT_POOL,
+            output_index: 0,
+            from_account_uuid: Some(uuid.to_vec()),
+            to_account_uuid: to_own.then(|| uuid.to_vec()),
+            to_address: None,
+            sent_to_address: None,
+            transparent_receiver_address: None,
+            to_key_scope: scope,
+            value: 490_000,
+            memo: None,
+            note_version: None,
+        }
+    }
+
+    fn known_fee_history(fee: u64) -> HistoryCompleteness {
+        HistoryCompleteness {
+            details_complete: true,
+            provisional: false,
+            classification: Some(HistoryClassification::Reconstructed),
+            effects_settled: true,
+            fee: Fee::Known(fee),
+            whole_fee: None,
+            sole_transparent_funder: false,
+            inferred_payment: None,
+        }
+    }
+
+    /// The fee and net-change flag of each row of `txid`.
+    fn fees_of(rows: &[TransactionInfo], txid: &[u8]) -> Vec<(TransactionFeeState, u64, bool)> {
+        rows.iter()
+            .filter(|row| row.txid_hex == hex::encode(txid))
+            .map(|row| (row.fee_state, row.fee, row.amount_is_net_change))
+            .collect()
+    }
+
+    /// A step folds only into a send that shows a sent row with a known fee:
+    /// a sweep to the account's own internal address shows no row to carry
+    /// it, and a send whose own fee is unknown would hide it in its unknown
+    /// total. The step then keeps its own fee row.
+    #[test]
+    fn a_funding_step_folds_only_into_a_send_that_shows_its_fee() {
+        let uuid = test_account_uuid().as_bytes().to_vec();
+        let (step, send) = (fake_txid(0xA1).to_vec(), fake_txid(0xA2).to_vec());
+        let spends = HashMap::from([(step.clone(), vec![send.clone()])]);
+        let rows = |send_history: HistoryCompleteness, send_to_own: bool| {
+            let bases = [
+                funding_base(&step, 1, -10_000, known_fee_history(10_000)),
+                funding_base(&send, 2, -500_000, send_history),
+            ];
+            let outputs = HashMap::from([
+                (
+                    step.clone(),
+                    vec![funding_output(
+                        &step,
+                        &uuid,
+                        true,
+                        Some(EPHEMERAL_KEY_SCOPE),
+                    )],
+                ),
+                (
+                    send.clone(),
+                    vec![funding_output(
+                        &send,
+                        &uuid,
+                        send_to_own,
+                        send_to_own.then_some(1),
+                    )],
+                ),
+            ]);
+            assemble_history(&bases, &outputs, &spends, &uuid, None)
+        };
+        let known = TransactionFeeState::Known;
+
+        let swept = rows(known_fee_history(10_000), true);
+        assert!(fees_of(&swept, &send).is_empty(), "a sweep has no row");
+        assert_eq!(fees_of(&swept, &step), [(known, 10_000, true)]);
+
+        let unknown = rows(
+            HistoryCompleteness {
+                fee: Fee::Unknown,
+                ..known_fee_history(0)
+            },
+            false,
+        );
+        assert_eq!(
+            fees_of(&unknown, &send),
+            [(TransactionFeeState::Unknown, 0, false)]
+        );
+        assert_eq!(fees_of(&unknown, &step), [(known, 10_000, true)]);
+
+        let carried = rows(known_fee_history(10_000), false);
+        assert_eq!(fees_of(&carried, &send), [(known, 20_000, false)]);
+        assert!(fees_of(&carried, &step).is_empty());
+    }
+
+    /// A send known only as its balance change carries a folded step's fee
+    /// as one that shows its payment does.
+    #[test]
+    fn a_funding_steps_fee_joins_a_send_known_only_as_its_balance_change() {
+        let uuid = test_account_uuid().as_bytes().to_vec();
+        let (step, send) = (fake_txid(0xA3).to_vec(), fake_txid(0xA4).to_vec());
+        let spends = HashMap::from([(step.clone(), vec![send.clone()])]);
+        let outputs = HashMap::from([(
+            step.clone(),
+            vec![funding_output(
+                &step,
+                &uuid,
+                true,
+                Some(EPHEMERAL_KEY_SCOPE),
+            )],
+        )]);
+        let provisional = HistoryCompleteness {
+            details_complete: false,
+            provisional: true,
+            ..known_fee_history(10_000)
+        };
+        let rows = |send_history| {
+            let bases = [
+                funding_base(&step, 1, -10_000, known_fee_history(10_000)),
+                funding_base(&send, 2, -500_000, send_history),
+            ];
+            let rows = assemble_history(&bases, &outputs, &spends, &uuid, None);
+            assert!(fees_of(&rows, &step).is_empty());
+            fees_of(&rows, &send)
+        };
+
+        // The account's own fee is subtracted from its debit: a send of the
+        // rest, with both fees.
+        assert_eq!(
+            rows(provisional),
+            [(TransactionFeeState::Known, 20_000, false)]
+        );
+        // Only the whole fee is known: its net change, with both fees.
+        assert_eq!(
+            rows(HistoryCompleteness {
+                fee: Fee::Unknown,
+                whole_fee: Some(10_000),
+                ..provisional
+            }),
+            [(TransactionFeeState::WholeTransaction, 20_000, true)]
+        );
+    }
+
+    /// When an earlier send's funding output was spent again, the mined
+    /// resend is the send the step funded, not the attempt that never mined,
+    /// whether that attempt has expired yet or not.
+    #[test]
+    fn a_funding_step_folds_into_its_mined_send_over_an_unmined_attempt() {
+        for expired_unmined in [true, false] {
+            assert_a_funding_step_folds_into_the_mined_resend(expired_unmined);
+        }
+    }
+
+    fn assert_a_funding_step_folds_into_the_mined_resend(expired_unmined: bool) {
+        let uuid = test_account_uuid().as_bytes().to_vec();
+        let (step, expired, resend) = (
+            fake_txid(0xA5).to_vec(),
+            fake_txid(0xA6).to_vec(),
+            fake_txid(0xA7).to_vec(),
+        );
+        let mut attempt = funding_base(&expired, 2, -500_000, known_fee_history(10_000));
+        attempt.mined_height = None;
+        attempt.expired_unmined = expired_unmined;
+        let bases = [
+            funding_base(&step, 1, -10_000, known_fee_history(10_000)),
+            attempt,
+            funding_base(&resend, 3, -500_000, known_fee_history(10_000)),
+        ];
+        let outputs = HashMap::from([
+            (
+                step.clone(),
+                vec![funding_output(
+                    &step,
+                    &uuid,
+                    true,
+                    Some(EPHEMERAL_KEY_SCOPE),
+                )],
+            ),
+            (
+                expired.clone(),
+                vec![funding_output(&expired, &uuid, false, None)],
+            ),
+            (
+                resend.clone(),
+                vec![funding_output(&resend, &uuid, false, None)],
+            ),
+        ]);
+        let spends = HashMap::from([(step.clone(), vec![expired.clone(), resend.clone()])]);
+
+        let rows = assemble_history(&bases, &outputs, &spends, &uuid, None);
+
+        let known = TransactionFeeState::Known;
+        let case = format!("attempt expired: {expired_unmined}");
+        assert_eq!(fees_of(&rows, &resend), [(known, 20_000, false)], "{case}");
+        assert_eq!(fees_of(&rows, &expired), [(known, 10_000, false)], "{case}");
+        assert!(fees_of(&rows, &step).is_empty(), "{case}");
+    }
+
+    /// A funding step no send carries that moved more than its own fee is a
+    /// debit like any other: with complete details the rest of its change is
+    /// what it paid, and without them its whole change is a net change.
+    #[test]
+    fn an_unmatched_funding_step_shows_what_it_paid_beyond_its_fee() {
+        let uuid = test_account_uuid().as_bytes().to_vec();
+        let step = fake_txid(0xA8).to_vec();
+        let outputs = HashMap::from([(
+            step.clone(),
+            vec![funding_output(
+                &step,
+                &uuid,
+                true,
+                Some(EPHEMERAL_KEY_SCOPE),
+            )],
+        )]);
+        let row = |history| {
+            let bases = [funding_base(&step, 1, -30_000, history)];
+            let rows = assemble_history(&bases, &outputs, &EphemeralSpends::new(), &uuid, None);
+            assert_eq!(rows.len(), 1);
+            let row = &rows[0];
+            (
+                row.tx_kind.clone(),
+                row.display_amount,
+                row.fee,
+                row.amount_is_net_change,
+            )
+        };
+
+        assert_eq!(
+            row(known_fee_history(10_000)),
+            ("sent".to_string(), 20_000, 10_000, false)
+        );
+        assert_eq!(
+            row(HistoryCompleteness {
+                details_complete: false,
+                ..known_fee_history(10_000)
+            }),
+            ("sent".to_string(), 30_000, 10_000, true)
+        );
+    }
+
+    /// A privately recovered funding step that also moved funds to one of
+    /// the account's visible addresses is no pure funding step: it keeps its
+    /// rows and its fee, and the send that spends its ephemeral output shows
+    /// only its own fee.
+    #[test]
+    fn a_funding_step_that_also_moves_funds_to_a_visible_address_keeps_its_rows() {
+        let uuid = test_account_uuid().as_bytes().to_vec();
+        let (step, send) = (fake_txid(0xA9).to_vec(), fake_txid(0xAA).to_vec());
+        let recovered = HistoryCompleteness {
+            whole_fee: Some(10_000),
+            sole_transparent_funder: true,
+            ..known_fee_history(10_000)
+        };
+        let bases = [
+            funding_base(&step, 1, -10_000, recovered),
+            funding_base(&send, 2, -500_000, known_fee_history(10_000)),
+        ];
+        // Private recovery does not record who funded the step's outputs.
+        let unattributed = |scope, value, index| TxOutput {
+            from_account_uuid: None,
+            to_key_scope: Some(scope),
+            value,
+            output_index: index,
+            ..funding_output(&step, &uuid, true, None)
+        };
+        let outputs = HashMap::from([
+            (
+                step.clone(),
+                vec![
+                    unattributed(EPHEMERAL_KEY_SCOPE, 490_000, 0),
+                    unattributed(0, 100_000, 1),
+                ],
+            ),
+            (
+                send.clone(),
+                vec![funding_output(&send, &uuid, false, None)],
+            ),
+        ]);
+        let spends = HashMap::from([(step.clone(), vec![send.clone()])]);
+
+        let rows = assemble_history(&bases, &outputs, &spends, &uuid, None);
+
+        let step_rows = rows
+            .iter()
+            .filter(|row| row.txid_hex == hex::encode(&step))
+            .map(|row| row.fee)
+            .collect::<Vec<_>>();
+        assert!(!step_rows.is_empty(), "the step keeps its rows");
+        assert!(
+            step_rows.iter().all(|&fee| fee == 10_000),
+            "with its own fee: {step_rows:?}"
+        );
+        assert_eq!(
+            fees_of(&rows, &send),
+            [(TransactionFeeState::Known, 10_000, false)]
+        );
+    }
+
+    /// Only an output to an ephemeral address makes a transaction a funding
+    /// step: a consolidation into the account's internal transparent change
+    /// stays hidden, as before.
+    #[test]
+    fn an_internal_consolidation_is_no_funding_step() {
+        let uuid = test_account_uuid().as_bytes().to_vec();
+        let txid = fake_txid(0xA8).to_vec();
+        let rows = |scope| {
+            let bases = [funding_base(&txid, 1, -10_000, known_fee_history(10_000))];
+            let outputs = HashMap::from([(
+                txid.clone(),
+                vec![funding_output(&txid, &uuid, true, Some(scope))],
+            )]);
+            assemble_history(&bases, &outputs, &EphemeralSpends::new(), &uuid, None)
+        };
+
+        assert!(rows(1).is_empty());
+        assert_eq!(
+            fees_of(&rows(EPHEMERAL_KEY_SCOPE), &txid),
+            [(TransactionFeeState::Known, 10_000, true)]
+        );
+    }
+
+    /// The library's view of a settled transaction whose balance change is
+    /// the whole fee, the account's own fee unknown: the account spent in
+    /// `spent` pools and has `spent_note_count` recorded inputs, and the
+    /// recovered metadata counts `metadata_inputs` transparent inputs.
+    fn whole_fee_movement(
+        spent: &[PoolType],
+        spent_note_count: u32,
+        metadata_inputs: u32,
+    ) -> HistoryCompleteness {
+        use zcash_client_backend::data_api::transparent_ledger::{EffectCompleteness, PoolEffect};
+
+        let mut details = shared_funding_details(exact_whole_fee());
+        if let Some(evidence) = details.transaction_metadata.as_mut() {
+            evidence.metadata.transparent_input_count = metadata_inputs;
+        }
+        details.effects = spent
+            .iter()
+            .map(|&pool| PoolEffect {
+                pool,
+                received: Zatoshis::ZERO,
+                spent: Zatoshis::from_u64(100_000).unwrap(),
+                completeness: EffectCompleteness::Complete,
+            })
+            .collect();
+        HistoryCompleteness::of(&details, spent_note_count)
+    }
+
+    /// A balance change of exactly the whole fee shows that only the fee left
+    /// the account, so that a funding step folds, only when the account alone
+    /// funded the transparent side: the metadata counts its own transparent
+    /// inputs, none when it spent no transparent funds. A jointly funded
+    /// transaction (A puts in 110,000 and B 100,000; 100,000 goes to A's
+    /// ephemeral address, 100,000 to someone else, 10,000 is the fee) changes
+    /// A's balance by the fee too, yet B may have paid A while A paid someone
+    /// else.
+    #[test]
+    fn only_the_sole_transparent_funder_proves_a_whole_fee_funding_step() {
+        let uuid = test_account_uuid().as_bytes().to_vec();
+        let step = fake_txid(0xAB).to_vec();
+        let outputs = [funding_output(
+            &step,
+            &uuid,
+            true,
+            Some(EPHEMERAL_KEY_SCOPE),
+        )];
+        let proves = |spent: &[PoolType], spent_note_count, metadata_inputs| {
+            let history = whole_fee_movement(spent, spent_note_count, metadata_inputs);
+            let base = funding_base(&step, 1, -(WHOLE_FEE as i64), history);
+            let pure =
+                is_pure_funding_step(&base, &summarize_activity_outputs(&base, &outputs, &uuid));
+            assert_eq!(
+                history.exact_fee().is_some(),
+                pure,
+                "{spent:?}: {spent_note_count} own inputs, {metadata_inputs} in the metadata"
+            );
+            assert_eq!(history.shown_fee(), Fee::Whole(WHOLE_FEE), "still shown");
+            pure
+        };
+        assert!(proves(&[PoolType::Transparent], 2, 2));
+        assert!(
+            !proves(&[PoolType::Transparent], 1, 2),
+            "another party funded a transparent input"
+        );
+        assert!(proves(&[PoolType::ORCHARD], 1, 0));
+        assert!(
+            !proves(&[PoolType::ORCHARD], 1, 1),
+            "a transparent input is not the account's"
+        );
+        assert!(
+            !proves(&[PoolType::Transparent, PoolType::ORCHARD], 2, 1),
+            "the account's own transparent inputs are not counted apart"
+        );
     }
 
     #[test]
