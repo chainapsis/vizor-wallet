@@ -1,0 +1,78 @@
+{
+  "private": [
+    {
+      "accountBalanceDelta": -15000,
+      "activityPool": "transparent",
+      "amountIncludesFee": false,
+      "detailsComplete": false,
+      "displayAmount": 250000,
+      "displayPool": "unknown",
+      "expiredUnmined": false,
+      "fee": 15000,
+      "feeState": "Known",
+      "isTransparent": false,
+      "provisional": true,
+      "txKind": "sent"
+    },
+    {
+      "accountBalanceDelta": -15000,
+      "activityPool": "transparent",
+      "amountIncludesFee": false,
+      "detailsComplete": false,
+      "displayAmount": 250000,
+      "displayPool": "transparent",
+      "expiredUnmined": false,
+      "fee": 15000,
+      "feeState": "Known",
+      "isTransparent": true,
+      "provisional": true,
+      "txKind": "received"
+    }
+  ],
+  "privateWithoutTransparentRows": [
+    {
+      "accountBalanceDelta": -265000,
+      "activityPool": "transparent",
+      "amountIncludesFee": false,
+      "detailsComplete": false,
+      "displayAmount": 250000,
+      "displayPool": "unknown",
+      "expiredUnmined": false,
+      "fee": 15000,
+      "feeState": "Known",
+      "isTransparent": false,
+      "provisional": true,
+      "txKind": "sent"
+    }
+  ],
+  "public": [
+    {
+      "accountBalanceDelta": -15000,
+      "activityPool": "transparent",
+      "amountIncludesFee": false,
+      "detailsComplete": true,
+      "displayAmount": 250000,
+      "displayPool": "transparent",
+      "expiredUnmined": false,
+      "fee": 15000,
+      "feeState": "Known",
+      "isTransparent": true,
+      "provisional": false,
+      "txKind": "sent"
+    },
+    {
+      "accountBalanceDelta": -15000,
+      "activityPool": "transparent",
+      "amountIncludesFee": false,
+      "detailsComplete": true,
+      "displayAmount": 250000,
+      "displayPool": "transparent",
+      "expiredUnmined": false,
+      "fee": 15000,
+      "feeState": "Known",
+      "isTransparent": true,
+      "provisional": false,
+      "txKind": "received"
+    }
+  ]
+}
