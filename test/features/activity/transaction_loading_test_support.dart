@@ -522,6 +522,7 @@ Future<void> _pump(
   required ActivityTxHistoryLoader history,
   ActivityTxDetailLoader? detail,
   bool seeded = true,
+  String txid = _txid,
   String kind = 'received',
   String sourceAccount = 'account-1',
   rust_sync.TransactionDetail? initialDetail,
@@ -535,14 +536,14 @@ Future<void> _pump(
   );
   addTearDown(() => tester.binding.setSurfaceSize(null));
   final router = GoRouter(
-    initialLocation: '/activity/tx/$_txid',
+    initialLocation: '/activity/tx/$txid',
     routes: [
       GoRoute(
         path: '/activity/tx/:txid',
         builder: (_, _) => mobile
             ? MobileTransactionStatusScreen(
                 args: MobileTransactionStatusArgs(
-                  txidHex: _txid,
+                  txidHex: txid,
                   txKind: kind,
                   initialTransaction: seeded
                       ? initialTransaction ?? _tx(kind: kind)
@@ -555,7 +556,7 @@ Future<void> _pump(
               )
             : ActivityTransactionStatusScreen(
                 args: ActivityTransactionStatusArgs(
-                  txidHex: _txid,
+                  txidHex: txid,
                   txKind: kind,
                   initialTransaction: seeded
                       ? initialTransaction ?? _tx(kind: kind)
@@ -644,6 +645,7 @@ Future<void> pumpOwnedTransferReceipt(
   tester,
   mobile: false,
   kind: transaction.txKind,
+  txid: transaction.txidHex,
   initialTransaction: transaction,
   privateQueries: true,
   history: history,
