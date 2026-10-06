@@ -189,7 +189,7 @@ bool paymentUriShouldDropOnWalletTransition({
 ///
 /// [parkedFor] is how long the prefill has been parked (null when nothing is
 /// parked, or when the park time is unknown). [hasBusySurface] is true while a
-/// hardware signing session is mounted — see `paymentUriBusySurfaceProvider`.
+/// hardware signing session is mounted — see `externalActionGuardProvider`.
 /// [hasActiveSendProposal] is true while the current desktop send-review route
 /// owns a proposal and its selected inputs. A second proposal must wait until
 /// that route releases the first one. [sendIsInFlight] is the negation of

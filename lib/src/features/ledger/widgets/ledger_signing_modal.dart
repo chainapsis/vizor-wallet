@@ -7,7 +7,7 @@ import 'ledger_access_recovery_modal.dart';
 import '../services/ledger_device_selection.dart';
 import '../services/ledger_mobile_ble_service.dart';
 import '../services/ledger_bluetooth_access.dart';
-import '../../../core/navigation/payment_uri_busy_surface_hold.dart';
+import '../../../core/navigation/external_action_guard_hold.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
@@ -105,7 +105,7 @@ class LedgerSigningModal extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) =>
-      PaymentUriBusySurfaceHold(child: _buildContent(context, ref));
+      ExternalActionGuardHold(child: _buildContent(context, ref));
 
   Widget _buildContent(BuildContext context, WidgetRef ref) {
     final colors = context.colors;

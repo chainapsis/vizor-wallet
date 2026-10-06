@@ -23,7 +23,7 @@ import 'src/core/navigation/mobile_exit_back_guard.dart';
 import 'src/core/navigation/mobile_onboarding_routes.dart';
 import 'src/core/navigation/mobile_routes.dart';
 import 'src/core/navigation/incoming_link_dispatch.dart';
-import 'src/core/navigation/payment_uri_busy_surface_provider.dart';
+import 'src/core/navigation/external_action_guard_provider.dart';
 import 'src/core/navigation/payment_uri_drain_policy.dart';
 import 'src/core/navigation/payload_page_key.dart';
 import 'src/core/motion/onboarding_motion.dart';
@@ -1913,8 +1913,18 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
     });
     // A hardware signing session keeps the link parked rather than dropping
     // it, so the drain has to be re-run when the hold is given back.
-    ref.listen<int>(paymentUriBusySurfaceProvider, (previous, next) {
-      if (next == 0 && (previous ?? 0) > 0) _schedulePendingDrain();
+    ref.listen<ExternalActionGuardState>(externalActionGuardProvider, (
+      previous,
+      next,
+    ) {
+      if (previous?.blocks(ExternalAction.paymentRequest) == true &&
+          !next.blocks(ExternalAction.paymentRequest)) {
+        _schedulePendingDrain();
+      }
+      if (previous?.blocks(ExternalAction.navigation) == true &&
+          !next.blocks(ExternalAction.navigation)) {
+        _openPendingPaymentLink();
+      }
     });
     // Same shape for a send mid-broadcast: the link stays parked until the
     // receipt is on screen, so the drain has to be re-run when it gets there.
@@ -1951,6 +1961,11 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
       case IncomingGiftCardLink():
         _handleGiftCardLink(rawUri);
       case IncomingVizorHomeLink():
+        if (ref
+            .read(externalActionGuardProvider)
+            .blocks(ExternalAction.navigation)) {
+          return;
+        }
         if (ref.read(appSecurityProvider).requiresUnlock) return;
         // Onboarding, import, and add-account keep their state only in the
         // widget tree -- a half-typed seed phrase, a freshly generated
@@ -2000,6 +2015,9 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
   void _openPendingPaymentLink() {
     final pendingLink = ref.read(paymentLinkIntakeProvider).pendingLink;
     if (_navigationScheduled ||
+        ref
+            .read(externalActionGuardProvider)
+            .blocks(ExternalAction.navigation) ||
         ref.read(appSecurityProvider).requiresUnlock ||
         pendingLink == null) {
       return;
@@ -2025,6 +2043,9 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _navigationScheduled = false;
         if (!mounted ||
+            ref
+                .read(externalActionGuardProvider)
+                .blocks(ExternalAction.navigation) ||
             widget.router.state.matchedLocation != '/welcome' ||
             ref.read(paymentLinkIntakeProvider).pendingLink == null ||
             ref.read(appSecurityProvider).requiresUnlock ||
@@ -2054,6 +2075,9 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _navigationScheduled = false;
       if (!mounted ||
+          ref
+              .read(externalActionGuardProvider)
+              .blocks(ExternalAction.navigation) ||
           ref.read(appSecurityProvider).requiresUnlock ||
           ref.read(paymentLinkIntakeProvider).pendingLink == null) {
         return;
@@ -2178,7 +2202,9 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
       // In-progress surfaces that own no route of their own — the desktop
       // Keystone shield signing overlay on `/home`, and the Gift Card funding
       // overlay on `/payment-links`.
-      hasBusySurface: ref.read(paymentUriBusySurfaceProvider) > 0,
+      hasBusySurface: ref
+          .read(externalActionGuardProvider)
+          .blocks(ExternalAction.paymentRequest),
       // Desktop review owns a live Rust proposal whose selected inputs stay
       // locked until the screen is disposed. The review also takes a busy hold
       // so leaving it schedules another drain; this route-payload check closes
@@ -2403,7 +2429,11 @@ class _WindowsUpdatePromptHostState
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(windowsUpdateProvider);
-    final showPrompt = _shouldShowPrompt(state);
+    final showPrompt =
+        _shouldShowPrompt(state) &&
+        !ref
+            .watch(externalActionGuardProvider)
+            .blocks(ExternalAction.updatePrompt);
 
     return Stack(
       fit: StackFit.expand,
@@ -2442,6 +2472,11 @@ class _WindowsUpdatePromptHostState
                           unawaited(_handleDownload());
                         },
                         onRestart: () {
+                          if (ref
+                              .read(externalActionGuardProvider)
+                              .blocks(ExternalAction.updatePrompt)) {
+                            return;
+                          }
                           unawaited(
                             ref
                                 .read(windowsUpdateProvider.notifier)

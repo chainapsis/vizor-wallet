@@ -8,6 +8,12 @@ import 'package:flutter/services.dart' show SystemChannels;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:zcash_wallet/app.dart' show buildIncomingLinkHostForTest;
+import 'package:zcash_wallet/src/core/navigation/external_action_guard_provider.dart';
+import 'package:zcash_wallet/src/services/incoming_uri_service.dart';
+import 'package:zcash_wallet/src/providers/sync_provider.dart';
+
+import '../../fakes/fake_sync_notifier.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/clipboard/sensitive_clipboard.dart';
@@ -72,10 +78,12 @@ class _FakeAccountNotifier extends AccountNotifier {
   final backedUpUuids = <String>[];
   final snoozedUuids = <String>[];
   bool failSave = false;
+  Completer<void>? pendingSave;
 
   @override
   Future<void> markBackedUp(String uuid) async {
     if (failSave) throw StateError("save failed");
+    await pendingSave?.future;
     backedUpUuids.add(uuid);
     _update(
       uuid,
@@ -89,6 +97,7 @@ class _FakeAccountNotifier extends AccountNotifier {
   @override
   Future<void> snoozeBackupReminder(String uuid, {DateTime? now}) async {
     if (failSave) throw StateError("save failed");
+    await pendingSave?.future;
     snoozedUuids.add(uuid);
     _update(
       uuid,
@@ -231,7 +240,11 @@ Widget _app({
   );
 }
 
-Widget _routerApp(GoRouter router, {_FakeAccountNotifier? accountNotifier}) {
+Widget _routerApp(
+  GoRouter router, {
+  _FakeAccountNotifier? accountNotifier,
+  IncomingUriService? incomingUris,
+}) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
@@ -240,10 +253,19 @@ Widget _routerApp(GoRouter router, {_FakeAccountNotifier? accountNotifier}) {
       ),
       appSecurityProvider.overrideWith(_FakeSecurityNotifier.new),
       biometricUnlockServiceProvider.overrideWithValue(_FakeBiometricUnlock()),
+      if (incomingUris != null) ...[
+        syncProvider.overrideWith(FakeSyncNotifier.new),
+        incomingUriServiceProvider.overrideWithValue(incomingUris),
+      ],
     ],
     child: MaterialApp.router(
       routerConfig: router,
-      builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
+      builder: (_, child) => AppTheme(
+        data: AppThemeData.light,
+        child: incomingUris == null
+            ? child!
+            : buildIncomingLinkHostForTest(router: router, child: child!),
+      ),
     ),
   );
 }
@@ -264,6 +286,109 @@ void main() {
       ..physicalSize = const Size(520, 1100)
       ..devicePixelRatio = 1.0;
   });
+
+  for (final snooze in [false, true]) {
+    for (final failSave in [false, true]) {
+      testWidgets(
+        'mobile backup ${snooze ? 'deferral' : 'completion'} blocks external navigation through ${failSave ? 'failure and retry' : 'success'}',
+        (tester) async {
+          final account = _FakeAccountNotifier(
+            _accountState.copyWith(
+              accounts: [
+                _accountState.accounts.first.copyWith(setupPending: true),
+              ],
+            ),
+          )..pendingSave = Completer<void>();
+          final incomingUris = _FakeIncomingUriService();
+          addTearDown(incomingUris.dispose);
+          final privacy = SensitivePrivacyOverlayController(
+            initiallySafe: true,
+          );
+          addTearDown(privacy.dispose);
+          final router = GoRouter(
+            initialLocation: '/setup/backup',
+            routes: [
+              GoRoute(
+                path: '/home',
+                builder: (_, _) => const Text('Home destination'),
+              ),
+              GoRoute(
+                path: '/setup/backup',
+                builder: (_, _) => MobileSeedPhraseScreen(
+                  accountUuid: 'account-1',
+                  showBackupIntro: true,
+                  privacyOverlayController: privacy,
+                  screenshotStream: const Stream.empty(),
+                  loadBirthday: false,
+                ),
+              ),
+            ],
+          );
+          addTearDown(router.dispose);
+          await tester.pumpWidget(
+            _routerApp(
+              router,
+              accountNotifier: account,
+              incomingUris: incomingUris,
+            ),
+          );
+          await tester.pumpAndSettle();
+          if (!snooze) {
+            await tester.tap(
+              find.byKey(const ValueKey('mobile_seed_backup_intro_continue')),
+            );
+            await tester.pumpAndSettle();
+            await _revealSecret(tester);
+          }
+          final screen = tester.element(find.byType(MobileSeedPhraseScreen));
+          final container = ProviderScope.containerOf(screen, listen: false);
+          final back = tester
+              .widget<MobileTopNav>(find.byType(MobileTopNav))
+              .onBack!;
+          final action = find.byKey(
+            ValueKey(
+              snooze
+                  ? 'mobile_seed_backup_remind_later'
+                  : 'mobile_seed_backed_up',
+            ),
+          );
+          await tester.tap(action);
+          await tester.pump();
+          back();
+          incomingUris.emit('https://link.vizor.cash');
+          await tester.pumpAndSettle();
+          expect(find.byType(MobileSeedPhraseScreen), findsOneWidget);
+          expect(
+            container
+                .read(externalActionGuardProvider)
+                .blocks(ExternalAction.navigation),
+            isTrue,
+          );
+          if (failSave) {
+            account.pendingSave!.completeError(StateError('late failure'));
+            await tester.pumpAndSettle();
+            expect(find.byType(MobileSeedPhraseScreen), findsOneWidget);
+            expect(find.text('Couldn’t save that. Try again.'), findsOneWidget);
+            expect(
+              container.read(externalActionGuardProvider).activeHoldCount,
+              0,
+            );
+            account.pendingSave = Completer<void>();
+            await tester.tap(action);
+            await tester.pump();
+          }
+          account.pendingSave!.complete();
+          await tester.pumpAndSettle();
+          expect(find.text('Home destination'), findsOneWidget);
+          expect(
+            container.read(externalActionGuardProvider).activeHoldCount,
+            0,
+          );
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
 
   for (final snooze in [false, true]) {
     testWidgets(
@@ -893,4 +1018,18 @@ void main() {
       expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
     },
   );
+}
+
+class _FakeIncomingUriService extends IncomingUriService {
+  final _controller = StreamController<String>.broadcast();
+  @override
+  Stream<String> get uriStream => _controller.stream;
+  @override
+  Future<void> initialize() async {}
+  void emit(String uri) => _controller.add(uri);
+  @override
+  Future<void> dispose() async {
+    await _controller.close();
+    await super.dispose();
+  }
 }

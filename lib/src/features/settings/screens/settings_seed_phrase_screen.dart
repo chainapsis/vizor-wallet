@@ -12,7 +12,8 @@ import '../../../core/security/password_policy.dart';
 import '../../../core/layout/app_desktop_backdrop_shell.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
-import '../../../core/navigation/payment_uri_busy_surface_provider.dart';
+import '../../../core/navigation/external_action_guard_provider.dart';
+import '../../../core/navigation/external_action_guard_hold.dart';
 import '../../../core/storage/app_secure_store.dart';
 import '../../../core/storage/linux_keyring_coordinator.dart';
 import '../../../core/storage/linux_secret_operation_guard.dart';
@@ -126,7 +127,6 @@ class _SettingsSeedPhraseScreenState
   final _passwordController = TextEditingController();
   bool _isSubmitting = false;
   bool _savingBackup = false;
-  bool _sidebarNavigationPending = false;
   String? _backupError;
   _SettingsSeedPhraseStage _stage = _SettingsSeedPhraseStage.password;
   String? _passwordError;
@@ -497,11 +497,9 @@ class _SettingsSeedPhraseScreenState
   }
 
   Future<void> _saveBackup(String uuid, {required bool snooze}) async {
-    if (_savingBackup || _sidebarNavigationPending) return;
-    final paymentUriBusySurface = ref.read(
-      paymentUriBusySurfaceProvider.notifier,
-    );
-    paymentUriBusySurface.acquire();
+    if (_savingBackup) return;
+    final lease = ref.read(externalActionGuardProvider.notifier).tryProtect();
+    if (lease == null) return;
     try {
       setState(() {
         _savingBackup = true;
@@ -532,7 +530,7 @@ class _SettingsSeedPhraseScreenState
         });
       }
     } finally {
-      paymentUriBusySurface.release();
+      lease.release();
     }
   }
 
@@ -583,7 +581,9 @@ class _SettingsSeedPhraseScreenState
           AppButton(
             key: const ValueKey('desktop_seed_backup_intro_continue'),
             minWidth: 196,
-            onPressed: _savingBackup || _sidebarNavigationPending
+            onPressed:
+                _savingBackup ||
+                    !ref.watch(externalActionGuardProvider).canProtect
                 ? null
                 : () => setState(
                     () => _stage = _SettingsSeedPhraseStage.password,
@@ -596,7 +596,9 @@ class _SettingsSeedPhraseScreenState
               key: const ValueKey('desktop_seed_backup_remind_later'),
               variant: AppButtonVariant.ghost,
               minWidth: 196,
-              onPressed: _savingBackup || _sidebarNavigationPending
+              onPressed:
+                  _savingBackup ||
+                      !ref.watch(externalActionGuardProvider).canProtect
                   ? null
                   : () => _saveBackup(account.uuid, snooze: true),
               child: const Text('Remind me later'),
@@ -606,7 +608,9 @@ class _SettingsSeedPhraseScreenState
           AppButton(
             key: const ValueKey('desktop_seed_backed_up'),
             minWidth: 196,
-            onPressed: _savingBackup || _sidebarNavigationPending
+            onPressed:
+                _savingBackup ||
+                    !ref.watch(externalActionGuardProvider).canProtect
                 ? null
                 : () => _saveBackup(account!.uuid, snooze: false),
             child: const Text('I’ve written it down'),
@@ -627,27 +631,20 @@ class _SettingsSeedPhraseScreenState
 
     final account = _targetAccount(ref.watch(accountProvider).value);
     return PopScope(
-      canPop: !_savingBackup,
+      canPop: !ref
+          .watch(externalActionGuardProvider)
+          .blocks(ExternalAction.navigation),
       child: AppDesktopBackdropShell(
         background: _stage == _SettingsSeedPhraseStage.reveal
             ? ColoredBox(color: context.colors.background.window)
             : const SettingsPaneBackdrop(art: SettingsBackdropArt.castle),
-        sidebar: _BackupNavigationGuard(
-          blocked: _savingBackup,
-          child: AppMainSidebar(
-            onNavigationPendingChanged: (pending) {
-              if (!mounted) return;
-              setState(() => _sidebarNavigationPending = pending);
-            },
-          ),
-        ),
+        sidebar: const AppMainSidebar(),
         pane: SensitivePrivacyOverlay(
           sensitiveContentVisible:
               _stage == _SettingsSeedPhraseStage.reveal && _mnemonic != null,
           controller: widget.privacyOverlayController,
           child: _SettingsSeedPhrasePane(
             onBeforeNavigateBack: () => _clearSensitiveState(),
-            navigationBlocked: _savingBackup,
             bottomActions: _buildBackupActions(account),
             compactBottomSpacing:
                 _backupError != null &&
@@ -705,14 +702,12 @@ class _SettingsSeedPhrasePane extends StatelessWidget {
     required this.onBeforeNavigateBack,
     required this.child,
     this.bottomActions,
-    this.navigationBlocked = false,
     this.compactBottomSpacing = false,
   });
 
   final VoidCallback onBeforeNavigateBack;
   final Widget child;
   final Widget? bottomActions;
-  final bool navigationBlocked;
   final bool compactBottomSpacing;
 
   @override
@@ -721,8 +716,7 @@ class _SettingsSeedPhrasePane extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _BackupNavigationGuard(
-            blocked: navigationBlocked,
+          ExternalActionNavigationGuard(
             child: AppPaneToolbar(
               backLinkMinWidth: 60,
               onBeforeNavigate: onBeforeNavigateBack,
@@ -759,19 +753,6 @@ class _SettingsSeedPhrasePane extends StatelessWidget {
       ),
     );
   }
-}
-
-class _BackupNavigationGuard extends StatelessWidget {
-  const _BackupNavigationGuard({required this.blocked, required this.child});
-
-  final bool blocked;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) => ExcludeFocus(
-    excluding: blocked,
-    child: AbsorbPointer(absorbing: blocked, child: child),
-  );
 }
 
 const _seedPhraseCardWidth = 396.0;
