@@ -697,6 +697,8 @@ impl Fee {
 /// library's history read.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct HistoryCompleteness {
+    /// Transaction-wide Enhance shape assertion, independent of payment completeness.
+    has_transparent_outputs: Option<bool>,
     details_complete: bool,
     provisional: bool,
     /// The library's classification of the account's side, once read. A net
@@ -725,6 +727,7 @@ impl HistoryCompleteness {
     #[cfg(test)]
     fn complete_for(base: &TxBase) -> Self {
         Self {
+            has_transparent_outputs: None,
             details_complete: true,
             provisional: false,
             classification: Some(HistoryClassification::Reconstructed),
@@ -742,6 +745,7 @@ impl HistoryCompleteness {
     /// all owned effects. Public discovery still counts as settled.
     fn of(details: &TransactionHistoryDetails) -> Self {
         Self {
+            has_transparent_outputs: details.has_transparent_outputs,
             details_complete: details.payment_details == DetailCompleteness::Complete,
             classification: Some(details.classification),
             // A net reconstruction (a privately recovered mixed shielding) has a final
@@ -786,6 +790,7 @@ impl HistoryCompleteness {
     /// known to be complete.
     fn unread(fee: Option<u64>) -> Self {
         Self {
+            has_transparent_outputs: None,
             details_complete: false,
             provisional: true,
             classification: None,
@@ -2296,6 +2301,12 @@ fn build_classified_tx(
 /// so a shown whole-transaction fee is part of the amount.
 fn build_movement_debit_row(base: &TxBase, tx_kind: &str, debit: u64) -> ClassifiedTx {
     let mut row = build_classified_tx(base, tx_kind, debit, "unknown", false, 1);
+    // Enhance can establish activity shape before recipients, payment amounts, or the
+    // account's fee share are known. Keep that display fact separate from destination
+    // classification and completeness; false or missing evidence supplies no new label.
+    if base.history.has_transparent_outputs == Some(true) {
+        row.info.activity_pool = Some("transparent".to_string());
+    }
     row.info.amount_includes_fee = base.history.movement_includes_shown_fee();
     row
 }
@@ -2895,6 +2906,7 @@ mod tests {
             created_time: 0,
             spent_orchard_note: true,
             history: HistoryCompleteness {
+                has_transparent_outputs: None,
                 details_complete: true,
                 classification: Some(HistoryClassification::Reconstructed),
                 provisional: false,
@@ -2947,6 +2959,7 @@ mod tests {
         base.total_spent = 100_000_000;
         base.total_received = 30_000_000;
         base.attach_history(HistoryCompleteness {
+            has_transparent_outputs: None,
             details_complete: false,
             classification: None,
             provisional: true,
@@ -3035,6 +3048,7 @@ mod tests {
     fn a_complete_debit_with_change_keeps_its_classification() {
         let (mut base, summary) = provisional_debit();
         base.history = HistoryCompleteness {
+            has_transparent_outputs: None,
             details_complete: true,
             classification: Some(HistoryClassification::Reconstructed),
             provisional: false,
@@ -3057,6 +3071,7 @@ mod tests {
     fn a_recovered_send_with_change_is_its_exact_payment_not_a_receive() {
         let (mut base, summary) = provisional_debit();
         base.history = HistoryCompleteness {
+            has_transparent_outputs: None,
             details_complete: false,
             classification: None,
             provisional: false,
@@ -3105,6 +3120,7 @@ mod tests {
     #[test]
     fn a_recovered_self_transfer_is_its_network_fee() {
         let (base, summary) = self_transfer(HistoryCompleteness {
+            has_transparent_outputs: None,
             details_complete: false,
             classification: None,
             provisional: false,
@@ -3130,6 +3146,7 @@ mod tests {
     #[test]
     fn a_public_self_transfer_keeps_its_classification() {
         let (base, summary) = self_transfer(HistoryCompleteness {
+            has_transparent_outputs: None,
             details_complete: false,
             classification: None,
             provisional: false,
@@ -3157,6 +3174,7 @@ mod tests {
             assert!(!rows[0].info.amount_includes_fee);
         };
         let exact = HistoryCompleteness {
+            has_transparent_outputs: None,
             details_complete: false,
             classification: None,
             provisional: false,
@@ -3188,6 +3206,7 @@ mod tests {
         base.total_spent = 110_000;
         base.total_received = 100_000;
         base.history = HistoryCompleteness {
+            has_transparent_outputs: None,
             details_complete: false,
             classification: None,
             provisional: false,
@@ -3248,6 +3267,7 @@ mod tests {
             }],
         };
         let mut details = TransactionHistoryDetails {
+            has_transparent_outputs: None,
             transaction_metadata: Some(evidence(false)),
             aggregate_payment: AggregatePayment::Exact(Zatoshis::from_u64(50_000).unwrap()),
             account_movement: AccountMovement {
@@ -3301,6 +3321,7 @@ mod tests {
         };
 
         TransactionHistoryDetails {
+            has_transparent_outputs: None,
             transaction_metadata: Some(TransactionMetadataEvidence {
                 metadata: TransactionMetadata {
                     fee: whole,
@@ -3331,6 +3352,30 @@ mod tests {
 
     fn exact_whole_fee() -> WholeTransactionFee {
         WholeTransactionFee::Exact(zcash_protocol::value::Zatoshis::from_u64(WHOLE_FEE).unwrap())
+    }
+
+    #[test]
+    fn enhance_shape_changes_only_the_movement_activity_pool() {
+        for outputs in [Some(true), Some(false), None] {
+            let mut details = shared_funding_details(exact_whole_fee());
+            details.has_transparent_outputs = outputs;
+            let (mut base, summary) = provisional_debit();
+            base.attach_history(HistoryCompleteness::of(&details));
+            let rows = classify_history_tx(&base, &summary, Fee::NotApplicable);
+            let info = &rows[0].info;
+            assert_eq!(
+                info.activity_pool.as_deref(),
+                outputs.filter(|v| *v).map(|_| "transparent")
+            );
+            assert_eq!(info.display_pool, "unknown");
+            assert!(!info.is_transparent);
+            assert_eq!(info.display_amount, 70_000_000);
+            assert_eq!(info.account_balance_delta, -70_000_000);
+            assert_eq!(info.fee, WHOLE_FEE);
+            assert!(info.amount_includes_fee);
+            assert!(info.provisional);
+            assert!(!info.details_complete);
+        }
     }
 
     /// D2: the exact whole fee is shown as the network fee, while the
@@ -3583,6 +3628,7 @@ mod tests {
             base.mined_height = None;
             base.history = HistoryCompleteness {
                 details_complete,
+                has_transparent_outputs: None,
                 provisional: false,
                 classification: details_complete.then_some(HistoryClassification::Reconstructed),
                 fee: Fee::Unknown,
@@ -3610,6 +3656,7 @@ mod tests {
     #[test]
     fn only_a_movement_shown_with_the_whole_fee_includes_it() {
         let whole = HistoryCompleteness {
+            has_transparent_outputs: None,
             details_complete: false,
             classification: None,
             provisional: true,
@@ -3671,6 +3718,7 @@ mod tests {
         // receipt to stand in for them.
         let complete_mined = flags(
             HistoryCompleteness {
+                has_transparent_outputs: None,
                 details_complete: true,
                 classification: Some(HistoryClassification::Reconstructed),
                 provisional: false,
@@ -3694,6 +3742,7 @@ mod tests {
         // Local construction knows the payment, but scanning still has to
         // discover the receipt to the account's own external shielded address.
         let mut details = TransactionHistoryDetails {
+            has_transparent_outputs: None,
             transaction_metadata: None,
             aggregate_payment: AggregatePayment::Exact(Zatoshis::from_u64(50_000).unwrap()),
             account_movement: AccountMovement {
@@ -3745,6 +3794,7 @@ mod tests {
         use zcash_protocol::{value::Zatoshis, PoolType};
 
         let mut details = TransactionHistoryDetails {
+            has_transparent_outputs: None,
             transaction_metadata: None,
             aggregate_payment: AggregatePayment::Unknown,
             account_movement: AccountMovement {
@@ -3814,6 +3864,7 @@ mod tests {
         let mut base = tx_base_for_history();
         base.is_shielding = true;
         base.attach_history(HistoryCompleteness {
+            has_transparent_outputs: None,
             details_complete: false,
             classification: None,
             provisional: true,
@@ -3826,6 +3877,7 @@ mod tests {
         let mut base = tx_base_for_history();
         base.is_shielding = true;
         base.attach_history(HistoryCompleteness {
+            has_transparent_outputs: None,
             details_complete: true,
             classification: Some(HistoryClassification::Reconstructed),
             provisional: false,

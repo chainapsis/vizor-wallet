@@ -33,6 +33,24 @@ List<PrivateShieldingCase> loadPrivateShieldingCases({
   ];
 }
 
+/// Checked against compact scanning, Enhance application and the Rust history mapper by
+/// `enhance_output_presence_labels_a_provisional_debit`; the pool is not assigned in Dart.
+rust_sync.TransactionInfo loadPrivateTransparentActivity() {
+  final entry =
+      jsonDecode(
+            File(
+              'test/fixtures/private_transparent_activity.json',
+            ).readAsStringSync(),
+          )
+          as Map<String, dynamic>;
+  return _case(
+    entry,
+    'fixture',
+    BigInt.from(121),
+    BigInt.from(1750000000),
+  ).transaction;
+}
+
 PrivateShieldingCase _case(
   Map<String, dynamic> entry,
   String txidHex,
@@ -62,6 +80,7 @@ PrivateShieldingCase _case(
       txKind: tx['txKind'] as String,
       displayAmount: BigInt.from(tx['displayAmount'] as int),
       displayPool: tx['displayPool'] as String,
+      activityPool: tx['activityPool'] as String?,
       createdTime: blockTime,
     ),
     rust_sync.TransactionDetail(

@@ -536,3 +536,84 @@ fn a_transaction_with_transparent_outputs_is_not_shown_as_shielded() {
         true,
     ));
 }
+
+/// Activity shape is known even while payment details and fee attribution are incomplete.
+/// Compact scanning and real Enhance application populate a fresh database without local
+/// construction records; each history read opens that database again.
+#[test]
+fn enhance_output_presence_labels_a_provisional_debit() {
+    let recovered = privately_recovered([300_000, 120_000], 205_000, Some(FEE), true);
+    let row = history_row(&recovered);
+    assert_eq!(row.tx_kind, "sent");
+    assert_eq!(row.display_amount, 215_000);
+    assert_eq!(row.account_balance_delta, -215_000);
+    assert_eq!(
+        row.display_pool, "unknown",
+        "payment destination stays unresolved"
+    );
+    assert!(
+        !row.is_transparent,
+        "recipient classification stays unchanged"
+    );
+    assert!(row.provisional);
+    assert!(!row.details_complete);
+    assert!(row.amount_includes_fee);
+    assert_eq!(row.fee, FEE);
+    assert_eq!(row.activity_pool.as_deref(), Some("transparent"));
+    assert_eq!(history_row(&recovered).activity_pool, row.activity_pool);
+
+    let detail = get_transaction_detail(
+        &recovered.path,
+        NETWORK,
+        &recovered.account.expose_uuid().to_string(),
+        &recovered.txid_hex,
+        &row.tx_kind,
+    )
+    .unwrap();
+    let mut displayed = display_values(&row, &detail);
+    displayed["transaction"]["activityPool"] = serde_json::json!(row.activity_pool);
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../test/fixtures/private_transparent_activity.json"
+    );
+    if std::env::var_os("VIZOR_UPDATE_FIXTURES").is_some() {
+        std::fs::write(
+            path,
+            serde_json::to_string_pretty(&displayed).unwrap() + "\n",
+        )
+        .unwrap();
+    }
+    let fixture: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    assert_eq!(
+        displayed, fixture,
+        "activity fixture must match private ingestion"
+    );
+}
+
+#[test]
+fn absent_or_unknown_enhance_output_presence_keeps_activity_unclassified() {
+    for outputs in [Some(false), None] {
+        let recovered = privately_recovered(
+            [300_000, 120_000],
+            205_000,
+            Some(FEE),
+            outputs.unwrap_or(true),
+        );
+        if outputs.is_none() {
+            rusqlite::Connection::open(&recovered.path)
+                .unwrap()
+                .execute(
+                    "UPDATE ironwood_enhance_routing SET has_transparent_outputs = NULL",
+                    [],
+                )
+                .unwrap();
+        }
+        let row = history_row(&recovered);
+        assert_eq!(row.activity_pool, None);
+        assert_eq!(row.display_pool, "unknown");
+        assert_eq!(row.display_amount, 215_000);
+        assert!(row.provisional);
+        assert!(!row.details_complete);
+    }
+}
