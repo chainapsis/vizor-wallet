@@ -17,9 +17,11 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
+import '../../../providers/pending_activity_evidence_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../swap/models/swap_activity_navigation.dart';
 import '../../swap/providers/swap_activity_tracker.dart';
+import '../activity_eta_provider.dart';
 import '../activity_row_mapper.dart';
 import '../gift_card_activity_index.dart';
 import '../models/activity_row_data.dart';
@@ -45,6 +47,8 @@ class ActivityScreen extends ConsumerStatefulWidget {
 class _ActivityScreenState extends ConsumerState<ActivityScreen> {
   List<rust_sync.TransactionInfo>? _transactions;
   String? _transactionsAccountUuid;
+  DateTime? _transactionsSyncCompletedAt;
+  bool _hasFreshTransactionHistory = false;
   bool _isLoading = true;
   String? _error;
   String? _activeAccountUuid;
@@ -90,12 +94,14 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     bool clearExisting = false,
   }) async {
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    final syncCompletedAt = ref.read(syncProvider).value?.lastSyncCompletedAt;
     final generation = ++_transactionLoadGeneration;
     _pendingTransactionRefresh = false;
     _activeAccountUuid = accountUuid;
 
-    if ((showLoading || clearExisting) && mounted) {
+    if (mounted) {
       setState(() {
+        _hasFreshTransactionHistory = false;
         if (showLoading) {
           _isLoading = true;
           _error = null;
@@ -125,6 +131,8 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
       }
       setState(() {
         _transactions = txs;
+        _transactionsSyncCompletedAt = syncCompletedAt;
+        _hasFreshTransactionHistory = true;
         _transactionsAccountUuid = accountUuid;
         _isLoading = false;
         _error = null;
@@ -287,13 +295,15 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
   }
 
   String _recentSignature(SyncState? sync) {
-    return sync?.recentTransactions
+    final recent =
+        sync?.recentTransactions
             .map(
               (tx) =>
                   '${tx.txidHex}:${tx.minedHeight}:${tx.expiredUnmined}:${tx.txKind}:${tx.displayAmount}',
             )
             .join('|') ??
         '';
+    return '${sync?.lastSyncCompletedAt}|$recent';
   }
 
   @override
@@ -358,6 +368,19 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
             row: buildTransactionActivityRow(
               context: context,
               transaction: tx,
+              showPendingEstimate: !ref
+                  .watch(activityEtaExcludedTxidsProvider)
+                  .contains(activityTxidKey(tx.txidHex)),
+              pendingLabel:
+                  _hasFreshTransactionHistory &&
+                      _transactionsSyncCompletedAt ==
+                          ref.watch(syncProvider).value?.lastSyncCompletedAt
+                  ? activityEtaLabelFor(
+                      transaction: tx,
+                      labels: ref.watch(activityEtaLabelsProvider),
+                      giftCard: giftCard,
+                    )
+                  : null,
               giftCardKind: giftCard?.kind,
               giftCardAmountZatoshi: giftCard?.amountZatoshi,
               giftCardBatchCount: giftCard?.batchCount,

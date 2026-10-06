@@ -18,6 +18,7 @@ void main() {
     int? giftCardBatchCount,
     bool giftCardClaimInFlight = false,
     String? giftCardDisplayPool,
+    String? pendingLabel,
   }) async {
     late ActivityRowData row;
     await tester.pumpWidget(
@@ -28,6 +29,7 @@ void main() {
             row = buildTransactionActivityRow(
               context: context,
               transaction: transaction,
+              pendingLabel: pendingLabel,
               giftCardKind: giftCardKind,
               giftCardAmountZatoshi: giftCardAmountZatoshi,
               giftCardBatchCount: giftCardBatchCount,
@@ -42,10 +44,74 @@ void main() {
     return row;
   }
 
-  testWidgets('ordinary sends and receipts label the exact output pool', (
+  testWidgets('pending ETA replaces only the pool subtitle and its icon', (
     tester,
   ) async {
     for (final kind in ['sent', 'received', 'receiving']) {
+      final pending = _transaction(txKind: kind, minedHeight: BigInt.zero);
+      final row = await mapRow(tester, pending, pendingLabel: '~1–3 min');
+      expect(row.subtitle, '~1–3 min');
+      expect(row.subtitleIconName, isNull);
+      expect(row.timestampText, (await mapRow(tester, pending)).timestampText);
+      expect((await mapRow(tester, pending)).subtitle, 'In progress');
+      expect(
+        (await mapRow(
+          tester,
+          _transaction(txKind: kind),
+          pendingLabel: '~1–3 min',
+        )).subtitle,
+        'Shielded',
+      );
+      expect(
+        (await mapRow(
+          tester,
+          _transaction(
+            txKind: kind,
+            minedHeight: BigInt.zero,
+            expiredUnmined: true,
+          ),
+          pendingLabel: '~1–3 min',
+        )).subtitle,
+        'Shielded',
+      );
+    }
+    for (final giftKind in GiftCardActivityKind.values) {
+      final row = await mapRow(
+        tester,
+        _transaction(
+          txKind: giftKind == GiftCardActivityKind.created
+              ? 'sent'
+              : 'receiving',
+          minedHeight: BigInt.zero,
+        ),
+        giftCardKind: giftKind,
+        pendingLabel: '~1–3 min',
+      );
+      expect(row.subtitle, '~1–3 min');
+      expect(row.subtitleIconName, isNull);
+    }
+    expect(
+      (await mapRow(
+        tester,
+        _transaction(txKind: 'migration', minedHeight: BigInt.zero),
+        pendingLabel: '~1–3 min',
+      )).subtitle,
+      'Orchard → Ironwood',
+    );
+    expect(
+      (await mapRow(
+        tester,
+        _transaction(txKind: 'shielded', minedHeight: BigInt.zero),
+        pendingLabel: '~1–3 min',
+      )).subtitle,
+      isNull,
+    );
+  });
+
+  testWidgets('ordinary sends and receipts label the exact output pool', (
+    tester,
+  ) async {
+    for (final kind in ['sent', 'received']) {
       for (final (pool, label, icon) in [
         ('ironwood', 'Shielded', AppIcons.shieldKeyholeOutline),
         ('orchard', 'Orchard', AppIcons.shieldKeyholeOutline),

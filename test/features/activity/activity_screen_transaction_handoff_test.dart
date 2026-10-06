@@ -3,6 +3,7 @@
 // transitive deps, hence the ignore.
 // ignore_for_file: depend_on_referenced_packages
 import 'dart:io';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -18,11 +19,143 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/features/activity/activity_eta_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import '../../fakes/fake_sync_notifier.dart';
 
 void main() {
+  testWidgets(
+    'same-epoch failed history refresh withholds ETA until recovery',
+    (tester) async {
+      final pending = rust_sync.TransactionInfo(
+        txidHex: 'pending',
+        minedHeight: BigInt.zero,
+        expiredUnmined: false,
+        accountBalanceDelta: 100000000,
+        fee: BigInt.zero,
+        blockTime: BigInt.zero,
+        isTransparent: false,
+        txKind: 'receiving',
+        displayAmount: BigInt.from(100000000),
+        displayPool: 'shielded',
+        createdTime: BigInt.zero,
+      );
+
+      final before = SyncState(
+        accountUuid: 'account-1',
+        hasAccountScopedData: true,
+        isSyncComplete: true,
+        lastSyncCompletedAt: DateTime.utc(2026, 10, 6),
+      );
+      final sync = FakeSyncNotifier(before);
+      final refreshing = Completer<List<rust_sync.TransactionInfo>>();
+      var reads = 0;
+      var isRefreshing = false;
+      await _pumpActivityScreen(
+        tester,
+        transaction: pending,
+        syncNotifier: sync,
+        etaLabels: const {'pending': '~1–3 min'},
+        historyLoader: (_) async {
+          reads++;
+          return isRefreshing ? refreshing.future : [pending];
+        },
+      );
+      expect(find.text('~1–3 min'), findsOneWidget);
+      final initialReads = reads;
+      isRefreshing = true;
+      sync.emit(before.copyWith(recentTransactions: [_transaction]));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(reads, initialReads + 1);
+      expect(find.text('~1–3 min'), findsNothing);
+      expect(find.text('In progress'), findsOneWidget);
+      refreshing.completeError(StateError('history unavailable'));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('~1–3 min'), findsNothing);
+      isRefreshing = false;
+      sync.emit(before.copyWith(recentTransactions: [pending]));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(reads, initialReads + 2);
+      expect(find.text('~1–3 min'), findsOneWidget);
+    },
+  );
+
+  testWidgets('sync completion refreshes pending rows outside the recent ten', (
+    tester,
+  ) async {
+    final pending = rust_sync.TransactionInfo(
+      txidHex: 'pending',
+      minedHeight: BigInt.zero,
+      expiredUnmined: false,
+      accountBalanceDelta: 100000000,
+      fee: BigInt.zero,
+      blockTime: BigInt.zero,
+      isTransparent: false,
+      txKind: 'receiving',
+      displayAmount: BigInt.from(100000000),
+      displayPool: 'shielded',
+      createdTime: BigInt.zero,
+    );
+    final before = SyncState(
+      accountUuid: 'account-1',
+      hasAccountScopedData: true,
+      isSyncComplete: true,
+      lastSyncCompletedAt: DateTime.utc(2026, 10, 6),
+    );
+    final sync = FakeSyncNotifier(before);
+    var reads = 0;
+    var refreshing = false;
+    final refreshed = Completer<List<rust_sync.TransactionInfo>>();
+    await _pumpActivityScreen(
+      tester,
+      transaction: pending,
+      syncNotifier: sync,
+      etaLabels: const {'pending': '~1–3 min'},
+      historyLoader: (_) async {
+        reads++;
+        return refreshing ? refreshed.future : [pending];
+      },
+    );
+    expect(find.text('~1–3 min'), findsOneWidget);
+    final initialReads = reads;
+    refreshing = true;
+    sync.emit(
+      before.copyWith(lastSyncCompletedAt: DateTime.utc(2026, 10, 6, 0, 1)),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(reads, initialReads + 1);
+    expect(find.text('~1–3 min'), findsNothing);
+    expect(find.text('In progress'), findsOneWidget);
+    refreshed.complete([_transaction]);
+    await tester.pumpAndSettle();
+    expect(find.text('Received'), findsOneWidget);
+    expect(find.text('~1–3 min'), findsNothing);
+  });
+
+  testWidgets('Activity replaces the pending pool with ETA', (tester) async {
+    await _pumpActivityScreen(
+      tester,
+      transaction: rust_sync.TransactionInfo(
+        txidHex: 'pending',
+        minedHeight: BigInt.zero,
+        expiredUnmined: false,
+        accountBalanceDelta: 100000000,
+        fee: BigInt.zero,
+        blockTime: BigInt.zero,
+        isTransparent: false,
+        txKind: 'receiving',
+        displayAmount: BigInt.from(100000000),
+        displayPool: 'shielded',
+        createdTime: BigInt.zero,
+      ),
+      etaLabels: const {'pending': '~1–3 min'},
+    );
+    expect(find.text('~1–3 min'), findsOneWidget);
+    expect(find.text('Shielded'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   setUp(() {
     // The handoff resolves the wallet DB path before it pushes; stub both
     // platform interfaces so that await completes and the FFI detail lookup
@@ -76,8 +209,12 @@ Future<void> _settleRealAsync(WidgetTester tester) async {
 }
 
 Future<_SwitchableAccountNotifier> _pumpActivityScreen(
-  WidgetTester tester,
-) async {
+  WidgetTester tester, {
+  rust_sync.TransactionInfo? transaction,
+  Map<String, String>? etaLabels,
+  ActivityHistoryLoader? historyLoader,
+  FakeSyncNotifier? syncNotifier,
+}) async {
   await tester.binding.setSurfaceSize(const Size(1280, 900));
   addTearDown(() => tester.binding.setSurfaceSize(null));
 
@@ -87,8 +224,10 @@ Future<_SwitchableAccountNotifier> _pumpActivityScreen(
     routes: [
       GoRoute(
         path: '/activity',
-        builder: (_, _) =>
-            ActivityScreen(historyLoader: (_) async => [_transaction]),
+        builder: (_, _) => ActivityScreen(
+          historyLoader:
+              historyLoader ?? (_) async => [transaction ?? _transaction],
+        ),
       ),
       GoRoute(
         path: '/activity/tx/:txid',
@@ -100,12 +239,16 @@ Future<_SwitchableAccountNotifier> _pumpActivityScreen(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
+        if (etaLabels != null)
+          activityEtaLabelsProvider.overrideWithValue(etaLabels),
         appBootstrapProvider.overrideWithValue(_bootstrap),
         accountProvider.overrideWith(() => accountNotifier),
         syncProvider.overrideWith(
-          () => FakeSyncNotifier(
-            SyncState(accountUuid: 'account-1', hasAccountScopedData: true),
-          ),
+          () =>
+              syncNotifier ??
+              FakeSyncNotifier(
+                SyncState(accountUuid: 'account-1', hasAccountScopedData: true),
+              ),
         ),
       ],
       child: MaterialApp.router(
@@ -114,8 +257,16 @@ Future<_SwitchableAccountNotifier> _pumpActivityScreen(
       ),
     ),
   );
-  await tester.pumpAndSettle();
-  expect(find.text('Received'), findsOneWidget);
+  if (transaction == null) {
+    await tester.pumpAndSettle();
+  } else {
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 300));
+  }
+  expect(
+    find.text(transaction == null ? 'Received' : 'Receiving ...'),
+    findsOneWidget,
+  );
   return accountNotifier;
 }
 

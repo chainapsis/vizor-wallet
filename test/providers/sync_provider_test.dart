@@ -8,9 +8,61 @@ import 'package:zcash_wallet/src/core/formatting/sync_status_label.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_failure.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/providers/pending_activity_evidence_provider.dart';
+import 'package:zcash_wallet/src/features/activity/activity_eta_provider.dart';
+import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 void main() {
+  test(
+    'history read failure suppresses ETA until history recovers even when tip polling succeeds',
+    () async {
+      final now = DateTime.utc(2026, 10, 6);
+      final initial = SyncState(
+        accountUuid: _accountUuid,
+        hasAccountScopedData: true,
+        isSyncComplete: true,
+        scannedHeight: 100,
+        chainTipHeight: 100,
+      );
+      final sync = _BalanceRefreshTestSyncNotifier(
+        () async => 'wallet.db',
+        initialState: initial,
+      )..balance = _availableBalance(BigInt.from(100));
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+          accountProvider.overrideWith(_ExistingAccountNotifier.new),
+          syncProvider.overrideWith(() => sync),
+          activityEtaClockProvider.overrideWithValue(() => now),
+          giftCardActivityIndexProvider(
+            _accountUuid,
+          ).overrideWith((ref) async => GiftCardActivityIndex.empty),
+          swapActivityRecordsProvider(
+            _accountUuid,
+          ).overrideWith((ref) async => []),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+      await container.read(syncProvider.future);
+      await container.read(giftCardActivityIndexProvider(_accountUuid).future);
+      await container.read(swapActivityRecordsProvider(_accountUuid).future);
+      final evidence = container.read(pendingActivityEvidenceProvider.notifier);
+      evidence.observe(accountUuid: _accountUuid, txids: ['pending']);
+      evidence.networkChecked(100);
+      expect(container.read(activityEtaLabelsProvider)['pending'], '~1–3 min');
+      sync.failHistory = true;
+      await sync.refreshAfterSend();
+      evidence.networkChecked(100);
+      expect(container.read(activityEtaLabelsProvider), isEmpty);
+      sync.failHistory = false;
+      await sync.refreshAfterSend();
+      expect(container.read(activityEtaLabelsProvider)['pending'], '~1–3 min');
+    },
+  );
+
   test(
     'private status coverage pauses sync only while private queries stay on',
     () {
@@ -796,6 +848,7 @@ class _BalanceRefreshTestSyncNotifier extends SyncNotifier {
   final SyncState? initialState;
   final List<rust_sync.TransactionInfo> history;
 
+  bool failHistory = false;
   var balanceReadCount = 0;
   rust_sync.WalletBalance? balance;
 
@@ -837,7 +890,10 @@ class _BalanceRefreshTestSyncNotifier extends SyncNotifier {
     required String network,
     int? limit,
     required String accountUuid,
-  }) async => history;
+  }) async {
+    if (failHistory) throw StateError('history read unavailable');
+    return history;
+  }
 }
 
 class _UnavailableSwitchBalanceNotifier extends SyncNotifier {

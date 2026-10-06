@@ -31,6 +31,8 @@ ActivityRowData buildTransactionActivityRow({
   String? giftCardStableId,
   DateTime? giftCardActivityTimestamp,
   String? giftCardDisplayPool,
+  String? pendingLabel,
+  bool showPendingEstimate = true,
   bool privacyModeEnabled = false,
   bool dateOnlyTimestamp = false,
   VoidCallback? onTap,
@@ -54,7 +56,11 @@ ActivityRowData buildTransactionActivityRow({
       ? transactionActivityPool(transaction)
       : giftCardDisplayPool ?? transaction.displayPool;
   final signedAmount = isSent ? -amount : amount;
-  final subtitle = isMigration
+  final replacesPool =
+      showPendingEstimate && isPending && (isInbound || isSent);
+  final subtitle = replacesPool
+      ? pendingLabel ?? 'In progress'
+      : isMigration
       ? 'Orchard → Ironwood'
       : isInbound || isSent
       ? _poolLabel(displayPool, ordinary: isOrdinaryTransaction)
@@ -95,7 +101,9 @@ ActivityRowData buildTransactionActivityRow({
     leadingBackgroundColor: colors.background.neutralSubtleOpacity,
     leadingIconColor: colors.icon.regular,
     subtitle: subtitle,
-    subtitleIconName: _poolIcon(displayPool, ordinary: isOrdinaryTransaction),
+    subtitleIconName: replacesPool
+        ? null
+        : _poolIcon(displayPool, ordinary: isOrdinaryTransaction),
     amountText: activityAmountTextForFormFactor(
       _transactionAmountText(
         amount: amount,

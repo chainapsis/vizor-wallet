@@ -1044,6 +1044,18 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildGiftCardBatchActivityDetailUseCase,
   ),
   FigmaCompareScenario(
+    id: 'home-activity-eta',
+    description: 'Home pending activity with estimate, unknown and longer wait',
+    builder: buildHomeActivityEtaUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'activities-eta',
+    description: 'Activity pending rows with estimate, unknown and longer wait',
+    builder: buildActivitiesEtaUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'activity-zero-value',
     description: 'Desktop home activity with zero-value memo payments',
     builder: buildDesktopZeroValueActivityUseCase,

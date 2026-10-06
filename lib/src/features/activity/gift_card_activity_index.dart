@@ -25,6 +25,7 @@ class GiftCardActivityMetadata {
     this.claimFeeReserveZatoshi,
     this.batchCount,
     this.amountPerCardZatoshi,
+    this.claimTxids = const [],
   }) : assert(
          kind != GiftCardActivityKind.created || claimFeeReserveZatoshi != null,
        );
@@ -41,6 +42,7 @@ class GiftCardActivityMetadata {
   final BigInt? claimFeeReserveZatoshi;
   final int? batchCount;
   final BigInt? amountPerCardZatoshi;
+  final List<String> claimTxids;
 
   BigInt detailFeeZatoshi(BigInt transactionFee) {
     if (kind == GiftCardActivityKind.redeemed) return transactionFee;
@@ -117,6 +119,7 @@ class GiftCardActivityIndex {
           stableId: 'gift-card:${record.address}',
           activityTimestamp: record.claimSubmittedAt,
           displayPool: record.claimDestinationPool,
+          claimTxids: _splitTxids(record.claimTxids).toList(growable: false),
         );
       }
     }

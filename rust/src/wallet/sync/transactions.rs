@@ -345,6 +345,9 @@ pub(crate) struct TransactionInfo {
     pub display_amount: u64,
     pub display_pool: String,
     pub activity_pool: Option<String>,
+    pub funding_parent_txid: Option<String>,
+    pub funding_parent_mined_height: Option<u64>,
+    pub funding_parent_expired: Option<bool>,
     pub created_time: u64,
 }
 
@@ -511,6 +514,7 @@ type FundingStepMatchKey = (String, i64, u64);
 struct SuppressedFundingStepFees {
     suppressed_funding_txids: HashSet<i64>,
     extra_fee_by_external_txid: HashMap<i64, u64>,
+    funding_parent_by_external_txid: HashMap<i64, i64>,
 }
 
 struct ClassifiedTx {
@@ -594,6 +598,10 @@ fn assemble_history(
     let suppressed_funding_step_fees =
         build_suppressed_funding_step_fees(bases, &summaries, &external_send_keys);
 
+    let bases_by_id: HashMap<i64, &TxBase> = bases
+        .iter()
+        .map(|base| (base.transaction_id, base))
+        .collect();
     let mut visible = Vec::new();
     for base in bases {
         let summary = summaries.get(&base.txid).cloned().unwrap_or_default();
@@ -614,7 +622,23 @@ fn assemble_history(
             0
         };
 
-        visible.extend(classify_history_tx(base, &summary, extra_sent_fee));
+        let mut rows = classify_history_tx(base, &summary, extra_sent_fee);
+        if let Some(parent_id) = suppressed_funding_step_fees
+            .funding_parent_by_external_txid
+            .get(&base.transaction_id)
+        {
+            if let Some(parent) = bases_by_id.get(parent_id) {
+                for row in &mut rows {
+                    if row.info.tx_kind == "sent" {
+                        row.info.funding_parent_txid = Some(hex::encode(&parent.txid));
+                        row.info.funding_parent_mined_height =
+                            Some(parent.mined_height.unwrap_or(0).into());
+                        row.info.funding_parent_expired = Some(parent.expired_unmined);
+                    }
+                }
+            }
+        }
+        visible.extend(rows);
     }
 
     visible.sort_by(|a, b| {
@@ -1599,6 +1623,9 @@ fn build_suppressed_funding_step_fees(
             external_index += 1;
 
             matched
+                .funding_parent_by_external_txid
+                .insert(external_transaction_id, funding_transaction_id);
+            matched
                 .suppressed_funding_txids
                 .insert(funding_transaction_id);
             let entry = matched
@@ -1813,6 +1840,9 @@ fn build_classified_tx_with_fee(
             display_amount,
             display_pool: display_pool.to_string(),
             activity_pool: None,
+            funding_parent_txid: None,
+            funding_parent_mined_height: None,
+            funding_parent_expired: None,
             created_time: base.created_time,
         },
         sort_pending_rank: u8::from(base.mined_height.is_none() && !base.expired_unmined),
@@ -4143,6 +4173,36 @@ mod tests {
         assert_eq!(got[0].tx_kind, "sent");
         assert_eq!(got[0].display_amount, 10_000_000);
         assert_eq!(got[0].fee, 50_000);
+        assert_eq!(got[0].funding_parent_txid, Some(hex::encode(funding_step)));
+        assert_eq!(got[0].funding_parent_mined_height, Some(0));
+        assert_eq!(got[0].funding_parent_expired, Some(false));
+        let conn = rusqlite::Connection::open(db.path()).unwrap();
+        conn.execute(
+            "UPDATE v_transactions SET mined_height = 100 WHERE txid = ?1",
+            rusqlite::params![funding_step],
+        )
+        .unwrap();
+        let confirmed = history_from_fixture(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Main,
+            Some(1),
+            &account.to_string(),
+        )
+        .unwrap();
+        assert_eq!(confirmed[0].funding_parent_mined_height, Some(100));
+        conn.execute(
+            "UPDATE v_transactions SET mined_height = NULL, expired_unmined = 1 WHERE txid = ?1",
+            rusqlite::params![funding_step],
+        )
+        .unwrap();
+        let expired = history_from_fixture(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Main,
+            Some(1),
+            &account.to_string(),
+        )
+        .unwrap();
+        assert_eq!(expired[0].funding_parent_expired, Some(true));
     }
 
     #[test]

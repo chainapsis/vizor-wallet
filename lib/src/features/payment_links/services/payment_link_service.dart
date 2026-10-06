@@ -15,6 +15,7 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
+import '../../../providers/pending_activity_evidence_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../../send/services/sapling_params.dart';
@@ -809,6 +810,9 @@ class PaymentLinkService
       throw PaymentLinkBatchRejected.from(error) ??
           const PaymentLinkBatchPreSubmissionFailure();
     }
+    if (isPaymentLinkFundingBroadcastAccepted(result.status)) {
+      observeActivityBroadcast(accountUuid: accountUuid, txids: result.txids);
+    }
     final funding = await PaymentLinkFundingRecovery(_recoveryStore)
         .completeBatch(
           transaction: result,
@@ -907,6 +911,12 @@ class PaymentLinkService
           fundingTxids: (result) => result.txids,
         );
     final fundingResult = funding.transaction;
+    if (isPaymentLinkFundingBroadcastAccepted(fundingResult.status)) {
+      observeActivityBroadcast(
+        accountUuid: sourceAccountUuid,
+        txids: fundingResult.txids,
+      );
+    }
     if (!funding.fundingMetadataSaved) {
       log(
         'PaymentLinkService: funding was submitted but recovery metadata '
@@ -924,6 +934,24 @@ class PaymentLinkService
         fundingResult.status,
       ),
     );
+  }
+
+  void observeActivityBroadcast({
+    required String accountUuid,
+    required String txids,
+  }) {
+    if (!_ref.mounted || _ref.read(appSecurityProvider).requiresUnlock) return;
+    if (!(_ref
+            .read(accountProvider)
+            .value
+            ?.accounts
+            .any((a) => a.uuid == accountUuid) ??
+        false)) {
+      return;
+    }
+    _ref
+        .read(pendingActivityEvidenceProvider.notifier)
+        .observe(accountUuid: accountUuid, txids: txids.split(','));
   }
 
   @override
@@ -1819,6 +1847,12 @@ class PaymentLinkService
         session,
         onSubmissionStarted: () => submissionStarted = true,
       );
+      if (result.status == PaymentLinkClaimBroadcastStatus.broadcasted) {
+        observeActivityBroadcast(
+          accountUuid: session.destinationAccountUuid,
+          txids: result.txids,
+        );
+      }
       // The local claim wallet is authoritative for the destination output
       // pool. Enrichment is deliberately best-effort: a successful broadcast
       // must remain recoverable even when detail lookup is temporarily

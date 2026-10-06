@@ -1,6 +1,8 @@
 @Tags(['mobile'])
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -16,6 +18,7 @@ import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/features/activity/activity_eta_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import '../../fakes/fake_sync_notifier.dart';
@@ -97,16 +100,22 @@ SwapIntentRecord _payActivityRecord({
 
 Widget _app(
   MobileActivityHistoryLoader loader, {
+  Map<String, String>? etaLabels,
+  FakeSyncNotifier? syncNotifier,
   SwapActivityStore? swapActivityStore,
   GiftCardActivityIndex giftCardActivityIndex = GiftCardActivityIndex.empty,
 }) {
   return ProviderScope(
     overrides: [
+      if (etaLabels != null)
+        activityEtaLabelsProvider.overrideWithValue(etaLabels),
       appBootstrapProvider.overrideWithValue(_bootstrap()),
       syncProvider.overrideWith(
-        () => FakeSyncNotifier(
-          SyncState(accountUuid: 'account-1', hasAccountScopedData: true),
-        ),
+        () =>
+            syncNotifier ??
+            FakeSyncNotifier(
+              SyncState(accountUuid: 'account-1', hasAccountScopedData: true),
+            ),
       ),
       if (swapActivityStore != null)
         swapActivityStoreProvider.overrideWithValue(swapActivityStore),
@@ -149,6 +158,141 @@ class _FakeSwapActivityStore implements SwapActivityStore {
 }
 
 void main() {
+  testWidgets(
+    'same-epoch failed history refresh withholds ETA until recovery',
+    (tester) async {
+      final pending = _tx(
+        txidHex: 'pending',
+        blockTime: BigInt.zero,
+        minedHeight: BigInt.zero,
+        kind: 'sent',
+      );
+      final before = SyncState(
+        accountUuid: 'account-1',
+        hasAccountScopedData: true,
+        isSyncComplete: true,
+        lastSyncCompletedAt: DateTime.utc(2026, 10, 6),
+      );
+      final sync = FakeSyncNotifier(before);
+      final refreshing = Completer<List<rust_sync.TransactionInfo>>();
+      var reads = 0;
+      var isRefreshing = false;
+      await tester.pumpWidget(
+        _app(
+          (_) async {
+            reads++;
+            return isRefreshing ? refreshing.future : [pending];
+          },
+          syncNotifier: sync,
+          etaLabels: const {'pending': '~1–3 min'},
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('~1–3 min'), findsOneWidget);
+      final initialReads = reads;
+      isRefreshing = true;
+      sync.emit(before.copyWith(recentTransactions: [pending]));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(reads, initialReads + 1);
+      expect(find.text('~1–3 min'), findsNothing);
+      expect(find.text('In progress'), findsOneWidget);
+      refreshing.completeError(StateError('history unavailable'));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('~1–3 min'), findsNothing);
+      isRefreshing = false;
+      sync.emit(before.copyWith(recentTransactions: []));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(reads, initialReads + 2);
+      expect(find.text('~1–3 min'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'sync completion refreshes older history and hides ETA until its read completes',
+    (tester) async {
+      final before = SyncState(
+        accountUuid: 'account-1',
+        hasAccountScopedData: true,
+        isSyncComplete: true,
+        lastSyncCompletedAt: DateTime.utc(2026, 10, 6),
+      );
+      final sync = FakeSyncNotifier(before);
+      var reads = 0;
+      var refreshing = false;
+      final refreshed = Completer<List<rust_sync.TransactionInfo>>();
+      await tester.pumpWidget(
+        _app(
+          (_) async {
+            reads++;
+            if (!refreshing) {
+              return [
+                _tx(
+                  txidHex: 'old-pending',
+                  blockTime: BigInt.zero,
+                  minedHeight: BigInt.zero,
+                  kind: 'sent',
+                ),
+              ];
+            }
+            return refreshed.future;
+          },
+          syncNotifier: sync,
+          etaLabels: const {'old-pending': '~1–3 min'},
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('~1–3 min'), findsOneWidget);
+      final initialReads = reads;
+      refreshing = true;
+      // The recent-ten history is unchanged (empty); this older transaction mined.
+      sync.emit(
+        before.copyWith(lastSyncCompletedAt: DateTime.utc(2026, 10, 6, 0, 1)),
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(reads, initialReads + 1);
+      expect(find.text('~1–3 min'), findsNothing);
+      expect(find.text('In progress'), findsOneWidget);
+      refreshed.complete([
+        _tx(
+          txidHex: 'old-pending',
+          blockTime: BigInt.from(1800000000),
+          kind: 'sent',
+        ),
+      ]);
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pumpAndSettle();
+      expect(find.text('Sent'), findsOneWidget);
+      expect(find.text('~1–3 min'), findsNothing);
+    },
+  );
+
+  testWidgets('Activity replaces the pending pool with ETA', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(393, 852));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      _app(
+        (_) async => [
+          _tx(
+            txidHex: 'pending',
+            blockTime: BigInt.zero,
+            minedHeight: BigInt.zero,
+            kind: 'sent',
+          ),
+          _tx(txidHex: 'mined', blockTime: BigInt.from(1800000000)),
+        ],
+        etaLabels: const {'pending': '~1–3 min', 'mined': '~1–3 min'},
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('Sending...'), findsOneWidget);
+    expect(find.text('~1–3 min'), findsOneWidget);
+    expect(find.text('Shielded'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('groups loaded history into dated sections', (tester) async {
     final now = DateTime.now();
     final thisWeek = BigInt.from(now.millisecondsSinceEpoch ~/ 1000 - 60);
