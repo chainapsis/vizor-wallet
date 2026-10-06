@@ -1516,6 +1516,13 @@ List<RouteBase> _desktopRoutes(Ref ref) => [
   GoRoute(path: '/accounts', builder: (_, _) => const AccountsScreen()),
   GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
   GoRoute(
+    path: '/setup/backup',
+    builder: (_, state) => SettingsSeedPhraseScreen(
+      accountUuid: state.extra is String ? state.extra as String : null,
+      showBackupIntro: true,
+    ),
+  ),
+  GoRoute(
     path: '/settings/secret-passphrase',
     builder: (_, state) => SettingsSeedPhraseScreen(
       accountUuid: state.extra is String ? state.extra as String : null,
@@ -2340,6 +2347,7 @@ class _WindowsUpdatePromptHostState
         path.startsWith('/import') ||
         path.startsWith('/import-keystone') ||
         path.startsWith('/send') ||
+        path.startsWith('/setup/backup') ||
         path.startsWith('/settings/secret-passphrase') ||
         path.startsWith('/settings/viewing-key') ||
         path.startsWith('/settings/change-password')) {

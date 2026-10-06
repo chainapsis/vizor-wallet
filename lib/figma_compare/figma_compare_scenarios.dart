@@ -1,6 +1,7 @@
 import 'desktop_welcome_capture.dart';
 import 'desktop_onboarding_intro_capture.dart';
 import 'desktop_onboarding_recovery_capture.dart';
+import 'desktop_backup_capture.dart';
 import 'desktop_onboarding_selection_capture.dart';
 import 'mobile_welcome_capture.dart';
 import '../src/features/payment_links/widgets/payment_link_gift_card.dart';
@@ -81,6 +82,82 @@ class FigmaCompareScenario {
 /// storage, network, wallet, and Rust state. Widgetbook fixtures are preferred
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
+  FigmaCompareScenario(
+    id: 'desktop-backup-intro',
+    description: 'Desktop backup warning and reminder actions',
+    builder: buildDesktopBackupIntroCapture,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-backup-gate',
+    description: 'Desktop backup password confirmation',
+    builder: buildDesktopBackupGateCapture,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-backup-reveal',
+    description: 'Desktop masked phrase, birthday and backup completion',
+    builder: buildDesktopBackupRevealCapture,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-backup-reveal-bip39',
+    description:
+        'Desktop backup with a masked phrase and extra BIP39 passphrase',
+    builder: buildDesktopBackupRevealBip39Capture,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-backup-reveal-bip39-end',
+    description: 'Desktop backup with BIP39 scrolled to the birthday card',
+    builder: buildDesktopBackupRevealBip39Capture,
+    scrollToEnd: true,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-backup-save-error-bip39',
+    description: 'Desktop backup with BIP39 after storage failure',
+    builder: buildDesktopBackupSaveErrorBip39Capture,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-backup-save-error-bip39-end',
+    description:
+        'Desktop BIP39 save failure scrolled to the full birthday card',
+    builder: buildDesktopBackupSaveErrorBip39Capture,
+    scrollToEnd: true,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-backup-save-error',
+    description: 'Desktop backup completion after storage failure',
+    builder: buildDesktopBackupSaveErrorCapture,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-backup-save-pending',
+    description: 'Desktop backup completion waiting for persistence',
+    builder: buildDesktopBackupSavePendingCapture,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-backup-defer-error',
+    description: 'Desktop reminder deferral after storage failure',
+    builder: buildDesktopBackupDeferErrorCapture,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-backup-defer-pending',
+    description: 'Desktop reminder deferral waiting for persistence',
+    builder: buildDesktopBackupDeferPendingCapture,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-settings-phrase',
+    description: 'Existing desktop Settings reveal with no pending backup',
+    builder: buildDesktopSettingsPhraseCapture,
+    platform: TargetPlatform.macOS,
+  ),
   FigmaCompareScenario(
     id: 'desktop-onboarding-recovery',
     description: 'Desktop interrupted account persistence and retry action',

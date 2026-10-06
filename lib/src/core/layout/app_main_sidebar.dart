@@ -87,6 +87,7 @@ class AppMainSidebar extends ConsumerStatefulWidget {
   const AppMainSidebar({
     this.disabledRoutePaths = const {},
     this.suppressActiveSelection = false,
+    this.onNavigationPendingChanged,
     super.key,
   });
 
@@ -94,6 +95,10 @@ class AppMainSidebar extends ConsumerStatefulWidget {
 
   /// Keeps navigation interactive while rendering every section inactive.
   final bool suppressActiveSelection;
+
+  /// Lets the current screen defer writes until accepted sidebar navigation
+  /// has settled, including operations started before input is blocked.
+  final ValueChanged<bool>? onNavigationPendingChanged;
 
   @override
   ConsumerState<AppMainSidebar> createState() => _AppMainSidebarState();
@@ -104,6 +109,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
 
   bool _isSigningOut = false;
   bool _isCopyingAddress = false;
+  int _pendingNavigationCount = 0;
   OverlayEntry? _accountMenuEntry;
 
   String get _matchedLocation => GoRouterState.of(context).matchedLocation;
@@ -187,23 +193,40 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
     final router = GoRouter.of(context);
     final entryPath = router.routerDelegate.currentConfiguration.uri.path;
     final swapNotifier = ref.read(swapStateProvider.notifier);
-    final selectedAsset = await swapNotifier.resolvePaySelectedAssetForEntry(
-      accountUuid: accountUuid,
-    );
-    if (!mounted ||
-        selectedAsset == null ||
-        router.routerDelegate.currentConfiguration.uri.path != entryPath) {
-      return;
+    await _trackPendingNavigation(() async {
+      final selectedAsset = await swapNotifier.resolvePaySelectedAssetForEntry(
+        accountUuid: accountUuid,
+      );
+      if (!mounted ||
+          selectedAsset == null ||
+          router.routerDelegate.currentConfiguration.uri.path != entryPath) {
+        return;
+      }
+      final prepared = swapNotifier.preparePayFromShieldedZec(
+        preferredAsset: selectedAsset,
+        expectedAccountUuid: accountUuid,
+      );
+      if (!prepared) return;
+      router.go(
+        '/pay',
+        extra: const PayComposerNavigationArgs(preservePreparedComposer: true),
+      );
+    });
+  }
+
+  Future<void> _trackPendingNavigation(Future<void> Function() action) async {
+    _pendingNavigationCount++;
+    if (_pendingNavigationCount == 1) {
+      widget.onNavigationPendingChanged?.call(true);
     }
-    final prepared = swapNotifier.preparePayFromShieldedZec(
-      preferredAsset: selectedAsset,
-      expectedAccountUuid: accountUuid,
-    );
-    if (!prepared) return;
-    router.go(
-      '/pay',
-      extra: const PayComposerNavigationArgs(preservePreparedComposer: true),
-    );
+    try {
+      await action();
+    } finally {
+      _pendingNavigationCount--;
+      if (mounted && _pendingNavigationCount == 0) {
+        widget.onNavigationPendingChanged?.call(false);
+      }
+    }
   }
 
   void _toggleAccountMenu({
@@ -280,11 +303,13 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
 
     final accountNotifier = ref.read(accountProvider.notifier);
     final syncNotifier = ref.read(syncProvider.notifier);
-    await accountNotifier.switchAccount(uuid);
-    if (mounted) {
-      context.go('/home');
-    }
-    unawaited(_refreshAfterAccountSwitch(syncNotifier));
+    await _trackPendingNavigation(() async {
+      await accountNotifier.switchAccount(uuid);
+      if (mounted) {
+        context.go('/home');
+      }
+      unawaited(_refreshAfterAccountSwitch(syncNotifier));
+    });
   }
 
   Future<void> _refreshAfterAccountSwitch(SyncNotifier syncNotifier) async {
