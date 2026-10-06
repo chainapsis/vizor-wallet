@@ -8,7 +8,10 @@ class WelcomeNetworkSettingsNotifier extends Notifier<bool> {
   @override
   bool build() => false;
 
-  void setPresented(bool value) => state = value;
+  void setPresented(bool value) {
+    if (!ref.mounted) return;
+    state = value;
+  }
 }
 
 final welcomeNetworkSettingsPresentedProvider =

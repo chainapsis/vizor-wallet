@@ -91,6 +91,11 @@ import 'src/features/payment_links/providers/payment_link_cards_provider.dart';
 import 'src/features/payment_links/providers/payment_link_claim_coordinator_provider.dart';
 import 'src/features/payment_links/providers/payment_link_intake_provider.dart';
 import 'src/features/payment_links/providers/gift_claim_flow_provider.dart';
+import 'src/features/payment_links/screens/gift_claim_screen.dart';
+import 'src/features/payment_links/screens/desktop_gift_password_screen.dart';
+import 'src/features/payment_links/screens/desktop_gift_customise_screen.dart';
+import 'src/features/payment_links/screens/gift_customise_account_screen.dart'
+    show GiftCustomiseAccountArgs;
 import 'src/features/payment_links/screens/payment_links_screen.dart';
 import 'src/features/payment_links/services/payment_link_entry_policy.dart';
 import 'src/features/receive/screens/receive_screen.dart';
@@ -550,13 +555,11 @@ String? appRedirect({
   // Creating the account does not finish its storage. Keep that setup
   // actionable on this screen; locking still takes precedence.
   if (hasWallet &&
-      kAppFormFactor == AppFormFactor.mobile &&
       ref.read(giftClaimFlowProvider)?.walletSetupInProgress == true &&
       state.matchedLocation == '/gift/customise') {
     return requiresUnlock ? '/unlock' : null;
   }
   if (_isRouteOrChild(state.matchedLocation, '/gift')) {
-    if (kAppFormFactor != AppFormFactor.mobile) return '/';
     if (hasWallet) {
       if (requiresUnlock) return '/unlock';
       if (state.matchedLocation == '/gift' &&
@@ -675,6 +678,35 @@ OnboardingBackTarget _desktopImportBackTarget(Ref ref, GoRouterState state) {
 /// replaces these with single-pane mobile onboarding screens (same
 /// route paths, so the shared guard keeps working).
 List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
+  GoRoute(
+    path: '/gift',
+    builder: (_, state) => GiftClaimScreen(
+      addingAccount: state.uri.queryParameters['addAccount'] == 'true',
+    ),
+  ),
+  GoRoute(
+    path: '/gift/set-password',
+    redirect: (_, _) =>
+        ref.read(giftClaimFlowProvider)?.inspection == null ? '/gift' : null,
+    builder: (_, _) => const DesktopGiftPasswordScreen(),
+  ),
+  GoRoute(
+    path: '/gift/customise',
+    redirect: (_, _) =>
+        ref.read(giftClaimFlowProvider)?.walletSetupInProgress == true
+        ? null
+        : '/gift',
+    builder: (_, _) {
+      final setup = ref.read(giftClaimFlowProvider)!;
+      return DesktopGiftCustomiseScreen(
+        args: GiftCustomiseAccountArgs(
+          passcode: setup.setupPasscode,
+          passwordInputSource: setup.setupPasswordInputSource,
+          inspection: setup.inspection!,
+        ),
+      );
+    },
+  ),
   GoRoute(
     path: '/import/method',
     builder: (_, state) {
@@ -2031,8 +2063,7 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
         _isRouteOrChild(location, '/gift')) {
       return;
     }
-    if (kAppFormFactor == AppFormFactor.mobile &&
-        location == '/welcome' &&
+    if (location == '/welcome' &&
         !(ref.read(walletProvider).value?.hasWallet ??
             ref.read(appBootstrapProvider).hasWallet)) {
       if (ref.read(welcomeNetworkSettingsPresentedProvider) ||

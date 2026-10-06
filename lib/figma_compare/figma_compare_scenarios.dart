@@ -1,4 +1,5 @@
 import 'desktop_welcome_capture.dart';
+import '../widgetbook/desktop_gift_onboarding_use_cases.dart';
 import 'desktop_onboarding_intro_capture.dart';
 import 'desktop_onboarding_recovery_capture.dart';
 import 'desktop_backup_capture.dart';
@@ -82,6 +83,54 @@ class FigmaCompareScenario {
 /// storage, network, wallet, and Rust state. Widgetbook fixtures are preferred
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
+  FigmaCompareScenario(
+    id: 'desktop-gift-entry',
+    description: 'Gift Card entry',
+    builder: buildDesktopGiftEntryUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-gift-checking',
+    description: 'Gift Card inspection pending',
+    builder: buildDesktopGiftCheckingUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-gift-inspected',
+    description: 'Gift Card ready for new wallet setup',
+    builder: buildDesktopGiftInspectedUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-gift-password',
+    description: 'Gift Card first-wallet password',
+    builder: buildDesktopGiftPasswordUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-gift-customise',
+    description: 'Gift Card first-wallet customise',
+    builder: buildDesktopGiftCustomiseUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-gift-additional-customise',
+    description: 'Gift Card additional-account customise',
+    builder: buildDesktopGiftAdditionalCustomiseUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-gift-check-error',
+    description: 'Gift Card inspection failure and retry',
+    builder: buildDesktopGiftCheckErrorUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-gift-long-scan',
+    description: 'Gift Card long scan consent',
+    builder: buildDesktopGiftLongScanUseCase,
+    platform: TargetPlatform.macOS,
+  ),
   FigmaCompareScenario(
     id: 'desktop-backup-intro',
     description: 'Desktop backup warning and reminder actions',
