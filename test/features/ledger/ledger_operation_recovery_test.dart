@@ -243,6 +243,90 @@ void main() {
     LedgerSignedOperationKind.swapDeposit,
     LedgerSignedOperationKind.payDeposit,
   ]) {
+    for (final state in ['signed_pending_broadcast', 'result_pending_ack']) {
+      test(
+        'recovery persists partial ${kind.wireName} from $state before ack',
+        () async {
+          final service = _FakeLedgerSignedOperationService([
+            _operation(
+              kind: kind,
+              state: state,
+              externalRef: 'intent-1',
+              txid: 'mined-parent,expired-child',
+              status: 'partial_broadcast',
+            ),
+          ]);
+          final writing = Completer<void>();
+          final gate = Completer<void>();
+          final container = _container(
+            operationService: service,
+            sync: _RecoverySyncNotifier(),
+            depositRecovery: ({required operation, required result}) async {
+              expect(operation.externalRef, 'intent-1');
+              expect(result.txid, 'mined-parent,expired-child');
+              expect(result.status, 'partial_broadcast');
+              writing.complete();
+              await gate.future;
+            },
+          );
+          addTearDown(container.dispose);
+          await container.read(walletProvider.future);
+          final recovery = container
+              .read(ledgerOperationRecoveryCoordinatorProvider)
+              .recover();
+          // The old classifier skips persistence and finishes immediately.
+          await Future.any([writing.future, recovery]);
+          expect(writing.isCompleted, isTrue);
+          expect(service.acknowledged, isEmpty);
+          gate.complete();
+          await recovery;
+          expect(service.acknowledged, ['operation-1']);
+          expect(
+            service.broadcasts,
+            state == 'signed_pending_broadcast' ? ['operation-1'] : isEmpty,
+          );
+        },
+      );
+    }
+
+    test(
+      'partial ${kind.wireName} survives persistence failure and retries without broadcast',
+      () async {
+        final service = _FakeLedgerSignedOperationService([
+          _operation(
+            kind: kind,
+            state: 'result_pending_ack',
+            externalRef: 'intent-1',
+            txid: 'mined-parent,expired-child',
+            status: 'partial_broadcast',
+          ),
+        ]);
+        var writes = 0;
+        final container = _container(
+          operationService: service,
+          sync: _RecoverySyncNotifier(),
+          depositRecovery: ({required operation, required result}) async {
+            writes++;
+            expect(result.status, 'partial_broadcast');
+            if (writes == 1) throw StateError('activity storage unavailable');
+          },
+        );
+        addTearDown(container.dispose);
+        await container.read(walletProvider.future);
+        final coordinator = container.read(
+          ledgerOperationRecoveryCoordinatorProvider,
+        );
+        await coordinator.recover();
+        expect(writes, 1);
+        expect(service.acknowledged, isEmpty);
+        expect(service.operations.single.externalRef, 'intent-1');
+        await coordinator.recover();
+        expect(writes, 2);
+        expect(service.broadcasts, isEmpty);
+        expect(service.acknowledged, ['operation-1']);
+      },
+    );
+
     test(
       'recovery acknowledges expired ${kind.wireName} without persistence',
       () async {
