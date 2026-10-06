@@ -2340,9 +2340,13 @@ fn link_funding_steps(
         else {
             continue;
         };
-        // A send whose own fee is unknown would hide the step's in its
-        // unknown total: the step keeps its row.
-        if send.history.shown_fee() == Fee::Unknown {
+        // A send that is itself folded away, or funds a later send in turn,
+        // would not carry the fee, and one whose own fee is unknown would
+        // hide it in its unknown total: the step keeps its row.
+        if already_suppressed.contains(&send.transaction_id)
+            || is_pure_funding_step(send, &summary_of(send))
+            || send.history.shown_fee() == Fee::Unknown
+        {
             continue;
         }
         let send_shows_a_sent_row =
@@ -8094,6 +8098,86 @@ mod tests {
                 .collect::<Vec<_>>(),
             [10_000],
             "the send carries only its own fee"
+        );
+    }
+
+    /// Chained funding steps: the first step's ephemeral output funds a
+    /// second step, whose output funds the send. Only the step the send
+    /// spends folds into it; the first keeps its own fee row, so no fee is
+    /// lost or shown twice.
+    #[test]
+    fn a_chained_funding_step_keeps_its_fee_row() {
+        let account = test_account_uuid();
+        let uuid = account.as_bytes().to_vec();
+        let txids = [fake_txid(0xF5), fake_txid(0xF6), fake_txid(0xF7)].map(|t| t.to_vec());
+        let recovered = |payment| HistoryCompleteness {
+            details_complete: false,
+            provisional: false,
+            classification: None,
+            effects_settled: true,
+            fee: Fee::Known(10_000),
+            whole_fee: Some(10_000),
+            sole_transparent_funder: true,
+            inferred_payment: Some(payment),
+        };
+        let base = |index: usize, delta: i64, payment| {
+            let mut base = tx_base_for_history();
+            base.txid = txids[index].clone();
+            base.transaction_id = index as i64 + 1;
+            base.spent_orchard_note = false;
+            base.fee = None;
+            base.account_balance_delta = delta;
+            base.total_spent = 1_000_000;
+            base.total_received = 1_000_000 - delta.unsigned_abs();
+            base.attach_history(recovered(payment));
+            base
+        };
+        let ephemeral = |index: usize, value| TxOutput {
+            txid: txids[index].clone(),
+            output_pool: TRANSPARENT_POOL,
+            output_index: 0,
+            from_account_uuid: None,
+            to_account_uuid: Some(uuid.clone()),
+            to_address: None,
+            sent_to_address: None,
+            transparent_receiver_address: None,
+            to_key_scope: Some(EPHEMERAL_KEY_SCOPE),
+            value,
+            memo: None,
+            note_version: None,
+        };
+        let bases = [
+            base(0, -10_000, 0),
+            base(1, -10_000, 0),
+            base(2, -980_000, 970_000),
+        ];
+        let outputs = HashMap::from([
+            (txids[0].clone(), vec![ephemeral(0, 990_000)]),
+            (txids[1].clone(), vec![ephemeral(1, 980_000)]),
+        ]);
+        let spends = HashMap::from([
+            (txids[0].clone(), vec![txids[1].clone()]),
+            (txids[1].clone(), vec![txids[2].clone()]),
+        ]);
+
+        let mut rows = assemble_history(&bases, &outputs, &spends, &uuid, None)
+            .into_iter()
+            .map(|row| {
+                (
+                    txids.iter().position(|t| hex::encode(t) == row.txid_hex),
+                    row.display_amount,
+                    row.fee,
+                    row.amount_is_net_change,
+                )
+            })
+            .collect::<Vec<_>>();
+        rows.sort();
+        assert_eq!(
+            rows,
+            [
+                (Some(0), 10_000, 10_000, true),
+                (Some(2), 970_000, 20_000, false),
+            ]
         );
     }
 
