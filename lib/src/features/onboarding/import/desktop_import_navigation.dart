@@ -14,8 +14,8 @@ String preserveDesktopImportEntry(Uri origin, String destination) {
         queryParameters: {
           ...target.queryParameters,
           'entry': entry,
-          if (origin.queryParameters['from'] == 'add-account')
-            'from': 'add-account',
+          if ({'add-account', 'gift'}.contains(origin.queryParameters['from']))
+            'from': origin.queryParameters['from']!,
         },
       )
       .toString();
@@ -39,8 +39,9 @@ String? desktopImportSelectionLocation(Uri origin) {
   if (destination == null) return null;
   return Uri(
     path: destination,
-    queryParameters: origin.queryParameters['from'] == 'add-account'
-        ? {'from': 'add-account'}
+    queryParameters:
+        {'add-account', 'gift'}.contains(origin.queryParameters['from'])
+        ? {'from': origin.queryParameters['from']!}
         : null,
   ).toString();
 }

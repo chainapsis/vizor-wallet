@@ -8,6 +8,14 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/app.dart';
+import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
+import 'package:zcash_wallet/src/features/onboarding/ledger/ledger_setup_args.dart';
+import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_account_service.dart';
+import 'package:zcash_wallet/src/features/payment_links/providers/gift_claim_flow_provider.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/gift_claim_import_store.dart';
+import 'package:zcash_wallet/src/rust/frb_generated.dart';
+
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/input/app_password_input_source.dart';
 import 'package:zcash_wallet/src/core/storage/linux_keyring_coordinator.dart';
@@ -76,7 +84,10 @@ class _Accounts extends _NoAccounts {
 }
 
 void main() {
-  setUpAll(loadPaymentLinksTestFonts);
+  setUpAll(() async {
+    await loadPaymentLinksTestFonts();
+    RustLib.initMock(api: _RustApiFake());
+  });
   late ProviderContainer container;
   late _GiftOperations operations;
   late _Accounts accounts;
@@ -89,6 +100,7 @@ void main() {
   Future<void> pump(
     WidgetTester tester, {
     bool existing = false,
+    int importedAccountCount = 1,
     AppBootstrapRetry? retryBootstrap,
     String? clipboard,
     Completer<void>? inspection,
@@ -101,7 +113,8 @@ void main() {
     operations = _GiftOperations(received)
       ..inspectionGate = inspection
       ..broadcastGate = broadcast;
-    accounts = _Accounts(existing: existing);
+    accounts = _Accounts(existing: existing)
+      ..importedAccountCount = importedAccountCount;
     security = _Security(existing: existing);
     inputPlatform = FakePlatform();
     inputStore = FakeStore();
@@ -119,6 +132,17 @@ void main() {
         if (retryBootstrap != null)
           appBootstrapRetryProvider.overrideWithValue(retryBootstrap),
         accountProvider.overrideWith(() => accounts),
+        ledgerStaticCapabilityProvider.overrideWithValue(
+          const LedgerCapability.supported(),
+        ),
+        ledgerAccountImporterProvider.overrideWithValue(
+          ({
+            required name,
+            required account,
+            required birthdayHeight,
+            required profilePictureId,
+          }) => accounts.importAccounts(name, profilePictureId),
+        ),
         appSecurityProvider.overrideWith(() => security),
         appPasswordInputSourceProvider.overrideWithValue(inputSource),
         linuxKeyringCoordinatorProvider.overrideWithValue(keyring),
@@ -170,6 +194,260 @@ void main() {
     await tester.pumpAndSettle();
     expect(container.read(_routerProvider).state.uri.path, '/gift/customise');
   }
+
+  Future<void> openGiftImport(
+    WidgetTester tester, {
+    bool existing = false,
+    int count = 1,
+  }) async {
+    await pump(
+      tester,
+      existing: existing,
+      importedAccountCount: count,
+      clipboard: incomingLink.toUri().toString(),
+    );
+    await paste(tester);
+    await tester.pumpAndSettle();
+    await tester.tap(keyed('gift_claim_claim_with_an_existing_wallet'));
+    await tester.pumpAndSettle();
+    expect(
+      container.read(_routerProvider).state.uri.toString(),
+      '/import/method?from=gift',
+    );
+    expect(
+      (await container.read(giftClaimImportStoreProvider).load())
+          ?.accountUuidsBeforeSetup,
+      existing ? {'original'} : isEmpty,
+    );
+  }
+
+  Future<void> finishImport(
+    WidgetTester tester, {
+    String method = 'passphrase',
+    bool first = true,
+    bool gift = true,
+  }) async {
+    final setup = method == 'keystone'
+        ? const SetPasswordScreenArgs.importKeystone(
+            name: 'Keystone',
+            ufvk: 'preview-ufvk',
+            seedFingerprint: [1],
+            zip32Index: 0,
+            birthdayHeight: 3000000,
+          )
+        : const SetPasswordScreenArgs.importWallet(
+            mnemonic: 'stub mnemonic',
+            birthdayHeight: 3000000,
+            selectedAdditionalAccountIndices: [1],
+          );
+    final suffix = gift ? '?entry=import-method&from=gift' : '';
+    final router = container.read(_routerProvider);
+    if (method == 'ledger') {
+      router.go(
+        '/onboarding/ledger/customise-account$suffix',
+        extra: LedgerCustomiseAccountArgs(
+          account: const LedgerDeviceAccount(
+            ufvk: 'preview-ledger',
+            seedFingerprint: [1],
+            accountIndex: 0,
+            appVersion: '3.9.3',
+          ),
+          birthdayHeight: 3000000,
+          pendingPassword: first ? 'Password1!' : null,
+        ),
+      );
+    } else {
+      router.go(
+        '${method == 'keystone' ? '/onboarding/keystone' : '/import'}/customise-account$suffix',
+        extra: CustomiseAccountArgs(
+          setupArgs: setup,
+          pendingPassword: first ? 'Password1!' : null,
+        ),
+      );
+    }
+    await tester.pumpAndSettle();
+    await tester.tap(keyed('customise_account_finish_button'));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets(
+    'Gift import selectors retain their origin and Cancel removes the durable handoff',
+    (tester) async {
+      await openGiftImport(tester, existing: true);
+      final request = container.read(giftClaimSetupReturnProvider);
+      await tester.tap(keyed('desktop_import_secret_passphrase_card'));
+      await tester.pumpAndSettle();
+      expect(
+        container.read(_routerProvider).state.uri.toString(),
+        '/import?entry=import-method&from=gift',
+      );
+      await tester.tap(find.text('Import methods'));
+      await tester.pumpAndSettle();
+      expect(
+        container.read(_routerProvider).state.uri.toString(),
+        '/import/method?from=gift',
+      );
+      await tester.tap(keyed('desktop_import_hardware_card'));
+      await tester.pumpAndSettle();
+      expect(
+        container.read(_routerProvider).state.uri.toString(),
+        '/import/hardware?from=gift',
+      );
+      await tester.tap(find.text('Back'));
+      await tester.pumpAndSettle();
+      expect(
+        container.read(_routerProvider).state.uri.toString(),
+        '/import/method?from=gift',
+      );
+      expect(container.read(giftClaimSetupReturnProvider), same(request));
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(
+        container.read(_routerProvider).state.uri.toString(),
+        '/gift?addAccount=true',
+      );
+      expect(container.read(giftClaimSetupReturnProvider), isNull);
+      expect(await container.read(giftClaimImportStoreProvider).load(), isNull);
+      expect(find.text('You’ve received a gift!'), findsOneWidget);
+      expect(operations.allowLongSyncChecks, [false]);
+    },
+  );
+
+  for (final method in ['passphrase', 'keystone', 'ledger']) {
+    for (final existing in [false, true]) {
+      testWidgets(
+        '$method Gift import pins the sole new account and releases setup ownership: existing=$existing',
+        (tester) async {
+          await openGiftImport(tester, existing: existing);
+          operations.bindGate = Completer<void>();
+          await finishImport(tester, method: method, first: !existing);
+          expect(find.text('Gift Home'), findsOneWidget);
+          expect(keyed('payment_link_claim_account_sheet'), findsNothing);
+          expect((await received.load()).single.setupAccountUuid, 'imported-0');
+          expect(operations.bindDestinations, ['imported-0']);
+          expect(operations.claimedDestinations, isEmpty);
+          expect(operations.allowLongSyncChecks, [false]);
+          expect(accounts.importCalls, 1);
+          expect(accounts.importedUnderOwnership, isTrue);
+          expect(security.prepareCalls, existing ? 0 : 1);
+          if (!existing) expect(security.committedUnderOwnership, isTrue);
+          expect(keyring.hasPendingMutation, isFalse);
+          expect(
+            await container.read(giftClaimImportStoreProvider).load(),
+            isNull,
+          );
+          expect(container.read(giftClaimSetupReturnProvider), isNull);
+          operations.bindGate!.complete();
+          await tester.pumpAndSettle();
+          expect(operations.claimedDestinations, ['imported-0']);
+          container.read(paymentLinkClaimCoordinatorProvider).pause();
+        },
+      );
+    }
+  }
+
+  for (final close in [false, true]) {
+    testWidgets(
+      'multiple imported accounts ${close ? 'retain an unclaimed card on close' : 'claim only into the selected account'}',
+      (tester) async {
+        await openGiftImport(tester, existing: true, count: 2);
+        await finishImport(tester, first: false);
+        expect(keyed('payment_link_claim_account_sheet'), findsOneWidget);
+        expect(keyed('payment_link_claim_account_original'), findsNothing);
+        expect((await received.load()).single.setupAccountUuid, isNull);
+        expect(keyring.hasPendingMutation, isFalse);
+        expect(operations.bindDestinations, isEmpty);
+        if (close) {
+          await tester.tap(keyed('payment_link_claim_account_close'));
+        } else {
+          await tester.tap(keyed('payment_link_claim_account_imported-1'));
+          await tester.tap(keyed('payment_link_claim_account_confirm'));
+        }
+        await tester.pumpAndSettle();
+        expect(find.text('Gift Home'), findsOneWidget);
+        expect(
+          (await received.load()).single.setupAccountUuid,
+          close ? null : 'imported-1',
+        );
+        expect(
+          operations.claimedDestinations,
+          close ? isEmpty : ['imported-1'],
+        );
+        expect(
+          container.read(accountProvider).value?.activeAccountUuid,
+          close ? 'imported-0' : 'imported-1',
+        );
+        expect(
+          await container.read(giftClaimImportStoreProvider).load(),
+          isNull,
+        );
+        expect(keyring.hasPendingMutation, isFalse);
+        container.read(paymentLinkClaimCoordinatorProvider).pause();
+      },
+    );
+  }
+
+  testWidgets(
+    'import failure preserves the Gift journal and a retry uses the original inspection',
+    (tester) async {
+      await openGiftImport(tester);
+      accounts.importError = StateError('connection unavailable');
+      await finishImport(tester);
+      expect(find.text('Gift Home'), findsNothing);
+      expect(
+        await container.read(giftClaimImportStoreProvider).load(),
+        isNotNull,
+      );
+      expect(await received.load(), isEmpty);
+      expect(keyring.hasPendingMutation, isFalse);
+      accounts.importError = null;
+      await tester.tap(keyed('customise_account_finish_button'));
+      await tester.pumpAndSettle();
+      expect(find.text('Gift Home'), findsOneWidget);
+      expect(accounts.importCalls, 2);
+      expect(operations.allowLongSyncChecks, [false]);
+      expect(operations.claimedDestinations, ['imported-0']);
+      container.read(paymentLinkClaimCoordinatorProvider).pause();
+    },
+  );
+
+  for (final method in ['passphrase', 'ledger']) {
+    testWidgets(
+      '$method import rejects a stale Linux submit before credential preparation',
+      (tester) async {
+        await openGiftImport(tester);
+        final gate = Completer<void>();
+        final pending = keyring.runMutation(() => gate.future);
+        await finishImport(tester, method: method);
+        expect(security.prepareCalls, 0);
+        expect(accounts.importCalls, 0);
+        expect(find.text('Gift Home'), findsNothing);
+        expect(
+          await container.read(giftClaimImportStoreProvider).load(),
+          isNotNull,
+        );
+        gate.complete();
+        await pending;
+        await tester.tap(keyed('customise_account_finish_button'));
+        await tester.pumpAndSettle();
+        expect(find.text('Gift Home'), findsOneWidget);
+        expect(keyring.hasPendingMutation, isFalse);
+        container.read(paymentLinkClaimCoordinatorProvider).pause();
+      },
+    );
+  }
+
+  testWidgets(
+    'ordinary Ledger import has no Gift handoff and releases its mutation owner',
+    (tester) async {
+      await pump(tester);
+      await finishImport(tester, method: 'ledger', gift: false);
+      expect(find.text('Gift Home'), findsOneWidget);
+      expect(accounts.importedUnderOwnership, isTrue);
+      expect(await received.load(), isEmpty);
+      expect(keyring.hasPendingMutation, isFalse);
+    },
+  );
 
   testWidgets('invalid card remains on the desktop entry with paste retry', (
     tester,
@@ -614,14 +892,65 @@ class _GiftOperations extends PendingClaimPaymentLinkOperations {
 
 class _NoAccounts extends AccountNotifier {
   @override
-  Future<void> switchAccount(String uuid) async {
-    state = AsyncData(
-      state.requireValue.copyWith(
-        activeAccountUuid: uuid,
-        activeAddress: 'u1new',
-      ),
-    );
-  }
+  Future<void> switchAccount(String uuid) =>
+      ref.read(linuxKeyringCoordinatorProvider).runMutation(() async {
+        state = AsyncData(
+          state.requireValue.copyWith(
+            activeAccountUuid: uuid,
+            activeAddress: 'u1new',
+          ),
+        );
+      });
+
+  int importedAccountCount = 1;
+  int importCalls = 0;
+  Object? importError;
+  bool importedUnderOwnership = false;
+
+  Future<void> importAccounts(String? name, String? picture) =>
+      ref.read(linuxKeyringCoordinatorProvider).runMutation(() async {
+        importCalls++;
+        importedUnderOwnership = ref
+            .read(linuxKeyringCoordinatorProvider)
+            .hasPendingMutation;
+        if (importError case final error?) throw error;
+        state = AsyncData(
+          AccountState(
+            accounts: [
+              ...?state.value?.accounts,
+              for (var i = 0; i < importedAccountCount; i++)
+                AccountInfo(
+                  uuid: 'imported-$i',
+                  name: i == 0 ? name ?? 'Imported' : 'Imported $i',
+                  order: i,
+                  profilePictureId: picture ?? 'default',
+                ),
+            ],
+            activeAccountUuid: 'imported-0',
+            activeAddress: 'u1imported',
+          ),
+        );
+      });
+
+  @override
+  Future<void> importAccount({
+    required String mnemonic,
+    String bip39Passphrase = '',
+    int? birthdayHeight,
+    String? name,
+    String? profilePictureId,
+    List<int> additionalAccountIndices = const [],
+  }) => importAccounts(name, profilePictureId);
+
+  @override
+  Future<void> importKeystoneAccount({
+    required String name,
+    required String ufvk,
+    required List<int> seedFingerprint,
+    required int zip32Index,
+    required int birthdayHeight,
+    String? profilePictureId,
+  }) => importAccounts(name, profilePictureId);
 
   GiftClaimAccountCreatedException? creationError;
   Object? recoveryError;
@@ -769,4 +1098,13 @@ class _MemoryStorage implements PaymentLinkReceivedStorage {
 
   @override
   Future<void> write(String next) async => value = next;
+}
+
+class _RustApiFake implements RustLibApi {
+  @override
+  List<String> crateApiWalletMnemonicWordList() => const ['abandon', 'about'];
+  @override
+  void crateApiKeystoneResetUrSession() {}
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

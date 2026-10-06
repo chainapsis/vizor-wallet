@@ -476,7 +476,8 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
                             flow: flow,
                             addingAccount: widget.addingAccount,
                             onCreate: _createGiftWallet,
-                            onExisting: null,
+                            onExisting: () =>
+                                _continueToSetup('/import/method?from=gift'),
                             onClose: _close,
                           ),
                         ),

@@ -505,3 +505,40 @@ cover `desktop-gift-entry`, `desktop-gift-checking`, `desktop-gift-inspected`,
 `desktop-gift-additional-customise`, `desktop-gift-check-error`, and
 `desktop-gift-long-scan` in both themes. These fixtures use no production wallet
 state, storage, network, camera, or Rust operations.
+
+### Desktop Gift into an imported account
+
+The inspected card's **Claim with an existing wallet** action opens the existing
+import selector at `/import/method?from=gift`. Secret passphrase, Keystone, and
+Ledger keep their normal desktop steps and capability gates. The Gift origin
+survives each Back destination. Cancel clears the secure import handoff before
+returning to the inspected card; if clearing fails, the selector stays available
+for retry.
+
+Software and Keystone share Customise account completion; Ledger's route invokes
+the same Gift import coordinator. Password/account persistence runs under one
+Linux mutation owner, then releases it before opening recipient selection so
+account switching can acquire its own owner. The shared router pause continues
+through the handoff.
+
+Only accounts added by this import are eligible recipients. A sole account is
+bound automatically. Multiple accounts open **Choose receiving account** in a
+desktop modal centered in the content pane, reusing the mobile choice content
+and selected-row check. The scrim still blocks the whole window.
+Confirmation switches to the chosen account, persists its UUID, reuses the
+existing inspection, and starts the shared claim runner without waiting for
+binding or broadcast before Home. Closing the choice keeps an unbound Received
+card and continues to Home. Desktop and mobile both restore interrupted import
+handoffs from the shared journal after unlock and account metadata restoration.
+Recovery transfers the card to Received without guessing a recipient, preserving
+any already persisted binding. Failed Received writes retain the journal for
+retry, and recovery does not race a live import handoff.
+
+Deterministic component captures: `desktop-gift-receiving-account`,
+`desktop-gift-receiving-many`, `desktop-gift-receiving-pending`, and
+`desktop-gift-receiving-error`. Widgetbook: Screens -> Onboarding -> Gift
+onboarding - Desktop. They render the production modal content over desktop
+Customise account using local fixtures; route tests separately drive the actual
+selector, import completion, dialog, Cancel/Close, retry, and Linux ownership.
+Native hardware, Linux Secret Service, and full-flow E2E remain in the final
+integration validation slice.

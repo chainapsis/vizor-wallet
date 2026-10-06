@@ -302,7 +302,6 @@ class PaymentLinkClaimCoordinator {
   }
 
   Future<void> _restoreImportHandoff() async {
-    if (kAppFormFactor != AppFormFactor.mobile) return;
     final journal = _ref.read(giftClaimImportStoreProvider);
     if (journal.hasLiveHandoff) return;
     final handoff = await journal.load();

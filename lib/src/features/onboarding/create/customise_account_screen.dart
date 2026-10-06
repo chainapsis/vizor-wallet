@@ -28,6 +28,7 @@ import '../shared/onboarding_error_messages.dart';
 import '../shared/onboarding_flow_args.dart';
 import 'account_persona_generator.dart';
 import 'onboarding_split_view.dart';
+import '../../payment_links/services/gift_claim_setup_coordinator.dart';
 import '../../payment_links/widgets/desktop_gift_setup_shell.dart';
 
 typedef CustomiseAccountFinishCallback =
@@ -203,13 +204,21 @@ class _CustomiseAccountScreenState
     await reloadBootstrap();
   }
 
-  Future<void> _finishSetup() => ref
-      .read(linuxKeyringCoordinatorProvider)
-      .runMutation(_finishSetupWithOwnership);
+  Future<void> _finishSetup() async {
+    await ref
+        .read(linuxKeyringCoordinatorProvider)
+        .runMutation(_finishSetupWithOwnership);
+    if (!mounted) return;
+    // Account/credential persistence has released its mutation owner before
+    // the user chooses a recipient and switching acquires its own owner.
+    await completeGiftClaimImportSetup(ref);
+    if (!mounted) return;
+    clearCustomisedAccountDraft(ref, widget.args!.flow);
+    GoRouter.of(context).go('/home');
+  }
 
   Future<void> _finishSetupWithOwnership() async {
     final args = widget.args!;
-    final router = GoRouter.of(context);
     final pendingPassword = args.pendingPassword;
     final inputSourceService = ref.read(appPasswordInputSourceProvider);
 
@@ -230,8 +239,6 @@ class _CustomiseAccountScreenState
 
     if (pendingPassword == null) {
       await createAccount();
-      clearCustomisedAccountDraft(ref, args.flow);
-      router.go('/home');
       return;
     }
 
@@ -247,8 +254,6 @@ class _CustomiseAccountScreenState
         await securityNotifier.completePasswordSetup();
         passwordCommitted = true;
         unawaited(inputSourceService.remember(args.passwordInputSource));
-        clearCustomisedAccountDraft(ref, args.flow);
-        router.go('/home');
       });
     } catch (e) {
       if (passwordPrepared && !passwordCommitted) {
