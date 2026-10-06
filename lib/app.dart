@@ -149,6 +149,8 @@ import 'src/providers/wallet_provider.dart';
 import 'src/providers/windows_update_provider.dart';
 import 'src/core/storage/secure_storage_diagnostics.dart';
 import 'src/core/widgets/linux_keyring_gate.dart';
+import 'src/core/storage/linux_keyring_coordinator.dart';
+import 'src/features/payment_links/services/gift_claim_setup_coordinator.dart';
 import 'src/rust/api/sync.dart' as rust_sync;
 import 'src/rust/api/voting.dart' as rust_voting;
 import 'src/rust/frb_generated.dart';
@@ -709,16 +711,41 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
   ),
   GoRoute(
     path: '/import/method',
-    builder: (_, state) {
-      final addingAccount = state.uri.queryParameters['from'] == 'add-account';
+    builder: (context, state) {
+      final origin = state.uri.queryParameters['from'];
+      final fromGift = origin == 'gift';
+      final suffix = {'add-account', 'gift'}.contains(origin)
+          ? 'from=$origin'
+          : null;
       return DesktopImportMethodSelectionScreen(
-        cancelRoute: addingAccount ? '/add-account' : '/welcome',
-        hardwareRoute: addingAccount
-            ? '/import/hardware?from=add-account'
-            : '/import/hardware',
-        secretPassphraseRoute: addingAccount
-            ? '/import?entry=import-method&from=add-account'
-            : '/import?entry=import-method',
+        cancelRoute: origin == 'add-account' ? '/add-account' : '/welcome',
+        onCancel: fromGift
+            ? () async {
+                try {
+                  await ref
+                      .read(giftClaimFlowProvider.notifier)
+                      .cancelSetupReturn();
+                } catch (_) {
+                  if (context.mounted) {
+                    showAppToast(
+                      context,
+                      'Couldn’t close the card. Try again.',
+                      iconName: AppIcons.warning,
+                    );
+                  }
+                  return;
+                }
+                if (!context.mounted) return;
+                context.go(
+                  ref.read(accountProvider).value?.hasAccounts == true
+                      ? '/gift?addAccount=true'
+                      : '/gift',
+                );
+              }
+            : null,
+        hardwareRoute: '/import/hardware${suffix == null ? '' : '?$suffix'}',
+        secretPassphraseRoute:
+            '/import?entry=import-method${suffix == null ? '' : '&$suffix'}',
       );
     },
   ),
@@ -726,9 +753,13 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
     path: '/import/hardware',
     builder: (_, state) => DesktopHardwareSelectionScreen(
       deviceBackRoute: state.uri.toString(),
-      backRoute: state.uri.queryParameters['from'] == 'add-account'
-          ? '/import/method?from=add-account'
-          : '/import/method',
+      backRoute: Uri(
+        path: '/import/method',
+        queryParameters:
+            {'add-account', 'gift'}.contains(state.uri.queryParameters['from'])
+            ? {'from': state.uri.queryParameters['from']!}
+            : null,
+      ).toString(),
     ),
   ),
 
@@ -899,50 +930,59 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
                   ),
           ),
           onFinish: (name, profilePictureId) async {
-            Future<void> importAccount() =>
-                ref.read(ledgerAccountImporterProvider)(
-                  name: name,
-                  account: args.account,
-                  birthdayHeight: args.birthdayHeight,
-                  profilePictureId: profilePictureId,
-                );
+            await ref.read(linuxKeyringCoordinatorProvider).runMutation(
+              () async {
+                Future<void> importAccount() =>
+                    ref.read(ledgerAccountImporterProvider)(
+                      name: name,
+                      account: args.account,
+                      birthdayHeight: args.birthdayHeight,
+                      profilePictureId: profilePictureId,
+                    );
 
-            final pendingPassword = args.pendingPassword;
-            final inputSourceService = ref.read(appPasswordInputSourceProvider);
-            if (pendingPassword == null) {
-              await importAccount();
-              if (!context.mounted) return;
-              context.go('/home');
-              return;
-            }
+                final pendingPassword = args.pendingPassword;
+                final inputSourceService = ref.read(
+                  appPasswordInputSourceProvider,
+                );
+                if (pendingPassword == null) {
+                  await importAccount();
+                  return;
+                }
 
-            final securityNotifier = ref.read(appSecurityProvider.notifier);
-            final routerRefresh = ref.read(routerRefreshProvider);
-            var passwordPrepared = false;
-            var passwordCommitted = false;
-            try {
-              await routerRefresh.pauseWhile(() async {
-                await securityNotifier.preparePasswordSetup(pendingPassword);
-                passwordPrepared = true;
-                await importAccount();
-                await securityNotifier.completePasswordSetup();
-                passwordCommitted = true;
-                unawaited(
-                  inputSourceService.remember(args.passwordInputSource),
-                );
-                if (!context.mounted) return;
-                context.go('/home');
-              });
-            } catch (error) {
-              if (passwordPrepared && !passwordCommitted) {
-                await securityNotifier.finishPasswordSetupAfterFailure(
-                  accountMayExist:
-                      error is WalletAccountSetupInterruptedException ||
-                      (ref.read(accountProvider).value?.hasAccounts ?? false),
-                );
-              }
-              rethrow;
-            }
+                final securityNotifier = ref.read(appSecurityProvider.notifier);
+                final routerRefresh = ref.read(routerRefreshProvider);
+                var passwordPrepared = false;
+                var passwordCommitted = false;
+                try {
+                  await routerRefresh.pauseWhile(() async {
+                    await securityNotifier.preparePasswordSetup(
+                      pendingPassword,
+                    );
+                    passwordPrepared = true;
+                    await importAccount();
+                    await securityNotifier.completePasswordSetup();
+                    passwordCommitted = true;
+                    unawaited(
+                      inputSourceService.remember(args.passwordInputSource),
+                    );
+                  });
+                } catch (error) {
+                  if (passwordPrepared && !passwordCommitted) {
+                    await securityNotifier.finishPasswordSetupAfterFailure(
+                      accountMayExist:
+                          error is WalletAccountSetupInterruptedException ||
+                          (ref.read(accountProvider).value?.hasAccounts ??
+                              false),
+                    );
+                  }
+                  rethrow;
+                }
+              },
+            );
+            if (!context.mounted) return;
+            await completeGiftClaimImportSetupForRoute(ref, context);
+            if (!context.mounted) return;
+            context.go('/home');
           },
         ),
         transitionsBuilder: _onboardingFadeTransition,

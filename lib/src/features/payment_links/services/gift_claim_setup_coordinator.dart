@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show ProviderListenable;
 
 import '../../../../main.dart' show log;
 import '../../../core/input/app_password_input_source.dart';
@@ -106,20 +108,31 @@ Future<void> completeGiftClaimWalletSetup(
 
 /// Finishes the existing-wallet choice before Face ID, using the inspection
 /// already performed on the Gift screen. Only restart recovery scans again.
-Future<void> completeGiftClaimImportSetup(WidgetRef ref) async {
-  final context = ref.context;
-  final request = ref.read(giftClaimSetupReturnProvider);
+Future<void> completeGiftClaimImportSetup(WidgetRef ref) =>
+    _completeGiftClaimImportSetup(ref.read, ref.context);
+
+/// Desktop route callbacks share the same durable import handoff.
+Future<void> completeGiftClaimImportSetupForRoute(
+  Ref ref,
+  BuildContext context,
+) => _completeGiftClaimImportSetup(ref.read, context);
+
+Future<void> _completeGiftClaimImportSetup(
+  T Function<T>(ProviderListenable<T> provider) read,
+  BuildContext context,
+) async {
+  final request = read(giftClaimSetupReturnProvider);
   if (request == null) return;
-  final accountState = ref.read(accountProvider).value;
+  final accountState = read(accountProvider).value;
   final accounts = [
     for (final account in accountState?.accounts ?? const <AccountInfo>[])
       if (!request.accountUuidsBeforeSetup.contains(account.uuid)) account,
   ];
   if (accounts.isEmpty) return;
-  final coordinator = ref.read(paymentLinkClaimCoordinatorProvider);
-  final journal = ref.read(giftClaimImportStoreProvider);
-  final flow = ref.read(giftClaimFlowProvider.notifier);
-  final store = ref.read(paymentLinkReceivedStoreProvider);
+  final coordinator = read(paymentLinkClaimCoordinatorProvider);
+  final journal = read(giftClaimImportStoreProvider);
+  final flow = read(giftClaimFlowProvider.notifier);
+  final store = read(paymentLinkReceivedStoreProvider);
 
   Future<void> finish(String? recipient) async {
     await coordinator.trackRetention(() async {
@@ -142,12 +155,10 @@ Future<void> completeGiftClaimImportSetup(WidgetRef ref) async {
       flow.finishImportSetup(request.inspection);
     });
     if (!context.mounted) return;
-    if (!ref
-        .read(giftClaimSetupReturnProvider.notifier)
-        .clearIfMatches(request)) {
+    if (!read(giftClaimSetupReturnProvider.notifier).clearIfMatches(request)) {
       return;
     }
-    ref.read(paymentLinkIntakeProvider.notifier).discard(request.link);
+    read(paymentLinkIntakeProvider.notifier).discard(request.link);
   }
 
   try {
@@ -168,20 +179,20 @@ Future<void> completeGiftClaimImportSetup(WidgetRef ref) async {
           ? activeAccountUuid!
           : accounts.first.uuid,
       onConfirm: (uuid) async {
-        final current = ref.read(accountProvider).value;
-        if (!identical(ref.read(giftClaimSetupReturnProvider), request) ||
-            ref.read(appSecurityProvider).requiresUnlock ||
+        final current = read(accountProvider).value;
+        if (!identical(read(giftClaimSetupReturnProvider), request) ||
+            read(appSecurityProvider).requiresUnlock ||
             current == null ||
             !accounts.any((a) => a.uuid == uuid) ||
             !current.accounts.any((a) => a.uuid == uuid)) {
           throw const PaymentLinkClaimDestinationChangedException();
         }
         if (current.activeAccountUuid != uuid) {
-          await ref.read(accountProvider.notifier).switchAccount(uuid);
+          await read(accountProvider.notifier).switchAccount(uuid);
         }
         if (!context.mounted ||
-            ref.read(appSecurityProvider).requiresUnlock ||
-            ref.read(accountProvider).value?.activeAccountUuid != uuid) {
+            read(appSecurityProvider).requiresUnlock ||
+            read(accountProvider).value?.activeAccountUuid != uuid) {
           throw const PaymentLinkClaimDestinationChangedException();
         }
         await finish(uuid);
@@ -192,8 +203,8 @@ Future<void> completeGiftClaimImportSetup(WidgetRef ref) async {
     // Import and password commit already succeeded. Preserve the journal and
     // let recovery bind the Card; never invite creation of another account.
     if (context.mounted) {
-      ref.read(giftClaimSetupReturnProvider.notifier).clearIfMatches(request);
-      ref.read(paymentLinkIntakeProvider.notifier).discard(request.link);
+      read(giftClaimSetupReturnProvider.notifier).clearIfMatches(request);
+      read(paymentLinkIntakeProvider.notifier).discard(request.link);
     }
     journal.releaseLiveHandoff();
     flow.finishImportSetup(request.inspection);

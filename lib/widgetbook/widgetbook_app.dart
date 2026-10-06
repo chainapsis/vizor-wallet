@@ -1,3 +1,4 @@
+import 'desktop_gift_import_use_cases.dart';
 // ignore_for_file: depend_on_referenced_packages
 // widgetbook is a dev-only dependency; imports of it are confined to
 // `lib/widgetbook/` and `lib/widgetbook.dart`, which are not reachable from
@@ -112,6 +113,22 @@ class WidgetbookApp extends StatelessWidget {
                 WidgetbookComponent(
                   name: 'Gift onboarding - Desktop',
                   useCases: [
+                    WidgetbookUseCase(
+                      name: 'Imported receiving account',
+                      builder: buildDesktopGiftReceivingAccountUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Imported accounts scrolling',
+                      builder: buildDesktopGiftReceivingManyAccountsUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Recipient preparation',
+                      builder: buildDesktopGiftReceivingPendingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Recipient retry',
+                      builder: buildDesktopGiftReceivingErrorUseCase,
+                    ),
                     WidgetbookUseCase(
                       name: 'Entry',
                       builder: buildDesktopGiftEntryUseCase,
