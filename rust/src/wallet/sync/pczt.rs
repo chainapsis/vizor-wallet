@@ -1747,16 +1747,24 @@ async fn store_and_broadcast_pczts_inner(
         });
     }
 
+    let mined_count = mined.iter().filter(|mined| **mined).count() as u32;
+    // A completed round makes the remaining batch a recovery obligation. RPC
+    // failures must preserve its proposal and input reservation for retry.
+    let rpc_failure = |error| {
+        if mined_count > 0 {
+            Err(error)
+        } else {
+            release_signed_pczt_operation_after_failure(proposal, error)
+        }
+    };
+
     // Only unmined rounds need a live tip and expiry checks. Mined evidence is
     // already a completed submission, even after the original expiry height.
     let mut expiry_client =
         match crate::wallet::sync_engine::open_isolated_lwd_channel(lightwalletd_url).await {
             Ok(client) => client,
             Err(error) => {
-                return release_signed_pczt_operation_after_failure(
-                    proposal,
-                    format!("Failed to open the broadcast route: {error}"),
-                );
+                return rpc_failure(format!("Failed to open the broadcast route: {error}"));
             }
         };
     let latest = match crate::wallet::sync_engine::latest_block_for_transaction_with_client(
@@ -1768,10 +1776,9 @@ async fn store_and_broadcast_pczts_inner(
     {
         Ok(latest) => latest,
         Err(error) => {
-            return release_signed_pczt_operation_after_failure(
-                proposal,
-                format!("Failed to read the chain tip before broadcast: {error}"),
-            );
+            return rpc_failure(format!(
+                "Failed to read the chain tip before broadcast: {error}"
+            ));
         }
     };
     if let Some(error) = prepared.iter().zip(&mined).find_map(|(item, mined)| {
@@ -1811,7 +1818,6 @@ async fn store_and_broadcast_pczts_inner(
         };
     }
     let mut first_client = Some(expiry_client);
-    let mined_count = mined.iter().filter(|mined| **mined).count() as u32;
     let mut newly_broadcasted = 0;
     let broadcast_plan = 'broadcast: loop {
         for (index, item) in prepared.iter().enumerate() {

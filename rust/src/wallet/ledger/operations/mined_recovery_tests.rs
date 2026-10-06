@@ -155,6 +155,33 @@ impl SignedProposal {
         .await
     }
 
+    async fn recover_batch(
+        &self,
+        wallet: &Wallet,
+        url: &str,
+    ) -> Result<StoreAndBroadcastPcztsResult, String> {
+        crate::wallet::sync::store_and_broadcast_signed_pczts_for_proposal(
+            &wallet.path,
+            url,
+            WalletNetwork::Regtest,
+            self.id,
+            &self.flow,
+            &wallet
+                .signed
+                .iter()
+                .map(|s| s.proof.clone())
+                .collect::<Vec<_>>(),
+            &wallet
+                .signed
+                .iter()
+                .map(|s| s.signature.clone())
+                .collect::<Vec<_>>(),
+            None,
+            None,
+        )
+        .await
+    }
+
     fn assert_retained(&self, wallet: &Wallet, retained: bool) {
         let has_lock = crate::wallet::sync::PROPOSAL_STORE
             .lock()
@@ -273,6 +300,7 @@ impl Wallet {
 #[derive(Clone)]
 struct Lightwalletd {
     tip: u64,
+    tip_unavailable: Arc<Mutex<bool>>,
     responses: Arc<Mutex<Vec<i32>>>,
     calls: Arc<Mutex<Vec<&'static str>>>,
     submitted: Arc<Mutex<Vec<Vec<u8>>>>,
@@ -301,6 +329,13 @@ impl tower_service::Service<http::Request<tonic::body::Body>> for Lightwalletd {
         Box::pin(async move {
             let message = if req.uri().path().ends_with("/GetLatestBlock") {
                 this.calls.lock().unwrap().push("tip");
+                if *this.tip_unavailable.lock().unwrap() {
+                    return Ok(http::Response::builder()
+                        .header("content-type", "application/grpc")
+                        .header("grpc-status", "14")
+                        .body(tonic::body::Body::empty())
+                        .unwrap());
+                }
                 zcash_client_backend::proto::service::BlockId {
                     height: this.tip,
                     hash: vec![1; 32],
@@ -370,6 +405,7 @@ async fn server(
     let url = format!("http://{}", listener.local_addr().unwrap());
     let service = Lightwalletd {
         tip,
+        tip_unavailable: Default::default(),
         responses: Arc::new(Mutex::new(vec![response])),
         calls: Default::default(),
         submitted: Default::default(),
@@ -894,6 +930,78 @@ async fn proposal_recovery_preserves_retry_capability_until_mined_evidence_retur
         assert_eq!((result.broadcasted_count, result.total_count), (1, 1));
         assert_eq!(result.txids, wallet.signed[0].tx.txid().to_string());
         proposal.assert_retained(&wallet, false);
+    }
+}
+
+#[tokio::test]
+async fn partially_mined_proposal_retains_retry_capability_on_rpc_failures() {
+    let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
+    crate::network_privacy::disable_tor();
+    for mined_index in [None, Some(0), Some(1)] {
+        for failure in ["route", "tip"] {
+            let wallet = Wallet::new(true);
+            if let Some(index) = mined_index {
+                wallet.store(index, Some(&wallet.signed[index].raw), Some(201));
+            }
+            let proposal = SignedProposal::new(&wallet);
+            let (url, service, handle) = server(205, 0).await;
+            *service.tip_unavailable.lock().unwrap() = true;
+            let closed = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let offline_url = format!("http://{}", closed.local_addr().unwrap());
+            drop(closed);
+            let error = proposal
+                .recover_batch(
+                    &wallet,
+                    if failure == "route" {
+                        &offline_url
+                    } else {
+                        &url
+                    },
+                )
+                .await
+                .err()
+                .expect("RPC failure must remain an error");
+            assert!(
+                error.contains(if failure == "route" {
+                    "Failed to open the broadcast route"
+                } else {
+                    "Failed to read the chain tip before broadcast"
+                }),
+                "{error}"
+            );
+            assert_eq!(
+                *service.calls.lock().unwrap(),
+                if failure == "tip" {
+                    vec!["tip"]
+                } else {
+                    vec![]
+                }
+            );
+            assert!(service.submitted.lock().unwrap().is_empty());
+            proposal.assert_retained(&wallet, mined_index.is_some());
+            handle.abort();
+            if let Some(index) = mined_index {
+                let (url, service, handle) = server(205, 0).await;
+                let result = proposal.recover_batch(&wallet, &url).await.unwrap();
+                assert_eq!(result.status, "broadcasted");
+                assert_eq!((result.broadcasted_count, result.total_count), (2, 2));
+                assert_eq!(
+                    *service.submitted.lock().unwrap(),
+                    vec![wallet.signed[1 - index].raw.clone()]
+                );
+                let conn = rusqlite::Connection::open(&wallet.path).unwrap();
+                let mined: (Vec<u8>, u32) = conn
+                    .query_row(
+                        "SELECT raw, mined_height FROM transactions WHERE txid = ?1",
+                        [wallet.signed[index].tx.txid().as_ref()],
+                        |r| Ok((r.get(0)?, r.get(1)?)),
+                    )
+                    .unwrap();
+                assert_eq!(mined, (wallet.signed[index].raw.clone(), 201));
+                proposal.assert_retained(&wallet, false);
+                handle.abort();
+            }
+        }
     }
 }
 
