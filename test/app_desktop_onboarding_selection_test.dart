@@ -7,6 +7,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/widgets/app_back_link.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_account_service.dart';
 import 'package:zcash_wallet/src/features/onboarding/import/desktop_import_navigation.dart';
@@ -67,6 +68,67 @@ void main() {
   }
 
   for (final hasWallet in [false, true]) {
+    testWidgets('Welcome create action opens the intro: hasWallet=$hasWallet', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        location: hasWallet ? '/add-account' : '/welcome',
+        hasWallet: hasWallet,
+      );
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const ValueKey('welcome_create_wallet_button')),
+          matching: find.byType(AppButton),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('The Shielded World'), findsOneWidget);
+      expect(
+        GoRouter.of(
+          tester.element(find.text('The Shielded World')),
+        ).state.uri.path,
+        '/onboarding/intro',
+      );
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets(
+      'Welcome software import reaches phrase input: hasWallet=$hasWallet',
+      (tester) async {
+        await pump(
+          tester,
+          location: hasWallet ? '/add-account' : '/welcome',
+          hasWallet: hasWallet,
+        );
+        await tester.tap(
+          find.byKey(const ValueKey('welcome_import_wallet_button')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('desktop_import_secret_passphrase_card')),
+        );
+        await tester.pumpAndSettle();
+        final phrase = find.byKey(
+          const ValueKey('import_mnemonic_first_word_field'),
+        );
+        expect(phrase, findsOneWidget);
+        final router = GoRouter.of(tester.element(phrase));
+        expect(router.state.uri.path, '/import');
+        expect(router.state.uri.queryParameters, {
+          'entry': 'import-method',
+          if (hasWallet) 'from': 'add-account',
+        });
+        await tester.tap(find.byType(AppBackLink));
+        await tester.pumpAndSettle();
+        expect(router.state.uri.path, '/import/method');
+        expect(router.state.uri.queryParameters, {
+          if (hasWallet) 'from': 'add-account',
+        });
+        expect(tester.takeException(), isNull);
+      },
+    );
+
     testWidgets('Welcome import enters the selector: hasWallet=$hasWallet', (
       tester,
     ) async {

@@ -568,3 +568,13 @@ captures use `desktop-home-setup`, `desktop-home-setup-importing`,
 The importing layout retains its progress/illustration positions and removes
 unused lower spacing so both the card and page indicators fit the default window.
 Final native and full-flow E2E validation remains the next integration slice.
+
+### Desktop integration validation
+
+The UI slices through #852 are merged into the desktop umbrella. The validation
+slice updates the existing E2E import entries to pass through the new method
+selector and follows the Welcome create button's actual action. Six macOS
+regtest runners (seven native test executions) passed, including creation,
+first/additional import, real sends, Gift claim, and process-restart/unlock
+recovery. Coverage, reproduction commands, and remaining native/hardware gates
+are tracked in [Desktop integration validation](onboarding/desktop-integration-validation.md).
