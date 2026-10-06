@@ -2346,6 +2346,7 @@ class _WindowsUpdatePromptHostState
         path.startsWith('/import') ||
         path.startsWith('/import-keystone') ||
         path.startsWith('/send') ||
+        path.startsWith('/setup/backup') ||
         path.startsWith('/settings/secret-passphrase') ||
         path.startsWith('/settings/viewing-key') ||
         path.startsWith('/settings/change-password')) {

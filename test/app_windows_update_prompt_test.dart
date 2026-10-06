@@ -4,11 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/onboarding/unlock_screen.dart';
+import 'package:zcash_wallet/src/features/settings/screens/settings_seed_phrase_screen.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -17,6 +19,51 @@ import 'package:zcash_wallet/src/providers/windows_update_provider.dart';
 import 'fakes/fake_sync_notifier.dart';
 
 void main() {
+  for (final status in [
+    WindowsUpdateStatus.available,
+    WindowsUpdateStatus.ready,
+  ]) {
+    testWidgets('backup flow hides ${status.name} update prompts', (
+      tester,
+    ) async {
+      await tester.binding.setSurfaceSize(const Size(1080, 720));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        _appHarness(
+          bootstrap: _backupBootstrap,
+          windowsUpdateOverride: windowsUpdateProvider.overrideWith(
+            () => _AvailableWindowsUpdateNotifier(status: status),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final promptTitle = status == WindowsUpdateStatus.ready
+          ? 'Update ready'
+          : 'Update 9.9.9 available';
+      expect(find.byType(SettingsSeedPhraseScreen), findsOneWidget);
+      expect(find.text(promptTitle), findsNothing);
+      expect(find.widgetWithText(AppButton, 'Restart'), findsNothing);
+      await tester.tap(
+        find.byKey(const ValueKey('desktop_seed_backup_intro_continue')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(EditableText), findsOneWidget);
+      expect(find.text(promptTitle), findsNothing);
+      expect(find.widgetWithText(AppButton, 'Restart'), findsNothing);
+
+      GoRouter.of(
+        tester.element(find.byType(SettingsSeedPhraseScreen)),
+      ).go('/settings');
+      await tester.pumpAndSettle();
+      expect(find.byType(SettingsSeedPhraseScreen), findsNothing);
+      expect(find.text(promptTitle), findsOneWidget);
+      if (status == WindowsUpdateStatus.ready) {
+        expect(find.widgetWithText(AppButton, 'Restart'), findsOneWidget);
+      }
+    });
+  }
+
   testWidgets('windows update prompt is visible on unlock route', (
     tester,
   ) async {
@@ -296,10 +343,11 @@ void main() {
 Widget _appHarness({
   Override? windowsUpdateOverride,
   List<Override> extraOverrides = const [],
+  AppBootstrapState? bootstrap,
 }) {
   return ProviderScope(
     overrides: [
-      appBootstrapProvider.overrideWithValue(_lockedBootstrap),
+      appBootstrapProvider.overrideWithValue(bootstrap ?? _lockedBootstrap),
       syncProvider.overrideWith(FakeSyncNotifier.new),
       windowsUpdateOverride ??
           windowsUpdateProvider.overrideWith(
@@ -327,18 +375,47 @@ final _lockedBootstrap = AppBootstrapState(
   passwordRotationRecoveryFailed: false,
 );
 
+final _backupBootstrap = AppBootstrapState(
+  initialLocation: '/setup/backup',
+  initialAccountState: const AccountState(
+    accounts: [
+      AccountInfo(
+        uuid: 'account-1',
+        name: 'Account 1',
+        order: 0,
+        setupPending: true,
+      ),
+    ],
+    activeAccountUuid: 'account-1',
+  ),
+  initialSyncSnapshot: AppSyncSnapshot.empty,
+  network: 'main',
+  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  themeMode: ThemeMode.system,
+  privacyModeEnabled: false,
+  isPasswordConfigured: true,
+  isUnlocked: true,
+  passwordRotationRecoveryFailed: false,
+);
+
 class _AvailableWindowsUpdateNotifier extends WindowsUpdateNotifier {
+  _AvailableWindowsUpdateNotifier({
+    this.status = WindowsUpdateStatus.available,
+  });
+
+  final WindowsUpdateStatus status;
+
   @override
   WindowsUpdateState build() {
-    return const WindowsUpdateState(
+    return WindowsUpdateState(
       supported: true,
-      status: WindowsUpdateStatus.available,
+      status: status,
       currentVersion: '1.0.0',
       appId: 'Vizor',
       repoUrl: 'https://updates.example.invalid/vizor',
       availableVersion: '9.9.9',
       downloadProgress: 0,
-      pendingRestart: false,
+      pendingRestart: status == WindowsUpdateStatus.ready,
       torProxyReady: false,
       message: '',
     );
