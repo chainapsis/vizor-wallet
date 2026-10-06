@@ -28,8 +28,7 @@ use zcash_client_backend::data_api::{
     transparent_ledger::{
         AddressRange, PublicationAnchor, ReceiveEvent, RecoveryRevision, SpendEvent,
         TransactionMetadata, TransparentLedgerCommit, TransparentLedgerMode,
-        TransparentLedgerRead as _, TransparentLedgerWrite as _, TransparentWatchSet, WatchOrigin,
-        WholeTransactionFee,
+        TransparentLedgerWrite as _, TransparentWatchSet, WatchOrigin, WholeTransactionFee,
     },
 };
 use zcash_client_sqlite::testing::{
@@ -368,6 +367,7 @@ fn display_values(row: &TransactionInfo, detail: &TransactionDetail) -> serde_js
             "feeState": format!("{:?}", row.fee_state),
             "detailsComplete": row.details_complete,
             "provisional": row.provisional,
+            "amountIncludesFee": row.amount_includes_fee,
             "isTransparent": row.is_transparent,
             "expiredUnmined": row.expired_unmined,
         },
@@ -407,6 +407,10 @@ fn a_privately_recovered_shielding_shows_as_shielded_with_the_network_fee() {
         assert_eq!(row.fee, FEE);
         assert!(row.details_complete);
         assert!(!row.provisional);
+        assert!(
+            !row.amount_includes_fee,
+            "the shielding amount excludes the fee"
+        );
 
         let detail = get_transaction_detail(
             &recovered.path,

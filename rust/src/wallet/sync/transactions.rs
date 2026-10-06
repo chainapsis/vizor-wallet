@@ -568,8 +568,8 @@ pub(crate) struct TransactionInfo {
     pub expired_unmined: bool,
     pub account_balance_delta: i64,
     /// The network fee shown for the transaction. Zero unless `fee_state` is
-    /// `Known`. Display only: it is never part of `display_amount` or
-    /// `account_balance_delta`.
+    /// `Known`. Display only: it is never subtracted from `display_amount`
+    /// or `account_balance_delta`.
     pub fee: u64,
     pub fee_state: TransactionFeeState,
     pub block_time: u64,
@@ -584,6 +584,12 @@ pub(crate) struct TransactionInfo {
     /// Whether later discovery or enhancement can still change this row. A
     /// provisional net debit is not a payment amount.
     pub provisional: bool,
+    /// Whether `display_amount` already includes the shown `fee`: the amount
+    /// is the account's balance movement, the account's own fee is unknown,
+    /// and `fee` is the whole transaction's exact fee from recovered
+    /// metadata. When `display_amount` equals `fee`, the whole movement is
+    /// that fee.
+    pub amount_includes_fee: bool,
 }
 
 /// The network fee shown for a transaction. Unknown, zero, and not
@@ -783,6 +789,15 @@ impl HistoryCompleteness {
             (Fee::Unknown, Some(whole)) => Fee::Known(whole),
             (fee, _) => fee,
         }
+    }
+
+    /// Whether an amount computed as the account's balance movement less its
+    /// known fee still carries the shown network fee: the account's fee is
+    /// unknown, so nothing was subtracted, and the shown fee is the whole
+    /// transaction's, which is never subtracted because other funders may
+    /// have shared it.
+    fn movement_includes_shown_fee(self) -> bool {
+        self.fee == Fee::Unknown && self.whole_fee.is_some()
     }
 
     /// Only full payment details can show that a transaction moved the
@@ -2036,6 +2051,20 @@ fn classify_history_tx(
                 1,
             )];
         }
+        // A reconstructed payment of zero whose debit is exactly the whole
+        // transaction's fee is a self-transfer: every output is the account's
+        // own, so none is a receive, and the whole balance change is the fee.
+        let debit = base.account_balance_delta.unsigned_abs();
+        if payment == 0
+            && base.account_balance_delta < 0
+            && summary.sent.output_count == 0
+            && base.history.whole_fee == Some(debit)
+            && base.history.shown_fee() == Fee::Known(debit)
+        {
+            let mut row = build_classified_tx(base, "sent", debit, "transparent", true, 1);
+            row.info.amount_includes_fee = true;
+            return vec![row];
+        }
     }
 
     // Discovery found this debit but not where the value went. The outputs it
@@ -2051,15 +2080,7 @@ fn classify_history_tx(
             .unsigned_abs()
             .saturating_sub(base.history.fee.known_or_zero());
         let tx_kind = if debit > 0 { "sent" } else { "unknown" };
-        return vec![build_classified_tx_with_fee(
-            base,
-            tx_kind,
-            debit,
-            "unknown",
-            false,
-            1,
-            base.history.shown_fee(),
-        )];
+        return vec![build_movement_debit_row(base, tx_kind, debit)];
     }
 
     // A visible output makes a row even at zero value: zero-value outputs are
@@ -2100,14 +2121,7 @@ fn classify_history_tx(
                 .unsigned_abs()
                 .saturating_sub(base.history.fee.known_or_zero());
             if sent_amount > 0 {
-                rows.push(build_classified_tx(
-                    base,
-                    "sent",
-                    sent_amount,
-                    "unknown",
-                    false,
-                    1,
-                ));
+                rows.push(build_movement_debit_row(base, "sent", sent_amount));
                 return rows;
             }
         }
@@ -2167,6 +2181,15 @@ fn build_classified_tx(
     )
 }
 
+/// The row of a debit known only as the account's balance movement, less the
+/// account's fee when that is known. When it is not, nothing is subtracted,
+/// so a shown whole-transaction fee is part of the amount.
+fn build_movement_debit_row(base: &TxBase, tx_kind: &str, debit: u64) -> ClassifiedTx {
+    let mut row = build_classified_tx(base, tx_kind, debit, "unknown", false, 1);
+    row.info.amount_includes_fee = base.history.movement_includes_shown_fee();
+    row
+}
+
 fn build_classified_tx_with_fee(
     base: &TxBase,
     tx_kind: &str,
@@ -2193,6 +2216,7 @@ fn build_classified_tx_with_fee(
             created_time: base.created_time,
             details_complete: base.history.details_complete,
             provisional: base.history.provisional,
+            amount_includes_fee: false,
         },
         sort_pending_rank: u8::from(base.mined_height.is_none() && !base.expired_unmined),
         sort_timestamp,
@@ -2941,6 +2965,146 @@ mod tests {
         assert_eq!(rows[0].info.display_amount, 69_990_000);
     }
 
+    /// A transparent-only self-transfer: the account spent 2 ZEC and every
+    /// output (1.2 ZEC and 0.7999 ZEC change) is its own, so its balance
+    /// changed by the fee alone.
+    fn self_transfer(history: HistoryCompleteness) -> (TxBase, ActivitySummary) {
+        let mut base = tx_base_for_history();
+        base.spent_orchard_note = false;
+        base.fee = Some(10_000);
+        base.account_balance_delta = -10_000;
+        base.total_spent = 200_000_000;
+        base.total_received = 199_990_000;
+        base.attach_history(history);
+        let mut summary = ActivitySummary::default();
+        summary.received.amount = 199_990_000;
+        summary.received.output_count = 2;
+        summary.received.has_transparent = true;
+        (base, summary)
+    }
+
+    #[test]
+    fn a_recovered_self_transfer_is_its_network_fee() {
+        let (base, summary) = self_transfer(HistoryCompleteness {
+            details_complete: false,
+            provisional: false,
+            fee: Fee::Known(10_000),
+            whole_fee: Some(10_000),
+            inferred_payment: Some(0),
+        });
+
+        let rows = classify_history_tx(&base, &summary, Fee::NotApplicable);
+
+        assert_eq!(rows.len(), 1);
+        let info = &rows[0].info;
+        assert_eq!(info.tx_kind, "sent");
+        assert_eq!(info.display_amount, 10_000);
+        assert_eq!(info.fee, 10_000);
+        assert_eq!(info.fee_state, TransactionFeeState::Known);
+        assert!(info.amount_includes_fee, "the whole movement is the fee");
+        assert_eq!(info.display_pool, "transparent");
+        assert!(info.is_transparent);
+        assert!(!info.provisional);
+    }
+
+    #[test]
+    fn a_public_self_transfer_keeps_its_classification() {
+        let (base, summary) = self_transfer(HistoryCompleteness {
+            details_complete: false,
+            provisional: false,
+            fee: Fee::Known(10_000),
+            whole_fee: None,
+            inferred_payment: None,
+        });
+
+        let rows = classify_history_tx(&base, &summary, Fee::NotApplicable);
+
+        assert_eq!(rows.len(), 1);
+        let info = &rows[0].info;
+        assert_eq!(info.tx_kind, "received");
+        assert_eq!(info.display_amount, 199_990_000);
+        assert!(!info.amount_includes_fee);
+    }
+
+    #[test]
+    fn an_inexact_self_transfer_is_not_shown_as_its_fee() {
+        let received = |history| {
+            let (base, summary) = self_transfer(history);
+            let rows = classify_history_tx(&base, &summary, Fee::NotApplicable);
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].info.tx_kind, "received");
+            assert!(!rows[0].info.amount_includes_fee);
+        };
+        let exact = HistoryCompleteness {
+            details_complete: false,
+            provisional: false,
+            fee: Fee::Known(10_000),
+            whole_fee: Some(10_000),
+            inferred_payment: Some(0),
+        };
+        // No exact payment.
+        received(HistoryCompleteness {
+            inferred_payment: None,
+            ..exact
+        });
+        // No exact whole fee.
+        received(HistoryCompleteness {
+            whole_fee: None,
+            ..exact
+        });
+        // A whole fee that is not the movement.
+        received(HistoryCompleteness {
+            whole_fee: Some(20_000),
+            ..exact
+        });
+    }
+
+    #[test]
+    fn a_recovered_zero_payment_keeps_the_fee_not_a_false_receive() {
+        let (mut base, mut summary) = provisional_debit();
+        base.account_balance_delta = -10_000;
+        base.total_spent = 110_000;
+        base.total_received = 100_000;
+        base.history = HistoryCompleteness {
+            details_complete: false,
+            provisional: false,
+            fee: Fee::Known(10_000),
+            whole_fee: Some(10_000),
+            inferred_payment: Some(0),
+        };
+        summary.received.amount = 100_000;
+        summary.received.output_count = 1;
+
+        let rows = classify_history_tx(&base, &summary, Fee::NotApplicable);
+
+        assert_eq!(rows.len(), 1, "keep the transaction visible");
+        let info = &rows[0].info;
+        assert_eq!(info.tx_kind, "sent");
+        assert_eq!(
+            info.display_amount, 10_000,
+            "returned funds are not a receipt"
+        );
+        assert!(info.amount_includes_fee, "the movement is the fee alone");
+        assert_eq!(info.display_pool, "transparent");
+        assert!(info.is_transparent);
+        assert_eq!(info.fee_state, TransactionFeeState::Known);
+        assert_eq!(info.fee, 10_000);
+        assert_eq!(info.account_balance_delta, -10_000);
+        assert!(!info.provisional);
+        assert!(!info.details_complete, "recipient details remain unknown");
+
+        // An explicitly recorded zero-value output still has its sent row.
+        summary.sent.output_count = 1;
+        summary.sent.has_transparent = true;
+        summary.received = ActivityAmounts::default();
+        let rows = classify_history_tx(&base, &summary, Fee::NotApplicable);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].info.tx_kind, "sent");
+        assert_eq!(rows[0].info.display_amount, 0);
+        assert_eq!(rows[0].info.fee, 10_000);
+        assert!(!rows[0].info.amount_includes_fee);
+    }
+
     #[test]
     fn only_a_reconstructed_transparent_only_payment_is_inferred() {
         use zcash_client_backend::data_api::transparent_ledger::{
@@ -2980,6 +3144,10 @@ mod tests {
             HistoryCompleteness::of(&details).inferred_payment,
             Some(50_000)
         );
+
+        details.aggregate_payment = AggregatePayment::Exact(Zatoshis::ZERO);
+        assert_eq!(HistoryCompleteness::of(&details).inferred_payment, Some(0));
+        details.aggregate_payment = AggregatePayment::Exact(Zatoshis::from_u64(50_000).unwrap());
 
         // A local record's payment, a provisional one, public evidence, and
         // shielded components are not a reconstructed transparent payment.
@@ -3073,6 +3241,11 @@ mod tests {
         assert_eq!(info.account_balance_delta, -70_000_000);
         assert_eq!(info.fee_state, TransactionFeeState::Known);
         assert_eq!(info.fee, WHOLE_FEE);
+        assert!(
+            info.amount_includes_fee,
+            "the movement carries the account's unknown share of the fee"
+        );
+        assert_ne!(info.display_amount, info.fee, "a net change, not a fee");
         assert!(info.provisional);
         assert!(!info.details_complete);
     }
@@ -3124,6 +3297,10 @@ mod tests {
         assert_eq!(info.display_amount, 100_000_000 - WHOLE_FEE);
         assert_eq!(info.fee_state, TransactionFeeState::Known);
         assert_eq!(info.fee, WHOLE_FEE);
+        assert!(
+            !info.amount_includes_fee,
+            "a complete shielding shows what arrived, fee excluded"
+        );
     }
 
     /// Public evidence carries no transaction metadata, so public rows keep
@@ -3146,6 +3323,7 @@ mod tests {
             (&info.tx_kind, info.display_amount, &info.display_pool),
             (&before.tx_kind, before.display_amount, &before.display_pool)
         );
+        assert!(!info.amount_includes_fee, "no fee is shown to include");
     }
 
     #[test]
@@ -3178,6 +3356,153 @@ mod tests {
             Fee::NotApplicable
         );
         assert_eq!(shown(exact_whole_fee(), known(4_000)), Fee::Known(4_000));
+    }
+
+    /// A self-shield known only from private recovery, before its payment
+    /// details arrive: the account's whole balance change is the network
+    /// fee, so the row's amount is that fee and includes it.
+    #[test]
+    fn a_recovered_self_shield_movement_is_its_whole_fee() {
+        let mut details = shared_funding_details(exact_whole_fee());
+        if let Some(evidence) = details.transaction_metadata.as_mut() {
+            evidence.metadata.transparent_input_count = 1;
+            evidence.metadata.has_shielded_components = true;
+        }
+        details.account_movement.received = 100_000_000 - WHOLE_FEE;
+
+        let mut base = tx_base_for_history();
+        base.spent_orchard_note = false;
+        base.fee = None;
+        base.is_shielding = true;
+        base.account_balance_delta = -(WHOLE_FEE as i64);
+        base.total_spent = 100_000_000;
+        base.total_received = 100_000_000 - WHOLE_FEE;
+        base.attach_history(HistoryCompleteness::of(&details));
+        assert!(
+            !base.is_shielding,
+            "incomplete details justify no shielding"
+        );
+
+        // The shielded output is internal change, so none of it is visible.
+        let rows = classify_history_tx(&base, &ActivitySummary::default(), Fee::NotApplicable);
+
+        assert_eq!(rows.len(), 1);
+        let info = &rows[0].info;
+        assert_eq!(info.tx_kind, "sent");
+        assert_eq!(info.display_amount, WHOLE_FEE);
+        assert_eq!(info.fee_state, TransactionFeeState::Known);
+        assert_eq!(info.fee, WHOLE_FEE);
+        assert!(info.amount_includes_fee);
+        assert!(info.provisional);
+    }
+
+    /// An unmined debit with no visible output shows the same movement as a
+    /// provisional one, so the same facts mark its amount. That holds with
+    /// complete details too (a reorged recovered transaction whose outputs
+    /// are all internal change): the row still shows the movement.
+    #[test]
+    fn an_unmined_movement_debit_includes_the_whole_fee() {
+        for details_complete in [false, true] {
+            let (mut base, _) = provisional_debit();
+            base.mined_height = None;
+            base.history = HistoryCompleteness {
+                details_complete,
+                provisional: false,
+                fee: Fee::Unknown,
+                whole_fee: Some(WHOLE_FEE),
+                inferred_payment: None,
+            };
+
+            let rows = classify_history_tx(&base, &ActivitySummary::default(), Fee::NotApplicable);
+
+            assert_eq!(rows.len(), 1, "details_complete: {details_complete}");
+            let info = &rows[0].info;
+            assert_eq!(info.tx_kind, "sent");
+            assert_eq!(info.display_amount, 70_000_000);
+            assert_eq!(info.fee, WHOLE_FEE);
+            assert!(
+                info.amount_includes_fee,
+                "details_complete: {details_complete}"
+            );
+        }
+    }
+
+    /// Only a balance movement shown with the whole fee includes it: a
+    /// recorded account fee was subtracted, a visible or reconstructed
+    /// payment excludes the fee, and without metadata no fee is shown.
+    #[test]
+    fn only_a_movement_shown_with_the_whole_fee_includes_it() {
+        let whole = HistoryCompleteness {
+            details_complete: false,
+            provisional: true,
+            fee: Fee::Unknown,
+            whole_fee: Some(WHOLE_FEE),
+            inferred_payment: None,
+        };
+        let (_, change) = provisional_debit();
+        let flags = |history: HistoryCompleteness, summary: &ActivitySummary| {
+            let (mut base, _) = provisional_debit();
+            base.history = history;
+            classify_history_tx(&base, summary, Fee::NotApplicable)
+                .iter()
+                .map(|row| row.info.amount_includes_fee)
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(flags(whole, &change), [true]);
+        assert_eq!(
+            flags(
+                HistoryCompleteness {
+                    fee: Fee::Known(4_000),
+                    ..whole
+                },
+                &change
+            ),
+            [false],
+            "a recorded account fee"
+        );
+        assert_eq!(
+            flags(
+                HistoryCompleteness {
+                    whole_fee: None,
+                    ..whole
+                },
+                &change
+            ),
+            [false],
+            "public evidence"
+        );
+        assert_eq!(
+            flags(
+                HistoryCompleteness {
+                    inferred_payment: Some(69_990_000),
+                    ..whole
+                },
+                &change
+            ),
+            [false],
+            "a reconstructed payment"
+        );
+        let mut paid = change.clone();
+        paid.sent.amount = 60_000_000;
+        paid.sent.output_count = 1;
+        paid.sent.has_shielded = true;
+        assert_eq!(flags(whole, &paid), [false, false], "a visible payment");
+        // A mined debit with complete details and no visible output is never
+        // shown as its movement: its outputs are internal change, with no
+        // receipt to stand in for them.
+        let complete_mined = flags(
+            HistoryCompleteness {
+                details_complete: true,
+                provisional: false,
+                ..whole
+            },
+            &ActivitySummary::default(),
+        );
+        assert!(
+            !complete_mined.contains(&true),
+            "a mined complete debit: {complete_mined:?}"
+        );
     }
 
     #[test]
@@ -6953,11 +7278,10 @@ mod tests {
         let (uuid, _) =
             crate::wallet::keys::init_db_and_create_account(&path, network, &seed, Some(100), "a")
                 .unwrap();
-        let address = crate::wallet::keys::software_account_transparent_addresses(
-            network, &seed, 0, 1,
-        )
-        .unwrap()
-        .swap_remove(0);
+        let address =
+            crate::wallet::keys::software_account_transparent_addresses(network, &seed, 0, 1)
+                .unwrap()
+                .swap_remove(0);
         let address = TransparentAddress::decode(&network, &address).unwrap();
         let output = WalletTransparentOutput::from_parts(
             OutPoint::new([0x51; 32], 0),

@@ -56,6 +56,7 @@ PrivateShieldingCase _case(
       },
       detailsComplete: tx['detailsComplete'] as bool,
       provisional: tx['provisional'] as bool,
+      amountIncludesFee: tx['amountIncludesFee'] as bool,
       blockTime: blockTime,
       isTransparent: tx['isTransparent'] as bool,
       txKind: tx['txKind'] as String,

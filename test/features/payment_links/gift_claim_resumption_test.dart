@@ -267,6 +267,7 @@ void main() {
         feeState: rust_sync.TransactionFeeState.notApplicable,
         detailsComplete: true,
         provisional: false,
+        amountIncludesFee: false,
       );
       expect(confirmedIndex.withPendingClaims([detected]), [detected]);
       expect(

@@ -2864,8 +2864,8 @@ class TransactionInfo {
   final PlatformInt64 accountBalanceDelta;
 
   /// The network fee shown for the transaction. Zero unless `fee_state` is
-  /// `Known`. Display only: it is never part of `display_amount` or
-  /// `account_balance_delta`.
+  /// `Known`. Display only: it is never subtracted from `display_amount`
+  /// or `account_balance_delta`.
   final BigInt fee;
   final TransactionFeeState feeState;
   final BigInt blockTime;
@@ -2882,6 +2882,12 @@ class TransactionInfo {
   /// A provisional debit is a net amount, not a payment amount.
   final bool provisional;
 
+  /// Whether `display_amount` already includes the shown `fee`: the amount
+  /// is the account's balance change and `fee` is the whole transaction's
+  /// fee from privately recovered metadata. Show the fee once: when
+  /// `display_amount` equals `fee`, the change is that fee alone.
+  final bool amountIncludesFee;
+
   const TransactionInfo({
     required this.txidHex,
     required this.minedHeight,
@@ -2897,6 +2903,7 @@ class TransactionInfo {
     required this.createdTime,
     required this.detailsComplete,
     required this.provisional,
+    required this.amountIncludesFee,
   });
 
   @override
@@ -2914,7 +2921,8 @@ class TransactionInfo {
       displayPool.hashCode ^
       createdTime.hashCode ^
       detailsComplete.hashCode ^
-      provisional.hashCode;
+      provisional.hashCode ^
+      amountIncludesFee.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -2934,7 +2942,8 @@ class TransactionInfo {
           displayPool == other.displayPool &&
           createdTime == other.createdTime &&
           detailsComplete == other.detailsComplete &&
-          provisional == other.provisional;
+          provisional == other.provisional &&
+          amountIncludesFee == other.amountIncludesFee;
 }
 
 /// What the transparent fields of a [`WalletBalance`] represent.

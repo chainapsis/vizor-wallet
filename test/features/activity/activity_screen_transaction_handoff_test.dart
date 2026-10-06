@@ -272,6 +272,7 @@ final _transaction = rust_sync.TransactionInfo(
   feeState: rust_sync.TransactionFeeState.notApplicable,
   detailsComplete: true,
   provisional: false,
+  amountIncludesFee: false,
   blockTime: BigInt.from(1764150000),
   isTransparent: false,
   txKind: 'received',

@@ -53,8 +53,17 @@ ActivityRowData buildTransactionActivityRow({
   final isInbound = isReceived || isReceiving;
   final displayPool = giftCardDisplayPool ?? transaction.displayPool;
   final signedAmount = isSent ? -amount : amount;
+  // A privately recovered entry whose whole balance change is its network
+  // fee reads as that fee, not as a payment, so it shows no pool.
+  final isFeeOnly =
+      giftCardKind == null &&
+      giftCardAmountZatoshi == null &&
+      transactionFeePresentation(transaction) ==
+          TransactionFeePresentation.feeOnly;
   final subtitle = isMigration
       ? 'Orchard → Ironwood'
+      : isFeeOnly
+      ? null
       : isInbound || isSent
       ? _poolLabel(displayPool)
       : null;
@@ -87,6 +96,8 @@ ActivityRowData buildTransactionActivityRow({
                 ? 'Sending'
                 : 'Receiving',
           )
+        : isFeeOnly
+        ? kNetworkFeeText
         : _txTitle(kind),
     leadingIconName: giftCardKind != null && !isInFlight
         ? AppIcons.giftCard
@@ -94,7 +105,7 @@ ActivityRowData buildTransactionActivityRow({
     leadingBackgroundColor: colors.background.neutralSubtleOpacity,
     leadingIconColor: colors.icon.regular,
     subtitle: subtitle,
-    subtitleIconName: _poolIcon(displayPool),
+    subtitleIconName: isFeeOnly ? null : _poolIcon(displayPool),
     amountText: activityAmountTextForFormFactor(
       _transactionAmountText(
         amount: amount,

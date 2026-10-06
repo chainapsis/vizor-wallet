@@ -528,6 +528,17 @@ history rows, so both describe one database state. Each entry carries:
   evidence carries the transaction's exact whole fee, that fee is shown as the
   network fee. It is display only: other funders may have shared it, so the
   amounts never subtract or add it.
+- `amount_includes_fee`: whether the amount is the account's balance change
+  with that whole fee shown beside it, so the amount already contains the
+  account's share of the fee. A receipt then shows the fee once: when the
+  amount equals the fee (a recovered self-shield), one "Network fee" line and
+  no separate amount or fee line, with "Network fee" as the activity row
+  title; otherwise the amount is labelled "Net change (includes network fee)"
+  and the fee keeps its line. Nothing is subtracted. Only a debit with no
+  visible output that is shown as its movement can carry it: a provisional
+  one, or an unmined one even with complete details. A recorded account fee,
+  public evidence, a visible or reconstructed payment, and a mined row with
+  complete details leave it false.
 - `details_complete`: whether the recipients, payment amounts, and memos are
   known. A missing recipient row does not mean there was no payment.
 - `provisional`: whether later discovery or enhancement can still change the

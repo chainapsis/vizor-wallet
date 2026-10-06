@@ -10,7 +10,8 @@
       "detailsComplete": true,
       "provisional": false,
       "isTransparent": false,
-      "expiredUnmined": false
+      "expiredUnmined": false,
+      "amountIncludesFee": false
     },
     "detail": {
       "txKind": "shielded",
@@ -36,7 +37,8 @@
       "detailsComplete": true,
       "provisional": false,
       "isTransparent": false,
-      "expiredUnmined": false
+      "expiredUnmined": false,
+      "amountIncludesFee": false
     },
     "detail": {
       "txKind": "shielded",

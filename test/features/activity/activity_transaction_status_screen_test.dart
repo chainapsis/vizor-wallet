@@ -1245,6 +1245,63 @@ void main() {
     },
   );
 
+  testWidgets('a fee-only entry is one network fee line', (tester) async {
+    // A recovered self-shield: the whole balance change is the network fee.
+    await _pumpScreen(
+      tester,
+      privateQueriesEnabled: true,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'sent',
+        initialTransaction: _transaction(
+          txKind: 'sent',
+          fee: BigInt.from(65000),
+          displayAmount: BigInt.from(65000),
+          amountIncludesFee: true,
+          detailsComplete: false,
+          provisional: true,
+        ),
+        initialDetail: _detail(txKind: 'sent'),
+      ),
+    );
+
+    expect(find.text('Transaction'), findsOneWidget);
+    expect(find.text(kNetworkFeeText), findsOneWidget);
+    expect(find.text('0.00065 ZEC'), findsOneWidget);
+    expect(find.text('Amount'), findsNothing);
+    expect(find.text('Tx fee'), findsNothing);
+    expect(find.text('Incomplete'), findsOneWidget);
+  });
+
+  testWidgets('an amount that includes the fee is labelled a net change', (
+    tester,
+  ) async {
+    await _pumpScreen(
+      tester,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'sent',
+        initialTransaction: _transaction(
+          txKind: 'sent',
+          fee: BigInt.from(10000),
+          displayAmount: BigInt.from(70000000),
+          amountIncludesFee: true,
+          detailsComplete: false,
+          provisional: true,
+        ),
+        initialDetail: _detail(txKind: 'sent'),
+      ),
+    );
+
+    expect(find.text(kNetChangeIncludesFeeText), findsOneWidget);
+    expect(find.text('Amount'), findsNothing);
+    // Nothing is subtracted, and the fee keeps its own line.
+    expect(find.text('0.70 ZEC'), findsOneWidget);
+    expect(find.text('Tx fee'), findsOneWidget);
+    expect(find.text('0.0001 ZEC'), findsOneWidget);
+    expect(find.text(kNetworkFeeText), findsNothing);
+  });
+
   for (final kind in ['sent', 'received', 'shielded', 'migration']) {
     for (final privateQueriesEnabled in [false, true]) {
       testWidgets(
@@ -1473,6 +1530,7 @@ rust_sync.TransactionInfo _transaction({
   rust_sync.TransactionFeeState feeState = rust_sync.TransactionFeeState.known,
   bool detailsComplete = true,
   bool provisional = false,
+  bool amountIncludesFee = false,
   BigInt? displayAmount,
 }) {
   return rust_sync.TransactionInfo(
@@ -1484,6 +1542,7 @@ rust_sync.TransactionInfo _transaction({
     feeState: feeState,
     detailsComplete: detailsComplete,
     provisional: provisional,
+    amountIncludesFee: amountIncludesFee,
     blockTime: _blockTime,
     isTransparent: false,
     txKind: txKind,
