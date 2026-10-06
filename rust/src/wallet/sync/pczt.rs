@@ -1280,9 +1280,11 @@ struct PreparedSignedPczt {
     extracted: ExtractedPcztTransaction,
 }
 
-/// Recognizes exact finalized bytes with current mined evidence in one read snapshot.
-/// Missing or conflicting mined bytes and mining evidence awaiting a rescan are
-/// retryable: neither permits submission, expiry, or a success acknowledgment.
+/// Recognizes validated transaction effects with current mined evidence in one read snapshot.
+/// Parse the entire stored payload and match its computed transaction ID: shielded
+/// binding signatures are randomized on extraction and need not be byte-identical.
+/// Missing, malformed, or mismatched payloads and mining evidence awaiting a rescan
+/// are retryable: neither permits submission, expiry, or a success acknowledgment.
 /// Historical mining outside pending recovery does not prove current mining.
 fn stored_mined_transactions(
     db_path: &str,
@@ -1324,10 +1326,15 @@ fn stored_mined_transactions(
                 .map_err(|e| format!("Read stored hardware transaction: {e}"))?;
             match stored {
                 Some((raw, Some(_))) => {
-                    if raw.as_deref() == Some(item.extracted.raw_tx.as_slice()) {
+                    let matches = raw.as_deref().is_some_and(|raw| {
+                        let mut remaining = raw;
+                        Transaction::read(&mut remaining, item.extracted.tx.consensus_branch_id())
+                            .is_ok_and(|stored| remaining.is_empty() && stored.txid() == item.extracted.txid)
+                    });
+                    if matches {
                         Ok(true)
                     } else {
-                        Err(format!("The stored mined transaction {} has missing or conflicting bytes; retry after sync recovers its payload", item.extracted.txid))
+                        Err(format!("The stored mined transaction {} has a missing, malformed, or mismatched payload; retry after sync recovers its payload", item.extracted.txid))
                     }
                 }
                 _ if awaiting_rescan.contains(txid) => Err(format!(
@@ -3285,8 +3292,8 @@ mod tests {
             assert!(duplicate_err.contains("Duplicate Orchard spend nullifier"));
         }
 
-        #[test]
-        fn io_finalized_pczt_txid_matches_extracted_transaction() {
+        #[tokio::test]
+        async fn io_finalized_pczt_txid_matches_extracted_transaction_in_mined_recovery() {
             let (base_bytes, orchard_ask, spend_index, _, _, _) = build_migration_base_pczt();
             let pre_signature_txid = txid_from_io_finalized_pczt(&base_bytes)
                 .expect("IO-finalized PCZT effects should have a stable txid");
@@ -3311,6 +3318,67 @@ mod tests {
             assert_eq!(
                 pre_signature_expiry,
                 u32::from(extracted.tx.expiry_height())
+            );
+            let retried = extract_transaction_from_pczt(&proofs, &signed, None, None).unwrap();
+            assert_eq!(extracted.txid, retried.txid);
+            assert_ne!(
+                extracted.raw_tx, retried.raw_tx,
+                "randomized binding signatures"
+            );
+
+            // A fresh extraction has different authorization bytes, but the
+            // mined transaction must reconcile offline without overwriting it.
+            use crate::wallet::{ledger, sync::WalletNetwork};
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("wallet.db");
+            let path = path.to_str().unwrap();
+            crate::wallet::keys::ensure_db_initialized(path, WalletNetwork::Regtest).unwrap();
+            let conn = rusqlite::Connection::open(path).unwrap();
+            conn.execute(
+                "INSERT INTO transactions (txid, raw, mined_height, min_observed_height)
+                 VALUES (?1, ?2, 10000001, 10000000)",
+                rusqlite::params![extracted.txid.as_ref(), &extracted.raw_tx],
+            )
+            .unwrap();
+            ledger::checkpoint_signed_operation_batch(
+                path,
+                WalletNetwork::Regtest,
+                "shielded-recovery",
+                "account-1",
+                "send",
+                None,
+                &[proofs],
+                &[signed],
+            )
+            .unwrap();
+            let result = ledger::broadcast_signed_operation(
+                path,
+                "http://127.0.0.1:1",
+                WalletNetwork::Regtest,
+                "shielded-recovery",
+                None,
+                None,
+            )
+            .await
+            .expect("same mined effects must reconcile despite new binding signatures");
+            assert_eq!(result.status, "broadcasted");
+            assert_eq!(result.txid, extracted.txid.to_string());
+            assert!(
+                !result.requires_ack,
+                "ordinary sends complete their outbox immediately"
+            );
+            let stored: Vec<u8> = conn
+                .query_row(
+                    "SELECT raw FROM transactions WHERE txid = ?1",
+                    [extracted.txid.as_ref()],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(stored, extracted.raw_tx);
+            assert!(
+                ledger::list_signed_operations(path, WalletNetwork::Regtest, None)
+                    .unwrap()
+                    .is_empty()
             );
         }
 

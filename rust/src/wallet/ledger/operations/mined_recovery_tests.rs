@@ -420,9 +420,25 @@ async fn exact_mined_batch_recovers_without_any_rpc_after_expiry() {
 async fn missing_or_mismatching_mined_bytes_defer_without_rpc() {
     let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
     crate::network_privacy::disable_tor();
-    for raw in [None, Some(&[0x42][..])] {
+    for evidence in [
+        "missing",
+        "malformed",
+        "different-effects",
+        "trailing-bytes",
+    ] {
         let wallet = Wallet::new(false);
-        wallet.store(0, raw, Some(201));
+        let raw = match evidence {
+            "missing" => None,
+            "malformed" => Some(vec![0x42]),
+            "different-effects" => Some(Signed::new(OutPoint::new([2; 32], 0), 1_000_000).raw),
+            "trailing-bytes" => {
+                let mut raw = wallet.signed[0].raw.clone();
+                raw.push(0x42);
+                Some(raw)
+            }
+            _ => unreachable!(),
+        };
+        wallet.store(0, raw.as_deref(), Some(201));
         wallet.checkpoint("uncertain-op", "swap_deposit");
         let (url, service, handle) = server(1_000, 0).await;
         let error = wallet
