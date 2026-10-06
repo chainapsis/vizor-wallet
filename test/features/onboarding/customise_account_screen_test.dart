@@ -2,7 +2,12 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
+import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/router_refresh_provider.dart';
+import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:flutter/services.dart' show FontLoader, rootBundle;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -11,6 +16,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/onboarding/create/customise_account_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/create/onboarding_split_view.dart';
+import 'package:zcash_wallet/src/features/onboarding/ledger/ledger_connect_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/set_password_screen.dart';
 
@@ -51,6 +57,174 @@ void main() {
     await tester.pumpAndSettle();
     expect(attempts, 2);
   });
+
+  for (final ledger in [false, true]) {
+    for (final uncertain in [false, true]) {
+      testWidgets(
+        'interrupted setup retries bootstrap, ledger=$ledger uncertain=$uncertain',
+        (tester) async {
+          await _setDesktopViewport(tester);
+          var imports = 0;
+          var reloads = 0;
+          final security = _RecoverySecurity();
+          Future<void> fail(String _, String _) async {
+            imports++;
+            if (uncertain) {
+              throw WalletAccountStateUncertainException(
+                StateError('DB unavailable'),
+              );
+            }
+            throw WalletAccountSetupInterruptedException(
+              null,
+              StateError('save failed'),
+            );
+          }
+
+          await tester.pumpWidget(
+            _screenHarness(
+              ledger
+                  ? CustomiseAccountScreen.ledger(
+                      onFinish: fail,
+                      ledgerBackTarget: const OnboardingBackTarget.route(
+                        label: 'Set Password',
+                        routePath: '/onboarding/ledger/set-password',
+                      ),
+                    )
+                  : CustomiseAccountScreen(
+                      args: const CustomiseAccountArgs(
+                        setupArgs: SetPasswordScreenArgs.create(
+                          mnemonic: _mnemonic,
+                        ),
+                        pendingPassword: 'Password1!',
+                      ),
+                      onFinish: fail,
+                    ),
+              overrides: [
+                appSecurityProvider.overrideWith(() => security),
+                appBootstrapRetryProvider.overrideWithValue(() async {
+                  reloads++;
+                  expect(security.state.requiresUnlock, isTrue);
+                  if (reloads == 1) {
+                    throw StateError('temporary reload failure');
+                  }
+                }),
+              ],
+            ),
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(
+            find.byKey(const ValueKey('customise_account_finish_button')),
+          );
+          await tester.pumpAndSettle();
+          expect(find.text('Retry setup'), findsOneWidget);
+          expect(
+            find.text('Setup interrupted. Retry to recover your wallet.'),
+            findsOneWidget,
+          );
+          expect(
+            tester
+                .renderObject<RenderParagraph>(
+                  find.text('Setup interrupted. Retry to recover your wallet.'),
+                )
+                .didExceedMaxLines,
+            isFalse,
+          );
+          if (!ledger) {
+            expect(
+              tester
+                  .widget<OnboardingTrailingPane>(
+                    find.byType(OnboardingTrailingPane),
+                  )
+                  .backTarget,
+              isNull,
+            );
+          } else {
+            expect(
+              tester
+                  .widget<LedgerOnboardingShell>(
+                    find.byType(LedgerOnboardingShell),
+                  )
+                  .backTarget,
+              isNull,
+            );
+          }
+
+          expect(
+            tester.widget<TextField>(find.byType(TextField)).enabled,
+            isFalse,
+          );
+          await tester.tap(find.text('Retry setup'));
+          await tester.pumpAndSettle();
+          expect(
+            find.text("Couldn't resume setup. Please try again."),
+            findsOneWidget,
+          );
+          await tester.tap(find.text('Retry setup'));
+          await tester.pumpAndSettle();
+          expect(imports, 1);
+          expect(reloads, 2);
+          expect(find.text('Recovering wallet...'), findsOneWidget);
+          expect(_finishButton(tester).onPressed, isNull);
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
+
+  testWidgets(
+    'lock during setup reloads before router refresh exposes unlock',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      final security = _RecoverySecurity();
+      final refresh = RouterRefreshController();
+      addTearDown(refresh.dispose);
+      final reload = Completer<void>();
+      var reloads = 0;
+      var refreshes = 0;
+      refresh.addListener(() => refreshes++);
+      await tester.pumpWidget(
+        _screenHarness(
+          CustomiseAccountScreen(
+            args: const CustomiseAccountArgs(
+              setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
+              pendingPassword: 'Password1!',
+            ),
+            onFinish: (_, _) async {
+              security.lock();
+              refresh.requestRefresh();
+              throw WalletAccountSetupInterruptedException(
+                null,
+                StateError('locked'),
+              );
+            },
+          ),
+          overrides: [
+            appSecurityProvider.overrideWith(() => security),
+            routerRefreshProvider.overrideWithValue(refresh),
+            appBootstrapRetryProvider.overrideWithValue(() async {
+              reloads++;
+              await reload.future;
+            }),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      ProviderScope.containerOf(
+        tester.element(find.byType(CustomiseAccountScreen)),
+      ).read(appSecurityProvider);
+      await tester.tap(
+        find.byKey(const ValueKey('customise_account_finish_button')),
+      );
+      await tester.pump();
+      expect(reloads, 1);
+      expect(refreshes, 0);
+      expect(find.text('Recovering wallet...'), findsOneWidget);
+      reload.complete();
+      await tester.pumpAndSettle();
+      expect(refreshes, 1);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   setUpAll(_loadAppFonts);
 
@@ -305,6 +479,7 @@ void main() {
     await tester.pumpWidget(
       _screenHarness(
         CustomiseAccountScreen(
+          random: _SequenceRandom([0, 0, 0]),
           args: const CustomiseAccountArgs(
             setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
           ),
@@ -418,10 +593,11 @@ Future<void> _setDesktopViewport(WidgetTester tester) async {
   addTearDown(() async => tester.binding.setSurfaceSize(null));
 }
 
-Widget _screenHarness(Widget child) {
+Widget _screenHarness(Widget child, {List<Override> overrides = const []}) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+      ...overrides,
     ],
     child: MaterialApp(
       home: AppTheme(
@@ -466,3 +642,12 @@ const _setupArgsByFlow = <SetPasswordScreenArgs>[
     birthdayHeight: 2500000,
   ),
 ];
+
+class _RecoverySecurity extends AppSecurityNotifier {
+  @override
+  AppSecurityState build() =>
+      const AppSecurityState(isPasswordConfigured: true, isUnlocked: true);
+
+  @override
+  void lock() => state = state.copyWith(isUnlocked: false);
+}
