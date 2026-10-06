@@ -189,6 +189,22 @@ fn privately_recovered(
     record_fee: Option<u64>,
     transparent_outputs: bool,
 ) -> Recovered {
+    privately_recovered_with_metadata_fee(
+        inputs,
+        shielded,
+        record_fee,
+        transparent_outputs,
+        WholeTransactionFee::Exact(zat(FEE)),
+    )
+}
+
+fn privately_recovered_with_metadata_fee(
+    inputs: [u64; 2],
+    shielded: u64,
+    record_fee: Option<u64>,
+    transparent_outputs: bool,
+    metadata_fee: WholeTransactionFee,
+) -> Recovered {
     configure_regtest_nu6_3_activation_height(NU6_3).unwrap();
     let mut st = TestBuilder::new()
         .with_network(regtest())
@@ -257,7 +273,7 @@ fn privately_recovered(
     // Private transparent recovery publishes both owned inputs of the
     // shielding, with its whole-transaction metadata.
     let metadata = TransactionMetadata {
-        fee: WholeTransactionFee::Exact(zat(FEE)),
+        fee: metadata_fee,
         transparent_input_count: 2,
         has_shielded_components: true,
     };
@@ -481,17 +497,30 @@ fn assert_not_a_shielding(recovered: &Recovered) {
     assert!(!detail.details_complete);
 }
 
-/// The Enhance publisher reports no fee for a transaction with transparent
-/// data, so its records recover the memo and shape but not the fee the library
-/// cross-checks: the history stays provisional, and Vizor keeps showing its
-/// provisional fallback rather than a shielding.
+/// An absent Enhance fee does not negate the exact fee carried by qualified
+/// transparent recovery. Its complete shape still supports the library's
+/// final net reconstruction.
 #[test]
-fn a_shielding_whose_enhance_record_carries_no_fee_is_not_shown_as_shielded() {
-    assert_not_a_shielding(&privately_recovered(
+fn a_shielding_with_no_enhance_fee_uses_the_qualified_transparent_fee() {
+    let recovered = privately_recovered([120_000, 80_000], 180_000, None, false);
+    let row = history_row(&recovered);
+    assert_eq!(row.tx_kind, "shielded");
+    assert_eq!(row.fee_state, TransactionFeeState::Known);
+    assert_eq!(row.fee, FEE);
+    assert!(row.details_complete);
+    assert!(!row.provisional);
+}
+
+/// Neither private source supplies an exact fee, so the library cannot
+/// establish a complete net reconstruction and Vizor keeps its fallback.
+#[test]
+fn a_shielding_with_no_qualified_fee_is_not_shown_as_shielded() {
+    assert_not_a_shielding(&privately_recovered_with_metadata_fee(
         [120_000, 80_000],
         180_000,
         None,
         false,
+        WholeTransactionFee::Unknown,
     ));
 }
 

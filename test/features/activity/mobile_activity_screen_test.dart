@@ -64,21 +64,24 @@ rust_sync.TransactionInfo _tx({
   String displayPool = 'shielded',
   BigInt? fee,
   bool amountIncludesFee = false,
+  int accountBalanceDelta = 0,
+  bool isTransparent = false,
+  bool? provisional,
 }) {
   return rust_sync.TransactionInfo(
     txidHex: txidHex,
     minedHeight: minedHeight ?? BigInt.one,
     expiredUnmined: expiredUnmined,
-    accountBalanceDelta: 0,
+    accountBalanceDelta: accountBalanceDelta,
     fee: fee ?? BigInt.zero,
     feeState: fee == null
         ? rust_sync.TransactionFeeState.notApplicable
         : rust_sync.TransactionFeeState.known,
     detailsComplete: !amountIncludesFee,
-    provisional: amountIncludesFee,
+    provisional: provisional ?? amountIncludesFee,
     amountIncludesFee: amountIncludesFee,
     blockTime: blockTime,
-    isTransparent: false,
+    isTransparent: isTransparent,
     txKind: kind,
     displayAmount: displayAmount ?? BigInt.from(100000000),
     displayPool: displayPool,
@@ -497,12 +500,15 @@ void main() {
     await tester.pumpWidget(
       _app(
         (_) async => [
-          // A recovered self-shield: the whole balance change is the fee.
+          // An established transparent self-transfer: the whole change is its fee.
           _tx(
             txidHex: 'aa',
             blockTime: blockTime,
             kind: 'sent',
-            displayPool: 'unknown',
+            displayPool: 'transparent',
+            isTransparent: true,
+            provisional: false,
+            accountBalanceDelta: -65000,
             displayAmount: BigInt.from(65000),
             fee: BigInt.from(65000),
             amountIncludesFee: true,
