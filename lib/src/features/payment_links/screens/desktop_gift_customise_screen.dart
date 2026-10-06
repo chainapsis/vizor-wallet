@@ -50,6 +50,7 @@ class _DesktopGiftCustomiseState
         await completeGiftClaimWalletSetup(
           ref,
           password: widget.args.passcode,
+          passwordInputSource: widget.args.passwordInputSource,
           accountName: name,
           profilePictureId: profilePictureId,
           inspection: widget.args.inspection,

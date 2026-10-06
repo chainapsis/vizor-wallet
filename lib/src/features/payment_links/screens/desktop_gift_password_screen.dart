@@ -11,14 +11,18 @@ class DesktopGiftPasswordScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) => SetPasswordScreen.gift(
-    onContinue: (password, _) async {
+    onContinue: (password, inputSource) async {
       final inspection = ref.read(giftClaimFlowProvider)?.inspection;
       if (inspection == null) {
         throw StateError('The gift card is no longer open.');
       }
       ref
           .read(giftClaimFlowProvider.notifier)
-          .beginWalletSetup(inspection, passcode: password);
+          .beginWalletSetup(
+            inspection,
+            passcode: password,
+            passwordInputSource: inputSource,
+          );
       context.go('/gift/customise');
     },
   );

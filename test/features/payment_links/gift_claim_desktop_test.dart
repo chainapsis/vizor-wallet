@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -8,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/core/input/app_password_input_source.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_toast.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
@@ -25,6 +27,7 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/wallet_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../fakes/fake_password_input_source.dart';
 import '../../support/payment_link_navigation_support.dart';
 import '../../support/payment_links_screen_support.dart'
     show incomingLink, FakePaymentLinkClipboard, loadPaymentLinksTestFonts;
@@ -78,6 +81,8 @@ void main() {
   late _Accounts accounts;
   late _Security security;
   late PaymentLinkReceivedStore received;
+  late FakePlatform inputPlatform;
+  late FakeStore inputStore;
 
   Future<void> pump(
     WidgetTester tester, {
@@ -96,6 +101,14 @@ void main() {
       ..broadcastGate = broadcast;
     accounts = _Accounts(existing: existing);
     security = _Security(existing: existing);
+    inputPlatform = FakePlatform();
+    inputStore = FakeStore();
+    final inputSource = AppPasswordInputSource(
+      enabled: true,
+      platform: inputPlatform,
+      store: inputStore,
+    );
+    addTearDown(inputSource.dispose);
     container = ProviderContainer(
       overrides: [
         appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
@@ -103,6 +116,7 @@ void main() {
           appBootstrapRetryProvider.overrideWithValue(retryBootstrap),
         accountProvider.overrideWith(() => accounts),
         appSecurityProvider.overrideWith(() => security),
+        appPasswordInputSourceProvider.overrideWithValue(inputSource),
         syncProvider.overrideWith(_IdleSync.new),
         giftCardEntryPriceProvider.overrideWith((_) async => null),
         paymentLinkOperationsProvider.overrideWithValue(operations),
@@ -293,6 +307,11 @@ void main() {
           '/gift/customise',
         );
         expect(accounts.creationCalls, 0);
+        expect(inputStore.writes, 0);
+        inputPlatform.current = const {
+          'platform': 'macos',
+          'id': 'another.layout',
+        };
         await tester.enterText(
           keyed('customise_account_name_field'),
           'My desktop gift',
@@ -302,6 +321,11 @@ void main() {
         expect(find.text('Gift Home'), findsOneWidget);
         expect(accounts.creationCalls, 1);
         expect(security.prepareCalls, existing ? 0 : 1);
+        expect(security.state.isUnlocked, isTrue);
+        expect(inputStore.writes, existing ? 0 : 1);
+        if (!existing) {
+          expect(jsonDecode(inputStore.value!)['source'], source);
+        }
         expect(
           accounts.state.requireValue.accounts.map((a) => a.uuid),
           existing ? ['original', 'new-account'] : ['new-account'],
@@ -318,6 +342,46 @@ void main() {
       },
     );
   }
+
+  testWidgets(
+    'failed Gift setup remembers the submitted input source only after retry commits',
+    (tester) async {
+      await pump(tester, clipboard: incomingLink.toUri().toString());
+      await paste(tester);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Create a wallet to claim'));
+      await tester.pumpAndSettle();
+      const submittedSource = {'platform': 'windows', 'hkl': 'test.layout'};
+      inputPlatform.current = submittedSource;
+      await tester.enterText(find.byType(EditableText).at(0), 'Password1!');
+      await tester.enterText(find.byType(EditableText).at(1), 'Password1!');
+      await tester.pump();
+      await tester.tap(keyed('set_password_submit_button'));
+      await tester.pumpAndSettle();
+      expect(inputStore.writes, 0);
+      security.prepareError = StateError('Password preparation unavailable');
+      await tester.tap(keyed('customise_account_finish_button'));
+      await tester.pumpAndSettle();
+      expect(container.read(_routerProvider).state.uri.path, '/gift/customise');
+      expect(accounts.creationCalls, 0);
+      expect(inputStore.writes, 0);
+      expect(security.state.isUnlocked, isFalse);
+
+      inputPlatform.current = const {
+        'platform': 'windows',
+        'hkl': 'another.layout',
+      };
+      security.prepareError = null;
+      await tester.tap(keyed('customise_account_finish_button'));
+      await tester.pumpAndSettle();
+      expect(find.text('Gift Home'), findsOneWidget);
+      expect(accounts.creationCalls, 1);
+      expect(security.state.isUnlocked, isTrue);
+      expect(inputStore.writes, 1);
+      expect(jsonDecode(inputStore.value!)['source'], submittedSource);
+      container.read(paymentLinkClaimCoordinatorProvider).pause();
+    },
+  );
 }
 
 class _GiftOperations extends PendingClaimPaymentLinkOperations {
@@ -533,6 +597,7 @@ class _Security extends AppSecurityNotifier {
 
   int prepareCalls = 0;
   int rollbackCalls = 0;
+  Object? prepareError;
   @override
   Future<void> rollbackPasswordSetup() async {
     rollbackCalls++;
@@ -546,6 +611,7 @@ class _Security extends AppSecurityNotifier {
   @override
   Future<void> preparePasswordSetup(String password) async {
     prepareCalls++;
+    if (prepareError case final error?) throw error;
     _passcode = password;
   }
 

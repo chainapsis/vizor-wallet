@@ -701,6 +701,7 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
       return DesktopGiftCustomiseScreen(
         args: GiftCustomiseAccountArgs(
           passcode: setup.setupPasscode,
+          passwordInputSource: setup.setupPasswordInputSource,
           inspection: setup.inspection!,
         ),
       );

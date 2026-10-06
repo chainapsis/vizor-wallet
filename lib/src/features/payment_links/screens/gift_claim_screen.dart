@@ -390,20 +390,6 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      if (!checking)
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: AppBackLink(
-                            key: const ValueKey('gift_claim_close_button'),
-                            label: flow == null
-                                ? (widget.addingAccount
-                                      ? 'Add account'
-                                      : 'Welcome')
-                                : 'Go back',
-                            onTap: _close,
-                          ),
-                        ),
-                      const SizedBox(height: AppSpacing.md),
                       if (flow == null) ...[
                         Text(
                           widget.addingAccount
@@ -501,6 +487,18 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
               ),
             ),
           ),
+          if (!checking)
+            PositionedDirectional(
+              start: AppSpacing.md,
+              top: AppSpacing.md,
+              child: AppBackLink(
+                key: const ValueKey('gift_claim_close_button'),
+                label: flow == null
+                    ? (widget.addingAccount ? 'Add account' : 'Welcome')
+                    : 'Go back',
+                onTap: _close,
+              ),
+            ),
           if (_desktopLongSyncWarning != null)
             PaymentLinkLongSyncWarningModal(
               onConfirm: () {
