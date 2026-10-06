@@ -121,6 +121,14 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     platform: TargetPlatform.macOS,
   ),
   FigmaCompareScenario(
+    id: 'desktop-backup-save-error-bip39-end',
+    description:
+        'Desktop BIP39 save failure scrolled to the full birthday card',
+    builder: buildDesktopBackupSaveErrorBip39Capture,
+    scrollToEnd: true,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
     id: 'desktop-backup-save-error',
     description: 'Desktop backup completion after storage failure',
     builder: buildDesktopBackupSaveErrorCapture,

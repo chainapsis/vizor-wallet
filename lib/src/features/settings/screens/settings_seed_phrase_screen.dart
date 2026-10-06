@@ -569,6 +569,16 @@ class _SettingsSeedPhraseScreenState
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
+        if (_backupError != null) ...[
+          Text(
+            _backupError!,
+            textAlign: TextAlign.center,
+            style: AppTypography.bodyMedium.copyWith(
+              color: context.colors.text.destructive,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+        ],
         if (isIntro) ...[
           AppButton(
             key: const ValueKey('desktop_seed_backup_intro_continue'),
@@ -601,16 +611,6 @@ class _SettingsSeedPhraseScreenState
                 : () => _saveBackup(account!.uuid, snooze: false),
             child: const Text('I’ve written it down'),
           ),
-        if (_backupError != null) ...[
-          const SizedBox(height: AppSpacing.xs),
-          Text(
-            _backupError!,
-            textAlign: TextAlign.center,
-            style: AppTypography.bodyMedium.copyWith(
-              color: context.colors.text.destructive,
-            ),
-          ),
-        ],
       ],
     );
   }
@@ -649,6 +649,9 @@ class _SettingsSeedPhraseScreenState
             onBeforeNavigateBack: () => _clearSensitiveState(),
             navigationBlocked: _savingBackup,
             bottomActions: _buildBackupActions(account),
+            compactBottomSpacing:
+                _backupError != null &&
+                _stage == _SettingsSeedPhraseStage.reveal,
             child: switch (_stage) {
               _SettingsSeedPhraseStage.intro => _buildBackupIntro(),
               _SettingsSeedPhraseStage.password => Center(
@@ -703,12 +706,14 @@ class _SettingsSeedPhrasePane extends StatelessWidget {
     required this.child,
     this.bottomActions,
     this.navigationBlocked = false,
+    this.compactBottomSpacing = false,
   });
 
   final VoidCallback onBeforeNavigateBack;
   final Widget child;
   final Widget? bottomActions;
   final bool navigationBlocked;
+  final bool compactBottomSpacing;
 
   @override
   Widget build(BuildContext context) {
@@ -725,11 +730,13 @@ class _SettingsSeedPhrasePane extends StatelessWidget {
           ),
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(
+              // Use the footer's outer spacing for retry feedback before
+              // reducing the viewport available to the recovery cards.
+              padding: EdgeInsets.fromLTRB(
                 AppSpacing.md,
                 0,
                 AppSpacing.md,
-                AppSpacing.md,
+                compactBottomSpacing ? AppSpacing.xs : AppSpacing.md,
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -737,7 +744,11 @@ class _SettingsSeedPhrasePane extends StatelessWidget {
                   Expanded(child: child),
                   if (bottomActions != null)
                     Padding(
-                      padding: const EdgeInsets.only(top: AppSpacing.sm),
+                      padding: EdgeInsets.only(
+                        top: compactBottomSpacing
+                            ? AppSpacing.xs
+                            : AppSpacing.sm,
+                      ),
                       child: bottomActions,
                     ),
                 ],

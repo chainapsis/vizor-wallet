@@ -681,6 +681,54 @@ void main() {
     },
   );
 
+  testWidgets('failed backup save keeps the standard birthday card in view', (
+    tester,
+  ) async {
+    await loadFigmaCompareFonts();
+    await tester.binding.setSurfaceSize(const Size(1080, 720));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final privacy = SensitivePrivacyOverlayController(initiallySafe: true);
+    addTearDown(privacy.dispose);
+    final account = _FakeAccountNotifier(
+      backupPending: true,
+      bip39Passphrase: '',
+    )..failBackupSave = true;
+    await tester.pumpWidget(
+      _harness(privacyController: privacy, accountNotifier: () => account),
+    );
+    await tester.pump();
+    await tester.enterText(find.byType(EditableText), 'Correct123!');
+    await tester.pump();
+    await tester.tap(find.bySemanticsLabel('Confirm password'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    final firstWord = find.byKey(const ValueKey('settings_seed_phrase_word_1'));
+    final wordBounds = tester.getRect(firstWord);
+    final completeButton = find.byKey(const ValueKey('desktop_seed_backed_up'));
+    await tester.tap(completeButton);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    final birthdayCard = find
+        .ancestor(
+          of: find.text('Birthday block height'),
+          matching: find.byType(Container),
+        )
+        .first;
+    final viewport = tester.getRect(find.byType(SingleChildScrollView));
+    expect(
+      tester.getRect(birthdayCard).bottom,
+      lessThanOrEqualTo(viewport.bottom),
+      reason: 'Retry feedback must not clip the birthday card at 1080 × 720.',
+    );
+    expect(tester.getRect(firstWord), wordBounds);
+    expect(
+      find.text('Couldn’t save that. Try again.').hitTestable(),
+      findsOneWidget,
+    );
+    expect(completeButton.hitTestable(), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('reveals the requested account without making it active', (
     tester,
   ) async {
