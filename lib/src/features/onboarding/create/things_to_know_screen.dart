@@ -7,23 +7,38 @@ import '../../../core/widgets/app_icon.dart';
 import 'onboarding_split_view.dart';
 
 class ThingsToKnowScreen extends StatelessWidget {
-  const ThingsToKnowScreen({super.key});
+  const ThingsToKnowScreen({
+    this.onContinue,
+    this.backTarget,
+    this.actionsEnabled = true,
+    super.key,
+  });
+  final VoidCallback? onContinue;
+  final OnboardingBackTarget? backTarget;
+  final bool actionsEnabled;
 
   @override
   Widget build(BuildContext context) {
     return OnboardingTrailingPane(
-      backTarget: OnboardingBackTarget.route(
-        label: OnboardingStep.addressTypes.label,
-        routePath: OnboardingStep.addressTypes.routePath,
-      ),
+      backTarget:
+          backTarget ??
+          OnboardingBackTarget.route(
+            label: OnboardingStep.addressTypes.label,
+            routePath: OnboardingStep.addressTypes.routePath,
+          ),
       bodyPadding: EdgeInsets.zero,
-      child: const _HeroLayout(),
+      child: _HeroLayout(
+        onContinue: onContinue,
+        actionsEnabled: actionsEnabled,
+      ),
     );
   }
 }
 
 class _HeroLayout extends StatelessWidget {
-  const _HeroLayout();
+  const _HeroLayout({this.onContinue, required this.actionsEnabled});
+  final VoidCallback? onContinue;
+  final bool actionsEnabled;
 
   static const double _contentAreaWidth = 420;
   static const double _contentPaddingX = 12;
@@ -31,7 +46,7 @@ class _HeroLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Column(
+    return Column(
       children: [
         Expanded(
           child: Center(
@@ -44,8 +59,11 @@ class _HeroLayout extends StatelessWidget {
                 ),
                 child: Column(
                   children: [
-                    Expanded(child: _OnPageContent()),
-                    _ButtonStack(),
+                    const Expanded(child: _OnPageContent()),
+                    _ButtonStack(
+                      onContinue: onContinue,
+                      actionsEnabled: actionsEnabled,
+                    ),
                   ],
                 ),
               ),
@@ -234,14 +252,20 @@ class _InfoSection extends StatelessWidget {
 }
 
 class _ButtonStack extends StatelessWidget {
-  const _ButtonStack();
+  const _ButtonStack({this.onContinue, required this.actionsEnabled});
+  final VoidCallback? onContinue;
+  final bool actionsEnabled;
 
   static const double _buttonWidth = 196;
 
   @override
   Widget build(BuildContext context) {
     return AppButton(
-      onPressed: () => context.go(OnboardingStep.secretPassphrase.routePath),
+      key: const ValueKey('desktop_education_continue'),
+      onPressed: actionsEnabled
+          ? onContinue ??
+                () => context.go(OnboardingStep.secretPassphrase.routePath)
+          : null,
       variant: AppButtonVariant.primary,
       minWidth: _buttonWidth,
       trailing: const AppIcon(AppIcons.chevronForward),

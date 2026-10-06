@@ -111,6 +111,31 @@ class WidgetbookApp extends StatelessWidget {
               name: 'Onboarding',
               children: [
                 WidgetbookComponent(
+                  name: 'Home setup guidance - Desktop',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Backup and education',
+                      builder: buildDesktopHomeSetupUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Initial scan',
+                      builder: buildDesktopHomeSetupImportingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Zcash introduction',
+                      builder: buildDesktopZcashEducationIntroUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Address types',
+                      builder: buildDesktopZcashEducationAddressTypesUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Things to know',
+                      builder: buildDesktopZcashEducationThingsToKnowUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
                   name: 'Gift onboarding - Desktop',
                   useCases: [
                     WidgetbookUseCase(

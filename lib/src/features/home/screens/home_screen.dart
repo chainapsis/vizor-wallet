@@ -47,6 +47,7 @@ import '../../migration/widgets/ironwood_migration_announcement_modal.dart';
 import '../../swap/models/swap_activity_navigation.dart';
 import '../../swap/models/swap_fiat_value_formatting.dart';
 import '../../swap/providers/swap_activity_tracker.dart';
+import '../widgets/desktop_home_setup_carousel.dart';
 import '../../swap/providers/swap_state_provider.dart';
 import '../services/transparent_shielding_service.dart';
 import '../widgets/keystone_shield_signing_overlay.dart';
@@ -628,6 +629,7 @@ class _HomePaneState extends ConsumerState<_HomePane> {
     );
 
     return _HomeDesktopPane(
+      hasSetupReminders: ref.watch(showDesktopHomeSetupCarouselProvider),
       isImporting: isImporting,
       importingAccountName: activeAccountName,
       hasBalance: hasBalance,
@@ -1163,6 +1165,7 @@ Offset _positionShieldErrorTooltip(TooltipPositionContext context) {
 class _HomeDesktopPane extends StatelessWidget {
   const _HomeDesktopPane({
     required this.isImporting,
+    required this.hasSetupReminders,
     required this.importingAccountName,
     required this.hasBalance,
     required this.showsIronwoodOnlyBalance,
@@ -1191,6 +1194,7 @@ class _HomeDesktopPane extends StatelessWidget {
   });
 
   final bool isImporting;
+  final bool hasSetupReminders;
   final String? importingAccountName;
   final bool hasBalance;
   final bool showsIronwoodOnlyBalance;
@@ -1283,6 +1287,13 @@ class _HomeDesktopPane extends StatelessWidget {
                     child: _HomeNoticeCard(data: notice!),
                   ),
                 ],
+                if (hasSetupReminders)
+                  const SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.only(top: AppSpacing.xs),
+                      child: Center(child: DesktopHomeSetupCarousel()),
+                    ),
+                  ),
                 SliverPadding(
                   padding: EdgeInsets.only(
                     top: hasMigrationHomeState
@@ -1313,32 +1324,35 @@ class _HomeDesktopPane extends StatelessWidget {
           );
         }
 
-        return Stack(
-          fit: StackFit.expand,
-          children: [
-            Positioned.fill(
-              top: contentTop,
-              child: Align(
-                alignment: Alignment.topCenter,
-                child: SizedBox(
+        return AppPaneScrollbar(
+          builder: (context, controller) => SingleChildScrollView(
+            controller: controller,
+            padding: EdgeInsets.only(top: contentTop),
+            child: Column(
+              children: [
+                SizedBox(
                   key: const ValueKey('home_desktop_content'),
                   width: 420,
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.s,
-                      vertical: AppSpacing.sm,
+                    padding: EdgeInsets.fromLTRB(
+                      AppSpacing.s,
+                      AppSpacing.sm,
+                      AppSpacing.s,
+                      hasSetupReminders ? 0 : AppSpacing.sm,
                     ),
                     child: Consumer(
                       builder: (context, ref, _) => _HomeImportingContent(
                         progress: ref.watch(syncDisplayPercentageProvider),
                         accountName: importingAccountName,
+                        height: hasSetupReminders ? 520 : 624,
                       ),
                     ),
                   ),
                 ),
-              ),
+                const DesktopHomeSetupCarousel(),
+              ],
             ),
-          ],
+          ),
         );
       },
     );
@@ -1372,10 +1386,15 @@ class _HomeDesktopCenteredSliver extends StatelessWidget {
 }
 
 class _HomeImportingContent extends StatelessWidget {
-  const _HomeImportingContent({required this.progress, this.accountName});
+  const _HomeImportingContent({
+    required this.progress,
+    this.accountName,
+    this.height = 624,
+  });
 
   final double progress;
   final String? accountName;
+  final double height;
 
   @override
   Widget build(BuildContext context) {
@@ -1388,7 +1407,7 @@ class _HomeImportingContent extends StatelessWidget {
         : 'It might take some time.\nKeep Vizor open & running.';
     return SizedBox(
       width: 396,
-      height: 624,
+      height: height,
       child: Stack(
         children: [
           Positioned(

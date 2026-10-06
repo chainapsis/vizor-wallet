@@ -85,6 +85,36 @@ class FigmaCompareScenario {
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
   FigmaCompareScenario(
+    id: 'desktop-home-setup',
+    description: 'Desktop Home backup and education reminders',
+    builder: buildDesktopHomeSetupUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-home-setup-importing',
+    description: 'Desktop setup reminders during the initial scan',
+    builder: buildDesktopHomeSetupImportingUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-gift-education',
+    description: 'Desktop post-setup Zcash introduction',
+    builder: buildDesktopZcashEducationIntroUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-gift-education-address-types',
+    description: 'Desktop post-setup address types',
+    builder: buildDesktopZcashEducationAddressTypesUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-gift-education-things-to-know',
+    description: 'Desktop post-setup things to know',
+    builder: buildDesktopZcashEducationThingsToKnowUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
     id: 'desktop-gift-entry',
     description: 'Gift Card entry',
     builder: buildDesktopGiftEntryUseCase,
