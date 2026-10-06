@@ -156,14 +156,37 @@ Android and Dart: `--dart-define=VIZOR_DEEPLINK_BASE_URL` (default
   property or environment variable — a second knob could disagree with
   the compiled-in Dart origin and silently break verified app links.
   Invoking Gradle directly (no dart-defines) falls back to the default.
-- iOS is the exception: it keeps `VIZOR_DEEPLINK_HOST` in the Flutter
-  xcconfigs (`ios/Flutter/{Debug,Profile,Release}.xcconfig`), which feed
-  `Info.plist` and `Runner.entitlements`. Change the host there too.
+- iOS is the exception: it keeps `VIZOR_DEEPLINK_HOST` in
+  `ios/Flutter/DeeplinkHost.xcconfig`, which the Runner xcconfigs and the
+  App Clip's `ios/Flutter/VizorClip.xcconfig` include. It feeds both
+  `Info.plist` files, `Runner.entitlements`, and `VizorClip.entitlements`.
+  Change the host there too.
 - The Android intent-filter claims the host with no path constraint, so
   the bare origin (empty path on Android), `/`, and
   `/payment-links/open` all open the app. Path filtering belongs to
   Dart's `classifyIncomingLink`, which drops unknown paths on the origin
   silently.
+
+### iOS App Clip gift handoff
+
+The `VizorClip` target (`com.keplr.vizor.Clip`) lets a person without Vizor
+open a Gift Card link, see the gift, and install Vizor from the system
+`SKOverlay` sheet. The App Clip saves the link in the keychain through
+`ios/Shared/AppClipGiftHandoff.swift`; on its first user-visible launch the
+full app reads and deletes it (`SceneDelegate` calls
+`IncomingUriChannelBridge.handlePendingAppClipGift`) and queues it like any
+incoming universal link, so Dart's existing `/gift` flow takes over.
+
+- The link is a bearer secret. Keep it in the keychain only: never an app
+  group container, `UserDefaults`, logs, or the App Clip's network requests.
+  The App Clip makes no network requests at all.
+- App Clips cannot use `keychain-access-groups`. Never set
+  `kSecAttrAccessGroup` on the handoff item; the parent and associated App
+  Clip entitlements grant the full app access (iOS 15.4+).
+- The App Clip's preview (`GiftLinkPreview`) is display-only. Dart remains
+  the only parser that decides whether a link can be claimed.
+- Release setup, App Store Connect experiences, and device testing are in
+  `docs/app-clip-gift-handoff.md`.
 
 ## Mainnet Block-Time Table
 

@@ -6,6 +6,10 @@
 	<array>
 		<string>group.com.keplr.vizor</string>
 	</array>
+	<key>com.apple.developer.associated-appclip-app-identifiers</key>
+	<array>
+		<string>$(AppIdentifierPrefix)com.keplr.vizor.Clip</string>
+	</array>
 	<key>com.apple.developer.associated-domains</key>
 	<array>
 		<string>applinks:$(VIZOR_DEEPLINK_HOST)</string>

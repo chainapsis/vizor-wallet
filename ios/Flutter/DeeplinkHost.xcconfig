@@ -1,0 +1,5 @@
+// The HTTPS host Vizor claims for universal links and App Clip invocations.
+// Shared by the Runner and VizorClip targets so their associated domains and
+// native allowlists cannot disagree. Keep it aligned with the Dart
+// VIZOR_DEEPLINK_BASE_URL define (see AGENTS.md "Deep-link Host").
+VIZOR_DEEPLINK_HOST = link.vizor.cash

@@ -121,9 +121,10 @@ For a mobile development build, keep the Dart and native values aligned:
   into the manifest and native allowlist, so there is no separate environment
   variable or Gradle property to set. Without the define, Android falls back to
   the production origin.
-- iOS defaults `VIZOR_DEEPLINK_HOST` to `link.vizor.cash`; set the Xcode build
-  setting to `link-dev.vizor.cash` for the development-signed build so its
-  associated-domain entitlement and native allowlist match the Dart value.
+- iOS defaults `VIZOR_DEEPLINK_HOST` to `link.vizor.cash` in
+  `ios/Flutter/DeeplinkHost.xcconfig`; set it to `link-dev.vizor.cash` for the
+  development-signed build so the associated-domain entitlements and native
+  allowlists of both the app and the App Clip match the Dart value.
 
 Verify the public association files before a device run:
 

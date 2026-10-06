@@ -44,6 +44,12 @@
 		B6A100022F9A000100000001 /* BackgroundMigrationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6A100012F9A000100000001 /* BackgroundMigrationManager.swift */; };
 		BIOUNLK01ED2DC5600515810 /* BiometricUnlockHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = BIOUNLK00ED2DC5600515810 /* BiometricUnlockHandler.swift */; };
 		DATEPCK01ED2DC5600515810 /* DatePickerHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = DATEPCK00ED2DC5600515810 /* DatePickerHandler.swift */; };
+		APPCLIP00000000000000011 /* VizorClip.app in Embed App Clips */ = {isa = PBXBuildFile; fileRef = APPCLIP00000000000000001 /* VizorClip.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		APPCLIP00000000000000014 /* AppClipGiftHandoff.swift in Sources */ = {isa = PBXBuildFile; fileRef = APPCLIP00000000000000013 /* AppClipGiftHandoff.swift */; };
+		APPCLIP00000000000000015 /* AppClipGiftHandoff.swift in Sources */ = {isa = PBXBuildFile; fileRef = APPCLIP00000000000000013 /* AppClipGiftHandoff.swift */; };
+		APPCLIP00000000000000017 /* GiftLinkPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = APPCLIP00000000000000016 /* GiftLinkPreview.swift */; };
+		APPCLIP00000000000000018 /* GiftLinkPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = APPCLIP00000000000000016 /* GiftLinkPreview.swift */; };
+		APPCLIP0000000000000001A /* AppClipGiftHandoffTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = APPCLIP00000000000000019 /* AppClipGiftHandoffTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -60,6 +66,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 97C146ED1CF9000F007C117D;
 			remoteInfo = Runner;
+		};
+		APPCLIP0000000000000000E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 97C146E61CF9000F007C117D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = APPCLIP00000000000000002;
+			remoteInfo = VizorClip;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -83,6 +96,17 @@
 			files = (
 			);
 			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		APPCLIP00000000000000010 /* Embed App Clips */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/AppClips";
+			dstSubfolderSpec = 16;
+			files = (
+				APPCLIP00000000000000011 /* VizorClip.app in Embed App Clips */,
+			);
+			name = "Embed App Clips";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
@@ -142,6 +166,13 @@
 		EF9D05AE0B7A994911C4F6F2 /* Pods-RunnerTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.debug.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.debug.xcconfig"; sourceTree = "<group>"; };
 		F754445942A6FAE31362F45C /* LiveActivitiesAppAttributes.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LiveActivitiesAppAttributes.swift; sourceTree = "<group>"; };
 		ZSYNC000ED2DC5600515810 /* zcash_sync.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = zcash_sync.h; sourceTree = "<group>"; };
+		APPCLIP00000000000000001 /* VizorClip.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VizorClip.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		APPCLIP00000000000000008 /* VizorClip.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = VizorClip.entitlements; sourceTree = "<group>"; };
+		APPCLIP00000000000000009 /* VizorClip.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = VizorClip.xcconfig; path = Flutter/VizorClip.xcconfig; sourceTree = "<group>"; };
+		APPCLIP0000000000000001B /* DeeplinkHost.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = DeeplinkHost.xcconfig; path = Flutter/DeeplinkHost.xcconfig; sourceTree = "<group>"; };
+		APPCLIP00000000000000013 /* AppClipGiftHandoff.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppClipGiftHandoff.swift; sourceTree = "<group>"; };
+		APPCLIP00000000000000016 /* GiftLinkPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GiftLinkPreview.swift; sourceTree = "<group>"; };
+		APPCLIP00000000000000019 /* AppClipGiftHandoffTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppClipGiftHandoffTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -151,6 +182,13 @@
 				Info.plist,
 			);
 			target = 265BA9A82F7BDB1D00287691 /* SyncWidgetExtension */;
+		};
+		APPCLIP00000000000000007 /* Exceptions for "VizorClip" folder in "VizorClip" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = APPCLIP00000000000000002 /* VizorClip */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -165,6 +203,18 @@
 			explicitFolders = (
 			);
 			path = SyncWidget;
+			sourceTree = "<group>";
+		};
+		APPCLIP00000000000000006 /* VizorClip */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				APPCLIP00000000000000007 /* Exceptions for "VizorClip" folder in "VizorClip" target */,
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = VizorClip;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -196,6 +246,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		APPCLIP00000000000000004 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -217,6 +274,7 @@
 				LEDGERIOS000000000000002 /* LedgerMobileHandlerTests.swift */,
 				OUTBOX000000000000000003 /* BackgroundMigrationOutboxTests.swift */,
 				OUTBOX000000000000000008 /* BackgroundMigrationOutboxExecutionGateTests.swift */,
+				APPCLIP00000000000000019 /* AppClipGiftHandoffTests.swift */,
 			);
 			path = RunnerTests;
 			sourceTree = "<group>";
@@ -242,6 +300,8 @@
 				7AFA3C8E1D35360C0083082E /* Release.xcconfig */,
 				249021D5217E4FDB00AE95B9 /* Profile.xcconfig */,
 				9740EEB31CF90195004384FC /* Generated.xcconfig */,
+				APPCLIP0000000000000001B /* DeeplinkHost.xcconfig */,
+				APPCLIP00000000000000009 /* VizorClip.xcconfig */,
 			);
 			name = Flutter;
 			sourceTree = "<group>";
@@ -253,6 +313,9 @@
 				9740EEB11CF90186004384FC /* Flutter */,
 				97C146F01CF9000F007C117D /* Runner */,
 				265BA9AE2F7BDB1D00287691 /* SyncWidget */,
+				APPCLIP00000000000000008 /* VizorClip.entitlements */,
+				APPCLIP00000000000000006 /* VizorClip */,
+				APPCLIP00000000000000012 /* Shared */,
 				97C146EF1CF9000F007C117D /* Products */,
 				331C8082294A63A400263BE5 /* RunnerTests */,
 				5F364B3313578EB70C166D3D /* Pods */,
@@ -266,6 +329,7 @@
 				97C146EE1CF9000F007C117D /* Runner.app */,
 				331C8081294A63A400263BE5 /* RunnerTests.xctest */,
 				265BA9A92F7BDB1D00287691 /* SyncWidgetExtension.appex */,
+				APPCLIP00000000000000001 /* VizorClip.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -306,6 +370,15 @@
 				F754445942A6FAE31362F45C /* LiveActivitiesAppAttributes.swift */,
 			);
 			path = Runner;
+			sourceTree = "<group>";
+		};
+		APPCLIP00000000000000012 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				APPCLIP00000000000000013 /* AppClipGiftHandoff.swift */,
+				APPCLIP00000000000000016 /* GiftLinkPreview.swift */,
+			);
+			path = Shared;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -361,6 +434,7 @@
 				97C146EC1CF9000F007C117D /* Resources */,
 				9705A1C41CF9048500538489 /* Embed Frameworks */,
 				265BA9BB2F7BDB1E00287691 /* Embed Foundation Extensions */,
+				APPCLIP00000000000000010 /* Embed App Clips */,
 				3B06AD1E1E4923F5004D2608 /* Thin Binary */,
 				45AD813E8FF520B9F7BEAAC2 /* [CP] Embed Pods Frameworks */,
 			);
@@ -368,6 +442,7 @@
 			);
 			dependencies = (
 				265BA9B92F7BDB1E00287691 /* PBXTargetDependency */,
+				APPCLIP0000000000000000F /* PBXTargetDependency */,
 			);
 			name = Runner;
 			packageProductDependencies = (
@@ -376,6 +451,26 @@
 			productName = Runner;
 			productReference = 97C146EE1CF9000F007C117D /* Runner.app */;
 			productType = "com.apple.product-type.application";
+		};
+		APPCLIP00000000000000002 /* VizorClip */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = APPCLIP0000000000000000D /* Build configuration list for PBXNativeTarget "VizorClip" */;
+			buildPhases = (
+				APPCLIP00000000000000003 /* Sources */,
+				APPCLIP00000000000000004 /* Frameworks */,
+				APPCLIP00000000000000005 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				APPCLIP00000000000000006 /* VizorClip */,
+			);
+			name = VizorClip;
+			productName = VizorClip;
+			productReference = APPCLIP00000000000000001 /* VizorClip.app */;
+			productType = "com.apple.product-type.application.on-demand-install-capable";
 		};
 /* End PBXNativeTarget section */
 
@@ -394,6 +489,9 @@
 					331C8080294A63A400263BE5 = {
 						CreatedOnToolsVersion = 14.0;
 						TestTargetID = 97C146ED1CF9000F007C117D;
+					};
+					APPCLIP00000000000000002 = {
+						CreatedOnToolsVersion = 26.0.1;
 					};
 					97C146ED1CF9000F007C117D = {
 						CreatedOnToolsVersion = 7.3.1;
@@ -420,6 +518,7 @@
 				97C146ED1CF9000F007C117D /* Runner */,
 				331C8080294A63A400263BE5 /* RunnerTests */,
 				265BA9A82F7BDB1D00287691 /* SyncWidgetExtension */,
+				APPCLIP00000000000000002 /* VizorClip */,
 			);
 		};
 /* End PBXProject section */
@@ -448,6 +547,13 @@
 				97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */,
 				8A0F5C512F8B001200A1C001 /* AppIcon.icon in Resources */,
 				97C146FC1CF9000F007C117D /* Main.storyboard in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		APPCLIP00000000000000005 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -564,6 +670,7 @@
 				LEDGERIOS010000000000003 /* LedgerMobileHandlerTests.swift in Sources */,
 				OUTBOX010000000000000003 /* BackgroundMigrationOutboxTests.swift in Sources */,
 				OUTBOX010000000000000008 /* BackgroundMigrationOutboxExecutionGateTests.swift in Sources */,
+				APPCLIP0000000000000001A /* AppClipGiftHandoffTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -593,6 +700,17 @@
 				7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */,
 				42257B77B623F2ABAD2A1912 /* DynamicIslandManager.swift in Sources */,
 				B7C6E66ECB0517259883CB1B /* LiveActivitiesAppAttributes.swift in Sources */,
+				APPCLIP00000000000000014 /* AppClipGiftHandoff.swift in Sources */,
+				APPCLIP00000000000000017 /* GiftLinkPreview.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		APPCLIP00000000000000003 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				APPCLIP00000000000000015 /* AppClipGiftHandoff.swift in Sources */,
+				APPCLIP00000000000000018 /* GiftLinkPreview.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -608,6 +726,11 @@
 			isa = PBXTargetDependency;
 			target = 97C146ED1CF9000F007C117D /* Runner */;
 			targetProxy = 331C8085294A63A400263BE5 /* PBXContainerItemProxy */;
+		};
+		APPCLIP0000000000000000F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = APPCLIP00000000000000002 /* VizorClip */;
+			targetProxy = APPCLIP0000000000000000E /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -1063,6 +1186,101 @@
 			};
 			name = Release;
 		};
+		APPCLIP0000000000000000A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = APPCLIP00000000000000009 /* VizorClip.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = VizorClip.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+				DEVELOPMENT_TEAM = SZTB68DXM4;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = VizorClip/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Vizor;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.keplr.vizor.Clip;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		APPCLIP0000000000000000B /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = APPCLIP00000000000000009 /* VizorClip.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = VizorClip.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+				DEVELOPMENT_TEAM = SZTB68DXM4;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = VizorClip/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Vizor;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.keplr.vizor.Clip;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		APPCLIP0000000000000000C /* Profile */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = APPCLIP00000000000000009 /* VizorClip.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = VizorClip.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+				DEVELOPMENT_TEAM = SZTB68DXM4;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = VizorClip/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Vizor;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.keplr.vizor.Clip;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Profile;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1102,6 +1320,16 @@
 				97C147061CF9000F007C117D /* Debug */,
 				97C147071CF9000F007C117D /* Release */,
 				249021D4217E4FDB00AE95B9 /* Profile */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		APPCLIP0000000000000000D /* Build configuration list for PBXNativeTarget "VizorClip" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				APPCLIP0000000000000000A /* Debug */,
+				APPCLIP0000000000000000B /* Release */,
+				APPCLIP0000000000000000C /* Profile */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

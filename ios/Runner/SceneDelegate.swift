@@ -14,6 +14,10 @@ class SceneDelegate: FlutterSceneDelegate {
     for userActivity in connectionOptions.userActivities {
       _ = IncomingUriChannelBridge.shared.handle(userActivity: userActivity)
     }
+    // A scene connects only for a user-visible launch, never for a background
+    // task launch, so a gift saved by the App Clip opens when the person
+    // first opens Vizor after installing it.
+    IncomingUriChannelBridge.shared.handlePendingAppClipGift()
   }
 
   override func scene(

@@ -1,0 +1,8 @@
+// Base configuration for the VizorClip App Clip target.
+//
+// Generated.xcconfig supplies FLUTTER_BUILD_NAME / FLUTTER_BUILD_NUMBER, so the
+// App Clip always ships the same version and build number as the full app, as
+// App Store Connect requires. Do not include the Pods xcconfigs here: the App
+// Clip links no Flutter or CocoaPods frameworks.
+#include "Generated.xcconfig"
+#include "DeeplinkHost.xcconfig"

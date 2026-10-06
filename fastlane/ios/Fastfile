@@ -10,10 +10,14 @@ require_relative "../common/release"
 IOS_TEAM_ID = "SZTB68DXM4".freeze
 IOS_APP_IDENTIFIER = "com.keplr.vizor".freeze
 IOS_WIDGET_IDENTIFIER = "com.keplr.vizor.SyncWidget".freeze
-IOS_APP_IDENTIFIERS = [IOS_APP_IDENTIFIER, IOS_WIDGET_IDENTIFIER].freeze
+# The App Clip takes its version from Flutter's Generated.xcconfig
+# (ios/Flutter/VizorClip.xcconfig), so it needs no Info.plist rewrite.
+IOS_APP_CLIP_IDENTIFIER = "com.keplr.vizor.Clip".freeze
+IOS_APP_IDENTIFIERS = [IOS_APP_IDENTIFIER, IOS_WIDGET_IDENTIFIER, IOS_APP_CLIP_IDENTIFIER].freeze
 IOS_TARGET_BUNDLE_IDS = {
   "Runner" => IOS_APP_IDENTIFIER,
-  "SyncWidgetExtension" => IOS_WIDGET_IDENTIFIER
+  "SyncWidgetExtension" => IOS_WIDGET_IDENTIFIER,
+  "VizorClip" => IOS_APP_CLIP_IDENTIFIER
 }.freeze
 
 def shell_escape(value)

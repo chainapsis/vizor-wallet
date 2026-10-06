@@ -959,6 +959,21 @@ final class IncomingUriChannelBridge {
     return handle(urls: [url])
   }
 
+  /// Queues the Gift Card link the App Clip saved before this app was
+  /// installed. Checks only once per install: if the keychain delete in
+  /// `AppClipGiftHandoff.consume` ever fails, the same gift must not reopen
+  /// on every launch.
+  func handlePendingAppClipGift(defaults: UserDefaults = .standard) {
+    guard !defaults.bool(forKey: Self.appClipGiftCheckedKey) else { return }
+    defaults.set(true, forKey: Self.appClipGiftCheckedKey)
+    guard let url = AppClipGiftHandoff.consume(host: Self.deeplinkHost) else {
+      return
+    }
+    handle(urls: [url])
+  }
+
+  private static let appClipGiftCheckedKey = "vizor.appClipGiftHandoffChecked"
+
   func handles(_ url: URL) -> Bool {
     // A ZIP-321 payment link is an opaque `zcash:` URL: no host to check, and
     // the Dart side owns its parsing. Everything else must be one of the
