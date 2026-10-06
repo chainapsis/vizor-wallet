@@ -1246,7 +1246,7 @@ void main() {
   );
 
   testWidgets('a fee-only entry is one network fee line', (tester) async {
-    // A recovered self-shield: the whole balance change is the network fee.
+    // Reconstructed zero external payment; recipient details can be missing.
     await _pumpScreen(
       tester,
       privateQueriesEnabled: true,
@@ -1259,7 +1259,8 @@ void main() {
           displayAmount: BigInt.from(65000),
           amountIncludesFee: true,
           detailsComplete: false,
-          provisional: true,
+          accountBalanceDelta: -65000,
+          displayPool: 'transparent',
         ),
         initialDetail: _detail(txKind: 'sent'),
       ),
@@ -1272,6 +1273,40 @@ void main() {
     expect(find.text('Tx fee'), findsNothing);
     expect(find.text('Incomplete'), findsOneWidget);
   });
+
+  testWidgets(
+    'a provisional fee-sized movement keeps its net change and fee explanation',
+    (tester) async {
+      // A mixed-pool balance decrease does not establish a fee-only activity.
+      await _pumpScreen(
+        tester,
+        privateQueriesEnabled: true,
+        args: ActivityTransactionStatusArgs(
+          txidHex: _txidHex,
+          txKind: 'sent',
+          initialTransaction: _transaction(
+            txKind: 'sent',
+            fee: BigInt.from(20000),
+            displayAmount: BigInt.from(20000),
+            amountIncludesFee: true,
+            detailsComplete: false,
+            provisional: true,
+            displayPool: 'unknown',
+            accountBalanceDelta: -20000,
+          ),
+          initialDetail: _detail(txKind: 'sent'),
+        ),
+      );
+
+      expect(find.text('Transaction'), findsOneWidget);
+      expect(find.text(kNetworkFeeText), findsNothing);
+      expect(find.text(kNetChangeIncludesFeeText), findsOneWidget);
+      expect(find.text('0.0002 ZEC'), findsNWidgets(2));
+      expect(find.text('Amount'), findsNothing);
+      expect(find.text('Tx fee'), findsOneWidget);
+      expect(find.text('Incomplete'), findsOneWidget);
+    },
+  );
 
   testWidgets('an amount that includes the fee is labelled a net change', (
     tester,
@@ -1532,22 +1567,24 @@ rust_sync.TransactionInfo _transaction({
   bool provisional = false,
   bool amountIncludesFee = false,
   BigInt? displayAmount,
+  int accountBalanceDelta = 0,
+  String displayPool = 'shielded',
 }) {
   return rust_sync.TransactionInfo(
     txidHex: txidHex,
     minedHeight: minedHeight ?? BigInt.from(2500000),
     expiredUnmined: expiredUnmined,
-    accountBalanceDelta: 0,
+    accountBalanceDelta: accountBalanceDelta,
     fee: fee ?? BigInt.zero,
     feeState: feeState,
     detailsComplete: detailsComplete,
     provisional: provisional,
     amountIncludesFee: amountIncludesFee,
     blockTime: _blockTime,
-    isTransparent: false,
+    isTransparent: displayPool == 'transparent',
     txKind: txKind,
     displayAmount: displayAmount ?? BigInt.from(12000000000),
-    displayPool: 'shielded',
+    displayPool: displayPool,
     createdTime: _blockTime,
   );
 }

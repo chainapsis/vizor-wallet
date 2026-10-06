@@ -12,7 +12,7 @@ const kIncompleteDetailsHelpText =
     'fee, are not known yet. The amount shown may change.';
 
 /// Titles the single line of an entry whose whole balance change is its
-/// network fee, such as a privately recovered self-shield.
+/// network fee, established by a recovered transparent self-transfer.
 const kNetworkFeeText = 'Network fee';
 
 /// Labels an amount that is the account's balance change, network fee
@@ -42,7 +42,21 @@ TransactionFeePresentation transactionFeePresentation(
   rust_sync.TransactionInfo tx,
 ) {
   if (!tx.amountIncludesFee) return TransactionFeePresentation.separate;
-  return tx.displayAmount == tx.fee
+  // Rust marks two distinct rows as including a fee: a reconstructed
+  // transparent self-transfer with zero external payment, and an unknown-pool
+  // balance movement whose payment role is not established. Only the former
+  // justifies fee-only presentation. A mixed-pool movement can equal its fee
+  // even after its effects settle, so !provisional alone is insufficient.
+  // Missing recipient details do not invalidate an established self-transfer.
+  final establishedSelfTransfer =
+      !tx.provisional &&
+      tx.txKind == 'sent' &&
+      tx.displayPool == 'transparent' &&
+      tx.isTransparent &&
+      tx.feeState == rust_sync.TransactionFeeState.known &&
+      tx.fee > BigInt.zero &&
+      BigInt.from(tx.accountBalanceDelta) == -tx.fee;
+  return establishedSelfTransfer && tx.displayAmount == tx.fee
       ? TransactionFeePresentation.feeOnly
       : TransactionFeePresentation.includedInAmount;
 }
