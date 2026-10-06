@@ -26,7 +26,8 @@ import '../ledger/ledger_connect_screen.dart';
 import '../shared/customise_account_mutation.dart';
 import '../shared/onboarding_error_messages.dart';
 import '../shared/onboarding_flow_args.dart';
-import 'account_persona_generator.dart';
+import '../shared/account_persona_draft.dart';
+import '../shared/account_persona_randomise_button.dart';
 import 'onboarding_split_view.dart';
 import '../../payment_links/services/gift_claim_setup_coordinator.dart';
 import '../../payment_links/widgets/desktop_gift_setup_shell.dart';
@@ -88,16 +89,17 @@ enum _FinishPhase { idle, stoppingSync, creatingWallet, recoveringSetup }
 
 class _CustomiseAccountScreenState
     extends ConsumerState<CustomiseAccountScreen> {
-  late final TextEditingController _nameController;
-  late String _profilePictureId;
+  late final AccountPersonaDraft _persona;
   var _finishPhase = _FinishPhase.idle;
   String? _submitError;
   var _showProfilePicturePicker = false;
   var _requiresSetupRecovery = false;
 
-  String get _normalizedName => normalizeAccountName(_nameController.text);
-  int get _nameLength => accountNameCharacterLength(_nameController.text);
-  bool get _nameValid => isAccountNameLengthValid(_nameController.text);
+  String get _normalizedName =>
+      normalizeAccountName(_persona.nameController.text);
+  int get _nameLength =>
+      accountNameCharacterLength(_persona.nameController.text);
+  bool get _nameValid => isAccountNameLengthValid(_persona.nameController.text);
   bool get _isSubmitting => _finishPhase != _FinishPhase.idle;
   bool get _canFinish =>
       !_isSubmitting && (_requiresSetupRecovery || _nameValid);
@@ -112,15 +114,12 @@ class _CustomiseAccountScreenState
   @override
   void initState() {
     super.initState();
-    final suggestion = generateAccountPersona(random: widget.random);
-    _nameController = TextEditingController(text: suggestion.name)
-      ..selection = TextSelection.collapsed(offset: suggestion.name.length);
-    _profilePictureId = suggestion.profilePictureId;
+    _persona = AccountPersonaDraft(random: widget.random);
   }
 
   @override
   void dispose() {
-    _nameController.dispose();
+    _persona.dispose();
     super.dispose();
   }
 
@@ -140,7 +139,7 @@ class _CustomiseAccountScreenState
         try {
           final onFinish = widget.onFinish;
           if (onFinish != null) {
-            await onFinish(_normalizedName, _profilePictureId);
+            await onFinish(_normalizedName, _persona.profilePictureId);
             if (mounted) setState(() => _finishPhase = _FinishPhase.idle);
             return;
           }
@@ -226,7 +225,7 @@ class _CustomiseAccountScreenState
       ref,
       setupArgs: args.setupArgs,
       accountName: _normalizedName,
-      profilePictureId: _profilePictureId,
+      profilePictureId: _persona.profilePictureId,
       onStoppingSync: () {
         if (!mounted) return;
         setState(() => _finishPhase = _FinishPhase.stoppingSync);
@@ -278,6 +277,14 @@ class _CustomiseAccountScreenState
     setState(() => _submitError = null);
   }
 
+  void _randomisePersona() {
+    if (_isSubmitting || _requiresSetupRecovery) return;
+    setState(() {
+      _persona.randomise(random: widget.random);
+      _submitError = null;
+    });
+  }
+
   void _openProfilePicturePicker() {
     if (_isSubmitting || _requiresSetupRecovery) return;
     setState(() => _showProfilePicturePicker = true);
@@ -289,7 +296,7 @@ class _CustomiseAccountScreenState
 
   Future<void> _selectProfilePicture(String profilePictureId) async {
     setState(() {
-      _profilePictureId = profilePictureId;
+      _persona.profilePictureId = profilePictureId;
       _showProfilePicturePicker = false;
     });
   }
@@ -348,7 +355,7 @@ class _CustomiseAccountScreenState
             onDismiss: _closeProfilePicturePicker,
             child: AppProfilePicturePickerModal(
               title: 'Select profile picture',
-              currentProfilePictureId: _profilePictureId,
+              currentProfilePictureId: _persona.profilePictureId,
               optionKeyPrefix: 'customise_account_pfp_option_',
               cancelKey: const ValueKey('customise_account_pfp_cancel'),
               actionKey: const ValueKey('customise_account_pfp_update'),
@@ -410,14 +417,15 @@ class _CustomiseAccountScreenState
   }
 
   Widget _buildContent() => _CustomiseAccountContent(
-    nameController: _nameController,
-    profilePictureId: _profilePictureId,
+    nameController: _persona.nameController,
+    profilePictureId: _persona.profilePictureId,
     nameMessage: _nameMessage,
     finishPhase: _finishPhase,
     canFinish: _canFinish,
     requiresSetupRecovery: _requiresSetupRecovery,
     onNameChanged: _handleNameChanged,
     onEditProfilePicture: _openProfilePicturePicker,
+    onRandomisePersona: _randomisePersona,
     onFinish: _submit,
   );
 }
@@ -432,6 +440,7 @@ class _CustomiseAccountContent extends StatelessWidget {
     required this.requiresSetupRecovery,
     required this.onNameChanged,
     required this.onEditProfilePicture,
+    required this.onRandomisePersona,
     required this.onFinish,
   });
 
@@ -443,6 +452,7 @@ class _CustomiseAccountContent extends StatelessWidget {
   final bool requiresSetupRecovery;
   final ValueChanged<String> onNameChanged;
   final VoidCallback onEditProfilePicture;
+  final VoidCallback onRandomisePersona;
   final Future<void> Function() onFinish;
 
   static const _contentWidth = 396.0;
@@ -472,6 +482,7 @@ class _CustomiseAccountContent extends StatelessWidget {
                           !requiresSetupRecovery,
                       onNameChanged: onNameChanged,
                       onEditProfilePicture: onEditProfilePicture,
+                      onRandomisePersona: onRandomisePersona,
                       onSubmitted: onFinish,
                     ),
                   ],
@@ -541,6 +552,7 @@ class _AccountProfileCard extends StatelessWidget {
     required this.enabled,
     required this.onNameChanged,
     required this.onEditProfilePicture,
+    required this.onRandomisePersona,
     required this.onSubmitted,
   });
 
@@ -550,6 +562,7 @@ class _AccountProfileCard extends StatelessWidget {
   final bool enabled;
   final ValueChanged<String> onNameChanged;
   final VoidCallback onEditProfilePicture;
+  final VoidCallback onRandomisePersona;
   final Future<void> Function() onSubmitted;
 
   @override
@@ -623,6 +636,16 @@ class _AccountProfileCard extends StatelessWidget {
                   ),
                 ),
               ],
+            ),
+          ),
+          PositionedDirectional(
+            top: 0,
+            end: 0,
+            child: AccountPersonaRandomiseButton(
+              actionKey: const ValueKey('customise_account_randomise'),
+              visualKey: const ValueKey('customise_account_randomise_visual'),
+              showTooltip: true,
+              onPressed: enabled ? onRandomisePersona : null,
             ),
           ),
           if (message != null)
