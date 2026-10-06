@@ -42,7 +42,7 @@ use zip32::Scope;
 use super::*;
 use crate::wallet::network::configure_regtest_nu6_3_activation_height;
 
-type State = TestState<BlockCache, TestDb, LocalNetwork>;
+pub(super) type State = TestState<BlockCache, TestDb, LocalNetwork>;
 
 const NETWORK: WalletNetwork = WalletNetwork::Regtest;
 const NU6_3: u32 = 2;
@@ -56,7 +56,7 @@ const MEMO: [u8; 512] = {
 
 /// Vizor's regtest chain: every upgrade through NU6.2 at height 1, Ironwood
 /// at `NU6_3`.
-fn regtest() -> LocalNetwork {
+pub(super) fn regtest() -> LocalNetwork {
     let one = Some(BlockHeight::from_u32(1));
     LocalNetwork {
         overwinter: one,
@@ -73,11 +73,11 @@ fn regtest() -> LocalNetwork {
     }
 }
 
-fn zat(value: u64) -> Zatoshis {
+pub(super) fn zat(value: u64) -> Zatoshis {
     Zatoshis::const_from_u64(value)
 }
 
-fn scan_unrelated_blocks(st: &mut State, count: usize) {
+pub(super) fn scan_unrelated_blocks(st: &mut State, count: usize) {
     let not_ours =
         sapling_crypto::zip32::ExtendedSpendingKey::master(&[]).to_diversifiable_full_viewing_key();
     let (start, _, _) =
@@ -88,17 +88,17 @@ fn scan_unrelated_blocks(st: &mut State, count: usize) {
     st.scan_cached_blocks(start, count);
 }
 
-fn set_policy(st: &mut State, mode: TransparentLedgerMode) {
+pub(super) fn set_policy(st: &mut State, mode: TransparentLedgerMode) {
     let db = st.wallet_mut().db_mut();
     db.apply_transparent_policy(mode).unwrap();
     db.set_transparent_ledger_mode(mode);
 }
 
-fn watch(st: &State, account: AccountUuid) -> TransparentWatchSet<AccountUuid> {
+pub(super) fn watch(st: &State, account: AccountUuid) -> TransparentWatchSet<AccountUuid> {
     st.wallet().db().transparent_watch_set(account).unwrap()
 }
 
-fn revision() -> RecoveryRevision {
+pub(super) fn revision() -> RecoveryRevision {
     RecoveryRevision {
         source: b"fixture".to_vec(),
         revision: b"r1".to_vec(),
@@ -135,7 +135,7 @@ fn commit(ws: &TransparentWatchSet<AccountUuid>) -> TransparentLedgerCommit<Acco
     }
 }
 
-fn external(ws: &TransparentWatchSet<AccountUuid>) -> TransparentAddress {
+pub(super) fn external(ws: &TransparentWatchSet<AccountUuid>) -> TransparentAddress {
     ws.addresses
         .iter()
         .find(|w| {
@@ -149,7 +149,7 @@ fn external(ws: &TransparentWatchSet<AccountUuid>) -> TransparentAddress {
 }
 
 /// Commits `receives` and repeats the coverage while the address window grows.
-fn cover(st: &mut State, account: AccountUuid, receives: Vec<ReceiveEvent>) {
+pub(super) fn cover(st: &mut State, account: AccountUuid, receives: Vec<ReceiveEvent>) {
     let mut receives = Some(receives);
     loop {
         let mut c = commit(&watch(st, account));

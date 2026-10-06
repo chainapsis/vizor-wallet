@@ -126,6 +126,7 @@ class _MobileTransactionStatusScreenState
   String? _activeAccountUuid;
   String? _argsAccountUuid;
   int _loadGeneration = 0;
+  bool _canFollowProvisionalRole = true;
   bool _messageExpanded = false;
 
   @override
@@ -226,6 +227,10 @@ class _MobileTransactionStatusScreenState
       final tx = _findTransaction(txs);
       if (tx == null) {
         setState(() {
+          if (_transaction?.inferredAttribution == true) {
+            _transaction = null;
+            _detail = null;
+          }
           _error = _transaction == null
               ? 'Transaction could not be loaded.'
               : 'Latest transaction status could not be refreshed.';
@@ -235,8 +240,11 @@ class _MobileTransactionStatusScreenState
         return;
       }
       setState(() {
+        final relationshipsChanged =
+            _transaction?.relationshipSignature != tx.relationshipSignature;
+        _detail = relationshipsChanged ? null : _matchingDetailFor(tx);
         _transaction = tx;
-        _detail = _matchingDetailFor(tx);
+        if (tx.inferredAttribution == true) _canFollowProvisionalRole = false;
         _error = null;
         _isLoading = false;
       });
@@ -271,10 +279,11 @@ class _MobileTransactionStatusScreenState
       if (txKind == null || _txKindMatches(txKind, tx.txKind)) return tx;
     }
     final shown = _transaction ?? widget.args.initialTransaction;
-    if (shown != null && shown.provisional) {
+    if (_canFollowProvisionalRole && shown != null && shown.provisional) {
       return provisionalRoleSuccessor(
         transactions,
         (other) => _txidsMatch(widget.args.txidHex, other),
+        previousKind: shown.txKind,
       );
     }
     return null;
@@ -286,16 +295,11 @@ class _MobileTransactionStatusScreenState
         (expected == 'received' && actual == 'receiving');
   }
 
-  String _recentTxSignature(SyncState? sync) {
-    for (final tx in sync?.recentTransactions ?? const []) {
-      if (_txidsMatch(widget.args.txidHex, tx.txidHex)) {
-        return '${tx.txidHex}:${tx.minedHeight}:${tx.expiredUnmined}:'
-            '${tx.txKind}:${tx.displayAmount}:${tx.fee}:${tx.activityPool}:'
-            '${transactionCompletenessSignature(tx)}';
-      }
-    }
-    return '';
-  }
+  String _recentTxSignature(SyncState? sync) =>
+      transactionReceiptRefreshSignature(
+        sync?.recentTransactions ?? const [],
+        (txid) => _txidsMatch(widget.args.txidHex, txid),
+      );
 
   bool _txidsMatch(String first, String second) {
     if (widget.args.giftCard != null) {
@@ -850,6 +854,8 @@ class _MobileTransactionStatusScreenState
                                 privacyModeEnabled: privacyModeEnabled,
                               ),
                         detailsIncomplete: _showIncompleteDetails(tx),
+                        inferredAttribution: tx.inferredAttribution == true,
+                        feePayerUnknown: tx.feeIsWholeTransaction == true,
                       ),
                       if (_error != null) ...[
                         const SizedBox(height: AppSpacing.sm),
@@ -904,7 +910,8 @@ class _MobileTransactionStatusScreenState
       ref.watch(enhancePirProvider) && transactionFeeIsUnknown(tx);
 
   bool _showIncompleteDetails(rust_sync.TransactionInfo tx) =>
-      ref.watch(enhancePirProvider) && transactionDetailsIncomplete(tx);
+      (tx.inferredAttribution == true || ref.watch(enhancePirProvider)) &&
+      transactionDetailsIncomplete(tx);
 
   String? _feeText(
     rust_sync.TransactionInfo? tx, {
@@ -1173,6 +1180,8 @@ class _DetailCard extends StatelessWidget {
     required this.feeText,
     this.isCardCreation = false,
     this.detailsIncomplete = false,
+    this.inferredAttribution = false,
+    this.feePayerUnknown = false,
   });
 
   final _TxPhase phase;
@@ -1188,6 +1197,8 @@ class _DetailCard extends StatelessWidget {
   final String? feeText;
   final bool isCardCreation;
   final bool detailsIncomplete;
+  final bool inferredAttribution;
+  final bool feePayerUnknown;
 
   @override
   Widget build(BuildContext context) {
@@ -1267,7 +1278,9 @@ class _DetailCard extends StatelessWidget {
                   showMobileTxFeeInfoSheet(
                     context,
                     title: 'Details incomplete',
-                    description: kIncompleteDetailsHelpText,
+                    description: inferredAttribution
+                        ? kInferredAttributionHelpText
+                        : kIncompleteDetailsHelpText,
                   ),
                 ),
               ),
@@ -1279,7 +1292,11 @@ class _DetailCard extends StatelessWidget {
             Container(height: 1, color: colors.border.regular),
             const SizedBox(height: AppSpacing.sm),
             _ListRow(
-              label: isCardCreation ? 'Card fee' : 'Tx fee',
+              label: isCardCreation
+                  ? 'Card fee'
+                  : feePayerUnknown
+                  ? 'Tx fee (payer unknown)'
+                  : 'Tx fee',
               labelStyle: AppTypography.labelLarge,
               value: _ValueWithIcon(
                 text: feeText,

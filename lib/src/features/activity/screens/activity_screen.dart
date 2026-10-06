@@ -348,6 +348,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
               giftCard: giftCard,
             ),
             row: buildTransactionActivityRow(
+              accountUuid: ref.watch(accountProvider).value?.activeAccountUuid,
               context: context,
               transaction: tx,
               privateQueriesEnabled: ref.watch(enhancePirProvider),

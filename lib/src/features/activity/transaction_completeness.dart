@@ -15,6 +15,16 @@ const kIncompleteDetailsHelpText =
 /// network fee, established by a recovered transparent self-transfer.
 const kNetworkFeeText = 'Network fee';
 
+const kInferredAttributionHelpText =
+    'The sender relationship is inferred from the single known funding account '
+    'in this wallet. Other participants may exist, and the fee payer is not '
+    'established. Payment details remain incomplete.';
+
+String transactionIncompleteDetailsHelp(rust_sync.TransactionInfo tx) =>
+    tx.inferredAttribution == true
+    ? kInferredAttributionHelpText
+    : kIncompleteDetailsHelpText;
+
 /// Labels an amount that is the account's balance change, network fee
 /// included.
 const kNetChangeIncludesFeeText = 'Net change (includes network fee)';
@@ -69,7 +79,9 @@ bool transactionDetailsIncomplete(rust_sync.TransactionInfo tx) =>
 /// The completeness part of an entry, for refresh signatures: an entry whose
 /// details or fee arrive changes nothing else a signature compares.
 String transactionCompletenessSignature(rust_sync.TransactionInfo tx) =>
-    '${tx.feeState.name}:${tx.detailsComplete}:${tx.provisional}';
+    '${tx.feeState.name}:${tx.detailsComplete}:${tx.provisional}:'
+    '${tx.inferredAttribution}:${tx.feeIsWholeTransaction}:'
+    '${tx.relationshipSignature}';
 
 /// The entry a receipt showing a provisional row of `txidHex` now shows.
 ///
@@ -79,8 +91,30 @@ String transactionCompletenessSignature(rust_sync.TransactionInfo tx) =>
 /// conflated.
 rust_sync.TransactionInfo? provisionalRoleSuccessor(
   Iterable<rust_sync.TransactionInfo> transactions,
-  bool Function(String txidHex) matchesTxid,
-) {
+  bool Function(String txidHex) matchesTxid, {
+  String? previousKind,
+}) {
   final rows = transactions.where((tx) => matchesTxid(tx.txidHex)).toList();
-  return rows.length == 1 ? rows.single : null;
+  if (rows.length != 1) return null;
+  final successor = rows.single;
+  if (previousKind == 'sent' &&
+      (successor.txKind == 'received' || successor.txKind == 'receiving')) {
+    return null;
+  }
+  return successor;
 }
+
+/// Refresh all roles of this transaction without choosing a receipt successor.
+/// A role disappearing changes this signature even when another leg remains.
+String transactionReceiptRefreshSignature(
+  Iterable<rust_sync.TransactionInfo> transactions,
+  bool Function(String txid) matchesTxid,
+) => transactions
+    .where((tx) => matchesTxid(tx.txidHex))
+    .map(
+      (tx) =>
+          '${tx.txidHex}:${tx.minedHeight}:${tx.expiredUnmined}:${tx.txKind}:'
+          '${tx.displayAmount}:${tx.fee}:${tx.activityPool}:'
+          '${transactionCompletenessSignature(tx)}',
+    )
+    .join('|');

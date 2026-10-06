@@ -2803,6 +2803,12 @@ pub struct TransactionInfo {
     /// fee from privately recovered metadata. Show the fee once: when
     /// `display_amount` equals `fee`, the change is that fee alone.
     pub amount_includes_fee: bool,
+    /// The sender relationship is inferred for display, not proven funding.
+    pub inferred_attribution: Option<bool>,
+    /// Changes when output ownership or funding relationships change.
+    pub relationship_signature: Option<String>,
+    /// Known whole-transaction fee with no known account payer.
+    pub fee_is_whole_transaction: Option<bool>,
 }
 
 /// The network fee shown for a transaction.
@@ -2830,6 +2836,7 @@ pub struct TransactionDetail {
     pub details_complete: bool,
     /// See [`TransactionInfo::provisional`].
     pub provisional: bool,
+    pub inferred_attribution: Option<bool>,
 }
 
 pub struct TransactionDetailOutput {
@@ -2878,6 +2885,9 @@ pub fn get_transaction_history(
                 details_complete: t.details_complete,
                 provisional: t.provisional,
                 amount_includes_fee: t.amount_includes_fee,
+                inferred_attribution: t.inferred_attribution,
+                relationship_signature: t.relationship_signature,
+                fee_is_whole_transaction: t.fee_is_whole_transaction,
             })
             .collect())
     })
@@ -2991,6 +3001,7 @@ pub fn get_transaction_detail(
                 .collect(),
             details_complete: detail.details_complete,
             provisional: detail.provisional,
+            inferred_attribution: detail.inferred_attribution,
         })
     })
 }

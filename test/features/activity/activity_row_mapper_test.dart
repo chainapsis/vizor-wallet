@@ -23,6 +23,7 @@ void main() {
     bool privateQueriesEnabled = false,
     String? giftCardDisplayPool,
     String? pendingLabel,
+    String? accountUuid,
   }) async {
     late ActivityRowData row;
     await tester.pumpWidget(
@@ -33,6 +34,7 @@ void main() {
             row = buildTransactionActivityRow(
               context: context,
               transaction: transaction,
+              accountUuid: accountUuid,
               privateQueriesEnabled: privateQueriesEnabled,
               pendingLabel: pendingLabel,
               giftCardKind: giftCardKind,
@@ -474,6 +476,58 @@ void main() {
       _transaction(txKind: 'unknown', displayAmount: BigInt.zero),
     );
     expect(unknown.amountText, activityAmountTextForFormFactor('--'));
+  });
+
+  testWidgets('gross owned transfer legs keep account and role identities', (
+    tester,
+  ) async {
+    final fallback = await mapRow(
+      tester,
+      _transaction(
+        txKind: 'sent',
+        displayAmount: BigInt.from(15000),
+        provisional: true,
+      ),
+      accountUuid: 'A',
+    );
+    final sent = await mapRow(
+      tester,
+      _transaction(
+        txKind: 'sent',
+        displayAmount: BigInt.from(250000),
+        displayPool: 'transparent',
+        detailsComplete: false,
+      ),
+      accountUuid: 'A',
+    );
+    final received = await mapRow(
+      tester,
+      _transaction(
+        txKind: 'received',
+        displayAmount: BigInt.from(250000),
+        displayPool: 'transparent',
+        detailsComplete: false,
+      ),
+      accountUuid: 'A',
+    );
+    final other = await mapRow(
+      tester,
+      _transaction(
+        txKind: 'received',
+        displayAmount: BigInt.from(250000),
+        displayPool: 'transparent',
+      ),
+      accountUuid: 'B',
+    );
+    expect(sent.stableId, fallback.stableId);
+    expect(received.stableId, isNot(sent.stableId));
+    expect(other.stableId, isNot(received.stableId));
+    expect(sent.title, 'Sent');
+    expect(received.title, 'Received');
+    expect(sent.subtitle, 'Transparent');
+    expect(received.subtitle, 'Transparent');
+    expect(sent.amountText, activityAmountTextForFormFactor('-0.0025 ZEC'));
+    expect(received.amountText, activityAmountTextForFormFactor('+0.0025 ZEC'));
   });
 
   testWidgets('transaction rows route the amount through the form-factor gate', (

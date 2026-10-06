@@ -13,17 +13,13 @@ import 'api/sync.dart';
 import 'api/voting.dart';
 import 'api/voting_session.dart';
 import 'api/wallet.dart';
-
 import 'dart:async';
 import 'dart:convert';
-
 import 'frb_generated.dart';
 import 'frb_generated.io.dart'
     if (dart.library.js_interop) 'frb_generated.web.dart';
 import 'network_privacy.dart';
-
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
-
 import 'third_party/zcash_voting/config.dart';
 import 'third_party/zcash_voting/delegate.dart';
 import 'third_party/zcash_voting/share_policy.dart';
@@ -14681,8 +14677,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TransactionDetail dco_decode_transaction_detail(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 9)
-      throw Exception('unexpected arr length: expect 9 but see ${arr.length}');
+    if (arr.length != 10)
+      throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
     return TransactionDetail(
       txidHex: dco_decode_String(arr[0]),
       txKind: dco_decode_String(arr[1]),
@@ -14693,6 +14689,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       outputs: dco_decode_list_transaction_detail_output(arr[6]),
       detailsComplete: dco_decode_bool(arr[7]),
       provisional: dco_decode_bool(arr[8]),
+      inferredAttribution: dco_decode_opt_box_autoadd_bool(arr[9]),
     );
   }
 
@@ -14721,8 +14718,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TransactionInfo dco_decode_transaction_info(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 19)
-      throw Exception('unexpected arr length: expect 19 but see ${arr.length}');
+    if (arr.length != 22)
+      throw Exception('unexpected arr length: expect 22 but see ${arr.length}');
     return TransactionInfo(
       txidHex: dco_decode_String(arr[0]),
       minedHeight: dco_decode_u_64(arr[1]),
@@ -14743,6 +14740,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       detailsComplete: dco_decode_bool(arr[16]),
       provisional: dco_decode_bool(arr[17]),
       amountIncludesFee: dco_decode_bool(arr[18]),
+      inferredAttribution: dco_decode_opt_box_autoadd_bool(arr[19]),
+      relationshipSignature: dco_decode_opt_String(arr[20]),
+      feeIsWholeTransaction: dco_decode_opt_box_autoadd_bool(arr[21]),
     );
   }
 
@@ -19690,6 +19690,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_outputs = sse_decode_list_transaction_detail_output(deserializer);
     var var_detailsComplete = sse_decode_bool(deserializer);
     var var_provisional = sse_decode_bool(deserializer);
+    var var_inferredAttribution = sse_decode_opt_box_autoadd_bool(deserializer);
     return TransactionDetail(
       txidHex: var_txidHex,
       txKind: var_txKind,
@@ -19700,6 +19701,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       outputs: var_outputs,
       detailsComplete: var_detailsComplete,
       provisional: var_provisional,
+      inferredAttribution: var_inferredAttribution,
     );
   }
 
@@ -19757,6 +19759,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_detailsComplete = sse_decode_bool(deserializer);
     var var_provisional = sse_decode_bool(deserializer);
     var var_amountIncludesFee = sse_decode_bool(deserializer);
+    var var_inferredAttribution = sse_decode_opt_box_autoadd_bool(deserializer);
+    var var_relationshipSignature = sse_decode_opt_String(deserializer);
+    var var_feeIsWholeTransaction = sse_decode_opt_box_autoadd_bool(
+      deserializer,
+    );
     return TransactionInfo(
       txidHex: var_txidHex,
       minedHeight: var_minedHeight,
@@ -19777,6 +19784,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       detailsComplete: var_detailsComplete,
       provisional: var_provisional,
       amountIncludesFee: var_amountIncludesFee,
+      inferredAttribution: var_inferredAttribution,
+      relationshipSignature: var_relationshipSignature,
+      feeIsWholeTransaction: var_feeIsWholeTransaction,
     );
   }
 
@@ -24020,6 +24030,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_list_transaction_detail_output(self.outputs, serializer);
     sse_encode_bool(self.detailsComplete, serializer);
     sse_encode_bool(self.provisional, serializer);
+    sse_encode_opt_box_autoadd_bool(self.inferredAttribution, serializer);
   }
 
   @protected
@@ -24069,6 +24080,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self.detailsComplete, serializer);
     sse_encode_bool(self.provisional, serializer);
     sse_encode_bool(self.amountIncludesFee, serializer);
+    sse_encode_opt_box_autoadd_bool(self.inferredAttribution, serializer);
+    sse_encode_opt_String(self.relationshipSignature, serializer);
+    sse_encode_opt_box_autoadd_bool(self.feeIsWholeTransaction, serializer);
   }
 
   @protected

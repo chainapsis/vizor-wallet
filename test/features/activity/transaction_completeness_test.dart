@@ -27,6 +27,40 @@ void main() {
     expect(provisionalRoleSuccessor(const [], matches), isNull);
   });
 
+  test('a Sent receipt never follows a unique Received leg', () {
+    expect(
+      provisionalRoleSuccessor(
+        [_transaction('aa', 'received')],
+        (id) => id == 'aa',
+        previousKind: 'sent',
+      ),
+      isNull,
+    );
+  });
+
+  test('relationship-only changes invalidate the completeness signature', () {
+    final before = _transaction(
+      'aa',
+      'sent',
+      relationshipSignature: 'A:B:external',
+    );
+    final after = _transaction(
+      'aa',
+      'sent',
+      relationshipSignature: 'A:B:internal',
+    );
+    expect(
+      transactionCompletenessSignature(before),
+      isNot(transactionCompletenessSignature(after)),
+    );
+    expect(
+      transactionIncompleteDetailsHelp(
+        _transaction('aa', 'sent', inferred: true),
+      ),
+      contains('Other participants may exist'),
+    );
+  });
+
   test('the completeness signature changes with each completeness field', () {
     final base = _transaction('aa', 'sent');
     final signatures = {
@@ -191,8 +225,12 @@ rust_sync.TransactionInfo _transaction(
   BigInt? fee,
   int accountBalanceDelta = 0,
   String displayPool = 'shielded',
+  String? relationshipSignature,
+  bool inferred = false,
 }) {
   return rust_sync.TransactionInfo(
+    relationshipSignature: relationshipSignature,
+    inferredAttribution: inferred,
     txidHex: txid,
     minedHeight: BigInt.from(2500000),
     expiredUnmined: false,

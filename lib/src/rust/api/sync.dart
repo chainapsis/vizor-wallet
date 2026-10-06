@@ -5,7 +5,6 @@
 
 import '../frb_generated.dart';
 import 'keystone.dart';
-
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `api_proposal_result`, `catch`, `enhance_pir_enabled`, `fetch_block_time`, `migration_status_from_balance`, `parse_network_and_migrate`, `payment_link_batch_pairs`, `run_full_sync_internal`, `to_wallet_action_sigs`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
@@ -2844,6 +2843,7 @@ class TransactionDetail {
 
   /// See [`TransactionInfo::provisional`].
   final bool provisional;
+  final bool? inferredAttribution;
 
   const TransactionDetail({
     required this.txidHex,
@@ -2855,6 +2855,7 @@ class TransactionDetail {
     required this.outputs,
     required this.detailsComplete,
     required this.provisional,
+    this.inferredAttribution,
   });
 
   @override
@@ -2867,7 +2868,8 @@ class TransactionDetail {
       memo.hashCode ^
       outputs.hashCode ^
       detailsComplete.hashCode ^
-      provisional.hashCode;
+      provisional.hashCode ^
+      inferredAttribution.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -2882,7 +2884,8 @@ class TransactionDetail {
           memo == other.memo &&
           outputs == other.outputs &&
           detailsComplete == other.detailsComplete &&
-          provisional == other.provisional;
+          provisional == other.provisional &&
+          inferredAttribution == other.inferredAttribution;
 }
 
 class TransactionDetailOutput {
@@ -2979,6 +2982,15 @@ class TransactionInfo {
   /// `display_amount` equals `fee`, the change is that fee alone.
   final bool amountIncludesFee;
 
+  /// The sender relationship is inferred for display, not proven funding.
+  final bool? inferredAttribution;
+
+  /// Changes when output ownership or funding relationships change.
+  final String? relationshipSignature;
+
+  /// Known whole-transaction fee with no known account payer.
+  final bool? feeIsWholeTransaction;
+
   const TransactionInfo({
     required this.txidHex,
     required this.minedHeight,
@@ -2999,6 +3011,9 @@ class TransactionInfo {
     required this.detailsComplete,
     required this.provisional,
     required this.amountIncludesFee,
+    this.inferredAttribution,
+    this.relationshipSignature,
+    this.feeIsWholeTransaction,
   });
 
   @override
@@ -3021,7 +3036,10 @@ class TransactionInfo {
       createdTime.hashCode ^
       detailsComplete.hashCode ^
       provisional.hashCode ^
-      amountIncludesFee.hashCode;
+      amountIncludesFee.hashCode ^
+      inferredAttribution.hashCode ^
+      relationshipSignature.hashCode ^
+      feeIsWholeTransaction.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -3046,7 +3064,10 @@ class TransactionInfo {
           createdTime == other.createdTime &&
           detailsComplete == other.detailsComplete &&
           provisional == other.provisional &&
-          amountIncludesFee == other.amountIncludesFee;
+          amountIncludesFee == other.amountIncludesFee &&
+          inferredAttribution == other.inferredAttribution &&
+          relationshipSignature == other.relationshipSignature &&
+          feeIsWholeTransaction == other.feeIsWholeTransaction;
 }
 
 /// What the transparent fields of a [`WalletBalance`] represent.

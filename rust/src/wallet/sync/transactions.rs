@@ -29,7 +29,7 @@ use zcash_client_backend::data_api::{
         AggregatePayment, DetailCompleteness, FeeState, HistoryClassification, RecoveryBlocker,
         TransactionHistoryDetails, TransparentAuthority, TransparentLedgerBalance,
         TransparentLedgerMode, TransparentLedgerRead, TransparentLedgerSnapshot,
-        WholeTransactionFee,
+        TransparentOutputScope, WholeTransactionFee,
     },
     Account as _, Balance, WalletRead, WalletWrite,
 };
@@ -594,6 +594,12 @@ pub(crate) struct TransactionInfo {
     /// metadata. When `display_amount` equals `fee`, the whole movement is
     /// that fee.
     pub amount_includes_fee: bool,
+    /// Display-only sender convention; never proof of funding or fee payment.
+    pub inferred_attribution: Option<bool>,
+    /// Refreshes receipts when relationships change without changing amounts.
+    pub relationship_signature: Option<String>,
+    /// The displayed fee covers the whole transaction, with no known account payer.
+    pub fee_is_whole_transaction: Option<bool>,
 }
 
 /// The network fee shown for a transaction. Unknown, zero, and not
@@ -623,6 +629,7 @@ pub(crate) struct TransactionDetail {
     pub details_complete: bool,
     /// See [`TransactionInfo::provisional`].
     pub provisional: bool,
+    pub inferred_attribution: Option<bool>,
 }
 
 pub(crate) struct TransactionDetailOutput {
@@ -657,6 +664,8 @@ struct TxBase {
     created_time: u64,
     spent_orchard_note: bool,
     history: HistoryCompleteness,
+    display_outputs: Vec<TxOutput>,
+    relationship_signature: String,
 }
 
 /// A fee, as far as history knows it.
@@ -740,7 +749,7 @@ impl HistoryCompleteness {
 
     /// Local intent can know every payment detail before scanning discovers
     /// all owned effects. Public discovery still counts as settled.
-    fn of(details: &TransactionHistoryDetails) -> Self {
+    fn of(details: &TransactionHistoryDetails<AccountUuid>) -> Self {
         Self {
             details_complete: details.payment_details == DetailCompleteness::Complete,
             classification: Some(details.classification),
@@ -837,6 +846,7 @@ impl HistoryCompleteness {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TxOutput {
+    inferred_attribution: bool,
     txid: Vec<u8>,
     output_pool: i64,
     output_index: i64,
@@ -894,12 +904,14 @@ struct ActivityAmounts {
     has_sapling: bool,
     has_orchard: bool,
     has_ironwood: bool,
+    inferred_attribution: bool,
 }
 
 impl ActivityAmounts {
     fn add_output(&mut self, output: &TxOutput) {
         self.amount = self.amount.saturating_add(output.value);
         self.output_count += 1;
+        self.inferred_attribution |= output.inferred_attribution;
         match output.output_pool {
             TRANSPARENT_POOL => self.has_transparent = true,
             SAPLING_POOL => self.has_sapling = true,
@@ -1025,11 +1037,14 @@ fn read_transaction_history(
     // `v_transactions` for DISTINCT txid. That view selects
     // `transactions.raw`, so a second pass would re-materialize every
     // raw blob even though this path never reads them.
-    let outputs_by_txid = read_history_outputs(
+    let mut outputs_by_txid = read_history_outputs(
         &read_tx,
         uuid_bytes,
         bases.iter().map(|base| base.txid.as_slice()),
     )?;
+    for base in &bases {
+        overlay_owned_outputs(base, outputs_by_txid.entry(base.txid.clone()).or_default());
+    }
     drop(read_tx);
 
     Ok(assemble_history(
@@ -1064,15 +1079,51 @@ fn attach_history_details(
             .transaction_history_details(account, batch)
             .map_err(|e| format!("Failed to read history details: {e}"))?
         {
-            read.insert(
-                details.txid.as_ref().to_vec(),
-                HistoryCompleteness::of(&details),
-            );
+            read.insert(details.txid.as_ref().to_vec(), details);
         }
     }
     for base in bases {
-        let history = read.get(&base.txid).copied().unwrap_or(base.history);
-        base.attach_history(history);
+        if let Some(details) = read.get(&base.txid) {
+            base.attach_history(HistoryCompleteness::of(details));
+            base.relationship_signature = format!(
+                "{:?}:{:?}",
+                details.known_wallet_funders, details.owned_transparent_outputs
+            );
+            base.display_outputs = details
+                .owned_transparent_outputs
+                .iter()
+                .filter_map(|output| {
+                    let funder = output.inferred_funding_account?;
+                    Some(TxOutput {
+                        inferred_attribution: true,
+                        txid: base.txid.clone(),
+                        output_pool: TRANSPARENT_POOL,
+                        output_index: i64::from(output.outpoint.n()),
+                        from_account_uuid: Some(funder.expose_uuid().as_bytes().to_vec()),
+                        to_account_uuid: Some(
+                            output.recipient_account.expose_uuid().as_bytes().to_vec(),
+                        ),
+                        to_address: Some(zcash_keys::encoding::AddressCodec::encode(
+                            &output.address,
+                            &network,
+                        )),
+                        sent_to_address: None,
+                        transparent_receiver_address: Some(
+                            zcash_keys::encoding::AddressCodec::encode(&output.address, &network),
+                        ),
+                        to_key_scope: output.scope.map(|scope| match scope {
+                            TransparentOutputScope::External => 0,
+                            TransparentOutputScope::Internal => 1,
+                            TransparentOutputScope::Ephemeral => 2,
+                            TransparentOutputScope::Foreign => -1,
+                        }),
+                        value: output.value.into_u64(),
+                        memo: None,
+                        note_version: None,
+                    })
+                })
+                .collect();
+        }
     }
     Ok(())
 }
@@ -1153,6 +1204,17 @@ fn assemble_history(
                         row.info.funding_parent_expired = Some(parent.expired_unmined);
                     }
                 }
+            }
+        }
+        for row in &mut rows {
+            let inferred = match row.info.tx_kind.as_str() {
+                "sent" => summary.sent.inferred_attribution,
+                "received" | "receiving" => summary.received.inferred_attribution,
+                _ => false,
+            };
+            row.info.inferred_attribution = Some(inferred);
+            if inferred {
+                row.info.details_complete = false;
             }
         }
         visible.extend(rows);
@@ -1385,6 +1447,7 @@ fn read_transaction_detail(
     };
     attach_history(&mut base)?;
     let mut outputs = read_outputs_for_tx(read_tx, &uuid_bytes, &txid)?;
+    overlay_owned_outputs(&base, &mut outputs);
     outputs.sort_by(|a, b| {
         a.output_index
             .cmp(&b.output_index)
@@ -1395,6 +1458,7 @@ fn read_transaction_detail(
         .iter()
         .filter(|output| detail_includes_output(&base, output, uuid_bytes.as_slice(), tx_kind))
         .collect::<Vec<_>>();
+    let inferred_attribution = visible_outputs.iter().any(|o| o.inferred_attribution);
     let memo = visible_outputs
         .iter()
         .find_map(|output| decode_text_memo(output.memo.as_deref()));
@@ -1433,8 +1497,9 @@ fn read_transaction_detail(
         source_pool: source.map(|s| s.pool.to_string()),
         memo,
         outputs,
-        details_complete: base.history.details_complete,
+        details_complete: base.history.details_complete && !inferred_attribution,
         provisional: base.history.provisional,
+        inferred_attribution: Some(inferred_attribution),
     })
 }
 
@@ -1613,6 +1678,8 @@ fn read_history_base_by_txid(
                     created_time: row.get::<_, i64>(13)?.unsigned_abs(),
                     spent_orchard_note: row.get(14)?,
                     history: HistoryCompleteness::unread(fee),
+                    display_outputs: vec![],
+                    relationship_signature: String::new(),
                 })
             },
         )
@@ -1657,6 +1724,8 @@ impl From<TransactionSummary> for TxBase {
             created_time: summary.created_time.map(i64::unsigned_abs).unwrap_or(0),
             spent_orchard_note: summary.has_orchard_spend,
             history: HistoryCompleteness::unread(summary.fee),
+            display_outputs: vec![],
+            relationship_signature: String::new(),
         }
     }
 }
@@ -1733,6 +1802,7 @@ fn read_history_outputs<'a>(
     let rows = stmt
         .query_map(rusqlite::params![account_uuid, txid_array], |row| {
             Ok(TxOutput {
+                inferred_attribution: false,
                 txid: row.get(0)?,
                 output_pool: row.get(1)?,
                 output_index: row.get(2)?,
@@ -1831,6 +1901,7 @@ fn read_outputs_for_tx(
     let rows = stmt
         .query_map(rusqlite::params![account_uuid, txid], |row| {
             Ok(TxOutput {
+                inferred_attribution: false,
                 txid: row.get(0)?,
                 output_pool: row.get(1)?,
                 output_index: row.get(2)?,
@@ -1849,6 +1920,19 @@ fn read_outputs_for_tx(
 
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("Row error: {e}"))
+}
+
+/// Reconciles only display rows. A canonical sender wins; inferred rows never enter SQL.
+fn overlay_owned_outputs(base: &TxBase, outputs: &mut Vec<TxOutput>) {
+    for inferred in &base.display_outputs {
+        match outputs.iter_mut().find(|o| {
+            o.output_pool == inferred.output_pool && o.output_index == inferred.output_index
+        }) {
+            Some(canonical) if canonical.from_account_uuid.is_some() => {}
+            Some(unattributed) => *unattributed = inferred.clone(),
+            None => outputs.push(inferred.clone()),
+        }
+    }
 }
 
 fn summarize_activity_outputs(
@@ -2331,6 +2415,11 @@ fn build_classified_tx_with_fee(
             details_complete: base.history.details_complete,
             provisional: base.history.provisional,
             amount_includes_fee: false,
+            inferred_attribution: Some(false),
+            relationship_signature: Some(base.relationship_signature.clone()),
+            fee_is_whole_transaction: Some(
+                !matches!(base.history.fee, Fee::Known(_)) && base.history.whole_fee.is_some(),
+            ),
         },
         sort_pending_rank: u8::from(base.mined_height.is_none() && !base.expired_unmined),
         sort_timestamp,
@@ -2877,8 +2966,10 @@ mod tests {
         );
     }
 
-    fn tx_base_for_history() -> TxBase {
+    pub(super) fn tx_base_for_history() -> TxBase {
         TxBase {
+            display_outputs: vec![],
+            relationship_signature: String::new(),
             txid: fake_txid(1).to_vec(),
             transaction_id: 1,
             mined_height: Some(121),
@@ -3248,6 +3339,8 @@ mod tests {
             }],
         };
         let mut details = TransactionHistoryDetails {
+            owned_transparent_outputs: vec![],
+            known_wallet_funders: vec![],
             transaction_metadata: Some(evidence(false)),
             aggregate_payment: AggregatePayment::Exact(Zatoshis::from_u64(50_000).unwrap()),
             account_movement: AccountMovement {
@@ -3295,12 +3388,16 @@ mod tests {
     /// transparent value and got 0.3 ZEC back, another party funded the
     /// transaction's second input, and the recovered metadata carries `whole`.
     /// The account's fee and the aggregate payment are unknown.
-    fn shared_funding_details(whole: WholeTransactionFee) -> TransactionHistoryDetails {
+    fn shared_funding_details(
+        whole: WholeTransactionFee,
+    ) -> TransactionHistoryDetails<AccountUuid> {
         use zcash_client_backend::data_api::transparent_ledger::{
             AccountMovement, MetadataProvenance, TransactionMetadata, TransactionMetadataEvidence,
         };
 
         TransactionHistoryDetails {
+            owned_transparent_outputs: vec![],
+            known_wallet_funders: vec![],
             transaction_metadata: Some(TransactionMetadataEvidence {
                 metadata: TransactionMetadata {
                     fee: whole,
@@ -3694,6 +3791,8 @@ mod tests {
         // Local construction knows the payment, but scanning still has to
         // discover the receipt to the account's own external shielded address.
         let mut details = TransactionHistoryDetails {
+            owned_transparent_outputs: vec![],
+            known_wallet_funders: vec![],
             transaction_metadata: None,
             aggregate_payment: AggregatePayment::Exact(Zatoshis::from_u64(50_000).unwrap()),
             account_movement: AccountMovement {
@@ -3745,6 +3844,8 @@ mod tests {
         use zcash_protocol::{value::Zatoshis, PoolType};
 
         let mut details = TransactionHistoryDetails {
+            owned_transparent_outputs: vec![],
+            known_wallet_funders: vec![],
             transaction_metadata: None,
             aggregate_payment: AggregatePayment::Unknown,
             account_movement: AccountMovement {
@@ -3982,6 +4083,7 @@ mod tests {
         let ua = "u1qexampleunifiedaddressexampleunifiedaddress".to_string();
 
         let transparent_received = TxOutput {
+            inferred_attribution: false,
             txid: vec![0u8; 32],
             output_pool: 0,
             output_index: 0,
@@ -4006,6 +4108,7 @@ mod tests {
 
         // Shielded receives (pool 2) still surface their stored address.
         let shielded_received = TxOutput {
+            inferred_attribution: false,
             txid: vec![0u8; 32],
             output_pool: 2,
             output_index: 0,
@@ -5015,6 +5118,8 @@ mod tests {
                         created_time: row.get::<_, i64>(13)?.unsigned_abs(),
                         spent_orchard_note: row.get(14)?,
                         history: HistoryCompleteness::unread(fee),
+                        display_outputs: vec![],
+                        relationship_signature: String::new(),
                     })
                 },
             )
@@ -5285,6 +5390,7 @@ mod tests {
         let rows = stmt
             .query_map(rusqlite::params![account_uuid], |row| {
                 Ok(TxOutput {
+                    inferred_attribution: false,
                     txid: row.get(0)?,
                     output_pool: row.get(1)?,
                     output_index: row.get(2)?,
@@ -7902,3 +8008,6 @@ mod tests {
         assert!(got.is_empty());
     }
 }
+
+#[cfg(test)]
+mod owned_transparent_tests;

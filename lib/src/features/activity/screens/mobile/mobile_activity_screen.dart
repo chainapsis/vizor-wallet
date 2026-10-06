@@ -174,6 +174,7 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
           giftCard?.activityTimestamp ??
           transactionActivityTimestamp(transaction),
       row: buildTransactionActivityRow(
+        accountUuid: ref.watch(accountProvider).value?.activeAccountUuid,
         context: context,
         transaction: transaction,
         privateQueriesEnabled: ref.watch(enhancePirProvider),

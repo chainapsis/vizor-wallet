@@ -14211,6 +14211,7 @@ impl SseDecode for crate::api::sync::TransactionDetail {
             <Vec<crate::api::sync::TransactionDetailOutput>>::sse_decode(deserializer);
         let mut var_detailsComplete = <bool>::sse_decode(deserializer);
         let mut var_provisional = <bool>::sse_decode(deserializer);
+        let mut var_inferredAttribution = <Option<bool>>::sse_decode(deserializer);
         return crate::api::sync::TransactionDetail {
             txid_hex: var_txidHex,
             tx_kind: var_txKind,
@@ -14221,6 +14222,7 @@ impl SseDecode for crate::api::sync::TransactionDetail {
             outputs: var_outputs,
             details_complete: var_detailsComplete,
             provisional: var_provisional,
+            inferred_attribution: var_inferredAttribution,
         };
     }
 }
@@ -14278,6 +14280,9 @@ impl SseDecode for crate::api::sync::TransactionInfo {
         let mut var_detailsComplete = <bool>::sse_decode(deserializer);
         let mut var_provisional = <bool>::sse_decode(deserializer);
         let mut var_amountIncludesFee = <bool>::sse_decode(deserializer);
+        let mut var_inferredAttribution = <Option<bool>>::sse_decode(deserializer);
+        let mut var_relationshipSignature = <Option<String>>::sse_decode(deserializer);
+        let mut var_feeIsWholeTransaction = <Option<bool>>::sse_decode(deserializer);
         return crate::api::sync::TransactionInfo {
             txid_hex: var_txidHex,
             mined_height: var_minedHeight,
@@ -14298,6 +14303,9 @@ impl SseDecode for crate::api::sync::TransactionInfo {
             details_complete: var_detailsComplete,
             provisional: var_provisional,
             amount_includes_fee: var_amountIncludesFee,
+            inferred_attribution: var_inferredAttribution,
+            relationship_signature: var_relationshipSignature,
+            fee_is_whole_transaction: var_feeIsWholeTransaction,
         };
     }
 }
@@ -18919,6 +18927,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::TransactionDetail {
             self.outputs.into_into_dart().into_dart(),
             self.details_complete.into_into_dart().into_dart(),
             self.provisional.into_into_dart().into_dart(),
+            self.inferred_attribution.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -19005,6 +19014,9 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::TransactionInfo {
             self.details_complete.into_into_dart().into_dart(),
             self.provisional.into_into_dart().into_dart(),
             self.amount_includes_fee.into_into_dart().into_dart(),
+            self.inferred_attribution.into_into_dart().into_dart(),
+            self.relationship_signature.into_into_dart().into_dart(),
+            self.fee_is_whole_transaction.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -22770,6 +22782,7 @@ impl SseEncode for crate::api::sync::TransactionDetail {
         <Vec<crate::api::sync::TransactionDetailOutput>>::sse_encode(self.outputs, serializer);
         <bool>::sse_encode(self.details_complete, serializer);
         <bool>::sse_encode(self.provisional, serializer);
+        <Option<bool>>::sse_encode(self.inferred_attribution, serializer);
     }
 }
 
@@ -22823,6 +22836,9 @@ impl SseEncode for crate::api::sync::TransactionInfo {
         <bool>::sse_encode(self.details_complete, serializer);
         <bool>::sse_encode(self.provisional, serializer);
         <bool>::sse_encode(self.amount_includes_fee, serializer);
+        <Option<bool>>::sse_encode(self.inferred_attribution, serializer);
+        <Option<String>>::sse_encode(self.relationship_signature, serializer);
+        <Option<bool>>::sse_encode(self.fee_is_whole_transaction, serializer);
     }
 }
 

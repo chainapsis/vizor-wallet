@@ -25,6 +25,7 @@ Color outgoingAmountColor(AppColors colors) =>
 ActivityRowData buildTransactionActivityRow({
   required BuildContext context,
   required rust_sync.TransactionInfo transaction,
+  String? accountUuid,
   GiftCardActivityKind? giftCardKind,
   BigInt? giftCardAmountZatoshi,
   int? giftCardBatchCount,
@@ -85,7 +86,7 @@ ActivityRowData buildTransactionActivityRow({
   return ActivityRowData(
     stableId:
         giftCardStableId ??
-        'tx:${transaction.txidHex}:${_stableTransactionRole(kind)}',
+        'tx:${accountUuid == null ? '' : '$accountUuid:'}${transaction.txidHex}:${_stableTransactionRole(kind)}',
     title: giftCardKind != null
         ? giftCardActivityTitle(
             giftCardKind,
@@ -144,7 +145,8 @@ ActivityRowData buildTransactionActivityRow({
         : outgoingAmountColor(colors),
     amountSubtitle: isFailed && amount != BigInt.zero
         ? 'Refunded'
-        : privateQueriesEnabled && transactionDetailsIncomplete(transaction)
+        : (privateQueriesEnabled || transaction.inferredAttribution == true) &&
+              transactionDetailsIncomplete(transaction)
         ? kIncompleteDetailsText
         : null,
     statusText: isFailed

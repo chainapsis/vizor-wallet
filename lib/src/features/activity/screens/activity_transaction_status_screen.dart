@@ -111,6 +111,7 @@ class _ActivityTransactionStatusScreenState
   String? _activeAccountUuid;
   String? _argsAccountUuid;
   int _loadGeneration = 0;
+  bool _canFollowProvisionalRole = true;
   bool _messageExpanded = false;
   String? _verifyAddress;
 
@@ -176,6 +177,10 @@ class _ActivityTransactionStatusScreenState
       );
       if (tx == null) {
         setState(() {
+          if (_transaction?.inferredAttribution == true) {
+            _transaction = null;
+            _detail = null;
+          }
           _error = _transaction == null
               ? 'Transaction could not be loaded.'
               : 'Latest transaction status could not be refreshed.';
@@ -186,8 +191,11 @@ class _ActivityTransactionStatusScreenState
       }
       // Publish the status without waiting for addresses, outputs, or memo.
       setState(() {
+        final relationshipsChanged =
+            _transaction?.relationshipSignature != tx.relationshipSignature;
+        _detail = relationshipsChanged ? null : _matchingDetailFor(tx);
         _transaction = tx;
-        _detail = _matchingDetailFor(tx);
+        if (tx.inferredAttribution == true) _canFollowProvisionalRole = false;
         _isLoading = false;
         _error = null;
       });
@@ -253,10 +261,11 @@ class _ActivityTransactionStatusScreenState
           return tx;
         }
       }
-      if (_shownTransactionIsProvisional) {
+      if (_canFollowProvisionalRole && _shownTransactionIsProvisional) {
         return provisionalRoleSuccessor(
           transactions,
           (other) => _txidsMatch(txidHex, other),
+          previousKind: txKind,
         );
       }
       return null;
@@ -270,43 +279,11 @@ class _ActivityTransactionStatusScreenState
   bool get _shownTransactionIsProvisional =>
       (_transaction ?? widget.args.initialTransaction)?.provisional ?? false;
 
-  String _recentTxSignature(SyncState? sync) {
-    final txKind =
-        _transaction?.txKind ??
-        widget.args.initialTransaction?.txKind ??
-        widget.args.txKind;
-    if (txKind != null) {
-      for (final tx in sync?.recentTransactions ?? const []) {
-        if (_txidsMatch(widget.args.txidHex, tx.txidHex) &&
-            _txKindMatches(txKind, tx.txKind)) {
-          return [
-            tx.txidHex,
-            tx.minedHeight,
-            tx.expiredUnmined,
-            tx.txKind,
-            tx.displayAmount,
-            tx.fee,
-            transactionCompletenessSignature(tx),
-          ].join(':');
-        }
-      }
-      return '';
-    }
-    for (final tx in sync?.recentTransactions ?? const []) {
-      if (_txidsMatch(widget.args.txidHex, tx.txidHex)) {
-        return [
-          tx.txidHex,
-          tx.minedHeight,
-          tx.expiredUnmined,
-          tx.txKind,
-          tx.displayAmount,
-          tx.fee,
-          transactionCompletenessSignature(tx),
-        ].join(':');
-      }
-    }
-    return '';
-  }
+  String _recentTxSignature(SyncState? sync) =>
+      transactionReceiptRefreshSignature(
+        sync?.recentTransactions ?? const [],
+        (txid) => _txidsMatch(widget.args.txidHex, txid),
+      );
 
   bool _txidsMatch(String first, String second) {
     if (widget.args.giftCard != null) {
@@ -384,7 +361,8 @@ class _ActivityTransactionStatusScreenState
       ref.watch(enhancePirProvider) && transactionFeeIsUnknown(tx);
 
   bool _showIncompleteDetails(rust_sync.TransactionInfo tx) =>
-      ref.watch(enhancePirProvider) && transactionDetailsIncomplete(tx);
+      (tx.inferredAttribution == true || ref.watch(enhancePirProvider)) &&
+      transactionDetailsIncomplete(tx);
 
   String _feeText(
     rust_sync.TransactionInfo? tx, {
@@ -491,6 +469,9 @@ class _ActivityTransactionStatusScreenState
 
     return _ReceiptContentColumn(
       child: ReceivedReceiptView(
+        feeLabel: tx.feeIsWholeTransaction == true
+            ? 'Tx fee (payer unknown)'
+            : 'Network fee',
         status: _receivedStatusFor(tx),
         feeText:
             tx.feeState == rust_sync.TransactionFeeState.known &&
@@ -547,6 +528,9 @@ class _ActivityTransactionStatusScreenState
     final hasMemo = memo != null && memo.isNotEmpty;
 
     return SendStatusContentView(
+      feeLabel: tx.feeIsWholeTransaction == true
+          ? 'Tx fee (payer unknown)'
+          : 'Tx fee',
       phase: _sentPhaseFor(tx),
       amountText: _amountText(tx, privacyModeEnabled: privacyModeEnabled),
       recipient: recipient,
@@ -832,12 +816,14 @@ class _ActivityTransactionStatusScreenState
                   value: 'Incomplete',
                   trailingIconName: AppIcons.help,
                   trailingIconColor: colors.text.secondary,
-                  trailingIconTooltip: kIncompleteDetailsHelpText,
+                  trailingIconTooltip: transactionIncompleteDetailsHelp(tx),
                 ),
               if (feeText != null) ...[
                 const ReviewWrapDivider(),
                 ReviewListRow(
-                  label: 'Tx fee',
+                  label: tx.feeIsWholeTransaction == true
+                      ? 'Tx fee (payer unknown)'
+                      : 'Tx fee',
                   value: feeText,
                   trailingIconName: AppIcons.help,
                   trailingIconColor: colors.text.secondary,
@@ -952,7 +938,12 @@ class _ActivityTransactionStatusScreenState
       redesignedContent = Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [redesignedContent, const _IncompleteDetailsNotice()],
+        children: [
+          redesignedContent,
+          _IncompleteDetailsNotice(
+            inferredAttribution: tx.inferredAttribution == true,
+          ),
+        ],
       );
     }
 
@@ -1014,7 +1005,8 @@ String _truncatedDisplayTxid(String protocolTxid) => truncatedTxid(
 
 /// Marks a dedicated receipt whose entry is incomplete.
 class _IncompleteDetailsNotice extends StatelessWidget {
-  const _IncompleteDetailsNotice();
+  const _IncompleteDetailsNotice({this.inferredAttribution = false});
+  final bool inferredAttribution;
 
   @override
   Widget build(BuildContext context) {
@@ -1026,7 +1018,9 @@ class _IncompleteDetailsNotice extends StatelessWidget {
             value: 'Incomplete',
             trailingIconName: AppIcons.help,
             trailingIconColor: context.colors.text.secondary,
-            trailingIconTooltip: kIncompleteDetailsHelpText,
+            trailingIconTooltip: inferredAttribution
+                ? kInferredAttributionHelpText
+                : kIncompleteDetailsHelpText,
           ),
         ],
       ),

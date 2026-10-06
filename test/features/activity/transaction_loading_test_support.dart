@@ -20,29 +20,39 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../fakes/fake_enhance_pir_notifier.dart';
+import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 import '../../figma_compare/figma_compare_font_loader.dart';
 
 const _txid =
     'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
-rust_sync.TransactionInfo _tx({String kind = 'received', int height = 100}) =>
-    rust_sync.TransactionInfo(
-      amountIncludesFee: false,
-      detailsComplete: true,
-      feeState: rust_sync.TransactionFeeState.known,
-      provisional: false,
-      txidHex: _txid,
-      txKind: kind,
-      minedHeight: BigInt.from(height),
-      expiredUnmined: false,
-      accountBalanceDelta: 0,
-      fee: BigInt.zero,
-      blockTime: BigInt.from(1764150000),
-      createdTime: BigInt.from(1764150000),
-      isTransparent: false,
-      displayAmount: BigInt.from(100000000),
-      displayPool: 'shielded',
-    );
+rust_sync.TransactionInfo _tx({
+  String kind = 'received',
+  int height = 100,
+  bool inferred = false,
+  String? relationshipSignature,
+  int amount = 100000000,
+  bool provisional = false,
+}) => rust_sync.TransactionInfo(
+  amountIncludesFee: false,
+  inferredAttribution: inferred,
+  relationshipSignature: relationshipSignature,
+  detailsComplete: !inferred,
+  feeState: rust_sync.TransactionFeeState.known,
+  provisional: provisional,
+  txidHex: _txid,
+  txKind: kind,
+  minedHeight: BigInt.from(height),
+  expiredUnmined: false,
+  accountBalanceDelta: 0,
+  fee: BigInt.zero,
+  blockTime: BigInt.from(1764150000),
+  createdTime: BigInt.from(1764150000),
+  isTransparent: false,
+  displayAmount: BigInt.from(amount),
+  displayPool: 'shielded',
+);
 
 rust_sync.TransactionDetail _detail(String memo, {String kind = 'received'}) =>
     rust_sync.TransactionDetail(
@@ -312,6 +322,80 @@ void transactionLoadingTests({required bool mobile}) {
     },
   );
 
+  testWidgets(
+    'Sent replacement keeps its role with two gross legs and clears on withdrawal',
+    (tester) async {
+      final sent = _tx(
+        kind: 'sent',
+        inferred: true,
+        relationshipSignature: 'A:A:external',
+        amount: 250000,
+        provisional: true,
+      );
+      final received = _tx(
+        inferred: true,
+        relationshipSignature: 'A:A:external',
+        amount: 250000,
+        provisional: true,
+      );
+      var rows = [sent, received];
+      final sync = FakeSyncNotifier(_sync());
+      final readKinds = <String>[];
+      await _pump(
+        tester,
+        mobile: mobile,
+        kind: 'sent',
+        privateQueries: true,
+        initialTransaction: _tx(kind: 'sent', amount: 15000, provisional: true),
+        history: (_) async => rows,
+        sync: sync,
+        detail: (_, tx) async {
+          readKinds.add(tx.txKind);
+          return _completeDetail(memo: 'Sent relationship', kind: tx.txKind);
+        },
+      );
+      expect(readKinds, ['sent']);
+      expect(find.textContaining('0.0025', findRichText: true), findsWidgets);
+      expect(find.text('Received successfully'), findsNothing);
+      expect(find.text('Received'), findsNothing);
+      rows = [received];
+      sync.emit(_sync(height: 101).copyWith(recentTransactions: rows));
+      await tester.pump();
+      await tester.pump();
+      expect(readKinds, ['sent']);
+      expect(find.text('Sent relationship'), findsNothing);
+      expect(find.text('Transaction could not be loaded.'), findsOneWidget);
+      expect(find.textContaining('0.0025', findRichText: true), findsNothing);
+    },
+  );
+
+  testWidgets('relationship-only refresh replaces open receipt details', (
+    tester,
+  ) async {
+    var tx = _tx(kind: 'sent', inferred: true, relationshipSignature: 'first');
+    var reads = 0;
+    final sync = FakeSyncNotifier(_sync().copyWith(recentTransactions: [tx]));
+    await _pump(
+      tester,
+      mobile: mobile,
+      kind: 'sent',
+      initialTransaction: tx,
+      history: (_) async => [tx],
+      sync: sync,
+      detail: (_, _) async =>
+          _completeDetail(memo: 'Revision ${++reads}', kind: 'sent'),
+    );
+    expect(find.text('Revision 1'), findsOneWidget);
+    tx = _tx(kind: 'sent', inferred: true, relationshipSignature: 'second');
+    sync.emit(_sync().copyWith(recentTransactions: [tx]));
+    await tester.pump();
+    await tester.pump();
+    await tester.pump();
+    expect(reads, 2);
+    expect(find.text('Revision 1'), findsNothing);
+    expect(find.text('Revision 2'), findsOneWidget);
+  });
+
   for (final staleError in [false, true]) {
     testWidgets(
       'A to B to A discards stale ${staleError ? 'errors' : 'details'}',
@@ -441,6 +525,8 @@ Future<void> _pump(
   String kind = 'received',
   String sourceAccount = 'account-1',
   rust_sync.TransactionDetail? initialDetail,
+  rust_sync.TransactionInfo? initialTransaction,
+  bool privateQueries = false,
   _Accounts? accounts,
   FakeSyncNotifier? sync,
 }) async {
@@ -458,7 +544,9 @@ Future<void> _pump(
                 args: MobileTransactionStatusArgs(
                   txidHex: _txid,
                   txKind: kind,
-                  initialTransaction: seeded ? _tx(kind: kind) : null,
+                  initialTransaction: seeded
+                      ? initialTransaction ?? _tx(kind: kind)
+                      : null,
                   initialDetail: initialDetail,
                   sourceAccountUuid: seeded ? sourceAccount : null,
                 ),
@@ -469,7 +557,9 @@ Future<void> _pump(
                 args: ActivityTransactionStatusArgs(
                   txidHex: _txid,
                   txKind: kind,
-                  initialTransaction: seeded ? _tx(kind: kind) : null,
+                  initialTransaction: seeded
+                      ? initialTransaction ?? _tx(kind: kind)
+                      : null,
                   initialDetail: initialDetail,
                   sourceAccountUuid: seeded ? sourceAccount : null,
                 ),
@@ -500,6 +590,9 @@ Future<void> _pump(
         accountProvider.overrideWith(() => accounts ?? _Accounts()),
         syncProvider.overrideWith(() => sync ?? FakeSyncNotifier(_sync())),
         swapFeatureEnabledProvider.overrideWithValue(false),
+        enhancePirProvider.overrideWith(
+          () => FakeEnhancePirNotifier(privateQueries),
+        ),
         ownAccountAddressesProvider.overrideWith((_) async => {}),
         giftCardActivityIndexProvider.overrideWith(
           (_, _) async => GiftCardActivityIndex.empty,
@@ -540,3 +633,19 @@ class _AddressBook implements AddressBookRepository {
   @override
   Future<void> saveContacts(List<AddressBookContact> contacts) async {}
 }
+
+/// Shared native harness; rows and details are read through the Rust bridge by the caller.
+Future<void> pumpOwnedTransferReceipt(
+  WidgetTester tester, {
+  required rust_sync.TransactionInfo transaction,
+  required ActivityTxHistoryLoader history,
+  required ActivityTxDetailLoader detail,
+}) => _pump(
+  tester,
+  mobile: false,
+  kind: transaction.txKind,
+  initialTransaction: transaction,
+  privateQueries: true,
+  history: history,
+  detail: detail,
+);

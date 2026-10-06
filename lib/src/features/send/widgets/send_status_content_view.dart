@@ -30,6 +30,7 @@ class SendStatusContentView extends StatelessWidget {
     required this.timestampText,
     required this.txIdText,
     required this.feeText,
+    this.feeLabel = 'Tx fee',
     this.isShieldedRecipient = true,
     this.recipientAddressType,
     this.fiatText,
@@ -68,6 +69,7 @@ class SendStatusContentView extends StatelessWidget {
 
   /// Formatted fee ("0.012 ZEC").
   final String feeText;
+  final String feeLabel;
 
   /// Optional fiat sub-label under the amount; hidden when null.
   final String? fiatText;
@@ -195,7 +197,7 @@ class SendStatusContentView extends StatelessWidget {
             ),
             const ReviewWrapDivider(),
             ReviewListRow(
-              label: 'Tx fee',
+              label: feeLabel,
               value: feeText,
               trailingIconName: AppIcons.help,
               trailingIconColor: colors.text.secondary,

@@ -42,6 +42,7 @@ class ReceivedReceiptView extends StatelessWidget {
     this.receivingAddress,
     this.isShieldedReceivingAddress = false,
     this.feeText,
+    this.feeLabel = 'Network fee',
     this.memoText,
     this.memoExpanded = false,
     this.detailsLoading = false,
@@ -84,6 +85,7 @@ class ReceivedReceiptView extends StatelessWidget {
 
   /// Known transaction fee, formatted by the hosting screen.
   final String? feeText;
+  final String feeLabel;
 
   /// Memo display text; the Message row is omitted when null or empty.
   final String? memoText;
@@ -216,7 +218,7 @@ class ReceivedReceiptView extends StatelessWidget {
                     onToggle: onExpandMemo,
                   ),
                 if (feeText != null)
-                  ReviewListRow(label: 'Network fee', value: feeText!),
+                  ReviewListRow(label: feeLabel, value: feeText!),
                 ReviewListRow(label: 'Timestamp', value: timestampText),
                 ReviewListRow(
                   label: 'Tx ID',
