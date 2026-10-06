@@ -279,6 +279,12 @@ mod tests {
                 return second.clone();
             }
             let hash = |height: u64| {
+                if height == first.height - 1 {
+                    return first.prev_hash.clone();
+                }
+                if height == second.height {
+                    return second.hash.clone();
+                }
                 let mut bytes = vec![0u8; 32];
                 bytes[..8].copy_from_slice(&height.to_le_bytes());
                 bytes
@@ -286,11 +292,11 @@ mod tests {
             CompactBlock {
                 height: h,
                 hash: hash(h),
-                prev_hash: if h == second.height + 1 {
-                    second.hash.clone()
-                } else {
-                    hash(h - 1)
-                },
+                prev_hash: hash(h - 1),
+                chain_metadata: Some(ChainMetadata {
+                    ironwood_commitment_tree_size: u32::from(h > first.height),
+                    ..Default::default()
+                }),
                 ..Default::default()
             }
         }
@@ -399,28 +405,10 @@ mod tests {
         (url, task, calls)
     }
 
-    #[tokio::test]
-    async fn creates_signed_ironwood_claim_with_a_historical_witness_and_unscanned_tail() {
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("claim.db");
-        let path = path.to_str().unwrap();
-        let network = WalletNetwork::Main;
-        let height = network
-            .activation_height(consensus::NetworkUpgrade::Nu6_3)
-            .unwrap()
-            + 100;
-        let seed = SecretVec::new(vec![7; 32]);
-        let (uuid, address) = crate::wallet::keys::init_db_and_create_account(
-            path,
-            network,
-            &seed,
-            Some(u32::from(height) as u64),
-            "card",
-        )
-        .unwrap();
-        let usk =
-            UnifiedSpendingKey::from_seed(&network, seed.expose_secret(), zip32::AccountId::ZERO)
-                .unwrap();
+    fn funded_card_blocks(
+        usk: &UnifiedSpendingKey,
+        height: BlockHeight,
+    ) -> (CompactBlock, CompactBlock) {
         let recipient = usk
             .to_unified_full_viewing_key()
             .orchard()
@@ -476,6 +464,148 @@ mod tests {
             }),
             ..Default::default()
         };
+        (first, second)
+    }
+
+    #[tokio::test]
+    async fn legacy_scan_gaps_do_not_hide_or_prematurely_adopt_funding() {
+        for cached_funding in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("legacy-claim.db");
+            let path = path.to_str().unwrap();
+            let network = WalletNetwork::Main;
+            let height = network
+                .activation_height(consensus::NetworkUpgrade::Nu6_3)
+                .unwrap()
+                + 300;
+            let birthday = height - 200;
+            let seed = SecretVec::new(vec![7; 32]);
+            let (uuid, address) = crate::wallet::keys::init_db_and_create_account(
+                path,
+                network,
+                &seed,
+                Some(u32::from(birthday) as u64),
+                "card",
+            )
+            .unwrap();
+            let usk = UnifiedSpendingKey::from_seed(
+                &network,
+                seed.expose_secret(),
+                zip32::AccountId::ZERO,
+            )
+            .unwrap();
+            let (first, second) = funded_card_blocks(&usk, height);
+            let (url, server, calls) =
+                start_card_server(first, second.clone(), u32::from(height + 1), true).await;
+            if cached_funding {
+                // Create genuine funding notes/witnesses, then model a legacy
+                // cache with only the later scanned range remaining.
+                gift_card_claim::run(
+                    path,
+                    &url,
+                    &[],
+                    network,
+                    Arc::new(AtomicBool::new(false)),
+                    false,
+                    |_, _, _, _| {},
+                )
+                .await
+                .unwrap();
+            }
+            let c = rusqlite::Connection::open(path).unwrap();
+            if cached_funding {
+                c.execute("DELETE FROM blocks WHERE height < ?1", [u32::from(height)])
+                    .unwrap();
+                c.execute("DELETE FROM vizor_giftcard_check", []).unwrap();
+                c.execute("DELETE FROM scan_queue", []).unwrap();
+                c.execute("INSERT INTO scan_queue(block_range_start,block_range_end,priority) VALUES(?1,?2,10),(?2,?3,0)", rusqlite::params![u32::from(birthday),u32::from(height),u32::from(height + 2)]).unwrap();
+            } else {
+                // Recent blocks can be scanned before the birthday history.
+                c.execute(
+                    "INSERT INTO blocks(height,hash,time,sapling_tree) VALUES(?1,?2,0,X'000000')",
+                    rusqlite::params![u32::from(height + 1), second.hash],
+                )
+                .unwrap();
+            }
+            // Never delete local transaction recovery material while repairing
+            // a legacy cache. Submission is intentionally disabled in this test.
+            c.execute(
+                "INSERT INTO transactions(txid,created,raw,min_observed_height) VALUES(?1,'legacy',X'01',0)",
+                [vec![9u8; 32]],
+            )
+            .unwrap();
+            calls.lock().unwrap().clear();
+            let discovered = gift_card_claim::run(
+                path,
+                &url,
+                &[],
+                network,
+                Arc::new(AtomicBool::new(false)),
+                false,
+                |_, _, _, _| {},
+            )
+            .await
+            .unwrap();
+            server.abort();
+            assert_eq!(discovered.funding_height, u32::from(height));
+            assert_eq!(discovered.unspent, 10_010_000);
+            assert!(discovered.complete);
+            assert!(
+                calls
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .filter(|m| *m == "GetBlockRange")
+                    .count()
+                    >= 3,
+                "Discovery must fill the birthday prefix before adopting cached funding"
+            );
+            let db = open_wallet_db(path, network).unwrap();
+            assert!(db.block_fully_scanned().unwrap().unwrap().block_height() >= height);
+            let input = CardInput::load(&db, path, parse_account_uuid(&uuid).unwrap())
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                input
+                    .estimate_max(network, &address, None)
+                    .unwrap()
+                    .amount_zatoshi,
+                10_000_000
+            );
+            let raw: Vec<u8> = c
+                .query_row(
+                    "SELECT raw FROM transactions WHERE txid=?1",
+                    [vec![9u8; 32]],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(raw, [1]);
+        }
+    }
+
+    #[tokio::test]
+    async fn creates_signed_ironwood_claim_with_a_historical_witness_and_unscanned_tail() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("claim.db");
+        let path = path.to_str().unwrap();
+        let network = WalletNetwork::Main;
+        let height = network
+            .activation_height(consensus::NetworkUpgrade::Nu6_3)
+            .unwrap()
+            + 100;
+        let seed = SecretVec::new(vec![7; 32]);
+        let (uuid, address) = crate::wallet::keys::init_db_and_create_account(
+            path,
+            network,
+            &seed,
+            Some(u32::from(height) as u64),
+            "card",
+        )
+        .unwrap();
+        let usk =
+            UnifiedSpendingKey::from_seed(&network, seed.expose_secret(), zip32::AccountId::ZERO)
+                .unwrap();
+        let (first, second) = funded_card_blocks(&usk, height);
         // A fresh receiver starts with no scanned notes, then discovers its
         // first funding and builds the witness from only these two blocks.
         let (url, server, initial_calls) =

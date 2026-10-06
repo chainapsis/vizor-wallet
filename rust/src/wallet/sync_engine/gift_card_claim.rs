@@ -106,6 +106,28 @@ fn check_cancel(cancel: &AtomicBool) -> Result<(), String> {
     }
 }
 
+/// Legacy sync may have scanned recent blocks before older history. Resume
+/// from the contiguous prefix, including any earlier verification work, never
+/// from the highest stored block. Discovery itself commits in height order.
+fn discovery_start(db: &WalletDatabase, birthday: BlockHeight, tip: u32) -> Result<u32, String> {
+    let contiguous_end = db
+        .block_fully_scanned()
+        .map_err(|e| e.to_string())?
+        .map(|block| u32::from(block.block_height()));
+    let mut start = contiguous_end.map_or(u32::from(birthday), |h| h.saturating_add(1));
+    if let Some(pending_start) = db
+        .suggest_scan_ranges()
+        .map_err(|e| e.to_string())?
+        .iter()
+        .filter(|range| is_pending_scan_range(range) && range.block_range().start <= tip.into())
+        .map(|range| u32::from(range.block_range().start))
+        .min()
+    {
+        start = start.min(pending_start);
+    }
+    Ok(start.max(u32::from(birthday)))
+}
+
 async fn cancellable<T>(
     cancel: &AtomicBool,
     work: impl Future<Output = Result<T, String>>,
@@ -214,7 +236,9 @@ async fn run_inner(
 
     c.execute("UPDATE vizor_giftcard_check SET complete=0", [])
         .map_err(|e| e.to_string())?;
+    let mut start = u32::from(birthday);
     if state.funding_height == 0 {
+        start = discovery_start(&db, birthday, tip)?;
         let anchor: Option<u32> = c
             .query_row(
                 "SELECT MAX(checkpoint_id) FROM ironwood_tree_checkpoints",
@@ -224,7 +248,7 @@ async fn run_inner(
             .map_err(|e| e.to_string())?;
         if let Some(anchor) = anchor {
             if let Some((height, txid)) = first_funding(&c)? {
-                if height <= anchor {
+                if height < start && height <= anchor {
                     c.execute("INSERT INTO vizor_giftcard_check(id,funding_height,funding_txid,anchor_height) VALUES(1,?1,?2,?3)",rusqlite::params![height,txid,anchor]).map_err(|e|e.to_string())?;
                     state = read_snapshot(&c).map_err(|e| e.to_string())?.unwrap();
                 }
@@ -234,10 +258,6 @@ async fn run_inner(
     // Prefetch two ranges, but scan and commit strictly in height order. Once
     // funding is found, dropping this stream cancels outstanding prefetched work.
     if state.funding_height == 0 {
-        let scanned: Option<u32> = c
-            .query_row("SELECT MAX(height) FROM blocks", [], |r| r.get(0))
-            .map_err(|e| e.to_string())?;
-        let start = scanned.map_or(u32::from(birthday), |h| h + 1);
         let ranges: Vec<_> = (start..=tip)
             .step_by(DISCOVERY_BATCH as usize)
             .map(|s| (s, s.saturating_add(DISCOVERY_BATCH - 1).min(tip)))
@@ -299,7 +319,9 @@ async fn run_inner(
                 (tip - u32::from(birthday) + 1) as u64,
                 &state,
             );
-            if let Some((height, txid)) = funding {
+            // A legacy cache can already contain a later note. Do not stop
+            // until discovery has covered its preceding history and funding.
+            if let Some((height, txid)) = funding.filter(|(height, _)| *height <= end) {
                 c.execute("INSERT OR REPLACE INTO vizor_giftcard_check(id,funding_height,funding_txid,anchor_height) VALUES(1,?1,?2,?3)",rusqlite::params![height,txid,end]).map_err(|e|e.to_string())?;
                 state = read_snapshot(&c).map_err(|e| e.to_string())?.unwrap();
                 progress("checking", 0, (tip - height + 1) as u64, &state);
