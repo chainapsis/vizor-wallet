@@ -725,8 +725,15 @@ impl HistoryCompleteness {
     fn of(details: &TransactionHistoryDetails) -> Self {
         Self {
             details_complete: details.payment_details == DetailCompleteness::Complete,
-            provisional: details.classification == HistoryClassification::Provisional
-                || details
+            // A net reconstruction (a privately recovered mixed shielding) has a final
+            // movement: it is shown, but its fee stays the whole transaction's and no
+            // payment is inferred from it.
+            provisional: match details.classification {
+                HistoryClassification::Provisional => true,
+                HistoryClassification::LocalIntent
+                | HistoryClassification::Reconstructed
+                | HistoryClassification::NetReconstructed => false,
+            } || details
                     .effects
                     .iter()
                     .any(|effect| !effect.completeness.is_settled()),
@@ -3068,6 +3075,24 @@ mod tests {
         assert_eq!(info.fee, WHOLE_FEE);
         assert!(info.provisional);
         assert!(!info.details_complete);
+    }
+
+    /// The library's net reconstruction of a privately recovered mixed shielding
+    /// keeps the shielding, shows the whole fee, and charges and infers nothing.
+    #[test]
+    fn a_net_reconstructed_shielding_is_shown_without_attributing_its_fee() {
+        let mut details = shared_funding_details(exact_whole_fee());
+        if let Some(evidence) = details.transaction_metadata.as_mut() {
+            evidence.metadata.has_shielded_components = true;
+        }
+        details.payment_details = DetailCompleteness::Complete;
+        details.classification = HistoryClassification::NetReconstructed;
+        let history = HistoryCompleteness::of(&details);
+        assert!(history.justifies_shielding());
+        assert_eq!(history.fee, Fee::Unknown);
+        assert_eq!(history.whole_fee, Some(WHOLE_FEE));
+        assert_eq!(history.inferred_payment, None);
+        assert_eq!(history.shown_fee(), Fee::Known(WHOLE_FEE));
     }
 
     #[test]
