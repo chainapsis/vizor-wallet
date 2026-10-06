@@ -34,13 +34,8 @@ fn stored_software_secret_matches_only_its_exact_database_account() {
         "legal winner thank year wave sausage worth useful legal winner thank yellow";
 
     assert_eq!(
-        find_software_account_for_mnemonic(
-            stored_secret,
-            "main".to_string(),
-            db_path.clone(),
-            0,
-        )
-        .unwrap(),
+        find_software_account_for_mnemonic(stored_secret, "main".to_string(), db_path.clone(), 0,)
+            .unwrap(),
         Some(imported.account_uuid),
     );
     assert_eq!(

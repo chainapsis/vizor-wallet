@@ -3169,6 +3169,7 @@ class _ClaimDestinationRustApi implements RustLibApi {
     required String network,
     required String accountUuid,
   }) async => rust_sync.WalletBalance(
+    transparentAuthority: rust_sync.TransparentBalanceAuthority.current,
     availability: rust_sync.WalletBalanceAvailability.available,
     transparent: BigInt.zero,
     sapling: BigInt.zero,
