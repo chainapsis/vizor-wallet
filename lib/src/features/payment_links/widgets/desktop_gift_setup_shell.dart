@@ -5,7 +5,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../onboarding/shared/onboarding_chrome.dart';
 
-enum DesktopGiftSetupStep { password, customise }
+enum DesktopGiftSetupStep { redeem, password, customise }
 
 /// Gift setup shares the desktop password/persona controls, with its own steps.
 class DesktopGiftSetupShell extends StatelessWidget {
@@ -13,6 +13,7 @@ class DesktopGiftSetupShell extends StatelessWidget {
     required this.step,
     required this.showPasswordStep,
     required this.child,
+    this.backTarget,
     this.overlay,
     super.key,
   });
@@ -20,6 +21,7 @@ class DesktopGiftSetupShell extends StatelessWidget {
   final DesktopGiftSetupStep step;
   final bool showPasswordStep;
   final Widget child;
+  final OnboardingBackTarget? backTarget;
   final Widget? overlay;
 
   @override
@@ -27,10 +29,10 @@ class DesktopGiftSetupShell extends StatelessWidget {
     backgroundColor: context.colors.background.window,
     sidebar: OnboardingSidebarChrome(
       steps: [
-        const OnboardingSidebarStepData(
-          label: 'Gift card',
-          iconName: AppIcons.giftCard,
-          active: false,
+        OnboardingSidebarStepData(
+          label: 'Redeem the card',
+          iconName: AppIcons.giftCardOutline,
+          active: step == DesktopGiftSetupStep.redeem,
         ),
         if (showPasswordStep)
           OnboardingSidebarStepData(
@@ -46,12 +48,28 @@ class DesktopGiftSetupShell extends StatelessWidget {
       ],
       illustration: Align(
         alignment: Alignment.bottomCenter,
-        child: Image.asset(
-          'assets/illustrations/onboarding_customise_account_sidebar.png',
-          fit: BoxFit.fitWidth,
-        ),
+        child: step == DesktopGiftSetupStep.redeem
+            ? SizedBox(
+                width: 256,
+                height: 430,
+                child: Image.asset(
+                  context.appTheme == AppThemeData.dark
+                      ? 'assets/illustrations/onboarding_intro_sidebar_dark.png'
+                      : 'assets/illustrations/onboarding_intro_sidebar_light.png',
+                  fit: BoxFit.cover,
+                  alignment: Alignment.bottomCenter,
+                ),
+              )
+            : Image.asset(
+                'assets/illustrations/onboarding_customise_account_sidebar.png',
+                fit: BoxFit.fitWidth,
+              ),
       ),
     ),
-    pane: OnboardingPaneChrome(overlay: overlay, child: child),
+    pane: OnboardingPaneChrome(
+      backTarget: backTarget,
+      overlay: overlay,
+      child: child,
+    ),
   );
 }

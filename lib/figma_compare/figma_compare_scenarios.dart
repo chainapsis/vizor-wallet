@@ -121,6 +121,12 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     platform: TargetPlatform.macOS,
   ),
   FigmaCompareScenario(
+    id: 'desktop-gift-additional-entry',
+    description: 'Gift Card entry for an additional account',
+    builder: buildDesktopGiftAdditionalEntryUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
     id: 'desktop-gift-checking',
     description: 'Gift Card inspection pending',
     builder: buildDesktopGiftCheckingUseCase,
