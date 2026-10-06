@@ -2,6 +2,7 @@
 // Preview boundaries are in memory; no wallet, network, storage or Rust calls.
 import 'dart:async';
 import '../src/features/payment_links/providers/gift_card_entry_price_provider.dart';
+import '../src/features/payment_links/providers/gift_card_check_progress_provider.dart';
 import 'dart:io';
 import 'dart:math';
 
@@ -73,6 +74,12 @@ Widget buildMobileGiftAddAccountInspected(BuildContext context) =>
     );
 Widget buildMobileGiftOnboardingChecking(BuildContext context) =>
     const _GiftPreview(initialLocation: '/gift', checking: true);
+Widget buildMobileGiftOnboardingFundingFound(BuildContext context) =>
+    const _GiftPreview(
+      initialLocation: '/gift',
+      checking: true,
+      fundingFound: true,
+    );
 Widget buildMobileGiftOnboardingLongSyncWarning(BuildContext context) =>
     const _GiftPreview(initialLocation: '/gift', longSyncWarning: true);
 
@@ -140,6 +147,7 @@ class _GiftPreview extends StatefulWidget {
   const _GiftPreview({
     this.initialLocation = '/welcome',
     this.checking = false,
+    this.fundingFound = false,
     this.inspected = false,
     this.longSyncWarning = false,
     this.failCreation = false,
@@ -150,6 +158,7 @@ class _GiftPreview extends StatefulWidget {
   });
   final String initialLocation;
   final bool checking;
+  final bool fundingFound;
   final bool inspected;
   final bool longSyncWarning;
   final bool failCreation;
@@ -334,6 +343,10 @@ class _GiftPreviewState extends State<_GiftPreview> {
       child: ProviderScope(
         overrides: [
           appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+          if (widget.fundingFound)
+            giftCardCheckProgressProvider.overrideWith(
+              _FundingFoundProgress.new,
+            ),
           paymentLinkSetupJournalPendingProvider.overrideWithValue(
             () async => false,
           ),
@@ -879,6 +892,25 @@ class _CheckingGiftFlow extends GiftClaimFlowNotifier {
   @override
   GiftClaimFlowState build() =>
       GiftClaimFlowState(link: _link, phase: GiftClaimPhase.checking);
+}
+
+class _FundingFoundProgress extends GiftCardCheckProgressNotifier {
+  @override
+  Map<String, GiftCardCheckProgress> build() => {
+    paymentLinkClaimWalletDirectoryName(_link): GiftCardCheckProgress(
+      _link,
+      rust_sync.ApiGiftCardCheckProgress(
+        phase: 'checking',
+        completed: BigInt.from(50),
+        total: BigInt.from(100),
+        fundingHeight: _link.birthdayHeight + 1,
+        checkedHeight: _link.birthdayHeight + 50,
+        totalZatoshi: _link.amountZatoshi + BigInt.from(10000),
+        unspentZatoshi: _link.amountZatoshi + BigInt.from(10000),
+        complete: false,
+      ),
+    ),
+  };
 }
 
 class _LongSyncGiftFlow extends GiftClaimFlowNotifier {

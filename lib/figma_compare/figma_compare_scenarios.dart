@@ -78,6 +78,25 @@ class FigmaCompareScenario {
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
   FigmaCompareScenario(
+    id: 'gift-card-claim-checking',
+    description: 'Discovered Gift Card with disabled claim and 50% progress',
+    builder: buildPaymentLinkReceivedCheckingUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-gift-card-claim-checking',
+    description: 'Discovered Gift Card with disabled claim and 50% progress',
+    builder: buildMobilePaymentLinkReceivedCheckingUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-gift-onboarding-funding-found',
+    description: 'Walletless Gift Card with funding found and 50% progress',
+    builder: buildMobileGiftOnboardingFundingFound,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'gift-card-value',
     description: 'Gift card value typography and optional fiat amount',
     builder: _giftCardValueCapture,
