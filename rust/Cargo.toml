@@ -230,13 +230,14 @@ assertions_on_constants = "allow"
 # these crates through crates.io, and a direct git dependency would duplicate
 # them. `zakura-pczt` and `zakura-pir-enhance-types` are patched because the
 # git `zakura-client-backend` depends on them by path. Drop this once a release includes the revision.
-# Pinned to wallet-libraries main after PR #96: account-scoped history,
-# rewind re-confirmation, retained legacy projection, and spend discovery after expiry.
+# Pinned to the existing wallet-libraries #82 head, which combines its
+# funding attribution and UTXO-absence APIs with account-scoped history summaries.
+# Repin to main when the remaining library fixes merge.
 [patch.crates-io]
-zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries", rev = "8897057f0043b4c475e0da12340c4e0e426cea71" }
-zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries", rev = "8897057f0043b4c475e0da12340c4e0e426cea71" }
-zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries", rev = "8897057f0043b4c475e0da12340c4e0e426cea71" }
-zakura-pir-enhance-types = { git = "https://github.com/zakura-core/wallet-libraries", rev = "8897057f0043b4c475e0da12340c4e0e426cea71" }
+zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries", rev = "1856e347d24e50c7b3e011be4294373292e14912" }
+zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries", rev = "1856e347d24e50c7b3e011be4294373292e14912" }
+zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries", rev = "1856e347d24e50c7b3e011be4294373292e14912" }
+zakura-pir-enhance-types = { git = "https://github.com/zakura-core/wallet-libraries", rev = "1856e347d24e50c7b3e011be4294373292e14912" }
 
 # Flutter debug builds use Cargokit + Cargo's dev profile (`cargo build`
 # without `--release`). Rust crypto and voting flows are slow under the default

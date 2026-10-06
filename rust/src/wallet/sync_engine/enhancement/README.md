@@ -568,8 +568,11 @@ there is no separate release gate.
 
 ## Library dependency
 
-The four patched library crates use wallet-libraries main revision
-`8897057f0043b4c475e0da12340c4e0e426cea71` (main after #96). Trusted qualification, rather than candidate observation, authorizes
+The four patched library crates use wallet-libraries #82 head
+`1856e347d24e50c7b3e011be4294373292e14912`, which includes the funding
+attribution and UTXO-absence fixes plus account-scoped history summaries.
+Repin to main once the remaining library fixes merge. Trusted qualification,
+rather than candidate observation, authorizes
 provisional revision replacement. The replacement regression explicitly
 qualifies fixture revisions at that boundary. Reader version 6 state is not
 supported by version 5 rollback readers; this pin remains preparatory work,
