@@ -2042,6 +2042,7 @@ void main() {
 
     expect(status.providerRefundInfo?.minimumDepositText, '1.485 ZEC');
     expect(status.providerRefundInfo?.refundFeeText, '0.00047 ZEC');
+    expect(status.providerRefundInfo?.recordedRefundFeeText, '0.00047 ZEC');
     expect(status.providerRefundInfo?.depositedAmountText, '1.5 ZEC');
     expect(status.providerRefundInfo?.refundedAmountText, '0.01 ZEC');
     expect(status.providerRefundInfo?.refundReason, 'UNUSED_INPUT');
@@ -2077,6 +2078,45 @@ void main() {
 
     expect(status.totalFeesText, '0.00047 ZEC');
   });
+
+  test(
+    'failed status keeps the recorded refund fee separate from app fees',
+    () async {
+      final transport = _FakeOneClickTransport([
+        _FakeResponse.get('/v0/tokens', _tokens),
+        _FakeResponse.get(
+          '/v0/status',
+          _quoteResponse(
+            originAsset: 'nep141:usdc.example',
+            destinationAsset: 'nep141:zec.omft.near',
+            amountInFormatted: '2.3',
+            amountOutFormatted: '0.003871',
+            depositAddress: 'status-deposit',
+            status: 'FAILED',
+            appFees: const [
+              {'recipient': 'partner.near', 'fee': 78},
+            ],
+            refundFee: '2400',
+            swapDetails: {
+              'depositedAmount': '2300000',
+              'depositedAmountFormatted': '2.3',
+              'refundedAmount': '2297600',
+              'refundedAmountFormatted': '2.2976',
+              'refundFee': '2400',
+            },
+          ),
+        ),
+      ]);
+      final provider = NearIntentsOneClickSwapAdapter(transport: transport);
+
+      final status = await provider.getStatus('status-deposit');
+
+      expect(status.status, SwapIntentStatus.failed);
+      expect(status.totalFeesText, '0.0024 USDC');
+      expect(status.providerRefundInfo?.refundedAmountText, '2.2976 USDC');
+      expect(status.providerRefundInfo?.recordedRefundFeeText, '0.0024 USDC');
+    },
+  );
 
   test(
     'uses status details for actual amounts fees and realised slippage',

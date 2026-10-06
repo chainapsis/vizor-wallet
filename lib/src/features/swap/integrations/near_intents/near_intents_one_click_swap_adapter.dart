@@ -498,6 +498,11 @@ class NearIntentsOneClickSwapAdapter
         asset: sellAsset,
         token: sellToken,
       ),
+      recordedRefundFeeText: _baseUnitAmountText(
+        details.refundFee,
+        asset: sellAsset,
+        token: sellToken,
+      ),
       refundReason: _cleanOptionalText(details.refundReason),
     );
     return info.hasAny ? info : null;

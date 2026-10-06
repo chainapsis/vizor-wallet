@@ -185,21 +185,28 @@ pub fn get_lightwalletd_chain_name(lightwalletd_url: String) -> Result<String, S
     catch(|| {
         let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
         rt.block_on(async {
-            use zcash_client_backend::proto::service::Empty;
+            // Bound channel establishment as well as the RPC response. Endpoint
+            // editors hold dismissal while verifying; timing out only in Dart
+            // would let the original request persist its result afterwards.
+            tokio::time::timeout(std::time::Duration::from_secs(30), async {
+                use zcash_client_backend::proto::service::Empty;
 
-            let mut client = crate::wallet::sync_engine::open_lwd_channel(&lightwalletd_url)
+                let mut client = crate::wallet::sync_engine::open_lwd_channel(&lightwalletd_url)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                let info = tokio::time::timeout(
+                    std::time::Duration::from_secs(10),
+                    client.get_lightd_info(Empty {}),
+                )
                 .await
-                .map_err(|e| e.to_string())?;
-            let info = tokio::time::timeout(
-                std::time::Duration::from_secs(10),
-                client.get_lightd_info(Empty {}),
-            )
-            .await
-            .map_err(|_| "get_lightd_info: timed out waiting for response".to_string())?
-            .map_err(|e| format!("get_lightd_info: {e}"))?
-            .into_inner();
+                .map_err(|_| "get_lightd_info: timed out waiting for response".to_string())?
+                .map_err(|e| format!("get_lightd_info: {e}"))?
+                .into_inner();
 
-            Ok(info.chain_name)
+                Ok(info.chain_name)
+            })
+            .await
+            .map_err(|_| "endpoint verification: timed out".to_string())?
         })
     })
 }
@@ -270,6 +277,8 @@ pub fn get_chain_upgrade_status_at_height(
 
 /// Create a new Zcash wallet with a fresh mnemonic.
 /// birthday_height should be the current chain tip (from get_latest_block_height).
+/// It is stored exactly: a tip birthday reveals only that a wallet was created
+/// now, and rounding it would only add blocks to scan.
 pub fn create_wallet(
     network: String,
     db_path: String,
@@ -293,7 +302,12 @@ pub fn create_wallet(
     })
 }
 
-/// Import an existing wallet from a mnemonic phrase.
+/// Create the first account of a wallet from a caller-provided mnemonic.
+///
+/// The birthday is stored as given. Its callers are the create-wallet flow
+/// (the chain tip) and payment-link claims (the height from the shared link).
+/// Restores go through [`import_software_wallet_with_account_discovery`], which
+/// rounds the birthday instead.
 pub fn import_wallet(
     mnemonic: String,
     bip39_passphrase: String,
@@ -317,7 +331,11 @@ pub fn import_wallet(
     })
 }
 
-/// Add an additional account to an existing wallet database.
+/// Add a newly created account to an existing wallet database.
+///
+/// The birthday is stored as given; callers pass the chain tip. Restored
+/// accounts go through [`import_software_wallet_with_account_discovery`],
+/// which rounds the birthday instead.
 pub fn add_account(
     db_path: String,
     network: String,
@@ -510,6 +528,7 @@ pub fn import_software_wallet_with_account_discovery(
             parse_network_and_migrate(&db_path, &network)?
         };
         let seed = keys::mnemonic_to_seed_with_passphrase(&mnemonic, &bip39_passphrase)?;
+        let birthday_height = restored_birthday(network, birthday_height);
         let first_account_number = next_account_number.max(1);
         let first_name = first_account_name
             .filter(|name| !name.trim().is_empty())
@@ -556,6 +575,7 @@ pub fn import_software_account_at_index(
             parse_network_and_migrate(&db_path, &network)?
         };
         let seed = keys::mnemonic_to_seed_with_passphrase(&mnemonic, &bip39_passphrase)?;
+        let birthday_height = restored_birthday(network, birthday_height);
 
         let (account_uuid, unified_address, is_seed_anchor) = if is_first_wallet_account {
             if zip32_account_index == 0 {
@@ -900,8 +920,18 @@ async fn discover_software_account_at_index(
     }
 }
 
+/// Birthday stored for a restored account. On mainnet it is rounded down to
+/// just past a 10,000-block grid point (see
+/// [`crate::wallet::tree_states::restore_birthday`]), so lightwalletd learns
+/// only the bucket and never the exact requested height.
+fn restored_birthday(network: WalletNetwork, birthday_height: Option<u64>) -> Option<u64> {
+    birthday_height.map(|height| crate::wallet::tree_states::restore_birthday(network, height))
+}
+
+/// Start of the transparent history read during import discovery. It uses the
+/// same rounded birthday the account will store.
 fn discovery_start_height(network: WalletNetwork, birthday_height: Option<u64>) -> u64 {
-    birthday_height.unwrap_or_else(|| {
+    restored_birthday(network, birthday_height).unwrap_or_else(|| {
         network
             .activation_height(NetworkUpgrade::Sapling)
             .map(|h| u32::from(h) as u64)
@@ -959,6 +989,7 @@ pub fn import_hardware_account(
 ) -> Result<AccountCreationResult, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
+        let birthday_height = restored_birthday(network, birthday_height);
         let hardware_signer_kind = keys::HardwareSignerKind::parse(&hardware_signer_kind)?;
         let (account_uuid, unified_address) = keys::import_hardware_account(
             &db_path,
@@ -1080,6 +1111,26 @@ pub fn get_unified_address(
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
         keys::get_address_from_db(&db_path, network, account_uuid.as_deref())
+    })
+}
+
+/// The wallet account encrypted software recovery material derives at
+/// `zip32_account_index`, matched by viewing key. Accepts either a legacy plain
+/// mnemonic or the versioned mnemonic + BIP-39 passphrase storage envelope.
+/// Returns `None` when the wallet or account is missing.
+pub fn find_software_account_for_mnemonic(
+    mnemonic: String,
+    network: String,
+    db_path: String,
+    zip32_account_index: u32,
+) -> Result<Option<String>, String> {
+    catch(|| {
+        if !keys::wallet_exists(&db_path) {
+            return Ok(None);
+        }
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let seed = keys::mnemonic_bytes_to_seed(mnemonic.as_bytes())?;
+        keys::software_account_uuid_for_seed(&db_path, network, &seed, zip32_account_index)
     })
 }
 
@@ -1221,6 +1272,170 @@ pub fn get_recent_transparent_receive_addresses(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(not(ironwood_masquerade))]
+    #[test]
+    fn discovery_reads_history_from_the_rounded_birthday() {
+        assert_eq!(
+            discovery_start_height(WalletNetwork::Main, Some(2_345_678)),
+            2_340_001
+        );
+        assert_eq!(
+            discovery_start_height(WalletNetwork::Test, Some(2_345_678)),
+            2_345_678
+        );
+        assert_eq!(discovery_start_height(WalletNetwork::Main, None), 419_200);
+    }
+
+    fn stored_birthdays(db_path: &str) -> std::collections::HashMap<String, u32> {
+        keys::list_accounts(db_path, WalletNetwork::Main)
+            .unwrap()
+            .into_iter()
+            .map(|account| (account.uuid, account.birthday_height))
+            .collect()
+    }
+
+    fn temp_db(dir: &tempfile::TempDir, name: &str) -> String {
+        dir.path().join(name).to_str().unwrap().to_string()
+    }
+
+    #[cfg(not(ironwood_masquerade))]
+    #[test]
+    fn mainnet_created_accounts_and_claims_keep_their_birthday() {
+        let dir = tempfile::tempdir().unwrap();
+        let main = || "main".to_string();
+
+        // Create-wallet flows: fresh mnemonic, then a new additional account.
+        let created_db = temp_db(&dir, "created.db");
+        let created = create_wallet(main(), created_db.clone(), Some(2_345_678), None).unwrap();
+        let added = add_account(
+            created_db.clone(),
+            main(),
+            "New".into(),
+            keys::generate_mnemonic(),
+            String::new(),
+            Some(2_345_679),
+        )
+        .unwrap();
+        let birthdays = stored_birthdays(&created_db);
+        assert_eq!(birthdays[&created.account_uuid], 2_345_678);
+        assert_eq!(birthdays[&added.account_uuid], 2_345_679);
+
+        // Onboarding's reveal-then-confirm create flow and payment-link
+        // claims both use import_wallet.
+        let from_mnemonic_db = temp_db(&dir, "from_mnemonic.db");
+        let from_mnemonic = import_wallet(
+            keys::generate_mnemonic(),
+            String::new(),
+            Some(2_345_678),
+            main(),
+            from_mnemonic_db.clone(),
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            stored_birthdays(&from_mnemonic_db)[&from_mnemonic.account_uuid],
+            2_345_678
+        );
+    }
+
+    #[cfg(not(ironwood_masquerade))]
+    #[test]
+    fn mainnet_software_restores_round_their_birthday() {
+        let dir = tempfile::tempdir().unwrap();
+        let main = || "main".to_string();
+
+        // Mnemonic restore, as onboarding and "add existing wallet" run it.
+        let restored_db = temp_db(&dir, "restored.db");
+        let restored = import_software_wallet_with_account_discovery(
+            keys::generate_mnemonic(),
+            String::new(),
+            Some(2_345_678),
+            main(),
+            restored_db.clone(),
+            None,
+            true,
+            1,
+            Vec::new(),
+        )
+        .unwrap();
+        // A second restored mnemonic, past the compiled table: still rounded.
+        let recent = import_software_wallet_with_account_discovery(
+            keys::generate_mnemonic(),
+            String::new(),
+            Some(9_000_123),
+            main(),
+            restored_db.clone(),
+            None,
+            false,
+            2,
+            Vec::new(),
+        )
+        .unwrap();
+        // Wallet-link import of one account.
+        let linked = import_software_account_at_index(
+            keys::generate_mnemonic(),
+            String::new(),
+            Some(2_345_678),
+            main(),
+            restored_db.clone(),
+            "Linked".into(),
+            0,
+            false,
+        )
+        .unwrap();
+
+        let birthdays = stored_birthdays(&restored_db);
+        assert_eq!(birthdays[&restored.accounts[0].account_uuid], 2_340_001);
+        assert_eq!(birthdays[&recent.accounts[0].account_uuid], 9_000_001);
+        assert_eq!(birthdays[&linked.account_uuid], 2_340_001);
+    }
+
+    #[cfg(not(ironwood_masquerade))]
+    #[test]
+    fn mainnet_hardware_imports_round_their_birthday() {
+        use secrecy::ExposeSecret;
+
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = temp_db(&dir, "hardware.db");
+        let seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
+        let ufvk = zcash_keys::keys::UnifiedSpendingKey::from_seed(
+            &WalletNetwork::Main,
+            seed.expose_secret(),
+            zip32::AccountId::ZERO,
+        )
+        .unwrap()
+        .to_unified_full_viewing_key()
+        .encode(&WalletNetwork::Main);
+        let fingerprint = zip32::fingerprint::SeedFingerprint::from_seed(seed.expose_secret())
+            .unwrap()
+            .to_bytes()
+            .to_vec();
+
+        let imported = import_hardware_account(
+            db_path.clone(),
+            "main".into(),
+            "Keystone".into(),
+            ufvk,
+            fingerprint,
+            0,
+            Some(2_345_678),
+            "keystone".into(),
+        )
+        .unwrap();
+        assert_eq!(
+            stored_birthdays(&db_path)[&imported.account_uuid],
+            2_340_001
+        );
+    }
+
+    #[test]
+    fn other_networks_keep_restored_birthdays_exact() {
+        for network in [WalletNetwork::Test, WalletNetwork::Regtest] {
+            assert_eq!(restored_birthday(network, Some(2_345_678)), Some(2_345_678));
+        }
+        assert_eq!(restored_birthday(WalletNetwork::Main, None), None);
+    }
 
     #[test]
     fn gift_entropy_preserves_wallet_and_rejects_invalid_inputs() {

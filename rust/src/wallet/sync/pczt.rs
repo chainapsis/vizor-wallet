@@ -680,6 +680,9 @@ pub async fn create_tex_pczts_from_proposal(
 
         let first_step = stored.proposal.steps().first().clone();
         let first_proposal = singleton_proposal(&stored.proposal, first_step.clone())?;
+        // Without this snapshot a cancel could not return the address, so stop
+        // before the backend reserves one.
+        let reserved_before = super::proposal_locks::reserved_ephemeral_addresses(db_path)?;
         let first_pczt = zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
             &mut db,
             &network,
@@ -688,8 +691,18 @@ pub async fn create_tex_pczts_from_proposal(
             &first_proposal,
             Some(live_expiry_height),
             BundlePadding::DEFAULT,
-        )
-        .map_err(|e| format!("Create TEX PCZT step 1 failed: {e}"))?;
+        );
+        // The backend reserves the ephemeral address even when this step fails.
+        // Best effort: failing here would not release it either, and an
+        // unrecorded address only stays reserved after a cancel.
+        if let Err(error) = super::proposal_locks::record_ephemeral_reservations(
+            db_path,
+            current_lock.owner,
+            &reserved_before,
+        ) {
+            log::warn!("TEX ephemeral reservation was not recorded: {error}");
+        }
+        let first_pczt = first_pczt.map_err(|e| format!("Create TEX PCZT step 1 failed: {e}"))?;
 
         let second_source = stored.proposal.steps().last();
         if second_source.prior_step_inputs().len() != 1 {

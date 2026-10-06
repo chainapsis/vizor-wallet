@@ -48,8 +48,8 @@ void main() {
       // Import up to the birthday step against the healthy proxy, then
       // make it unavailable right before the import (and first sync)
       // kicks off.
-      await tapAppButton(tester, const ValueKey('mobile_welcome_get_started'));
       await tapWidget(tester, const ValueKey('mobile_welcome_import'));
+      await tapWidget(tester, const ValueKey('mobile_import_passphrase'));
       await _pasteAndContinueToBirthday(tester);
       await tapWidget(
         tester,

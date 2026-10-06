@@ -18,6 +18,7 @@ import 'package:zcash_wallet/src/core/widgets/app_pane_modal_overlay.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_screen.dart';
 import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
 import 'package:zcash_wallet/src/features/home/screens/home_screen.dart';
+import 'package:zcash_wallet/src/features/settings/screens/settings_screen.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signed_operation_service.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
@@ -1155,7 +1156,6 @@ void main() {
             kind: SyncFailureKind.network,
             rawMessage: 'network failed',
             userMessage: 'Network connection lost.',
-            showSettingsAction: false,
           ),
         ),
       ),
@@ -1165,6 +1165,43 @@ void main() {
     expect(find.byKey(const ValueKey('home_notice_card')), findsOneWidget);
     expect(find.text('Network connection lost.'), findsOneWidget);
     expect(find.text('Retry'), findsOneWidget);
+  });
+
+  testWidgets('private status coverage notice opens privacy settings', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          failure: classifySyncFailure('private status coverage incomplete'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        "Private transaction lookup couldn't determine a transaction's "
+        'status. Turn off experimental private queries in Settings to continue '
+        'syncing.',
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const ValueKey('home_notice_card')),
+        matching: find.text('Settings'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      GoRouterState.of(tester.element(find.byType(SettingsScreen))).uri.path,
+      '/settings',
+    );
   });
 
   testWidgets('home desktop retries the Tor route from a Tor failure notice', (

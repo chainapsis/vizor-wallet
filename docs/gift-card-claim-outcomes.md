@@ -5,14 +5,15 @@ or checking a link does not reserve its funds. Competition is settled by the
 chain, not by the order of taps in Vizor.
 
 - Empty history or balance is not proof of a failed broadcast or an external
-  claim. Saved bearer links remain in secure storage.
+  claim. Saved bearer links remain in secure storage until the user removes a
+  card claimed elsewhere.
 - A server rejection is distinct from an unknown response, but neither proves
   that every server rejected the transaction. Pending and partially submitted
   claims remain protected until every transaction is terminal: expired,
   conflicted with a spend covered by six scanned confirmations, or itself
   covered by six scanned confirmations. Mixed outcomes settle as failed only
   when at least one leg failed.
-- A card is labelled `Already claimed` only when all its observed shielded
+- A card is labelled `Claimed elsewhere` only when all its observed shielded
   outputs have settled spends outside its locally created/recorded claims.
   Unspent positive-value top-ups prevent that conclusion; zero-value change
   outputs do not represent remaining funds. Pending scan ranges limit the
@@ -33,6 +34,12 @@ chain, not by the order of taps in Vizor.
   claim clears the destination binding while retaining the bearer link. Hiding
   a card changes only its visibility; archived cards can be restored. Active
   claims cannot be hidden.
+- A card claimed elsewhere never reached this wallet, so it leaves `Received`
+  (and `Archived`, if it was hidden) for its own `Claimed elsewhere` group with
+  dimmed artwork. It has nothing left to recover, so it is removed rather than
+  hidden: its row and outcome offer `Remove`, confirmed once, which deletes the
+  retained claim wallet first and the record only after that succeeds. `Claim
+  failed` and `No balance` cards may still hold funds and keep hide/restore.
 
 ## Existing development data
 
@@ -81,7 +88,7 @@ Capture scenarios: `gift-card-claimed-elsewhere`, `gift-card-claim-failed`, and
 
 The macOS outcomes E2E runner covers three scenarios with real Rust wallets and
 regtest transactions: competing claims, accepted-response loss and restart
-recovery, and archived-card restoration after restart. Run
+recovery, and removing the losing card after restart. Run
 `scripts/e2e/flutter-macos-regtest-gift-card-outcomes.sh` explicitly; it uses the
 shared local Docker chain. See `scripts/e2e/README.md` for phases and logs.
 

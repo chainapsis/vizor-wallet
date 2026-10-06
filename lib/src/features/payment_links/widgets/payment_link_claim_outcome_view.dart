@@ -5,6 +5,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../services/payment_link_received_store.dart';
 import 'mobile/payment_link_mobile_views.dart';
+import 'payment_link_copy.dart';
 import 'payment_link_desktop_views.dart';
 
 extension PaymentLinkAvailabilityCopy on PaymentLinkAvailability {
@@ -12,7 +13,8 @@ extension PaymentLinkAvailabilityCopy on PaymentLinkAvailability {
     PaymentLinkAvailability.unchecked ||
     PaymentLinkAvailability.available => 'Claim',
     PaymentLinkAvailability.noBalance => 'No balance',
-    PaymentLinkAvailability.claimedElsewhere => 'Already claimed',
+    PaymentLinkAvailability.claimedElsewhere =>
+      kPaymentLinkClaimedElsewhereLabel,
     PaymentLinkAvailability.checking ||
     PaymentLinkAvailability.rejected => 'Checking result',
     PaymentLinkAvailability.failed => 'Claim failed',
@@ -20,7 +22,7 @@ extension PaymentLinkAvailabilityCopy on PaymentLinkAvailability {
 
   String get description => switch (this) {
     PaymentLinkAvailability.claimedElsewhere =>
-      'This gift card was claimed elsewhere. There is no balance available to claim.',
+      kPaymentLinkClaimedElsewhereDescription,
     PaymentLinkAvailability.failed =>
       'Your claim did not complete. Check the card before trying again.',
     PaymentLinkAvailability.rejected =>
@@ -40,6 +42,7 @@ class PaymentLinkClaimOutcomeView extends StatelessWidget {
     required this.onBack,
     this.onCheck,
     this.onArchive,
+    this.onRemove,
     this.archived = false,
     this.busy = false,
     super.key,
@@ -48,6 +51,9 @@ class PaymentLinkClaimOutcomeView extends StatelessWidget {
   final VoidCallback onBack;
   final VoidCallback? onCheck;
   final VoidCallback? onArchive;
+
+  /// Offered instead of hiding when nothing is left to claim.
+  final VoidCallback? onRemove;
   final bool archived;
   final bool busy;
 
@@ -95,7 +101,13 @@ class PaymentLinkClaimOutcomeView extends StatelessWidget {
         ),
       ),
     );
-    final archiveAction = onArchive == null
+    final archiveAction = onRemove != null
+        ? AppButton(
+            onPressed: busy ? null : onRemove,
+            variant: AppButtonVariant.secondary,
+            child: const Text(kPaymentLinkRemoveCardLabel),
+          )
+        : onArchive == null
         ? null
         : AppButton(
             onPressed: busy ? null : onArchive,

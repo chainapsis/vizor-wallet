@@ -29,6 +29,10 @@ const _zcashdRpcUrl = String.fromEnvironment(
   defaultValue: 'http://127.0.0.1:18232',
 );
 const _texAddress = String.fromEnvironment('ZCASH_E2E_TEX_ADDRESS');
+const _driverUrl = String.fromEnvironment(
+  'ZCASH_E2E_DRIVER_URL',
+  defaultValue: 'http://127.0.0.1:39068',
+);
 const _zcashdRpcUser = 'zcash';
 const _zcashdRpcPassword = 'zcash';
 const _accountsKey = 'zcash_accounts';
@@ -43,6 +47,8 @@ const _secondMnemonic =
 const _password = 'Vizor123!';
 const _sendAmount = '0.25';
 final _sendZatoshi = BigInt.from(25_000_000);
+const _returnAmount = '0.1';
+final _returnZatoshi = BigInt.from(10_000_000);
 final _currencyTicker = kZcashDefaultCurrencyTicker;
 
 void main() {
@@ -144,8 +150,56 @@ void main() {
         status: 'Completed',
       );
       _log('receiver transparent TEX activity matched');
+
+      // ZIP 320: the recipient may return funds to the pair's ephemeral
+      // source, and the sender must recognize and be able to spend them.
+      final ephemeral = await _texEphemeralSource(receiverAccountUuid);
+      _log('TEX ephemeral source $ephemeral');
+      final returned = await _postDriver('/fund-confirmed', {
+        'address': ephemeral,
+        'amount': _returnAmount,
+        'confirmations': 1,
+      });
+      _log('returned funds txid=${returned['txid']}');
+      // The source becomes checkable once the first leg can no longer expire.
+      await _mineRegtestBlocks(45);
+
+      await _openWallet(tester);
+      await _switchAccount(tester, 0);
+      await _waitForReturnedFunds(senderAccountUuid);
+      await _waitForShieldBalanceUi(tester);
+
+      final dbPath = await getWalletDbPath();
+      final shieldStatus = await rust_sync.getShieldTransparentStatus(
+        dbPath: dbPath,
+        network: _network,
+        accountUuid: senderAccountUuid,
+      );
+      expect(shieldStatus.canShield, isTrue);
+      final expectedShielded = shieldStatus.shieldedZatoshi;
+      expect(expectedShielded, greaterThan(BigInt.zero));
+      expect(expectedShielded, lessThanOrEqualTo(_returnZatoshi));
+      await _tapWidget(tester, const ValueKey('home_shield_balance_button'));
+      await _waitForHistoryEntry(
+        tester,
+        accountUuid: senderAccountUuid,
+        txKind: 'shielded',
+        displayAmount: expectedShielded,
+        pending: true,
+        timeout: const Duration(minutes: 4),
+      );
+      await _mineRegtestBlocks(10);
+      await _waitForHistoryEntry(
+        tester,
+        accountUuid: senderAccountUuid,
+        txKind: 'shielded',
+        displayAmount: expectedShielded,
+        pending: false,
+        timeout: const Duration(minutes: 4),
+      );
+      _log('returned TEX funds detected and shielded');
     },
-    timeout: const Timeout(Duration(minutes: 12)),
+    timeout: const Timeout(Duration(minutes: 20)),
   );
 }
 
@@ -276,6 +330,104 @@ Future<void> _mineRegtestBlocks(int blocks) async {
   }
 
   throw StateError('Timed out waiting for lightwalletd height $targetHeight.');
+}
+
+/// The ephemeral address that funded the TEX pair's second transaction.
+Future<String> _texEphemeralSource(String receiverAccountUuid) async {
+  final history = await rust_sync.getTransactionHistory(
+    dbPath: await getWalletDbPath(),
+    network: _network,
+    limit: 20,
+    accountUuid: receiverAccountUuid,
+  );
+  final secondLeg = history.firstWhere(
+    (tx) => tx.txKind == 'received' && tx.displayAmount == _sendZatoshi,
+  );
+  // Wallet txids are in internal byte order; zcashd RPC expects display order.
+  final tx = await _zcashdRpc<Map<String, Object?>>('getrawtransaction', [
+    _reverseTxidHex(secondLeg.txidHex),
+    1,
+  ]);
+  final input = (tx['vin']! as List<Object?>).single! as Map<String, Object?>;
+  final prevout = await _zcashdRpc<Map<String, Object?>>('getrawtransaction', [
+    input['txid'],
+    1,
+  ]);
+  final output =
+      (prevout['vout']! as List<Object?>)[input['vout']! as int]!
+          as Map<String, Object?>;
+  final script = output['scriptPubKey']! as Map<String, Object?>;
+  return (script['addresses']! as List<Object?>).single! as String;
+}
+
+String _reverseTxidHex(String txidHex) {
+  final pairs = <String>[];
+  for (var i = 0; i + 1 < txidHex.length; i += 2) {
+    pairs.add(txidHex.substring(i, i + 2));
+  }
+  return pairs.reversed.join();
+}
+
+/// Mines one block at a time so each sync pass can run its due check.
+Future<void> _waitForReturnedFunds(String accountUuid) async {
+  final dbPath = await getWalletDbPath();
+  for (var attempt = 0; attempt < 12; attempt++) {
+    final status = await rust_sync.getShieldTransparentStatus(
+      dbPath: dbPath,
+      network: _network,
+      accountUuid: accountUuid,
+    );
+    if (status.canShield) {
+      _log('returned funds visible after $attempt extra block(s)');
+      return;
+    }
+    await _mineRegtestBlocks(1);
+    await Future<void>.delayed(const Duration(seconds: 12));
+  }
+  fail('Returned TEX funds were not detected.');
+}
+
+Future<void> _waitForShieldBalanceUi(WidgetTester tester) async {
+  await _pumpUntil(
+    tester,
+    () {
+      final button = find.byKey(const ValueKey('home_shield_balance_button'));
+      return tester.any(button) &&
+          tester.any(
+            find.descendant(of: button, matching: find.text('Shield now')),
+          );
+    },
+    description: 'shield balance action to render',
+    timeout: const Duration(minutes: 2),
+  );
+}
+
+Future<Map<String, Object?>> _postDriver(
+  String path,
+  Map<String, Object?> payload, {
+  Duration timeout = const Duration(minutes: 2),
+}) async {
+  final client = HttpClient();
+  try {
+    final request = await client
+        .postUrl(Uri.parse('$_driverUrl$path'))
+        .timeout(timeout);
+    final bodyBytes = utf8.encode(jsonEncode(payload));
+    request.headers.contentType = ContentType.json;
+    request.contentLength = bodyBytes.length;
+    request.add(bodyBytes);
+
+    final response = await request.close().timeout(timeout);
+    final body = await utf8.decoder.bind(response).join().timeout(timeout);
+    if (response.statusCode != HttpStatus.ok) {
+      throw StateError(
+        'E2E driver $path failed: HTTP ${response.statusCode}\n$body',
+      );
+    }
+    return jsonDecode(body) as Map<String, Object?>;
+  } finally {
+    client.close(force: true);
+  }
 }
 
 Future<T> _zcashdRpc<T>(

@@ -21,13 +21,13 @@ use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
 
 use crate::wallet::{
     db::{
-        open_readonly_conn_with_timeout, open_wallet_db_with_timeout,
-        open_wallet_raw_conn_with_timeout, with_wallet_db_write_lock, WalletDatabase,
-        SYNC_DB_BUSY_TIMEOUT,
+        open_readonly_conn_with_timeout, open_wallet_db_readonly_with_timeout,
+        open_wallet_db_with_timeout, open_wallet_raw_conn_with_timeout, with_wallet_db_write_lock,
+        WalletDatabase, READ_DB_BUSY_TIMEOUT, SYNC_DB_BUSY_TIMEOUT,
     },
     keys,
     network::WalletNetwork,
-    sync, transparent_receive_cache,
+    sync, transparent_receive_cache, tree_states,
 };
 
 use {
@@ -48,7 +48,10 @@ use {
 mod address_history;
 mod block_source;
 mod claim_roots;
-mod enhance;
+pub(crate) mod enhancement;
+mod ephemeral_checks;
+#[cfg(test)]
+mod ephemeral_checks_tests;
 mod error;
 pub(crate) mod ledger_discovery;
 mod lwd;
@@ -57,15 +60,15 @@ mod tip_cache;
 #[cfg(test)]
 mod transparent_recovery_tests;
 
-use enhance::run_enhancement;
+use enhancement::{queue_stored_transactions, EnhancementPolicy, EnhancementSession};
 pub(crate) use error::SyncError;
 use error::{RecoveryStrategy, MAX_REWINDS_PER_RUN};
 use lwd::{
-    download_blocks, download_subtree_roots, get_address_utxos_stream, get_compact_block_hash,
-    get_tree_state, get_tree_state_for_block,
+    download_blocks, download_subtree_roots, get_address_utxos_stream, get_tree_state,
+    get_tree_state_for_block,
 };
 pub(crate) use lwd::{
-    get_latest_block, get_taddress_txids, get_transaction, next_stream_message,
+    get_compact_block_hash, get_latest_block, get_taddress_txids, next_stream_message,
     open_background_direct_lwd_channel, open_isolated_lwd_channel, open_lwd_channel,
     open_lwd_channel_with_cancel, send_transaction, send_transaction_with_status,
 };
@@ -2077,6 +2080,10 @@ async fn watch_for_exit(should_exit: &impl Fn() -> bool) {
     }
 }
 
+fn needs_completion_enhancement_pass(enhancement_after_scan: bool) -> bool {
+    !enhancement_after_scan
+}
+
 /// Discard a completed tip RPC result when cancellation or a mode handoff won
 /// the race. Callers must apply this before interpreting the result or mutating
 /// the wallet DB.
@@ -2351,15 +2358,16 @@ async fn download_scan_batch(
     network: WalletNetwork,
 ) -> Result<ScanBatch, SyncError> {
     let mut tree_state_client = client.clone();
-    let use_empty_state = should_use_empty_chain_state(&network, start)?;
+    let local_state = local_batch_start_state(network, start)?;
+    let uses_compiled_checkpoint =
+        local_state.is_some() && !should_use_empty_chain_state(&network, start)?;
     let tree_state = async move {
-        if use_empty_state {
-            Ok(chain::ChainState::empty(start - 1, BlockHash([0u8; 32])))
-        } else {
-            get_tree_state(&mut tree_state_client, u64::from(u32::from(start - 1)))
+        match local_state {
+            Some(state) => Ok(state),
+            None => get_tree_state(&mut tree_state_client, u64::from(u32::from(start - 1)))
                 .await?
                 .to_chain_state()
-                .map_err(|e| SyncError::parse(format!("parse tree state: {e}")))
+                .map_err(|e| SyncError::parse(format!("parse tree state: {e}"))),
         }
     };
 
@@ -2367,6 +2375,16 @@ async fn download_scan_batch(
         join_scan_batch_inputs(download_blocks(client, start, end, network), tree_state).await?;
     if block_source.starts_after(&from_state) {
         return Ok((block_source, from_state));
+    }
+    if uses_compiled_checkpoint {
+        // A forked or non-mainnet server behind a `main` endpoint, or a bad
+        // table entry. The hash-pinned lookup below reveals only the
+        // checkpoint's bucket, and keeps the wallet syncing.
+        log::error!(
+            "sync: compiled tree state at {} does not precede the served block {start}; \
+             fetching the served predecessor's state",
+            u32::from(start - 1)
+        );
     }
 
     let predecessor_hash = match block_source
@@ -2963,6 +2981,7 @@ async fn run_sync_impl(
     // Open DB once — reused for the entire sync
     let mut db =
         with_wallet_db_write_lock("sync_engine.open_db", || open_db(db_data_path, network))?;
+    let mut enhancement = EnhancementSession::new(network, db_data_path);
     // The main-phase rewind budget also covers a reorg detected by the
     // initial tip response, before the scan queue has been created.
     let mut main_rewinds_this_run: u32 = 0;
@@ -3316,6 +3335,26 @@ async fn run_sync_impl(
     // `suggest_scan_ranges` runs again).
     let mut prefetch: Option<Prefetch<ScanBatch>> = None;
 
+    // Retry enhancement work left by an interrupted/older sync before scanning.
+    // Best-effort: a retryable public failure must not block compact sync; the
+    // work stays durable and later passes retry it.
+    match enhancement
+        .run_payload_recovery(&mut db, &mut client, None, &should_exit)
+        .await
+    {
+        Ok(true) => {
+            log::info!("[{}] sync: exiting during enhancement", elapsed());
+            return Ok(());
+        }
+        Ok(false) => {}
+        Err(error) => log::warn!(
+            "[{}] sync: startup enhancement failed; it will retry after scanning: {}",
+            elapsed(),
+            error,
+        ),
+    }
+    let mut enhancement_after_scan = false;
+
     // 5. Sync loop
     loop {
         if cancel.load(Ordering::Relaxed) {
@@ -3602,65 +3641,56 @@ async fn run_sync_impl(
                     // A previous attempt may have scanned its final batch before
                     // cancellation or an enhancement failure. Drain its durable
                     // requests even when no further blocks need scanning.
-                    if !db
-                        .transaction_data_requests()
-                        .map_err(|e| SyncError::db(format!("transaction_data_requests: {e}")))?
-                        .is_empty()
+                    if enhancement
+                        .run_checkpoint(&mut db, &mut client, None, &should_exit)
+                        .await?
+                        || should_exit()
                     {
-                        let released = run_enhancement(
-                            &mut client,
-                            &mut db,
-                            db_data_path,
-                            network,
-                            &should_exit,
-                        )
-                        .await?;
-                        // This path completes without a post-batch pass, so a
-                        // transaction released by a final status observation is
-                        // broadcast now against the validated tip. If the chain
-                        // advanced, scan first: a new block may have mined it.
-                        let ranges = if !released.is_empty() {
-                            db.suggest_scan_ranges()
-                                .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?
-                        } else {
-                            Vec::new()
-                        };
-                        let outcome = resubmit_released_transactions(
-                            &released,
-                            allow_resubmit,
-                            &ranges,
-                            db_data_path,
-                            lightwalletd_url,
-                            &mut client,
-                            &mut db,
-                            current_tip_height,
-                            || {
-                                cancel.load(Ordering::Relaxed)
-                                    || desired_mode.load(Ordering::SeqCst) != running_mode
-                            },
-                        )
-                        .await?;
-                        if let ReleasedResubmission::TipAdvanced(fresh_height) = outcome {
-                            current_tip_height = fresh_height;
-                            let promoted_ranges = db.suggest_scan_ranges().map_err(|e| {
-                                SyncError::db(format!(
-                                    "suggest_scan_ranges after tip promotion: {e}"
-                                ))
-                            })?;
-                            reset_promoted_scan_progress(
-                                &promoted_ranges,
-                                &mut initial_total,
-                                &mut prev_remaining,
-                            );
-                            progress_display_mode = ProgressDisplayMode::Work;
-                            queued_ranges = Some(promoted_ranges);
-                            completion_tip_validation_required = true;
-                            continue;
-                        }
-                    }
-                    if should_exit() {
                         return Ok(());
                     }
+                    let released = enhancement.take_ready_resubmission();
+                    // This path completes without a post-batch pass, so a
+                    // transaction released by a final status observation is
+                    // broadcast now against the validated tip. If the chain
+                    // advanced, scan first: a new block may have mined it.
+                    let ranges = if !released.is_empty() {
+                        db.suggest_scan_ranges()
+                            .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?
+                    } else {
+                        Vec::new()
+                    };
+                    let outcome = resubmit_released_transactions(
+                        &released,
+                        allow_resubmit,
+                        &ranges,
+                        db_data_path,
+                        lightwalletd_url,
+                        &mut client,
+                        &mut db,
+                        current_tip_height,
+                        || {
+                            cancel.load(Ordering::Relaxed)
+                                || desired_mode.load(Ordering::SeqCst) != running_mode
+                        },
+                    )
+                    .await?;
+                    if let ReleasedResubmission::TipAdvanced(fresh_height) = outcome {
+                        current_tip_height = fresh_height;
+                        let promoted_ranges = db.suggest_scan_ranges().map_err(|e| {
+                            SyncError::db(format!("suggest_scan_ranges after tip promotion: {e}"))
+                        })?;
+                        reset_promoted_scan_progress(
+                            &promoted_ranges,
+                            &mut initial_total,
+                            &mut prev_remaining,
+                        );
+                        progress_display_mode = ProgressDisplayMode::Work;
+                        queued_ranges = Some(promoted_ranges);
+                        completion_tip_validation_required = true;
+                        continue;
+                    }
+
+                    enhancement_after_scan = true;
                     ensure_complete_scan_state(&mut db, current_tip_height)?;
                     break;
                 }
@@ -3836,7 +3866,7 @@ async fn run_sync_impl(
         let scan_result = with_wallet_db_write_lock("sync_engine.retain_and_scan_blocks", || {
             // Persist before scanning advances scan_queue: cancellation or a crash
             // after the scan must not lose this account's recovery work.
-            enhance::queue_stored_transactions(db_data_path, &block_source)?;
+            queue_stored_transactions(db_data_path, &block_source)?;
             if let Some(incoming_checkpoint_heights) = &incoming_orchard_checkpoint_heights {
                 let retained =
                     crate::wallet::sync::retain_migration_anchor_checkpoints_before_scan(
@@ -4148,9 +4178,17 @@ async fn run_sync_impl(
             .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
         let resubmit_exclusions = recovery_resubmit_exclusions(db_data_path, &post_scan_ranges)?;
 
-        // Enhancement
-        let ready =
-            run_enhancement(&mut client, &mut db, db_data_path, network, &should_exit).await?;
+        // Status and transparent history run before the routed payload snapshot,
+        // so transactions discovered by history are enhanced in this checkpoint.
+        if enhancement
+            .run_checkpoint(&mut db, &mut client, Some(&block_source), &should_exit)
+            .await?
+        {
+            log::info!("[{}] sync: exiting during enhancement", elapsed());
+            return Ok(());
+        }
+        let ready = enhancement.take_ready_resubmission();
+        enhancement_after_scan = true;
 
         // Post-batch tip reconciliation and auto-resubmit. The resubmit calls
         // match zcash-android-wallet-sdk's lines 593/701 call sites (end of a
@@ -4171,8 +4209,8 @@ async fn run_sync_impl(
         //
         // Pre-flight guard matches the one at the startup resubmit
         // call site — if cancel or mode-change landed during
-        // `run_enhancement` (which can spend a second or two on a
-        // transparent-address scan), bail before opening a single
+        // `run_checkpoint` (which can spend a second or two on a transparent-
+        // address scan), bail before opening a single
         // new `send_transaction` RPC. The helper also consults the
         // same closure between candidates and before each retry so
         // a cancel arriving mid-pass stops initiating further
@@ -4420,6 +4458,24 @@ async fn run_sync_impl(
         maybe_sleep_for_e2e_sync_batch_delay().await;
     }
 
+    // A mode change can expose ordinary transaction-ID enhancement requests
+    // while the compact scan queue is already empty. Always service both
+    // queues once at completion so disabling private recovery takes effect
+    // without waiting for another block to arrive.
+    if needs_completion_enhancement_pass(enhancement_after_scan) {
+        if enhancement
+            .run_checkpoint(&mut db, &mut client, None, &should_exit)
+            .await?
+            || should_exit()
+        {
+            log::info!(
+                "[{}] sync: exiting during completion enhancement",
+                elapsed()
+            );
+            return Ok(());
+        }
+    }
+
     let (final_scanned_height, final_tip_height) =
         ensure_complete_scan_state(&mut db, current_tip_height)?;
     for id in db
@@ -4573,8 +4629,9 @@ async fn run_sync_impl(
             ),
         }
         if deferred_received_outputs && !should_exit() {
-            if let Err(error) =
-                run_enhancement(&mut client, &mut db, db_data_path, network, &should_exit).await
+            if let Err(error) = enhancement
+                .run_checkpoint(&mut db, &mut client, None, &should_exit)
+                .await
             {
                 log::warn!(
                     "[{}] sync: deferred transparent transaction enhancement failed; it will retry on a later sync: {}",
@@ -4586,6 +4643,43 @@ async fn run_sync_impl(
             // running. Re-emit completion even after a terminal partial
             // failure so Dart refreshes whichever account is active now from
             // every output that was committed by an earlier successful group.
+            progress_fn(SyncProgressEvent {
+                scanned_height: final_scanned_height,
+                chain_tip_height: final_tip_height,
+                percentage: 1.0,
+                display_target_percentage: 1.0,
+                display_target_blocks: 0,
+                is_syncing: false,
+                is_complete: true,
+                has_new_tx: true,
+                phase_completed_units: 0,
+                phase_total_units: 0,
+                phase: String::new(),
+            });
+        }
+    }
+
+    if !should_exit() {
+        let mut changed = false;
+        if let Err(error) = ephemeral_checks::run(
+            lightwalletd_url,
+            &mut db,
+            db_data_path,
+            network,
+            BlockHeight::from_u32(final_tip_height as u32),
+            &mut changed,
+            &should_exit,
+        )
+        .await
+        {
+            log::warn!(
+                "[{}] sync: ephemeral address check failed; it will retry on a later sync: {}",
+                elapsed(),
+                error,
+            );
+        }
+        // Refresh even after a failure that followed stored transactions.
+        if changed && !should_exit() {
             progress_fn(SyncProgressEvent {
                 scanned_height: final_scanned_height,
                 chain_tip_height: final_tip_height,
@@ -4696,6 +4790,27 @@ fn clear_unmined_note_commitment_positions(db_data_path: &str) -> Result<usize, 
     Ok(cleared)
 }
 
+/// The chain state preceding a scan batch that starts at `start`, when it is
+/// known without asking lightwalletd: empty at Sapling activation, or a
+/// compiled mainnet checkpoint (see [`tree_states`]). Account birthdays are
+/// rounded to the checkpoint grid, so a restored account's first batch gets one
+/// whenever its bucket is in the table.
+fn local_batch_start_state(
+    network: WalletNetwork,
+    start: BlockHeight,
+) -> Result<Option<chain::ChainState>, SyncError> {
+    if should_use_empty_chain_state(&network, start)? {
+        return Ok(Some(chain::ChainState::empty(
+            start - 1,
+            BlockHash([0u8; 32]),
+        )));
+    }
+    Ok(tree_states::mainnet_chain_state(
+        network,
+        u64::from(u32::from(start - 1)),
+    ))
+}
+
 fn should_use_empty_chain_state(
     network: &WalletNetwork,
     start: BlockHeight,
@@ -4804,6 +4919,12 @@ mod tests {
 
     fn block_height(height: u32) -> BlockHeight {
         BlockHeight::from_u32(height)
+    }
+
+    #[test]
+    fn no_scan_run_requires_a_completion_enhancement_pass() {
+        assert!(needs_completion_enhancement_pass(false));
+        assert!(!needs_completion_enhancement_pass(true));
     }
 
     fn block_source(heights: &[u64]) -> block_source::MemoryBlockSource {
@@ -5591,6 +5712,52 @@ mod tests {
         );
     }
 
+    #[cfg(not(ironwood_masquerade))]
+    #[test]
+    fn first_batch_of_a_rounded_mainnet_birthday_needs_no_tree_state_request() {
+        use zcash_client_backend::proto::compact_formats::{ChainMetadata, CompactBlock};
+
+        let start = BlockHeight::from_u32(2_340_001);
+        let state = local_batch_start_state(WalletNetwork::Main, start)
+            .unwrap()
+            .expect("compiled checkpoint below a rounded birthday");
+        assert_eq!(state.block_height(), BlockHeight::from_u32(2_340_000));
+
+        // A served block that continues the checkpoint passes the same
+        // continuity check `download_scan_batch` applies.
+        let mut block = CompactBlock {
+            height: 2_340_001,
+            prev_hash: state.block_hash().0.to_vec(),
+            chain_metadata: Some(ChainMetadata {
+                sapling_commitment_tree_size: state.final_sapling_tree().tree_size() as u32,
+                orchard_commitment_tree_size: state.final_orchard_tree().tree_size() as u32,
+                ironwood_commitment_tree_size: state.final_ironwood_tree().tree_size() as u32,
+            }),
+            ..Default::default()
+        };
+        assert!(block_source::MemoryBlockSource::new(vec![block.clone()]).starts_after(&state));
+        // A block from another chain fails it, so the batch falls back to the
+        // hash-pinned lookup of the served predecessor.
+        block.prev_hash = vec![7u8; 32];
+        assert!(!block_source::MemoryBlockSource::new(vec![block]).starts_after(&state));
+
+        // Batches that don't start right after a checkpoint, and other
+        // networks, still fetch the state.
+        assert!(
+            local_batch_start_state(WalletNetwork::Main, BlockHeight::from_u32(2_340_002))
+                .unwrap()
+                .is_none()
+        );
+        for network in [WalletNetwork::Test, WalletNetwork::Regtest] {
+            assert!(local_batch_start_state(network, start).unwrap().is_none());
+        }
+        assert!(
+            local_batch_start_state(WalletNetwork::Main, BlockHeight::from_u32(419_200))
+                .unwrap()
+                .is_some()
+        );
+    }
+
     #[test]
     fn scannable_batch_end_clamps_to_current_tip() {
         assert_eq!(
@@ -6285,3 +6452,51 @@ mod tests {
         assert_eq!(clear_unmined_note_commitment_positions(db_path).unwrap(), 0);
     }
 }
+
+pub(crate) fn enhance_recovery_status(
+    path: &str,
+    network: WalletNetwork,
+) -> Result<crate::api::sync::EnhanceRecoveryStatus, String> {
+    let mut db = open_wallet_db_readonly_with_timeout(path, network, READ_DB_BUSY_TIMEOUT)?;
+    EnhancementPolicy::current(network).configure_db(&mut db);
+    recovery_status_for(&db, enhancement::phase(path))
+}
+
+/// Counts recovery work in a database already configured with the current
+/// enhancement policy.
+fn recovery_status_for(
+    db: &WalletDatabase,
+    service_state: String,
+) -> Result<crate::api::sync::EnhanceRecoveryStatus, String> {
+    use zcash_client_backend::data_api::enhance_pir::EnhancePirRead;
+    use zcash_client_backend::data_api::enhance_pir::TransactionEnhancementWork;
+    use zcash_client_backend::data_api::status::{TransactionStatusRead, TransactionStatusWork};
+    // `run_requests` defers private status failures for the session while the
+    // obligation stays durable. Without counting it here, a wallet with no
+    // payload work would never schedule the retry once Status PIR recovers.
+    let status = db
+        .transaction_status_work()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .filter(|work| matches!(work, TransactionStatusWork::Private(_)))
+        .count();
+    let work = zakura_pir_enhance::wallet::PreparedWork::new(
+        db.transaction_enhancement_work()
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .filter_map(|work| match work {
+                TransactionEnhancementWork::Private(work) => Some(work),
+                TransactionEnhancementWork::Public(_) => None,
+            }),
+    );
+    Ok(crate::api::sync::EnhanceRecoveryStatus {
+        queries: work.query_count() as u32,
+        rediscovery: work.rediscover.len() as u32,
+        suspended: work.suspended as u32,
+        status: status as u32,
+        service_state,
+    })
+}
+
+#[cfg(test)]
+mod birthday_rpc_tests;

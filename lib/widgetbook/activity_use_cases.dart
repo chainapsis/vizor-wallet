@@ -183,7 +183,7 @@ Widget _buildGiftCardActivityDetailUseCase(
             txIdText: 'f154...8143',
             feeText: kind == GiftCardActivityKind.created
                 ? '0.0002 ZEC'
-                : '0.0001 ZEC',
+                : null,
             onTxIdPressed: _noop,
             onToggleMessage: _noop,
           ),

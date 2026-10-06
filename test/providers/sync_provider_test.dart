@@ -12,6 +12,35 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 void main() {
   test(
+    'private status coverage pauses sync only while private queries stay on',
+    () {
+      final failure = classifySyncFailure('private status coverage incomplete');
+
+      expect(
+        shouldPauseSyncForPrivateStatusCoverage(
+          failure: failure,
+          privateQueriesEnabled: true,
+        ),
+        isTrue,
+      );
+      expect(
+        shouldPauseSyncForPrivateStatusCoverage(
+          failure: failure,
+          privateQueriesEnabled: false,
+        ),
+        isFalse,
+      );
+      expect(
+        shouldPauseSyncForPrivateStatusCoverage(
+          failure: classifySyncFailure('network: unavailable'),
+          privateQueriesEnabled: true,
+        ),
+        isFalse,
+      );
+    },
+  );
+
+  test(
     'exit gate rejects normal and forced sync starts before Rust dispatch',
     () async {
       final shutdown = AppShutdownSignal()..begin();

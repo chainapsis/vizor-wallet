@@ -439,6 +439,48 @@ void main() {
   );
 
   test(
+    'a failed one-shot scoped lease is released by the next resume',
+    () async {
+      const channel = MethodChannel('test/background_migration/one_shot_lease');
+      final active = <String>{};
+      var failResumes = true;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            final lease = (call.arguments as Map)['leaseId'] as String;
+            if (call.method == 'quiesce') active.add(lease);
+            if (call.method == 'resume') {
+              if (failResumes) throw PlatformException(code: 'lost_reply');
+              active.remove(lease);
+            }
+            return true;
+          });
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null),
+      );
+      final lifecycle = IronwoodMigrationBackgroundLifecycle(
+        channel: channel,
+        isIOS: true,
+        resumeRetryDelays: const [Duration.zero],
+      );
+      // The zone is one-shot: nothing re-enters it to retry its own lease.
+      await expectLater(
+        IronwoodMigrationBackgroundLifecycle.runWithNewQuiescenceLease(
+          () async {
+            await lifecycle.quiesce();
+            await lifecycle.resumeAfterMutation();
+          },
+        ),
+        throwsStateError,
+      );
+      expect(active, hasLength(1));
+      failResumes = false;
+      await lifecycle.resumeAfterMutation();
+      expect(active, isEmpty);
+    },
+  );
+
+  test(
     'overlapping unscoped iOS resumes reserve different leases before awaiting',
     () async {
       const channel = MethodChannel(
@@ -496,6 +538,65 @@ void main() {
 
     expect(calls.map((call) => call.method), ['quiesce', 'resume']);
   });
+
+  test('iOS receives the private recovery setting and fails closed', () async {
+    const channel = MethodChannel('test/background_migration/private_recovery');
+    final calls = <MethodCall>[];
+    bool? reply = true;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          calls.add(call);
+          return reply;
+        });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
+    final lifecycle = IronwoodMigrationBackgroundLifecycle(
+      channel: channel,
+      isIOS: true,
+      isAndroid: false,
+    );
+
+    await lifecycle.setPrivateRecovery(true);
+    await lifecycle.setPrivateRecovery(false);
+    expect(calls.map((call) => call.method), [
+      'setPrivateRecovery',
+      'setPrivateRecovery',
+    ]);
+    expect(calls.map((call) => call.arguments), [
+      {'enabled': true},
+      {'enabled': false},
+    ]);
+
+    reply = false;
+    await expectLater(lifecycle.setPrivateRecovery(true), throwsStateError);
+  });
+
+  test(
+    'private recovery is not sent to platforms without the channel',
+    () async {
+      const channel = MethodChannel('test/background_migration/no_private');
+      var calls = 0;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            calls++;
+            return true;
+          });
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null),
+      );
+      for (final android in [true, false]) {
+        await IronwoodMigrationBackgroundLifecycle(
+          channel: channel,
+          isIOS: false,
+          isAndroid: android,
+        ).setPrivateRecovery(true);
+      }
+      expect(calls, 0);
+    },
+  );
 
   test('iOS migration resume retries a transient channel failure', () async {
     const channel = MethodChannel('test/background_migration/resume_retry');

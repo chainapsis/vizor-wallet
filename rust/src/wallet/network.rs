@@ -67,6 +67,9 @@ fn ironwood_masquerade_activation_height(nu: NetworkUpgrade) -> Option<BlockHeig
         NetworkUpgrade::Nu6_1 => 4,
         NetworkUpgrade::Nu6_2 => 5,
         NetworkUpgrade::Nu6_3 => 5000,
+        // Proposed NU7 has no activation height on main/test; keep masquerade
+        // the same so Ironwood stays on Nu6.3.
+        NetworkUpgrade::Nu7 => return None,
     };
     Some(BlockHeight::from_u32(height))
 }
@@ -98,6 +101,9 @@ impl Parameters for WalletNetwork {
                 | NetworkUpgrade::Nu6_1
                 | NetworkUpgrade::Nu6_2 => Some(BlockHeight::from_u32(1)),
                 NetworkUpgrade::Nu6_3 => Some(regtest_nu6_3_activation_height()),
+                // Keep proposed NU7 inactive on regtest unless a future E2E
+                // configures an activation height for it.
+                NetworkUpgrade::Nu7 => None,
             },
         }
     }

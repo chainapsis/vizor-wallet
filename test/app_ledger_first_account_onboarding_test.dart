@@ -225,6 +225,9 @@ class _RecordingSecurityNotifier extends AppSecurityNotifier {
   }
 
   @override
+  Future<void> completePasswordSetup() async => commitPasswordSetup();
+
+  @override
   void commitPasswordSetup() {
     commitCount++;
     state = const AppSecurityState(

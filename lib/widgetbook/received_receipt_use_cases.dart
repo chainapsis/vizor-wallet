@@ -38,11 +38,9 @@ Widget buildReceivedReceiptTransparentToTransparentUseCase(
       memoText: _sampleMemo,
       timestampText: '25 May, 13:30',
       txIdText: '0123123124512512',
-      feeText: '0.012 ZEC',
       onShowFullAddress: () {},
       onExpandMemo: () {},
       onTxIdPressed: () {},
-      onFeeHelpPressed: () {},
     ),
   );
 }
@@ -60,11 +58,9 @@ Widget buildReceivedReceiptTransparentToShieldedUseCase(BuildContext context) {
       memoText: _sampleMemo,
       timestampText: '25 May, 13:30',
       txIdText: '0123123124512512',
-      feeText: '0.012 ZEC',
       onShowFullAddress: () {},
       onExpandMemo: () {},
       onTxIdPressed: () {},
-      onFeeHelpPressed: () {},
     ),
   );
 }
@@ -81,9 +77,7 @@ Widget buildReceivedReceiptShieldedToShieldedUseCase(BuildContext context) {
       isShieldedReceivingAddress: true,
       timestampText: '25 May, 13:30',
       txIdText: '0123123124512512',
-      feeText: '0.012 ZEC',
       onTxIdPressed: () {},
-      onFeeHelpPressed: () {},
     ),
   );
 }
@@ -103,18 +97,15 @@ Widget buildReceivedReceiptKnownSenderUseCase(BuildContext context) {
       memoText: _sampleMemo,
       timestampText: '25 May, 13:30',
       txIdText: '0123123124512512',
-      feeText: '0.012 ZEC',
       onShowFullAddress: () {},
       onExpandMemo: () {},
       onTxIdPressed: () {},
-      onFeeHelpPressed: () {},
     ),
   );
 }
 
 /// Unconfirmed inbound transaction as it actually renders in the app:
-/// loader status row per the send-in-progress spec, unknown sender, and no
-/// network fee row until the wallet knows the transaction-level fee.
+/// loader status row per the send-in-progress spec and unknown sender.
 Widget buildReceivedReceiptInProgressUseCase(BuildContext context) {
   return _ReceivedReceiptFrame(
     child: ReceivedReceiptView(

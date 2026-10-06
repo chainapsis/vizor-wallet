@@ -38,6 +38,7 @@ import 'package:zcash_wallet/src/features/swap/providers/pay_selected_asset_stor
 import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
+import 'package:zcash_wallet/src/providers/sync_failure.dart';
 import 'package:zcash_wallet/src/providers/sync_keep_awake_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
@@ -267,8 +268,19 @@ Widget _app(
         )
       else
         GoRoute(path: '/home', builder: (_, _) => const MobileHomeScreen()),
+      GoRoute(
+        path: '/setup/backup',
+        builder: (_, state) => Text('backup route ${state.extra}'),
+      ),
       GoRoute(path: '/send', builder: (_, _) => const Text('send route')),
       GoRoute(path: '/receive', builder: (_, _) => const Text('receive route')),
+      GoRoute(
+        path: '/settings',
+        builder: (_, _) => const Text(
+          'settings route',
+          key: ValueKey('mobile_settings_route'),
+        ),
+      ),
       GoRoute(
         path: '/home/ledger-shield',
         builder: (_, _) => const Text(
@@ -358,6 +370,7 @@ Widget _app(
                 _ => Completer<IronwoodMigrationCompletionState>().future,
               },
         ),
+      accountProvider.overrideWith(AccountNotifier.new),
       syncProvider.overrideWith(() => effectiveSyncNotifier),
       if (syncKeepAwakeNotifier != null)
         syncKeepAwakeProvider.overrideWith(() => syncKeepAwakeNotifier),
@@ -645,6 +658,76 @@ class _DeferredVotingStore implements VotingHomeCacheStore {
 }
 
 void main() {
+  testWidgets('Home offers only pending backup and opens its account route', (
+    tester,
+  ) async {
+    final pending = _accountState.copyWith(
+      accounts: [_accountState.accounts.first.copyWith(setupPending: true)],
+    );
+    await tester.pumpWidget(
+      _app(_syncedState(), accountState: pending, showVoting: false),
+    );
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('mobile_home_backup')),
+    );
+    await tester.tap(find.byKey(const ValueKey('mobile_home_backup')));
+    await tester.pumpAndSettle();
+    expect(find.text('backup route account-1'), findsOneWidget);
+  });
+
+  testWidgets('Home hides snoozed backup without marking it complete', (
+    tester,
+  ) async {
+    final snoozed = _accountState.copyWith(
+      accounts: [
+        _accountState.accounts.first.copyWith(
+          setupPending: true,
+          backupReminderSnoozedUntilUtc: DateTime.now().toUtc().add(
+            const Duration(days: 2),
+          ),
+        ),
+      ],
+    );
+    await tester.pumpWidget(
+      _app(_syncedState(), accountState: snoozed, showVoting: false),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('mobile_home_backup')), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('private status coverage notice opens settings', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        _syncedState().copyWith(
+          failure: classifySyncFailure('private status coverage incomplete'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('mobile_private_status_coverage_notice')),
+      findsOneWidget,
+    );
+    expect(
+      find.text(
+        "Private transaction lookup couldn't determine a transaction's "
+        'status. Turn off experimental private queries in Settings to continue '
+        'syncing.',
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_private_status_coverage_settings')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('mobile_settings_route')), findsOneWidget);
+  });
+
   testWidgets(
     'Home renders before cache read and restores the card during sync',
     (tester) async {

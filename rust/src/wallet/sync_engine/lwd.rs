@@ -30,7 +30,7 @@ use zcash_client_backend::{
     proto::service::{
         self, compact_tx_streamer_client::CompactTxStreamerClient, BlockId, BlockRange, ChainSpec,
         Empty, GetAddressUtxosArg, GetAddressUtxosReply, GetSubtreeRootsArg, RawTransaction,
-        SendResponse, TransparentAddressBlockFilter, TreeState, TxFilter,
+        SendResponse, TransparentAddressBlockFilter, TreeState,
     },
 };
 use zcash_primitives::block::BlockHash;
@@ -233,12 +233,12 @@ async fn open_lwd_channel_for_route(
 }
 
 #[derive(Clone)]
-struct DirectRouteConnector {
+pub(super) struct DirectRouteConnector {
     inner: HttpConnector,
 }
 
 impl DirectRouteConnector {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         let mut inner = HttpConnector::new();
         inner.enforce_http(false);
         // Tonic applies the endpoint's `tcp_nodelay` (enabled by default) only
@@ -315,7 +315,7 @@ pub(crate) async fn get_latest_block(
 /// optional hash in a `GetLatestBlock` response. A server that also omits
 /// [`CompactBlock::hash`] cannot safely prove tip continuity, so this helper
 /// returns an incompatibility error.
-pub(super) async fn get_compact_block_hash(
+pub(crate) async fn get_compact_block_hash(
     client: &mut CompactTxStreamerClient<Channel>,
     height: u64,
 ) -> Result<BlockHash, SyncError> {
@@ -397,28 +397,6 @@ async fn request_tree_state(
     )
     .await
     .map_err(|e| status_to_network_error("get_tree_state", e))
-}
-
-/// Return a raw transaction response. This keeps the original tonic
-/// `Status` so callers that distinguish `NotFound` from transient
-/// network failures can make that decision after the timeout wrapper.
-pub(crate) async fn get_transaction(
-    client: &mut CompactTxStreamerClient<Channel>,
-    hash: Vec<u8>,
-) -> Result<RawTransaction, Status> {
-    await_tonic_response(
-        "get_transaction",
-        LIGHTWALLETD_UNARY_RPC_TIMEOUT,
-        client.get_transaction(timed_request(
-            TxFilter {
-                block: None,
-                index: 0,
-                hash,
-            },
-            LIGHTWALLETD_UNARY_RPC_TIMEOUT,
-        )),
-    )
-    .await
 }
 
 /// Submit a raw transaction with a bounded response wait.

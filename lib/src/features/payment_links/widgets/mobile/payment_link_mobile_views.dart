@@ -1458,7 +1458,7 @@ class PaymentLinkRedeemMobileView extends StatelessWidget {
         ),
       ),
       PaymentLinkRedeemMobileState.loading =>
-        const _PaymentLinkLoadingMobileCard(),
+        const PaymentLinkLoadingMobileCard(),
     };
 
     return _MobilePaymentLinkFrame(
@@ -1714,8 +1714,8 @@ class PaymentLinkReceivedMobileView extends StatelessWidget {
   }
 }
 
-class _PaymentLinkLoadingMobileCard extends StatelessWidget {
-  const _PaymentLinkLoadingMobileCard();
+class PaymentLinkLoadingMobileCard extends StatelessWidget {
+  const PaymentLinkLoadingMobileCard({super.key});
 
   @override
   Widget build(BuildContext context) {

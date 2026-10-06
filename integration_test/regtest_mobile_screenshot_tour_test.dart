@@ -81,16 +81,16 @@ void main() {
       await shot('01_welcome');
 
       // ── Method selection ───────────────────────────────────────────
-      await tapWidget(tester, const ValueKey('mobile_welcome_get_started'));
+      await tapWidget(tester, const ValueKey('mobile_welcome_import'));
       await pumpUntil(
         tester,
-        () => tester.any(find.byKey(const ValueKey('mobile_welcome_import'))),
+        () => tester.any(find.byKey(const ValueKey('mobile_import_passphrase'))),
         description: 'method selection screen',
       );
       await shot('01b_method_selection');
 
       // ── Import flow (funded wallet) ────────────────────────────────
-      await tapWidget(tester, const ValueKey('mobile_welcome_import'));
+      await tapWidget(tester, const ValueKey('mobile_import_passphrase'));
       await shot('02_import_entry');
       await tapWidget(tester, const ValueKey('mobile_import_enter_manually'));
       await pumpUntil(
@@ -548,7 +548,8 @@ void main() {
       await openHomeTab(tester);
       await openAddAccountFlow(tester);
       await shot('31_welcome_add_account');
-      await tapWidget(tester, const ValueKey('mobile_welcome_get_started'));
+      await tapWidget(tester, const ValueKey('mobile_welcome_import'));
+      await tapWidget(tester, const ValueKey('mobile_import_hardware'));
       await pumpUntil(
         tester,
         () => tester.any(find.byKey(const ValueKey('mobile_welcome_keystone'))),
@@ -564,12 +565,16 @@ void main() {
       );
       await shot('31b_keystone_intro');
       await tapBack(tester);
+      await tapBack(tester);
+      await tapBack(tester);
       await pumpUntil(
         tester,
-        () => tester.any(find.byKey(const ValueKey('mobile_welcome_create'))),
-        description: 'back on method selection',
+        () => tester.any(
+          find.byKey(const ValueKey('mobile_welcome_get_started')),
+        ),
+        description: 'back on add-account Welcome',
       );
-      await tapWidget(tester, const ValueKey('mobile_welcome_create'));
+      await tapWidget(tester, const ValueKey('mobile_welcome_get_started'));
       await pumpUntil(
         tester,
         () => tester.any(find.byKey(const ValueKey('mobile_intro_continue'))),

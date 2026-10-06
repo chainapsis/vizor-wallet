@@ -2,7 +2,7 @@ use super::tests::{fake_raw, fake_txid, fresh_db, insert_row};
 use super::*;
 use tempfile::NamedTempFile;
 
-fn populate_recovery_wallet(path: &str, txid: &[u8], raw: &[u8]) {
+pub(crate) fn populate_recovery_wallet(path: &str, txid: &[u8], raw: &[u8]) {
     // Exercise a real migrated view with an outgoing transaction spending a
     // funding note and returning change. These are synthetic SQL note contents;
     // this test verifies persisted recovery state, not note cryptography.
@@ -955,11 +955,7 @@ fn resubmit_guard_matches_pinned_backend_schema() {
     )
     .unwrap();
     assert_resubmit_count(&file, 0);
-    conn.execute(
-        "INSERT INTO tx_retrieval_queue (txid, query_type) VALUES (?1, 1)",
-        [txid],
-    )
-    .unwrap();
+    // The routed backend preserves the fixture's independent payload request.
     assert!(resolve_recovered_nonmined_status(&mut conn, &txid).unwrap());
     assert_resubmit_count(&file, 1);
     assert_eq!(

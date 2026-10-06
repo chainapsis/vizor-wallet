@@ -5,6 +5,7 @@ import 'package:flutter/material.dart'
     show BorderRadius, BoxDecoration, MaterialApp, SingleChildScrollView;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
@@ -14,16 +15,22 @@ import 'package:zcash_wallet/src/features/swap/domain/swap_asset.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_timeout_content.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_deposit_tokens_page_content.dart';
 
+import '../../figma_compare/figma_compare_font_loader.dart';
+
 Widget _harness(
   Widget child, {
   Size mediaSize = const Size(393, 852),
   double width = 361,
+  double textScale = 1,
 }) {
   return MaterialApp(
     builder: (_, navigator) =>
         AppTheme(data: AppThemeData.dark, child: navigator!),
     home: MediaQuery(
-      data: MediaQueryData(size: mediaSize),
+      data: MediaQueryData(
+        size: mediaSize,
+        textScaler: TextScaler.linear(textScale),
+      ),
       child: SingleChildScrollView(
         child: Align(
           alignment: Alignment.topCenter,
@@ -35,6 +42,30 @@ Widget _harness(
 }
 
 void main() {
+  testWidgets('scaled deposit amount and deadline stay inside the QR card', (
+    tester,
+  ) async {
+    await loadFigmaCompareFonts();
+    for (final width in [288.0, 361.0]) {
+      await tester.pumpWidget(
+        _harness(_content(), width: width, textScale: 1.3),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      final card = tester.getRect(
+        find.byKey(const ValueKey('swap_deposit_qr_card')),
+      );
+      final expiry = tester.getRect(
+        find.byKey(const ValueKey('swap_deposit_expiry_label')),
+      );
+      expect(expiry.bottom, lessThanOrEqualTo(card.bottom));
+      final amount = tester.renderObject<RenderParagraph>(
+        find.text('999.99 USDC').first,
+      );
+      expect(amount.didExceedMaxLines, isFalse);
+    }
+  });
+
   testWidgets('mobile deposit layout matches the Figma QR card metrics', (
     tester,
   ) async {

@@ -17,6 +17,8 @@ void main() {
       addTearDown(coordinator.dispose);
       final bootstrap = Completer<AppBootstrapState>();
       var queries = 0;
+      final policyApplied = Completer<void>();
+      var policyCalls = 0;
       CapsLockMonitor? monitor;
       final messenger = tester.binding.defaultBinaryMessenger;
       messenger.setMockMethodCallHandler(CapsLockMonitor.channel, (call) async {
@@ -34,6 +36,11 @@ void main() {
           loadApp: () async {
             final app = await buildProductionZcashWalletApp(
               loadBootstrap: () => bootstrap.future,
+              applyPrivacyPolicy: (state) async {
+                expect(state, same(AppBootstrapState.empty));
+                policyCalls++;
+                await policyApplied.future;
+              },
             );
             // Exercise the actual production overrides without starting wallet,
             // storage, or Rust providers belonging to the full application shell.
@@ -55,6 +62,11 @@ void main() {
       expect(monitor, isNull);
       bootstrap.complete(AppBootstrapState.empty);
       await tester.pump();
+      await tester.pump();
+      await tester.pump();
+      expect(policyCalls, 1);
+      expect(monitor, isNull);
+      policyApplied.complete();
       await tester.pump();
       await tester.pump();
       expect(monitor?.enabled, isTrue);

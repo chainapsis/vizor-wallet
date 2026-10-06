@@ -232,13 +232,18 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
             // scroll view.
             return SafeArea(
               bottom: false,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Spacer(),
-                  MobileModalCard(child: content),
-                ],
-              ),
+              child: surface == _PayModalSurface.slippage
+                  ? Align(
+                      alignment: Alignment.bottomCenter,
+                      child: MobileModalCard(child: content),
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Spacer(),
+                        MobileModalCard(child: content),
+                      ],
+                    ),
             );
           },
         );

@@ -30,6 +30,11 @@ pub(crate) enum SyncError {
     /// retry path is the right response.
     Network(String),
 
+    /// Private Status PIR could not prove that its snapshot covered the
+    /// transaction-status decision. This is retryable for publication lag,
+    /// but changing lightwalletd endpoints cannot repair it.
+    PrivateStatusCoverageIncomplete,
+
     /// Local SQLite / `WalletDb` failure. Usually non-retryable (permissions,
     /// disk full, schema corruption) — propagate up and let the caller decide.
     Db(String),
@@ -134,7 +139,12 @@ impl SyncError {
     /// (no rewind, no caller intervention).
     #[allow(dead_code)] // currently unused outside recovery_strategy itself
     pub(crate) fn is_transient(&self) -> bool {
-        matches!(self, SyncError::Network(_) | SyncError::Other(_))
+        matches!(
+            self,
+            SyncError::Network(_)
+                | SyncError::PrivateStatusCoverageIncomplete
+                | SyncError::Other(_)
+        )
     }
 
     /// The height at which a continuity break was detected, if this is a
@@ -153,7 +163,9 @@ impl SyncError {
             SyncError::Continuity { at_height, .. } => RecoveryStrategy::Rewind {
                 to_height: at_height.saturating_sub(REWIND_DISTANCE),
             },
-            SyncError::Network(_) | SyncError::Other(_) => RecoveryStrategy::RetryWithBackoff,
+            SyncError::Network(_)
+            | SyncError::PrivateStatusCoverageIncomplete
+            | SyncError::Other(_) => RecoveryStrategy::RetryWithBackoff,
             SyncError::Db(_) | SyncError::Parse(_) => RecoveryStrategy::Fatal,
         }
     }
@@ -195,7 +207,10 @@ impl SyncError {
     pub(crate) fn is_endpoint_failover_candidate(&self) -> bool {
         match self {
             SyncError::Network(message) => is_endpoint_failover_candidate_message(message),
-            SyncError::Continuity { .. } | SyncError::Db(_) | SyncError::Parse(_) => false,
+            SyncError::Continuity { .. }
+            | SyncError::PrivateStatusCoverageIncomplete
+            | SyncError::Db(_)
+            | SyncError::Parse(_) => false,
             SyncError::Other(message) => is_endpoint_failover_candidate_message(message),
         }
     }
@@ -242,6 +257,9 @@ impl fmt::Display for SyncError {
                 write!(f, "chain continuity broken at height {at_height}: {detail}")
             }
             SyncError::Network(msg) => write!(f, "network: {msg}"),
+            SyncError::PrivateStatusCoverageIncomplete => {
+                write!(f, "private status coverage incomplete")
+            }
             SyncError::Db(msg) => write!(f, "db: {msg}"),
             SyncError::Parse(msg) => write!(f, "parse: {msg}"),
             SyncError::Other(msg) => write!(f, "other: {msg}"),
@@ -304,6 +322,10 @@ mod tests {
             SyncError::Other("???".into()).recovery_strategy(),
             RecoveryStrategy::RetryWithBackoff,
         );
+        assert_eq!(
+            SyncError::PrivateStatusCoverageIncomplete.recovery_strategy(),
+            RecoveryStrategy::RetryWithBackoff,
+        );
     }
 
     #[test]
@@ -323,6 +345,7 @@ mod tests {
             detail: "PrevHashMismatch".into(),
         }
         .is_endpoint_failover_candidate());
+        assert!(!SyncError::PrivateStatusCoverageIncomplete.is_endpoint_failover_candidate());
         assert!(!is_endpoint_failover_candidate_message(
             "Endpoint is for test, but this wallet uses main."
         ));
@@ -380,6 +403,10 @@ mod tests {
         assert!(format!("{}", SyncError::Db("x".into())).starts_with("db: "));
         assert!(format!("{}", SyncError::Parse("x".into())).starts_with("parse: "));
         assert!(format!("{}", SyncError::Other("x".into())).starts_with("other: "));
+        assert_eq!(
+            format!("{}", SyncError::PrivateStatusCoverageIncomplete),
+            "private status coverage incomplete"
+        );
     }
 
     #[test]

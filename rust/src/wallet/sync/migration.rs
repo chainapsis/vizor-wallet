@@ -2083,6 +2083,36 @@ pub(crate) fn schedule_block_offset_for_part(
         .map(|entry| entry.block_offset)
 }
 
+fn record_creation_evidence(
+    tx: &rusqlite::Transaction<'_>,
+    network: WalletNetwork,
+    txid_hex: &str,
+    target_height: u32,
+) -> Result<(), String> {
+    use zcash_client_backend::data_api::status::TransactionStatusWrite;
+    let mut bytes: [u8; 32] = hex::decode(txid_hex)
+        .map_err(|e| e.to_string())?
+        .try_into()
+        .map_err(|_| "Invalid migration txid length")?;
+    bytes.reverse();
+    let mut db = zcash_client_sqlite::WalletDb::from_connection(&**tx, network, (), ());
+    db.record_transaction_created(
+        zcash_primitives::transaction::TxId::from_bytes(bytes),
+        BlockHeight::from_u32(target_height),
+    )
+    .map_err(|e| format!("Record migration creation evidence: {e}"))
+}
+
+// Persist original construction evidence with the encrypted outbox, before any broadcast.
+// The current scheduled height can move on retries and is deliberately not used here.
+fn record_pending_creation(
+    tx: &rusqlite::Transaction<'_>,
+    network: WalletNetwork,
+    pending: &PendingMigrationTxInsert,
+) -> Result<(), String> {
+    record_creation_evidence(tx, network, &pending.txid_hex, pending.target_height)
+}
+
 fn insert_pending_txs_with_tx(
     tx: &rusqlite::Transaction<'_>,
     run_id: &str,
@@ -2246,6 +2276,7 @@ fn insert_pending_txs_with_tx(
     let payload_key = secret_payload::PayloadKey::new(password, salt.as_slice());
 
     for (pending, block_offset, schedule_origin) in scheduled_pending {
+        record_pending_creation(tx, network, &pending)?;
         let encrypted_raw_tx = payload_key.encrypt(Zeroizing::new(pending.raw_tx))?;
         let metadata_json = serde_json::to_string(&pending.metadata)
             .map_err(|e| format!("Encode migration pending metadata: {e}"))?;
@@ -3354,6 +3385,58 @@ pub(crate) fn unbroadcast_migration_recovery_candidates(
     Ok(candidates)
 }
 
+/// Repairs creation provenance for outbox rows written before atomic evidence
+/// recording was introduced. This must run before private status recovery:
+/// `target_height` is the immutable construction bound, while the scheduled
+/// height may have moved after retries.
+pub(crate) fn backfill_unbroadcast_migration_creation_evidence(
+    db_path: &str,
+    account_uuid: &str,
+    network: WalletNetwork,
+    expected_run_id: &str,
+) -> Result<(), String> {
+    with_wallet_db_write_lock("migration.backfill_creation_evidence", || {
+        let conn = open_wallet_raw_conn_with_timeout(db_path, WALLET_DB_BUSY_TIMEOUT)?;
+        ensure_schema(&conn)?;
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|e| format!("Begin migration creation evidence backfill: {e}"))?;
+        let run = active_run(&tx, account_uuid, network)?
+            .ok_or("No active migration run is available for recovery")?;
+        if run.run_id != expected_run_id {
+            return Err(format!(
+                "Migration recovery run changed: expected {expected_run_id}, got {}",
+                run.run_id
+            ));
+        }
+
+        let rows = {
+            let mut stmt = tx
+                .prepare_cached(&format!(
+                    "SELECT txid_hex, target_height
+                     FROM {PENDING_TXS_TABLE}
+                     WHERE run_id = ?1 AND status IN ('scheduled', 'broadcasted')
+                     ORDER BY part_index ASC, txid_hex ASC"
+                ))
+                .map_err(|e| format!("Prepare migration creation evidence backfill: {e}"))?;
+            let rows = stmt
+                .query_map(params![expected_run_id], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, u32>(1)?))
+                })
+                .map_err(|e| format!("Query migration creation evidence backfill: {e}"))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| format!("Read migration creation evidence backfill: {e}"))?;
+            rows
+        };
+
+        for (txid_hex, target_height) in rows {
+            record_creation_evidence(&tx, network, &txid_hex, target_height)?;
+        }
+        tx.commit()
+            .map_err(|e| format!("Commit migration creation evidence backfill: {e}"))
+    })
+}
+
 /// Promotes pending migration rows to `confirmed` when the wallet already has
 /// local chain identity for their txids (and demotes orphaned `confirmed` rows
 /// after a reorg). Call before due selection. Expiry and noncanonical
@@ -4294,6 +4377,7 @@ pub(crate) fn replace_resigned_pending_parts(
         }
 
         let pending = replacement.replacement;
+        record_pending_creation(&tx, _network, &pending)?;
         let canonical_expiry = zip318_canonical_migration_expiry_height(pending.scheduled_height)?;
         if pending.expiry_height != canonical_expiry {
             return Err(
@@ -4536,13 +4620,16 @@ pub(crate) fn retire_run_for_rebuild(
     reconcile_wallet_locks_for_run(db_path, network, run_id)
 }
 
+/// Abandons the run after rechecking `evidence` in the same write
+/// transaction, so a concurrent sync cannot invalidate it first.
 pub(crate) fn abandon_run(
     db_path: &str,
     account_uuid: &str,
     network: WalletNetwork,
     expected_run_id: &str,
+    evidence: &StopEvidence,
 ) -> Result<(), String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    let mut conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     let run = conn
         .query_row(
@@ -4576,9 +4663,12 @@ pub(crate) fn abandon_run(
     }
 
     let now = now_ms()?;
+    // IMMEDIATE takes the write lock before the evidence is read, so sync
+    // cannot move the chain between the recheck and the transition.
     let tx = conn
-        .unchecked_transaction()
+        .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|e| format!("Begin migration stop transition: {e}"))?;
+    verify_stop_evidence(&tx, evidence)?;
     let transitioned = tx
         .execute(
             &format!(
@@ -4597,6 +4687,27 @@ pub(crate) fn abandon_run(
         .map_err(|e| format!("Mark migration stopped: {e}"))?;
     if transitioned != 1 {
         return Err("Migration phase changed while stopping; retry.".to_string());
+    }
+
+    // Only now, after the recheck, record that the wallet tracks these. Doing
+    // it earlier would hide them from a retry after a failed recheck.
+    for tracked in &evidence.tracked {
+        match tracked.kind {
+            MigrationStopCandidateKind::MigrationTransaction => {
+                tx.execute(
+                    &format!(
+                        "UPDATE {PENDING_TXS_TABLE}
+                         SET status = 'broadcasted'
+                         WHERE run_id = ?1 AND txid_hex = ?2 AND status = 'scheduled'"
+                    ),
+                    params![expected_run_id, tracked.txid_hex],
+                )
+                .map_err(|e| format!("Keep tracked migration transaction: {e}"))?;
+            }
+            MigrationStopCandidateKind::DenominationStage => {
+                mark_denomination_stage_broadcasted(&tx, expected_run_id, &tracked.txid_hex)?;
+            }
+        }
     }
 
     // A prepared child PCZT has not reached the network. Once the run is
@@ -7515,6 +7626,104 @@ pub(crate) fn local_denomination_chain_identity(
 
     #[cfg(not(test))]
     Err("Wallet schema cannot provide canonical denomination block identities".to_string())
+}
+
+/// Local evidence a migration stop relied on.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct StopEvidence {
+    /// Attempted transactions that stop let the wallet's own records protect.
+    pub tracked: Vec<TrackedStopTransaction>,
+    /// The scanned block, by height and hash, that stop matched against the
+    /// current chain before discarding transactions.
+    pub verified_scan: Option<(u32, [u8; 32])>,
+}
+
+/// An attempted transaction whose inputs the wallet's own records hold.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct TrackedStopTransaction {
+    pub kind: MigrationStopCandidateKind,
+    pub txid_hex: String,
+    pub expiry_height: u32,
+}
+
+/// The chain tip the wallet judges expiry against, as librustzcash computes
+/// it: scan ranges are end-exclusive.
+pub(crate) fn wallet_chain_tip(conn: &rusqlite::Connection) -> Result<Option<u32>, String> {
+    conn.query_row("SELECT MAX(block_range_end) FROM scan_queue", [], |row| {
+        row.get::<_, Option<u32>>(0)
+    })
+    .map(|end| end.map(|end| end.saturating_sub(1)))
+    .map_err(|e| format!("Read wallet chain tip: {e}"))
+}
+
+/// Whether the wallet's records treat an attempted transaction's inputs as
+/// spent. The wallet must store the transaction's bytes: they record its
+/// expiry, which keeps the inputs spent even if a reorg later unmines it.
+/// A transaction known only from compact-block scanning has no recorded
+/// expiry, so after a reorg the wallet would release its inputs within the
+/// default expiry window, long before a ZIP 318 migration expires. A stored
+/// transaction holds its inputs while it is mined, or while it is unexpired
+/// at `chain_tip_height`. Zero is the legacy no-expiry sentinel.
+pub(crate) fn stop_evidence_holds_inputs(
+    mined: bool,
+    stored: bool,
+    expiry_height: u32,
+    chain_tip_height: Option<u32>,
+) -> bool {
+    let unexpired = expiry_height == 0 || chain_tip_height.is_some_and(|tip| expiry_height > tip);
+    stored && (mined || unexpired)
+}
+
+/// [`stop_evidence_holds_inputs`] for one transaction's local records.
+pub(crate) fn stop_candidate_holds_inputs(
+    conn: &rusqlite::Connection,
+    txid_hex: &str,
+    expiry_height: u32,
+    chain_tip_height: Option<u32>,
+) -> Result<bool, String> {
+    Ok(stop_evidence_holds_inputs(
+        local_denomination_chain_identity(conn, txid_hex)?.is_some(),
+        local_transaction_raw(conn, txid_hex)?.is_some(),
+        expiry_height,
+        chain_tip_height,
+    ))
+}
+
+fn verify_stop_evidence(
+    conn: &rusqlite::Connection,
+    evidence: &StopEvidence,
+) -> Result<(), String> {
+    const CHANGED: &str =
+        "The wallet's chain changed while the migration was stopping. Try stopping again.";
+    if !evidence.tracked.is_empty() {
+        let chain_tip_height = wallet_chain_tip(conn)?;
+        for tracked in &evidence.tracked {
+            if !stop_candidate_holds_inputs(
+                conn,
+                &tracked.txid_hex,
+                tracked.expiry_height,
+                chain_tip_height,
+            )? {
+                return Err(CHANGED.to_string());
+            }
+        }
+    }
+    if let Some((height, hash)) = evidence.verified_scan {
+        // Truncation removes every block above its target, so an unchanged
+        // block here leaves the whole verified scan below it in place.
+        let local_hash = conn
+            .query_row(
+                "SELECT hash FROM blocks WHERE height = ?1",
+                params![height],
+                |row| row.get::<_, Vec<u8>>(0),
+            )
+            .optional()
+            .map_err(|e| format!("Read verified scanned block: {e}"))?;
+        if local_hash.as_deref() != Some(hash.as_slice()) {
+            return Err(CHANGED.to_string());
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn local_transaction_raw(

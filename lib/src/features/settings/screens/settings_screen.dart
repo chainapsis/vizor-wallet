@@ -8,6 +8,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/config/zcash_explorer.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
@@ -18,7 +19,7 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../providers/account_provider.dart';
-import '../../../core/config/zcash_explorer.dart';
+import '../../../providers/enhance_pir_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/theme_mode_provider.dart';
 import '../../../providers/zcash_explorer_provider.dart';
@@ -30,6 +31,7 @@ import '../../payment_links/providers/payment_link_cards_provider.dart';
 import '../../donation/donation_config.dart';
 import '../settings_platform.dart';
 import '../widgets/network_privacy_control.dart';
+import '../widgets/enhance_pir_privacy_control.dart';
 import '../widgets/settings_new_badge.dart';
 import '../widgets/windows_update_download_flow.dart';
 
@@ -443,7 +445,7 @@ class _SettingsPane extends StatelessWidget {
   }
 }
 
-class _SettingsList extends StatelessWidget {
+class _SettingsList extends ConsumerWidget {
   const _SettingsList({
     required this.accountName,
     required this.profilePictureId,
@@ -495,7 +497,11 @@ class _SettingsList extends StatelessWidget {
   final VoidCallback? onUninstall;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final enhancePirEnabled = ref.watch(enhancePirProvider);
+    final enhancePirAvailable = ref.watch(enhancePirAvailableProvider);
+    final recoveryTransition = ref.watch(enhancePirTransitionProvider);
+    final changingRecovery = recoveryTransition == 'Changing setting…';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -592,11 +598,23 @@ class _SettingsList extends StatelessWidget {
         const SizedBox(height: AppSpacing.md),
         _SettingsBlock(
           title: 'Privacy',
-          rows: const [
-            NetworkPrivacyControl(
+          rows: [
+            const NetworkPrivacyControl(
               key: ValueKey('settings_tor_control'),
               showSurface: false,
             ),
+            if (enhancePirAvailable) ...[
+              const SizedBox(height: AppSpacing.sm),
+              EnhancePirPrivacyControl(
+                enabled: enhancePirEnabled,
+                transition: recoveryTransition,
+                onToggle: changingRecovery
+                    ? null
+                    : () => unawaited(
+                        ref.read(enhancePirProvider.notifier).toggle(),
+                      ),
+              ),
+            ],
           ],
         ),
         const SizedBox(height: AppSpacing.md),

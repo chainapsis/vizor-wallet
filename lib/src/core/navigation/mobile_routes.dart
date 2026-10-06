@@ -3,6 +3,8 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../feedback/app_review.dart';
+
 import '../../features/accounts/screens/mobile/mobile_accounts_screen.dart';
 import '../../features/accounts/screens/mobile/mobile_account_removal_passcode_screen.dart';
 import '../../features/activity/screens/mobile/mobile_activity_screen.dart';
@@ -19,6 +21,7 @@ import '../../features/migration/screens/ironwood_migration_flow_screen.dart'
         MobileIronwoodMigrationKeystoneBatchSignScreen,
         MobileIronwoodMigrationKeystoneDenominationSignEntry,
         MobileIronwoodMigrationKeystoneDenominationSignScreen;
+import '../../features/onboarding/mobile/mobile_gift_education_screen.dart';
 import '../../features/pay/screens/mobile/mobile_pay_screen.dart';
 import '../../features/pay/screens/mobile/mobile_pay_submitted_screen.dart';
 import '../../features/pay/models/pay_recent_recipients.dart';
@@ -107,10 +110,35 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
           ),
       ],
     ),
-    // Settings detail screens are full-screen pushes over the shell so
+    // Backup, education, and settings detail screens push over the shell so
     // the bottom tab bar is hidden while they're open. Absolute paths
     // match the desktop routes for the shared redirect guard and deep
     // links.
+    for (final entry in {
+      '/setup/education/intro': GiftEducationPage.intro,
+      '/setup/education/address-types': GiftEducationPage.addressTypes,
+      '/setup/education/things-to-know': GiftEducationPage.thingsToKnow,
+    }.entries)
+      GoRoute(
+        path: entry.key,
+        pageBuilder: (context, state) => CupertinoPage(
+          key: state.pageKey,
+          child: MobileGiftEducationScreen(
+            page: entry.value,
+            accountUuid: state.extra is String ? state.extra as String : null,
+          ),
+        ),
+      ),
+    GoRoute(
+      path: '/setup/backup',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: MobileSeedPhraseScreen(
+          accountUuid: state.extra is String ? state.extra as String : null,
+          showBackupIntro: true,
+        ),
+      ),
+    ),
     GoRoute(
       path: '/accounts/confirm-removal',
       pageBuilder: (context, state) => CupertinoPage(
@@ -209,6 +237,7 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
       pageBuilder: (context, state) => CupertinoPage(
         key: state.pageKey,
         child: PaymentLinksScreen(
+          initialReceivedCardAddress: state.uri.queryParameters['received'],
           initialCards: state.extra is PaymentLinkCardsSnapshot
               ? state.extra! as PaymentLinkCardsSnapshot
               : null,
@@ -737,6 +766,9 @@ class _MobileTabShell extends ConsumerWidget {
           // shell keeps no tab history of its own). Skip when re-selecting
           // the active tab — that just resets it to root.
           if (targetBranchIndex != currentBranchIndex) {
+            if (targetTab.path != "/home") {
+              expectAppReviewVisit(ref, targetTab.path);
+            }
             ref
                 .read(mobilePreviousTabPathProvider.notifier)
                 .record(currentTab.path);

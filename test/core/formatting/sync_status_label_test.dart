@@ -29,12 +29,22 @@ void main() {
           kind: SyncFailureKind.network,
           rawMessage: 'connection refused',
           userMessage: 'Network error',
-          showSettingsAction: false,
         ),
       ),
     );
     expect(status.kind, SyncStatusKind.failed);
     expect(status.label, 'Syncing failed. Network error...');
+  });
+
+  test('private status coverage failure names private lookup', () {
+    final status = SyncStatusLabel.from(
+      SyncState(
+        failure: classifySyncFailure('private status coverage incomplete'),
+      ),
+    );
+
+    expect(status.kind, SyncStatusKind.failed);
+    expect(status.label, 'Syncing failed. Private lookup...');
   });
 
   test('a bootstrapping Tor route reads as connecting, not as synced', () {
@@ -167,5 +177,4 @@ SyncFailure _networkFailure(String raw) => SyncFailure(
   kind: SyncFailureKind.network,
   rawMessage: raw,
   userMessage: 'Network error',
-  showSettingsAction: false,
 );

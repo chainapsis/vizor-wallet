@@ -332,6 +332,44 @@ Future<void> _setMobileViewport(WidgetTester tester, Size size) async {
 }
 
 void main() {
+  testWidgets('slippage buttons stay above the keyboard on a compact route', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 568);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetViewInsets);
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile_pay_slippage_button')));
+    await tester.pumpAndSettle();
+    tester.view.viewInsets = const FakeViewPadding(bottom: 216);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('mobile_swap_slippage_value')),
+      '1.25',
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    for (final key in [
+      'swap_slippage_update_button',
+      'swap_slippage_cancel_button',
+    ]) {
+      final button = find.byKey(ValueKey(key));
+      expect(tester.getRect(button).bottom, lessThanOrEqualTo(352));
+      expect(button.hitTestable(), findsOneWidget);
+    }
+    await tester.tap(find.byKey(const ValueKey('swap_slippage_update_button')));
+    await tester.pumpAndSettle();
+    expect(find.byType(MobileSwapSlippageStepperModal), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('mobile_pay_slippage_button')));
+    await tester.pumpAndSettle();
+    await tester.tapAt(const Offset(8, 8));
+    await tester.pumpAndSettle();
+    expect(find.byType(MobileSwapSlippageStepperModal), findsNothing);
+  });
+
   testWidgets(
     'mobile pay amount uses the completed spendable snapshot during sync',
     (tester) async {
@@ -757,6 +795,12 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('mobile_pay_slippage_button')));
     await tester.pump();
     expect(find.byType(MobileSwapSlippageStepperModal), findsOneWidget);
+    expect(
+      find.text(
+        'Allows this much extra ZEC for quote movement before execution fails. Network fees are separate.',
+      ),
+      findsOneWidget,
+    );
 
     await tester.tapAt(const Offset(8, 8));
     await tester.pumpAndSettle();

@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'mobile_onboarding_progress.dart';
+import 'mobile_onboarding_progress_scope.dart';
 import '../../ledger/ledger_device_label.dart';
 import '../../ledger/services/ledger_failure_guidance.dart';
 import '../../../core/theme/app_theme.dart';
@@ -96,7 +98,7 @@ class _MobileLedgerConnectScreenState
       );
       if (!mounted) return;
       setState(() => _phase = _MobileLedgerConnectPhase.idle);
-      context.push(
+      context.pushOnboarding(
         '/onboarding/ledger/birthday',
         extra: LedgerBirthdayArgs(account: account),
       );
@@ -142,7 +144,9 @@ class _MobileLedgerConnectScreenState
     );
     final readiness = ref.watch(ledgerAppReadinessStateProvider);
     return MobileOnboardingStepScaffold(
-      progress: 0.25,
+      progress: MobileOnboardingProgressScope.of(
+        context,
+      ).at(OnboardingFlow.ledger, OnboardingStage.deviceConnect).value,
       title: 'Connect Ledger',
       subtitle:
           'Select your Ledger, then approve sharing its viewing key to add a watch-only account.',

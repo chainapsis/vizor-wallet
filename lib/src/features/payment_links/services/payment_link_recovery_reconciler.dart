@@ -4,6 +4,7 @@ import '../../../../main.dart' show log;
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
+import '../../ledger/ledger_capability.dart';
 import '../../ledger/services/ledger_signed_operation_service.dart';
 import '../models/vizor_payment_link.dart';
 import 'payment_link_hardware_signing_service.dart';
@@ -27,6 +28,16 @@ const kPaymentLinkInertDraftRetention = Duration(minutes: 10);
 final paymentLinkRecoveryReconcilerProvider =
     Provider<PaymentLinkRecoveryReconciler>((ref) {
       final claimWallet = PaymentLinkClaimWallet(ref);
+      final ledgerSupported = ref
+          .watch(ledgerStaticCapabilityProvider)
+          .supported;
+      Future<List<LedgerSignedOperationMetadata>> loadLedgerOperations() async {
+        // The Rust outbox uses the same Ledger network gate. Software-card
+        // checks must still work when Ledger operations are unavailable.
+        if (!ledgerSupported) return const [];
+        return ref.read(ledgerSignedOperationServiceProvider).list();
+      }
+
       return PaymentLinkRecoveryReconciler(
         ref.watch(paymentLinkRecoveryStoreProvider),
         loadCurrentHeight: () => ref
@@ -58,13 +69,11 @@ final paymentLinkRecoveryReconcilerProvider =
         },
         loadLinkFundingHistory: claimWallet.loadFundingHistory,
         loadLedgerOperationRefs: () async => {
-          for (final operation
-              in await ref.read(ledgerSignedOperationServiceProvider).list())
+          for (final operation in await loadLedgerOperations())
             ?operation.externalRef,
         },
         loadSignedPendingGiftCardRefs: (accountUuid) async => {
-          for (final operation
-              in await ref.read(ledgerSignedOperationServiceProvider).list())
+          for (final operation in await loadLedgerOperations())
             if (operation.kind == LedgerSignedOperationKind.giftCard &&
                 operation.accountUuid == accountUuid &&
                 operation.state == 'signed_pending_broadcast')
