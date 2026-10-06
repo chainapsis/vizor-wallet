@@ -48,6 +48,138 @@ struct Wallet {
     signed: Vec<Signed>,
 }
 
+/// Signing has consumed the proposal, but completion still owns its input lock.
+struct SignedProposal {
+    id: u64,
+    flow: String,
+}
+
+impl SignedProposal {
+    fn new(wallet: &Wallet) -> Self {
+        use crate::wallet::sync::{proposal_locks, StoredProposalLock, PROPOSAL_STORE};
+        use std::collections::BTreeMap;
+        use transparent::{address::TransparentAddress, bundle::TxOut};
+        use zcash_client_backend::{
+            data_api::wallet::ConfirmationsPolicy,
+            fees::TransactionBalance,
+            proposal::Proposal,
+            wallet::{LockOwner, OutputRef, WalletTransparentOutput},
+            zip321::{Payment, TransactionRequest},
+        };
+        use zcash_keys::address::Address;
+        use zcash_protocol::{consensus::BlockHeight, value::Zatoshis, PoolType};
+
+        let address = TransparentAddress::PublicKeyHash([7; 20]);
+        let input = WalletTransparentOutput::from_parts(
+            OutPoint::new([1; 32], 0),
+            TxOut::new(Zatoshis::const_from_u64(1_000_000), address.script().into()),
+            Some(BlockHeight::from_u32(150)),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let payment = Payment::new(
+            Address::Transparent(address).to_zcash_address(&WalletNetwork::Regtest),
+            Some(Zatoshis::const_from_u64(990_000)),
+            None,
+            None,
+            None,
+            vec![],
+        )
+        .unwrap();
+        let proposal = Proposal::single_step(
+            TransactionRequest::new(vec![payment]).unwrap(),
+            BTreeMap::from([(0, PoolType::TRANSPARENT)]),
+            vec![input],
+            None,
+            BlockHeight::from_u32(200),
+            TransactionBalance::new(vec![], Zatoshis::const_from_u64(10_000)).unwrap(),
+            crate::wallet::sync::ConservativeZip317FeeRule,
+            wallet.signed[0].tx.expiry_height().into(),
+            ConfirmationsPolicy::default(),
+            false,
+            false,
+        )
+        .unwrap();
+        let id = {
+            let mut store = PROPOSAL_STORE.lock().unwrap();
+            let id = store.next_id;
+            store.next_id += 1;
+            id
+        };
+        let flow = format!("mined-recovery-{id}");
+        let mut owner_bytes = [0; 32];
+        owner_bytes[..8].copy_from_slice(&id.to_le_bytes());
+        let owner = LockOwner::new(owner_bytes);
+        proposal_locks::persist(
+            &wallet.path,
+            owner,
+            &[OutputRef::new(
+                zcash_primitives::transaction::TxId::from_bytes([1; 32]),
+                PoolType::TRANSPARENT,
+                0,
+            )],
+            wallet.signed[0].tx.expiry_height(),
+        )
+        .unwrap();
+        PROPOSAL_STORE.lock().unwrap().locks.insert(
+            id,
+            StoredProposalLock {
+                proposal,
+                network: WalletNetwork::Regtest,
+                db_path: wallet.path.clone(),
+                owner,
+                send_flow_id: flow.clone(),
+            },
+        );
+        Self { id, flow }
+    }
+
+    async fn recover(
+        &self,
+        wallet: &Wallet,
+        signature: Vec<u8>,
+    ) -> Result<StoreAndBroadcastPcztsResult, String> {
+        crate::wallet::sync::store_and_broadcast_signed_pczts_for_proposal(
+            &wallet.path,
+            "http://127.0.0.1:1",
+            WalletNetwork::Regtest,
+            self.id,
+            &self.flow,
+            &[wallet.signed[0].proof.clone()],
+            &[signature],
+            None,
+            None,
+        )
+        .await
+    }
+
+    fn assert_retained(&self, wallet: &Wallet, retained: bool) {
+        let has_lock = crate::wallet::sync::PROPOSAL_STORE
+            .lock()
+            .unwrap()
+            .locks
+            .contains_key(&self.id);
+        assert_eq!(has_lock, retained, "proposal retry capability");
+        let conn = rusqlite::Connection::open(&wallet.path).unwrap();
+        let count: u32 = conn
+            .query_row("SELECT COUNT(*) FROM vizor_send_proposal_locks", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(count, u32::from(retained), "durable input reservation");
+    }
+}
+
+impl Drop for SignedProposal {
+    fn drop(&mut self) {
+        if let Ok(mut store) = crate::wallet::sync::PROPOSAL_STORE.lock() {
+            store.locks.remove(&self.id);
+        }
+    }
+}
+
 impl Wallet {
     fn new(batch: bool) -> Self {
         let directory = tempfile::tempdir().unwrap();
@@ -513,6 +645,69 @@ async fn invalid_signed_effects_are_rejected_even_when_base_is_mined() {
         error.contains("transaction effects do not match"),
         "{error}"
     );
+}
+
+#[tokio::test]
+async fn proposal_recovery_preserves_retry_capability_until_mined_evidence_returns() {
+    let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
+    crate::network_privacy::disable_tor();
+    for evidence in ["missing", "conflicting", "rescan"] {
+        let wallet = Wallet::new(false);
+        let raw = match evidence {
+            "missing" => None,
+            "conflicting" => Some(&b"conflicting"[..]),
+            _ => Some(wallet.signed[0].raw.as_slice()),
+        };
+        wallet.store(0, raw, Some(201));
+        let conn = rusqlite::Connection::open(&wallet.path).unwrap();
+        if evidence == "rescan" {
+            conn.execute(
+                "UPDATE transactions SET mined_height = NULL, expiry_height = ?1",
+                [u32::from(wallet.signed[0].tx.expiry_height())],
+            )
+            .unwrap();
+            conn.execute_batch("DELETE FROM scan_queue; INSERT INTO scan_queue (block_range_start, block_range_end, priority) VALUES (200, 206, 20)").unwrap();
+        }
+        let proposal = SignedProposal::new(&wallet);
+        let error = proposal
+            .recover(&wallet, wallet.signed[0].signature.clone())
+            .await
+            .err()
+            .expect("incomplete mined evidence must remain retryable");
+        assert!(error.contains("retry after sync"), "{evidence}: {error}");
+        proposal.assert_retained(&wallet, true);
+        conn.execute(
+            "UPDATE transactions SET raw = ?1, mined_height = 201",
+            [&wallet.signed[0].raw],
+        )
+        .unwrap();
+        let result = proposal
+            .recover(&wallet, wallet.signed[0].signature.clone())
+            .await
+            .unwrap();
+        assert_eq!(result.status, "broadcasted");
+        assert_eq!((result.broadcasted_count, result.total_count), (1, 1));
+        assert_eq!(result.txids, wallet.signed[0].tx.txid().to_string());
+        proposal.assert_retained(&wallet, false);
+    }
+}
+
+#[tokio::test]
+async fn proposal_recovery_still_releases_invalid_signed_effects() {
+    let wallet = Wallet::new(false);
+    wallet.store(0, Some(&wallet.signed[0].raw), Some(201));
+    let proposal = SignedProposal::new(&wallet);
+    let different = Signed::new(OutPoint::new([2; 32], 0), 1_000_000);
+    let error = proposal
+        .recover(&wallet, different.signature)
+        .await
+        .err()
+        .expect("mismatched effects must fail");
+    assert!(
+        error.contains("transaction effects do not match"),
+        "{error}"
+    );
+    proposal.assert_retained(&wallet, false);
 }
 
 #[tokio::test]

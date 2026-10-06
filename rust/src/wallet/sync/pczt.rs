@@ -1565,6 +1565,8 @@ pub(crate) fn validate_signed_pczts(
 /// rejections are never written to the wallet DB. The outer SQLite transaction
 /// makes each PCZT-aware store participate in the same commit, so a later store
 /// failure rolls back every earlier item in the prefix.
+/// Incomplete mined evidence or a recovery read error preserves the proposal
+/// input lock so the same signed batch can be retried after sync.
 pub async fn store_and_broadcast_signed_pczts_for_proposal(
     db_path: &str,
     lightwalletd_url: &str,
@@ -1593,6 +1595,8 @@ pub async fn store_and_broadcast_signed_pczts_for_proposal(
 /// Validate a signatures-only Keystone response, broadcast the corresponding
 /// wallet-owned proof PCZTs in dependency order, and atomically persist the
 /// accepted-or-ambiguous prefix.
+/// Incomplete mined evidence or a recovery read error preserves the proposal
+/// input lock so the same signed batch can be retried after sync.
 pub async fn store_and_broadcast_pczts_with_compact_signatures_for_proposal(
     db_path: &str,
     lightwalletd_url: &str,
@@ -1717,11 +1721,10 @@ async fn store_and_broadcast_pczts_inner(
     let txids_joined = txids.join(",");
     let total_count = prepared.len() as u32;
 
-    let mined = stored_mined_transactions(db_path, network, &prepared);
-    let mined = match mined {
-        Ok(mined) => mined,
-        Err(error) => return release_signed_pczt_operation_after_failure(proposal, error),
-    };
+    // The signed batch is valid. Missing recovery evidence or a read failure
+    // must preserve its retry capability and input reservations until sync can
+    // restore that evidence; these errors do not abandon the proposal.
+    let mined = stored_mined_transactions(db_path, network, &prepared)?;
     if mined.iter().all(|mined| *mined) {
         if let Some((proposal_id, send_flow_id)) = proposal {
             if let Err(error) = finish_stored_proposal(proposal_id, send_flow_id, false) {

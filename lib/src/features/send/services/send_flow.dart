@@ -920,8 +920,9 @@ Future<SendBroadcastOutcome> _runSendBroadcast({
             payload.pcztWithProofs.isEmpty) {
           throw Exception('Invalid Keystone signing round count.');
         }
-        // The Rust orchestration owns proposal-lock cleanup on every outcome
-        // from this point onward, including validation and atomic-store errors.
+        // Rust owns proposal-lock bookkeeping from this point onward. It
+        // preserves retryable mined-evidence errors and cleans up terminal
+        // validation failures and completed outcomes.
         proposalReleased = true;
         final rust_sync.StoreAndBroadcastPcztsResult result;
         if (args.addressType == 'tex') {
