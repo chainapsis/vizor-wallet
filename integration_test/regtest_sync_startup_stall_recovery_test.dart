@@ -58,6 +58,10 @@ void main() {
         tester,
         const ValueKey('welcome_import_wallet_button'),
       );
+      await tapAppWidget(
+        tester,
+        const ValueKey('desktop_import_secret_passphrase_card'),
+      );
       await enterAppText(
         tester,
         const ValueKey('import_mnemonic_first_word_field'),
