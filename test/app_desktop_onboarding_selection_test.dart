@@ -88,6 +88,21 @@ void main() {
     });
   }
 
+  testWidgets('desktop education routes finish at Home without wallet setup', (
+    tester,
+  ) async {
+    await pump(tester, location: '/setup/education/intro', hasWallet: true);
+    expect(find.text('Secret Passphrase'), findsNothing);
+    for (var page = 0; page < 3; page++) {
+      await tester.tap(
+        find.byKey(const ValueKey('desktop_education_continue')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Secret Passphrase'), findsNothing);
+    }
+    expect(find.text('home-destination'), findsOneWidget);
+  });
+
   testWidgets('testnet summary matches the actual hardware choices', (
     tester,
   ) async {

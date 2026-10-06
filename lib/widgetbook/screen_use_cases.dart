@@ -68,6 +68,7 @@ import '../src/features/onboarding/mobile/mobile_passcode_screen.dart';
 import '../src/features/onboarding/mobile/mobile_secret_passphrase_screen.dart';
 import '../src/features/onboarding/mobile/mobile_unlock_screen.dart';
 import '../src/features/onboarding/create/customise_account_screen.dart';
+import '../src/features/onboarding/create/desktop_gift_education_screen.dart';
 import '../src/features/onboarding/create/onboarding_split_view.dart';
 import '../src/features/onboarding/shared/onboarding_flow_args.dart';
 import '../src/features/settings/screens/settings_change_password_screen.dart';
@@ -1082,6 +1083,49 @@ Widget buildSettingsSecretPassphraseGateUseCase(BuildContext context) {
   return _buildSettingsSubScreenUseCase(
     '/settings/secret-passphrase',
     const SettingsSeedPhraseScreen(),
+  );
+}
+
+Widget buildDesktopHomeSetupUseCase(BuildContext context) =>
+    _buildDesktopSetupHomeUseCase();
+
+Widget buildDesktopHomeSetupImportingUseCase(BuildContext context) =>
+    _buildDesktopSetupHomeUseCase(importing: true);
+
+Widget buildDesktopZcashEducationIntroUseCase(BuildContext context) =>
+    _buildDesktopSetupHomeUseCase(initialLocation: '/setup/education/intro');
+
+Widget buildDesktopZcashEducationAddressTypesUseCase(BuildContext context) =>
+    _buildDesktopSetupHomeUseCase(
+      initialLocation: '/setup/education/address-types',
+    );
+
+Widget buildDesktopZcashEducationThingsToKnowUseCase(BuildContext context) =>
+    _buildDesktopSetupHomeUseCase(
+      initialLocation: '/setup/education/things-to-know',
+    );
+
+Widget _buildDesktopSetupHomeUseCase({
+  bool importing = false,
+  String initialLocation = '/home',
+}) {
+  final accounts = _setupPreviewState.copyWith(
+    accounts: [
+      for (final account in _setupPreviewState.accounts)
+        account.copyWith(giftEducationPending: true),
+    ],
+  );
+  return _buildDesktopHomeUseCase(
+    accountState: accounts,
+    syncState: SyncState(
+      accountUuid: accounts.activeAccountUuid,
+      hasAccountScopedData: !importing,
+      percentage: importing ? .3 : 1,
+      totalBalance: BigInt.zero,
+    ),
+    migrationCta: const IronwoodHomeMigrationCtaState.hidden(),
+    initialLocation: initialLocation,
+    setupPreview: true,
   );
 }
 
@@ -2921,6 +2965,8 @@ Widget _buildDesktopHomeUseCase({
   GiftCardActivityIndex giftCardActivityIndex = GiftCardActivityIndex.empty,
   NetworkPrivacyState? networkPrivacyState,
   ActivityTransactionStatusArgs? receiptArgs,
+  String initialLocation = '/home',
+  bool setupPreview = false,
 }) {
   return ProviderScope(
     overrides: [
@@ -2933,7 +2979,13 @@ Widget _buildDesktopHomeUseCase({
           () => _PreviewNetworkPrivacyNotifier(networkPrivacyState),
         ),
       appBootstrapProvider.overrideWithValue(_homeBootstrap(accountState)),
-      accountProvider.overrideWith(() => _PreviewAccountNotifier(accountState)),
+      accountProvider.overrideWith(
+        () => setupPreview
+            ? _PreviewSetupAccountNotifier(accountState)
+            : _PreviewAccountNotifier(accountState),
+      ),
+      if (setupPreview)
+        appSecurityProvider.overrideWith(_PreviewBackupSecurityNotifier.new),
       syncProvider.overrideWith(
         () => _PreviewSyncNotifier(
           accountState.activeAccountUuid,
@@ -2976,7 +3028,10 @@ Widget _buildDesktopHomeUseCase({
         return announcement;
       }),
     ],
-    child: _DesktopHomeHarness(receiptArgs: receiptArgs),
+    child: _DesktopHomeHarness(
+      receiptArgs: receiptArgs,
+      initialLocation: initialLocation,
+    ),
   );
 }
 
@@ -3691,10 +3746,11 @@ class _MobileHomeHarnessState extends State<_MobileHomeHarness> {
 }
 
 class _DesktopHomeHarness extends StatefulWidget {
-  const _DesktopHomeHarness({this.receiptArgs});
+  const _DesktopHomeHarness({this.receiptArgs, this.initialLocation = '/home'});
 
   /// Opens the production receipt for these args instead of the home screen.
   final ActivityTransactionStatusArgs? receiptArgs;
+  final String initialLocation;
 
   @override
   State<_DesktopHomeHarness> createState() => _DesktopHomeHarnessState();
@@ -3702,6 +3758,7 @@ class _DesktopHomeHarness extends StatefulWidget {
 
 class _DesktopHomeHarnessState extends State<_DesktopHomeHarness> {
   late final GoRouter _router;
+  final _privacy = SensitivePrivacyOverlayController(initiallySafe: true);
 
   @override
   void initState() {
@@ -3709,10 +3766,30 @@ class _DesktopHomeHarnessState extends State<_DesktopHomeHarness> {
     final receiptArgs = widget.receiptArgs;
     _router = GoRouter(
       initialLocation: receiptArgs == null
-          ? '/home'
+          ? widget.initialLocation
           : '/activity/tx/${receiptArgs.txidHex}',
       routes: [
         GoRoute(path: '/home', builder: (_, _) => const HomeScreen()),
+        GoRoute(
+          path: '/setup/backup',
+          builder: (_, state) => SettingsSeedPhraseScreen(
+            showBackupIntro: true,
+            accountUuid: state.extra as String?,
+            privacyOverlayController: _privacy,
+          ),
+        ),
+        for (final entry in {
+          'intro': DesktopGiftEducationPage.intro,
+          'address-types': DesktopGiftEducationPage.addressTypes,
+          'things-to-know': DesktopGiftEducationPage.thingsToKnow,
+        }.entries)
+          GoRoute(
+            path: '/setup/education/${entry.key}',
+            builder: (_, state) => DesktopGiftEducationScreen(
+              page: entry.value,
+              accountUuid: state.extra as String?,
+            ),
+          ),
         GoRoute(
           path: '/send',
           builder: (_, _) => const _PreviewRoutePlaceholder(label: '/send'),
@@ -3767,6 +3844,7 @@ class _DesktopHomeHarnessState extends State<_DesktopHomeHarness> {
   @override
   void dispose() {
     _router.dispose();
+    _privacy.dispose();
     super.dispose();
   }
 
