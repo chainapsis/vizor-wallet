@@ -34,6 +34,176 @@ const _accountState = AccountState(
 );
 
 void main() {
+  testWidgets('backup warning still requires a valid password before reveal', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1080, 720));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final privacy = SensitivePrivacyOverlayController(initiallySafe: true);
+    addTearDown(privacy.dispose);
+    final account = _FakeAccountNotifier(backupPending: true);
+    await tester.pumpWidget(
+      _harness(
+        privacyController: privacy,
+        accountNotifier: () => account,
+        showBackupIntro: true,
+        passwordValid: false,
+      ),
+    );
+    await tester.pump();
+    await tester.tap(
+      find.byKey(const ValueKey('desktop_seed_backup_intro_continue')),
+    );
+    await tester.pump();
+    await tester.enterText(find.byType(EditableText), 'Incorrect123!');
+    await tester.pump();
+    await tester.tap(find.bySemanticsLabel('Confirm password'));
+    await tester.pumpAndSettle();
+    expect(find.text('Incorrect password. Please try again.'), findsOneWidget);
+    expect(find.text('abandon'), findsNothing);
+    expect(account.requestedMnemonicUuids, isEmpty);
+    expect(account.completed, isEmpty);
+  });
+
+  testWidgets(
+    'reminder deferral waits for persistence and can retry a failure',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1080, 720));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final privacy = SensitivePrivacyOverlayController(initiallySafe: true);
+      addTearDown(privacy.dispose);
+      final account = _FakeAccountNotifier(backupPending: true)
+        ..failBackupSave = true;
+      await tester.pumpWidget(
+        _harness(
+          privacyController: privacy,
+          accountNotifier: () => account,
+          showBackupIntro: true,
+        ),
+      );
+      await tester.pump();
+      final defer = find.byKey(
+        const ValueKey('desktop_seed_backup_remind_later'),
+      );
+      await tester.tap(defer);
+      await tester.pump();
+      expect(find.text('Couldn’t save that. Try again.'), findsOneWidget);
+      expect(find.text('home-destination'), findsNothing);
+      expect(account.snoozed, isEmpty);
+      account.failBackupSave = false;
+      account.backupSave = Completer<void>();
+      await tester.tap(defer);
+      await tester.pump();
+      expect(tester.widget<AppButton>(defer).onPressed, isNull);
+      expect(
+        tester
+            .widget<AppButton>(
+              find.byKey(const ValueKey('desktop_seed_backup_intro_continue')),
+            )
+            .onPressed,
+        isNull,
+      );
+      expect(find.text('home-destination'), findsNothing);
+      account.backupSave!.complete();
+      await tester.pumpAndSettle();
+      expect(account.snoozed, ['account-2']);
+      expect(account.completed, isEmpty);
+      expect(account.requestedMnemonicUuids, isEmpty);
+      expect(account.state.requireValue.accounts.last.setupPending, isTrue);
+      expect(find.text('home-destination'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'backup intro can defer the requested account without revealing its phrase',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1280, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final privacy = SensitivePrivacyOverlayController(initiallySafe: true);
+      addTearDown(privacy.dispose);
+      final account = _FakeAccountNotifier(backupPending: true);
+      await tester.pumpWidget(
+        _harness(
+          privacyController: privacy,
+          accountNotifier: () => account,
+          showBackupIntro: true,
+        ),
+      );
+      await tester.pump();
+      expect(find.text('abandon'), findsNothing);
+      expect(find.byType(EditableText), findsNothing);
+      await tester.tap(
+        find.byKey(const ValueKey('desktop_seed_backup_remind_later')),
+      );
+      await tester.pumpAndSettle();
+      expect(account.snoozed, ['account-2']);
+      expect(account.requestedMnemonicUuids, isEmpty);
+      expect(account.state.requireValue.accounts.last.setupPending, isTrue);
+      expect(find.text('home-destination'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'backup completion waits for persistence and retains the phrase after failure',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1080, 720));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final privacy = SensitivePrivacyOverlayController(initiallySafe: true);
+      addTearDown(privacy.dispose);
+      final account = _FakeAccountNotifier(backupPending: true);
+      await tester.pumpWidget(
+        _harness(
+          privacyController: privacy,
+          accountNotifier: () => account,
+          showBackupIntro: true,
+        ),
+      );
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey('desktop_seed_backup_intro_continue')),
+      );
+      await tester.pump();
+      expect(find.text('abandon'), findsNothing);
+      await tester.enterText(find.byType(EditableText), 'Correct123!');
+      await tester.pump();
+      await tester.tap(find.bySemanticsLabel('Confirm password'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.text('abandon'), findsOneWidget);
+      account.failBackupSave = true;
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('desktop_seed_backed_up')),
+      );
+      await tester.tap(find.byKey(const ValueKey('desktop_seed_backed_up')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.text('Couldn’t save that. Try again.'), findsOneWidget);
+      expect(find.text('abandon'), findsOneWidget);
+      expect(account.state.requireValue.accounts.last.setupPending, isTrue);
+      account.failBackupSave = false;
+      account.backupSave = Completer<void>();
+      await tester.tap(find.byKey(const ValueKey('desktop_seed_backed_up')));
+      await tester.pump();
+      expect(
+        tester
+            .widget<AppButton>(
+              find.byKey(const ValueKey('desktop_seed_backed_up')),
+            )
+            .onPressed,
+        isNull,
+      );
+      expect(find.text('home-destination'), findsNothing);
+      account.backupSave!.complete();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(account.completed, ['account-2']);
+      expect(account.state.requireValue.accounts.first.setupPending, isFalse);
+      expect(account.state.requireValue.accounts.last.setupPending, isFalse);
+      expect(find.text('home-destination'), findsOneWidget);
+      expect(find.text('abandon'), findsNothing);
+    },
+  );
+
   testWidgets('reveals the requested account without making it active', (
     tester,
   ) async {
@@ -234,6 +404,8 @@ Widget _harness({
   required SensitivePrivacyOverlayController privacyController,
   required AccountNotifier Function() accountNotifier,
   AppSecureStore? secureStore,
+  bool showBackupIntro = false,
+  bool passwordValid = true,
 }) {
   final router = GoRouter(
     initialLocation: '/settings/secret-passphrase',
@@ -242,12 +414,13 @@ Widget _harness({
         path: '/settings/secret-passphrase',
         builder: (_, _) => SettingsSeedPhraseScreen(
           accountUuid: 'account-2',
+          showBackupIntro: showBackupIntro,
           privacyOverlayController: privacyController,
         ),
       ),
       GoRoute(path: '/accounts', builder: (_, _) => const SizedBox()),
       GoRoute(path: '/settings', builder: (_, _) => const SizedBox()),
-      GoRoute(path: '/home', builder: (_, _) => const SizedBox()),
+      GoRoute(path: '/home', builder: (_, _) => const Text('home-destination')),
     ],
   );
 
@@ -257,7 +430,9 @@ Widget _harness({
       if (secureStore != null)
         linuxSecretOperationStoreProvider.overrideWithValue(secureStore),
       accountProvider.overrideWith(accountNotifier),
-      appSecurityProvider.overrideWith(_FakeSecurityNotifier.new),
+      appSecurityProvider.overrideWith(
+        () => _FakeSecurityNotifier(valid: passwordValid),
+      ),
       syncProvider.overrideWith(_FakeSyncNotifier.new),
     ],
     child: MaterialApp.router(
@@ -284,15 +459,48 @@ class _FakeAccountNotifier extends AccountNotifier {
   _FakeAccountNotifier({
     this.bip39Passphrase = _bip39Passphrase,
     this.pendingSecret,
+    this.backupPending = false,
   });
 
   final Completer<SoftwareWalletSecret?>? pendingSecret;
 
   final String bip39Passphrase;
+  final bool backupPending;
+  bool failBackupSave = false;
+  Completer<void>? backupSave;
+  final completed = <String>[];
+  final snoozed = <String>[];
   final requestedMnemonicUuids = <String>[];
 
   @override
-  FutureOr<AccountState> build() => _accountState;
+  FutureOr<AccountState> build() => _accountState.copyWith(
+    accounts: [
+      _accountState.accounts.first,
+      _accountState.accounts.last.copyWith(setupPending: backupPending),
+    ],
+  );
+
+  @override
+  Future<void> markBackedUp(String uuid) async {
+    if (failBackupSave) throw StateError('write failed');
+    await backupSave?.future;
+    completed.add(uuid);
+    state = AsyncData(
+      state.requireValue.copyWith(
+        accounts: [
+          for (final a in state.requireValue.accounts)
+            a.uuid == uuid ? a.copyWith(setupPending: false) : a,
+        ],
+      ),
+    );
+  }
+
+  @override
+  Future<void> snoozeBackupReminder(String uuid, {DateTime? now}) async {
+    if (failBackupSave) throw StateError('write failed');
+    await backupSave?.future;
+    snoozed.add(uuid);
+  }
 
   @override
   Future<SoftwareWalletSecret?> getSoftwareWalletSecretForAccount(
@@ -318,8 +526,11 @@ class _FakeAccountNotifier extends AccountNotifier {
 }
 
 class _FakeSecurityNotifier extends AppSecurityNotifier {
+  _FakeSecurityNotifier({this.valid = true});
+  final bool valid;
+
   @override
-  Future<bool> confirmPassword(String password) async => true;
+  Future<bool> confirmPassword(String password) async => valid;
 }
 
 class _FakeSyncNotifier extends SyncNotifier {

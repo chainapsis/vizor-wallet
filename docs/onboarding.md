@@ -448,3 +448,31 @@ Deterministic widget captures use `desktop-onboarding-recovery`,
 `desktop-onboarding-recovery-retry-error`,
 `desktop-onboarding-recovery-pending`, `desktop-onboarding-ledger-recovery`,
 and `desktop-onboarding-submit-error` in both light and dark themes.
+
+### Desktop post-creation backup
+
+The desktop `/setup/backup` route accepts an account UUID in `extra` and opens
+the existing Settings secret-passphrase screen with a warning first. Continue
+opens its password confirmation gate; the warning never reads or reveals a
+secret. Normal Settings entry continues to open the password gate directly.
+The Home carousel entry is connected in the later Home-guidance slice.
+
+For software accounts with `setupPending`, **Remind me later** calls the shared
+account-scoped reminder deferral without marking backup complete. After password
+confirmation reveals the phrase, **I’ve written it down** calls the shared backup
+completion operation. Hardware accounts and accounts already backed up do not
+offer these actions. The existing birthday, copy, privacy shield, and account
+selection checks are retained.
+
+Both actions wait for persistence before leaving. Backup-route entry returns to
+Home; Settings entry returns to its previous route, falling back to Home when
+there is no previous route. A failed write retains the current screen and offers
+retry, and pending writes disable submission. Phrase content scrolls when the
+completion action exceeds the available height.
+
+Deterministic desktop captures cover `desktop-backup-intro`,
+`desktop-backup-gate`, `desktop-backup-reveal`, `desktop-backup-save-error`,
+`desktop-backup-save-pending`, `desktop-backup-defer-error`,
+`desktop-backup-defer-pending`, and `desktop-settings-phrase`. Capture credentials,
+masked words, birthday values, and writes are local fixtures; they use no wallet
+DB, production secrets, network, or Rust state.

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/clipboard/sensitive_clipboard.dart';
@@ -24,17 +25,30 @@ import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../widgets/confirm_access_card.dart';
+import '../../onboarding/mobile/mobile_secret_passphrase_screen.dart'
+    show SecretPassphraseRevealWarningCard;
 import '../widgets/settings_pane_backdrop.dart';
 
 class SettingsSeedPhraseScreen extends ConsumerStatefulWidget {
   const SettingsSeedPhraseScreen({
     this.accountUuid,
+    this.showBackupIntro = false,
     this.privacyOverlayController,
+    this.birthdayHeightLoader,
+    this.birthdayBlockTimeLoader,
     super.key,
   });
 
   final String? accountUuid;
+  final bool showBackupIntro;
   final SensitivePrivacyOverlayController? privacyOverlayController;
+
+  /// Deterministic preview/test loaders; production reads the wallet DB.
+  @visibleForTesting
+  final Future<int> Function(String accountUuid)? birthdayHeightLoader;
+
+  @visibleForTesting
+  final Future<int> Function(int height)? birthdayBlockTimeLoader;
 
   @override
   ConsumerState<SettingsSeedPhraseScreen> createState() =>
@@ -91,7 +105,7 @@ class SettingsSeedPhraseRevealPreview extends StatelessWidget {
 
 Future<void> _noopPreviewCopy() async {}
 
-enum _SettingsSeedPhraseStage { password, reveal }
+enum _SettingsSeedPhraseStage { intro, password, reveal }
 
 enum _SeedPhraseCopyTarget {
   phrase,
@@ -110,6 +124,8 @@ class _SettingsSeedPhraseScreenState
     extends ConsumerState<SettingsSeedPhraseScreen> {
   final _passwordController = TextEditingController();
   bool _isSubmitting = false;
+  bool _savingBackup = false;
+  String? _backupError;
   _SettingsSeedPhraseStage _stage = _SettingsSeedPhraseStage.password;
   String? _passwordError;
   String? _mnemonic;
@@ -129,6 +145,12 @@ class _SettingsSeedPhraseScreenState
 
   bool get _canSubmit =>
       !_isSubmitting && isWalletPasswordValid(_passwordController.text);
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.showBackupIntro) _stage = _SettingsSeedPhraseStage.intro;
+  }
 
   @override
   void dispose() {
@@ -153,6 +175,7 @@ class _SettingsSeedPhraseScreenState
     _isBirthdayDateLoading = false;
     _revealError = null;
     _copiedTarget = null;
+    _backupError = null;
   }
 
   void _handleTargetAccountChanged() {
@@ -390,6 +413,8 @@ class _SettingsSeedPhraseScreenState
   }
 
   Future<int> _loadBirthdayHeight(String targetAccountUuid) async {
+    final loader = widget.birthdayHeightLoader;
+    if (loader != null) return loader(targetAccountUuid);
     final dbPath = await getWalletDbPath();
     final endpoint = ref.read(rpcEndpointProvider);
     final height = await rust_sync.getExportBirthdayHeight(
@@ -401,6 +426,8 @@ class _SettingsSeedPhraseScreenState
   }
 
   Future<int> _loadBirthdayBlockTime(int height) async {
+    final loader = widget.birthdayBlockTimeLoader;
+    if (loader != null) return loader(height);
     // Local first: the scanned block or, on mainnet, the compiled-in table.
     // Only a network without a local answer asks lightwalletd for the height.
     final dbPath = await getWalletDbPath();
@@ -467,6 +494,81 @@ class _SettingsSeedPhraseScreenState
     });
   }
 
+  Future<void> _saveBackup(String uuid, {required bool snooze}) async {
+    if (_savingBackup) return;
+    setState(() {
+      _savingBackup = true;
+      _backupError = null;
+    });
+    try {
+      final accounts = ref.read(accountProvider.notifier);
+      if (snooze) {
+        await accounts.snoozeBackupReminder(uuid);
+      } else {
+        await accounts.markBackedUp(uuid);
+      }
+      if (!mounted) return;
+      _clearSensitiveState();
+      if (widget.showBackupIntro || !context.canPop()) {
+        context.go('/home');
+      } else {
+        context.pop();
+      }
+    } catch (error, stack) {
+      log('SettingsSeedPhraseScreen._saveBackup: $error\n$stack');
+      if (mounted) {
+        setState(() {
+          _savingBackup = false;
+          _backupError = 'Couldn’t save that. Try again.';
+        });
+      }
+    }
+  }
+
+  Widget _buildBackupIntro(AccountInfo? account) => Center(
+    child: SizedBox(
+      width: _seedPhraseCardWidth,
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SecretPassphraseRevealWarningCard(),
+            const SizedBox(height: AppSpacing.md),
+            AppButton(
+              key: const ValueKey('desktop_seed_backup_intro_continue'),
+              onPressed: _savingBackup
+                  ? null
+                  : () => setState(
+                      () => _stage = _SettingsSeedPhraseStage.password,
+                    ),
+              child: const Text('Continue'),
+            ),
+            if (account?.setupPending == true && !account!.isHardware) ...[
+              const SizedBox(height: AppSpacing.xs),
+              AppButton(
+                key: const ValueKey('desktop_seed_backup_remind_later'),
+                variant: AppButtonVariant.ghost,
+                onPressed: _savingBackup
+                    ? null
+                    : () => _saveBackup(account.uuid, snooze: true),
+                child: const Text('Remind me later'),
+              ),
+            ],
+            if (_backupError != null) ...[
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                _backupError!,
+                style: AppTypography.bodyMedium.copyWith(
+                  color: context.colors.text.destructive,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     ref.listen<AccountInfo?>(
@@ -477,6 +579,7 @@ class _SettingsSeedPhraseScreenState
       },
     );
 
+    final account = _targetAccount(ref.watch(accountProvider).value);
     return AppDesktopBackdropShell(
       background: _stage == _SettingsSeedPhraseStage.reveal
           ? ColoredBox(color: context.colors.background.window)
@@ -489,6 +592,7 @@ class _SettingsSeedPhraseScreenState
         child: _SettingsSeedPhrasePane(
           onBeforeNavigateBack: () => _clearSensitiveState(),
           child: switch (_stage) {
+            _SettingsSeedPhraseStage.intro => _buildBackupIntro(account),
             _SettingsSeedPhraseStage.password => Center(
               child: ConfirmAccessCard(
                 subtitle: 'To view the secret passphrase.',
@@ -500,25 +604,57 @@ class _SettingsSeedPhraseScreenState
                 onSubmit: _submitPassword,
               ),
             ),
-            _SettingsSeedPhraseStage.reveal => _SeedPhraseRevealView(
-              mnemonic: _mnemonic,
-              bip39Passphrase: _bip39Passphrase,
-              birthdayHeight: _birthdayHeight,
-              birthdayBlockTime: _birthdayBlockTime,
-              birthdayHeightLoading: _isBirthdayHeightLoading,
-              birthdayDateLoading: _isBirthdayDateLoading,
-              errorText: _revealError,
-              phraseCopied: _copiedTarget == _SeedPhraseCopyTarget.phrase,
-              bip39PassphraseCopied:
-                  _copiedTarget == _SeedPhraseCopyTarget.bip39Passphrase,
-              birthdayDateCopied:
-                  _copiedTarget == _SeedPhraseCopyTarget.birthdayDate,
-              birthdayHeightCopied:
-                  _copiedTarget == _SeedPhraseCopyTarget.birthdayHeight,
-              onCopyPressed: _copyMnemonic,
-              onCopyBip39PassphrasePressed: _copyBip39Passphrase,
-              onCopyBirthdayDatePressed: _copyBirthdayDate,
-              onCopyBirthdayHeightPressed: _copyBirthdayHeight,
+            _SettingsSeedPhraseStage.reveal => Center(
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _SeedPhraseRevealView(
+                      mnemonic: _mnemonic,
+                      bip39Passphrase: _bip39Passphrase,
+                      birthdayHeight: _birthdayHeight,
+                      birthdayBlockTime: _birthdayBlockTime,
+                      birthdayHeightLoading: _isBirthdayHeightLoading,
+                      birthdayDateLoading: _isBirthdayDateLoading,
+                      errorText: _revealError,
+                      phraseCopied:
+                          _copiedTarget == _SeedPhraseCopyTarget.phrase,
+                      bip39PassphraseCopied:
+                          _copiedTarget ==
+                          _SeedPhraseCopyTarget.bip39Passphrase,
+                      birthdayDateCopied:
+                          _copiedTarget == _SeedPhraseCopyTarget.birthdayDate,
+                      birthdayHeightCopied:
+                          _copiedTarget == _SeedPhraseCopyTarget.birthdayHeight,
+                      onCopyPressed: _copyMnemonic,
+                      onCopyBip39PassphrasePressed: _copyBip39Passphrase,
+                      onCopyBirthdayDatePressed: _copyBirthdayDate,
+                      onCopyBirthdayHeightPressed: _copyBirthdayHeight,
+                    ),
+                    if (_mnemonic != null &&
+                        account?.setupPending == true &&
+                        !account!.isHardware) ...[
+                      const SizedBox(height: AppSpacing.md),
+                      AppButton(
+                        key: const ValueKey('desktop_seed_backed_up'),
+                        onPressed: _savingBackup
+                            ? null
+                            : () => _saveBackup(account.uuid, snooze: false),
+                        child: const Text('I’ve written it down'),
+                      ),
+                    ],
+                    if (_backupError != null) ...[
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(
+                        _backupError!,
+                        style: AppTypography.bodyMedium.copyWith(
+                          color: context.colors.text.destructive,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ),
           },
         ),
