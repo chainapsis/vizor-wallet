@@ -14,12 +14,15 @@ struct Signed {
 
 impl Signed {
     fn new(prevout: OutPoint, value: u64) -> Self {
-        let (proof, signature, _) = super::tests::signed_pczt_with_input(
-            200,
-            secp256k1::SecretKey::from_slice(&[7; 32]).unwrap(),
+        Self::with_key(
             prevout,
             value,
-        );
+            secp256k1::SecretKey::from_slice(&[7; 32]).unwrap(),
+        )
+    }
+
+    fn with_key(prevout: OutPoint, value: u64, key: secp256k1::SecretKey) -> Self {
+        let (proof, signature, _) = super::tests::signed_pczt_with_input(200, key, prevout, value);
         let finalized = pczt::roles::spend_finalizer::SpendFinalizer::new(
             pczt::Pczt::parse(&signature).unwrap(),
         )
@@ -73,7 +76,7 @@ impl Wallet {
     fn store(&self, index: usize, raw: Option<&[u8]>, mined: Option<u32>) {
         let conn = open_wallet_raw_conn_with_timeout(&self.path, WALLET_DB_BUSY_TIMEOUT).unwrap();
         conn.execute(
-            "INSERT INTO transactions (txid, raw, mined_height) VALUES (?1, ?2, ?3)",
+            "INSERT INTO transactions (txid, raw, mined_height, min_observed_height) VALUES (?1, ?2, ?3, 200)",
             params![self.signed[index].tx.txid().as_ref(), raw, mined],
         )
         .unwrap();
@@ -285,12 +288,12 @@ async fn partially_mined_batch_preserves_count_and_mined_row() {
     crate::network_privacy::disable_tor();
     for (mined_index, tip, response, status, count) in [
         (0, 1_000, 0, "expired", 1),
-        (0, 200, 0, "broadcasted", 2),
-        (0, 200, 1, "partial_broadcast", 1),
-        (0, 200, -1, "partial_broadcast", 1),
-        (1, 200, 1, "partial_broadcast", 1),
-        (1, 200, -1, "partial_broadcast", 1),
-        (1, 200, 0, "broadcasted", 2),
+        (0, 205, 0, "broadcasted", 2),
+        (0, 205, 1, "partial_broadcast", 1),
+        (0, 205, -1, "partial_broadcast", 1),
+        (1, 205, 1, "partial_broadcast", 1),
+        (1, 205, -1, "partial_broadcast", 1),
+        (1, 205, 0, "broadcasted", 2),
     ] {
         let wallet = Wallet::new(true);
         wallet.store(
@@ -335,41 +338,96 @@ async fn invalid_signed_effects_are_rejected_even_when_base_is_mined() {
     let wallet = Wallet::new(false);
     wallet.store(0, Some(&wallet.signed[0].raw), Some(201));
     let different = Signed::new(OutPoint::new([2; 32], 0), 1_000_000);
-    assert!(store_and_broadcast_signed_pczts(
+    let error = store_and_broadcast_signed_pczts(
         &wallet.path,
         "http://127.0.0.1:1",
         WalletNetwork::Regtest,
         &[wallet.signed[0].proof.clone()],
         &[different.signature],
         None,
-        None
+        None,
     )
     .await
-    .is_err());
+    .err()
+    .expect("mismatched effects must fail");
+    assert!(
+        error.contains("transaction effects do not match"),
+        "{error}"
+    );
 }
 
 #[tokio::test]
 async fn interrupted_outcome_write_recovers_in_a_fresh_offline_process() {
-    let wallet = Wallet::new(false);
+    use crate::wallet::db::open_wallet_db_with_timeout;
+    use secrecy::ExposeSecret;
+    use transparent::{
+        address::TransparentAddress,
+        bundle::TxOut,
+        keys::{AccountPrivKey, NonHardenedChildIndex, TransparentKeyScope},
+    };
+    use zcash_client_backend::{
+        data_api::{wallet::decrypt_and_store_transaction, WalletWrite},
+        wallet::WalletTransparentOutput,
+    };
+    use zcash_protocol::{consensus::BlockHeight, value::Zatoshis};
+    let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
+    crate::network_privacy::disable_tor();
+    let mut wallet = Wallet::new(false);
+    let seed = secrecy::SecretVec::new(vec![1; 32]);
+    let (uuid, _) = crate::wallet::keys::init_db_and_create_account(
+        &wallet.path,
+        WalletNetwork::Regtest,
+        &seed,
+        Some(1),
+        "Ledger",
+    )
+    .unwrap();
+    let account = crate::wallet::keys::parse_account_uuid(&uuid).unwrap();
+    let key = AccountPrivKey::from_seed(
+        &WalletNetwork::Regtest,
+        seed.expose_secret(),
+        zip32::AccountId::ZERO,
+    )
+    .unwrap()
+    .derive_external_secret_key(NonHardenedChildIndex::from_index(0).unwrap())
+    .unwrap();
+    let address = TransparentAddress::from_pubkey(&key.public_key(&secp256k1::Secp256k1::new()));
+    wallet.signed[0] = Signed::with_key(OutPoint::new([1; 32], 0), 1_000_000, key);
     let signed = &wallet.signed[0];
+    let mut db =
+        open_wallet_db_with_timeout(&wallet.path, WalletNetwork::Regtest, WALLET_DB_BUSY_TIMEOUT)
+            .unwrap();
+    db.update_chain_tip(BlockHeight::from_u32(200)).unwrap();
+    db.put_received_transparent_utxo(
+        &WalletTransparentOutput::from_parts(
+            OutPoint::new([1; 32], 0),
+            TxOut::new(Zatoshis::const_from_u64(1_000_000), address.script().into()),
+            Some(BlockHeight::from_u32(150)),
+            Some(account),
+            Some(TransparentKeyScope::EXTERNAL),
+            None,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    drop(db);
     checkpoint(
         &wallet.path,
         WalletNetwork::Regtest,
         "restart-op",
-        "account-1",
+        &uuid,
         "swap_deposit",
         Some("deposit-1"),
         &signed.proof,
         &signed.signature,
     )
     .unwrap();
-    // The wallet has observed the accepted transaction, while the outbox update failed.
-    wallet.store(0, Some(&signed.raw), Some(201));
     let conn = open_wallet_raw_conn_with_timeout(&wallet.path, WALLET_DB_BUSY_TIMEOUT).unwrap();
-    conn.execute_batch("CREATE TRIGGER interrupt_outcome BEFORE UPDATE ON vizor_ledger_signed_operations BEGIN SELECT RAISE(ABORT, 'interrupted outcome write'); END").unwrap();
+    conn.execute_batch("CREATE TRIGGER interrupt_outcome BEFORE UPDATE ON vizor_ledger_signed_operations WHEN NEW.state = 'result_pending_ack' BEGIN SELECT RAISE(ABORT, 'interrupted outcome write'); END").unwrap();
+    let (url, service, handle) = server(200, 0).await;
     let error = broadcast(
         &wallet.path,
-        "http://127.0.0.1:1",
+        &url,
         WalletNetwork::Regtest,
         "restart-op",
         None,
@@ -378,40 +436,75 @@ async fn interrupted_outcome_write_recovers_in_a_fresh_offline_process() {
     .await
     .unwrap_err();
     assert!(error.contains("interrupted outcome write"), "{error}");
+    assert_eq!(*service.submitted.lock().unwrap(), [signed.raw.clone()]);
     assert_eq!(
         list(&wallet.path, WalletNetwork::Regtest, None).unwrap()[0].state,
         STATE_SIGNED_PENDING_BROADCAST
     );
+    let raw: Vec<u8> = conn
+        .query_row(
+            "SELECT raw FROM transactions WHERE txid=?1",
+            [signed.tx.txid().as_ref()],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(raw, signed.raw);
+    assert_eq!(
+        conn.query_row(
+            "SELECT COUNT(*) FROM transparent_received_output_spends",
+            [],
+            |r| r.get::<_, u32>(0)
+        )
+        .unwrap(),
+        1
+    );
     conn.execute_batch("DROP TRIGGER interrupt_outcome")
         .unwrap();
     drop(conn);
-    let output = std::process::Command::new(std::env::current_exe().unwrap())
-        .args([
-            "--exact",
-            "wallet::ledger::operations::mined_recovery_tests::offline_restart_child",
-            "--nocapture",
-        ])
-        .env("VIZOR_MINED_RECOVERY_TEST_DB", &wallet.path)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let rows = list(&wallet.path, WalletNetwork::Regtest, None).unwrap();
-    assert_eq!(rows[0].state, STATE_RESULT_PENDING_ACK);
-    assert_eq!(rows[0].status.as_deref(), Some("broadcasted"));
-    assert_eq!(
-        rows[0].txid.as_deref(),
-        Some(signed.tx.txid().to_string().as_str())
-    );
-    assert_eq!(rows[0].external_ref.as_deref(), Some("deposit-1"));
+    // Sync observes mining before startup can reconcile the pending outbox row.
+    let mut db =
+        open_wallet_db_with_timeout(&wallet.path, WalletNetwork::Regtest, WALLET_DB_BUSY_TIMEOUT)
+            .unwrap();
+    decrypt_and_store_transaction(
+        &WalletNetwork::Regtest,
+        &mut db,
+        &signed.tx,
+        Some(BlockHeight::from_u32(201)),
+    )
+    .unwrap();
+    db.update_chain_tip(BlockHeight::from_u32(1_000)).unwrap();
+    drop(db);
+    for _ in 0..2 {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "wallet::ledger::operations::mined_recovery_tests::offline_restart_child",
+                "--nocapture",
+            ])
+            .env("VIZOR_MINED_RECOVERY_TEST_DB", &wallet.path)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let rows = list(&wallet.path, WalletNetwork::Regtest, None).unwrap();
+        assert_eq!(rows[0].state, STATE_RESULT_PENDING_ACK);
+        assert_eq!(rows[0].status.as_deref(), Some("broadcasted"));
+        assert_eq!(
+            rows[0].txid.as_deref(),
+            Some(signed.tx.txid().to_string().as_str())
+        );
+        assert_eq!(rows[0].external_ref.as_deref(), Some("deposit-1"));
+    }
+    assert_eq!(*service.submitted.lock().unwrap(), [signed.raw.clone()]);
     acknowledge(&wallet.path, WalletNetwork::Regtest, "restart-op").unwrap();
     assert!(list(&wallet.path, WalletNetwork::Regtest, None)
         .unwrap()
         .is_empty());
+    handle.abort();
 }
 
 #[tokio::test]
@@ -420,6 +513,12 @@ async fn offline_restart_child() {
         return;
     };
     crate::network_privacy::disable_tor();
+    let rows = list(&path, WalletNetwork::Regtest, None).unwrap();
+    if rows[0].state == STATE_RESULT_PENDING_ACK {
+        assert_eq!(rows[0].status.as_deref(), Some("broadcasted"));
+        assert_eq!(rows[0].external_ref.as_deref(), Some("deposit-1"));
+        return;
+    }
     let result = broadcast(
         &path,
         "http://127.0.0.1:1",
