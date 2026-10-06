@@ -2758,7 +2758,7 @@ mod tests {
         base.history.fee = Fee::Known(10_000);
         let mut summary = ActivitySummary::default();
         summary.sent.output_count = 1;
-        summary.sent.has_shielded = true;
+        summary.sent.has_orchard = true;
 
         let rows = classify_history_tx(&base, &summary, Fee::NotApplicable);
 
@@ -2940,7 +2940,7 @@ mod tests {
         let mut summary = ActivitySummary::default();
         summary.sent.amount = 5_000_000;
         summary.sent.output_count = 1;
-        summary.sent.has_shielded = true;
+        summary.sent.has_orchard = true;
 
         let rows = classify_history_tx(&base, &summary, Fee::NotApplicable);
         assert_eq!(rows[0].info.fee_state, TransactionFeeState::Unknown);
@@ -3059,7 +3059,7 @@ mod tests {
         let mut base = tx_base_for_history();
         base.total_spent = 0;
         base.account_balance_delta = 50_000;
-        let rows = classify_history_tx(&base, &ActivitySummary::default(), 0);
+        let rows = classify_history_tx(&base, &ActivitySummary::default(), Fee::NotApplicable);
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].info.tx_kind, "received");
         assert_eq!(rows[0].info.display_pool, "unknown");

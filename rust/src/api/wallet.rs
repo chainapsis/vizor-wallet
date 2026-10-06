@@ -3,10 +3,8 @@ use std::panic;
 use crate::wallet::sync_engine::{enhancement::EnhancementPolicy, TransparentLookupGate};
 use crate::wallet::{keys, network::WalletNetwork, transparent_receive_cache};
 use bip0039::{Count, English, Mnemonic};
-use tonic::{transport::Channel, Request};
-use zcash_client_backend::proto::service::{
-    self, compact_tx_streamer_client::CompactTxStreamerClient,
-};
+use tonic::transport::Channel;
+use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 
 /// Returned before any request when the transparent policy withholds public
 /// UTXO lookups; an unavailable preview is not a zero balance.

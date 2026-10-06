@@ -829,10 +829,7 @@ fn tex_smoke_pczts(ufvk: &str, seed_fingerprint: &[u8]) -> Result<TexSmokePczts,
         .add_transparent_p2pkh_input(
             source_pubkey,
             OutPoint::new(FIXTURE_UTXO_TXID, 0),
-            TxOut::new(
-                FIXTURE_UTXO_VALUE,
-                source_address.script().into(),
-            ),
+            TxOut::new(FIXTURE_UTXO_VALUE, source_address.script().into()),
         )
         .map_err(|error| format!("Add TEX step 1 source input: {error}"))?;
     first_builder
