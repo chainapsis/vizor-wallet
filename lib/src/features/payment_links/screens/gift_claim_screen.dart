@@ -399,7 +399,7 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
                         Text(
                           widget.addingAccount
                               ? 'Receive a gift card'
-                              : 'Create a wallet with a gift card',
+                              : 'Create a wallet\nwith a gift card',
                           textAlign: TextAlign.center,
                           style: AppTypography.displayLarge.copyWith(
                             color: context.colors.text.accent,

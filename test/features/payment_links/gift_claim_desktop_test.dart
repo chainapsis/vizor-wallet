@@ -455,7 +455,7 @@ void main() {
     await pump(tester, clipboard: incomingLink.toUri().toString());
     await tester.tap(keyed('welcome_redeem_card_button'));
     await tester.pumpAndSettle();
-    expect(find.text('Create a wallet with a gift card'), findsOneWidget);
+    expect(find.text('Create a wallet\nwith a gift card'), findsOneWidget);
     void expectNoFallbackTextStyle() {
       for (final richText in tester.widgetList<RichText>(
         find.byType(RichText),
