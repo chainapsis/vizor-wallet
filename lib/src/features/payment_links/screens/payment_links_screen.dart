@@ -2590,7 +2590,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     }
     return PaymentLinksHomeDesktopView(
       illustration: Image.asset(
-        'assets/illustrations/payment_links/payment_link_empty_card.png',
+        'assets/illustrations/payment_links/payment_link_empty_card.webp',
         width: 243,
         height: 162,
         fit: BoxFit.contain,

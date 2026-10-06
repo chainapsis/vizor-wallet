@@ -513,9 +513,9 @@ class SwapDepositTimeoutPageContent extends StatelessWidget {
   const SwapDepositTimeoutPageContent({required this.onRestart, super.key});
 
   static const _lightIllustration =
-      'assets/illustrations/swap_deposit_timeout_illustration_light.png';
+      'assets/illustrations/swap_deposit_timeout_illustration_light.webp';
   static const _darkIllustration =
-      'assets/illustrations/swap_deposit_timeout_illustration_dark.png';
+      'assets/illustrations/swap_deposit_timeout_illustration_dark.webp';
 
   final VoidCallback onRestart;
 

@@ -115,7 +115,7 @@ class _DesktopGiftEducationScreenState
     final theme = context.appTheme == AppThemeData.dark ? 'dark' : 'light';
     final illustration = switch (widget.page) {
       DesktopGiftEducationPage.intro => 'intro',
-      DesktopGiftEducationPage.addressTypes => 'address_types',
+      DesktopGiftEducationPage.addressTypes => 'wallet_details',
       DesktopGiftEducationPage.thingsToKnow => 'things_to_know',
     };
     return AppDesktopShell(
@@ -136,7 +136,7 @@ class _DesktopGiftEducationScreenState
         illustration: Align(
           alignment: Alignment.bottomCenter,
           child: Image.asset(
-            'assets/illustrations/onboarding_${illustration}_sidebar_$theme.png',
+            'assets/illustrations/onboarding_${illustration}_sidebar_$theme.webp',
             fit: BoxFit.fitWidth,
           ),
         ),

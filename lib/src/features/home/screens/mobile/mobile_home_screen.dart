@@ -781,8 +781,8 @@ class _ImportingBackground extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = context.appTheme == AppThemeData.dark;
     final assetName = isDark
-        ? 'assets/illustrations/home_importing_background_dark.png'
-        : 'assets/illustrations/home_importing_background_light.png';
+        ? 'assets/illustrations/home_importing_background_dark.webp'
+        : 'assets/illustrations/home_importing_background_light.webp';
 
     return Positioned.fill(
       child: Image.asset(
@@ -2420,7 +2420,7 @@ class _MobileRestImage extends StatelessWidget {
                 left: _imageLeft * scale,
                 top: _imageTop * scale,
                 child: Image.asset(
-                  'assets/illustrations/home_rest_character.png',
+                  'assets/illustrations/home_rest_character.webp',
                   key: const ValueKey('mobile_home_rest_image'),
                   width: _imageWidth * scale,
                   height: _imageHeight * scale,

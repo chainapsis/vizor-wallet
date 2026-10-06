@@ -54,14 +54,14 @@ class DesktopGiftSetupShell extends StatelessWidget {
                 height: 430,
                 child: Image.asset(
                   context.appTheme == AppThemeData.dark
-                      ? 'assets/illustrations/onboarding_intro_sidebar_dark.png'
-                      : 'assets/illustrations/onboarding_intro_sidebar_light.png',
+                      ? 'assets/illustrations/onboarding_intro_sidebar_dark.webp'
+                      : 'assets/illustrations/onboarding_intro_sidebar_light.webp',
                   fit: BoxFit.cover,
                   alignment: Alignment.bottomCenter,
                 ),
               )
             : Image.asset(
-                'assets/illustrations/onboarding_customise_account_sidebar.png',
+                'assets/illustrations/onboarding_customise_account_sidebar.webp',
                 fit: BoxFit.fitWidth,
               ),
       ),

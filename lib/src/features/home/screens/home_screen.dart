@@ -56,7 +56,7 @@ import '../widgets/ledger_shield_signing_overlay.dart';
 const _shieldErrorTooltipIconSize = 14.0;
 const _shieldErrorTooltipGap = AppSpacing.xxs;
 const _ironwoodMigrationIllustrationAsset =
-    'assets/illustrations/ironwood_migration_illustration.png';
+    'assets/illustrations/ironwood_migration_illustration.webp';
 const _ironwoodMigrationCtaBackgroundColor = Color(0xFF1B1F1F);
 const _ironwoodMigrationCtaBorderColor = Color(0x12FFFFFF);
 const _homeDesktopActivationShortcuts = <ShortcutActivator, Intent>{
@@ -363,7 +363,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return AppDesktopBackdropShell(
       background: _HomeFullPageBackground(
         assetName:
-            'assets/illustrations/home_${backgroundVariant}_background_$backgroundTheme.png',
+            'assets/illustrations/home_${backgroundVariant}_background_$backgroundTheme.webp',
       ),
       sidebar: const AppMainSidebar(),
       pane: Stack(
@@ -1447,7 +1447,7 @@ class _HomeImportingContent extends StatelessWidget {
                   width: 246,
                   height: 192,
                   child: Image.asset(
-                    'assets/illustrations/home_rest_character.png',
+                    'assets/illustrations/home_rest_character.webp',
                     fit: BoxFit.contain,
                   ),
                 ),
@@ -2457,7 +2457,7 @@ class _HomeDesktopEmptyActivity extends StatelessWidget {
                   ),
                   const SizedBox(height: AppSpacing.xxs),
                   Image.asset(
-                    'assets/illustrations/home_rest_character.png',
+                    'assets/illustrations/home_rest_character.webp',
                     width: illustrationWidth,
                     height: illustrationHeight,
                     fit: BoxFit.contain,

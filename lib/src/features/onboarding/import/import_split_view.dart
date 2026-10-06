@@ -99,13 +99,13 @@ class _ImportOnboardingWindowBackground extends StatelessWidget {
       ImportOnboardingStep.secretPassphrase ||
       ImportOnboardingStep.walletBirthdayHeight =>
         isDark
-            ? 'assets/illustrations/onboarding_secret_passphrase_background_dark.png'
-            : 'assets/illustrations/onboarding_secret_passphrase_background_light.png',
+            ? 'assets/illustrations/onboarding_secret_passphrase_background_dark.webp'
+            : 'assets/illustrations/onboarding_secret_passphrase_background_light.webp',
       // Figma uses the same castle line-art for both themes (alpha-only
       // strokes composite against the window color), so one asset serves
       // light and dark — same wiring as the create flow.
       ImportOnboardingStep.setPassword =>
-        'assets/illustrations/onboarding_set_password_background_light.png',
+        'assets/illustrations/onboarding_set_password_background_light.webp',
       ImportOnboardingStep.customiseAccount => null,
     };
 
@@ -195,18 +195,18 @@ class _SidebarIllustration extends StatelessWidget {
     final asset = switch (activeStep) {
       ImportOnboardingStep.secretPassphrase =>
         isDark
-            ? 'assets/illustrations/onboarding_import_secret_passphrase_sidebar_dark.png'
-            : 'assets/illustrations/onboarding_import_secret_passphrase_sidebar_light.png',
+            ? 'assets/illustrations/onboarding_secret_passphrase_sidebar_closed_dark.webp'
+            : 'assets/illustrations/onboarding_secret_passphrase_sidebar_closed_light.webp',
       ImportOnboardingStep.walletBirthdayHeight =>
         isDark
-            ? 'assets/illustrations/onboarding_wallet_birthday_sidebar_dark.png'
-            : 'assets/illustrations/onboarding_wallet_birthday_sidebar_light.png',
+            ? 'assets/illustrations/onboarding_wallet_details_sidebar_dark.webp'
+            : 'assets/illustrations/onboarding_wallet_details_sidebar_light.webp',
       ImportOnboardingStep.setPassword =>
         isDark
-            ? 'assets/illustrations/onboarding_set_password_sidebar_dark.png'
-            : 'assets/illustrations/onboarding_set_password_sidebar_light.png',
+            ? 'assets/illustrations/onboarding_set_password_sidebar_dark.webp'
+            : 'assets/illustrations/onboarding_set_password_sidebar_light.webp',
       ImportOnboardingStep.customiseAccount =>
-        'assets/illustrations/onboarding_customise_account_sidebar.png',
+        'assets/illustrations/onboarding_customise_account_sidebar.webp',
     };
     final frameHeight = activeStep == ImportOnboardingStep.customiseAccount
         ? _customiseAccountFrameHeight

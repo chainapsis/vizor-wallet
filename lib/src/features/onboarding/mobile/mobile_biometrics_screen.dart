@@ -151,8 +151,8 @@ class _BiometricHero extends StatelessWidget {
     final isFingerprint =
         kind == BiometricKind.fingerprint || kind == BiometricKind.touchId;
     final assetName = isFingerprint
-        ? 'assets/illustrations/biometrics_fingerprint_knight.png'
-        : 'assets/illustrations/biometrics_faceid_knight.png';
+        ? 'assets/illustrations/biometrics_fingerprint_knight.webp'
+        : 'assets/illustrations/biometrics_faceid_knight.webp';
     final imageHeight = isFingerprint ? 262.0 : 300.0;
     return SizedBox(
       height: _frameHeight,

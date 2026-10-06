@@ -945,14 +945,14 @@ class _EmptySearchState extends StatelessWidget {
 
 String _emptyContactsAsset(BuildContext context) {
   return AppTheme.of(context) == AppThemeData.dark
-      ? 'assets/illustrations/address_book_empty_contacts_dark.png'
-      : 'assets/illustrations/address_book_empty_contacts_light.png';
+      ? 'assets/illustrations/address_book_empty_contacts_dark.webp'
+      : 'assets/illustrations/address_book_empty_contacts_light.webp';
 }
 
 String _emptySearchAsset(BuildContext context) {
   return AppTheme.of(context) == AppThemeData.dark
-      ? 'assets/illustrations/address_book_empty_search_dark.png'
-      : 'assets/illustrations/address_book_empty_search_light.png';
+      ? 'assets/illustrations/address_book_empty_search_dark.webp'
+      : 'assets/illustrations/address_book_empty_search_light.webp';
 }
 
 class _ContactDraft {

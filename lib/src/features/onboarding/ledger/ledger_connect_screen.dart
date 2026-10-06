@@ -76,7 +76,7 @@ class LedgerOnboardingShell extends ConsumerWidget {
           child: Align(
             alignment: Alignment.bottomCenter,
             child: Image.asset(
-              'assets/illustrations/onboarding_ledger_sidebar.png',
+              'assets/illustrations/onboarding_ledger_sidebar.webp',
               width: 256,
               height: 430,
               fit: BoxFit.contain,

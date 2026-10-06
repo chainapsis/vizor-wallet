@@ -168,13 +168,13 @@ class _OnboardingWindowBackground extends StatelessWidget {
     final asset = switch (activeStep) {
       OnboardingStep.secretPassphrase =>
         isDark
-            ? 'assets/illustrations/onboarding_secret_passphrase_background_dark.png'
-            : 'assets/illustrations/onboarding_secret_passphrase_background_light.png',
+            ? 'assets/illustrations/onboarding_secret_passphrase_background_dark.webp'
+            : 'assets/illustrations/onboarding_secret_passphrase_background_light.webp',
       // Figma uses the same castle line-art for both themes (alpha-only
       // strokes composite against the window color), so one asset serves
       // light and dark.
       OnboardingStep.setPassword =>
-        'assets/illustrations/onboarding_set_password_background_light.png',
+        'assets/illustrations/onboarding_set_password_background_light.webp',
       _ => null,
     };
 
@@ -290,29 +290,29 @@ class _SidebarIllustration extends StatelessWidget {
       OnboardingStep.secretPassphrase =>
         secretPassphraseRevealed
             ? isDark
-                  ? 'assets/illustrations/onboarding_secret_passphrase_sidebar_open_dark.png'
-                  : 'assets/illustrations/onboarding_secret_passphrase_sidebar_open_light.png'
+                  ? 'assets/illustrations/onboarding_secret_passphrase_sidebar_open_dark.webp'
+                  : 'assets/illustrations/onboarding_secret_passphrase_sidebar_open_light.webp'
             : isDark
-            ? 'assets/illustrations/onboarding_secret_passphrase_sidebar_closed_dark.png'
-            : 'assets/illustrations/onboarding_secret_passphrase_sidebar_closed_light.png',
+            ? 'assets/illustrations/onboarding_secret_passphrase_sidebar_closed_dark.webp'
+            : 'assets/illustrations/onboarding_secret_passphrase_sidebar_closed_light.webp',
       OnboardingStep.setPassword =>
         isDark
-            ? 'assets/illustrations/onboarding_set_password_sidebar_dark.png'
-            : 'assets/illustrations/onboarding_set_password_sidebar_light.png',
+            ? 'assets/illustrations/onboarding_set_password_sidebar_dark.webp'
+            : 'assets/illustrations/onboarding_set_password_sidebar_light.webp',
       OnboardingStep.customiseAccount =>
-        'assets/illustrations/onboarding_customise_account_sidebar.png',
+        'assets/illustrations/onboarding_customise_account_sidebar.webp',
       OnboardingStep.thingsToKnow =>
         isDark
-            ? 'assets/illustrations/onboarding_things_to_know_sidebar_dark.png'
-            : 'assets/illustrations/onboarding_things_to_know_sidebar_light.png',
+            ? 'assets/illustrations/onboarding_things_to_know_sidebar_dark.webp'
+            : 'assets/illustrations/onboarding_things_to_know_sidebar_light.webp',
       OnboardingStep.addressTypes =>
         isDark
-            ? 'assets/illustrations/onboarding_address_types_sidebar_dark.png'
-            : 'assets/illustrations/onboarding_address_types_sidebar_light.png',
+            ? 'assets/illustrations/onboarding_wallet_details_sidebar_dark.webp'
+            : 'assets/illustrations/onboarding_wallet_details_sidebar_light.webp',
       _ =>
         isDark
-            ? 'assets/illustrations/onboarding_intro_sidebar_dark.png'
-            : 'assets/illustrations/onboarding_intro_sidebar_light.png',
+            ? 'assets/illustrations/onboarding_intro_sidebar_dark.webp'
+            : 'assets/illustrations/onboarding_intro_sidebar_light.webp',
     };
     return IgnorePointer(
       child: Align(

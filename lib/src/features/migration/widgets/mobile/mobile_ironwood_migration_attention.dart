@@ -213,7 +213,7 @@ class _MobileIronwoodMigrationBannerState
                     ).createShader(bounds),
                     child: Image.asset(
                       'assets/illustrations/'
-                      'ironwood_migration_home_card_background.png',
+                      'ironwood_migration_home_card_background.webp',
                       key: const ValueKey(
                         'mobile_home_ironwood_migration_banner_background',
                       ),

@@ -421,7 +421,7 @@ class _LinkedContent extends StatelessWidget {
         width: 300,
         height: 200,
         child: _Illustration(
-          asset: 'assets/illustrations/wallet_link_success.png',
+          asset: 'assets/illustrations/wallet_link_success.webp',
           width: 158,
           height: 200,
         ),
@@ -462,7 +462,7 @@ class _ExpiredContent extends StatelessWidget {
         width: 300,
         height: 200,
         child: _Illustration(
-          asset: 'assets/illustrations/wallet_link_expired.png',
+          asset: 'assets/illustrations/wallet_link_expired.webp',
           width: 160,
           height: 200,
         ),

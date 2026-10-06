@@ -487,7 +487,7 @@ class DonationVizorBadge extends StatelessWidget {
     return SizedBox.square(
       dimension: size,
       child: Image.asset(
-        'assets/illustrations/donation_vizor_badge.png',
+        'assets/illustrations/donation_vizor_badge.webp',
         fit: BoxFit.contain,
         filterQuality: FilterQuality.high,
       ),
@@ -607,7 +607,7 @@ class DonationSuccessBackground extends StatelessWidget {
           ).createShader(bounds),
           blendMode: BlendMode.dstIn,
           child: Image.asset(
-            'assets/illustrations/donation_success_background.png',
+            'assets/illustrations/donation_success_background.webp',
             fit: BoxFit.cover,
           ),
         ),
@@ -675,7 +675,7 @@ class _DonationHeartBadge extends StatelessWidget {
     return SizedBox.square(
       dimension: 60,
       child: Image.asset(
-        'assets/illustrations/donation_vizor_heart.png',
+        'assets/illustrations/donation_vizor_heart.webp',
         fit: BoxFit.contain,
         filterQuality: FilterQuality.high,
       ),

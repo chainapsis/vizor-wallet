@@ -274,7 +274,7 @@ class MobileIronwoodKeystoneScanHelpBody extends StatelessWidget {
         Align(
           alignment: Alignment.center,
           child: Image.asset(
-            'assets/illustrations/keystone_qr_scan_error.png',
+            'assets/illustrations/keystone_qr_scan_error.webp',
             width: 48,
             height: 48,
             filterQuality: FilterQuality.high,

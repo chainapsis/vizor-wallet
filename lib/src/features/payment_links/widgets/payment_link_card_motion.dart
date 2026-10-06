@@ -538,7 +538,7 @@ class PaymentLinkCardGlossShine extends StatefulWidget {
   const PaymentLinkCardGlossShine({
     required this.light,
     this.maskAsset =
-        'assets/illustrations/payment_links/payment_link_message_pattern.png',
+        'assets/illustrations/payment_links/payment_link_message_pattern.webp',
     super.key,
   });
 

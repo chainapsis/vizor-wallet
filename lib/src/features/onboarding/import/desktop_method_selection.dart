@@ -58,7 +58,7 @@ class DesktopMethodSelectionScaffold extends StatelessWidget {
                 const [Color(0x26FFFFFF), Color(0x00FFFFFF)],
               ),
               child: Image.asset(
-                'assets/illustrations/donation_success_background.png',
+                'assets/illustrations/donation_success_background.webp',
                 key: const ValueKey('desktop_method_selection_background'),
                 fit: BoxFit.cover,
                 alignment: Alignment.center,

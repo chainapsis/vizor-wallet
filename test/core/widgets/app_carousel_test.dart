@@ -20,7 +20,7 @@ const _items = [
   AppCarouselItem.image(
     message: 'Third carousel message.',
     tileColor: Color(0xFFB90A4A),
-    imageAsset: 'assets/illustrations/ironwood_migration_expect_running.png',
+    imageAsset: 'assets/illustrations/ironwood_migration_expect_running.webp',
   ),
 ];
 
