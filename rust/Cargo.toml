@@ -170,7 +170,7 @@ features = ["wallet"]
 # crates.io package; see the `[patch.crates-io]` comment below.
 [dependencies.zakura-pir-transparent]
 git = "https://github.com/zakura-core/wallet-libraries"
-rev = "7e0c36fbdad124e6f02e6dbb054ef69783cdb238"
+rev = "43e364f687721248de699ad402b46e55963f3cd0"
 default-features = false
 features = ["wallet"]
 
@@ -253,15 +253,13 @@ assertions_on_constants = "allow"
 # equal to these so its path dependencies on the backend and SQLite crates
 # resolve to the patched sources.
 #
-# Pinned to the head of zakura-core/wallet-libraries#108, on main 3fc2bf4:
-# private recovery keeps the memo and agreed fee of mixed transparent/Ironwood
-# transactions and reconstructs a transparent-to-Ironwood shielding. Repin to
-# its merge commit once merged.
+# Pinned to wallet-libraries main after #111: private mixed shielding recovery
+# uses qualified fee metadata and explicit transparent-output shape evidence.
 [patch.crates-io]
-zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries", rev = "7e0c36fbdad124e6f02e6dbb054ef69783cdb238" }
-zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries", rev = "7e0c36fbdad124e6f02e6dbb054ef69783cdb238" }
-zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries", rev = "7e0c36fbdad124e6f02e6dbb054ef69783cdb238" }
-zakura-pir-enhance-types = { git = "https://github.com/zakura-core/wallet-libraries", rev = "7e0c36fbdad124e6f02e6dbb054ef69783cdb238" }
+zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries", rev = "43e364f687721248de699ad402b46e55963f3cd0" }
+zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries", rev = "43e364f687721248de699ad402b46e55963f3cd0" }
+zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries", rev = "43e364f687721248de699ad402b46e55963f3cd0" }
+zakura-pir-enhance-types = { git = "https://github.com/zakura-core/wallet-libraries", rev = "43e364f687721248de699ad402b46e55963f3cd0" }
 
 # Flutter debug builds use Cargokit + Cargo's dev profile (`cargo build`
 # without `--release`). Rust crypto and voting flows are slow under the default
