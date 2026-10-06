@@ -116,6 +116,10 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildWelcomeLargeUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Add account',
+                      builder: buildDesktopAddAccountWelcomeUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Network settings',
                       builder: buildWelcomeNetworkSettingsUseCase,
                     ),

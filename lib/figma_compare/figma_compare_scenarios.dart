@@ -1,3 +1,4 @@
+import 'desktop_welcome_capture.dart';
 import 'desktop_onboarding_selection_capture.dart';
 import 'mobile_welcome_capture.dart';
 import '../src/features/payment_links/widgets/payment_link_gift_card.dart';
@@ -78,6 +79,18 @@ class FigmaCompareScenario {
 /// storage, network, wallet, and Rust state. Widgetbook fixtures are preferred
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
+  FigmaCompareScenario(
+    id: 'desktop-onboarding-welcome',
+    description: 'Desktop initial Welcome with deterministic video poster',
+    builder: buildDesktopWelcomeCapture,
+    renderShadows: true,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-onboarding-add-account-welcome',
+    description: 'Desktop additional-account Welcome with deterministic poster',
+    builder: buildDesktopAddAccountWelcomeCapture,
+    renderShadows: true,
+  ),
   FigmaCompareScenario(
     id: 'desktop-onboarding-import',
     description: 'Desktop onboarding import method selection',

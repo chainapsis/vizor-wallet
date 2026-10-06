@@ -118,7 +118,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
-      expect(find.text('Create a wallet'), findsOneWidget);
+      expect(find.text('Get started'), findsOneWidget);
     },
   );
 
