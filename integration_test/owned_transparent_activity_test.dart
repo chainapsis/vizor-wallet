@@ -1,10 +1,12 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:desktop_window_bootstrap/desktop_window_bootstrap.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/layout/app_layout.dart';
 import 'package:zcash_wallet/src/features/activity/activity_row_mapper.dart';
 import 'package:zcash_wallet/src/features/activity/widgets/activity_feed.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
@@ -28,6 +30,13 @@ void main() {
         isNotEmpty,
         reason: 'use a fresh isolated Rust fixture',
       );
+      // The native window starts hidden. Match the app's bootstrap so test
+      // pumps receive frames, including with the hidden-window test define.
+      await initializeDesktopWindow();
+      await DesktopWindowBootstrap.initialize(
+        visualStyle: DesktopWindowVisualStyle.opaque,
+      );
+      await showDesktopWindow();
       final identity =
           jsonDecode(await File('$directory/identity.json').readAsString())
               as Map<String, dynamic>;
@@ -40,6 +49,7 @@ void main() {
             accountUuid: identity['account'] as String,
           )).where((tx) => tx.txidHex == identity['txid']).toList();
       final rows = await history('');
+      debugPrint('owned transfer: production history loaded');
       expect(rows.map((r) => r.txKind), ['sent', 'received']);
       expect(
         rows.every(
@@ -84,6 +94,7 @@ void main() {
         ),
       );
       await tester.pump();
+      debugPrint('owned transfer: activity rendered');
       expect(find.text('Sent'), findsOneWidget);
       expect(find.text('Received'), findsOneWidget);
       expect(find.text('Transparent'), findsNWidgets(2));
@@ -110,6 +121,7 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
+        debugPrint('owned transfer: ${tx.txKind} receipt rendered');
         expect(
           find.text(
             tx.txKind == 'sent' ? 'Sent successfully' : 'Received successfully',
