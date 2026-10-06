@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../app_bootstrap.dart';
 import '../import/desktop_import_navigation.dart';
 import '../../../core/input/app_password_input_source.dart';
 import '../../../../main.dart' show log;
@@ -64,7 +65,7 @@ class CustomiseAccountScreen extends ConsumerStatefulWidget {
       _CustomiseAccountScreenState();
 }
 
-enum _FinishPhase { idle, stoppingSync, creatingWallet }
+enum _FinishPhase { idle, stoppingSync, creatingWallet, recoveringSetup }
 
 class _CustomiseAccountScreenState
     extends ConsumerState<CustomiseAccountScreen> {
@@ -73,12 +74,14 @@ class _CustomiseAccountScreenState
   var _finishPhase = _FinishPhase.idle;
   String? _submitError;
   var _showProfilePicturePicker = false;
+  var _requiresSetupRecovery = false;
 
   String get _normalizedName => normalizeAccountName(_nameController.text);
   int get _nameLength => accountNameCharacterLength(_nameController.text);
   bool get _nameValid => isAccountNameLengthValid(_nameController.text);
   bool get _isSubmitting => _finishPhase != _FinishPhase.idle;
-  bool get _canFinish => !_isSubmitting && _nameValid;
+  bool get _canFinish =>
+      !_isSubmitting && (_requiresSetupRecovery || _nameValid);
 
   String? get _nameMessage {
     if (_submitError != null) return _submitError;
@@ -104,28 +107,82 @@ class _CustomiseAccountScreenState
 
   Future<void> _submit() async {
     if (!_canFinish) return;
+    if (_requiresSetupRecovery) {
+      await _retryInterruptedSetup();
+      return;
+    }
     setState(() {
       _finishPhase = _FinishPhase.creatingWallet;
       _submitError = null;
     });
 
     try {
-      final onFinish = widget.onFinish;
-      if (onFinish != null) {
-        await onFinish(_normalizedName, _profilePictureId);
-        if (!mounted) return;
-        setState(() => _finishPhase = _FinishPhase.idle);
-        return;
-      }
-      await _finishSetup();
+      await ref.read(routerRefreshProvider).pauseWhile(() async {
+        try {
+          final onFinish = widget.onFinish;
+          if (onFinish != null) {
+            await onFinish(_normalizedName, _profilePictureId);
+            if (mounted) setState(() => _finishPhase = _FinishPhase.idle);
+            return;
+          }
+          await _finishSetup();
+        } catch (error) {
+          if (_isInterruptedSetup(error) &&
+              ref.read(appSecurityProvider).requiresUnlock) {
+            // A lock during persistence must rebuild the account snapshot
+            // before the router can expose Unlock with an empty account list.
+            _requiresSetupRecovery = true;
+            if (mounted) {
+              setState(() => _finishPhase = _FinishPhase.recoveringSetup);
+            }
+            await _reloadInterruptedSetup();
+            return;
+          }
+          rethrow;
+        }
+      });
     } catch (e, st) {
       log('CustomiseAccountScreen._submit: ERROR: $e\n$st');
       if (!mounted) return;
       setState(() {
         _finishPhase = _FinishPhase.idle;
-        _submitError = onboardingSubmitErrorMessage(e);
+        _requiresSetupRecovery =
+            _requiresSetupRecovery || _isInterruptedSetup(e);
+        _submitError = _requiresSetupRecovery
+            ? 'Setup interrupted. Retry to recover your wallet.'
+            : onboardingSubmitErrorMessage(e);
       });
     }
+  }
+
+  Future<void> _retryInterruptedSetup() async {
+    setState(() {
+      _finishPhase = _FinishPhase.recoveringSetup;
+      _submitError = null;
+    });
+    try {
+      await ref.read(routerRefreshProvider).pauseWhile(_reloadInterruptedSetup);
+    } catch (error, stack) {
+      log('CustomiseAccountScreen._retryInterruptedSetup: $error\n$stack');
+      if (mounted) {
+        setState(() {
+          _finishPhase = _FinishPhase.idle;
+          _submitError = "Couldn't resume setup. Please try again.";
+        });
+      }
+    }
+  }
+
+  bool _isInterruptedSetup(Object error) =>
+      error is WalletAccountSetupInterruptedException ||
+      error is WalletAccountStateUncertainException;
+
+  Future<void> _reloadInterruptedSetup() async {
+    // Reuse startup's durable DB inspection and credential preservation.
+    // Lock first so recovery must finish on unlock before Home opens.
+    final reloadBootstrap = ref.read(appBootstrapRetryProvider);
+    ref.read(appSecurityProvider.notifier).lock();
+    await reloadBootstrap();
   }
 
   Future<void> _finishSetup() => ref
@@ -199,7 +256,7 @@ class _CustomiseAccountScreenState
   }
 
   void _openProfilePicturePicker() {
-    if (_isSubmitting) return;
+    if (_isSubmitting || _requiresSetupRecovery) return;
     setState(() => _showProfilePicturePicker = true);
   }
 
@@ -281,7 +338,9 @@ class _CustomiseAccountScreenState
     if (widget.ledgerPresentation) {
       return LedgerOnboardingShell(
         activeStep: LedgerOnboardingStep.customiseAccount,
-        backTarget: _isSubmitting ? null : widget.ledgerBackTarget,
+        backTarget: (_isSubmitting || _requiresSetupRecovery)
+            ? null
+            : widget.ledgerBackTarget,
         overlay: profilePictureOverlay,
         child: _buildContent(),
       );
@@ -292,17 +351,23 @@ class _CustomiseAccountScreenState
         'Desktop Ledger uses its dedicated setup routes.',
       ),
       SetPasswordFlow.create => OnboardingTrailingPane(
-        backTarget: _isSubmitting ? null : _backTarget,
+        backTarget: (_isSubmitting || _requiresSetupRecovery)
+            ? null
+            : _backTarget,
         overlay: profilePictureOverlay,
         child: _buildContent(),
       ),
       SetPasswordFlow.importWallet => ImportOnboardingTrailingPane(
-        backTarget: _isSubmitting ? null : _backTarget,
+        backTarget: (_isSubmitting || _requiresSetupRecovery)
+            ? null
+            : _backTarget,
         overlay: profilePictureOverlay,
         child: _buildContent(),
       ),
       SetPasswordFlow.importKeystone => KeystoneOnboardingTrailingPane(
-        backTarget: _isSubmitting ? null : _backTarget,
+        backTarget: (_isSubmitting || _requiresSetupRecovery)
+            ? null
+            : _backTarget,
         overlay: profilePictureOverlay,
         child: _buildContent(),
       ),
@@ -319,6 +384,7 @@ class _CustomiseAccountScreenState
     nameMessage: _nameMessage,
     finishPhase: _finishPhase,
     canFinish: _canFinish,
+    requiresSetupRecovery: _requiresSetupRecovery,
     onNameChanged: _handleNameChanged,
     onEditProfilePicture: _openProfilePicturePicker,
     onFinish: _submit,
@@ -332,6 +398,7 @@ class _CustomiseAccountContent extends StatelessWidget {
     required this.nameMessage,
     required this.finishPhase,
     required this.canFinish,
+    required this.requiresSetupRecovery,
     required this.onNameChanged,
     required this.onEditProfilePicture,
     required this.onFinish,
@@ -342,6 +409,7 @@ class _CustomiseAccountContent extends StatelessWidget {
   final String? nameMessage;
   final _FinishPhase finishPhase;
   final bool canFinish;
+  final bool requiresSetupRecovery;
   final ValueChanged<String> onNameChanged;
   final VoidCallback onEditProfilePicture;
   final Future<void> Function() onFinish;
@@ -368,7 +436,9 @@ class _CustomiseAccountContent extends StatelessWidget {
                       nameController: nameController,
                       profilePictureId: profilePictureId,
                       message: nameMessage,
-                      enabled: finishPhase == _FinishPhase.idle,
+                      enabled:
+                          finishPhase == _FinishPhase.idle &&
+                          !requiresSetupRecovery,
                       onNameChanged: onNameChanged,
                       onEditProfilePicture: onEditProfilePicture,
                       onSubmitted: onFinish,
@@ -383,9 +453,11 @@ class _CustomiseAccountContent extends StatelessWidget {
               minWidth: _buttonMinWidth,
               trailing: const AppIcon(AppIcons.chevronForward),
               child: Text(switch (finishPhase) {
-                _FinishPhase.idle => 'Finish setup',
+                _FinishPhase.idle =>
+                  requiresSetupRecovery ? 'Retry setup' : 'Finish setup',
                 _FinishPhase.stoppingSync => 'Stop syncing...',
                 _FinishPhase.creatingWallet => 'Creating wallet...',
+                _FinishPhase.recoveringSetup => 'Recovering wallet...',
               }),
             ),
           ],

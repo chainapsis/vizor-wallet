@@ -423,3 +423,28 @@ The Figma Welcome reference (`8648:104679`, 1080 × 720) includes a Terms/Privac
 footer that is not implemented in this slice. Record it as a remaining visual
 difference in review; the initial Gift action also remains disabled until the
 later Gift integration slice.
+
+### Desktop interrupted setup recovery
+
+Password setup forwards its draft to Customise without creating an account;
+additional accounts retain their existing credential and skip password setup.
+
+If account persistence is interrupted or its DB state cannot be confirmed,
+Customise freezes the name/profile and Back controls and offers **Retry setup**.
+Retry locks the session and reloads the existing startup snapshot without
+creating another account or preparing another password. Startup inspects the
+DB: an existing account goes to Unlock, confirmed empty setup goes to Welcome,
+and an unreadable DB goes to the existing startup error/retry screen. Unlock
+must finish pending storage writes before Home opens. A lock during setup
+reloads the snapshot before the router can expose Unlock.
+
+This connection includes Ledger's callback-based Customise screen. Ordinary
+errors before account creation retain editable fields and the existing inline
+retry flow. The durable recovery journal and restart/unlock behavior remain
+shared with mobile; this slice connects the desktop retry action.
+
+Deterministic widget captures use `desktop-onboarding-recovery`,
+`desktop-onboarding-recovery-uncertain`,
+`desktop-onboarding-recovery-retry-error`,
+`desktop-onboarding-recovery-pending`, `desktop-onboarding-ledger-recovery`,
+and `desktop-onboarding-submit-error` in both light and dark themes.

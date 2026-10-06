@@ -1,5 +1,6 @@
 import 'desktop_welcome_capture.dart';
 import 'desktop_onboarding_intro_capture.dart';
+import 'desktop_onboarding_recovery_capture.dart';
 import 'desktop_onboarding_selection_capture.dart';
 import 'mobile_welcome_capture.dart';
 import '../src/features/payment_links/widgets/payment_link_gift_card.dart';
@@ -80,6 +81,42 @@ class FigmaCompareScenario {
 /// storage, network, wallet, and Rust state. Widgetbook fixtures are preferred
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
+  FigmaCompareScenario(
+    id: 'desktop-onboarding-recovery',
+    description: 'Desktop interrupted account persistence and retry action',
+    builder: buildDesktopSetupInterruptedCapture,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-onboarding-recovery-uncertain',
+    description: 'Desktop unconfirmed wallet DB state and recovery action',
+    builder: buildDesktopSetupUncertainCapture,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-onboarding-recovery-retry-error',
+    description: 'Desktop interrupted setup after a bootstrap retry failure',
+    builder: buildDesktopSetupRetryErrorCapture,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-onboarding-recovery-pending',
+    description: 'Desktop interrupted setup while reloading bootstrap',
+    builder: buildDesktopSetupPendingCapture,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-onboarding-ledger-recovery',
+    description: 'Desktop Ledger interrupted account persistence',
+    builder: buildDesktopLedgerSetupInterruptedCapture,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-onboarding-submit-error',
+    description: 'Desktop ordinary setup error remains editable and retryable',
+    builder: buildDesktopSetupOrdinaryErrorCapture,
+    platform: TargetPlatform.macOS,
+  ),
   FigmaCompareScenario(
     id: 'desktop-onboarding-welcome',
     description: 'Desktop initial Welcome with deterministic video poster',
