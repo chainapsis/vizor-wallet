@@ -348,19 +348,19 @@ pub(crate) fn acknowledge(
         ensure_table(&connection)?;
         proposal_locks::ensure_schema(&connection)?;
         let conn = connection.transaction().map_err(|e| e.to_string())?;
-        let status: Option<String> = conn
+        let (status, message): (Option<String>, Option<String>) = conn
             .query_row(
                 &format!(
                     "DELETE FROM {TABLE}
                      WHERE network = ?1 AND operation_id = ?2 AND state = ?3
-                     RETURNING status"
+                     RETURNING status, message"
                 ),
                 params![
                     network_name(network),
                     operation_id,
                     STATE_RESULT_PENDING_ACK
                 ],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .optional()
             .map_err(|e| format!("Acknowledge Ledger operation: {e}"))?
@@ -369,9 +369,14 @@ pub(crate) fn acknowledge(
                 "Ledger operation {operation_id} has no broadcast result awaiting acknowledgment"
             )
             })?;
-        // Partial results are terminal after caller persistence. Keep ambiguous
-        // broadcast reservations until expiry, as before.
-        let release = status.as_deref() == Some("partial_broadcast");
+        // Partial results may still report failed wallet storage. Caller metadata
+        // alone cannot protect inputs while sync recovers an unrecorded spend.
+        // This diagnostic is emitted by store_and_broadcast_pczts_inner when
+        // both wallet-storage paths fail, regardless of the broadcast count.
+        let storage_failed = message
+            .as_deref()
+            .is_some_and(|message| message.contains("local storage failed"));
+        let release = status.as_deref() == Some("partial_broadcast") && !storage_failed;
         if release {
             proposal_locks::release_operation(&conn, operation_id)?;
         }
