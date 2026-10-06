@@ -96,6 +96,7 @@ class _FakeSwapProvider implements SwapProvider {
     List<SwapAsset>? supportedAssets,
     this.submitDepositError,
     this.quoteExpiresAt,
+    this.zecDepositMemo = 'memo-live',
   }) : supportedAssets = supportedAssets ?? swapExternalAssets;
 
   final requests = <SwapQuoteRequest>[];
@@ -108,6 +109,10 @@ class _FakeSwapProvider implements SwapProvider {
   /// When set, every quote carries this expiry so tests can exercise the
   /// review-quote expiry guard in [SwapNotifier.startIntent].
   final DateTime? quoteExpiresAt;
+
+  /// The memo on ZEC deposit instructions. NEAR gives none, and a swap refund key
+  /// requires none.
+  final String? zecDepositMemo;
 
   @override
   String get providerLabel => 'NEAR Intents';
@@ -159,7 +164,9 @@ class _FakeSwapProvider implements SwapProvider {
             : '0xlive-deposit',
         expiresInLabel: '07:12',
         reuseWarning: 'Do not reuse this address',
-        memo: 'memo-live',
+        memo: request.direction == SwapDirection.zecToExternal
+            ? zecDepositMemo
+            : 'memo-live',
       ),
     );
   }

@@ -152,6 +152,30 @@ void main() {
     },
   );
 
+  test('records refund statuses only for supported accounts', () async {
+    final checkedAt = DateTime.now().toUtc();
+    await service.observeRefundStatus(
+      'account',
+      'deposit',
+      'u1refund',
+      _snapshot,
+      checkedAt,
+    );
+    service = SwapReceiveReservationService(
+      store: (_) async => store,
+      provider: provider,
+      supportsAccount: (_) => false,
+    );
+    await service.observeRefundStatus(
+      'hardware',
+      'deposit',
+      'u1refund',
+      _snapshot,
+      checkedAt,
+    );
+    expect(store.events, ['refund:deposit:u1refund']);
+  });
+
   test(
     'wallet deletion waits for in-flight quote result persistence',
     () async {
@@ -250,6 +274,16 @@ class _Store implements ReceiveReservationStore {
   ) async {
     events.add('observe:$request');
     pending.removeWhere((q) => q.requestId == request);
+  }
+
+  @override
+  Future<void> observeRefund(
+    String operation,
+    String refundAddress,
+    SwapIntentSnapshot snapshot,
+    DateTime checkedAt,
+  ) async {
+    events.add('refund:$operation:$refundAddress');
   }
 
   @override

@@ -7,13 +7,9 @@ use super::WalletDatabase;
 use crate::wallet::{db::with_wallet_db_write_lock, network::WalletNetwork};
 use std::time::Duration;
 use zakura_pir_enhance::transport::{Request, ResponseBody, Transport};
-use zakura_pir_enhance::wallet::PreparedWork;
 use zakura_pir_enhance::ClientError;
 use zakura_pir_receiver::{
     DirectoryError, EnhanceNotes, Swept, Transport as ReceiverTransport, WriteLock, MAINNET_GENESIS,
-};
-use zcash_client_backend::data_api::enhance_pir::{
-    EnhancePirRead, EnhancePirWrite, TransactionEnhancementWork,
 };
 use zcash_client_backend::data_api::{transparent_ledger::ChainPoint, WalletRead};
 
@@ -110,22 +106,14 @@ pub(super) async fn run(
         height: tip.block_height(),
         hash: tip.block_hash(),
     };
-    let started = std::time::Instant::now();
     // Stopping at any await is safe (see `zakura_pir_receiver`).
     let result = tokio::select! {
         biased;
         _ = super::watch_for_exit(should_exit) => return,
-        result = tokio::time::timeout(RUN_BUDGET, run_inner(db, network, through, should_exit)) => {
+        result = tokio::time::timeout(RUN_BUDGET, run_inner(db, through, should_exit)) => {
             result.unwrap_or_else(|_| Err("time budget reached".to_owned()))
         }
     };
-    let ok = result
-        .as_ref()
-        .is_ok_and(|swept| swept.deferred.is_empty() && !swept.pending);
-    log::info!(
-        "pir_metric component=recovery stage=total elapsed_us={} ok={ok}",
-        started.elapsed().as_micros(),
-    );
     match result {
         Ok(swept) => {
             // Keys identify the wallet's swaps, so only the reasons are logged.
@@ -141,56 +129,22 @@ pub(super) async fn run(
 }
 
 /// Runs recovery at `through`, the fully scanned block, if it is also the chain tip.
+/// The sync's enhancement checkpoint has already retrieved funding memos, and
+/// maintenance has registered their refund keys.
 async fn run_inner(
     db: &mut WalletDatabase,
-    network: WalletNetwork,
     through: ChainPoint,
     should_exit: &impl Fn() -> bool,
 ) -> Result<Swept, String> {
     if Some(through.height) != db.chain_height().map_err(error)? {
         return Ok(Swept::default());
     }
-    // The exception covers receiver discovery and its matching note data only.
-    // Ordinary memo enhancement still follows the general Private queries setting.
-    let prepared = PreparedWork::new(
-        db.transaction_enhancement_work()
-            .map_err(error)?
-            .into_iter()
-            .filter_map(|w| match w {
-                TransactionEnhancementWork::Private(w)
-                    if crate::api::sync::enhance_pir_enabled() =>
-                {
-                    Some(w)
-                }
-                _ => None,
-            }),
-    );
-    let batches = prepared.batches_by_tx_and_row();
     let enhance_origin = super::enhancement::payload_endpoint();
     let transport = SwapTransport::new(
         should_exit,
         url::Url::parse(&enhance_origin).map_err(error)?,
     );
     let mut notes = EnhanceNotes::new(&enhance_origin, &transport);
-    if !batches.is_empty() {
-        for requests in batches.into_values() {
-            let reply = notes
-                .session(db)
-                .await
-                .map_err(error)?
-                .query_row_requests(&transport, &requests)
-                .await
-                .map_err(error)?;
-            with_wallet_db_write_lock("swap_private.enhance", || {
-                db.apply_ironwood_enhance_records(&reply.slots)
-                    .map_err(error)
-            })?;
-        }
-        // Funding memos just retrieved can register refund keys before the sweeps.
-        with_wallet_db_write_lock("swap_private.memos", || {
-            crate::wallet::swap_receiving::maintain_recovery(db, network)
-        })?;
-    }
     let accounts = crate::wallet::swap_receiving::software_accounts(db)?;
     zakura_pir_receiver::sweep(
         db,
@@ -265,12 +219,16 @@ mod tests {
         let should_exit = || false;
         let enhance_origin = super::super::enhancement::payload_endpoint();
         let transport = SwapTransport::new(&should_exit, url::Url::parse(&enhance_origin).unwrap());
-        let client = DirectoryClient::connect(RECEIVER_ORIGIN, &transport, accepted)
+        let manifest = DirectoryClient::fetch_manifest(RECEIVER_ORIGIN, &&transport)
             .await
             .unwrap();
+        let client =
+            DirectoryClient::connect_manifest(RECEIVER_ORIGIN, &transport, accepted, manifest, 0)
+                .await
+                .unwrap();
         let proofs = client.witnesses().await.unwrap();
         assert_eq!(
-            hex::encode(proofs.root),
+            hex::encode(proofs.root()),
             anchors["directory"]["root"].as_str().unwrap()
         );
         let fixture: serde_json::Value = serde_json::from_str(include_str!(

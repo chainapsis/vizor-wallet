@@ -7,6 +7,7 @@ import '../core/config/network_config.dart';
 import '../core/storage/enhance_pir_preference_store.dart';
 import '../core/storage/wallet_paths.dart';
 import '../features/migration/services/ironwood_migration_background_credential_store.dart';
+import '../rust/api/swap_receive.dart' as rust_swap;
 import '../rust/api/sync.dart' as rust_sync;
 import 'rpc_endpoint_failover_provider.dart';
 import 'sync_provider.dart';
@@ -113,9 +114,9 @@ final nearSwapPrivacyPreferenceStoreProvider =
 /// Overridable in tests.
 final swapHistoryRecheckProvider = Provider<Future<void> Function()>(
   (ref) =>
-      () async => rust_sync.recheckSwapHistory(
+      () async => rust_swap.recheckSwapHistory(
         dbPath: await getWalletDbPath(),
-        network: ref.read(rpcEndpointFailoverProvider).current.networkName,
+        networkName: ref.read(rpcEndpointFailoverProvider).current.networkName,
       ),
 );
 

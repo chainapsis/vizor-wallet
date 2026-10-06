@@ -128,6 +128,70 @@ Future<void> reapReceiveReservations({
   accountUuid: accountUuid,
 );
 
+/// Reserves the next refund address. Its key starts scanning when the wallet stores
+/// the swap's funding transaction. `live_tip` is the chain tip the quote flow fetched.
+Future<SwapReceivingAddress> reserveSwapReceivingAddress({
+  required String dbPath,
+  required String networkName,
+  required String accountUuid,
+  required BigInt liveTip,
+}) => RustLib.instance.api.crateApiSwapReceiveReserveSwapReceivingAddress(
+  dbPath: dbPath,
+  networkName: networkName,
+  accountUuid: accountUuid,
+  liveTip: liveTip,
+);
+
+/// Binds an accepted refund quote's deposit address to the refund key reserved for
+/// it, before the quote is shown. Funding requires this record.
+Future<void> recordSwapRefundQuote({
+  required String dbPath,
+  required String networkName,
+  required String accountUuid,
+  required BigInt refundIndex,
+  required String depositAddress,
+  required PlatformInt64 deadlineSeconds,
+}) => RustLib.instance.api.crateApiSwapReceiveRecordSwapRefundQuote(
+  dbPath: dbPath,
+  networkName: networkName,
+  accountUuid: accountUuid,
+  refundIndex: refundIndex,
+  depositAddress: depositAddress,
+  deadlineSeconds: deadlineSeconds,
+);
+
+/// Records a provider status, fetched at `observed_at_seconds`, for the refund key
+/// behind `refund_address`. Addresses without a swap key and unrecognized statuses
+/// are ignored. Do not call it for a failed status request.
+Future<void> observeSwapRefundQuote({
+  required String dbPath,
+  required String networkName,
+  required String accountUuid,
+  required String operationId,
+  required String refundAddress,
+  required SwapProviderStatus status,
+  required PlatformInt64 observedAtSeconds,
+}) => RustLib.instance.api.crateApiSwapReceiveObserveSwapRefundQuote(
+  dbPath: dbPath,
+  networkName: networkName,
+  accountUuid: accountUuid,
+  operationId: operationId,
+  refundAddress: refundAddress,
+  status: status,
+  observedAtSeconds: observedAtSeconds,
+);
+
+/// Queues one receiver-directory sweep of every closed swap key for the next sync,
+/// which finds a second refund or a late payout that arrived after its key stopped
+/// scanning. Called when the user turns NEAR swap privacy on.
+Future<void> recheckSwapHistory({
+  required String dbPath,
+  required String networkName,
+}) => RustLib.instance.api.crateApiSwapReceiveRecheckSwapHistory(
+  dbPath: dbPath,
+  networkName: networkName,
+);
+
 /// The deposit instructions of a started incoming quote: the only ones to show.
 class ReceiveDepositInstruction {
   final String address;
@@ -227,4 +291,23 @@ class SwapProviderStatus {
           refundedAmount == other.refundedAmount &&
           amountOut == other.amountOut &&
           deadlineSeconds == other.deadlineSeconds;
+}
+
+/// A durably reserved refund address and its key index.
+class SwapReceivingAddress {
+  final String address;
+  final BigInt index;
+
+  const SwapReceivingAddress({required this.address, required this.index});
+
+  @override
+  int get hashCode => address.hashCode ^ index.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SwapReceivingAddress &&
+          runtimeType == other.runtimeType &&
+          address == other.address &&
+          index == other.index;
 }

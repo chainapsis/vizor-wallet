@@ -794,10 +794,7 @@ class SwapNotifier extends Notifier<SwapState> {
 
       state = state.copyWith(
         reviewVisible: true,
-        reviewQuote: SwapQuote.withLocalIdentity(
-          quote,
-          swapRefundIndex: stagingAddress.receivingIndex,
-        ),
+        reviewQuote: quote,
         reviewAddressPlan: addressPlan,
         reviewAccountUuid: accountUuid,
         quoteLoading: false,
@@ -806,8 +803,9 @@ class SwapNotifier extends Notifier<SwapState> {
       );
     } catch (e) {
       if (generation != _quoteGeneration) return;
-      // Only the incoming quote path throws a bare ReceiveError.
-      if (e is ReceiveError && e.code == ReceiveErrorCode.stale) {
+      // A swap address failure drops the cached address. Preparing again
+      // resumes an incoming draft, or reserves a new refund key.
+      if (e is ReceiveError) {
         _reviewStagingAddress = null;
       }
       state = state.copyWith(
@@ -2187,14 +2185,25 @@ class SwapNotifier extends Notifier<SwapState> {
   Future<SwapIntentSnapshot> _submitProviderDepositTransaction(
     SwapIntent intent,
     String txHash,
-  ) {
-    return ref
+  ) async {
+    final checkedAt = DateTime.now().toUtc();
+    final snapshot = await ref
         .read(swapIntentProvider)
         .submitDepositTransaction(
           depositAddress: _providerDepositAddress(intent),
           txHash: txHash,
           depositMemo: intent.depositMemo,
         );
+    // Like a refreshed status, it decides when the swap's key stops scanning.
+    // Failing to record it only delays that.
+    try {
+      await ref
+          .read(swapActivityTrackerProvider)
+          .recordProviderSnapshot(intent, snapshot, checkedAt);
+    } catch (e) {
+      log('Swap: deposit status not recorded in the wallet error=$e');
+    }
+    return snapshot;
   }
 
   bool _isHardwareIntent(SwapIntent intent) {

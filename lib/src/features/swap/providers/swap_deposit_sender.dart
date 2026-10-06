@@ -60,7 +60,6 @@ class RustSwapDepositSender implements SwapDepositSender {
             );
             final refundIndex = quote.swapRefundIndex;
             if (refundIndex != null) {
-              _requireAddressOnlyDeposit(quote);
               return rust_sync.estimateSwapFundingFee(
                 dbPath: dbPath,
                 network: endpoint.networkName,
@@ -121,7 +120,6 @@ class RustSwapDepositSender implements SwapDepositSender {
               secretGuard.check();
               final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
               final refundIndex = quote.swapRefundIndex;
-              if (refundIndex != null) _requireAddressOnlyDeposit(quote);
               final proposal = refundIndex != null
                   ? await rust_sync.proposeSwapFunding(
                       dbPath: dbPath,
@@ -286,10 +284,4 @@ String _shortSwapValue(String? value) {
   if (trimmed == null || trimmed.isEmpty) return '-';
   if (trimmed.length <= 14) return trimmed;
   return '${trimmed.substring(0, 7)}...${trimmed.substring(trimmed.length - 6)}';
-}
-
-void _requireAddressOnlyDeposit(SwapQuote quote) {
-  if (quote.depositInstruction.memo?.isNotEmpty ?? false) {
-    throw StateError('Swap receiving requires an address-only ZEC deposit');
-  }
 }

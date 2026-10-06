@@ -8043,12 +8043,16 @@ void main() {
           routes: [_swapRoute(), _swapActivityRoute()],
         ),
         seedSwapActivityFixtures: false,
+        swapProvider: _FakeSwapProvider(zecDepositMemo: null),
         reserveSwapAddress: ({required accountUuid, required direction}) async {
           purposes.add(direction);
           reservations++;
+          // Only an address that refunds ZEC has a refund key index.
           return SwapZecStagingAddress(
             address: 'u1poc$reservations',
-            receivingIndex: BigInt.from(reservations),
+            receivingIndex: direction.sendsZec
+                ? BigInt.from(reservations)
+                : null,
           );
         },
       ),

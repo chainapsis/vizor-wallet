@@ -6,9 +6,8 @@
 import '../frb_generated.dart';
 import 'keystone.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
-import 'swap_receive.dart';
 
-// These functions are ignored because they are not marked as `pub`: `api_proposal_result`, `catch`, `enhance_pir_enabled`, `fetch_block_time`, `migration_status_from_balance`, `near_swap_setting`, `parse_network_and_migrate`, `payment_link_batch_pairs`, `run_full_sync_internal`, `to_wallet_action_sigs`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
+// These functions are ignored because they are not marked as `pub`: `api_proposal_result`, `catch`, `enhance_pir_enabled`, `fetch_block_time`, `migration_status_from_balance`, `near_swap_privacy_enabled`, `parse_network_and_migrate`, `payment_link_batch_pairs`, `run_full_sync_internal`, `to_wallet_action_sigs`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `MempoolObserverState`
 
 /// Set the desired sync mode. 0=none, 1=foreground, 2=background.
@@ -1225,76 +1224,10 @@ Future<EnhanceRecoveryStatus> getEnhanceRecoveryStatus({
   network: network,
 );
 
-/// Whether new private swap addresses may be issued.
-bool nearSwapPrivacyEnabled() =>
-    RustLib.instance.api.crateApiSyncNearSwapPrivacyEnabled();
-
-/// New private swap addresses require Private queries. Existing keys remain stored.
+/// Allow new private swap addresses, which also need Private queries (see
+/// `require_new_address`). Existing keys remain stored either way.
 void setNearSwapPrivacyEnabled({required bool enabled}) => RustLib.instance.api
     .crateApiSyncSetNearSwapPrivacyEnabled(enabled: enabled);
-
-/// Queues one receiver PIR sweep of every closed swap key for the next sync, which
-/// finds a second refund or a late payout that arrived after its key stopped
-/// scanning. Called when the user turns NEAR swap privacy on.
-Future<void> recheckSwapHistory({
-  required String dbPath,
-  required String network,
-}) => RustLib.instance.api.crateApiSyncRecheckSwapHistory(
-  dbPath: dbPath,
-  network: network,
-);
-
-/// Reserves the next refund address. Its key starts scanning when the wallet stores
-/// the swap's funding transaction. `live_tip` is the chain tip the quote flow fetched.
-Future<SwapReceivingAddress> reserveSwapReceivingAddress({
-  required String dbPath,
-  required String network,
-  required String accountUuid,
-  required BigInt liveTip,
-}) => RustLib.instance.api.crateApiSyncReserveSwapReceivingAddress(
-  dbPath: dbPath,
-  network: network,
-  accountUuid: accountUuid,
-  liveTip: liveTip,
-);
-
-/// Binds an accepted refund quote's deposit address to the refund key reserved for
-/// it, before the quote is shown. Funding requires this record.
-Future<void> recordSwapRefundQuote({
-  required String dbPath,
-  required String network,
-  required String accountUuid,
-  required BigInt refundIndex,
-  required String depositAddress,
-  required PlatformInt64 deadlineSeconds,
-}) => RustLib.instance.api.crateApiSyncRecordSwapRefundQuote(
-  dbPath: dbPath,
-  network: network,
-  accountUuid: accountUuid,
-  refundIndex: refundIndex,
-  depositAddress: depositAddress,
-  deadlineSeconds: deadlineSeconds,
-);
-
-/// Records a provider status for the refund key behind `address`, ignoring
-/// unrecognized statuses. Do not call it for a failed status request.
-Future<void> observeSwapReceivingOperation({
-  required String dbPath,
-  required String network,
-  required String accountUuid,
-  required String operationId,
-  required String address,
-  required SwapProviderStatus status,
-  required PlatformInt64 observedAtSeconds,
-}) => RustLib.instance.api.crateApiSyncObserveSwapReceivingOperation(
-  dbPath: dbPath,
-  network: network,
-  accountUuid: accountUuid,
-  operationId: operationId,
-  address: address,
-  status: status,
-  observedAtSeconds: observedAtSeconds,
-);
 
 /// Same software send lifecycle, with an authenticated refund record on change.
 Future<ProposalResult> proposeSwapFunding({
@@ -2787,25 +2720,6 @@ class SubtreeRoot {
           runtimeType == other.runtimeType &&
           completingBlockHeight == other.completingBlockHeight &&
           rootHash == other.rootHash;
-}
-
-/// A durably reserved refund address and its key index.
-class SwapReceivingAddress {
-  final String address;
-  final BigInt index;
-
-  const SwapReceivingAddress({required this.address, required this.index});
-
-  @override
-  int get hashCode => address.hashCode ^ index.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is SwapReceivingAddress &&
-          runtimeType == other.runtimeType &&
-          address == other.address &&
-          index == other.index;
 }
 
 class SyncProgress {

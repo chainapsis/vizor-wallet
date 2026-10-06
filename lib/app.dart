@@ -253,9 +253,10 @@ Future<void> applyEnhancePirPolicy(
       isEnhancePirAvailableForNetwork(bootstrap.network);
   (setRustEnabled ??
       (enabled) => rust_sync.setEnhancePirEnabled(enabled: enabled))(enabled);
+  // Rust issues new swap addresses only with both settings on.
   (setRustSwapPrivacyEnabled ??
       (value) => rust_sync.setNearSwapPrivacyEnabled(enabled: value))(
-    enabled && bootstrap.nearSwapPrivacyEnabled,
+    bootstrap.nearSwapPrivacyEnabled,
   );
   try {
     await (setNativePrivateRecovery ??

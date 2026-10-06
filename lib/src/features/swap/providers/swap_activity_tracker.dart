@@ -4,11 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
 import '../../../providers/network_privacy_provider.dart';
-import '../../../providers/app_security_provider.dart';
-import '../../../providers/rpc_endpoint_failover_provider.dart';
-import '../../../core/storage/wallet_paths.dart';
-import '../../../rust/api/swap_receive.dart' show SwapProviderStatus;
-import '../../../rust/api/sync.dart' as rust_sync;
 import '../../ledger/services/ledger_operation_lifecycle.dart';
 import '../models/swap_intent_presentation_mapper.dart';
 import '../models/swap_models.dart';
@@ -17,19 +12,6 @@ import 'swap_failure_policy.dart';
 import 'swap_provider_config.dart';
 import 'swap_receive_reservation_service.dart';
 
-/// Supply the initial pending observation for a new quote. Rust normalizes all
-/// provider states by swap direction; local UI expiry is not a provider outcome.
-String? swapScanningProviderStatus(
-  String? raw, {
-  SwapIntentStatus? localStatus,
-}) {
-  if (raw != null) return raw;
-  if (localStatus == SwapIntentStatus.awaitingDeposit) {
-    return 'PENDING_DEPOSIT';
-  }
-  return null;
-}
-
 const swapActivityStatusRefreshInterval = Duration(seconds: 30);
 
 final swapActivityTrackerProvider = Provider<SwapActivityTracker>((ref) {
@@ -37,63 +19,37 @@ final swapActivityTrackerProvider = Provider<SwapActivityTracker>((ref) {
     activityStore: ref.read(swapActivityStoreProvider),
     reconcileReceiveReservations: (account) =>
         ref.read(swapReceiveReservationServiceProvider).reconcile(account),
+    // Statuses reach the wallet as they are fetched: an incoming quote's through its
+    // reservation, and a refund quote's on the refund key behind its refund address.
     onProviderSnapshot: (intent, snapshot, checkedAt) async {
       final account = intent.accountUuid;
-      if (account == null || intent.direction?.sendsZec != false) return;
-      await ref
-          .read(swapReceiveReservationServiceProvider)
-          .observeStatus(
+      if (account == null) return;
+      final reservations = ref.read(swapReceiveReservationServiceProvider);
+      final operation = intent.depositAddress ?? intent.id;
+      switch (intent.direction?.sendsZec) {
+        case false:
+          await reservations.observeStatus(
             account,
-            intent.depositAddress ?? intent.id,
+            operation,
             intent.depositMemo,
             snapshot,
             checkedAt,
           );
+        case true:
+          final refundTo = intent.oneClickRefundTo;
+          if (refundTo == null) return;
+          await reservations.observeRefundStatus(
+            account,
+            operation,
+            refundTo,
+            snapshot,
+            checkedAt,
+          );
+        case null:
+          return;
+      }
     },
     lifecycle: ref.read(ledgerOperationLifecycleProvider),
-    onIntentsPersisted: (accountUuid, intents) async {
-      if (ref.read(appSecurityProvider).requiresUnlock ||
-          !ref
-              .read(swapReceiveReservationServiceProvider)
-              .supportsAccount(accountUuid)) {
-        return;
-      }
-      final dbPath = await getWalletDbPath();
-      final network = ref.read(rpcEndpointFailoverProvider).current.networkName;
-      for (final intent in intents) {
-        final status = swapScanningProviderStatus(
-          intent.providerStatusRaw,
-          localStatus: intent.status,
-        );
-        final address = intent.oneClickRefundTo;
-        final observedAt = intent.lastStatusCheckedAt ?? intent.createdAt;
-        // Incoming quotes record their statuses through their reservation.
-        if (intent.direction?.sendsZec != true ||
-            status == null ||
-            address == null ||
-            observedAt == null ||
-            intent.statusError != null) {
-          continue;
-        }
-        await rust_sync.observeSwapReceivingOperation(
-          dbPath: dbPath,
-          network: network,
-          accountUuid: accountUuid,
-          operationId: intent.depositAddress ?? intent.id,
-          address: address,
-          status: SwapProviderStatus(
-            status: status,
-            swapType: intent.providerSwapType,
-            refundedAmount: intent.refundedAmountBaseUnits,
-            deadlineSeconds: switch (intent.depositDeadline) {
-              final deadline? => unixSeconds(deadline),
-              null => null,
-            },
-          ),
-          observedAtSeconds: unixSeconds(observedAt),
-        );
-      }
-    },
     swapProvider: ref.read(swapIntentProvider),
     isTorEnabled: () => ref.read(networkPrivacyProvider).torEnabled,
     onRecordsChanged: () {
@@ -239,15 +195,13 @@ class SwapActivityTracker {
     Future<void> Function(String)? reconcileReceiveReservations,
     Future<void> Function(SwapIntent, SwapIntentSnapshot, DateTime)?
     onProviderSnapshot,
-    Future<void> Function(String, List<SwapIntent>)? onIntentsPersisted,
   }) : _activityStore = activityStore,
        _swapProvider = swapProvider,
        _isTorEnabled = isTorEnabled,
        _onRecordsChanged = onRecordsChanged,
        _lifecycle = lifecycle,
        _reconcileReceiveReservations = reconcileReceiveReservations,
-       _onProviderSnapshot = onProviderSnapshot,
-       _onIntentsPersisted = onIntentsPersisted;
+       _onProviderSnapshot = onProviderSnapshot;
 
   final Future<void> Function(SwapIntent, SwapIntentSnapshot, DateTime)?
   _onProviderSnapshot;
@@ -257,7 +211,6 @@ class SwapActivityTracker {
   }
 
   final LedgerOperationLifecycle? _lifecycle;
-  final Future<void> Function(String, List<SwapIntent>)? _onIntentsPersisted;
 
   // Share the wallet deletion drain with durable send operations. Acquire before
   // the first await, including status requests whose results later write state.
@@ -287,23 +240,17 @@ class SwapActivityTracker {
     final records = await _activityStore.loadRecords(
       accountUuid: scopedAccountUuid,
     );
-    final intents = _intentsFromRecords(records);
-    _replayStatuses(scopedAccountUuid, intents);
-    return intents;
+    return _intentsFromRecords(records);
   }
 
-  /// Replays provider statuses into the wallet without holding up the activity
-  /// they describe, since the wallet write can wait behind sync. The replay stays
-  /// registered with the lifecycle, so wallet changes still wait for it, and a
-  /// failure is retried on the next load or save.
-  void _replayStatuses(String accountUuid, List<SwapIntent> intents) {
-    final replay = _onIntentsPersisted;
-    if (replay == null) return;
-    unawaited(
-      _run(() => replay(accountUuid, intents)).catchError((Object error) {
-        log('Swap: status replay deferred error=$error');
-      }),
-    );
+  /// Hands a provider status, fetched at `checkedAt`, to the wallet. A failure
+  /// fails the refresh that fetched it, which is retried.
+  Future<void> recordProviderSnapshot(
+    SwapIntent intent,
+    SwapIntentSnapshot snapshot,
+    DateTime checkedAt,
+  ) async {
+    await _onProviderSnapshot?.call(intent, snapshot, checkedAt);
   }
 
   Future<void> saveIntents({
@@ -332,7 +279,6 @@ class SwapActivityTracker {
           ),
       ],
     );
-    _replayStatuses(scopedAccountUuid, persistable);
     _onRecordsChanged?.call();
   }
 
@@ -480,7 +426,7 @@ class SwapActivityTracker {
       _providerDepositAddress(intent),
       depositMemo: intent.depositMemo,
     );
-    await _onProviderSnapshot?.call(
+    await recordProviderSnapshot(
       intent,
       snapshot,
       checkedAt ?? DateTime.now().toUtc(),

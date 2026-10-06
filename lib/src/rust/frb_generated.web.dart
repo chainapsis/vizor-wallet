@@ -1075,9 +1075,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ReceiveError dco_decode_receive_error(dynamic raw);
 
   @protected
-  ReceiveErrorCode dco_decode_receive_error_code(dynamic raw);
-
-  @protected
   ReceiveQuoteStatusRequest dco_decode_receive_quote_status_request(
     dynamic raw,
   );
@@ -2646,9 +2643,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ReceiveError sse_decode_receive_error(SseDeserializer deserializer);
-
-  @protected
-  ReceiveErrorCode sse_decode_receive_error_code(SseDeserializer deserializer);
 
   @protected
   ReceiveQuoteStatusRequest sse_decode_receive_quote_status_request(
@@ -4568,12 +4562,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_receive_error(ReceiveError self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_receive_error_code(
-    ReceiveErrorCode self,
-    SseSerializer serializer,
-  );
 
   @protected
   void sse_encode_receive_quote_status_request(

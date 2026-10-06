@@ -1,14 +1,14 @@
+import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
+    show PlatformInt64;
 import 'package:zcash_wallet/src/rust/wallet/swap_receiving/receive.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/swap/domain/swap_contract.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_receive_reservation_service.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_zec_staging_address_service.dart';
 
 void main() {
   test('typed allocation failures preserve the display message', () {
-    const cause = ReceiveError(
-      code: ReceiveErrorCode.stale,
-      message: 'Choose another quote.',
-    );
+    const cause = ReceiveError(message: 'Choose another quote.');
     expect(
       const SwapZecStagingAddressUnavailableException(cause).toString(),
       'Choose another quote.',
@@ -48,13 +48,10 @@ void main() {
 
   test('records refund quotes for reserved refund keys only', () async {
     final recorded = <String>[];
-    final quoted = <String>[];
+    final reservations = _Reservations();
     final service = SwapZecStagingAddressService(
       reserveFreshOrchardAddress: ({required accountUuid}) async => 'ordinary',
-      quoteWithReservation: (account, address, fetch) {
-        quoted.add(address.address);
-        return fetch(null);
-      },
+      reservations: reservations,
       recordRefundQuote: (account, index, quote) async {
         recorded.add('$account:$index:${quote.depositInstruction.address}');
       },
@@ -78,17 +75,55 @@ void main() {
         deadline: DateTime.utc(2026, 10),
       ),
     );
-    for (final address in [
+    final refund = await service.quote(
+      'software',
       SwapZecStagingAddress(address: 'refund', receivingIndex: BigInt.from(7)),
+      (_) async => quote,
+    );
+    expect(refund.swapRefundIndex, BigInt.from(7));
+    for (final address in [
       const SwapZecStagingAddress(address: 'incoming', reservationId: 1),
       const SwapZecStagingAddress(address: 'ordinary'),
     ]) {
       expect(
         await service.quote('software', address, (_) async => quote),
-        quote,
+        same(quote),
       );
     }
-    expect(quoted, ['refund', 'incoming', 'ordinary']);
+    expect(reservations.quoted, [1]);
+    expect(recorded, ['software:7:t1deposit']);
+    // The funding transaction cannot carry a deposit memo.
+    final withMemo = SwapQuote(
+      direction: quote.direction,
+      sellAsset: quote.sellAsset,
+      receiveAsset: quote.receiveAsset,
+      externalAsset: quote.externalAsset,
+      sellAmount: quote.sellAmount,
+      receiveAmount: quote.receiveAmount,
+      minimumReceiveAmount: quote.minimumReceiveAmount,
+      providerLabel: quote.providerLabel,
+      feeLabel: quote.feeLabel,
+      expiryLabel: quote.expiryLabel,
+      depositInstruction: SwapDepositInstruction(
+        asset: SwapAsset.zec,
+        address: 't1deposit',
+        expiresInLabel: '10:00',
+        reuseWarning: '',
+        memo: 'memo',
+        deadline: DateTime.utc(2026, 10),
+      ),
+    );
+    await expectLater(
+      service.quote(
+        'software',
+        SwapZecStagingAddress(
+          address: 'refund',
+          receivingIndex: BigInt.from(8),
+        ),
+        (_) async => withMemo,
+      ),
+      throwsStateError,
+    );
     expect(recorded, ['software:7:t1deposit']);
   });
 
@@ -177,4 +212,19 @@ void main() {
       expect(plan.oneClickRefundTo, '0xrefund');
     },
   );
+}
+
+/// Quotes an incoming reservation without a wallet, recording which it quoted.
+class _Reservations extends Fake implements SwapReceiveReservationService {
+  final quoted = <PlatformInt64>[];
+
+  @override
+  Future<SwapQuote> quote(
+    String account,
+    PlatformInt64 reservation,
+    Future<SwapQuote> Function(SwapQuoteSendHook beforeSend) fetch,
+  ) {
+    quoted.add(reservation);
+    return fetch((_) async {});
+  }
 }

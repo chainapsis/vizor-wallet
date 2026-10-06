@@ -104,14 +104,13 @@ fn open_wallet_db_for_init(
     db_path: &str,
     network: WalletNetwork,
 ) -> Result<WalletDatabase, String> {
-    reject_legacy_swap_poc(db_path)?;
+    reject_prerelease_swap_database(db_path)?;
     open_wallet_db_with_timeout(db_path, network, WALLET_DB_BUSY_TIMEOUT)
 }
 
-/// The earlier local POC reused prerelease migrations. Until its upgrade is
-/// qualified, preserve that wallet and require a separate recovery test identity.
-/// Databases from later swap prereleases cannot migrate and need a fresh restore.
-fn reject_legacy_swap_poc(db_path: &str) -> Result<(), String> {
+/// Databases from swap receiving prereleases cannot migrate and need a fresh restore
+/// from the recovery phrase. The check reads the database without changing it.
+fn reject_prerelease_swap_database(db_path: &str) -> Result<(), String> {
     if !std::path::Path::new(db_path).exists() {
         return Ok(());
     }
@@ -130,15 +129,11 @@ fn reject_legacy_swap_poc(db_path: &str) -> Result<(), String> {
         let mut stmt = conn
             .prepare("SELECT EXISTS(SELECT 1 FROM schemer_migrations WHERE id=?1)")
             .map_err(|e| e.to_string())?;
-        let mut applied = |id: u128| -> Result<bool, String> {
-            stmt.query_row([uuid::Uuid::from_u128(id).as_bytes()], |r| r.get(0))
-                .map_err(|e| e.to_string())
-        };
-        if applied(LEGACY_SWAP_POC_MIGRATION)? {
-            return Err("This wallet uses the earlier swap POC database. Preserve it and use a separate wallet identity for private recovery testing.".into());
-        }
         for id in PRERELEASE_SWAP_MIGRATIONS {
-            if applied(id)? {
+            let applied: bool = stmt
+                .query_row([uuid::Uuid::from_u128(id).as_bytes()], |r| r.get(0))
+                .map_err(|e| e.to_string())?;
+            if applied {
                 return Err("This wallet database comes from a swap receiving prerelease. Restore the wallet from its recovery phrase into a new database.".into());
             }
         }
@@ -146,13 +141,10 @@ fn reject_legacy_swap_poc(db_path: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// The migration that only the earlier local swap POC applied.
-const LEGACY_SWAP_POC_MIGRATION: u128 = 0x2eac815d_67ca_4fb4_b534_066102a0fba2;
-
-/// Swap migrations from prerelease builds, since replaced by one migration
-/// whose tables they already created. All but the last stored keys derived
-/// with the prerelease HMAC KDF.
-const PRERELEASE_SWAP_MIGRATIONS: [u128; 15] = [
+/// Swap migrations from prerelease builds, each since replaced by the released one.
+/// The first came from the earlier local POC.
+const PRERELEASE_SWAP_MIGRATIONS: [u128; 17] = [
+    0x2eac815d_67ca_4fb4_b534_066102a0fba2,
     0x36463314_9e3c_4544_8d2b_65bcc2601da2,
     0x7aec2ef0_6b82_40f0_a1a4_47c1330b6813,
     0x75ea2907_2b95_4ba9_af1e_c7a80b4d2136,
@@ -168,6 +160,7 @@ const PRERELEASE_SWAP_MIGRATIONS: [u128; 15] = [
     0x5af803d8_d1b5_4637_8909_66a49b7f081a,
     0x02dbf60f_b9bc_42bd_82d9_f7939391c28b,
     0x75bb24bd_c390_4791_9694_368a878a7b76,
+    0x19038f09_9eba_45e6_bf67_e8a912a82f99,
 ];
 
 fn open_wallet_db_for_mutation(
@@ -3595,36 +3588,25 @@ mod tests {
 #[cfg(test)]
 mod swap_upgrade_gate_tests {
     #[test]
-    fn legacy_swap_database_is_rejected_without_modification() {
-        let file = tempfile::NamedTempFile::new().unwrap();
-        let conn = rusqlite::Connection::open(file.path()).unwrap();
-        conn.execute_batch("CREATE TABLE schemer_migrations(id BLOB PRIMARY KEY)")
+    fn prerelease_swap_database_requires_restore_without_modification() {
+        let ids = super::PRERELEASE_SWAP_MIGRATIONS;
+        for id in [ids[0], ids[ids.len() - 1]] {
+            let file = tempfile::NamedTempFile::new().unwrap();
+            let path = file.path().to_str().unwrap();
+            let conn = rusqlite::Connection::open(path).unwrap();
+            conn.execute_batch("CREATE TABLE schemer_migrations(id BLOB PRIMARY KEY)")
+                .unwrap();
+            assert!(super::reject_prerelease_swap_database(path).is_ok());
+            conn.execute(
+                "INSERT INTO schemer_migrations VALUES (?1)",
+                [uuid::Uuid::from_u128(id).as_bytes()],
+            )
             .unwrap();
-        conn.execute(
-            "INSERT INTO schemer_migrations VALUES (?1)",
-            [uuid::Uuid::from_u128(super::LEGACY_SWAP_POC_MIGRATION).as_bytes()],
-        )
-        .unwrap();
-        drop(conn);
-        let before = std::fs::read(file.path()).unwrap();
-        assert!(super::reject_legacy_swap_poc(file.path().to_str().unwrap()).is_err());
-        assert_eq!(before, std::fs::read(file.path()).unwrap());
-    }
-
-    #[test]
-    fn prerelease_swap_database_requires_restore() {
-        let file = tempfile::NamedTempFile::new().unwrap();
-        let conn = rusqlite::Connection::open(file.path()).unwrap();
-        conn.execute_batch("CREATE TABLE schemer_migrations(id BLOB PRIMARY KEY)")
-            .unwrap();
-        let path = file.path().to_str().unwrap();
-        assert!(super::reject_legacy_swap_poc(path).is_ok());
-        conn.execute(
-            "INSERT INTO schemer_migrations VALUES (?1)",
-            [uuid::Uuid::from_u128(super::PRERELEASE_SWAP_MIGRATIONS[14]).as_bytes()],
-        )
-        .unwrap();
-        let error = super::reject_legacy_swap_poc(path).unwrap_err();
-        assert!(error.contains("recovery phrase"));
+            drop(conn);
+            let before = std::fs::read(path).unwrap();
+            let error = super::reject_prerelease_swap_database(path).unwrap_err();
+            assert!(error.contains("recovery phrase"));
+            assert_eq!(before, std::fs::read(path).unwrap());
+        }
     }
 }

@@ -6,23 +6,19 @@
 import '../../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
+/// A swap receiving failure. `message` is display text, never a parsing protocol.
 class ReceiveError implements FrbException {
-  final ReceiveErrorCode code;
   final String message;
 
-  const ReceiveError({required this.code, required this.message});
+  const ReceiveError({required this.message});
 
   @override
-  int get hashCode => code.hashCode ^ message.hashCode;
+  int get hashCode => message.hashCode;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is ReceiveError &&
           runtimeType == other.runtimeType &&
-          code == other.code &&
           message == other.message;
 }
-
-/// Stable UI classification. Messages are display text, never a parsing protocol.
-enum ReceiveErrorCode { gap, limit, stale, coverage, other }

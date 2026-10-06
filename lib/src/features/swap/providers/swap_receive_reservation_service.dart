@@ -78,8 +78,30 @@ abstract interface class ReceiveReservationStore {
     SwapIntentSnapshot snapshot,
     DateTime checkedAt,
   );
+
+  /// Records a refund quote's provider status on the refund key behind
+  /// `refundAddress`.
+  Future<void> observeRefund(
+    String operation,
+    String refundAddress,
+    SwapIntentSnapshot snapshot,
+    DateTime checkedAt,
+  );
   Future<void> reap();
 }
+
+/// The fields of `snapshot` that decide when a swap key stops scanning.
+api.SwapProviderStatus _providerStatus(SwapIntentSnapshot snapshot) =>
+    api.SwapProviderStatus(
+      status: snapshot.providerStatusRaw ?? 'UNKNOWN',
+      swapType: snapshot.providerSwapType,
+      refundedAmount: snapshot.refundedAmountBaseUnits,
+      amountOut: snapshot.amountOutBaseUnits,
+      deadlineSeconds: switch (snapshot.depositInstruction.deadline) {
+        final deadline? => unixSeconds(deadline),
+        null => null,
+      },
+    );
 
 class RustReceiveReservationStore implements ReceiveReservationStore {
   const RustReceiveReservationStore(this.path, this.network, this.account);
@@ -147,22 +169,28 @@ class RustReceiveReservationStore implements ReceiveReservationStore {
     networkName: network,
     accountUuid: account,
     requestId: request,
-    status: api.SwapProviderStatus(
-      status: snapshot.providerStatusRaw ?? 'UNKNOWN',
-      swapType: snapshot.providerSwapType,
-      refundedAmount: snapshot.refundedAmountBaseUnits,
-      amountOut: snapshot.amountOutBaseUnits,
-      deadlineSeconds: switch (snapshot.depositInstruction.deadline) {
-        final deadline? => unixSeconds(deadline),
-        null => null,
-      },
-    ),
+    status: _providerStatus(snapshot),
     funded: swapHasProviderObservedDepositEvidence(
       status: snapshot.status,
       originChainTxHash: snapshot.originChainTxHash,
       depositedAmountText: snapshot.providerRefundInfo?.depositedAmountText,
     ),
     checkedAtSeconds: unixSeconds(checkedAt),
+  );
+  @override
+  Future<void> observeRefund(
+    String operation,
+    String refundAddress,
+    SwapIntentSnapshot snapshot,
+    DateTime checkedAt,
+  ) => api.observeSwapRefundQuote(
+    dbPath: path,
+    networkName: network,
+    accountUuid: account,
+    operationId: operation,
+    refundAddress: refundAddress,
+    status: _providerStatus(snapshot),
+    observedAtSeconds: unixSeconds(checkedAt),
   );
   @override
   Future<void> reap() => api.reapReceiveReservations(
@@ -262,6 +290,22 @@ class SwapReceiveReservationService {
         }
       }
     });
+  }
+
+  /// Records a refund quote's provider status on its refund key, as it is fetched.
+  Future<void> observeRefundStatus(
+    String account,
+    String operation,
+    String refundAddress,
+    SwapIntentSnapshot snapshot,
+    DateTime checkedAt,
+  ) async {
+    if (!supportsAccount(account)) return;
+    await _run(
+      () async => (await store(
+        account,
+      )).observeRefund(operation, refundAddress, snapshot, checkedAt),
+    );
   }
 
   /// Reconciles provider records even when the activity UI considers them expired.

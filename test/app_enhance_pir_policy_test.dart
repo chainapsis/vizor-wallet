@@ -9,21 +9,19 @@ import 'package:zcash_wallet/src/core/storage/enhance_pir_preference_store.dart'
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 
-AppBootstrapState _ready({required bool enabled, bool swap = false}) =>
-    AppBootstrapState(
-      initialLocation: '/home',
-      initialAccountState: const AccountState(),
-      initialSyncSnapshot: AppSyncSnapshot.empty,
-      network: 'main',
-      rpcEndpointConfig: defaultRpcEndpointConfig('main'),
-      themeMode: ThemeMode.system,
-      privacyModeEnabled: false,
-      isPasswordConfigured: true,
-      isUnlocked: true,
-      passwordRotationRecoveryFailed: false,
-      enhancePirEnabled: enabled,
-      nearSwapPrivacyEnabled: swap,
-    );
+AppBootstrapState _ready({required bool enabled}) => AppBootstrapState(
+  initialLocation: '/home',
+  initialAccountState: const AccountState(),
+  initialSyncSnapshot: AppSyncSnapshot.empty,
+  network: 'main',
+  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  themeMode: ThemeMode.system,
+  privacyModeEnabled: false,
+  isPasswordConfigured: true,
+  isUnlocked: true,
+  passwordRotationRecoveryFailed: false,
+  enhancePirEnabled: enabled,
+);
 
 void main() {
   late List<String> applied;
@@ -36,19 +34,6 @@ void main() {
   );
 
   setUp(() => applied = []);
-
-  test('startup applies swap opt-in only with Private queries', () async {
-    final values = <bool>[];
-    for (final parent in [false, true]) {
-      await applyEnhancePirPolicy(
-        _ready(enabled: parent, swap: true),
-        setRustEnabled: (_) {},
-        setRustSwapPrivacyEnabled: values.add,
-        setNativePrivateRecovery: (_) async {},
-      );
-    }
-    expect(values, [false, isEnhancePirAvailableForNetwork('main')]);
-  });
 
   for (final kind in AppBootstrapFailureKind.values) {
     test(

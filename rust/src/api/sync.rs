@@ -12,9 +12,8 @@ use crate::wallet::{keys, network::WalletNetwork, secret_store, sync as wallet_s
 // ======================== Sync Mode ========================
 // 0 = None, 1 = Foreground, 2 = Background
 pub(crate) static DESIRED_SYNC_MODE: AtomicU8 = AtomicU8::new(0);
-static PRIVACY_SETTINGS: AtomicU8 = AtomicU8::new(0);
-const PRIVATE_QUERIES: u8 = 1;
-const NEAR_SWAP_PRIVACY: u8 = 2;
+static PRIVATE_QUERIES: AtomicBool = AtomicBool::new(false);
+static NEAR_SWAP_PRIVACY: AtomicBool = AtomicBool::new(false);
 static ACTIVE_SYNC_ACCOUNT: std::sync::LazyLock<sync_engine::ActiveSyncAccountTarget> =
     std::sync::LazyLock::new(|| Arc::new(RwLock::new(None)));
 static PAYMENT_LINK_CLAIM_SYNCS: std::sync::LazyLock<Mutex<HashMap<String, Arc<AtomicBool>>>> =
@@ -45,16 +44,11 @@ pub fn set_active_sync_account(account_uuid: Option<String>) {
 /// Enable private Ironwood transaction enhancement for future sync work.
 #[frb(sync)]
 pub fn set_enhance_pir_enabled(enabled: bool) {
-    if enabled {
-        PRIVACY_SETTINGS.fetch_or(PRIVATE_QUERIES, Ordering::SeqCst);
-    } else {
-        // NEAR swap privacy requires Private queries.
-        PRIVACY_SETTINGS.store(0, Ordering::SeqCst);
-    }
+    PRIVATE_QUERIES.store(enabled, Ordering::SeqCst);
 }
 
 pub(crate) fn enhance_pir_enabled() -> bool {
-    PRIVACY_SETTINGS.load(Ordering::SeqCst) & PRIVATE_QUERIES != 0
+    PRIVATE_QUERIES.load(Ordering::SeqCst)
 }
 
 // ======================== Full Sync ========================
@@ -3128,114 +3122,15 @@ pub fn get_enhance_recovery_status(
     sync_engine::enhance_recovery_status(&db_path, network)
 }
 
-/// Whether new private swap addresses may be issued.
-#[frb(sync)]
-pub fn near_swap_privacy_enabled() -> bool {
-    PRIVACY_SETTINGS.load(Ordering::SeqCst) & NEAR_SWAP_PRIVACY != 0
-}
-
-/// New private swap addresses require Private queries. Existing keys remain stored.
+/// Allow new private swap addresses, which also need Private queries (see
+/// `require_new_address`). Existing keys remain stored either way.
 #[frb(sync)]
 pub fn set_near_swap_privacy_enabled(enabled: bool) {
-    PRIVACY_SETTINGS
-        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |current| {
-            Some(near_swap_setting(current, enabled))
-        })
-        .unwrap();
+    NEAR_SWAP_PRIVACY.store(enabled, Ordering::SeqCst);
 }
 
-fn near_swap_setting(current: u8, enabled: bool) -> u8 {
-    if enabled && current & PRIVATE_QUERIES != 0 {
-        current | NEAR_SWAP_PRIVACY
-    } else {
-        current & !NEAR_SWAP_PRIVACY
-    }
-}
-
-/// Queues one receiver PIR sweep of every closed swap key for the next sync, which
-/// finds a second refund or a late payout that arrived after its key stopped
-/// scanning. Called when the user turns NEAR swap privacy on.
-pub fn recheck_swap_history(db_path: String, network: String) -> Result<(), String> {
-    catch(|| {
-        // Without a wallet there is nothing to recheck; do not create its database.
-        if !keys::wallet_exists(&db_path) {
-            return Ok(());
-        }
-        let network = parse_network_and_migrate(&db_path, &network)?;
-        let queued = crate::wallet::swap_receiving::recheck_history(&db_path, network)?;
-        log::info!("Queued {queued} swap key rechecks");
-        Ok(())
-    })
-}
-
-/// A durably reserved refund address and its key index.
-pub struct SwapReceivingAddress {
-    pub address: String,
-    pub index: u64,
-}
-
-/// Reserves the next refund address. Its key starts scanning when the wallet stores
-/// the swap's funding transaction. `live_tip` is the chain tip the quote flow fetched.
-pub fn reserve_swap_receiving_address(
-    db_path: String,
-    network: String,
-    account_uuid: String,
-    live_tip: u64,
-) -> Result<SwapReceivingAddress, String> {
-    catch(|| {
-        let network = parse_network_and_migrate(&db_path, &network)?;
-        let (address, index) =
-            crate::wallet::swap_receiving::reserve(&db_path, network, &account_uuid, live_tip)?;
-        Ok(SwapReceivingAddress { address, index })
-    })
-}
-
-/// Binds an accepted refund quote's deposit address to the refund key reserved for
-/// it, before the quote is shown. Funding requires this record.
-pub fn record_swap_refund_quote(
-    db_path: String,
-    network: String,
-    account_uuid: String,
-    refund_index: u64,
-    deposit_address: String,
-    deadline_seconds: i64,
-) -> Result<(), String> {
-    catch(|| {
-        let network = parse_network_and_migrate(&db_path, &network)?;
-        crate::wallet::swap_receiving::record_refund_quote(
-            &db_path,
-            network,
-            &account_uuid,
-            refund_index,
-            &deposit_address,
-            deadline_seconds,
-        )
-    })
-}
-
-/// Records a provider status for the refund key behind `address`, ignoring
-/// unrecognized statuses. Do not call it for a failed status request.
-pub fn observe_swap_receiving_operation(
-    db_path: String,
-    network: String,
-    account_uuid: String,
-    operation_id: String,
-    address: String,
-    status: crate::api::swap_receive::SwapProviderStatus,
-    observed_at_seconds: i64,
-) -> Result<(), String> {
-    catch(|| {
-        let network = parse_network_and_migrate(&db_path, &network)?;
-        crate::wallet::swap_receiving::observe_operation(
-            &db_path,
-            network,
-            &account_uuid,
-            &operation_id,
-            &address,
-            &status,
-            observed_at_seconds,
-        )
-    })
+pub(crate) fn near_swap_privacy_enabled() -> bool {
+    NEAR_SWAP_PRIVACY.load(Ordering::SeqCst)
 }
 
 /// Same software send lifecycle, with an authenticated refund record on change.
@@ -3287,15 +3182,4 @@ pub fn estimate_swap_funding_fee(
             refund_index,
         )
     })
-}
-
-#[cfg(test)]
-mod swap_privacy_setting_tests {
-    use super::*;
-    #[test]
-    fn private_queries_is_required_for_swap_privacy() {
-        assert_eq!(near_swap_setting(0, true), 0);
-        assert_eq!(near_swap_setting(PRIVATE_QUERIES, true), 3);
-        assert_eq!(near_swap_setting(3, false), PRIVATE_QUERIES);
-    }
 }

@@ -1,18 +1,10 @@
-//! Incoming address lifecycle. Provider polling stays in Dart; allocation is durable in Rust.
+//! Helpers shared by the swap receiving FFI. Provider polling stays in Dart; allocation
+//! is durable in Rust.
 use super::*;
 
-/// Stable UI classification. Messages are display text, never a parsing protocol.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ReceiveErrorCode {
-    Gap,
-    Limit,
-    Stale,
-    Coverage,
-    Other,
-}
+/// A swap receiving failure. `message` is display text, never a parsing protocol.
 #[derive(Clone, Debug)]
 pub struct ReceiveError {
-    pub code: ReceiveErrorCode,
     pub message: String,
 }
 impl std::fmt::Display for ReceiveError {
@@ -23,10 +15,7 @@ impl std::fmt::Display for ReceiveError {
 impl std::error::Error for ReceiveError {}
 impl From<String> for ReceiveError {
     fn from(message: String) -> Self {
-        Self {
-            code: ReceiveErrorCode::Other,
-            message,
-        }
+        Self { message }
     }
 }
 impl From<&str> for ReceiveError {
@@ -34,30 +23,9 @@ impl From<&str> for ReceiveError {
         message.to_owned().into()
     }
 }
-impl From<zcash_client_sqlite::wallet::swap_receiving::ReservationPolicy> for ReceiveError {
-    fn from(policy: zcash_client_sqlite::wallet::swap_receiving::ReservationPolicy) -> Self {
-        use zcash_client_sqlite::wallet::swap_receiving::ReservationPolicy as P;
-        let code = match policy {
-            P::Gap => ReceiveErrorCode::Gap,
-            P::Limit => ReceiveErrorCode::Limit,
-            P::Stale => ReceiveErrorCode::Stale,
-            P::Coverage => ReceiveErrorCode::Coverage,
-            P::Unreadable => ReceiveErrorCode::Other,
-        };
-        Self {
-            code,
-            message: policy.to_string(),
-        }
-    }
-}
 impl From<zcash_client_sqlite::wallet::swap_receiving::Error> for ReceiveError {
     fn from(error: zcash_client_sqlite::wallet::swap_receiving::Error) -> Self {
-        if let zcash_client_sqlite::wallet::swap_receiving::Error::ReservationPolicy(policy) = error
-        {
-            policy.into()
-        } else {
-            error.to_string().into()
-        }
+        error.to_string().into()
     }
 }
 pub(crate) fn now() -> Result<i64, String> {

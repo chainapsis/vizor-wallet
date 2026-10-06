@@ -1,6 +1,4 @@
-import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:zcash_wallet/src/features/ledger/services/ledger_operation_lifecycle.dart';
 import 'package:zcash_wallet/src/features/swap/integrations/near_intents/near_intents_one_click_swap_adapter.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_deposit_broadcast_result.dart';
@@ -8,92 +6,6 @@ import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dar
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_tracker.dart';
 
 void main() {
-  test(
-    'new quotes start pending and local expiry does not invent an outcome',
-    () {
-      expect(
-        swapScanningProviderStatus(
-          null,
-          localStatus: SwapIntentStatus.awaitingDeposit,
-        ),
-        'PENDING_DEPOSIT',
-      );
-      expect(
-        swapScanningProviderStatus(null, localStatus: SwapIntentStatus.expired),
-        isNull,
-      );
-      expect(swapScanningProviderStatus('REFUNDED'), 'REFUNDED');
-      expect(swapScanningProviderStatus('UNKNOWN'), 'UNKNOWN');
-    },
-  );
-
-  test(
-    'replays persisted terminal records and drains lifecycle writes before reset',
-    () async {
-      final lifecycle = LedgerOperationLifecycle();
-      final writing = Completer<void>();
-      final release = Completer<void>();
-      final store = _MemorySwapActivityStore();
-      final saved = _intent(
-        id: 'done',
-        depositAddress: 'deposit',
-        status: SwapIntentStatus.complete,
-      ).copyWith(providerStatusRaw: 'SUCCESS');
-      store.savedRecords = [SwapIntentRecord.fromIntent(saved)];
-      var calls = 0;
-      final tracker = SwapActivityTracker(
-        activityStore: store,
-        swapProvider: _StatusSwapProvider({}),
-        lifecycle: lifecycle,
-        onIntentsPersisted: (account, intents) async {
-          expect(account, 'account-1');
-          expect(intents.single.providerStatusRaw, 'SUCCESS');
-          calls++;
-          writing.complete();
-          await release.future;
-        },
-      );
-      final load = tracker.loadIntents(accountUuid: 'account-1');
-      await writing.future;
-      var drained = false;
-      final drain = lifecycle.quiesceAndDrain().then((_) => drained = true);
-      await Future<void>.delayed(Duration.zero);
-      expect(drained, false);
-      await expectLater(
-        tracker.loadIntents(accountUuid: 'account-1'),
-        throwsStateError,
-      );
-      release.complete();
-      expect(await load, hasLength(1));
-      await drain;
-      expect(calls, 1);
-      expect(drained, true);
-      lifecycle.resume();
-    },
-  );
-
-  test(
-    'loads activity while the wallet status replay waits or fails',
-    () async {
-      final store = _MemorySwapActivityStore()
-        ..savedRecords = [
-          SwapIntentRecord.fromIntent(_intent(id: 'open', depositAddress: 'a')),
-        ];
-      final stalled = SwapActivityTracker(
-        activityStore: store,
-        swapProvider: _StatusSwapProvider({}),
-        onIntentsPersisted: (account, intents) => Completer<void>().future,
-      );
-      expect(await stalled.loadIntents(accountUuid: 'account-1'), hasLength(1));
-      final failing = SwapActivityTracker(
-        activityStore: store,
-        swapProvider: _StatusSwapProvider({}),
-        onIntentsPersisted: (account, intents) async => throw StateError('db'),
-      );
-      expect(await failing.loadIntents(accountUuid: 'account-1'), hasLength(1));
-    },
-  );
-
   test(
     'reconciles abandoned reservations even without visible activity',
     () async {
