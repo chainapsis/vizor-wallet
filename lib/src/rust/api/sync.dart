@@ -1244,8 +1244,8 @@ Future<void> recheckSwapHistory({
   network: network,
 );
 
-/// Reserves the next refund address, scanned from the next unscanned block until
-/// its swap closes. `live_tip` is the chain tip the quote flow fetched.
+/// Reserves the next refund address. Its key starts scanning when the wallet stores
+/// the swap's funding transaction. `live_tip` is the chain tip the quote flow fetched.
 Future<SwapReceivingAddress> reserveSwapReceivingAddress({
   required String dbPath,
   required String network,

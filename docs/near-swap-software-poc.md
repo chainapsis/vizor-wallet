@@ -41,26 +41,29 @@ and the 24-hour, 15-reservation, and 30-slot incoming-address policy.
 1. The first quote obtains the live chain height without updating the wallet tip
    or starting sync. A new reservation requires contiguous scanning within ten
    blocks of the newer RPC/DB tip and no pending transaction enhancement. It
-   recovers confirmed funding records, then reserves the next index, scanning it
-   from the first unscanned block until its swap closes. This is a near-tip
-   policy, not a guarantee that an independently restored wallet has discovered
-   allocations in the tail.
+   recovers confirmed funding records, then reserves the next index. An incoming
+   key scans from the first unscanned block until its swap closes; a refund key
+   starts when the wallet stores the swap's funding transaction. This is a
+   near-tip policy, not a guarantee that an independently restored wallet has
+   discovered allocations in the tail.
    Refunds and incoming payments use independent sequences. Quote errors, amount
    edits, and refreshes retain the same reservation for the current account and
    direction, including while address preparation is in flight. Starting a swap,
    requesting a quote for another account/direction, or restarting the app
    requires a new refund reservation. The incoming draft is stored in the wallet
    and resumed after any of these until a swap starts with it.
-   Existing reservations remain scanned; errors never roll back a key that may
+   Existing reservations stay reserved; errors never roll back a key that may
    already have been sent to the provider. A retained refund address needs no
    further readiness check, but every incoming quote rechecks that its address is
    unpaid and the wallet is scanned to the tip.
 2. An accepted refund quote records its deposit address against the reserved
-   refund key before it is shown, and funding requires that record. An unfunded
-   quote holds no key open. Outgoing fee estimation and funding use the same
-   normal proposal pipeline with a binary recovery memo on ordinary internal
-   Ironwood change. The proposal must include that memo in the transaction paying
-   the deposit address. A zero-value change note is valid. Multi-step funding,
+   refund key before it is shown, and funding requires that record. A refund can
+   only follow a deposit, so storing the funding transaction starts the refund
+   key, from the first block above the scanned chain, and an unfunded quote
+   never starts it. Outgoing fee estimation and funding use the same normal
+   proposal pipeline with a binary recovery memo on ordinary internal Ironwood
+   change. The proposal must include that memo in the transaction paying the
+   deposit address. A zero-value change note is valid. Multi-step funding,
    non-transparent deposit addresses and deposit instructions requiring a
    separate memo are rejected in this POC.
 3. Every software restore registers 30 incoming lookahead keys from the account

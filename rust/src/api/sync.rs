@@ -3174,8 +3174,8 @@ pub struct SwapReceivingAddress {
     pub index: u64,
 }
 
-/// Reserves the next refund address, scanned from the next unscanned block until
-/// its swap closes. `live_tip` is the chain tip the quote flow fetched.
+/// Reserves the next refund address. Its key starts scanning when the wallet stores
+/// the swap's funding transaction. `live_tip` is the chain tip the quote flow fetched.
 pub fn reserve_swap_receiving_address(
     db_path: String,
     network: String,

@@ -297,6 +297,14 @@ mod tests {
             .reserve_swap_refund_key(account, BlockHeight::from_u32(111))
             .unwrap()
             .key_id();
+        // Storing the swap's funding transaction starts the key; model that here.
+        rusqlite::Connection::open(path)
+            .unwrap()
+            .execute(
+                "UPDATE ironwood_receiving_keys SET active_from = 111 WHERE purpose = 0",
+                [],
+            )
+            .unwrap();
         // The quote's limit passed while the app was closed.
         let deadline = receive::now().unwrap() - CompletionPolicy::default().limit_secs - 60;
         let pending = Observation {

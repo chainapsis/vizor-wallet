@@ -9,7 +9,8 @@ recovery phrase into a new database.
 
 Swap keys issued on this device never use the directory. They are trial-decrypted
 from issuance until their swap closes, including while catching up after time
-offline. The directory is used only for keys recovered from the seed.
+offline; a refund key starts when the wallet stores the swap's funding
+transaction. The directory is used only for keys recovered from the seed.
 
 ## Recovery flow
 
@@ -94,19 +95,19 @@ POC database with this build or reuse its secure-store namespace.
 ## POC boundaries
 
 Keys issued on this device are trial-decrypted with no key-count cap until their
-swap closes. A key closes as soon as every provider status on it is final and
-its expected Zcash receipts have 10 confirmations, the ZIP 315 depth for
-untrusted notes, so a reorg cannot strand a receipt on a closed key. Refunds,
-positive `refundedAmount` values and exact-output `SUCCESS` leftovers are
-expected receipts for refund keys; an incoming key expects `amountOut`. Incoming
-source-chain refunds do not imply a Zcash receipt. A refund quote that no
-provider status has reached stays open for 24 hours after it was recorded, in
-case it is funded. A `FAILED` status is inconclusive. Every key closes 30 days
-after its quote deadline whatever the provider reports. Cached UI status and
-failed polls do not record an observation. Keys close only at the end of a sync,
-once the tip is revalidated and scanned, so blocks mined while the app was
-offline are checked first. Closing uses the earlier of the device clock and the
-tip's block time, so a clock that runs fast cannot close a key early.
+swap closes. A refund key starts only when the wallet stores the swap's funding
+transaction, so a quote that is never funded never scans. A key closes as soon
+as every provider status on it is final and its expected Zcash receipts have 10
+confirmations, the ZIP 315 depth for untrusted notes, so a reorg cannot strand a
+receipt on a closed key. Refunds, positive `refundedAmount` values and
+exact-output `SUCCESS` leftovers are expected receipts for refund keys; an
+incoming key expects `amountOut`. Incoming source-chain refunds do not imply a
+Zcash receipt. A `FAILED` status is inconclusive. Every key closes 30 days after
+its quote deadline whatever the provider reports. Cached UI status and failed
+polls do not record an observation. Keys close only at the end of a sync, once
+the tip is revalidated and scanned, so blocks mined while the app was offline
+are checked first. Closing uses the earlier of the device clock and the tip's
+block time, so a clock that runs fast cannot close a key early.
 
 A restored key scans new blocks after its sweep only as described in the
 recovery flow, and a restored incoming key issued later starts at the tip. A
