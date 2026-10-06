@@ -344,9 +344,6 @@ async fn run_inner(
         return Err("Gift Card requires one account".into());
     }
     db.set_anchor_retention_interval(AnchorRetentionInterval::custom(NonZeroU32::new(1).unwrap()));
-    db.update_chain_tip(BlockHeight::from_u32(tip))
-        .map_err(|e| e.to_string())?;
-    crate::wallet::sync::recover_orphaned_send_locks(path, network)?;
     let c = crate::wallet::db::open_wallet_raw_conn_with_timeout(
         path,
         crate::wallet::db::WALLET_DB_BUSY_TIMEOUT,
@@ -355,9 +352,33 @@ async fn run_inner(
     let mut state = read_snapshot(&c)
         .map_err(|e| e.to_string())?
         .unwrap_or_default();
-    if state.checked_height > tip {
-        return Err("Gift Card endpoint is behind the last checked block".into());
+    // Legacy wallets may have no observer row. Do not overwrite their known
+    // tip or unmine a receipt merely because the selected endpoint is behind.
+    let known_mined: Option<u32> = c
+        .query_row("SELECT MAX(mined_height) FROM transactions", [], |r| {
+            r.get(0)
+        })
+        .map_err(|e| e.to_string())?;
+    let known_scanned = db
+        .block_max_scanned()
+        .map_err(|e| e.to_string())?
+        .map(|b| u32::from(b.block_height()));
+    let known_tip = db.chain_height().map_err(|e| e.to_string())?.map(u32::from);
+    if [
+        Some(state.checked_height),
+        known_tip,
+        known_scanned,
+        known_mined,
+    ]
+    .into_iter()
+    .flatten()
+    .any(|h| h > tip)
+    {
+        return Err("Gift Card endpoint is behind the last known block".into());
     }
+    db.update_chain_tip(BlockHeight::from_u32(tip))
+        .map_err(|e| e.to_string())?;
+    crate::wallet::sync::recover_orphaned_send_locks(path, network)?;
 
     c.execute("UPDATE vizor_giftcard_check SET complete=0", [])
         .map_err(|e| e.to_string())?;

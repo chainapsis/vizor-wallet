@@ -57,6 +57,12 @@ pub(super) fn reconcile_mined_claims(
         .map_err(|e| e.to_string())?;
     drop(q);
     let mut db = open_db(path, network).map_err(|e| e.to_string())?;
+    // Observation may stop once every funding input has six confirmations.
+    // Preserve the endpoint tip already learned by the caller, even then.
+    let current_tip = db
+        .chain_height()
+        .map_err(|e| e.to_string())?
+        .unwrap_or_else(|| state.checked_height.into());
     let result = db.transactionally(|wdb| {
         let anchor = BlockHeight::from_u32(anchor_height);
         // Use all SDK rewind hooks, rather than clearing mined_height alone.
@@ -68,7 +74,7 @@ pub(super) fn reconcile_mined_claims(
                 requested_height: anchor,
             });
         }
-        wdb.update_chain_tip(BlockHeight::from_u32(state.checked_height))?;
+        wdb.update_chain_tip(current_tip)?;
         for (bytes, height) in &retained {
             let bytes: [u8; 32] = bytes.as_slice().try_into().map_err(|_| {
                 SqliteClientError::CorruptedData("Invalid Gift Card transaction ID".into())

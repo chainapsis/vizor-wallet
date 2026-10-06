@@ -371,6 +371,10 @@ async fn observed_mining_and_conflicting_spends_never_relay_or_unlock_funding() 
         let state = card.check(&url, true).await.unwrap();
         assert!(state.complete);
         assert_eq!(state.unspent, 0);
+        assert_eq!(
+            card.db().chain_height().unwrap(),
+            Some(card.height + tip_offset)
+        );
         assert!(card.quote().is_err());
         assert_eq!(card.raw(&id), bytes);
         assert!(!calls.lock().unwrap().iter().any(|m| m == "SendTransaction"));
@@ -486,6 +490,56 @@ async fn observer_and_configured_endpoint_disagreement_does_not_recover_receipts
     }
     primary.abort();
     secondary.abort();
+}
+
+#[tokio::test]
+async fn a_lagging_legacy_endpoint_preserves_sdk_tip_receipts_and_signed_bytes() {
+    for lost_tip in [false, true] {
+        let card = ClaimFixture::new();
+        let (id, bytes) = card.legacy_mined_claim().await;
+        if lost_tip {
+            rusqlite::Connection::open(&card.path)
+                .unwrap()
+                .execute("DELETE FROM scan_queue", [])
+                .unwrap();
+        }
+        let known_tip = card.db().chain_height().unwrap();
+        let (url, server, calls) = start_card_server(
+            card.first.clone(),
+            card.second.clone(),
+            u32::from(card.height + if lost_tip { 1 } else { 2 }),
+            true,
+        )
+        .await;
+        assert!(card
+            .check(&url, true)
+            .await
+            .err()
+            .unwrap()
+            .contains("endpoint is behind"));
+        assert_eq!(card.db().chain_height().unwrap(), known_tip);
+        assert_eq!(card.cached_height(&id), Some(u32::from(card.height + 2)));
+        assert_eq!(card.raw(&id), bytes);
+        assert!(gift_card_claim::snapshot(&card.path).unwrap().is_none());
+        assert!(!calls.lock().unwrap().iter().any(|m| m == "SendTransaction"));
+        server.abort();
+        // A caught-up endpoint can perform the normal recovery on retry.
+        let (url, server, calls) = start_card_server(
+            card.first.clone(),
+            card.second.clone(),
+            u32::from(card.height + 3),
+            true,
+        )
+        .await;
+        card.check(&url, true).await.unwrap();
+        assert_eq!(card.cached_height(&id), None);
+        assert!(calls
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|m| m == &format!("submitted:{}", hex::encode(&bytes))));
+        server.abort();
+    }
 }
 
 #[tokio::test]
