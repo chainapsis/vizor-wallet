@@ -24,12 +24,13 @@ use std::{
 
 use rusqlite::{types::Value, vtab::array::Array, OptionalExtension};
 use transparent::address::TransparentAddress;
+#[cfg(test)]
+use zcash_client_backend::data_api::transparent_ledger::WholeTransactionFee;
 use zcash_client_backend::data_api::{
     transparent_ledger::{
         AggregatePayment, DetailCompleteness, FeeState, HistoryClassification, RecoveryBlocker,
         TransactionHistoryDetails, TransparentAuthority, TransparentLedgerBalance,
         TransparentLedgerMode, TransparentLedgerRead, TransparentLedgerSnapshot,
-        WholeTransactionFee,
     },
     Account as _, Balance, WalletRead, WalletWrite,
 };
@@ -709,8 +710,8 @@ struct HistoryCompleteness {
     /// The fee as it concerns the account. Amounts are computed with this fee
     /// only.
     fee: Fee,
-    /// The exact fee of the whole transaction, from recovered transaction
-    /// metadata (qualified private evidence only). Other funders may have
+    /// The exact fee of the whole transaction, reconciled by the library
+    /// from stored and recovered fee evidence. Other funders may have
     /// shared it, so it is shown as the network fee when the account's fee is
     /// unknown and never charged to the account.
     whole_fee: Option<u64>,
@@ -720,6 +721,8 @@ struct HistoryCompleteness {
     /// components, and the whole fee is known), when no local record exists.
     /// The recipients themselves stay unknown.
     inferred_payment: Option<u64>,
+    /// Activity-only residual supplied by the library; recipient and fee attribution stay unknown.
+    inferred_outgoing: Option<u64>,
 }
 
 impl HistoryCompleteness {
@@ -738,6 +741,7 @@ impl HistoryCompleteness {
             },
             whole_fee: None,
             inferred_payment: None,
+            inferred_outgoing: None,
         }
     }
 
@@ -765,12 +769,8 @@ impl HistoryCompleteness {
                 FeeState::Unknown => Fee::Unknown,
                 FeeState::NotApplicable => Fee::NotApplicable,
             },
-            whole_fee: details.transaction_metadata.as_ref().and_then(|evidence| {
-                match evidence.metadata.fee {
-                    WholeTransactionFee::Exact(fee) => Some(fee.into_u64()),
-                    WholeTransactionFee::Unknown | WholeTransactionFee::NotApplicable => None,
-                }
-            }),
+            whole_fee: details.whole_fee.map(|fee| fee.into_u64()),
+            inferred_outgoing: details.inferred_outgoing.map(|amount| amount.into_u64()),
             inferred_payment: match details.aggregate_payment {
                 AggregatePayment::Exact(amount)
                     if details.classification == HistoryClassification::Reconstructed
@@ -797,6 +797,7 @@ impl HistoryCompleteness {
             fee: fee.map_or(Fee::Unknown, Fee::Known),
             whole_fee: None,
             inferred_payment: None,
+            inferred_outgoing: None,
         }
     }
 
@@ -950,6 +951,8 @@ impl ActivityAmounts {
 struct ActivitySummary {
     sent: ActivityAmounts,
     received: ActivityAmounts,
+    /// Actual owned transparent receipts, excluding shielded change.
+    received_transparent: ActivityAmounts,
     shielded: ActivityAmounts,
     internal_ironwood_transition: ActivityAmounts,
     own_transparent_output_amount: u64,
@@ -1902,6 +1905,9 @@ fn summarize_activity_outputs(
         }
         if visible_received {
             summary.received.add_output(output);
+            if output.output_pool == TRANSPARENT_POOL {
+                summary.received_transparent.add_output(output);
+            }
         }
     }
 
@@ -2195,6 +2201,30 @@ fn classify_history_tx(
             let mut row = build_classified_tx(base, "sent", debit, "transparent", true, 1);
             row.info.amount_includes_fee = true;
             return vec![row];
+        }
+    }
+
+    // The library reconciled compact-scanned shielded effects and the Enhance fee.
+    // The residual includes owned transparent outputs, so show their known receipts
+    // separately without presenting shielded change as a new receipt.
+    if let Some(outgoing) = base.history.inferred_outgoing {
+        if outgoing > 0 && summary.sent.output_count == 0 {
+            let mut sent = build_classified_tx(base, "sent", outgoing, "transparent", true, 1);
+            sent.info.activity_pool = Some("transparent".to_string());
+            let mut rows = vec![sent];
+            if summary.received_transparent.output_count > 0 {
+                let mut received = build_classified_tx(
+                    base,
+                    receiving_tx_kind(base),
+                    summary.received_transparent.amount,
+                    "transparent",
+                    true,
+                    2,
+                );
+                received.info.activity_pool = Some("transparent".to_string());
+                rows.push(received);
+            }
+            return rows;
         }
     }
 
@@ -2933,6 +2963,7 @@ mod tests {
                 fee: Fee::Known(20_000),
                 whole_fee: None,
                 inferred_payment: None,
+                inferred_outgoing: None,
             },
         }
     }
@@ -2986,12 +3017,61 @@ mod tests {
             fee: Fee::Unknown,
             whole_fee: None,
             inferred_payment: None,
+            inferred_outgoing: None,
         });
         let mut summary = ActivitySummary::default();
         // The change arrived on an address that reads as a receive.
         summary.received.amount = 30_000_000;
         summary.received.has_transparent = true;
         (base, summary)
+    }
+
+    #[test]
+    fn compact_enhanced_outgoing_matches_public_activity_with_or_without_owned_receipt() {
+        for owned_receipt in [false, true] {
+            let (mut base, mut summary) = provisional_debit();
+            base.total_spent = 107_485_000;
+            base.total_received = 107_220_000 + if owned_receipt { 250_000 } else { 0 };
+            base.account_balance_delta = if owned_receipt { -15_000 } else { -265_000 };
+            base.history.whole_fee = Some(15_000);
+            base.history.inferred_outgoing = Some(250_000);
+            base.history.has_transparent_outputs = Some(true);
+            // Shielded change is visible in the unreconciled output summary too.
+            summary.received.amount = base.total_received;
+            if owned_receipt {
+                summary.received_transparent.amount = 250_000;
+                summary.received_transparent.output_count = 1;
+            }
+
+            let rows = classify_history_tx(&base, &summary, Fee::NotApplicable);
+            assert_eq!(rows.len(), if owned_receipt { 2 } else { 1 });
+            assert_eq!(rows[0].info.tx_kind, "sent");
+            assert_eq!(rows[0].info.display_amount, 250_000);
+            assert_eq!(rows[0].info.activity_pool.as_deref(), Some("transparent"));
+            assert_eq!(rows[0].info.fee, 15_000);
+            assert!(!rows[0].info.amount_includes_fee);
+            assert!(rows[0].info.provisional);
+            assert!(!rows[0].info.details_complete);
+            if owned_receipt {
+                assert_eq!(rows[1].info.tx_kind, "received");
+                assert_eq!(rows[1].info.display_amount, 250_000);
+            }
+        }
+    }
+
+    #[test]
+    fn compact_enhanced_external_send_excludes_the_network_fee() {
+        let (mut base, summary) = provisional_debit();
+        base.account_balance_delta = -215_000;
+        base.history.whole_fee = Some(15_000);
+        base.history.inferred_outgoing = Some(200_000);
+        base.history.has_transparent_outputs = Some(true);
+        let rows = classify_history_tx(&base, &summary, Fee::NotApplicable);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].info.tx_kind, "sent");
+        assert_eq!(rows[0].info.display_amount, 200_000);
+        assert_eq!(rows[0].info.fee, 15_000);
+        assert!(!rows[0].info.amount_includes_fee);
     }
 
     #[test]
@@ -3075,6 +3155,7 @@ mod tests {
             fee: Fee::Known(10_000),
             whole_fee: None,
             inferred_payment: None,
+            inferred_outgoing: None,
         };
 
         let rows = classify_history_tx(&base, &summary, Fee::NotApplicable);
@@ -3098,6 +3179,7 @@ mod tests {
             fee: Fee::Known(10_000),
             whole_fee: None,
             inferred_payment: Some(69_990_000),
+            inferred_outgoing: None,
         };
 
         let rows = classify_history_tx(&base, &summary, Fee::NotApplicable);
@@ -3147,6 +3229,7 @@ mod tests {
             fee: Fee::Known(10_000),
             whole_fee: Some(10_000),
             inferred_payment: Some(0),
+            inferred_outgoing: None,
         });
 
         let rows = classify_history_tx(&base, &summary, Fee::NotApplicable);
@@ -3173,6 +3256,7 @@ mod tests {
             fee: Fee::Known(10_000),
             whole_fee: None,
             inferred_payment: None,
+            inferred_outgoing: None,
         });
 
         let rows = classify_history_tx(&base, &summary, Fee::NotApplicable);
@@ -3201,10 +3285,12 @@ mod tests {
             fee: Fee::Known(10_000),
             whole_fee: Some(10_000),
             inferred_payment: Some(0),
+            inferred_outgoing: None,
         };
         // No exact payment.
         received(HistoryCompleteness {
             inferred_payment: None,
+            inferred_outgoing: None,
             ..exact
         });
         // No exact whole fee.
@@ -3233,6 +3319,7 @@ mod tests {
             fee: Fee::Known(10_000),
             whole_fee: Some(10_000),
             inferred_payment: Some(0),
+            inferred_outgoing: None,
         };
         summary.received.amount = 100_000;
         summary.received.output_count = 1;
@@ -3289,6 +3376,8 @@ mod tests {
         let mut details = TransactionHistoryDetails {
             has_transparent_outputs: None,
             transaction_metadata: Some(evidence(false)),
+            whole_fee: None,
+            inferred_outgoing: None,
             aggregate_payment: AggregatePayment::Exact(Zatoshis::from_u64(50_000).unwrap()),
             account_movement: AccountMovement {
                 received: 40_000,
@@ -3354,6 +3443,11 @@ mod tests {
                     lineage: 0,
                 }],
             }),
+            whole_fee: match whole {
+                WholeTransactionFee::Exact(fee) => Some(fee),
+                _ => None,
+            },
+            inferred_outgoing: None,
             aggregate_payment: AggregatePayment::Unknown,
             account_movement: AccountMovement {
                 received: 30_000_000,
@@ -3654,6 +3748,7 @@ mod tests {
                 fee: Fee::Unknown,
                 whole_fee: Some(WHOLE_FEE),
                 inferred_payment: None,
+                inferred_outgoing: None,
             };
 
             let rows = classify_history_tx(&base, &ActivitySummary::default(), Fee::NotApplicable);
@@ -3683,6 +3778,7 @@ mod tests {
             fee: Fee::Unknown,
             whole_fee: Some(WHOLE_FEE),
             inferred_payment: None,
+            inferred_outgoing: None,
         };
         let (_, change) = provisional_debit();
         let flags = |history: HistoryCompleteness, summary: &ActivitySummary| {
@@ -3721,6 +3817,7 @@ mod tests {
             flags(
                 HistoryCompleteness {
                     inferred_payment: Some(69_990_000),
+                    inferred_outgoing: None,
                     ..whole
                 },
                 &change
@@ -3764,6 +3861,8 @@ mod tests {
         let mut details = TransactionHistoryDetails {
             has_transparent_outputs: None,
             transaction_metadata: None,
+            whole_fee: None,
+            inferred_outgoing: None,
             aggregate_payment: AggregatePayment::Exact(Zatoshis::from_u64(50_000).unwrap()),
             account_movement: AccountMovement {
                 received: 140_000,
@@ -3816,6 +3915,8 @@ mod tests {
         let mut details = TransactionHistoryDetails {
             has_transparent_outputs: None,
             transaction_metadata: None,
+            whole_fee: None,
+            inferred_outgoing: None,
             aggregate_payment: AggregatePayment::Unknown,
             account_movement: AccountMovement {
                 received: 0,
@@ -3891,6 +3992,7 @@ mod tests {
             fee: Fee::Unknown,
             whole_fee: None,
             inferred_payment: None,
+            inferred_outgoing: None,
         });
         assert!(!base.is_shielding);
 
@@ -3904,6 +4006,7 @@ mod tests {
             fee: Fee::Known(10_000),
             whole_fee: None,
             inferred_payment: None,
+            inferred_outgoing: None,
         });
         assert!(base.is_shielding);
     }
