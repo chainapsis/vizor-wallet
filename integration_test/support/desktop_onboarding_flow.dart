@@ -4,6 +4,40 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 
 var _nextDesktopOnboardingPointer = 9000;
 
+/// Opens software import from either Welcome or the additional-account entry.
+///
+/// Desktop now requires selecting an import method before the phrase fields
+/// appear. Drive both production screens instead of bypassing the selector.
+Future<void> openDesktopSecretPassphraseImport(
+  WidgetTester tester, {
+  Duration timeout = const Duration(seconds: 20),
+}) async {
+  for (final key in const [
+    ValueKey('welcome_import_wallet_button'),
+    ValueKey('desktop_import_secret_passphrase_card'),
+  ]) {
+    final finder = find.byKey(key);
+    final deadline = DateTime.now().add(timeout);
+    while (!finder.evaluate().any(
+      (element) =>
+          element.widget is! AppButton ||
+          (element.widget as AppButton).onPressed != null,
+    )) {
+      if (!DateTime.now().isBefore(deadline)) {
+        fail('Timed out waiting for desktop import action $key.');
+      }
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 100)),
+      );
+    }
+    await tester.ensureVisible(finder);
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tap(finder, pointer: _nextDesktopOnboardingPointer++);
+    await tester.pump(const Duration(milliseconds: 250));
+  }
+}
+
 /// Completes the account name/profile step that finalizes desktop onboarding.
 ///
 /// Password submission only routes to this screen; the wallet is not created

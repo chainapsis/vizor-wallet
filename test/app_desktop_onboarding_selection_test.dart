@@ -17,6 +17,7 @@ import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/providers/wallet_provider.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'figma_compare/figma_compare_font_loader.dart';
+import '../integration_test/support/desktop_onboarding_flow.dart';
 
 void main() {
   setUpAll(loadFigmaCompareFonts);
@@ -67,6 +68,36 @@ void main() {
   }
 
   for (final hasWallet in [false, true]) {
+    testWidgets(
+      'E2E import helper reaches phrase input: hasWallet=$hasWallet',
+      (tester) async {
+        await pump(
+          tester,
+          location: hasWallet ? '/add-account' : '/welcome',
+          hasWallet: hasWallet,
+        );
+        await openDesktopSecretPassphraseImport(tester);
+        await tester.pumpAndSettle();
+        final phrase = find.byKey(
+          const ValueKey('import_mnemonic_first_word_field'),
+        );
+        expect(phrase, findsOneWidget);
+        final router = GoRouter.of(tester.element(phrase));
+        expect(router.state.uri.path, '/import');
+        expect(router.state.uri.queryParameters, {
+          'entry': 'import-method',
+          if (hasWallet) 'from': 'add-account',
+        });
+        await tester.tap(find.byType(AppBackLink));
+        await tester.pumpAndSettle();
+        expect(router.state.uri.path, '/import/method');
+        expect(router.state.uri.queryParameters, {
+          if (hasWallet) 'from': 'add-account',
+        });
+        expect(tester.takeException(), isNull);
+      },
+    );
+
     testWidgets('Welcome import enters the selector: hasWallet=$hasWallet', (
       tester,
     ) async {

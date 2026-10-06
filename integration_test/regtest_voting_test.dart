@@ -116,10 +116,7 @@ void main() {
         }
       } else {
         _log('importing deterministic Ironwood-funded wallet');
-        await _tapButton(
-          tester,
-          const ValueKey('welcome_import_wallet_button'),
-        );
+        await openDesktopSecretPassphraseImport(tester);
         await _enterText(
           tester,
           const ValueKey('import_mnemonic_first_word_field'),

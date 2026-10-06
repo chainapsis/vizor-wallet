@@ -54,10 +54,7 @@ void main() {
       e2eLog('pumping app with a custom endpoint proxy');
       await tester.pumpWidget(await buildBootstrappedZcashWalletApp());
 
-      await tapAppButton(
-        tester,
-        const ValueKey('welcome_import_wallet_button'),
-      );
+      await openDesktopSecretPassphraseImport(tester);
       await enterAppText(
         tester,
         const ValueKey('import_mnemonic_first_word_field'),
