@@ -2035,6 +2035,9 @@ List<rust_sync.TransactionInfo> _etaTransactions() => [
     ('unknown', 'orchard', 'receiving'),
   ])
     rust_sync.TransactionInfo(
+      detailsComplete: true,
+      feeState: rust_sync.TransactionFeeState.known,
+      provisional: false,
       txidHex: 'preview-$id',
       fundingParentTxid: id == 'tex' ? 'preview-parent' : null,
       fundingParentMinedHeight: id == 'tex' ? BigInt.zero : null,

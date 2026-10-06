@@ -28,7 +28,6 @@ import '../gift_card_activity_index.dart';
 import '../models/activity_row_data.dart';
 import '../swap_activity_row_items_provider.dart';
 import '../swap_activity_row_mapper.dart';
-import '../transaction_completeness.dart';
 import '../widgets/activity_feed.dart';
 import 'activity_transaction_status_screen.dart';
 

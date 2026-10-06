@@ -64,6 +64,9 @@ rust_sync.TransactionInfo _tx({
   String displayPool = 'shielded',
 }) {
   return rust_sync.TransactionInfo(
+    detailsComplete: true,
+    feeState: rust_sync.TransactionFeeState.known,
+    provisional: false,
     txidHex: txidHex,
     minedHeight: minedHeight ?? BigInt.one,
     expiredUnmined: expiredUnmined,

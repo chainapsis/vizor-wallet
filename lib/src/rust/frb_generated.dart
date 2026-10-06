@@ -13,13 +13,17 @@ import 'api/sync.dart';
 import 'api/voting.dart';
 import 'api/voting_session.dart';
 import 'api/wallet.dart';
+
 import 'dart:async';
 import 'dart:convert';
+
 import 'frb_generated.dart';
 import 'frb_generated.io.dart'
     if (dart.library.js_interop) 'frb_generated.web.dart';
 import 'network_privacy.dart';
+
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
+
 import 'third_party/zcash_voting/config.dart';
 import 'third_party/zcash_voting/delegate.dart';
 import 'third_party/zcash_voting/share_policy.dart';
@@ -14586,8 +14590,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TransactionInfo dco_decode_transaction_info(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 14)
-      throw Exception('unexpected arr length: expect 14 but see ${arr.length}');
+    if (arr.length != 18)
+      throw Exception('unexpected arr length: expect 18 but see ${arr.length}');
     return TransactionInfo(
       txidHex: dco_decode_String(arr[0]),
       minedHeight: dco_decode_u_64(arr[1]),
@@ -14600,9 +14604,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       txKind: dco_decode_String(arr[8]),
       displayAmount: dco_decode_u_64(arr[9]),
       displayPool: dco_decode_String(arr[10]),
-      createdTime: dco_decode_u_64(arr[11]),
-      detailsComplete: dco_decode_bool(arr[12]),
-      provisional: dco_decode_bool(arr[13]),
+      activityPool: dco_decode_opt_String(arr[11]),
+      fundingParentTxid: dco_decode_opt_String(arr[12]),
+      fundingParentMinedHeight: dco_decode_opt_box_autoadd_u_64(arr[13]),
+      fundingParentExpired: dco_decode_opt_box_autoadd_bool(arr[14]),
+      createdTime: dco_decode_u_64(arr[15]),
+      detailsComplete: dco_decode_bool(arr[16]),
+      provisional: dco_decode_bool(arr[17]),
     );
   }
 
