@@ -1,28 +1,21 @@
-//! Experimental receiver → Enhance PIR → verified wallet insertion.
-//! All chain acceptance and note mutation stays in the wallet library.
+//! Restore sweeps of swap keys through the receiver directory, with the matching
+//! Enhance PIR note data. The sweep's rules, chain acceptance and note mutation live
+//! in `zakura_pir_receiver` and the wallet library; this module supplies Vizor's
+//! routed transport, service origins, write lock and run budget.
 use super::enhancement::transport::{RoutedHttpError, RoutedTransport};
 use super::WalletDatabase;
 use crate::wallet::{db::with_wallet_db_write_lock, network::WalletNetwork};
-use futures::StreamExt;
-use receiver_directory::Receiver;
-use receiver_pir::{
-    transport::{DirectoryClient, Transport as ReceiverTransport},
-    AcceptedCoverage,
-};
-use std::{collections::BTreeMap, num::NonZeroU32, time::Duration};
-use zakura_pir_enhance::wallet::{self as enhance_wallet, Acceptance, PreparedWork};
-use zakura_pir_enhance::{
-    transport::{PendingClient, Request, ResponseBody, Transport},
-    ClientError, ClientResourceLimits,
+use std::time::Duration;
+use zakura_pir_enhance::transport::{Request, ResponseBody, Transport};
+use zakura_pir_enhance::wallet::PreparedWork;
+use zakura_pir_enhance::ClientError;
+use zakura_pir_receiver::{
+    DirectoryError, EnhanceNotes, Swept, Transport as ReceiverTransport, WriteLock, MAINNET_GENESIS,
 };
 use zcash_client_backend::data_api::enhance_pir::{
     EnhancePirRead, EnhancePirWrite, TransactionEnhancementWork,
 };
 use zcash_client_backend::data_api::{transparent_ledger::ChainPoint, WalletRead};
-use zcash_client_sqlite::wallet::swap_receiving::{
-    DirectoryPayment, DiscoveryWork, PaymentApplication,
-};
-use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
 
 // Use explicit HTTPS origins and never follow service redirects.
 const RECEIVER_ORIGIN: &str = "https://161-35-182-172.sslip.io";
@@ -60,18 +53,16 @@ impl<F: Fn() -> bool> Transport for SwapTransport<'_, F> {
         self.http.execute(request).await
     }
 }
-fn receiver_error(error: RoutedHttpError) -> receiver_pir::Error {
+fn receiver_error(error: RoutedHttpError) -> DirectoryError {
     match error {
-        RoutedHttpError::HttpStatus(409 | 410) => receiver_pir::Error::Revision,
-        RoutedHttpError::HttpStatus(status) => {
-            receiver_pir::Error::Transport(format!("HTTP {status}"))
-        }
-        RoutedHttpError::Cancelled => receiver_pir::Error::Transport("Cancelled".into()),
-        RoutedHttpError::Failed(error) => receiver_pir::Error::Transport(error.to_string()),
+        RoutedHttpError::HttpStatus(409 | 410) => DirectoryError::Revision,
+        RoutedHttpError::HttpStatus(status) => DirectoryError::Transport(format!("HTTP {status}")),
+        RoutedHttpError::Cancelled => DirectoryError::Transport("Cancelled".into()),
+        RoutedHttpError::Failed(error) => DirectoryError::Transport(error.to_string()),
     }
 }
 impl<F: Fn() -> bool> ReceiverTransport for SwapTransport<'_, F> {
-    async fn get(&self, url: &str, limit: usize) -> Result<Vec<u8>, receiver_pir::Error> {
+    async fn get(&self, url: &str, limit: usize) -> Result<Vec<u8>, DirectoryError> {
         self.http
             .bytes(http::Method::GET, url, vec![], limit)
             .await
@@ -82,11 +73,18 @@ impl<F: Fn() -> bool> ReceiverTransport for SwapTransport<'_, F> {
         url: &str,
         body: Vec<u8>,
         limit: usize,
-    ) -> Result<Vec<u8>, receiver_pir::Error> {
+    ) -> Result<Vec<u8>, DirectoryError> {
         self.http
             .bytes(http::Method::POST, url, body, limit)
             .await
             .map_err(receiver_error)
+    }
+}
+/// Holds the wallet write lock for each of a sweep's writes.
+struct WalletWriteLock;
+impl WriteLock for WalletWriteLock {
+    fn write<T>(&self, label: &'static str, write: impl FnOnce() -> T) -> T {
+        with_wallet_db_write_lock(label, write)
     }
 }
 fn error(e: impl std::fmt::Display) -> String {
@@ -113,118 +111,32 @@ pub(super) async fn run(
         hash: tip.block_hash(),
     };
     let started = std::time::Instant::now();
-    let phase = async {
-        run_inner(db, network, through, should_exit).await?;
-        with_wallet_db_write_lock("swap_private.prune", || {
-            crate::wallet::swap_receiving::finish_nullifier_recovery(db, through)
-        })?;
-        for account in crate::wallet::swap_receiving::software_accounts(db)? {
-            if db
-                .swap_history_pending(account, through.height)
-                .map_err(error)?
-            {
-                return Err("restore sweeps remain pending".to_owned());
-            }
-        }
-        Ok::<(), String>(())
-    };
-    // Every write is its own transaction and a begun attempt is already backed
-    // off, so stopping at any await leaves the next run a consistent queue.
+    // Stopping at any await is safe (see `zakura_pir_receiver`).
     let result = tokio::select! {
         biased;
         _ = super::watch_for_exit(should_exit) => return,
-        result = tokio::time::timeout(RUN_BUDGET, phase) => {
+        result = tokio::time::timeout(RUN_BUDGET, run_inner(db, network, through, should_exit)) => {
             result.unwrap_or_else(|_| Err("time budget reached".to_owned()))
         }
     };
+    let ok = result
+        .as_ref()
+        .is_ok_and(|swept| swept.deferred.is_empty() && !swept.pending);
     log::info!(
-        "pir_metric component=recovery stage=total elapsed_us={} ok={}",
+        "pir_metric component=recovery stage=total elapsed_us={} ok={ok}",
         started.elapsed().as_micros(),
-        result.is_ok()
     );
-    if let Err(e) = result {
-        log::warn!("Swap recovery deferred: {e}");
-    }
-}
-
-fn discovery_work(
-    db: &mut WalletDatabase,
-    through: ChainPoint,
-) -> Result<
-    (
-        Vec<(zcash_client_sqlite::AccountUuid, DiscoveryWork)>,
-        usize,
-    ),
-    String,
-> {
-    let mut work = Vec::new();
-    let mut remaining = 0;
-    let now = crate::wallet::swap_receiving::receive::now()?;
-    for account in crate::wallet::swap_receiving::software_accounts(db)? {
-        let batch = with_wallet_db_write_lock("swap_private.discovery", || {
-            db.prepare_swap_discovery_batch(account, through, now, NonZeroU32::new(64).unwrap())
-                .map_err(error)
-        })?;
-        remaining += batch.remaining_lookups;
-        work.extend(batch.work.into_iter().map(|key| (account, key)));
-    }
-    Ok((work, remaining))
-}
-
-/// Connects to a directory publication bound to locally accepted block history.
-async fn receiver_client<T: ReceiverTransport>(
-    db: &mut WalletDatabase,
-    network: WalletNetwork,
-    http: T,
-    through: ChainPoint,
-    remaining_lookups: usize,
-) -> Result<(DirectoryClient<T>, AcceptedCoverage, ChainPoint), String> {
-    let advertised = DirectoryClient::fetch_manifest(RECEIVER_ORIGIN, &http)
-        .await
-        .map_err(error)?;
-    let anchor = db
-        .swap_publication_anchor(BlockHeight::from(advertised.directory.end_height), through)
-        .map_err(error)?;
-    let activation = network
-        .activation_height(NetworkUpgrade::Nu6_3)
-        .ok_or("Ironwood inactive")?;
-    let mut genesis: [u8; 32] =
-        hex::decode("00040fe8ec8471911baa1db1266ea15dd06b4a8a5c453883c000b031973dce08")
-            .unwrap()
-            .try_into()
-            .unwrap();
-    genesis.reverse();
-    let accepted = AcceptedCoverage {
-        genesis,
-        required_start: activation.into(),
-        height: anchor.height.into(),
-        hash: anchor.hash.0,
-    };
-    let client = DirectoryClient::connect_manifest(
-        RECEIVER_ORIGIN,
-        http,
-        accepted,
-        advertised,
-        remaining_lookups,
-    )
-    .await
-    .map_err(error)?;
-    Ok((client, accepted, anchor))
-}
-
-/// A directory payment as the wallet library takes it.
-fn directory_payment(payment: receiver_directory::Payment) -> DirectoryPayment {
-    DirectoryPayment {
-        height: payment.height,
-        block_hash: payment.block_hash,
-        txid: payment.txid,
-        tx_index: payment.tx_index,
-        action_index: payment.action_index,
-        position: payment.position,
-        action_nullifier: payment.action_nullifier,
-        cmx: payment.cmx,
-        ephemeral_key: payment.ephemeral_key,
-        ciphertext_prefix: payment.ciphertext_prefix,
+    match result {
+        Ok(swept) => {
+            // Keys identify the wallet's swaps, so only the reasons are logged.
+            for (_, e) in &swept.deferred {
+                log::warn!("Private swap recovery work deferred: {e}");
+            }
+            if swept.pending {
+                log::warn!("Swap recovery deferred: restore sweeps remain pending");
+            }
+        }
+        Err(e) => log::warn!("Swap recovery deferred: {e}"),
     }
 }
 
@@ -234,9 +146,9 @@ async fn run_inner(
     network: WalletNetwork,
     through: ChainPoint,
     should_exit: &impl Fn() -> bool,
-) -> Result<(), String> {
+) -> Result<Swept, String> {
     if Some(through.height) != db.chain_height().map_err(error)? {
-        return Ok(());
+        return Ok(Swept::default());
     }
     // The exception covers receiver discovery and its matching note data only.
     // Ordinary memo enhancement still follows the general Private queries setting.
@@ -254,218 +166,55 @@ async fn run_inner(
             }),
     );
     let batches = prepared.batches_by_tx_and_row();
-    if batches.is_empty() && discovery_work(db, through)?.0.is_empty() {
-        return Ok(());
-    }
     let enhance_origin = super::enhancement::payload_endpoint();
     let transport = SwapTransport::new(
         should_exit,
         url::Url::parse(&enhance_origin).map_err(error)?,
     );
-    let pending = PendingClient::fetch(&transport, &enhance_origin)
-        .await
-        .map_err(error)?;
-    let acceptance = match enhance_wallet::acceptance(
-        db,
-        pending.manifest(),
-        &network,
-        ClientResourceLimits::with_cache(32768, 2),
-    )
-    .map_err(error)?
-    .map_err(error)?
-    {
-        Acceptance::Accepted(a) => a,
-        Acceptance::WaitingForScanning => return Err("Enhance anchor has not been scanned".into()),
-        Acceptance::Mismatch => return Err("Enhance anchor differs from the accepted chain".into()),
-    };
-    let mut enhance = pending.accept(&acceptance).map_err(error)?;
-    for requests in batches.into_values() {
-        let reply = enhance
-            .query_row_requests(&transport, &requests)
-            .await
-            .map_err(error)?;
-        with_wallet_db_write_lock("swap_private.enhance", || {
-            db.apply_ironwood_enhance_records(&reply.slots)
-                .map_err(error)
-        })?;
-    }
-    // Incoming funding memos can now register refund keys before directory lookups.
-    with_wallet_db_write_lock("swap_private.memos", || {
-        crate::wallet::swap_receiving::maintain_recovery(db, network)
-    })?;
-    let (mut work, remaining) = discovery_work(db, through)?;
-    if work.is_empty() {
-        return Ok(());
-    }
-    let (mut client, accepted, anchor) =
-        receiver_client(db, network, &transport, through, remaining).await?;
-    // Both modes fetch the same common proofs once for the entire revision.
-    let witnesses = client.witnesses().await.map_err(error)?;
-    let mut failures = 0usize;
-    loop {
-        for (account, work_item) in work {
-            if should_exit() {
-                return Ok(());
-            }
-            let now = crate::wallet::swap_receiving::receive::now()?;
-            let result = async {
-                let key = work_item.key;
-                with_wallet_db_write_lock("swap_private.attempt", || {
-                    db.begin_swap_discovery_attempt(account, key, anchor, now)
-                        .map_err(error)
-                })?;
-                if work_item.lookup.is_none() {
-                    let receiver = Receiver::from_bytes(work_item.receiver).map_err(error)?;
-                    let payments: Vec<_> = client
-                        .lookup(receiver, NonZeroU32::new(32).unwrap(), accepted)
-                        .await
-                        .map_err(error)?
-                        .into_iter()
-                        .map(directory_payment)
-                        .collect();
-                    let positions = db
-                        .swap_note_data_needed(account, key, &payments)
-                        .map_err(error)?;
-                    // Enhance groups these positions into shared row requests internally.
-                    let stream = enhance.query_batch(&transport, positions).map_err(error)?;
-                    futures::pin_mut!(stream);
-                    let mut note_data = BTreeMap::new();
-                    while let Some(result) = stream.next().await {
-                        let record = result.record.map_err(error)?;
-                        note_data.insert(result.position, *record.enc_ciphertext_suffix());
-                    }
-                    with_wallet_db_write_lock("swap_private.queue", || {
-                        db.queue_swap_directory_lookup(account, key, anchor, &payments, &note_data)
-                            .map_err(error)
-                    })?;
-                }
-                let applied = with_wallet_db_write_lock("swap_private.apply", || {
-                    db.apply_swap_sweep(account, key, through, anchor, |position, cmx| {
-                        witnesses.path(position, cmx).ok()
-                    })
+    let mut notes = EnhanceNotes::new(&enhance_origin, &transport);
+    if !batches.is_empty() {
+        for requests in batches.into_values() {
+            let reply = notes
+                .session(db)
+                .await
+                .map_err(error)?
+                .query_row_requests(&transport, &requests)
+                .await
+                .map_err(error)?;
+            with_wallet_db_write_lock("swap_private.enhance", || {
+                db.apply_ironwood_enhance_records(&reply.slots)
                     .map_err(error)
-                })?;
-                if applied != PaymentApplication::Applied {
-                    return Err(format!("Payment remains queued: {applied:?}"));
-                }
-                Ok::<(), String>(())
-            }
-            .await;
-            if let Err(e) = result {
-                failures += 1;
-                log::warn!("Private swap recovery work deferred: {e}");
-            }
+            })?;
         }
-        with_wallet_db_write_lock("swap_private.lookahead", || {
+        // Funding memos just retrieved can register refund keys before the sweeps.
+        with_wallet_db_write_lock("swap_private.memos", || {
             crate::wallet::swap_receiving::maintain_recovery(db, network)
         })?;
-        let (next, remaining) = discovery_work(db, through)?;
-        if next.is_empty() {
-            break;
-        }
-        client.use_file_for_work(remaining).await.map_err(error)?;
-        work = next;
     }
-    if failures > 0 {
-        return Err(format!("{failures} swap recovery records remain pending"));
-    }
-    Ok(())
+    let accounts = crate::wallet::swap_receiving::software_accounts(db)?;
+    zakura_pir_receiver::sweep(
+        db,
+        &accounts,
+        through,
+        MAINNET_GENESIS,
+        RECEIVER_ORIGIN,
+        &transport,
+        &mut notes,
+        &WalletWriteLock,
+        crate::wallet::swap_receiving::receive::now()?,
+    )
+    .await
+    .map_err(error)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zakura_pir_enhance::{AcceptedAnchor, GenerationAcceptance};
-    use zcash_client_sqlite::wallet::swap_receiving::RECEIVE_GAP_LIMIT;
-    use zcash_primitives::block::BlockHash;
-
-    #[test]
-    fn restore_checks_extended_window_without_rechecking_completed_keys() {
-        use crate::wallet::{
-            db::{open_wallet_db_with_timeout, WALLET_DB_BUSY_TIMEOUT},
-            keys,
-        };
-        use secrecy::SecretVec;
-        use zcash_client_backend::data_api::WalletWrite;
-
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("restore.db");
-        let path = path.to_str().unwrap();
-        let network = WalletNetwork::Main;
-        let height = network.activation_height(NetworkUpgrade::Nu6_3).unwrap();
-        let (uuid, _) = keys::init_db_and_create_account(
-            path,
-            network,
-            &SecretVec::new(vec![1; 32]),
-            Some(height.into()),
-            "restore",
-        )
-        .unwrap();
-        let account = keys::parse_account_uuid(&uuid).unwrap();
-        let mut db = open_wallet_db_with_timeout(path, network, WALLET_DB_BUSY_TIMEOUT).unwrap();
-        db.update_chain_tip(height).unwrap();
-        let conn = rusqlite::Connection::open(path).unwrap();
-        conn.execute(
-            "INSERT INTO blocks(height,hash,time,sapling_tree) VALUES(?1,zeroblob(32),0,X'000000')",
-            [u32::from(height)],
-        )
-        .unwrap();
-        // Model completed ordinary scanning of the birthday block.
-        conn.execute("DELETE FROM scan_queue", []).unwrap();
-        conn.execute(
-            "INSERT INTO scan_queue(block_range_start,block_range_end,priority) VALUES(?1,?2,10)",
-            [u32::from(height), u32::from(height) + 1],
-        )
-        .unwrap();
-        let through = ChainPoint {
-            height,
-            hash: BlockHash([0; 32]),
-        };
-        db.maintain_swap_receiving(account).unwrap();
-        assert!(!crate::api::sync::enhance_pir_enabled());
-        assert!(!crate::api::sync::near_swap_privacy_enabled());
-        let work = discovery_work(&mut db, through).unwrap().0;
-        assert_eq!(work.len() as u64, RECEIVE_GAP_LIMIT);
-        for (account, key) in work {
-            db.queue_swap_directory_lookup(account, key.key, through, &[], &BTreeMap::new())
-                .unwrap();
-            db.apply_swap_sweep(account, key.key, through, through, |_, _| None)
-                .unwrap();
-        }
-        assert!(discovery_work(&mut db, through).unwrap().0.is_empty());
-
-        // Model the registry advancement scanning records for a payment at the edge.
-        // The library tests exercise the actual compact note decryption.
-        let edge = RECEIVE_GAP_LIMIT - 1;
-        conn.execute(
-            "UPDATE ironwood_receiving_keys SET advances_allocation = 1
-             WHERE purpose = 1 AND key_index = ?1",
-            [edge.to_be_bytes()],
-        )
-        .unwrap();
-        db.maintain_swap_receiving(account).unwrap();
-        let work = discovery_work(&mut db, through).unwrap().0;
-        assert_eq!(work.len() as u64, RECEIVE_GAP_LIMIT);
-        assert!(work.iter().all(|(_, key)| key.key.index() > edge));
-        for (account, key) in work {
-            db.queue_swap_directory_lookup(account, key.key, through, &[], &BTreeMap::new())
-                .unwrap();
-            db.apply_swap_sweep(account, key.key, through, through, |_, _| None)
-                .unwrap();
-        }
-        drop(db);
-        let mut db = open_wallet_db_with_timeout(path, network, WALLET_DB_BUSY_TIMEOUT).unwrap();
-        let later = ChainPoint {
-            height: height + 1,
-            hash: BlockHash([1; 32]),
-        };
-        conn.execute(
-            "INSERT INTO blocks(height,hash,time,sapling_tree) VALUES(?1,?2,0,X'000000')",
-            rusqlite::params![u32::from(later.height), later.hash.0],
-        )
-        .unwrap();
-        assert!(discovery_work(&mut db, later).unwrap().0.is_empty());
-    }
+    use futures::StreamExt;
+    use std::num::NonZeroU32;
+    use zakura_pir_enhance::transport::PendingClient;
+    use zakura_pir_enhance::{AcceptedAnchor, ClientResourceLimits, GenerationAcceptance};
+    use zakura_pir_receiver::receiver_pir::{transport::DirectoryClient, AcceptedCoverage};
 
     #[test]
     fn enhance_routes_remain_on_the_configured_tls_origin() {
@@ -534,7 +283,7 @@ mod tests {
                 .try_into()
                 .unwrap()
         }
-        let action = receiver_directory::extract::Action {
+        let action = zakura_pir_receiver::receiver_directory::extract::Action {
             cv: field(&fixture, "cv"),
             nullifier: field(&fixture, "nullifier"),
             cmx: field(&fixture, "cmx"),

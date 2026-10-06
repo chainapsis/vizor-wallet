@@ -65,12 +65,14 @@ The POC uses the public Enhance v9 native two-mask protocol at the configured
 Enhance endpoint, `https://enhance-pir.valargroup.dev` unless
 `VIZOR_ENHANCE_PIR_URL` overrides it. Receiver PIR is independently hosted at
 `https://161-35-182-172.sslip.io`. No Mac or SSH tunnel is required for serving.
-Requests are bounded, redirects are disabled, and Enhance routes must remain
-on that exact HTTPS origin with standard TLS validation. Receiver and Enhance
-requests reuse ordinary Enhance PIR's route-aware HTTPS transport, including Tor,
-cancellation and bounded responses. Manifest, setup, query and witness requests
-all follow the same route. There is no direct fallback when Tor fails and no
-public transaction fallback when PIR fails.
+Requests are bounded, redirects are disabled, and Enhance routes must remain on
+that exact HTTPS origin with standard TLS validation. Receiver and Enhance
+requests reuse ordinary Enhance PIR's route-aware HTTPS transport, including
+Tor, cancellation and bounded responses. Vizor supplies that transport, the
+service origins, its wallet write lock and the run budget to the library's
+sweep. Manifest, setup, query and witness requests all follow the same route.
+There is no direct fallback when Tor fails and no public transaction fallback
+when PIR fails.
 
 Signing, bundle identity and secure-store overrides stay local. Record the app
 path, bundle ID, secure-store service and new wallet DB path before opening it.
@@ -146,14 +148,15 @@ Retries retain fixed canonical targets. Attempts are leased individually before
 network I/O so interruption cannot postpone the unstarted tail. A failed key does
 not prevent other selected work from progressing.
 
-The coordinator reuses one directory session and common witness file across
-batches. Small jobs use PIR. Large jobs download the common row file after checking
-its length, digest and independently accepted chain coverage. At current geometry,
-remaining PIR upload plus response bytes cross the 32 MiB file at about 240
-one-page lookups. The initial 50/250/10,000 lookup test measured 7,034,703,
-33,555,199 and 33,555,199 HTTP body bytes respectively, including setup. These
-loopback measurements exclude headers and TLS. Common witnesses and note data
-are separate costs for both modes.
+The sweep runs in wallet-libraries' `zakura-pir-receiver` crate, which reuses
+one directory session and common witness file across batches. Small jobs use
+PIR. Large jobs download the common row file after checking its length, digest
+and independently accepted chain coverage. At current geometry, remaining PIR
+upload plus response bytes cross the 32 MiB file at about 240 one-page lookups.
+The initial 50/250/10,000 lookup test measured 7,034,703, 33,555,199 and
+33,555,199 HTTP body bytes respectively, including setup. These loopback
+measurements exclude headers and TLS. Common witnesses and note data are
+separate costs for both modes.
 
 Complete lookup results and authenticated ciphertexts are persisted atomically.
 A restart resumes queued notes without another receiver lookup or ciphertext

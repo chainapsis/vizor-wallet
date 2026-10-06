@@ -3,9 +3,7 @@
 pub(crate) mod receive;
 
 use zakura_swap_receiving::lifecycle::{near_observation, ProviderStatus};
-use zcash_client_backend::data_api::{
-    transparent_ledger::ChainPoint, Account as _, AccountSource, WalletRead,
-};
+use zcash_client_backend::data_api::{Account as _, AccountSource, WalletRead};
 use zcash_client_sqlite::{wallet::swap_receiving::RegisteredKey, AccountUuid};
 use zcash_keys::address::{Address, UnifiedAddress};
 use zcash_protocol::{
@@ -154,19 +152,6 @@ pub(crate) fn close_finished_keys(db: &mut WalletDatabase, tip: BlockHeight) -> 
     let now = receive::now()?;
     for account in software_accounts(db)? {
         db.close_finished_swap_keys(account, now, tip)
-            .map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
-
-/// Called after private discovery, under the wallet write lock. The library checks
-/// every completion barrier again before releasing temporary spend evidence.
-pub(crate) fn finish_nullifier_recovery(
-    db: &mut WalletDatabase,
-    through: ChainPoint,
-) -> Result<(), String> {
-    for account in software_accounts(db)? {
-        db.finish_swap_nullifier_recovery(account, through)
             .map_err(|e| e.to_string())?;
     }
     Ok(())
