@@ -71,15 +71,15 @@ class PaymentLinkClaimWallet {
     required String dbPath,
     required bool allowResubmit,
   }) async {
-    if (!_ref.read(paymentLinkClaimCoordinatorProvider).acceptsPreparation) {
-      throw StateError('Gift Card preparation is paused.');
-    }
+    final coordinator = _ref.read(paymentLinkClaimCoordinatorProvider);
+    final generation = coordinator.beginPreparation();
     final epoch = _checkCancellationEpoch;
     return _ref
         .read(rpcEndpointFailoverProvider.notifier)
         .runWithEndpointFallback<rust_sync.ApiGiftCardCheckProgress>(
           operation: 'Gift Card check',
           action: (endpoint) async {
+            coordinator.requirePreparation(generation);
             if (epoch != _checkCancellationEpoch ||
                 !_ref
                     .read(paymentLinkClaimCoordinatorProvider)
@@ -90,55 +90,65 @@ class PaymentLinkClaimWallet {
             if (endpoint.networkName != link.network) {
               throw StateError('Gift Card network changed.');
             }
-            final failover = _ref.read(rpcEndpointFailoverProvider);
-            rust_sync.ApiGiftCardCheckProgress? last;
-            var paused = false;
-            await for (final event in rust_sync.runPaymentLinkClaimCheck(
-              claimId: paymentLinkClaimWalletDirectoryName(link),
-              dbPath: dbPath,
-              lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-              // Capability fallback also works for custom endpoints. Preserve
-              // configured transport routing; these are public chain queries.
-              fallbackUrls:
-                  {
-                        ...failover.fallbackCandidates
-                            .where((e) => e.networkName == link.network)
-                            .map((e) => e.normalizedLightwalletdUrl),
-                        ...rpcEndpointPresetsForNetwork(link.network).map(
-                          (e) => RpcEndpointConfig(
-                            networkName: link.network,
-                            lightwalletdUrl: e.url,
-                          ).normalizedLightwalletdUrl,
-                        ),
-                      }
-                      .where((url) => url != endpoint.normalizedLightwalletdUrl)
-                      .toList(),
-              network: link.network,
-              allowResubmit: allowResubmit,
-            )) {
-              if (epoch != _checkCancellationEpoch ||
-                  _ref.read(appSecurityProvider).requiresUnlock ||
-                  !_ref
-                      .read(paymentLinkClaimCoordinatorProvider)
-                      .acceptsPreparation) {
-                rust_sync.cancelPaymentLinkClaimSync(
-                  claimId: paymentLinkClaimWalletDirectoryName(link),
-                );
-                paused = true;
+            try {
+              final failover = _ref.read(rpcEndpointFailoverProvider);
+              rust_sync.ApiGiftCardCheckProgress? last;
+              var paused = false;
+              await for (final event in rust_sync.runPaymentLinkClaimCheck(
+                claimId: paymentLinkClaimWalletDirectoryName(link),
+                dbPath: dbPath,
+                lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+                // Capability fallback also works for custom endpoints. Preserve
+                // configured transport routing; these are public chain queries.
+                fallbackUrls:
+                    {
+                          ...failover.fallbackCandidates
+                              .where((e) => e.networkName == link.network)
+                              .map((e) => e.normalizedLightwalletdUrl),
+                          ...rpcEndpointPresetsForNetwork(link.network).map(
+                            (e) => RpcEndpointConfig(
+                              networkName: link.network,
+                              lightwalletdUrl: e.url,
+                            ).normalizedLightwalletdUrl,
+                          ),
+                        }
+                        .where(
+                          (url) => url != endpoint.normalizedLightwalletdUrl,
+                        )
+                        .toList(),
+                network: link.network,
+                allowResubmit: allowResubmit,
+              )) {
+                if (epoch != _checkCancellationEpoch ||
+                    _ref.read(appSecurityProvider).requiresUnlock ||
+                    !_ref
+                        .read(paymentLinkClaimCoordinatorProvider)
+                        .acceptsPreparation) {
+                  rust_sync.cancelPaymentLinkClaimSync(
+                    claimId: paymentLinkClaimWalletDirectoryName(link),
+                  );
+                  paused = true;
+                }
+                if (paused) continue;
+                last = event;
+                _ref
+                    .read(giftCardCheckProgressProvider.notifier)
+                    .update(link, event);
               }
-              if (paused) continue;
-              last = event;
-              _ref
-                  .read(giftCardCheckProgressProvider.notifier)
-                  .update(link, event);
+              coordinator.requirePreparation(generation);
+              if (paused || epoch != _checkCancellationEpoch) {
+                throw StateError('Gift Card preparation is paused.');
+              }
+              if (last == null || !last.complete) {
+                throw StateError('Gift Card check did not complete.');
+              }
+              return last;
+            } catch (_) {
+              // A late transport error after pause must not start endpoint
+              // health probes or a fallback scan, even after a quick resume.
+              coordinator.requirePreparation(generation);
+              rethrow;
             }
-            if (paused || epoch != _checkCancellationEpoch) {
-              throw StateError('Gift Card preparation is paused.');
-            }
-            if (last == null || !last.complete) {
-              throw StateError('Gift Card check did not complete.');
-            }
-            return last;
           },
         );
   }

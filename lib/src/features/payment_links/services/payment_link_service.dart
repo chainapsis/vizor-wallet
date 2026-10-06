@@ -1471,8 +1471,11 @@ class PaymentLinkService
     VizorPaymentLink link, {
     required bool allowLongSync,
   }) async {
+    final coordinator = _ref.read(paymentLinkClaimCoordinatorProvider);
+    final generation = coordinator.beginPreparation();
     _requireWalletUnlocked();
     final records = await _receivedStore.load();
+    coordinator.requirePreparation(generation);
     final saved = records
         .where(
           (record) =>
@@ -1484,6 +1487,7 @@ class PaymentLinkService
     final setupAccountUuid = saved?.setupAccountUuid;
     if (setupAccountUuid != null) {
       link = await paymentLinkWithRetainedAddress(link, [saved!]);
+      coordinator.requirePreparation(generation);
       return _ref
           .read(paymentLinkClaimCoordinatorProvider)
           .prepareSetupClaim(
@@ -1530,6 +1534,7 @@ class PaymentLinkService
     // Locking preserves the active UUID but clears its address. Do not restore
     // that sensitive state from a lookup that completed after the wallet locked.
     _requireWalletUnlocked();
+    coordinator.requirePreparation(generation);
     if (_ref.read(accountProvider).value?.activeAccountUuid !=
         receiverAccountUuid) {
       throw const PaymentLinkClaimDestinationChangedException();
@@ -1546,6 +1551,7 @@ class PaymentLinkService
       link,
       allowLongSync: allowLongSync,
       estimateDestinationAddress: receiverAddress,
+      preparationGeneration: generation,
     );
     return _sessionFromInspection(
       inspection,
@@ -1672,7 +1678,12 @@ class PaymentLinkService
     VizorPaymentLink link, {
     required bool allowLongSync,
     String? estimateDestinationAddress,
+    int? preparationGeneration,
   }) async {
+    final coordinator = _ref.read(paymentLinkClaimCoordinatorProvider);
+    final generation = preparationGeneration ?? coordinator.beginPreparation();
+    void requirePreparation() => coordinator.requirePreparation(generation);
+    requirePreparation();
     log('PaymentLinkClaim: preparation started');
     final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
     if (link.network != endpoint.networkName) {
@@ -1686,18 +1697,22 @@ class PaymentLinkService
     final currentTipHeight = await _ref
         .read(rpcEndpointFailoverProvider.notifier)
         .getLatestBlockHeight();
+    requirePreparation();
     final claimBirthdayHeight = validatePaymentLinkClaimBirthday(
       advertisedBirthdayHeight: link.birthdayHeight,
       currentTipHeight: currentTipHeight.toInt(),
     );
     log('PaymentLinkClaim: birthday validated');
     final retainedRecords = await _receivedStore.load();
+    requirePreparation();
     link = await paymentLinkWithRetainedAddress(link, retainedRecords);
 
+    requirePreparation();
     final tempWallet = await _claimWallet.createOrOpen(link);
     log('PaymentLinkClaim: temporary wallet opened');
     var deleteOnError = !tempWallet.existed;
     try {
+      requirePreparation();
       final String importedAddress;
       final String importedAccountUuid;
       if (tempWallet.existed) {
@@ -1713,8 +1728,10 @@ class PaymentLinkService
             'recreating it: $e\n$st',
           );
         }
+        requirePreparation();
         if (accounts == null ||
             !await _claimWallet.matchesLink(link: link, accounts: accounts)) {
+          requirePreparation();
           if (accounts != null) {
             log(
               'PaymentLinkService: recreating incomplete payment-link claim '
@@ -1723,6 +1740,7 @@ class PaymentLinkService
           }
           deleteOnError = true;
           await _claimWallet.resetDb(tempWallet.directory);
+          requirePreparation();
           final imported = await _claimWallet.importClaimAccount(
             link: link,
             birthdayHeight: claimBirthdayHeight,
@@ -1745,6 +1763,7 @@ class PaymentLinkService
         importedAddress = imported.address;
         importedAccountUuid = imported.accountUuid;
       }
+      requirePreparation();
       final advertisedAddress = link.knownAddress;
       if (advertisedAddress != null) {
         try {
@@ -1764,10 +1783,12 @@ class PaymentLinkService
           );
         }
       }
+      requirePreparation();
       link = link.withResolvedMetadata(
         address: advertisedAddress ?? importedAddress,
       );
       final existingRecord = await _receivedStore.find(link.address);
+      requirePreparation();
       if (existingRecord?.isClaimInFlight ?? false) {
         throw const PaymentLinkClaimInFlightException();
       }
@@ -1780,12 +1801,14 @@ class PaymentLinkService
       log('PaymentLinkClaim: independent check completed');
       // Before wallet setup, use the card's own receiver only for the preview
       // estimate. This address is never used as a submitted claim destination.
+      requirePreparation();
       final estimate = await _estimateClaim(
         dbPath: tempWallet.dbPath,
         network: endpoint.networkName,
         accountUuid: importedAccountUuid,
         toAddress: estimateDestinationAddress ?? importedAddress,
       );
+      requirePreparation();
       final claimableZatoshi = paymentLinkClaimableAmountZatoshi(
         recipientAmountZatoshi: link.amountZatoshi,
         maxSpendableZatoshi: estimate?.amountZatoshi ?? BigInt.zero,
@@ -1797,6 +1820,7 @@ class PaymentLinkService
         accountUuid: importedAccountUuid,
         limit: null,
       );
+      requirePreparation();
       link = resolvePaymentLinkCreatedAt(
         link: link,
         transactions: transactions,
@@ -1807,6 +1831,7 @@ class PaymentLinkService
           createdAt: link.createdAt,
         );
       }
+      requirePreparation();
       final fundingConfirmationCount = check.fundingHeight > 0
           ? (check.checkedHeight - check.fundingHeight + 1).clamp(
               0,
@@ -1822,6 +1847,7 @@ class PaymentLinkService
         accountUuid: importedAccountUuid,
         claimTxids: existingRecord?.claimTxids ?? '',
       );
+      requirePreparation();
       final availability = claimableZatoshi > BigInt.zero
           ? PaymentLinkAvailability.available
           : evidence.allFundsSpentElsewhere
@@ -1835,6 +1861,7 @@ class PaymentLinkService
               existingRecord.setupAccountUuid != null)) {
         await _receivedStore.setAvailability(link.address, availability);
       }
+      requirePreparation();
       final waitingForFundingConfirmations = paymentLinkShouldWaitForFunding(
         recipientAmountZatoshi: link.amountZatoshi,
         totalZatoshi: check.unspentZatoshi,

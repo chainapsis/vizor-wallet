@@ -66,9 +66,14 @@ void main() {
           rpcEndpointFailoverChainNameGetterProvider.overrideWithValue(
             (_) async => 'main',
           ),
-          rpcEndpointFailoverLatestBlockHeightGetterProvider.overrideWithValue(
-            (_, _) async => BigInt.from(api.tipHeight),
-          ),
+          rpcEndpointFailoverLatestBlockHeightGetterProvider.overrideWithValue((
+            _,
+            _,
+          ) async {
+            if (!api.tipStarted.isCompleted) api.tipStarted.complete();
+            await api.tipGate?.future;
+            return BigInt.from(api.tipHeight);
+          }),
           paymentLinkRecoveryStoreProvider.overrideWithValue(
             PaymentLinkRecoveryStore(_MemoryRecoveryStorage()),
           ),
@@ -95,11 +100,98 @@ void main() {
         final checking = service.inspectClaim(_link());
         final failure = expectLater(checking, throwsStateError);
         await api.checkStarted.future;
-        container.read(paymentLinkClaimCoordinatorProvider).pause();
+        container.read(paymentLinkClaimCoordinatorProvider).pauseForLifecycle();
         api.checkGate!.complete();
         await failure;
         expect(container.read(giftCardCheckProgressProvider), isEmpty);
         expect(api.cancelCalls, greaterThan(0));
+      },
+    );
+
+    for (final stage in ['tip', 'storage', 'import']) {
+      for (final resumeBeforeCompletion in [false, true]) {
+        test(
+          'pause during $stage blocks inspection even when resume=$resumeBeforeCompletion',
+          () async {
+            final gate = Completer<void>();
+            final started = Completer<void>();
+            switch (stage) {
+              case 'tip':
+                api.tipGate = gate;
+              case 'storage':
+                receivedStorage.onRead = () async {
+                  if (!started.isCompleted) started.complete();
+                  await gate.future;
+                  return receivedStorage.value;
+                };
+              case 'import':
+                api.importGate = gate;
+            }
+            final checking = service.inspectClaim(_link());
+            final failure = expectLater(checking, throwsStateError);
+            await switch (stage) {
+              'tip' => api.tipStarted.future,
+              'import' => api.importStarted.future,
+              _ => started.future,
+            };
+            final coordinator = container.read(
+              paymentLinkClaimCoordinatorProvider,
+            );
+            coordinator.pauseForLifecycle();
+            if (resumeBeforeCompletion) coordinator.resumeForLifecycle();
+            gate.complete();
+            await failure;
+            expect(api.syncCalls, 0);
+            expect(api.estimateDestinations, isEmpty);
+            expect(receivedStorage.value, isNull);
+            expect(container.read(giftCardCheckProgressProvider), isEmpty);
+            if (api.importedDbPath != null) {
+              expect(await File(api.importedDbPath!).exists(), isFalse);
+            }
+          },
+        );
+      }
+    }
+
+    test(
+      'background admission stays closed after account recovery wakeups',
+      () async {
+        final coordinator = container.read(paymentLinkClaimCoordinatorProvider);
+        coordinator.pauseForLifecycle();
+        (container.read(appSecurityProvider.notifier) as _SetupSecurityNotifier)
+            .unlockForTest();
+        coordinator.resumeAfterReset();
+        expect(coordinator.acceptsPreparation, isFalse);
+        await expectLater(service.inspectClaim(_link()), throwsStateError);
+        expect(api.importCalls, 0);
+        expect(api.syncCalls, 0);
+      },
+    );
+
+    test('account-free inspection can retry after foreground resume', () async {
+      final coordinator = container.read(paymentLinkClaimCoordinatorProvider);
+      coordinator.pauseForLifecycle();
+      await expectLater(service.inspectClaim(_link()), throwsStateError);
+      coordinator.resumeForLifecycle();
+      final inspection = await service.inspectClaim(_link());
+      expect(inspection.claimableZatoshi, _link().amountZatoshi);
+      expect(api.syncCalls, 1);
+      expect(container.read(appSecurityProvider).isPasswordConfigured, isFalse);
+    });
+
+    test(
+      'pause prevents fallback dispatch after an in-flight endpoint error',
+      () async {
+        api.failCheckOnce = true;
+        api.checkGate = Completer<void>();
+        final checking = service.inspectClaim(_link());
+        final failure = expectLater(checking, throwsStateError);
+        await api.checkStarted.future;
+        container.read(paymentLinkClaimCoordinatorProvider).pauseForLifecycle();
+        api.checkGate!.complete();
+        await failure;
+        expect(api.checkUrls, hasLength(1));
+        expect(api.estimateDestinations, isEmpty);
       },
     );
 
@@ -706,6 +798,10 @@ class _InspectRustApi implements RustLibApi {
   final checkUrls = <String>[];
   Completer<void>? checkGate;
   Completer<void> checkStarted = Completer<void>();
+  Completer<void>? tipGate;
+  Completer<void> tipStarted = Completer<void>();
+  Completer<void>? importGate;
+  Completer<void> importStarted = Completer<void>();
   int? fundingHeight;
   int? checkedTip;
   String? importedDbPath;
@@ -727,6 +823,10 @@ class _InspectRustApi implements RustLibApi {
     checkUrls.clear();
     checkGate = null;
     checkStarted = Completer<void>();
+    tipGate = null;
+    tipStarted = Completer<void>();
+    importGate = null;
+    importStarted = Completer<void>();
     fundingHeight = null;
     checkedTip = null;
     importedDbPath = null;
@@ -746,6 +846,8 @@ class _InspectRustApi implements RustLibApi {
     importCalls++;
     importedDbPath = dbPath;
     await File(dbPath).writeAsString('claim wallet fixture');
+    if (!importStarted.isCompleted) importStarted.complete();
+    await importGate?.future;
     return rust_wallet.WalletImportResult(
       unifiedAddress: _link().address,
       accountUuid: 'claim-wallet',
@@ -771,12 +873,12 @@ class _InspectRustApi implements RustLibApi {
   }) async* {
     syncCalls++;
     checkUrls.add(lightwalletdUrl);
+    if (!checkStarted.isCompleted) checkStarted.complete();
+    await checkGate?.future;
     if (failCheckOnce) {
       failCheckOnce = false;
       throw const SocketException('Connection reset');
     }
-    if (!checkStarted.isCompleted) checkStarted.complete();
-    await checkGate?.future;
     if (failSync) throw StateError('Claim scan failed');
     yield rust_sync.ApiGiftCardCheckProgress(
       phase: 'complete',
