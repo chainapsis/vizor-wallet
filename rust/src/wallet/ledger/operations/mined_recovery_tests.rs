@@ -93,6 +93,28 @@ impl Wallet {
         .unwrap();
     }
 
+    fn checkpoint(&self, operation_id: &str, kind: &str) {
+        checkpoint_batch(
+            &self.path,
+            WalletNetwork::Regtest,
+            operation_id,
+            "account-1",
+            kind,
+            Some("deposit-1"),
+            &self
+                .signed
+                .iter()
+                .map(|s| s.proof.clone())
+                .collect::<Vec<_>>(),
+            &self
+                .signed
+                .iter()
+                .map(|s| s.signature.clone())
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+    }
+
     async fn recover(&self, url: &str) -> Result<StoreAndBroadcastPcztsResult, String> {
         store_and_broadcast_signed_pczts(
             &self.path,
@@ -256,41 +278,131 @@ async fn exact_mined_batch_recovers_without_any_rpc_after_expiry() {
 }
 
 #[tokio::test]
-async fn byte_mismatch_missing_raw_and_rewound_mining_do_not_bypass_expiry() {
+async fn missing_or_mismatching_mined_bytes_defer_without_rpc() {
     let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
     crate::network_privacy::disable_tor();
-    for evidence in ["mismatch", "missing_raw", "rewound", "missing_row"] {
+    for raw in [None, Some(&[0x42][..])] {
         let wallet = Wallet::new(false);
-        match evidence {
-            "mismatch" => wallet.store(0, Some(&[0x42]), Some(201)),
-            "missing_raw" => wallet.store(0, None, Some(201)),
-            "rewound" => {
-                wallet.store(0, Some(&wallet.signed[0].raw), Some(201));
-                let conn = open_wallet_raw_conn_with_timeout(&wallet.path, WALLET_DB_BUSY_TIMEOUT)
-                    .unwrap();
-                conn.execute("UPDATE transactions SET mined_height = NULL", [])
-                    .unwrap();
-                assert_eq!(
-                    conn.query_row("SELECT COUNT(*) FROM vizor_mined_transactions", [], |r| r
-                        .get::<_, u32>(
-                        0
-                    ))
-                    .unwrap(),
-                    1
-                );
-            }
-            _ => {}
-        }
+        wallet.store(0, raw, Some(201));
+        wallet.checkpoint("uncertain-op", "swap_deposit");
         let (url, service, handle) = server(1_000, 0).await;
-        let result = wallet.recover(&url).await.unwrap();
-        assert_eq!(
-            (result.status.as_str(), result.broadcasted_count),
-            ("expired", 0),
-            "{evidence}"
-        );
-        assert_eq!(*service.calls.lock().unwrap(), ["tip"], "{evidence}");
+        let error = wallet
+            .recover(&url)
+            .await
+            .err()
+            .expect("mined bytes must defer");
+        assert!(error.contains("stored mined transaction"), "{error}");
+        broadcast(
+            &wallet.path,
+            &url,
+            WalletNetwork::Regtest,
+            "uncertain-op",
+            None,
+            None,
+        )
+        .await
+        .unwrap_err();
+        let rows = list(&wallet.path, WalletNetwork::Regtest, None).unwrap();
+        assert_eq!(rows[0].state, STATE_SIGNED_PENDING_BROADCAST);
+        assert_eq!(rows[0].external_ref.as_deref(), Some("deposit-1"));
+        assert!(service.calls.lock().unwrap().is_empty());
+        // Enhancement can supply exact bytes on a later attempt.
+        let conn = rusqlite::Connection::open(&wallet.path).unwrap();
+        conn.execute("UPDATE transactions SET raw = ?1", [&wallet.signed[0].raw])
+            .unwrap();
+        let result = broadcast(
+            &wallet.path,
+            "http://127.0.0.1:1",
+            WalletNetwork::Regtest,
+            "uncertain-op",
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.status, "broadcasted");
+        assert!(result.requires_ack);
         handle.abort();
     }
+}
+
+#[tokio::test]
+async fn rewound_mining_defers_only_while_recovery_evidence_is_pending() {
+    let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
+    crate::network_privacy::disable_tor();
+    for (start, end, priority, deferred) in [
+        (200, 206, 20, true),
+        (200, 206, 10, false),     // Already scanned.
+        (1, 100, 20, false),       // Before the transaction was observed.
+        (1_000, 1_001, 20, false), // After its expiry.
+    ] {
+        let wallet = Wallet::new(false);
+        wallet.store(0, Some(&wallet.signed[0].raw), Some(201));
+        wallet.checkpoint("rewound-op", "swap_deposit");
+        let conn = rusqlite::Connection::open(&wallet.path).unwrap();
+        conn.execute(
+            "UPDATE transactions SET mined_height = NULL, expiry_height = ?1",
+            [u32::from(wallet.signed[0].tx.expiry_height())],
+        )
+        .unwrap();
+        conn.execute("DELETE FROM scan_queue", []).unwrap();
+        conn.execute("INSERT INTO scan_queue (block_range_start, block_range_end, priority) VALUES (?1, ?2, ?3)",
+            params![start, end, priority]).unwrap();
+        let (url, service, handle) = server(1_000, 0).await;
+        let result = broadcast(
+            &wallet.path,
+            &url,
+            WalletNetwork::Regtest,
+            "rewound-op",
+            None,
+            None,
+        )
+        .await;
+        if deferred {
+            let error = result.unwrap_err();
+            assert!(error.contains("awaiting mined-state recovery"), "{error}");
+            assert!(service.calls.lock().unwrap().is_empty());
+            let rows = list(&wallet.path, WalletNetwork::Regtest, None).unwrap();
+            assert_eq!(rows[0].state, STATE_SIGNED_PENDING_BROADCAST);
+            assert_eq!(rows[0].external_ref.as_deref(), Some("deposit-1"));
+            // A restored mined height completes recovery offline.
+            conn.execute("UPDATE transactions SET mined_height = 201", [])
+                .unwrap();
+            assert_eq!(
+                broadcast(
+                    &wallet.path,
+                    "http://127.0.0.1:1",
+                    WalletNetwork::Regtest,
+                    "rewound-op",
+                    None,
+                    None
+                )
+                .await
+                .unwrap()
+                .status,
+                "broadcasted"
+            );
+        } else {
+            assert_eq!(result.unwrap().status, "expired");
+            assert_eq!(*service.calls.lock().unwrap(), ["tip"]);
+        }
+        handle.abort();
+    }
+}
+
+#[tokio::test]
+async fn an_unobserved_transaction_still_expires_normally() {
+    let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
+    crate::network_privacy::disable_tor();
+    let wallet = Wallet::new(false);
+    let (url, service, handle) = server(1_000, 0).await;
+    let result = wallet.recover(&url).await.unwrap();
+    assert_eq!(
+        (result.status.as_str(), result.broadcasted_count),
+        ("expired", 0)
+    );
+    assert_eq!(*service.calls.lock().unwrap(), ["tip"]);
+    handle.abort();
 }
 
 #[tokio::test]
@@ -298,7 +410,8 @@ async fn partially_mined_batch_preserves_count_and_mined_row() {
     let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
     crate::network_privacy::disable_tor();
     for (mined_index, tip, response, status, count) in [
-        (0, 1_000, 0, "expired", 1),
+        (0, 1_000, 0, "partial_broadcast", 1),
+        (1, 1_000, 0, "partial_broadcast", 1),
         (0, 205, 0, "broadcasted", 2),
         (0, 205, 1, "partial_broadcast", 1),
         (0, 205, -1, "partial_broadcast", 1),
@@ -334,12 +447,47 @@ async fn partially_mined_batch_preserves_count_and_mined_row() {
         assert_eq!(stored, (wallet.signed[mined_index].raw.clone(), 201));
         assert_eq!(
             *service.submitted.lock().unwrap(),
-            if status == "expired" {
+            if tip == 1_000 {
                 vec![]
             } else {
                 vec![wallet.signed[1 - mined_index].raw.clone()]
             }
         );
+        handle.abort();
+    }
+}
+
+#[tokio::test]
+async fn partial_expiry_preserves_the_ledger_deposit_result_for_acknowledgement() {
+    let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
+    crate::network_privacy::disable_tor();
+    for kind in ["swap_deposit", "pay_deposit"] {
+        let wallet = Wallet::new(true);
+        wallet.store(0, Some(&wallet.signed[0].raw), Some(201));
+        wallet.checkpoint("partial-op", kind);
+        let (url, service, handle) = server(1_000, 0).await;
+        let result = broadcast(
+            &wallet.path,
+            &url,
+            WalletNetwork::Regtest,
+            "partial-op",
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.status, "partial_broadcast");
+        assert!(result.requires_ack);
+        let rows = list(&wallet.path, WalletNetwork::Regtest, None).unwrap();
+        assert_eq!(rows[0].state, STATE_RESULT_PENDING_ACK);
+        assert_eq!(rows[0].status.as_deref(), Some("partial_broadcast"));
+        assert_eq!(rows[0].external_ref.as_deref(), Some("deposit-1"));
+        assert!(rows[0]
+            .txid
+            .as_deref()
+            .unwrap()
+            .contains(&wallet.signed[0].tx.txid().to_string()));
+        assert_eq!(*service.calls.lock().unwrap(), ["tip"]);
         handle.abort();
     }
 }

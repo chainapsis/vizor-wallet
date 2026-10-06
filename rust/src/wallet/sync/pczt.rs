@@ -1281,30 +1281,60 @@ struct PreparedSignedPczt {
 }
 
 /// Recognizes exact finalized bytes with current mined evidence in one read snapshot.
-/// Historical mining alone is insufficient after a rewind; unmined and missing-raw
-/// rows still need the normal network and expiry path. No wallet data is written.
+/// Missing or conflicting mined bytes and mining evidence awaiting a rescan are
+/// retryable: neither permits submission, expiry, or a success acknowledgment.
+/// Historical mining outside pending recovery does not prove current mining.
 fn stored_mined_transactions(
     db_path: &str,
+    network: WalletNetwork,
     prepared: &[PreparedSignedPczt],
 ) -> Result<Vec<bool>, String> {
     use rusqlite::OptionalExtension;
+    use zcash_client_backend::data_api::scanning::ScanPriority;
     let conn = crate::wallet::db::open_readonly_conn_with_timeout(
         db_path,
         Some(crate::wallet::db::READ_DB_BUSY_TIMEOUT),
     )?;
     let snapshot = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let wallet = zcash_client_sqlite::WalletDb::from_connection(&*snapshot, network, (), ());
+    let pending_ranges = wallet
+        .suggest_scan_ranges()
+        .map_err(|e| format!("Read hardware recovery scan ranges: {e}"))?
+        .into_iter()
+        .filter(|range| {
+            !matches!(
+                range.priority(),
+                ScanPriority::Ignored | ScanPriority::Scanned
+            )
+        })
+        .map(|range| range.block_range().clone())
+        .collect::<Vec<_>>();
+    let awaiting_rescan =
+        super::transactions::unmined_txids_with_mined_output_evidence(&snapshot, &pending_ranges)?;
     let mut query = snapshot
-        .prepare("SELECT raw FROM transactions WHERE txid = ?1 AND mined_height IS NOT NULL")
+        .prepare("SELECT raw, mined_height FROM transactions WHERE txid = ?1")
         .map_err(|e| format!("Read stored hardware transaction: {e}"))?;
     prepared
         .iter()
         .map(|item| {
-            let stored: Option<Vec<u8>> = query
-                .query_row([item.extracted.txid.as_ref()], |row| row.get(0))
+            let txid: &[u8] = item.extracted.txid.as_ref();
+            let stored: Option<(Option<Vec<u8>>, Option<u32>)> = query
+                .query_row([txid], |row| Ok((row.get(0)?, row.get(1)?)))
                 .optional()
-                .map_err(|e| format!("Read stored hardware transaction: {e}"))?
-                .flatten();
-            Ok(stored.as_deref() == Some(item.extracted.raw_tx.as_slice()))
+                .map_err(|e| format!("Read stored hardware transaction: {e}"))?;
+            match stored {
+                Some((raw, Some(_))) => {
+                    if raw.as_deref() == Some(item.extracted.raw_tx.as_slice()) {
+                        Ok(true)
+                    } else {
+                        Err(format!("The stored mined transaction {} has missing or conflicting bytes; retry after sync recovers its payload", item.extracted.txid))
+                    }
+                }
+                _ if awaiting_rescan.contains(txid) => Err(format!(
+                    "Hardware transaction {} is awaiting mined-state recovery; retry after sync", item.extracted.txid
+                )),
+                _ => Ok(false),
+            }
         })
         .collect()
 }
@@ -1687,7 +1717,7 @@ async fn store_and_broadcast_pczts_inner(
     let txids_joined = txids.join(",");
     let total_count = prepared.len() as u32;
 
-    let mined = stored_mined_transactions(db_path, &prepared);
+    let mined = stored_mined_transactions(db_path, network, &prepared);
     let mined = match mined {
         Ok(mined) => mined,
         Err(error) => return release_signed_pczt_operation_after_failure(proposal, error),
@@ -1746,7 +1776,14 @@ async fn store_and_broadcast_pczts_inner(
     }) {
         let result = StoreAndBroadcastPcztsResult {
             txids: txids_joined,
-            status: StoreAndBroadcastPcztsResult::EXPIRED.to_string(),
+            // Preserve a mined round's result metadata through the Ledger
+            // acknowledgment boundary; only wholly unmined batches expire.
+            status: if mined.iter().any(|mined| *mined) {
+                StoreAndBroadcastPcztsResult::PARTIAL_BROADCAST
+            } else {
+                StoreAndBroadcastPcztsResult::EXPIRED
+            }
+            .to_string(),
             broadcasted_count: mined.iter().filter(|mined| **mined).count() as u32,
             total_count,
             message: Some(error.clone()),

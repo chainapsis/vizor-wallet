@@ -248,6 +248,17 @@ pub(crate) fn get_unmined_txids_with_mined_output_evidence(
     }
 
     let conn = open_readonly_conn(db_path)?;
+    unmined_txids_with_mined_output_evidence(&conn, pending_ranges)
+}
+
+/// Reads the same rescan guard inside a caller-owned SQLite snapshot.
+pub(super) fn unmined_txids_with_mined_output_evidence(
+    conn: &rusqlite::Connection,
+    pending_ranges: &[Range<BlockHeight>],
+) -> Result<HashSet<Vec<u8>>, String> {
+    if pending_ranges.is_empty() {
+        return Ok(HashSet::new());
+    }
     let mut stmt = conn
         .prepare(&format!(
             "SELECT DISTINCT t.txid, t.min_observed_height, t.expiry_height
