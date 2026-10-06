@@ -7,6 +7,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/widgets/app_back_link.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_account_service.dart';
 import 'package:zcash_wallet/src/features/onboarding/import/desktop_import_navigation.dart';
@@ -17,7 +18,6 @@ import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/providers/wallet_provider.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'figma_compare/figma_compare_font_loader.dart';
-import '../integration_test/support/desktop_onboarding_flow.dart';
 
 void main() {
   setUpAll(loadFigmaCompareFonts);
@@ -68,7 +68,7 @@ void main() {
   }
 
   for (final hasWallet in [false, true]) {
-    testWidgets('E2E create helper opens the intro: hasWallet=$hasWallet', (
+    testWidgets('Welcome create action opens the intro: hasWallet=$hasWallet', (
       tester,
     ) async {
       await pump(
@@ -76,7 +76,12 @@ void main() {
         location: hasWallet ? '/add-account' : '/welcome',
         hasWallet: hasWallet,
       );
-      await openDesktopWalletCreation(tester);
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const ValueKey('welcome_create_wallet_button')),
+          matching: find.byType(AppButton),
+        ),
+      );
       await tester.pumpAndSettle();
       expect(find.text('The Shielded World'), findsOneWidget);
       expect(
@@ -89,14 +94,20 @@ void main() {
     });
 
     testWidgets(
-      'E2E import helper reaches phrase input: hasWallet=$hasWallet',
+      'Welcome software import reaches phrase input: hasWallet=$hasWallet',
       (tester) async {
         await pump(
           tester,
           location: hasWallet ? '/add-account' : '/welcome',
           hasWallet: hasWallet,
         );
-        await openDesktopSecretPassphraseImport(tester);
+        await tester.tap(
+          find.byKey(const ValueKey('welcome_import_wallet_button')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('desktop_import_secret_passphrase_card')),
+        );
         await tester.pumpAndSettle();
         final phrase = find.byKey(
           const ValueKey('import_mnemonic_first_word_field'),

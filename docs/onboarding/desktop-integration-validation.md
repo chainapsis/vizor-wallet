@@ -11,24 +11,24 @@ requires clicking **Import secret passphrase** before `/import` and its phrase
 fields appear. The previous regtest tests clicked Welcome's import button and
 immediately waited for the phrase field, so they would stop at the selector.
 
-`integration_test/support/desktop_onboarding_flow.dart` owns
-`openDesktopSecretPassphraseImport`. It drives both screens through their real
-controls, waits for each action, and preserves the production routing context.
-It is used at all 20 first/additional-wallet entry sites across 12 existing
-regtest scenarios and `desktop_regtest_flow.dart`. The scenario-specific
-mnemonics, birthdays, passwords, funding, balance, send, and recovery assertions
-remain in their existing tests.
+Each scenario traverses Welcome/Add account → import-method selector → phrase
+input using its existing local tap helpers. All 19 first/additional-wallet
+entry sites across 12 existing regtest scenarios and the pre-existing
+`desktop_regtest_flow.dart` are updated. Desktop interaction helpers remain
+per-file as required by `AGENTS.md`; no new shared route driver is introduced.
+The scenario-specific mnemonics, birthdays, passwords, funding, balance, send,
+and recovery assertions remain in their existing tests.
 
 Native execution also found that the Welcome create key now belongs to a
 `Semantics` wrapper. The two shield runners still cast that wrapper to
 `AppButton`, so their enablement wait timed out before creation started.
-`openDesktopWalletCreation` locates the wrapper's actual `AppButton` and drives
-its enabled action. Both creation runners use this helper.
+Each runner now passes the wrapper's actual `AppButton` finder to its existing
+local button helper and waits for the enabled action.
 
-Four widget tests execute these exact E2E helpers against the production desktop
-onboarding routes. They verify first/additional-account creation entry, phrase
-input, the `entry=import-method` context, the additional-account origin, and Back
-returning to the correct selector.
+Four widget tests drive the production desktop onboarding controls. They verify
+first/additional-account creation entry, phrase input, the `entry=import-method`
+context, the additional-account origin, and Back returning to the correct
+selector.
 The native Welcome smoke test also checks the create, import, and Gift controls
 using their stable keys.
 
