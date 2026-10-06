@@ -1980,6 +1980,7 @@ List<rust_sync.TransactionInfo> _etaTransactions() => [
     ('unknown', 'orchard', 'receiving'),
   ])
     rust_sync.TransactionInfo(
+      amountIncludesFee: false,
       detailsComplete: true,
       feeState: rust_sync.TransactionFeeState.known,
       provisional: false,

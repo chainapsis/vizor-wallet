@@ -120,7 +120,7 @@ ActivityRowData buildTransactionActivityRow({
                   subtitle == 'Taking longer'
               ? AppIcons.time
               : null)
-: isFeeOnly
+        : isFeeOnly
         ? null
         : _poolIcon(normalizeActivityPool(displayPool), ordinary: isPayment),
     amountText: activityAmountTextForFormFactor(
