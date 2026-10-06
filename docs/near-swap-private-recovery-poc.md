@@ -178,10 +178,10 @@ removes trial decryption, preserving key IDs, note ownership, witnesses, and
 nullifiers needed to spend recovered notes. Reorgs invalidate affected sweep
 anchors and candidates.
 
-NEAR activity persistence and loading both replay supported statuses into the
-wallet DB. The wallet deletion drain covers the status request and its resulting
-writes. Existing records are linked by their registered refund or recipient
-address, including records written before lifecycle integration.
+NEAR activity persistence and loading replay outgoing swap statuses into the
+wallet DB, matching each record to its refund key by the refund address. Incoming
+quotes record theirs through their reservation instead. The wallet deletion drain
+covers the status request and its resulting writes.
 
 Private enhancement is requested only for concrete query batches. Outgoing work
 that needs local rediscovery remains durably queued without creating network
@@ -190,20 +190,13 @@ outgoing enrichment has been completed.
 
 ### Restore comparison instrumentation
 
-`pir_http` records each completed HTTP attempt with service, request class,
-application request/response byte counts, elapsed microseconds and success.
-Receiver request classes distinguish manifest, public parameters, witness and
-query pages. Enhance distinguishes GET setup requests and POST requests.
-`pir_metric` records full receiver lookup, validation/insertion and private
-recovery wall time; `sync_metric` records block download, exposed download wait,
-scan/store and ordinary enhancement durations. Logs omit keys, receivers,
-transaction identifiers, URLs and payloads from these new metric events.
+`pir_metric` records private recovery wall time; `sync_metric` records block
+download, exposed download wait and scan/store durations. Logs omit keys,
+receivers, transaction identifiers, URLs and payloads from these metric events.
 
 Phase durations are inclusive; prefetch download overlaps scanning. Use sync
-start/completion for wall time instead of summing nested timers. In-flight
-cancelled HTTP attempts do not emit completion metrics, so report cancelled runs
-separately. The baseline disables swap-receiving-poc entirely; it measures
-ordinary wallet work and is not expected to recover the special swap receipts.
+start/completion for wall time instead of summing nested timers. A cancelled
+recovery emits no `pir_metric`, so report cancelled runs separately.
 
 ### Reproducing this checkpoint
 

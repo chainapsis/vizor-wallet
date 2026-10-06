@@ -6,15 +6,11 @@ edition = "2021"
 [lib]
 crate-type = ["cdylib", "staticlib", "rlib"]
 
-[features]
-# Kept for existing POC build scripts. New addresses require the runtime setting.
-swap-receiving-poc = []
-
 [dependencies]
 # These receiver and swap crates are not published yet.
 receiver-pir = { git = "https://github.com/valargroup/wallet-pir.git", rev = "48a6c2a55603fdc5eeb1823cc8102588fc561d0f" }
 receiver-directory = { git = "https://github.com/valargroup/wallet-pir.git", rev = "48a6c2a55603fdc5eeb1823cc8102588fc561d0f" }
-zakura-swap-receiving = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "709cbf99f9da6c6c78622c648edae2f9d432d50d" }
+zakura-swap-receiving = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "e42ab994f5ddd4293b3511a016c1a5de06adc225" }
 zakura-pir-status = { version = "=0.0.1-rc0" }
 zakura-transaction-status = { version = "=0.0.1-rc0" }
 zcash_note_encryption = "0.4"
@@ -67,7 +63,7 @@ hyper = "1"
 hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "http2", "ring", "tls12", "webpki-roots"] }
 hyper-util = { version = "0.1", features = ["client-legacy", "http1", "http2", "tokio"] }
 tower-service = "0.3"
-time = { version = "0.3", features = ["parsing"] }
+time = "0.3"
 # rustls is in the graph transitively via tonic; make it a direct dep
 # so we can explicitly install the ring CryptoProvider in `init_app`.
 # Without an explicit provider install, rustls 0.23+ panics the first
@@ -236,12 +232,12 @@ opt-level = 3
 
 # Experimental wallet changes share one exact source revision.
 [patch.crates-io]
-zakura-pir-native = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "709cbf99f9da6c6c78622c648edae2f9d432d50d" }
-zakura-pir-enhance-types = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "709cbf99f9da6c6c78622c648edae2f9d432d50d" }
-zakura-pir-enhance = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "709cbf99f9da6c6c78622c648edae2f9d432d50d" }
-zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "709cbf99f9da6c6c78622c648edae2f9d432d50d" }
-zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "709cbf99f9da6c6c78622c648edae2f9d432d50d" }
-zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "709cbf99f9da6c6c78622c648edae2f9d432d50d" }
+zakura-pir-native = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "e42ab994f5ddd4293b3511a016c1a5de06adc225" }
+zakura-pir-enhance-types = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "e42ab994f5ddd4293b3511a016c1a5de06adc225" }
+zakura-pir-enhance = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "e42ab994f5ddd4293b3511a016c1a5de06adc225" }
+zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "e42ab994f5ddd4293b3511a016c1a5de06adc225" }
+zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "e42ab994f5ddd4293b3511a016c1a5de06adc225" }
+zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "e42ab994f5ddd4293b3511a016c1a5de06adc225" }
 
 # Receiver PIR uses the same published math family as Private queries.
 [patch."https://github.com/valargroup/ipir-sp.git"]

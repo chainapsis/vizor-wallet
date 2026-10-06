@@ -93,7 +93,7 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
             _MobilePrivateQueriesControl(
               label: 'NEAR swap privacy',
               keyPrefix: 'mobile_settings_near_swap_privacy',
-              enabled: nearSwapPrivacy && enhancePirEnabled,
+              enabled: nearSwapPrivacy,
               onToggle: changingRecovery || !enhancePirEnabled
                   ? null
                   : () => unawaited(

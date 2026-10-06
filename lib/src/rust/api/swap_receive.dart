@@ -7,10 +7,10 @@ import '../frb_generated.dart';
 import '../wallet/swap_receiving/receive.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `network`
-
-/// Resumes a draft or reserves the lowest eligible index, scanned from the next block.
-/// Does not start or restart ordinary wallet sync.
+/// Resumes the account's draft or reserves the lowest eligible index. Its key is
+/// scanned from the next unscanned block until it closes, and quoting later
+/// requires that scanning to reach the tip without finding a payment. Does not
+/// start or restart ordinary wallet sync.
 Future<ReceiveReservation> prepareReceiveReservation({
   required String dbPath,
   required String networkName,
@@ -116,8 +116,9 @@ Future<void> observeReceiveQuote({
   checkedAtSeconds: checkedAtSeconds,
 );
 
-/// Releases eligible abandoned addresses that local scanning shows are still unpaid.
-Future<int> reapReceiveReservations({
+/// Closes settled paid reservations and releases abandoned unpaid ones whose
+/// addresses local scanning shows are still empty.
+Future<void> reapReceiveReservations({
   required String dbPath,
   required String networkName,
   required String accountUuid,
@@ -131,17 +132,11 @@ Future<int> reapReceiveReservations({
 class ReceiveDepositInstruction {
   final String address;
   final String? memo;
-  final PlatformInt64 deadlineSeconds;
 
-  const ReceiveDepositInstruction({
-    required this.address,
-    this.memo,
-    required this.deadlineSeconds,
-  });
+  const ReceiveDepositInstruction({required this.address, this.memo});
 
   @override
-  int get hashCode =>
-      address.hashCode ^ memo.hashCode ^ deadlineSeconds.hashCode;
+  int get hashCode => address.hashCode ^ memo.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -149,8 +144,7 @@ class ReceiveDepositInstruction {
       other is ReceiveDepositInstruction &&
           runtimeType == other.runtimeType &&
           address == other.address &&
-          memo == other.memo &&
-          deadlineSeconds == other.deadlineSeconds;
+          memo == other.memo;
 }
 
 /// Provider lookup for a persisted quote, including quotes never started in the UI.
@@ -182,17 +176,12 @@ class ReceiveQuoteStatusRequest {
 /// An account-scoped durable receive draft, whose key is scanned from issuance.
 class ReceiveReservation {
   final PlatformInt64 id;
-  final BigInt index;
   final String address;
 
-  const ReceiveReservation({
-    required this.id,
-    required this.index,
-    required this.address,
-  });
+  const ReceiveReservation({required this.id, required this.address});
 
   @override
-  int get hashCode => id.hashCode ^ index.hashCode ^ address.hashCode;
+  int get hashCode => id.hashCode ^ address.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -200,7 +189,6 @@ class ReceiveReservation {
       other is ReceiveReservation &&
           runtimeType == other.runtimeType &&
           id == other.id &&
-          index == other.index &&
           address == other.address;
 }
 

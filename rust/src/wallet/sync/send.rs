@@ -838,8 +838,7 @@ pub(crate) fn propose_send_with_swap_refund(
     send_flow_id: &str,
     to_address: &str,
     amount_zatoshi: u64,
-    memo_str: Option<&str>,
-    swap_refund_index: Option<u64>,
+    refund_index: u64,
 ) -> Result<ProposalResult, String> {
     propose_send_with_request(
         db_path,
@@ -849,21 +848,20 @@ pub(crate) fn propose_send_with_swap_refund(
         SendRequest::SwapFunding {
             to_address,
             amount_zatoshi,
-            memo_str,
-            swap_refund_index,
+            refund_index,
         },
         SendPurpose::Ordinary,
     )
 }
 
+/// The fee [`propose_send_with_swap_refund`] would pay.
 pub(crate) fn estimate_fee_with_swap_refund(
     db_path: &str,
     network: WalletNetwork,
     account_uuid: &str,
     to_address: &str,
     amount_zatoshi: u64,
-    memo_str: Option<&str>,
-    swap_refund_index: Option<u64>,
+    refund_index: u64,
 ) -> Result<u64, String> {
     estimate_fee_with_request(
         db_path,
@@ -872,8 +870,7 @@ pub(crate) fn estimate_fee_with_swap_refund(
         SendRequest::SwapFunding {
             to_address,
             amount_zatoshi,
-            memo_str,
-            swap_refund_index,
+            refund_index,
         },
     )
 }
@@ -1073,11 +1070,11 @@ fn estimate_fee_with_request(
 /// card of a Gift Card batch.
 #[derive(Clone, Copy)]
 enum SendRequest<'a> {
+    /// A swap deposit whose change carries the recovery memo of refund key `refund_index`.
     SwapFunding {
         to_address: &'a str,
         amount_zatoshi: u64,
-        memo_str: Option<&'a str>,
-        swap_refund_index: Option<u64>,
+        refund_index: u64,
     },
     Single {
         to_address: &'a str,
@@ -1093,10 +1090,9 @@ impl SendRequest<'_> {
             Self::SwapFunding {
                 to_address,
                 amount_zatoshi,
-                memo_str,
                 ..
-            }
-            | Self::Single {
+            } => build_send_request(to_address, amount_zatoshi, None),
+            Self::Single {
                 to_address,
                 amount_zatoshi,
                 memo_str,
@@ -1127,11 +1123,12 @@ fn propose_request(
     let change_memo = match request {
         SendRequest::SwapFunding {
             to_address,
-            swap_refund_index: Some(index),
+            refund_index,
             ..
-        } => Some(crate::wallet::swap_receiving::funding_memo(
-            db, account_id, index, to_address,
-        )?),
+        } => Some(
+            db.swap_funding_memo(account_id, refund_index, to_address)
+                .map_err(|e| e.to_string())?,
+        ),
         _ => None,
     };
     let migration_locks = super::migration::locked_migration_note_refs(db_path, account_uuid)?;
@@ -4099,7 +4096,7 @@ fn propose_send_with_reserved_notes(
         (
             MultiOutputChangeStrategy::new(
                 ConservativeZip317FeeRule,
-                change_memo.clone(),
+                change_memo,
                 ShieldedPool::Ironwood,
                 DustOutputPolicy::default(),
                 SplitPolicy::single_output(),
@@ -4110,7 +4107,7 @@ fn propose_send_with_reserved_notes(
         zip317_helper::<ReservedInputSource<'_, WalletDatabase>>(None, is_ledger)
     };
 
-    let proposal = input_selector
+    input_selector
         .propose_transaction(
             &network,
             &reserved_db,
@@ -4125,8 +4122,7 @@ fn propose_send_with_reserved_notes(
             spend_policy,
             proposed_tx_version,
         )
-        .map_err(|e| format!("Propose failed: {e}"))?;
-    Ok(proposal)
+        .map_err(|e| format!("Propose failed: {e}"))
 }
 
 fn ordinary_send_spend_pools(orchard_reserved_for_migration: bool) -> Vec<ShieldedPool> {

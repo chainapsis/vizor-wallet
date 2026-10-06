@@ -80,11 +80,7 @@ void main() {
     );
     for (final address in [
       SwapZecStagingAddress(address: 'refund', receivingIndex: BigInt.from(7)),
-      SwapZecStagingAddress(
-        address: 'incoming',
-        receivingIndex: BigInt.from(3),
-        reservationId: 1,
-      ),
+      const SwapZecStagingAddress(address: 'incoming', reservationId: 1),
       const SwapZecStagingAddress(address: 'ordinary'),
     ]) {
       expect(

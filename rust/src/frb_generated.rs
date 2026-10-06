@@ -7773,7 +7773,6 @@ fn wire__crate__api__sync__reserve_swap_receiving_address_impl(
             let api_db_path = <String>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
-            let api_refund = <bool>::sse_decode(&mut deserializer);
             let api_live_tip = <u64>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
@@ -7782,7 +7781,6 @@ fn wire__crate__api__sync__reserve_swap_receiving_address_impl(
                         api_db_path,
                         api_network,
                         api_account_uuid,
-                        api_refund,
                         api_live_tip,
                     )?;
                     Ok(output_ok)
@@ -13745,11 +13743,9 @@ impl SseDecode for crate::api::swap_receive::ReceiveDepositInstruction {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_address = <String>::sse_decode(deserializer);
         let mut var_memo = <Option<String>>::sse_decode(deserializer);
-        let mut var_deadlineSeconds = <i64>::sse_decode(deserializer);
         return crate::api::swap_receive::ReceiveDepositInstruction {
             address: var_address,
             memo: var_memo,
-            deadline_seconds: var_deadlineSeconds,
         };
     }
 }
@@ -13800,11 +13796,9 @@ impl SseDecode for crate::api::swap_receive::ReceiveReservation {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_id = <i64>::sse_decode(deserializer);
-        let mut var_index = <u64>::sse_decode(deserializer);
         let mut var_address = <String>::sse_decode(deserializer);
         return crate::api::swap_receive::ReceiveReservation {
             id: var_id,
-            index: var_index,
             address: var_address,
         };
     }
@@ -18197,7 +18191,6 @@ impl flutter_rust_bridge::IntoDart for crate::api::swap_receive::ReceiveDepositI
         [
             self.address.into_into_dart().into_dart(),
             self.memo.into_into_dart().into_dart(),
-            self.deadline_seconds.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -18285,7 +18278,6 @@ impl flutter_rust_bridge::IntoDart for crate::api::swap_receive::ReceiveReservat
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
             self.id.into_into_dart().into_dart(),
-            self.index.into_into_dart().into_dart(),
             self.address.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -22559,7 +22551,6 @@ impl SseEncode for crate::api::swap_receive::ReceiveDepositInstruction {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.address, serializer);
         <Option<String>>::sse_encode(self.memo, serializer);
-        <i64>::sse_encode(self.deadline_seconds, serializer);
     }
 }
 
@@ -22605,7 +22596,6 @@ impl SseEncode for crate::api::swap_receive::ReceiveReservation {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <i64>::sse_encode(self.id, serializer);
-        <u64>::sse_encode(self.index, serializer);
         <String>::sse_encode(self.address, serializer);
     }
 }

@@ -3,7 +3,6 @@ use super::enhancement::transport::RoutedTransport;
 use crate::wallet::db::{with_wallet_db_write_lock, WalletDatabase};
 use futures::StreamExt;
 use std::num::NonZeroU32;
-use zcash_client_backend::data_api::{Account as _, AccountSource, WalletRead};
 
 pub(super) async fn reconcile(
     db: &mut WalletDatabase,
@@ -11,16 +10,7 @@ pub(super) async fn reconcile(
 ) -> Result<(), String> {
     let now = crate::wallet::swap_receiving::receive::now()?;
     let transport = RoutedTransport::new(should_exit);
-    for account in db.get_account_ids().map_err(|e| e.to_string())? {
-        let details = db
-            .get_account(account)
-            .map_err(|e| e.to_string())?
-            .ok_or("Account disappeared")?;
-        if !matches!(details.source(), AccountSource::Derived { .. })
-            || crate::wallet::keys::hardware_signer_kind(details.source()).is_some()
-        {
-            continue;
-        }
+    for account in crate::wallet::swap_receiving::software_accounts(db)? {
         let work = with_wallet_db_write_lock("swap_refund.status_due", || {
             db.take_swap_refund_status_checks(account, now, NonZeroU32::new(8).unwrap())
                 .map_err(|e| e.to_string())

@@ -290,6 +290,6 @@ String _shortSwapValue(String? value) {
 
 void _requireAddressOnlyDeposit(SwapQuote quote) {
   if (quote.depositInstruction.memo?.isNotEmpty ?? false) {
-    throw StateError('Swap receiving POC requires an address-only ZEC deposit');
+    throw StateError('Swap receiving requires an address-only ZEC deposit');
   }
 }

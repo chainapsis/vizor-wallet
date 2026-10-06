@@ -27,8 +27,6 @@ recovery pending without failing ordinary sync.
 
 The dependencies use exact Git revisions and published PIR math crates. No sibling
 compatibility checkout or compile-time privacy environment variable is needed.
-The legacy `swap-receiving-poc` Cargo feature remains accepted by old build scripts
-but does not turn the setting on.
 
 Generate the bridge with `scripts/generate-rust-bridge.sh`. Then use the normal
 Flutter build workflow with an isolated bundle, wallet database, and Keychain
@@ -51,10 +49,12 @@ and the 48-hour, three-reservation, and 30-slot incoming-address policy.
    edits, and refreshes retain the same reservation for the current account and
    direction, including while address preparation is in flight. Starting a swap,
    requesting a quote for another account/direction, or restarting the app
-   requires a new reservation.
+   requires a new refund reservation. The incoming draft is stored in the wallet
+   and resumed after any of these until a swap starts with it.
    Existing reservations remain scanned; errors never roll back a key that may
-   already have been sent to the provider. A retained address does not require
-   another sync readiness check for each quote.
+   already have been sent to the provider. A retained refund address needs no
+   further readiness check, but every incoming quote rechecks that its address is
+   unpaid and the wallet is scanned to the tip.
 2. An accepted refund quote records its deposit address against the reserved
    refund key before it is shown, and funding requires that record. An unfunded
    quote holds no key open. Outgoing fee estimation and funding use the same
@@ -111,7 +111,7 @@ direction mapping, and rejection without falling back to an ordinary address. Th
 library tests cover issuance during incomplete sync.
 
 ```sh
-cargo test --manifest-path rust/Cargo.toml --features swap-receiving-poc wallet::swap_receiving::tests --lib
+cargo test --manifest-path rust/Cargo.toml wallet::swap_receiving::tests --lib
 fvm flutter test test/features/swap/swap_zec_staging_address_service_test.dart test/features/swap/swap_address_plan_test.dart test/features/swap/swap_deposit_amount_test.dart
 ```
 

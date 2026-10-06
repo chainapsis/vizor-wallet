@@ -118,32 +118,36 @@ fn reject_legacy_swap_poc(db_path: &str) -> Result<(), String> {
     let conn =
         rusqlite::Connection::open_with_flags(db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
             .map_err(|e| e.to_string())?;
-    let exists:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='schemer_migrations')",[],|r|r.get(0)).map_err(|e|e.to_string())?;
+    let exists: bool = conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master
+             WHERE type='table' AND name='schemer_migrations')",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
     if exists {
-        let legacy: bool = conn
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM schemer_migrations WHERE id=?1)",
-                [uuid::Uuid::from_u128(0x2eac815d_67ca_4fb4_b534_066102a0fba2).as_bytes()],
-                |r| r.get(0),
-            )
-            .map_err(|e| e.to_string())?;
-        if legacy {
-            return Err("This wallet uses the earlier swap POC database. Preserve it and use a separate wallet identity for private recovery testing.".into());
-        }
         let mut stmt = conn
             .prepare("SELECT EXISTS(SELECT 1 FROM schemer_migrations WHERE id=?1)")
             .map_err(|e| e.to_string())?;
+        let mut applied = |id: u128| -> Result<bool, String> {
+            stmt.query_row([uuid::Uuid::from_u128(id).as_bytes()], |r| r.get(0))
+                .map_err(|e| e.to_string())
+        };
+        if applied(LEGACY_SWAP_POC_MIGRATION)? {
+            return Err("This wallet uses the earlier swap POC database. Preserve it and use a separate wallet identity for private recovery testing.".into());
+        }
         for id in PRERELEASE_SWAP_MIGRATIONS {
-            let applied: bool = stmt
-                .query_row([uuid::Uuid::from_u128(id).as_bytes()], |r| r.get(0))
-                .map_err(|e| e.to_string())?;
-            if applied {
+            if applied(id)? {
                 return Err("This wallet database comes from a swap receiving prerelease. Restore the wallet from its recovery phrase into a new database.".into());
             }
         }
     }
     Ok(())
 }
+
+/// The migration that only the earlier local swap POC applied.
+const LEGACY_SWAP_POC_MIGRATION: u128 = 0x2eac815d_67ca_4fb4_b534_066102a0fba2;
 
 /// Swap migrations from prerelease builds, since replaced by one migration
 /// whose tables they already created.
@@ -3595,7 +3599,7 @@ mod swap_upgrade_gate_tests {
             .unwrap();
         conn.execute(
             "INSERT INTO schemer_migrations VALUES (?1)",
-            [uuid::Uuid::from_u128(0x2eac815d_67ca_4fb4_b534_066102a0fba2).as_bytes()],
+            [uuid::Uuid::from_u128(super::LEGACY_SWAP_POC_MIGRATION).as_bytes()],
         )
         .unwrap();
         drop(conn);

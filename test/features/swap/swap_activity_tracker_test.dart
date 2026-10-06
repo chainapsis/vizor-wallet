@@ -19,13 +19,6 @@ void main() {
         'PENDING_DEPOSIT',
       );
       expect(
-        swapScanningProviderStatus(
-          null,
-          localStatus: SwapIntentStatus.awaitingExternalDeposit,
-        ),
-        'PENDING_DEPOSIT',
-      );
-      expect(
         swapScanningProviderStatus(null, localStatus: SwapIntentStatus.expired),
         isNull,
       );

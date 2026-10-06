@@ -23,7 +23,7 @@ pub(super) const HTTP_TIMEOUT: Duration = Duration::from_secs(120);
 type DirectHttpsClient = Client<hyper_rustls::HttpsConnector<DirectRouteConnector>, Full<Bytes>>;
 
 #[derive(Debug)]
-pub(crate) enum RoutedHttpError {
+pub(in crate::wallet::sync_engine) enum RoutedHttpError {
     Cancelled,
     HttpStatus(u16),
     Failed(SyncError),
@@ -53,14 +53,14 @@ enum RoutePolicy {
 /// `routed_request` re-checks the route per request, and `DirectRouteIo` polls
 /// the route lease on every read and write, so a pooled connection stays
 /// route-policed for its whole life.
-pub(crate) struct RoutedTransport<'a, F> {
+pub(in crate::wallet::sync_engine) struct RoutedTransport<'a, F> {
     should_exit: &'a F,
     direct: DirectHttpsClient,
     route_policy: RoutePolicy,
 }
 
 impl<'a, F> RoutedTransport<'a, F> {
-    pub(crate) fn new(should_exit: &'a F) -> Self {
+    pub(in crate::wallet::sync_engine) fn new(should_exit: &'a F) -> Self {
         Self::with_route(should_exit, RoutePolicy::WalletPreference)
     }
     pub(in crate::wallet::sync_engine) fn new_direct(should_exit: &'a F) -> Self {
@@ -278,7 +278,7 @@ where
 
 impl<F: Fn() -> bool> RoutedTransport<'_, F> {
     /// Bounded bytes for protocols that supply their own decoding and limits.
-    pub(crate) async fn bytes(
+    pub(in crate::wallet::sync_engine) async fn bytes(
         &self,
         method: Method,
         url: &str,

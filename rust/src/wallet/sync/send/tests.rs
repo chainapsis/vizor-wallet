@@ -1127,8 +1127,6 @@ impl InputSource for RecordingConsolidationSource {
         Ok(None)
     }
 
-
-
     fn select_spendable_notes(
         &self,
         _account: Self::AccountId,

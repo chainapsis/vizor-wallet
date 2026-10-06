@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
-    show PlatformInt64, PlatformInt64Util;
+    show PlatformInt64;
 import 'package:zcash_wallet/src/features/ledger/services/ledger_operation_lifecycle.dart';
 import 'package:zcash_wallet/src/features/swap/domain/swap_contract.dart';
 import 'package:zcash_wallet/src/features/swap/integrations/near_intents/near_intents_one_click_swap_adapter.dart';
@@ -16,7 +16,6 @@ void main() {
     store = _Store();
     provider = _Provider();
     service = SwapReceiveReservationService(
-      enabled: () => true,
       store: (_) async => store,
       provider: provider,
     );
@@ -88,7 +87,10 @@ void main() {
     // A quote that never reserved an address has nothing to start.
     await service.start('account', _quote);
     expect(store.events, isEmpty);
-    final quote = SwapQuote.withReceiveRequestId(_quote, 'request-1');
+    final quote = SwapQuote.withLocalIdentity(
+      _quote,
+      receiveRequestId: 'request-1',
+    );
     await service.start('account', quote);
     expect(store.events, ['start:request-1']);
     store.savedMemo = 'other-memo';
@@ -155,7 +157,6 @@ void main() {
     () async {
       final lifecycle = LedgerOperationLifecycle();
       service = SwapReceiveReservationService(
-        enabled: () => true,
         store: (_) async => store,
         provider: provider,
         lifecycle: lifecycle,
@@ -212,7 +213,7 @@ class _Store implements ReceiveReservationStore {
   String savedMemo = 'memo';
   @override
   Future<api.ReceiveReservation> prepare(BigInt tip) async =>
-      api.ReceiveReservation(id: 1, index: BigInt.zero, address: 'u1test');
+      const api.ReceiveReservation(id: 1, address: 'u1test');
   @override
   Future<String> begin(PlatformInt64 reservation, DateTime deadline) async {
     events.add('begin');
@@ -236,13 +237,7 @@ class _Store implements ReceiveReservationStore {
   @override
   Future<api.ReceiveDepositInstruction> start(String request) async {
     events.add('start:$request');
-    return api.ReceiveDepositInstruction(
-      address: 'deposit',
-      memo: savedMemo,
-      deadlineSeconds: PlatformInt64Util.from(
-        _deadline.millisecondsSinceEpoch ~/ 1000,
-      ),
-    );
+    return api.ReceiveDepositInstruction(address: 'deposit', memo: savedMemo);
   }
 
   @override

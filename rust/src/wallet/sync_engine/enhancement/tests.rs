@@ -392,8 +392,9 @@ mod tests {
         let should_exit = || false;
         let _ = rustls::crypto::ring::default_provider().install_default();
         let mut enhancement = EnhancementSession::new(WalletNetwork::Regtest, db_path);
+        // Only catches a hang: the wallet write lock is shared with concurrent tests.
         let result = tokio::time::timeout(
-            std::time::Duration::from_secs(5),
+            std::time::Duration::from_secs(60),
             enhancement.run_checkpoint(&mut db, &mut client, None, &should_exit),
         )
         .await

@@ -794,9 +794,9 @@ class SwapNotifier extends Notifier<SwapState> {
 
       state = state.copyWith(
         reviewVisible: true,
-        reviewQuote: SwapQuote.withSwapRefundIndex(
+        reviewQuote: SwapQuote.withLocalIdentity(
           quote,
-          direction.sendsZec ? stagingAddress.receivingIndex : null,
+          swapRefundIndex: stagingAddress.receivingIndex,
         ),
         reviewAddressPlan: addressPlan,
         reviewAccountUuid: accountUuid,
@@ -806,9 +806,8 @@ class SwapNotifier extends Notifier<SwapState> {
       );
     } catch (e) {
       if (generation != _quoteGeneration) return;
-      if (!direction.sendsZec &&
-          e is ReceiveError &&
-          e.code == ReceiveErrorCode.stale) {
+      // Only the incoming quote path throws a bare ReceiveError.
+      if (e is ReceiveError && e.code == ReceiveErrorCode.stale) {
         _reviewStagingAddress = null;
       }
       state = state.copyWith(

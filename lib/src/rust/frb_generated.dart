@@ -1221,7 +1221,7 @@ abstract class RustLibApi extends BaseApi {
 
   Future<void> crateApiNetworkPrivacyQuiesceNetworkPrivacyDirectRequests();
 
-  Future<int> crateApiSwapReceiveReapReceiveReservations({
+  Future<void> crateApiSwapReceiveReapReceiveReservations({
     required String dbPath,
     required String networkName,
     required String accountUuid,
@@ -1294,7 +1294,6 @@ abstract class RustLibApi extends BaseApi {
     required String dbPath,
     required String network,
     required String accountUuid,
-    required bool refund,
     required BigInt liveTip,
   });
 
@@ -9161,7 +9160,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Future<int> crateApiSwapReceiveReapReceiveReservations({
+  Future<void> crateApiSwapReceiveReapReceiveReservations({
     required String dbPath,
     required String networkName,
     required String accountUuid,
@@ -9181,7 +9180,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           );
         },
         codec: SseCodec(
-          decodeSuccessData: sse_decode_u_32,
+          decodeSuccessData: sse_decode_unit,
           decodeErrorData: sse_decode_receive_error,
         ),
         constMeta: kCrateApiSwapReceiveReapReceiveReservationsConstMeta,
@@ -9594,7 +9593,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String dbPath,
     required String network,
     required String accountUuid,
-    required bool refund,
     required BigInt liveTip,
   }) {
     return handler.executeNormal(
@@ -9604,7 +9602,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(dbPath, serializer);
           sse_encode_String(network, serializer);
           sse_encode_String(accountUuid, serializer);
-          sse_encode_bool(refund, serializer);
           sse_encode_u_64(liveTip, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
@@ -9618,7 +9615,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiSyncReserveSwapReceivingAddressConstMeta,
-        argValues: [dbPath, network, accountUuid, refund, liveTip],
+        argValues: [dbPath, network, accountUuid, liveTip],
         apiImpl: this,
       ),
     );
@@ -9627,7 +9624,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiSyncReserveSwapReceivingAddressConstMeta =>
       const TaskConstMeta(
         debugName: "reserve_swap_receiving_address",
-        argNames: ["dbPath", "network", "accountUuid", "refund", "liveTip"],
+        argNames: ["dbPath", "network", "accountUuid", "liveTip"],
       );
 
   @override
@@ -14558,12 +14555,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
     return ReceiveDepositInstruction(
       address: dco_decode_String(arr[0]),
       memo: dco_decode_opt_String(arr[1]),
-      deadlineSeconds: dco_decode_i_64(arr[2]),
     );
   }
 
@@ -14604,12 +14600,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ReceiveReservation dco_decode_receive_reservation(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
     return ReceiveReservation(
       id: dco_decode_i_64(arr[0]),
-      index: dco_decode_u_64(arr[1]),
-      address: dco_decode_String(arr[2]),
+      address: dco_decode_String(arr[1]),
     );
   }
 
@@ -19424,12 +19419,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_address = sse_decode_String(deserializer);
     var var_memo = sse_decode_opt_String(deserializer);
-    var var_deadlineSeconds = sse_decode_i_64(deserializer);
-    return ReceiveDepositInstruction(
-      address: var_address,
-      memo: var_memo,
-      deadlineSeconds: var_deadlineSeconds,
-    );
+    return ReceiveDepositInstruction(address: var_address, memo: var_memo);
   }
 
   @protected
@@ -19468,13 +19458,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_id = sse_decode_i_64(deserializer);
-    var var_index = sse_decode_u_64(deserializer);
     var var_address = sse_decode_String(deserializer);
-    return ReceiveReservation(
-      id: var_id,
-      index: var_index,
-      address: var_address,
-    );
+    return ReceiveReservation(id: var_id, address: var_address);
   }
 
   @protected
@@ -23953,7 +23938,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.address, serializer);
     sse_encode_opt_String(self.memo, serializer);
-    sse_encode_i_64(self.deadlineSeconds, serializer);
   }
 
   @protected
@@ -23990,7 +23974,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_64(self.id, serializer);
-    sse_encode_u_64(self.index, serializer);
     sse_encode_String(self.address, serializer);
   }
 

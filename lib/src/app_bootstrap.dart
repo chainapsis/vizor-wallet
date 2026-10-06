@@ -834,12 +834,10 @@ Future<AppSyncSnapshot> _loadInitialSyncSnapshot({
 }
 
 /// New address issuance stays off if its opt-in cannot be read.
-Future<bool> readNearSwapPrivacyPreference({
-  EnhancePirPreferenceStore preferences =
-      const SharedPreferencesEnhancePirStore(
-        key: kNearSwapPrivacyPreferenceKey,
-      ),
-}) async {
+Future<bool> readNearSwapPrivacyPreference() async {
+  const preferences = SharedPreferencesEnhancePirStore(
+    key: kNearSwapPrivacyPreferenceKey,
+  );
   try {
     return await preferences.readEnabled() ?? false;
   } catch (_) {

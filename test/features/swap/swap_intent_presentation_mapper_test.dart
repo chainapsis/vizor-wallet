@@ -156,14 +156,12 @@ void main() {
           reuseWarning: 'Do not reuse',
         ),
         providerStatusRaw: 'SUCCESS',
-        amountOutBaseUnits: '1150000',
         statusOnly: true,
       ),
     );
 
     expect(updated.status, SwapIntentStatus.complete);
     expect(updated.providerStatusRaw, 'SUCCESS');
-    expect(updated.amountOutBaseUnits, '1150000');
     expect(updated.pair, 'USDC -> ZEC');
     expect(updated.sellAmount, '2.3 USDC');
     expect(updated.receiveEstimate, '0.0115 ZEC');

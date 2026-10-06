@@ -622,7 +622,7 @@ class _SettingsList extends ConsumerWidget {
                 description: enhancePirEnabled
                     ? 'Uses a separate receiving key for each swap. Recovery always uses private queries.'
                     : 'Turn on Private queries to create private swap addresses.',
-                enabled: nearSwapPrivacy && enhancePirEnabled,
+                enabled: nearSwapPrivacy,
                 transition: null,
                 onToggle: changingRecovery || !enhancePirEnabled
                     ? null

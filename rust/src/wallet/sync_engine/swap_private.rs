@@ -19,7 +19,7 @@ use zakura_swap_receiving::lifecycle::ChainAnchor;
 use zcash_client_backend::data_api::enhance_pir::{
     EnhancePirRead, EnhancePirWrite, TransactionEnhancementWork,
 };
-use zcash_client_backend::data_api::{Account as _, AccountSource, WalletRead};
+use zcash_client_backend::data_api::WalletRead;
 use zcash_client_sqlite::wallet::swap_receiving::{
     DirectoryPayment, DiscoveryWork, PaymentApplication,
 };
@@ -109,19 +109,14 @@ pub(super) async fn run(
     let started = std::time::Instant::now();
     let phase = async {
         let result = async {
-            run_inner(db, network, should_exit).await?;
+            run_inner(db, network, through, should_exit).await?;
             with_wallet_db_write_lock("swap_private.prune", || {
                 crate::wallet::swap_receiving::finish_nullifier_recovery(db, through)
             })?;
-            for account in db.get_account_ids().map_err(error)? {
-                let Some(details) = db.get_account(account).map_err(error)? else {
-                    continue;
-                };
-                if matches!(details.source(), AccountSource::Derived { .. })
-                    && crate::wallet::keys::hardware_signer_kind(details.source()).is_none()
-                    && db
-                        .swap_history_pending(account, through.height)
-                        .map_err(error)?
+            for account in crate::wallet::swap_receiving::software_accounts(db)? {
+                if db
+                    .swap_history_pending(account, through.height)
+                    .map_err(error)?
                 {
                     return Err("restore sweeps remain pending".to_owned());
                 }
@@ -160,16 +155,7 @@ fn discovery_work(
     let mut work = Vec::new();
     let mut remaining = 0;
     let now = crate::wallet::swap_receiving::receive::now()?;
-    for account in db.get_account_ids().map_err(error)? {
-        let details = db
-            .get_account(account)
-            .map_err(error)?
-            .ok_or("Account disappeared")?;
-        if !matches!(details.source(), AccountSource::Derived { .. })
-            || crate::wallet::keys::hardware_signer_kind(details.source()).is_some()
-        {
-            continue;
-        }
+    for account in crate::wallet::swap_receiving::software_accounts(db)? {
         let batch = with_wallet_db_write_lock("swap_private.discovery", || {
             db.prepare_swap_discovery_batch(account, through, now, NonZeroU32::new(64).unwrap())
                 .map_err(error)
@@ -237,21 +223,16 @@ fn directory_payment(payment: receiver_directory::Payment) -> DirectoryPayment {
     }
 }
 
+/// Runs recovery at `through`, the fully scanned block, if it is also the chain tip.
 async fn run_inner(
     db: &mut WalletDatabase,
     network: WalletNetwork,
+    through: ChainAnchor,
     should_exit: &impl Fn() -> bool,
 ) -> Result<(), String> {
-    let Some(tip) = db.block_fully_scanned().map_err(error)? else {
-        return Ok(());
-    };
-    if Some(tip.block_height()) != db.chain_height().map_err(error)? {
+    if Some(through.height) != db.chain_height().map_err(error)? {
         return Ok(());
     }
-    let through = ChainAnchor {
-        height: tip.block_height(),
-        hash: tip.block_hash().0,
-    };
     // The exception covers receiver discovery and its matching note data only.
     // Ordinary memo enhancement still follows the general Private queries setting.
     let prepared = PreparedWork::new(
@@ -396,7 +377,6 @@ mod tests {
             keys,
         };
         use secrecy::SecretVec;
-        use zakura_swap_receiving::{KeyId, Purpose};
         use zcash_client_backend::data_api::WalletWrite;
 
         let dir = tempfile::tempdir().unwrap();
@@ -438,26 +418,30 @@ mod tests {
         let work = discovery_work(&mut db, through).unwrap().0;
         assert_eq!(work.len() as u64, RECEIVE_GAP_LIMIT);
         for (account, key) in work {
-            db.queue_swap_lookup(account, key.key, through, &[])
+            db.queue_swap_directory_lookup(account, key.key, through, &[], &BTreeMap::new())
                 .unwrap();
-            db.finish_swap_discovery_attempt(account, key.key, through)
+            db.apply_swap_sweep(account, key.key, through, through, |_, _| None)
                 .unwrap();
         }
         assert!(discovery_work(&mut db, through).unwrap().0.is_empty());
 
-        // Model the registry advancement after a verified payment at the edge.
+        // Model the registry advancement scanning records for a payment at the edge.
         // The library tests exercise the actual compact note decryption.
         let edge = RECEIVE_GAP_LIMIT - 1;
-        db.recover_swap_receiving_key(account, KeyId::new(Purpose::Receive, edge), height)
-            .unwrap();
+        conn.execute(
+            "UPDATE ironwood_receiving_keys SET advances_allocation = 1
+             WHERE purpose = 1 AND key_index = ?1",
+            [edge.to_be_bytes()],
+        )
+        .unwrap();
         db.maintain_swap_receiving(account).unwrap();
         let work = discovery_work(&mut db, through).unwrap().0;
         assert_eq!(work.len() as u64, RECEIVE_GAP_LIMIT);
         assert!(work.iter().all(|(_, key)| key.key.index() > edge));
         for (account, key) in work {
-            db.queue_swap_lookup(account, key.key, through, &[])
+            db.queue_swap_directory_lookup(account, key.key, through, &[], &BTreeMap::new())
                 .unwrap();
-            db.finish_swap_discovery_attempt(account, key.key, through)
+            db.apply_swap_sweep(account, key.key, through, through, |_, _| None)
                 .unwrap();
         }
         drop(db);

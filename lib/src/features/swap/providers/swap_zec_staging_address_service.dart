@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
-    show PlatformInt64, PlatformInt64Util;
+    show PlatformInt64;
 
 import '../../../../main.dart' show log;
 import '../../../providers/receive_address_provider.dart';
@@ -17,38 +17,29 @@ final swapZecStagingAddressServiceProvider =
     Provider<SwapZecStagingAddressService>((ref) {
       return SwapZecStagingAddressService(
         reserveSwapAddress: ({required accountUuid, required direction}) async {
-          if (!rust_sync.nearSwapPrivacyEnabled()) return null;
-          final accounts = ref.read(accountProvider).value?.accounts;
-          if (accounts?.any(
-                (account) => account.uuid == accountUuid && account.isHardware,
-              ) ??
-              false) {
+          if (!rust_sync.nearSwapPrivacyEnabled() ||
+              ref
+                  .read(accountProvider.notifier)
+                  .isHardwareAccount(accountUuid)) {
             return null;
           }
           final liveTip = await ref
               .read(rpcEndpointFailoverProvider.notifier)
               .getLatestBlockHeight();
-          final dbPath = await getWalletDbPath();
-          final network = ref
-              .read(rpcEndpointFailoverProvider)
-              .current
-              .networkName;
           if (!direction.sendsZec) {
             final address = await ref
                 .read(swapReceiveReservationServiceProvider)
                 .prepare(accountUuid, liveTip);
             return SwapZecStagingAddress(
               address: address.address,
-              receivingIndex: address.index,
               reservationId: address.id,
             );
           }
           final address = await rust_sync.reserveSwapReceivingAddress(
-            dbPath: dbPath,
-            network: network,
+            dbPath: await getWalletDbPath(),
+            network: ref.read(rpcEndpointFailoverProvider).current.networkName,
             liveTip: liveTip,
             accountUuid: accountUuid,
-            refund: direction.sendsZec,
           );
           return SwapZecStagingAddress(
             address: address.address,
@@ -67,19 +58,14 @@ final swapZecStagingAddressServiceProvider =
                   .read(swapReceiveReservationServiceProvider)
                   .quote(account, address.reservationId!, fetch),
         recordRefundQuote: (account, refundIndex, quote) async {
-          final deadline = quote.depositInstruction.deadline;
-          if (deadline == null) {
-            throw StateError('Provider omitted the deposit deadline.');
-          }
+          final deadline = requireDepositDeadline(quote);
           await rust_sync.recordSwapRefundQuote(
             dbPath: await getWalletDbPath(),
             network: ref.read(rpcEndpointFailoverProvider).current.networkName,
             accountUuid: account,
             refundIndex: refundIndex,
             depositAddress: quote.depositInstruction.address,
-            deadlineSeconds: PlatformInt64Util.from(
-              deadline.millisecondsSinceEpoch ~/ 1000,
-            ),
+            deadlineSeconds: unixSeconds(deadline),
           );
         },
         startQuote: (account, quote) => ref
@@ -113,7 +99,11 @@ class SwapZecStagingAddress {
   });
 
   final String address;
+
+  /// The reserved refund key's index. Set only for refund addresses.
   final BigInt? receivingIndex;
+
+  /// The incoming draft reservation. Set only for incoming addresses.
   final PlatformInt64? reservationId;
 
   SwapAddressPlan toAddressPlan({
@@ -179,7 +169,7 @@ class SwapZecStagingAddressService {
         await (_quoteWithReservation?.call(account, address, fetch) ??
             fetch(null));
     final refundIndex = address.receivingIndex;
-    if (address.reservationId == null && refundIndex != null) {
+    if (refundIndex != null) {
       await _recordRefundQuote?.call(account, refundIndex, quote);
     }
     return quote;
@@ -194,7 +184,8 @@ class SwapZecStagingAddressService {
     SwapDirection direction = SwapDirection.zecToExternal,
   }) async {
     try {
-      // An enabled POC fails closed on reservation errors, including hardware accounts.
+      // With NEAR swap privacy on, a software account fails closed on reservation
+      // errors. Hardware accounts get no swap address and use an ordinary one.
       final swapAddress = await _reserveSwapAddress?.call(
         accountUuid: accountUuid,
         direction: direction,

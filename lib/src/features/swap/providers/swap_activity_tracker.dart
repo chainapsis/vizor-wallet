@@ -1,12 +1,9 @@
 import 'dart:async';
 
-import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
-    show PlatformInt64Util;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
 import '../../../providers/network_privacy_provider.dart';
-import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../core/storage/wallet_paths.dart';
@@ -27,8 +24,7 @@ String? swapScanningProviderStatus(
   SwapIntentStatus? localStatus,
 }) {
   if (raw != null) return raw;
-  if (localStatus == SwapIntentStatus.awaitingDeposit ||
-      localStatus == SwapIntentStatus.awaitingExternalDeposit) {
+  if (localStatus == SwapIntentStatus.awaitingDeposit) {
     return 'PENDING_DEPOSIT';
   }
   return null;
@@ -56,17 +52,10 @@ final swapActivityTrackerProvider = Provider<SwapActivityTracker>((ref) {
     },
     lifecycle: ref.read(ledgerOperationLifecycleProvider),
     onIntentsPersisted: (accountUuid, intents) async {
-      if (ref.read(appSecurityProvider).requiresUnlock) {
-        return;
-      }
-      if (!(ref
-              .read(accountProvider)
-              .value
-              ?.accounts
-              .any(
-                (account) => account.uuid == accountUuid && !account.isHardware,
-              ) ??
-          false)) {
+      if (ref.read(appSecurityProvider).requiresUnlock ||
+          !ref
+              .read(swapReceiveReservationServiceProvider)
+              .supportsAccount(accountUuid)) {
         return;
       }
       final dbPath = await getWalletDbPath();
@@ -76,11 +65,11 @@ final swapActivityTrackerProvider = Provider<SwapActivityTracker>((ref) {
           intent.providerStatusRaw,
           localStatus: intent.status,
         );
-        final address = intent.direction?.sendsZec == true
-            ? intent.oneClickRefundTo
-            : intent.oneClickRecipient;
+        final address = intent.oneClickRefundTo;
         final observedAt = intent.lastStatusCheckedAt ?? intent.createdAt;
-        if (status == null ||
+        // Incoming quotes record their statuses through their reservation.
+        if (intent.direction?.sendsZec != true ||
+            status == null ||
             address == null ||
             observedAt == null ||
             intent.statusError != null) {
@@ -96,17 +85,12 @@ final swapActivityTrackerProvider = Provider<SwapActivityTracker>((ref) {
             status: status,
             swapType: intent.providerSwapType,
             refundedAmount: intent.refundedAmountBaseUnits,
-            amountOut: intent.amountOutBaseUnits,
             deadlineSeconds: switch (intent.depositDeadline) {
-              final deadline? => PlatformInt64Util.from(
-                deadline.millisecondsSinceEpoch ~/ 1000,
-              ),
+              final deadline? => unixSeconds(deadline),
               null => null,
             },
           ),
-          observedAtSeconds: PlatformInt64Util.from(
-            observedAt.millisecondsSinceEpoch ~/ 1000,
-          ),
+          observedAtSeconds: unixSeconds(observedAt),
         );
       }
     },
@@ -333,26 +317,22 @@ class SwapActivityTracker {
   }) async {
     final scopedAccountUuid = normalizeAccountUuid(accountUuid);
     if (scopedAccountUuid == null) return;
+    final persistable = [
+      for (final intent in intents)
+        if (_isPersistableIntent(intent, accountUuid: scopedAccountUuid))
+          intent,
+    ];
     await _activityStore.saveRecords(
       accountUuid: scopedAccountUuid,
       records: [
-        for (final intent in intents)
-          if (_isPersistableIntent(intent, accountUuid: scopedAccountUuid))
-            swapIntentRecordForPersistence(
-              intent,
-              accountUuid: scopedAccountUuid,
-            ),
+        for (final intent in persistable)
+          swapIntentRecordForPersistence(
+            intent,
+            accountUuid: scopedAccountUuid,
+          ),
       ],
     );
-    _replayStatuses(
-      scopedAccountUuid,
-      intents
-          .where(
-            (intent) =>
-                _isPersistableIntent(intent, accountUuid: scopedAccountUuid),
-          )
-          .toList(),
-    );
+    _replayStatuses(scopedAccountUuid, persistable);
     _onRecordsChanged?.call();
   }
 

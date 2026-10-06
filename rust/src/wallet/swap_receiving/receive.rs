@@ -1,6 +1,5 @@
 //! Incoming address lifecycle. Provider polling stays in Dart; allocation is durable in Rust.
 use super::*;
-use zcash_client_sqlite::wallet::swap_receiving::ReceiveReservation;
 
 /// Stable UI classification. Messages are display text, never a parsing protocol.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -61,11 +60,6 @@ impl From<zcash_client_sqlite::wallet::swap_receiving::Error> for ReceiveError {
         }
     }
 }
-impl From<zcash_client_sqlite::error::SqliteClientError> for ReceiveError {
-    fn from(e: zcash_client_sqlite::error::SqliteClientError) -> Self {
-        e.to_string().into()
-    }
-}
 pub(crate) fn now() -> Result<i64, String> {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -75,42 +69,16 @@ pub(crate) fn now() -> Result<i64, String> {
         .map_err(|_| "Clock overflow".into())
 }
 
-pub(crate) fn with_db<T>(
+/// Runs `action` on `uuid`'s account in the wallet at `path`, under the wallet write lock.
+pub(crate) fn with_db<T, E: From<String>>(
     path: &str,
     network: WalletNetwork,
     uuid: &str,
-    action: impl FnOnce(&mut WalletDatabase, AccountUuid) -> Result<T, ReceiveError>,
-) -> Result<T, ReceiveError> {
-    with_wallet_db_write_lock("swap_receive.reservation", || {
+    action: impl FnOnce(&mut WalletDatabase, AccountUuid) -> Result<T, E>,
+) -> Result<T, E> {
+    with_wallet_db_write_lock("swap_receiving", || {
         let mut db = open_wallet_db_with_timeout(path, network, WALLET_DB_BUSY_TIMEOUT)?;
         let account = parse_account_uuid(uuid)?;
         action(&mut db, account)
-    })
-}
-
-/// Resumes the account's draft or reserves the lowest eligible receive index.
-///
-/// The key is scanned from the next unscanned block until it closes. Quoting
-/// later requires that scanning to reach the tip without finding a payment.
-pub(crate) fn prepare(
-    path: &str,
-    network: WalletNetwork,
-    uuid: &str,
-    live_tip: u64,
-) -> Result<ReceiveReservation, ReceiveError> {
-    require_new_address(network)?;
-    with_db(path, network, uuid, |db, account| {
-        require_software_account(db, account)?;
-        db.prepare_swap_receive_reservation(account, now()?, network_tip(live_tip)?)
-            .map_err(ReceiveError::from)
-    })
-}
-
-/// Closes settled paid reservations and reclaims abandoned unpaid ones whose
-/// addresses local scanning shows are still empty. Returns the number reclaimed.
-pub(crate) fn reap(path: &str, network: WalletNetwork, uuid: &str) -> Result<u32, ReceiveError> {
-    with_db(path, network, uuid, |db, account| {
-        db.reap_swap_receive_reservations(account, now()?)
-            .map_err(ReceiveError::from)
     })
 }

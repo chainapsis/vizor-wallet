@@ -1,13 +1,12 @@
 //! Incoming swap reservation lifecycle. Refund allocation uses the existing API.
+use super::sync::parse_network_and_migrate;
 use crate::wallet::swap_receiving::receive::ReceiveError;
-use crate::wallet::{keys, network::WalletNetwork, swap_receiving::receive};
+use crate::wallet::swap_receiving::{self, receive};
 use zcash_client_sqlite::wallet::swap_receiving::{QuoteOutcome, ReceiveDeposit};
-use zcash_keys::address::{Address, UnifiedAddress};
 
 /// An account-scoped durable receive draft, whose key is scanned from issuance.
 pub struct ReceiveReservation {
     pub id: i64,
-    pub index: u64,
     pub address: String,
 }
 
@@ -25,7 +24,6 @@ pub struct SwapProviderStatus {
 pub struct ReceiveDepositInstruction {
     pub address: String,
     pub memo: Option<String>,
-    pub deadline_seconds: i64,
 }
 
 /// Provider lookup for a persisted quote, including quotes never started in the UI.
@@ -35,32 +33,30 @@ pub struct ReceiveQuoteStatusRequest {
     pub deposit_memo: Option<String>,
 }
 
-fn network(path: &str, value: &str) -> Result<WalletNetwork, String> {
-    let network = keys::parse_network(value)?;
-    keys::ensure_db_migrated_once(path, network)?;
-    Ok(network)
-}
-
-/// Resumes a draft or reserves the lowest eligible index, scanned from the next block.
-/// Does not start or restart ordinary wallet sync.
+/// Resumes the account's draft or reserves the lowest eligible index. Its key is
+/// scanned from the next unscanned block until it closes, and quoting later
+/// requires that scanning to reach the tip without finding a payment. Does not
+/// start or restart ordinary wallet sync.
 pub fn prepare_receive_reservation(
     db_path: String,
     network_name: String,
     account_uuid: String,
     live_tip: u64,
 ) -> Result<ReceiveReservation, ReceiveError> {
-    let network = network(&db_path, &network_name)?;
-    let r = receive::prepare(&db_path, network, &account_uuid, live_tip)?;
-    let address = Address::Unified(
-        UnifiedAddress::from_receivers(Some(r.key.receiver()), None, None)
-            .ok_or("Invalid receive address")?,
-    )
-    .to_zcash_address(&network)
-    .to_string();
+    let network = parse_network_and_migrate(&db_path, &network_name)?;
+    swap_receiving::require_new_address(network)?;
+    let r = receive::with_db(&db_path, network, &account_uuid, |db, a| {
+        swap_receiving::require_software_account(db, a)?;
+        db.prepare_swap_receive_reservation(
+            a,
+            receive::now()?,
+            swap_receiving::network_tip(live_tip)?,
+        )
+        .map_err(ReceiveError::from)
+    })?;
     Ok(ReceiveReservation {
         id: r.id,
-        index: r.key.key_id().index(),
-        address,
+        address: swap_receiving::encode_address(&r.key, network)?,
     })
 }
 
@@ -74,18 +70,12 @@ pub fn begin_receive_quote(
     reservation_id: i64,
     deadline_seconds: i64,
 ) -> Result<String, ReceiveError> {
-    receive::with_db(
-        &db_path,
-        network(&db_path, &network_name)?,
-        &account_uuid,
-        |db, a| {
-            crate::wallet::swap_receiving::require_new_address(keys::parse_network(
-                &network_name,
-            )?)?;
-            db.begin_swap_receive_quote(a, reservation_id, deadline_seconds, receive::now()?)
-                .map_err(ReceiveError::from)
-        },
-    )
+    let network = parse_network_and_migrate(&db_path, &network_name)?;
+    receive::with_db(&db_path, network, &account_uuid, |db, a| {
+        swap_receiving::require_new_address(network)?;
+        db.begin_swap_receive_quote(a, reservation_id, deadline_seconds, receive::now()?)
+            .map_err(ReceiveError::from)
+    })
 }
 
 /// Saves accepted payment instructions even if the requesting UI has changed.
@@ -100,7 +90,7 @@ pub fn record_receive_quote(
 ) -> Result<(), ReceiveError> {
     receive::with_db(
         &db_path,
-        network(&db_path, &network_name)?,
+        parse_network_and_migrate(&db_path, &network_name)?,
         &account_uuid,
         |db, a| {
             let deposit = ReceiveDeposit {
@@ -123,7 +113,7 @@ pub fn reject_receive_quote(
 ) -> Result<(), ReceiveError> {
     receive::with_db(
         &db_path,
-        network(&db_path, &network_name)?,
+        parse_network_and_migrate(&db_path, &network_name)?,
         &account_uuid,
         |db, a| {
             db.finish_swap_receive_quote(a, &request_id, &QuoteOutcome::Rejected)
@@ -142,7 +132,7 @@ pub fn start_receive_quote(
 ) -> Result<ReceiveDepositInstruction, ReceiveError> {
     receive::with_db(
         &db_path,
-        network(&db_path, &network_name)?,
+        parse_network_and_migrate(&db_path, &network_name)?,
         &account_uuid,
         |db, a| {
             let deposit = db
@@ -151,7 +141,6 @@ pub fn start_receive_quote(
             Ok(ReceiveDepositInstruction {
                 address: deposit.address,
                 memo: deposit.memo,
-                deadline_seconds: deposit.deadline,
             })
         },
     )
@@ -165,7 +154,7 @@ pub fn receive_quotes_due(
 ) -> Result<Vec<ReceiveQuoteStatusRequest>, ReceiveError> {
     receive::with_db(
         &db_path,
-        network(&db_path, &network_name)?,
+        parse_network_and_migrate(&db_path, &network_name)?,
         &account_uuid,
         |db, a| {
             Ok(db
@@ -194,21 +183,30 @@ pub fn observe_receive_quote(
 ) -> Result<(), ReceiveError> {
     receive::with_db(
         &db_path,
-        network(&db_path, &network_name)?,
+        parse_network_and_migrate(&db_path, &network_name)?,
         &account_uuid,
         |db, a| {
-            let status = crate::wallet::swap_receiving::provider_status(&status);
+            let status = swap_receiving::provider_status(&status);
             db.observe_swap_receive_quote(a, &request_id, &status, funded, checked_at_seconds)
                 .map_err(ReceiveError::from)
         },
     )
 }
 
-/// Releases eligible abandoned addresses that local scanning shows are still unpaid.
+/// Closes settled paid reservations and releases abandoned unpaid ones whose
+/// addresses local scanning shows are still empty.
 pub fn reap_receive_reservations(
     db_path: String,
     network_name: String,
     account_uuid: String,
-) -> Result<u32, ReceiveError> {
-    receive::reap(&db_path, network(&db_path, &network_name)?, &account_uuid)
+) -> Result<(), ReceiveError> {
+    receive::with_db(
+        &db_path,
+        parse_network_and_migrate(&db_path, &network_name)?,
+        &account_uuid,
+        |db, a| {
+            db.reap_swap_receive_reservations(a, receive::now()?)?;
+            Ok(())
+        },
+    )
 }

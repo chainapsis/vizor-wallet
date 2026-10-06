@@ -45,15 +45,12 @@ pub fn set_active_sync_account(account_uuid: Option<String>) {
 /// Enable private Ironwood transaction enhancement for future sync work.
 #[frb(sync)]
 pub fn set_enhance_pir_enabled(enabled: bool) {
-    PRIVACY_SETTINGS
-        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |current| {
-            Some(if enabled {
-                current | PRIVATE_QUERIES
-            } else {
-                0
-            })
-        })
-        .unwrap();
+    if enabled {
+        PRIVACY_SETTINGS.fetch_or(PRIVATE_QUERIES, Ordering::SeqCst);
+    } else {
+        // NEAR swap privacy requires Private queries.
+        PRIVACY_SETTINGS.store(0, Ordering::SeqCst);
+    }
 }
 
 pub(crate) fn enhance_pir_enabled() -> bool {
@@ -549,7 +546,10 @@ fn catch<T>(f: impl FnOnce() -> Result<T, String> + panic::UnwindSafe) -> Result
     }
 }
 
-fn parse_network_and_migrate(db_path: &str, network: &str) -> Result<WalletNetwork, String> {
+pub(crate) fn parse_network_and_migrate(
+    db_path: &str,
+    network: &str,
+) -> Result<WalletNetwork, String> {
     let network = keys::parse_network(network)?;
     keys::ensure_db_migrated_once(db_path, network)?;
     Ok(network)
@@ -3152,28 +3152,24 @@ fn near_swap_setting(current: u8, enabled: bool) -> u8 {
     }
 }
 
-/// A durably reserved address in the independent refund or incoming sequence.
+/// A durably reserved refund address and its key index.
 pub struct SwapReceivingAddress {
     pub address: String,
     pub index: u64,
 }
 
+/// Reserves the next refund address, scanned from the next unscanned block until
+/// its swap closes. `live_tip` is the chain tip the quote flow fetched.
 pub fn reserve_swap_receiving_address(
     db_path: String,
     network: String,
     account_uuid: String,
-    refund: bool,
     live_tip: u64,
 ) -> Result<SwapReceivingAddress, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
-        let (address, index) = crate::wallet::swap_receiving::reserve(
-            &db_path,
-            network,
-            &account_uuid,
-            refund,
-            live_tip,
-        )?;
+        let (address, index) =
+            crate::wallet::swap_receiving::reserve(&db_path, network, &account_uuid, live_tip)?;
         Ok(SwapReceivingAddress { address, index })
     })
 }
@@ -3201,8 +3197,8 @@ pub fn record_swap_refund_quote(
     })
 }
 
-/// Persists the compact scanning deadline for an existing local swap operation.
-/// Only supported provider statuses may call this; transport errors preserve state.
+/// Records a provider status for the refund key behind `address`, ignoring
+/// unrecognized statuses. Do not call it for a failed status request.
 pub fn observe_swap_receiving_operation(
     db_path: String,
     network: String,
@@ -3245,8 +3241,7 @@ pub fn propose_swap_funding(
             &send_flow_id,
             &deposit_address,
             amount_zatoshi,
-            None,
-            Some(refund_index),
+            refund_index,
         )?;
         Ok(ProposalResult {
             proposal_id: r.proposal_id,
@@ -3256,6 +3251,7 @@ pub fn propose_swap_funding(
     })
 }
 
+/// The fee [`propose_swap_funding`] would pay.
 pub fn estimate_swap_funding_fee(
     db_path: String,
     network: String,
@@ -3272,8 +3268,7 @@ pub fn estimate_swap_funding_fee(
             &account_uuid,
             &deposit_address,
             amount_zatoshi,
-            None,
-            Some(refund_index),
+            refund_index,
         )
     })
 }

@@ -72,6 +72,8 @@ fn failed_run_creation_deletes_run_only_after_unlock_succeeds() {
 }
 
 // Outbox-only fixtures need the wallet metadata used by the atomic creation-evidence write.
+// The `tpir_meta` row stands in for the transparent ledger migration. Don't create
+// `schemer_migrations`: its absence keeps `wallet_lock_reconciliation_snapshot` off.
 fn create_creation_evidence_fixture(conn: &rusqlite::Connection) {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS transactions (
@@ -84,7 +86,30 @@ fn create_creation_evidence_fixture(conn: &rusqlite::Connection) {
          );
          CREATE TABLE IF NOT EXISTS scan_queue (block_range_end INTEGER NOT NULL);
          INSERT INTO scan_queue (block_range_end) SELECT 101
-         WHERE NOT EXISTS (SELECT 1 FROM scan_queue);",
+         WHERE NOT EXISTS (SELECT 1 FROM scan_queue);
+         CREATE TABLE IF NOT EXISTS tpir_meta (
+             id INTEGER PRIMARY KEY,
+             applied_mode INTEGER NOT NULL,
+             policy_generation INTEGER NOT NULL,
+             min_reader_version INTEGER NOT NULL
+         );
+         INSERT OR IGNORE INTO tpir_meta VALUES (0, 0, 0, 1);
+         CREATE TABLE IF NOT EXISTS transparent_received_outputs (
+             id INTEGER PRIMARY KEY,
+             transaction_id INTEGER NOT NULL
+         );
+         CREATE TABLE IF NOT EXISTS tpir_output_origins (
+             output_id INTEGER NOT NULL,
+             origin INTEGER NOT NULL,
+             UNIQUE (output_id, origin)
+         );
+         CREATE TABLE IF NOT EXISTS tpir_spend_origins (
+             spending_transaction_id INTEGER NOT NULL,
+             prevout_txid BLOB NOT NULL,
+             prevout_output_index INTEGER NOT NULL,
+             origin INTEGER NOT NULL,
+             UNIQUE (spending_transaction_id, prevout_txid, prevout_output_index, origin)
+         );",
     )
     .unwrap();
 }

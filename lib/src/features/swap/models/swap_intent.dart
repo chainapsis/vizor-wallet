@@ -26,7 +26,6 @@ class SwapIntentRecord {
     this.nearIntentHash,
     this.providerSwapType,
     this.refundedAmountBaseUnits,
-    this.amountOutBaseUnits,
     this.originChainTxHash,
     this.destinationChainTxHash,
     this.providerRefundInfo,
@@ -72,7 +71,6 @@ class SwapIntentRecord {
       nearIntentHash: intent.nearIntentHash,
       providerSwapType: intent.providerSwapType,
       refundedAmountBaseUnits: intent.refundedAmountBaseUnits,
-      amountOutBaseUnits: intent.amountOutBaseUnits,
       originChainTxHash: intent.originChainTxHash,
       destinationChainTxHash: intent.destinationChainTxHash,
       providerRefundInfo: intent.providerRefundInfo,
@@ -117,7 +115,6 @@ class SwapIntentRecord {
   final String? nearIntentHash;
   final String? providerSwapType;
   final String? refundedAmountBaseUnits;
-  final String? amountOutBaseUnits;
   final String? originChainTxHash;
   final String? destinationChainTxHash;
   final SwapProviderRefundInfo? providerRefundInfo;
@@ -164,7 +161,6 @@ class SwapIntentRecord {
     String? nearIntentHash,
     String? providerSwapType,
     String? refundedAmountBaseUnits,
-    String? amountOutBaseUnits,
     String? originChainTxHash,
     String? destinationChainTxHash,
     SwapProviderRefundInfo? providerRefundInfo,
@@ -213,7 +209,6 @@ class SwapIntentRecord {
       providerSwapType: providerSwapType ?? this.providerSwapType,
       refundedAmountBaseUnits:
           refundedAmountBaseUnits ?? this.refundedAmountBaseUnits,
-      amountOutBaseUnits: amountOutBaseUnits ?? this.amountOutBaseUnits,
       originChainTxHash: originChainTxHash ?? this.originChainTxHash,
       destinationChainTxHash:
           destinationChainTxHash ?? this.destinationChainTxHash,
@@ -267,7 +262,6 @@ class SwapIntent {
     this.nearIntentHash,
     this.providerSwapType,
     this.refundedAmountBaseUnits,
-    this.amountOutBaseUnits,
     this.originChainTxHash,
     this.destinationChainTxHash,
     this.providerRefundInfo,
@@ -311,7 +305,6 @@ class SwapIntent {
   final String? nearIntentHash;
   final String? providerSwapType;
   final String? refundedAmountBaseUnits;
-  final String? amountOutBaseUnits;
   final String? originChainTxHash;
   final String? destinationChainTxHash;
   final SwapProviderRefundInfo? providerRefundInfo;
@@ -372,7 +365,6 @@ class SwapIntent {
     String? nearIntentHash,
     String? providerSwapType,
     String? refundedAmountBaseUnits,
-    String? amountOutBaseUnits,
     String? originChainTxHash,
     String? destinationChainTxHash,
     SwapProviderRefundInfo? providerRefundInfo,
@@ -421,7 +413,6 @@ class SwapIntent {
       providerSwapType: providerSwapType ?? this.providerSwapType,
       refundedAmountBaseUnits:
           refundedAmountBaseUnits ?? this.refundedAmountBaseUnits,
-      amountOutBaseUnits: amountOutBaseUnits ?? this.amountOutBaseUnits,
       originChainTxHash: originChainTxHash ?? this.originChainTxHash,
       destinationChainTxHash:
           destinationChainTxHash ?? this.destinationChainTxHash,

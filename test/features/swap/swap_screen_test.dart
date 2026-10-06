@@ -43,7 +43,6 @@ import 'package:zcash_wallet/src/features/swap/providers/swap_deposit_sender.dar
 import 'package:zcash_wallet/src/features/swap/providers/swap_max_amount_estimator.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_tracker.dart';
-import 'package:zcash_wallet/src/features/swap/providers/swap_receive_reservation_service.dart';
 import 'package:zcash_wallet/src/features/swap/providers/pay_selected_asset_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_composer_preferences_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_zec_staging_address_service.dart';
@@ -68,7 +67,6 @@ import 'package:zcash_wallet/src/providers/receive_address_provider.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
-import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
 import 'support/swap_activity_fixture_intents.dart';
 
@@ -77,7 +75,6 @@ import '../../support/leading_decimal_input.dart';
 part 'support/swap_screen_test_fakes.dart';
 
 void main() {
-  setUpAll(() => RustLib.initMock(api: _SwapScreenRustApi()));
   test('swapIntentProvider uses the Vizor proxy and referral', () {
     final container = ProviderContainer();
     addTearDown(container.dispose);
@@ -10234,14 +10231,6 @@ Widget _routerHarness(
               ref.read(swapActivityRecordsRevisionProvider.notifier).bump(),
         ),
       ),
-      swapReceiveReservationServiceProvider.overrideWith(
-        (ref) => SwapReceiveReservationService(
-          enabled: () => false,
-          store: (_) async =>
-              throw StateError('No wallet database in widget tests'),
-          provider: ref.read(swapIntentProvider),
-        ),
-      ),
       swapComposerPreferencesStoreProvider.overrideWithValue(
         effectiveSessionStore,
       ),
@@ -11074,12 +11063,4 @@ String _fieldText(WidgetTester tester, String keyValue) {
     ),
   );
   return editable.controller.text;
-}
-
-class _SwapScreenRustApi implements RustLibApi {
-  @override
-  bool crateApiSyncNearSwapPrivacyEnabled() => false;
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

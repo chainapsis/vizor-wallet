@@ -16,7 +16,6 @@ import 'swap_provider_config.dart';
 
 final swapReceiveReservationServiceProvider = Provider((ref) {
   return SwapReceiveReservationService(
-    enabled: () => true,
     supportsAccount: (uuid) =>
         ref
             .read(accountProvider)
@@ -52,6 +51,15 @@ final swapReceiveReservationServiceProvider = Provider((ref) {
     },
   );
 });
+
+/// `time` in Unix seconds, as the Rust swap APIs take it.
+PlatformInt64 unixSeconds(DateTime time) =>
+    PlatformInt64Util.from(time.millisecondsSinceEpoch ~/ 1000);
+
+/// The quote's deposit deadline, which swap address records require.
+DateTime requireDepositDeadline(SwapQuote quote) =>
+    quote.depositInstruction.deadline ??
+    (throw StateError('Provider omitted the deposit deadline.'));
 
 /// Persistence boundary used by the quote flow and the existing status refresh loop.
 abstract interface class ReceiveReservationStore {
@@ -94,28 +102,19 @@ class RustReceiveReservationStore implements ReceiveReservationStore {
         networkName: network,
         accountUuid: account,
         reservationId: reservation,
-        deadlineSeconds: PlatformInt64Util.from(
-          deadline.millisecondsSinceEpoch ~/ 1000,
-        ),
+        deadlineSeconds: unixSeconds(deadline),
       );
   @override
-  Future<void> record(String request, SwapQuote quote) {
-    final deadline = quote.depositInstruction.deadline;
-    if (deadline == null) {
-      throw StateError('Provider omitted the deposit deadline.');
-    }
-    return api.recordReceiveQuote(
-      dbPath: path,
-      networkName: network,
-      accountUuid: account,
-      requestId: request,
-      operationId: quote.depositInstruction.address,
-      depositMemo: quote.depositInstruction.memo,
-      deadlineSeconds: PlatformInt64Util.from(
-        deadline.millisecondsSinceEpoch ~/ 1000,
-      ),
-    );
-  }
+  Future<void> record(String request, SwapQuote quote) =>
+      api.recordReceiveQuote(
+        dbPath: path,
+        networkName: network,
+        accountUuid: account,
+        requestId: request,
+        operationId: quote.depositInstruction.address,
+        depositMemo: quote.depositInstruction.memo,
+        deadlineSeconds: unixSeconds(requireDepositDeadline(quote)),
+      );
 
   @override
   Future<void> reject(String request) => api.rejectReceiveQuote(
@@ -154,9 +153,7 @@ class RustReceiveReservationStore implements ReceiveReservationStore {
       refundedAmount: snapshot.refundedAmountBaseUnits,
       amountOut: snapshot.amountOutBaseUnits,
       deadlineSeconds: switch (snapshot.depositInstruction.deadline) {
-        final deadline? => PlatformInt64Util.from(
-          deadline.millisecondsSinceEpoch ~/ 1000,
-        ),
+        final deadline? => unixSeconds(deadline),
         null => null,
       },
     ),
@@ -165,23 +162,18 @@ class RustReceiveReservationStore implements ReceiveReservationStore {
       originChainTxHash: snapshot.originChainTxHash,
       depositedAmountText: snapshot.providerRefundInfo?.depositedAmountText,
     ),
-    checkedAtSeconds: PlatformInt64Util.from(
-      checkedAt.millisecondsSinceEpoch ~/ 1000,
-    ),
+    checkedAtSeconds: unixSeconds(checkedAt),
   );
   @override
-  Future<void> reap() async {
-    await api.reapReceiveReservations(
-      dbPath: path,
-      networkName: network,
-      accountUuid: account,
-    );
-  }
+  Future<void> reap() => api.reapReceiveReservations(
+    dbPath: path,
+    networkName: network,
+    accountUuid: account,
+  );
 }
 
 class SwapReceiveReservationService {
   SwapReceiveReservationService({
-    required this.enabled,
     required this.store,
     required this.provider,
     this.lifecycle,
@@ -189,7 +181,6 @@ class SwapReceiveReservationService {
   });
   static bool _allAccounts(String _) => true;
   final bool Function(String) supportsAccount;
-  final bool Function() enabled;
   final Future<ReceiveReservationStore> Function(String account) store;
   final SwapProvider provider;
   final LedgerOperationLifecycle? lifecycle;
@@ -236,19 +227,15 @@ class SwapReceiveReservationService {
       throw StateError('The quote request skipped its receive reservation.');
     }
     await backend.record(sent, result);
-    return SwapQuote.withReceiveRequestId(result, sent);
+    return SwapQuote.withLocalIdentity(result, receiveRequestId: sent);
   });
 
   /// Locks the quote's reservation before its deposit instructions are shown, and
   /// checks that they are the ones the wallet saved.
   Future<void> start(String account, SwapQuote quote) async {
+    // Only incoming quotes from supported accounts reserve a request.
     final request = quote.receiveRequestId;
-    if (!enabled() ||
-        !supportsAccount(account) ||
-        quote.direction.sendsZec ||
-        request == null) {
-      return;
-    }
+    if (request == null) return;
     await _run(() async {
       final deposit = await (await store(account)).start(request);
       if (deposit.address != quote.depositInstruction.address ||
@@ -266,7 +253,7 @@ class SwapReceiveReservationService {
     SwapIntentSnapshot snapshot,
     DateTime checkedAt,
   ) async {
-    if (!enabled() || !supportsAccount(account)) return;
+    if (!supportsAccount(account)) return;
     await _run(() async {
       final backend = await store(account);
       for (final request in await backend.due()) {
@@ -279,7 +266,7 @@ class SwapReceiveReservationService {
 
   /// Reconciles provider records even when the activity UI considers them expired.
   Future<void> reconcile(String account) {
-    if (!enabled() || !supportsAccount(account)) return Future.value();
+    if (!supportsAccount(account)) return Future.value();
     return _refreshing[account] ??=
         _run(() async {
           final backend = await store(account);

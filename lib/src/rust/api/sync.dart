@@ -1233,17 +1233,17 @@ bool nearSwapPrivacyEnabled() =>
 void setNearSwapPrivacyEnabled({required bool enabled}) => RustLib.instance.api
     .crateApiSyncSetNearSwapPrivacyEnabled(enabled: enabled);
 
+/// Reserves the next refund address, scanned from the next unscanned block until
+/// its swap closes. `live_tip` is the chain tip the quote flow fetched.
 Future<SwapReceivingAddress> reserveSwapReceivingAddress({
   required String dbPath,
   required String network,
   required String accountUuid,
-  required bool refund,
   required BigInt liveTip,
 }) => RustLib.instance.api.crateApiSyncReserveSwapReceivingAddress(
   dbPath: dbPath,
   network: network,
   accountUuid: accountUuid,
-  refund: refund,
   liveTip: liveTip,
 );
 
@@ -1265,8 +1265,8 @@ Future<void> recordSwapRefundQuote({
   deadlineSeconds: deadlineSeconds,
 );
 
-/// Persists the compact scanning deadline for an existing local swap operation.
-/// Only supported provider statuses may call this; transport errors preserve state.
+/// Records a provider status for the refund key behind `address`, ignoring
+/// unrecognized statuses. Do not call it for a failed status request.
 Future<void> observeSwapReceivingOperation({
   required String dbPath,
   required String network,
@@ -1304,6 +1304,7 @@ Future<ProposalResult> proposeSwapFunding({
   refundIndex: refundIndex,
 );
 
+/// The fee [`propose_swap_funding`] would pay.
 Future<BigInt> estimateSwapFundingFee({
   required String dbPath,
   required String network,
@@ -2777,7 +2778,7 @@ class SubtreeRoot {
           rootHash == other.rootHash;
 }
 
-/// A durably reserved address in the independent refund or incoming sequence.
+/// A durably reserved refund address and its key index.
 class SwapReceivingAddress {
   final String address;
   final BigInt index;
