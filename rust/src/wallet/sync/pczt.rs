@@ -1280,6 +1280,35 @@ struct PreparedSignedPczt {
     extracted: ExtractedPcztTransaction,
 }
 
+/// Recognizes exact finalized bytes with current mined evidence in one read snapshot.
+/// Historical mining alone is insufficient after a rewind; unmined and missing-raw
+/// rows still need the normal network and expiry path. No wallet data is written.
+fn stored_mined_transactions(
+    db_path: &str,
+    prepared: &[PreparedSignedPczt],
+) -> Result<Vec<bool>, String> {
+    use rusqlite::OptionalExtension;
+    let conn = crate::wallet::db::open_readonly_conn_with_timeout(
+        db_path,
+        Some(crate::wallet::db::READ_DB_BUSY_TIMEOUT),
+    )?;
+    let snapshot = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let mut query = snapshot
+        .prepare("SELECT raw FROM transactions WHERE txid = ?1 AND mined_height IS NOT NULL")
+        .map_err(|e| format!("Read stored hardware transaction: {e}"))?;
+    prepared
+        .iter()
+        .map(|item| {
+            let stored: Option<Vec<u8>> = query
+                .query_row([item.extracted.txid.as_ref()], |row| row.get(0))
+                .optional()
+                .map_err(|e| format!("Read stored hardware transaction: {e}"))?
+                .flatten();
+            Ok(stored.as_deref() == Some(item.extracted.raw_tx.as_slice()))
+        })
+        .collect()
+}
+
 #[derive(Debug, PartialEq, Eq)]
 enum PcztBroadcastAttempt {
     Accepted,
@@ -1658,8 +1687,28 @@ async fn store_and_broadcast_pczts_inner(
     let txids_joined = txids.join(",");
     let total_count = prepared.len() as u32;
 
-    // Resolve a recent tip before touching either the DB or the network. An
-    // already-expired set is terminal and must not be persisted as pending.
+    let mined = stored_mined_transactions(db_path, &prepared);
+    let mined = match mined {
+        Ok(mined) => mined,
+        Err(error) => return release_signed_pczt_operation_after_failure(proposal, error),
+    };
+    if mined.iter().all(|mined| *mined) {
+        if let Some((proposal_id, send_flow_id)) = proposal {
+            if let Err(error) = finish_stored_proposal(proposal_id, send_flow_id, false) {
+                log::warn!("keystone: mined transactions reconciled but proposal lock bookkeeping failed: {error}");
+            }
+        }
+        return Ok(StoreAndBroadcastPcztsResult {
+            txids: txids_joined,
+            status: StoreAndBroadcastPcztsResult::BROADCASTED.to_string(),
+            broadcasted_count: total_count,
+            total_count,
+            message: None,
+        });
+    }
+
+    // Only unmined rounds need a live tip and expiry checks. Mined evidence is
+    // already a completed submission, even after the original expiry height.
     let mut expiry_client =
         match crate::wallet::sync_engine::open_isolated_lwd_channel(lightwalletd_url).await {
             Ok(client) => client,
@@ -1685,7 +1734,10 @@ async fn store_and_broadcast_pczts_inner(
             );
         }
     };
-    if let Some(error) = prepared.iter().find_map(|item| {
+    if let Some(error) = prepared.iter().zip(&mined).find_map(|(item, mined)| {
+        if *mined {
+            return None;
+        }
         pczt_broadcast_expiry_error(
             &item.extracted.txid,
             u32::from(item.extracted.tx.expiry_height()),
@@ -1695,7 +1747,7 @@ async fn store_and_broadcast_pczts_inner(
         let result = StoreAndBroadcastPcztsResult {
             txids: txids_joined,
             status: StoreAndBroadcastPcztsResult::EXPIRED.to_string(),
-            broadcasted_count: 0,
+            broadcasted_count: mined.iter().filter(|mined| **mined).count() as u32,
             total_count,
             message: Some(error.clone()),
         };
@@ -1712,8 +1764,20 @@ async fn store_and_broadcast_pczts_inner(
         };
     }
     let mut first_client = Some(expiry_client);
+    let mined_count = mined.iter().filter(|mined| **mined).count() as u32;
+    let mut newly_broadcasted = 0;
     let broadcast_plan = 'broadcast: loop {
         for (index, item) in prepared.iter().enumerate() {
+            if mined[index] {
+                match pczt_broadcast_step(index, prepared.len(), PcztBroadcastAttempt::Accepted) {
+                    PcztBroadcastStep::Continue => continue,
+                    PcztBroadcastStep::Stop(mut plan) => {
+                        plan.broadcasted_count = mined_count + newly_broadcasted;
+                        break 'broadcast plan;
+                    }
+                    PcztBroadcastStep::Fail(_) => unreachable!(),
+                }
+            }
             let client = if let Some(client) = first_client.take() {
                 Ok(client)
             } else {
@@ -1728,14 +1792,25 @@ async fn store_and_broadcast_pczts_inner(
                         PcztBroadcastAttempt::RouteUnavailable(error.to_string()),
                     ) {
                         PcztBroadcastStep::Continue => unreachable!(),
-                        PcztBroadcastStep::Stop(plan) => break 'broadcast plan,
+                        PcztBroadcastStep::Stop(mut plan) => {
+                            plan.broadcasted_count = mined_count + newly_broadcasted;
+                            break 'broadcast plan;
+                        }
+                        PcztBroadcastStep::Fail(error) if mined_count > 0 => {
+                            break 'broadcast PcztBroadcastPlan {
+                                persisted_prefix_len: index,
+                                broadcasted_count: mined_count + newly_broadcasted,
+                                status: StoreAndBroadcastPcztsResult::PARTIAL_BROADCAST,
+                                message: Some(error),
+                            };
+                        }
                         PcztBroadcastStep::Fail(error) => {
                             return release_signed_pczt_operation_after_failure(proposal, error);
                         }
                     }
                 }
             };
-            if index == 0 {
+            if newly_broadcasted == 0 {
                 if let Some((proposal_id, send_flow_id)) = proposal {
                     super::mark_proposal_broadcast_started(proposal_id, send_flow_id)?;
                 }
@@ -1752,9 +1827,28 @@ async fn store_and_broadcast_pczts_inner(
                 },
                 Err(error) => PcztBroadcastAttempt::TransportUnknown(error.to_string()),
             };
+            if matches!(attempt, PcztBroadcastAttempt::Accepted) {
+                newly_broadcasted += 1;
+            }
             match pczt_broadcast_step(index, prepared.len(), attempt) {
                 PcztBroadcastStep::Continue => {}
-                PcztBroadcastStep::Stop(plan) => break 'broadcast plan,
+                PcztBroadcastStep::Stop(mut plan) => {
+                    plan.broadcasted_count = mined_count + newly_broadcasted;
+                    if mined_count > 0
+                        && plan.status == StoreAndBroadcastPcztsResult::BROADCAST_UNKNOWN
+                    {
+                        plan.status = StoreAndBroadcastPcztsResult::PARTIAL_BROADCAST;
+                    }
+                    break 'broadcast plan;
+                }
+                PcztBroadcastStep::Fail(error) if mined_count > 0 => {
+                    break 'broadcast PcztBroadcastPlan {
+                        persisted_prefix_len: index,
+                        broadcasted_count: mined_count + newly_broadcasted,
+                        status: StoreAndBroadcastPcztsResult::PARTIAL_BROADCAST,
+                        message: Some(error),
+                    };
+                }
                 PcztBroadcastStep::Fail(error) => {
                     return release_signed_pczt_operation_after_failure(proposal, error);
                 }
@@ -1773,6 +1867,9 @@ async fn store_and_broadcast_pczts_inner(
                     .take(broadcast_plan.persisted_prefix_len)
                     .enumerate()
                 {
+                    if mined[index] {
+                        continue;
+                    }
                     let consensus_branch_id = *item.combined.global().consensus_branch_id();
                     let orchard_vk =
                         orchard_verifying_key_for_consensus_branch(consensus_branch_id);
@@ -1805,6 +1902,9 @@ async fn store_and_broadcast_pczts_inner(
                     .take(broadcast_plan.persisted_prefix_len)
                     .enumerate()
                 {
+                    if mined[index] {
+                        continue;
+                    }
                     decrypt_and_store_transaction(
                         &network,
                         transactional_db,

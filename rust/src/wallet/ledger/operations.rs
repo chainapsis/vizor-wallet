@@ -791,6 +791,15 @@ mod tests {
 
     fn signed_pczt(target_height: u32) -> (Vec<u8>, Vec<u8>, u32) {
         let sk = secp256k1::SecretKey::from_slice(&[7; 32]).unwrap();
+        signed_pczt_with_input(target_height, sk, OutPoint::new([1; 32], 0), 1_000_000)
+    }
+
+    pub(super) fn signed_pczt_with_input(
+        target_height: u32,
+        sk: secp256k1::SecretKey,
+        prevout: OutPoint,
+        value: u64,
+    ) -> (Vec<u8>, Vec<u8>, u32) {
         let secp = secp256k1::Secp256k1::new();
         let pubkey = sk.public_key(&secp);
         let pubkey_bytes = pubkey.serialize();
@@ -810,12 +819,12 @@ mod tests {
         builder
             .add_transparent_p2pkh_input(
                 pubkey,
-                OutPoint::new([1; 32], 0),
-                TxOut::new(Zatoshis::const_from_u64(1_000_000), address.script().into()),
+                prevout,
+                TxOut::new(Zatoshis::from_u64(value).unwrap(), address.script().into()),
             )
             .unwrap();
         builder
-            .add_transparent_output(&address, Zatoshis::const_from_u64(990_000))
+            .add_transparent_output(&address, Zatoshis::from_u64(value - 10_000).unwrap())
             .unwrap();
         let PcztResult { pczt_parts, .. } = builder
             .build_for_pczt(OsRng, &zip317::FeeRule::standard())
@@ -1253,3 +1262,7 @@ mod tests {
         assert!(list(db_path, WalletNetwork::Main, None).unwrap().is_empty());
     }
 }
+
+#[cfg(test)]
+#[path = "operations/mined_recovery_tests.rs"]
+mod mined_recovery_tests;
