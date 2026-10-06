@@ -105,7 +105,7 @@ ActivityRowData buildTransactionActivityRow({
         ? (subtitle == 'Est. 1–3 min' ||
                   subtitle == 'Est. 2–6 min' ||
                   subtitle == 'Taking longer'
-              ? AppIcons.migrationTimer
+              ? AppIcons.time
               : null)
         : _poolIcon(displayPool, ordinary: isOrdinaryTransaction),
     amountText: activityAmountTextForFormFactor(

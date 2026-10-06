@@ -45,7 +45,7 @@ void main() {
   }
 
   testWidgets(
-    'estimates and long waits use a static clock; fallback copy has no icon',
+    'estimates and long waits use an hourglass; fallback copy has no icon',
     (tester) async {
       final tx = _transaction(txKind: 'sent', minedHeight: BigInt.zero);
       for (final label in [
@@ -60,7 +60,7 @@ void main() {
         expect(
           row.subtitleIconName,
           label.startsWith('Est.') || label == 'Taking longer'
-              ? AppIcons.migrationTimer
+              ? AppIcons.time
               : isNull,
         );
         expect(row.leadingIconName, AppIcons.loader);
@@ -75,7 +75,7 @@ void main() {
       final pending = _transaction(txKind: kind, minedHeight: BigInt.zero);
       final row = await mapRow(tester, pending, pendingLabel: 'Est. 1–3 min');
       expect(row.subtitle, 'Est. 1–3 min');
-      expect(row.subtitleIconName, AppIcons.migrationTimer);
+      expect(row.subtitleIconName, AppIcons.time);
       expect(row.timestampText, (await mapRow(tester, pending)).timestampText);
       expect((await mapRow(tester, pending)).subtitle, 'Checking status');
       expect(
@@ -112,7 +112,7 @@ void main() {
         pendingLabel: 'Est. 1–3 min',
       );
       expect(row.subtitle, 'Est. 1–3 min');
-      expect(row.subtitleIconName, AppIcons.migrationTimer);
+      expect(row.subtitleIconName, AppIcons.time);
     }
     expect(
       (await mapRow(
