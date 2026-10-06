@@ -132,6 +132,8 @@ version = "=5.1.1-rc.3"
 [dependencies.orchard]
 package = "zakura-orchard"
 version = "=2.0.0"
+# Cargo unifies this feature with wallet-library Orchard and Ironwood tree hashing.
+features = ["weighted-merkle"]
 
 [dependencies.zcash_proofs]
 package = "zakura-proofs"

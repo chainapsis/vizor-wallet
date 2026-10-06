@@ -136,7 +136,7 @@ void main() {
       final rawLink = await payment_link_flow.readPaymentLinkFromClipboard();
       var link = VizorPaymentLink.parse(rawLink);
       expect(Uri.parse(rawLink).fragment, startsWith('v3='));
-      expect(link.mnemonic.split(' ').length, 24);
+      expect(link.mnemonic.split(' ').length, 12);
       expect(link.network, _network);
       expect(link.amountZatoshi, _giftAmountZatoshi);
       expect(link.presentation?.artworkId, 'coin');

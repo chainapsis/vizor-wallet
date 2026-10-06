@@ -6,6 +6,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/rendering.dart';
+import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
@@ -15,6 +16,7 @@ import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_activity_screen.dart';
+import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_transaction_status_screen.dart';
 import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
@@ -24,6 +26,7 @@ import 'package:zcash_wallet/src/features/activity/activity_eta_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../support/wallet_path_read_blocker.dart';
 
 const _accountState = AccountState(
   accounts: [
@@ -106,6 +109,7 @@ Widget _app(
   FakeSyncNotifier? syncNotifier,
   SwapActivityStore? swapActivityStore,
   GiftCardActivityIndex giftCardActivityIndex = GiftCardActivityIndex.empty,
+  GoRouter? router,
 }) {
   return ProviderScope(
     overrides: [
@@ -125,12 +129,18 @@ Widget _app(
         return giftCardActivityIndex;
       }),
     ],
-    child: MaterialApp(
-      home: AppTheme(
-        data: AppThemeData.dark,
-        child: MobileActivityScreen(historyLoader: loader),
-      ),
-    ),
+    child: router != null
+        ? MaterialApp.router(
+            routerConfig: router,
+            builder: (_, child) =>
+                AppTheme(data: AppThemeData.dark, child: child!),
+          )
+        : MaterialApp(
+            home: AppTheme(
+              data: AppThemeData.dark,
+              child: MobileActivityScreen(historyLoader: loader),
+            ),
+          ),
   );
 }
 
@@ -344,6 +354,56 @@ void main() {
     expect(find.text('Est. 1–3 min'), findsOneWidget);
     expect(find.text('Shielded'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('activity tap opens before receipt loading completes', (
+    tester,
+  ) async {
+    final history = Completer<List<rust_sync.TransactionInfo>>();
+    final tx = _tx(txidHex: 'a' * 64, blockTime: BigInt.from(1764150000));
+    MobileTransactionStatusArgs? suppliedArgs;
+    await tester.binding.setSurfaceSize(const Size(393, 1200));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final router = GoRouter(
+      initialLocation: '/activity',
+      routes: [
+        GoRoute(
+          path: '/activity',
+          builder: (_, _) =>
+              MobileActivityScreen(historyLoader: (_) async => [tx]),
+        ),
+        GoRoute(
+          path: '/activity/tx/:txid',
+          builder: (_, state) {
+            suppliedArgs = state.extra as MobileTransactionStatusArgs;
+            return MobileTransactionStatusScreen(
+              args: suppliedArgs!,
+              historyLoader: (_) => history.future,
+              detailLoader: (_, _) async => null,
+            );
+          },
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+    await tester.pumpWidget(_app((_) async => [tx], router: router));
+    await tester.pumpAndSettle();
+    WalletPathReadBlocker();
+    await tester.tap(find.text('Received'));
+    await tester.pump();
+    await tester.pump();
+    expect(find.byType(MobileTransactionStatusScreen), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(MobileTransactionStatusScreen),
+        matching: find.text('Received'),
+      ),
+      findsOneWidget,
+    );
+    expect(history.isCompleted, isFalse);
+    expect(suppliedArgs!.sourceAccountUuid, 'account-1');
+    expect(suppliedArgs!.initialTransaction, same(tx));
+    expect(suppliedArgs!.initialDetail, isNull);
   });
 
   testWidgets('groups loaded history into dated sections', (tester) async {

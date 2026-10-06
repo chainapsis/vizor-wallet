@@ -100,9 +100,9 @@ Future<AccountCreationResult> addAccount({
   birthdayHeight: birthdayHeight,
 );
 
-/// Generate a software account mnemonic and shielded address without touching
-/// the wallet DB. Used for an external one-time recipient controlled by a
-/// fresh seed, such as payment-link funding.
+/// Generate a 12-word BIP-39 mnemonic and shielded address for Gift Card funding
+/// without touching the wallet DB. Regular wallets and Gift Card recipients
+/// continue using the 24-word [`keys::generate_mnemonic`] generator.
 Future<GeneratedSoftwareAccount> generateSoftwareAccount({
   required String network,
 }) => RustLib.instance.api.crateApiWalletGenerateSoftwareAccount(

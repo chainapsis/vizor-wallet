@@ -47,6 +47,7 @@ class ActivityTransactionStatusArgs {
     this.txKind,
     this.initialTransaction,
     this.initialDetail,
+    this.sourceAccountUuid,
     this.giftCard,
   });
 
@@ -54,6 +55,9 @@ class ActivityTransactionStatusArgs {
   final String? txKind;
   final rust_sync.TransactionInfo? initialTransaction;
   final rust_sync.TransactionDetail? initialDetail;
+
+  /// Account that supplied the row and its metadata. Absent for direct links.
+  final String? sourceAccountUuid;
   final GiftCardActivityMetadata? giftCard;
 }
 
@@ -100,6 +104,7 @@ class _ActivityTransactionStatusScreenState
   String? _error;
   String? _activeAccountUuid;
   String? _argsAccountUuid;
+  int _loadGeneration = 0;
   bool _messageExpanded = false;
   String? _verifyAddress;
 
@@ -109,7 +114,12 @@ class _ActivityTransactionStatusScreenState
     _transaction = widget.args.initialTransaction;
     _detail = widget.args.initialDetail;
     _activeAccountUuid = ref.read(accountProvider).value?.activeAccountUuid;
-    _argsAccountUuid = _activeAccountUuid;
+    _argsAccountUuid = widget.args.sourceAccountUuid ?? _activeAccountUuid;
+    if (_argsAccountUuid != _activeAccountUuid) {
+      _transaction = null;
+      _detail = null;
+    }
+    _isLoading = _transaction == null;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.read(appLayoutProvider.notifier).setMode(AppLayoutMode.large);
@@ -117,19 +127,29 @@ class _ActivityTransactionStatusScreenState
     });
   }
 
-  Future<void> _loadTransaction({bool showLoading = false}) async {
-    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
-    _activeAccountUuid = accountUuid;
+  bool _loadIsCurrent(int generation, String? accountUuid) =>
+      mounted &&
+      generation == _loadGeneration &&
+      accountUuid == ref.read(accountProvider).value?.activeAccountUuid;
 
-    if (showLoading && mounted) {
+  Future<void> _loadTransaction({bool showLoading = false}) async {
+    final generation = ++_loadGeneration;
+    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    final accountChanged = accountUuid != _activeAccountUuid;
+    _activeAccountUuid = accountUuid;
+    if (accountChanged || showLoading) {
       setState(() {
-        _isLoading = true;
+        if (accountChanged) {
+          _transaction = null;
+          _detail = null;
+          _verifyAddress = null;
+          _messageExpanded = false;
+        }
+        _isLoading = _transaction == null;
         _error = null;
       });
     }
-
     if (accountUuid == null) {
-      if (!mounted) return;
       setState(() {
         _isLoading = false;
         _error = 'No active account.';
@@ -139,11 +159,7 @@ class _ActivityTransactionStatusScreenState
 
     try {
       final txs = await _loadHistory(accountUuid);
-      if (!mounted) return;
-      if (accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
-        return;
-      }
-
+      if (!_loadIsCurrent(generation, accountUuid)) return;
       final tx = _findTransaction(
         txs,
         widget.args.txidHex,
@@ -152,36 +168,29 @@ class _ActivityTransactionStatusScreenState
             widget.args.initialTransaction?.txKind ??
             widget.args.txKind,
       );
-      rust_sync.TransactionDetail? detail;
-      if (tx != null) {
-        try {
-          detail = await _loadDetail(accountUuid, tx);
-        } catch (e, st) {
-          log('ActivityTransactionStatus: detail load failed: $e\n$st');
-        }
-        if (!mounted) return;
-        if (accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
-          return;
-        }
-      }
-      setState(() {
-        if (tx != null) {
-          _transaction = tx;
-          _detail = detail;
-          _error = null;
-        } else {
-          _detail = null;
+      if (tx == null) {
+        setState(() {
           _error = _transaction == null
               ? 'Transaction could not be loaded.'
               : 'Latest transaction status could not be refreshed.';
-        }
-        _isLoading = false;
-      });
-    } catch (e, st) {
-      log('ActivityTransactionStatus: transaction load failed: $e\n$st');
-      if (!mounted) return;
+          _isLoading = false;
+        });
+        return;
+      }
+      // Publish the status without waiting for addresses, outputs, or memo.
       setState(() {
-        _detail = null;
+        _transaction = tx;
+        _detail = _matchingDetailFor(tx);
+        _isLoading = false;
+        _error = null;
+      });
+      final detail = await _loadDetail(accountUuid, tx);
+      if (!_loadIsCurrent(generation, accountUuid)) return;
+      setState(() => _detail = detail);
+    } catch (e, st) {
+      if (!_loadIsCurrent(generation, accountUuid)) return;
+      log('ActivityTransactionStatus: transaction load failed: $e\n$st');
+      setState(() {
         _error = _transaction == null
             ? 'Transaction could not be loaded.'
             : 'Latest transaction status could not be refreshed.';
@@ -813,8 +822,7 @@ class _ActivityTransactionStatusScreenState
         _activeAccountUuid;
     // The args metadata was resolved for the account that was active when the
     // row was tapped; under another account only that account's index counts.
-    final suppliedGiftCard =
-        _argsAccountUuid == null || _argsAccountUuid == activeAccountUuid
+    final suppliedGiftCard = _argsAccountUuid == activeAccountUuid
         ? widget.args.giftCard
         : null;
     final giftCard =
@@ -856,6 +864,30 @@ class _ActivityTransactionStatusScreenState
       );
     }
 
+    Widget receiptContent =
+        redesignedContent ??
+        _fallbackContent(tx, privacyModeEnabled: privacyModeEnabled);
+    // Both dedicated and summary-only receipts retain refresh errors. When
+    // there is no row, the fallback already displays its loading/error state.
+    if (tx != null && _error != null) {
+      receiptContent = Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          receiptContent,
+          Padding(
+            padding: const EdgeInsets.all(AppSpacing.sm),
+            child: Text(
+              _error!,
+              textAlign: TextAlign.center,
+              style: AppTypography.bodyMedium.copyWith(
+                color: context.colors.text.secondary,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
     final verifyAddress = _verifyAddress;
     final verifyAccountUuid =
         _activeAccountUuid ??
@@ -867,12 +899,7 @@ class _ActivityTransactionStatusScreenState
         padding: EdgeInsets.zero,
         child: Stack(
           children: [
-            if (redesignedContent != null)
-              _redesignedPane(redesignedContent)
-            else
-              _redesignedPane(
-                _fallbackContent(tx, privacyModeEnabled: privacyModeEnabled),
-              ),
+            _redesignedPane(receiptContent),
             if (verifyAddress != null && verifyAccountUuid != null)
               SendVerifyAddressOverlay(
                 accountUuid: verifyAccountUuid,

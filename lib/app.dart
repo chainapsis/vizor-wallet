@@ -1387,6 +1387,7 @@ List<RouteBase> _desktopRoutes(Ref ref) => [
                 txKind: txKind,
                 initialTransaction: extra.initialTransaction,
                 initialDetail: extra.initialDetail,
+                sourceAccountUuid: extra.sourceAccountUuid,
                 giftCard: extra.giftCard,
               )
             : extra;
