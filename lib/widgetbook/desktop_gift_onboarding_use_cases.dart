@@ -40,6 +40,8 @@ final _inspection = PaymentLinkClaimInspection(
 
 Widget buildDesktopGiftEntryUseCase(BuildContext context) =>
     const _Capture(screen: GiftClaimScreen());
+Widget buildDesktopGiftAdditionalEntryUseCase(BuildContext context) =>
+    const _Capture(screen: GiftClaimScreen(addingAccount: true));
 Widget buildDesktopGiftCheckingUseCase(BuildContext context) =>
     const _Capture(screen: GiftClaimScreen(), phase: GiftClaimPhase.checking);
 Widget buildDesktopGiftInspectedUseCase(BuildContext context) =>

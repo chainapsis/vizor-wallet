@@ -1615,6 +1615,8 @@ class PaymentLinkRedeemDesktopView extends StatelessWidget {
     required this.state,
     required this.onBack,
     this.onPaste,
+    this.onScan,
+    this.scanEnabled = true,
     this.onClearClipboard,
     this.loadingPlaceholder,
     this.statusContent,
@@ -1632,6 +1634,8 @@ class PaymentLinkRedeemDesktopView extends StatelessWidget {
   final PaymentLinkRedeemVisualState state;
   final VoidCallback onBack;
   final VoidCallback? onPaste;
+  final VoidCallback? onScan;
+  final bool scanEnabled;
   final VoidCallback? onClearClipboard;
   final Widget? loadingPlaceholder;
   final Widget? statusContent;
@@ -1719,11 +1723,28 @@ class PaymentLinkRedeemDesktopView extends StatelessWidget {
                                               label: pasteLabel,
                                               onPressed: onPaste,
                                             ),
+                                            if (onScan != null) ...[
+                                              const SizedBox(
+                                                height: AppSpacing.s,
+                                              ),
+                                              _scanButton(),
+                                            ],
                                           ],
                                         )
-                                      : PaymentLinkPasteButton(
-                                          label: pasteLabel,
-                                          onPressed: onPaste,
+                                      : Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            PaymentLinkPasteButton(
+                                              label: pasteLabel,
+                                              onPressed: onPaste,
+                                            ),
+                                            if (onScan != null) ...[
+                                              const SizedBox(
+                                                height: AppSpacing.s,
+                                              ),
+                                              _scanButton(),
+                                            ],
+                                          ],
                                         )),
                             ),
                     ),
@@ -1770,4 +1791,13 @@ class PaymentLinkRedeemDesktopView extends StatelessWidget {
       ),
     );
   }
+
+  Widget _scanButton() => AppButton(
+    key: const ValueKey('payment_link_desktop_scan_button'),
+    onPressed: scanEnabled ? onScan : null,
+    size: AppButtonSize.mediumLarge,
+    variant: AppButtonVariant.secondary,
+    leading: const AppIcon(AppIcons.qr),
+    child: const Text('Scan QR code'),
+  );
 }

@@ -19,6 +19,7 @@ import 'package:zcash_wallet/src/features/payment_links/models/gift_card_usage.d
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/gift_card_tracking_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/gift_card_tracking_service.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/gift_claim_import_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_clipboard.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_hardware_signing_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_ledger_funding_service.dart';
@@ -60,6 +61,7 @@ Future<void> pumpPaymentLinksScreen(
   PaymentLinkQrImageSaver? qrImageSaver,
   PaymentLinkQrShareHandler? qrShareHandler,
   PaymentLinkScanner? scanner,
+  GiftClaimImportStore? giftImportStore,
   AccountNotifier? accountNotifier,
   AppBootstrapState? bootstrap,
   BigInt? spendableBalance,
@@ -117,6 +119,8 @@ Future<void> pumpPaymentLinksScreen(
           paymentLinkQrImageSaverProvider.overrideWithValue(qrImageSaver),
         if (qrShareHandler != null)
           paymentLinkQrShareHandlerProvider.overrideWithValue(qrShareHandler),
+        if (giftImportStore != null)
+          giftClaimImportStoreProvider.overrideWithValue(giftImportStore),
         if (scanner != null)
           paymentLinkScannerProvider.overrideWithValue(scanner),
         if (ledgerFunding != null)

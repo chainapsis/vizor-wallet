@@ -29,6 +29,7 @@ import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_lin
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_clipboard.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/mobile/payment_link_scan_sheet.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/router_refresh_provider.dart';
@@ -103,6 +104,7 @@ void main() {
     int importedAccountCount = 1,
     AppBootstrapRetry? retryBootstrap,
     String? clipboard,
+    PaymentLinkScanner? scanner,
     Completer<void>? inspection,
     Completer<void>? broadcast,
   }) async {
@@ -150,6 +152,8 @@ void main() {
         giftCardEntryPriceProvider.overrideWith((_) async => null),
         paymentLinkOperationsProvider.overrideWithValue(operations),
         paymentLinkReceivedStoreProvider.overrideWithValue(received),
+        if (scanner != null)
+          paymentLinkScannerProvider.overrideWithValue(scanner),
         paymentLinkClipboardProvider.overrideWithValue(
           FakePaymentLinkClipboard(text: clipboard),
         ),
@@ -455,7 +459,7 @@ void main() {
     await pump(tester, clipboard: incomingLink.toUri().toString());
     await tester.tap(keyed('welcome_redeem_card_button'));
     await tester.pumpAndSettle();
-    expect(find.text('Create a wallet\nwith a gift card'), findsOneWidget);
+    expect(find.text('Redeem the Card'), findsOneWidget);
     void expectNoFallbackTextStyle() {
       for (final richText in tester.widgetList<RichText>(
         find.byType(RichText),
@@ -477,6 +481,48 @@ void main() {
     expect(find.text('Create a wallet to claim'), findsOneWidget);
     expectNoFallbackTextStyle();
   });
+
+  for (final existing in [false, true]) {
+    testWidgets(
+      'Gift entry for ${existing ? "additional" : "first"} account recovers from '
+      'scan cancellation and returns to its source',
+      (tester) async {
+        var scans = 0;
+        await pump(
+          tester,
+          existing: existing,
+          scanner: (context, {required networkName}) async {
+            scans++;
+            return null;
+          },
+        );
+        await tester.tap(keyed('welcome_redeem_card_button'));
+        await tester.pumpAndSettle();
+        expect(find.text('Redeem the Card'), findsOneWidget);
+        expect(
+          find.text('Set Password'),
+          existing ? findsNothing : findsOneWidget,
+        );
+        expect(find.text('Secret Passphrase'), findsNothing);
+        expect(
+          find.textContaining(existing ? 'new account' : 'new Vizor wallet'),
+          findsOneWidget,
+        );
+        for (var i = 0; i < 2; i++) {
+          await tester.tap(keyed('gift_desktop_scan_button'));
+          await tester.pumpAndSettle();
+          expect(keyed('gift_desktop_paste_button'), findsOneWidget);
+        }
+        expect(scans, 2);
+        await tester.tap(find.text(existing ? 'Add account' : 'Welcome'));
+        await tester.pumpAndSettle();
+        expect(
+          container.read(_routerProvider).state.uri.path,
+          existing ? '/add-account' : '/welcome',
+        );
+      },
+    );
+  }
 
   testWidgets('invalid card remains on the desktop entry with paste retry', (
     tester,
