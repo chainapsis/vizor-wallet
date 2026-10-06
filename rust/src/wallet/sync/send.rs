@@ -6704,6 +6704,28 @@ where
             return ResubmitStats::default();
         }
     };
+    resubmit_transactions(
+        lightwalletd_url,
+        client,
+        current_height,
+        candidates,
+        should_exit,
+    )
+    .await
+}
+
+/// Relay an already validated candidate set. Gift Card inspection supplies its
+/// own chain-authoritative candidates; ordinary sync keeps its existing query.
+pub(crate) async fn resubmit_transactions<ShouldExit>(
+    lightwalletd_url: &str,
+    client: &mut zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient<tonic::transport::Channel>,
+    current_height: u32,
+    candidates: Vec<super::transactions::ResubmittableTx>,
+    should_exit: ShouldExit,
+) -> ResubmitStats
+where
+    ShouldExit: Fn() -> bool,
+{
     let candidates = order_resubmittable_transactions(candidates);
 
     if candidates.is_empty() {

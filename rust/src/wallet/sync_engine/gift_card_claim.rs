@@ -9,6 +9,8 @@ use zcash_client_backend::{
     data_api::anchor_retention::AnchorRetentionInterval, proto::compact_formats::CompactBlock,
 };
 
+mod recovery;
+
 const TAIL: u32 = 12;
 const DISCOVERY_BATCH: u32 = 100;
 const OBSERVATION_BATCH: u32 = 500;
@@ -733,6 +735,21 @@ async fn run_inner(
     if hash != observed || configured_hash != observed {
         return Err("Gift Card tip changed during inspection; retrying is required".into());
     }
+    check_cancel(&cancel)?;
+    // Do not publish readiness until legacy SDK receipts agree with the
+    // completed observer pass. Rewinding retains signed bytes and spend links.
+    let Some(anchor) = recovery::reconcile_mined_claims(path, network, &c, &state)? else {
+        let mut db = open_db(path, network).map_err(|e| e.to_string())?;
+        rebuild_discovery(&mut db, &c, &mut client, birthday).await?;
+        return Ok(CheckResult::RebuildWitnesses);
+    };
+    if anchor != state.anchor_height {
+        // The previous boundary and the entire observed chain were validated
+        // before this recovery rewind. Keep readiness false until it is saved;
+        // a crash between SDK commit and this write triggers cache rediscovery.
+        c.execute("UPDATE vizor_giftcard_check SET anchor_height=?1", [anchor])
+            .map_err(|e| e.to_string())?;
+    }
     c.execute("UPDATE vizor_giftcard_check SET complete=1", [])
         .map_err(|e| e.to_string())?;
     c.execute(
@@ -742,23 +759,11 @@ async fn run_inner(
     .map_err(|e| e.to_string())?;
     state = read_snapshot(&c).map_err(|e| e.to_string())?.unwrap();
     if allow_resubmit {
-        let mut excluded = own_mined_txids(&c)?;
-        let mut conflicts=c.prepare("SELECT DISTINCT t.txid FROM vizor_giftcard_spends s JOIN ironwood_received_notes n ON n.nf=s.nf JOIN v_received_output_spends spent ON spent.pool=4 AND spent.received_output_id=n.id JOIN transactions t ON t.id_tx=spent.transaction_id WHERE t.created IS NOT NULL AND t.txid!=s.txid").map_err(|e|e.to_string())?;
-        let rows = conflicts
-            .query_map([], |r| r.get::<_, Vec<u8>>(0))
-            .map_err(|e| e.to_string())?;
-        for id in rows {
-            excluded.insert(id.map_err(|e| e.to_string())?);
-        }
-
-        crate::wallet::sync::resubmit_pending_transactions(
-            path,
-            url,
-            &mut client,
-            tip,
-            &excluded,
-            || cancel.load(Ordering::Relaxed),
-        )
+        check_cancel(&cancel)?;
+        let candidates = recovery::resubmittable_claims(path, network, &c, &state)?;
+        crate::wallet::sync::resubmit_transactions(url, &mut client, tip, candidates, || {
+            cancel.load(Ordering::Relaxed)
+        })
         .await;
     }
     check_cancel(&cancel)?;
@@ -827,15 +832,6 @@ fn local_txids(c: &Connection) -> Result<HashSet<Vec<u8>>, String> {
     rows.collect::<rusqlite::Result<_>>()
         .map_err(|e| e.to_string())
 }
-fn own_mined_txids(c: &Connection) -> Result<HashSet<Vec<u8>>, String> {
-    let mut q = c
-        .prepare("SELECT txid FROM vizor_giftcard_mined")
-        .map_err(|e| e.to_string())?;
-    let rows = q.query_map([], |r| r.get(0)).map_err(|e| e.to_string())?;
-    rows.collect::<rusqlite::Result<_>>()
-        .map_err(|e| e.to_string())
-}
-
 pub(crate) fn confirmations(path: &str, txids: &str) -> Result<Option<i32>, String> {
     let c = crate::wallet::sync::open_readonly_conn(path)?;
     let c = c.unchecked_transaction().map_err(|e| e.to_string())?;

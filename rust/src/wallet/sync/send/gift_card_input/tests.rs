@@ -21,20 +21,45 @@ async fn start_card_server(
     tokio::task::JoinHandle<()>,
     Arc<std::sync::Mutex<Vec<String>>>,
 ) {
+    start_card_server_with_tail(first, second, tip, supports_nullifiers, vec![]).await
+}
+
+async fn start_card_server_with_tail(
+    first: CompactBlock,
+    second: CompactBlock,
+    tip: u32,
+    supports_nullifiers: bool,
+    tail: Vec<CompactBlock>,
+) -> (
+    String,
+    tokio::task::JoinHandle<()>,
+    Arc<std::sync::Mutex<Vec<String>>>,
+) {
     use bytes::Bytes;
     use http_body_util::{BodyExt, Full};
     use prost::Message;
     use zcash_client_backend::proto::service::{
         BlockId, BlockRange, RawTransaction, SendResponse, TreeState,
     };
-    fn generated(h: u64, first: &CompactBlock, second: &CompactBlock) -> CompactBlock {
+    fn generated(
+        h: u64,
+        first: &CompactBlock,
+        second: &CompactBlock,
+        tail: &[CompactBlock],
+    ) -> CompactBlock {
         if h == first.height {
             return first.clone();
         }
         if h == second.height {
             return second.clone();
         }
+        if let Some(block) = tail.iter().find(|b| b.height == h) {
+            return block.clone();
+        }
         let hash = |height: u64| {
+            if let Some(block) = tail.iter().find(|b| b.height == height) {
+                return block.hash.clone();
+            }
             if height == first.height - 1 {
                 return first.prev_hash.clone();
             }
@@ -50,7 +75,15 @@ async fn start_card_server(
             hash: hash(h),
             prev_hash: hash(h - 1),
             chain_metadata: Some(ChainMetadata {
-                ironwood_commitment_tree_size: u32::from(h > first.height),
+                ironwood_commitment_tree_size: if h > second.height {
+                    second
+                        .chain_metadata
+                        .as_ref()
+                        .unwrap()
+                        .ironwood_commitment_tree_size
+                } else {
+                    0
+                },
                 ..Default::default()
             }),
             ..Default::default()
@@ -66,12 +99,14 @@ async fn start_card_server(
             let first = first.clone();
             let second = second.clone();
             let calls = recorded.clone();
+            let tail = tail.clone();
             tokio::spawn(async move {
                 let service = hyper::service::service_fn(
                     move |req: hyper::Request<hyper::body::Incoming>| {
                         let first = first.clone();
                         let second = second.clone();
                         let calls = calls.clone();
+                        let tail = tail.clone();
                         async move {
                             let method = req.uri().path().rsplit('/').next().unwrap().to_string();
                             calls.lock().unwrap().push(method.clone());
@@ -104,7 +139,7 @@ async fn start_card_server(
                                     let mut hash = if id.height == first.height - 1 {
                                         first.prev_hash.clone()
                                     } else {
-                                        generated(id.height, &first, &second).hash
+                                        generated(id.height, &first, &second, &tail).hash
                                     };
                                     hash.reverse();
                                     vec![TreeState {
@@ -119,13 +154,14 @@ async fn start_card_server(
                                     BlockId::decode(&body[5..]).unwrap().height,
                                     &first,
                                     &second,
+                                    &tail,
                                 )
                                 .encode_to_vec()],
                                 "GetBlockRange" | "GetBlockRangeNullifiers" => {
                                     let range = BlockRange::decode(&body[5..]).unwrap();
                                     (range.start.unwrap().height..=range.end.unwrap().height)
                                         .map(|h| {
-                                            let mut block = generated(h, &first, &second);
+                                            let mut block = generated(h, &first, &second, &tail);
                                             if method == "GetBlockRangeNullifiers" {
                                                 for tx in &mut block.vtx {
                                                     for action in &mut tx.ironwood_actions {
@@ -946,3 +982,5 @@ async fn creates_signed_ironwood_claim_with_a_historical_witness_and_unscanned_t
     );
     assert!(pending.estimate_max(network, &address, None).is_err());
 }
+
+mod recovery;
