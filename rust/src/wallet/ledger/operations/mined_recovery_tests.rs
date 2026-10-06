@@ -58,6 +58,17 @@ impl Wallet {
             .unwrap()
             .to_owned();
         crate::wallet::keys::ensure_db_initialized(&path, WalletNetwork::Regtest).unwrap();
+        // Pending-transaction storage requires the wallet's observed chain tip.
+        use zcash_client_backend::data_api::WalletWrite;
+        let mut db = crate::wallet::db::open_wallet_db_with_timeout(
+            &path,
+            WalletNetwork::Regtest,
+            WALLET_DB_BUSY_TIMEOUT,
+        )
+        .unwrap();
+        db.update_chain_tip(zcash_protocol::consensus::BlockHeight::from_u32(205))
+            .unwrap();
+        drop(db);
         let first = Signed::new(OutPoint::new([1; 32], 0), 1_000_000);
         let mut signed = vec![first];
         if batch {
