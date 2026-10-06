@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/layout/app_form_factor.dart';
+import '../../../../core/layout/content_overlay_inset.dart';
 import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -31,7 +32,9 @@ Future<bool> showPaymentLinkClaimAccountSheet({
       ? await showDialog<bool>(
           context: context,
           barrierDismissible: false,
-          builder: (dialogContext) => Center(child: content(dialogContext)),
+          builder: (dialogContext) => ContentPaneCenteringPadding(
+            child: Center(child: content(dialogContext)),
+          ),
         )
       : await showAppMobileSheet<bool>(
           context: context,

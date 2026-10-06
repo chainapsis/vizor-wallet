@@ -523,12 +523,16 @@ through the handoff.
 
 Only accounts added by this import are eligible recipients. A sole account is
 bound automatically. Multiple accounts open **Choose receiving account** in a
-centered desktop modal, reusing the mobile choice content and selected-row check.
+desktop modal centered in the content pane, reusing the mobile choice content
+and selected-row check. The scrim still blocks the whole window.
 Confirmation switches to the chosen account, persists its UUID, reuses the
 existing inspection, and starts the shared claim runner without waiting for
 binding or broadcast before Home. Closing the choice keeps an unbound Received
-card and continues to Home. The shared import journal and restart policy are
-unchanged; recovery never guesses an interrupted recipient.
+card and continues to Home. Desktop and mobile both restore interrupted import
+handoffs from the shared journal after unlock and account metadata restoration.
+Recovery transfers the card to Received without guessing a recipient, preserving
+any already persisted binding. Failed Received writes retain the journal for
+retry, and recovery does not race a live import handoff.
 
 Deterministic component captures: `desktop-gift-receiving-account`,
 `desktop-gift-receiving-many`, `desktop-gift-receiving-pending`, and

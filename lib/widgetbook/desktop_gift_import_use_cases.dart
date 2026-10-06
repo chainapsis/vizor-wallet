@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../src/app_bootstrap.dart';
+import '../src/core/layout/content_overlay_inset.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/core/widgets/app_button.dart';
 import '../src/features/onboarding/create/customise_account_screen.dart';
@@ -111,7 +112,7 @@ class _RecipientCaptureState extends State<_RecipientCapture> {
         ),
       ),
       const Positioned.fill(child: ColoredBox(color: Color(0x8A000000))),
-      Center(child: _choice()),
+      ContentPaneCenteringPadding(child: Center(child: _choice())),
     ],
   );
 

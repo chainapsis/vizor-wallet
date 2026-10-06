@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/mobile/payment_link_claim_account_sheet.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -10,6 +11,32 @@ import '../../figma_compare/figma_compare_font_loader.dart';
 
 void main() {
   setUpAll(loadFigmaCompareFonts);
+
+  for (final size in [const Size(1080, 720), const Size(720, 520)]) {
+    testWidgets('recipient dialog centers in the content pane at $size', (
+      tester,
+    ) async {
+      await _openSheet(
+        tester,
+        size: size,
+        accountCount: 12,
+        withSidebar: true,
+        onConfirm: (_) async {},
+      );
+      final pane = tester.getRect(find.byKey(const ValueKey('content_pane')));
+      final modal = tester.getRect(
+        find.byKey(const ValueKey('payment_link_claim_account_sheet')),
+      );
+      expect(modal.center.dx, closeTo(pane.center.dx, 0.01));
+      expect(modal.center.dy, closeTo(pane.center.dy, 0.01));
+      expect(modal.left, greaterThanOrEqualTo(pane.left));
+      expect(modal.right, lessThanOrEqualTo(pane.right));
+      expect(tester.takeException(), isNull);
+      await tester.tapAt(const Offset(20, 20));
+      await tester.pumpAndSettle();
+      expect(find.text('Choose receiving account'), findsOneWidget);
+    });
+  }
 
   for (final size in [const Size(1080, 720), const Size(720, 520)]) {
     testWidgets('only accounts scroll at $size, with the Claim button fixed', (
@@ -134,36 +161,41 @@ void main() {
 Future<void> _openSheet(
   WidgetTester tester, {
   Size size = const Size(1080, 720),
+  bool withSidebar = false,
   required int accountCount,
   required Future<void> Function(String) onConfirm,
 }) async {
   await tester.binding.setSurfaceSize(size);
-  addTearDown(() => tester.binding.setSurfaceSize(null));
+  addTearDown(() async {
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+    await tester.binding.setSurfaceSize(null);
+  });
+  final pane = Builder(
+    key: const ValueKey('content_pane'),
+    builder: (context) => Center(
+      child: TextButton(
+        onPressed: () => showPaymentLinkClaimAccountSheet(
+          context: context,
+          amountZatoshi: BigInt.from(445000000),
+          accounts: [
+            for (var i = 0; i < accountCount; i++)
+              AccountInfo(uuid: 'account-$i', name: 'Account $i', order: i),
+          ],
+          activeAccountUuid: 'account-0',
+          onConfirm: onConfirm,
+        ),
+        child: const Text('Open'),
+      ),
+    ),
+  );
   await tester.pumpWidget(
     AppTheme(
       data: AppThemeData.dark,
       child: MaterialApp(
-        home: Builder(
-          builder: (context) => Scaffold(
-            body: TextButton(
-              onPressed: () => showPaymentLinkClaimAccountSheet(
-                context: context,
-                amountZatoshi: BigInt.from(445000000),
-                accounts: [
-                  for (var i = 0; i < accountCount; i++)
-                    AccountInfo(
-                      uuid: 'account-$i',
-                      name: 'Account $i',
-                      order: i,
-                    ),
-                ],
-                activeAccountUuid: 'account-0',
-                onConfirm: onConfirm,
-              ),
-              child: const Text('Open'),
-            ),
-          ),
-        ),
+        home: withSidebar
+            ? AppDesktopShell(sidebar: const SizedBox(), pane: pane)
+            : Scaffold(body: pane),
       ),
     ),
   );
