@@ -710,6 +710,11 @@ impl Fee {
 struct HistoryCompleteness {
     details_complete: bool,
     provisional: bool,
+    /// The library's classification of the account's side, once read. A net
+    /// reconstruction (a privately recovered mixed shielding) has a final
+    /// movement but no attributed fee or payment; see
+    /// [`Self::justifies_shielding`].
+    classification: Option<HistoryClassification>,
     /// The fee as it concerns the account. Amounts are computed with this fee
     /// only.
     fee: Fee,
@@ -733,6 +738,7 @@ impl HistoryCompleteness {
         Self {
             details_complete: true,
             provisional: false,
+            classification: Some(HistoryClassification::Reconstructed),
             fee: match (base.total_spent > 0, base.fee) {
                 (false, _) => Fee::NotApplicable,
                 (true, Some(fee)) => Fee::Known(fee),
@@ -748,6 +754,7 @@ impl HistoryCompleteness {
     fn of(details: &TransactionHistoryDetails) -> Self {
         Self {
             details_complete: details.payment_details == DetailCompleteness::Complete,
+            classification: Some(details.classification),
             // A net reconstruction (a privately recovered mixed shielding) has a final
             // movement: it is shown, but its fee stays the whole transaction's and no
             // payment is inferred from it.
@@ -792,6 +799,7 @@ impl HistoryCompleteness {
         Self {
             details_complete: false,
             provisional: true,
+            classification: None,
             fee: fee.map_or(Fee::Unknown, Fee::Known),
             whole_fee: None,
             inferred_payment: None,
@@ -819,8 +827,22 @@ impl HistoryCompleteness {
 
     /// Only full payment details can show that a transaction moved the
     /// account's transparent funds into its shielded pools and paid no one.
+    /// Local intent and a full reconstruction show every payment. A net
+    /// reconstruction shows that the account's transparent spends became its
+    /// own Ironwood receipt and the whole transaction's fee, which stays
+    /// unattributed: the row shows the receipt and that fee, charging none of
+    /// it. A provisional or unread history never justifies a shielding.
     fn justifies_shielding(self) -> bool {
-        self.details_complete && !self.provisional
+        self.details_complete
+            && !self.provisional
+            && match self.classification {
+                Some(
+                    HistoryClassification::LocalIntent
+                    | HistoryClassification::Reconstructed
+                    | HistoryClassification::NetReconstructed,
+                ) => true,
+                Some(HistoryClassification::Provisional) | None => false,
+            }
     }
 }
 
@@ -2885,6 +2907,7 @@ mod tests {
             spent_orchard_note: true,
             history: HistoryCompleteness {
                 details_complete: true,
+                classification: Some(HistoryClassification::Reconstructed),
                 provisional: false,
                 fee: Fee::Known(20_000),
                 whole_fee: None,
@@ -2936,6 +2959,7 @@ mod tests {
         base.total_received = 30_000_000;
         base.attach_history(HistoryCompleteness {
             details_complete: false,
+            classification: None,
             provisional: true,
             fee: Fee::Unknown,
             whole_fee: None,
@@ -3023,6 +3047,7 @@ mod tests {
         let (mut base, summary) = provisional_debit();
         base.history = HistoryCompleteness {
             details_complete: true,
+            classification: Some(HistoryClassification::Reconstructed),
             provisional: false,
             fee: Fee::Known(10_000),
             whole_fee: None,
@@ -3044,6 +3069,7 @@ mod tests {
         let (mut base, summary) = provisional_debit();
         base.history = HistoryCompleteness {
             details_complete: false,
+            classification: None,
             provisional: false,
             fee: Fee::Known(10_000),
             whole_fee: None,
@@ -3091,6 +3117,7 @@ mod tests {
     fn a_recovered_self_transfer_is_its_network_fee() {
         let (base, summary) = self_transfer(HistoryCompleteness {
             details_complete: false,
+            classification: None,
             provisional: false,
             fee: Fee::Known(10_000),
             whole_fee: Some(10_000),
@@ -3115,6 +3142,7 @@ mod tests {
     fn a_public_self_transfer_keeps_its_classification() {
         let (base, summary) = self_transfer(HistoryCompleteness {
             details_complete: false,
+            classification: None,
             provisional: false,
             fee: Fee::Known(10_000),
             whole_fee: None,
@@ -3141,6 +3169,7 @@ mod tests {
         };
         let exact = HistoryCompleteness {
             details_complete: false,
+            classification: None,
             provisional: false,
             fee: Fee::Known(10_000),
             whole_fee: Some(10_000),
@@ -3171,6 +3200,7 @@ mod tests {
         base.total_received = 100_000;
         base.history = HistoryCompleteness {
             details_complete: false,
+            classification: None,
             provisional: false,
             fee: Fee::Known(10_000),
             whole_fee: Some(10_000),
@@ -3372,6 +3402,59 @@ mod tests {
         assert_eq!(history.shown_fee(), Fee::Known(WHOLE_FEE));
     }
 
+    /// Only a complete, final history justifies a shielding: a net
+    /// reconstruction without its payment details, a provisional history with
+    /// them, and an unread one do not.
+    #[test]
+    fn only_complete_final_histories_justify_a_shielding() {
+        let mut details = shared_funding_details(exact_whole_fee());
+        if let Some(evidence) = details.transaction_metadata.as_mut() {
+            evidence.metadata.has_shielded_components = true;
+        }
+        details.classification = HistoryClassification::NetReconstructed;
+        details.payment_details = DetailCompleteness::Incomplete;
+        assert!(!HistoryCompleteness::of(&details).justifies_shielding());
+
+        details.payment_details = DetailCompleteness::Complete;
+        details.classification = HistoryClassification::Provisional;
+        assert!(!HistoryCompleteness::of(&details).justifies_shielding());
+
+        assert!(!HistoryCompleteness::unread(Some(WHOLE_FEE)).justifies_shielding());
+
+        // A net reconstruction never charges the whole fee to the account, and
+        // a shielding row built from it shows the receipt, not the movement.
+        details.classification = HistoryClassification::NetReconstructed;
+        let history = HistoryCompleteness::of(&details);
+        let mut base = tx_base_for_history();
+        base.spent_orchard_note = false;
+        base.fee = None;
+        base.is_shielding = true;
+        base.account_balance_delta = -(WHOLE_FEE as i64);
+        base.total_spent = 100_000_000;
+        base.total_received = 100_000_000 - WHOLE_FEE;
+        base.attach_history(history);
+        assert!(base.is_shielding);
+        let mut summary = ActivitySummary::default();
+        summary.shielded.amount = base.total_received;
+        let rows = classify_history_tx(&base, &summary, Fee::NotApplicable);
+        assert_eq!(rows.len(), 1);
+        let info = &rows[0].info;
+        assert_eq!(info.tx_kind, "shielded");
+        assert_eq!(info.display_amount, 100_000_000 - WHOLE_FEE);
+        assert_eq!(info.account_balance_delta, -(WHOLE_FEE as i64));
+        assert_eq!(info.fee, WHOLE_FEE);
+        assert!(!info.amount_includes_fee);
+        assert!(!info.provisional);
+        assert!(info.details_complete);
+
+        // Without the SQL shielding candidate, a net reconstruction alone
+        // makes nothing a shielding.
+        let mut base = tx_base_for_history();
+        base.is_shielding = false;
+        base.attach_history(history);
+        assert!(!base.is_shielding);
+    }
+
     #[test]
     fn a_recovered_shielding_shows_the_whole_fee() {
         let mut details = shared_funding_details(exact_whole_fee());
@@ -3512,6 +3595,7 @@ mod tests {
             base.history = HistoryCompleteness {
                 details_complete,
                 provisional: false,
+                classification: details_complete.then_some(HistoryClassification::Reconstructed),
                 fee: Fee::Unknown,
                 whole_fee: Some(WHOLE_FEE),
                 inferred_payment: None,
@@ -3538,6 +3622,7 @@ mod tests {
     fn only_a_movement_shown_with_the_whole_fee_includes_it() {
         let whole = HistoryCompleteness {
             details_complete: false,
+            classification: None,
             provisional: true,
             fee: Fee::Unknown,
             whole_fee: Some(WHOLE_FEE),
@@ -3598,6 +3683,7 @@ mod tests {
         let complete_mined = flags(
             HistoryCompleteness {
                 details_complete: true,
+                classification: Some(HistoryClassification::Reconstructed),
                 provisional: false,
                 ..whole
             },
@@ -3740,6 +3826,7 @@ mod tests {
         base.is_shielding = true;
         base.attach_history(HistoryCompleteness {
             details_complete: false,
+            classification: None,
             provisional: true,
             fee: Fee::Unknown,
             whole_fee: None,
@@ -3751,6 +3838,7 @@ mod tests {
         base.is_shielding = true;
         base.attach_history(HistoryCompleteness {
             details_complete: true,
+            classification: Some(HistoryClassification::Reconstructed),
             provisional: false,
             fee: Fee::Known(10_000),
             whole_fee: None,
