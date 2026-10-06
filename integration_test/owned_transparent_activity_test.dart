@@ -129,7 +129,8 @@ void main() {
           findsOneWidget,
         );
         expect(find.textContaining('0.0025', findRichText: true), findsWidgets);
-        expect(find.text('Details incomplete'), findsOneWidget);
+        expect(find.text('Details'), findsOneWidget);
+        expect(find.text('Incomplete'), findsOneWidget);
         expect(tester.takeException(), isNull);
       }
     },
