@@ -8429,7 +8429,7 @@ dependencies = [
 [[package]]
 name = "zakura-client-backend"
 version = "0.1.0-rc7"
-source = "git+https://github.com/zakura-core/wallet-libraries?rev=65a1156b41dfc271b036ab665531b87af9ad4c7c#65a1156b41dfc271b036ab665531b87af9ad4c7c"
+source = "git+https://github.com/zakura-core/wallet-libraries?rev=ff325047b36bb406bc85e464d8a1a341c09090bf#ff325047b36bb406bc85e464d8a1a341c09090bf"
 dependencies = [
  "ambassador",
  "arti-client",
@@ -8505,7 +8505,7 @@ dependencies = [
 [[package]]
 name = "zakura-client-sqlite"
 version = "0.1.0-rc7"
-source = "git+https://github.com/zakura-core/wallet-libraries?rev=65a1156b41dfc271b036ab665531b87af9ad4c7c#65a1156b41dfc271b036ab665531b87af9ad4c7c"
+source = "git+https://github.com/zakura-core/wallet-libraries?rev=ff325047b36bb406bc85e464d8a1a341c09090bf#ff325047b36bb406bc85e464d8a1a341c09090bf"
 dependencies = [
  "ambassador",
  "bip32",
@@ -8713,7 +8713,7 @@ dependencies = [
 [[package]]
 name = "zakura-pczt"
 version = "0.1.0-rc4"
-source = "git+https://github.com/zakura-core/wallet-libraries?rev=65a1156b41dfc271b036ab665531b87af9ad4c7c#65a1156b41dfc271b036ab665531b87af9ad4c7c"
+source = "git+https://github.com/zakura-core/wallet-libraries?rev=ff325047b36bb406bc85e464d8a1a341c09090bf#ff325047b36bb406bc85e464d8a1a341c09090bf"
 dependencies = [
  "blake2b_simd",
  "document-features",
@@ -8767,7 +8767,7 @@ dependencies = [
 [[package]]
 name = "zakura-pir-enhance-types"
 version = "0.0.1-rc0"
-source = "git+https://github.com/zakura-core/wallet-libraries?rev=65a1156b41dfc271b036ab665531b87af9ad4c7c#65a1156b41dfc271b036ab665531b87af9ad4c7c"
+source = "git+https://github.com/zakura-core/wallet-libraries?rev=ff325047b36bb406bc85e464d8a1a341c09090bf#ff325047b36bb406bc85e464d8a1a341c09090bf"
 
 [[package]]
 name = "zakura-pir-native"
@@ -8799,7 +8799,7 @@ dependencies = [
 [[package]]
 name = "zakura-pir-transparent"
 version = "0.0.1-rc0"
-source = "git+https://github.com/zakura-core/wallet-libraries?rev=65a1156b41dfc271b036ab665531b87af9ad4c7c#65a1156b41dfc271b036ab665531b87af9ad4c7c"
+source = "git+https://github.com/zakura-core/wallet-libraries?rev=ff325047b36bb406bc85e464d8a1a341c09090bf#ff325047b36bb406bc85e464d8a1a341c09090bf"
 dependencies = [
  "hex",
  "rusqlite",
