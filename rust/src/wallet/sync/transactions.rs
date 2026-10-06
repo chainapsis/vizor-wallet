@@ -3579,7 +3579,7 @@ mod tests {
         let mut paid = change.clone();
         paid.sent.amount = 60_000_000;
         paid.sent.output_count = 1;
-        paid.sent.has_shielded = true;
+        paid.sent.has_orchard = true;
         assert_eq!(flags(whole, &paid), [false, false], "a visible payment");
         // A mined debit with complete details and no visible output is never
         // shown as its movement: its outputs are internal change, with no
