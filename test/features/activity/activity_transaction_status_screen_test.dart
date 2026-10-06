@@ -10,6 +10,8 @@ import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/formatting/address_display.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/core/widgets/app_tooltip.dart';
+import 'package:zcash_wallet/src/core/widgets/review_list_row.dart';
 import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_transaction_status_screen.dart';
 import 'package:zcash_wallet/src/features/activity/transaction_completeness.dart';
@@ -1100,7 +1102,12 @@ void main() {
         expect(find.byType(SendStatusContentView), findsNothing);
         expect(find.text('Shielded successfully'), findsOneWidget);
         expect(find.text(expected[index]), findsOneWidget);
-        expect(find.text('Tx fee'), findsOneWidget);
+        // The library does not attribute the fee to the account: it is the
+        // transaction's network fee.
+        expect(find.text(kNetworkFeeText), findsOneWidget);
+        expect(find.text('Tx fee'), findsNothing);
+        expect(_tooltip(kWholeTransactionFeeHelpText), findsOneWidget);
+        expect(_tooltip(kTxFeeHelpTooltip), findsNothing);
         expect(find.text('0.0002 ZEC'), findsOneWidget);
         expect(find.text(kUnknownFeeText), findsNothing);
       }
@@ -1246,7 +1253,8 @@ void main() {
   );
 
   testWidgets('a fee-only entry is one network fee line', (tester) async {
-    // Reconstructed zero external payment; recipient details can be missing.
+    // A recovered self-transfer whose outputs are all change: the whole
+    // balance change is the account's own fee.
     await _pumpScreen(
       tester,
       privateQueriesEnabled: true,
@@ -1257,7 +1265,7 @@ void main() {
           txKind: 'sent',
           fee: BigInt.from(65000),
           displayAmount: BigInt.from(65000),
-          amountIncludesFee: true,
+          amountIsNetChange: true,
           detailsComplete: false,
           accountBalanceDelta: -65000,
           displayPool: 'transparent',
@@ -1288,7 +1296,7 @@ void main() {
             txKind: 'sent',
             fee: BigInt.from(20000),
             displayAmount: BigInt.from(20000),
-            amountIncludesFee: true,
+            amountIsNetChange: true,
             detailsComplete: false,
             provisional: true,
             displayPool: 'unknown',
@@ -1300,7 +1308,7 @@ void main() {
 
       expect(find.text('Transaction'), findsOneWidget);
       expect(find.text(kNetworkFeeText), findsNothing);
-      expect(find.text(kNetChangeIncludesFeeText), findsOneWidget);
+      expect(find.text(kNetChangeText), findsOneWidget);
       expect(find.text('0.0002 ZEC'), findsNWidgets(2));
       expect(find.text('Amount'), findsNothing);
       expect(find.text('Tx fee'), findsOneWidget);
@@ -1308,7 +1316,7 @@ void main() {
     },
   );
 
-  testWidgets('an amount that includes the fee is labelled a net change', (
+  testWidgets('a net change is labelled as such, with its fee apart', (
     tester,
   ) async {
     await _pumpScreen(
@@ -1320,7 +1328,7 @@ void main() {
           txKind: 'sent',
           fee: BigInt.from(10000),
           displayAmount: BigInt.from(70000000),
-          amountIncludesFee: true,
+          amountIsNetChange: true,
           detailsComplete: false,
           provisional: true,
         ),
@@ -1328,13 +1336,82 @@ void main() {
       ),
     );
 
-    expect(find.text(kNetChangeIncludesFeeText), findsOneWidget);
+    expect(find.text('Transaction'), findsOneWidget);
+    expect(find.text(kNetChangeText), findsOneWidget);
     expect(find.text('Amount'), findsNothing);
-    // Nothing is subtracted, and the fee keeps its own line.
+    // Nothing is subtracted, and the account's fee keeps its own line.
     expect(find.text('0.70 ZEC'), findsOneWidget);
     expect(find.text('Tx fee'), findsOneWidget);
     expect(find.text('0.0001 ZEC'), findsOneWidget);
     expect(find.text(kNetworkFeeText), findsNothing);
+  });
+
+  testWidgets('a whole-transaction fee is the network fee, never the Tx fee', (
+    tester,
+  ) async {
+    // Equal to the net change or not, the transaction's fee is never read as
+    // the account's: no fee-only line and no inclusion is claimed.
+    for (final change in [70000000, 15000]) {
+      await _pumpScreen(
+        tester,
+        privateQueriesEnabled: true,
+        args: ActivityTransactionStatusArgs(
+          txidHex: _txidHex,
+          txKind: 'sent',
+          initialTransaction: _transaction(
+            txKind: 'sent',
+            fee: BigInt.from(15000),
+            feeState: rust_sync.TransactionFeeState.wholeTransaction,
+            displayAmount: BigInt.from(change),
+            amountIsNetChange: true,
+            detailsComplete: false,
+            provisional: true,
+          ),
+          initialDetail: _detail(txKind: 'sent'),
+        ),
+      );
+
+      expect(find.text(kNetChangeText), findsOneWidget, reason: '$change');
+      expect(find.text(kNetworkFeeText), findsOneWidget, reason: '$change');
+      expect(find.text('Tx fee'), findsNothing, reason: '$change');
+      expect(
+        _tooltip(kWholeTransactionFeeHelpText),
+        findsOneWidget,
+        reason: '$change',
+      );
+      expect(
+        find.text('0.00015 ZEC'),
+        findsNWidgets(change == 15000 ? 2 : 1),
+        reason: '$change',
+      );
+    }
+
+    // A move shown with its recipient keeps the same label.
+    await _pumpScreen(
+      tester,
+      privateQueriesEnabled: true,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'sent',
+        initialTransaction: _transaction(
+          txKind: 'sent',
+          fee: BigInt.from(15000),
+          feeState: rust_sync.TransactionFeeState.wholeTransaction,
+          displayAmount: BigInt.from(250000),
+          detailsComplete: false,
+          provisional: true,
+        ),
+        initialDetail: _detail(
+          txKind: 'sent',
+          primaryAddress: _receivingAddress,
+        ),
+      ),
+    );
+    expect(find.byType(SendStatusContentView), findsOneWidget);
+    expect(find.text(kNetworkFeeText), findsOneWidget);
+    expect(find.text('Tx fee'), findsNothing);
+    expect(_tooltip(kWholeTransactionFeeHelpText), findsOneWidget);
+    expect(_tooltip(kTxFeeHelpTooltip), findsNothing);
   });
 
   for (final kind in ['sent', 'received', 'shielded', 'migration']) {
@@ -1583,6 +1660,12 @@ void main() {
   );
 }
 
+/// The help tooltip whose message is [message].
+Finder _tooltip(String message) => find.byWidgetPredicate(
+  (widget) => widget is AppTooltip && widget.message == message,
+  description: 'AppTooltip("$message")',
+);
+
 rust_sync.TransactionInfo _transaction({
   String txidHex = _txidHex,
   required String txKind,
@@ -1592,7 +1675,7 @@ rust_sync.TransactionInfo _transaction({
   rust_sync.TransactionFeeState feeState = rust_sync.TransactionFeeState.known,
   bool detailsComplete = true,
   bool provisional = false,
-  bool amountIncludesFee = false,
+  bool amountIsNetChange = false,
   BigInt? displayAmount,
   int accountBalanceDelta = 0,
   String displayPool = 'shielded',
@@ -1606,7 +1689,7 @@ rust_sync.TransactionInfo _transaction({
     feeState: feeState,
     detailsComplete: detailsComplete,
     provisional: provisional,
-    amountIncludesFee: amountIncludesFee,
+    amountIsNetChange: amountIsNetChange,
     blockTime: _blockTime,
     isTransparent: displayPool == 'transparent',
     txKind: txKind,

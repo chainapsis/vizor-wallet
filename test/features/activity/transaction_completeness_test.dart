@@ -44,54 +44,69 @@ void main() {
           feeState: rust_sync.TransactionFeeState.unknown,
         ),
       ),
+      transactionCompletenessSignature(
+        _transaction('aa', 'sent', amountIsNetChange: true),
+      ),
     };
-    expect(signatures, hasLength(4));
+    expect(signatures, hasLength(5));
   });
 
-  test('a fee the amount includes is presented once', () {
+  test('a net change is the account\'s own fee only when that equals it', () {
     TransactionFeePresentation presentation({
-      required bool amountIncludesFee,
+      required bool amountIsNetChange,
       required int displayAmount,
+      rust_sync.TransactionFeeState feeState =
+          rust_sync.TransactionFeeState.known,
     }) => transactionFeePresentation(
       _transaction(
         'aa',
         'sent',
-        amountIncludesFee: amountIncludesFee,
-        displayPool: 'transparent',
+        amountIsNetChange: amountIsNetChange,
         accountBalanceDelta: -displayAmount,
         displayAmount: BigInt.from(displayAmount),
+        feeState: feeState,
       ),
     );
 
     // The fee is 10000 zatoshis.
     expect(
-      presentation(amountIncludesFee: false, displayAmount: 100000),
+      presentation(amountIsNetChange: false, displayAmount: 100000),
       TransactionFeePresentation.separate,
     );
     expect(
-      presentation(amountIncludesFee: false, displayAmount: 10000),
+      presentation(amountIsNetChange: false, displayAmount: 10000),
       TransactionFeePresentation.separate,
       reason: 'a payment equal to the fee is still a payment',
     );
     expect(
-      presentation(amountIncludesFee: true, displayAmount: 100000),
-      TransactionFeePresentation.includedInAmount,
+      presentation(amountIsNetChange: true, displayAmount: 100000),
+      TransactionFeePresentation.netChange,
     );
     expect(
-      presentation(amountIncludesFee: true, displayAmount: 10000),
+      presentation(amountIsNetChange: true, displayAmount: 10000),
       TransactionFeePresentation.feeOnly,
+    );
+    expect(
+      presentation(
+        amountIsNetChange: true,
+        displayAmount: 10000,
+        feeState: rust_sync.TransactionFeeState.wholeTransaction,
+      ),
+      TransactionFeePresentation.netChange,
+      reason: 'the whole transaction\'s fee is not the account\'s',
     );
   });
   test('net movement equal to the whole fee does not establish fee-only', () {
     // A mixed-pool movement can be provisional or settled without its payment
-    // role being established. Neither becomes a fee-only transparent transfer.
+    // role being established. Neither becomes a fee-only entry.
     for (final provisional in [true, false]) {
       final tx = _transaction(
         'aa',
         'sent',
         detailsComplete: false,
         provisional: provisional,
-        amountIncludesFee: true,
+        feeState: rust_sync.TransactionFeeState.wholeTransaction,
+        amountIsNetChange: true,
         displayAmount: BigInt.from(20000),
         fee: BigInt.from(20000),
         accountBalanceDelta: -20000,
@@ -99,7 +114,7 @@ void main() {
       );
       expect(
         transactionFeePresentation(tx),
-        TransactionFeePresentation.includedInAmount,
+        TransactionFeePresentation.netChange,
       );
       expect(transactionDetailsIncomplete(tx), isTrue);
     }
@@ -110,28 +125,28 @@ void main() {
       'aa',
       'sent',
       detailsComplete: false,
-      amountIncludesFee: true,
+      amountIsNetChange: true,
       displayAmount: BigInt.from(10000),
       accountBalanceDelta: -10000,
-      displayPool: 'transparent',
+      displayPool: 'unknown',
     );
     expect(transactionFeePresentation(tx), TransactionFeePresentation.feeOnly);
     expect(transactionDetailsIncomplete(tx), isTrue);
   });
 
-  test('an unsettled transparent transfer is not established fee-only', () {
+  test('an unsettled change of the fee is not established fee-only', () {
     final tx = _transaction(
       'aa',
       'sent',
       provisional: true,
-      amountIncludesFee: true,
+      amountIsNetChange: true,
       displayAmount: BigInt.from(10000),
       accountBalanceDelta: -10000,
-      displayPool: 'transparent',
+      displayPool: 'unknown',
     );
     expect(
       transactionFeePresentation(tx),
-      TransactionFeePresentation.includedInAmount,
+      TransactionFeePresentation.netChange,
     );
   });
 
@@ -139,32 +154,33 @@ void main() {
     for (final state in [
       rust_sync.TransactionFeeState.unknown,
       rust_sync.TransactionFeeState.notApplicable,
+      rust_sync.TransactionFeeState.wholeTransaction,
     ]) {
       final tx = _transaction(
         'aa',
         'sent',
         feeState: state,
-        amountIncludesFee: true,
-        displayPool: 'transparent',
+        amountIsNetChange: true,
+        displayPool: 'unknown',
         accountBalanceDelta: -10000,
         displayAmount: BigInt.from(10000),
       );
       expect(
         transactionFeePresentation(tx),
-        TransactionFeePresentation.includedInAmount,
+        TransactionFeePresentation.netChange,
       );
     }
     final sharedFee = _transaction(
       'aa',
       'sent',
-      amountIncludesFee: true,
-      displayPool: 'transparent',
+      amountIsNetChange: true,
+      displayPool: 'unknown',
       accountBalanceDelta: -5000,
       displayAmount: BigInt.from(10000),
     );
     expect(
       transactionFeePresentation(sharedFee),
-      TransactionFeePresentation.includedInAmount,
+      TransactionFeePresentation.netChange,
     );
   });
 
@@ -186,7 +202,7 @@ rust_sync.TransactionInfo _transaction(
   bool detailsComplete = true,
   bool provisional = false,
   rust_sync.TransactionFeeState feeState = rust_sync.TransactionFeeState.known,
-  bool amountIncludesFee = false,
+  bool amountIsNetChange = false,
   BigInt? displayAmount,
   BigInt? fee,
   int accountBalanceDelta = 0,
@@ -201,7 +217,7 @@ rust_sync.TransactionInfo _transaction(
     feeState: feeState,
     detailsComplete: detailsComplete,
     provisional: provisional,
-    amountIncludesFee: amountIncludesFee,
+    amountIsNetChange: amountIsNetChange,
     blockTime: BigInt.from(1750000000),
     isTransparent: displayPool == 'transparent',
     txKind: kind,

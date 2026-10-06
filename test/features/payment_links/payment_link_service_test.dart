@@ -1650,7 +1650,7 @@ void main() {
           api.poolFixture = true;
           api.recipientHistory = [
             rust_sync.TransactionInfo(
-              amountIncludesFee: false,
+              amountIsNetChange: false,
               detailsComplete: true,
               provisional: false,
               feeState: rust_sync.TransactionFeeState.notApplicable,
@@ -3110,7 +3110,7 @@ rust_sync.TransactionInfo _transaction({
     feeState: rust_sync.TransactionFeeState.notApplicable,
     detailsComplete: true,
     provisional: false,
-    amountIncludesFee: false,
+    amountIsNetChange: false,
     blockTime: BigInt.from(blockTime),
     isTransparent: false,
     txKind: txKind,

@@ -2924,10 +2924,15 @@ class TransactionDetailOutput {
 
 /// The network fee shown for a transaction.
 enum TransactionFeeState {
-  /// `fee` is known: the fee the account paid or, when that is not recorded,
-  /// the exact fee of the whole transaction from privately recovered
-  /// metadata, which other funders may have shared.
+  /// `fee` is the fee the account paid.
   known,
+
+  /// The account's own share of `fee` is unknown: `fee` is the exact fee of
+  /// the whole transaction from privately recovered metadata, with that of
+  /// any TEX funding step shown as part of it. Other funders may have shared
+  /// it: show it as the network fee of the transactions, never as the
+  /// account's.
+  wholeTransaction,
 
   /// The account spent funds, or may have, but neither its fee nor the
   /// whole transaction's is known. Show it as unknown, never as zero.
@@ -2944,8 +2949,8 @@ class TransactionInfo {
   final PlatformInt64 accountBalanceDelta;
 
   /// The network fee shown for the transaction. Zero unless `fee_state` is
-  /// `Known`. Display only: it is never subtracted from `display_amount`
-  /// or `account_balance_delta`.
+  /// `Known` or `WholeTransaction`. Display only: it is never subtracted
+  /// from `display_amount` or `account_balance_delta`.
   final BigInt fee;
   final TransactionFeeState feeState;
   final BigInt blockTime;
@@ -2973,11 +2978,12 @@ class TransactionInfo {
   /// A provisional debit is a net amount, not a payment amount.
   final bool provisional;
 
-  /// Whether `display_amount` already includes the shown `fee`: the amount
-  /// is the account's balance change and `fee` is the whole transaction's
-  /// fee from privately recovered metadata. Show the fee once: when
-  /// `display_amount` equals `fee`, the change is that fee alone.
-  final bool amountIncludesFee;
+  /// Whether `display_amount` is the account's net balance change rather
+  /// than a payment: the wallet knows the debit but not where its value
+  /// went. Label it as the net change; it is not a payment of that amount.
+  /// When the shown fee is the account's own (`Known`) and equals the
+  /// amount, the change is that fee alone.
+  final bool amountIsNetChange;
 
   const TransactionInfo({
     required this.txidHex,
@@ -2998,7 +3004,7 @@ class TransactionInfo {
     required this.createdTime,
     required this.detailsComplete,
     required this.provisional,
-    required this.amountIncludesFee,
+    required this.amountIsNetChange,
   });
 
   @override
@@ -3021,7 +3027,7 @@ class TransactionInfo {
       createdTime.hashCode ^
       detailsComplete.hashCode ^
       provisional.hashCode ^
-      amountIncludesFee.hashCode;
+      amountIsNetChange.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -3046,7 +3052,7 @@ class TransactionInfo {
           createdTime == other.createdTime &&
           detailsComplete == other.detailsComplete &&
           provisional == other.provisional &&
-          amountIncludesFee == other.amountIncludesFee;
+          amountIsNetChange == other.amountIsNetChange;
 }
 
 /// What the transparent fields of a [`WalletBalance`] represent.

@@ -14742,7 +14742,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       createdTime: dco_decode_u_64(arr[15]),
       detailsComplete: dco_decode_bool(arr[16]),
       provisional: dco_decode_bool(arr[17]),
-      amountIncludesFee: dco_decode_bool(arr[18]),
+      amountIsNetChange: dco_decode_bool(arr[18]),
     );
   }
 
@@ -19756,7 +19756,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_createdTime = sse_decode_u_64(deserializer);
     var var_detailsComplete = sse_decode_bool(deserializer);
     var var_provisional = sse_decode_bool(deserializer);
-    var var_amountIncludesFee = sse_decode_bool(deserializer);
+    var var_amountIsNetChange = sse_decode_bool(deserializer);
     return TransactionInfo(
       txidHex: var_txidHex,
       minedHeight: var_minedHeight,
@@ -19776,7 +19776,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       createdTime: var_createdTime,
       detailsComplete: var_detailsComplete,
       provisional: var_provisional,
-      amountIncludesFee: var_amountIncludesFee,
+      amountIsNetChange: var_amountIsNetChange,
     );
   }
 
@@ -24068,7 +24068,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_64(self.createdTime, serializer);
     sse_encode_bool(self.detailsComplete, serializer);
     sse_encode_bool(self.provisional, serializer);
-    sse_encode_bool(self.amountIncludesFee, serializer);
+    sse_encode_bool(self.amountIsNetChange, serializer);
   }
 
   @protected

@@ -564,7 +564,7 @@ rust_sync.TransactionInfo _tx(int index) {
     feeState: rust_sync.TransactionFeeState.notApplicable,
     detailsComplete: true,
     provisional: false,
-    amountIncludesFee: false,
+    amountIsNetChange: false,
     blockTime: seconds,
     isTransparent: false,
     txKind: 'received',
@@ -584,7 +584,7 @@ rust_sync.TransactionInfo _sentZecTx({required String txidHex}) {
     feeState: rust_sync.TransactionFeeState.known,
     detailsComplete: true,
     provisional: false,
-    amountIncludesFee: false,
+    amountIsNetChange: false,
     blockTime: BigInt.from(1800000000),
     isTransparent: false,
     txKind: 'sent',
@@ -632,7 +632,7 @@ rust_sync.TransactionInfo _receivedZecTx({
     feeState: rust_sync.TransactionFeeState.notApplicable,
     detailsComplete: true,
     provisional: false,
-    amountIncludesFee: false,
+    amountIsNetChange: false,
     blockTime: BigInt.from(1800000000),
     isTransparent: false,
     txKind: 'received',
@@ -686,7 +686,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(393, 1000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final pending = rust_sync.TransactionInfo(
-      amountIncludesFee: false,
+      amountIsNetChange: false,
       detailsComplete: true,
       feeState: rust_sync.TransactionFeeState.known,
       provisional: false,
@@ -2919,7 +2919,7 @@ void main() {
           feeState: rust_sync.TransactionFeeState.notApplicable,
           detailsComplete: true,
           provisional: false,
-          amountIncludesFee: false,
+          amountIsNetChange: false,
           blockTime: height == BigInt.zero
               ? BigInt.zero
               : BigInt.from(1800000100),

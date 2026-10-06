@@ -361,16 +361,18 @@ class _MobileTransactionStatusScreenState
     if (_isIncoming) {
       return _phase == _TxPhase.pending ? 'Receiving...' : 'Received';
     }
-    // An unclassified tx stays neutral, like the desktop fallback receipt, and
-    // so does an entry whose whole balance change is its network fee.
-    if (!_isSent ||
-        _feePresentationFor(_transaction, null) ==
-            TransactionFeePresentation.feeOnly) {
-      return 'Transaction';
-    }
+    // An unclassified tx stays neutral, like the desktop fallback receipt.
+    if (!_isSent) return 'Transaction';
     return switch (_phase) {
       _TxPhase.pending => 'Sending...',
-      _TxPhase.succeeded => 'Sent successfully',
+      // Once settled, an entry whose amount is its net balance change (or its
+      // network fee alone) stays neutral too: no payment of it is known. In
+      // flight or failed it keeps the send's title, as its activity row does.
+      _TxPhase.succeeded =>
+        _feePresentationFor(_transaction, null) ==
+                TransactionFeePresentation.separate
+            ? 'Sent successfully'
+            : 'Transaction',
       _TxPhase.failed => 'Send failed',
     };
   }
@@ -572,8 +574,7 @@ class _MobileTransactionStatusScreenState
     final amountRow = MobileReviewInfoRow(
       label: switch (feePresentation) {
         TransactionFeePresentation.separate => 'Amount',
-        TransactionFeePresentation.includedInAmount =>
-          kNetChangeIncludesFeeText,
+        TransactionFeePresentation.netChange => kNetChangeText,
         TransactionFeePresentation.feeOnly => kNetworkFeeText,
       },
       value: amountText,
@@ -850,6 +851,9 @@ class _MobileTransactionStatusScreenState
                                 privacyModeEnabled: privacyModeEnabled,
                               ),
                         detailsIncomplete: _showIncompleteDetails(tx),
+                        feeIsWholeTransaction: transactionFeeIsWholeTransaction(
+                          tx,
+                        ),
                       ),
                       if (_error != null) ...[
                         const SizedBox(height: AppSpacing.sm),
@@ -1173,6 +1177,7 @@ class _DetailCard extends StatelessWidget {
     required this.feeText,
     this.isCardCreation = false,
     this.detailsIncomplete = false,
+    this.feeIsWholeTransaction = false,
   });
 
   final _TxPhase phase;
@@ -1188,6 +1193,10 @@ class _DetailCard extends StatelessWidget {
   final String? feeText;
   final bool isCardCreation;
   final bool detailsIncomplete;
+
+  /// The fee is the whole transaction's, not the account's: it is the
+  /// transaction's network fee.
+  final bool feeIsWholeTransaction;
 
   @override
   Widget build(BuildContext context) {
@@ -1279,7 +1288,11 @@ class _DetailCard extends StatelessWidget {
             Container(height: 1, color: colors.border.regular),
             const SizedBox(height: AppSpacing.sm),
             _ListRow(
-              label: isCardCreation ? 'Card fee' : 'Tx fee',
+              label: isCardCreation
+                  ? 'Card fee'
+                  : feeIsWholeTransaction
+                  ? kNetworkFeeText
+                  : 'Tx fee',
               labelStyle: AppTypography.labelLarge,
               value: _ValueWithIcon(
                 text: feeText,
@@ -1291,6 +1304,12 @@ class _DetailCard extends StatelessWidget {
                           context,
                           title: 'Card fee',
                           description: kPaymentLinkCardFeeHelpText,
+                        )
+                      : feeIsWholeTransaction
+                      ? showMobileTxFeeInfoSheet(
+                          context,
+                          title: kNetworkFeeText,
+                          description: kWholeTransactionFeeHelpText,
                         )
                       : showMobileTxFeeInfoSheet(context),
                 ),

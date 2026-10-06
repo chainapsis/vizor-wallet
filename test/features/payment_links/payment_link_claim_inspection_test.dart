@@ -714,7 +714,7 @@ rust_sync.TransactionInfo _transaction({
     displayAmount: BigInt.one,
     displayPool: 'shielded',
     createdTime: BigInt.zero,
-    amountIncludesFee: false,
+    amountIsNetChange: false,
   );
 }
 

@@ -11,54 +11,64 @@ const kIncompleteDetailsHelpText =
     'Some details of this transaction, such as its recipients, memos, or '
     'fee, are not known yet. The amount shown may change.';
 
-/// Titles the single line of an entry whose whole balance change is its
-/// network fee, established by a recovered transparent self-transfer.
+/// Titles the single line of an entry whose whole balance change is the
+/// account's own network fee, and labels a fee that is the whole
+/// transaction's rather than the account's.
 const kNetworkFeeText = 'Network fee';
 
-/// Labels an amount that is the account's balance change, network fee
-/// included.
-const kNetChangeIncludesFeeText = 'Net change (includes network fee)';
+/// Labels an amount that is the account's net balance change, not a payment.
+const kNetChangeText = 'Net change';
+
+/// Titles an activity row whose amount is the account's net balance change:
+/// value left the account, but no payment of that amount is known.
+const kSentNetText = 'Sent (net)';
+
+/// Explains a [kNetworkFeeText] that is the whole transaction's fee, with
+/// that of any funding transaction shown as part of it.
+const kWholeTransactionFeeHelpText =
+    'The network fee of the whole transaction, including any transaction '
+    'that funded it. Others who funded them may have paid part of it, so '
+    'this account\'s share is not known.';
 
 bool transactionFeeIsUnknown(rust_sync.TransactionInfo tx) =>
     tx.feeState == rust_sync.TransactionFeeState.unknown;
 
+/// Whether the shown fee is the whole transaction's: the account's own share
+/// is unknown, so it is labelled [kNetworkFeeText], never as the account's.
+bool transactionFeeIsWholeTransaction(rust_sync.TransactionInfo tx) =>
+    tx.feeState == rust_sync.TransactionFeeState.wholeTransaction;
+
 /// How an entry shows its amount and network fee, so the fee appears once.
 enum TransactionFeePresentation {
-  /// The amount excludes the fee, which keeps its own line.
+  /// The amount is a payment or receipt, and the fee keeps its own line.
   separate,
 
-  /// The amount is the balance change with the fee in it
-  /// ([kNetChangeIncludesFeeText]); the fee keeps its own line.
-  includedInAmount,
+  /// The amount is the account's net balance change ([kNetChangeText]), not
+  /// a payment; the fee keeps its own line and is not subtracted from it.
+  netChange,
 
-  /// The whole balance change is the fee: one [kNetworkFeeText] line, with no
-  /// separate amount or fee line.
+  /// The whole balance change is the account's own fee: one [kNetworkFeeText]
+  /// line, with no separate amount or fee line.
   feeOnly,
 }
 
-/// How [tx] shows its fee. Nothing is subtracted: an amount that includes the
-/// fee is shown as it is.
+/// How [tx] shows its fee. Nothing is subtracted: a net change is shown as it
+/// is, and is the fee alone only when the account's own fee equals it.
 TransactionFeePresentation transactionFeePresentation(
   rust_sync.TransactionInfo tx,
 ) {
-  if (!tx.amountIncludesFee) return TransactionFeePresentation.separate;
-  // Rust marks two distinct rows as including a fee: a reconstructed
-  // transparent self-transfer with zero external payment, and an unknown-pool
-  // balance movement whose payment role is not established. Only the former
-  // justifies fee-only presentation. A mixed-pool movement can equal its fee
-  // even after its effects settle, so !provisional alone is insufficient.
-  // Missing recipient details do not invalidate an established self-transfer.
-  final establishedSelfTransfer =
+  if (!tx.amountIsNetChange) return TransactionFeePresentation.separate;
+  // The change is the fee alone only when it is settled and exactly the
+  // account's own known fee: a whole-transaction fee, or a change that can
+  // still move, may hide a payment.
+  final feeAlone =
       !tx.provisional &&
-      tx.txKind == 'sent' &&
-      tx.displayPool == 'transparent' &&
-      tx.isTransparent &&
       tx.feeState == rust_sync.TransactionFeeState.known &&
       tx.fee > BigInt.zero &&
       BigInt.from(tx.accountBalanceDelta) == -tx.fee;
-  return establishedSelfTransfer && tx.displayAmount == tx.fee
+  return feeAlone && tx.displayAmount == tx.fee
       ? TransactionFeePresentation.feeOnly
-      : TransactionFeePresentation.includedInAmount;
+      : TransactionFeePresentation.netChange;
 }
 
 /// Whether the entry is incomplete: its payment details are missing, or the
@@ -74,7 +84,8 @@ bool transactionActivitySummaryIncomplete(rust_sync.TransactionInfo tx) =>
 /// The completeness part of an entry, for refresh signatures: an entry whose
 /// details or fee arrive changes nothing else a signature compares.
 String transactionCompletenessSignature(rust_sync.TransactionInfo tx) =>
-    '${tx.feeState.name}:${tx.detailsComplete}:${tx.provisional}';
+    '${tx.feeState.name}:${tx.detailsComplete}:${tx.provisional}:'
+    '${tx.amountIsNetChange}';
 
 /// The entry a receipt showing a provisional row of `txidHex` now shows.
 ///

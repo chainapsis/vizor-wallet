@@ -24,7 +24,7 @@ void main() {
     'same-epoch failed history refresh withholds ETA until recovery',
     (tester) async {
       final pending = rust_sync.TransactionInfo(
-        amountIncludesFee: false,
+        amountIsNetChange: false,
         detailsComplete: true,
         feeState: rust_sync.TransactionFeeState.known,
         provisional: false,
@@ -85,7 +85,7 @@ void main() {
       'sync completion refreshes older pending rows (new block: $newBlock)',
       (tester) async {
         final pending = rust_sync.TransactionInfo(
-          amountIncludesFee: false,
+          amountIsNetChange: false,
           detailsComplete: true,
           feeState: rust_sync.TransactionFeeState.known,
           provisional: false,
@@ -147,7 +147,7 @@ void main() {
     await _pumpActivityScreen(
       tester,
       transaction: rust_sync.TransactionInfo(
-        amountIncludesFee: false,
+        amountIsNetChange: false,
         detailsComplete: true,
         feeState: rust_sync.TransactionFeeState.known,
         provisional: false,
@@ -343,7 +343,7 @@ final _transaction = rust_sync.TransactionInfo(
   expiredUnmined: false,
   accountBalanceDelta: 0,
   fee: BigInt.zero,
-  amountIncludesFee: false,
+  amountIsNetChange: false,
   blockTime: BigInt.from(1764150000),
   isTransparent: false,
   txKind: 'received',

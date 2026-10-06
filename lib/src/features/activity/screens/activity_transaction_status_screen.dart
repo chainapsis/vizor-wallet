@@ -386,6 +386,13 @@ class _ActivityTransactionStatusScreenState
   bool _showIncompleteDetails(rust_sync.TransactionInfo tx) =>
       ref.watch(enhancePirProvider) && transactionDetailsIncomplete(tx);
 
+  /// The label and help of the fee line. A whole-transaction fee is the
+  /// transaction's network fee, never the account's.
+  (String, String) _feeLabelFor(rust_sync.TransactionInfo tx) =>
+      transactionFeeIsWholeTransaction(tx)
+      ? (kNetworkFeeText, kWholeTransactionFeeHelpText)
+      : ('Tx fee', kTxFeeHelpTooltip);
+
   String _feeText(
     rust_sync.TransactionInfo? tx, {
     required bool privacyModeEnabled,
@@ -545,6 +552,7 @@ class _ActivityTransactionStatusScreenState
           );
     final memo = detail?.memo?.trim();
     final hasMemo = memo != null && memo.isNotEmpty;
+    final (feeLabel, feeTooltip) = _feeLabelFor(tx);
 
     return SendStatusContentView(
       phase: _sentPhaseFor(tx),
@@ -556,6 +564,8 @@ class _ActivityTransactionStatusScreenState
       timestampText: _timestampText(tx),
       txIdText: _truncatedDisplayTxid(tx.txidHex),
       feeText: _feeText(tx, privacyModeEnabled: privacyModeEnabled),
+      feeLabel: feeLabel,
+      feeTooltip: feeTooltip,
       isShieldedRecipient:
           recipientAddress != null &&
           zcashAddressDisplayKind(recipientAddress) ==
@@ -586,6 +596,7 @@ class _ActivityTransactionStatusScreenState
   }) {
     final memo = detail?.memo?.trim();
     final hasMemo = memo != null && memo.isNotEmpty;
+    final (feeLabel, feeTooltip) = _feeLabelFor(tx);
 
     return _ReceiptContentColumn(
       child: ShieldedReceiptView(
@@ -596,6 +607,8 @@ class _ActivityTransactionStatusScreenState
         feeText: tx.fee > BigInt.zero || _showUnknownFee(tx)
             ? _feeText(tx, privacyModeEnabled: privacyModeEnabled)
             : null,
+        feeLabel: feeLabel,
+        feeTooltip: feeTooltip,
         memoText: hasMemo ? memo : null,
         memoExpanded: _messageExpanded,
         memoLoading: _detailsLoading,
@@ -745,13 +758,14 @@ class _ActivityTransactionStatusScreenState
         : tx.minedHeight == BigInt.zero
         ? ('In progress', AppIcons.loader, colors.text.secondary)
         : ('Completed', AppIcons.checkCircle, colors.text.positiveStrong);
-    // The fee appears once: a fee-only entry is its one fee line, and an
-    // amount that includes the fee says so.
+    // The fee appears once: a fee-only entry is its one fee line, and a net
+    // change says it is no payment.
     final feePresentation = transactionFeePresentation(tx);
     final feeOnly = feePresentation == TransactionFeePresentation.feeOnly;
     final feeText = !feeOnly && (tx.fee > BigInt.zero || _showUnknownFee(tx))
         ? _feeText(tx, privacyModeEnabled: privacyModeEnabled)
         : null;
+    final (feeLabel, feeTooltip) = _feeLabelFor(tx);
 
     return _ReceiptContentColumn(
       child: Column(
@@ -780,8 +794,7 @@ class _ActivityTransactionStatusScreenState
                   ? 'Amount migrated'
                   : switch (feePresentation) {
                       TransactionFeePresentation.separate => 'Amount',
-                      TransactionFeePresentation.includedInAmount =>
-                        kNetChangeIncludesFeeText,
+                      TransactionFeePresentation.netChange => kNetChangeText,
                       TransactionFeePresentation.feeOnly => kNetworkFeeText,
                     },
               value: feeOnly
@@ -837,11 +850,11 @@ class _ActivityTransactionStatusScreenState
               if (feeText != null) ...[
                 const ReviewWrapDivider(),
                 ReviewListRow(
-                  label: 'Tx fee',
+                  label: feeLabel,
                   value: feeText,
                   trailingIconName: AppIcons.help,
                   trailingIconColor: colors.text.secondary,
-                  trailingIconTooltip: kTxFeeHelpTooltip,
+                  trailingIconTooltip: feeTooltip,
                 ),
               ],
             ],

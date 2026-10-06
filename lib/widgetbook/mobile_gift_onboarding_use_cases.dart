@@ -743,7 +743,7 @@ class _GiftPreviewSync extends SyncNotifier {
             feeState: rust_sync.TransactionFeeState.notApplicable,
             detailsComplete: true,
             provisional: false,
-            amountIncludesFee: false,
+            amountIsNetChange: false,
           ),
       ],
     );

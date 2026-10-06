@@ -2775,8 +2775,8 @@ pub struct TransactionInfo {
     pub expired_unmined: bool,
     pub account_balance_delta: i64,
     /// The network fee shown for the transaction. Zero unless `fee_state` is
-    /// `Known`. Display only: it is never subtracted from `display_amount`
-    /// or `account_balance_delta`.
+    /// `Known` or `WholeTransaction`. Display only: it is never subtracted
+    /// from `display_amount` or `account_balance_delta`.
     pub fee: u64,
     pub fee_state: TransactionFeeState,
     pub block_time: u64,
@@ -2798,19 +2798,24 @@ pub struct TransactionInfo {
     /// Whether later discovery or enhancement can still change this entry.
     /// A provisional debit is a net amount, not a payment amount.
     pub provisional: bool,
-    /// Whether `display_amount` already includes the shown `fee`: the amount
-    /// is the account's balance change and `fee` is the whole transaction's
-    /// fee from privately recovered metadata. Show the fee once: when
-    /// `display_amount` equals `fee`, the change is that fee alone.
-    pub amount_includes_fee: bool,
+    /// Whether `display_amount` is the account's net balance change rather
+    /// than a payment: the wallet knows the debit but not where its value
+    /// went. Label it as the net change; it is not a payment of that amount.
+    /// When the shown fee is the account's own (`Known`) and equals the
+    /// amount, the change is that fee alone.
+    pub amount_is_net_change: bool,
 }
 
 /// The network fee shown for a transaction.
 pub enum TransactionFeeState {
-    /// `fee` is known: the fee the account paid or, when that is not recorded,
-    /// the exact fee of the whole transaction from privately recovered
-    /// metadata, which other funders may have shared.
+    /// `fee` is the fee the account paid.
     Known,
+    /// The account's own share of `fee` is unknown: `fee` is the exact fee of
+    /// the whole transaction from privately recovered metadata, with that of
+    /// any TEX funding step shown as part of it. Other funders may have shared
+    /// it: show it as the network fee of the transactions, never as the
+    /// account's.
+    WholeTransaction,
     /// The account spent funds, or may have, but neither its fee nor the
     /// whole transaction's is known. Show it as unknown, never as zero.
     Unknown,
@@ -2860,6 +2865,9 @@ pub fn get_transaction_history(
                 fee: t.fee,
                 fee_state: match t.fee_state {
                     wallet_sync::TransactionFeeState::Known => TransactionFeeState::Known,
+                    wallet_sync::TransactionFeeState::WholeTransaction => {
+                        TransactionFeeState::WholeTransaction
+                    }
                     wallet_sync::TransactionFeeState::Unknown => TransactionFeeState::Unknown,
                     wallet_sync::TransactionFeeState::NotApplicable => {
                         TransactionFeeState::NotApplicable
@@ -2877,7 +2885,7 @@ pub fn get_transaction_history(
                 created_time: t.created_time,
                 details_complete: t.details_complete,
                 provisional: t.provisional,
-                amount_includes_fee: t.amount_includes_fee,
+                amount_is_net_change: t.amount_is_net_change,
             })
             .collect())
     })

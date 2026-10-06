@@ -397,7 +397,7 @@ fn display_values(row: &TransactionInfo, detail: &TransactionDetail) -> serde_js
             "feeState": format!("{:?}", row.fee_state),
             "detailsComplete": row.details_complete,
             "provisional": row.provisional,
-            "amountIncludesFee": row.amount_includes_fee,
+            "amountIsNetChange": row.amount_is_net_change,
             "isTransparent": row.is_transparent,
             "expiredUnmined": row.expired_unmined,
         },
@@ -433,12 +433,16 @@ fn a_privately_recovered_shielding_shows_as_shielded_with_the_network_fee() {
         assert_eq!(row.tx_kind, "shielded");
         assert_eq!(row.display_amount, shielded);
         assert_eq!(row.account_balance_delta, -(FEE as i64));
-        assert_eq!(row.fee_state, TransactionFeeState::Known);
+        assert_eq!(
+            row.fee_state,
+            TransactionFeeState::WholeTransaction,
+            "the library does not attribute the fee to the account"
+        );
         assert_eq!(row.fee, FEE);
         assert!(row.details_complete);
         assert!(!row.provisional);
         assert!(
-            !row.amount_includes_fee,
+            !row.amount_is_net_change,
             "the shielding amount excludes the fee"
         );
 
@@ -507,7 +511,11 @@ fn a_shielding_with_no_enhance_fee_uses_the_qualified_transparent_fee() {
     let recovered = privately_recovered([120_000, 80_000], 180_000, None, false);
     let row = history_row(&recovered);
     assert_eq!(row.tx_kind, "shielded");
-    assert_eq!(row.fee_state, TransactionFeeState::Known);
+    assert_eq!(
+        row.fee_state,
+        TransactionFeeState::WholeTransaction,
+        "the library does not attribute the fee to the account"
+    );
     assert_eq!(row.fee, FEE);
     assert!(row.details_complete);
     assert!(!row.provisional);

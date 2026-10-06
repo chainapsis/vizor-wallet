@@ -63,10 +63,10 @@ rust_sync.TransactionInfo _tx({
   BigInt? displayAmount,
   String displayPool = 'shielded',
   BigInt? fee,
-  bool amountIncludesFee = false,
+  bool amountIsNetChange = false,
+  bool provisional = false,
   int accountBalanceDelta = 0,
   bool isTransparent = false,
-  bool? provisional,
 }) {
   return rust_sync.TransactionInfo(
     txidHex: txidHex,
@@ -77,9 +77,9 @@ rust_sync.TransactionInfo _tx({
     feeState: fee == null
         ? rust_sync.TransactionFeeState.notApplicable
         : rust_sync.TransactionFeeState.known,
-    detailsComplete: !amountIncludesFee,
-    provisional: provisional ?? amountIncludesFee,
-    amountIncludesFee: amountIncludesFee,
+    detailsComplete: !amountIsNetChange,
+    provisional: provisional,
+    amountIsNetChange: amountIsNetChange,
     blockTime: blockTime,
     isTransparent: isTransparent,
     txKind: kind,
@@ -493,14 +493,17 @@ void main() {
     expect(find.text('Transparent'), findsNothing);
   });
 
-  testWidgets('a fee-only entry reads as its network fee', (tester) async {
+  testWidgets('a fee-only entry reads as its fee and a net change as net', (
+    tester,
+  ) async {
     final blockTime = BigInt.from(
       DateTime.now().millisecondsSinceEpoch ~/ 1000 - 60,
     );
     await tester.pumpWidget(
       _app(
         (_) async => [
-          // An established transparent self-transfer: the whole change is its fee.
+          // An established transparent self-transfer: the whole balance
+          // change is the account's own fee.
           _tx(
             txidHex: 'aa',
             blockTime: blockTime,
@@ -511,9 +514,9 @@ void main() {
             accountBalanceDelta: -65000,
             displayAmount: BigInt.from(65000),
             fee: BigInt.from(65000),
-            amountIncludesFee: true,
+            amountIsNetChange: true,
           ),
-          // A net change that includes the fee keeps its sent row.
+          // A larger net change is no payment of that amount.
           _tx(
             txidHex: 'bb',
             blockTime: blockTime,
@@ -521,7 +524,9 @@ void main() {
             displayPool: 'unknown',
             displayAmount: BigInt.from(70000000),
             fee: BigInt.from(10000),
-            amountIncludesFee: true,
+            amountIsNetChange: true,
+            provisional: true,
+            accountBalanceDelta: -70000000,
           ),
         ],
       ),
@@ -530,7 +535,8 @@ void main() {
 
     expect(find.text('Network fee'), findsOneWidget);
     expect(find.text('-0.00065 ZEC'), findsOneWidget);
-    expect(find.text('Sent'), findsOneWidget);
+    expect(find.text('Sent (net)'), findsOneWidget);
+    expect(find.text('Sent'), findsNothing);
     expect(find.text('-0.7 ZEC'), findsOneWidget);
   });
 

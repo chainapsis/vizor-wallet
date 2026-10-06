@@ -91,7 +91,7 @@ rust_sync.TransactionInfo _tx({
   rust_sync.TransactionFeeState feeState = rust_sync.TransactionFeeState.known,
   bool detailsComplete = true,
   bool provisional = false,
-  bool amountIncludesFee = false,
+  bool amountIsNetChange = false,
   BigInt? displayAmount,
   int accountBalanceDelta = 0,
 }) {
@@ -104,7 +104,7 @@ rust_sync.TransactionInfo _tx({
     feeState: feeState,
     detailsComplete: detailsComplete,
     provisional: provisional,
-    amountIncludesFee: amountIncludesFee,
+    amountIsNetChange: amountIsNetChange,
     blockTime: blockTime ?? BigInt.from(1750000000),
     isTransparent: displayPool == 'transparent',
     txKind: kind,
@@ -803,12 +803,13 @@ void main() {
   );
 
   testWidgets('a fee-only entry is one network fee line', (tester) async {
-    // Reconstructed zero external payment; recipient details can be missing.
+    // A recovered self-transfer whose outputs are all change: the whole
+    // balance change is the account's own fee.
     final tx = _tx(
       fee: BigInt.from(65000),
       displayAmount: BigInt.from(65000),
-      displayPool: 'transparent',
-      amountIncludesFee: true,
+      displayPool: 'unknown',
+      amountIsNetChange: true,
       detailsComplete: false,
       accountBalanceDelta: -65000,
     );
@@ -842,7 +843,7 @@ void main() {
         fee: BigInt.from(20000),
         displayAmount: BigInt.from(20000),
         displayPool: 'unknown',
-        amountIncludesFee: true,
+        amountIsNetChange: true,
         detailsComplete: false,
         provisional: true,
         accountBalanceDelta: -20000,
@@ -856,10 +857,10 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Transaction'), findsNothing);
-      expect(find.text('Sent successfully'), findsOneWidget);
+      expect(find.text('Transaction'), findsOneWidget);
+      expect(find.text('Sent successfully'), findsNothing);
       expect(find.text(kNetworkFeeText), findsNothing);
-      expect(find.text(kNetChangeIncludesFeeText), findsOneWidget);
+      expect(find.text(kNetChangeText), findsOneWidget);
       expect(find.text('0.0002 ZEC'), findsNWidgets(2));
       expect(find.text('Amount'), findsNothing);
       expect(find.text('Tx fee'), findsOneWidget);
@@ -871,29 +872,91 @@ void main() {
     },
   );
 
-  testWidgets('an amount that includes the fee is labelled a net change', (
+  testWidgets('a net change is labelled as such, never a payment', (
     tester,
   ) async {
     final tx = _tx(
       fee: BigInt.from(10000),
       displayAmount: BigInt.from(70000000),
       displayPool: 'unknown',
-      amountIncludesFee: true,
+      amountIsNetChange: true,
       detailsComplete: false,
       provisional: true,
     );
     await tester.pumpWidget(_app(tx, detail: _detail(hasRecipient: false)));
     await tester.pumpAndSettle();
 
-    expect(find.text('Sent successfully'), findsOneWidget);
-    expect(find.text(kNetChangeIncludesFeeText), findsOneWidget);
+    expect(find.text('Transaction'), findsOneWidget);
+    expect(find.text('Sent successfully'), findsNothing);
+    expect(find.text(kNetChangeText), findsOneWidget);
     expect(find.text('Amount'), findsNothing);
-    // Nothing is subtracted, and the fee keeps its own line.
+    // Nothing is subtracted, and the account's fee keeps its own line.
     expect(find.text('0.70 ZEC'), findsOneWidget);
     expect(find.text('Tx fee'), findsOneWidget);
     expect(find.text('0.0001 ZEC'), findsOneWidget);
     expect(find.text(kNetworkFeeText), findsNothing);
   });
+
+  testWidgets('a whole-transaction fee is the network fee, never the Tx fee', (
+    tester,
+  ) async {
+    // Equal to the net change, it still is no fee-only line: whose fee it
+    // was is not known.
+    final tx = _tx(
+      fee: BigInt.from(15000),
+      feeState: rust_sync.TransactionFeeState.wholeTransaction,
+      displayAmount: BigInt.from(15000),
+      displayPool: 'unknown',
+      amountIsNetChange: true,
+      detailsComplete: false,
+      provisional: true,
+    );
+    await tester.pumpWidget(
+      _app(
+        tx,
+        detail: _detail(hasRecipient: false),
+        privateQueriesEnabled: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text(kNetChangeText), findsOneWidget);
+    expect(find.text(kNetworkFeeText), findsOneWidget);
+    expect(find.text('Tx fee'), findsNothing);
+    expect(find.text('0.00015 ZEC'), findsNWidgets(2));
+
+    // Its help says whose fee it is: the whole transaction's.
+    await tester.tap(find.text('0.00015 ZEC').last);
+    await tester.pumpAndSettle();
+    expect(find.text(kWholeTransactionFeeHelpText), findsOneWidget);
+    expect(find.textContaining('ZIP 317'), findsNothing);
+  });
+
+  for (final (expired, title) in [
+    (false, 'Sending...'),
+    (true, 'Send failed'),
+  ]) {
+    testWidgets('a net change keeps the send title: $title', (tester) async {
+      final tx = _tx(
+        minedHeight: BigInt.zero,
+        expired: expired,
+        fee: BigInt.from(10000),
+        displayAmount: BigInt.from(70000000),
+        displayPool: 'unknown',
+        amountIsNetChange: true,
+        detailsComplete: false,
+        provisional: true,
+      );
+      await tester.pumpWidget(_app(tx, detail: _detail(hasRecipient: false)));
+      // No pumpAndSettle: the in-progress loader spins forever.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.text(title), findsOneWidget);
+      expect(find.text('Transaction'), findsNothing);
+      expect(find.text(kNetChangeText), findsOneWidget);
+    });
+  }
 
   for (final kind in ['sent', 'received', 'shielded', 'migration']) {
     for (final privateQueriesEnabled in [false, true]) {

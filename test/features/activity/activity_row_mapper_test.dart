@@ -594,7 +594,7 @@ void main() {
         displayPool: 'unknown',
         activityPool: 'transparent',
         detailsComplete: false,
-        amountIncludesFee: true,
+        amountIsNetChange: true,
       ),
     ]) {
       final row = await mapRow(
@@ -606,48 +606,122 @@ void main() {
     }
   });
 
-  testWidgets('fee-sized net changes keep their incomplete sent row', (
+  testWidgets('a net change never reads as a payment of that amount', (
     tester,
   ) async {
-    rust_sync.TransactionInfo recovered({
+    rust_sync.TransactionInfo movement({
       required int displayAmount,
       required int fee,
-      bool amountIncludesFee = true,
+      rust_sync.TransactionFeeState feeState =
+          rust_sync.TransactionFeeState.known,
+      bool amountIsNetChange = true,
+      bool provisional = false,
+      BigInt? minedHeight,
+      bool expiredUnmined = false,
     }) => _transaction(
       txKind: 'sent',
       displayPool: 'unknown',
       detailsComplete: false,
-      provisional: true,
+      provisional: provisional,
       displayAmount: BigInt.from(displayAmount),
       fee: BigInt.from(fee),
-      amountIncludesFee: amountIncludesFee,
+      feeState: feeState,
+      amountIsNetChange: amountIsNetChange,
       accountBalanceDelta: -displayAmount,
+      minedHeight: minedHeight,
+      expiredUnmined: expiredUnmined,
     );
 
-    // A provisional mixed-pool debit cannot establish a fee-only activity.
-    final movement = await mapRow(
+    // The whole change is the account's own fee: it reads as that fee, with
+    // no pool.
+    final feeOnly = await mapRow(
       tester,
-      recovered(displayAmount: 20000, fee: 20000),
+      movement(displayAmount: 10000, fee: 10000),
+    );
+    expect(feeOnly.title, kNetworkFeeText);
+    expect(feeOnly.amountText, activityAmountTextForFormFactor('-0.0001 ZEC'));
+    expect(feeOnly.subtitle, isNull);
+    expect(feeOnly.subtitleIconName, isNull);
+
+    // A change equal to the whole transaction's fee is not shown as the
+    // account's fee: whose fee it was is not known.
+    final wholeFee = await mapRow(
+      tester,
+      movement(
+        displayAmount: 15000,
+        fee: 15000,
+        feeState: rust_sync.TransactionFeeState.wholeTransaction,
+      ),
+    );
+    expect(wholeFee.title, kSentNetText);
+    expect(
+      wholeFee.amountText,
+      activityAmountTextForFormFactor('-0.00015 ZEC'),
+    );
+
+    // A change of the fee that can still move may hide a payment: it is no
+    // fee-only entry.
+    final unsettled = await mapRow(
+      tester,
+      movement(displayAmount: 20000, fee: 20000, provisional: true),
       privateQueriesEnabled: true,
     );
-    expect(movement.title, 'Sent');
-    expect(movement.amountText, activityAmountTextForFormFactor('-0.0002 ZEC'));
-    expect(movement.amountSubtitle, kIncompleteDetailsText);
+    expect(unsettled.title, kSentNetText);
+    expect(
+      unsettled.amountText,
+      activityAmountTextForFormFactor('-0.0002 ZEC'),
+    );
+    expect(unsettled.amountSubtitle, kIncompleteDetailsText);
 
-    // A net change keeps its sent row and its whole amount: a row has no fee
-    // line to repeat the fee in.
+    // A larger net change keeps its whole amount under a net title: a row has
+    // no fee line to repeat the fee in.
     final netChange = await mapRow(
       tester,
-      recovered(displayAmount: 70000000, fee: 10000),
+      movement(
+        displayAmount: 215000,
+        fee: 0,
+        feeState: rust_sync.TransactionFeeState.unknown,
+      ),
     );
-    expect(netChange.title, 'Sent');
-    expect(netChange.amountText, activityAmountTextForFormFactor('-0.7 ZEC'));
+    expect(netChange.title, kSentNetText);
+    expect(
+      netChange.amountText,
+      activityAmountTextForFormFactor('-0.00215 ZEC'),
+    );
 
     final payment = await mapRow(
       tester,
-      recovered(displayAmount: 65000, fee: 65000, amountIncludesFee: false),
+      movement(displayAmount: 10000, fee: 10000, amountIsNetChange: false),
     );
     expect(payment.title, 'Sent', reason: 'a payment equal to its fee');
+
+    // In-flight and failed entries keep their phase titles.
+    for (final (amount, feeState) in [
+      (10000, rust_sync.TransactionFeeState.known),
+      (215000, rust_sync.TransactionFeeState.unknown),
+    ]) {
+      final sending = await mapRow(
+        tester,
+        movement(
+          displayAmount: amount,
+          fee: 10000,
+          feeState: feeState,
+          minedHeight: BigInt.zero,
+        ),
+      );
+      expect(sending.title, _pendingTitle('Sending'));
+      final failed = await mapRow(
+        tester,
+        movement(
+          displayAmount: amount,
+          fee: 10000,
+          feeState: feeState,
+          minedHeight: BigInt.zero,
+          expiredUnmined: true,
+        ),
+      );
+      expect(failed.title, 'Send failed');
+    }
   });
 
   testWidgets('established self-transfer reads as its network fee', (
@@ -664,7 +738,7 @@ void main() {
         detailsComplete: false,
         displayAmount: BigInt.from(10000),
         fee: BigInt.from(10000),
-        amountIncludesFee: true,
+        amountIsNetChange: true,
       ),
     );
     expect(selfTransfer.title, kNetworkFeeText);
@@ -727,7 +801,8 @@ rust_sync.TransactionInfo _transaction({
   bool provisional = false,
   String? activityPool,
   BigInt? fee,
-  bool amountIncludesFee = false,
+  rust_sync.TransactionFeeState? feeState,
+  bool amountIsNetChange = false,
   int accountBalanceDelta = 0,
 }) {
   return rust_sync.TransactionInfo(
@@ -736,12 +811,14 @@ rust_sync.TransactionInfo _transaction({
     expiredUnmined: expiredUnmined,
     accountBalanceDelta: accountBalanceDelta,
     fee: fee ?? BigInt.zero,
-    feeState: fee == null
-        ? rust_sync.TransactionFeeState.notApplicable
-        : rust_sync.TransactionFeeState.known,
+    feeState:
+        feeState ??
+        (fee == null
+            ? rust_sync.TransactionFeeState.notApplicable
+            : rust_sync.TransactionFeeState.known),
     detailsComplete: detailsComplete,
     provisional: provisional,
-    amountIncludesFee: amountIncludesFee,
+    amountIsNetChange: amountIsNetChange,
     blockTime: BigInt.from(1750000000),
     isTransparent: displayPool == 'transparent',
     txKind: txKind,

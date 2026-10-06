@@ -14249,8 +14249,9 @@ impl SseDecode for crate::api::sync::TransactionFeeState {
         let mut inner = <i32>::sse_decode(deserializer);
         return match inner {
             0 => crate::api::sync::TransactionFeeState::Known,
-            1 => crate::api::sync::TransactionFeeState::Unknown,
-            2 => crate::api::sync::TransactionFeeState::NotApplicable,
+            1 => crate::api::sync::TransactionFeeState::WholeTransaction,
+            2 => crate::api::sync::TransactionFeeState::Unknown,
+            3 => crate::api::sync::TransactionFeeState::NotApplicable,
             _ => unreachable!("Invalid variant for TransactionFeeState: {}", inner),
         };
     }
@@ -14277,7 +14278,7 @@ impl SseDecode for crate::api::sync::TransactionInfo {
         let mut var_createdTime = <u64>::sse_decode(deserializer);
         let mut var_detailsComplete = <bool>::sse_decode(deserializer);
         let mut var_provisional = <bool>::sse_decode(deserializer);
-        let mut var_amountIncludesFee = <bool>::sse_decode(deserializer);
+        let mut var_amountIsNetChange = <bool>::sse_decode(deserializer);
         return crate::api::sync::TransactionInfo {
             txid_hex: var_txidHex,
             mined_height: var_minedHeight,
@@ -14297,7 +14298,7 @@ impl SseDecode for crate::api::sync::TransactionInfo {
             created_time: var_createdTime,
             details_complete: var_detailsComplete,
             provisional: var_provisional,
-            amount_includes_fee: var_amountIncludesFee,
+            amount_is_net_change: var_amountIsNetChange,
         };
     }
 }
@@ -18963,8 +18964,9 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::TransactionFeeState {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self {
             Self::Known => 0.into_dart(),
-            Self::Unknown => 1.into_dart(),
-            Self::NotApplicable => 2.into_dart(),
+            Self::WholeTransaction => 1.into_dart(),
+            Self::Unknown => 2.into_dart(),
+            Self::NotApplicable => 3.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -19004,7 +19006,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::TransactionInfo {
             self.created_time.into_into_dart().into_dart(),
             self.details_complete.into_into_dart().into_dart(),
             self.provisional.into_into_dart().into_dart(),
-            self.amount_includes_fee.into_into_dart().into_dart(),
+            self.amount_is_net_change.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -22790,8 +22792,9 @@ impl SseEncode for crate::api::sync::TransactionFeeState {
         <i32>::sse_encode(
             match self {
                 crate::api::sync::TransactionFeeState::Known => 0,
-                crate::api::sync::TransactionFeeState::Unknown => 1,
-                crate::api::sync::TransactionFeeState::NotApplicable => 2,
+                crate::api::sync::TransactionFeeState::WholeTransaction => 1,
+                crate::api::sync::TransactionFeeState::Unknown => 2,
+                crate::api::sync::TransactionFeeState::NotApplicable => 3,
                 _ => {
                     unimplemented!("");
                 }
@@ -22822,7 +22825,7 @@ impl SseEncode for crate::api::sync::TransactionInfo {
         <u64>::sse_encode(self.created_time, serializer);
         <bool>::sse_encode(self.details_complete, serializer);
         <bool>::sse_encode(self.provisional, serializer);
-        <bool>::sse_encode(self.amount_includes_fee, serializer);
+        <bool>::sse_encode(self.amount_is_net_change, serializer);
     }
 }
 

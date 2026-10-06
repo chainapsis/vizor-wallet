@@ -6,12 +6,12 @@
       "displayPool": "shielded",
       "accountBalanceDelta": -20000,
       "fee": 20000,
-      "feeState": "Known",
+      "feeState": "WholeTransaction",
       "detailsComplete": true,
       "provisional": false,
       "isTransparent": false,
       "expiredUnmined": false,
-      "amountIncludesFee": false
+      "amountIsNetChange": false
     },
     "detail": {
       "txKind": "shielded",
@@ -33,12 +33,12 @@
       "displayPool": "shielded",
       "accountBalanceDelta": -20000,
       "fee": 20000,
-      "feeState": "Known",
+      "feeState": "WholeTransaction",
       "detailsComplete": true,
       "provisional": false,
       "isTransparent": false,
       "expiredUnmined": false,
-      "amountIncludesFee": false
+      "amountIsNetChange": false
     },
     "detail": {
       "txKind": "shielded",

@@ -58,13 +58,14 @@ ActivityRowData buildTransactionActivityRow({
       ? transactionActivityPool(transaction)
       : giftCardDisplayPool ?? transactionActivityPool(transaction);
   final signedAmount = isSent ? -amount : amount;
-  // A privately recovered entry whose whole balance change is its network
-  // fee reads as that fee, not as a payment, so it shows no pool.
-  final isFeeOnly =
-      giftCardKind == null &&
-      giftCardAmountZatoshi == null &&
-      transactionFeePresentation(transaction) ==
-          TransactionFeePresentation.feeOnly;
+  // An entry whose amount is the account's net balance change is no payment
+  // of that amount; one whose whole change is its own network fee reads as
+  // that fee and shows no pool.
+  final feePresentation = giftCardKind == null && giftCardAmountZatoshi == null
+      ? transactionFeePresentation(transaction)
+      : TransactionFeePresentation.separate;
+  final isFeeOnly = feePresentation == TransactionFeePresentation.feeOnly;
+  final isNetChange = feePresentation == TransactionFeePresentation.netChange;
   final replacesPool =
       showPendingEstimate && isPending && (isInbound || isSent);
   final subtitle = replacesPool
@@ -107,6 +108,8 @@ ActivityRowData buildTransactionActivityRow({
           )
         : isFeeOnly
         ? kNetworkFeeText
+        : isNetChange
+        ? kSentNetText
         : _txTitle(kind),
     leadingIconName: giftCardKind != null && !isInFlight
         ? AppIcons.giftCard

@@ -598,7 +598,7 @@ rust_sync.TransactionInfo _tx(
   BigInt? parentHeight,
   bool? parentExpired,
 }) => rust_sync.TransactionInfo(
-  amountIncludesFee: false,
+  amountIsNetChange: false,
   detailsComplete: true,
   feeState: rust_sync.TransactionFeeState.known,
   provisional: false,
