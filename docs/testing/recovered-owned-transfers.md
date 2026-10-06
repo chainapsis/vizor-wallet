@@ -38,6 +38,15 @@ cargo test --locked --manifest-path rust/Cargo.toml --lib owned_transparent_nati
 fvm flutter test integration_test/owned_transparent_activity_test.dart -d macos --dart-define=VIZOR_OWNED_TRANSFER_FIXTURE_DIR="$VIZOR_OWNED_TRANSFER_FIXTURE_DIR" --dart-define=VIZOR_E2E_HIDDEN_WINDOW=true --dart-define=VIZOR_SECURE_STORE_SERVICE=vizor-owned-transfer-tests
 ```
 
+A disposable local bundle can use ad hoc signing rather than a provisioning
+profile. If the project's developer entitlements require a profile, pass an
+external `XCODE_XCCONFIG_FILE` that sets both `CODE_SIGN_IDENTITY` and
+`CODE_SIGN_IDENTITY[sdk=macosx*]` to `-`, and `CODE_SIGN_ENTITLEMENTS` to a separate
+test-only file containing the app-sandbox, allow-jit and network client/server
+entitlements. Leave developer/team identifiers out of that test file. Keep these
+overrides outside Git; this test does not exercise production signing or Keychain
+capabilities.
+
 Fixture and widget evidence do not establish production-wallet behavior on the
 user's installed app. Native qualification must be reported separately, together
 with the exact application and library revisions tested.

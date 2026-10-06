@@ -178,28 +178,58 @@ fn read(
     (rows, details)
 }
 
+/// Compare production balances: PrivateRequired intentionally omits transparent
+/// funds from the shielded summary; Vizor reads them from the private ledger.
+fn balance(st: &State, account: AccountUuid) -> Vec<u64> {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("wallet.db");
+    st.wallet()
+        .conn()
+        .execute("VACUUM INTO ?1", [path.to_str().unwrap()])
+        .unwrap();
+    let b = get_wallet_balance(
+        path.to_str().unwrap(),
+        WalletNetwork::Regtest,
+        &account.expose_uuid().to_string(),
+    )
+    .unwrap();
+    assert_eq!(b.availability, WalletBalanceAvailability::Available);
+    assert_eq!(
+        b.transparent_authority,
+        TransparentBalanceAuthority::Current
+    );
+    vec![
+        b.transparent,
+        b.sapling,
+        b.orchard,
+        b.ironwood,
+        b.transparent_locked,
+        b.sapling_locked,
+        b.orchard_locked,
+        b.ironwood_locked,
+        b.transparent_pending,
+        b.sapling_pending,
+        b.orchard_pending,
+        b.ironwood_pending,
+        b.uneconomic_value,
+    ]
+}
+
 #[test]
 fn owned_transparent_public_private_activity_and_receipts_match() {
     for (cross, internal) in [(false, false), (true, false), (true, true), (false, true)] {
         let (public, pa, private, qa, txid) = pair(cross, internal);
         for (p, q) in pa.iter().zip(&qa) {
-            let public_balance = public
-                .wallet()
-                .get_wallet_summary(ConfirmationsPolicy::MIN)
-                .unwrap()
-                .unwrap()
-                .account_balances()[p]
-                .total();
-            let private_balance = private
-                .wallet()
-                .get_wallet_summary(ConfirmationsPolicy::MIN)
-                .unwrap()
-                .unwrap()
-                .account_balances()[q]
-                .total();
-            assert_eq!(private_balance, public_balance);
+            let public_balance = balance(&public, *p);
+            let private_balance = balance(&private, *q);
+            assert_eq!(
+                private_balance, public_balance,
+                "cross={cross}, internal={internal}, account={p:?}"
+            );
             let (expected, public_details) = read(&public, *p, txid);
             let (actual, private_details) = read(&private, *q, txid);
+            assert_eq!(balance(&private, *q), private_balance);
+            assert_eq!(balance(&public, *p), public_balance);
             let presentation = |rows: &[TransactionInfo]| {
                 rows.iter()
                     .map(|r| {
@@ -391,6 +421,13 @@ fn owned_transparent_production_reads_refresh_and_withdraw_atomically() {
         )
         .unwrap()
         .id();
+    // Import schedules historical shielded scanning; settle it before asking
+    // private transparent recovery to cover the current transaction height.
+    let start = birthday.height();
+    private.scan_cached_blocks(
+        start,
+        usize::try_from(height - u32::from(start) + 1).unwrap(),
+    );
     let to = address(&private, imported, false);
     let event = ReceiveEvent {
         outpoint: OutPoint::new(*txid.as_ref(), output_index),
@@ -405,13 +442,23 @@ fn owned_transparent_production_reads_refresh_and_withdraw_atomically() {
         }),
     };
     cover(&mut private, imported, vec![event]);
+    cover(&mut private, sender, vec![]);
     private
         .wallet_mut()
         .db_mut()
         .promote_transparent_account(imported)
         .unwrap();
     let restored = read(&private, sender, txid).0;
-    assert_eq!(restored[0].display_amount, 250_000);
+    assert_eq!(
+        restored[0].display_amount,
+        250_000,
+        "{:?}",
+        private
+            .wallet()
+            .db()
+            .transaction_history_details(sender, &[txid])
+            .unwrap()
+    );
     assert_eq!(restored[0].inferred_attribution, Some(true));
     assert_ne!(
         restored[0].relationship_signature,
