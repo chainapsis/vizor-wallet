@@ -1233,6 +1233,17 @@ bool nearSwapPrivacyEnabled() =>
 void setNearSwapPrivacyEnabled({required bool enabled}) => RustLib.instance.api
     .crateApiSyncSetNearSwapPrivacyEnabled(enabled: enabled);
 
+/// Queues one receiver PIR sweep of every closed swap key for the next sync, which
+/// finds a second refund or a late payout that arrived after its key stopped
+/// scanning. Called when the user turns NEAR swap privacy on.
+Future<void> recheckSwapHistory({
+  required String dbPath,
+  required String network,
+}) => RustLib.instance.api.crateApiSyncRecheckSwapHistory(
+  dbPath: dbPath,
+  network: network,
+);
+
 /// Reserves the next refund address, scanned from the next unscanned block until
 /// its swap closes. `live_tip` is the chain tip the quote flow fetched.
 Future<SwapReceivingAddress> reserveSwapReceivingAddress({

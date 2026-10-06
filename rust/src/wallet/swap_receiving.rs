@@ -3,7 +3,9 @@
 pub(crate) mod receive;
 
 use zakura_swap_receiving::lifecycle::{near_observation, ProviderStatus};
-use zcash_client_backend::data_api::{Account as _, AccountSource, WalletRead};
+use zcash_client_backend::data_api::{
+    transparent_ledger::ChainPoint, Account as _, AccountSource, WalletRead,
+};
 use zcash_client_sqlite::{wallet::swap_receiving::RegisteredKey, AccountUuid};
 use zcash_keys::address::{Address, UnifiedAddress};
 use zcash_protocol::{
@@ -161,13 +163,32 @@ pub(crate) fn close_finished_keys(db: &mut WalletDatabase, tip: BlockHeight) -> 
 /// every completion barrier again before releasing temporary spend evidence.
 pub(crate) fn finish_nullifier_recovery(
     db: &mut WalletDatabase,
-    through: zakura_swap_receiving::lifecycle::ChainAnchor,
+    through: ChainPoint,
 ) -> Result<(), String> {
     for account in software_accounts(db)? {
         db.finish_swap_nullifier_recovery(account, through)
             .map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+/// Queues one receiver-directory sweep of every closed swap key in the wallet at
+/// `db_path`, as a seed restore does, and returns how many were queued.
+pub(crate) fn recheck_history(db_path: &str, network: WalletNetwork) -> Result<usize, String> {
+    // Only mainnet runs restore sweeps (see `sync_engine::swap_private`).
+    if network != WalletNetwork::Main || cfg!(ironwood_masquerade) {
+        return Ok(0);
+    }
+    with_wallet_db_write_lock("swap_receiving.recheck", || {
+        let mut db = open_wallet_db_with_timeout(db_path, network, WALLET_DB_BUSY_TIMEOUT)?;
+        let mut queued = 0;
+        for account in software_accounts(&db)? {
+            queued += db
+                .recheck_swap_history(account)
+                .map_err(|e| e.to_string())?;
+        }
+        Ok(queued)
+    })
 }
 
 /// Applies a provider status to the swap key behind `address`, a refund address.
@@ -254,7 +275,7 @@ mod tests {
 
     #[test]
     fn keys_close_only_after_offline_blocks_are_scanned() {
-        use zakura_swap_receiving::lifecycle::{Observation, OperationStatus};
+        use zakura_swap_receiving::lifecycle::{CompletionPolicy, Observation, OperationStatus};
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("wallet.db");
         let path = path.to_str().unwrap();
@@ -276,8 +297,8 @@ mod tests {
             .reserve_swap_refund_key(account, BlockHeight::from_u32(111))
             .unwrap()
             .key_id();
-        // The quote's seven-day limit passed while the app was closed.
-        let deadline = receive::now().unwrap() - 8 * 24 * 60 * 60;
+        // The quote's limit passed while the app was closed.
+        let deadline = receive::now().unwrap() - CompletionPolicy::default().limit_secs - 60;
         let pending = Observation {
             status: OperationStatus::Active,
             deadline: Some(deadline),

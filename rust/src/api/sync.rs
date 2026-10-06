@@ -3152,6 +3152,22 @@ fn near_swap_setting(current: u8, enabled: bool) -> u8 {
     }
 }
 
+/// Queues one receiver PIR sweep of every closed swap key for the next sync, which
+/// finds a second refund or a late payout that arrived after its key stopped
+/// scanning. Called when the user turns NEAR swap privacy on.
+pub fn recheck_swap_history(db_path: String, network: String) -> Result<(), String> {
+    catch(|| {
+        // Without a wallet there is nothing to recheck; do not create its database.
+        if !keys::wallet_exists(&db_path) {
+            return Ok(());
+        }
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let queued = crate::wallet::swap_receiving::recheck_history(&db_path, network)?;
+        log::info!("Queued {queued} swap key rechecks");
+        Ok(())
+    })
+}
+
 /// A durably reserved refund address and its key index.
 pub struct SwapReceivingAddress {
     pub address: String,

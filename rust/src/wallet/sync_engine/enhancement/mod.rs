@@ -39,7 +39,7 @@ pub(super) mod transport;
 pub(super) const DEFAULT_MAINNET_ENDPOINT: &str = "https://enhance-pir.valargroup.dev";
 
 pub(super) use auxiliary::transparent_history::store_address_transaction;
-pub(super) use payload::{phase, queue_stored_transactions};
+pub(super) use payload::{payload_endpoint, phase, queue_stored_transactions};
 pub(crate) use policy::EnhancementPolicy;
 
 use std::collections::HashSet;

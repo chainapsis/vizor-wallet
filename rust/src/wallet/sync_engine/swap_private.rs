@@ -9,17 +9,16 @@ use receiver_pir::{
     transport::{DirectoryClient, Transport as ReceiverTransport},
     AcceptedCoverage,
 };
-use std::{collections::BTreeMap, num::NonZeroU32};
+use std::{collections::BTreeMap, num::NonZeroU32, time::Duration};
 use zakura_pir_enhance::wallet::{self as enhance_wallet, Acceptance, PreparedWork};
 use zakura_pir_enhance::{
     transport::{PendingClient, Request, ResponseBody, Transport},
     ClientError, ClientResourceLimits,
 };
-use zakura_swap_receiving::lifecycle::ChainAnchor;
 use zcash_client_backend::data_api::enhance_pir::{
     EnhancePirRead, EnhancePirWrite, TransactionEnhancementWork,
 };
-use zcash_client_backend::data_api::WalletRead;
+use zcash_client_backend::data_api::{transparent_ledger::ChainPoint, WalletRead};
 use zcash_client_sqlite::wallet::swap_receiving::{
     DirectoryPayment, DiscoveryWork, PaymentApplication,
 };
@@ -27,31 +26,38 @@ use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
 
 // Use explicit HTTPS origins and never follow service redirects.
 const RECEIVER_ORIGIN: &str = "https://161-35-182-172.sslip.io";
-const ENHANCE_ORIGIN: &str = "https://enhance-pir.valargroup.dev";
-fn allowed_enhance_route(url: &url::Url) -> bool {
+/// Time one recovery run may take. Sweeps it does not reach wait for a later sync.
+const RUN_BUDGET: Duration = Duration::from_secs(180);
+/// Whether `url` stays on `origin`, the configured Enhance endpoint, over HTTPS.
+fn allowed_enhance_route(origin: &url::Url, url: &url::Url) -> bool {
     url.scheme() == "https"
-        && url.host_str() == Some("enhance-pir.valargroup.dev")
-        && url.port_or_known_default() == Some(443)
+        && url.origin() == origin.origin()
         && url.username().is_empty()
         && url.password().is_none()
 }
 /// Both swap services use the same Tor-aware transport as ordinary Enhance PIR.
-struct SwapTransport<'a, F>(RoutedTransport<'a, F>);
+struct SwapTransport<'a, F> {
+    http: RoutedTransport<'a, F>,
+    enhance: url::Url,
+}
 impl<'a, F> SwapTransport<'a, F> {
-    fn new(should_exit: &'a F) -> Self {
-        Self(RoutedTransport::new(should_exit))
+    fn new(should_exit: &'a F, enhance: url::Url) -> Self {
+        Self {
+            http: RoutedTransport::new(should_exit),
+            enhance,
+        }
     }
 }
 impl<F: Fn() -> bool> Transport for SwapTransport<'_, F> {
     async fn execute(&self, request: Request) -> Result<ResponseBody, ClientError> {
         let url = url::Url::parse(&request.url)
             .map_err(|_| ClientError::Transport("Invalid Enhance URL".into()))?;
-        if !allowed_enhance_route(&url) {
+        if !allowed_enhance_route(&self.enhance, &url) {
             return Err(ClientError::Transport(
                 "Enhance route escaped the selected HTTPS origin".into(),
             ));
         }
-        self.0.execute(request).await
+        self.http.execute(request).await
     }
 }
 fn receiver_error(error: RoutedHttpError) -> receiver_pir::Error {
@@ -66,7 +72,7 @@ fn receiver_error(error: RoutedHttpError) -> receiver_pir::Error {
 }
 impl<F: Fn() -> bool> ReceiverTransport for SwapTransport<'_, F> {
     async fn get(&self, url: &str, limit: usize) -> Result<Vec<u8>, receiver_pir::Error> {
-        self.0
+        self.http
             .bytes(http::Method::GET, url, vec![], limit)
             .await
             .map_err(receiver_error)
@@ -77,7 +83,7 @@ impl<F: Fn() -> bool> ReceiverTransport for SwapTransport<'_, F> {
         body: Vec<u8>,
         limit: usize,
     ) -> Result<Vec<u8>, receiver_pir::Error> {
-        self.0
+        self.http
             .bytes(http::Method::POST, url, body, limit)
             .await
             .map_err(receiver_error)
@@ -87,7 +93,7 @@ fn error(e: impl std::fmt::Display) -> String {
     e.to_string()
 }
 
-/// Polls restored refunds and runs pending restore sweeps. Failures are logged and
+/// Runs pending restore sweeps for at most [`RUN_BUDGET`]. Failures are logged and
 /// retried on the next sync; ordinary sync never waits for the directory.
 pub(super) async fn run(
     db: &mut WalletDatabase,
@@ -102,49 +108,48 @@ pub(super) async fn run(
         Ok(None) => return,
         Err(e) => return log::warn!("Swap recovery deferred: {e}"),
     };
-    let through = ChainAnchor {
+    let through = ChainPoint {
         height: tip.block_height(),
-        hash: tip.block_hash().0,
+        hash: tip.block_hash(),
     };
     let started = std::time::Instant::now();
     let phase = async {
-        let result = async {
-            run_inner(db, network, through, should_exit).await?;
-            with_wallet_db_write_lock("swap_private.prune", || {
-                crate::wallet::swap_receiving::finish_nullifier_recovery(db, through)
-            })?;
-            for account in crate::wallet::swap_receiving::software_accounts(db)? {
-                if db
-                    .swap_history_pending(account, through.height)
-                    .map_err(error)?
-                {
-                    return Err("restore sweeps remain pending".to_owned());
-                }
+        run_inner(db, network, through, should_exit).await?;
+        with_wallet_db_write_lock("swap_private.prune", || {
+            crate::wallet::swap_receiving::finish_nullifier_recovery(db, through)
+        })?;
+        for account in crate::wallet::swap_receiving::software_accounts(db)? {
+            if db
+                .swap_history_pending(account, through.height)
+                .map_err(error)?
+            {
+                return Err("restore sweeps remain pending".to_owned());
             }
-            Ok::<(), String>(())
         }
-        .await;
-        log::info!(
-            "pir_metric component=recovery stage=total elapsed_us={} ok={}",
-            started.elapsed().as_micros(),
-            result.is_ok()
-        );
-        result
+        Ok::<(), String>(())
     };
-    tokio::select! {
+    // Every write is its own transaction and a begun attempt is already backed
+    // off, so stopping at any await leaves the next run a consistent queue.
+    let result = tokio::select! {
         biased;
-        _ = super::watch_for_exit(should_exit) => {}
-        result = phase => {
-            if let Err(e) = result {
-                log::warn!("Swap recovery deferred: {e}");
-            }
+        _ = super::watch_for_exit(should_exit) => return,
+        result = tokio::time::timeout(RUN_BUDGET, phase) => {
+            result.unwrap_or_else(|_| Err("time budget reached".to_owned()))
         }
+    };
+    log::info!(
+        "pir_metric component=recovery stage=total elapsed_us={} ok={}",
+        started.elapsed().as_micros(),
+        result.is_ok()
+    );
+    if let Err(e) = result {
+        log::warn!("Swap recovery deferred: {e}");
     }
 }
 
 fn discovery_work(
     db: &mut WalletDatabase,
-    through: ChainAnchor,
+    through: ChainPoint,
 ) -> Result<
     (
         Vec<(zcash_client_sqlite::AccountUuid, DiscoveryWork)>,
@@ -171,9 +176,9 @@ async fn receiver_client<T: ReceiverTransport>(
     db: &mut WalletDatabase,
     network: WalletNetwork,
     http: T,
-    through: ChainAnchor,
+    through: ChainPoint,
     remaining_lookups: usize,
-) -> Result<(DirectoryClient<T>, AcceptedCoverage, ChainAnchor), String> {
+) -> Result<(DirectoryClient<T>, AcceptedCoverage, ChainPoint), String> {
     let advertised = DirectoryClient::fetch_manifest(RECEIVER_ORIGIN, &http)
         .await
         .map_err(error)?;
@@ -193,7 +198,7 @@ async fn receiver_client<T: ReceiverTransport>(
         genesis,
         required_start: activation.into(),
         height: anchor.height.into(),
-        hash: anchor.hash,
+        hash: anchor.hash.0,
     };
     let client = DirectoryClient::connect_manifest(
         RECEIVER_ORIGIN,
@@ -227,7 +232,7 @@ fn directory_payment(payment: receiver_directory::Payment) -> DirectoryPayment {
 async fn run_inner(
     db: &mut WalletDatabase,
     network: WalletNetwork,
-    through: ChainAnchor,
+    through: ChainPoint,
     should_exit: &impl Fn() -> bool,
 ) -> Result<(), String> {
     if Some(through.height) != db.chain_height().map_err(error)? {
@@ -249,12 +254,15 @@ async fn run_inner(
             }),
     );
     let batches = prepared.batches_by_tx_and_row();
-    super::swap_refund_status::reconcile(db, should_exit).await?;
     if batches.is_empty() && discovery_work(db, through)?.0.is_empty() {
         return Ok(());
     }
-    let transport = SwapTransport::new(should_exit);
-    let pending = PendingClient::fetch(&transport, ENHANCE_ORIGIN)
+    let enhance_origin = super::enhancement::payload_endpoint();
+    let transport = SwapTransport::new(
+        should_exit,
+        url::Url::parse(&enhance_origin).map_err(error)?,
+    );
+    let pending = PendingClient::fetch(&transport, &enhance_origin)
         .await
         .map_err(error)?;
     let acceptance = match enhance_wallet::acceptance(
@@ -369,6 +377,7 @@ mod tests {
     use super::*;
     use zakura_pir_enhance::{AcceptedAnchor, GenerationAcceptance};
     use zcash_client_sqlite::wallet::swap_receiving::RECEIVE_GAP_LIMIT;
+    use zcash_primitives::block::BlockHash;
 
     #[test]
     fn restore_checks_extended_window_without_rechecking_completed_keys() {
@@ -408,9 +417,9 @@ mod tests {
             [u32::from(height), u32::from(height) + 1],
         )
         .unwrap();
-        let through = ChainAnchor {
+        let through = ChainPoint {
             height,
-            hash: [0; 32],
+            hash: BlockHash([0; 32]),
         };
         db.maintain_swap_receiving(account).unwrap();
         assert!(!crate::api::sync::enhance_pir_enabled());
@@ -446,22 +455,25 @@ mod tests {
         }
         drop(db);
         let mut db = open_wallet_db_with_timeout(path, network, WALLET_DB_BUSY_TIMEOUT).unwrap();
-        let later = ChainAnchor {
+        let later = ChainPoint {
             height: height + 1,
-            hash: [1; 32],
+            hash: BlockHash([1; 32]),
         };
         conn.execute(
             "INSERT INTO blocks(height,hash,time,sapling_tree) VALUES(?1,?2,0,X'000000')",
-            rusqlite::params![u32::from(later.height), later.hash],
+            rusqlite::params![u32::from(later.height), later.hash.0],
         )
         .unwrap();
         assert!(discovery_work(&mut db, later).unwrap().0.is_empty());
     }
 
     #[test]
-    fn enhance_routes_remain_on_the_public_tls_origin() {
+    fn enhance_routes_remain_on_the_configured_tls_origin() {
+        let parse = |url| url::Url::parse(url).unwrap();
+        let origin = parse(super::super::enhancement::DEFAULT_MAINNET_ENDPOINT);
         assert!(allowed_enhance_route(
-            &url::Url::parse("https://enhance-pir.valargroup.dev/v1/enhance/init").unwrap()
+            &origin,
+            &parse("https://enhance-pir.valargroup.dev/v1/enhance/init")
         ));
         for route in [
             "http://enhance-pir.valargroup.dev/v1/enhance/init",
@@ -470,11 +482,17 @@ mod tests {
             "https://user@enhance-pir.valargroup.dev/v1/enhance/init",
             "http://127.0.0.1:18280/v1/enhance/init",
         ] {
-            assert!(
-                !allowed_enhance_route(&url::Url::parse(route).unwrap()),
-                "{route}"
-            );
+            assert!(!allowed_enhance_route(&origin, &parse(route)), "{route}");
         }
+        let local = parse("https://127.0.0.1:18280");
+        assert!(allowed_enhance_route(
+            &local,
+            &parse("https://127.0.0.1:18280/v1/enhance/init")
+        ));
+        assert!(!allowed_enhance_route(
+            &local,
+            &parse("https://127.0.0.1/v1/enhance/init")
+        ));
     }
     /// Uses only a public zero-OVK chain fixture and independently checked RPC anchors.
     #[tokio::test]
@@ -496,7 +514,8 @@ mod tests {
             hash: hash(&anchors["directory"]["hash"]),
         };
         let should_exit = || false;
-        let transport = SwapTransport::new(&should_exit);
+        let enhance_origin = super::super::enhancement::payload_endpoint();
+        let transport = SwapTransport::new(&should_exit, url::Url::parse(&enhance_origin).unwrap());
         let client = DirectoryClient::connect(RECEIVER_ORIGIN, &transport, accepted)
             .await
             .unwrap();
@@ -531,7 +550,7 @@ mod tests {
         let payment = found.iter().find(|p| p.position == 610503).unwrap();
         assert_eq!(payment.height, 3496114);
         proofs.path(610503, action.cmx).unwrap();
-        let pending = PendingClient::fetch(&transport, ENHANCE_ORIGIN)
+        let pending = PendingClient::fetch(&transport, &enhance_origin)
             .await
             .unwrap();
         let mut display = hash(&anchors["enhance"]["hash"]);

@@ -70,14 +70,10 @@ and the 24-hour, 15-reservation, and 30-slot incoming-address policy.
    one PIR sweep. Payments extend incoming lookahead until 30 consecutive indices
    are empty. Finish the extended window before reporting recovery complete. Each
    sweep keeps a fixed target, so new blocks do not restart completed sweeps.
-   Funding memos also restore NEAR status polling for the deposit address, which
-   comes from the funding transaction's transparent output. After its sweep, a
-   refund key scans new blocks until it closes, and an unpaid incoming key for
-   24 hours. Vizor checks NEAR status during sync, at most once per minute per
-   pending refund. Failures, `FAILED` and unknown statuses keep a key scanning up
-   to the seven-day limit, and then a daily check for 30 days; a later promise of
-   ZEC sweeps and reopens the key. Reopening preserves polling times and
-   observations.
+   After its sweep, a refund key scans new blocks until 30 days after its funding
+   block, and an unpaid incoming key for 24 hours. Restore makes no NEAR status
+   request. Turning NEAR swap privacy off and on sweeps every closed swap key
+   once more, which finds a payment that arrived after its key stopped scanning.
 5. Received notes retain their derived key for reconstruction and software spending.
    Change returns to the ordinary internal key.
 
@@ -93,8 +89,8 @@ matching note enhancement still use PIR. No nullifier service is required.
 
 Incoming seed recovery has a bounded gap limit. It does not guarantee discovery
 beyond 30 consecutive unpaid indices. Incoming recovery cannot reconstruct a
-provider association without its deposit address. Restored refund polling does
-not recreate the full UI activity record or infer funds from provider status.
+provider association without its deposit address, and restore does not recreate
+the UI activity record of a refund either.
 
 Wallet handles explicitly retain the existing public transparent-discovery mode
 required by the latest library base. The shielded privacy switches do not select
@@ -136,5 +132,7 @@ exercise. Record the funding and payout transaction IDs and scan heights.
   the child stays off after re-enabling the parent.
 - Turn NEAR swap privacy off during a pending software swap. Its refund must still
   be found, and its received note must remain spendable.
+- After a swap's key has closed, turn NEAR swap privacy off and on. The next sync
+  must sweep the closed keys once and add no duplicate notes.
 
 Passing the automated checks does not substitute for this signed-app exercise.

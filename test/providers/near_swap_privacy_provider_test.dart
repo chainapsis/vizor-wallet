@@ -80,6 +80,9 @@ void main() {
         nearSwapPrivacyPreferenceStoreProvider.overrideWithValue(store),
         enhancePirPreferenceStoreProvider.overrideWithValue(_Store()),
         enhancePirBackgroundSinkProvider.overrideWithValue((_) async {}),
+        swapHistoryRecheckProvider.overrideWithValue(
+          () async => api.events.add('recheck'),
+        ),
       ],
     );
     addTearDown(container.dispose);
@@ -107,7 +110,8 @@ void main() {
     await pending;
     expect(store.value, isTrue);
     expect(c.read(nearSwapPrivacyProvider), isTrue);
-    expect(api.events, ['swap:true']);
+    // Turning the setting on rechecks closed swap keys once.
+    expect(api.events, ['swap:true', 'recheck']);
   });
   test('turning off Private queries durably clears the child first', () async {
     final store = _Store()..value = true;

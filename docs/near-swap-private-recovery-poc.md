@@ -28,10 +28,10 @@ offline. The directory is used only for keys recovered from the seed.
    retained history. Store the note, key, memo, witness and known spend together.
    Missing evidence leaves a candidate pending without crediting balance.
 5. Complete each sweep at its block anchor. A refund key then scans from the next
-   block until its swap closes, and an unpaid incoming key for 24 hours, to
-   catch a payout from a swap in flight at restore. Paid incoming indices extend
-   the lookahead, and the new keys are swept too. Rewinds below a sweep reopen it
-   and invalidate affected candidates and spend coverage.
+   block until 30 days after its funding block, and an unpaid incoming key for
+   24 hours, to catch a payment from a swap in flight at restore. Paid incoming
+   indices extend the lookahead, and the new keys are swept too. Rewinds below a
+   sweep reopen it and invalidate affected candidates and spend coverage.
 6. After all funding memos, own-send evidence, lookahead, sweeps and candidate
    imports are resolved, release old unrelated Ironwood spend evidence. Normal
    recent history and wallet-owned spend links remain. New scans retain their
@@ -48,10 +48,9 @@ proof against its own accepted root. It never trusts the file's root on its own.
 Use the mainnet build. NEAR address recovery always uses private directory discovery, independently of
 **NEAR swap privacy** and the general **Private queries** setting. This exception
 covers receiver discovery and matching note data. Ordinary transaction retrieval
-still follows Private queries. Funding transactions pay transparent deposits, so
-their refund memos and deposit addresses come from a public lightwalletd fetch
-until transparent PIR exists. Creating a new private swap requires both switches
-on. Both default off.
+still follows Private queries. Refund memos sit on internal Ironwood change, so
+recovery needs no funding transaction. Creating a new private swap requires both
+switches on. Both default off.
 The [software-wallet guide](near-swap-software-poc.md) defines toggle behavior.
 The complete software implementation is saved on `adam/near-swap-complete-20260929`
 in the wallet, library and receiver service repositories. These are integration
@@ -61,8 +60,9 @@ Dependencies are pinned in `rust/Cargo.toml` and `rust/Cargo.lock`. No sibling
 math compatibility checkout or compile-time privacy environment variable is required.
 Regenerate the bridge with the repository wrapper after API changes.
 
-The POC uses the public Enhance v9 native two-mask protocol at
-`https://enhance-pir.valargroup.dev`. Receiver PIR is independently hosted at
+The POC uses the public Enhance v9 native two-mask protocol at the configured
+Enhance endpoint, `https://enhance-pir.valargroup.dev` unless
+`VIZOR_ENHANCE_PIR_URL` overrides it. Receiver PIR is independently hosted at
 `https://161-35-182-172.sslip.io`. No Mac or SSH tunnel is required for serving.
 Requests are bounded, redirects are disabled, and Enhance routes must remain
 on that exact HTTPS origin with standard TLS validation. Receiver and Enhance
@@ -94,32 +94,32 @@ POC database with this build or reuse its secure-store namespace.
 ## POC boundaries
 
 Keys issued on this device are trial-decrypted with no key-count cap until their
-swap closes. A key closes 24 hours after its final provider status once the
-expected Zcash receipts are found, or seven days after its quote deadline
-whatever the provider reports, extended by 30 days while a promised receipt has
-not arrived. Refunds, positive `refundedAmount` values and exact-output `SUCCESS`
-leftovers are expected receipts for refund keys; an incoming key expects
-`amountOut`. Incoming source-chain refunds do not imply a Zcash receipt. A
-`FAILED` status is inconclusive, so that key closes by the seven-day limit or a
-later definitive status. After it closes, its NEAR status is still checked once a
-day for 30 days, and a later promise of ZEC sweeps the key for the time it was
-closed and reopens it. Cached UI status and failed polls do not record an
-observation. Keys close only at the end of a sync, once the tip is revalidated
-and scanned, so blocks mined while the app was offline are checked first.
-Closing uses the earlier of the device clock and the tip's block time, so a
-clock that runs fast cannot close a key early.
+swap closes. A key closes as soon as every provider status on it is final and
+its expected Zcash receipts have 10 confirmations, the ZIP 315 depth for
+untrusted notes, so a reorg cannot strand a receipt on a closed key. Refunds,
+positive `refundedAmount` values and exact-output `SUCCESS` leftovers are
+expected receipts for refund keys; an incoming key expects `amountOut`. Incoming
+source-chain refunds do not imply a Zcash receipt. A refund quote that no
+provider status has reached stays open for 24 hours after it was recorded, in
+case it is funded. A `FAILED` status is inconclusive. Every key closes 30 days
+after its quote deadline whatever the provider reports. Cached UI status and
+failed polls do not record an observation. Keys close only at the end of a sync,
+once the tip is revalidated and scanned, so blocks mined while the app was
+offline are checked first. Closing uses the earlier of the device clock and the
+tip's block time, so a clock that runs fast cannot close a key early.
 
 A restored key scans new blocks after its sweep only as described in the
-recovery flow. Issuing a closed restored incoming key later starts at the tip and
-sweeps the time it was closed in the background. Any other payment that arrives
-after a key closes is found by a later seed restore; swap addresses are not
+recovery flow, and a restored incoming key issued later starts at the tip. A
+payment that arrives after its key closed, such as a second refund, is found by
+turning **NEAR swap privacy** off and on, which sweeps every closed swap key once
+through the directory, or by a later seed restore. Swap addresses are not
 permanent receive addresses.
 
-The retention floor follows unfinished sweeps, pending candidates and closed
-refund keys on a late status watch, independent of provider completion. Missing memos or unavailable directory data can extend
-temporary retention. Sapling and Orchard keep their ordinary policies. Reorgs
-reopen affected sweeps. Pruning permits SQLite to reuse rows without forcing a
-vacuum.
+The retention floor follows unfinished sweeps and pending candidates,
+independent of provider completion. Missing memos or unavailable directory data
+can extend temporary retention. Sapling and Orchard keep their ordinary
+policies. Reorgs reopen affected sweeps. Pruning permits SQLite to reuse rows
+without forcing a vacuum.
 
 If an authenticated, included candidate needs pruned spend history, the library
 coalesces replay of the whole public account recovery interval. Repeated attempts
@@ -161,20 +161,22 @@ again. Inclusion, witness and spend validation still precede balance changes.
 A sweep completes only after its candidates are applied. Backoff and an
 unavailable publication never make incomplete historical recovery appear complete.
 Failed key lookups back off from one minute to twelve hours, and an unavailable
-service is retried on the next sync; neither fails ordinary sync. When a finished
-sweep starts a key scanning from its anchor, sync scans those blocks before it
-completes.
+service is retried on the next sync; neither fails ordinary sync. One recovery
+run takes at most three minutes, and sweeps it does not reach wait for the next
+sync. When a finished sweep starts a key scanning from its anchor, sync scans
+those blocks before it completes.
 
 New memos and paid receive indices extend recovery. A completed sweep makes no
-further requests unless its key reopens after closing. Both issuance settings may be off during recovery. File mode
-sends no receiver-dependent public ranges, and PIR failure has no public fallback.
+further requests unless a rewind or a history recheck queues it again. Both
+issuance settings may be off during recovery. File mode sends no
+receiver-dependent public ranges, and PIR failure has no public fallback.
 
-Funding memo recovery now persists completion per note together with its key and
-provider watch. Maintenance retries missing memos and missing own-send evidence,
-but returns only newly processed records. Changed memo data or funding heights
-make a record eligible again. The forward migration starts with no inferred
-completion. Registry lookup by key ID, receiver or reservation derives only the
-selected key. Scanning reuses that validated derivation.
+Funding memo recovery now persists completion per note together with its key.
+Maintenance retries missing memos and missing own-send evidence, but returns
+only newly processed records. Changed memo data or funding heights make a record
+eligible again. The forward migration starts with no inferred completion.
+Registry lookup by key ID, receiver or reservation derives only the selected
+key. Scanning reuses that validated derivation.
 
 Every compact scan batch includes all active keys and derives only those.
 Activating a key queues a rescan of blocks already scanned from its start height,

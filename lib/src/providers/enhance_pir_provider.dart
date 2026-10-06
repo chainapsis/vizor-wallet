@@ -5,8 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../app_bootstrap.dart';
 import '../core/config/network_config.dart';
 import '../core/storage/enhance_pir_preference_store.dart';
+import '../core/storage/wallet_paths.dart';
 import '../features/migration/services/ironwood_migration_background_credential_store.dart';
 import '../rust/api/sync.dart' as rust_sync;
+import 'rpc_endpoint_failover_provider.dart';
 import 'sync_provider.dart';
 
 /// Whether the configured chain has a matching private enhancement service.
@@ -106,6 +108,17 @@ final nearSwapPrivacyPreferenceStoreProvider =
       ),
     );
 
+/// Queues one private sweep of every closed swap key for the next sync, which
+/// finds a refund or payout that arrived after its key stopped scanning.
+/// Overridable in tests.
+final swapHistoryRecheckProvider = Provider<Future<void> Function()>(
+  (ref) =>
+      () async => rust_sync.recheckSwapHistory(
+        dbPath: await getWalletDbPath(),
+        network: ref.read(rpcEndpointFailoverProvider).current.networkName,
+      ),
+);
+
 /// Install-scoped opt-in for new swap addresses. Recovery of existing keys is independent.
 class NearSwapPrivacyNotifier extends Notifier<bool> {
   @override
@@ -131,6 +144,14 @@ class NearSwapPrivacyNotifier extends Notifier<bool> {
             .writeEnabled(enabled);
         rust_sync.setNearSwapPrivacyEnabled(enabled: enabled);
         state = enabled;
+        if (enabled) {
+          // A failed recheck leaves the setting on; toggling again retries it.
+          try {
+            await ref.read(swapHistoryRecheckProvider)();
+          } catch (error) {
+            log('near swap privacy: history recheck not queued: $error');
+          }
+        }
       });
       transition.update(null);
     } catch (_) {
