@@ -740,6 +740,9 @@ class _GiftPreviewSync extends SyncNotifier {
             displayAmount: record.amountZatoshi,
             displayPool: 'orchard',
             createdTime: BigInt.from(1788220800),
+            feeState: rust_sync.TransactionFeeState.notApplicable,
+            detailsComplete: true,
+            provisional: false,
           ),
       ],
     );
