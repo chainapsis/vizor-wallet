@@ -101,10 +101,29 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     platform: TargetPlatform.macOS,
   ),
   FigmaCompareScenario(
+    id: 'desktop-backup-reveal-bip39',
+    description:
+        'Desktop backup with a masked phrase and extra BIP39 passphrase',
+    builder: buildDesktopBackupRevealBip39Capture,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-backup-reveal-bip39-end',
+    description: 'Desktop backup with BIP39 scrolled to the birthday card',
+    builder: buildDesktopBackupRevealBip39Capture,
+    scrollToEnd: true,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-backup-save-error-bip39',
+    description: 'Desktop backup with BIP39 after storage failure',
+    builder: buildDesktopBackupSaveErrorBip39Capture,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
     id: 'desktop-backup-save-error',
     description: 'Desktop backup completion after storage failure',
     builder: buildDesktopBackupSaveErrorCapture,
-    scrollToEnd: true,
     platform: TargetPlatform.macOS,
   ),
   FigmaCompareScenario(

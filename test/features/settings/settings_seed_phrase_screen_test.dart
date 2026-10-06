@@ -13,10 +13,14 @@ import 'package:zcash_wallet/src/core/storage/linux_secret_operation_guard.dart'
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_secret_passphrase_screen.dart'
+    show SecretPassphraseRevealWarningCard;
 import 'package:zcash_wallet/src/features/settings/screens/settings_seed_phrase_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+
+import '../../figma_compare/figma_compare_font_loader.dart';
 
 const _mnemonic =
     'abandon ability able about above absent absorb abstract absurd abuse '
@@ -146,6 +150,7 @@ void main() {
   testWidgets(
     'backup completion waits for persistence and retains the phrase after failure',
     (tester) async {
+      await loadFigmaCompareFonts();
       await tester.binding.setSurfaceSize(const Size(1080, 720));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       final privacy = SensitivePrivacyOverlayController(initiallySafe: true);
@@ -159,6 +164,9 @@ void main() {
         ),
       );
       await tester.pump();
+      final warningBounds = tester.getRect(
+        find.byType(SecretPassphraseRevealWarningCard),
+      );
       await tester.tap(
         find.byKey(const ValueKey('desktop_seed_backup_intro_continue')),
       );
@@ -170,14 +178,51 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
       expect(find.text('abandon'), findsOneWidget);
+      final phraseCard = find
+          .ancestor(
+            of: find.byKey(const ValueKey('settings_seed_phrase_copy_button')),
+            matching: find.byType(Container),
+          )
+          .first;
+      expect(tester.getRect(phraseCard), warningBounds);
       account.failBackupSave = true;
-      await tester.ensureVisible(
-        find.byKey(const ValueKey('desktop_seed_backed_up')),
+      final completeButton = find.byKey(
+        const ValueKey('desktop_seed_backed_up'),
       );
-      await tester.tap(find.byKey(const ValueKey('desktop_seed_backed_up')));
+      final paneBounds = tester.getRect(find.byType(SensitivePrivacyOverlay));
+      expect(completeButton.hitTestable(), findsOneWidget);
+      expect(
+        tester.getBottomRight(completeButton).dy,
+        lessThanOrEqualTo(paneBounds.bottom - AppSpacing.md),
+      );
+      await tester.tap(completeButton);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
-      expect(find.text('Couldn’t save that. Try again.'), findsOneWidget);
+      final saveError = find.text('Couldn’t save that. Try again.');
+      expect(saveError.hitTestable(), findsOneWidget);
+      expect(
+        tester.getBottomRight(saveError).dy,
+        lessThanOrEqualTo(paneBounds.bottom - AppSpacing.md),
+      );
+      final birthdayCard = find
+          .ancestor(
+            of: find.text('Birthday block height'),
+            matching: find.byType(Container),
+          )
+          .first;
+      final buttonBounds = tester.getRect(completeButton);
+      await tester.drag(
+        find.byType(SingleChildScrollView),
+        const Offset(0, -200),
+      );
+      await tester.pump();
+      expect(tester.getRect(completeButton), buttonBounds);
+      expect(
+        tester.getBottomRight(birthdayCard).dy,
+        lessThanOrEqualTo(
+          tester.getBottomRight(find.byType(SingleChildScrollView)).dy,
+        ),
+      );
       expect(find.text('abandon'), findsOneWidget);
       expect(account.state.requireValue.accounts.last.setupPending, isTrue);
       account.failBackupSave = false;

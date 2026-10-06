@@ -20,6 +20,14 @@ Widget buildDesktopBackupGateCapture(BuildContext _) =>
     const _BackupCapture(stage: _CaptureStage.password);
 Widget buildDesktopBackupRevealCapture(BuildContext _) =>
     const _BackupCapture(stage: _CaptureStage.reveal);
+Widget buildDesktopBackupRevealBip39Capture(BuildContext _) =>
+    const _BackupCapture(stage: _CaptureStage.reveal, includeBip39: true);
+Widget buildDesktopBackupSaveErrorBip39Capture(BuildContext _) =>
+    const _BackupCapture(
+      stage: _CaptureStage.reveal,
+      includeBip39: true,
+      saveError: true,
+    );
 Widget buildDesktopBackupSaveErrorCapture(BuildContext _) =>
     const _BackupCapture(stage: _CaptureStage.reveal, saveError: true);
 Widget buildDesktopBackupSavePendingCapture(BuildContext _) =>
@@ -41,12 +49,14 @@ class _BackupCapture extends StatefulWidget {
     this.backupPending = true,
     this.saveError = false,
     this.savePending = false,
+    this.includeBip39 = false,
   });
 
   final _CaptureStage stage;
   final bool backupPending;
   final bool saveError;
   final bool savePending;
+  final bool includeBip39;
 
   @override
   State<_BackupCapture> createState() => _BackupCaptureState();
@@ -57,6 +67,7 @@ class _BackupCaptureState extends State<_BackupCapture> {
   final _privacy = SensitivePrivacyOverlayController(initiallySafe: true);
   late final _accounts = _CaptureAccounts(
     backupPending: widget.backupPending,
+    includeBip39: widget.includeBip39,
     save: () {
       if (widget.saveError) throw StateError('Capture storage write');
       return _save.future;
@@ -155,8 +166,13 @@ class _BackupCaptureState extends State<_BackupCapture> {
 }
 
 class _CaptureAccounts extends AccountNotifier {
-  _CaptureAccounts({required this.backupPending, required this.save});
+  _CaptureAccounts({
+    required this.backupPending,
+    required this.includeBip39,
+    required this.save,
+  });
   final bool backupPending;
+  final bool includeBip39;
   final Future<void> Function() save;
 
   @override
@@ -175,8 +191,10 @@ class _CaptureAccounts extends AccountNotifier {
   @override
   Future<SoftwareWalletSecret?> getSoftwareWalletSecretForAccount(
     String _,
-  ) async =>
-      SoftwareWalletSecret(mnemonic: List.filled(24, '••••••').join(' '));
+  ) async => SoftwareWalletSecret(
+    mnemonic: List.filled(24, '••••••').join(' '),
+    bip39Passphrase: includeBip39 ? 'preview-only extra passphrase' : '',
+  );
 
   @override
   Future<void> markBackedUp(String _) => save();
