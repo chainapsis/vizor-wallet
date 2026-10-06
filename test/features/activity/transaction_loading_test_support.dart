@@ -27,6 +27,7 @@ const _txid =
 
 rust_sync.TransactionInfo _tx({String kind = 'received', int height = 100}) =>
     rust_sync.TransactionInfo(
+      amountIncludesFee: false,
       detailsComplete: true,
       feeState: rust_sync.TransactionFeeState.known,
       provisional: false,

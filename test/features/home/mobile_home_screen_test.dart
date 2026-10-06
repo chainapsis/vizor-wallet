@@ -686,6 +686,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(393, 1000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final pending = rust_sync.TransactionInfo(
+      amountIncludesFee: false,
       detailsComplete: true,
       feeState: rust_sync.TransactionFeeState.known,
       provisional: false,
