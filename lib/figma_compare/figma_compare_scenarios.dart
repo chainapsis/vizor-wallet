@@ -1,4 +1,5 @@
 import 'desktop_welcome_capture.dart';
+import 'desktop_onboarding_intro_capture.dart';
 import 'desktop_onboarding_selection_capture.dart';
 import 'mobile_welcome_capture.dart';
 import '../src/features/payment_links/widgets/payment_link_gift_card.dart';
@@ -90,6 +91,36 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     description: 'Desktop additional-account Welcome with deterministic poster',
     builder: buildDesktopAddAccountWelcomeCapture,
     renderShadows: true,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-onboarding-intro',
+    description: 'Desktop onboarding introduction and sidebar spacing',
+    builder: buildDesktopOnboardingIntroCapture,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-onboarding-customise',
+    description: 'Desktop account name and profile picture customisation',
+    builder: buildCustomiseAccountUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-onboarding-import-customise',
+    description: 'Desktop imported-account sidebar spacing',
+    builder: buildImportCustomiseAccountUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-onboarding-ledger-sidebar',
+    description: 'Desktop Ledger sidebar spacing without device state',
+    builder: _buildLedgerOnboardingSidebar,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-onboarding-keystone-sidebar',
+    description: 'Desktop Keystone sidebar spacing without camera state',
+    builder: buildDesktopKeystoneSidebarCapture,
+    platform: TargetPlatform.macOS,
   ),
   FigmaCompareScenario(
     id: 'desktop-onboarding-import',
