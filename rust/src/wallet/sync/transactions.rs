@@ -2180,6 +2180,24 @@ fn classify_history_tx(
         )];
     }
 
+    // Private recovery found a shielded send whose value left through outputs
+    // it cannot see, and the library inferred that value from the account's
+    // shielded spends, its shielded change, and the whole fee. The send shows
+    // that value with the whole fee beside it, not in it. The account's own
+    // transparent outputs are part of that value, so a known one keeps its
+    // receive row; its shielded receipts are the change the value excludes.
+    // The details stay incomplete and the row provisional. Value that left
+    // the account is not a migration, even when Orchard funds paid it.
+    if let Some(outgoing) = base.history.inferred_outgoing {
+        if base.account_balance_delta < 0 && summary.sent.output_count == 0 {
+            let mut rows = vec![build_activity_row(base, "sent", outgoing, 1)];
+            if summary.received_transparent.amount > 0 {
+                rows.push(received_row(base, &summary.received_transparent));
+            }
+            return rows;
+        }
+    }
+
     if is_internal_ironwood_transition(base, summary) {
         return vec![build_classified_tx(
             base,
@@ -2219,23 +2237,6 @@ fn classify_history_tx(
             let mut row = build_classified_tx(base, "sent", debit, "transparent", true, 1);
             row.info.amount_includes_fee = true;
             return vec![row];
-        }
-    }
-
-    // Private recovery found a shielded send whose value left through outputs
-    // it cannot see, and the library inferred that value from the account's
-    // shielded spends, its shielded change, and the whole fee. The send shows
-    // that value with the whole fee beside it, not in it. The account's own
-    // transparent outputs are part of that value, so a known one keeps its
-    // receive row; its shielded receipts are the change the value excludes.
-    // The details stay incomplete and the row provisional.
-    if let Some(outgoing) = base.history.inferred_outgoing {
-        if base.account_balance_delta < 0 && summary.sent.output_count == 0 {
-            let mut rows = vec![build_activity_row(base, "sent", outgoing, 1)];
-            if summary.received_transparent.amount > 0 {
-                rows.push(received_row(base, &summary.received_transparent));
-            }
-            return rows;
         }
     }
 
@@ -3673,6 +3674,20 @@ mod tests {
         assert_eq!(shown(exact_whole_fee(), known(4_000)), Fee::Known(4_000));
     }
 
+    /// Stored and qualified fees that disagree leave the whole fee unknown: a
+    /// debit shows an unknown fee and does not claim its amount includes one.
+    #[test]
+    fn a_contradicted_whole_fee_stays_unknown() {
+        let mut details = shared_funding_details(exact_whole_fee());
+        details.whole_fee = None;
+        let (mut base, summary) = provisional_debit();
+        base.attach_history(HistoryCompleteness::of(&details));
+        assert_eq!(base.history.shown_fee(), Fee::Unknown);
+        let rows = classify_history_tx(&base, &summary, Fee::NotApplicable);
+        assert_eq!(rows[0].info.fee_state, TransactionFeeState::Unknown);
+        assert!(!rows[0].info.amount_includes_fee);
+    }
+
     /// A stored whole fee without qualified metadata, such as one from an
     /// Enhance record, is shown for a debit whose account fee is unknown, but
     /// not for a transaction the account may only have received in.
@@ -3730,6 +3745,21 @@ mod tests {
                 .map(|r| (r.info.tx_kind.as_str(), r.info.display_amount))
                 .collect::<Vec<_>>(),
             vec![("sent", 250_000), ("received", 250_000)]
+        );
+
+        // Orchard funds that left the account are a send, not a migration.
+        let mut orchard = summary.clone();
+        let mut migration_base = base.clone();
+        migration_base.spent_orchard_note = true;
+        orchard.received = ActivityAmounts::default();
+        orchard.internal_ironwood_transition.amount = 29_000_000;
+        orchard.internal_ironwood_transition.output_count = 1;
+        let rows = classify_history_tx(&migration_base, &orchard, Fee::NotApplicable);
+        assert_eq!(
+            rows.iter()
+                .map(|r| (r.info.tx_kind.as_str(), r.info.display_amount))
+                .collect::<Vec<_>>(),
+            vec![("sent", 250_000)]
         );
 
         // A recorded send is shown as itself; the inference adds no second row.
