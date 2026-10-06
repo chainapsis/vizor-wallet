@@ -711,7 +711,7 @@ struct HistoryCompleteness {
     /// only.
     fee: Fee,
     /// The exact fee of the whole transaction, as the library establishes it
-    /// from the stored fee (including one from a validated Enhance record) or
+    /// from the stored fee (including trusted metadata from an Enhance record) or
     /// qualified transparent metadata. Other funders may have shared it, so it
     /// is shown as the network fee when the account's fee is unknown and never
     /// charged to the account.
@@ -2371,7 +2371,9 @@ fn build_movement_debit_row(base: &TxBase, tx_kind: &str, debit: u64) -> Classif
     row
 }
 
-/// A row whose destination the wallet has not recorded.
+/// A row whose destination the wallet has not recorded. The Enhance shape
+/// label says only that transparent outputs exist: the amount may also include
+/// shielded outputs no recovery reveals, so no recipient pool is claimed.
 fn build_activity_row(base: &TxBase, tx_kind: &str, amount: u64, row_order: u8) -> ClassifiedTx {
     let mut row = build_classified_tx(base, tx_kind, amount, "unknown", false, row_order);
     // Enhance can establish activity shape before recipients, payment amounts, or the
