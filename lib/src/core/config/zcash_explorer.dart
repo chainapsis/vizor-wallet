@@ -6,10 +6,10 @@ enum ZcashExplorerTxidOrder { protocol, display }
 
 typedef ZcashExplorerLauncher = Future<bool> Function(Uri uri);
 
-const kDefaultZcashExplorerLabel = 'CipherScan';
+const kDefaultZcashExplorerLabel = 'ZecBlock';
 
 const kZcashExplorerPrivacyCopy =
-    'Transaction links open in this explorer. Use CipherScan or another site '
+    'Transaction links open in this explorer. Use ZecBlock or another site '
     'you prefer. Opening a public explorer after you send can link your IP '
     'address to that transaction.';
 
@@ -26,13 +26,13 @@ final _txidPlaceholderPattern = RegExp(
 String defaultZcashExplorerHost(String networkName) {
   final network = zcashNetworkFromName(networkName);
   return switch (network) {
-    ZcashNetwork.mainnet => 'cipherscan.app',
-    ZcashNetwork.testnet => 'testnet.cipherscan.app',
-    ZcashNetwork.regtest => 'testnet.cipherscan.app',
+    ZcashNetwork.mainnet => 'zecblock.com',
+    ZcashNetwork.testnet => 'testnet.zecblock.com',
+    ZcashNetwork.regtest => 'testnet.zecblock.com',
   };
 }
 
-/// Settings-row label: CipherScan when unset, otherwise the custom host.
+/// Settings-row label: ZecBlock when unset, otherwise the custom host.
 String explorerSettingsLabel(
   String? customTemplate, {
   required String networkName,

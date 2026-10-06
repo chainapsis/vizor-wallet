@@ -71,6 +71,7 @@ dependencies:
   # is sandboxed, so a resolved Downloads path would land inside the app
   # container — only an NSSavePanel result is a folder the user can reach.
   file_selector: ^1.1.0
+  video_player: ^2.14.0
 
 dev_dependencies:
   flutter_test:
@@ -114,6 +115,7 @@ flutter:
   uses-material-design: true
 
   assets:
+    - assets/animations/
     - assets/illustrations/
     - assets/illustrations/payment_links/
     - assets/profile_pictures/

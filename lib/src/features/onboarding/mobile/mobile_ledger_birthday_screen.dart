@@ -1,7 +1,8 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
+import 'mobile_onboarding_progress.dart';
+import 'mobile_onboarding_progress_scope.dart';
 import '../../../providers/app_security_provider.dart';
 import '../ledger/ledger_setup_args.dart';
 import '../shared/onboarding_flow_args.dart';
@@ -21,7 +22,9 @@ class MobileLedgerBirthdayScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return MobileImportBirthdayScreen(
       args: const ImportBirthdayArgs(mnemonic: ''),
-      progress: 0.5,
+      position: MobileOnboardingProgressScope.of(
+        context,
+      ).at(OnboardingFlow.ledger, OnboardingStage.birthday),
       loadChainMetadata: loadChainMetadata,
       onHeightConfirmed: (height) async {
         if (!context.mounted) return;
@@ -30,9 +33,9 @@ class MobileLedgerBirthdayScreen extends ConsumerWidget {
           birthdayHeight: height,
         );
         if (!ref.read(appSecurityProvider).isPasswordConfigured) {
-          context.push('/onboarding/set-passcode', extra: setupArgs);
+          context.pushOnboarding('/onboarding/set-passcode', extra: setupArgs);
         } else {
-          context.push(
+          context.pushOnboarding(
             '/onboarding/customise-account',
             extra: CustomiseAccountArgs(setupArgs: setupArgs),
           );

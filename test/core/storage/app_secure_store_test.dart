@@ -114,7 +114,16 @@ void main() {
           '{"link":"https://example.test/payment-links/open#v1=secret-mnemonic-payload"}';
       const receivedPayload =
           '{"claimLink":"https://example.test/payment-links/open#v1=received-secret-payload"}';
+      const pendingPayload = '{"mnemonic":"pending-gift-secret"}';
       await store.configurePassword(_oldPassword);
+      await store.writeSecretString(
+        kPendingAccountMnemonicStorageKey,
+        pendingPayload,
+      );
+      expect(
+        await store.readPlain(kPendingAccountMnemonicStorageKey),
+        isNot(contains('pending-gift-secret')),
+      );
       await store.writeSecretString(
         kPaymentLinkRecoveryStorageKey,
         recoveryPayload,
@@ -157,6 +166,13 @@ void main() {
           requireUnlockedSession: true,
         ),
         receivedPayload,
+      );
+      expect(
+        await store.readSecretStringWithOptions(
+          kPendingAccountMnemonicStorageKey,
+          requireUnlockedSession: true,
+        ),
+        pendingPayload,
       );
     },
   );

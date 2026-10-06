@@ -350,6 +350,22 @@ Future<String> getUnifiedAddress({
   accountUuid: accountUuid,
 );
 
+/// The wallet account encrypted software recovery material derives at
+/// `zip32_account_index`, matched by viewing key. Accepts either a legacy plain
+/// mnemonic or the versioned mnemonic + BIP-39 passphrase storage envelope.
+/// Returns `None` when the wallet or account is missing.
+Future<String?> findSoftwareAccountForMnemonic({
+  required String mnemonic,
+  required String network,
+  required String dbPath,
+  required int zip32AccountIndex,
+}) => RustLib.instance.api.crateApiWalletFindSoftwareAccountForMnemonic(
+  mnemonic: mnemonic,
+  network: network,
+  dbPath: dbPath,
+  zip32AccountIndex: zip32AccountIndex,
+);
+
 /// Export a single account's Unified Full Viewing Key (UFVK). Works for both
 /// software and hardware (Keystone) accounts.
 Future<String> getAccountUfvk({

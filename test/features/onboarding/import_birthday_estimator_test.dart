@@ -14,10 +14,10 @@ typedef _EstimateBirthdayWithEndpoint =
     });
 
 void main() {
-  test('keeps the 15-day birthday safety margin', () {
+  test('keeps the 7-day birthday safety margin', () {
     expect(
       importBirthdaySearchDate(DateTime(2026, 8, 7, 18, 30)),
-      DateTime(2026, 7, 23),
+      DateTime(2026, 7, 31),
     );
   });
 

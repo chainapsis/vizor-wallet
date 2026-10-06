@@ -185,21 +185,28 @@ pub fn get_lightwalletd_chain_name(lightwalletd_url: String) -> Result<String, S
     catch(|| {
         let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
         rt.block_on(async {
-            use zcash_client_backend::proto::service::Empty;
+            // Bound channel establishment as well as the RPC response. Endpoint
+            // editors hold dismissal while verifying; timing out only in Dart
+            // would let the original request persist its result afterwards.
+            tokio::time::timeout(std::time::Duration::from_secs(30), async {
+                use zcash_client_backend::proto::service::Empty;
 
-            let mut client = crate::wallet::sync_engine::open_lwd_channel(&lightwalletd_url)
+                let mut client = crate::wallet::sync_engine::open_lwd_channel(&lightwalletd_url)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                let info = tokio::time::timeout(
+                    std::time::Duration::from_secs(10),
+                    client.get_lightd_info(Empty {}),
+                )
                 .await
-                .map_err(|e| e.to_string())?;
-            let info = tokio::time::timeout(
-                std::time::Duration::from_secs(10),
-                client.get_lightd_info(Empty {}),
-            )
-            .await
-            .map_err(|_| "get_lightd_info: timed out waiting for response".to_string())?
-            .map_err(|e| format!("get_lightd_info: {e}"))?
-            .into_inner();
+                .map_err(|_| "get_lightd_info: timed out waiting for response".to_string())?
+                .map_err(|e| format!("get_lightd_info: {e}"))?
+                .into_inner();
 
-            Ok(info.chain_name)
+                Ok(info.chain_name)
+            })
+            .await
+            .map_err(|_| "endpoint verification: timed out".to_string())?
         })
     })
 }
@@ -1104,6 +1111,26 @@ pub fn get_unified_address(
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
         keys::get_address_from_db(&db_path, network, account_uuid.as_deref())
+    })
+}
+
+/// The wallet account encrypted software recovery material derives at
+/// `zip32_account_index`, matched by viewing key. Accepts either a legacy plain
+/// mnemonic or the versioned mnemonic + BIP-39 passphrase storage envelope.
+/// Returns `None` when the wallet or account is missing.
+pub fn find_software_account_for_mnemonic(
+    mnemonic: String,
+    network: String,
+    db_path: String,
+    zip32_account_index: u32,
+) -> Result<Option<String>, String> {
+    catch(|| {
+        if !keys::wallet_exists(&db_path) {
+            return Ok(None);
+        }
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let seed = keys::mnemonic_bytes_to_seed(mnemonic.as_bytes())?;
+        keys::software_account_uuid_for_seed(&db_path, network, &seed, zip32_account_index)
     })
 }
 

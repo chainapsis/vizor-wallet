@@ -2833,6 +2833,41 @@ void main() {
     expect(find.text('You’ve received\na gift card!'), findsOneWidget);
   });
 
+  testWidgets('reopening a completed Card discards its inspection wallet', (
+    tester,
+  ) async {
+    final operations = FakePaymentLinkOperations(
+      receivedRecords: [
+        PaymentLinkReceivedRecord.fromLink(incomingLink).copyWith(
+          status: PaymentLinkReceivedStatus.received,
+          claimLink: null,
+          destinationAccountUuid: 'account-1',
+          claimTxids: 'claim-tx',
+          claimSubmittedAt: DateTime.utc(2026, 10, 1),
+        ),
+      ],
+      claimable: false,
+    );
+    await pumpPaymentLinksScreen(tester, operations: operations);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MaterialApp)),
+    );
+
+    container
+        .read(paymentLinkIntakeProvider.notifier)
+        .receive(incomingLink.toUri().toString());
+    await tester.pumpAndSettle();
+
+    expect(operations.discardedClaimAddresses, [incomingLink.address]);
+    expect(operations.retainedClaimAddresses, isEmpty);
+    expect(
+      operations.receivedRecords.single.status,
+      PaymentLinkReceivedStatus.received,
+    );
+    expect(operations.receivedRecords.single.claimTxids, 'claim-tx');
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('does not reopen an in-flight received Gift Card', (
     tester,
   ) async {

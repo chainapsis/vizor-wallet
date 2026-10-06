@@ -753,7 +753,7 @@ class _PaymentLinkStaticAmountRow extends StatelessWidget {
               amount,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: AppTypography.headlineLarge.copyWith(color: cardTextColor),
+              style: AppTypography.displayLarge.copyWith(color: cardTextColor),
             ),
           ),
           const SizedBox(width: AppSpacing.xxs),
@@ -773,6 +773,7 @@ class _PaymentLinkStaticAmountRow extends StatelessWidget {
           _PaymentLinkCurrencyLabel(
             currencySymbol: currencySymbol,
             cardTextColor: cardTextColor,
+            valueStyle: true,
           ),
       ],
     );
@@ -937,10 +938,12 @@ class _PaymentLinkCurrencyLabel extends StatelessWidget {
   const _PaymentLinkCurrencyLabel({
     required this.currencySymbol,
     required this.cardTextColor,
+    this.valueStyle = false,
   });
 
   final String currencySymbol;
   final Color cardTextColor;
+  final bool valueStyle;
 
   @override
   Widget build(BuildContext context) {
@@ -953,9 +956,11 @@ class _PaymentLinkCurrencyLabel extends StatelessWidget {
         child: Text(
           currencySymbol,
           maxLines: 1,
-          style: AppTypography.headlineMedium.copyWith(
-            color: cardTextColor.withValues(alpha: 0.55),
-          ),
+          style:
+              (valueStyle
+                      ? AppTypography.headlineLarge
+                      : AppTypography.headlineMedium)
+                  .copyWith(color: cardTextColor.withValues(alpha: 0.55)),
         ),
       ),
     );

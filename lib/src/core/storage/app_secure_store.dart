@@ -32,6 +32,16 @@ const kRpcEndpointPresetKey = 'zcash_rpc_endpoint_preset';
 const kPaymentLinkRecoveryStorageKey = 'zcash_gift_card_recovery_v1';
 const kPaymentLinkReceivedStorageKey = 'zcash_gift_card_received_v1';
 
+/// OS-protected bearer journal carried through first-wallet import.
+const kGiftClaimImportHandoffStorageKey = 'zcash_gift_card_import_handoff_v1';
+
+/// Encrypted creation journal written before a Gift wallet account exists.
+const kPendingAccountMnemonicStorageKey = 'zcash_pending_account_mnemonic_v1';
+
+/// Locked-readable setup marker written before preparing a Gift wallet password.
+/// Contains no recovery material or credentials.
+const kGiftWalletSetupStartedStorageKey = 'zcash_gift_wallet_setup_started_v1';
+
 /// Plain (locked-readable) count of Gift Card claims still in flight.
 const kPaymentLinkClaimsInFlightCountKey =
     'zcash_gift_card_claims_in_flight_v1';
@@ -458,7 +468,8 @@ class AppSecureStore {
     }
     if (key.startsWith(_votingHotkeyKeyPrefix) ||
         key == kPaymentLinkRecoveryStorageKey ||
-        key == kPaymentLinkReceivedStorageKey) {
+        key == kPaymentLinkReceivedStorageKey ||
+        key == kPendingAccountMnemonicStorageKey) {
       await _secretMutationLock.run(() async {
         await _runStorageOperation(
           'delete "$key"',
@@ -754,6 +765,12 @@ class AppSecureStore {
   Future<void> clearPasswordConfiguration() {
     if (enforcesSessionGeneration) clearSessionPassword();
     return _secretMutationLock.run(() async {
+      // Remove abandoned recovery material before its decryption credential.
+      // A failed delete must not leave an old journal beside a new password.
+      await _runStorageOperation(
+        'delete pending account mnemonic',
+        () => _storage.delete(key: kPendingAccountMnemonicStorageKey),
+      );
       await _runStorageOperation(
         'delete password verifier salt',
         () => _storage.delete(key: _passwordVerifierSaltKey),
@@ -765,6 +782,12 @@ class AppSecureStore {
       await _runStorageOperation(
         'delete password rotation record',
         () => _storage.delete(key: _passwordRotationInProgressKey),
+      );
+      // Keep the start marker until all credential and journal deletes finish,
+      // so startup can repeat cleanup if the process exits during a delete.
+      await _runStorageOperation(
+        'delete gift wallet setup start marker',
+        () => _storage.delete(key: kGiftWalletSetupStartedStorageKey),
       );
       clearSessionPassword();
     });
@@ -1191,7 +1214,8 @@ class AppSecureStore {
   bool _isAppManagedGeneralSecretKey(String key) {
     return key.startsWith(_votingHotkeyKeyPrefix) ||
         key == kPaymentLinkRecoveryStorageKey ||
-        key == kPaymentLinkReceivedStorageKey;
+        key == kPaymentLinkReceivedStorageKey ||
+        key == kPendingAccountMnemonicStorageKey;
   }
 
   Future<void> _deleteRotationRecordBestEffort() async {

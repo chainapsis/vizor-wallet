@@ -14,7 +14,7 @@ import '../../../core/widgets/app_text_field.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/zcash_explorer_provider.dart';
 
-enum _ExplorerChoice { cipherscan, custom }
+enum _ExplorerChoice { zecblock, custom }
 
 class SettingsExplorerScreen extends ConsumerStatefulWidget {
   const SettingsExplorerScreen({super.key});
@@ -36,7 +36,7 @@ class _SettingsExplorerScreenState
     super.initState();
     final current = ref.read(zcashExplorerProvider);
     _choice = current.trim().isEmpty
-        ? _ExplorerChoice.cipherscan
+        ? _ExplorerChoice.zecblock
         : _ExplorerChoice.custom;
     if (_choice == _ExplorerChoice.custom) {
       _customController.text = current;
@@ -52,7 +52,7 @@ class _SettingsExplorerScreenState
   bool _canUpdate(String current) {
     if (_isSubmitting) return false;
     return switch (_choice) {
-      _ExplorerChoice.cipherscan => current.trim().isNotEmpty,
+      _ExplorerChoice.zecblock => current.trim().isNotEmpty,
       _ExplorerChoice.custom => _customTemplateChanged(current),
     };
   }
@@ -88,7 +88,7 @@ class _SettingsExplorerScreenState
 
     try {
       final notifier = ref.read(zcashExplorerProvider.notifier);
-      if (_choice == _ExplorerChoice.cipherscan) {
+      if (_choice == _ExplorerChoice.zecblock) {
         await notifier.resetToDefault();
       } else {
         await notifier.setCustom(_customController.text);
@@ -162,15 +162,15 @@ class _SettingsExplorerScreenState
                     ),
                     const SizedBox(height: AppSpacing.base),
                     _ExplorerOptionCard(
-                      key: const ValueKey('explorer_option_cipherscan'),
+                      key: const ValueKey('explorer_option_zecblock'),
                       iconName: AppIcons.globe,
                       label: kDefaultZcashExplorerLabel,
                       subtitle: defaultZcashExplorerHost(networkName),
-                      selected: _choice == _ExplorerChoice.cipherscan,
+                      selected: _choice == _ExplorerChoice.zecblock,
                       onTap: _isSubmitting
                           ? null
                           : () => setState(() {
-                              _choice = _ExplorerChoice.cipherscan;
+                              _choice = _ExplorerChoice.zecblock;
                               _submitError = null;
                             }),
                     ),

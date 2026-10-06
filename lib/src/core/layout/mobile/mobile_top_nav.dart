@@ -43,6 +43,8 @@ class MobileTopNav extends StatelessWidget {
        titleMaxLines = 1,
        height = kMobileTopNavHeight,
        progress = 0,
+       progressOffset = Offset.zero,
+       progressTrackColor = null,
        showBackButton = true,
        onBack = null,
        trailing = null,
@@ -51,6 +53,9 @@ class MobileTopNav extends StatelessWidget {
 
   const MobileTopNav.steps({
     required this.progress,
+    this.height = kMobileTopNavHeight,
+    this.progressOffset = Offset.zero,
+    this.progressTrackColor,
     this.onBack,
     this.showBackButton = true,
     super.key,
@@ -67,7 +72,6 @@ class MobileTopNav extends StatelessWidget {
        title = '',
        titleStyle = null,
        titleMaxLines = 1,
-       height = kMobileTopNavHeight,
        trailing = null,
        foregroundColor = null,
        backIcon = AppIcons.chevronBackward;
@@ -93,6 +97,8 @@ class MobileTopNav extends StatelessWidget {
        avatar = null,
        onAccountTap = null,
        progress = 0,
+       progressOffset = Offset.zero,
+       progressTrackColor = null,
        showBackButton = true;
 
   final _MobileTopNavVariant _variant;
@@ -123,6 +129,10 @@ class MobileTopNav extends StatelessWidget {
 
   /// Steps variant: progress through the flow, 0.0–1.0.
   final double progress;
+
+  /// Optional visual alignment and track tint for screen-specific step frames.
+  final Offset progressOffset;
+  final Color? progressTrackColor;
   final bool showBackButton;
 
   /// Back variant: centered serif title.
@@ -130,6 +140,8 @@ class MobileTopNav extends StatelessWidget {
   final TextStyle? titleStyle;
   final int titleMaxLines;
   final Color? foregroundColor;
+
+  /// Navigation height; the steps and back variants accept screen overrides.
   final double height;
 
   /// Back variant: right-aligned widget (e.g. the swap composer's
@@ -286,23 +298,26 @@ class MobileTopNav extends StatelessWidget {
       alignment: Alignment.center,
       children: [
         Center(
-          child: SizedBox(
-            width: _progressTrackWidth,
-            height: _progressTrackHeight,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: colors.background.overlay,
-                borderRadius: BorderRadius.circular(AppRadii.full),
-              ),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: FractionallySizedBox(
-                  widthFactor: progress.clamp(0.0, 1.0),
-                  heightFactor: 1,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: colors.background.inverse,
-                      borderRadius: BorderRadius.circular(AppRadii.full),
+          child: Transform.translate(
+            offset: progressOffset,
+            child: SizedBox(
+              width: _progressTrackWidth,
+              height: _progressTrackHeight,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: progressTrackColor ?? colors.background.overlay,
+                  borderRadius: BorderRadius.circular(AppRadii.full),
+                ),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: FractionallySizedBox(
+                    widthFactor: progress.clamp(0.0, 1.0),
+                    heightFactor: 1,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: colors.background.inverse,
+                        borderRadius: BorderRadius.circular(AppRadii.full),
+                      ),
                     ),
                   ),
                 ),

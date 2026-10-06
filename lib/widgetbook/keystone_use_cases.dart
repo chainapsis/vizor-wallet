@@ -6,6 +6,8 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter/widgets.dart';
+import '../src/features/onboarding/mobile/mobile_onboarding_progress.dart';
+import '../src/features/onboarding/mobile/mobile_onboarding_progress_scope.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
@@ -107,6 +109,10 @@ Widget buildMobileKeystoneBirthdayUseCase(BuildContext context) {
       ],
       child: MobileImportBirthdayScreen(
         args: const ImportBirthdayArgs(mnemonic: ''),
+        position: OnboardingProgressPlan.forFlow(
+          OnboardingFlow.keystone,
+          setupMode: OnboardingSetupMode.createPasscode,
+        ).at(OnboardingStage.birthday),
         loadChainMetadata: false,
         onHeightConfirmed: (_) async {},
       ),
@@ -135,7 +141,10 @@ class _MobileKeystoneScreenFrame extends StatelessWidget {
           size: Size(393, 852),
           viewPadding: EdgeInsets.only(top: 55),
         ),
-        child: child,
+        child: MobileOnboardingProgressScope(
+          setupMode: OnboardingSetupMode.createPasscode,
+          child: child,
+        ),
       ),
     );
   }
@@ -170,16 +179,8 @@ class _MobileKeystoneSelectAccountFrame extends StatelessWidget {
           _SeededKeystoneOnboardingNotifier.new,
         ),
       ],
-      child: const SizedBox(
-        width: 393,
-        height: 852,
-        child: MediaQuery(
-          data: MediaQueryData(
-            size: Size(393, 852),
-            viewPadding: EdgeInsets.only(top: 55),
-          ),
-          child: MobileKeystoneSelectAccountScreen(),
-        ),
+      child: const _MobileKeystoneScreenFrame(
+        child: MobileKeystoneSelectAccountScreen(),
       ),
     );
   }
