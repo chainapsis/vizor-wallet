@@ -449,6 +449,35 @@ void main() {
     },
   );
 
+  testWidgets('Gift entry and checked card use normal route text styles', (
+    tester,
+  ) async {
+    await pump(tester, clipboard: incomingLink.toUri().toString());
+    await tester.tap(keyed('welcome_redeem_card_button'));
+    await tester.pumpAndSettle();
+    expect(find.text('Create a wallet with a gift card'), findsOneWidget);
+    void expectNoFallbackTextStyle() {
+      for (final richText in tester.widgetList<RichText>(
+        find.byType(RichText),
+      )) {
+        final style = richText.text.style;
+        expect(
+          style?.decoration?.contains(TextDecoration.underline) == true &&
+              style?.decorationStyle == TextDecorationStyle.double &&
+              style?.decorationColor == const Color(0xffffff00),
+          isFalse,
+          reason: 'The route must not inherit MaterialApp fallback underlines.',
+        );
+      }
+    }
+
+    expectNoFallbackTextStyle();
+    await tester.tap(keyed('gift_desktop_paste_button'));
+    await tester.pumpAndSettle();
+    expect(find.text('Create a wallet to claim'), findsOneWidget);
+    expectNoFallbackTextStyle();
+  });
+
   testWidgets('invalid card remains on the desktop entry with paste retry', (
     tester,
   ) async {

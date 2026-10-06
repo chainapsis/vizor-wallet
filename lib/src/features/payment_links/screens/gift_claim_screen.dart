@@ -240,7 +240,12 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
   Widget build(BuildContext context) {
     ref.watch(giftCardEntryPriceProvider);
     final flow = ref.watch(giftClaimFlowProvider);
-    if (kAppFormFactor == AppFormFactor.desktop) return _buildDesktop(flow);
+    if (kAppFormFactor == AppFormFactor.desktop) {
+      return Scaffold(
+        backgroundColor: context.colors.background.window,
+        body: _buildDesktop(flow),
+      );
+    }
     if (flow == null) {
       return _guardBack(
         Scaffold(
