@@ -5,6 +5,7 @@
 
 import '../frb_generated.dart';
 import 'keystone.dart';
+
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `api_proposal_result`, `catch`, `enhance_pir_enabled`, `fetch_block_time`, `migration_status_from_balance`, `parse_network_and_migrate`, `payment_link_batch_pairs`, `run_full_sync_internal`, `to_wallet_action_sigs`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
@@ -2843,6 +2844,17 @@ class TransactionInfo {
   final String txKind;
   final BigInt displayAmount;
   final String displayPool;
+
+  /// Exact output pool for ordinary Activity labels. The legacy display pool
+  /// remains available for Gift Cards; shielding and migration leave this unset.
+  final String? activityPool;
+
+  /// Hidden TEX funding step matched by the existing history classifier.
+  final String? fundingParentTxid;
+
+  /// Zero means unmined; absent means no matched funding dependency.
+  final BigInt? fundingParentMinedHeight;
+  final bool? fundingParentExpired;
   final BigInt createdTime;
 
   /// Whether the recipients, payment amounts, and memos are known.
@@ -2864,6 +2876,10 @@ class TransactionInfo {
     required this.txKind,
     required this.displayAmount,
     required this.displayPool,
+    this.activityPool,
+    this.fundingParentTxid,
+    this.fundingParentMinedHeight,
+    this.fundingParentExpired,
     required this.createdTime,
     required this.detailsComplete,
     required this.provisional,
@@ -2882,6 +2898,10 @@ class TransactionInfo {
       txKind.hashCode ^
       displayAmount.hashCode ^
       displayPool.hashCode ^
+      activityPool.hashCode ^
+      fundingParentTxid.hashCode ^
+      fundingParentMinedHeight.hashCode ^
+      fundingParentExpired.hashCode ^
       createdTime.hashCode ^
       detailsComplete.hashCode ^
       provisional.hashCode;
@@ -2902,6 +2922,10 @@ class TransactionInfo {
           txKind == other.txKind &&
           displayAmount == other.displayAmount &&
           displayPool == other.displayPool &&
+          activityPool == other.activityPool &&
+          fundingParentTxid == other.fundingParentTxid &&
+          fundingParentMinedHeight == other.fundingParentMinedHeight &&
+          fundingParentExpired == other.fundingParentExpired &&
           createdTime == other.createdTime &&
           detailsComplete == other.detailsComplete &&
           provisional == other.provisional;
