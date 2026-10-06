@@ -9,12 +9,14 @@ import '../../ledger/ledger_capability.dart';
 class DesktopImportMethodSelectionScreen extends ConsumerWidget {
   const DesktopImportMethodSelectionScreen({
     this.cancelRoute = '/welcome',
+    this.onCancel,
     this.hardwareRoute = '/import/hardware',
     this.secretPassphraseRoute = '/import?entry=import-method',
     super.key,
   });
 
   final String cancelRoute;
+  final VoidCallback? onCancel;
   final String hardwareRoute;
   final String secretPassphraseRoute;
 
@@ -24,7 +26,7 @@ class DesktopImportMethodSelectionScreen extends ConsumerWidget {
       title: 'Import Account\nto Vizor',
       subtitle: 'Select the method you want.',
       footerLabel: 'Cancel',
-      onFooterPressed: () => context.go(cancelRoute),
+      onFooterPressed: onCancel ?? () => context.go(cancelRoute),
       cards: [
         DesktopMethodSelectionCard(
           key: const ValueKey('desktop_import_secret_passphrase_card'),

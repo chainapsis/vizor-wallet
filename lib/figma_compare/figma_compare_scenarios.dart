@@ -1,5 +1,6 @@
 import 'desktop_welcome_capture.dart';
 import '../widgetbook/desktop_gift_onboarding_use_cases.dart';
+import '../widgetbook/desktop_gift_import_use_cases.dart';
 import 'desktop_onboarding_intro_capture.dart';
 import 'desktop_onboarding_recovery_capture.dart';
 import 'desktop_backup_capture.dart';
@@ -99,6 +100,30 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'desktop-gift-inspected',
     description: 'Gift Card ready for new wallet setup',
     builder: buildDesktopGiftInspectedUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-gift-receiving-account',
+    description: 'Gift imported receiving account choice',
+    builder: buildDesktopGiftReceivingAccountUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-gift-receiving-many',
+    description: 'Gift imported account list scrolling',
+    builder: buildDesktopGiftReceivingManyAccountsUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-gift-receiving-pending',
+    description: 'Gift recipient confirmation pending',
+    builder: buildDesktopGiftReceivingPendingUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-gift-receiving-error',
+    description: 'Gift recipient confirmation failure and retry',
+    builder: buildDesktopGiftReceivingErrorUseCase,
     platform: TargetPlatform.macOS,
   ),
   FigmaCompareScenario(
