@@ -12,6 +12,7 @@ import '../../../core/security/password_policy.dart';
 import '../../../core/layout/app_desktop_backdrop_shell.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/navigation/payment_uri_busy_surface_provider.dart';
 import '../../../core/storage/app_secure_store.dart';
 import '../../../core/storage/linux_keyring_coordinator.dart';
 import '../../../core/storage/linux_secret_operation_guard.dart';
@@ -497,11 +498,15 @@ class _SettingsSeedPhraseScreenState
 
   Future<void> _saveBackup(String uuid, {required bool snooze}) async {
     if (_savingBackup || _sidebarNavigationPending) return;
-    setState(() {
-      _savingBackup = true;
-      _backupError = null;
-    });
+    final paymentUriBusySurface = ref.read(
+      paymentUriBusySurfaceProvider.notifier,
+    );
+    paymentUriBusySurface.acquire();
     try {
+      setState(() {
+        _savingBackup = true;
+        _backupError = null;
+      });
       final accounts = ref.read(accountProvider.notifier);
       if (snooze) {
         await accounts.snoozeBackupReminder(uuid);
@@ -526,6 +531,8 @@ class _SettingsSeedPhraseScreenState
           _backupError = 'Couldn’t save that. Try again.';
         });
       }
+    } finally {
+      paymentUriBusySurface.release();
     }
   }
 

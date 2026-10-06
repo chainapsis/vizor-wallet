@@ -5,9 +5,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:zcash_wallet/app.dart' show buildIncomingLinkHostForTest;
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
+import 'package:zcash_wallet/src/core/navigation/payment_uri_busy_surface_provider.dart';
 import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
 import 'package:zcash_wallet/src/core/security/software_wallet_secret.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
@@ -20,11 +22,21 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_secret_passphrase_screen.dart'
     show SecretPassphraseRevealWarningCard;
 import 'package:zcash_wallet/src/features/settings/screens/settings_seed_phrase_screen.dart';
+import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
+import 'package:zcash_wallet/src/features/send/services/payment_request_precheck.dart';
+import 'package:zcash_wallet/src/features/send/widgets/payment_request_host.dart';
+import 'package:zcash_wallet/src/features/send/widgets/payment_request_surface.dart';
+import 'package:zcash_wallet/src/features/send/widgets/send_recipient_resolver.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
+import 'package:zcash_wallet/src/providers/migration_send_gate_provider.dart';
+import 'package:zcash_wallet/src/providers/payment_uri_prefill_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
+import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/services/incoming_uri_service.dart';
 
 import '../../figma_compare/figma_compare_font_loader.dart';
 
@@ -44,6 +56,135 @@ const _accountState = AccountState(
 );
 
 void main() {
+  for (final completeBackup in [false, true]) {
+    for (final failSave in [false, true]) {
+      testWidgets(
+        'incoming payment request waits for backup ${completeBackup ? 'completion' : 'deferral'} ${failSave ? 'failure' : 'success'}',
+        (tester) async {
+          await tester.binding.setSurfaceSize(const Size(1080, 720));
+          addTearDown(() => tester.binding.setSurfaceSize(null));
+          final privacy = SensitivePrivacyOverlayController(
+            initiallySafe: true,
+          );
+          addTearDown(privacy.dispose);
+          final incomingUris = _FakeIncomingUriService();
+          addTearDown(incomingUris.dispose);
+          final account = _FakeAccountNotifier(backupPending: true)
+            ..backupSave = Completer<void>();
+          await tester.pumpWidget(
+            _harness(
+              privacyController: privacy,
+              accountNotifier: () => account,
+              showBackupIntro: !completeBackup,
+              incomingUris: incomingUris,
+            ),
+          );
+          await tester.pumpAndSettle();
+          if (completeBackup) {
+            await tester.enterText(find.byType(EditableText), 'Correct123!');
+            await tester.pump();
+            await tester.tap(find.bySemanticsLabel('Confirm password'));
+            await tester.pumpAndSettle();
+          }
+          final container = ProviderScope.containerOf(
+            tester.element(find.byType(SettingsSeedPhraseScreen)),
+            listen: false,
+          );
+          final action = find.byKey(
+            ValueKey(
+              completeBackup
+                  ? 'desktop_seed_backed_up'
+                  : 'desktop_seed_backup_remind_later',
+            ),
+          );
+          await tester.tap(action);
+          await tester.pump();
+          incomingUris.emit('zcash:u1recipient');
+          await tester.pumpAndSettle();
+          expect(find.byType(PaymentRequestSurface), findsNothing);
+          expect(find.text('Enter amount'), findsNothing);
+          expect(find.byType(SettingsSeedPhraseScreen), findsOneWidget);
+          expect(container.read(paymentUriBusySurfaceProvider), 1);
+          expect(container.read(paymentUriPrefillProvider), isNotNull);
+
+          if (failSave) {
+            account.backupSave!.completeError(StateError('late write failure'));
+          } else {
+            account.backupSave!.complete();
+          }
+          await tester.pumpAndSettle();
+          expect(container.read(paymentUriBusySurfaceProvider), 0);
+          expect(container.read(paymentUriPrefillProvider), isNull);
+          expect(find.byType(PaymentRequestSurface), findsOneWidget);
+          if (failSave) {
+            expect(find.byType(SettingsSeedPhraseScreen), findsOneWidget);
+            expect(find.text('Couldn’t save that. Try again.'), findsOneWidget);
+            if (completeBackup) expect(find.text('abandon'), findsOneWidget);
+            // Dismiss the request through the pane scrim, then retry the write.
+            await tester.tapAt(const Offset(300, 690));
+            await tester.pumpAndSettle();
+            expect(find.byType(PaymentRequestSurface), findsNothing);
+            account.backupSave = Completer<void>();
+            await tester.tap(action);
+            await tester.pump();
+            expect(container.read(paymentUriBusySurfaceProvider), 1);
+            account.backupSave!.complete();
+            await tester.pumpAndSettle();
+            expect(container.read(paymentUriBusySurfaceProvider), 0);
+            expect(find.text('home-destination'), findsOneWidget);
+          } else {
+            expect(find.text('home-destination'), findsOneWidget);
+            await tester.tap(find.widgetWithText(AppButton, 'Enter amount'));
+            await tester.pumpAndSettle();
+            expect(find.text('send-destination'), findsOneWidget);
+          }
+          expect(completeBackup ? account.completed : account.snoozed, [
+            'account-2',
+          ]);
+        },
+      );
+    }
+  }
+
+  testWidgets('an unmounted backup write releases only its own URI hold', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1080, 720));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final privacy = SensitivePrivacyOverlayController(initiallySafe: true);
+    addTearDown(privacy.dispose);
+    final account = _FakeAccountNotifier(backupPending: true)
+      ..backupSave = Completer<void>();
+    await tester.pumpWidget(
+      _harness(
+        privacyController: privacy,
+        accountNotifier: () => account,
+        showBackupIntro: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+    final screen = tester.element(find.byType(SettingsSeedPhraseScreen));
+    final router = GoRouter.of(screen);
+    final container = ProviderScope.containerOf(screen, listen: false);
+    final otherHolder = container.read(paymentUriBusySurfaceProvider.notifier);
+    otherHolder.acquire();
+    await tester.tap(
+      find.byKey(const ValueKey('desktop_seed_backup_remind_later')),
+    );
+    await tester.pump();
+    expect(container.read(paymentUriBusySurfaceProvider), 2);
+    router.go('/home');
+    await tester.pumpAndSettle();
+    expect(find.byType(SettingsSeedPhraseScreen), findsNothing);
+    expect(container.read(paymentUriBusySurfaceProvider), 2);
+    account.backupSave!.completeError(StateError('failure after unmount'));
+    await tester.pumpAndSettle();
+    expect(container.read(paymentUriBusySurfaceProvider), 1);
+    otherHolder.release();
+    expect(container.read(paymentUriBusySurfaceProvider), 0);
+    expect(tester.takeException(), isNull);
+  });
+
   for (final completeBackup in [false, true]) {
     testWidgets(
       'accepted account switch prevents backup ${completeBackup ? 'completion' : 'deferral'} from starting',
@@ -744,20 +885,26 @@ Widget _harness({
   bool passwordValid = true,
   bool startAtHome = false,
   _FakeSwapNotifier? swapNotifier,
+  _FakeIncomingUriService? incomingUris,
 }) {
   final router = GoRouter(
-    initialLocation: startAtHome ? '/home' : '/settings/secret-passphrase',
+    initialLocation: startAtHome
+        ? '/home'
+        : incomingUris != null
+        ? '/setup/backup'
+        : '/settings/secret-passphrase',
     routes: [
-      GoRoute(
-        path: '/settings/secret-passphrase',
-        builder: (_, _) => SettingsSeedPhraseScreen(
-          accountUuid: 'account-2',
-          showBackupIntro: showBackupIntro,
-          privacyOverlayController: privacyController,
-          birthdayHeightLoader: (_) async => 3428019,
-          birthdayBlockTimeLoader: (_) async => 1785196800,
+      for (final path in ['/settings/secret-passphrase', '/setup/backup'])
+        GoRoute(
+          path: path,
+          builder: (_, _) => SettingsSeedPhraseScreen(
+            accountUuid: 'account-2',
+            showBackupIntro: showBackupIntro,
+            privacyOverlayController: privacyController,
+            birthdayHeightLoader: (_) async => 3428019,
+            birthdayBlockTimeLoader: (_) async => 1785196800,
+          ),
         ),
-      ),
       GoRoute(path: '/accounts', builder: (_, _) => const SizedBox()),
       GoRoute(
         path: '/settings',
@@ -765,6 +912,7 @@ Widget _harness({
       ),
       GoRoute(path: '/home', builder: (_, _) => const Text('home-destination')),
       GoRoute(path: '/pay', builder: (_, _) => const Text('pay-destination')),
+      GoRoute(path: '/send', builder: (_, _) => const Text('send-destination')),
     ],
   );
 
@@ -778,6 +926,16 @@ Widget _harness({
         () => _FakeSecurityNotifier(valid: passwordValid),
       ),
       syncProvider.overrideWith(_FakeSyncNotifier.new),
+      if (incomingUris != null) ...[
+        incomingUriServiceProvider.overrideWithValue(incomingUris),
+        paymentRequestPrecheckProvider.overrideWithValue(
+          _amountlessPaymentPrecheck(),
+        ),
+        addressBookProvider.overrideWith(_EmptyAddressBookNotifier.new),
+        ownAccountAddressesProvider.overrideWith((ref) async => const {}),
+        zecHomeUsdUnitPriceProvider.overrideWithValue(null),
+        migrationSendGateProvider.overrideWithValue(false),
+      ],
       if (swapNotifier != null) ...[
         swapFeatureEnabledProvider.overrideWithValue(true),
         swapStateProvider.overrideWith(() => swapNotifier),
@@ -785,7 +943,15 @@ Widget _harness({
     ],
     child: MaterialApp.router(
       routerConfig: router,
-      builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
+      builder: (_, child) => AppTheme(
+        data: AppThemeData.light,
+        child: incomingUris == null
+            ? child!
+            : buildIncomingLinkHostForTest(
+                router: router,
+                child: PaymentRequestHost(router: router, child: child!),
+              ),
+      ),
     ),
   );
 }
@@ -931,3 +1097,53 @@ class _FakeSwapNotifier extends SwapNotifier {
     String? expectedAccountUuid,
   }) => true;
 }
+
+class _FakeIncomingUriService extends IncomingUriService {
+  final _uris = StreamController<String>.broadcast();
+
+  @override
+  Stream<String> get uriStream => _uris.stream;
+
+  @override
+  Future<void> initialize() async {}
+
+  void emit(String uri) => _uris.add(uri);
+
+  @override
+  Future<void> dispose() => _uris.close();
+}
+
+class _EmptyAddressBookNotifier extends AddressBookNotifier {
+  @override
+  Future<AddressBookState> build() async => const AddressBookState();
+}
+
+PaymentRequestPrecheck _amountlessPaymentPrecheck() => PaymentRequestPrecheck(
+  readNetworkName: () => kZcashDefaultNetworkName,
+  spendableIsAuthoritativeNow: () => true,
+  validateAddress: ({required String address, required String network}) async =>
+      rust_sync.AddressValidationResult(
+        isValid: true,
+        addressType: 'unified',
+        wrongNetwork: false,
+      ),
+  proposeTransfer:
+      ({
+        required String accountUuid,
+        required String sendFlowId,
+        required String address,
+        required String addressType,
+        required BigInt amountZatoshi,
+        String? memo,
+        bool isPaymentRequest = false,
+        String? requestedBy,
+        BigInt? requestedAmountZatoshi,
+      }) async => throw StateError('An amountless request must not propose'),
+  discardProposal:
+      ({
+        required BigInt proposalId,
+        required String sendFlowId,
+        required String logContext,
+        required String accountUuid,
+      }) async => true,
+);
