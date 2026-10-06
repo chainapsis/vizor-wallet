@@ -120,7 +120,9 @@ ActivityRowData buildTransactionActivityRow({
                   subtitle == 'Taking longer'
               ? AppIcons.time
               : null)
-        : isFeeOnly ? null : _poolIcon(displayPool, ordinary: isOrdinaryTransaction),
+        : isFeeOnly
+        ? null
+        : _poolIcon(displayPool, ordinary: isOrdinaryTransaction),
     amountText: activityAmountTextForFormFactor(
       _transactionAmountText(
         amount: amount,

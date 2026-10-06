@@ -14565,8 +14565,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TransactionInfo dco_decode_transaction_info(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 18)
-      throw Exception('unexpected arr length: expect 18 but see ${arr.length}');
+    if (arr.length != 19)
+      throw Exception('unexpected arr length: expect 19 but see ${arr.length}');
     return TransactionInfo(
       txidHex: dco_decode_String(arr[0]),
       minedHeight: dco_decode_u_64(arr[1]),
@@ -14586,6 +14586,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       createdTime: dco_decode_u_64(arr[15]),
       detailsComplete: dco_decode_bool(arr[16]),
       provisional: dco_decode_bool(arr[17]),
+      amountIncludesFee: dco_decode_bool(arr[18]),
     );
   }
 

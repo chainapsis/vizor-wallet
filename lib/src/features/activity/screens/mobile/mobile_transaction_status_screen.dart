@@ -849,8 +849,7 @@ class _MobileTransactionStatusScreenState
                                 giftCard: giftCard,
                                 privacyModeEnabled: privacyModeEnabled,
                               ),
-                        detailsIncomplete:
-                            _showIncompleteDetails(tx),
+                        detailsIncomplete: _showIncompleteDetails(tx),
                       ),
                       if (_error != null) ...[
                         const SizedBox(height: AppSpacing.sm),
