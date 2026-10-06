@@ -237,12 +237,15 @@ or a payment retain the reservation. Cleanup
 runs while the app is active and before requesting another address; it does not
 need an operating-system service.
 
-Allocation picks the lowest eligible never-paid index. A sticky used marker keeps
-paid addresses excluded after spending or a rewind. Reclaimed reservations and
-quote associations remain in the database for late-payment attribution. Address
-reuse does not invalidate old deposit instructions and cannot prove that no future
-payment will arrive. A reclaimed key keeps scanning, so the slot is reissued with
-no gap in its history and a late payment is still found locally.
+Allocation picks the lowest eligible never-paid index, except during the 24-hour
+watch after a restore, when it picks the highest one in the recovery window: the
+lowest unpaid indices may belong to the old device's swaps still in flight. A
+sticky used marker keeps paid addresses excluded after spending or a rewind.
+Reclaimed reservations and quote associations remain in the database for
+late-payment attribution. Address reuse does not invalidate old deposit
+instructions and cannot prove that no future payment will arrive. A reclaimed key
+keeps scanning, so the slot is reissued with no gap in its history and a late
+payment is still found locally.
 
 The seed-recovery gap is 30, and issuance may not exceed 30 slots after the highest
 canonical receipt (indices 0 through 29 before the first receipt). Provider deposit
