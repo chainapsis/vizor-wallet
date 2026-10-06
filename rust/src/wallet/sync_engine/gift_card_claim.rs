@@ -214,6 +214,32 @@ fn read_snapshot(c: &Connection) -> rusqlite::Result<Option<Snapshot>> {
     })).optional()
 }
 
+/// All positive outputs of the first funding transaction must have six observed
+/// confirmations on their spends. An empty/damaged cache is never settlement.
+fn funding_spends_settled(c: &Connection, state: &Snapshot) -> Result<bool, String> {
+    if state.total == 0 || state.unspent != 0 {
+        return Ok(false);
+    }
+    let Some(settled_height) = state.checked_height.checked_sub(5) else {
+        return Ok(false);
+    };
+    c.query_row(
+        "SELECT EXISTS(
+           SELECT 1 FROM ironwood_received_notes n
+           JOIN transactions t ON t.id_tx=n.transaction_id
+           JOIN vizor_giftcard_check g ON t.txid=g.funding_txid WHERE n.value>0)
+         AND NOT EXISTS(
+           SELECT 1 FROM ironwood_received_notes n
+           JOIN transactions t ON t.id_tx=n.transaction_id
+           JOIN vizor_giftcard_check g ON t.txid=g.funding_txid
+           LEFT JOIN vizor_giftcard_spends s ON s.nf=n.nf
+           WHERE n.value>0 AND (s.height IS NULL OR s.height>?1))",
+        [settled_height],
+        |r| r.get(0),
+    )
+    .map_err(|e| e.to_string())
+}
+
 fn check_cancel(cancel: &AtomicBool) -> Result<(), String> {
     if cancel.load(Ordering::Relaxed) {
         Err("Gift Card check cancelled".into())
@@ -711,12 +737,7 @@ async fn run_inner(
             (tip - start + 1) as u64,
             &state,
         );
-        let latest_spend: Option<u32> = c
-            .query_row("SELECT MAX(height) FROM vizor_giftcard_spends", [], |r| {
-                r.get(0)
-            })
-            .map_err(|e| e.to_string())?;
-        if state.unspent == 0 && latest_spend.is_some_and(|h| e.saturating_sub(h) >= 5) {
+        if funding_spends_settled(&c, &state)? {
             break;
         }
     }
@@ -757,8 +778,9 @@ async fn run_inner(
         return Err("Gift Card tip changed during inspection; retrying is required".into());
     }
     check_cancel(&cancel)?;
-    // Do not publish readiness until legacy SDK receipts agree with the
-    // completed observer pass. Rewinding retains signed bytes and spend links.
+    // Before settlement, repair stale SDK receipts for a possible new claim.
+    // Once all funding spends settle, only reflect observed mined claims;
+    // this disposable cache no longer needs a wallet-wide recovery rewind.
     let Some(anchor) = recovery::reconcile_mined_claims(path, network, &c, &state)? else {
         let mut db = open_db(path, network).map_err(|e| e.to_string())?;
         rebuild_discovery(&mut db, &c, &mut client, birthday).await?;
@@ -779,7 +801,7 @@ async fn run_inner(
     )
     .map_err(|e| e.to_string())?;
     state = read_snapshot(&c).map_err(|e| e.to_string())?.unwrap();
-    if allow_resubmit {
+    if allow_resubmit && !funding_spends_settled(&c, &state)? {
         check_cancel(&cancel)?;
         let candidates = recovery::resubmittable_claims(path, network, &c, &state)?;
         crate::wallet::sync::resubmit_transactions(url, &mut client, tip, candidates, || {
@@ -1185,6 +1207,49 @@ mod tests {
             .unwrap()
             .conflicted_txids
             .is_empty());
+    }
+
+    #[test]
+    fn settlement_requires_every_positive_funding_note_and_six_confirmations() {
+        let (_dir, _path, c) = fixture();
+        let settled = || funding_spends_settled(&c, &read_snapshot(&c).unwrap().unwrap()).unwrap();
+        assert!(!settled());
+        c.execute(
+            "INSERT INTO vizor_giftcard_spends VALUES(?1,?2,105)",
+            rusqlite::params![vec![2u8; 32], vec![5u8; 32]],
+        )
+        .unwrap();
+        assert!(!settled(), "One remaining funding note prevents settlement");
+        c.execute(
+            "INSERT INTO vizor_giftcard_spends VALUES(?1,?2,106)",
+            rusqlite::params![vec![3u8; 32], vec![6u8; 32]],
+        )
+        .unwrap();
+        assert!(!settled(), "The second spend has only five confirmations");
+        c.execute("UPDATE vizor_giftcard_check SET checked_height=111", [])
+            .unwrap();
+        assert!(settled());
+        c.execute(
+            "INSERT INTO vizor_giftcard_spends VALUES(?1,?2,999)",
+            rusqlite::params![vec![8u8; 32], vec![9u8; 32]],
+        )
+        .unwrap();
+        assert!(
+            settled(),
+            "Unrelated observer rows cannot change funding settlement"
+        );
+        c.execute(
+            "UPDATE vizor_giftcard_spends SET height=112 WHERE nf=?1",
+            [vec![3u8; 32]],
+        )
+        .unwrap();
+        assert!(
+            !settled(),
+            "A spend beyond the observed height is not confirmed"
+        );
+        c.execute("DELETE FROM ironwood_received_notes", [])
+            .unwrap();
+        assert!(!settled(), "Missing funding notes are not settlement");
     }
 
     #[test]

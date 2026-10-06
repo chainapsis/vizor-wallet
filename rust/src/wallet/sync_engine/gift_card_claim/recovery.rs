@@ -20,6 +20,10 @@ pub(super) fn reconcile_mined_claims(
     c: &Connection,
     state: &Snapshot,
 ) -> Result<Option<u32>, String> {
+    if funding_spends_settled(c, state)? {
+        reconcile_settled_claims(path, network, c)?;
+        return Ok(Some(state.anchor_height));
+    }
     let stale_height: Option<u32> = c
         .query_row(
             &format!(
@@ -98,6 +102,49 @@ pub(super) fn reconcile_mined_claims(
         ) => Ok(None),
         Err(e) => Err(format!("Recover Gift Card mined receipts: {e}")),
     }
+}
+
+/// Settlement is decided by the validated observer. Keep SDK history usable
+/// for mixed success/conflict outcomes, without clearing any other receipts.
+/// An orphaned local claim remains settled by positive input-conflict evidence,
+/// rather than by unmining its SDK receipt in a wallet-wide rewind.
+fn reconcile_settled_claims(
+    path: &str,
+    network: WalletNetwork,
+    c: &Connection,
+) -> Result<(), String> {
+    let mut q = c
+        .prepare(&format!(
+            "SELECT t.txid,m.height FROM transactions t
+             JOIN vizor_giftcard_mined m ON m.txid=t.txid
+             WHERE t.id_tx IN ({CLAIMS})
+               AND (t.mined_height IS NULL OR t.mined_height!=m.height)"
+        ))
+        .map_err(|e| e.to_string())?;
+    let mined = q
+        .query_map([], |r| Ok((r.get::<_, Vec<u8>>(0)?, r.get::<_, u32>(1)?)))
+        .map_err(|e| e.to_string())?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|e| e.to_string())?;
+    drop(q);
+    if mined.is_empty() {
+        return Ok(());
+    }
+    let mut db = open_db(path, network).map_err(|e| e.to_string())?;
+    db.transactionally(|wdb| {
+        for (bytes, height) in &mined {
+            let bytes: [u8; 32] = bytes.as_slice().try_into().map_err(|_| {
+                SqliteClientError::CorruptedData("Invalid Gift Card transaction ID".into())
+            })?;
+            WalletWrite::set_transaction_status(
+                wdb,
+                zcash_primitives::transaction::TxId::from_bytes(bytes),
+                TransactionStatus::Mined(BlockHeight::from_u32(*height)),
+            )?;
+        }
+        Ok::<_, SqliteClientError>(())
+    })
+    .map_err(|e| format!("Record settled Gift Card mined claims: {e}"))
 }
 
 pub(super) fn resubmittable_claims(

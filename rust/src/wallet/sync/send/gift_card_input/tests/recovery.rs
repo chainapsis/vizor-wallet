@@ -1,6 +1,8 @@
 use super::*;
 use zcash_client_backend::data_api::TransactionStatus;
 
+mod settlement;
+
 struct TestBlocks(Vec<CompactBlock>);
 impl zcash_client_backend::data_api::chain::BlockSource for TestBlocks {
     type Error = Infallible;
@@ -349,9 +351,15 @@ async fn receipt_recovery_preserves_retained_reservations_until_their_expiry() {
 
 #[tokio::test]
 async fn observed_mining_and_conflicting_spends_never_relay_or_unlock_funding() {
-    for (own, mined_offset, tip_offset) in
-        [(true, 2, 3), (true, 3, 4), (true, 2, 41), (false, 2, 41)]
-    {
+    for (own, mined_offset, tip_offset) in [
+        (true, 2, 3),
+        (true, 3, 4),
+        (true, 2, 41),
+        (false, 2, 41),
+        (false, 2, 6),
+        (false, 2, 7),
+        (true, 3, 8),
+    ] {
         let card = ClaimFixture::new();
         let (id, bytes) = card.legacy_mined_claim().await;
         let spender = if own {
@@ -380,7 +388,15 @@ async fn observed_mining_and_conflicting_spends_never_relay_or_unlock_funding() 
         assert!(!calls.lock().unwrap().iter().any(|m| m == "SendTransaction"));
         assert_eq!(
             card.cached_height(&id),
-            own.then_some(u32::from(card.height + mined_offset))
+            if own {
+                Some(u32::from(card.height + mined_offset))
+            } else if tip_offset - mined_offset >= 5 {
+                // Terminal conflicts are settled by the observer, without
+                // clearing the obsolete SDK receipt in a global rewind.
+                Some(u32::from(card.height + 2))
+            } else {
+                None
+            }
         );
         if own {
             assert!(
