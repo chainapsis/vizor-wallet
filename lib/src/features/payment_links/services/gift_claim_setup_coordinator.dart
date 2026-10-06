@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/input/app_password_input_source.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/router_refresh_provider.dart';
@@ -25,13 +26,19 @@ Future<void> completeGiftClaimWalletSetup(
   required PaymentLinkClaimInspection inspection,
   required void Function() onComplete,
   String? createdAccountUuid,
+  PasswordInputSourceCandidate? passwordInputSource,
 }) {
   final coordinator = ref.read(paymentLinkClaimCoordinatorProvider);
   final intake = ref.read(paymentLinkIntakeProvider.notifier);
   final accounts = ref.read(accountProvider.notifier);
   final store = ref.read(paymentLinkReceivedStoreProvider);
   final flow = ref.read(giftClaimFlowProvider.notifier);
-  flow.beginWalletSetup(inspection, passcode: password);
+  final inputSourceService = ref.read(appPasswordInputSourceProvider);
+  flow.beginWalletSetup(
+    inspection,
+    passcode: password,
+    passwordInputSource: passwordInputSource,
+  );
   return ref
       .read(routerRefreshProvider)
       .pauseWhile(
@@ -77,6 +84,9 @@ Future<void> completeGiftClaimWalletSetup(
             }
           }
 
+          if (password != null) {
+            unawaited(inputSourceService.remember(passwordInputSource));
+          }
           intake.discard(inspection.link);
           unawaited(
             coordinator

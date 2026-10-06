@@ -47,26 +47,21 @@ void main() {
     expect(find.text('Activate gift card'), findsOneWidget);
   });
 
-  testWidgets(
-    'Gift Card activation stays disabled until its TODO is connected',
-    (tester) async {
-      final semantics = tester.ensureSemantics();
-      try {
-        await _setDesktopViewport(tester);
-        await tester.pumpWidget(_welcomeScreen());
-        final button = find.byKey(const ValueKey('welcome_redeem_card_button'));
-        final node = tester.getSemantics(button);
-        expect(node.flagsCollection.isButton, isTrue);
-        expect(node.flagsCollection.isEnabled, Tristate.isFalse);
-        expect(node.getSemanticsData().hasAction(SemanticsAction.tap), isFalse);
-        await tester.tap(button);
-        await tester.pump();
-        expect(find.text('Get started'), findsOneWidget);
-      } finally {
-        semantics.dispose();
-      }
-    },
-  );
+  testWidgets('Gift activation is an enabled action', (tester) async {
+    final semantics = tester.ensureSemantics();
+    try {
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(_welcomeScreen());
+      final node = tester.getSemantics(
+        find.byKey(const ValueKey('welcome_redeem_card_button')),
+      );
+      expect(node.flagsCollection.isButton, isTrue);
+      expect(node.flagsCollection.isEnabled, Tristate.isTrue);
+      expect(node.getSemanticsData().hasAction(SemanticsAction.tap), isTrue);
+    } finally {
+      semantics.dispose();
+    }
+  });
 
   testWidgets('shows endpoint settings on first wallet creation entry', (
     tester,
@@ -315,7 +310,7 @@ void main() {
     await tester.pumpWidget(_welcomeScreen(showBackButton: true));
 
     expect(find.text('Back'), findsOneWidget);
-    expect(find.text('Activate gift card'), findsNothing);
+    expect(find.text('Activate gift card'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('welcome_endpoint_settings_button')),
       findsNothing,

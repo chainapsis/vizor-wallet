@@ -22,6 +22,7 @@ import 'mobile_pay_use_cases.dart';
 import 'mobile_shell_use_cases.dart';
 import 'mobile_welcome_network_use_cases.dart';
 import 'mobile_gift_onboarding_use_cases.dart';
+import 'desktop_gift_onboarding_use_cases.dart';
 import 'payment_request_use_cases.dart';
 import 'request_amount_use_cases.dart';
 import 'pay_use_cases.dart';
@@ -108,6 +109,43 @@ class WidgetbookApp extends StatelessWidget {
             WidgetbookFolder(
               name: 'Onboarding',
               children: [
+                WidgetbookComponent(
+                  name: 'Gift onboarding - Desktop',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Entry',
+                      builder: buildDesktopGiftEntryUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Checking card',
+                      builder: buildDesktopGiftCheckingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Ready to create',
+                      builder: buildDesktopGiftInspectedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Set password',
+                      builder: buildDesktopGiftPasswordUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Customise - First account',
+                      builder: buildDesktopGiftCustomiseUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Customise - Additional account',
+                      builder: buildDesktopGiftAdditionalCustomiseUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Inspection error',
+                      builder: buildDesktopGiftCheckErrorUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Long scan consent',
+                      builder: buildDesktopGiftLongScanUseCase,
+                    ),
+                  ],
+                ),
                 WidgetbookComponent(
                   name: 'Welcome',
                   useCases: [

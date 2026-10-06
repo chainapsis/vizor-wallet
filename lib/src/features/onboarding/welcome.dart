@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart' show Scaffold;
@@ -17,6 +18,7 @@ import 'shared/onboarding_welcome_art.dart';
 import 'shared/welcome_accent_button.dart';
 import 'shared/welcome_button_tokens.dart';
 import 'shared/welcome_video_backdrop.dart';
+import 'providers/welcome_network_settings_provider.dart';
 
 const kDesktopWelcomeVideoAsset = 'assets/animations/desktop_welcome.mp4';
 const kDesktopWelcomeAnimatedImageAsset =
@@ -45,20 +47,42 @@ class WelcomeScreen extends ConsumerStatefulWidget {
 
 class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
   late bool _showEndpointSettings;
+  late final WelcomeNetworkSettingsNotifier _networkSettings;
 
   @override
   void initState() {
     super.initState();
+    _networkSettings = ref.read(
+      welcomeNetworkSettingsPresentedProvider.notifier,
+    );
     _showEndpointSettings = widget.showNetworkSettingsInitially;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      _networkSettings.setPresented(
+        _showEndpointSettings && !widget.showBackButton,
+      );
       ref.read(appLayoutProvider.notifier).setMode(AppLayoutMode.large);
     });
+  }
+
+  @override
+  void dispose() {
+    if (_showEndpointSettings && !widget.showBackButton) {
+      final settings = _networkSettings;
+      scheduleMicrotask(() => settings.setPresented(false));
+    }
+    super.dispose();
+  }
+
+  void _openEndpointSettings() {
+    setState(() => _showEndpointSettings = true);
+    _networkSettings.setPresented(true);
   }
 
   void _dismissEndpointSettings() {
     if (ref.read(enhancePirTransitionProvider) == 'Changing setting…') return;
     setState(() => _showEndpointSettings = false);
+    _networkSettings.setPresented(false);
   }
 
   @override
@@ -131,7 +155,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
                   icon: AppIcons.cog,
                   tooltip: 'Network settings',
                   semanticLabel: 'Network settings',
-                  onTap: () => setState(() => _showEndpointSettings = true),
+                  onTap: _openEndpointSettings,
                 ),
               ),
             if (widget.showBackButton)
@@ -213,33 +237,30 @@ class _WelcomeContent extends StatelessWidget {
                 ),
                 child: const Text('Import wallet'),
               ),
-              if (!showBackButton) ...[
-                const SizedBox(height: 16),
-                Semantics(
-                  key: const ValueKey('welcome_redeem_card_button'),
-                  button: true,
-                  enabled: false,
-                  child: AppButton(
-                    expand: true,
-                    height: 44,
-                    variant: AppButtonVariant.ghost,
-                    disabledBackgroundColor: const Color(0x00000000),
-                    leading: const AppIcon(
-                      AppIcons.giftCard,
-                      size: 20,
-                      color: WelcomeButtonTokens.ghostDisabledLabel,
-                    ),
-                    // TODO: Connect Gift Card activation once the claim flow is finalized.
-                    onPressed: null,
-                    child: const Text(
-                      'Activate gift card',
-                      style: TextStyle(
-                        color: WelcomeButtonTokens.ghostDisabledLabel,
-                      ),
-                    ),
+              const SizedBox(height: 16),
+              Semantics(
+                key: const ValueKey('welcome_redeem_card_button'),
+                button: true,
+                enabled: true,
+                child: AppButton(
+                  expand: true,
+                  height: 44,
+                  variant: AppButtonVariant.ghost,
+                  disabledBackgroundColor: const Color(0x00000000),
+                  leading: const AppIcon(
+                    AppIcons.giftCard,
+                    size: 20,
+                    color: WelcomeButtonTokens.secondaryLabel,
+                  ),
+                  onPressed: () => context.go(
+                    showBackButton ? '/gift?addAccount=true' : '/gift',
+                  ),
+                  child: const Text(
+                    'Activate gift card',
+                    style: TextStyle(color: WelcomeButtonTokens.secondaryLabel),
                   ),
                 ),
-              ],
+              ),
             ],
           ),
         ),
