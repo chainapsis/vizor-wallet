@@ -215,18 +215,19 @@ request is recorded with its deposit deadline just before it is sent to NEAR,
 after local validation, and each accepted deposit instruction is retained, even if
 the user leaves the review screen. An explicit quote validation rejection removes
 that request's scan watch; an uncertain outcome stays reserved until its deadline
-is 48 hours past. Starting a swap locks the draft whose quote matches both the
-deposit address and memo, and the next swap gets another eligible address. At most three distinct unfunded incoming reservations may be
-open for an account, across all source chains. Provider deposit evidence removes
-that reservation from the unfunded count.
+is 24 hours past. Starting a swap locks the draft whose quote matches both the
+deposit address and memo, and the next swap gets another eligible address. At
+most 15 distinct unfunded incoming reservations (half the 30-slot gap) may be open
+for an account, across all source chains. Provider deposit evidence or the ZEC
+payment arriving removes that reservation from the unfunded count.
 
 The existing status refresh loop also checks reservations absent from the activity
-UI. An unpaid slot can be reclaimed after 48 hours from creation and from every
+UI. An unpaid slot can be reclaimed after 24 hours from creation and from every
 accepted quote's deposit deadline. Every attempt must have a fresh successful
 provider check, with no pending or unknown funded operation. The key has been
 trial-decrypted since issuance, so reclamation then only requires the wallet to
 be scanned to its tip with no payment to that address. Provider errors, unknown
-quote outcomes before their deadline has passed by 48 hours, an unscanned tail,
+quote outcomes before their deadline has passed by 24 hours, an unscanned tail,
 or a payment retain the reservation. Cleanup
 runs while the app is active and before requesting another address; it does not
 need an operating-system service.
@@ -257,10 +258,9 @@ reservations; coordinating concurrent issuance across devices remains outside
 this POC.
 
 Automated tests cover the paid/empty/paid/paid/paid example, restart, explicit quote
-rejection versus lost responses, the three-reservation cap, the 30-slot bound,
+rejection versus lost responses, the 15-reservation cap, the 30-slot bound,
 late-payment races, stale statuses, reissuing a swept key, and deletion draining.
-For a manual check, start three small incoming attempts without funding them and
-confirm a fourth is blocked; quote refreshes should keep the same receive slot.
-Fund one existing attempt and check that provider deposit evidence permits another.
-The 48-hour reclaim case is exercised with controlled test time, not by changing
-production wallet timestamps.
+For a manual check, confirm that quote refreshes keep the same receive slot and
+that funding an attempt frees its slot for another swap. The 15-reservation cap is
+covered by automated tests, and the 24-hour reclaim case is exercised with
+controlled test time, not by changing production wallet timestamps.

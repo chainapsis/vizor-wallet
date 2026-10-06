@@ -34,7 +34,7 @@ service. Native Rust mnemonic lookup and Dart storage must use the same service.
 Do not reuse the installed app's wallet identity for this test.
 
 See [private recovery](near-swap-private-recovery-poc.md) for the directory protocol
-and the 48-hour, three-reservation, and 30-slot incoming-address policy.
+and the 24-hour, 15-reservation, and 30-slot incoming-address policy.
 
 ## Wallet flow
 
