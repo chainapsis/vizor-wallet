@@ -170,7 +170,7 @@ features = ["wallet"]
 # crates.io package; see the `[patch.crates-io]` comment below.
 [dependencies.zakura-pir-transparent]
 git = "https://github.com/zakura-core/wallet-libraries"
-rev = "65a1156b41dfc271b036ab665531b87af9ad4c7c"
+rev = "ff325047b36bb406bc85e464d8a1a341c09090bf"
 default-features = false
 features = ["wallet"]
 
@@ -253,14 +253,13 @@ assertions_on_constants = "allow"
 # equal to these so its path dependencies on the backend and SQLite crates
 # resolve to the patched sources.
 #
-# Pinned to wallet-libraries #106 rebased onto main after #113: retain the
-# recovered transparent-output shape and re-attribute sends when their funding
-# outputs are recorded. Repin to main once #106 merges.
+# Pinned to wallet-libraries main after #106: retain the recovered transparent-
+# output shape and re-attribute sends when their funding outputs are recorded.
 [patch.crates-io]
-zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries", rev = "65a1156b41dfc271b036ab665531b87af9ad4c7c" }
-zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries", rev = "65a1156b41dfc271b036ab665531b87af9ad4c7c" }
-zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries", rev = "65a1156b41dfc271b036ab665531b87af9ad4c7c" }
-zakura-pir-enhance-types = { git = "https://github.com/zakura-core/wallet-libraries", rev = "65a1156b41dfc271b036ab665531b87af9ad4c7c" }
+zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries", rev = "ff325047b36bb406bc85e464d8a1a341c09090bf" }
+zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries", rev = "ff325047b36bb406bc85e464d8a1a341c09090bf" }
+zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries", rev = "ff325047b36bb406bc85e464d8a1a341c09090bf" }
+zakura-pir-enhance-types = { git = "https://github.com/zakura-core/wallet-libraries", rev = "ff325047b36bb406bc85e464d8a1a341c09090bf" }
 
 # Flutter debug builds use Cargokit + Cargo's dev profile (`cargo build`
 # without `--release`). Rust crypto and voting flows are slow under the default
