@@ -542,3 +542,29 @@ Customise account using local fixtures; route tests separately drive the actual
 selector, import completion, dialog, Cancel/Close, retry, and Linux ownership.
 Native hardware, Linux Secret Service, and full-flow E2E remain in the final
 integration validation slice.
+
+### Desktop Home guidance and education
+
+Home shows account-specific backup and deferred Zcash education below its
+balance/actions, including during the initial scan. The manual carousel displays
+one card at rest, without faded neighboring cards or automatic rotation. Drag,
+arrow keys, and page indicators change the selected card; click, Enter, or Space
+opens its action. Hardware accounts never receive software-backup guidance.
+Locked or empty wallets expose no setup actions.
+
+Backup opens the existing account-pinned `/setup/backup` flow and uses the shared
+completion/snooze policy. Education reuses the existing desktop introduction,
+address-types, and things-to-know content at `/setup/education/*`, with a
+three-step sidebar and a Home return. Only Skip or the final Continue persists
+education completion, through the same account notifier as mobile. Leaving keeps
+the reminder pending; save failures keep the page actionable for retry. Education
+completion never completes backup, and account changes do not retarget an open
+education flow.
+
+Widgetbook: Screens -> Onboarding -> Home setup guidance - Desktop. Deterministic
+captures use `desktop-home-setup`, `desktop-home-setup-importing`,
+`desktop-gift-education`, `desktop-gift-education-address-types`, and
+`desktop-gift-education-things-to-know`, in light and dark themes at 1080 x 720.
+The importing layout retains its progress/illustration positions and removes
+unused lower spacing so both the card and page indicators fit the default window.
+Final native and full-flow E2E validation remains the next integration slice.

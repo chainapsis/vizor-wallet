@@ -60,6 +60,7 @@ import 'src/features/about/screens/mobile/mobile_about_screens.dart';
 import 'src/features/onboarding/create/address_types_screen.dart';
 import 'src/features/onboarding/create/customise_account_screen.dart';
 import 'src/features/onboarding/create/intro_zcash_screen.dart';
+import 'src/features/onboarding/create/desktop_gift_education_screen.dart';
 import 'src/features/onboarding/create/onboarding_split_view.dart';
 import 'src/features/onboarding/create/secret_passphrase_screen.dart';
 import 'src/features/onboarding/create/things_to_know_screen.dart';
@@ -680,6 +681,18 @@ OnboardingBackTarget _desktopImportBackTarget(Ref ref, GoRouterState state) {
 /// replaces these with single-pane mobile onboarding screens (same
 /// route paths, so the shared guard keeps working).
 List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
+  for (final entry in {
+    'intro': DesktopGiftEducationPage.intro,
+    'address-types': DesktopGiftEducationPage.addressTypes,
+    'things-to-know': DesktopGiftEducationPage.thingsToKnow,
+  }.entries)
+    GoRoute(
+      path: '/setup/education/${entry.key}',
+      builder: (_, state) => DesktopGiftEducationScreen(
+        page: entry.value,
+        accountUuid: state.extra is String ? state.extra as String : null,
+      ),
+    ),
   GoRoute(
     path: '/gift',
     builder: (_, state) => GiftClaimScreen(
