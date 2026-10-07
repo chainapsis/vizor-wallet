@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/input/app_password_input_source.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../models/vizor_payment_link.dart';
@@ -28,6 +29,7 @@ class GiftClaimFlowState {
     this.inspection,
     this.failure,
     this.setupPasscode,
+    this.setupPasswordInputSource,
     this.walletSetupInProgress = false,
   });
 
@@ -37,6 +39,7 @@ class GiftClaimFlowState {
   final GiftClaimFailure? failure;
   // Kept only until setup leaves the screen. Route refresh must not serialize it.
   final String? setupPasscode;
+  final PasswordInputSourceCandidate? setupPasswordInputSource;
   final bool walletSetupInProgress;
 }
 
@@ -154,6 +157,7 @@ class GiftClaimFlowNotifier extends Notifier<GiftClaimFlowState?> {
   void beginWalletSetup(
     PaymentLinkClaimInspection inspection, {
     String? passcode,
+    PasswordInputSourceCandidate? passwordInputSource,
   }) {
     _generation++;
     state = GiftClaimFlowState(
@@ -161,6 +165,7 @@ class GiftClaimFlowNotifier extends Notifier<GiftClaimFlowState?> {
       phase: GiftClaimPhase.inspected,
       inspection: inspection,
       setupPasscode: passcode,
+      setupPasswordInputSource: passwordInputSource,
       walletSetupInProgress: true,
     );
   }

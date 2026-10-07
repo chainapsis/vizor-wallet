@@ -3,7 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../../core/navigation/payment_uri_busy_surface_hold.dart';
+import '../../../../core/navigation/external_action_guard_hold.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../providers/voting/voting_submission_job_provider.dart';
@@ -42,7 +42,7 @@ class MobileKeystoneVotingSigningScreen extends StatelessWidget {
 
     // Above the keyed flow on purpose: the key changes per bundle, so a hold
     // taken inside the flow would fall back to zero between bundles.
-    return PaymentUriBusySurfaceHold(
+    return ExternalActionGuardHold(
       child: MobileKeystonePcztSigningFlow(
         key: flowKey,
         title: 'Sign vote with Keystone',

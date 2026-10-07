@@ -224,7 +224,7 @@ class PaymentLinksMobileBody extends StatelessWidget {
     }
     return PaymentLinksHomeMobileView(
       illustration: Image.asset(
-        'assets/illustrations/payment_links/payment_link_empty_card.png',
+        'assets/illustrations/payment_links/payment_link_empty_card.webp',
         fit: BoxFit.contain,
         semanticLabel: 'Gift box',
       ),

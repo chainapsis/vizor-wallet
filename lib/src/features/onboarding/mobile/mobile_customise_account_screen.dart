@@ -16,7 +16,8 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/router_refresh_provider.dart';
 import '../../accounts/widgets/mobile/account_edit_sheets.dart'
     show showProfilePictureSheet;
-import '../create/account_persona_generator.dart';
+import '../shared/account_persona_draft.dart';
+import '../shared/account_persona_randomise_button.dart';
 import '../ledger/ledger_setup_args.dart';
 import '../shared/customise_account_mutation.dart';
 import '../shared/onboarding_error_messages.dart';
@@ -74,18 +75,19 @@ enum _SubmitPhase { idle, stoppingSync, creatingWallet }
 
 class _MobileCustomiseAccountScreenState
     extends ConsumerState<MobileCustomiseAccountScreen> {
-  late final TextEditingController _nameController;
+  late final AccountPersonaDraft _persona;
   final _nameFocusNode = FocusNode();
   Animation<double>? _routeAnimation;
   var _initialFocusMonitoringScheduled = false;
   var _initialFocusRequested = false;
-  late String _profilePictureId;
   var _submitPhase = _SubmitPhase.idle;
   String? _submitError;
 
-  String get _normalizedName => normalizeAccountName(_nameController.text);
-  int get _nameLength => accountNameCharacterLength(_nameController.text);
-  bool get _nameValid => isAccountNameLengthValid(_nameController.text);
+  String get _normalizedName =>
+      normalizeAccountName(_persona.nameController.text);
+  int get _nameLength =>
+      accountNameCharacterLength(_persona.nameController.text);
+  bool get _nameValid => isAccountNameLengthValid(_persona.nameController.text);
   bool get _isSubmitting => _submitPhase != _SubmitPhase.idle;
   bool get _canContinue =>
       widget.actionsEnabled && !_isSubmitting && _nameValid;
@@ -100,10 +102,7 @@ class _MobileCustomiseAccountScreenState
   @override
   void initState() {
     super.initState();
-    final suggestion = generateAccountPersona(random: widget.random);
-    _nameController = TextEditingController(text: suggestion.name)
-      ..selection = TextSelection.collapsed(offset: suggestion.name.length);
-    _profilePictureId = suggestion.profilePictureId;
+    _persona = AccountPersonaDraft(random: widget.random);
   }
 
   @override
@@ -147,7 +146,7 @@ class _MobileCustomiseAccountScreenState
   @override
   void dispose() {
     _routeAnimation?.removeStatusListener(_handleRouteAnimationStatus);
-    _nameController.dispose();
+    _persona.dispose();
     _nameFocusNode.dispose();
     super.dispose();
   }
@@ -160,13 +159,8 @@ class _MobileCustomiseAccountScreenState
     if (_isSubmitting || widget.setupCommitted || !widget.actionsEnabled) {
       return;
     }
-    final suggestion = generateAccountPersona(random: widget.random);
-    _nameController.value = TextEditingValue(
-      text: suggestion.name,
-      selection: TextSelection.collapsed(offset: suggestion.name.length),
-    );
     setState(() {
-      _profilePictureId = suggestion.profilePictureId;
+      _persona.randomise(random: widget.random);
       _submitError = null;
     });
   }
@@ -178,10 +172,10 @@ class _MobileCustomiseAccountScreenState
     _nameFocusNode.unfocus();
     final selected = await showProfilePictureSheet(
       context,
-      selectedId: _profilePictureId,
+      selectedId: _persona.profilePictureId,
     );
     if (selected != null && mounted) {
-      setState(() => _profilePictureId = selected);
+      setState(() => _persona.profilePictureId = selected);
     }
   }
 
@@ -196,7 +190,7 @@ class _MobileCustomiseAccountScreenState
     try {
       final onFinish = widget.onFinish;
       if (onFinish != null) {
-        await onFinish(_normalizedName, _profilePictureId);
+        await onFinish(_normalizedName, _persona.profilePictureId);
         if (mounted) setState(() => _submitPhase = _SubmitPhase.idle);
         return;
       }
@@ -218,7 +212,7 @@ class _MobileCustomiseAccountScreenState
       ref,
       setupArgs: args.setupArgs,
       accountName: _normalizedName,
-      profilePictureId: _profilePictureId,
+      profilePictureId: _persona.profilePictureId,
       onStoppingSync: () {
         if (mounted) {
           setState(() => _submitPhase = _SubmitPhase.stoppingSync);
@@ -309,9 +303,9 @@ class _MobileCustomiseAccountScreenState
         children: [
           const SizedBox(height: AppSpacing.xs),
           _AccountProfileCard(
-            nameController: _nameController,
+            nameController: _persona.nameController,
             nameFocusNode: _nameFocusNode,
-            profilePictureId: _profilePictureId,
+            profilePictureId: _persona.profilePictureId,
             message: _nameMessage,
             enabled:
                 !_isSubmitting &&
@@ -374,8 +368,8 @@ class _AccountProfileCard extends StatelessWidget {
   final VoidCallback onRandomisePersona;
   final Future<void> Function() onSubmitted;
 
-  static const _randomiseTapSize = 44.0;
-  static const _randomiseVisualSize = 28.0;
+  static const _randomiseTapSize = AccountPersonaRandomiseButton.tapSize;
+  static const _randomiseVisualSize = AccountPersonaRandomiseButton.visualSize;
   static const _randomiseInset = (_randomiseTapSize - _randomiseVisualSize) / 2;
 
   @override
@@ -469,50 +463,14 @@ class _AccountProfileCard extends StatelessWidget {
               PositionedDirectional(
                 top: 0,
                 end: 0,
-                child: Semantics(
-                  button: true,
-                  enabled: enabled,
-                  label: 'Randomise account name and profile picture',
-                  onTap: enabled ? onRandomisePersona : null,
-                  child: ExcludeSemantics(
-                    child: AppButton(
-                      key: const ValueKey('mobile_customise_account_randomise'),
-                      variant: AppButtonVariant.secondary,
-                      size: AppButtonSize.medium,
-                      height: _randomiseTapSize,
-                      minWidth: _randomiseTapSize,
-                      contentPadding: EdgeInsets.zero,
-                      enabledBackgroundColor: colors.background.homeCard
-                          .withValues(alpha: 0),
-                      pressedBackgroundColor: colors.background.homeCard
-                          .withValues(alpha: 0),
-                      disabledBackgroundColor: colors.background.homeCard
-                          .withValues(alpha: 0),
-                      onPressed: enabled ? onRandomisePersona : null,
-                      child: Container(
-                        key: const ValueKey(
-                          'mobile_customise_account_randomise_visual',
-                        ),
-                        width: _randomiseVisualSize,
-                        height: _randomiseVisualSize,
-                        decoration: BoxDecoration(
-                          color: enabled
-                              ? colors.button.secondary.bg
-                              : colors.button.disabled.bg,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Center(
-                          child: AppIcon(
-                            AppIcons.renew,
-                            size: 16,
-                            color: enabled
-                                ? colors.button.secondary.label
-                                : colors.button.disabled.label,
-                          ),
-                        ),
-                      ),
-                    ),
+                child: AccountPersonaRandomiseButton(
+                  actionKey: const ValueKey(
+                    'mobile_customise_account_randomise',
                   ),
+                  visualKey: const ValueKey(
+                    'mobile_customise_account_randomise_visual',
+                  ),
+                  onPressed: enabled ? onRandomisePersona : null,
                 ),
               ),
             ],

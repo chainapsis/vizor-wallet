@@ -6,16 +6,130 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
+import 'package:zcash_wallet/src/features/payment_links/providers/gift_claim_failure_notice_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_claim_coordinator_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_claim_lifecycle_registry_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/gift_claim_import_store.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => FlutterSecureStorage.setMockInitialValues({}));
+
+  for (final submittedStatus in [
+    null,
+    PaymentLinkReceivedStatus.submitting,
+    PaymentLinkReceivedStatus.receiving,
+  ]) {
+    final name = submittedStatus == null
+        ? 'setup submission failure reports and stops pre-broadcast retries'
+        : 'setup submission failure preserves ${submittedStatus.name} recovery';
+    testWidgets(name, (tester) async {
+      final store = PaymentLinkReceivedStore(_MemoryGiftStorage());
+      final link = _link('setup-failure');
+      await store.saveReady(link, setupAccountUuid: 'setup-account');
+      var submissions = 0;
+      final container = _setupRecoveryContainer(
+        store,
+        prepare: (link, {required destinationAccountUuid}) async => _session(
+          link.address,
+          destinationAccountUuid: destinationAccountUuid,
+        ),
+        submit: (session) async {
+          submissions++;
+          if (submittedStatus != null) {
+            await store.markClaimStarted(
+              address: link.address,
+              destinationAccountUuid: 'setup-account',
+            );
+            if (submittedStatus == PaymentLinkReceivedStatus.receiving) {
+              await store.markReceiving(
+                address: link.address,
+                destinationAccountUuid: 'setup-account',
+                claimTxids: 'submitted-txid',
+              );
+            }
+          }
+          throw StateError('claim submission failed');
+        },
+      );
+      addTearDown(container.dispose);
+      await container.read(paymentLinkClaimCoordinatorProvider).refresh();
+
+      final record = (await store.find(link.address))!;
+      final notice = container.read(giftClaimFailureNoticeProvider);
+      if (submittedStatus == null) {
+        expect(record.availability, PaymentLinkAvailability.failed);
+        expect(notice?.link.hasSameCanonicalPayload(link), isTrue);
+        expect(notice?.accountUuid, 'setup-account');
+      } else {
+        expect(record.status, submittedStatus);
+        expect(record.needsClaimRecovery, isTrue);
+        expect(record.availability, isNot(PaymentLinkAvailability.failed));
+        expect(notice, isNull);
+      }
+      // Read the persisted result on subsequent recovery ticks. A failed Card
+      // must not be submitted again; an unknown submission stays in recovery.
+      for (var i = 0; i < 3; i++) {
+        await tester.pump(const Duration(seconds: 1));
+      }
+      expect(submissions, 1);
+      container.read(paymentLinkClaimCoordinatorProvider).pause();
+    });
+  }
+
+  testWidgets('transient setup preparation failure remains retryable', (
+    tester,
+  ) async {
+    final store = PaymentLinkReceivedStore(_MemoryGiftStorage());
+    final link = _link('setup-preparation-timeout');
+    await store.saveReady(link, setupAccountUuid: 'setup-account');
+    var preparations = 0;
+    var submissions = 0;
+    final container = _setupRecoveryContainer(
+      store,
+      prepare: (link, {required destinationAccountUuid}) async {
+        if (++preparations == 1) throw TimeoutException('inspection timeout');
+        return _session(
+          link.address,
+          destinationAccountUuid: destinationAccountUuid,
+        );
+      },
+      submit: (session) async {
+        submissions++;
+        await store.markClaimStarted(
+          address: link.address,
+          destinationAccountUuid: 'setup-account',
+        );
+        await store.markReceiving(
+          address: link.address,
+          destinationAccountUuid: 'setup-account',
+          claimTxids: 'recovered-txid',
+        );
+        await store.markReceived(address: link.address);
+        return _result('recovered-txid');
+      },
+    );
+    addTearDown(container.dispose);
+    await container.read(paymentLinkClaimCoordinatorProvider).refresh();
+
+    expect(
+      (await store.find(link.address))!.availability,
+      isNot(PaymentLinkAvailability.failed),
+    );
+    expect(container.read(giftClaimFailureNoticeProvider), isNull);
+    await tester.pump(const Duration(seconds: 1));
+    expect(preparations, 2);
+    expect(submissions, 1);
+    expect(
+      (await store.find(link.address))!.status,
+      PaymentLinkReceivedStatus.received,
+    );
+    container.read(paymentLinkClaimCoordinatorProvider).pause();
+  });
 
   test(
     'a coordinator created while hidden rejects preparations and recovery',
@@ -861,6 +975,42 @@ final _readySetupRecordWithoutAccount = PaymentLinkReceivedRecord(
   updatedAt: DateTime.utc(2026, 9, 23),
   availability: PaymentLinkAvailability.noBalance,
 );
+
+ProviderContainer _setupRecoveryContainer(
+  PaymentLinkReceivedStore store, {
+  required PaymentLinkSetupClaimPreparer prepare,
+  required PaymentLinkClaimSubmitter submit,
+}) => ProviderContainer(
+  overrides: [
+    appSecurityProvider.overrideWith(_UnlockedSecurityNotifier.new),
+    accountProvider.overrideWith(_SetupAccountNotifier.new),
+    paymentLinkReceivedStoreProvider.overrideWithValue(store),
+    giftClaimImportStoreProvider.overrideWithValue(
+      GiftClaimImportStore(storage: _MemoryGiftStorage()),
+    ),
+    paymentLinkSetupJournalPendingProvider.overrideWithValue(() async => false),
+    paymentLinkClaimRecoveryRetryDelayProvider.overrideWithValue(
+      const Duration(seconds: 1),
+    ),
+    paymentLinkClaimRecoveryRunnerProvider.overrideWithValue(store.load),
+    paymentLinkSetupClaimPreparerProvider.overrideWithValue(prepare),
+    paymentLinkClaimSubmitterProvider.overrideWithValue(submit),
+  ],
+);
+
+class _MemoryGiftStorage
+    implements PaymentLinkReceivedStorage, GiftClaimImportStorage {
+  String? value;
+
+  @override
+  Future<String?> read() async => value;
+
+  @override
+  Future<void> write(String value) async => this.value = value;
+
+  @override
+  Future<void> delete() async => value = null;
+}
 
 class _UnlockedSecurityNotifier extends AppSecurityNotifier {
   @override

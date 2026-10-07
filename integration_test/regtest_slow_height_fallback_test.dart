@@ -132,7 +132,14 @@ void main() {
 
 Future<void> _importWallet(WidgetTester tester) async {
   _log('opening import flow');
-  await _tapButton(tester, const ValueKey('welcome_import_wallet_button'));
+  await _tapButton(
+    tester,
+    const ValueKey('welcome_import_wallet_button'),
+  );
+  await _tapButton(
+    tester,
+    const ValueKey('desktop_import_secret_passphrase_card'),
+  );
 
   _log('entering mnemonic');
   await _enterText(
@@ -251,9 +258,11 @@ Future<void> _tapButton(WidgetTester tester, Key key) async {
   final finder = find.byKey(key);
   await _pumpUntil(
     tester,
-    () =>
-        tester.any(finder) &&
-        tester.widget<AppButton>(finder).onPressed != null,
+    () {
+      if (!tester.any(finder)) return false;
+      final widget = tester.widget(finder);
+      return widget is! AppButton || widget.onPressed != null;
+    },
     description: '$key button to be enabled',
   );
   await tester.ensureVisible(finder);

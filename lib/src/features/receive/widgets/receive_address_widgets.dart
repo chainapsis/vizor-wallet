@@ -7,6 +7,7 @@ library;
 import 'dart:async';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' show CircularProgressIndicator, Colors;
 import 'package:flutter/widgets.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
@@ -321,8 +322,76 @@ class _CachedQrBitmap extends StatefulWidget {
 
 const _transparentMinimumQrVersion = 9;
 
+/// Owns only the first badge frame and can detach before decoding finishes.
+/// No Canvas is recorded while an asset stream is still asynchronous.
+class _QrBadgeLoad {
+  _QrBadgeLoad(ImageProvider provider) {
+    _stream = provider.resolve(ImageConfiguration.empty);
+    _listener = ImageStreamListener(
+      (info, synchronous) {
+        if (_result.isCompleted) {
+          info.dispose();
+          return;
+        }
+        _stopListening();
+        _result.complete(info);
+      },
+      onError: (Object error, StackTrace? stack) {
+        if (_result.isCompleted) return;
+        _stopListening();
+        _result.completeError(error, stack);
+      },
+    );
+    _stream.addListener(_listener);
+  }
+
+  final _result = Completer<ImageInfo?>();
+  late final ImageStream _stream;
+  late final ImageStreamListener _listener;
+  bool _listening = true;
+
+  Future<ImageInfo?> get image => _result.future;
+
+  void cancel() {
+    _stopListening();
+    if (!_result.isCompleted) _result.complete(null);
+  }
+
+  void _stopListening() {
+    if (!_listening) return;
+    _listening = false;
+    _stream.removeListener(_listener);
+  }
+}
+
+/// Gives the QR painter a synchronous, single-frame snapshot. Bypass the
+/// global cache: a cache reset must neither start a new decode nor retain a
+/// separate cache entry for every generated QR.
+class _QrBadgeSnapshot extends ImageProvider<_QrBadgeSnapshot> {
+  _QrBadgeSnapshot(this.info);
+
+  final ImageInfo info;
+
+  @override
+  Future<_QrBadgeSnapshot> obtainKey(ImageConfiguration configuration) =>
+      SynchronousFuture(this);
+
+  @override
+  void resolveStreamForKey(
+    ImageConfiguration configuration,
+    ImageStream stream,
+    _QrBadgeSnapshot key,
+    ImageErrorListener handleError,
+  ) {
+    stream.setCompleter(
+      OneFrameImageStreamCompleter(SynchronousFuture(info.clone())),
+    );
+  }
+}
+
 class _CachedQrBitmapState extends State<_CachedQrBitmap> {
   ui.Image? _image;
+  _QrBadgeLoad? _badgeLoad;
   Object? _error;
   int _generation = 0;
 
@@ -354,13 +423,22 @@ class _CachedQrBitmapState extends State<_CachedQrBitmap> {
   @override
   void dispose() {
     _generation++;
+    _badgeLoad?.cancel();
+    _badgeLoad = null;
     _image?.dispose();
     super.dispose();
   }
 
   Future<void> _renderQr() async {
     final generation = ++_generation;
+    _badgeLoad?.cancel();
+    ImageInfo? badge;
+    _QrBadgeLoad? load;
     try {
+      load = _QrBadgeLoad(AssetImage(widget.embeddedImageAsset));
+      _badgeLoad = load;
+      badge = await load.image;
+      if (badge == null || !mounted || generation != _generation) return;
       final qrCode = _qrCodeForData(
         widget.data,
         widget.type,
@@ -372,7 +450,7 @@ class _CachedQrBitmapState extends State<_CachedQrBitmap> {
         decoration: PrettyQrDecoration(
           quietZone: PrettyQrQuietZone.zero,
           image: PrettyQrDecorationImage(
-            image: AssetImage(widget.embeddedImageAsset),
+            image: _QrBadgeSnapshot(badge),
             scale: widget.embeddedImageScale,
             fit: BoxFit.fill,
             filterQuality: FilterQuality.high,
@@ -413,6 +491,9 @@ class _CachedQrBitmapState extends State<_CachedQrBitmap> {
         _error = e;
       });
       _disposeImageAfterFrame(previous);
+    } finally {
+      badge?.dispose();
+      if (identical(_badgeLoad, load)) _badgeLoad = null;
     }
   }
 

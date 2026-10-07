@@ -7,7 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/layout/app_form_factor.dart';
-import '../../../core/navigation/payment_uri_busy_surface_hold.dart';
+import '../../../core/navigation/external_action_guard_hold.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -473,7 +473,7 @@ class _PaymentLinkKeystoneSigningOverlayState
         // stays put behind it). The hold is what tells an arriving `zcash:`
         // link to stay parked instead of covering the QR with a card; the
         // link lands as soon as the signing round ends.
-        PaymentUriBusySurfaceHold(
+        ExternalActionGuardHold(
           child: AppPaneModalOverlay(
             onDismiss: _cancel,
             child: KeystoneSigningModal(
@@ -531,7 +531,7 @@ class _PaymentLinkKeystoneSigningOverlayState
         // Same contract as the desktop overlay: the camera is reading the
         // animated PCZT QR while `/payment-links` stays put behind it, so an
         // arriving `zcash:` link must stay parked until the round ends.
-        PaymentUriBusySurfaceHold(
+        ExternalActionGuardHold(
           child: AbsorbPointer(
             absorbing: _cancelling,
             child: MobileKeystonePcztSigningFlow(

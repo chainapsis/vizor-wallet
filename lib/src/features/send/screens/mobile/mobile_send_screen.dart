@@ -13,7 +13,7 @@ import '../../../../../main.dart' show log;
 import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
-import '../../../../core/navigation/payment_uri_busy_surface_provider.dart';
+import '../../../../core/navigation/external_action_guard_provider.dart';
 import '../../../../core/storage/wallet_paths.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
@@ -529,11 +529,11 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   /// Captured in [initState] so the hold can be given back from [dispose]
   /// and from an async continuation that outlives the element.
-  late final PaymentUriBusySurfaceNotifier _paymentUriBusySurface;
+  late final ExternalActionGuardNotifier _externalActionGuard;
 
-  /// Whether this screen holds the `paymentUriBusySurfaceProvider` hold it
+  /// Whether this screen holds the `externalActionGuardProvider` hold it
   /// takes for the confirmation window — see [_confirmAndSend].
-  var _holdsConfirmBusySurface = false;
+  ExternalActionLease? _confirmLease;
 
   // Recipient state.
   String _addressType = '';
@@ -575,7 +575,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   void initState() {
     super.initState();
     _syncNotifier = ref.read(syncProvider.notifier);
-    _paymentUriBusySurface = ref.read(paymentUriBusySurfaceProvider.notifier);
+    _externalActionGuard = ref.read(externalActionGuardProvider.notifier);
     try {
       ref.read(sendProvingKeyWarmupProvider).call();
     } catch (error) {
@@ -654,10 +654,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   @override
   void dispose() {
-    if (_holdsConfirmBusySurface) {
-      _holdsConfirmBusySurface = false;
-      _paymentUriBusySurface.releaseAfterNavigation();
-    }
+    _confirmLease?.releaseAfterNavigation();
+    _confirmLease = null;
     _addressFocus.removeListener(_handleAddressFocusChanged);
     _amountFocus.removeListener(_handleAmountFocusChanged);
     _addressController.dispose();
@@ -1775,7 +1773,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     context.pushReplacement('/send/status', extra: extra);
   }
 
-  /// Confirm & send, under a `paymentUriBusySurfaceProvider` hold.
+  /// Confirm & send, under a `externalActionGuardProvider` hold.
   ///
   /// Between the tap on Confirm and the status route being on screen, a
   /// `zcash:` link would otherwise be delivered as a card over the review —
@@ -1802,18 +1800,15 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }
 
   void _acquireConfirmBusySurface() {
-    if (_holdsConfirmBusySurface) return;
-    _holdsConfirmBusySurface = true;
-    _paymentUriBusySurface.acquire();
+    _confirmLease ??= _externalActionGuard.acquire();
   }
 
   /// Safe after the element is gone: the notifier is app-scoped, and this
   /// runs from an async continuation, never from `dispose` (which has its
   /// own release).
   void _releaseConfirmBusySurface() {
-    if (!_holdsConfirmBusySurface) return;
-    _holdsConfirmBusySurface = false;
-    _paymentUriBusySurface.release();
+    _confirmLease?.release();
+    _confirmLease = null;
   }
 
   Future<void> _confirmAndSendHeld() async {

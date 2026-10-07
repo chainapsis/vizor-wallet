@@ -44,16 +44,21 @@ class PaymentLinkPasteButton extends StatelessWidget {
 }
 
 class PaymentLinkDashedDropZone extends StatelessWidget {
-  const PaymentLinkDashedDropZone({required this.child, super.key});
+  const PaymentLinkDashedDropZone({
+    required this.child,
+    this.borderColor,
+    super.key,
+  });
 
   final Widget child;
+  final Color? borderColor;
 
   @override
   Widget build(BuildContext context) {
     return CustomPaint(
       key: const ValueKey('payment_link_redeem_drop_zone'),
       painter: PaymentLinkDashedBorderPainter(
-        color: context.colors.border.medium,
+        color: borderColor ?? context.colors.border.medium,
         radius: AppRadii.large,
         strokeWidth: 3,
       ),

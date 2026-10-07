@@ -217,7 +217,14 @@ Future<void> _configureProxyPresetPrimary() async {
 
 Future<void> _createFirstWallet(WidgetTester tester) async {
   _log('creating first wallet');
-  await _tapAppButton(tester, const ValueKey('welcome_create_wallet_button'));
+  await _tapAppButton(
+    tester,
+    const ValueKey('welcome_create_wallet_button'),
+    action: find.descendant(
+      of: find.byKey(const ValueKey('welcome_create_wallet_button')),
+      matching: find.byType(AppButton),
+    ),
+  );
   await _tapText(tester, 'I know how to use Zcash');
   await _tapAppButton(
     tester,
@@ -517,9 +524,10 @@ bool _activityRowMatches(
 Future<void> _tapAppButton(
   WidgetTester tester,
   Key key, {
+  Finder? action,
   Duration timeout = const Duration(seconds: 20),
 }) async {
-  final finder = find.byKey(key);
+  final finder = action ?? find.byKey(key);
   await _pumpUntil(
     tester,
     () =>

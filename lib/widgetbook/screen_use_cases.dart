@@ -1,3 +1,5 @@
+import '../src/features/onboarding/import/desktop_import_method_selection_screen.dart';
+import '../src/features/onboarding/import/desktop_hardware_selection_screen.dart';
 import '../src/providers/enhance_pir_provider.dart';
 // ignore_for_file: depend_on_referenced_packages
 // widgetbook is dev-only; see `widgetbook.dart` for the boundary.
@@ -69,6 +71,7 @@ import '../src/features/onboarding/mobile/mobile_passcode_screen.dart';
 import '../src/features/onboarding/mobile/mobile_secret_passphrase_screen.dart';
 import '../src/features/onboarding/mobile/mobile_unlock_screen.dart';
 import '../src/features/onboarding/create/customise_account_screen.dart';
+import '../src/features/onboarding/create/desktop_gift_education_screen.dart';
 import '../src/features/onboarding/create/onboarding_split_view.dart';
 import '../src/features/onboarding/shared/onboarding_flow_args.dart';
 import '../src/features/settings/screens/settings_change_password_screen.dart';
@@ -159,7 +162,11 @@ const _previewManualWordList = [..._previewManualAcceptedWords, 'age', 'agent'];
 /// in a minimal `GoRouter` so the in-screen `context.go(...)` calls
 /// resolve instead of throwing if a reviewer taps a button during the
 /// preview.
-Widget buildWelcomeLargeUseCase(BuildContext context) {
+Widget buildWelcomeLargeUseCase(
+  BuildContext context, {
+  bool showBackButton = false,
+  bool animateBackground = true,
+}) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
@@ -168,9 +175,15 @@ Widget buildWelcomeLargeUseCase(BuildContext context) {
         () => _PreviewNetworkPrivacyNotifier(const NetworkPrivacyState.off()),
       ),
     ],
-    child: _WelcomeHarness(),
+    child: _WelcomeHarness(
+      showBackButton: showBackButton,
+      animateBackground: animateBackground,
+    ),
   );
 }
+
+Widget buildDesktopAddAccountWelcomeUseCase(BuildContext context) =>
+    buildWelcomeLargeUseCase(context, showBackButton: true);
 
 Widget buildWelcomeNetworkSettingsUseCase(BuildContext context) {
   return _buildWelcomeNetworkSettingsUseCase(const NetworkPrivacyState.off());
@@ -1073,6 +1086,49 @@ Widget buildSettingsSecretPassphraseGateUseCase(BuildContext context) {
   return _buildSettingsSubScreenUseCase(
     '/settings/secret-passphrase',
     const SettingsSeedPhraseScreen(),
+  );
+}
+
+Widget buildDesktopHomeSetupUseCase(BuildContext context) =>
+    _buildDesktopSetupHomeUseCase();
+
+Widget buildDesktopHomeSetupImportingUseCase(BuildContext context) =>
+    _buildDesktopSetupHomeUseCase(importing: true);
+
+Widget buildDesktopZcashEducationIntroUseCase(BuildContext context) =>
+    _buildDesktopSetupHomeUseCase(initialLocation: '/setup/education/intro');
+
+Widget buildDesktopZcashEducationAddressTypesUseCase(BuildContext context) =>
+    _buildDesktopSetupHomeUseCase(
+      initialLocation: '/setup/education/address-types',
+    );
+
+Widget buildDesktopZcashEducationThingsToKnowUseCase(BuildContext context) =>
+    _buildDesktopSetupHomeUseCase(
+      initialLocation: '/setup/education/things-to-know',
+    );
+
+Widget _buildDesktopSetupHomeUseCase({
+  bool importing = false,
+  String initialLocation = '/home',
+}) {
+  final accounts = _setupPreviewState.copyWith(
+    accounts: [
+      for (final account in _setupPreviewState.accounts)
+        account.copyWith(giftEducationPending: true),
+    ],
+  );
+  return _buildDesktopHomeUseCase(
+    accountState: accounts,
+    syncState: SyncState(
+      accountUuid: accounts.activeAccountUuid,
+      hasAccountScopedData: !importing,
+      percentage: importing ? .3 : 1,
+      totalBalance: BigInt.zero,
+    ),
+    migrationCta: const IronwoodHomeMigrationCtaState.hidden(),
+    initialLocation: initialLocation,
+    setupPreview: true,
   );
 }
 
@@ -3238,6 +3294,8 @@ Widget _buildDesktopHomeUseCase({
   NetworkPrivacyState? networkPrivacyState,
   ActivityTransactionStatusArgs? receiptArgs,
   bool? privateQueries,
+  String initialLocation = '/home',
+  bool setupPreview = false,
 }) {
   return ProviderScope(
     overrides: [
@@ -3258,7 +3316,13 @@ Widget _buildDesktopHomeUseCase({
           () => _PreviewNetworkPrivacyNotifier(networkPrivacyState),
         ),
       appBootstrapProvider.overrideWithValue(_homeBootstrap(accountState)),
-      accountProvider.overrideWith(() => _PreviewAccountNotifier(accountState)),
+      accountProvider.overrideWith(
+        () => setupPreview
+            ? _PreviewSetupAccountNotifier(accountState)
+            : _PreviewAccountNotifier(accountState),
+      ),
+      if (setupPreview)
+        appSecurityProvider.overrideWith(_PreviewBackupSecurityNotifier.new),
       syncProvider.overrideWith(
         () => _PreviewSyncNotifier(
           accountState.activeAccountUuid,
@@ -3301,7 +3365,12 @@ Widget _buildDesktopHomeUseCase({
         return announcement;
       }),
     ],
-    child: previewChild ?? _DesktopHomeHarness(receiptArgs: receiptArgs),
+    child:
+        previewChild ??
+        _DesktopHomeHarness(
+          receiptArgs: receiptArgs,
+          initialLocation: initialLocation,
+        ),
   );
 }
 
@@ -4016,10 +4085,11 @@ class _MobileHomeHarnessState extends State<_MobileHomeHarness> {
 }
 
 class _DesktopHomeHarness extends StatefulWidget {
-  const _DesktopHomeHarness({this.receiptArgs});
+  const _DesktopHomeHarness({this.receiptArgs, this.initialLocation = '/home'});
 
   /// Opens the production receipt for these args instead of the home screen.
   final ActivityTransactionStatusArgs? receiptArgs;
+  final String initialLocation;
 
   @override
   State<_DesktopHomeHarness> createState() => _DesktopHomeHarnessState();
@@ -4027,6 +4097,7 @@ class _DesktopHomeHarness extends StatefulWidget {
 
 class _DesktopHomeHarnessState extends State<_DesktopHomeHarness> {
   late final GoRouter _router;
+  final _privacy = SensitivePrivacyOverlayController(initiallySafe: true);
 
   @override
   void initState() {
@@ -4034,10 +4105,30 @@ class _DesktopHomeHarnessState extends State<_DesktopHomeHarness> {
     final receiptArgs = widget.receiptArgs;
     _router = GoRouter(
       initialLocation: receiptArgs == null
-          ? '/home'
+          ? widget.initialLocation
           : '/activity/tx/${receiptArgs.txidHex}',
       routes: [
         GoRoute(path: '/home', builder: (_, _) => const HomeScreen()),
+        GoRoute(
+          path: '/setup/backup',
+          builder: (_, state) => SettingsSeedPhraseScreen(
+            showBackupIntro: true,
+            accountUuid: state.extra as String?,
+            privacyOverlayController: _privacy,
+          ),
+        ),
+        for (final entry in {
+          'intro': DesktopGiftEducationPage.intro,
+          'address-types': DesktopGiftEducationPage.addressTypes,
+          'things-to-know': DesktopGiftEducationPage.thingsToKnow,
+        }.entries)
+          GoRoute(
+            path: '/setup/education/${entry.key}',
+            builder: (_, state) => DesktopGiftEducationScreen(
+              page: entry.value,
+              accountUuid: state.extra as String?,
+            ),
+          ),
         GoRoute(
           path: '/send',
           builder: (_, _) => const _PreviewRoutePlaceholder(label: '/send'),
@@ -4092,6 +4183,7 @@ class _DesktopHomeHarnessState extends State<_DesktopHomeHarness> {
   @override
   void dispose() {
     _router.dispose();
+    _privacy.dispose();
     super.dispose();
   }
 
@@ -4368,9 +4460,15 @@ class _IronwoodMigrationHarnessState extends State<_IronwoodMigrationHarness> {
 }
 
 class _WelcomeHarness extends StatefulWidget {
-  const _WelcomeHarness({this.showNetworkSettingsInitially = false});
+  const _WelcomeHarness({
+    this.showNetworkSettingsInitially = false,
+    this.showBackButton = false,
+    this.animateBackground = true,
+  });
 
   final bool showNetworkSettingsInitially;
+  final bool showBackButton;
+  final bool animateBackground;
 
   @override
   State<_WelcomeHarness> createState() => _WelcomeHarnessState();
@@ -4383,13 +4481,29 @@ class _WelcomeHarnessState extends State<_WelcomeHarness> {
   void initState() {
     super.initState();
     _router = GoRouter(
-      initialLocation: '/welcome',
+      initialLocation: widget.showBackButton ? '/add-account' : '/welcome',
       routes: [
         GoRoute(
           path: '/welcome',
           builder: (_, _) => WelcomeScreen(
             showNetworkSettingsInitially: widget.showNetworkSettingsInitially,
+            animateBackground: widget.animateBackground,
           ),
+        ),
+        GoRoute(
+          path: '/add-account',
+          builder: (_, _) => WelcomeScreen(
+            showBackButton: true,
+            animateBackground: widget.animateBackground,
+          ),
+        ),
+        GoRoute(
+          path: '/home',
+          builder: (_, _) => const _PreviewRoutePlaceholder(label: '/home'),
+        ),
+        GoRoute(
+          path: '/gift',
+          builder: (_, _) => const _PreviewRoutePlaceholder(label: '/gift'),
         ),
         // Stub destinations so buttons in the preview don't throw when
         // tapped. They render nothing meaningful — the point is just to
@@ -4400,9 +4514,38 @@ class _WelcomeHarnessState extends State<_WelcomeHarness> {
               const _PreviewRoutePlaceholder(label: '/onboarding/intro'),
         ),
         GoRoute(
+          path: '/import/method',
+          builder: (_, state) {
+            final adding = state.uri.queryParameters['from'] == 'add-account';
+            return DesktopImportMethodSelectionScreen(
+              cancelRoute: adding ? '/add-account' : '/welcome',
+              hardwareRoute: adding
+                  ? '/import/hardware?from=add-account'
+                  : '/import/hardware',
+              secretPassphraseRoute: adding
+                  ? '/import?entry=import-method&from=add-account'
+                  : '/import?entry=import-method',
+            );
+          },
+        ),
+        GoRoute(
+          path: '/import/hardware',
+          builder: (_, state) => DesktopHardwareSelectionScreen(
+            deviceBackRoute: state.uri.toString(),
+            backRoute: state.uri.queryParameters['from'] == 'add-account'
+                ? '/import/method?from=add-account'
+                : '/import/method',
+          ),
+        ),
+        GoRoute(
           path: '/import',
           builder: (_, _) => const _PreviewRoutePlaceholder(label: '/import'),
         ),
+        for (final path in ['/onboarding/keystone', '/onboarding/ledger'])
+          GoRoute(
+            path: path,
+            builder: (_, _) => _PreviewRoutePlaceholder(label: path),
+          ),
       ],
     );
   }

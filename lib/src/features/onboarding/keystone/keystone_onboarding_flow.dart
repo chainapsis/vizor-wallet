@@ -185,12 +185,9 @@ class _KeystoneOnboardingWindowBackground extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = AppTheme.of(context) == AppThemeData.dark;
     final asset = switch (activeStep) {
       KeystoneOnboardingStep.setPassword =>
-        isDark
-            ? 'assets/illustrations/onboarding_secret_passphrase_background_dark.png'
-            : 'assets/illustrations/onboarding_secret_passphrase_background_light.png',
+        'assets/illustrations/desktop/onboarding_secret_passphrase_background.webp',
       KeystoneOnboardingStep.customiseAccount => null,
       _ => null,
     };
@@ -275,9 +272,9 @@ class _SidebarIllustration extends StatelessWidget {
   static const _defaultFrameHeight = 405.0;
   static const _customiseAccountFrameHeight = 430.0;
   static const _lightAsset =
-      'assets/illustrations/onboarding_keystone_sidebar_light.png';
+      'assets/illustrations/desktop/onboarding_keystone_sidebar_light.webp';
   static const _darkAsset =
-      'assets/illustrations/onboarding_keystone_sidebar_dark.png';
+      'assets/illustrations/desktop/onboarding_keystone_sidebar_dark.webp';
 
   @override
   Widget build(BuildContext context) {
@@ -285,14 +282,14 @@ class _SidebarIllustration extends StatelessWidget {
     final asset = switch (activeStep) {
       KeystoneOnboardingStep.walletBirthdayHeight =>
         isDark
-            ? 'assets/illustrations/onboarding_wallet_birthday_sidebar_dark.png'
-            : 'assets/illustrations/onboarding_wallet_birthday_sidebar_light.png',
+            ? 'assets/illustrations/desktop/onboarding_wallet_details_sidebar_dark.webp'
+            : 'assets/illustrations/desktop/onboarding_wallet_details_sidebar_light.webp',
       KeystoneOnboardingStep.setPassword =>
         isDark
-            ? 'assets/illustrations/onboarding_set_password_sidebar_dark.png'
-            : 'assets/illustrations/onboarding_set_password_sidebar_light.png',
+            ? 'assets/illustrations/desktop/onboarding_set_password_sidebar_dark.webp'
+            : 'assets/illustrations/desktop/onboarding_set_password_sidebar_light.webp',
       KeystoneOnboardingStep.customiseAccount =>
-        'assets/illustrations/onboarding_customise_account_sidebar.png',
+        'assets/illustrations/desktop/onboarding_customise_account_sidebar.webp',
       _ => isDark ? _darkAsset : _lightAsset,
     };
     final frameHeight = activeStep == KeystoneOnboardingStep.customiseAccount

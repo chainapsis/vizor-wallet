@@ -4,6 +4,7 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:video_player/video_player.dart';
 // video_player exposes its platform interface through a transitive package;
@@ -40,6 +41,10 @@ class _FakeVideoPlayerPlatform extends VideoPlayerPlatform {
 
   @override
   Future<int?> createWithOptions(VideoCreationOptions options) async {
+    // A native video decoder is mocked, but its asset must still be available
+    // in the same mobile bundle that supplies the screen's actual images.
+    final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
+    expect(manifest.listAssets(), contains(options.dataSource.asset));
     calls.add('create');
     createdSources.add(options.dataSource);
     createdOptions.add(options.videoPlayerOptions);

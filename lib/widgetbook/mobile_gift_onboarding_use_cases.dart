@@ -28,7 +28,7 @@ import '../src/features/payment_links/widgets/gift_claim_failure_toast_listener.
 import '../src/core/widgets/app_toast.dart';
 import '../src/features/payment_links/models/vizor_payment_link.dart';
 import '../src/features/payment_links/widgets/payment_link_gift_card.dart';
-import '../src/features/payment_links/widgets/mobile/payment_link_scan_sheet.dart';
+import '../src/features/payment_links/providers/payment_link_scanner_provider.dart';
 import '../src/features/payment_links/services/payment_link_clipboard.dart';
 import '../src/features/payment_links/providers/gift_claim_flow_provider.dart';
 import '../src/features/payment_links/screens/gift_claim_screen.dart';

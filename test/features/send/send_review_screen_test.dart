@@ -23,7 +23,7 @@ import 'package:zcash_wallet/app.dart'
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/formatting/address_display.dart';
-import 'package:zcash_wallet/src/core/navigation/payment_uri_busy_surface_provider.dart';
+import 'package:zcash_wallet/src/core/navigation/external_action_guard_provider.dart';
 import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_pane_modal_overlay.dart';
@@ -946,13 +946,13 @@ void main() {
     final container = ProviderScope.containerOf(
       tester.element(find.byType(MaterialApp)),
     );
-    expect(container.read(paymentUriBusySurfaceProvider), 1);
+    expect(container.read(externalActionGuardProvider).activeHoldCount, 1);
 
     await tester.tap(find.text('Confirm with Keystone'));
     await _flushRealAsync(tester);
 
     expect(find.byType(KeystoneSigningModal), findsOneWidget);
-    expect(container.read(paymentUriBusySurfaceProvider), 2);
+    expect(container.read(externalActionGuardProvider).activeHoldCount, 2);
 
     await tester.tap(
       find.descendant(
@@ -965,11 +965,11 @@ void main() {
 
     expect(find.byType(KeystoneSigningModal), findsNothing);
     expect(find.text('Review send'), findsOneWidget);
-    expect(container.read(paymentUriBusySurfaceProvider), 1);
+    expect(container.read(externalActionGuardProvider).activeHoldCount, 1);
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
     expect(find.text('send-route'), findsOneWidget);
-    expect(container.read(paymentUriBusySurfaceProvider), 0);
+    expect(container.read(externalActionGuardProvider).activeHoldCount, 0);
   });
 
   testWidgets('review keeps the latch held until proposal discard completes', (
@@ -984,18 +984,18 @@ void main() {
     final container = ProviderScope.containerOf(
       tester.element(find.byType(MaterialApp)),
     );
-    expect(container.read(paymentUriBusySurfaceProvider), 1);
+    expect(container.read(externalActionGuardProvider).activeHoldCount, 1);
 
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
     expect(find.text('send-route'), findsNothing);
     expect(find.text('Review send'), findsOneWidget);
-    expect(container.read(paymentUriBusySurfaceProvider), 1);
+    expect(container.read(externalActionGuardProvider).activeHoldCount, 1);
 
     discardCompleter.complete();
     await tester.pumpAndSettle();
     expect(find.text('send-route'), findsOneWidget);
-    expect(container.read(paymentUriBusySurfaceProvider), 0);
+    expect(container.read(externalActionGuardProvider).activeHoldCount, 0);
   });
 
   testWidgets('Keystone signature limit fails before showing a QR', (

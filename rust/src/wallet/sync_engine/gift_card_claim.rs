@@ -9,6 +9,8 @@ use zcash_client_backend::{
     data_api::anchor_retention::AnchorRetentionInterval, proto::compact_formats::CompactBlock,
 };
 
+mod recovery;
+
 const TAIL: u32 = 12;
 const DISCOVERY_BATCH: u32 = 100;
 const OBSERVATION_BATCH: u32 = 500;
@@ -56,6 +58,120 @@ pub(crate) struct Snapshot {
     pub complete: bool,
 }
 
+/// Use the same anchor depth as the claim selector, including for a frozen
+/// funding prefix whose later blocks are observed without wallet scanning.
+pub(crate) fn max_claim_anchor_height(checked_height: u32) -> Option<u32> {
+    checked_height.checked_add(1)?.checked_sub(u32::from(
+        crate::wallet::payment_link_claim_confirmations_policy().trusted(),
+    ))
+}
+
+impl Snapshot {
+    pub(crate) fn has_confirmed_anchor(&self) -> bool {
+        self.funding_height > 0
+            && self.funding_height <= self.anchor_height
+            && max_claim_anchor_height(self.checked_height)
+                .is_some_and(|maximum| self.anchor_height <= maximum)
+    }
+}
+
+enum CheckResult {
+    Complete(Snapshot),
+    RebuildWitnesses,
+}
+
+fn has_unexpired_claim(c: &Connection, tip: u32) -> Result<bool, String> {
+    c.query_row(
+        "SELECT EXISTS(
+           SELECT 1 FROM v_received_output_spends spent
+           JOIN ironwood_received_notes n ON spent.pool=4 AND spent.received_output_id=n.id
+           JOIN transactions funding ON funding.id_tx=n.transaction_id
+           JOIN vizor_giftcard_check g ON funding.txid=g.funding_txid
+           JOIN transactions t ON t.id_tx=spent.transaction_id
+           WHERE t.created IS NOT NULL AND t.raw IS NOT NULL
+             AND (t.expiry_height IS NULL OR t.expiry_height=0 OR t.expiry_height>?1))",
+        [tip],
+        |r| r.get(0),
+    )
+    .map_err(|e| e.to_string())
+}
+
+/// Only choose from the scanned prefix whose chain identity was just checked.
+/// A checkpoint row alone does not establish that its funding witnesses exist.
+fn stable_anchor(
+    db: &mut WalletDatabase,
+    c: &Connection,
+    state: &Snapshot,
+    maximum: u32,
+) -> Result<Option<u32>, String> {
+    let anchor: Option<u32> = c
+        .query_row(
+            "SELECT MAX(checkpoint_id) FROM ironwood_tree_checkpoints
+             WHERE checkpoint_id BETWEEN ?1 AND ?2",
+            rusqlite::params![state.funding_height, maximum.min(state.anchor_height)],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    let Some(anchor) = anchor else {
+        return Ok(None);
+    };
+    let mut query = c
+        .prepare(
+            "SELECT n.commitment_tree_position FROM ironwood_received_notes n
+             JOIN transactions t ON t.id_tx=n.transaction_id
+             JOIN vizor_giftcard_check g ON t.txid=g.funding_txid WHERE n.value>0",
+        )
+        .map_err(|e| e.to_string())?;
+    let positions = query
+        .query_map([], |r| r.get::<_, Option<u64>>(0))
+        .map_err(|e| e.to_string())?
+        .collect::<rusqlite::Result<Option<Vec<_>>>>()
+        .map_err(|e| e.to_string())?;
+    let Some(positions) = positions.filter(|p| !p.is_empty()) else {
+        return Ok(None);
+    };
+    let height = BlockHeight::from_u32(anchor);
+    let usable: Result<_, ShardTreeError<zcash_client_sqlite::wallet::commitment_tree::Error>> = db
+        .with_ironwood_tree_mut(|tree| {
+            if tree.root_at_checkpoint_id(&height)?.is_none() {
+                return Ok(false);
+            }
+            for position in &positions {
+                if tree
+                    .witness_at_checkpoint_id((*position).into(), &height)?
+                    .is_none()
+                {
+                    return Ok(false);
+                }
+            }
+            Ok(true)
+        });
+    match usable {
+        Ok(Some(true)) => Ok(Some(anchor)),
+        Ok(_) | Err(ShardTreeError::Query(_)) => Ok(None),
+        Err(e) => Err(format!("Read Gift Card witnesses: {e}")),
+    }
+}
+
+async fn rebuild_discovery(
+    db: &mut WalletDatabase,
+    c: &Connection,
+    client: &mut CompactTxStreamerClient<Channel>,
+    birthday: BlockHeight,
+) -> Result<(), String> {
+    let from = get_tree_state(client, u32::from(birthday - 1) as u64)
+        .await
+        .map_err(|e| e.to_string())?
+        .to_chain_state()
+        .map_err(|e| e.to_string())?;
+    // A witness rebuild does not revoke signed transactions or their input
+    // reservations. Those attempts retain their original anchor and expiry.
+    db.truncate_to_chain_state(from)
+        .map_err(|e| e.to_string())?;
+    c.execute_batch("DELETE FROM vizor_giftcard_check; DELETE FROM vizor_giftcard_blocks; DELETE FROM vizor_giftcard_spends; DELETE FROM vizor_giftcard_mined; DELETE FROM vizor_giftcard_canary;").map_err(|e|e.to_string())?;
+    Ok(())
+}
+
 fn schema(c: &Connection) -> Result<(), String> {
     c.execute_batch("CREATE TABLE IF NOT EXISTS vizor_giftcard_check(
       id INTEGER PRIMARY KEY CHECK(id=1), funding_height INTEGER NOT NULL,
@@ -96,6 +212,32 @@ fn read_snapshot(c: &Connection) -> rusqlite::Result<Option<Snapshot>> {
         funding_height:r.get(0)?,anchor_height:r.get(1)?,checked_height:r.get(2)?,
         complete:r.get(3)?,total:r.get(4)?,unspent:r.get(5)?,
     })).optional()
+}
+
+/// All positive outputs of the first funding transaction must have six observed
+/// confirmations on their spends. An empty/damaged cache is never settlement.
+fn funding_spends_settled(c: &Connection, state: &Snapshot) -> Result<bool, String> {
+    if state.total == 0 || state.unspent != 0 {
+        return Ok(false);
+    }
+    let Some(settled_height) = state.checked_height.checked_sub(5) else {
+        return Ok(false);
+    };
+    c.query_row(
+        "SELECT EXISTS(
+           SELECT 1 FROM ironwood_received_notes n
+           JOIN transactions t ON t.id_tx=n.transaction_id
+           JOIN vizor_giftcard_check g ON t.txid=g.funding_txid WHERE n.value>0)
+         AND NOT EXISTS(
+           SELECT 1 FROM ironwood_received_notes n
+           JOIN transactions t ON t.id_tx=n.transaction_id
+           JOIN vizor_giftcard_check g ON t.txid=g.funding_txid
+           LEFT JOIN vizor_giftcard_spends s ON s.nf=n.nf
+           WHERE n.value>0 AND (s.height IS NULL OR s.height>?1))",
+        [settled_height],
+        |r| r.get(0),
+    )
+    .map_err(|e| e.to_string())
 }
 
 fn check_cancel(cancel: &AtomicBool) -> Result<(), String> {
@@ -175,18 +317,27 @@ pub(crate) async fn run(
     check_cancel(&cancel)?;
     // Covers connection/Tor startup and every RPC wait, including boundary
     // checks. Dropping the future also drops downloads and SQLite connections.
-    cancellable(
-        &cancel,
-        run_inner(
-            path,
-            url,
-            fallbacks,
-            network,
-            cancel.clone(),
-            allow_resubmit,
-            progress,
-        ),
-    )
+    cancellable(&cancel, async {
+        // Repair a legacy/missing witness cache once within the same check.
+        // A broken endpoint must not create an unbounded rediscovery loop.
+        for _ in 0..2 {
+            match run_inner(
+                path,
+                url,
+                fallbacks,
+                network,
+                cancel.clone(),
+                allow_resubmit,
+                &progress,
+            )
+            .await?
+            {
+                CheckResult::Complete(state) => return Ok(state),
+                CheckResult::RebuildWitnesses => {}
+            }
+        }
+        Err("Gift Card funding witnesses could not be rebuilt".into())
+    })
     .await
 }
 
@@ -199,7 +350,7 @@ async fn run_inner(
     cancel: Arc<AtomicBool>,
     allow_resubmit: bool,
     progress: impl Fn(&str, u64, u64, &Snapshot),
-) -> Result<Snapshot, String> {
+) -> Result<CheckResult, String> {
     let mut client = open_lwd_channel_with_cancel(url, || cancel.load(Ordering::Relaxed))
         .await
         .map_err(|e| e.to_string())?;
@@ -219,9 +370,6 @@ async fn run_inner(
         return Err("Gift Card requires one account".into());
     }
     db.set_anchor_retention_interval(AnchorRetentionInterval::custom(NonZeroU32::new(1).unwrap()));
-    db.update_chain_tip(BlockHeight::from_u32(tip))
-        .map_err(|e| e.to_string())?;
-    crate::wallet::sync::recover_orphaned_send_locks(path, network)?;
     let c = crate::wallet::db::open_wallet_raw_conn_with_timeout(
         path,
         crate::wallet::db::WALLET_DB_BUSY_TIMEOUT,
@@ -230,9 +378,33 @@ async fn run_inner(
     let mut state = read_snapshot(&c)
         .map_err(|e| e.to_string())?
         .unwrap_or_default();
-    if state.checked_height > tip {
-        return Err("Gift Card endpoint is behind the last checked block".into());
+    // Legacy wallets may have no observer row. Do not overwrite their known
+    // tip or unmine a receipt merely because the selected endpoint is behind.
+    let known_mined: Option<u32> = c
+        .query_row("SELECT MAX(mined_height) FROM transactions", [], |r| {
+            r.get(0)
+        })
+        .map_err(|e| e.to_string())?;
+    let known_scanned = db
+        .block_max_scanned()
+        .map_err(|e| e.to_string())?
+        .map(|b| u32::from(b.block_height()));
+    let known_tip = db.chain_height().map_err(|e| e.to_string())?.map(u32::from);
+    if [
+        Some(state.checked_height),
+        known_tip,
+        known_scanned,
+        known_mined,
+    ]
+    .into_iter()
+    .flatten()
+    .any(|h| h > tip)
+    {
+        return Err("Gift Card endpoint is behind the last known block".into());
     }
+    db.update_chain_tip(BlockHeight::from_u32(tip))
+        .map_err(|e| e.to_string())?;
+    crate::wallet::sync::recover_orphaned_send_locks(path, network)?;
 
     c.execute("UPDATE vizor_giftcard_check SET complete=0", [])
         .map_err(|e| e.to_string())?;
@@ -333,7 +505,7 @@ async fn run_inner(
         }
         if state.funding_height == 0 {
             progress("complete", 1, 1, &state);
-            return Ok(state);
+            return Ok(CheckResult::Complete(state));
         }
     }
     drop(db);
@@ -406,26 +578,44 @@ async fn run_inner(
             .0
             .to_vec()
     };
-    let stored: Vec<u8> = c
+    let stored: Option<Vec<u8>> = c
         .query_row(
             "SELECT hash FROM blocks WHERE height=?1",
             [state.anchor_height],
             |r| r.get(0),
         )
+        .optional()
         .map_err(|e| e.to_string())?;
-    if actual_hash != stored {
-        // Keep signed transaction records: rebuilding witnesses is never
-        // permission to generate a second attempt while the first can mine.
-        let from = get_tree_state(&mut client, u32::from(birthday - 1) as u64)
-            .await
-            .map_err(|e| e.to_string())?
-            .to_chain_state()
-            .map_err(|e| e.to_string())?;
+    if stored.as_ref() != Some(&actual_hash) {
         let mut db = open_db(path, network).map_err(|e| e.to_string())?;
-        db.truncate_to_chain_state(from)
-            .map_err(|e| e.to_string())?;
-        c.execute_batch("DELETE FROM vizor_giftcard_check; DELETE FROM vizor_giftcard_blocks; DELETE FROM vizor_giftcard_spends; DELETE FROM vizor_giftcard_mined; DELETE FROM vizor_giftcard_canary;").map_err(|e|e.to_string())?;
+        rebuild_discovery(&mut db, &c, &mut client, birthday).await?;
+        if stored.is_none() {
+            return Ok(CheckResult::RebuildWitnesses);
+        }
         return Err("Gift Card anchor changed; observation restart required".into());
+    }
+
+    // Validate the previous frozen boundary before changing it. In particular,
+    // moving a legacy tip anchor must never hide a reorg of a signed attempt.
+    // Keep that boundary for the lifetime of an existing signed claim; changing
+    // the observer row cannot change the anchor inside its immutable raw bytes.
+    // A legacy SDK mined_height may be stale after a reorg; mined evidence now
+    // belongs to the observer. Retain every unexpired signed attempt's boundary.
+    let unexpired_claim = has_unexpired_claim(&c, tip)?;
+    if let Some(maximum) = max_claim_anchor_height(tip)
+        .filter(|h| state.funding_height <= *h)
+        .filter(|_| !unexpired_claim)
+    {
+        let mut db = open_db(path, network).map_err(|e| e.to_string())?;
+        let Some(anchor) = stable_anchor(&mut db, &c, &state, maximum)? else {
+            rebuild_discovery(&mut db, &c, &mut client, birthday).await?;
+            return Ok(CheckResult::RebuildWitnesses);
+        };
+        if anchor != state.anchor_height {
+            c.execute("UPDATE vizor_giftcard_check SET anchor_height=?1", [anchor])
+                .map_err(|e| e.to_string())?;
+            state.anchor_height = anchor;
+        }
     }
 
     let start = state
@@ -547,12 +737,7 @@ async fn run_inner(
             (tip - start + 1) as u64,
             &state,
         );
-        let latest_spend: Option<u32> = c
-            .query_row("SELECT MAX(height) FROM vizor_giftcard_spends", [], |r| {
-                r.get(0)
-            })
-            .map_err(|e| e.to_string())?;
-        if state.unspent == 0 && latest_spend.is_some_and(|h| e.saturating_sub(h) >= 5) {
+        if funding_spends_settled(&c, &state)? {
             break;
         }
     }
@@ -592,6 +777,22 @@ async fn run_inner(
     if hash != observed || configured_hash != observed {
         return Err("Gift Card tip changed during inspection; retrying is required".into());
     }
+    check_cancel(&cancel)?;
+    // Before settlement, repair stale SDK receipts for a possible new claim.
+    // Once all funding spends settle, only reflect observed mined claims;
+    // this disposable cache no longer needs a wallet-wide recovery rewind.
+    let Some(anchor) = recovery::reconcile_mined_claims(path, network, &c, &state)? else {
+        let mut db = open_db(path, network).map_err(|e| e.to_string())?;
+        rebuild_discovery(&mut db, &c, &mut client, birthday).await?;
+        return Ok(CheckResult::RebuildWitnesses);
+    };
+    if anchor != state.anchor_height {
+        // The previous boundary and the entire observed chain were validated
+        // before this recovery rewind. Keep readiness false until it is saved;
+        // a crash between SDK commit and this write triggers cache rediscovery.
+        c.execute("UPDATE vizor_giftcard_check SET anchor_height=?1", [anchor])
+            .map_err(|e| e.to_string())?;
+    }
     c.execute("UPDATE vizor_giftcard_check SET complete=1", [])
         .map_err(|e| e.to_string())?;
     c.execute(
@@ -600,29 +801,17 @@ async fn run_inner(
     )
     .map_err(|e| e.to_string())?;
     state = read_snapshot(&c).map_err(|e| e.to_string())?.unwrap();
-    if allow_resubmit {
-        let mut excluded = own_mined_txids(&c)?;
-        let mut conflicts=c.prepare("SELECT DISTINCT t.txid FROM vizor_giftcard_spends s JOIN ironwood_received_notes n ON n.nf=s.nf JOIN v_received_output_spends spent ON spent.pool=4 AND spent.received_output_id=n.id JOIN transactions t ON t.id_tx=spent.transaction_id WHERE t.created IS NOT NULL AND t.txid!=s.txid").map_err(|e|e.to_string())?;
-        let rows = conflicts
-            .query_map([], |r| r.get::<_, Vec<u8>>(0))
-            .map_err(|e| e.to_string())?;
-        for id in rows {
-            excluded.insert(id.map_err(|e| e.to_string())?);
-        }
-
-        crate::wallet::sync::resubmit_pending_transactions(
-            path,
-            url,
-            &mut client,
-            tip,
-            &excluded,
-            || cancel.load(Ordering::Relaxed),
-        )
+    if allow_resubmit && !funding_spends_settled(&c, &state)? {
+        check_cancel(&cancel)?;
+        let candidates = recovery::resubmittable_claims(path, network, &c, &state)?;
+        crate::wallet::sync::resubmit_transactions(url, &mut client, tip, candidates, || {
+            cancel.load(Ordering::Relaxed)
+        })
         .await;
     }
     check_cancel(&cancel)?;
     progress("complete", 1, 1, &state);
-    Ok(state)
+    Ok(CheckResult::Complete(state))
 }
 
 fn canary_matches(full: &CompactBlock, probe: &CompactBlock) -> bool {
@@ -686,15 +875,6 @@ fn local_txids(c: &Connection) -> Result<HashSet<Vec<u8>>, String> {
     rows.collect::<rusqlite::Result<_>>()
         .map_err(|e| e.to_string())
 }
-fn own_mined_txids(c: &Connection) -> Result<HashSet<Vec<u8>>, String> {
-    let mut q = c
-        .prepare("SELECT txid FROM vizor_giftcard_mined")
-        .map_err(|e| e.to_string())?;
-    let rows = q.query_map([], |r| r.get(0)).map_err(|e| e.to_string())?;
-    rows.collect::<rusqlite::Result<_>>()
-        .map_err(|e| e.to_string())
-}
-
 pub(crate) fn confirmations(path: &str, txids: &str) -> Result<Option<i32>, String> {
     let c = crate::wallet::sync::open_readonly_conn(path)?;
     let c = c.unchecked_transaction().map_err(|e| e.to_string())?;
@@ -818,6 +998,28 @@ mod tests {
     use super::*;
     use zcash_client_backend::proto::compact_formats::{CompactOrchardAction, CompactTx};
 
+    #[test]
+    fn claim_anchor_depth_matches_the_confirmation_policy() {
+        assert_eq!(max_claim_anchor_height(0), None);
+        assert_eq!(max_claim_anchor_height(101), Some(100));
+        assert_eq!(max_claim_anchor_height(u32::MAX), None);
+        let mut state = Snapshot {
+            funding_height: 100,
+            anchor_height: 100,
+            checked_height: 100,
+            ..Default::default()
+        };
+        assert!(!state.has_confirmed_anchor());
+        state.checked_height = 101;
+        assert!(state.has_confirmed_anchor());
+        state.anchor_height = 101;
+        assert!(!state.has_confirmed_anchor());
+        state.anchor_height = 99;
+        assert!(!state.has_confirmed_anchor());
+        state.funding_height = 0;
+        assert!(!state.has_confirmed_anchor());
+    }
+
     fn block(height: u64, hash: u8, previous: u8) -> CompactBlock {
         CompactBlock {
             height,
@@ -901,6 +1103,28 @@ mod tests {
         .unwrap();
         (directory, path, c)
     }
+
+    #[test]
+    fn signed_claim_boundary_does_not_trust_cached_mined_status_before_expiry() {
+        let (_dir, _path, c) = fixture();
+        c.execute_batch(
+            "ALTER TABLE transactions ADD COLUMN mined_height INTEGER;
+             ALTER TABLE transactions ADD COLUMN expiry_height INTEGER;
+             INSERT INTO transactions VALUES(2,X'04','created',X'01',105,120);
+             INSERT INTO v_received_output_spends VALUES(4,1,2);",
+        )
+        .unwrap();
+        // Legacy wallet sync may have cached a receipt later removed by a
+        // reorg. Only the observer can establish its current mined status.
+        assert!(has_unexpired_claim(&c, 110).unwrap());
+        c.execute(
+            "UPDATE transactions SET mined_height=NULL WHERE id_tx=2",
+            [],
+        )
+        .unwrap();
+        assert!(has_unexpired_claim(&c, 119).unwrap());
+        assert!(!has_unexpired_claim(&c, 120).unwrap());
+    }
     #[test]
     fn includes_all_funding_notes_and_requires_positive_six_block_spend_evidence() {
         let (_dir, path, c) = fixture();
@@ -983,6 +1207,49 @@ mod tests {
             .unwrap()
             .conflicted_txids
             .is_empty());
+    }
+
+    #[test]
+    fn settlement_requires_every_positive_funding_note_and_six_confirmations() {
+        let (_dir, _path, c) = fixture();
+        let settled = || funding_spends_settled(&c, &read_snapshot(&c).unwrap().unwrap()).unwrap();
+        assert!(!settled());
+        c.execute(
+            "INSERT INTO vizor_giftcard_spends VALUES(?1,?2,105)",
+            rusqlite::params![vec![2u8; 32], vec![5u8; 32]],
+        )
+        .unwrap();
+        assert!(!settled(), "One remaining funding note prevents settlement");
+        c.execute(
+            "INSERT INTO vizor_giftcard_spends VALUES(?1,?2,106)",
+            rusqlite::params![vec![3u8; 32], vec![6u8; 32]],
+        )
+        .unwrap();
+        assert!(!settled(), "The second spend has only five confirmations");
+        c.execute("UPDATE vizor_giftcard_check SET checked_height=111", [])
+            .unwrap();
+        assert!(settled());
+        c.execute(
+            "INSERT INTO vizor_giftcard_spends VALUES(?1,?2,999)",
+            rusqlite::params![vec![8u8; 32], vec![9u8; 32]],
+        )
+        .unwrap();
+        assert!(
+            settled(),
+            "Unrelated observer rows cannot change funding settlement"
+        );
+        c.execute(
+            "UPDATE vizor_giftcard_spends SET height=112 WHERE nf=?1",
+            [vec![3u8; 32]],
+        )
+        .unwrap();
+        assert!(
+            !settled(),
+            "A spend beyond the observed height is not confirmed"
+        );
+        c.execute("DELETE FROM ironwood_received_notes", [])
+            .unwrap();
+        assert!(!settled(), "Missing funding notes are not settlement");
     }
 
     #[test]

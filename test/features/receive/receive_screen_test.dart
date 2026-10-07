@@ -26,6 +26,7 @@ import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 import '../../fixtures/orchard_receive_address.dart';
+import 'receive_qr_bitmap_cases.dart';
 
 /// A price the test can move after the request was created.
 class _PriceNotifier extends Notifier<double?> {
@@ -40,6 +41,7 @@ final _priceProvider = NotifierProvider<_PriceNotifier, double?>(
 );
 
 void main() {
+  registerReceiveQrBitmapTests();
   testWidgets('shows shielded renew button for software accounts', (
     tester,
   ) async {

@@ -59,6 +59,13 @@ void main() {
           '/add-account',
           '/onboarding/secret-passphrase',
           '/import/secret-passphrase',
+          '/gift',
+          '/gift/set-password',
+          '/gift/customise',
+          '/setup/backup',
+          '/setup/education/intro',
+          '/setup/education/address-types',
+          '/setup/education/things-to-know',
         ])
           GoRoute(
             path: path,
@@ -101,6 +108,13 @@ void main() {
     '/add-account',
     '/onboarding/secret-passphrase',
     '/import/secret-passphrase',
+    '/gift',
+    '/gift/set-password',
+    '/gift/customise',
+    '/setup/backup',
+    '/setup/education/intro',
+    '/setup/education/address-types',
+    '/setup/education/things-to-know',
   ]) {
     testWidgets('a home link on $origin does not navigate', (tester) async {
       final (router, incomingUris) = await pumpHost(

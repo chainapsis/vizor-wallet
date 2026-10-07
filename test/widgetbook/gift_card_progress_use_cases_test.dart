@@ -74,7 +74,7 @@ void main() {
         );
         expect(
           row.subtitle,
-          stage >= 2 ? 'Ironwood' : 'Checking status',
+          stage >= 2 ? 'Shielded' : 'Checking status',
           reason: 'stage $stage subtitle',
         );
         expect(row.subtitleIconName, stage >= 2 ? isNotNull : isNull);

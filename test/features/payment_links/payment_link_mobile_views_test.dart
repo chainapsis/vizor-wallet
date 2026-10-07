@@ -1,7 +1,7 @@
 @Tags(['mobile'])
 library;
 
-import 'package:flutter/material.dart' show MaterialApp;
+import 'package:flutter/material.dart' show MaterialApp, Scaffold;
 import 'package:flutter/widgets.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -17,6 +17,45 @@ const _feeHelpText =
 
 void main() {
   setUpAll(loadFigmaCompareFonts);
+
+  for (final width in [375.0, 402.0, 440.0]) {
+    testWidgets(
+      'checking fills the screen and centers content at width $width',
+      (tester) async {
+        await tester.binding.setSurfaceSize(Size(width, 852));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await tester.pumpWidget(
+          MaterialApp(
+            builder: (_, child) =>
+                AppTheme(data: AppThemeData.light, child: child!),
+            home: const Scaffold(
+              body: SafeArea(
+                child: PaymentLinkReadyMobileView(
+                  state: PaymentLinkReadyMobileState.checking,
+                  card: PaymentLinkLoadingMobileCard(),
+                  onHome: _noop,
+                ),
+              ),
+            ),
+          ),
+        );
+        expect(
+          tester
+              .getRect(
+                find.byKey(const ValueKey('payment_link_mobile_loading_card')),
+              )
+              .center
+              .dx,
+          closeTo(width / 2, 0.01),
+        );
+        expect(
+          tester.getRect(find.text(kPaymentLinkClaimCheckingHeading)).center.dx,
+          closeTo(width / 2, 0.01),
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 
   testWidgets(
     'checking content scrolls without overlap on a small screen with large text',

@@ -19,6 +19,7 @@ import '../shared/onboarding_welcome_art.dart' show VizorWordmark;
 import 'mobile_welcome_backdrop.dart';
 import '../shared/welcome_accent_button.dart';
 import '../shared/welcome_button_tokens.dart';
+import '../shared/welcome_gift_card_button.dart';
 
 /// Figma `Welcome` (8635:103040): native video with create and import entry paths.
 class MobileWelcomeScreen extends ConsumerStatefulWidget {
@@ -226,32 +227,13 @@ class _MobileWelcomeScreenState extends ConsumerState<MobileWelcomeScreen> {
                                             ),
                                             button: true,
                                             enabled: true,
-                                            child: AppButton(
-                                              expand: true,
-                                              variant: AppButtonVariant.ghost,
+                                            child: WelcomeGiftCardButton(
                                               onPressed: () => _enter(
                                                 () => context.push(
                                                   widget.showBackButton
                                                       ? '/gift?addAccount=true'
                                                       : '/gift',
                                                 ),
-                                              ),
-                                              disabledBackgroundColor:
-                                                  const Color(0x00000000),
-                                              leading: const AppIcon(
-                                                AppIcons.giftCard,
-                                                color: WelcomeButtonTokens
-                                                    .accentLabel,
-                                              ),
-                                              growWithContent: true,
-                                              constrainContent: true,
-                                              child: const Text(
-                                                'Activate gift card',
-                                                style: TextStyle(
-                                                  color: WelcomeButtonTokens
-                                                      .accentLabel,
-                                                ),
-                                                textAlign: TextAlign.center,
                                               ),
                                             ),
                                           ),

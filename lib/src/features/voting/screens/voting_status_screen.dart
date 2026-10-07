@@ -13,7 +13,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
-import '../../../core/navigation/payment_uri_busy_surface_hold.dart';
+import '../../../core/navigation/external_action_guard_hold.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -985,7 +985,7 @@ class VotingStatusContent extends StatelessWidget {
                 // Only the signing panel is a live QR the device is reading.
                 // The hold sits above it rather than on the status screen, so
                 // a request still lands while the vote is merely submitting.
-                PaymentUriBusySurfaceHold(
+                ExternalActionGuardHold(
                   child: _KeystoneSigningPanel(
                     bundleIndex: keystoneSigningBundleIndex!,
                     urParts: keystoneUrParts,
@@ -1005,7 +1005,7 @@ class VotingStatusContent extends StatelessWidget {
                   submissionJobInFlight &&
                   phase == VotingSessionPhase.ledgerSigning &&
                   ledgerSigningBundleIndex != null) ...[
-                PaymentUriBusySurfaceHold(
+                ExternalActionGuardHold(
                   child: LedgerVotingSigningPanel(
                     accountUuid: ledgerAccountUuid,
                     displayMemo: ledgerDisplayMemo ?? '',
@@ -1211,7 +1211,7 @@ class LedgerVotingSigningPanel extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) =>
-      PaymentUriBusySurfaceHold(child: _buildContent(context, ref));
+      ExternalActionGuardHold(child: _buildContent(context, ref));
 
   Widget _buildContent(BuildContext context, WidgetRef ref) {
     final colors = context.colors;

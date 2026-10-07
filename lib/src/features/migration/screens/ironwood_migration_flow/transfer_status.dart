@@ -268,7 +268,7 @@ class _MigrationCompleteStatusContent extends StatelessWidget {
                   height: 200,
                   child: Image.asset(
                     key: const ValueKey('ironwood_migration_complete_coins'),
-                    'assets/illustrations/ironwood_migration_done_coins.png',
+                    'assets/illustrations/ironwood_migration_done_coins.webp',
                     fit: BoxFit.fill,
                   ),
                 ),

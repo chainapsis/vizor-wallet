@@ -31,6 +31,29 @@ class PaymentLinkClaimCheckingContent extends StatelessWidget {
         ),
       ),
       const SizedBox(height: AppSpacing.sm),
+      PaymentLinkClaimCheckingDetails(
+        status: status,
+        statusSpacing: statusSpacing,
+      ),
+    ],
+  );
+}
+
+/// Shared details below the card, including the live check progress.
+class PaymentLinkClaimCheckingDetails extends StatelessWidget {
+  const PaymentLinkClaimCheckingDetails({
+    required this.status,
+    this.statusSpacing = AppSpacing.md,
+    super.key,
+  });
+
+  final Widget status;
+  final double statusSpacing;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    mainAxisSize: MainAxisSize.min,
+    children: [
       Text(
         kPaymentLinkClaimCheckingDescription,
         textAlign: TextAlign.center,

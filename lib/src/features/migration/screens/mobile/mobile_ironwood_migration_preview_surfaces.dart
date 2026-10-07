@@ -591,7 +591,7 @@ class _MigrationNotificationIllustration extends StatelessWidget {
       child: SizedBox.square(
         dimension: size,
         child: Image.asset(
-          'assets/illustrations/ironwood_notification_bell.png',
+          'assets/illustrations/ironwood_notification_bell.webp',
           fit: BoxFit.contain,
         ),
       ),
@@ -2380,7 +2380,7 @@ class _MigrationCompletePreview extends StatelessWidget {
             dimension: 256,
             child: Image(
               image: AssetImage(
-                'assets/illustrations/ironwood_migration_done_coins.png',
+                'assets/illustrations/ironwood_migration_done_coins.webp',
               ),
               fit: BoxFit.contain,
             ),

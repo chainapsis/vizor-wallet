@@ -22,20 +22,20 @@ const _keystoneMigrationLegacySignResultUrType = 'zcash-sign-result';
 const _keystoneMigrationFirmwareUpdateError =
     'Update Keystone firmware to sign Ironwood migrations, then try again.';
 const _ironwoodMigrationIntroBannerLightAsset =
-    'assets/illustrations/ironwood_migration_intro_banner_light.png';
+    'assets/illustrations/desktop/ironwood_migration_intro_banner_light.webp';
 const _ironwoodMigrationIntroBannerDarkAsset =
-    'assets/illustrations/ironwood_migration_intro_banner_dark.png';
+    'assets/illustrations/desktop/ironwood_migration_intro_banner_dark.webp';
 const _ironwoodMigrationHowStepAssets = [
-  'assets/illustrations/ironwood_migration_how_step_1.png',
-  'assets/illustrations/ironwood_migration_how_step_2.png',
-  'assets/illustrations/ironwood_migration_how_step_3.png',
+  'assets/illustrations/desktop/ironwood_migration_how_step_1.webp',
+  'assets/illustrations/desktop/ironwood_migration_how_step_2.webp',
+  'assets/illustrations/desktop/ironwood_migration_time.webp',
 ];
 const _ironwoodMigrationExpectationRunningAsset =
-    'assets/illustrations/ironwood_migration_expect_running.png';
+    'assets/illustrations/desktop/ironwood_migration_expect_running.webp';
 const _ironwoodMigrationExpectationAssets = [
-  'assets/illustrations/ironwood_migration_expect_time.png',
-  'assets/illustrations/ironwood_migration_expect_spend.png',
-  'assets/illustrations/ironwood_migration_expect_privacy.png',
+  'assets/illustrations/desktop/ironwood_migration_time.webp',
+  'assets/illustrations/desktop/ironwood_migration_expect_spend.webp',
+  'assets/illustrations/desktop/ironwood_migration_expect_privacy.webp',
   _ironwoodMigrationExpectationRunningAsset,
 ];
 

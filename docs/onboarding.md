@@ -1,9 +1,10 @@
-# Mobile onboarding
+# Onboarding
 
-This document describes the mobile onboarding behavior integrated in PR #793.
-Desktop onboarding UI remains separate; this umbrella preserves its existing
-entry paths. Shared account persistence, credentials, bootstrap, and recovery
-changes also apply to desktop and are validated in the desktop test lane. Mobile builds, tests, and captures use
+This document describes the mobile onboarding behavior integrated in PR #793
+and the planned desktop integration. Desktop entry paths retain their existing
+behavior until the relevant slices below are merged. Shared account persistence,
+credentials, bootstrap, and recovery changes also apply to desktop and are
+validated in the desktop test lane. Mobile builds, tests, and captures use
 `--dart-define=VIZOR_FORM_FACTOR=mobile`.
 
 ## Entry and account setup
@@ -355,3 +356,225 @@ First Keystone and Ledger imports also retain the credential if the DB contains
 an account or its state cannot be verified after a failure. The hardware UFVK
 is already in Rust; no software mnemonic journal is needed. Desktop Ledger uses
 the same failure boundary.
+
+## Desktop integration
+
+Desktop onboarding is delivered through a draft umbrella based on `main` after
+#826. Its child PRs target the umbrella in the order below. The existing shared
+account journals, credential retention, and unlock recovery apply to desktop;
+the recovery slice connects and verifies desktop retry and navigation behavior.
+
+1. Import-method and hardware selectors: first/additional-account entry,
+   Back/Cancel destinations, and testnet capability copy.
+2. Welcome: desktop video/poster, WebP playback, gradient, buttons, and network
+   settings. Gift activation is connected in the later Gift slices.
+3. Ordinary setup screens: introduction, password and account customisation,
+   using the existing shared name/profile controls.
+4. Interrupted setup: preserve existing accounts and credentials across storage
+   failure, lock and restart; retry recovery instead of creating replacements.
+5. Post-creation backup: password confirmation, phrase and birthday, explicit
+   completion and Remind me later, with continued Settings access.
+6. Gift into a new account: inspection, password if needed, customisation,
+   durable setup and claim handoff, then Home; include additional accounts.
+7. Gift into an imported account: software/Keystone/Ledger import, recipient
+   selection when needed, and cancellation/restart recovery.
+8. Home guidance and education: manual carousel, account-specific backup state
+   and Zcash education. Do not add Gift status banners.
+9. Full-flow E2E and walkthroughs: ordinary and Gift setup, first/additional
+   accounts, failures, lock and restart. Hide mnemonic text in recordings.
+
+Complete recovery and backup before integrating Gift onboarding. Desktop keeps
+its existing password flow rather than adopting the mobile passcode/Face ID
+screens. Link Vizor Desktop is excluded from the desktop import selector because
+it is a phone-to-desktop QR flow. Ledger choices and summary copy follow the
+existing capability gates; this work does not expand Ledger network support.
+
+### Desktop import selection
+
+Welcome and Add account open `/import/method`, offering secret-passphrase and
+hardware import. `/import/hardware` offers Keystone and, where the existing
+capability allows it, Ledger. The summary uses the same capability gate.
+Selector-origin parameters survive birthday, password and customisation steps
+without changing typed route extras. Cancel returns to the originating Welcome
+or Add account screen; direct import/device entry retains its original fallback.
+
+Preview the selectors from Widgetbook's desktop Welcome use case by clicking
+Import wallet. The `desktop-onboarding-import` and
+`desktop-onboarding-hardware` capture scenarios render deterministic content.
+
+### Desktop Welcome
+
+Welcome uses the desktop video and static WebP poster with the adjusted gradient
+and shared accent-button effects. macOS uses the existing video player;
+Windows/Linux use animated WebP without another player dependency. Both animation
+assets contain the loop crossfade. Reduced motion and deterministic captures use
+the poster; playback follows route visibility and app lifecycle.
+
+Get started opens ordinary creation. Import wallet opens the selectors above,
+including the additional-account return context. Initial Welcome retains network
+settings; additional-account Welcome retains Back. The initial Welcome Gift
+button now opens desktop Gift setup. Additional-account Welcome offers the same
+entry without preparing a second password.
+
+Widgetbook has Large and Add account Welcome entries. Deterministic captures use
+`desktop-onboarding-welcome` and `desktop-onboarding-add-account-welcome`.
+
+The Figma Welcome reference (`8648:104679`, 1080 × 720) includes a Terms/Privacy
+footer that is not implemented in this slice. Record it as a remaining visual
+difference in review. Gift setup is integrated by the later new-account slice.
+
+### Desktop interrupted setup recovery
+
+Password setup forwards its draft to Customise without creating an account;
+additional accounts retain their existing credential and skip password setup.
+
+If account persistence is interrupted or its DB state cannot be confirmed,
+Customise freezes the name/profile and Back controls and offers **Retry setup**.
+Retry locks the session and reloads the existing startup snapshot without
+creating another account or preparing another password. Startup inspects the
+DB: an existing account goes to Unlock, confirmed empty setup goes to Welcome,
+and an unreadable DB goes to the existing startup error/retry screen. Unlock
+must finish pending storage writes before Home opens. A lock during setup
+reloads the snapshot before the router can expose Unlock.
+
+This connection includes Ledger's callback-based Customise screen. Ordinary
+errors before account creation retain editable fields and the existing inline
+retry flow. The durable recovery journal and restart/unlock behavior remain
+shared with mobile; this slice connects the desktop retry action.
+
+Deterministic widget captures use `desktop-onboarding-recovery`,
+`desktop-onboarding-recovery-uncertain`,
+`desktop-onboarding-recovery-retry-error`,
+`desktop-onboarding-recovery-pending`, `desktop-onboarding-ledger-recovery`,
+and `desktop-onboarding-submit-error` in both light and dark themes.
+
+### Desktop post-creation backup
+
+The desktop `/setup/backup` route accepts an account UUID in `extra` and opens
+the existing Settings secret-passphrase screen with a warning first. Continue
+opens its password confirmation gate; the warning never reads or reveals a
+secret. Normal Settings entry continues to open the password gate directly.
+The Home carousel entry is connected in the later Home-guidance slice.
+
+For software accounts with `setupPending`, **Remind me later** calls the shared
+account-scoped reminder deferral without marking backup complete. After password
+confirmation reveals the phrase, **I’ve written it down** calls the shared backup
+completion operation. Hardware accounts and accounts already backed up do not
+offer these actions. The existing birthday, copy, privacy shield, and account
+selection checks are retained.
+
+Both actions wait for persistence before leaving. Backup-route entry returns to
+Home; Settings entry returns to its previous route, falling back to Home when
+there is no previous route. A failed write retains the current screen and offers
+retry, and pending writes disable submission. Phrase content scrolls when the
+completion action exceeds the available height.
+
+Deterministic desktop captures cover `desktop-backup-intro`,
+`desktop-backup-gate`, `desktop-backup-reveal`, `desktop-backup-save-error`,
+`desktop-backup-save-pending`, `desktop-backup-defer-error`,
+`desktop-backup-defer-pending`, and `desktop-settings-phrase`. Capture credentials,
+masked words, birthday values, and writes are local fixtures; they use no wallet
+DB, production secrets, network, or Rust state.
+
+### Desktop Gift into a new account
+
+Welcome and Add account now open `/gift` for paste or QR inspection. A fresh
+wallet continues to `/gift/set-password`, then `/gift/customise`. An unlocked
+existing wallet goes directly to Customise to add the receiving account. Both
+use the shared Gift setup coordinator, account journal, and claim runner.
+
+The Gift is inspected before account creation. During a long scan, the user
+explicitly chooses whether to continue. Invalid links keep paste/scan retry
+available; network errors offer another inspection. Wallet/password setup
+completes and the checked Card is retained with its destination before Home;
+Home does not wait for claim broadcast or confirmations. Interrupted persistence
+uses desktop startup/unlock recovery without creating another account.
+
+Incoming Gift links can enter the empty desktop Welcome when transport is ready.
+An open network editor or connecting transport keeps the link queued; the
+existing listeners resume entry after the editor closes or transport becomes
+ready. Existing-wallet links retain the Received Gift Card entry policy.
+
+The imported-wallet branch and recipient selection remain the next child PR.
+`Claim with an existing wallet` stays disabled on this desktop entry until that
+branch is connected; mobile retains its existing import action.
+
+Widgetbook: Screens -> Onboarding -> Gift onboarding - Desktop. Deterministic desktop captures
+cover `desktop-gift-entry`, `desktop-gift-checking`, `desktop-gift-inspected`,
+`desktop-gift-password`, `desktop-gift-customise`,
+`desktop-gift-additional-customise`, `desktop-gift-check-error`, and
+`desktop-gift-long-scan` in both themes. These fixtures use no production wallet
+state, storage, network, camera, or Rust operations.
+
+### Desktop Gift into an imported account
+
+The inspected card's **Claim with an existing wallet** action opens the existing
+import selector at `/import/method?from=gift`. Secret passphrase, Keystone, and
+Ledger keep their normal desktop steps and capability gates. The Gift origin
+survives each Back destination. Cancel clears the secure import handoff before
+returning to the inspected card; if clearing fails, the selector stays available
+for retry.
+
+Software and Keystone share Customise account completion; Ledger's route invokes
+the same Gift import coordinator. Password/account persistence runs under one
+Linux mutation owner, then releases it before opening recipient selection so
+account switching can acquire its own owner. The shared router pause continues
+through the handoff.
+
+Only accounts added by this import are eligible recipients. A sole account is
+bound automatically. Multiple accounts open **Choose receiving account** in a
+desktop modal centered in the content pane, reusing the mobile choice content
+and selected-row check. The scrim still blocks the whole window.
+Confirmation switches to the chosen account, persists its UUID, reuses the
+existing inspection, and starts the shared claim runner without waiting for
+binding or broadcast before Home. Closing the choice keeps an unbound Received
+card and continues to Home. Desktop and mobile both restore interrupted import
+handoffs from the shared journal after unlock and account metadata restoration.
+Recovery transfers the card to Received without guessing a recipient, preserving
+any already persisted binding. Failed Received writes retain the journal for
+retry, and recovery does not race a live import handoff.
+
+Deterministic component captures: `desktop-gift-receiving-account`,
+`desktop-gift-receiving-many`, `desktop-gift-receiving-pending`, and
+`desktop-gift-receiving-error`. Widgetbook: Screens -> Onboarding -> Gift
+onboarding - Desktop. They render the production modal content over desktop
+Customise account using local fixtures; route tests separately drive the actual
+selector, import completion, dialog, Cancel/Close, retry, and Linux ownership.
+Native hardware, Linux Secret Service, and full-flow E2E remain in the final
+integration validation slice.
+
+### Desktop Home guidance and education
+
+Home shows account-specific backup and deferred Zcash education below its
+balance/actions, including during the initial scan. The manual carousel displays
+one card at rest, without faded neighboring cards or automatic rotation. Drag,
+arrow keys, and page indicators change the selected card; click, Enter, or Space
+opens its action. Hardware accounts never receive software-backup guidance.
+Locked or empty wallets expose no setup actions.
+
+Backup opens the existing account-pinned `/setup/backup` flow and uses the shared
+completion/snooze policy. Education reuses the existing desktop introduction,
+address-types, and things-to-know content at `/setup/education/*`, with a
+three-step sidebar and a Home return. Only Skip or the final Continue persists
+education completion, through the same account notifier as mobile. Leaving keeps
+the reminder pending; save failures keep the page actionable for retry. Education
+completion never completes backup, and account changes do not retarget an open
+education flow.
+
+Widgetbook: Screens -> Onboarding -> Home setup guidance - Desktop. Deterministic
+captures use `desktop-home-setup`, `desktop-home-setup-importing`,
+`desktop-gift-education`, `desktop-gift-education-address-types`, and
+`desktop-gift-education-things-to-know`, in light and dark themes at 1080 x 720.
+The importing layout retains its progress/illustration positions and removes
+unused lower spacing so both the card and page indicators fit the default window.
+Final native and full-flow E2E validation remains the next integration slice.
+
+### Desktop integration validation
+
+The UI slices through #852 are merged into the desktop umbrella. The validation
+slice updates the existing E2E import entries to pass through the new method
+selector and follows the Welcome create button's actual action. Six macOS
+regtest runners (seven native test executions) passed, including creation,
+first/additional import, real sends, Gift claim, and process-restart/unlock
+recovery. Coverage, reproduction commands, and remaining native/hardware gates
+are tracked in [Desktop integration validation](onboarding/desktop-integration-validation.md).

@@ -1,4 +1,6 @@
 tags:
+  # Desktop-only geometry scenarios use the default token lane.
+  desktop: {}
   # Screenshot generation is an explicit tooling lane. The wrapper supplies
   # --update-goldens, the deterministic defines, and --run-skipped.
   figma-capture:
