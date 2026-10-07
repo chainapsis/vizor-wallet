@@ -40,11 +40,10 @@ class TransparentDetailsSection extends StatelessWidget {
     final colors = context.colors;
     final rows = <Widget>[
       switch (state) {
-        rust_sync.TransparentDetailsState.available =>
-          ReviewListRow(
-            label: 'Transparent outputs',
-            value: '${detail!.transparentRecipients.length}',
-          ),
+        rust_sync.TransparentDetailsState.available => ReviewListRow(
+          label: 'Transparent outputs',
+          value: '${detail!.transparentRecipients.length}',
+        ),
         rust_sync.TransparentDetailsState.pending ||
         rust_sync.TransparentDetailsState.unavailable => ReviewListRow(
           key: const ValueKey('transparent_details_unavailable'),

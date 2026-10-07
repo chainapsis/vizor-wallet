@@ -69,9 +69,6 @@ pub(crate) enum DetailFailure {
 
 /// One transaction's details, from whichever source the run chose.
 pub(crate) trait DetailSource {
-    /// Whether the source is the private one. Facts it returns are stored
-    /// only while the run's captured policy generation holds.
-    fn private(&self) -> bool;
 
     /// Looks up `txid` mined at `mined_height`. Stops at `should_exit`.
     fn lookup(
@@ -174,10 +171,6 @@ impl PirSource {
 }
 
 impl DetailSource for PirSource {
-    fn private(&self) -> bool {
-        true
-    }
-
     async fn lookup(
         &mut self,
         txid: [u8; 32],
@@ -296,10 +289,6 @@ impl GateSource {
 }
 
 impl DetailSource for GateSource {
-    fn private(&self) -> bool {
-        false
-    }
-
     async fn lookup(
         &mut self,
         txid: [u8; 32],
