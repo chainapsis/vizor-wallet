@@ -3055,6 +3055,54 @@ mod tests {
     }
 
     #[test]
+    fn compact_enhanced_outgoing_matches_public_activity_with_or_without_owned_receipt() {
+        for owned_receipt in [false, true] {
+            let (mut base, mut summary) = provisional_debit();
+            base.total_spent = 107_485_000;
+            base.total_received = 107_220_000 + if owned_receipt { 250_000 } else { 0 };
+            base.account_balance_delta = if owned_receipt { -15_000 } else { -265_000 };
+            base.history.whole_fee = Some(15_000);
+            base.history.inferred_outgoing = Some(250_000);
+            base.history.has_transparent_outputs = Some(true);
+            // Shielded change is visible in the unreconciled output summary too.
+            summary.received.amount = base.total_received;
+            if owned_receipt {
+                summary.received_transparent.amount = 250_000;
+                summary.received_transparent.output_count = 1;
+            }
+
+            let rows = classify_history_tx(&base, &summary, Fee::NotApplicable);
+            assert_eq!(rows.len(), if owned_receipt { 2 } else { 1 });
+            assert_eq!(rows[0].info.tx_kind, "sent");
+            assert_eq!(rows[0].info.display_amount, 250_000);
+            assert_eq!(rows[0].info.activity_pool.as_deref(), Some("transparent"));
+            assert_eq!(rows[0].info.fee, 15_000);
+            assert!(!rows[0].info.amount_includes_fee);
+            assert!(rows[0].info.provisional);
+            assert!(!rows[0].info.details_complete);
+            if owned_receipt {
+                assert_eq!(rows[1].info.tx_kind, "received");
+                assert_eq!(rows[1].info.display_amount, 250_000);
+            }
+        }
+    }
+
+    #[test]
+    fn compact_enhanced_external_send_excludes_the_network_fee() {
+        let (mut base, summary) = provisional_debit();
+        base.account_balance_delta = -215_000;
+        base.history.whole_fee = Some(15_000);
+        base.history.inferred_outgoing = Some(200_000);
+        base.history.has_transparent_outputs = Some(true);
+        let rows = classify_history_tx(&base, &summary, Fee::NotApplicable);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].info.tx_kind, "sent");
+        assert_eq!(rows[0].info.display_amount, 200_000);
+        assert_eq!(rows[0].info.fee, 15_000);
+        assert!(!rows[0].info.amount_includes_fee);
+    }
+
+    #[test]
     fn a_provisional_debit_with_change_is_one_sent_row_not_a_receive() {
         let (base, summary) = provisional_debit();
 

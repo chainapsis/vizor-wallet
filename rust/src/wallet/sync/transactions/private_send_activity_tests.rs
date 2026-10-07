@@ -76,11 +76,21 @@ fn own_transparent(st: &State) -> TransparentAddress {
 /// The reported transaction, built by a sender wallet holding the same note:
 /// 250,000 to the account's own first external transparent address.
 fn reported_transaction() -> Transaction {
+    sent_transaction(None, SENT)
+}
+
+/// The external send that follows the reported one: 200,000 to a transparent
+/// address no wallet account holds.
+const EXTERNAL_SENT: u64 = 200_000;
+
+/// A transaction spending the funded note to pay `value` to `to`, or to the
+/// account's own first external transparent address.
+fn sent_transaction(to: Option<TransparentAddress>, value: u64) -> Transaction {
     let mut st = funded(|st| set_policy(st, TransparentLedgerMode::Public));
-    let to = Address::from(own_transparent(&st));
+    let to = Address::from(to.unwrap_or_else(|| own_transparent(&st)));
     let request = TransactionRequest::new(vec![Payment::without_memo(
         to.to_zcash_address(st.network()),
-        zat(SENT),
+        zat(value),
     )])
     .unwrap();
     let account = st.test_account().cloned().unwrap();
@@ -372,48 +382,81 @@ fn a_privately_restored_send_shows_the_public_sent_amount() {
     assert_eq!(displayed, fixture, "desktop fixture is stale");
 }
 
-/// Opt-in, read-only comparison of the Activity rows Vizor's production
-/// history read produces for selected transactions in local wallet snapshots,
-/// for example a public and a private restore of the same seed. Nothing is
-/// written to the snapshots: each is copied before it is read, and only the
-/// selected rows are printed.
+/// A transparent address no wallet account holds.
+fn foreign_transparent() -> TransparentAddress {
+    TransparentAddress::PublicKeyHash([7; 20])
+}
+
+/// The neighbouring external send of the reported wallet (public Activity:
+/// Sent 0.002 ZEC; private before the fix: Sent 0.00215 ZEC including the
+/// fee) takes the same inference: privately it shows the public Sent amount,
+/// pool and fee, and no receive row, since no owned output exists.
+#[test]
+fn a_privately_restored_external_send_shows_the_public_sent_amount() {
+    let tx = sent_transaction(Some(foreign_transparent()), EXTERNAL_SENT);
+    let public = activity(&publicly_restored(&tx));
+    assert_eq!(
+        public.iter().map(shown).collect::<Vec<_>>(),
+        vec![("sent", EXTERNAL_SENT, "transparent")]
+    );
+    let private = activity(&privately_restored(&tx, false));
+    assert_eq!(
+        private.iter().map(shown).collect::<Vec<_>>(),
+        public.iter().map(shown).collect::<Vec<_>>()
+    );
+    let row = &private[0];
+    assert_eq!((row.fee_state, row.fee), (TransactionFeeState::Known, FEE));
+    assert_eq!(
+        (public[0].fee_state, public[0].fee),
+        (TransactionFeeState::Known, FEE)
+    );
+    assert!(!row.amount_includes_fee);
+    assert!(row.provisional);
+    assert!(!row.details_complete);
+    assert_eq!(row.account_balance_delta, -((EXTERNAL_SENT + FEE) as i64));
+}
+
+/// Opt-in, read-only diagnostic of the Activity rows Vizor's production
+/// history read produces for selected transactions of a local wallet
+/// snapshot. The snapshot is copied before it is read, and only the selected
+/// rows' display values are printed: no addresses, keys, or memos.
 ///
 /// ```sh
-/// VIZOR_HISTORY_COMPARE='public=/path/a.db@<account uuid>,private=/path/b.db@<account uuid>' \
-/// VIZOR_HISTORY_COMPARE_TXIDS='<txid hex>,...' VIZOR_HISTORY_COMPARE_NETWORK=main \
-/// cargo test --lib compare_local_history_snapshots -- --ignored --nocapture
+/// VIZOR_ACTIVITY_PARITY_DB=/path/wallet.db VIZOR_ACTIVITY_PARITY_ACCOUNT=<account uuid> \
+/// VIZOR_ACTIVITY_PARITY_TXID=<txid hex>[,<txid hex>...] [VIZOR_ACTIVITY_PARITY_NETWORK=main] \
+/// cargo test --lib activity_parity_diagnostic -- --ignored --nocapture
 /// ```
 #[test]
-#[ignore = "reads local wallet snapshots named by VIZOR_HISTORY_COMPARE"]
-fn compare_local_history_snapshots() {
-    let snapshots = std::env::var("VIZOR_HISTORY_COMPARE")
-        .expect("VIZOR_HISTORY_COMPARE=label=path@account,...");
-    let txids: Vec<String> = std::env::var("VIZOR_HISTORY_COMPARE_TXIDS")
-        .expect("VIZOR_HISTORY_COMPARE_TXIDS=txid,...")
+#[ignore = "reads the local wallet snapshot named by VIZOR_ACTIVITY_PARITY_DB"]
+fn activity_parity_diagnostic() {
+    let path = std::env::var("VIZOR_ACTIVITY_PARITY_DB").expect("VIZOR_ACTIVITY_PARITY_DB");
+    let account =
+        std::env::var("VIZOR_ACTIVITY_PARITY_ACCOUNT").expect("VIZOR_ACTIVITY_PARITY_ACCOUNT");
+    let txids: Vec<String> = std::env::var("VIZOR_ACTIVITY_PARITY_TXID")
+        .expect("VIZOR_ACTIVITY_PARITY_TXID")
         .split(',')
         .map(|txid| txid.trim().to_lowercase())
         .filter(|txid| !txid.is_empty())
         .collect();
     assert!(!txids.is_empty(), "select at least one transaction");
     let network = WalletNetwork::from_str(
-        &std::env::var("VIZOR_HISTORY_COMPARE_NETWORK").unwrap_or_else(|_| "main".to_owned()),
+        &std::env::var("VIZOR_ACTIVITY_PARITY_NETWORK").unwrap_or_else(|_| "main".to_owned()),
     )
-    .expect("VIZOR_HISTORY_COMPARE_NETWORK is main, test, or regtest");
-    for snapshot in snapshots.split(',') {
-        let (label, rest) = snapshot.split_once('=').expect("label=path@account");
-        let (path, account) = rest.rsplit_once('@').expect("path@account");
+    .expect("VIZOR_ACTIVITY_PARITY_NETWORK is main, test, or regtest");
+    {
         let dir = tempfile::tempdir().unwrap();
         let copy = dir.path().join("snapshot.db");
-        rusqlite::Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        rusqlite::Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
             .unwrap()
             .execute("VACUUM INTO ?1", [copy.to_str().unwrap()])
             .unwrap();
-        let rows = get_transaction_history(copy.to_str().unwrap(), network, None, account)
-            .unwrap_or_else(|e| panic!("{label}: {e}"));
+        let rows = get_transaction_history(copy.to_str().unwrap(), network, None, &account)
+            .unwrap_or_else(|e| panic!("history read failed: {e}"));
         for row in rows.iter().filter(|row| txids.contains(&row.txid_hex)) {
             println!(
-                "{label} {} kind={} amount={} pool={} activity_pool={:?} fee={} fee_state={:?} \
-                 includes_fee={} provisional={} details_complete={}",
+                "{} kind={} displayAmount={} displayPool={} activityPool={:?} fee={} \
+                 feeState={:?} amountIncludesFee={} provisional={} detailsComplete={} \
+                 isTransparent={} mined={} expiredUnmined={}",
                 row.txid_hex,
                 row.tx_kind,
                 row.display_amount,
@@ -424,6 +467,9 @@ fn compare_local_history_snapshots() {
                 row.amount_includes_fee,
                 row.provisional,
                 row.details_complete,
+                row.is_transparent,
+                row.mined_height > 0,
+                row.expired_unmined,
             );
         }
     }
