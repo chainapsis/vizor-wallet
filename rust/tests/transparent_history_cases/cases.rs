@@ -912,7 +912,8 @@ impl Ctx {
 
     /// Final checkpoint: R (settled), O (R reopened), N (fresh restore; its
     /// first sync runs with GetTransaction held to expose the pre-enrichment
-    /// view, which H13 asserts as the delayed-publication fault).
+    /// view, which H13 asserts as the delayed-publication fault), and N_seq
+    /// (fresh restore with A0 synced alone before A1 is added).
     fn final_checkpoint(&mut self) {
         let r_result = self.r.settle().err();
         let o = self.r.reopen("O", &self.chain);
@@ -960,9 +961,8 @@ impl Ctx {
         let n_result = n.settle().err();
         // N_seq: the same fresh restore, with A0 synced alone before A1 is
         // added, so adding an account rewinds a synced wallet.
-        let (n_seq, n_seq_first) =
-            VizorWallet::import_sequential("N_seq", &self.chain, &self.a0, &self.a1);
-        let n_seq_result = n_seq.settle().err().or(n_seq_first);
+        let n_seq = VizorWallet::import_sequential("N_seq", &self.chain, &self.a0, &self.a1);
+        let n_seq_result = n_seq.settle().err();
         checkpoint(
             &self.chain,
             &mut self.suite,

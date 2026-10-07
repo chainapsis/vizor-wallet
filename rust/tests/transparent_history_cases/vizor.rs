@@ -2,8 +2,9 @@
 //!
 //! - V builder: production send / shield / TEX / gift-card paths.
 //! - Variants: R (the DB that built or observed), N (fresh restore of Alice's
-//!   seeds), O (R's files copied to a new path: a reopen with no in-process
-//!   state keyed by the old path).
+//!   seeds), N_seq (the same restore with A0 synced alone before A1 is added,
+//!   [`VizorWallet::import_sequential`]), O (R's files copied to a new path: a
+//!   reopen with no in-process state keyed by the old path).
 //! - Observation: balances, the owned transparent ledger, history rows,
 //!   details, and every lightwalletd request (through the proxy).
 
@@ -209,14 +210,14 @@ impl VizorWallet {
     /// A fresh restore in the other order users reach: A0 alone is restored
     /// and synced to the tip, and only then is A1 added. Adding an account to
     /// a synced wallet rewinds it, which [`Self::import`] (both seeds before
-    /// the first sync) never exercises. Returns the wallet, for the caller to
-    /// settle, with the error of A0's own sync, if any.
-    pub fn import_sequential(
-        label: &str,
-        chain: &Chain,
-        a0: &Party,
-        a1: &Party,
-    ) -> (Self, Option<String>) {
+    /// the first sync) never exercises. Returns the wallet for the caller to
+    /// settle.
+    ///
+    /// Panics, as R's sync does, when A0 alone does not reach a synchronized
+    /// wallet (private profile: privately recovered, current transparent
+    /// authority), or when adding A1 lowers the private policy: the variant
+    /// would not test what it claims.
+    pub fn import_sequential(label: &str, chain: &Chain, a0: &Party, a1: &Party) -> Self {
         let dir = tempfile::tempdir().expect("wallet dir");
         let db = dir
             .path()
@@ -234,8 +235,7 @@ impl VizorWallet {
         .expect("import A0");
         if crate::report::profile() == "private" {
             // As in `import`: the wallet requires private recovery before its
-            // first sync. Adding A1 later must keep it, so it is not raised
-            // again.
+            // first sync. Adding A1 must keep it; that is checked below.
             sync_api::reconcile_transparent_policy(db.clone(), NET.into(), true)
                 .expect("raise the transparent policy to private recovery");
         }
@@ -250,9 +250,40 @@ impl VizorWallet {
                 mnemonic: a0.mnemonic.clone(),
             }],
         };
-        let first_sync = wallet.settle().err().map(|e| format!("A0 alone: {e}"));
+        // A sync can fail with a retryable error; production retries on the
+        // next pass.
+        let mut first_sync = wallet.settle();
+        for _ in 0..2 {
+            if first_sync.is_ok() {
+                break;
+            }
+            first_sync = wallet.settle();
+        }
+        if let Err(e) = first_sync {
+            panic!(
+                "{label}: A0's sync alone failed: {e}\n{}",
+                chain.container_logs()
+            );
+        }
+        let view = wallet.observe(a0.name);
+        assert!(
+            view.sync_complete && view.scanned_height == view.chain_tip_height,
+            "{label}: A0 is not synchronized before A1 is added (complete {}, scanned {} of {})",
+            view.sync_complete,
+            view.scanned_height,
+            view.chain_tip_height,
+        );
+        let private = crate::report::profile() == "private";
+        if private {
+            let balance = view.balance.as_ref();
+            assert!(
+                balance
+                    .is_some_and(|b| b.transparent_private && b.transparent_authority == "current"),
+                "{label}: A0 has not recovered privately before A1 is added: {balance:?}",
+            );
+        }
         let second = wallet_api::add_account(
-            db,
+            db.clone(),
             NET.into(),
             a1.name.into(),
             a1.mnemonic.clone(),
@@ -260,12 +291,18 @@ impl VizorWallet {
             Some(1),
         )
         .expect("add A1");
+        if private {
+            // Ok(false): the wallet already requires private recovery.
+            let raised = sync_api::reconcile_transparent_policy(db, NET.into(), true)
+                .expect("read the transparent policy");
+            assert!(!raised, "{label}: adding A1 lowered the transparent policy");
+        }
         wallet.accounts.push(Account {
             name: a1.name,
             uuid: second.account_uuid,
             mnemonic: a1.mnemonic.clone(),
         });
-        (wallet, first_sync)
+        wallet
     }
 
     /// O: copy every file of this wallet to a new directory. Call only while
