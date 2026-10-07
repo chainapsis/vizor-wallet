@@ -72,9 +72,11 @@ bool transactionActivitySummaryIncomplete(rust_sync.TransactionInfo tx) =>
     tx.provisional || tx.txKind == 'unknown' || tx.displayPool == 'unknown';
 
 /// The completeness part of an entry, for refresh signatures: an entry whose
-/// details or fee arrive changes nothing else a signature compares.
+/// details or fee arrive, or whose fee presentation changes, may change
+/// nothing else a signature compares.
 String transactionCompletenessSignature(rust_sync.TransactionInfo tx) =>
-    '${tx.feeState.name}:${tx.detailsComplete}:${tx.provisional}';
+    '${tx.feeState.name}:${tx.detailsComplete}:${tx.provisional}:'
+    '${transactionFeePresentation(tx).name}';
 
 /// The entry a receipt showing a provisional row of `txidHex` now shows.
 ///
