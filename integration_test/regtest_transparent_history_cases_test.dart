@@ -4,8 +4,8 @@
 // [--profile private]: the Rust layer builds H01-H13 on an isolated regtest
 // chain, keeps it alive, and hands over runtime mnemonics and oracle
 // expectations as --dart-defines. This test restores Alice's two seeds into
-// the app (a fresh restore, variant N) and checks every expected activity row
-// and its detail screen.
+// the app (a fresh restore, variant N, with A0 synced before A1 is added) and
+// checks every expected activity row and its detail screen.
 //
 // Private profile: the runner builds the app with the private transparent
 // recovery flag and the debug-only regtest allowance, and points Rust at the
@@ -66,7 +66,10 @@ void main() {
       ),
     );
 
+    // A0 is restored and synced alone before A1 is added, so adding an
+    // account rewinds a synced wallet, the order users reach.
     await _importSeed(tester, thA0Mnemonic, first: true);
+    await thWaitForSynchronized(tester);
     await _importSeed(tester, thA1Mnemonic, first: false);
     final uuids = {
       'A0': await thAccountUuidAtOrder(0),

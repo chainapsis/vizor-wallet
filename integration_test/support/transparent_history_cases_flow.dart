@@ -120,6 +120,33 @@ class ThUiRow {
   String get label => '$caseId $account ${txid.substring(0, 12)}:$role';
 }
 
+/// Waits until the wallet reports its last sync completed, scanned to the
+/// tip, with no sync running.
+///
+/// The app layer restores A0 alone and waits here before adding A1, so adding
+/// an account rewinds an already synced wallet, the order users reach.
+Future<void> thWaitForSynchronized(
+  WidgetTester tester, {
+  Duration timeout = const Duration(minutes: 4),
+}) async {
+  final dbPath = await getWalletDbPath();
+  final deadline = DateTime.now().add(timeout);
+  while (true) {
+    try {
+      final status = await rust_sync.getSyncStatus(
+        dbPath: dbPath,
+        network: 'regtest',
+      );
+      if (status.isComplete && !rust_sync.isSyncRunning()) return;
+    } catch (_) {}
+    if (DateTime.now().isAfter(deadline)) {
+      fail('timed out waiting for the wallet to report itself synchronized');
+    }
+    await tester.pump(const Duration(milliseconds: 200));
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+  }
+}
+
 /// UUID of the account imported in position `order` (0 = A0's seed, 1 = A1's).
 /// The wallet DB's account listing is not in import order; the app's stored
 /// account list carries it.

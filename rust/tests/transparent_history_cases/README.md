@@ -61,7 +61,11 @@ The oracle's self-tests need no chain:
 
 Variants: **R** is the wallet that built or observed each transaction, **O**
 is R's files copied to a new path (a reopen with no in-process state), **N**
-is a fresh restore of Alice's seeds. Fault variants: **N_pre** (N's first
+is a fresh restore of Alice's seeds (both imported before the first sync),
+and **N_seq** is the same restore in the order users reach: A0 is restored
+and synced alone, and only then is A1 added, which rewinds a synced wallet.
+N_seq is held to N's expectations. The app layer restores in N_seq's order.
+Fault variants: **N_pre** (N's first
 sync with every `GetTransaction` held: the pre-enrichment view), **N_cut**
 (`GetTaddressTxids` streams cut), **N_utxo_fail** (`GetAddressUtxos*` fail),
 **N_pending** (a fresh restore while H12's transactions are unmined). The
@@ -185,4 +189,7 @@ Limits to state with any private result:
 Not covered (future extensions): hardware wallets (Ledger/Speculos variants of
 H07 and H10, which exercise the hardware broadcast-authority check; Keystone
 has no harness), txid-PIR enrichment tests, real-chain replay, a real NEAR
-swap, and CI wiring.
+swap, and CI wiring. The app layer is one fresh restore plus a mempool
+receive, so it does not check gift-card labels (the swap record is checked),
+a pending shield in the wallet that built it (Rust layer only), or H12's and
+H13's fault variants.

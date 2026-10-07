@@ -33,12 +33,15 @@ void main() {
       ),
     );
 
+    // A0 is restored and synced alone before A1 is added, so adding an
+    // account rewinds a synced wallet, the order users reach.
     await importWalletViaPaste(
       tester,
       mnemonic: thA0Mnemonic,
       birthdayHeight: 1,
       isFirstWallet: true,
     );
+    await thWaitForSynchronized(tester);
     await openAddAccountFlow(tester);
     await importWalletViaPaste(
       tester,

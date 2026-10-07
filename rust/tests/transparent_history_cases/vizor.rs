@@ -206,6 +206,68 @@ impl VizorWallet {
         }
     }
 
+    /// A fresh restore in the other order users reach: A0 alone is restored
+    /// and synced to the tip, and only then is A1 added. Adding an account to
+    /// a synced wallet rewinds it, which [`Self::import`] (both seeds before
+    /// the first sync) never exercises. Returns the wallet, for the caller to
+    /// settle, with the error of A0's own sync, if any.
+    pub fn import_sequential(
+        label: &str,
+        chain: &Chain,
+        a0: &Party,
+        a1: &Party,
+    ) -> (Self, Option<String>) {
+        let dir = tempfile::tempdir().expect("wallet dir");
+        let db = dir
+            .path()
+            .join("zcash_wallet.db")
+            .to_string_lossy()
+            .to_string();
+        let first = wallet_api::import_wallet(
+            a0.mnemonic.clone(),
+            String::new(),
+            Some(1),
+            NET.into(),
+            db.clone(),
+            Some(a0.name.into()),
+        )
+        .expect("import A0");
+        if crate::report::profile() == "private" {
+            // As in `import`: the wallet requires private recovery before its
+            // first sync. Adding A1 later must keep it, so it is not raised
+            // again.
+            sync_api::reconcile_transparent_policy(db.clone(), NET.into(), true)
+                .expect("raise the transparent policy to private recovery");
+        }
+        let mut wallet = VizorWallet {
+            label: label.into(),
+            _dir: dir,
+            db: db.clone(),
+            proxy: Proxy::start(&chain.lwd_url()),
+            accounts: vec![Account {
+                name: a0.name,
+                uuid: first.account_uuid,
+                mnemonic: a0.mnemonic.clone(),
+            }],
+        };
+        let first_sync = wallet.settle().err().map(|e| format!("A0 alone: {e}"));
+        let second = wallet_api::add_account(
+            db,
+            NET.into(),
+            a1.name.into(),
+            a1.mnemonic.clone(),
+            String::new(),
+            Some(1),
+        )
+        .expect("add A1");
+        wallet.accounts.push(Account {
+            name: a1.name,
+            uuid: second.account_uuid,
+            mnemonic: a1.mnemonic.clone(),
+        });
+        (wallet, first_sync)
+    }
+
     /// O: copy every file of this wallet to a new directory. Call only while
     /// no Vizor operation runs on it.
     pub fn reopen(&self, label: &str, chain: &Chain) -> Self {
