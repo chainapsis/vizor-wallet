@@ -72,10 +72,11 @@ typedef ActivityTxHistoryLoader =
     Future<List<rust_sync.TransactionInfo>> Function(String accountUuid);
 
 /// Loads one transaction's detail; injectable for previews and widget tests.
-typedef ActivityTxDetailLoader = Future<rust_sync.TransactionDetail?> Function(
-  String accountUuid,
-  rust_sync.TransactionInfo transaction,
-);
+typedef ActivityTxDetailLoader =
+    Future<rust_sync.TransactionDetail?> Function(
+      String accountUuid,
+      rust_sync.TransactionInfo transaction,
+    );
 
 /// Asks the next sync to look a transaction's transparent details up first;
 /// injectable for widget tests.
@@ -83,9 +84,8 @@ typedef TransparentDetailsPrioritizer = Future<void> Function(String txidHex);
 
 /// Development builds only: one private lookup, described in a line;
 /// injectable for widget tests.
-typedef TransparentDetailsDebugLookup = Future<String> Function(
-  rust_sync.TransactionInfo transaction,
-);
+typedef TransparentDetailsDebugLookup =
+    Future<String> Function(rust_sync.TransactionInfo transaction);
 
 class ActivityTransactionStatusScreen extends ConsumerStatefulWidget {
   const ActivityTransactionStatusScreen({
@@ -140,6 +140,7 @@ class _ActivityTransactionStatusScreenState
   bool _messageExpanded = false;
   String? _verifyAddress;
   Timer? _transparentDetailsPoll;
+  bool _transparentDetailsPollInFlight = false;
   bool _transparentDetailsPrioritized = false;
   String? _debugLookupText;
 
@@ -311,18 +312,25 @@ class _ActivityTransactionStatusScreenState
   }
 
   Future<void> _pollTransparentDetails() async {
+    // Full receipt loads supersede polls through the same generation guard.
+    // Do not start a second read while either refresh is still running.
+    if (_detailsPending || _transparentDetailsPollInFlight) return;
+    final generation = _loadGeneration;
     final tx = _transaction;
     final accountUuid = _activeAccountUuid;
     if (tx == null || accountUuid == null) return;
+    _transparentDetailsPollInFlight = true;
     try {
       final detail = await _loadDetail(accountUuid, tx);
-      if (!mounted || accountUuid != _activeAccountUuid || detail == null) {
+      if (!_loadIsCurrent(generation, accountUuid) || detail == null) {
         return;
       }
       setState(() => _detail = detail);
       _followTransparentDetails();
     } catch (e) {
       log('ActivityTransactionStatus: transparent details refresh failed: $e');
+    } finally {
+      _transparentDetailsPollInFlight = false;
     }
   }
 

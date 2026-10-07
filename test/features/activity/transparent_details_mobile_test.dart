@@ -22,7 +22,11 @@ import '../../fakes/fake_enhance_pir_notifier.dart';
 import '../../fakes/fake_sync_notifier.dart';
 import 'transparent_details_test_support.dart';
 
-Future<List<String>> _pump(WidgetTester tester, ScriptedDetails details) async {
+Future<List<String>> _pump(
+  WidgetTester tester,
+  ScriptedDetails details, {
+  FakeSyncNotifier? sync,
+}) async {
   await tester.binding.setSurfaceSize(const Size(393, 1600));
   addTearDown(() => tester.binding.setSurfaceSize(null));
   final prioritized = <String>[];
@@ -34,9 +38,11 @@ Future<List<String>> _pump(WidgetTester tester, ScriptedDetails details) async {
         enhancePirProvider.overrideWith(() => FakeEnhancePirNotifier(true)),
         appBootstrapProvider.overrideWithValue(transparentDetailsBootstrap()),
         syncProvider.overrideWith(
-          () => FakeSyncNotifier(
-            SyncState(accountUuid: 'account-1', hasAccountScopedData: true),
-          ),
+          () =>
+              sync ??
+              FakeSyncNotifier(
+                SyncState(accountUuid: 'account-1', hasAccountScopedData: true),
+              ),
         ),
         addressBookRepositoryProvider.overrideWithValue(EmptyAddressBook()),
         ownAccountAddressesProvider.overrideWith((ref) async => const {}),
@@ -73,6 +79,11 @@ Future<void> _close(WidgetTester tester) async {
 }
 
 void main() {
+  transparentDetailsRefreshTests(
+    pump: (tester, details, sync) async {
+      await _pump(tester, details, sync: sync);
+    },
+  );
   testWidgets('mobile receipt shows transparent recipients when available', (
     tester,
   ) async {

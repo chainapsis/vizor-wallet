@@ -84,10 +84,11 @@ typedef MobileTxHistoryLoader =
     Future<List<rust_sync.TransactionInfo>> Function(String accountUuid);
 
 /// Loads one transaction's detail; injectable for widget tests.
-typedef MobileTxDetailLoader = Future<rust_sync.TransactionDetail?> Function(
-  String accountUuid,
-  rust_sync.TransactionInfo transaction,
-);
+typedef MobileTxDetailLoader =
+    Future<rust_sync.TransactionDetail?> Function(
+      String accountUuid,
+      rust_sync.TransactionInfo transaction,
+    );
 
 /// Mobile transaction status/detail — Figma `ACTIVITY & STATUS` frames
 /// `Status Sending` (4752:70731), `Status Scucess` (4752:71303),
@@ -146,6 +147,7 @@ class _MobileTransactionStatusScreenState
   int _loadGeneration = 0;
   bool _messageExpanded = false;
   Timer? _transparentDetailsPoll;
+  bool _transparentDetailsPollInFlight = false;
   bool _transparentDetailsPrioritized = false;
   String? _debugLookupText;
 
@@ -321,18 +323,25 @@ class _MobileTransactionStatusScreenState
   }
 
   Future<void> _pollTransparentDetails() async {
+    // Full receipt loads supersede polls through the same generation guard.
+    // Do not start a second read while either refresh is still running.
+    if (_detailsPending || _transparentDetailsPollInFlight) return;
+    final generation = _loadGeneration;
     final tx = _transaction;
     final accountUuid = _activeAccountUuid;
     if (tx == null || accountUuid == null) return;
+    _transparentDetailsPollInFlight = true;
     try {
       final detail = await _loadDetail(accountUuid, tx);
-      if (!mounted || accountUuid != _activeAccountUuid || detail == null) {
+      if (!_loadIsCurrent(generation, accountUuid) || detail == null) {
         return;
       }
       setState(() => _detail = detail);
       _followTransparentDetails();
     } catch (e) {
       log('MobileTransactionStatus: transparent details refresh failed: $e');
+    } finally {
+      _transparentDetailsPollInFlight = false;
     }
   }
 
