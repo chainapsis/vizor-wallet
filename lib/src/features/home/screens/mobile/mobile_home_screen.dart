@@ -779,14 +779,9 @@ class _ImportingBackground extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = context.appTheme == AppThemeData.dark;
-    final assetName = isDark
-        ? 'assets/illustrations/home_importing_background_dark.webp'
-        : 'assets/illustrations/home_importing_background_light.webp';
-
     return Positioned.fill(
       child: Image.asset(
-        assetName,
+        'assets/illustrations/home_importing_background.webp',
         key: const ValueKey('mobile_home_importing_background'),
         fit: BoxFit.cover,
         alignment: Alignment.topCenter,

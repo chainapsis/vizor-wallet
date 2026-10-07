@@ -43,6 +43,7 @@ import '../widgetbook/screen_use_cases.dart';
 import '../widgetbook/mobile_welcome_network_use_cases.dart';
 import '../widgetbook/swap_use_cases.dart';
 import '../widgetbook/voting_use_cases.dart';
+import '../widgetbook/address_book_use_cases.dart';
 import '../widgetbook/address_verify_use_cases.dart';
 import 'zip321_prefill_use_cases.dart';
 import 'gift_card_usage_use_cases.dart';
@@ -95,6 +96,32 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     description: 'Desktop setup reminders during the initial scan',
     builder: buildDesktopHomeSetupImportingUseCase,
     platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'address-book-no-contacts',
+    description: 'Desktop address book with no saved contacts',
+    builder: buildAddressBookNoContactsUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'address-book-empty-search',
+    description: 'Desktop address book with no search results',
+    builder: buildAddressBookEmptySearchUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-address-book-no-contacts',
+    description: 'Mobile address book with no saved contacts',
+    builder: buildMobileContactsNoContactsUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-address-book-empty-search',
+    description: 'Mobile address book with no search results',
+    builder: buildMobileContactsEmptySearchUseCase,
+    desktop: false,
+    mobile: true,
   ),
   FigmaCompareScenario(
     id: 'desktop-gift-education',
@@ -1894,6 +1921,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'swap-tor-blocked',
     description: 'Desktop swap when the provider blocks a Tor exit',
     builder: buildSwapPageTorBlockedUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-deposit-timeout',
+    description: 'Desktop swap after the deposit window expires',
+    builder: buildSwapDepositTimeoutUseCase,
   ),
   FigmaCompareScenario(
     id: 'swap-guidance-deposit-desktop',

@@ -94,18 +94,15 @@ class _ImportOnboardingWindowBackground extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = AppTheme.of(context) == AppThemeData.dark;
     final asset = switch (activeStep) {
       ImportOnboardingStep.secretPassphrase ||
       ImportOnboardingStep.walletBirthdayHeight =>
-        isDark
-            ? 'assets/illustrations/onboarding_secret_passphrase_background_dark.webp'
-            : 'assets/illustrations/onboarding_secret_passphrase_background_light.webp',
+        'assets/illustrations/desktop/onboarding_secret_passphrase_background.webp',
       // Figma uses the same castle line-art for both themes (alpha-only
       // strokes composite against the window color), so one asset serves
       // light and dark — same wiring as the create flow.
       ImportOnboardingStep.setPassword =>
-        'assets/illustrations/onboarding_set_password_background_light.webp',
+        'assets/illustrations/desktop/onboarding_set_password_background_light.webp',
       ImportOnboardingStep.customiseAccount => null,
     };
 

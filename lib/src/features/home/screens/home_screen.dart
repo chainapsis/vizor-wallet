@@ -56,7 +56,7 @@ import '../widgets/ledger_shield_signing_overlay.dart';
 const _shieldErrorTooltipIconSize = 14.0;
 const _shieldErrorTooltipGap = AppSpacing.xxs;
 const _ironwoodMigrationIllustrationAsset =
-    'assets/illustrations/ironwood_migration_illustration.webp';
+    'assets/illustrations/desktop/ironwood_migration_illustration.webp';
 const _ironwoodMigrationCtaBackgroundColor = Color(0xFF1B1F1F);
 const _ironwoodMigrationCtaBorderColor = Color(0x12FFFFFF);
 const _homeDesktopActivationShortcuts = <ShortcutActivator, Intent>{
@@ -322,10 +322,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         !sync.hasAccountScopedData &&
         sync.failure == null;
     final isDark = context.appTheme == AppThemeData.dark;
-    final backgroundVariant = isImportingForBackground
-        ? 'importing'
-        : 'default';
-    final backgroundTheme = isDark ? 'dark' : 'light';
+    final backgroundAsset = isImportingForBackground
+        ? 'assets/illustrations/home_importing_background.webp'
+        : 'assets/illustrations/desktop/'
+              'home_default_background_${isDark ? 'dark' : 'light'}.webp';
     final ironwoodAnnouncementAsync = ref.watch(
       ironwoodMigrationAnnouncementProvider,
     );
@@ -361,10 +361,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
     final visibleIronwoodAnnouncement = _visibleIronwoodAnnouncement;
     return AppDesktopBackdropShell(
-      background: _HomeFullPageBackground(
-        assetName:
-            'assets/illustrations/home_${backgroundVariant}_background_$backgroundTheme.webp',
-      ),
+      background: _HomeFullPageBackground(assetName: backgroundAsset),
       sidebar: const AppMainSidebar(),
       pane: Stack(
         fit: StackFit.expand,

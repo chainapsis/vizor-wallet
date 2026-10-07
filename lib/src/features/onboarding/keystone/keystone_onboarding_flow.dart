@@ -185,12 +185,9 @@ class _KeystoneOnboardingWindowBackground extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = AppTheme.of(context) == AppThemeData.dark;
     final asset = switch (activeStep) {
       KeystoneOnboardingStep.setPassword =>
-        isDark
-            ? 'assets/illustrations/onboarding_secret_passphrase_background_dark.webp'
-            : 'assets/illustrations/onboarding_secret_passphrase_background_light.webp',
+        'assets/illustrations/desktop/onboarding_secret_passphrase_background.webp',
       KeystoneOnboardingStep.customiseAccount => null,
       _ => null,
     };
