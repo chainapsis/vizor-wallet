@@ -20,7 +20,7 @@ use std::time::Duration;
 use tokio::runtime::Handle;
 use tonic::transport::Channel;
 use zakura_pir_transparent::{
-    deferral, display_facts, map_sha256, TxidDisplayClient, TxidError, TxidLookup,
+    deferral, display_facts, map_sha256, TxidDisplayClient, TxidError, TxidLookup, TxidTransport,
 };
 use zcash_client_backend::data_api::transparent_ledger::{
     TransparentDetailOutcome, TransparentDisplayFacts,
@@ -86,6 +86,13 @@ pub(crate) trait DetailSource {
     /// The display map the source last used, which releases work held by an
     /// older one.
     fn map_sha256(&self) -> Option<[u8; 32]>;
+
+    /// Fetches the source's display map afresh and returns its hash; `None`
+    /// for a source without one, or when the fetch failed or was stopped.
+    fn refresh_map(
+        &mut self,
+        should_exit: &(dyn Fn() -> bool + Sync),
+    ) -> impl Future<Output = Option<[u8; 32]>> + Send;
 }
 
 // ---- private ---------------------------------------------------------------
@@ -196,6 +203,25 @@ impl DetailSource for PirSource {
             .map_sha256()
             .and_then(map_sha256)
     }
+
+    async fn refresh_map(&mut self, should_exit: &(dyn Fn() -> bool + Sync)) -> Option<[u8; 32]> {
+        #[cfg(test)]
+        let observer = Some(self.observer.clone()?);
+        let request = BlockingLookup {
+            origin: self.origin.clone(),
+            client: self.client.clone(),
+            txid: [0; 32],
+            mined_height: 0,
+            handle: Handle::current(),
+            cancel: Arc::new(AtomicBool::new(false)),
+            #[cfg(test)]
+            observer,
+        };
+        run_blocking_with(request, should_exit, BlockingLookup::refresh_map)
+            .await
+            .ok()
+            .flatten()
+    }
 }
 
 /// Everything one private lookup needs on its blocking thread.
@@ -219,6 +245,31 @@ impl BlockingLookup {
     /// Runs the lookup on the calling thread, which must not be a runtime
     /// worker.
     pub(crate) fn run(self) -> Looked {
+        self.with_client(|client, mut http, exit, txid, height| {
+            client.lookup(&mut http, txid, height, exit)
+        })
+    }
+
+    /// Fetches the display map now; the hash, or `None` on any failure.
+    pub(crate) fn refresh_map(self) -> Option<[u8; 32]> {
+        let (refreshed, _) =
+            self.with_client(|client, mut http, exit, _, _| client.refresh_map(&mut http, exit));
+        refreshed.ok()
+    }
+
+    /// Runs `call` with the client and a transport bound to this request's
+    /// cancellation; returns its result with the map hash the client holds
+    /// afterwards.
+    fn with_client<T>(
+        self,
+        call: impl FnOnce(
+            &mut TxidDisplayClient,
+            &mut dyn TxidTransport,
+            &dyn Fn() -> bool,
+            [u8; 32],
+            u64,
+        ) -> Result<T, TxidError>,
+    ) -> (Result<T, TxidError>, Option<[u8; 32]>) {
         let _runtime = self.handle.enter();
         let cancel = self.cancel.clone();
         let exit = move || cancel.load(Ordering::SeqCst);
@@ -240,9 +291,9 @@ impl BlockingLookup {
         };
         let mut http = http;
         let mut client = self.client.lock().unwrap_or_else(PoisonError::into_inner);
-        let found = client.lookup(&mut http, self.txid, self.mined_height, &exit);
+        let result = call(&mut client, &mut http, &exit, self.txid, self.mined_height);
         let map = client.map_sha256().and_then(map_sha256);
-        (found, map)
+        (result, map)
     }
 }
 
@@ -252,9 +303,18 @@ async fn run_blocking(
     request: BlockingLookup,
     should_exit: &(dyn Fn() -> bool + Sync),
 ) -> Result<Looked, DetailFailure> {
+    run_blocking_with(request, should_exit, BlockingLookup::run).await
+}
+
+/// [`run_blocking`] for any blocking call on the request.
+async fn run_blocking_with<T: Send + 'static>(
+    request: BlockingLookup,
+    should_exit: &(dyn Fn() -> bool + Sync),
+    call: fn(BlockingLookup) -> T,
+) -> Result<T, DetailFailure> {
     let cancel = request.cancel.clone();
     let _cancel_on_drop = CancelOnDrop(cancel.clone());
-    let mut task = tokio::task::spawn_blocking(move || request.run());
+    let mut task = tokio::task::spawn_blocking(move || call(request));
     let joined = tokio::select! {
         biased;
         _ = watch_for_exit(&should_exit) => {
@@ -267,8 +327,8 @@ async fn run_blocking(
         return Err(DetailFailure::Cancelled);
     }
     match joined {
-        Ok(Ok(looked)) => Ok(looked),
-        // The lookup panicked, or passed its backstop.
+        Ok(Ok(result)) => Ok(result),
+        // The call panicked, or passed its backstop.
         Ok(Err(_)) | Err(_) => {
             cancel.store(true, Ordering::SeqCst);
             Err(DetailFailure::Deferred {
@@ -346,6 +406,10 @@ impl DetailSource for GateSource {
     }
 
     fn map_sha256(&self) -> Option<[u8; 32]> {
+        None
+    }
+
+    async fn refresh_map(&mut self, _should_exit: &(dyn Fn() -> bool + Sync)) -> Option<[u8; 32]> {
         None
     }
 }
