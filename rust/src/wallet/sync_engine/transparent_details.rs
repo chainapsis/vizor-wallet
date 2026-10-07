@@ -39,7 +39,9 @@
 //! Work a private lookup held for the display map waits for the map to
 //! change, and no lookup may be due to fetch a newer one: when nothing is due
 //! and work is parked, the private source fetches the map alone and the run
-//! lists again (see `list_work`).
+//! lists again (see `list_work`). The database's refresh time bounds these
+//! checks to six hours after the latest parked attempt or attempted map check.
+//! The process keeps check times by origin across runs, including failed checks.
 
 use std::collections::{HashMap, VecDeque};
 use std::panic::AssertUnwindSafe;
@@ -60,6 +62,7 @@ use zcash_client_backend::data_api::{
 use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 use zcash_client_sqlite::{error::SqliteClientError, AccountUuid};
 use zcash_primitives::transaction::TxId;
+use zcash_protocol::consensus::BlockHeight;
 
 use super::enhancement::EnhancementPolicy;
 use super::{elapsed, SyncProgressEvent, TransparentLookupGate, WalletDatabase};
@@ -238,6 +241,7 @@ pub(crate) async fn run<S: DetailSource>(
             break;
         }
         let txid = request.txid;
+        let looked_up_height = request.mined_height;
         let answer = source
             .lookup(txid, request.mined_height, &budget_exit)
             .await;
@@ -255,6 +259,7 @@ pub(crate) async fn run<S: DetailSource>(
                 defer(
                     db,
                     txid,
+                    looked_up_height,
                     now,
                     TransparentDetailOutcome::Unavailable { retry_after: None },
                     None,
@@ -276,7 +281,18 @@ pub(crate) async fn run<S: DetailSource>(
                     "transparent details: lookup deferred ({})",
                     outcome_name(outcome)
                 );
-                if !defer(db, txid, now, outcome, map_sha256, &mut stats, &write_exit).await {
+                if !defer(
+                    db,
+                    txid,
+                    looked_up_height,
+                    now,
+                    outcome,
+                    map_sha256,
+                    &mut stats,
+                    &write_exit,
+                )
+                .await
+                {
                     return gave_up(should_exit, stats);
                 }
                 if matches!(outcome, TransparentDetailOutcome::Unavailable { .. }) {
@@ -292,6 +308,7 @@ pub(crate) async fn run<S: DetailSource>(
                     if !defer(
                         db,
                         txid,
+                        looked_up_height,
                         now,
                         TransparentDetailOutcome::Protocol,
                         None,
@@ -333,6 +350,7 @@ pub(crate) async fn run<S: DetailSource>(
                         if !defer(
                             db,
                             txid,
+                            looked_up_height,
                             now,
                             TransparentDetailOutcome::Unavailable { retry_after: None },
                             map_sha256,
@@ -354,6 +372,7 @@ pub(crate) async fn run<S: DetailSource>(
                     if !defer(
                         db,
                         txid,
+                        looked_up_height,
                         now,
                         TransparentDetailOutcome::Protocol,
                         None,
@@ -404,6 +423,7 @@ pub(crate) async fn run<S: DetailSource>(
                         if !defer(
                             db,
                             txid,
+                            looked_up_height,
                             now,
                             TransparentDetailOutcome::Unavailable { retry_after: None },
                             None,
@@ -441,13 +461,17 @@ async fn list_work<S: DetailSource>(
     if !work.requests.is_empty() {
         return Some(work);
     }
+    let now = (clock.system)();
     let parked = db
-        .transparent_detail_parked((clock.system)())
-        .map(|parked| parked.count)
-        .unwrap_or(0);
-    if parked == 0 {
+        .transparent_detail_parked(now, map, source.map_checked_at())
+        .ok();
+    if !parked
+        .is_some_and(|parked| parked.count > 0 && parked.refresh_at.is_some_and(|at| at <= now))
+        || should_exit()
+    {
         return Some(work);
     }
+    source.map_check_started(now);
     match source.refresh_map(should_exit).await {
         Some(refreshed) if Some(refreshed) != map => {
             log::info!("transparent details: display map changed; re-listing parked work");
@@ -473,6 +497,7 @@ fn gave_up(should_exit: &(dyn Fn() -> bool + Sync), stats: RunStats) -> RunOutco
 async fn defer(
     db: &mut WalletDatabase,
     txid: TxId,
+    looked_up_height: BlockHeight,
     now: SystemTime,
     outcome: TransparentDetailOutcome,
     map_sha256: Option<[u8; 32]>,
@@ -482,7 +507,7 @@ async fn defer(
     let deferred = with_wallet_db_write_lock_unless(
         "sync_engine.transparent_details.defer",
         write_exit,
-        || db.defer_transparent_detail(txid, outcome, map_sha256, now),
+        || db.defer_transparent_detail(txid, looked_up_height, outcome, map_sha256, now),
     )
     .await;
     let Some(deferred) = deferred else {

@@ -755,10 +755,13 @@ captured policy ── PrivateRequired ──> txid display PIR  (PirSource)
   unsupported, contradicted) waits for that map to change, and no lookup may
   be due to fetch a newer one. So when nothing is due and the wallet reports
   work parked for want of a map change (`transparent_detail_parked`), the
-  private source fetches the map alone (`refresh_map`: one
+  private source waits for the reported refresh time, then fetches the map alone (`refresh_map`: one
   `GET /v1/txid/shards`, no txid, validated as a lookup validates it) and the
-  run lists again under its hash. A restart starts without a map, and the
-  first such run fetches it. A failed or cancelled fetch leaves the map the
+  run lists again under its hash. The check is due six hours after the later
+  of the newest parked attempt and the last attempted map check. The process
+  keeps that check time by origin across sync runs, including failed checks.
+  A restart starts without a map or check time and fetches when the parked
+  work permits it. A failed or cancelled fetch leaves the map the
   client held, and the work held under it; it is logged by kind and never
   becomes a public lookup. Parking is private only: under public authority
   the gate source has no map, and held work is due at its ordinary retry.
@@ -789,14 +792,17 @@ captured policy ── PrivateRequired ──> txid display PIR  (PirSource)
   mode retains public authority, and stores are checked against that
   generation. When nothing is due but lookups are parked on the display map
   they last saw (`transparent_detail_parked`), the private source refreshes
-  its map once (`refresh_map`) and lists again under the new hash. The run
+  its map once (`refresh_map`) when the six-hour check interval permits it,
+  then lists again under the new hash. The run
   puts transactions a detail view asked for
   (`prioritize_transparent_details`, an in-memory interest set) first, and
   makes at most 8 lookups in 45 s, one at a time. Lookups run on a thread
   of their own with no database lock held; each store or deferral takes the wallet
   write lock for one short transaction, within the budget above.
 - **Failures.** Every failure is deferred to the wallet
-  (`defer_transparent_detail`), which schedules the retry: unavailable,
+  (`defer_transparent_detail`) with the original requested mined height, so
+  a failure after a remine or rewind cannot postpone replacement work.
+  The wallet schedules the retry: unavailable,
   stale, transport or protocol failures from 30 s doubling to an hour (at
   least the service's `Retry-After`), a height above the newest shard from a
   minute to five (shown pending), an absent record from an hour to a day,

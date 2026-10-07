@@ -1787,6 +1787,50 @@ fn work_row(path: &str, txid: &TxId) -> Option<(Option<i64>, Option<[u8; 32]>)> 
 
 /// Longer than any backoff a held outcome gets.
 const PAST_BACKOFF: Duration = Duration::from_secs(2 * 24 * 60 * 60);
+const MAP_RECHECK: Duration = Duration::from_secs(6 * 60 * 60);
+
+/// A lookup failure belongs to the placement it requested. A remine or
+/// rewind while it is in flight must not postpone the replacement work.
+#[tokio::test]
+async fn stale_lookup_failures_preserve_remined_or_unmined_work() {
+    for new_height in [Some(TOP), None] {
+        let fixture = wallet();
+        let txid = utxo_receipt(&fixture, 0x4c, TOP - 1).txid();
+        let path = fixture.path.clone();
+        let mut source = Scripted::new(move |looked_up_txid| {
+            rusqlite::Connection::open(&path)
+                .unwrap()
+                .execute(
+                    "UPDATE transactions SET mined_height = ?1 WHERE txid = ?2",
+                    rusqlite::params![new_height, looked_up_txid.as_ref().as_slice()],
+                )
+                .unwrap();
+            deferred(TransparentDetailOutcome::NotCovered)
+        });
+        run_scripted(&fixture, &mut source).await.unwrap();
+        assert_eq!(work_row(&fixture.path, &txid), Some((None, None)));
+        let (attempts, next): (u32, i64) = rusqlite::Connection::open(&fixture.path)
+            .unwrap()
+            .query_row(
+                "SELECT attempts, next_attempt_at FROM transparent_detail_work w
+                        JOIN transactions t ON t.id_tx = w.transaction_id WHERE t.txid = ?1",
+                [txid.as_ref().as_slice()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((attempts, next), (0, 0));
+        let db = open(&fixture.path);
+        let work = db
+            .transparent_detail_work(wall(), WORK_WINDOW, source.map_sha256())
+            .unwrap();
+        if let Some(height) = new_height {
+            assert_eq!(work.requests.len(), 1);
+            assert_eq!(work.requests[0].mined_height, BlockHeight::from_u32(height));
+        } else {
+            assert!(work.requests.is_empty());
+        }
+    }
+}
 
 /// Requests `observer` saw after the first `sent`.
 fn paths_since(observer: &RequestObserver, sent: usize) -> Vec<String> {
@@ -1850,8 +1894,8 @@ async fn held_work_learns_of_new_coverage_through_the_cached_client() {
     assert_eq!(lwd.count("/GetTransaction"), 0);
 }
 
-/// An unchanged map keeps held work held, through a kept client and after a
-/// restart; each run asks only for the map.
+/// An unchanged map keeps held work held. Consecutive runs share a six-hour
+/// check interval; restarting the client forgets its attempted check time.
 #[tokio::test(flavor = "multi_thread")]
 async fn held_work_stays_held_while_the_map_is_unchanged() {
     let fixture = wallet();
@@ -1865,6 +1909,20 @@ async fn held_work_stays_held_while_the_map_is_unchanged() {
         let _seam = test_seam::set(&fixture.path, service.clone());
         hold(&fixture, &lwd, &txid, map).await;
         let sent = service.requests().len();
+        let outcome = followup_with(&fixture, required(), &lwd).await;
+        assert!(finished_with(outcome, 0), "{outcome:?}");
+        assert_eq!(paths_since(&service, sent), ["/v1/txid/shards"]);
+
+        // New sources in consecutive sync runs retain the attempted check.
+        let sent = service.requests().len();
+        let outcome = followup_with(&fixture, required(), &lwd).await;
+        assert!(finished_with(outcome, 0), "{outcome:?}");
+        assert!(paths_since(&service, sent).is_empty());
+        advance_wall(MAP_RECHECK - Duration::from_secs(1));
+        let outcome = followup_with(&fixture, required(), &lwd).await;
+        assert!(finished_with(outcome, 0), "{outcome:?}");
+        assert!(paths_since(&service, sent).is_empty());
+        advance_wall(Duration::from_secs(1));
         let outcome = followup_with(&fixture, required(), &lwd).await;
         assert!(finished_with(outcome, 0), "{outcome:?}");
         assert_eq!(paths_since(&service, sent), ["/v1/txid/shards"]);
@@ -1982,6 +2040,14 @@ fn held_work_stays_held_when_the_map_cannot_be_fetched() {
                     let outcome = followup_with(&fixture, required(), &lwd).await;
                     assert!(finished_with(outcome, 0), "{kind}: {outcome:?}");
                     check(sent);
+                    let sent = service.requests().len();
+                    let outcome = followup_with(&fixture, required(), &lwd).await;
+                    assert!(finished_with(outcome, 0), "{kind}: {outcome:?}");
+                    assert!(
+                        paths_since(&service, sent).is_empty(),
+                        "failed checks are bounded too"
+                    );
+                    advance_wall(MAP_RECHECK);
                 }
             }
             for kind in 1..=FAILURES {
@@ -2318,6 +2384,8 @@ fn an_abandoned_lookup_holds_neither_the_run_nor_its_runtime() {
     let (unblock, blocked) = std::sync::mpsc::channel::<()>();
     let blocked = Arc::new(Mutex::new(blocked));
     let (descendant, descended) = std::sync::mpsc::channel::<()>();
+    let (descendant_started, started) = std::sync::mpsc::channel::<()>();
+    let started = Arc::new(Mutex::new(started));
     let stuck = Arc::new(AtomicBool::new(false));
     let covering = publication(BIRTHDAY, TOP).answer;
     let service = RequestObserver::answering({
@@ -2327,14 +2395,21 @@ fn an_abandoned_lookup_holds_neither_the_run_nor_its_runtime() {
                 // Blocking work the request's I/O left on its runtime, as a
                 // stuck DNS lookup leaves it, never awaited.
                 let descendant = descendant.clone();
+                let descendant_started = descendant_started.clone();
                 let blocked = blocked.clone();
                 tokio::task::spawn_blocking(move || {
+                    descendant_started.send(()).unwrap();
                     let _ = blocked
                         .lock()
                         .unwrap()
                         .recv_timeout(Duration::from_secs(30));
                     let _ = descendant.send(());
                 });
+                started
+                    .lock()
+                    .unwrap()
+                    .recv_timeout(Duration::from_secs(10))
+                    .unwrap();
                 // Blocks until released, whatever the cancellation says.
                 let _ = released
                     .lock()

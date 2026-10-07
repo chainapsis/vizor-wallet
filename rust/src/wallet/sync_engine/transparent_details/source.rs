@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex, PoisonError, TryLockError};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use tokio::runtime::Handle;
 use tonic::transport::Channel;
@@ -93,6 +93,14 @@ pub(crate) trait DetailSource {
     /// older one.
     fn map_sha256(&self) -> Option<[u8; 32]>;
 
+    /// Last attempted publication-map check, shared across sync runs.
+    fn map_checked_at(&self) -> Option<SystemTime> {
+        None
+    }
+
+    /// Records the attempt before awaiting it, including failed or cancelled checks.
+    fn map_check_started(&mut self, _now: SystemTime) {}
+
     /// Fetches the source's display map afresh and returns its hash; `None`
     /// for a source without one, or when the fetch failed or was stopped.
     fn refresh_map(
@@ -105,17 +113,29 @@ pub(crate) trait DetailSource {
 
 /// One client per origin for the whole process, so the init document, the
 /// map, manifests, setups and the costly native profiles are derived once.
-static CLIENTS: LazyLock<Mutex<HashMap<String, Arc<Mutex<TxidDisplayClient>>>>> =
-    LazyLock::new(Default::default);
+static CLIENTS: LazyLock<Mutex<HashMap<String, CachedClient>>> = LazyLock::new(Default::default);
 
-/// The process-wide client for `origin`.
-pub(crate) fn client_for(origin: &str) -> Arc<Mutex<TxidDisplayClient>> {
+#[derive(Clone)]
+struct CachedClient {
+    client: Arc<Mutex<TxidDisplayClient>>,
+    map_checked_at: Arc<Mutex<Option<SystemTime>>>,
+}
+
+fn cached_for(origin: &str) -> CachedClient {
     CLIENTS
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .entry(origin.to_owned())
-        .or_insert_with(|| Arc::new(Mutex::new(TxidDisplayClient::new())))
+        .or_insert_with(|| CachedClient {
+            client: Arc::new(Mutex::new(TxidDisplayClient::new())),
+            map_checked_at: Arc::new(Mutex::new(None)),
+        })
         .clone()
+}
+
+/// The process-wide client for `origin`.
+pub(crate) fn client_for(origin: &str) -> Arc<Mutex<TxidDisplayClient>> {
+    cached_for(origin).client
 }
 
 /// The txid display origin for `network`: the transparent PIR origin, with
@@ -131,6 +151,8 @@ pub(crate) struct PirSource {
     /// The digest of the map the client held after this source's last
     /// request, for when another request holds the client.
     map: Option<[u8; 32]>,
+    /// Kept outside the native-client lock, which an abandoned lookup may hold.
+    map_checked_at: Arc<Mutex<Option<SystemTime>>>,
     #[cfg(test)]
     observer: Option<crate::wallet::sync_engine::enhancement::RequestObserver>,
 }
@@ -144,17 +166,24 @@ impl PirSource {
         #[cfg(test)]
         let seam = test_seam::get(db_path);
         #[cfg(test)]
-        let client = seam.as_ref().map_or_else(
-            || Arc::new(Mutex::new(TxidDisplayClient::new())),
-            |seam| seam.client.clone(),
+        let cached = seam.as_ref().map_or_else(
+            || CachedClient {
+                client: Arc::new(Mutex::new(TxidDisplayClient::new())),
+                map_checked_at: Arc::new(Mutex::new(None)),
+            },
+            |seam| CachedClient {
+                client: seam.client.clone(),
+                map_checked_at: seam.map_checked_at.clone(),
+            },
         );
         #[cfg(not(test))]
-        let client = client_for(&origin);
+        let cached = cached_for(&origin);
         let _ = db_path;
         let mut source = Self {
             origin,
-            client,
+            client: cached.client,
             map: None,
+            map_checked_at: cached.map_checked_at,
             #[cfg(test)]
             observer: seam.map(|seam| seam.observer),
         };
@@ -225,6 +254,20 @@ impl DetailSource for PirSource {
             }
             Err(TryLockError::WouldBlock) => self.map,
         }
+    }
+
+    fn map_checked_at(&self) -> Option<SystemTime> {
+        *self
+            .map_checked_at
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn map_check_started(&mut self, now: SystemTime) {
+        *self
+            .map_checked_at
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(now);
     }
 
     async fn refresh_map(&mut self, should_exit: &(dyn Fn() -> bool + Sync)) -> Option<[u8; 32]> {
@@ -506,6 +549,7 @@ impl DetailSource for GateSource {
 pub(crate) mod test_seam {
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex, OnceLock, PoisonError};
+    use std::time::SystemTime;
 
     use zakura_pir_transparent::TxidDisplayClient;
 
@@ -518,6 +562,7 @@ pub(crate) mod test_seam {
         /// Shared by every source built while the seam is set, as sources
         /// share the process-wide client; a new seam is a restart.
         pub(crate) client: Arc<Mutex<TxidDisplayClient>>,
+        pub(crate) map_checked_at: Arc<Mutex<Option<SystemTime>>>,
     }
 
     fn seams() -> &'static Mutex<HashMap<String, Seam>> {
@@ -544,6 +589,7 @@ pub(crate) mod test_seam {
                 Seam {
                     observer,
                     client: Arc::new(Mutex::new(TxidDisplayClient::new())),
+                    map_checked_at: Arc::new(Mutex::new(None)),
                 },
             );
         SeamGuard(db_path.to_owned())
