@@ -144,7 +144,7 @@ fn reject_prerelease_swap_database(db_path: &str) -> Result<(), String> {
 /// Migrations from prerelease builds that the released library no longer has. The
 /// first is `ironwood_compact_encryption` from zakura-client-sqlite 0.1.0-rc6, withdrawn
 /// in rc7; the rest are swap receiving migrations, each since replaced.
-const PRERELEASE_SWAP_MIGRATIONS: [u128; 18] = [
+const PRERELEASE_SWAP_MIGRATIONS: [u128; 19] = [
     0x2eac815d_67ca_4fb4_b534_066102a0fba2,
     0x36463314_9e3c_4544_8d2b_65bcc2601da2,
     0x7aec2ef0_6b82_40f0_a1a4_47c1330b6813,
@@ -163,6 +163,7 @@ const PRERELEASE_SWAP_MIGRATIONS: [u128; 18] = [
     0x75bb24bd_c390_4791_9694_368a878a7b76,
     0x19038f09_9eba_45e6_bf67_e8a912a82f99,
     0xa149818b_e384_4632_9103_4d1d1ac51403,
+    0xd4d1c920_ce9e_4cab_86f2_d96974f17a85,
 ];
 
 fn open_wallet_db_for_mutation(

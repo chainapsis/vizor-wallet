@@ -60,8 +60,8 @@ exact-output `SUCCESS` leftovers are expected receipts for a refund key; an
 incoming key expects `amountOut`. A source-chain refund of an incoming swap is not
 a Zcash receipt, and `FAILED` is inconclusive. A key also closes 30 days after its
 quote deadline, whatever the provider reports, except an incoming key with an open
-reservation or one issued here and never paid, which keeps scanning so its index
-can be reissued without a gap. Either way, no key closes while a receipt is unmined
+reservation. An abandoned incoming address stops scanning when its reservation is
+reclaimed. Either way, no key closes while a receipt is unmined
 and unexpired or has fewer than 10 confirmations (ZIP 315's untrusted depth), so a
 reorg cannot strand a receipt. A rewind that un-mines a closed key's receipt, such
 as Vizor's own repair rewinds, reopens the key until the receipt is confirmed
@@ -89,20 +89,24 @@ A seed restore finds swap keys without trial-decrypting history for every index:
    the same account supplied an input to the funding transaction. Thirty incoming
    lookahead keys are registered from the birthday or Ironwood activation,
    whichever is later.
-3. Each restored key gets one private receiver-directory sweep. The wallet accepts
-   a publication at a block it scanned, downloads the common witness file, queries
-   the receivers over PIR and fetches each matching payment's note data over
-   Enhance PIR in batches, saving each as it arrives. It authenticates the note
-   and memo with the derived key, checks the inclusion path against its own chain
-   and the spend state against retained history, then stores the note, key, memo,
-   witness and known spend together. Missing evidence leaves a candidate pending
-   without crediting balance; an answer that fails a check is asked for again.
-4. After its sweep, a refund key scans new blocks until 30 days after its funding
-   block, and an incoming key, paid or not, for 24 hours, catching a payment from
-   a swap in flight at restore. Paid incoming indices extend the lookahead, and the new
-   keys are swept too. During the 24-hour watch, incoming issuance takes the
-   highest free index in the window, since the lowest unpaid ones may belong to the
-   old device's open swaps.
+3. Each restored key gets one receiver-directory sweep. The wallet accepts a
+   publication at a block it scanned and downloads its filters, which every wallet
+   downloads alike, then tests each receiver locally. Only a receiver the paid
+   filter holds is queried over PIR, with the common witness file, and each
+   matching payment's note data comes over Enhance PIR in batches, saved as it
+   arrives. A wallet with nothing to look up makes no PIR query. The wallet
+   authenticates the note and memo with the derived key, checks the inclusion path
+   against its own chain and the spend state against retained history, then stores
+   the note, key, memo, witness and known spend together. Missing evidence leaves
+   a candidate pending without crediting balance; an answer that fails a check is
+   asked for again.
+4. A key the recent filter holds, because NEAR was given its address in the last
+   day, keeps scanning after its sweep, catching a payment from a swap in flight
+   at restore: a refund key until 30 days after its funding block, an incoming key
+   for 24 hours. Any other key closes at its sweep. Paid incoming indices extend
+   the lookahead, and the new keys are swept too. A key the seen filter holds,
+   because NEAR was ever given its address, is marked quoted, so this device does not
+   hand out the old device's addresses again.
 5. Once memos, lookahead, sweeps and candidates are resolved, old unrelated spend
    evidence is released. Other pools keep their ordinary retention.
 
@@ -131,14 +135,15 @@ quote matches the deposit address and memo, and the next swap gets another addre
 - At most 15 unfunded incoming reservations may be open per account, half the
   30-index recovery gap. Provider deposit evidence or a ZEC payment removes one
   from that count.
-- Issuance never goes more than 30 indices past the highest receipt with 10
-  confirmations, and waits for incoming restore sweeps, which may reveal paid
-  indices.
+- Issuance takes the lowest address never quoted and reuses the lowest abandoned
+  one only when nothing else fits. It never goes more than 30 indices past the
+  highest receipt with 10 confirmations, and waits for incoming restore sweeps,
+  which may reveal paid or quoted indices.
 - An unpaid reservation is reclaimed 24 hours after its creation and every quote's
   deposit deadline, given a fresh conclusive provider status and the wallet scanned
   to its tip with no payment to the address. The status refresh loop also checks
-  reservations missing from the activity list. A reclaimed key keeps scanning, so
-  reissuing it leaves no gap in its history and a late payment is still found.
+  reservations missing from the activity list. A reclaimed key stops scanning:
+  every quote is past its deadline with a conclusive status, so no swap can pay it.
 - Quoting requires the address unpaid, with no queued restore candidate, and the
   wallet scanned to its tip. A paid address is permanently excluded.
 
