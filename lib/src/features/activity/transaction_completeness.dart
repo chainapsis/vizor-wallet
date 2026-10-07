@@ -62,6 +62,13 @@ TransactionFeePresentation transactionFeePresentation(
       : TransactionFeePresentation.includedInAmount;
 }
 
+/// Whether a receipt without a recipient still titles the entry as a send:
+/// its role is established and it moved more than its fee.
+bool receiptTitlesSend(rust_sync.TransactionInfo tx) =>
+    tx.txKind == 'sent' &&
+    !transactionActivitySummaryIncomplete(tx) &&
+    transactionFeePresentation(tx) != TransactionFeePresentation.feeOnly;
+
 /// Whether the entry is incomplete: its payment details are missing, or the
 /// wallet has not yet discovered all of its effects.
 bool transactionDetailsIncomplete(rust_sync.TransactionInfo tx) =>
@@ -114,10 +121,71 @@ bool transparentDetailsAwaited(rust_sync.TransactionDetail? detail) =>
       _ => false,
     };
 
-/// One line per transparent output: the address it pays (or "Script" for a
-/// nonstandard one), and whether it is the account's own.
-String transparentRecipientLabel(rust_sync.TransparentRecipient recipient) =>
-    recipient.isOwn ? 'Your address' : 'Recipient';
+/// The transparent outputs a receipt may name as payments: every known
+/// output the account did not receive, in transaction order. The account's
+/// own outputs (the funds a receive delivered, a send's change) are left out,
+/// as they are from a receipt built on the stored transaction.
+List<rust_sync.TransparentRecipient> transparentPayees(
+  rust_sync.TransactionDetail? detail,
+) {
+  if (detail?.transparentDetailsState !=
+      rust_sync.TransparentDetailsState.available) {
+    return const [];
+  }
+  return [
+    for (final output in detail!.transparentRecipients)
+      if (!output.isOwn) output,
+  ]..sort((a, b) => a.outputIndex.compareTo(b.outputIndex));
+}
+
+/// The address a receipt names as the recipient: the recorded one, otherwise,
+/// for a send, its first transparent payee with a standard address.
+///
+/// A send found by private queries has no stored transaction, so no recipient
+/// is recorded; its ordered transparent outputs still name who it paid.
+/// Private queries cannot see shielded payees, so a send with no transparent
+/// payee keeps no recipient, and neither does a provisional entry, whose role
+/// may still change.
+String? receiptRecipientAddress(rust_sync.TransactionDetail? detail) {
+  final recorded = detail?.primaryAddress?.trim();
+  if (recorded != null && recorded.isNotEmpty) return recorded;
+  if (detail == null || detail.txKind != 'sent' || detail.provisional) {
+    return null;
+  }
+  for (final payee in transparentPayees(detail)) {
+    final address = payee.address?.trim();
+    if (address != null && address.isNotEmpty) return address;
+  }
+  return null;
+}
+
+/// The payees a receipt lists below its detail card: only a send paying
+/// several transparent recipients, whose recipient row names the first.
+List<rust_sync.TransparentRecipient> listedTransparentPayees(
+  rust_sync.TransactionDetail? detail,
+) {
+  if (detail?.txKind != 'sent') return const [];
+  final payees = transparentPayees(detail);
+  return payees.length > 1 ? payees : const [];
+}
+
+/// The transparent details state a receipt reports, or null when the
+/// receipt is whole without them: the outputs are not known yet or cannot be
+/// looked up, and the receipt has no recipient to show without them.
+/// Receives and shieldings name the account's own outputs, which are
+/// recorded, so they never wait on this.
+rust_sync.TransparentDetailsState? transparentDetailsNotice(
+  rust_sync.TransactionDetail? detail,
+) {
+  final state = detail?.transparentDetailsState;
+  if (state == null || state == rust_sync.TransparentDetailsState.available) {
+    return null;
+  }
+  return switch (detail!.txKind) {
+    'received' || 'receiving' || 'shielded' || 'migration' => null,
+    _ => receiptRecipientAddress(detail) == null ? state : null,
+  };
+}
 
 /// One line describing a development lookup's result.
 String describeTransparentDetailsLookup(

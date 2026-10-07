@@ -897,6 +897,14 @@ class _ActivityTransactionStatusScreenState
                       : tx.minedHeight == BigInt.zero
                       ? 'Migrating to Ironwood'
                       : 'Migrated to Ironwood'
+                // A send whose recipient is unknown keeps the send status
+                // title; a provisional or fee-only entry stays neutral.
+                : receiptTitlesSend(tx)
+                ? switch (_sentPhaseFor(tx)) {
+                    SendStatusPhase.inProgress => 'Send in progress...',
+                    SendStatusPhase.completed => 'Sent successfully',
+                    SendStatusPhase.failed => 'Send failed',
+                  }
                 : 'Transaction',
             textAlign: TextAlign.center,
             style: AppTypography.bodyLarge.copyWith(
@@ -1042,7 +1050,7 @@ class _ActivityTransactionStatusScreenState
     final giftCard =
         _resolvedGiftCard(tx, activeAccountUuid) ?? suppliedGiftCard;
 
-    final sentRecipientAddress = detail?.primaryAddress?.trim();
+    final sentRecipientAddress = receiptRecipientAddress(detail);
     Widget? redesignedContent;
     if (tx != null && giftCard != null) {
       redesignedContent = _giftCardContent(
@@ -1091,7 +1099,12 @@ class _ActivityTransactionStatusScreenState
     Widget receiptContent =
         redesignedContent ??
         _fallbackContent(tx, privacyModeEnabled: privacyModeEnabled);
-    if (tx != null && detail?.transparentDetailsState != null) {
+    final offersDebugLookup = tx != null && _offersDebugLookup(tx, detail);
+    if (tx != null &&
+        giftCard == null &&
+        (offersDebugLookup ||
+            transparentDetailsNotice(detail) != null ||
+            listedTransparentPayees(detail).isNotEmpty)) {
       receiptContent = Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1102,9 +1115,10 @@ class _ActivityTransactionStatusScreenState
               detail: detail,
               privacyModeEnabled: privacyModeEnabled,
               debugLookupText: _debugLookupText,
-              onDebugLookup: _offersDebugLookup(tx, detail)
+              onDebugLookup: offersDebugLookup
                   ? () => unawaited(_runDebugLookup(tx))
                   : null,
+              spaced: false,
             ),
           ),
         ],

@@ -1204,8 +1204,9 @@ void main() {
       expect(find.byType(ReceivedReceiptView), findsNothing);
       expect(find.byType(ShieldedReceiptView), findsNothing);
 
-      // Neutral fallback: title, amount, status card.
-      expect(find.text('Transaction'), findsOneWidget);
+      // Minimal fallback keeps the send status title: amount, status card.
+      expect(find.text('Sent successfully'), findsOneWidget);
+      expect(find.text('Transaction'), findsNothing);
       expect(find.text('Amount'), findsOneWidget);
       expect(find.text('120.00 ZEC'), findsOneWidget);
       expect(find.text('Completed'), findsOneWidget);

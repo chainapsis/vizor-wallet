@@ -475,7 +475,13 @@ class _MobileTransactionStatusScreenState
       );
     }
 
-    if (_isShielding) return 'Shielded';
+    if (_isShielding) {
+      return switch (_phase) {
+        _TxPhase.pending => 'Shielding...',
+        _TxPhase.succeeded => 'Shielded',
+        _TxPhase.failed => 'Shielding failed',
+      };
+    }
     if (_isMigration) {
       return switch (_phase) {
         _TxPhase.pending => 'Migrating to Ironwood...',
@@ -484,7 +490,11 @@ class _MobileTransactionStatusScreenState
       };
     }
     if (_isIncoming) {
-      return _phase == _TxPhase.pending ? 'Receiving...' : 'Received';
+      return switch (_phase) {
+        _TxPhase.pending => 'Receiving...',
+        _TxPhase.succeeded => 'Received',
+        _TxPhase.failed => 'Receive failed',
+      };
     }
     // An unclassified tx stays neutral, like the desktop fallback receipt, and
     // so does an entry whose whole balance change is its network fee.
@@ -619,7 +629,7 @@ class _MobileTransactionStatusScreenState
     // receipt drops the address row and its verify affordance.
     final primaryAddress = giftCard != null
         ? null
-        : detail?.primaryAddress?.trim();
+        : receiptRecipientAddress(detail);
     final sourceAddress = giftCard != null
         ? null
         : detail?.sourceAddress?.trim();

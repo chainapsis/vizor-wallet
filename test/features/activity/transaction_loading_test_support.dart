@@ -220,14 +220,9 @@ void transactionLoadingTests({required bool mobile}) {
           }
           await tester.pump();
           await tester.pump();
+          // Desktop and mobile both keep the send title without a recipient.
           expect(
-            find.text(
-              kind == 'received'
-                  ? receivedTitle
-                  : mobile
-                  ? 'Sent successfully'
-                  : 'Transaction',
-            ),
+            find.text(kind == 'received' ? receivedTitle : 'Sent successfully'),
             findsOneWidget,
           );
           expect(find.text('Completed'), findsOneWidget);
