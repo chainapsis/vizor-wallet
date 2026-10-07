@@ -3741,12 +3741,13 @@ mod tests {
         );
     }
 
-    /// Public evidence carries no transaction metadata, so public rows keep
-    /// the account's fee: unknown stays unknown.
+    /// Without either transaction metadata or a reconciled whole fee, a
+    /// public row has no network fee to show. The account's fee stays unknown.
     #[test]
-    fn a_public_debit_keeps_its_unknown_fee() {
+    fn a_public_debit_without_whole_fee_keeps_its_unknown_fee() {
         let mut details = shared_funding_details(exact_whole_fee());
         details.transaction_metadata = None;
+        details.whole_fee = None;
         let (mut base, summary) = provisional_debit();
         let before = classify_history_tx(&base, &summary, Fee::NotApplicable);
         base.attach_history(HistoryCompleteness::of(&details));
@@ -3762,6 +3763,33 @@ mod tests {
             (&before.tx_kind, before.display_amount, &before.display_pool)
         );
         assert!(!info.amount_includes_fee, "no fee is shown to include");
+    }
+
+    #[test]
+    fn a_public_debit_shows_the_library_whole_fee_without_metadata() {
+        let mut details = shared_funding_details(exact_whole_fee());
+        details.transaction_metadata = None;
+        let history = HistoryCompleteness::of(&details);
+        assert_eq!(
+            history.fee,
+            Fee::Unknown,
+            "the account's share stays unknown"
+        );
+
+        let (mut base, summary) = provisional_debit();
+        base.attach_history(history);
+        let rows = classify_history_tx(&base, &summary, Fee::NotApplicable);
+
+        assert_eq!(rows.len(), 1);
+        let info = &rows[0].info;
+        assert_eq!(info.tx_kind, "sent");
+        assert_eq!(info.display_amount, 70_000_000);
+        assert_eq!(info.fee_state, TransactionFeeState::Known);
+        assert_eq!(info.fee, WHOLE_FEE);
+        assert!(
+            info.amount_includes_fee,
+            "the movement was not reduced by an unknown fee share"
+        );
     }
 
     #[test]
