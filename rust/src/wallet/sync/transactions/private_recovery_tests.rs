@@ -218,8 +218,8 @@ fn settled_mixed_activity_does_not_inherit_incomplete_payment_details() {
             )
             .unwrap();
         conn.execute(
-            "INSERT INTO transactions (txid, mined_height, tx_index, fee)
-            VALUES (?1, ?2, 0, 15000)
+            "INSERT INTO transactions (txid, mined_height, min_observed_height, tx_index, fee)
+            VALUES (?1, ?2, ?2, 0, 15000)
             ON CONFLICT(txid) DO UPDATE SET fee = 15000",
             rusqlite::params![[0x71u8; 32], u32::from(target - 4)],
         )
@@ -232,7 +232,7 @@ fn settled_mixed_activity_does_not_inherit_incomplete_payment_details() {
             )
             .unwrap();
         conn.execute(
-            "INSERT INTO transactions (txid, mined_height, tx_index) VALUES (?1, ?2, 0)",
+            "INSERT INTO transactions (txid, mined_height, min_observed_height, tx_index) VALUES (?1, ?2, ?2, 0)",
             rusqlite::params![[0x70u8; 32], u32::from(target - 5)],
         )
         .unwrap();
