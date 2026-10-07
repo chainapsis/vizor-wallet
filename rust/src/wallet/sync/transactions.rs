@@ -953,6 +953,8 @@ struct ActivitySummary {
     received: ActivityAmounts,
     /// Actual owned transparent receipts, excluding shielded change.
     received_transparent: ActivityAmounts,
+    /// Owned transparent change/funding excluded from the visible outgoing residual.
+    internal_transparent: ActivityAmounts,
     shielded: ActivityAmounts,
     internal_ironwood_transition: ActivityAmounts,
     own_transparent_output_amount: u64,
@@ -1869,10 +1871,16 @@ fn summarize_activity_outputs(
 ) -> ActivitySummary {
     let mut summary = ActivitySummary::default();
     let pays_others = pays_others(outputs, account_uuid);
+    let recovered_self_transfer = recovered_transparent_self_transfer(base);
 
     for output in outputs {
         let from_own = output.from_account_uuid.as_deref() == Some(account_uuid);
         let to_own = output.to_account_uuid.as_deref() == Some(account_uuid);
+        // Private output recovery can establish the receiver's scope before it
+        // links the sender. Only account-funded recovery justifies treating an
+        // unlinked owned output as self-payment/change rather than incoming.
+        let recovered_from_own = output.from_account_uuid.is_none()
+            && (base.history.inferred_outgoing.is_some() || recovered_self_transfer);
 
         if base.is_shielding {
             if to_own && is_shielded_pool(output.output_pool) {
@@ -1893,8 +1901,21 @@ fn summarize_activity_outputs(
                 .saturating_add(output.value);
         }
 
-        let visible_self_output = from_own && to_own && is_user_visible_self_output(output);
+        if output.output_pool == TRANSPARENT_POOL
+            && to_own
+            && (from_own || recovered_from_own)
+            && matches!(output.to_key_scope, Some(1) | Some(2))
+        {
+            summary.internal_transparent.add_output(output);
+            continue;
+        }
+
+        let visible_self_output = (from_own || (recovered_self_transfer && recovered_from_own))
+            && to_own
+            && is_user_visible_self_output(output);
         let visible_sent = from_own && (!to_own || (visible_self_output && !pays_others));
+        let visible_sent =
+            visible_sent || (recovered_self_transfer && visible_self_output && !pays_others);
         let visible_received = to_own && (!from_own || visible_self_output);
 
         if visible_sent {
@@ -1912,6 +1933,17 @@ fn summarize_activity_outputs(
     }
 
     summary
+}
+
+/// An exact zero payment outside the account plus its fully attributed fee
+/// proves self-funding. It does not mean an external-scope self-payment is
+/// change: that payment still belongs in Activity as Sent and Received.
+fn recovered_transparent_self_transfer(base: &TxBase) -> bool {
+    let debit = base.account_balance_delta.unsigned_abs();
+    base.history.inferred_payment == Some(0)
+        && base.account_balance_delta < 0
+        && base.history.whole_fee == Some(debit)
+        && base.history.shown_fee() == Fee::Known(debit)
 }
 
 /// Whether the account paid anyone else in the transaction. A self-payment
@@ -2188,9 +2220,8 @@ fn classify_history_tx(
                 1,
             )];
         }
-        // A reconstructed payment of zero whose debit is exactly the whole
-        // transaction's fee is a self-transfer: every output is the account's
-        // own, so none is a receive, and the whole balance change is the fee.
+        // Without a known visible self-payment, the only amount we can show
+        // for this recovered self-transfer is its fee.
         let debit = base.account_balance_delta.unsigned_abs();
         if payment == 0
             && base.account_balance_delta < 0
@@ -2205,10 +2236,20 @@ fn classify_history_tx(
     }
 
     // The library reconciled compact-scanned shielded effects and the Enhance fee.
-    // The residual includes owned transparent outputs, so show their known receipts
-    // separately without presenting shielded change as a new receipt.
+    // The residual includes owned transparent outputs. Exclude known internal
+    // change/funding, and show ordinary receipts separately from shielded change.
     if let Some(outgoing) = base.history.inferred_outgoing {
         if outgoing > 0 && summary.sent.output_count == 0 {
+            let visible_outgoing = outgoing.checked_sub(summary.internal_transparent.amount);
+            // A fully accounted funding step has no visible payment. Do not
+            // fall through and recreate it as a provisional fee-sized debit.
+            if visible_outgoing == Some(0) && summary.received_transparent.output_count == 0 {
+                return Vec::new();
+            }
+            // Inconsistent local evidence must not underflow or erase a debit.
+            let outgoing = visible_outgoing
+                .filter(|amount| *amount > 0)
+                .unwrap_or(outgoing);
             let mut sent = build_classified_tx(base, "sent", outgoing, "transparent", true, 1);
             sent.info.activity_pool = Some("transparent".to_string());
             let mut rows = vec![sent];
@@ -3175,6 +3216,196 @@ mod tests {
         assert_eq!(rows[0].info.display_amount, 200_000);
         assert_eq!(rows[0].info.fee, 15_000);
         assert!(!rows[0].info.amount_includes_fee);
+    }
+
+    /// Read scopes through the production SQL reader, then run the complete
+    /// Activity pipeline. Synthetic outputs model restoration without a sender
+    /// link; public enhancement supplies that link on the very same outputs.
+    fn recovered_activity_fixture(
+        mut base: TxBase,
+        owned_outputs: &[(u64, Option<i64>)],
+        public: bool,
+    ) -> Vec<TransactionInfo> {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        insert_history_tx(
+            &db,
+            account,
+            &base.txid,
+            Some(121),
+            0,
+            Some(122),
+            base.account_balance_delta,
+            base.total_spent as i64,
+            base.total_received as i64,
+            false,
+            None,
+        );
+        for (index, &(value, scope)) in owned_outputs.iter().enumerate() {
+            insert_output_with_address(
+                &db,
+                &base.txid,
+                TRANSPARENT_POOL,
+                public.then_some(account),
+                Some(account),
+                value as i64,
+                false,
+                Some(&format!("synthetic-receiver-{index}")),
+                scope,
+            );
+        }
+        let conn = open_readonly_conn(db.path().to_str().unwrap()).unwrap();
+        let outputs =
+            read_history_outputs(&conn, account.as_bytes(), [base.txid.as_slice()]).unwrap();
+        if public {
+            base.history = HistoryCompleteness::complete_for(&base);
+        }
+        assemble_history(&[base], &outputs, account.as_bytes(), None)
+    }
+
+    fn compact_funding_base(amount: u64) -> TxBase {
+        let (mut base, _) = provisional_debit();
+        base.total_spent = 1_000_000 + amount + 15_000;
+        base.total_received = 1_000_000 + amount;
+        base.account_balance_delta = -15_000;
+        base.history.whole_fee = Some(15_000);
+        base.history.inferred_outgoing = Some(amount);
+        base.history.has_transparent_outputs = Some(true);
+        base
+    }
+
+    #[test]
+    fn recovered_activity_hides_funding_steps_like_public_without_created_metadata() {
+        for amount in [20_000, 110_000] {
+            for scope in [1, 2] {
+                let base = compact_funding_base(amount);
+                assert!(base.created.is_none());
+                let public =
+                    recovered_activity_fixture(base.clone(), &[(amount, Some(scope))], true);
+                let private = recovered_activity_fixture(base, &[(amount, Some(scope))], false);
+                assert!(public.is_empty());
+                assert!(
+                    private.is_empty(),
+                    "internal funding must not fall through to a debit"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn recovered_activity_preserves_external_self_payment_like_public() {
+        for scope in [0, -1] {
+            let base = compact_funding_base(250_000);
+            let public = recovered_activity_fixture(base.clone(), &[(250_000, Some(scope))], true);
+            let private = recovered_activity_fixture(base, &[(250_000, Some(scope))], false);
+            let signature = |rows: &[TransactionInfo]| {
+                rows.iter()
+                    .map(|row| {
+                        (
+                            row.tx_kind.clone(),
+                            row.display_amount,
+                            row.activity_pool.clone(),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(signature(&private), signature(&public));
+            assert_eq!(private.len(), 2);
+            assert_eq!(private[0].display_amount, 250_000);
+            assert_eq!(private[1].display_amount, 250_000);
+            assert!(private
+                .iter()
+                .all(|row| row.provisional && !row.details_complete));
+        }
+    }
+
+    #[test]
+    fn recovered_activity_subtracts_only_known_internal_funding() {
+        let base = compact_funding_base(270_000);
+        let rows =
+            recovered_activity_fixture(base, &[(20_000, Some(2)), (250_000, Some(0))], false);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].tx_kind, "sent");
+        assert_eq!(rows[0].display_amount, 250_000);
+        assert_eq!(rows[1].tx_kind, "received");
+        assert_eq!(rows[1].display_amount, 250_000);
+
+        // The remainder can also be an external payment whose recipient is
+        // unavailable. It must survive removing the known change output.
+        let rows =
+            recovered_activity_fixture(compact_funding_base(220_000), &[(20_000, Some(1))], false);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].display_amount, 200_000);
+    }
+
+    #[test]
+    fn recovered_activity_does_not_hide_unknown_scope_or_erase_conflicting_debits() {
+        let rows =
+            recovered_activity_fixture(compact_funding_base(20_000), &[(20_000, None)], false);
+        assert_eq!(
+            rows.len(),
+            2,
+            "unknown scope does not prove internal funding"
+        );
+        assert_eq!(rows[0].display_amount, 20_000);
+        assert!(rows[0].provisional);
+        let rows =
+            recovered_activity_fixture(compact_funding_base(20_000), &[(30_000, Some(2))], false);
+        assert_eq!(rows.len(), 1, "conflicting evidence cannot erase the debit");
+        assert_eq!(rows[0].display_amount, 20_000);
+        assert!(rows[0].provisional);
+    }
+
+    #[test]
+    fn recovered_activity_keeps_unrelated_incoming_on_internal_receivers() {
+        let mut base = tx_base_for_history();
+        base.total_spent = 0;
+        base.total_received = 20_000;
+        base.account_balance_delta = 20_000;
+        base.history = HistoryCompleteness::unread(None);
+        let rows = recovered_activity_fixture(base, &[(20_000, Some(2))], false);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].tx_kind, "received");
+        assert_eq!(rows[0].display_amount, 20_000);
+    }
+
+    #[test]
+    fn recovered_activity_restores_visible_transparent_self_transfer_instead_of_fee_only() {
+        let mut base = tx_base_for_history();
+        base.spent_orchard_note = false;
+        base.total_spent = 110_000;
+        base.total_received = 100_000;
+        base.account_balance_delta = -10_000;
+        base.fee = Some(10_000);
+        base.history = HistoryCompleteness {
+            inferred_payment: Some(0),
+            whole_fee: Some(10_000),
+            fee: Fee::Known(10_000),
+            details_complete: false,
+            provisional: false,
+            classification: None,
+            has_transparent_outputs: Some(true),
+            inferred_outgoing: None,
+        };
+        for scope in [0, -1] {
+            let public = recovered_activity_fixture(base.clone(), &[(100_000, Some(scope))], true);
+            let private =
+                recovered_activity_fixture(base.clone(), &[(100_000, Some(scope))], false);
+            assert_eq!(public.len(), 2);
+            assert_eq!(private.len(), 2);
+            for (actual, expected) in private.iter().zip(public.iter()) {
+                assert_eq!(actual.tx_kind, expected.tx_kind);
+                assert_eq!(actual.display_amount, expected.display_amount);
+                assert_eq!(actual.display_amount, 100_000);
+                assert!(!actual.amount_includes_fee);
+                assert!(!actual.details_complete);
+            }
+        }
+        // An owned internal receiver is still not an explicit self-payment.
+        let rows = recovered_activity_fixture(base, &[(100_000, Some(1))], false);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].display_amount, 10_000);
+        assert!(rows[0].amount_includes_fee);
     }
 
     #[test]
