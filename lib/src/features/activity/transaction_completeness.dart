@@ -62,13 +62,6 @@ TransactionFeePresentation transactionFeePresentation(
       : TransactionFeePresentation.includedInAmount;
 }
 
-/// Whether a receipt without a recipient still titles the entry as a send:
-/// its role is established and it moved more than its fee.
-bool receiptTitlesSend(rust_sync.TransactionInfo tx) =>
-    tx.txKind == 'sent' &&
-    !transactionActivitySummaryIncomplete(tx) &&
-    transactionFeePresentation(tx) != TransactionFeePresentation.feeOnly;
-
 /// Whether the entry is incomplete: its payment details are missing, or the
 /// wallet has not yet discovered all of its effects.
 bool transactionDetailsIncomplete(rust_sync.TransactionInfo tx) =>
@@ -147,10 +140,19 @@ String? receiptRecipientAddress(rust_sync.TransactionDetail? detail) {
 
 /// Whether a receipt with an established send role but no recorded recipient
 /// keeps the send shell with an unknown recipient.
+///
+/// Only an amount that is a payment, with its fee on its own line, fits that
+/// shell. An amount that includes the fee is a balance change whose payment
+/// role is not established, and a fee-only entry is its one fee line; both
+/// keep the neutral receipt, which labels them as such.
 bool receiptHasUnknownRecipient(
   rust_sync.TransactionInfo tx,
   rust_sync.TransactionDetail? detail,
-) => receiptTitlesSend(tx) && receiptRecipientAddress(detail) == null;
+) =>
+    tx.txKind == 'sent' &&
+    !transactionActivitySummaryIncomplete(tx) &&
+    transactionFeePresentation(tx) == TransactionFeePresentation.separate &&
+    receiptRecipientAddress(detail) == null;
 
 /// The transparent outputs a receipt lists as the transaction's, attributed
 /// to no one: every known output the account did not record as its own, in

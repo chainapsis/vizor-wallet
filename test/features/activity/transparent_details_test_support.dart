@@ -859,6 +859,115 @@ void transparentReceiptParityTests({
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('a net change that includes its fee keeps the neutral receipt', (
+    tester,
+  ) async {
+    // The amount is the account's balance change with the fee in it, and its
+    // payment role is not established: it is neither a payment to an
+    // unknown recipient nor a second fee line.
+    final sent = transparentSend();
+    final tx = rust_sync.TransactionInfo(
+      txidHex: sent.txidHex,
+      minedHeight: sent.minedHeight,
+      expiredUnmined: false,
+      accountBalanceDelta: -228440040,
+      fee: BigInt.from(20000),
+      feeState: rust_sync.TransactionFeeState.known,
+      detailsComplete: false,
+      provisional: false,
+      amountIncludesFee: true,
+      blockTime: sent.blockTime,
+      isTransparent: true,
+      txKind: 'sent',
+      displayAmount: BigInt.from(228440040),
+      displayPool: 'transparent',
+      createdTime: sent.createdTime,
+    );
+    expect(
+      transactionFeePresentation(tx),
+      TransactionFeePresentation.includedInAmount,
+    );
+    await pump(
+      tester,
+      ScriptedDetails([transparentSendDetail(recorded: false)]),
+      transaction: tx,
+      privateQueries: true,
+    );
+    expect(find.text(kNetChangeIncludesFeeText), findsOneWidget);
+    expect(find.text('Amount'), findsNothing);
+    expect(find.text(kUnknownRecipientText), findsNothing);
+    expect(find.text('To'), findsNothing);
+    expect(find.text('Show full address'), findsNothing);
+    expect(find.text('0.0002 ZEC'), findsOneWidget, reason: 'one fee line');
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  for (final private in [false, true]) {
+    final mode = private ? 'private' : 'public';
+    testWidgets('$mode transfer from an own transparent address names it', (
+      tester,
+    ) async {
+      // The stored transaction's input pays from an address of another
+      // account in this wallet.
+      await pump(
+        tester,
+        ScriptedDetails([transparentReceiveDetail(private: false)]),
+        transaction: transparentReceive(),
+        privateQueries: private,
+        ownAccounts: const {
+          transparentSenderAddress: AccountInfo(
+            uuid: 'account-2',
+            name: 'Savings',
+            order: 1,
+          ),
+        },
+      );
+      expect(find.text('Savings'), findsOneWidget);
+      expect(find.text('Unknown sender'), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('$mode own unshielding names its pool, not an address', (
+      tester,
+    ) async {
+      // The stored transaction has no transparent input: the funds came from
+      // the shielded pool. Which shielded address paid is never known.
+      await pump(
+        tester,
+        ScriptedDetails([
+          transparentDetail(
+            rust_sync.TransparentDetailsState.available,
+            txKind: 'received',
+            sourcePool: 'shielded',
+            outputs: [
+              rust_sync.TransactionDetailOutput(
+                address: transparentOwnAddress,
+                amountZatoshi: _received,
+                pool: 'transparent',
+                activityPool: 'transparent',
+                usesOrchardReceiver: false,
+              ),
+            ],
+            recipients: [
+              rust_sync.TransparentRecipient(
+                outputIndex: 0,
+                address: transparentOwnAddress,
+                amountZatoshi: _received,
+                isOwn: true,
+              ),
+            ],
+          ),
+        ]),
+        transaction: transparentReceive(),
+        privateQueries: private,
+      );
+      expect(find.text('Shielded sender'), findsOneWidget);
+      expect(find.text('Unknown sender'), findsNothing);
+      expect(find.text('Show full address'), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+    });
+  }
+
   testWidgets('private receive keeps a known sender and its account name', (
     tester,
   ) async {
@@ -994,6 +1103,9 @@ void transparentReceiptParityTests({
     );
     expect(find.text('Transaction'), findsOneWidget);
     expect(find.text('To'), findsNothing);
+    expect(find.text(kUnknownRecipientText), findsNothing);
+    // The fee is the entry's one line.
+    expect(find.text(kNetworkFeeText), findsOneWidget);
     expect(_supplementalCard, findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
