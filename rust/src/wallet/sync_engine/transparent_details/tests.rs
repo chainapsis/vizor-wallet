@@ -2391,7 +2391,7 @@ fn an_abandoned_lookup_holds_neither_the_run_nor_its_runtime() {
     let service = RequestObserver::answering({
         let (released, blocked, stuck) = (released.clone(), blocked.clone(), stuck.clone());
         move |request| {
-            if request.path.contains("/query/") && !stuck.swap(true, Ordering::SeqCst) {
+            if request.path.contains("/query/") && !stuck.load(Ordering::SeqCst) {
                 // Blocking work the request's I/O left on its runtime, as a
                 // stuck DNS lookup leaves it, never awaited.
                 let descendant = descendant.clone();
@@ -2410,6 +2410,7 @@ fn an_abandoned_lookup_holds_neither_the_run_nor_its_runtime() {
                     .unwrap()
                     .recv_timeout(Duration::from_secs(10))
                     .unwrap();
+                stuck.store(true, Ordering::SeqCst);
                 // Blocks until released, whatever the cancellation says.
                 let _ = released
                     .lock()
@@ -2423,6 +2424,7 @@ fn an_abandoned_lookup_holds_neither_the_run_nor_its_runtime() {
     // As the full sync runs: on a runtime of its own, dropped on return.
     let sync = |exit_after: Duration| {
         let path = fixture.path.clone();
+        let stuck = stuck.clone();
         std::thread::spawn(move || {
             let runtime = tokio::runtime::Builder::new_multi_thread()
                 .worker_threads(1)
@@ -2433,7 +2435,8 @@ fn an_abandoned_lookup_holds_neither_the_run_nor_its_runtime() {
             let outcome = runtime.block_on(async {
                 let lwd = CapturingLwd::start_with(Vec::new(), u64::from(TOP), |_| {}).await;
                 let mut db = open(&path);
-                let should_exit = || started.elapsed() >= exit_after;
+                let should_exit =
+                    || stuck.load(Ordering::SeqCst) && started.elapsed() >= exit_after;
                 followup(
                     &mut db,
                     &path,
