@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../main.dart' show log;
 import '../app_bootstrap.dart';
 import '../features/migration/services/ironwood_migration_background_credential_store.dart';
+import '../core/config/private_transparent_recovery_config.dart';
 import '../core/config/rpc_endpoint_config.dart';
 import '../core/layout/app_process_work_policy.dart';
 import '../core/lifecycle/app_shutdown_signal.dart';
@@ -826,7 +827,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     IronwoodMigrationBackgroundLifecycle? recoveryLifecycle,
     Duration recoveryTransitionTimeout = const Duration(seconds: 120),
     Future<void> Function(String dbPath)? excludeCompanionsFromBackup,
+    bool privateTransparentRecovery = kZcashPrivateTransparentRecovery,
   }) : _walletDbPathResolver = walletDbPathResolver ?? getWalletDbPath,
+       _privateTransparentRecovery = privateTransparentRecovery,
        _recoveryLifecycle =
            recoveryLifecycle ?? IronwoodMigrationBackgroundLifecycle.instance,
        _recoveryTransitionTimeout = recoveryTransitionTimeout,
@@ -837,6 +840,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   final IronwoodMigrationBackgroundLifecycle _recoveryLifecycle;
   final Duration _recoveryTransitionTimeout;
   final Future<void> Function(String dbPath) _excludeCompanionsFromBackup;
+  final bool _privateTransparentRecovery;
 
   static const _authoritativeBalanceRecoveryDelays = <Duration>[
     Duration.zero,
@@ -1303,10 +1307,16 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     // A durably private wallet's transparent amount is current only while its
     // private ledger covers the tip, and this sync moves the tip. Carry it as
     // last known, and stop offering to shield it, until a balance read after
-    // the sync reports authority again.
+    // the sync reports authority again. A carried public amount counts too
+    // when private queries are on in a build that raises the policy: the
+    // setting raised it after that amount was read, at startup or on toggle.
+    final transparentMayBePrivate =
+        scopedPrev != null &&
+        (scopedPrev.transparentPrivate ||
+            (_privateTransparentRecovery && ref.read(enhancePirProvider)));
     final demotedPrivateTransparent =
         scopedPrev != null &&
-            scopedPrev.transparentPrivate &&
+            transparentMayBePrivate &&
             scopedPrev.transparentAuthority ==
                 rust_sync.TransparentBalanceAuthority.current
         ? scopedPrev.transparentBalance + scopedPrev.transparentPendingBalance
