@@ -14,20 +14,23 @@
 //!    with any history, spent or not, is used. Progress is checkpointed per
 //!    scope against a block hash, so a pass resumes where it stopped and a
 //!    reorg restarts it.
-//! 2. **Restored TEX operations** ([`run_restored_ephemeral`], after the chain
-//!    scan): an ephemeral-address output the wallet learned from the chain
-//!    rather than built itself, such as a ZIP 320 first leg found by a restore,
-//!    is checked once, immediately, so its second leg and any returned funds
-//!    are found now rather than on the randomized ZIP 320 schedule, which
-//!    still applies afterwards ([`super::ephemeral_checks`]). Each such query
-//!    uses its own channel, like the scheduled checks.
+//! 2. **Restored TEX operations** ([`run_restored_ephemeral`], after a sync
+//!    completes): an ephemeral-address output the wallet learned from the
+//!    chain rather than built itself, such as a ZIP 320 first leg found by a
+//!    restore, is checked once, so its second leg and any returned funds are
+//!    found without waiting for the randomized ZIP 320 schedule, which still
+//!    applies afterwards ([`super::ephemeral_checks`]). Like the scheduled
+//!    checks, each query uses its own channel, and a sync sends at most one
+//!    ephemeral address: a restored one, chosen at random, while any remains
+//!    unchecked, otherwise a due scheduled check.
 //!
 //! Afterwards the ordinary UTXO refresh and the library's spend searches keep
 //! the history current. [`Coverage`] reports whether an account's public
 //! history is complete: initial discovery done, no restored ephemeral output
 //! unchecked, and no spend search due at or below the tip. Balances report
-//! transparent funds as current, shielding spends them, and sync reports
-//! completion only when it is complete.
+//! transparent funds as current, and shielding spends them, only when it is
+//! complete. Sync reports completion once everything but the restored
+//! ephemeral checks is complete, since those are spread over later syncs.
 //!
 //! Every request sends a wallet address to public lightwalletd, so it goes
 //! through [`TransparentLookupGate`]; every write that marks work done reads
@@ -696,10 +699,27 @@ async fn run_with<R: DiscoveryRpc>(
     Ok(())
 }
 
-/// Called by sync once the chain scan and its enhancement have stored what
-/// they found, under the transparent policy the sync captured. Checks every
-/// restored ephemeral output's address once, and returns whether any
-/// transaction was stored.
+/// What [`run_restored_ephemeral`] sent and found.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum RestoredCheck {
+    /// Nothing was sent: no restored ephemeral output is unchecked, the
+    /// transparent policy withholds the check, or the sync is exiting.
+    NotSent,
+    /// One address was sent; `stored` says whether its history stored a
+    /// transaction.
+    Sent { stored: bool },
+}
+
+/// Called by sync once it has completed, under the transparent policy the sync
+/// captured. Checks one restored ephemeral output's address, chosen at random,
+/// over its own channel.
+///
+/// One address per sync, like the scheduled ZIP 320 checks: checking every
+/// restored address in one burst of isolated channels, right after the sync's
+/// own requests, would let the server link them to each other and to the
+/// wallet by request time. The rest are checked by later syncs; until then
+/// [`Coverage::RestoredEphemeral`] keeps the account's transparent funds last
+/// known and its shielding refused, but does not hold sync completion.
 pub(super) async fn run_restored_ephemeral(
     client: &mut CompactTxStreamerClient<Channel>,
     db: &mut WalletDatabase,
@@ -709,7 +729,7 @@ pub(super) async fn run_restored_ephemeral(
     policy: EnhancementPolicy,
     tip: BlockHeight,
     should_exit: &impl Fn() -> bool,
-) -> Result<bool, SyncError> {
+) -> Result<RestoredCheck, SyncError> {
     let mut rpc = Lightwalletd {
         client: client.clone(),
         url: lightwalletd_url.to_owned(),
@@ -725,79 +745,81 @@ async fn restored_ephemeral_with<R: DiscoveryRpc>(
     policy: EnhancementPolicy,
     tip: BlockHeight,
     should_exit: &impl Fn() -> bool,
-) -> Result<bool, SyncError> {
-    // Each address is sent to public lightwalletd, so the gate authorizes
-    // every query and the write that records it checked.
+) -> Result<RestoredCheck, SyncError> {
+    use rand::seq::SliceRandom as _;
+    // The address is sent to public lightwalletd, so the gate authorizes the
+    // query and the write that records it checked.
     let gate = TransparentLookupGate::for_wallet(
         policy.public_transparent_lookups(db)?,
         db_path,
         network,
     )?;
     if !gate.is_allowed() {
-        return Ok(false);
+        return Ok(RestoredCheck::NotSent);
     }
-    let mut stored = false;
-    for address in restored_ephemeral_addresses(db_path)? {
-        if should_exit() {
-            return Ok(stored);
-        }
-        let checked = TransparentAddress::decode(&network, &address)
-            .map_err(|e| SyncError::parse(format!("restored ephemeral address: {e}")))?;
-        let query = super::transparent_address_for_query(
-            &address,
-            network,
-            super::transparent_utxo_query_network(network),
-        )
-        .map_err(SyncError::parse)?;
-        let opening = client.isolated_history(&gate, query, u64::from(u32::from(tip)));
-        let history = tokio::select! { biased; _ = watch_for_exit(should_exit) => return Ok(stored), r = opening => r? };
-        let Some(mut history) = history else {
-            log::info!("sync: transparent policy withholds restored ephemeral discovery");
-            return Ok(stored);
-        };
-        let Some(used) = store_history(
-            &mut history,
-            db,
-            network,
-            u32::from(tip),
-            "restored ephemeral address",
-            should_exit,
-        )
-        .await?
-        else {
-            return Ok(stored);
-        };
-        stored |= used;
-        if should_exit() {
-            return Ok(stored);
-        }
-        // Record the address as checked through `tip`, under the policy that
-        // authorized the query. A transition withholds the record, so the
-        // address is checked again under the new policy.
-        let TransactionDataRequest::TransactionsInvolvingAddress(request) =
-            TransactionDataRequest::transactions_involving_address(
-                checked,
-                BlockHeight::from_u32(0),
-                Some(tip + 1),
-                None,
-                TransactionStatusFilter::Mined,
-                OutputStatusFilter::All,
-            );
-        let recorded = with_wallet_db_write_lock("address_discovery.ephemeral_checked", || {
-            db.transactionally(|tx| {
-                if !gate.permits_applied(tx.applied_transparent_policy()?) {
-                    return Ok(false);
-                }
+    let addresses = restored_ephemeral_addresses(db_path)?;
+    let Some(address) = addresses.choose(&mut rand::thread_rng()) else {
+        return Ok(RestoredCheck::NotSent);
+    };
+    if should_exit() {
+        return Ok(RestoredCheck::NotSent);
+    }
+    let checked = TransparentAddress::decode(&network, address)
+        .map_err(|e| SyncError::parse(format!("restored ephemeral address: {e}")))?;
+    let query = super::transparent_address_for_query(
+        address,
+        network,
+        super::transparent_utxo_query_network(network),
+    )
+    .map_err(SyncError::parse)?;
+    let opening = client.isolated_history(&gate, query, u64::from(u32::from(tip)));
+    let history = tokio::select! {
+        biased;
+        // The request may already be on its way.
+        _ = watch_for_exit(should_exit) => return Ok(RestoredCheck::Sent { stored: false }),
+        r = opening => r?,
+    };
+    let Some(mut history) = history else {
+        log::info!("sync: transparent policy withholds restored ephemeral discovery");
+        return Ok(RestoredCheck::NotSent);
+    };
+    let Some(stored) = store_history(
+        &mut history,
+        db,
+        network,
+        u32::from(tip),
+        "restored ephemeral address",
+        should_exit,
+    )
+    .await?
+    else {
+        return Ok(RestoredCheck::Sent { stored: false });
+    };
+    if should_exit() {
+        return Ok(RestoredCheck::Sent { stored });
+    }
+    // Record the address as checked through `tip`, under the policy that
+    // authorized the query. A transition withholds the record, so the
+    // address is checked again under the new policy.
+    let TransactionDataRequest::TransactionsInvolvingAddress(request) =
+        TransactionDataRequest::transactions_involving_address(
+            checked,
+            BlockHeight::from_u32(0),
+            Some(tip + 1),
+            None,
+            TransactionStatusFilter::Mined,
+            OutputStatusFilter::All,
+        );
+    with_wallet_db_write_lock("address_discovery.ephemeral_checked", || {
+        db.transactionally(|tx| {
+            if gate.permits_applied(tx.applied_transparent_policy()?) {
                 tx.notify_address_checked(request, tip)?;
-                Ok::<_, SqliteClientError>(true)
-            })
+            }
+            Ok::<_, SqliteClientError>(())
         })
-        .map_err(|e| SyncError::db(format!("restored ephemeral address checked: {e}")))?;
-        if !recorded {
-            return Ok(stored);
-        }
-    }
-    Ok(stored)
+    })
+    .map_err(|e| SyncError::db(format!("restored ephemeral address checked: {e}")))?;
+    Ok(RestoredCheck::Sent { stored })
 }
 
 /// Addresses of every restored ephemeral output (see
@@ -917,7 +939,8 @@ pub(crate) enum Coverage {
     Complete,
     /// Initial discovery of the account's derived addresses has not finished.
     InitialDiscovery,
-    /// A restored ephemeral output's address has not been checked yet.
+    /// A restored ephemeral output's address has not been checked yet. Holds
+    /// balances and shielding, but not sync completion.
     RestoredEphemeral,
     /// A spend search for one of the account's outputs is due at or below
     /// the tip.
@@ -945,11 +968,28 @@ impl CoverageRead {
         Ok(Self { due_spend_searches })
     }
 
+    /// `account`'s coverage, as balances and shielding read it.
     pub(crate) fn account<W>(
         &self,
         wdb: &W,
         ext: &ExtensionTransaction<'_>,
         account: AccountUuid,
+    ) -> Result<Coverage, SqliteClientError>
+    where
+        W: WalletRead<AccountId = AccountUuid, Error = SqliteClientError>,
+    {
+        self.account_with(wdb, ext, account, true)
+    }
+
+    /// `account`'s coverage. An unchecked restored ephemeral output counts
+    /// only with `restored_ephemeral`: sync completion leaves those to later
+    /// syncs, one per sync (see [`run_restored_ephemeral`]).
+    fn account_with<W>(
+        &self,
+        wdb: &W,
+        ext: &ExtensionTransaction<'_>,
+        account: AccountUuid,
+        restored_ephemeral: bool,
     ) -> Result<Coverage, SqliteClientError>
     where
         W: WalletRead<AccountId = AccountUuid, Error = SqliteClientError>,
@@ -970,13 +1010,15 @@ impl CoverageRead {
                 return Ok(Coverage::InitialDiscovery);
             }
         }
-        let restored: bool = ext.query_row(
-            &format!("SELECT EXISTS(SELECT 1 {RESTORED_EPHEMERAL_OUTPUTS} AND acct.uuid = ?1)"),
-            [&uuid],
-            |r| r.get(0),
-        )?;
-        if restored {
-            return Ok(Coverage::RestoredEphemeral);
+        if restored_ephemeral {
+            let restored: bool = ext.query_row(
+                &format!("SELECT EXISTS(SELECT 1 {RESTORED_EPHEMERAL_OUTPUTS} AND acct.uuid = ?1)"),
+                [&uuid],
+                |r| r.get(0),
+            )?;
+            if restored {
+                return Ok(Coverage::RestoredEphemeral);
+            }
         }
         if !self.due_spend_searches.is_empty() {
             let placeholders = vec!["?"; self.due_spend_searches.len()].join(",");
@@ -1045,7 +1087,10 @@ pub(crate) fn account_coverage(
     .map_err(|e: SqliteClientError| format!("Failed to read transparent history coverage: {e}"))
 }
 
-/// The first account whose public transparent history is incomplete, if any.
+/// The first account whose public transparent history is too incomplete for
+/// the wallet to read as synchronized, if any. An unchecked restored
+/// ephemeral output does not count: a sync checks one, and leaves the rest to
+/// later syncs rather than failing and retrying until all are checked.
 pub(crate) fn first_incomplete(
     db: &mut WalletDatabase,
     network: WalletNetwork,
@@ -1061,7 +1106,7 @@ pub(crate) fn first_incomplete(
             if snapshot.authority != TransparentAuthority::Public {
                 continue;
             }
-            let coverage = read.account(wdb, ext, account)?;
+            let coverage = read.account_with(wdb, ext, account, false)?;
             if coverage != Coverage::Complete {
                 return Ok(Some((account, coverage)));
             }
@@ -2076,13 +2121,27 @@ mod tests {
         RawTransaction,
         zcash_primitives::transaction::TxId,
     ) {
+        restored_first_leg_from(db, id, 5)
+    }
+
+    /// [`restored_first_leg`], funded from an outpoint of `seed`, so that
+    /// each first leg is a distinct transaction.
+    fn restored_first_leg_from(
+        db: &mut WalletDatabase,
+        id: AccountUuid,
+        seed: u8,
+    ) -> (
+        transparent::address::TransparentAddress,
+        RawTransaction,
+        zcash_primitives::transaction::TxId,
+    ) {
         use zcash_client_backend::data_api::WalletWrite;
         let (ephemeral, _) = db
             .reserve_next_n_ephemeral_addresses(id, 1)
             .unwrap()
             .remove(0);
         let (leg1, txid) = payment(
-            transparent::bundle::OutPoint::new([5; 32], 0),
+            transparent::bundle::OutPoint::new([seed; 32], 0),
             ephemeral,
             TIP - 5,
         );
@@ -2098,8 +2157,8 @@ mod tests {
     }
 
     /// TEX leg 2 after a restore: the restored first leg's ephemeral address
-    /// is checked once, immediately and over its own channel, so the second
-    /// leg is found without waiting for the daily ZIP 320 schedule.
+    /// is checked once, by the next sync and over its own channel, so the
+    /// second leg is found without waiting for the daily ZIP 320 schedule.
     #[tokio::test]
     async fn a_restored_tex_first_leg_finds_its_second_leg_at_once() {
         let (_dir, path, id, mut db, _) = software_fixture();
@@ -2117,7 +2176,7 @@ mod tests {
             encoded.clone(),
             vec![leg1, leg2],
         )]));
-        let stored = restored_ephemeral_with(
+        let checked = restored_ephemeral_with(
             &mut rpc,
             &mut db,
             &path,
@@ -2129,7 +2188,7 @@ mod tests {
         .await
         .unwrap();
 
-        assert!(stored);
+        assert_eq!(checked, RestoredCheck::Sent { stored: true });
         assert_eq!(
             *rpc.queries.lock().unwrap(),
             vec![format!("isolated:{encoded}")]
@@ -2141,8 +2200,9 @@ mod tests {
         );
         assert_eq!(coverage_of(&mut db, id), Some(Coverage::Complete));
 
-        // Once checked, the address is left to the ZIP 320 schedule.
-        restored_ephemeral_with(
+        // Once checked, the address is left to the ZIP 320 schedule, and the
+        // next sync's ephemeral slot goes to that schedule.
+        let checked = restored_ephemeral_with(
             &mut rpc,
             &mut db,
             &path,
@@ -2153,7 +2213,72 @@ mod tests {
         )
         .await
         .unwrap();
+        assert_eq!(checked, RestoredCheck::NotSent);
         assert_eq!(rpc.queries.lock().unwrap().len(), 1);
+    }
+
+    /// Several restored first legs are checked one per sync, never in one
+    /// burst of isolated channels that the server could link by request
+    /// time. Until the last is checked, the account's transparent funds stay
+    /// last known, but each sync completes rather than failing and retrying.
+    #[tokio::test]
+    async fn restored_ephemeral_addresses_are_checked_one_per_sync() {
+        use crate::wallet::sync::TransparentBalanceAuthority;
+        let (_dir, path, id, mut db, _) = software_fixture();
+        mark_scanned(&path);
+        record_initial_discovery_for_test(&path, id, TIP);
+        let legs = (0..3u8)
+            .map(|seed| restored_first_leg_from(&mut db, id, 5 + seed))
+            .collect::<Vec<_>>();
+        let mut rpc = rpc(legs
+            .iter()
+            .map(|(ephemeral, leg1, _)| {
+                (ephemeral.encode(&WalletNetwork::Main), vec![leg1.clone()])
+            })
+            .collect());
+        assert_eq!(
+            first_incomplete(&mut db, WalletNetwork::Main).unwrap(),
+            None,
+            "unchecked restored addresses do not hold sync completion"
+        );
+
+        for sync in 1..=legs.len() {
+            assert_eq!(coverage_of(&mut db, id), Some(Coverage::RestoredEphemeral));
+            assert_eq!(authority(&path, id), TransparentBalanceAuthority::LastKnown);
+            assert!(!permits_transparent_spend(&mut db, WalletNetwork::Main, id).unwrap());
+            let checked = restored_ephemeral_with(
+                &mut rpc,
+                &mut db,
+                &path,
+                WalletNetwork::Main,
+                EnhancementPolicy::current(WalletNetwork::Main),
+                BlockHeight::from_u32(TIP),
+                &|| false,
+            )
+            .await
+            .unwrap();
+            assert_eq!(checked, RestoredCheck::Sent { stored: true });
+            assert_eq!(
+                rpc.queries.lock().unwrap().len(),
+                sync,
+                "one address per sync"
+            );
+            assert_eq!(
+                first_incomplete(&mut db, WalletNetwork::Main).unwrap(),
+                None
+            );
+        }
+
+        let mut queried = rpc.queries.lock().unwrap().clone();
+        queried.sort();
+        let mut expected = legs
+            .iter()
+            .map(|(ephemeral, _, _)| format!("isolated:{}", ephemeral.encode(&WalletNetwork::Main)))
+            .collect::<Vec<_>>();
+        expected.sort();
+        assert_eq!(queried, expected, "each address is checked once");
+        assert_eq!(coverage_of(&mut db, id), Some(Coverage::Complete));
+        assert_eq!(authority(&path, id), TransparentBalanceAuthority::Current);
     }
 
     /// A restored first leg whose second leg never reached the chain is

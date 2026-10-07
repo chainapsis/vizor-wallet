@@ -4686,44 +4686,14 @@ async fn run_sync_impl(
         }
     }
 
-    // A restore finds a TEX operation's first leg only now, through the
-    // shielded scan and its enhancement. Its second leg spends from an
-    // ephemeral address, so it is found here, by checking that address once,
-    // and the transactions it stores are enhanced before completion.
-    let tip_for_ephemeral = BlockHeight::from_u32(current_tip_height as u32);
-    if address_discovery::run_restored_ephemeral(
-        &mut client,
-        &mut db,
-        db_data_path,
-        lightwalletd_url,
-        network,
-        enhancement.policy(),
-        tip_for_ephemeral,
-        &should_exit,
-    )
-    .await?
-        && !should_exit()
-        && enhancement
-            .run_checkpoint(&mut db, &mut client, None, &should_exit)
-            .await?
-    {
-        log::info!(
-            "[{}] sync: exiting during restored ephemeral enhancement",
-            elapsed()
-        );
-        return Ok(());
-    }
-    if should_exit() {
-        return Ok(());
-    }
-
     let (final_scanned_height, final_tip_height) =
         ensure_complete_scan_state(&mut db, current_tip_height)?;
     // Completion claims the transparent history is complete too: address
-    // discovery, restored ephemeral checks, and every spend search due at or
-    // below the tip. A failure that left any of it undone (an address-history
-    // stream cut, an address whose transactions failed to store) fails the
-    // sync, which retries, instead of reporting a synchronized wallet.
+    // discovery and every spend search due at or below the tip. A failure
+    // that left any of it undone (an address-history stream cut, an address
+    // whose transactions failed to store) fails the sync, which retries,
+    // instead of reporting a synchronized wallet. Restored ephemeral checks
+    // are left to the ephemeral slot below, one per sync.
     if let Some((account, coverage)) =
         address_discovery::first_incomplete(&mut db, network).map_err(SyncError::db)?
     {
@@ -4925,25 +4895,64 @@ async fn run_sync_impl(
 
     if !should_exit() {
         let mut changed = false;
-        // Each check sends an ephemeral address, so it is authorized under
-        // the transparent policy this sync captured.
-        if let Err(error) = ephemeral_checks::run(
-            lightwalletd_url,
+        // A sync sends at most one ephemeral address, over its own channel,
+        // so that the server cannot link several to each other, or to this
+        // sync, by request time. While a restored TEX operation's first leg
+        // is unchecked (a restore finds it only through the scan), one such
+        // address is checked, so that its second leg and any returned funds
+        // are found; otherwise a due ZIP 320 check runs. Each check is
+        // authorized under the transparent policy this sync captured.
+        let tip = BlockHeight::from_u32(final_tip_height as u32);
+        match address_discovery::run_restored_ephemeral(
+            &mut client,
             &mut db,
             db_data_path,
+            lightwalletd_url,
             network,
             enhancement.policy(),
-            BlockHeight::from_u32(final_tip_height as u32),
-            &mut changed,
+            tip,
             &should_exit,
         )
         .await
         {
-            log::warn!(
-                "[{}] sync: ephemeral address check failed; it will retry on a later sync: {}",
+            Ok(address_discovery::RestoredCheck::NotSent) => {
+                if let Err(error) = ephemeral_checks::run(
+                    lightwalletd_url,
+                    &mut db,
+                    db_data_path,
+                    network,
+                    enhancement.policy(),
+                    tip,
+                    &mut changed,
+                    &should_exit,
+                )
+                .await
+                {
+                    log::warn!(
+                        "[{}] sync: ephemeral address check failed; it will retry on a later sync: {}",
+                        elapsed(),
+                        error,
+                    );
+                }
+            }
+            Ok(address_discovery::RestoredCheck::Sent { stored }) => {
+                log::info!(
+                    "[{}] sync: checked a restored ephemeral address (stored={})",
+                    elapsed(),
+                    stored,
+                );
+                // Recording the address checked can complete the account's
+                // coverage, which changes its balance even with nothing
+                // stored. What it stored is enhanced by a later sync, as for
+                // a scheduled check: a lookup over this sync's channel right
+                // after the isolated query could link the two.
+                changed = true;
+            }
+            Err(error) => log::warn!(
+                "[{}] sync: restored ephemeral address check failed; it will retry on a later sync: {}",
                 elapsed(),
                 error,
-            );
+            ),
         }
         // Refresh even after a failure that followed stored transactions.
         if changed && !should_exit() {

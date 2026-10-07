@@ -797,18 +797,21 @@ async fn an_activated_wallet_discloses_nothing_through_any_lane_including_the_pi
         )
         .await
         .unwrap();
-        assert!(!address_discovery::run_restored_ephemeral(
-            &mut lwd.client,
-            &mut db,
-            &path,
-            &lwd.url,
-            MAIN,
-            policy,
-            tip,
-            &|| false,
-        )
-        .await
-        .unwrap());
+        assert_eq!(
+            address_discovery::run_restored_ephemeral(
+                &mut lwd.client,
+                &mut db,
+                &path,
+                &lwd.url,
+                MAIN,
+                policy,
+                tip,
+                &|| false,
+            )
+            .await
+            .unwrap(),
+            address_discovery::RestoredCheck::NotSent
+        );
         for selection in [
             TransparentAccountSelection::All,
             TransparentAccountSelection::Except(&uuid),
@@ -1075,18 +1078,21 @@ async fn a_flag_build_discloses_nothing_before_it_raises_the_wallet() {
     )
     .await
     .unwrap();
-    assert!(!address_discovery::run_restored_ephemeral(
-        &mut lwd.client,
-        &mut db,
-        &path,
-        &lwd.url,
-        MAIN,
-        flag,
-        tip,
-        &|| false,
-    )
-    .await
-    .unwrap());
+    assert_eq!(
+        address_discovery::run_restored_ephemeral(
+            &mut lwd.client,
+            &mut db,
+            &path,
+            &lwd.url,
+            MAIN,
+            flag,
+            tip,
+            &|| false,
+        )
+        .await
+        .unwrap(),
+        address_discovery::RestoredCheck::NotSent
+    );
     let mut received = false;
     let refreshed = refresh_utxos(
         &mut lwd.client,

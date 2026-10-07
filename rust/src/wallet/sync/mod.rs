@@ -455,8 +455,9 @@ pub(crate) fn get_sync_progress(
                 None
             });
             // A wallet is synchronized only when its transparent history is
-            // complete too; a sync that completed earlier says nothing about
-            // discovery that has since become due or failed.
+            // complete too, as a sync's own completion judges it; a sync that
+            // completed earlier says nothing about discovery that has since
+            // become due or failed.
             let is_complete =
                 is_completed_sync_status(scanned_height, chain_tip_height, last_completed_height)
                     && super::sync_engine::address_discovery::first_incomplete(&mut db, network)?
