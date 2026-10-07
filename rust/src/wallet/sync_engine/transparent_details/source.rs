@@ -14,7 +14,7 @@
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, LazyLock, Mutex, PoisonError};
+use std::sync::{Arc, LazyLock, Mutex, PoisonError, TryLockError};
 use std::time::Duration;
 
 use tokio::runtime::Handle;
@@ -36,8 +36,14 @@ use crate::wallet::sync_engine::{watch_for_exit, TransparentLookupGate};
 
 pub(crate) use crate::wallet::sync_engine::transparent_ledger::pir::DEFAULT_MAINNET_ORIGIN;
 
-/// Abandons a lookup whose blocking task ignores its exit signal.
+/// Abandons a lookup or map fetch that has not returned, without an exit.
 const LOOKUP_BACKSTOP: Duration = Duration::from_secs(60);
+/// How long a run waits, once it exits or its budget is spent, for the
+/// lookup or map fetch it cancelled to return before abandoning it.
+pub(crate) const CANCEL_GRACE: Duration = Duration::from_secs(2);
+
+/// How often a blocking request polls for a client another request holds.
+const CLIENT_WAIT_STEP: Duration = Duration::from_millis(5);
 
 /// What a lookup found.
 #[derive(Debug)]
@@ -122,6 +128,9 @@ pub(crate) fn txid_origin(network: WalletNetwork) -> Option<String> {
 pub(crate) struct PirSource {
     origin: String,
     client: Arc<Mutex<TxidDisplayClient>>,
+    /// The digest of the map the client held after this source's last
+    /// request, for when another request holds the client.
+    map: Option<[u8; 32]>,
     #[cfg(test)]
     observer: Option<crate::wallet::sync_engine::enhancement::RequestObserver>,
 }
@@ -142,12 +151,15 @@ impl PirSource {
         #[cfg(not(test))]
         let client = client_for(&origin);
         let _ = db_path;
-        Some(Self {
+        let mut source = Self {
             origin,
             client,
+            map: None,
             #[cfg(test)]
             observer: seam.map(|seam| seam.observer),
-        })
+        };
+        source.map = source.map_sha256();
+        Some(source)
     }
 }
 
@@ -177,6 +189,7 @@ impl DetailSource for PirSource {
             observer: Some(observer),
         };
         let (found, map) = run_blocking(request, should_exit).await?;
+        self.map = map;
         match found {
             Ok(TxidLookup::Found { record, provenance }) => {
                 match display_facts(&record, &provenance, mined_height) {
@@ -202,12 +215,16 @@ impl DetailSource for PirSource {
         None
     }
 
+    /// Read without waiting: while a request (perhaps one abandoned at its
+    /// backstop) holds the client, the digest this source last saw.
     fn map_sha256(&self) -> Option<[u8; 32]> {
-        self.client
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .map_sha256()
-            .and_then(map_sha256)
+        match self.client.try_lock() {
+            Ok(client) => client.map_sha256().and_then(map_sha256),
+            Err(TryLockError::Poisoned(client)) => {
+                client.into_inner().map_sha256().and_then(map_sha256)
+            }
+            Err(TryLockError::WouldBlock) => self.map,
+        }
     }
 
     async fn refresh_map(&mut self, should_exit: &(dyn Fn() -> bool + Sync)) -> Option<[u8; 32]> {
@@ -223,10 +240,14 @@ impl DetailSource for PirSource {
             #[cfg(test)]
             observer,
         };
-        run_blocking_with(request, should_exit, BlockingLookup::refresh_map)
+        let refreshed = run_blocking_with(request, should_exit, BlockingLookup::refresh_map)
             .await
             .ok()
-            .flatten()
+            .flatten();
+        if refreshed.is_some() {
+            self.map = refreshed;
+        }
+        refreshed
     }
 }
 
@@ -252,7 +273,15 @@ impl BlockingLookup {
     /// worker.
     pub(crate) fn run(self) -> Looked {
         self.with_client(|client, mut http, exit, txid, height| {
-            client.lookup(&mut http, txid, height, exit)
+            let found = client.lookup(&mut http, txid, height, exit);
+            if matches!(found, Ok(TxidLookup::Unsupported)) {
+                // The client keeps an unsupported init document for good.
+                // Start the next lookup afresh, keeping only the derived
+                // profiles, so a service that comes to support this client
+                // is found once the wallet retries the transaction.
+                *client = TxidDisplayClient::with_profiles(client.profiles());
+            }
+            found
         })
     }
 
@@ -296,15 +325,26 @@ impl BlockingLookup {
             None => http,
         };
         let mut http = http;
-        let mut client = self.client.lock().unwrap_or_else(PoisonError::into_inner);
+        // Another request may hold the client, one abandoned at its backstop
+        // among them: wait only while this one is wanted.
+        let mut client = loop {
+            match self.client.try_lock() {
+                Ok(client) => break client,
+                Err(TryLockError::Poisoned(client)) => break client.into_inner(),
+                Err(TryLockError::WouldBlock) if exit() => {
+                    return (Err(TxidError::Cancelled), None)
+                }
+                Err(TryLockError::WouldBlock) => std::thread::sleep(CLIENT_WAIT_STEP),
+            }
+        };
         let result = call(&mut client, &mut http, &exit, self.txid, self.mined_height);
         let map = client.map_sha256().and_then(map_sha256);
         (result, map)
     }
 }
 
-/// Runs `request` on a blocking thread until it returns or `should_exit`
-/// holds; on exit, signals it and waits for it, so nothing outlives the call.
+/// Runs `request` off the runtime until it returns or `should_exit` holds;
+/// see [`run_blocking_with`] for what happens to a request that outlives it.
 async fn run_blocking(
     request: BlockingLookup,
     should_exit: &(dyn Fn() -> bool + Sync),
@@ -313,6 +353,16 @@ async fn run_blocking(
 }
 
 /// [`run_blocking`] for any blocking call on the request.
+///
+/// The call runs on a thread of its own, with a runtime of its own for its
+/// I/O, never the caller's runtime or its blocking pool: a runtime's
+/// shutdown waits for every blocking-pool task, so a call that ignored its
+/// cancellation would hold the sync that owns the runtime. The request's
+/// `handle` is replaced by that runtime's. On
+/// exit the call's cancellation is set and the call gets [`CANCEL_GRACE`] to
+/// return; a call that does not is abandoned, still running, and nothing it
+/// returns later is read, so it stores nothing. It may keep the client until
+/// it returns; later requests wait for it only while they are wanted.
 async fn run_blocking_with<T: Send + 'static>(
     request: BlockingLookup,
     should_exit: &(dyn Fn() -> bool + Sync),
@@ -320,14 +370,39 @@ async fn run_blocking_with<T: Send + 'static>(
 ) -> Result<T, DetailFailure> {
     let cancel = request.cancel.clone();
     let _cancel_on_drop = CancelOnDrop(cancel.clone());
-    let mut task = tokio::task::spawn_blocking(move || call(request));
+    let (done, mut answer) = tokio::sync::oneshot::channel();
+    let spawned = std::thread::Builder::new()
+        .name("txid-display".to_owned())
+        .spawn(move || {
+            // The request's I/O (DNS lookups on its blocking pool among it)
+            // runs on a runtime of its own, never the sync's: an abandoned
+            // request must not hold the sync's runtime shutdown.
+            let Ok(io) = tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(1)
+                .thread_name("txid-display-io")
+                .enable_all()
+                .build()
+            else {
+                return;
+            };
+            let mut request = request;
+            request.handle = io.handle().clone();
+            let _ = done.send(call(request));
+            io.shutdown_background();
+        });
+    if spawned.is_err() {
+        return Err(DetailFailure::Deferred {
+            outcome: TransparentDetailOutcome::Unavailable { retry_after: None },
+            map_sha256: None,
+        });
+    }
     let joined = tokio::select! {
         biased;
         _ = watch_for_exit(&should_exit) => {
             cancel.store(true, Ordering::SeqCst);
-            tokio::time::timeout(LOOKUP_BACKSTOP, &mut task).await
+            tokio::time::timeout(CANCEL_GRACE, &mut answer).await
         }
-        joined = tokio::time::timeout(LOOKUP_BACKSTOP, &mut task) => joined,
+        joined = tokio::time::timeout(LOOKUP_BACKSTOP, &mut answer) => joined,
     };
     if cancel.load(Ordering::SeqCst) || should_exit() {
         return Err(DetailFailure::Cancelled);

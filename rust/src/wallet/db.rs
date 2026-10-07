@@ -241,6 +241,54 @@ fn lock_until<'a>(
     }
 }
 
+/// [`with_wallet_db_write_lock`] for an async caller with a budget: the wait
+/// yields to the runtime instead of blocking its worker, and is given up,
+/// returning `None` without writing, once `give_up` holds.
+pub(crate) async fn with_wallet_db_write_lock_unless<T>(
+    operation: &'static str,
+    give_up: &(dyn Fn() -> bool + Sync),
+    write: impl FnOnce() -> T,
+) -> Option<T> {
+    let lock = WALLET_DB_WRITE_LOCK.get_or_init(|| Mutex::new(()));
+    let wait_start = Instant::now();
+    loop {
+        if give_up() {
+            log::info!("wallet DB write lock wait given up for {operation}");
+            return None;
+        }
+        // No guard may live across the await below.
+        {
+            let guard = match lock.try_lock() {
+                Ok(guard) => Some(guard),
+                Err(TryLockError::Poisoned(poisoned)) => {
+                    log::error!(
+                        "wallet DB write lock poisoned while entering {operation}; continuing"
+                    );
+                    Some(poisoned.into_inner())
+                }
+                Err(TryLockError::WouldBlock) => None,
+            };
+            if let Some(guard) = guard {
+                // The budget or exit may have come while the lock was taken.
+                if give_up() {
+                    drop(guard);
+                    log::info!("wallet DB write lock wait given up for {operation}");
+                    return None;
+                }
+                let waited = wait_start.elapsed();
+                if waited >= Duration::from_millis(50) {
+                    log::info!(
+                        "wallet DB write lock waited {:.3}s for {operation}",
+                        waited.as_secs_f64()
+                    );
+                }
+                return Some(run_wallet_db_write(operation, guard, write));
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+}
+
 /// Holds the wallet write lock from a thread of its own until the returned
 /// sender is dropped, or for `at_most`: contention for tests.
 #[cfg(test)]

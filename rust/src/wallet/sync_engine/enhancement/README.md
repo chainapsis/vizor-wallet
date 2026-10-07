@@ -704,7 +704,9 @@ trusted, since every commit comes from the configured origin.
 ## Transparent txid enhancement
 
 A sync runs four loops. The first three keep their code and scheduling; the
-fourth only fills in detail views.
+fourth fills in detail views. Its private path stores display facts only; its
+public path stores the raw transaction through `decrypt_and_store_transaction`,
+as payload enhancement does, which can update balances and history.
 
 | Loop | What it does | Where |
 |---|---|---|
@@ -744,7 +746,35 @@ captured policy ── PrivateRequired ──> txid display PIR  (PirSource)
   the txid or a selected row. The result is the transaction's complete
   transparent output list (values and raw scripts), its coinbase flag, input
   count and exact fee when known. One client per origin lives for the whole
-  process, so the derived native profiles are built once.
+  process, so the derived native profiles are built once. A client that
+  found the service's display unsupported is replaced by a fresh one that
+  keeps only those profiles, so the next lookup asks for the init document
+  and map again: a service that comes to support the client is found once
+  the wallet retries the transaction.
+- **Display metadata.** Work a lookup held for a map (not covered,
+  unsupported, contradicted) waits for that map to change, and no lookup may
+  be due to fetch a newer one. So when nothing is due and the wallet reports
+  work parked for want of a map change (`transparent_detail_parked`), the
+  private source fetches the map alone (`refresh_map`: one
+  `GET /v1/txid/shards`, no txid, validated as a lookup validates it) and the
+  run lists again under its hash. A restart starts without a map, and the
+  first such run fetches it. A failed or cancelled fetch leaves the map the
+  client held, and the work held under it; it is logged by kind and never
+  becomes a public lookup. Parking is private only: under public authority
+  the gate source has no map, and held work is due at its ordinary retry.
+- **Locks and budget.** No runtime worker waits for the shared client: the
+  run reads the map digest with `try_lock`, falling back to the digest its
+  source last saw, and lookups and map fetches take the client on a thread
+  of their own, polling their cancellation. Once the sync exits or the 45 s
+  lookup budget is spent, a lookup gets 2 s to return; one that does not is
+  abandoned and its result never read, so it stores nothing. It runs on its
+  own thread, not the runtime's blocking pool, so it cannot hold the sync's
+  runtime shutdown, and later requests wait for the client it may still hold
+  only while they are wanted. Stores and deferrals wait for the wallet write
+  lock by yielding, and give up 2 s past the budget or at the exit, checked
+  again once the lock is taken: what was stored stays, and an unrecorded
+  transaction stays due. A run therefore ends within 47 s, plus at most one
+  SQLite write already under way.
 - **Transport.** `enhancement/transport/txid_pir.rs`: the shared routed HTTPS
   core (HTTPS only, Tor when desired, direct-route lease otherwise), a 30 s
   bound per request, bodies bounded per route, error bodies never read,
@@ -762,9 +792,9 @@ captured policy ── PrivateRequired ──> txid display PIR  (PirSource)
   its map once (`refresh_map`) and lists again under the new hash. The run
   puts transactions a detail view asked for
   (`prioritize_transparent_details`, an in-memory interest set) first, and
-  makes at most 8 lookups in 45 s, one at a time. Lookups run on a blocking
-  thread with no database lock held; each store or deferral takes the wallet
-  write lock for one short transaction.
+  makes at most 8 lookups in 45 s, one at a time. Lookups run on a thread
+  of their own with no database lock held; each store or deferral takes the wallet
+  write lock for one short transaction, within the budget above.
 - **Failures.** Every failure is deferred to the wallet
   (`defer_transparent_detail`), which schedules the retry: unavailable,
   stale, transport or protocol failures from 30 s doubling to an hour (at
@@ -777,7 +807,8 @@ captured policy ── PrivateRequired ──> txid display PIR  (PirSource)
   generation ends the run without storing; facts that contradict the wallet
   are held, not stored. Failures are logged by kind, never by txid, a panic
   is caught, and nothing returns an error to the sync. Balances,
-  spendability, sends and history never read what this loop stores.
+  spendability, sends and history never read the display facts the private
+  path stores; the public path's raw transaction is ordinary wallet data.
 - **Storage.** `store_transparent_display` validates the facts against what
   the wallet knows (owned outputs, coinbase flag, recovered metadata and fee)
   and stores them; raw bytes arriving later supersede them. A run that stored
@@ -791,11 +822,25 @@ Detail-view states (`TransactionDetail.transparent_details_state`):
 | `pending` | No lookup has answered yet | "Details unavailable — will update when the service is reachable" |
 | `unavailable` | The last lookup failed; a later sync retries | the same notice |
 | `notCovered` | Private mode cannot look it up | "Not available in private mode" |
-| absent | No transparent part the account recorded, and no detail work | nothing |
+| absent | No transparent part the account takes part in | nothing |
+
+The view belongs to the account. It shows when the account has a transparent
+output or spend in the transaction, or a shielded part (a received, spent or
+sent note, a payment to a transparent recipient among them) in a transaction
+the wallet durably records as mixed: by detail work, stored display facts or
+the route-2 marker. Storing display facts deletes the work but keeps the
+facts and the marker, so the view stays. Storing raw bytes deletes the work
+and the facts; for an account whose part is shielded, the raw transaction
+then decides, and a view shows only when it has a transparent input or
+output. Another account's mixed transaction, and a fully shielded one, have
+no view.
 
 While the state is `pending` or `unavailable`, a receipt asks for the
 transaction to be served first (once per open) and re-reads its detail every
-five seconds, stopping when it is available or not covered. Development
+five seconds, stopping when it is available or not covered. Re-reads are
+serialized: a poll does not start while another read, or a full receipt
+load, is in flight, and a read that a newer load or an account switch has
+superseded is discarded rather than shown. Development
 builds (`ZCASH_PRIVATE_TRANSPARENT_RECOVERY`) add a button that runs one
 private lookup through `debug_lookup_transparent_details` and stores nothing.
 

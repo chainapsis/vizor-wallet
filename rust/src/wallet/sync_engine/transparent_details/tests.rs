@@ -81,6 +81,12 @@ pub(crate) struct Fixture {
 /// A mainnet wallet with one software account, scanned from [`BIRTHDAY`]
 /// through [`TOP`].
 pub(crate) fn wallet() -> Fixture {
+    wallet_with_seed().0
+}
+
+/// [`wallet`], with the account's seed.
+fn wallet_with_seed() -> (Fixture, Vec<u8>) {
+    use secrecy::ExposeSecret as _;
     let _ = rustls::crypto::ring::default_provider().install_default();
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("wallet.db").to_str().unwrap().to_owned();
@@ -117,13 +123,17 @@ pub(crate) fn wallet() -> Fixture {
         .keys()
         .next()
         .expect("the account has a transparent receiver");
-    Fixture {
-        _dir: dir,
-        path,
-        uuid,
-        account,
-        address,
-    }
+    let seed = seed.expose_secret().to_vec();
+    (
+        Fixture {
+            _dir: dir,
+            path,
+            uuid,
+            account,
+            address,
+        },
+        seed,
+    )
 }
 
 /// A transparent receipt the wallet recorded at `height` without its raw
@@ -2196,13 +2206,314 @@ async fn a_held_write_lock_delays_no_run_past_its_budget() {
         exit.store(true, Ordering::SeqCst);
         std::future::pending::<()>().await
     };
+    let started = tokio_now();
     let outcome = tokio::select! {
         outcome = run => outcome,
         _ = stop => unreachable!(),
     };
+    let took = tokio_now() - started;
     drop(release);
     assert!(
         matches!(outcome, RunOutcome::Exited(stats) if stats.lookups == 1 && stats.stored == 0),
         "{outcome:?}"
     );
+    // The exit came a second in; the run returned with it.
+    assert!(took < Duration::from_secs(2), "{took:?}");
+    // With the lock released, nothing late is written: the work stays due.
+    tokio::time::sleep(Duration::from_secs(5)).await;
+    assert_eq!(work_row(&fixture.path, &other), Some((None, None)));
+    assert_eq!(view(&fixture, &other), Some(TransparentDisplayView::Pending));
+}
+
+/// A lookup whose transport ignores its cancellation is abandoned within the
+/// cancel grace. The run returns, and so does the runtime the sync owns and
+/// drops on return, though the lookup still runs; a later run waits for the
+/// client it still holds only while it is wanted. Once the stuck request
+/// returns, the abandoned lookup sends nothing more and nothing is stored.
+#[test]
+fn an_abandoned_lookup_holds_neither_the_run_nor_its_runtime() {
+    let fixture = wallet();
+    let txid = utxo_receipt(&fixture, 0x4b, TOP - 1).txid();
+    let _mode = require_private(&fixture.path);
+    let (release, released) = std::sync::mpsc::channel::<()>();
+    let released = Arc::new(Mutex::new(released));
+    let (unblock, blocked) = std::sync::mpsc::channel::<()>();
+    let blocked = Arc::new(Mutex::new(blocked));
+    let (descendant, descended) = std::sync::mpsc::channel::<()>();
+    let stuck = Arc::new(AtomicBool::new(false));
+    let covering = publication(BIRTHDAY, TOP).answer;
+    let service = RequestObserver::answering({
+        let (released, blocked, stuck) = (released.clone(), blocked.clone(), stuck.clone());
+        move |request| {
+            if request.path.contains("/query/") && !stuck.swap(true, Ordering::SeqCst) {
+                // Blocking work the request's I/O left on its runtime, as a
+                // stuck DNS lookup leaves it, never awaited.
+                let descendant = descendant.clone();
+                let blocked = blocked.clone();
+                tokio::task::spawn_blocking(move || {
+                    let _ = blocked.lock().unwrap().recv_timeout(Duration::from_secs(30));
+                    let _ = descendant.send(());
+                });
+                // Blocks until released, whatever the cancellation says.
+                let _ = released
+                    .lock()
+                    .unwrap()
+                    .recv_timeout(Duration::from_secs(30));
+            }
+            covering(request)
+        }
+    });
+    let _seam = test_seam::set(&fixture.path, service.clone());
+    // As the full sync runs: on a runtime of its own, dropped on return.
+    let sync = |exit_after: Duration| {
+        let path = fixture.path.clone();
+        std::thread::spawn(move || {
+            let runtime = tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(1)
+                .enable_all()
+                .build()
+                .unwrap();
+            let started = Instant::now();
+            let outcome = runtime.block_on(async {
+                let lwd = CapturingLwd::start_with(Vec::new(), u64::from(TOP), |_| {}).await;
+                let mut db = open(&path);
+                let should_exit = || started.elapsed() >= exit_after;
+                followup(
+                    &mut db,
+                    &path,
+                    MAIN,
+                    required(),
+                    &lwd.client,
+                    clock(),
+                    &should_exit,
+                )
+                .await
+            });
+            drop(runtime);
+            (outcome, started.elapsed())
+        })
+        .join()
+        .unwrap()
+    };
+
+    let (outcome, took) = sync(Duration::from_millis(500));
+    assert!(stuck.load(Ordering::SeqCst), "the lookup reached the stuck request");
+    assert!(
+        matches!(outcome, Some(RunOutcome::Exited(stats)) if stats.lookups == 1),
+        "{outcome:?}"
+    );
+    assert!(
+        took < Duration::from_millis(500) + source::CANCEL_GRACE + Duration::from_secs(2),
+        "{took:?}"
+    );
+
+    // The abandoned lookup still holds the client.
+    let (outcome, took) = sync(Duration::from_millis(300));
+    assert!(
+        matches!(outcome, Some(RunOutcome::Exited(stats)) if stats.lookups == 1),
+        "{outcome:?}"
+    );
+    assert!(took < Duration::from_secs(3), "{took:?}");
+
+    let sent = service.requests().len();
+    release.send(()).unwrap();
+    unblock.send(()).unwrap();
+    // The abandoned lookup sends only while it holds the client: once the
+    // client is free, it has returned, and its descendant work has ended.
+    drop(test_seam::client(&fixture.path).lock().unwrap());
+    descended.recv_timeout(Duration::from_secs(10)).unwrap();
+    assert_eq!(service.requests().len(), sent, "nothing sent after release");
+    assert_eq!(work_row(&fixture.path, &txid), Some((None, None)));
+    assert_eq!(view(&fixture, &txid), Some(TransparentDisplayView::Pending));
+}
+
+/// A real payment the account made from an Orchard note to an external
+/// transparent recipient, with no transparent input or change: one Orchard
+/// spend of the account's note, one transparent output to [`PAYEE`], and
+/// returns the payment and the spent note's nullifier.
+fn genuine_payment(seed: &[u8], height: u32) -> (Transaction, [u8; 32], u64) {
+    use incrementalmerkletree::{Hashable, Level};
+    use orchard::{
+        keys::{FullViewingKey, Scope, SpendAuthorizingKey},
+        note::{ExtractedNoteCommitment, RandomSeed, Rho},
+        tree::{MerkleHashOrchard, MerklePath},
+        value::NoteValue,
+        Note, NoteVersion,
+    };
+    use sapling_crypto::prover::mock::{MockOutputProver, MockSpendProver};
+    use zcash_primitives::transaction::{
+        builder::{BuildConfig, Builder, BundlePadding},
+        fees::zip317,
+    };
+    let usk = zcash_keys::keys::UnifiedSpendingKey::from_seed(&MAIN, seed, zip32::AccountId::ZERO)
+        .unwrap();
+    let sk = usk.orchard();
+    let fvk = FullViewingKey::from(sk);
+    // Exactly the payment and its fee: no change.
+    let value = 5_000 + 15_000;
+    let rho = Rho::from_bytes(&[0; 32]).unwrap();
+    let note = Note::from_parts(
+        fvk.address_at(0u32, Scope::External),
+        NoteValue::from_raw(value),
+        rho,
+        RandomSeed::from_bytes([7; 32], &rho).unwrap(),
+        NoteVersion::V2,
+    )
+    .unwrap();
+    let path = MerklePath::from_parts(
+        0,
+        core::array::from_fn(|level| MerkleHashOrchard::empty_root(Level::from(level as u8))),
+    );
+    let anchor = path.root(ExtractedNoteCommitment::from(note.commitment()));
+    let mut builder = Builder::new(
+        MAIN,
+        BlockHeight::from_u32(height),
+        BuildConfig::Standard {
+            sapling_anchor: None,
+            orchard_anchor: Some(anchor),
+            ironwood_anchor: None,
+            orchard_padding: BundlePadding::DEFAULT,
+            ironwood_padding: BundlePadding::DEFAULT,
+        },
+    );
+    builder
+        .add_orchard_spend::<zip317::FeeError>(fvk.clone(), note, path)
+        .unwrap();
+    builder
+        .add_transparent_output(
+            &TransparentAddress::PublicKeyHash([0x11; 20]),
+            Zatoshis::const_from_u64(5_000),
+        )
+        .unwrap();
+    let tx = builder
+        .build(
+            &transparent::builder::TransparentSigningSet::new(),
+            &[],
+            &[SpendAuthorizingKey::from(sk)],
+            voting_crypto_deps::rand::rngs::OsRng,
+            &MockSpendProver,
+            &MockOutputProver,
+            &zip317::FeeRule::standard(),
+        )
+        .unwrap()
+        .transaction()
+        .clone();
+    (tx, note.nullifier(&fvk).to_bytes(), value)
+}
+
+/// A real payment the account made from its Orchard funds to an external
+/// transparent recipient keeps its view once public raw recovery stores it.
+/// The wallet knows only that the account's note was spent; loop 4 fetches
+/// the raw bytes, the wallet finds the account's spend by its nullifier,
+/// records the payment to the transparent recipient (`output_pool` 0) and
+/// clears the work. The view shows the recipient as not the account's, no
+/// transparent input, and a shielded part; another account has none.
+#[tokio::test]
+async fn genuine_shielded_payment_to_a_transparent_recipient_stays_visible() {
+    let (fixture, seed) = wallet_with_seed();
+    let other_seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
+    let (other_uuid, _) = keys::add_account(
+        &fixture.path,
+        MAIN,
+        "other",
+        &other_seed,
+        Some(u64::from(BIRTHDAY)),
+    )
+    .unwrap();
+    let other = keys::parse_account_uuid(&other_uuid).unwrap();
+    let (tx, nullifier, value) = genuine_payment(&seed, TOP - 1);
+    assert!(tx.orchard_bundle().is_some());
+    assert!(tx
+        .transparent_bundle()
+        .is_some_and(|bundle| bundle.vin.is_empty() && bundle.vout.len() == 1));
+
+    // The account's note, received earlier, and the payment the compact scan
+    // saw spend it, without raw bytes, as mixed.
+    let account = account_id(&fixture.path, fixture.account);
+    let conn = rusqlite::Connection::open(&fixture.path).unwrap();
+    conn.execute(
+        "INSERT INTO transactions (txid, mined_height, min_observed_height, tx_index)
+         VALUES (?1, ?2, ?2, 1)",
+        rusqlite::params![[0x77u8; 32].as_slice(), TOP - 2],
+    )
+    .unwrap();
+    let funding = conn.last_insert_rowid();
+    conn.execute(
+        "INSERT INTO orchard_received_notes (transaction_id, action_index, account_id,
+             diversifier, value, rho, rseed, nf, is_change, note_version)
+         VALUES (?1, 0, ?2, zeroblob(11), ?3, zeroblob(32), zeroblob(32), ?4, 0, 2)",
+        rusqlite::params![funding, account, value, nullifier.as_slice()],
+    )
+    .unwrap();
+    let note = conn.last_insert_rowid();
+    conn.execute(
+        "INSERT INTO transactions (txid, mined_height, min_observed_height)
+         VALUES (?1, ?2, ?2)",
+        rusqlite::params![tx.txid().as_ref().as_slice(), TOP - 1],
+    )
+    .unwrap();
+    let id = conn.last_insert_rowid();
+    conn.execute(
+        "INSERT INTO orchard_received_note_spends (orchard_received_note_id, transaction_id)
+         VALUES (?1, ?2)",
+        [note, id],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO ironwood_enhance_routing (transaction_id, route) VALUES (?1, 2)",
+        [id],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO transparent_detail_work (transaction_id, reasons) VALUES (?1, 4)",
+        [id],
+    )
+    .unwrap();
+    let mut bytes = Vec::new();
+    tx.write(&mut bytes).unwrap();
+    let lwd = CapturingLwd::start_serving(
+        vec![(*tx.txid().as_ref(), bytes, u64::from(TOP - 1))],
+        0,
+        |_| {},
+    )
+    .await;
+
+    let outcome = followup_with(&fixture, public(), &lwd).await;
+    assert!(
+        matches!(outcome, Some(RunOutcome::Finished(stats)) if stats.stored == 1),
+        "{outcome:?}"
+    );
+    assert_eq!(lwd.count("/GetTransaction"), 1);
+    assert_eq!(
+        count(&fixture.path, "SELECT COUNT(*) FROM transparent_detail_work"),
+        0
+    );
+    assert_eq!(
+        count(
+            &fixture.path,
+            &format!(
+                "SELECT COUNT(*) FROM sent_notes
+                 WHERE transaction_id = {id} AND output_pool = 0 AND from_account_id = {account}
+                   AND value = 5000"
+            )
+        ),
+        1,
+        "the store recorded the payment to the transparent recipient"
+    );
+    assert_eq!(
+        count(
+            &fixture.path,
+            &format!("SELECT COUNT(*) FROM transparent_received_outputs WHERE transaction_id = {id}")
+        ),
+        0
+    );
+
+    let Some(TransparentDisplayView::Available(details)) = view(&fixture, &tx.txid()) else {
+        panic!("the stored payment stays visible");
+    };
+    assert_eq!(details.source, TransparentDisplaySource::RawTransaction);
+    assert_eq!(rows(&details), [(0, 5_000, false)]);
+    assert_eq!(details.input_count, 0);
+    assert!(details.shielded);
+    assert_eq!(view_for(&fixture.path, other, &tx.txid()), None);
 }

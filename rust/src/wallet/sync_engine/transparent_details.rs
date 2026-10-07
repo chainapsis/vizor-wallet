@@ -3,7 +3,7 @@
 //! A sync runs four loops. (1) Compact scanning, (2) Ironwood payload
 //! enhancement ([`super::enhancement`]) and (3) transparent discovery (public
 //! lightwalletd lanes, or private recovery in [`super::transparent_ledger`])
-//! decide balances, spendability and history. This loop only fills in what a
+//! decide balances, spendability and history. This loop fills in what a
 //! detail view shows: for each transparent or mixed transaction the wallet
 //! recorded without raw bytes, it fetches that transaction's details by txid.
 //!
@@ -26,10 +26,20 @@
 //! one at a time, in the wallet's order, with any due transaction a detail
 //! view asked for ([`prioritize`]) ahead of the rest. Lookups run with no
 //! database lock held; each result is stored, or each failure deferred, under
-//! the wallet write lock in its own short transaction. Failures are logged by
-//! kind, never by txid. Nothing this loop does changes balances,
-//! spendability, sends or history, and nothing it does can fail the sync:
+//! the wallet write lock in its own short transaction. Once the budget is
+//! spent or the sync exits, a lookup gets [`source::CANCEL_GRACE`] to return
+//! before it is abandoned, and writes may wait for the lock until
+//! [`WRITE_GRACE`] past the budget: a run ends within 47 s, plus at most one
+//! SQLite write already under way. Failures are logged by kind, never by txid. The display facts the
+//! private source stores change no balance, spendability, send or history;
+//! the public source's raw transaction is ordinary wallet data, as from
+//! payload enhancement. Nothing this loop does can fail the sync:
 //! [`transparent_details_followup`] catches errors and panics.
+//!
+//! Work a private lookup held for the display map waits for the map to
+//! change, and no lookup may be due to fetch a newer one: when nothing is due
+//! and work is parked, the private source fetches the map alone and the run
+//! lists again (see `list_work`).
 
 use std::collections::{HashMap, VecDeque};
 use std::panic::AssertUnwindSafe;
@@ -37,6 +47,7 @@ use std::sync::{LazyLock, Mutex, PoisonError};
 use std::time::{Duration, Instant, SystemTime};
 
 use futures::FutureExt;
+use rusqlite::OptionalExtension as _;
 use tonic::transport::Channel;
 use zcash_client_backend::data_api::{
     transparent_ledger::{
@@ -53,7 +64,7 @@ use zcash_primitives::transaction::TxId;
 
 use super::enhancement::EnhancementPolicy;
 use super::{elapsed, SyncProgressEvent, TransparentLookupGate, WalletDatabase};
-use crate::wallet::db::with_wallet_db_write_lock;
+use crate::wallet::db::with_wallet_db_write_lock_unless;
 use crate::wallet::network::WalletNetwork;
 
 pub(crate) mod source;
@@ -62,8 +73,12 @@ pub(crate) mod tests;
 
 use source::{DetailAnswer, DetailFailure, DetailSource, GateSource, PirSource};
 
-/// Time one run may take, lookups and stores included.
+/// Time one run's lookups may take; see the module documentation for the
+/// grace a run takes past it.
 pub(crate) const RUN_BUDGET: Duration = Duration::from_secs(45);
+/// How long past the budget a run may wait to record the lookup the budget
+/// stopped.
+const WRITE_GRACE: Duration = Duration::from_secs(2);
 /// Lookups one run may make.
 pub(crate) const MAX_LOOKUPS: usize = 8;
 /// Due work one run reads, so that prioritized transactions can go first.
@@ -184,9 +199,15 @@ pub(crate) async fn run<S: DetailSource>(
     }
     let deadline = (clock.instant)() + RUN_BUDGET;
     let budget_exit = move || should_exit() || (clock.instant)() >= deadline;
+    // Writes may finish the budget's last lookup, but never wait on the
+    // wallet's write lock past a short grace, nor once the sync exits.
+    let write_exit = move || should_exit() || (clock.instant)() >= deadline + WRITE_GRACE;
     let Some(work) = list_work(db, source, clock, &budget_exit).await else {
         return RunOutcome::Failed;
     };
+    if should_exit() {
+        return RunOutcome::Exited(stats);
+    }
     // The listing's snapshot decides: a policy moved since the run captured
     // its source ends the run, and public transport needs the listed mode to
     // retain public authority.
@@ -239,7 +260,9 @@ pub(crate) async fn run<S: DetailSource>(
                     TransparentDetailOutcome::Unavailable { retry_after: None },
                     None,
                     &mut stats,
-                );
+                    &write_exit,
+                )
+                .await;
                 break;
             }
             Err(DetailFailure::Withheld) => {
@@ -254,7 +277,9 @@ pub(crate) async fn run<S: DetailSource>(
                     "transparent details: lookup deferred ({})",
                     outcome_name(outcome)
                 );
-                defer(db, txid, now, outcome, map_sha256, &mut stats);
+                if !defer(db, txid, now, outcome, map_sha256, &mut stats, &write_exit).await {
+                    return gave_up(should_exit, stats);
+                }
                 if matches!(outcome, TransparentDetailOutcome::Unavailable { .. }) {
                     return RunOutcome::Unavailable(stats);
                 }
@@ -265,14 +290,31 @@ pub(crate) async fn run<S: DetailSource>(
             DetailAnswer::Facts(facts) => {
                 if facts.txid != txid {
                     log::error!("transparent details: source answered another transaction");
-                    defer(db, txid, now, TransparentDetailOutcome::Protocol, None, &mut stats);
+                    if !defer(
+                        db,
+                        txid,
+                        now,
+                        TransparentDetailOutcome::Protocol,
+                        None,
+                        &mut stats,
+                        &write_exit,
+                    )
+                    .await
+                    {
+                        return gave_up(should_exit, stats);
+                    }
                     continue;
                 }
                 let map_sha256 = Some(facts.provenance.map_sha256);
-                let stored =
-                    with_wallet_db_write_lock("sync_engine.transparent_details.store", || {
-                        db.store_transparent_display(*facts, expected_generation, now)
-                    });
+                let stored = with_wallet_db_write_lock_unless(
+                    "sync_engine.transparent_details.store",
+                    &write_exit,
+                    || db.store_transparent_display(*facts, expected_generation, now),
+                )
+                .await;
+                let Some(stored) = stored else {
+                    return gave_up(should_exit, stats);
+                };
                 match stored {
                     Ok(TransparentDisplayStore::Stored) => stats.stored += 1,
                     // Raw bytes arrived meanwhile, or the transaction left.
@@ -289,14 +331,19 @@ pub(crate) async fn run<S: DetailSource>(
                     }
                     Err(_) => {
                         log::warn!("transparent details: store failed; retrying later");
-                        defer(
+                        if !defer(
                             db,
                             txid,
                             now,
                             TransparentDetailOutcome::Unavailable { retry_after: None },
                             map_sha256,
                             &mut stats,
-                        );
+                            &write_exit,
+                        )
+                        .await
+                        {
+                            return gave_up(should_exit, stats);
+                        }
                     }
                 }
             }
@@ -305,14 +352,27 @@ pub(crate) async fn run<S: DetailSource>(
                 mined_height,
             } => {
                 let Some(gate) = source.gate() else {
-                    defer(db, txid, now, TransparentDetailOutcome::Protocol, None, &mut stats);
+                    if !defer(
+                        db,
+                        txid,
+                        now,
+                        TransparentDetailOutcome::Protocol,
+                        None,
+                        &mut stats,
+                        &write_exit,
+                    )
+                    .await
+                    {
+                        return gave_up(should_exit, stats);
+                    }
                     continue;
                 };
                 // A completing write: the policy is read in the same
                 // transaction, so a transition while the lookup was in flight
                 // leaves the transaction to a later authorized run.
-                let stored = with_wallet_db_write_lock(
+                let stored = with_wallet_db_write_lock_unless(
                     "sync_engine.transparent_details.decrypt_and_store_transaction",
+                    &write_exit,
                     || {
                         db.transactionally(|tx| {
                             if !gate.permits_applied(tx.applied_transparent_policy()?) {
@@ -322,7 +382,11 @@ pub(crate) async fn run<S: DetailSource>(
                             Ok::<_, SqliteClientError>(true)
                         })
                     },
-                );
+                )
+                .await;
+                let Some(stored) = stored else {
+                    return gave_up(should_exit, stats);
+                };
                 match stored {
                     Ok(true) => stats.stored += 1,
                     Ok(false) => {
@@ -333,14 +397,19 @@ pub(crate) async fn run<S: DetailSource>(
                     }
                     Err(_) => {
                         log::warn!("transparent details: store failed; retrying later");
-                        defer(
+                        if !defer(
                             db,
                             txid,
                             now,
                             TransparentDetailOutcome::Unavailable { retry_after: None },
                             None,
                             &mut stats,
-                        );
+                            &write_exit,
+                        )
+                        .await
+                        {
+                            return gave_up(should_exit, stats);
+                        }
                     }
                 }
             }
@@ -384,19 +453,37 @@ async fn list_work<S: DetailSource>(
     }
 }
 
+/// How the run ends when it gave up waiting for the wallet's write lock:
+/// what it stored stays, and the transaction it could not record stays due.
+fn gave_up(should_exit: &(dyn Fn() -> bool + Sync), stats: RunStats) -> RunOutcome {
+    if should_exit() {
+        return RunOutcome::Exited(stats);
+    }
+    log::info!("transparent details: run budget spent waiting to write; the rest waits");
+    RunOutcome::Finished(stats)
+}
+
 /// Records a failed lookup of `txid` in the wallet, which schedules the next
-/// attempt, and counts it.
-fn defer(
+/// attempt, and counts it. `false` when it gave up waiting for the wallet's
+/// write lock at `write_exit`, recording nothing.
+async fn defer(
     db: &mut WalletDatabase,
     txid: TxId,
     now: SystemTime,
     outcome: TransparentDetailOutcome,
     map_sha256: Option<[u8; 32]>,
     stats: &mut RunStats,
-) {
-    let deferred = with_wallet_db_write_lock("sync_engine.transparent_details.defer", || {
-        db.defer_transparent_detail(txid, outcome, map_sha256, now)
-    });
+    write_exit: &(dyn Fn() -> bool + Sync),
+) -> bool {
+    let deferred = with_wallet_db_write_lock_unless(
+        "sync_engine.transparent_details.defer",
+        write_exit,
+        || db.defer_transparent_detail(txid, outcome, map_sha256, now),
+    )
+    .await;
+    let Some(deferred) = deferred else {
+        return false;
+    };
     match deferred {
         Ok(()) => match outcome {
             TransparentDetailOutcome::NotCovered | TransparentDetailOutcome::Unsupported => {
@@ -406,6 +493,7 @@ fn defer(
         },
         Err(_) => log::warn!("transparent details: could not record a deferral"),
     }
+    true
 }
 
 /// An outcome's name, for logs.
@@ -568,9 +656,8 @@ pub(crate) async fn followup(
 }
 
 /// The detail view of `txid` (protocol byte order) for `account`, from the
-/// wallet behind `db` and its connection `conn`; `None` when the account
-/// recorded no transparent part of it and the wallet keeps no detail work for
-/// it.
+/// wallet behind `db` and its connection `conn`; `None` when the transaction
+/// has no transparent part the account takes part in.
 pub(crate) fn detail_view(
     db: &WalletDatabase,
     conn: &rusqlite::Connection,
@@ -578,47 +665,119 @@ pub(crate) fn detail_view(
     txid: &[u8],
 ) -> Result<Option<TransparentDisplayView>, String> {
     let txid: [u8; 32] = txid.try_into().map_err(|_| "txid length".to_owned())?;
-    if !transparent_part(conn, account, &txid)? {
+    let part = transparent_part(conn, account, &txid)?;
+    if part == TransparentPart::None {
         return Ok(None);
     }
-    db.transparent_display_view(account, TxId::from_bytes(txid))
-        .map_err(|error| format!("transparent detail view: {error}"))
+    let view = db
+        .transparent_display_view(account, TxId::from_bytes(txid))
+        .map_err(|error| format!("transparent detail view: {error}"))?;
+    // Raw bytes show whether the transaction has a transparent side at all.
+    if part == TransparentPart::IfRawShowsOne
+        && !matches!(&view, Some(TransparentDisplayView::Available(details))
+            if !details.outputs.is_empty() || details.input_count > 0)
+    {
+        return Ok(None);
+    }
+    Ok(view)
 }
 
-/// Whether the account recorded a transparent output or spend of `txid`, or
-/// the wallet keeps detail work for it (a mixed transaction).
+/// What the wallet records of an account's part in a transaction's
+/// transparent side.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TransparentPart {
+    /// The account has no part in the transaction, or the wallet records no
+    /// transparent side of it.
+    None,
+    /// The account has a transparent output or spend in the transaction, or
+    /// a shielded part in a transaction the wallet records as mixed.
+    Recorded,
+    /// The account has a shielded part in a transaction whose raw bytes the
+    /// wallet holds; they show whether it has a transparent side.
+    IfRawShowsOne,
+}
+
+/// The account's part in `txid`'s transparent side.
+///
+/// Its own transparent outputs and spends, recovered or scanned, count. So
+/// does a shielded part (a received, spent or sent note, a payment to a
+/// transparent recipient among them) in a transaction the wallet durably
+/// records as mixed: by detail work, stored display facts or the route-2
+/// marker, which outlive the work they replace. Raw bytes replace work and
+/// display facts alike, so for a shielded part in a transaction with raw
+/// bytes, those bytes decide.
 fn transparent_part(
     conn: &rusqlite::Connection,
     account: AccountUuid,
     txid: &[u8; 32],
-) -> Result<bool, String> {
-    conn.query_row(
-        "SELECT EXISTS (
-             SELECT 1 FROM transparent_received_outputs o
-             JOIN transactions t ON t.id_tx = o.transaction_id
-             JOIN accounts a ON a.id = o.account_id
-             WHERE t.txid = ?2 AND a.uuid = ?1
-             UNION ALL
-             SELECT 1 FROM transparent_received_output_spends s
-             JOIN transparent_received_outputs o ON o.id = s.transparent_received_output_id
-             JOIN transactions t ON t.id_tx = s.transaction_id
-             JOIN accounts a ON a.id = o.account_id
-             WHERE t.txid = ?2 AND a.uuid = ?1
-             UNION ALL
-             SELECT 1 FROM tpir_receive_events r JOIN accounts a ON a.id = r.account_id
-             WHERE r.txid = ?2 AND a.uuid = ?1
-             UNION ALL
-             SELECT 1 FROM tpir_spend_events s JOIN accounts a ON a.id = s.account_id
-             WHERE s.spending_txid = ?2 AND a.uuid = ?1
-             UNION ALL
-             SELECT 1 FROM transparent_detail_work w
-             JOIN transactions t ON t.id_tx = w.transaction_id
-             WHERE t.txid = ?2
-         )",
-        rusqlite::params![account.expose_uuid().as_bytes().as_slice(), txid.as_slice()],
-        |row| row.get(0),
-    )
-    .map_err(|error| format!("transparent detail view: {error}"))
+) -> Result<TransparentPart, String> {
+    let (own, shielded, mixed, raw): (bool, bool, bool, bool) = conn
+        .query_row(
+            "SELECT
+                 EXISTS (
+                     SELECT 1 FROM transparent_received_outputs o
+                     WHERE o.transaction_id = t.id_tx AND o.account_id = a.id
+                     UNION ALL
+                     SELECT 1 FROM transparent_received_output_spends s
+                     JOIN transparent_received_outputs o
+                       ON o.id = s.transparent_received_output_id
+                     WHERE s.transaction_id = t.id_tx AND o.account_id = a.id
+                     UNION ALL
+                     SELECT 1 FROM tpir_receive_events r
+                     WHERE r.txid = t.txid AND r.account_id = a.id
+                     UNION ALL
+                     SELECT 1 FROM tpir_spend_events s
+                     WHERE s.spending_txid = t.txid AND s.account_id = a.id
+                 ),
+                 EXISTS (
+                     SELECT 1 FROM sapling_received_notes n
+                     WHERE n.transaction_id = t.id_tx AND n.account_id = a.id
+                     UNION ALL
+                     SELECT 1 FROM orchard_received_notes n
+                     WHERE n.transaction_id = t.id_tx AND n.account_id = a.id
+                     UNION ALL
+                     SELECT 1 FROM ironwood_received_notes n
+                     WHERE n.transaction_id = t.id_tx AND n.account_id = a.id
+                     UNION ALL
+                     SELECT 1 FROM sapling_received_note_spends s
+                     JOIN sapling_received_notes n ON n.id = s.sapling_received_note_id
+                     WHERE s.transaction_id = t.id_tx AND n.account_id = a.id
+                     UNION ALL
+                     SELECT 1 FROM orchard_received_note_spends s
+                     JOIN orchard_received_notes n ON n.id = s.orchard_received_note_id
+                     WHERE s.transaction_id = t.id_tx AND n.account_id = a.id
+                     UNION ALL
+                     SELECT 1 FROM ironwood_received_note_spends s
+                     JOIN ironwood_received_notes n ON n.id = s.ironwood_received_note_id
+                     WHERE s.transaction_id = t.id_tx AND n.account_id = a.id
+                     UNION ALL
+                     SELECT 1 FROM sent_notes n
+                     WHERE n.transaction_id = t.id_tx AND n.from_account_id = a.id
+                 ),
+                 EXISTS (
+                     SELECT 1 FROM transparent_detail_work w WHERE w.transaction_id = t.id_tx
+                     UNION ALL
+                     SELECT 1 FROM transparent_tx_display d WHERE d.transaction_id = t.id_tx
+                     UNION ALL
+                     SELECT 1 FROM ironwood_enhance_routing r
+                     WHERE r.transaction_id = t.id_tx AND r.route = 2
+                 ),
+                 t.raw IS NOT NULL
+             FROM transactions t, accounts a
+             WHERE t.txid = ?2 AND a.uuid = ?1",
+            rusqlite::params![account.expose_uuid().as_bytes().as_slice(), txid.as_slice()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .optional()
+        .map_err(|error| format!("transparent detail view: {error}"))?
+        .unwrap_or_default();
+    Ok(if own || (shielded && mixed) {
+        TransparentPart::Recorded
+    } else if shielded && raw {
+        TransparentPart::IfRawShowsOne
+    } else {
+        TransparentPart::None
+    })
 }
 
 /// What a development lookup found, without storing anything.
