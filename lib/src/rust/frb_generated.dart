@@ -13,17 +13,13 @@ import 'api/sync.dart';
 import 'api/voting.dart';
 import 'api/voting_session.dart';
 import 'api/wallet.dart';
-
 import 'dart:async';
 import 'dart:convert';
-
 import 'frb_generated.dart';
 import 'frb_generated.io.dart'
     if (dart.library.js_interop) 'frb_generated.web.dart';
 import 'network_privacy.dart';
-
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
-
 import 'third_party/zcash_voting/config.dart';
 import 'third_party/zcash_voting/delegate.dart';
 import 'third_party/zcash_voting/share_policy.dart';
@@ -14871,15 +14867,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TransparentDetailsLookup dco_decode_transparent_details_lookup(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 6)
-      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
     return TransparentDetailsLookup(
       outcome: dco_decode_String(arr[0]),
       recipients: dco_decode_list_transparent_recipient(arr[1]),
       feeZatoshi: dco_decode_opt_box_autoadd_u_64(arr[2]),
       transparentInputCount: dco_decode_u_32(arr[3]),
       coinbase: dco_decode_bool(arr[4]),
-      privateQueries: dco_decode_u_32(arr[5]),
     );
   }
 
@@ -19990,14 +19985,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_feeZatoshi = sse_decode_opt_box_autoadd_u_64(deserializer);
     var var_transparentInputCount = sse_decode_u_32(deserializer);
     var var_coinbase = sse_decode_bool(deserializer);
-    var var_privateQueries = sse_decode_u_32(deserializer);
     return TransparentDetailsLookup(
       outcome: var_outcome,
       recipients: var_recipients,
       feeZatoshi: var_feeZatoshi,
       transparentInputCount: var_transparentInputCount,
       coinbase: var_coinbase,
-      privateQueries: var_privateQueries,
     );
   }
 
@@ -24371,7 +24364,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_box_autoadd_u_64(self.feeZatoshi, serializer);
     sse_encode_u_32(self.transparentInputCount, serializer);
     sse_encode_bool(self.coinbase, serializer);
-    sse_encode_u_32(self.privateQueries, serializer);
   }
 
   @protected
