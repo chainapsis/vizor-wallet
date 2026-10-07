@@ -516,8 +516,13 @@ void transparentReceiptParityTests({
       if (private) {
         expect(find.text('Unknown sender'), findsOneWidget);
         expect(find.text('Show full address'), findsNothing);
+        // A transparent receiving output says nothing about the sender's
+        // pool, and neither output is the sender.
+        expect(find.text('Transparent'), findsNothing);
+        expect(_showsAddress(transparentSenderAddress), findsNothing);
       } else {
         expect(_showsAddress(transparentSenderAddress), findsOneWidget);
+        expect(find.text('Transparent'), findsOneWidget);
         expect(find.text('Show full address'), findsOneWidget);
       }
       await tester.pumpWidget(const SizedBox());
