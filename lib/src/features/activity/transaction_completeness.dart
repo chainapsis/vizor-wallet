@@ -1,3 +1,4 @@
+import '../../core/formatting/zec_amount.dart';
 import '../../rust/api/sync.dart' as rust_sync;
 
 /// Shown for a fee the wallet has not recorded. An unknown fee is never 0.
@@ -90,4 +91,45 @@ rust_sync.TransactionInfo? provisionalRoleSuccessor(
 ) {
   final rows = transactions.where((tx) => matchesTxid(tx.txidHex)).toList();
   return rows.length == 1 ? rows.single : null;
+}
+
+/// Shown for a transparent or mixed transaction whose outputs are not known
+/// yet: no lookup has answered, or the last one failed. A later sync fills
+/// them in.
+const kTransparentDetailsUnavailableText =
+    'Details unavailable — will update when the service is reachable';
+
+/// Shown when private mode cannot look the transaction's outputs up.
+const kTransparentDetailsNotCoveredText = 'Not available in private mode';
+
+/// How often a receipt re-reads details that may still arrive.
+const kTransparentDetailsPollInterval = Duration(seconds: 5);
+
+/// Whether [detail]'s transparent outputs may still arrive, so a receipt
+/// keeps re-reading it and asks for it to be looked up first.
+bool transparentDetailsAwaited(rust_sync.TransactionDetail? detail) =>
+    switch (detail?.transparentDetailsState) {
+      rust_sync.TransparentDetailsState.pending ||
+      rust_sync.TransparentDetailsState.unavailable => true,
+      _ => false,
+    };
+
+/// One line per transparent output: the address it pays (or "Script" for a
+/// nonstandard one), and whether it is the account's own.
+String transparentRecipientLabel(rust_sync.TransparentRecipient recipient) =>
+    recipient.isOwn ? 'Your address' : 'Recipient';
+
+/// One line describing a development lookup's result.
+String describeTransparentDetailsLookup(
+  rust_sync.TransparentDetailsLookup lookup,
+) {
+  if (lookup.outcome != 'found') {
+    return '${lookup.outcome} · ${lookup.privateQueries} private queries';
+  }
+  final fee = lookup.feeZatoshi;
+  return [
+    '${lookup.recipients.length} outputs',
+    if (fee != null) 'fee ${ZecAmount.fromZatoshi(fee).fee}',
+    '${lookup.privateQueries} private queries',
+  ].join(' · ');
 }

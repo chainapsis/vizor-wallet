@@ -2830,6 +2830,49 @@ pub struct TransactionDetail {
     pub details_complete: bool,
     /// See [`TransactionInfo::provisional`].
     pub provisional: bool,
+    /// What transparent txid enhancement knows about the transaction's
+    /// transparent outputs; `None` when it has no transparent part the
+    /// account recorded.
+    pub transparent_details_state: Option<TransparentDetailsState>,
+    /// Every transparent output, in order, when the state is `Available`.
+    pub transparent_recipients: Vec<TransparentRecipient>,
+}
+
+/// Whether a transparent or mixed transaction's outputs are known.
+pub enum TransparentDetailsState {
+    /// `transparent_recipients` holds every transparent output.
+    Available,
+    /// No lookup has answered yet; a later sync fills them in.
+    Pending,
+    /// The last lookup failed; a later sync retries when the service is
+    /// reachable.
+    Unavailable,
+    /// Private mode cannot look the transaction up: the private publication
+    /// does not cover it.
+    NotCovered,
+}
+
+/// One transparent output of a transaction.
+pub struct TransparentRecipient {
+    pub output_index: u32,
+    /// The P2PKH or P2SH address it pays; `None` for other scripts.
+    pub address: Option<String>,
+    pub amount_zatoshi: u64,
+    /// Whether the account recorded this output as its own.
+    pub is_own: bool,
+}
+
+/// What a development lookup found. Nothing is stored.
+pub struct TransparentDetailsLookup {
+    /// `found`, `absent`, `placementUnknown` or `unsupported`.
+    pub outcome: String,
+    pub recipients: Vec<TransparentRecipient>,
+    /// The whole transaction's exact fee, when the publication knows it.
+    pub fee_zatoshi: Option<u64>,
+    pub transparent_input_count: u32,
+    pub coinbase: bool,
+    /// Private queries the lookup sent.
+    pub private_queries: u32,
 }
 
 pub struct TransactionDetailOutput {
@@ -2991,6 +3034,78 @@ pub fn get_transaction_detail(
                 .collect(),
             details_complete: detail.details_complete,
             provisional: detail.provisional,
+            transparent_details_state: detail.transparent_details.as_ref().map(|view| match view {
+                wallet_sync::TransparentDetailsView::Available(_) => {
+                    TransparentDetailsState::Available
+                }
+                wallet_sync::TransparentDetailsView::Pending => TransparentDetailsState::Pending,
+                wallet_sync::TransparentDetailsView::Unavailable => {
+                    TransparentDetailsState::Unavailable
+                }
+                wallet_sync::TransparentDetailsView::NotCovered => {
+                    TransparentDetailsState::NotCovered
+                }
+            }),
+            transparent_recipients: match detail.transparent_details {
+                Some(wallet_sync::TransparentDetailsView::Available(rows)) => rows
+                    .into_iter()
+                    .map(|row| TransparentRecipient {
+                        output_index: row.output_index,
+                        address: row.address,
+                        amount_zatoshi: row.amount_zatoshi,
+                        is_own: row.is_own,
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            },
+        })
+    })
+}
+
+/// Serves `txid_hex` (as [`TransactionInfo::txid_hex`]) first in the next
+/// transparent txid enhancement run for the wallet at `db_path`. A detail
+/// view calls it on open while the details are pending or unavailable.
+#[flutter_rust_bridge::frb(sync)]
+pub fn prioritize_transparent_details(db_path: String, txid_hex: String) -> Result<(), String> {
+    let txid: [u8; 32] = hex::decode(&txid_hex)
+        .map_err(|e| format!("Invalid txid: {e}"))?
+        .try_into()
+        .map_err(|_| "Invalid txid length".to_string())?;
+    sync_engine::transparent_details::prioritize(&db_path, txid);
+    Ok(())
+}
+
+/// Development builds only (`ZCASH_PRIVATE_TRANSPARENT_RECOVERY`): one
+/// private txid display lookup of `txid_hex` (as [`TransactionInfo::txid_hex`])
+/// mined at `mined_height`, on mainnet, persisting nothing.
+pub fn debug_lookup_transparent_details(
+    network: String,
+    txid_hex: String,
+    mined_height: u64,
+) -> Result<TransparentDetailsLookup, String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        let txid: [u8; 32] = hex::decode(&txid_hex)
+            .map_err(|e| format!("Invalid txid: {e}"))?
+            .try_into()
+            .map_err(|_| "Invalid txid length".to_string())?;
+        let found = sync_engine::transparent_details::debug_lookup(network, txid, mined_height)?;
+        Ok(TransparentDetailsLookup {
+            outcome: found.outcome.to_owned(),
+            recipients: found
+                .outputs
+                .into_iter()
+                .map(|output| TransparentRecipient {
+                    output_index: output.index,
+                    address: output.address,
+                    amount_zatoshi: output.value,
+                    is_own: output.own,
+                })
+                .collect(),
+            fee_zatoshi: found.fee,
+            transparent_input_count: found.transparent_input_count,
+            coinbase: found.coinbase,
+            private_queries: found.private_queries,
         })
     })
 }

@@ -69,7 +69,7 @@ pub(crate) mod fixture;
 pub(crate) mod pir;
 mod policy;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 pub(crate) use pir::TransparentPirSource;
 use policy::raise_to_required;

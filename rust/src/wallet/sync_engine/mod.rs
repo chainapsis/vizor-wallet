@@ -60,6 +60,7 @@ pub(crate) mod mempool;
 #[cfg(test)]
 pub(crate) mod test_lwd;
 mod tip_cache;
+pub(crate) mod transparent_details;
 pub(crate) mod transparent_ledger;
 #[cfg(test)]
 mod transparent_recovery_tests;
@@ -4620,6 +4621,23 @@ async fn run_sync_impl(
             enhancement.policy(),
             &transparent_ledger::TransparentPirSource::new(db_data_path, network),
             first,
+            &should_exit,
+            progress_fn,
+            (final_scanned_height, final_tip_height),
+        )
+        .await;
+    }
+
+    // Loop 4, transparent txid enhancement, only fills in detail views. It
+    // runs once completion is reported, under the same cancellation, and
+    // never fails the sync. Background preparation syncs skip it.
+    if !should_exit() && running_mode != 2 {
+        transparent_details::transparent_details_followup(
+            &mut db,
+            db_data_path,
+            network,
+            enhancement.policy(),
+            &client,
             &should_exit,
             progress_fn,
             (final_scanned_height, final_tip_height),

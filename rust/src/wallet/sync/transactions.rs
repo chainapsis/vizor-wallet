@@ -625,6 +625,29 @@ pub(crate) struct TransactionDetail {
     /// Whether the transaction's payment classification or owned effects remain
     /// provisional. An established Activity row can still have incomplete receipt details.
     pub provisional: bool,
+    /// Transparent txid enhancement's view of the transaction: `None` when
+    /// it has no transparent part the account recorded.
+    pub transparent_details: Option<TransparentDetailsView>,
+}
+
+/// What loop 4 knows about a transparent or mixed transaction's outputs.
+pub(crate) enum TransparentDetailsView {
+    /// Every transparent output, in order.
+    Available(Vec<TransparentRecipientRow>),
+    /// No lookup has answered yet.
+    Pending,
+    /// The last lookup failed; a later sync retries.
+    Unavailable,
+    /// The private publication does not cover the transaction.
+    NotCovered,
+}
+
+pub(crate) struct TransparentRecipientRow {
+    pub output_index: u32,
+    pub address: Option<String>,
+    pub amount_zatoshi: u64,
+    /// Whether the account recorded this output as its own.
+    pub is_own: bool,
 }
 
 pub(crate) struct TransactionDetailOutput {
@@ -1377,14 +1400,60 @@ pub(crate) fn get_transaction_detail(
     let read_tx = conn
         .unchecked_transaction()
         .map_err(|e| format!("SQL error: {e}"))?;
-    read_transaction_detail(&read_tx, network, account, txid_hex, tx_kind, |base| {
-        attach_history_details(
-            &read_tx,
-            db_path,
-            network,
-            account,
-            std::slice::from_mut(base),
-        )
+    let mut detail =
+        read_transaction_detail(&read_tx, network, account, txid_hex, tx_kind, |base| {
+            attach_history_details(
+                &read_tx,
+                db_path,
+                network,
+                account,
+                std::slice::from_mut(base),
+            )
+        })?;
+    detail.transparent_details =
+        transparent_details_view(&read_tx, db_path, network, account, &detail.txid_hex);
+    Ok(detail)
+}
+
+/// Loop 4's view of `txid_hex` for `account`. A view that cannot be read is
+/// left out rather than failing the detail.
+fn transparent_details_view(
+    read_tx: &rusqlite::Connection,
+    db_path: &str,
+    network: WalletNetwork,
+    account: AccountUuid,
+    txid_hex: &str,
+) -> Option<TransparentDetailsView> {
+    use crate::wallet::sync_engine::transparent_details::{detail_view, store::DisplayView};
+    let txid = hex::decode(txid_hex).ok()?;
+    let view = match detail_view(
+        read_tx,
+        db_path,
+        network,
+        account.expose_uuid().as_bytes(),
+        &txid,
+    ) {
+        Ok(view) => view?,
+        Err(_) => {
+            log::warn!("transaction detail: transparent details unreadable");
+            return None;
+        }
+    };
+    Some(match view {
+        DisplayView::Available { outputs } => TransparentDetailsView::Available(
+            outputs
+                .into_iter()
+                .map(|output| TransparentRecipientRow {
+                    output_index: output.index,
+                    address: output.address,
+                    amount_zatoshi: output.value,
+                    is_own: output.own,
+                })
+                .collect(),
+        ),
+        DisplayView::Pending => TransparentDetailsView::Pending,
+        DisplayView::Unavailable => TransparentDetailsView::Unavailable,
+        DisplayView::NotCovered => TransparentDetailsView::NotCovered,
     })
 }
 
@@ -1462,6 +1531,7 @@ fn read_transaction_detail(
         outputs,
         details_complete: base.history.details_complete,
         provisional: base.history.provisional,
+        transparent_details: None,
     })
 }
 
