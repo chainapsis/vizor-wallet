@@ -40,6 +40,8 @@ import 'package:zcash_wallet/src/features/payment_links/services/payment_link_re
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_copy.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_confetti.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_motion.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/gift_claim_failure_notice_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_claim_coordinator_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/gift_claim_import_store.dart';
@@ -75,12 +77,14 @@ void main() {
     Future<double?>? entryPrice,
     BiometricUnlock? biometric,
     Size size = const Size(393, 852),
+    ThemeMode themeMode = ThemeMode.dark,
     bool restored = false,
     bool testPrivacyLock = false,
     bool multipleRestoredAccounts = false,
     bool addingGiftAccount = false,
     PaymentLinkReceivedStore? receivedStore,
     GiftClaimImportStore? importStore,
+    GlobalKey? captureBoundaryKey,
   }) async {
     await tester.binding.setSurfaceSize(size);
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -104,7 +108,9 @@ void main() {
           ),
           if (scanner != null)
             paymentLinkScannerProvider.overrideWithValue(scanner),
-          appBootstrapProvider.overrideWithValue(_noWalletBootstrap),
+          appBootstrapProvider.overrideWithValue(
+            _noWalletBootstrap(themeMode: themeMode),
+          ),
           accountProvider.overrideWith(
             addingGiftAccount
                 ? _ExistingGiftAccounts.new
@@ -129,7 +135,12 @@ void main() {
             paymentClipboard ?? FakePaymentLinkClipboard(text: clipboard),
           ),
         ],
-        child: const ZcashWalletApp(),
+        child: captureBoundaryKey == null
+            ? const ZcashWalletApp()
+            : RepaintBoundary(
+                key: captureBoundaryKey,
+                child: const ZcashWalletApp(),
+              ),
       ),
     );
     await pumpUntilPresent(
@@ -215,7 +226,7 @@ void main() {
       ProviderScope(
         key: UniqueKey(),
         overrides: [
-          appBootstrapProvider.overrideWithValue(_noWalletBootstrap),
+          appBootstrapProvider.overrideWithValue(_noWalletBootstrap()),
           accountProvider.overrideWith(
             () => _NoAccounts(importedAccountCount: count),
           ),
@@ -1552,8 +1563,11 @@ void main() {
       await tester.pump();
       expect(find.text('Checking the gift… 50%'), findsWidgets);
       expect(find.text('Checking your\ngift card'), findsOneWidget);
-      expect(find.text('Create a wallet to claim'), findsNothing);
-      expect(find.text('Claim with an existing wallet'), findsNothing);
+      expect(find.text('Create a wallet to claim').hitTestable(), findsNothing);
+      expect(
+        find.text('Claim with an existing wallet').hitTestable(),
+        findsNothing,
+      );
       expect(find.byType(PaymentLinkConfetti), findsNothing);
       expect(
         find.ancestor(
@@ -1668,6 +1682,201 @@ void main() {
 
   // Layout checks need the real display fonts; they run last so the rest of
   // the file keeps its usual metrics.
+  for (final size in [const Size(320, 568), const Size(402, 874)]) {
+    for (final outcome in ['empty', 'claimed', 'network error']) {
+      testWidgets(
+        'gift card keeps its scrolled position after $outcome at $size',
+        (tester) async {
+          await loadFigmaCompareFonts();
+          tester.platformDispatcher.textScaleFactorTestValue = 1.4;
+          addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+          tester.view.padding = const FakeViewPadding(top: 62, bottom: 34);
+          addTearDown(tester.view.resetPadding);
+          final container = await pumpWelcome(tester, size: size);
+          operations.inspectionAvailability = outcome == 'claimed'
+              ? PaymentLinkAvailability.claimedElsewhere
+              : PaymentLinkAvailability.noBalance;
+          final gate = Completer<void>();
+          operations.inspectionGate = gate;
+          container
+              .read(paymentLinkIntakeProvider.notifier)
+              .receive(paymentLinkNavigationLink.toUri().toString());
+          await pumpUntilPresent(tester, find.text('Checking the gift…'));
+          await tester.pump(const Duration(seconds: 1));
+          await tester.ensureVisible(find.text('Checking the gift…'));
+          await tester.pump();
+          final slot = keyed('gift_claim_card_slot');
+          final bounds = tester.getRect(slot);
+          if (outcome == 'network error') {
+            gate.completeError(const SocketException('offline'));
+          } else {
+            gate.complete();
+          }
+          await pumpUntilPresent(tester, keyed('gift_claim_status'));
+          await tester.pumpAndSettle();
+          expect(
+            tester.getRect(slot),
+            rectMoreOrLessEquals(bounds, epsilon: 0.001),
+          );
+          expect(find.byType(PaymentLinkLoadingMobileCard), findsNothing);
+          expect(keyed('gift_claim_close_button'), findsOneWidget);
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
+
+  for (final size in [
+    const Size(320, 568),
+    const Size(375, 667),
+    const Size(393, 852),
+    const Size(402, 874),
+    const Size(440, 956),
+  ]) {
+    for (final (textScale, safeInsets, fundingFound) in [
+      (1.0, false, true),
+      (1.4, false, true),
+      (1.0, true, false),
+      (1.4, true, true),
+    ]) {
+      testWidgets(
+        'gift card keeps its bounds through loading at $size, scale $textScale, safe insets $safeInsets, funding found $fundingFound',
+        (tester) async {
+          await loadFigmaCompareFonts();
+          tester.platformDispatcher.textScaleFactorTestValue = textScale;
+          addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+          if (safeInsets) {
+            tester.view.padding = const FakeViewPadding(top: 62, bottom: 34);
+            addTearDown(tester.view.resetPadding);
+          }
+          final captureKey = GlobalKey();
+          const captureDirectory = String.fromEnvironment(
+            'GIFT_CLAIM_LAYOUT_CAPTURE_DIR',
+          );
+          const captureTheme = String.fromEnvironment(
+            'GIFT_CLAIM_LAYOUT_THEME',
+          );
+          final container = await pumpWelcome(
+            tester,
+            size: size,
+            themeMode: captureTheme == 'light'
+                ? ThemeMode.light
+                : ThemeMode.dark,
+            captureBoundaryKey: captureDirectory.isEmpty ? null : captureKey,
+          );
+          Future<void> capture(String state) async {
+            if (captureDirectory.isEmpty) return;
+            final output = File(
+              '$captureDirectory/${size.width.toInt()}x${size.height.toInt()}-$textScale-$safeInsets-$fundingFound-$state.png',
+            );
+            output.parent.createSync(recursive: true);
+            await expectLater(
+              find.byKey(captureKey),
+              matchesGoldenFile(output.uri),
+            );
+          }
+
+          final gate = Completer<void>();
+          operations.inspectionGate = gate;
+          final link = safeInsets && !fundingFound
+              ? paymentLinkNavigationLink
+              : incomingLink;
+          container
+              .read(paymentLinkIntakeProvider.notifier)
+              .receive(link.toUri().toString());
+          await pumpUntilPresent(tester, find.text('Checking the gift…'));
+          await tester.pump(const Duration(seconds: 1));
+          final slot = keyed('gift_claim_card_slot');
+          var skeletonBounds = tester.getRect(slot);
+          final motionState = tester.state(find.byType(PaymentLinkCardMotion));
+          expect(skeletonBounds.center.dx, closeTo(size.width / 2, 0.01));
+          expect(
+            skeletonBounds.width / skeletonBounds.height,
+            closeTo(1.6, 0.01),
+          );
+          expect(find.byType(PaymentLinkLoadingMobileCard), findsOneWidget);
+          expect(
+            tester.getRect(keyed('payment_link_mobile_loading_card')),
+            rectMoreOrLessEquals(skeletonBounds, epsilon: 0.001),
+          );
+          expect(
+            keyed('gift_claim_create_a_wallet_to_claim').hitTestable(),
+            findsNothing,
+          );
+
+          await capture('skeleton');
+          if (safeInsets && fundingFound) {
+            await tester.ensureVisible(find.text('Checking the gift…'));
+            await tester.pump();
+            skeletonBounds = tester.getRect(slot);
+          }
+          if (fundingFound) {
+            container
+                .read(giftCardCheckProgressProvider.notifier)
+                .update(
+                  link,
+                  rust_sync.ApiGiftCardCheckProgress(
+                    phase: 'checking',
+                    completed: BigInt.from(50),
+                    total: BigInt.from(100),
+                    fundingHeight: link.birthdayHeight + 1,
+                    checkedHeight: link.birthdayHeight + 50,
+                    totalZatoshi: link.amountZatoshi,
+                    unspentZatoshi: link.amountZatoshi,
+                    complete: false,
+                  ),
+                );
+            await tester.pump();
+            expect(tester.getRect(slot), skeletonBounds);
+            expect(find.byType(PaymentLinkLoadingMobileCard), findsNothing);
+            expect(
+              tester.getRect(find.byType(PaymentLinkGiftCard).first),
+              rectMoreOrLessEquals(skeletonBounds, epsilon: 0.1),
+            );
+            expect(
+              tester.state(find.byType(PaymentLinkCardMotion)),
+              same(motionState),
+            );
+
+            await capture('funding');
+          }
+          gate.complete();
+          container.read(giftCardCheckProgressProvider.notifier).clear(link);
+          await tester.pump();
+          await pumpUntilPresent(tester, find.text('Gift found'));
+          // Check both the first loaded frame and the settled reveal. The motion
+          // state must survive so completion doesn't restart its entry scaling.
+          expect(tester.getRect(slot), skeletonBounds);
+          expect(
+            tester.state(find.byType(PaymentLinkCardMotion)),
+            same(motionState),
+          );
+          expect(
+            find.ancestor(
+              of: find.byType(PaymentLinkConfetti),
+              matching: find.byType(PaymentLinkCardMotion),
+            ),
+            findsNothing,
+          );
+          await tester.pumpAndSettle();
+          expect(tester.getRect(slot), skeletonBounds);
+          expect(
+            tester.getRect(find.byType(PaymentLinkGiftCard).first),
+            rectMoreOrLessEquals(skeletonBounds, epsilon: 0.1),
+          );
+          await capture('loaded');
+          expect(
+            tester
+                .getRect(keyed('gift_claim_claim_with_an_existing_wallet'))
+                .bottom,
+            lessThanOrEqualTo(size.height),
+          );
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
+
   for (final (size, textScale) in [
     (const Size(393, 852), 1.0),
     (const Size(320, 568), 1.0),
@@ -1696,6 +1905,8 @@ void main() {
             tester.getRect(keyed('gift_claim_close_button')).bottom,
           ),
         );
+        await tester.ensureVisible(status);
+        await tester.pumpAndSettle();
         expect(
           tester.getRect(status).bottom,
           lessThanOrEqualTo(tester.getRect(primary).top),
@@ -1750,6 +1961,8 @@ class _GiftOperations extends PendingClaimPaymentLinkOperations {
   final claimedDestinations = <String>[];
   final retainedClaimAddresses = <String>[];
   bool waiting = false;
+  PaymentLinkAvailability inspectionAvailability =
+      PaymentLinkAvailability.available;
   bool bindFails = false;
   Completer<void>? bindGate;
   Completer<void>? inspectionGate;
@@ -1853,13 +2066,16 @@ class _GiftOperations extends PendingClaimPaymentLinkOperations {
       dbPath: '/tmp/claim.db',
       accountUuid: 'claim-account',
       totalZatoshi: link.amountZatoshi + BigInt.from(10000),
-      claimableZatoshi: waiting ? BigInt.zero : link.amountZatoshi,
+      claimableZatoshi:
+          waiting || inspectionAvailability != PaymentLinkAvailability.available
+          ? BigInt.zero
+          : link.amountZatoshi,
       feeZatoshi: waiting ? BigInt.zero : BigInt.from(10000),
       fundingConfirmationCount: waiting ? 1 : 2,
       waitingForFundingConfirmations: waiting,
       availability: waiting
           ? PaymentLinkAvailability.noBalance
-          : PaymentLinkAvailability.available,
+          : inspectionAvailability,
     );
   }
 
@@ -2056,18 +2272,19 @@ class _MemoryStorage implements PaymentLinkReceivedStorage {
   Future<void> write(String next) async => value = next;
 }
 
-final _noWalletBootstrap = AppBootstrapState(
-  initialLocation: '/welcome',
-  initialAccountState: const AccountState(),
-  initialSyncSnapshot: AppSyncSnapshot.empty,
-  network: 'main',
-  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
-  themeMode: ThemeMode.dark,
-  privacyModeEnabled: false,
-  isPasswordConfigured: false,
-  isUnlocked: false,
-  passwordRotationRecoveryFailed: false,
-);
+AppBootstrapState _noWalletBootstrap({ThemeMode themeMode = ThemeMode.dark}) =>
+    AppBootstrapState(
+      initialLocation: '/welcome',
+      initialAccountState: const AccountState(),
+      initialSyncSnapshot: AppSyncSnapshot.empty,
+      network: 'main',
+      rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+      themeMode: themeMode,
+      privacyModeEnabled: false,
+      isPasswordConfigured: false,
+      isUnlocked: false,
+      passwordRotationRecoveryFailed: false,
+    );
 
 class _NoBiometrics extends BiometricUnlock {
   @override
