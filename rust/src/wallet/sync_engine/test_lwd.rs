@@ -15,6 +15,7 @@ use zcash_client_backend::data_api::transparent_ledger::{
 };
 use zcash_client_backend::proto::service::{
     compact_tx_streamer_client::CompactTxStreamerClient, BlockId, RawTransaction, SendResponse,
+    TxFilter,
 };
 
 use crate::wallet::{db::open_wallet_db_with_timeout, network::WalletNetwork};
@@ -23,9 +24,13 @@ use super::SYNC_DB_BUSY_TIMEOUT;
 
 type OnRequest = Arc<dyn Fn(&str) + Send + Sync>;
 
+/// Transactions `GetTransaction` answers, by txid: raw bytes and height.
+type Served = Arc<std::collections::HashMap<[u8; 32], (Vec<u8>, u64)>>;
+
 /// Records every request path. Address history returns `history_tx`, or ends
 /// with no transaction when `history_tx` is empty;
-/// transaction lookups answer "not found", `GetLatestBlock` reports
+/// transaction lookups answer "not found" unless the transaction is served,
+/// `GetLatestBlock` reports
 /// `tip_height`, and UTXO streams are empty.
 pub(crate) struct CapturingLwd {
     pub(crate) client: CompactTxStreamerClient<Channel>,
@@ -49,12 +54,50 @@ impl CapturingLwd {
         tip_height: u64,
         on_request: impl Fn(&str) + Send + Sync + 'static,
     ) -> Self {
-        Self::start_inner(history_tx, tip_height, on_request, false, None).await
+        Self::start_inner(
+            history_tx,
+            tip_height,
+            on_request,
+            false,
+            None,
+            Served::default(),
+        )
+        .await
+    }
+
+    /// Like [`Self::start_with`], but `GetTransaction` answers each of
+    /// `served` (txid, raw bytes, height) with the transaction.
+    pub(crate) async fn start_serving(
+        served: Vec<([u8; 32], Vec<u8>, u64)>,
+        tip_height: u64,
+        on_request: impl Fn(&str) + Send + Sync + 'static,
+    ) -> Self {
+        let served = served
+            .into_iter()
+            .map(|(txid, bytes, height)| (txid, (bytes, height)))
+            .collect();
+        Self::start_inner(
+            Vec::new(),
+            tip_height,
+            on_request,
+            false,
+            None,
+            Arc::new(served),
+        )
+        .await
     }
 
     /// A real successful broadcast response for durable operation recovery tests.
     pub(crate) async fn start_for_broadcast(tip_height: u64) -> Self {
-        Self::start_inner(Vec::new(), tip_height, |_| {}, true, None).await
+        Self::start_inner(
+            Vec::new(),
+            tip_height,
+            |_| {},
+            true,
+            None,
+            Served::default(),
+        )
+        .await
     }
 
     /// Like [`Self::start_for_broadcast`], but every `SendTransaction`
@@ -64,7 +107,15 @@ impl CapturingLwd {
         tip_height: u64,
     ) -> (Self, Arc<tokio::sync::Notify>) {
         let gate = Arc::new(tokio::sync::Notify::new());
-        let lwd = Self::start_inner(Vec::new(), tip_height, |_| {}, true, Some(gate.clone())).await;
+        let lwd = Self::start_inner(
+            Vec::new(),
+            tip_height,
+            |_| {},
+            true,
+            Some(gate.clone()),
+            Served::default(),
+        )
+        .await;
         (lwd, gate)
     }
 
@@ -74,6 +125,7 @@ impl CapturingLwd {
         on_request: impl Fn(&str) + Send + Sync + 'static,
         accept_broadcast: bool,
         send_gate: Option<Arc<tokio::sync::Notify>>,
+        served: Served,
     ) -> Self {
         let requests = Arc::new(Mutex::new(Vec::new()));
         let recorded = requests.clone();
@@ -87,6 +139,7 @@ impl CapturingLwd {
                 let on_request = on_request.clone();
                 let history_tx = history_tx.clone();
                 let send_gate = send_gate.clone();
+                let served = served.clone();
                 tokio::spawn(async move {
                     let service =
                         service_fn(move |request: hyper::Request<hyper::body::Incoming>| {
@@ -95,7 +148,33 @@ impl CapturingLwd {
                             on_request(&path);
                             let history_tx = history_tx.clone();
                             let send_gate = send_gate.clone();
+                            let served = served.clone();
                             async move {
+                                if path.ends_with("/GetTransaction") && !served.is_empty() {
+                                    let body = request.into_body().collect().await;
+                                    let filter = body.ok().and_then(|body| {
+                                        let bytes = body.to_bytes();
+                                        TxFilter::decode(bytes.get(5..)?).ok()
+                                    });
+                                    let found = filter.and_then(|filter| {
+                                        served.get(filter.hash.as_slice()).cloned()
+                                    });
+                                    let grpc = hyper::Response::builder()
+                                        .header("content-type", "application/grpc");
+                                    let response = match found {
+                                        Some((data, height)) => grpc
+                                            .header("grpc-status", "0")
+                                            .body(Full::new(grpc_frame(&RawTransaction {
+                                                data,
+                                                height,
+                                            }))),
+                                        None => grpc
+                                            .header("grpc-status", "5")
+                                            .header("grpc-message", "not found")
+                                            .body(Full::new(Bytes::new())),
+                                    };
+                                    return Ok::<_, std::convert::Infallible>(response.unwrap());
+                                }
                                 if path.ends_with("/SendTransaction") {
                                     if let Some(gate) = send_gate {
                                         // Hold the response only after the

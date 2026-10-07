@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../../main.dart' show log;
+import '../../../../core/config/private_transparent_recovery_config.dart';
 import '../../../../core/config/swap_feature_config.dart';
 import '../../../../core/config/zcash_explorer.dart';
 import '../../../../core/formatting/address_display.dart';
@@ -47,6 +48,9 @@ import '../../activity_row_mapper.dart'
         transactionShowsZeroAmount;
 import '../../gift_card_activity_index.dart';
 import '../../transaction_completeness.dart';
+import '../../widgets/transparent_details_section.dart';
+import '../activity_transaction_status_screen.dart'
+    show TransparentDetailsDebugLookup, TransparentDetailsPrioritizer;
 
 /// Route arguments for [MobileTransactionStatusScreen]. The row that
 /// was tapped passes its [initialTransaction] so the screen renders
@@ -96,10 +100,25 @@ class MobileTransactionStatusScreen extends ConsumerStatefulWidget {
     required this.args,
     this.historyLoader,
     this.detailLoader,
+    this.transparentDetailsPrioritizer,
+    this.transparentDetailsDebugLookup,
+    this.privateTransparentRecovery = kZcashPrivateTransparentRecovery,
     super.key,
   });
 
   final MobileTransactionStatusArgs args;
+
+  /// Test seam — production asks Rust.
+  @visibleForTesting
+  final TransparentDetailsPrioritizer? transparentDetailsPrioritizer;
+
+  /// Test seam — production asks Rust.
+  @visibleForTesting
+  final TransparentDetailsDebugLookup? transparentDetailsDebugLookup;
+
+  /// Whether this is a development build that offers the private lookup
+  /// button.
+  final bool privateTransparentRecovery;
 
   /// Test seam — production reads the wallet DB through Rust.
   @visibleForTesting
@@ -127,6 +146,15 @@ class _MobileTransactionStatusScreenState
   String? _argsAccountUuid;
   int _loadGeneration = 0;
   bool _messageExpanded = false;
+  Timer? _transparentDetailsPoll;
+  bool _transparentDetailsPrioritized = false;
+  String? _debugLookupText;
+
+  @override
+  void dispose() {
+    _transparentDetailsPoll?.cancel();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -246,6 +274,7 @@ class _MobileTransactionStatusScreenState
         _detail = detail ?? _detail;
         _detailsPending = false;
       });
+      _followTransparentDetails();
     } catch (e, st) {
       if (!_loadIsCurrent(generation, accountUuid)) return;
       log('MobileTransactionStatus: transaction load failed: $e\n$st');
@@ -256,6 +285,85 @@ class _MobileTransactionStatusScreenState
         _isLoading = false;
         _detailsPending = false;
       });
+    }
+  }
+
+  /// While the shown transaction's transparent details may still arrive,
+  /// asks the next sync to look them up first (once) and re-reads the detail
+  /// until they do.
+  void _followTransparentDetails() {
+    final detail = _matchingDetailFor(_transaction);
+    if (!transparentDetailsAwaited(detail)) {
+      _transparentDetailsPoll?.cancel();
+      _transparentDetailsPoll = null;
+      return;
+    }
+    if (!_transparentDetailsPrioritized) {
+      _transparentDetailsPrioritized = true;
+      unawaited(_prioritizeTransparentDetails(detail!.txidHex));
+    }
+    _transparentDetailsPoll ??= Timer.periodic(
+      kTransparentDetailsPollInterval,
+      (_) => unawaited(_pollTransparentDetails()),
+    );
+  }
+
+  Future<void> _prioritizeTransparentDetails(String txidHex) async {
+    try {
+      final prioritizer = widget.transparentDetailsPrioritizer;
+      if (prioritizer != null) return await prioritizer(txidHex);
+      rust_sync.prioritizeTransparentDetails(
+        dbPath: await getWalletDbPath(),
+        txidHex: txidHex,
+      );
+    } catch (e) {
+      log('MobileTransactionStatus: prioritize failed: $e');
+    }
+  }
+
+  Future<void> _pollTransparentDetails() async {
+    final tx = _transaction;
+    final accountUuid = _activeAccountUuid;
+    if (tx == null || accountUuid == null) return;
+    try {
+      final detail = await _loadDetail(accountUuid, tx);
+      if (!mounted || accountUuid != _activeAccountUuid || detail == null) {
+        return;
+      }
+      setState(() => _detail = detail);
+      _followTransparentDetails();
+    } catch (e) {
+      log('MobileTransactionStatus: transparent details refresh failed: $e');
+    }
+  }
+
+  bool _offersDebugLookup(
+    rust_sync.TransactionInfo tx,
+    rust_sync.TransactionDetail? detail,
+  ) {
+    final state = detail?.transparentDetailsState;
+    return widget.privateTransparentRecovery &&
+        state != null &&
+        state != rust_sync.TransparentDetailsState.available &&
+        tx.minedHeight > BigInt.zero;
+  }
+
+  Future<void> _runDebugLookup(rust_sync.TransactionInfo tx) async {
+    setState(() => _debugLookupText = 'Looking up…');
+    try {
+      final lookup = widget.transparentDetailsDebugLookup;
+      final text = lookup != null
+          ? await lookup(tx)
+          : describeTransparentDetailsLookup(
+              await rust_sync.debugLookupTransparentDetails(
+                network: ref.read(rpcEndpointProvider).networkName,
+                txidHex: tx.txidHex,
+                minedHeight: tx.minedHeight,
+              ),
+            );
+      if (mounted) setState(() => _debugLookupText = text);
+    } catch (e) {
+      if (mounted) setState(() => _debugLookupText = 'Failed: $e');
     }
   }
 
@@ -851,6 +959,16 @@ class _MobileTransactionStatusScreenState
                               ),
                         detailsIncomplete: _showIncompleteDetails(tx),
                       ),
+                      if (giftCard == null &&
+                          detail?.transparentDetailsState != null)
+                        TransparentDetailsSection(
+                          detail: detail,
+                          privacyModeEnabled: privacyModeEnabled,
+                          debugLookupText: _debugLookupText,
+                          onDebugLookup: _offersDebugLookup(tx, detail)
+                              ? () => unawaited(_runDebugLookup(tx))
+                              : null,
+                        ),
                       if (_error != null) ...[
                         const SizedBox(height: AppSpacing.sm),
                         Text(

@@ -1,17 +1,65 @@
-//! Shared cancellation-aware HTTPS transport for Enhance PIR, Status PIR and
-//! transparent PIR.
+//! Shared cancellation-aware HTTPS transport for Enhance PIR, Status PIR,
+//! transparent PIR and txid display PIR.
 
 mod cancellation;
 mod enhance_pir;
 mod status_pir;
 mod transparent_pir;
+mod txid_pir;
 
 pub(super) use cancellation::cancelable;
 pub(super) use enhance_pir::client_protocol_error;
 pub(crate) use status_pir::StatusPirTransport;
 pub(in crate::wallet::sync_engine) use transparent_pir::TransparentPirHttp;
+pub(in crate::wallet::sync_engine) use txid_pir::TxidPirHttp;
 #[cfg(test)]
 pub(in crate::wallet::sync_engine) use transparent_pir::{ObservedRequest, RequestObserver};
+
+/// Test capture of the log records emitted on one thread.
+#[cfg(test)]
+pub(crate) mod test_log {
+    use std::cell::RefCell;
+
+    thread_local! {
+        static LOG_LINES: RefCell<Option<Vec<(String, String)>>> = const { RefCell::new(None) };
+    }
+
+    /// Captures the log records emitted on the calling thread. Transports log
+    /// where they block, on their caller's thread.
+    struct ThreadLog;
+
+    impl log::Log for ThreadLog {
+        fn enabled(&self, _: &log::Metadata<'_>) -> bool {
+            true
+        }
+
+        fn log(&self, record: &log::Record<'_>) {
+            LOG_LINES.with(|lines| {
+                if let Some(lines) = lines.borrow_mut().as_mut() {
+                    lines.push((
+                        record.target().to_owned(),
+                        format!("{} {}", record.level(), record.args()),
+                    ));
+                }
+            });
+        }
+
+        fn flush(&self) {}
+    }
+
+    /// Every record logged on this thread while `run` runs, with its target.
+    pub(crate) fn log_lines(run: impl FnOnce()) -> Vec<(String, String)> {
+        static LOGGER: ThreadLog = ThreadLog;
+        static INSTALL: std::sync::Once = std::sync::Once::new();
+        INSTALL.call_once(|| {
+            log::set_logger(&LOGGER).expect("no other logger in the test binary");
+            log::set_max_level(log::LevelFilter::Debug);
+        });
+        LOG_LINES.with(|lines| *lines.borrow_mut() = Some(Vec::new()));
+        run();
+        LOG_LINES.with(|lines| lines.borrow_mut().take().unwrap())
+    }
+}
 
 use bytes::Bytes;
 use http::{Method, Request, StatusCode};
