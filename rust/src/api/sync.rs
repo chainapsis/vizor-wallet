@@ -241,18 +241,15 @@ pub fn run_payment_link_claim_sync(
     let result = catch(panic::AssertUnwindSafe(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
         let runtime = tokio::runtime::Runtime::new().map_err(|error| format!("tokio: {error}"))?;
-        let locator = match (&funding_txid, funding_height, expected_funding_amount) {
-            (Some(id), None, None) => Some(sync_engine::direct_claim::FundingLocator::Txid(id)),
-            (None, Some(height), Some(expected_amount)) => {
-                Some(sync_engine::direct_claim::FundingLocator::Height {
-                    height,
-                    expected_amount,
-                })
-            }
-            (None, None, None) => None,
-            _ => {
+        let locator = match sync_engine::direct_claim::FundingLocator::from_fields(
+            funding_txid.as_deref(),
+            funding_height,
+            expected_funding_amount,
+        ) {
+            Ok(locator) => locator,
+            Err(error) => {
                 sync_engine::direct_claim::clear(&db_path)?;
-                return Err("Payment-link funding locator is invalid".into());
+                return Err(error);
             }
         };
         if let Some(locator) = locator {
@@ -284,7 +281,7 @@ pub fn run_payment_link_claim_sync(
     result
 }
 
-/// Independent single-funding Gift Card preparation / post-submit observation.
+/// Progress for birthday discovery/observation or direct funding preparation.
 pub struct ApiGiftCardCheckProgress {
     pub phase: String,
     pub completed: u64,
@@ -303,6 +300,9 @@ pub fn run_payment_link_claim_check(
     fallback_urls: Vec<String>,
     network: String,
     allow_resubmit: bool,
+    funding_txid: Option<String>,
+    funding_height: Option<u32>,
+    expected_funding_amount: Option<u64>,
     sink: StreamSink<ApiGiftCardCheckProgress>,
 ) -> Result<(), String> {
     if claim_id.trim().is_empty() {
@@ -321,13 +321,25 @@ pub fn run_payment_link_claim_check(
     let result = catch(panic::AssertUnwindSafe(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
         let runtime = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
+        let locator = match sync_engine::direct_claim::FundingLocator::from_fields(
+            funding_txid.as_deref(),
+            funding_height,
+            expected_funding_amount,
+        ) {
+            Ok(locator) => locator,
+            Err(error) => {
+                sync_engine::direct_claim::clear(&db_path)?;
+                return Err(error);
+            }
+        };
         runtime.block_on(async {
             for attempt in 0..3 {
-                let result = sync_engine::gift_card_claim::run(
+                let result = sync_engine::gift_card_claim::check(
                     &db_path,
                     &lightwalletd_url,
                     &fallback_urls,
                     network,
+                    locator.as_ref(),
                     cancel.clone(),
                     allow_resubmit,
                     |phase, completed, total, state| {

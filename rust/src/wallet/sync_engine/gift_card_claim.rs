@@ -162,6 +162,47 @@ where
     Err(error)
 }
 
+/// All link locators share cancellation and progress. Direct locators only
+/// prepare known funding; broadcast still validates external spentness.
+pub(crate) async fn check(
+    path: &str,
+    url: &str,
+    fallbacks: &[String],
+    network: WalletNetwork,
+    locator: Option<&super::direct_claim::FundingLocator<'_>>,
+    cancel: Arc<AtomicBool>,
+    allow_resubmit: bool,
+    progress: impl Fn(&str, u64, u64, &Snapshot),
+) -> Result<Snapshot, String> {
+    let Some(locator) = locator else {
+        super::direct_claim::clear(path)?;
+        return run(
+            path,
+            url,
+            fallbacks,
+            network,
+            cancel,
+            allow_resubmit,
+            progress,
+        )
+        .await;
+    };
+    // Use the observer's cancellable wrapper for Tor startup and in-flight
+    // direct RPCs too, rather than waiting for the next explicit flag check.
+    let result = cancellable(
+        &cancel,
+        super::direct_claim::prepare(path, url, network, *locator, cancel.clone(), allow_resubmit),
+    )
+    .await;
+    if let Err(error) = result.and_then(|_| check_cancel(&cancel)) {
+        super::direct_claim::clear(path)?;
+        return Err(error);
+    }
+    let state = super::direct_claim::snapshot(path, network)?;
+    progress("complete", 1, 1, &state);
+    Ok(state)
+}
+
 /// No main-wallet sync guard: callers serialize by retained claim DB identity.
 pub(crate) async fn run(
     path: &str,

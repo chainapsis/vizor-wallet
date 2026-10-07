@@ -640,7 +640,7 @@ void main() {
           _eventLink().toShareUri().toString(),
         );
         final wallet = container.read(Provider(PaymentLinkClaimWallet.new));
-        await wallet.runClaimSync(
+        await wallet.runClaimCheck(
           link: link,
           dbPath: 'event.db',
           allowResubmit: true,
@@ -669,7 +669,7 @@ void main() {
           fundingHeight: 3500000,
         );
         final wallet = container.read(Provider(PaymentLinkClaimWallet.new));
-        await wallet.runClaimSync(
+        await wallet.runClaimCheck(
           link: link,
           dbPath: 'height.db',
           allowResubmit: true,
@@ -3457,8 +3457,21 @@ class _ClaimDestinationRustApi implements RustLibApi {
     required String lightwalletdUrl,
     required List<String> fallbackUrls,
     required String network,
+    String? fundingTxid,
+    int? fundingHeight,
+    BigInt? expectedFundingAmount,
   }) async* {
     claimCheckCalls++;
+    if (fundingTxid != null || fundingHeight != null) {
+      if (fundingTxid != null) {
+        directClaimTxids.add(fundingTxid);
+      } else {
+        directClaimHeights.add(fundingHeight!);
+        directClaimAmounts.add(expectedFundingAmount!);
+      }
+      claimSyncModes.add(allowResubmit);
+      claimSyncDbPaths.add(dbPath);
+    }
     if (!syncStarted.isCompleted) syncStarted.complete();
     await syncGate?.future;
     yield rust_sync.ApiGiftCardCheckProgress(

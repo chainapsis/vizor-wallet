@@ -30,12 +30,13 @@ overflowing ULEB128 values are invalid.
 
 | Mode | Meaning | Locator bytes | Claim behavior |
 | --- | --- | --- | --- |
-| `00` | Birthday | Positive block height as big-endian `u32` | Scan from birthday |
+| `00` | Birthday | Positive block height as big-endian `u32` | Discover funding from birthday, then observe later spends |
 | `01` | Funding height | Positive block height as big-endian `u32` | Resolve the card's funding transaction in that block |
 | `02` | Funding transaction | 32-byte txid in display-hex byte order | Retrieve that transaction directly |
 
 The model carries exactly one locator. Modes `01` and `02` select direct claim;
-mode `00` keeps the historical scan path. A funding-height claim verifies the
+mode `00` uses the merged single-funding Ironwood discovery/observer path.
+A funding-height claim verifies the
 expected recipient amount while resolving the transaction. Once found, its
 txid is durable claim state; it is not written back into or substituted for
 the original shared locator.
@@ -183,6 +184,14 @@ binary entropy, rather than JSON containing the mnemonic words.
 
 ## Claim verification
 
+All three locators use the same claim-check API, endpoint routing, foreground
+admission, cancellation, and progress ownership. Birthday links discover the
+first funding transaction by scanning from birthday, then observe nullifiers
+and claim transaction IDs through later blocks without further wallet scanning
+or enhancement. Historical block-range downloads still remain in this mode;
+it is not a direct lookup. Retained legacy birthday receipts can continue their
+older sync recovery path.
+
 Height mode scans exactly the specified block using the preceding tree state.
 It requires one positive received shielded note worth recipient amount plus
 the 10,000 zatoshi reserve, and a unique transaction satisfying that condition.
@@ -197,6 +206,9 @@ block. The node validates spentness when the claim is broadcast. Its funding
 lookup currently uses the existing public transaction-payload path, so do not
 interpret a shorter height locator as hiding the resolved txid from the
 endpoint. The separate recent-anchor work is not included here.
+Direct claims refresh their funding preparation again before submission and
+use the same cancellable check when recovering retained receipts. They do not
+enter the birthday observer or fall back to scanning historical ranges.
 
 The funded regtest uses temporary claim DBs and an explicitly selected isolated
 node stack. `VIZOR_DIRECT_GIFT_PROJECT` can select an owned Compose project;

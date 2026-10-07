@@ -124,6 +124,11 @@ class PaymentLinkClaimWallet {
                         .toList(),
                 network: link.network,
                 allowResubmit: allowResubmit,
+                fundingTxid: link.fundingTxid,
+                fundingHeight: link.fundingHeight,
+                expectedFundingAmount: link.fundingHeight == null
+                    ? null
+                    : paymentLinkFundingAmountZatoshi(link.amountZatoshi),
               )) {
                 if (epoch != _checkCancellationEpoch ||
                     _ref.read(appSecurityProvider).requiresUnlock ||
@@ -321,7 +326,7 @@ class PaymentLinkClaimWallet {
       dbPath: tempWallet.dbPath,
       claimTxids: claimTxids,
     );
-    if (fastConfirmations != null) {
+    if (link.isDirectClaim || fastConfirmations != null) {
       await runClaimCheck(
         link: link,
         dbPath: tempWallet.dbPath,

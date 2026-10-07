@@ -34,9 +34,28 @@ pub(crate) struct Preparation {
     pub tip_height: BlockHeight,
 }
 
+#[derive(Clone, Copy)]
 pub(crate) enum FundingLocator<'a> {
     Txid(&'a str),
     Height { height: u32, expected_amount: u64 },
+}
+
+impl<'a> FundingLocator<'a> {
+    pub(crate) fn from_fields(
+        txid: Option<&'a str>,
+        height: Option<u32>,
+        expected_amount: Option<u64>,
+    ) -> Result<Option<Self>, String> {
+        match (txid, height, expected_amount) {
+            (Some(id), None, None) => Ok(Some(Self::Txid(id))),
+            (None, Some(height), Some(expected_amount)) => Ok(Some(Self::Height {
+                height,
+                expected_amount,
+            })),
+            (None, None, None) => Ok(None),
+            _ => Err("Payment-link funding locator is invalid".into()),
+        }
+    }
 }
 
 // Resolution is separate from quote readiness: a cancelled refresh invalidates
@@ -145,6 +164,33 @@ pub(crate) fn load(path: &str) -> Result<Option<Preparation>, String> {
         })
     })
     .transpose()
+}
+
+/// UI amounts retain the SDK's local balance semantics. Later external spends
+/// are deliberately unknown in direct mode until broadcast.
+pub(super) fn snapshot(
+    path: &str,
+    network: WalletNetwork,
+) -> Result<super::gift_card_claim::Snapshot, String> {
+    let prepared = load(path)?.ok_or("Gift Card preparation missing")?;
+    let db = open_db(path, network).map_err(|e| e.to_string())?;
+    let summary = db
+        .get_wallet_summary(crate::wallet::payment_link_claim_confirmations_policy())
+        .map_err(|e| e.to_string())?
+        .ok_or("Gift Card balance unavailable")?;
+    let balance = summary
+        .account_balances()
+        .values()
+        .map(|b| u64::from(b.total()))
+        .sum();
+    Ok(super::gift_card_claim::Snapshot {
+        funding_height: prepared.funding_height.into(),
+        anchor_height: prepared.funding_height.into(),
+        checked_height: prepared.tip_height.into(),
+        total: balance,
+        unspent: balance,
+        complete: true,
+    })
 }
 
 /// A failed or cancelled refresh must not leave an old quote usable.

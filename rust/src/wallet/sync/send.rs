@@ -1060,12 +1060,6 @@ fn propose_request(
     purpose: SendPurpose,
     context: &str,
 ) -> Result<(Proposal<WalletFeeRule, ReceivedNoteId>, Option<TxVersion>), String> {
-    if purpose == SendPurpose::PaymentLinkClaim {
-        if let Some(source) = gift_card_input::CardInput::load(db, db_path, account_id)? {
-            let proposal = source.propose(network, request.build()?)?;
-            return Ok((proposal, Some(TxVersion::V6)));
-        }
-    }
     let proposed_tx_version = proposed_tx_version_for_wallet_db(db, network, context)?;
     let transaction_request = request.build()?;
     let batch_signer = if let SendRequest::PaymentLinkBatch(_) = request {
@@ -1087,6 +1081,10 @@ fn propose_request(
                 proposed_tx_version,
             )?;
             return Ok((proposal, proposed_tx_version));
+        }
+        if let Some(source) = gift_card_input::CardInput::load(db, db_path, account_id)? {
+            let proposal = source.propose(network, transaction_request)?;
+            return Ok((proposal, Some(TxVersion::V6)));
         }
     }
     let migration_locks = super::migration::locked_migration_note_refs(db_path, account_uuid)?;

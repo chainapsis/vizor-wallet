@@ -102,6 +102,9 @@ Stream<ApiGiftCardCheckProgress> runPaymentLinkClaimCheck({
   required List<String> fallbackUrls,
   required String network,
   required bool allowResubmit,
+  String? fundingTxid,
+  int? fundingHeight,
+  BigInt? expectedFundingAmount,
 }) => RustLib.instance.api.crateApiSyncRunPaymentLinkClaimCheck(
   claimId: claimId,
   dbPath: dbPath,
@@ -109,6 +112,9 @@ Stream<ApiGiftCardCheckProgress> runPaymentLinkClaimCheck({
   fallbackUrls: fallbackUrls,
   network: network,
   allowResubmit: allowResubmit,
+  fundingTxid: fundingTxid,
+  fundingHeight: fundingHeight,
+  expectedFundingAmount: expectedFundingAmount,
 );
 
 /// None identifies a retained claim from a version using ordinary wallet sync.
@@ -1311,7 +1317,7 @@ class AddressValidationResult {
           wrongNetwork == other.wrongNetwork;
 }
 
-/// Independent single-funding Gift Card preparation / post-submit observation.
+/// Progress for birthday discovery/observation or direct funding preparation.
 class ApiGiftCardCheckProgress {
   final String phase;
   final BigInt completed;

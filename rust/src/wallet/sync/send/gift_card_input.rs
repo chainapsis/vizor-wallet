@@ -500,11 +500,12 @@ mod tests {
             if cached_funding {
                 // Create genuine funding notes/witnesses, then model a legacy
                 // cache with only the later scanned range remaining.
-                gift_card_claim::run(
+                gift_card_claim::check(
                     path,
                     &url,
                     &[],
                     network,
+                    None,
                     Arc::new(AtomicBool::new(false)),
                     false,
                     |_, _, _, _| {},
@@ -535,11 +536,12 @@ mod tests {
             )
             .unwrap();
             calls.lock().unwrap().clear();
-            let discovered = gift_card_claim::run(
+            let discovered = gift_card_claim::check(
                 path,
                 &url,
                 &[],
                 network,
+                None,
                 Arc::new(AtomicBool::new(false)),
                 false,
                 |_, _, _, _| {},

@@ -299,6 +299,14 @@ fn funding_block_builds_a_real_claim_quote_while_historical_gaps_remain_unscanne
     )
     .unwrap();
     drop(conn);
+    let state = snapshot(path, network).unwrap();
+    assert!(state.complete);
+    assert_eq!(state.unspent, 50_010_000);
+    assert_eq!(state.funding_height, u32::from(funding_height));
+    assert_eq!(state.checked_height, u32::from(tip));
+    assert!(super::super::gift_card_claim::snapshot(path)
+        .unwrap()
+        .is_none());
     let quote = crate::wallet::sync::estimate_send_max_for_purpose(
         path,
         network,
@@ -346,6 +354,8 @@ fn failed_and_cancelled_refreshes_invalidate_cached_preparation() {
     )
     .unwrap();
     let id = TxId::from_bytes([7; 32]);
+    let display_id = id.to_string();
+    let locator = FundingLocator::Txid(&display_id);
     let runtime = tokio::runtime::Runtime::new().unwrap();
     for cancelled in [false, true] {
         conn.execute(
@@ -355,13 +365,15 @@ fn failed_and_cancelled_refreshes_invalidate_cached_preparation() {
         .unwrap();
         assert!(load(path).unwrap().is_some());
         assert!(runtime
-            .block_on(prepare(
+            .block_on(super::super::gift_card_claim::check(
                 path,
                 "http://127.0.0.1:9",
+                &[],
                 WalletNetwork::Main,
-                FundingLocator::Txid(&id.to_string()),
+                Some(&locator),
                 Arc::new(AtomicBool::new(cancelled)),
-                false
+                false,
+                |_, _, _, _| panic!("failed checks must not publish readiness"),
             ))
             .is_err());
         assert!(load(path).unwrap().is_none());
