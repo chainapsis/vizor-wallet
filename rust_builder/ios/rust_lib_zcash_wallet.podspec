@@ -44,5 +44,9 @@ A new Flutter FFI plugin project.
     # Flutter.framework does not contain a i386 slice.
     'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386',
     'OTHER_LDFLAGS' => '-force_load ${BUILT_PRODUCTS_DIR}/librust_lib_zcash_wallet.a',
+    # CocoaPods turns off install stripping for pods. Strip local symbols from
+    # archived Release builds; the archive's dSYM keeps the function names.
+    'STRIP_INSTALLED_PRODUCT[config=Release]' => 'YES',
+    'STRIP_STYLE[config=Release]' => 'non-global',
   }
 end
