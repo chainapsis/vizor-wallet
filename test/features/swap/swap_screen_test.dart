@@ -62,6 +62,7 @@ import 'package:zcash_wallet/src/features/swap/widgets/swap_review_page_content.
 import 'package:zcash_wallet/src/features/swap/widgets/swap_status_page_content.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_summary_amount_text.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/receive_address_provider.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
@@ -8095,6 +8096,77 @@ void main() {
     );
   });
 
+  testWidgets('toggling NEAR swap privacy drops the cached review address', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    late ProviderContainer container;
+    var swapReservations = 0;
+    var ordinaryReservations = 0;
+    Completer<void>? ordinaryGate;
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedSwapActivityFixtures: false,
+        swapProvider: _FakeSwapProvider(zecDepositMemo: null),
+        nearSwapPrivacy: _FakeNearSwapPrivacyNotifier.new,
+        // As in production, only NEAR swap privacy gives a swap address.
+        reserveSwapAddress: ({required accountUuid, required direction}) async {
+          if (!container.read(nearSwapPrivacyProvider)) return null;
+          swapReservations++;
+          return SwapZecStagingAddress(address: 'u1swap$swapReservations');
+        },
+        loadShieldedAddress: ({required accountUuid}) async {
+          await ordinaryGate?.future;
+          ordinaryReservations++;
+          return 'u1ordinary$ordinaryReservations';
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    container = ProviderScope.containerOf(
+      tester.element(find.byType(SwapScreen)),
+    );
+    final notifier = container.read(swapStateProvider.notifier);
+    notifier.selectDirection(SwapDirection.externalToZec);
+    notifier.updateDestination('0x52908400098527886e0f7030069857d2e4169ee7');
+    Future<String?> reviewedRecipient(String amount) async {
+      notifier.updateAmount(amount);
+      await notifier.showReview();
+      await tester.pumpAndSettle();
+      return container
+          .read(swapStateProvider)
+          .reviewAddressPlan
+          ?.oneClickRecipient;
+    }
+
+    expect(await reviewedRecipient('25'), 'u1ordinary1');
+    expect(await reviewedRecipient('26'), 'u1ordinary1');
+    await container.read(nearSwapPrivacyProvider.notifier).set(true);
+    expect(await reviewedRecipient('27'), 'u1swap1');
+    expect(await reviewedRecipient('28'), 'u1swap1');
+    await container.read(nearSwapPrivacyProvider.notifier).set(false);
+    expect(await reviewedRecipient('29'), 'u1ordinary2');
+    expect(swapReservations, 1);
+    expect(ordinaryReservations, 2);
+
+    // A change while a quote is in flight discards it, rather than showing a review
+    // for the other kind of address.
+    ordinaryGate = Completer<void>();
+    notifier.updateAmount('30');
+    final inFlight = notifier.showReview();
+    await tester.pump();
+    await container.read(nearSwapPrivacyProvider.notifier).set(true);
+    ordinaryGate.complete();
+    await inFlight;
+    await tester.pumpAndSettle();
+    expect(container.read(swapStateProvider).reviewVisible, isFalse);
+    expect(container.read(swapStateProvider).reviewAddressPlan, isNull);
+  });
+
   testWidgets('pay quote failure uses payment-specific copy', (tester) async {
     await _setDesktopViewport(tester);
 
@@ -10148,6 +10220,7 @@ Widget _routerHarness(
   bool seedSwapActivityFixtures = true,
   AppBootstrapState? bootstrap,
   AccountNotifier Function()? accountNotifier,
+  NearSwapPrivacyNotifier Function()? nearSwapPrivacy,
   AddressBookRepository? addressBookRepository,
   RpcEndpointChainNameGetter? failoverChainNameGetter,
   RpcEndpointLatestBlockHeightGetter? failoverHeightGetter,
@@ -10174,6 +10247,8 @@ Widget _routerHarness(
       ),
       if (accountNotifier != null)
         accountProvider.overrideWith(accountNotifier),
+      if (nearSwapPrivacy != null)
+        nearSwapPrivacyProvider.overrideWith(nearSwapPrivacy),
       syncProvider.overrideWith(
         () => _FakeSwapSyncNotifier(
           spendableBalance ?? BigInt.from(10000000000),

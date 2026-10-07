@@ -10,6 +10,7 @@ import '../models/swap_deposit_broadcast_result.dart';
 import '../models/swap_intent_presentation_mapper.dart';
 import '../models/swap_models.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/enhance_pir_provider.dart';
 import '../../../providers/network_privacy_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
@@ -92,6 +93,21 @@ class SwapNotifier extends Notifier<SwapState> {
 
   @override
   SwapState build() {
+    // NEAR swap privacy chooses between a swap address and an ordinary one, so a
+    // change, including Private queries turning it off, drops the cached address
+    // and any quote or review prepared for the other kind.
+    ref.listen<bool>(nearSwapPrivacyProvider, (previous, next) {
+      if (previous == next) return;
+      _quoteGeneration++;
+      _reviewStagingAddress = null;
+      if (state.reviewVisible || state.quoteLoading) {
+        state = state.copyWith(
+          reviewVisible: false,
+          quoteLoading: false,
+          clearReview: true,
+        );
+      }
+    });
     ref.listen<NetworkPrivacyState>(networkPrivacyProvider, (previous, next) {
       final becameDirect =
           !next.torEnabled &&

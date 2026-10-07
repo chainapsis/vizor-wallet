@@ -574,6 +574,16 @@ class _FakeNetworkPrivacyNotifier extends NetworkPrivacyNotifier {
   }
 }
 
+/// NEAR swap privacy, off at first, that a test sets without the settings
+/// store or native calls.
+class _FakeNearSwapPrivacyNotifier extends NearSwapPrivacyNotifier {
+  @override
+  bool build() => false;
+
+  @override
+  Future<void> set(bool enabled) async => state = enabled;
+}
+
 class _FailingQuoteSwapProvider extends _FakeSwapProvider {
   @override
   Future<SwapQuote> quote(SwapQuoteRequest request) async {

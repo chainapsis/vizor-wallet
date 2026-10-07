@@ -52,8 +52,8 @@ use shardtree::{
 };
 use transparent::{address::TransparentAddress, bundle::OutPoint, keys::TransparentKeyScope};
 use zcash_client_backend::data_api::wallet::input_selection::{
-    GreedyInputSelector, InputSelector, LockFilter, LockedInputPolicy, NoteSelection,
-    ShieldingSelector, SpendPolicy,
+    GreedyInputSelector, InputSelector, InputSelectorError, LockFilter, LockedInputPolicy,
+    NoteSelection, ShieldingSelector, SpendPolicy,
 };
 use zcash_client_backend::{
     data_api::{
@@ -1100,7 +1100,24 @@ impl SendRequest<'_> {
             Self::PaymentLinkBatch(payments) => build_payment_link_batch_request(payments),
         }
     }
+
+    /// The notes this request may spend. Swap funding spends only Ironwood notes,
+    /// because its change carries the refund memo and must stay in Ironwood (see
+    /// `verify_swap_funding_proposal`); a shortfall is [`SWAP_FUNDING_NEEDS_IRONWOOD`].
+    fn spend_policy(self, orchard_reserved_for_migration: bool) -> SpendPolicy {
+        match self {
+            Self::SwapFunding { .. } => SpendPolicy::shielded_pools(vec![ShieldedPool::Ironwood])
+                .with_note_selection(NoteSelection::PreferConsolidation),
+            Self::Single { .. } | Self::PaymentLinkBatch(_) => {
+                ordinary_send_spend_policy(orchard_reserved_for_migration)
+            }
+        }
+    }
 }
+
+/// Starts the error for a swap deposit that Ironwood notes alone cannot fund. Dart's
+/// swap failure policy matches it and asks the user to move funds to Ironwood.
+const SWAP_FUNDING_NEEDS_IRONWOOD: &str = "Swap funding needs Ironwood funds";
 
 /// Shared proposal step of [`propose_send`] and [`estimate_fee`]: pass 1 plus
 /// the [`propose_with_note_version_downgrade`] pass 2, so the displayed
@@ -1132,9 +1149,9 @@ fn propose_request(
         _ => None,
     };
     let migration_locks = super::migration::locked_migration_note_refs(db_path, account_uuid)?;
-    let spend_policy = ordinary_send_spend_policy(
-        super::migration::migration_reserves_orchard_inputs(db_path, account_uuid, network)?,
-    );
+    let orchard_reserved_for_migration =
+        super::migration::migration_reserves_orchard_inputs(db_path, account_uuid, network)?;
+    let spend_policy = request.spend_policy(orchard_reserved_for_migration);
     let propose = |transaction_request: TransactionRequest, tx_version: Option<TxVersion>| {
         let proposal = propose_send_with_reserved_notes(
             db,
@@ -4092,7 +4109,9 @@ fn propose_send_with_reserved_notes(
         .ok_or("Account not found")?;
     let is_ledger = crate::wallet::keys::hardware_signer_kind(account.source())
         == Some(crate::wallet::keys::HardwareSignerKind::Ledger);
-    let (change_strategy, input_selector) = if change_memo.is_some() {
+    // Only swap funding sets a change memo.
+    let swap_funding = change_memo.is_some();
+    let (change_strategy, input_selector) = if swap_funding {
         (
             MultiOutputChangeStrategy::new(
                 ConservativeZip317FeeRule,
@@ -4122,7 +4141,12 @@ fn propose_send_with_reserved_notes(
             spend_policy,
             proposed_tx_version,
         )
-        .map_err(|e| format!("Propose failed: {e}"))
+        .map_err(|e| match e {
+            InputSelectorError::InsufficientFunds { .. } if swap_funding => {
+                format!("{SWAP_FUNDING_NEEDS_IRONWOOD}: {e}")
+            }
+            e => format!("Propose failed: {e}"),
+        })
 }
 
 fn ordinary_send_spend_pools(orchard_reserved_for_migration: bool) -> Vec<ShieldedPool> {

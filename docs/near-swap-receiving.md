@@ -2,8 +2,9 @@
 
 Software accounts receive NEAR swap refunds and incoming swap payouts at per-swap
 Ironwood addresses derived from the account's viewing key, so swaps cannot be
-linked through a shared address. Every address is recoverable from the seed.
-Hardware accounts keep their existing swap addresses.
+linked through a shared address. Every address is recoverable from the seed. A
+software account is one Vizor derives from a seed, including accounts added from
+another seed; hardware and view-only accounts keep their existing swap addresses.
 
 ## Settings
 
@@ -31,7 +32,9 @@ sequences.
   against the refund key before it is shown, and funding requires that record. The
   funding transaction carries the refund index in a binary memo on ordinary
   internal Ironwood change and pays only the transparent deposit address; a
-  zero-value change note is valid. Quotes whose deposit needs a memo, and
+  zero-value change note is valid. Funding spends only Ironwood notes, so the
+  change stays in Ironwood; Orchard or Sapling funds must be moved to Ironwood
+  first. Quotes whose deposit needs a memo, and
   multi-step funding, are rejected. A refund can only follow a deposit, so the
   refund key starts scanning when the wallet stores the funding transaction, and a
   quote never funded never scans.
@@ -52,12 +55,17 @@ and change returns to the ordinary internal key.
 
 Keys issued on this device are trial-decrypted, with no key-count cap, until their
 swap closes. A key closes as soon as every provider status on it is final and its
-expected Zcash receipts have 10 confirmations (ZIP 315's untrusted depth), so a
-reorg cannot strand a receipt. Refunds, positive `refundedAmount` values and
+expected Zcash receipts are in. Refunds, positive `refundedAmount` values and
 exact-output `SUCCESS` leftovers are expected receipts for a refund key; an
 incoming key expects `amountOut`. A source-chain refund of an incoming swap is not
-a Zcash receipt, and `FAILED` is inconclusive. Every key also closes 30 days after
-its quote deadline, whatever the provider reports.
+a Zcash receipt, and `FAILED` is inconclusive. A key also closes 30 days after its
+quote deadline, whatever the provider reports, except an incoming key with an open
+reservation or one issued here and never paid, which keeps scanning so its index
+can be reissued without a gap. Either way, no key closes while a receipt is unmined
+and unexpired or has fewer than 10 confirmations (ZIP 315's untrusted depth), so a
+reorg cannot strand a receipt. A rewind that un-mines a closed key's receipt, such
+as Vizor's own repair rewinds, reopens the key until the receipt is confirmed
+again. Incoming payouts show as pending as soon as they reach the mempool.
 
 Statuses are recorded as they are fetched, by the activity refresh and by deposit
 submission; cached UI status and failed polls record nothing. Keys close only at
@@ -84,13 +92,14 @@ A seed restore finds swap keys without trial-decrypting history for every index:
 3. Each restored key gets one private receiver-directory sweep. The wallet accepts
    a publication at a block it scanned, downloads the common witness file, queries
    the receivers over PIR and fetches each matching payment's note data over
-   Enhance PIR. It authenticates the note and memo with the derived key, checks the
-   inclusion path against its own chain and the spend state against retained
-   history, then stores the note, key, memo, witness and known spend together.
-   Missing evidence leaves a candidate pending without crediting balance.
+   Enhance PIR in batches, saving each as it arrives. It authenticates the note
+   and memo with the derived key, checks the inclusion path against its own chain
+   and the spend state against retained history, then stores the note, key, memo,
+   witness and known spend together. Missing evidence leaves a candidate pending
+   without crediting balance; an answer that fails a check is asked for again.
 4. After its sweep, a refund key scans new blocks until 30 days after its funding
-   block, and an unpaid incoming key for 24 hours, catching a payment from a swap
-   in flight at restore. Paid incoming indices extend the lookahead, and the new
+   block, and an incoming key, paid or not, for 24 hours, catching a payment from
+   a swap in flight at restore. Paid incoming indices extend the lookahead, and the new
    keys are swept too. During the 24-hour watch, incoming issuance takes the
    highest free index in the window, since the lowest unpaid ones may belong to the
    old device's open swaps.
@@ -100,15 +109,15 @@ A seed restore finds swap keys without trial-decrypting history for every index:
 Restore makes no NEAR status request and cannot recreate a swap's activity record
 or an incoming swap's provider association. Incoming recovery has a gap limit of
 30 consecutive unpaid indices. A payment before the account birthday is not
-tracked, as with any note, but its index is marked used.
+tracked, as with any note, but once its inclusion is checked its index is marked
+used and counts toward that window.
 
 Sweeps resume after interruption without repeating finished lookups. Failed
 lookups back off from one minute to twelve hours, one recovery run takes at most
 three minutes, and an unavailable service is retried on the next sync; none of
 these fails ordinary sync or makes recovery appear complete. Rewinds below a sweep
 reopen it. If an included candidate needs pruned spend history, the library
-replays the account's public Ironwood recovery interval once; a candidate before
-that interval stays unresolved until the range is widened.
+replays the account's public Ironwood recovery interval once.
 
 ## Incoming reservations
 
@@ -122,8 +131,9 @@ quote matches the deposit address and memo, and the next swap gets another addre
 - At most 15 unfunded incoming reservations may be open per account, half the
   30-index recovery gap. Provider deposit evidence or a ZEC payment removes one
   from that count.
-- Issuance never goes more than 30 indices past the highest canonical receipt, and
-  waits for incoming restore sweeps, which may reveal paid indices.
+- Issuance never goes more than 30 indices past the highest receipt with 10
+  confirmations, and waits for incoming restore sweeps, which may reveal paid
+  indices.
 - An unpaid reservation is reclaimed 24 hours after its creation and every quote's
   deposit deadline, given a fresh conclusive provider status and the wallet scanned
   to its tip with no payment to the address. The status refresh loop also checks
@@ -149,7 +159,8 @@ activation, and end within 100 blocks of the wallet's scanned tip. The directory
 polls every ten seconds and publishes the latest canonical tip. The common witness
 file holds deduplicated sibling hashes for every published payment; each wallet
 downloads the same bytes and verifies every path against its own accepted root.
-Large jobs download the 32 MiB row file instead of querying over PIR.
+Large jobs download the row file (32 MiB today) instead of querying over PIR, and
+a key with more than 16 payments switches to it; the directory can see either.
 
 Inclusion authenticates a note and its position; transaction IDs and action indices
 remain directory assertions, checked against local data. Directory omission
@@ -161,8 +172,8 @@ Dependencies are pinned in `rust/Cargo.toml` and `rust/Cargo.lock`. Regenerate t
 bridge with `scripts/generate-rust-bridge.sh` after API changes. For a test install,
 use an isolated bundle, wallet database and secure-store service, the same in Dart
 and Rust, and do not reuse an installed app's wallet identity. A database from a
-swap receiving prerelease cannot migrate; restore that wallet from its recovery
-phrase into a new database.
+prerelease build cannot migrate; restore that wallet from its recovery phrase into
+a new database.
 
 ## Tests
 

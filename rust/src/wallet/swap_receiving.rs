@@ -3,7 +3,7 @@
 pub(crate) mod receive;
 
 use zakura_swap_receiving::lifecycle::ProviderStatus;
-use zcash_client_backend::data_api::{Account as _, AccountSource, WalletRead};
+use zcash_client_backend::data_api::{Account as _, WalletRead};
 use zcash_client_sqlite::{wallet::swap_receiving::RegisteredKey, AccountUuid};
 use zcash_keys::address::{Address, UnifiedAddress};
 use zcash_protocol::{consensus::BlockHeight, value::Zatoshis};
@@ -58,14 +58,17 @@ pub(crate) fn provider_status(
     }
 }
 
-/// Whether `account` is a software account: seed-derived, without a hardware signer.
+/// Whether `account` is a software account: one with ZIP 32 derivation metadata, from
+/// which Vizor derives its spending key (see `execute_stored_proposal`), and without a
+/// hardware signer. That includes the first account, created as `Derived`, and accounts
+/// added later as spending UFVK imports; view-only imports have no derivation.
 fn is_software(db: &WalletDatabase, account: AccountUuid) -> Result<bool, String> {
     let account = db
         .get_account(account)
         .map_err(|e| e.to_string())?
         .ok_or("Account not found")?;
-    Ok(matches!(account.source(), AccountSource::Derived { .. })
-        && super::keys::hardware_signer_kind(account.source()).is_none())
+    let source = account.source();
+    Ok(source.key_derivation().is_some() && super::keys::hardware_signer_kind(source).is_none())
 }
 
 /// Fails unless `account` is a software account (see [`is_software`]).
@@ -193,5 +196,146 @@ mod tests {
         assert_eq!(keys(), (RECEIVE_GAP_LIMIT, 0));
         let error = require_new_address(WalletNetwork::Main).unwrap_err();
         assert!(error.contains("Enable Private queries"), "{error}");
+    }
+
+    /// Swap receiving covers the first account and accounts added from another seed,
+    /// whose swap notes Vizor can spend, but not hardware or view-only accounts.
+    #[test]
+    fn added_seed_accounts_are_software_but_hardware_and_view_only_accounts_are_not() {
+        use super::super::keys;
+        use secrecy::ExposeSecret;
+        use std::collections::HashSet;
+        use zakura_swap_receiving::{has_same_spending_authority, KeyId, Purpose};
+        use zcash_keys::keys::UnifiedSpendingKey;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db");
+        let path = path.to_str().unwrap();
+        let network = WalletNetwork::Regtest;
+        super::super::network::configure_regtest_nu6_3_activation_height(100).unwrap();
+        let uuid = |uuid: String| parse_account_uuid(&uuid).unwrap();
+        let derived = SecretVec::new(vec![0; 32]);
+        let derived = uuid(
+            keys::init_db_and_create_account(path, network, &derived, Some(100), "Derived")
+                .unwrap()
+                .0,
+        );
+        // Accounts added to a wallet are spending UFVK imports with ZIP 32 metadata.
+        let added_seed = SecretVec::new(vec![1; 32]);
+        let added = uuid(
+            keys::add_account(path, network, "Added", &added_seed, Some(100))
+                .unwrap()
+                .0,
+        );
+        let hardware_ufvk =
+            UnifiedSpendingKey::from_seed(&network, &[2; 32], zip32::AccountId::ZERO)
+                .unwrap()
+                .to_unified_full_viewing_key();
+        let hardware = uuid(
+            keys::import_hardware_account(
+                path,
+                network,
+                "Keystone",
+                &hardware_ufvk.encode(&network),
+                &[2; 32],
+                0,
+                Some(100),
+                keys::HardwareSignerKind::Keystone,
+            )
+            .unwrap()
+            .0,
+        );
+        let observer_phrase = keys::generate_mnemonic();
+        let observer_seed = keys::mnemonic_to_seed(&observer_phrase).unwrap();
+        let observer = uuid(
+            keys::register_gift_card_observer(
+                path,
+                network,
+                observer_phrase.as_bytes(),
+                &keys::derive_gift_address(network, &observer_seed, 0).unwrap(),
+                100,
+            )
+            .unwrap(),
+        );
+
+        let mut db = open_wallet_db_with_timeout(path, network, WALLET_DB_BUSY_TIMEOUT).unwrap();
+        assert_eq!(
+            software_accounts(&db)
+                .unwrap()
+                .into_iter()
+                .collect::<HashSet<_>>(),
+            HashSet::from([derived, added])
+        );
+        for account in [hardware, observer] {
+            assert!(require_software_account(&db, account).is_err());
+        }
+
+        // Restore maintenance runs for both software accounts, as in the test above.
+        db.update_chain_tip(BlockHeight::from_u32(110)).unwrap();
+        rusqlite::Connection::open(path)
+            .unwrap()
+            .execute_batch(
+                "INSERT INTO blocks(height,hash,time,sapling_tree) VALUES(110,zeroblob(32),0,X'000000');
+                 DELETE FROM scan_queue;
+                 INSERT INTO scan_queue(block_range_start,block_range_end,priority) VALUES(100,111,10);",
+            )
+            .unwrap();
+        maintain_recovery(&mut db).unwrap();
+        let registered: u64 = rusqlite::Connection::open(path)
+            .unwrap()
+            .query_row("SELECT COUNT(*) FROM ironwood_receiving_keys", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(registered, 2 * RECEIVE_GAP_LIMIT);
+        let first_receiver = |fvk: &orchard::keys::FullViewingKey| {
+            KeyId::new(Purpose::Receive, 0)
+                .derive(fvk)
+                .unwrap()
+                .address_at(0u32, orchard::keys::Scope::External)
+        };
+        let observer_ufvk = UnifiedSpendingKey::from_seed(
+            &network,
+            observer_seed.expose_secret(),
+            zip32::AccountId::ZERO,
+        )
+        .unwrap()
+        .to_unified_full_viewing_key();
+        for (account, ufvk) in [(hardware, hardware_ufvk), (observer, observer_ufvk)] {
+            let receiver = first_receiver(ufvk.orchard().unwrap());
+            assert!(db
+                .get_swap_receiving_key_for_receiver(account, &receiver)
+                .unwrap()
+                .is_none());
+        }
+
+        // Spending derives the added account's key from its seed and ZIP 32 index, as
+        // `execute_stored_proposal` does. The builder finds the account by that key's
+        // UFVK, and the swap FVK it derives shares the account's spending authority
+        // and matches the registered key.
+        let index = db
+            .get_account(added)
+            .unwrap()
+            .unwrap()
+            .source()
+            .key_derivation()
+            .unwrap()
+            .account_index();
+        let usk =
+            UnifiedSpendingKey::from_seed(&network, added_seed.expose_secret(), index).unwrap();
+        assert_eq!(
+            db.get_account_for_ufvk(&usk.to_unified_full_viewing_key())
+                .unwrap()
+                .map(|account| account.id()),
+            Some(added)
+        );
+        let fvk = orchard::keys::FullViewingKey::from(usk.orchard());
+        let swap_fvk = KeyId::new(Purpose::Receive, 0).derive(&fvk).unwrap();
+        assert!(has_same_spending_authority(&fvk, &swap_fvk));
+        let key = db
+            .get_swap_receiving_key_for_receiver(added, &first_receiver(&fvk))
+            .unwrap()
+            .unwrap();
+        assert_eq!(key.key_id(), KeyId::new(Purpose::Receive, 0));
     }
 }

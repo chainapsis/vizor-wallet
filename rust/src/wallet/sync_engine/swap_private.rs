@@ -165,7 +165,6 @@ async fn run_inner(
 mod tests {
     use super::*;
     use futures::StreamExt;
-    use std::num::NonZeroU32;
     use zakura_pir_enhance::transport::PendingClient;
     use zakura_pir_enhance::{AcceptedAnchor, ClientResourceLimits, GenerationAcceptance};
     use zakura_pir_receiver::receiver_pir::{transport::DirectoryClient, AcceptedCoverage};
@@ -222,7 +221,7 @@ mod tests {
         let manifest = DirectoryClient::fetch_manifest(RECEIVER_ORIGIN, &&transport)
             .await
             .unwrap();
-        let client =
+        let mut client =
             DirectoryClient::connect_manifest(RECEIVER_ORIGIN, &transport, accepted, manifest, 0)
                 .await
                 .unwrap();
@@ -250,10 +249,7 @@ mod tests {
             out_ciphertext: field(&fixture, "outCiphertext"),
         };
         let receiver = action.recover_receiver().unwrap().unwrap();
-        let found = client
-            .lookup(receiver, NonZeroU32::new(32).unwrap(), accepted)
-            .await
-            .unwrap();
+        let found = client.lookup(receiver, accepted).await.unwrap();
         let payment = found.iter().find(|p| p.position == 610503).unwrap();
         assert_eq!(payment.height, 3496114);
         proofs.path(610503, action.cmx).unwrap();
