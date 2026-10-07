@@ -48,6 +48,30 @@ void main() {
     expect(signatures, hasLength(4));
   });
 
+  test('the completeness signature changes with the fee presentation', () {
+    // The fee is 10000 zatoshis; amount, fee and completeness stay the same.
+    String signature({
+      required bool amountIncludesFee,
+      required int accountBalanceDelta,
+    }) => transactionCompletenessSignature(
+      _transaction(
+        'aa',
+        'sent',
+        amountIncludesFee: amountIncludesFee,
+        displayPool: 'transparent',
+        accountBalanceDelta: accountBalanceDelta,
+        displayAmount: BigInt.from(10000),
+      ),
+    );
+
+    final signatures = {
+      signature(amountIncludesFee: false, accountBalanceDelta: -10000),
+      signature(amountIncludesFee: true, accountBalanceDelta: -10000),
+      signature(amountIncludesFee: true, accountBalanceDelta: -20000),
+    };
+    expect(signatures, hasLength(3), reason: 'separate, feeOnly, included');
+  });
+
   test('a fee the amount includes is presented once', () {
     TransactionFeePresentation presentation({
       required bool amountIncludesFee,
