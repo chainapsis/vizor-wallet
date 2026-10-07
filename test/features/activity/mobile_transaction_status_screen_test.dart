@@ -135,6 +135,7 @@ rust_sync.TransactionDetail _detail({
     sourcePool: sourcePool,
     memo: memo,
     outputs: outputs,
+    transparentRecipients: const [],
   );
 }
 
@@ -1382,6 +1383,7 @@ void main() {
             outputs: const [],
             detailsComplete: true,
             provisional: false,
+            transparentRecipients: const [],
           ),
         ),
       );

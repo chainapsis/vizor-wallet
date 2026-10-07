@@ -1723,6 +1723,7 @@ rust_sync.TransactionDetail _zeroValueDetail(rust_sync.TransactionInfo tx) {
     ],
     detailsComplete: true,
     provisional: false,
+    transparentRecipients: const [],
   );
 }
 

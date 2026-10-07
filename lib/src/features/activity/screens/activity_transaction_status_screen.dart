@@ -72,11 +72,10 @@ typedef ActivityTxHistoryLoader =
     Future<List<rust_sync.TransactionInfo>> Function(String accountUuid);
 
 /// Loads one transaction's detail; injectable for previews and widget tests.
-typedef ActivityTxDetailLoader =
-    Future<rust_sync.TransactionDetail?> Function(
-      String accountUuid,
-      rust_sync.TransactionInfo transaction,
-    );
+typedef ActivityTxDetailLoader = Future<rust_sync.TransactionDetail?> Function(
+  String accountUuid,
+  rust_sync.TransactionInfo transaction,
+);
 
 /// Asks the next sync to look a transaction's transparent details up first;
 /// injectable for widget tests.
@@ -84,8 +83,9 @@ typedef TransparentDetailsPrioritizer = Future<void> Function(String txidHex);
 
 /// Development builds only: one private lookup, described in a line;
 /// injectable for widget tests.
-typedef TransparentDetailsDebugLookup =
-    Future<String> Function(rust_sync.TransactionInfo transaction);
+typedef TransparentDetailsDebugLookup = Future<String> Function(
+  rust_sync.TransactionInfo transaction,
+);
 
 class ActivityTransactionStatusScreen extends ConsumerStatefulWidget {
   const ActivityTransactionStatusScreen({

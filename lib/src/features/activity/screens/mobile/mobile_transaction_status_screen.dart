@@ -84,11 +84,10 @@ typedef MobileTxHistoryLoader =
     Future<List<rust_sync.TransactionInfo>> Function(String accountUuid);
 
 /// Loads one transaction's detail; injectable for widget tests.
-typedef MobileTxDetailLoader =
-    Future<rust_sync.TransactionDetail?> Function(
-      String accountUuid,
-      rust_sync.TransactionInfo transaction,
-    );
+typedef MobileTxDetailLoader = Future<rust_sync.TransactionDetail?> Function(
+  String accountUuid,
+  rust_sync.TransactionInfo transaction,
+);
 
 /// Mobile transaction status/detail — Figma `ACTIVITY & STATUS` frames
 /// `Status Sending` (4752:70731), `Status Scucess` (4752:71303),

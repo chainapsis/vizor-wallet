@@ -255,10 +255,6 @@ impl Scripted {
 }
 
 impl DetailSource for Scripted {
-    fn private(&self) -> bool {
-        true
-    }
-
     async fn lookup(
         &mut self,
         txid: [u8; 32],
@@ -991,10 +987,6 @@ async fn detail_view_states() {
 struct FirstOnly<'s>(&'s mut Scripted, bool);
 
 impl DetailSource for FirstOnly<'_> {
-    fn private(&self) -> bool {
-        true
-    }
-
     async fn lookup(
         &mut self,
         txid: [u8; 32],
