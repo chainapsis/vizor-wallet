@@ -25,14 +25,17 @@ use transparent_shard::manifest::TableGeometry;
 use zcash_client_backend::data_api::{
     transparent_ledger::{
         TransactionMetadata, TransparentDetailOutcome, TransparentDisplayFacts,
-        TransparentDisplayOutput, TransparentDisplayProvenance, TransparentDisplayView,
-        TransparentLedgerMode, TransparentLedgerWrite, WholeTransactionFee,
+        TransparentDisplayOutput, TransparentDisplayProvenance, TransparentDisplaySource,
+        TransparentDisplayView, TransparentLedgerMode, TransparentLedgerWrite, WholeTransactionFee,
     },
     WalletRead,
 };
 use zcash_client_sqlite::AccountUuid;
 use zcash_primitives::transaction::{Transaction, TxId};
-use zcash_protocol::{consensus::BlockHeight, value::Zatoshis};
+use zcash_protocol::{
+    consensus::{BlockHeight, BranchId},
+    value::Zatoshis,
+};
 
 use super::source::{test_seam, DetailAnswer, DetailFailure, DetailSource};
 use super::*;
@@ -42,7 +45,9 @@ use crate::wallet::db::{
 };
 use crate::wallet::keys;
 use crate::wallet::sync::{get_wallet_balance, WalletBalance};
-use crate::wallet::sync_engine::enhancement::{test_log::log_lines, test_mode, RequestObserver};
+use crate::wallet::sync_engine::enhancement::{
+    test_log::log_lines, test_mode, ObservedRequest, RequestObserver,
+};
 use crate::wallet::sync_engine::test_lwd::{transition_on_first_dispatch, CapturingLwd};
 use crate::wallet::sync_engine::transparent_recovery_tests::{downloaded, legacy_transaction};
 use crate::wallet::sync_engine::{store_transparent_outputs, watch_for_exit};
@@ -173,10 +178,14 @@ fn balance(fixture: &Fixture) -> WalletBalance {
 /// The detail view of `txid` for the fixture's account, as the detail API
 /// reads it.
 pub(crate) fn view(fixture: &Fixture, txid: &TxId) -> Option<TransparentDisplayView> {
-    let db =
-        open_wallet_db_readonly_with_timeout(&fixture.path, MAIN, READ_DB_BUSY_TIMEOUT).unwrap();
-    let conn = rusqlite::Connection::open(&fixture.path).unwrap();
-    detail_view(&db, &conn, fixture.account, txid.as_ref()).unwrap()
+    view_for(&fixture.path, fixture.account, txid)
+}
+
+/// The detail view of `txid` for `account`, as the detail API reads it.
+fn view_for(path: &str, account: AccountUuid, txid: &TxId) -> Option<TransparentDisplayView> {
+    let db = open_wallet_db_readonly_with_timeout(path, MAIN, READ_DB_BUSY_TIMEOUT).unwrap();
+    let conn = rusqlite::Connection::open(path).unwrap();
+    detail_view(&db, &conn, account, txid.as_ref()).unwrap()
 }
 
 fn count(path: &str, sql: &str) -> i64 {
@@ -380,6 +389,32 @@ fn setup_seed(kind: &str) -> u64 {
 /// `start..=end` that holds no record: every route of a lookup is answered
 /// well-formed, so a lookup sends the whole transcript and finds nothing.
 pub(crate) fn empty_publication(start: u32, end: u32) -> RequestObserver {
+    let answer = publication(start, end).answer;
+    RequestObserver::answering(move |request| answer(request))
+}
+
+type Responder =
+    Arc<dyn Fn(&ObservedRequest) -> http::Response<Full<Bytes>> + Send + Sync + 'static>;
+
+/// One publication's answers and the digest of its map.
+struct Publication {
+    answer: Responder,
+    map_sha256: [u8; 32],
+}
+
+/// A service publishing `before` until `advanced` is set, then `after`.
+fn advancing(before: Publication, after: Publication, advanced: Arc<AtomicBool>) -> RequestObserver {
+    RequestObserver::answering(move |request| {
+        if advanced.load(Ordering::SeqCst) {
+            (after.answer)(request)
+        } else {
+            (before.answer)(request)
+        }
+    })
+}
+
+/// The answers of [`empty_publication`].
+fn publication(start: u32, end: u32) -> Publication {
     let (start, end) = (u64::from(start), u64::from(end));
     let directory = TableProfile::new(
         transparent_shard::SCHEMA,
@@ -458,11 +493,12 @@ pub(crate) fn empty_publication(start: u32, end: u32) -> RequestObserver {
     };
     map.check_shape().unwrap();
     let map_bytes = map.to_bytes();
-    let map_sha256 = hex::encode(Sha256::digest(&map_bytes));
+    let map_digest: [u8; 32] = Sha256::digest(&map_bytes).into();
+    let map_sha256 = hex::encode(map_digest);
     let public_bytes = directory.scheme.public_bytes;
     let response_bytes = directory.scheme.response_bytes;
     let shard = format!("/v1/txid/recent/shards/0/revisions/{digest}");
-    RequestObserver::answering(move |request| {
+    let answer: Responder = Arc::new(move |request: &ObservedRequest| {
         let path = request.path.as_str();
         if path == "/v1/txid/init" {
             reply(200, &[], init.clone())
@@ -495,7 +531,11 @@ pub(crate) fn empty_publication(start: u32, end: u32) -> RequestObserver {
         } else {
             reply(404, &[], Vec::new())
         }
-    })
+    });
+    Publication {
+        answer,
+        map_sha256: map_digest,
+    }
 }
 
 fn paths(observer: &RequestObserver) -> Vec<String> {
@@ -1083,4 +1123,622 @@ impl DetailSource for FirstOnly<'_> {
     fn map_sha256(&self) -> Option<[u8; 32]> {
         self.0.map_sha256()
     }
+}
+
+// ---- mixed transactions: the account's own part is shielded ---------------
+
+/// The wallet's id of `account`.
+fn account_id(path: &str, account: AccountUuid) -> i64 {
+    rusqlite::Connection::open(path)
+        .unwrap()
+        .query_row(
+            "SELECT id FROM accounts WHERE uuid = ?1",
+            [account.expose_uuid().as_bytes().as_slice()],
+            |row| row.get(0),
+        )
+        .unwrap()
+}
+
+/// How a fixture transaction's transparent side is recorded.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TransparentSide {
+    /// Nothing: a fully shielded transaction.
+    None,
+    /// The sticky route-2 marker and mixed detail work, as Enhance PIR
+    /// records a mixed transaction under `PrivateRequired`.
+    RouteTwo,
+}
+
+/// Records `txid` mined at `height` without raw bytes, in which `account`
+/// received an Orchard note and has no transparent output or spend.
+fn shielded_part(
+    path: &str,
+    account: AccountUuid,
+    txid: TxId,
+    height: u32,
+    side: TransparentSide,
+) {
+    let conn = rusqlite::Connection::open(path).unwrap();
+    conn.execute(
+        "INSERT INTO transactions (txid, mined_height, min_observed_height, tx_index)
+         VALUES (?1, ?2, ?2, 1)",
+        rusqlite::params![txid.as_ref().as_slice(), height],
+    )
+    .unwrap();
+    let tx = conn.last_insert_rowid();
+    conn.execute(
+        "INSERT INTO orchard_received_notes (transaction_id, action_index,
+             account_id, diversifier, value, rho, rseed, is_change, memo, note_version)
+         VALUES (?1, 0, ?2, zeroblob(11), 50000, zeroblob(32), zeroblob(32), 0, X'F6', 2)",
+        rusqlite::params![tx, account_id(path, account)],
+    )
+    .unwrap();
+    if side == TransparentSide::RouteTwo {
+        conn.execute(
+            "INSERT INTO ironwood_enhance_routing (transaction_id, route) VALUES (?1, 2)",
+            [tx],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO transparent_detail_work (transaction_id, reasons) VALUES (?1, 4)",
+            [tx],
+        )
+        .unwrap();
+    }
+}
+
+/// The facts of a mixed transaction: one transparent input, a payment of
+/// 5,000 to [`PAYEE`], and a shielded part.
+fn mixed_facts(txid: TxId) -> DetailAnswer {
+    DetailAnswer::Facts(Box::new(TransparentDisplayFacts {
+        txid,
+        coinbase: false,
+        metadata: TransactionMetadata {
+            fee: WholeTransactionFee::Exact(Zatoshis::const_from_u64(1_000)),
+            transparent_input_count: 1,
+            has_shielded_components: true,
+        },
+        outputs: vec![TransparentDisplayOutput {
+            value: Zatoshis::const_from_u64(5_000),
+            script: PAYEE.to_vec(),
+        }],
+        provenance: TransparentDisplayProvenance {
+            shard_id: 3,
+            revision: 0,
+            map_sha256: [0xaa; 32],
+            looked_up_height: BlockHeight::from_u32(TOP - 1),
+        },
+    }))
+}
+
+/// A pre-Overwinter transaction spending `prevout` and paying 5,000 to
+/// [`PAYEE`]: the raw bytes lightwalletd serves for a mixed transaction.
+fn payee_transaction(prevout: OutPoint) -> Transaction {
+    let mut bytes = 1u32.to_le_bytes().to_vec();
+    bytes.push(1);
+    bytes.extend_from_slice(prevout.hash());
+    bytes.extend_from_slice(&prevout.n().to_le_bytes());
+    bytes.push(0);
+    bytes.extend_from_slice(&u32::MAX.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&5_000u64.to_le_bytes());
+    bytes.push(PAYEE.len() as u8);
+    bytes.extend_from_slice(&PAYEE);
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    Transaction::read(&bytes[..], BranchId::Sprout).unwrap()
+}
+
+/// A pre-Overwinter transaction with no transparent input or output.
+fn no_transparent_transaction() -> Transaction {
+    let mut bytes = 1u32.to_le_bytes().to_vec();
+    bytes.extend([0, 0]);
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    Transaction::read(&bytes[..], BranchId::Sprout).unwrap()
+}
+
+/// `(index, value, owned)` of every output a view shows.
+fn rows(details: &zcash_client_backend::data_api::transparent_ledger::TransparentDisplayDetails) -> Vec<(u32, u64, bool)> {
+    details
+        .outputs
+        .iter()
+        .map(|output| (output.index, output.value.into_u64(), output.owned))
+        .collect()
+}
+
+/// Storing the private details of a mixed transaction, whose only part for
+/// the account is shielded, deletes its work; the view stays, from the
+/// stored facts, and the detail API carries it.
+#[tokio::test]
+async fn mixed_private_details_stay_visible_after_storing() {
+    let fixture = wallet();
+    let _mode = require_private(&fixture.path);
+    let txid = TxId::from_bytes([0x71; 32]);
+    shielded_part(
+        &fixture.path,
+        fixture.account,
+        txid,
+        TOP - 1,
+        TransparentSide::RouteTwo,
+    );
+    assert_eq!(view(&fixture, &txid), Some(TransparentDisplayView::Pending));
+
+    let mut source = Scripted::new(|txid| Ok(mixed_facts(txid)));
+    let outcome = run_scripted(&fixture, &mut source).await;
+    assert!(
+        matches!(outcome, Some(RunOutcome::Finished(stats)) if stats.stored == 1),
+        "{outcome:?}"
+    );
+    assert_eq!(
+        count(&fixture.path, "SELECT COUNT(*) FROM transparent_detail_work"),
+        0
+    );
+
+    let Some(TransparentDisplayView::Available(details)) = view(&fixture, &txid) else {
+        panic!("the stored details stay visible");
+    };
+    assert!(matches!(details.source, TransparentDisplaySource::Display(_)));
+    assert!(details.shielded);
+    assert_eq!(rows(&details), [(0, 5_000, false)]);
+
+    let detail = crate::wallet::sync::get_transaction_detail(
+        &fixture.path,
+        MAIN,
+        &fixture.uuid,
+        &hex::encode(txid.as_ref()),
+        "received",
+    )
+    .unwrap();
+    let Some(crate::wallet::sync::TransparentDetailsView::Available(rows)) =
+        detail.transparent_details
+    else {
+        panic!("the detail carries the stored outputs");
+    };
+    assert_eq!(rows.len(), 1);
+    assert!(!rows[0].is_own);
+    assert_eq!(rows[0].amount_zatoshi, 5_000);
+}
+
+/// Raw bytes of a mixed transaction, whose only part for the account is
+/// shielded, replace its work; the view stays, from the raw transaction.
+///
+/// The raw bytes are written as the wallet's raw store writes them (the
+/// bytes in, the work and any display facts out): `decrypt_and_store_transaction`
+/// stores a transaction only when it decrypts the account's part, and no
+/// fixture here builds a real shielded bundle.
+#[tokio::test]
+async fn mixed_raw_details_stay_visible_once_raw_bytes_replace_the_work() {
+    let fixture = wallet();
+    let tx = payee_transaction(OutPoint::new([0x72; 32], 0));
+    shielded_part(
+        &fixture.path,
+        fixture.account,
+        tx.txid(),
+        TOP - 1,
+        TransparentSide::RouteTwo,
+    );
+    assert_eq!(
+        view(&fixture, &tx.txid()),
+        Some(TransparentDisplayView::Pending)
+    );
+    let mut bytes = Vec::new();
+    tx.write(&mut bytes).unwrap();
+    let conn = rusqlite::Connection::open(&fixture.path).unwrap();
+    conn.execute(
+        "UPDATE transactions SET raw = ?1 WHERE txid = ?2",
+        rusqlite::params![bytes, tx.txid().as_ref().as_slice()],
+    )
+    .unwrap();
+    conn.execute_batch(
+        "DELETE FROM transparent_detail_work; DELETE FROM transparent_tx_display;",
+    )
+    .unwrap();
+
+    let Some(TransparentDisplayView::Available(details)) = view(&fixture, &tx.txid()) else {
+        panic!("the raw transaction stays visible");
+    };
+    assert_eq!(details.source, TransparentDisplaySource::RawTransaction);
+    assert_eq!(rows(&details), [(0, 5_000, false)]);
+    assert_eq!(details.input_count, 1);
+}
+
+/// The view is the account's own: another account's mixed transaction, a
+/// fully shielded transaction with or without raw bytes, and an unknown
+/// transaction have none.
+#[tokio::test]
+async fn views_need_a_transparent_part_the_account_takes_part_in() {
+    let fixture = wallet();
+    let other_seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
+    let (other_uuid, _) = keys::add_account(
+        &fixture.path,
+        MAIN,
+        "other",
+        &other_seed,
+        Some(u64::from(BIRTHDAY)),
+    )
+    .unwrap();
+    let other = keys::parse_account_uuid(&other_uuid).unwrap();
+
+    // Another account's mixed transaction, while pending and once stored.
+    let theirs = TxId::from_bytes([0x73; 32]);
+    shielded_part(
+        &fixture.path,
+        other,
+        theirs,
+        TOP - 1,
+        TransparentSide::RouteTwo,
+    );
+    assert_eq!(
+        view_for(&fixture.path, other, &theirs),
+        Some(TransparentDisplayView::Pending)
+    );
+    assert_eq!(view(&fixture, &theirs), None);
+    let mut source = Scripted::new(|txid| Ok(mixed_facts(txid)));
+    let outcome = run_scripted(&fixture, &mut source).await;
+    assert!(
+        matches!(outcome, Some(RunOutcome::Finished(stats)) if stats.stored == 1),
+        "{outcome:?}"
+    );
+    assert!(matches!(
+        view_for(&fixture.path, other, &theirs),
+        Some(TransparentDisplayView::Available(_))
+    ));
+    assert_eq!(view(&fixture, &theirs), None);
+
+    // Fully shielded, without raw bytes.
+    let shielded = TxId::from_bytes([0x74; 32]);
+    shielded_part(
+        &fixture.path,
+        fixture.account,
+        shielded,
+        TOP - 2,
+        TransparentSide::None,
+    );
+    assert_eq!(view(&fixture, &shielded), None);
+
+    // Fully shielded, with raw bytes.
+    let raw = no_transparent_transaction();
+    shielded_part(
+        &fixture.path,
+        fixture.account,
+        raw.txid(),
+        TOP - 3,
+        TransparentSide::None,
+    );
+    let mut bytes = Vec::new();
+    raw.write(&mut bytes).unwrap();
+    rusqlite::Connection::open(&fixture.path)
+        .unwrap()
+        .execute(
+            "UPDATE transactions SET raw = ?1 WHERE txid = ?2",
+            rusqlite::params![bytes, raw.txid().as_ref().as_slice()],
+        )
+        .unwrap();
+    assert_eq!(view(&fixture, &raw.txid()), None);
+
+    assert_eq!(view(&fixture, &TxId::from_bytes([0x75; 32])), None);
+}
+
+// ---- held work and the display map ----------------------------------------
+
+/// `last_outcome` codes of the wallet's detail work.
+const ABSENT_CODE: i64 = 1;
+const NOT_COVERED_CODE: i64 = 2;
+
+/// The work row of `txid`: its last outcome and the map it was recorded for.
+fn work_row(path: &str, txid: &TxId) -> Option<(Option<i64>, Option<[u8; 32]>)> {
+    use rusqlite::OptionalExtension as _;
+    rusqlite::Connection::open(path)
+        .unwrap()
+        .query_row(
+            "SELECT w.last_outcome, w.last_map_sha256 FROM transparent_detail_work w
+             JOIN transactions t ON t.id_tx = w.transaction_id WHERE t.txid = ?1",
+            [txid.as_ref().as_slice()],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get::<_, Option<Vec<u8>>>(1)?
+                        .map(|map| map.try_into().unwrap()),
+                ))
+            },
+        )
+        .optional()
+        .unwrap()
+}
+
+/// Longer than any backoff a held outcome gets.
+const PAST_BACKOFF: Duration = Duration::from_secs(2 * 24 * 60 * 60);
+
+/// Requests `observer` saw after the first `sent`.
+fn paths_since(observer: &RequestObserver, sent: usize) -> Vec<String> {
+    paths(observer)[sent..].to_vec()
+}
+
+fn finished_with(outcome: Option<RunOutcome>, lookups: usize) -> bool {
+    matches!(outcome, Some(RunOutcome::Finished(stats)) if stats.lookups == lookups)
+}
+
+/// Work held as not covered under one map learns of a newer map through the
+/// client the runs share, once its backoff has passed, though no other work
+/// is due to send a lookup that would have fetched it.
+#[tokio::test(flavor = "multi_thread")]
+async fn held_work_learns_of_new_coverage_through_the_cached_client() {
+    let fixture = wallet();
+    let txid = utxo_receipt(&fixture, 0x41, TOP - 1).txid();
+    let _mode = require_private(&fixture.path);
+    let (old, new) = (publication(BIRTHDAY, TOP - 2), publication(BIRTHDAY, TOP));
+    let (old_map, new_map) = (old.map_sha256, new.map_sha256);
+    let advanced = Arc::new(AtomicBool::new(false));
+    let service = advancing(old, new, advanced.clone());
+    // One client across runs, whose map is always old enough to fetch again.
+    let _seam = test_seam::set_with_refresh_age(&fixture.path, service.clone(), Duration::ZERO);
+    let lwd = CapturingLwd::start_with(Vec::new(), u64::from(TOP), |_| {}).await;
+
+    let outcome = followup_with(&fixture, required(), &lwd).await;
+    assert!(
+        matches!(outcome, Some(RunOutcome::Finished(stats)) if stats.lookups == 1 && stats.not_covered == 1),
+        "{outcome:?}"
+    );
+    assert_eq!(
+        work_row(&fixture.path, &txid),
+        Some((Some(NOT_COVERED_CODE), Some(old_map)))
+    );
+
+    // The publication advances; the held receipt waits out its backoff.
+    advanced.store(true, Ordering::SeqCst);
+    let outcome = followup_with(&fixture, required(), &lwd).await;
+    assert!(finished_with(outcome, 0), "{outcome:?}");
+
+    // After it, the run fetches the new map before reading its work, and
+    // looks the receipt up in the shard that now covers it.
+    advance_wall(PAST_BACKOFF);
+    let sent = service.requests().len();
+    let outcome = followup_with(&fixture, required(), &lwd).await;
+    assert!(
+        matches!(outcome, Some(RunOutcome::Finished(stats)) if stats.lookups == 1 && stats.deferred == 1),
+        "{outcome:?}"
+    );
+    let sent = paths_since(&service, sent);
+    assert_eq!(sent[0], "/v1/txid/shards", "{sent:?}");
+    assert!(sent.iter().any(|path| path.contains("/query/")), "{sent:?}");
+    assert_eq!(
+        work_row(&fixture.path, &txid),
+        Some((Some(ABSENT_CODE), Some(new_map)))
+    );
+    assert_eq!(lwd.count("/GetTransaction"), 0);
+}
+
+/// An unchanged map keeps held work held after its backoff, through a kept
+/// client and after a restart, and a map younger than the refresh age is not
+/// fetched again.
+#[tokio::test(flavor = "multi_thread")]
+async fn held_work_stays_held_while_the_map_is_unchanged() {
+    let fixture = wallet();
+    let txid = utxo_receipt(&fixture, 0x42, TOP - 1).txid();
+    let _mode = require_private(&fixture.path);
+    let held = publication(BIRTHDAY, TOP - 2);
+    let map = held.map_sha256;
+    let service = RequestObserver::answering(move |request| (held.answer)(request));
+    let lwd = CapturingLwd::start_with(Vec::new(), u64::from(TOP), |_| {}).await;
+    {
+        let _seam =
+            test_seam::set_with_refresh_age(&fixture.path, service.clone(), Duration::ZERO);
+        let outcome = followup_with(&fixture, required(), &lwd).await;
+        assert!(finished_with(outcome, 1), "{outcome:?}");
+        advance_wall(PAST_BACKOFF);
+        let sent = service.requests().len();
+        let outcome = followup_with(&fixture, required(), &lwd).await;
+        assert!(finished_with(outcome, 0), "{outcome:?}");
+        assert_eq!(paths_since(&service, sent), ["/v1/txid/shards"]);
+    }
+
+    // A restart: a new client, at the production refresh age.
+    let _seam = test_seam::set(&fixture.path, service.clone());
+    let sent = service.requests().len();
+    let outcome = followup_with(&fixture, required(), &lwd).await;
+    assert!(finished_with(outcome, 0), "{outcome:?}");
+    assert_eq!(paths_since(&service, sent), ["/v1/txid/shards"]);
+    // The map is fresh: the next run fetches nothing.
+    let sent = service.requests().len();
+    let outcome = followup_with(&fixture, required(), &lwd).await;
+    assert!(finished_with(outcome, 0), "{outcome:?}");
+    assert!(paths_since(&service, sent).is_empty());
+
+    assert_eq!(
+        work_row(&fixture.path, &txid),
+        Some((Some(NOT_COVERED_CODE), Some(map)))
+    );
+    assert_eq!(
+        view(&fixture, &txid),
+        Some(TransparentDisplayView::NotCovered)
+    );
+    assert_eq!(lwd.count("/GetTransaction"), 0);
+}
+
+/// A restart forgets the map; the first run after it fetches the map before
+/// reading its work, so held work learns of new coverage.
+#[tokio::test(flavor = "multi_thread")]
+async fn held_work_learns_of_new_coverage_after_a_restart() {
+    let fixture = wallet();
+    let txid = utxo_receipt(&fixture, 0x43, TOP - 1).txid();
+    let _mode = require_private(&fixture.path);
+    let (old, new) = (publication(BIRTHDAY, TOP - 2), publication(BIRTHDAY, TOP));
+    let (old_map, new_map) = (old.map_sha256, new.map_sha256);
+    let advanced = Arc::new(AtomicBool::new(false));
+    let service = advancing(old, new, advanced.clone());
+    let lwd = CapturingLwd::start_with(Vec::new(), u64::from(TOP), |_| {}).await;
+    {
+        let _seam = test_seam::set(&fixture.path, service.clone());
+        let outcome = followup_with(&fixture, required(), &lwd).await;
+        assert!(finished_with(outcome, 1), "{outcome:?}");
+        assert_eq!(
+            work_row(&fixture.path, &txid),
+            Some((Some(NOT_COVERED_CODE), Some(old_map)))
+        );
+    }
+
+    advanced.store(true, Ordering::SeqCst);
+    advance_wall(PAST_BACKOFF);
+    let _seam = test_seam::set(&fixture.path, service.clone());
+    let sent = service.requests().len();
+    let outcome = followup_with(&fixture, required(), &lwd).await;
+    assert!(finished_with(outcome, 1), "{outcome:?}");
+    assert_eq!(paths_since(&service, sent)[0], "/v1/txid/shards");
+    assert_eq!(
+        work_row(&fixture.path, &txid),
+        Some((Some(ABSENT_CODE), Some(new_map)))
+    );
+    assert_eq!(lwd.count("/GetTransaction"), 0);
+}
+
+/// A map request that fails leaves held work held under the map it was held
+/// for, through a kept client and after a restart: no lookup, no public
+/// request, and no log line names the transaction.
+#[test]
+fn held_work_stays_held_when_the_map_cannot_be_fetched() {
+    let fixture = wallet();
+    let txid = utxo_receipt(&fixture, 0x44, TOP - 1).txid();
+    let _mode = require_private(&fixture.path);
+    let held = publication(BIRTHDAY, TOP - 2);
+    let map = held.map_sha256;
+    let covering = publication(BIRTHDAY, TOP).answer;
+    // 0 publishes the held map; any other value fails the map request in
+    // its own way, and the rest of the service covers the receipt.
+    let failure = Arc::new(AtomicUsize::new(0));
+    const FAILURES: usize = 4;
+    let service = RequestObserver::answering({
+        let failure = failure.clone();
+        move |request| {
+            let kind = failure.load(Ordering::SeqCst);
+            if kind == 0 {
+                return (held.answer)(request);
+            }
+            if request.path != "/v1/txid/shards" {
+                return covering(request);
+            }
+            match kind {
+                1 => reply(503, &[("retry-after", "30")], Vec::new()),
+                2 => reply(404, &[], Vec::new()),
+                3 => {
+                    // A map without its digest header.
+                    let mut response = covering(request);
+                    response.headers_mut().remove("x-txid-map-sha256");
+                    response
+                }
+                _ => {
+                    let body = b"not a map".to_vec();
+                    let digest = hex::encode(Sha256::digest(&body));
+                    reply(200, &[("x-txid-map-sha256", &digest)], body)
+                }
+            }
+        }
+    });
+    let lines = log_lines(|| {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let lwd = CapturingLwd::start_with(Vec::new(), u64::from(TOP), |_| {}).await;
+            let check = |sent: usize| {
+                assert_eq!(paths_since(&service, sent), ["/v1/txid/shards"]);
+                assert_eq!(
+                    work_row(&fixture.path, &txid),
+                    Some((Some(NOT_COVERED_CODE), Some(map)))
+                );
+            };
+            {
+                let _seam = test_seam::set_with_refresh_age(
+                    &fixture.path,
+                    service.clone(),
+                    Duration::ZERO,
+                );
+                let outcome = followup_with(&fixture, required(), &lwd).await;
+                assert!(finished_with(outcome, 1), "{outcome:?}");
+                advance_wall(PAST_BACKOFF);
+                for kind in 1..=FAILURES {
+                    failure.store(kind, Ordering::SeqCst);
+                    let sent = service.requests().len();
+                    let outcome = followup_with(&fixture, required(), &lwd).await;
+                    assert!(finished_with(outcome, 0), "{kind}: {outcome:?}");
+                    check(sent);
+                }
+            }
+            for kind in 1..=FAILURES {
+                failure.store(kind, Ordering::SeqCst);
+                let _seam = test_seam::set(&fixture.path, service.clone());
+                let sent = service.requests().len();
+                let outcome = followup_with(&fixture, required(), &lwd).await;
+                assert!(finished_with(outcome, 0), "{kind}: {outcome:?}");
+                check(sent);
+            }
+            assert_eq!(lwd.count("/GetTransaction"), 0);
+        });
+    });
+    assert_eq!(
+        view(&fixture, &txid),
+        Some(TransparentDisplayView::NotCovered)
+    );
+    assert!(
+        lines.iter().any(|(_, line)| line.contains("map")),
+        "the failures are logged: {lines:?}"
+    );
+    let mut reversed = *txid.as_ref();
+    reversed.reverse();
+    for needle in [hex::encode(txid.as_ref()), hex::encode(reversed)] {
+        for (_, line) in &lines {
+            assert!(!line.contains(&needle), "{line:?} names a txid");
+        }
+    }
+}
+
+/// Cancellation during the map request ends the run before it reads its
+/// work: nothing is looked up or recorded.
+#[tokio::test(flavor = "multi_thread")]
+async fn map_refresh_honors_cancellation() {
+    let fixture = wallet();
+    let txid = utxo_receipt(&fixture, 0x45, TOP - 1).txid();
+    let _mode = require_private(&fixture.path);
+    let exit = Arc::new(AtomicBool::new(false));
+    let covering = publication(BIRTHDAY, TOP).answer;
+    let service = RequestObserver::answering({
+        let exit = exit.clone();
+        move |request| {
+            if request.path == "/v1/txid/shards" {
+                exit.store(true, Ordering::SeqCst);
+            }
+            covering(request)
+        }
+    });
+    let _seam = test_seam::set(&fixture.path, service.clone());
+    let lwd = CapturingLwd::start_with(Vec::new(), u64::from(TOP), |_| {}).await;
+    let mut db = open(&fixture.path);
+    let should_exit = || exit.load(Ordering::SeqCst);
+    let outcome = followup(
+        &mut db,
+        &fixture.path,
+        MAIN,
+        required(),
+        &lwd.client,
+        clock(),
+        &should_exit,
+    )
+    .await;
+    assert_eq!(outcome, Some(RunOutcome::Exited(RunStats::default())));
+    assert_eq!(paths(&service), ["/v1/txid/shards"]);
+    assert_eq!(view(&fixture, &txid), Some(TransparentDisplayView::Pending));
+    assert_eq!(work_row(&fixture.path, &txid), Some((None, None)));
+    assert_eq!(lwd.count("/GetTransaction"), 0);
+}
+
+/// A wallet without detail work asks the private service nothing.
+#[tokio::test(flavor = "multi_thread")]
+async fn no_detail_work_no_private_request() {
+    let fixture = wallet();
+    let _mode = require_private(&fixture.path);
+    let service = empty_publication(BIRTHDAY, TOP);
+    let _seam = test_seam::set_with_refresh_age(&fixture.path, service.clone(), Duration::ZERO);
+    let lwd = CapturingLwd::start_with(Vec::new(), u64::from(TOP), |_| {}).await;
+    let outcome = followup_with(&fixture, required(), &lwd).await;
+    assert_eq!(outcome, Some(RunOutcome::Finished(RunStats::default())));
+    assert!(service.requests().is_empty());
 }
