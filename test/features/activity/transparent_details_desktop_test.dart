@@ -23,6 +23,7 @@ import 'transparent_details_test_support.dart';
 Future<List<String>> _pump(
   WidgetTester tester,
   ScriptedDetails details, {
+  FakeSyncNotifier? sync,
   bool privateTransparentRecovery = false,
   Future<String> Function(rust_sync.TransactionInfo)? debugLookup,
 }) async {
@@ -58,13 +59,15 @@ Future<List<String>> _pump(
         enhancePirProvider.overrideWith(() => FakeEnhancePirNotifier(true)),
         appBootstrapProvider.overrideWithValue(transparentDetailsBootstrap()),
         syncProvider.overrideWith(
-          () => FakeSyncNotifier(
-            SyncState(
-              accountUuid: 'account-1',
-              hasAccountScopedData: true,
-              percentage: 1,
-            ),
-          ),
+          () =>
+              sync ??
+              FakeSyncNotifier(
+                SyncState(
+                  accountUuid: 'account-1',
+                  hasAccountScopedData: true,
+                  percentage: 1,
+                ),
+              ),
         ),
         addressBookRepositoryProvider.overrideWithValue(EmptyAddressBook()),
         ownAccountAddressesProvider.overrideWith((ref) async => const {}),
@@ -87,6 +90,11 @@ Future<void> _close(WidgetTester tester) async {
 }
 
 void main() {
+  transparentDetailsRefreshTests(
+    pump: (tester, details, sync) async {
+      await _pump(tester, details, sync: sync);
+    },
+  );
   testWidgets('desktop receipt shows transparent recipients when available', (
     tester,
   ) async {
@@ -108,7 +116,11 @@ void main() {
       findsOneWidget,
     );
     expect(find.text(kTransparentDetailsUnavailableText), findsNothing);
-    expect(prioritized, isEmpty, reason: 'available details are not prioritized');
+    expect(
+      prioritized,
+      isEmpty,
+      reason: 'available details are not prioritized',
+    );
     await _close(tester);
   });
 
