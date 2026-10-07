@@ -4,17 +4,29 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../app_bootstrap.dart';
 import '../core/config/network_config.dart';
+import '../core/config/private_transparent_recovery_config.dart';
 import '../core/storage/enhance_pir_preference_store.dart';
 import '../core/storage/wallet_paths.dart';
 import '../features/migration/services/ironwood_migration_background_credential_store.dart';
 import '../rust/api/sync.dart' as rust_sync;
 import 'sync_provider.dart';
 
-/// Whether the configured chain has a matching private enhancement service.
+/// Whether the configured chain has a matching private enhancement service:
+/// mainnet, outside masquerade builds. In a debug build with
+/// [kZcashE2ePrivateTransparentRegtest], also regtest, whose only private
+/// service is the transparent history harness's transparent PIR service.
 bool isEnhancePirAvailableForNetwork(
   String network, {
   bool isMasquerade = kZcashIronwoodMasquerade,
-}) => !isMasquerade && zcashNetworkFromName(network) == ZcashNetwork.mainnet;
+  bool regtestHarness = kZcashE2ePrivateTransparentRegtest,
+}) {
+  if (isMasquerade) return false;
+  return switch (zcashNetworkFromName(network)) {
+    ZcashNetwork.mainnet => true,
+    ZcashNetwork.testnet => false,
+    ZcashNetwork.regtest => regtestHarness,
+  };
+}
 
 /// Exposes private enhancement availability to both settings form factors.
 final enhancePirAvailableProvider = Provider<bool>((ref) {

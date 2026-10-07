@@ -4,6 +4,9 @@
 //! PIR service through the reference adapter `zakura_pir_transparent`, over the
 //! wallet's routed HTTPS transport. It answers for mainnet only, from
 //! [`DEFAULT_MAINNET_ORIGIN`]; debug builds honor `VIZOR_TRANSPARENT_PIR_URL`.
+//! Debug builds under the regtest history harness's switch also answer on
+//! regtest, from that override only, over plain HTTP to a loopback origin
+//! (see [`regtest_private_e2e`]).
 //! Every commit it returns comes from that origin, which is what lets the
 //! coordinator qualify it (the trusted-indexer decision).
 //!
@@ -50,7 +53,7 @@ use zcash_client_sqlite::AccountUuid;
 use super::{Continuation, RecoverySource, SourceBatch, SourceError, SourceRequest};
 use crate::wallet::db::{open_wallet_db_readonly_with_timeout, READ_DB_BUSY_TIMEOUT};
 use crate::wallet::network::WalletNetwork;
-use crate::wallet::sync_engine::enhancement::TransparentPirHttp;
+use crate::wallet::sync_engine::enhancement::{regtest_private_e2e, TransparentPirHttp};
 use crate::wallet::sync_engine::watch_for_exit;
 
 /// The transparent PIR service mainnet wallets recover from.
@@ -482,9 +485,7 @@ impl Pass {
         let target = self.watch.target.ok_or(PassFailure::Invalid)?;
         let chain = WalletChain::new(db, target);
         let exit = || self.cancel.load(Ordering::SeqCst) || (self.clock)() >= self.deadline;
-        let http =
-            TransparentPirHttp::new(&self.origin, &exit, self.handle.clone(), MAX_RESPONSE_BYTES)
-                .map_err(|_| PassFailure::Transport)?;
+        let http = self.transport(&exit)?;
         #[cfg(test)]
         let http = self.transport.attach(http);
         let mut http = http;
@@ -503,11 +504,51 @@ impl Pass {
     }
 }
 
+impl Pass {
+    /// The pass's transport: the wallet's routed HTTPS transport, or in a
+    /// debug build under [`regtest_private_e2e`], plain HTTP to the harness's
+    /// loopback service.
+    fn transport<'a, F: Fn() -> bool>(
+        &self,
+        exit: &'a F,
+    ) -> Result<TransparentPirHttp<'a, F>, PassFailure> {
+        #[cfg(debug_assertions)]
+        if regtest_private_e2e(self.network) {
+            if let Some(http) = TransparentPirHttp::regtest_loopback(
+                &self.origin,
+                exit,
+                self.handle.clone(),
+                MAX_RESPONSE_BYTES,
+            ) {
+                return Ok(http);
+            }
+        }
+        TransparentPirHttp::new(&self.origin, exit, self.handle.clone(), MAX_RESPONSE_BYTES)
+            .map_err(|_| PassFailure::Transport)
+    }
+}
+
 /// The origin a source on `network` recovers from: `configured` or the
-/// default service, on mainnet only.
+/// default service on mainnet; on regtest under [`regtest_private_e2e`],
+/// `configured` only.
 pub(super) fn origin_for(network: WalletNetwork, configured: Option<String>) -> Option<String> {
-    (network == WalletNetwork::Main)
-        .then(|| configured.unwrap_or_else(|| DEFAULT_MAINNET_ORIGIN.to_owned()))
+    origin_for_gated(network, configured, regtest_private_e2e(network))
+}
+
+/// [`origin_for`] with the regtest harness switch given. Regtest never falls
+/// back to the mainnet service.
+pub(super) fn origin_for_gated(
+    network: WalletNetwork,
+    configured: Option<String>,
+    regtest_e2e: bool,
+) -> Option<String> {
+    match network {
+        WalletNetwork::Main => {
+            Some(configured.unwrap_or_else(|| DEFAULT_MAINNET_ORIGIN.to_owned()))
+        }
+        WalletNetwork::Regtest if regtest_e2e => configured,
+        WalletNetwork::Regtest | WalletNetwork::Test => None,
+    }
 }
 
 /// The configured origin override, read with `read`, in debug builds only.

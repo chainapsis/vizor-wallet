@@ -40,19 +40,48 @@ pub(crate) fn set_preference_confirmed(confirmed: bool) {
     PREFERENCE_CONFIRMED.store(confirmed, Ordering::SeqCst);
 }
 
+/// Lets a debug build select private transparent recovery on regtest, for the
+/// transparent history harness, which runs its own transparent PIR service.
+/// Release builds never read it.
+const REGTEST_PRIVATE_E2E_ENV: &str = "ZCASH_E2E_REGTEST_PRIVATE_TRANSPARENT";
+
+/// Whether this process may select private transparent recovery on `network`
+/// although it is not mainnet: a debug build on regtest with
+/// [`REGTEST_PRIVATE_E2E_ENV`] set. Constant `false` in release builds.
+pub(crate) fn regtest_private_e2e(network: WalletNetwork) -> bool {
+    allows_regtest_private(network, cfg!(debug_assertions), || {
+        std::env::var_os(REGTEST_PRIVATE_E2E_ENV).is_some()
+    })
+}
+
+/// [`regtest_private_e2e`] for a build with `debug_build`, reading the
+/// environment through `env_set` only when the rest allows it.
+fn allows_regtest_private(
+    network: WalletNetwork,
+    debug_build: bool,
+    env_set: impl FnOnce() -> bool,
+) -> bool {
+    debug_build && network == WalletNetwork::Regtest && env_set()
+}
+
 /// The transparent ledger mode that `preference` selects on `network` in a
 /// build whose development flag is `build_flag`.
 ///
-/// `PrivateRequired` only on mainnet, with private queries on and the flag
-/// set, outside masquerade builds; otherwise `Public`. The selection never
-/// weakens a wallet: openers adopt a stricter durable policy, and only an
-/// explicit toggle-off lowers one.
+/// `PrivateRequired` only on mainnet (or on regtest under
+/// [`regtest_private_e2e`]), with private queries on and the flag set,
+/// outside masquerade builds; otherwise `Public`. The selection never weakens
+/// a wallet: openers adopt a stricter durable policy, and only an explicit
+/// toggle-off lowers one.
 pub(crate) fn select_transparent_mode(
     network: WalletNetwork,
     preference: bool,
     build_flag: bool,
 ) -> TransparentLedgerMode {
-    if network == WalletNetwork::Main && preference && build_flag && !cfg!(ironwood_masquerade) {
+    if (network == WalletNetwork::Main || regtest_private_e2e(network))
+        && preference
+        && build_flag
+        && !cfg!(ironwood_masquerade)
+    {
         TransparentLedgerMode::PrivateRequired
     } else {
         TransparentLedgerMode::Public
@@ -406,6 +435,34 @@ mod tests {
         assert!(!policy.is_private());
         assert_eq!(policy.status_mode(), TransactionStatusMode::Public);
         assert_eq!(policy.payload_mode(), EnhancementMode::Standard);
+    }
+
+    #[test]
+    fn regtest_private_e2e_needs_a_debug_build_regtest_and_the_switch() {
+        for network in [
+            WalletNetwork::Main,
+            WalletNetwork::Test,
+            WalletNetwork::Regtest,
+        ] {
+            for debug_build in [false, true] {
+                for env_set in [false, true] {
+                    assert_eq!(
+                        allows_regtest_private(network, debug_build, || env_set),
+                        network == WalletNetwork::Regtest && debug_build && env_set,
+                        "{network:?}, debug {debug_build}, switch {env_set}"
+                    );
+                }
+            }
+        }
+        // A release-style build never reads the switch.
+        assert!(!allows_regtest_private(
+            WalletNetwork::Regtest,
+            false,
+            || panic!("read the switch in a release-style build")
+        ));
+        if !cfg!(debug_assertions) {
+            assert!(!regtest_private_e2e(WalletNetwork::Regtest));
+        }
     }
 
     #[test]

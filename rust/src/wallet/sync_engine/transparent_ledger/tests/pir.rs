@@ -263,6 +263,25 @@ async fn new_selects_the_origin_gates_mainnet_and_uses_the_wallet_route() {
         assert_eq!(pir::origin_for(network, None), None);
         assert_eq!(pir::origin_for(network, Some(custom.clone())), None);
     }
+    // The regtest history harness's switch admits regtest, from the override
+    // only, and never testnet.
+    let loopback = "http://127.0.0.1:8080".to_owned();
+    assert_eq!(
+        pir::origin_for_gated(WalletNetwork::Regtest, Some(loopback.clone()), true),
+        Some(loopback.clone())
+    );
+    assert_eq!(
+        pir::origin_for_gated(WalletNetwork::Regtest, None, true),
+        None
+    );
+    assert_eq!(
+        pir::origin_for_gated(WalletNetwork::Test, Some(loopback.clone()), true),
+        None
+    );
+    assert_eq!(
+        pir::origin_for_gated(MAIN, None, true).as_deref(),
+        Some(pir::DEFAULT_MAINNET_ORIGIN)
+    );
     // Only a debug build reads the override.
     let read = pir::origin_override(|name| {
         assert_eq!(name, "VIZOR_TRANSPARENT_PIR_URL");
