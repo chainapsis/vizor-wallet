@@ -573,8 +573,14 @@ Classification follows the facts it has:
   send's, which names it as its funding parent. It folds only when it moved
   the account's own funds and only its fee left, and only into a send that
   shows a `sent` row with a known fee; any other funding step keeps a row with
-  its fee. Of several spenders of the output, a mined one is the send, then
-  one that has not expired.
+  its fee. For a step matched by its spent output, an unknown account fee can
+  use the whole fee only when qualified metadata proves a transparent-only
+  transaction whose inputs all belong to the account. Mixed transactions may
+  have foreign shielded contributors, so their unattributed whole fee cannot
+  justify hiding the funding activity or adding that fee to the later send.
+  A known account fee still permits folding, including shielded funding.
+  Of several spenders of the output, a mined one is the send, then one that
+  has not expired.
 - **A provisional debit** whose outputs are unknown, or known only as change,
   is one `sent` row for the net change, with pool `unknown` and no recipient.
   Its change is not shown as a receive, and the net change is not presented

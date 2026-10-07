@@ -364,3 +364,72 @@ fn a_privately_recovered_tex_send_folds_its_funding_step() {
     );
     assert_eq!(send, []);
 }
+
+/// A fee-sized debit does not prove that a mixed transaction only funded
+/// the later send: another party may have contributed shielded funds.
+/// Keep that uncertain activity and its whole fee separate from the send.
+#[test]
+fn a_mixed_private_funding_step_keeps_its_uncertain_activity() {
+    let (mut st, account) = private_wallet();
+    let ws = watch(&st, account);
+    let target = ws.target.unwrap().height;
+    let funding = output(0x91, 0, external(&ws), 110_000, target - 8, None);
+    cover(&mut st, account, vec![funding.clone()]);
+    promote(&mut st, account);
+
+    // A contributes 110,000 transparently, B contributes 100,000 shielded;
+    // 100,000 returns to A's ephemeral address, 100,000 pays someone else,
+    // and 10,000 is the fee. Recovery knows A's effects and the transaction
+    // shape, but cannot attribute B's shielded input or the other payment.
+    let mixed = Some(TransactionMetadata {
+        fee: WholeTransactionFee::Exact(Zatoshis::const_from_u64(10_000)),
+        transparent_input_count: 1,
+        has_shielded_components: true,
+    });
+    let ephemeral = output(
+        0x92,
+        0,
+        derived(&st, account, TransparentKeyScope::EPHEMERAL, 0),
+        100_000,
+        target - 5,
+        mixed,
+    );
+    publish(
+        &mut st,
+        account,
+        vec![ephemeral.clone()],
+        vec![
+            spend(0x92, 0, &funding, target - 5, mixed),
+            spend(0x93, 0, &ephemeral, target - 4, transparent_only(10_000, 1)),
+        ],
+    );
+
+    let snapshot = Snapshot::of(&st, account);
+    let step = snapshot.rows(0x92);
+    assert_eq!(step.len(), 1, "uncertain mixed activity must stay visible");
+    let step = &step[0];
+    assert_eq!(step.tx_kind, "sent");
+    assert_eq!(step.display_amount, 10_000);
+    assert_eq!(step.display_pool, "unknown");
+    assert!(step.amount_is_net_change);
+    assert!(step.provisional);
+    assert!(!step.details_complete);
+    assert_eq!(
+        (step.fee_state, step.fee),
+        (TransactionFeeState::WholeTransaction, 10_000)
+    );
+
+    let send = snapshot.rows(0x93);
+    assert_eq!(send.len(), 1);
+    let send = &send[0];
+    assert_eq!(send.display_amount, 90_000);
+    assert_eq!(send.display_pool, "transparent");
+    assert!(!send.amount_is_net_change);
+    assert!(!send.provisional);
+    assert_eq!(send.funding_parent_txid, None);
+    assert_eq!(
+        (send.fee_state, send.fee),
+        (TransactionFeeState::Known, 10_000),
+        "the uncertain transaction's fee must not be attached to the send"
+    );
+}

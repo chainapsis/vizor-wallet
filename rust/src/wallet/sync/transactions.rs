@@ -737,12 +737,9 @@ struct HistoryCompleteness {
     /// Other funders may have shared it, so it is shown as the network fee
     /// when the account's fee is unknown and never charged to the account.
     whole_fee: Option<u64>,
-    /// Whether the recovered metadata counts exactly the account's own
-    /// transparent inputs: none when it spent no transparent funds, all of
-    /// its inputs when it spent only transparent funds. No other party then
-    /// funded a transparent input that could have paid what the account's
-    /// funds seem to have paid, so a settled balance change equal to the
-    /// whole fee shows that nothing else left the account.
+    /// Whether recovered metadata proves a transparent-only transaction
+    /// whose inputs all belong to the account. Counting transparent inputs
+    /// in a mixed transaction cannot rule out foreign shielded contributors.
     sole_transparent_funder: bool,
     /// The exact payment outside the account that the library reconstructed
     /// from recovered transaction metadata (private recovery: the account
@@ -822,7 +819,9 @@ impl HistoryCompleteness {
                 .map(|fee| fee.into_u64()),
             inferred_outgoing: details.inferred_outgoing.map(|amount| amount.into_u64()),
             sole_transparent_funder: details.transaction_metadata.as_ref().is_some_and(|e| {
-                own_transparent_inputs == Some(e.metadata.transparent_input_count)
+                !e.metadata.has_shielded_components
+                    && e.metadata.transparent_input_count > 0
+                    && own_transparent_inputs == Some(e.metadata.transparent_input_count)
             }),
             inferred_payment: match details.aggregate_payment {
                 AggregatePayment::Exact(amount)
@@ -868,9 +867,10 @@ impl HistoryCompleteness {
 
     /// The exact fee a settled balance change can be compared with: the
     /// account's own fee or, when that is unknown, the whole transaction's,
-    /// but only when the account alone funded its transparent side. Another
-    /// funder could otherwise have paid the fee while the account's funds paid
-    /// someone else as much as it received back.
+    /// but only when metadata proves a transparent-only transaction funded
+    /// entirely by the account. Another transparent or shielded funder could
+    /// otherwise have paid the fee while the account's funds paid someone
+    /// else as much as it received back.
     fn exact_fee(self) -> Option<u64> {
         if !self.effects_settled {
             return None;
@@ -8066,12 +8066,12 @@ mod tests {
     /// transparent address, known only from private recovery. The funding step
     /// moves Ironwood funds to an ephemeral address with Ironwood change, its
     /// fee only the transaction's whole fee; the send spends that output to
-    /// his own external address with its own fee. The step folds into the
-    /// send, whose Sent row carries both fees. The base's recovered visible
-    /// self-transfer handling preserves Sent and Received rows for the moved
-    /// amount; the funding step itself has no row.
+    /// his own external address with its own fee. The funding step keeps its
+    /// uncertain net-change row: its whole fee does not establish the
+    /// account's share. The send keeps Sent and Received rows for the moved
+    /// amount. An attributed account fee allows the funding step to fold.
     #[test]
-    fn a_private_tex_send_to_self_folds_its_funding_step() {
+    fn a_private_tex_send_to_self_keeps_its_unattributed_funding_step() {
         let account = test_account_uuid();
         let uuid = account.as_bytes().to_vec();
         let (step_txid, send_txid) = (fake_txid(0xF1).to_vec(), fake_txid(0xF2).to_vec());
@@ -8116,7 +8116,7 @@ mod tests {
                     effects_settled: true,
                     fee: Fee::Unknown,
                     whole_fee: Some(15_000),
-                    sole_transparent_funder: true,
+                    sole_transparent_funder: false,
                     inferred_payment: None,
                 },
             ),
@@ -8186,8 +8186,8 @@ mod tests {
                     "sent".into(),
                     100_000,
                     "transparent".into(),
-                    whole,
-                    25_000,
+                    TransactionFeeState::Known,
+                    10_000,
                 ),
                 (
                     true,
@@ -8197,8 +8197,30 @@ mod tests {
                     TransactionFeeState::Known,
                     10_000,
                 ),
+                (
+                    false,
+                    "sent".into(),
+                    15_000,
+                    "unknown".into(),
+                    whole,
+                    15_000,
+                ),
             ],
-            "the visible self-transfer keeps both rows, with both fees on Sent"
+            "the uncertain funding activity stays separate from the self-transfer"
+        );
+        let linked = HashMap::from([(step_txid.clone(), vec![send_txid.clone()])]);
+        let mut attributed = bases.clone();
+        attributed[0].history.fee = Fee::Known(15_000);
+        attributed[0].history.provisional = false;
+        let attributed_rows = assemble_history(&attributed, &outputs, &linked, &uuid, None);
+        assert!(fees_of(&attributed_rows, &step_txid).is_empty());
+        assert_eq!(
+            fees_of(&attributed_rows, &send_txid),
+            [
+                (TransactionFeeState::Known, 25_000, false),
+                (TransactionFeeState::Known, 10_000, false),
+            ],
+            "an attributed account fee still folds into the send's Sent row"
         );
         // Unlinked, the step keeps a row with its fee, never a receipt of its
         // intermediate output.
@@ -8221,7 +8243,6 @@ mod tests {
         // something: it is no mere cost of the send and keeps its own row.
         let mut paid = bases.clone();
         paid[0].account_balance_delta = -25_000;
-        let linked = HashMap::from([(step_txid.clone(), vec![send_txid.clone()])]);
         let shown = assemble_history(&paid, &outputs, &linked, &uuid, None);
         assert_eq!(
             shown
@@ -8957,6 +8978,8 @@ mod tests {
         let mut details = shared_funding_details(exact_whole_fee());
         if let Some(evidence) = details.transaction_metadata.as_mut() {
             evidence.metadata.transparent_input_count = metadata_inputs;
+            evidence.metadata.has_shielded_components =
+                spent.iter().any(|pool| *pool != PoolType::Transparent);
         }
         details.effects = spent
             .iter()
@@ -8972,8 +8995,8 @@ mod tests {
 
     /// A balance change of exactly the whole fee shows that only the fee left
     /// the account, so that a funding step folds, only when the account alone
-    /// funded the transparent side: the metadata counts its own transparent
-    /// inputs, none when it spent no transparent funds. A jointly funded
+    /// funded a transparent-only transaction: the metadata counts its own
+    /// inputs and rules out shielded components. A jointly funded
     /// transaction (A puts in 110,000 and B 100,000; 100,000 goes to A's
     /// ephemeral address, 100,000 to someone else, 10,000 is the fee) changes
     /// A's balance by the fee too, yet B may have paid A while A paid someone
@@ -9002,11 +9025,15 @@ mod tests {
             pure
         };
         assert!(proves(&[PoolType::Transparent], 2, 2));
+        assert!(!proves(&[], 0, 0), "no owned input proves no funding");
         assert!(
             !proves(&[PoolType::Transparent], 1, 2),
             "another party funded a transparent input"
         );
-        assert!(proves(&[PoolType::ORCHARD], 1, 0));
+        assert!(
+            !proves(&[PoolType::ORCHARD], 1, 0),
+            "shielded inputs may include another party's contribution"
+        );
         assert!(
             !proves(&[PoolType::ORCHARD], 1, 1),
             "a transparent input is not the account's"
