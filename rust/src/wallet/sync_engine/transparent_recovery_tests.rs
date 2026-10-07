@@ -66,7 +66,162 @@ pub(super) fn downloaded(
             None,
         )
         .unwrap()],
+        observed_at: None,
     }
+}
+
+/// Gap 5a (H12 R): an output that a complete UTXO query of its address no
+/// longer returns was spent by a transaction the wallet never saw. Reporting
+/// each refresh to the library stops counting it as spendable and queues the
+/// search for its spend; storing that spend then links it. A refresh is
+/// reported only at the wallet's accepted tip and only under the authority
+/// that made it: one observed elsewhere, or answered after a policy
+/// transition, reports nothing.
+#[test]
+fn a_utxo_refresh_reports_an_output_spent_by_an_unseen_transaction() {
+    use zcash_client_backend::data_api::transparent_ledger::{
+        TransparentLedgerMode, TransparentLedgerWrite,
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("wallet.db");
+    let path = path.to_str().unwrap();
+    let network = WalletNetwork::Main;
+    let seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
+    let (uuid, _) =
+        keys::init_db_and_create_account(path, network, &seed, Some(2_000_000), "absent").unwrap();
+    let account = keys::parse_account_uuid(&uuid).unwrap();
+    let encoded = keys::software_account_transparent_addresses(network, &seed, 0, 1).unwrap();
+    let address = TransparentAddress::decode(&network, &encoded[0]).unwrap();
+    let mut db = open_wallet_db_with_timeout(path, network, SYNC_DB_BUSY_TIMEOUT).unwrap();
+    let conn = rusqlite::Connection::open(path).unwrap();
+    // The wallet accepts `height` as its tip, with a scanned block there.
+    let accept = |db: &mut WalletDatabase, height: BlockHeight| -> ChainPoint {
+        db.update_chain_tip(height).unwrap();
+        let hash = BlockHash([u32::from(height) as u8; 32]);
+        // Transparent-only fixture: no shielded witnesses above this block.
+        conn.execute(
+            "INSERT INTO blocks (height, hash, time, sapling_tree) VALUES (?1, ?2, 0, X'')",
+            params![u32::from(height), hash.0.as_slice()],
+        )
+        .unwrap();
+        ChainPoint { height, hash }
+    };
+    let tip = BlockHeight::from_u32(2_000_100);
+    let at_tip = accept(&mut db, tip);
+    let gate = TransparentLookupGate::for_wallet(
+        enhancement::EnhancementPolicy::current(network)
+            .public_transparent_lookups(&db)
+            .unwrap(),
+        path,
+        network,
+    )
+    .unwrap();
+    let refresh = |outputs: Vec<WalletTransparentOutput<AccountUuid>>, observed_at| {
+        vec![DownloadedTransparentRefresh {
+            refresh: TransparentRefresh {
+                addresses: vec![encoded[0].clone()],
+                start_height: BlockHeight::from_u32(2_000_000),
+                label: "absence test".into(),
+                account_uuid: uuid.clone(),
+                completion: None,
+            },
+            outputs,
+            observed_at,
+        }]
+    };
+    let spendable = |db: &WalletDatabase| -> Zatoshis {
+        db.get_transparent_balances(account, (tip + 2).into(), ConfirmationsPolicy::MIN)
+            .unwrap()
+            .values()
+            .map(|balance| balance.1.spendable_value())
+            .sum::<Option<Zatoshis>>()
+            .unwrap()
+    };
+    let searched = |db: &WalletDatabase| {
+        db.transaction_data_requests()
+            .unwrap()
+            .iter()
+            .any(|request| {
+                matches!(request, TransactionDataRequest::TransactionsInvolvingAddress(r)
+                if r.address() == address && r.block_range_end().is_some())
+            })
+    };
+    let report = |gate| UtxoReport { gate, network };
+
+    // The output is returned while it is unspent.
+    let funding = legacy_transaction(OutPoint::new([9; 32], 0), address, 1_000_000);
+    let returned = downloaded(&uuid, &funding, 2_000_050).outputs;
+    assert!(store_transparent_refreshes(
+        &mut db,
+        Some(report(&gate)),
+        &refresh(returned, Some(at_tip))
+    )
+    .unwrap());
+    assert_eq!(spendable(&db), Zatoshis::const_from_u64(1_000_000));
+
+    // The next block arrives, and the output is no longer returned.
+    let later = accept(&mut db, tip + 1);
+
+    // Storing a refresh without reporting it, as before, keeps an absent
+    // output spendable: nothing tells the library it disappeared.
+    store_transparent_refreshes(&mut db, None, &refresh(Vec::new(), Some(later))).unwrap();
+    assert_eq!(spendable(&db), Zatoshis::const_from_u64(1_000_000));
+
+    // Nor does a refresh whose provider tip moved during the query, or one
+    // observed at a tip the wallet no longer has: it speaks for no state the
+    // wallet accepts. Its group is still authorized.
+    for observed_at in [None, Some(at_tip)] {
+        assert!(store_transparent_refreshes(
+            &mut db,
+            Some(report(&gate)),
+            &refresh(Vec::new(), observed_at)
+        )
+        .unwrap());
+        assert_eq!(spendable(&db), Zatoshis::const_from_u64(1_000_000));
+    }
+
+    // A refresh answered after a transition reports nothing either.
+    db.apply_transparent_policy(TransparentLedgerMode::PrivateShadow)
+        .unwrap();
+    assert!(!store_transparent_refreshes(
+        &mut db,
+        Some(report(&gate)),
+        &refresh(Vec::new(), Some(later))
+    )
+    .unwrap());
+    assert_eq!(spendable(&db), Zatoshis::const_from_u64(1_000_000));
+
+    // Reported under current authority at the wallet's tip, the absence stops
+    // the output counting and queues the search for its spend.
+    let renewed = TransparentLookupGate::for_wallet(
+        enhancement::EnhancementPolicy::current(network)
+            .public_transparent_lookups(&db)
+            .unwrap(),
+        path,
+        network,
+    )
+    .unwrap();
+    assert!(store_transparent_refreshes(
+        &mut db,
+        Some(report(&renewed)),
+        &refresh(Vec::new(), Some(later))
+    )
+    .unwrap());
+    assert_eq!(spendable(&db), Zatoshis::ZERO);
+    assert!(searched(&db), "the unseen spend is searched for");
+
+    // The search finds the spend; storing it links the output.
+    let outside = TransparentAddress::PublicKeyHash([77; 20]);
+    let spend = legacy_transaction(OutPoint::new(*funding.txid().as_ref(), 0), outside, 990_000);
+    decrypt_and_store_transaction(
+        &network,
+        &mut db,
+        &spend,
+        Some(BlockHeight::from_u32(2_000_060)),
+    )
+    .unwrap();
+    assert!(!searched(&db));
+    assert_eq!(spendable(&db), Zatoshis::ZERO);
 }
 
 #[test]

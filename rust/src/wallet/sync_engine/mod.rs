@@ -12,6 +12,7 @@ use zcash_client_backend::data_api::{
     chain::{self, error::Error as ChainError, scan_cached_blocks},
     ll::LowLevelWalletWrite,
     scanning::{ScanPriority, ScanRange},
+    transparent_ledger::{ChainPoint, TransparentLedgerRead},
     wallet::ConfirmationsPolicy,
     WalletCommitmentTrees, WalletRead, WalletWrite,
 };
@@ -1416,6 +1417,10 @@ struct TransparentRefreshCompletion {
 struct DownloadedTransparentRefresh {
     refresh: TransparentRefresh,
     outputs: Vec<WalletTransparentOutput<AccountUuid>>,
+    /// The provider's tip when it was the same immediately before the query
+    /// and after its complete response: the chain state `outputs` speaks for.
+    /// `None` when the tip moved or could not be read.
+    observed_at: Option<ChainPoint>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1754,11 +1759,17 @@ async fn refresh_utxos(
             store_then_mark_transparent_refreshes(
                 downloaded,
                 |downloaded| {
-                    store_transparent_outputs(db, downloaded)?;
-                    // Outputs already received are stored, but a group answered
-                    // after a transition does not advance refresh metadata, so
-                    // a later pass under the new policy re-covers it.
-                    completion_authorized.set(gate.permits()?);
+                    // A group answered after a transition neither reports its
+                    // result nor advances refresh metadata, so a later pass
+                    // under the new policy re-covers it.
+                    completion_authorized.set(store_transparent_refreshes(
+                        db,
+                        Some(UtxoReport {
+                            gate: &gate,
+                            network,
+                        }),
+                        downloaded,
+                    )?);
                     Ok(())
                 },
                 |downloaded| {
@@ -1983,6 +1994,8 @@ fn store_then_mark_transparent_refreshes<T, E>(
     Ok(())
 }
 
+/// Stores the outputs of a group of UTXO refreshes without reporting them.
+#[cfg(test)]
 fn store_transparent_outputs(
     db: &mut WalletDatabase,
     downloaded: &[DownloadedTransparentRefresh],
@@ -1990,9 +2003,48 @@ fn store_transparent_outputs(
     if downloaded.iter().all(|batch| batch.outputs.is_empty()) {
         return Ok(());
     }
+    store_transparent_refreshes(db, None, downloaded).map(|_| ())
+}
 
+/// Who authorizes a refresh group's report, and how its addresses decode.
+struct UtxoReport<'a> {
+    gate: &'a TransparentLookupGate,
+    network: WalletNetwork,
+}
+
+/// One refresh's result for one queried address.
+struct UtxoObservation {
+    address: TransparentAddress,
+    start_height: BlockHeight,
+    observed_at: ChainPoint,
+    unspent: Vec<OutPoint>,
+}
+
+/// Stores a group of UTXO refreshes and reports each one's result to the
+/// library, in one SQLite transaction (gap 5a).
+///
+/// Every refresh is a complete query: no entry limit, and its stream ended
+/// without error. For each queried address it reports the outputs returned
+/// since the refresh's start height, observed at the provider tip the
+/// refresh read before the query and again after its response. A wallet
+/// output mined in that range that was not returned, and whose spend the
+/// wallet has not seen, then stops counting as spendable and its spend is
+/// searched for. A refresh is reported only while the wallet's accepted tip
+/// is that same point; otherwise its outputs are stored and a later refresh
+/// reports. The report is a completion write: it is made only while
+/// `report.gate` still authorizes the lookups, reading the durable policy in
+/// this transaction. Returns whether it was authorized.
+fn store_transparent_refreshes(
+    db: &mut WalletDatabase,
+    report: Option<UtxoReport<'_>>,
+    downloaded: &[DownloadedTransparentRefresh],
+) -> Result<bool, SyncError> {
+    let observations = match &report {
+        Some(report) => utxo_observations(report.network, downloaded)?,
+        None => Vec::new(),
+    };
     with_wallet_db_write_lock("sync_engine.put_received_transparent_utxos", || {
-        db.transactionally(|tx_db| -> Result<(), SqliteClientError> {
+        db.transactionally(|tx_db| -> Result<bool, SqliteClientError> {
             for batch in downloaded {
                 for output in &batch.outputs {
                     tx_db.put_received_transparent_utxo(output)?;
@@ -2005,16 +2057,107 @@ fn store_transparent_outputs(
                     tx_db.queue_tx_retrieval(std::iter::once(*output.outpoint().txid()), None)?;
                 }
             }
-            Ok(())
+            let Some(report) = &report else {
+                return Ok(false);
+            };
+            // Outputs already received are stored, but a group answered after
+            // a transition reports nothing, so a later pass under the new
+            // policy observes the addresses again.
+            if !report
+                .gate
+                .permits_applied(TransparentLedgerRead::applied_transparent_policy(&*tx_db)?)
+            {
+                return Ok(false);
+            }
+            let mut stale = 0usize;
+            for observation in &observations {
+                let point = observation.observed_at;
+                // The library judges absence only at the wallet's accepted
+                // tip; a refresh made before the scan reached it, or across a
+                // reorg, speaks for another chain state.
+                if tx_db.chain_height()? != Some(point.height)
+                    || tx_db.get_block_hash(point.height)? != Some(point.hash)
+                {
+                    stale += 1;
+                    continue;
+                }
+                tx_db.notify_transparent_utxos_observed(
+                    &observation.address,
+                    observation.start_height,
+                    point,
+                    point,
+                    &observation.unspent,
+                )?;
+            }
+            if stale > 0 {
+                log::info!(
+                    "sync: {stale} transparent UTXO observations not at the wallet's tip; \
+                     a later refresh reports them"
+                );
+            }
+            Ok(true)
         })
         .map_err(|e| SyncError::db(format!("put_received_transparent_utxos: {e}")))
     })
 }
 
+/// Each queried address of each refresh observed at a stable provider tip,
+/// with the refresh's start height and the outpoints it returned for that
+/// address. A refresh whose tip moved, or that starts above its tip, judged
+/// nothing and reports nothing.
+fn utxo_observations(
+    network: WalletNetwork,
+    downloaded: &[DownloadedTransparentRefresh],
+) -> Result<Vec<UtxoObservation>, SyncError> {
+    let query_network = transparent_utxo_query_network(network);
+    let mut observations = Vec::new();
+    for batch in downloaded {
+        let Some(observed_at) = batch.observed_at else {
+            continue;
+        };
+        if batch.refresh.start_height > observed_at.height {
+            continue;
+        }
+        for address in &batch.refresh.addresses {
+            let address = TransparentAddress::decode(&query_network, address).map_err(|e| {
+                SyncError::parse(format!("refreshed transparent address {address}: {e}"))
+            })?;
+            let unspent = batch
+                .outputs
+                .iter()
+                .filter(|output| *output.recipient_address() == address)
+                .map(|output| output.outpoint().clone())
+                .collect();
+            observations.push(UtxoObservation {
+                address,
+                start_height: batch.refresh.start_height,
+                observed_at,
+                unspent,
+            });
+        }
+    }
+    Ok(observations)
+}
+
+/// The provider's current tip, or `None` when it cannot be read or names no
+/// block hash.
+async fn provider_tip(client: &mut CompactTxStreamerClient<Channel>) -> Option<ChainPoint> {
+    match get_latest_block(client).await {
+        Ok(tip) => Some(ChainPoint {
+            height: BlockHeight::from_u32(u32::try_from(tip.height).ok()?),
+            hash: BlockHash::try_from_slice(&tip.hash)?,
+        }),
+        Err(e) => {
+            log::info!("sync: provider tip unavailable for a UTXO observation: {e}");
+            None
+        }
+    }
+}
+
 async fn download_transparent_outputs(
     mut client: CompactTxStreamerClient<Channel>,
     gate: TransparentLookupGate,
-    mut refresh: TransparentRefresh,
+    refresh: TransparentRefresh,
     should_exit: &impl Fn() -> bool,
 ) -> Result<Option<DownloadedTransparentRefresh>, SyncError> {
     if should_exit() {
@@ -2024,6 +2167,7 @@ async fn download_transparent_outputs(
         return Ok(Some(DownloadedTransparentRefresh {
             refresh,
             outputs: Vec::new(),
+            observed_at: None,
         }));
     }
 
@@ -2038,7 +2182,10 @@ async fn download_transparent_outputs(
         refresh.addresses.len(),
     );
 
-    let addresses = std::mem::take(&mut refresh.addresses);
+    // The result speaks for a chain state only if the provider's tip is the
+    // same before the query and after its complete response.
+    let query_start = provider_tip(&mut client).await;
+    let addresses = refresh.addresses.clone();
     let stream = tokio::select! {
         biased;
         _ = watch_for_exit(should_exit) => {
@@ -2116,12 +2263,19 @@ async fn download_transparent_outputs(
         );
     }
 
+    let query_end = provider_tip(&mut client).await;
+    let observed_at = query_start.filter(|start| Some(*start) == query_end);
+
     log::info!(
         "transparent refresh: account={} batch={:?} addresses={} rpc_count=1 outputs={} response_bytes={} elapsed_ms={}",
         refresh.account_uuid, refresh.label,
         address_count, outputs.len(), response_bytes, started.elapsed().as_millis(),
     );
-    Ok(Some(DownloadedTransparentRefresh { refresh, outputs }))
+    Ok(Some(DownloadedTransparentRefresh {
+        refresh,
+        outputs,
+        observed_at,
+    }))
 }
 
 async fn watch_for_exit(should_exit: &impl Fn() -> bool) {
