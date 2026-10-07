@@ -128,7 +128,7 @@ Incoming swaps persist a reservation separately from notes and activity. Each qu
 request is recorded with its deposit deadline just before it is sent, and each
 accepted deposit instruction is kept even if the user leaves the review screen. An
 explicit quote rejection releases the request; an uncertain outcome holds the
-address until its deadline is 24 hours past. Starting a swap locks the draft whose
+address until its deadline is two hours past. Starting a swap locks the draft whose
 quote matches the deposit address and memo, and the next swap gets another address.
 
 - Issuance takes the lowest address never quoted and reuses the lowest abandoned
@@ -136,12 +136,13 @@ quote matches the deposit address and memo, and the next swap gets another addre
   highest receipt with 10 confirmations, and waits for incoming restore sweeps,
   which may reveal paid or quoted indices. When swaps in progress hold all 30, a
   new quote is refused with a message to wait for one to finish; an unused quote
-  frees its address 24 hours after its deadline.
-- An unpaid reservation is reclaimed 24 hours after its creation and every quote's
-  deposit deadline, given a fresh conclusive provider status and the wallet scanned
-  to its tip with no payment to the address. The status refresh loop also checks
-  reservations missing from the activity list. A reclaimed key stops scanning:
-  every quote is past its deadline with a conclusive status, so no swap can pay it.
+  frees its address two hours after its deadline.
+- An unpaid reservation is reclaimed two hours after its creation and every
+  quote's deposit deadline, given a fresh conclusive provider status and the
+  wallet scanned to its tip with no payment to the address. The status refresh
+  loop also checks reservations missing from the activity list. A reclaimed key
+  stops scanning: every quote is past its deadline with a conclusive status, so no
+  swap can pay it.
 - Quoting requires the address unpaid, with no queued restore candidate, and the
   wallet scanned to its tip. A paid address is permanently excluded.
 
