@@ -8,6 +8,7 @@ pub(crate) mod apdu;
 mod operations;
 mod parse;
 mod serializer;
+pub(crate) use parse::{memo_review_cost, MAX_RETAINED_MEMO_BYTES};
 
 pub(crate) use operations::{
     acknowledge as acknowledge_signed_operation, broadcast as broadcast_signed_operation,

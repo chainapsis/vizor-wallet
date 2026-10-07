@@ -24,6 +24,11 @@ import 'support/desktop_regtest_flow.dart';
 import 'support/payment_link_regtest_flow.dart' as payment_link_flow;
 
 const _network = 'regtest';
+const _fundingHeightCard = bool.fromEnvironment(
+  'VIZOR_E2E_FUNDING_HEIGHT_GIFT_CARD',
+);
+const _eventCard =
+    bool.fromEnvironment('VIZOR_E2E_EVENT_GIFT_CARD') || _fundingHeightCard;
 const _lightwalletdUrl = String.fromEnvironment(
   'ZCASH_E2E_LIGHTWALLETD_URL',
   defaultValue: 'http://127.0.0.1:9067',
@@ -48,7 +53,9 @@ void main() {
   });
 
   testWidgets(
-    'creates, opens, and claims a payment link between two regtest accounts',
+    _eventCard
+        ? 'claims a funded event card through desktop My gift cards'
+        : 'creates, opens, and claims a payment link between two regtest accounts',
     (tester) async {
       addTearDown(() async {
         await Clipboard.setData(const ClipboardData(text: ''));
@@ -186,6 +193,31 @@ void main() {
         address: fundingRecovery.link.address,
         createdAt: fundingRecovery.link.createdAt,
       );
+      if (_eventCard) {
+        // The issuer supplies a mined height or txid. Mainnet-only v4 sharing stays
+        // gated; regtest exercises the same direct claim via local recovery.
+        link = VizorPaymentLink(
+          network: link.network,
+          address: link.address,
+          amountZatoshi: link.amountZatoshi,
+          mnemonic: link.mnemonic,
+          birthdayHeight: link.birthdayHeight,
+          label: link.label,
+          createdAt: link.createdAt,
+          presentation: const PaymentLinkPresentation(
+            artworkId: 'gift',
+            message: _giftMessage,
+          ),
+          fundingHeight: _fundingHeightCard
+              ? minedFunding.minedHeight.toInt()
+              : null,
+          fundingTxid: _fundingHeightCard ? null : minedFunding.txidHex,
+        );
+        final recovery = link.toRecoveryUri().toString();
+        expect(VizorPaymentLink.parse(recovery).isDirectClaim, isTrue);
+        expect(() => link.toShareUri(), throwsFormatException);
+        await Clipboard.setData(ClipboardData(text: recovery));
+      }
       final fundingProgress = await operations.inspectCreatedLinkFundings([
         fundingRecovery,
       ]);
@@ -221,7 +253,7 @@ void main() {
         tester
             .widget<PaymentLinkGiftCard>(find.byType(PaymentLinkGiftCard))
             .artwork,
-        PaymentLinkCardArtwork.coin,
+        _eventCard ? PaymentLinkCardArtwork.gift : PaymentLinkCardArtwork.coin,
       );
 
       await _mineRegtestBlocks(

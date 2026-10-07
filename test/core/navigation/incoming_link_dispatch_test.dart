@@ -11,11 +11,14 @@ void main() {
   final host = VizorDeepLink.host;
 
   group('host is tested before scheme', () {
-    test('a Gift Card link on the Vizor origin is a gift card', () {
-      final target = classifyIncomingLink(
-        'https://$host/payment-links/open#v1=abcdef',
-      );
-      expect(target, isA<IncomingGiftCardLink>());
+    test('both Gift Card routes on the Vizor origin are gift cards', () {
+      for (final path in [
+        VizorDeepLink.giftPath,
+        VizorDeepLink.paymentLinkPath,
+      ]) {
+        final target = classifyIncomingLink('https://$host$path#v1=abcdef');
+        expect(target, isA<IncomingGiftCardLink>(), reason: path);
+      }
     });
 
     test('an unrecognised path on the Vizor origin is unknown, not a payment '

@@ -1,169 +1,273 @@
-# Compact gift links
+# Compact gift links (v3 and v4)
 
-V3 encodes the original English BIP-39 entropy in the fragment of
-`https://link.vizor.cash/payment-links/open#v3=<payload>`. The origin remains
-configurable through `VIZOR_DEEPLINK_BASE_URL`. No resolver, remote presentation
-lookup, or new route is needed. New gifts use 12 words. Decoding continues to
-support existing 12, 15, 18, 21, and 24 word phrases without a version change.
+Gift links place their payload in the URL fragment, so the secret is not sent
+to the HTTPS origin. V4 links use
+`https://link.vizor.cash/gift#v4=<payload>`. The origin remains configurable
+through `VIZOR_DEEPLINK_BASE_URL`. V1 through v3 links retain their existing
+`/payment-links/open` route and remain readable.
 
-The message remains inline. It is not placed in, or fetched from, a funding
-transaction memo. The amount and birthday retain their existing meanings.
+New 12-word gifts use v4. Existing 24-word gifts continue to share as v3, so a
+funded secret is never shortened or replaced. V4 always means mainnet and has
+no network field. Writers reject non-mainnet cards.
 
-## Positional JSON schema
+## V4 core
 
-The fragment contains unpadded Base64url of a UTF-8 JSON array. The array uses
-these fixed positions, with at least the first four entries and at most eight:
+The payload is unpadded canonical Base64url of this binary sequence:
 
-| Index | Value | JSON type |
+| Order | Value | Encoding |
 | --- | --- | --- |
-| 0 | Network, `main` or gated `regtest` | String |
-| 1 | Original BIP-39 entropy, unpadded Base64url | String |
-| 2 | Positive birthday height, at most 4,294,967,295 | Integer |
-| 3 | Positive zatoshi, at most 2,100,000,000,000,000 | Decimal string |
-| 4 | Artwork ID, such as `knightMagic` | String or null |
-| 5 | Finite, nonnegative USD snapshot | Number or null |
-| 6 | Personal message | String or null |
-| 7 | Custom label; null or absent means `Payment link` | String or null |
+| 0 | Locator mode | One byte: `00`, `01`, or `02` |
+| 1 | Original 12-word BIP-39 entropy | 16 bytes |
+| 2 | Recipient amount in zatoshi | Minimal unsigned LEB128 |
+| 3 | Locator | Mode-dependent, below |
+| 4 | Display options | Zero or more TLVs |
 
-Omit trailing null entries when writing. Keep null placeholders when a later
-optional field is present. An empty custom label is allowed. Amounts use decimal
-strings without a sign, exponent, or leading zeroes. The version is already in
-`#v3=` and is not repeated in the array.
+The amount is positive. It plus the 10,000 zatoshi claim fee reserve must not
+exceed the 21 million ZEC monetary maximum. Nonminimal, unterminated, and
+overflowing ULEB128 values are invalid.
+
+### Locator modes
+
+| Mode | Meaning | Locator bytes | Claim behavior |
+| --- | --- | --- | --- |
+| `00` | Birthday | Positive block height as big-endian `u32` | Discover funding from birthday, then observe later spends |
+| `01` | Funding height | Positive block height as big-endian `u32` | Resolve the card's funding transaction in that block |
+| `02` | Funding transaction | 32-byte txid in display-hex byte order | Retrieve that transaction directly |
+
+The model carries exactly one locator. Modes `01` and `02` select direct claim;
+mode `00` uses the merged single-funding Ironwood discovery/observer path.
+A funding-height claim verifies the
+expected recipient amount while resolving the transaction. Once found, its
+txid is durable claim state; it is not written back into or substituted for
+the original shared locator.
+
+Transaction bytes follow the successive pairs of the conventional
+64-character display hex. They are not reversed by this codec. Rust converts
+them to protocol order at the transaction lookup boundary.
+
+## V4 display TLVs
+
+Each optional display field is `[tag: u8][length: minimal ULEB128][value]`.
+These values affect presentation only. They do not select funds or change the
+claim locator.
+
+| Tag | Value |
+| --- | --- |
+| `01` | One-byte artwork code |
+| `02` | USD snapshot as IEEE-754 float64, big-endian |
+| `03` | Reserved; messages are carried in the funding output memo |
+
+Artwork codes are stable: `1 knight`, `2 chestLava`, `3 chestCave`, `4 dragon`,
+`5 knightMagic`, `6 gandalf`, `7 crystal`, `8 diamond`, `9 ruby`, `10 coin`,
+and `11 gift`. A writer omits an unknown local artwork ID.
+
+Fiat values must be finite and nonnegative. A gift message uses the standard
+UTF-8 memo on its shielded funding output, with no custom header. App writers
+trim messages, allow at most 128 grapheme clusters / 512 UTF-8 bytes, and reject
+NUL characters before funding. An absent or invalid display memo never blocks
+a valid claim. Funding validation failures retain their existing behavior.
+Labels are local and are not shared.
+
+Readers skip complete unknown TLVs. If the display suffix is truncated,
+noncanonical, duplicated, or contains a malformed known option, parsing stops
+at that option. The valid core and every valid preceding display option are
+retained. This allows display metadata to evolve without weakening validation
+of the secret, amount, or locator. Malformed core data always rejects the link.
+
+The decoded binary payload is capped at 1,024 bytes. Accepted links must also
+fit the existing 16 KiB local recovery envelope.
+
+## External issuer CLI
+
+`tool/gift_link_v4.dart` builds v4 URLs directly from 16-byte entropy after an
+external issuer funds a card. It does not initialize the Rust bridge and never
+accepts a mnemonic. Treat the input and output as secrets.
+
+JSON input may be one object or an array:
+
+```json
+[
+  {
+    "entropyHex": "00000000000000000000000000000000",
+    "amountZatoshi": "1000000",
+    "locatorKind": "fundingHeight",
+    "fundingHeight": 4000000,
+    "artworkId": "gift",
+    "fiatUsd": 0.42
+  },
+  {
+    "entropyHex": "00000000000000000000000000000001",
+    "amountZatoshi": "2500000",
+    "locatorKind": "fundingTxid",
+    "fundingTxid": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+  }
+]
+```
+
+```bash
+fvm dart run tool/gift_link_v4.dart --input cards.json --output links.txt
+```
+
+CSV uses the same field names in its header. Empty optional cells are omitted:
+
+```csv
+entropyHex,amountZatoshi,locatorKind,birthdayHeight,fundingHeight,fundingTxid,artworkId,fiatUsd
+00000000000000000000000000000000,1000000,fundingHeight,,4000000,,gift,0.42
+```
+
+```bash
+fvm dart run tool/gift_link_v4.dart --format csv --input cards.csv
+```
+
+The command writes one URL per input record. It exits nonzero on the first
+invalid record and does not print the secret-bearing input in its error.
+`message` input is rejected: this encoder cannot add a memo to an already
+funded gift. External issuers must attach the message when constructing each
+funding output, before broadcasting. Funding messages cannot be edited later.
+
+## V3 compatibility
+
+V3 is unpadded Base64url of a UTF-8 JSON array with four required and four
+optional positions:
+
+| Index | Value |
+| --- | --- |
+| 0 | Network (`main` or gated `regtest`) |
+| 1 | BIP-39 entropy as unpadded Base64url |
+| 2 | Positive birthday height (`u32`) |
+| 3 | Positive zatoshi as a decimal string |
+| 4 | Artwork ID or null |
+| 5 | Finite nonnegative USD snapshot or null |
+| 6 | Personal message or null |
+| 7 | Custom label or null |
+
+Trailing nulls are omitted. V3 readers support 12, 15, 18, 21, and 24-word
+English phrases. New writers use v4 for 12-word phrases and preserve v3 for
+24-word reshares. V1 and v2 parsing and v2 local recovery remain unchanged.
 
 The v3 writer rounds the display-only USD snapshot to two decimal places and
 keeps it a JSON number. Readers continue accepting older full-precision USD
 snapshots in v1, v2, and v3 without rounding them. Local v2 recovery records
-retain their original precision; resharing a card rounds only the v3 snapshot.
-The ZEC amount, mnemonic, birthday, and claim calculations are unaffected.
+retain their original precision; resharing rounds only the v3 snapshot. V4's
+binary float64 display option retains its original precision. The ZEC amount,
+mnemonic, birthday, and claim calculations are unaffected.
 
-The complete URL is bounded to 16 KiB before decoding. Both Base64url strings
-use only `A-Z`, `a-z`, `0-9`, `-`, and `_`, without padding or noncanonical trailing
-bits. JSON whitespace and normal JSON string escaping are accepted. Wrong
-field types, missing required fields, extra fields, and out-of-range values are
-rejected using the existing presentation and recovery limits.
+`toRecoveryUri()` writes the local v2 JSON representation. It stores
+`fundingHeight` or `fundingTxid` when present. Address, creation time, and
+durable claim state remain in the enclosing sender or receiver record;
+presentation remains in the v2 payload. Incoming v4 links use `Payment link`
+as their local label.
 
-Strings keep the existing trimmed semantics. Artwork IDs are ASCII identifiers
-of at most 64 characters; unknown IDs use the local artwork fallback. Messages
-remain limited to 128 grapheme clusters and 512 UTF-8 bytes.
+| Reader | v1 | v2 | v3 | v4 |
+| --- | --- | --- | --- | --- |
+| V1-only Vizor | Yes | No | No | No |
+| V2-capable Vizor | Yes | Yes | No | No |
+| Existing v3 reader | Yes | Yes | Yes | No |
+| This implementation | Yes | Yes | Yes | Yes |
 
-Entropy is 16, 20, 24, 28, or 32 bytes, reconstructing the original English
-mnemonic with an empty BIP-39 passphrase and ZIP32 account zero. New gifts use
-16 bytes, or 12 words, instead of 32 bytes, or 24 words. This changes only new
-gift funding accounts; existing funded secrets are never shortened. Ordinary
-wallet creation and the recipient wallet automatically created during Gift
-Card onboarding continue using independent 24-word mnemonics. Legacy cards with
-alternate mnemonic whitespace share as v2 after verifying the original address
-and validating the canonical phrase. Their original secret, recovery records,
-and claim-cache identity remain unchanged. Other conversion or address-validation
-errors fail sharing; they never trigger a v2 fallback.
-Synchronous FFI only converts mnemonic and entropy; address validation remains
-asynchronous and local.
+## Link size comparison
 
-This uses standard JSON serialization, with no binary header, bit flags, length
-prefixes, artwork-code registry, or custom checksum. JSON parsing validates the
-structure, and the claim flow verifies actual funding. This replaces the
-unreleased binary v3 prototype; v1/v2 compatibility is preserved.
+For the same 12-word entropy, 0.5 ZEC recipient amount, and height 4,000,000,
+including the HTTPS origin, path, and version prefix:
 
-## Compatibility and recovery
+| Payload | v3 JSON | v4 birthday | v4 funding height | v4 funding txid |
+| --- | ---: | ---: | ---: | ---: |
+| Required fields only | 116 characters | 66 | 66 | 103 |
+| Plus gift artwork, USD 25 snapshot, and `For you` | 145 | 83 | 83 | 120 |
 
-`toShareUri()` always writes v3. The verified sharing helper preserves v2
-only for legacy mnemonic whitespace. `toRecoveryUri()`
-continues writing the established v2 JSON format. `toUri()` remains a v2 alias
-for existing callers. Sender addresses, creation times, status, funding
-transactions, and claim evidence stay in their existing secure records.
-Incoming v3 links persist through that same v2 representation. Decoding rejects
-links whose v2 recovery URI exceeds 16 KiB, including the expanded mnemonic,
-JSON field names, string escaping, and Base64 encoding.
+V4's height modes save 50 characters without optional metadata and 62 with
+the displayed example. The full txid mode saves 13 and 25 respectively; its
+message is in the funding output rather than the link. These are examples,
+not fixed lengths: amount varint size, text length, and a configured origin
+change the total. V3 itself uses JSON containing
+binary entropy, rather than JSON containing the mnemonic words.
 
-`preparePaymentLinkShareUri()` verifies a locally known address against the
-mnemonic before dropping it from compact sharing. A failure leaves the record
-untouched and reports a sharing error. Funding creation checks the selected
-share and recovery representations before the durable draft and broadcast.
-All funding signers share this path. No retry replaces a funded secret.
+## Claim verification
 
-The claim cache continues using network, mnemonic, and birthday, including its
-existing legacy-directory preference when submission evidence exists. Intake
-equality continues comparing normalized logical payloads rather than the wire
-version. Different amounts, birthdays, labels, or presentation remain distinct.
+All three locators use the same claim-check API, endpoint routing, foreground
+admission, cancellation, and progress ownership. Birthday links discover the
+first funding transaction by scanning from birthday, then observe nullifiers
+and claim transaction IDs through later blocks without further wallet scanning
+or enhancement. Historical block-range downloads still remain in this mode;
+it is not a direct lookup. Retained legacy birthday receipts can continue their
+older sync recovery path.
 
-Desktop and mobile share v3 without an older-version copy
-option. Recipients must upgrade to a v3-capable Vizor to claim compact links.
-Existing v1 and v2 links remain readable.
+Height mode scans exactly the specified block using the preceding tree state.
+It requires one positive received shielded note worth recipient amount plus
+the 10,000 zatoshi reserve, and a unique transaction satisfying that condition.
+Zero-valued padding is ignored. Missing, split, or ambiguous funding fails;
+there is no neighboring-block search or fallback scan. On first open, a reorg
+moving funding out of that block requires a corrected link or the txid mode.
+After discovery, the local isolated claim DB persists the resolved txid and
+retries follow its current mined height while preserving the original link.
 
-| Reader | v1 | v2 | v3 |
-| --- | --- | --- | --- |
-| V1-only Vizor | Yes | No | No |
-| V2-capable Vizor | Yes | Yes | No |
-| This implementation | Yes | Yes | Yes |
+Direct preparation does not establish whether the note was spent in a later
+block. The node validates spentness when the claim is broadcast. Its funding
+lookup currently uses the existing public transaction-payload path, so do not
+interpret a shorter height locator as hiding the resolved txid from the
+endpoint.
+Direct claims refresh their funding preparation again before submission and
+use the same cancellable check when recovering retained receipts. They do not
+enter the birthday observer or fall back to scanning historical ranges.
 
-An older installed app may intercept a new link before a browser fallback can
-help. Recipients need a v3-capable build for new links. Existing v1/v2 links
-remain readable without migration.
+Direct claims use `tip - 1`, matching the existing two-confirmation gift-claim
+policy, rather than the funding-height anchor. Preparation processes the recent
+anchor block and individual boundary blocks needed to complete missing witness
+nodes; historical gaps remain unscanned. Each funding note's witness must match
+the verified recent tree root. Failure to establish it stops preparation, with
+no fallback to an old anchor or a full scan. Submission refreshes preparation
+before estimation so a long-open preview does not preserve an old anchor.
 
-## Rollout and local testing
+Preparation clears its quote marker before remote lookup while preserving the
+height locator's durable funding resolution. A failed or cancelled refresh
+cannot reuse an old quote. Funding-height moves or cached block-hash changes
+rewind and rebuild sparse witnesses. An anchor-only fork also triggers rebuilding
+when the funding transaction remains unchanged. Stored outgoing claims retain
+the existing same-txid recovery and expiry behavior.
 
-V3 sharing is enabled by default, with no build flag. The gateway must accept
-opaque `#v3=` envelopes and recipients must have a v3-capable wallet. There is
-no online recipient capability check or automatic downgrade for older apps.
-This PR does not deploy the gateway.
+Recent anchors do not remove direct lookup disclosure or all link correlations.
+A tree root can remain unchanged across empty blocks. Ordinary sends and birthday
+claims retain their existing confirmation and anchor policies.
 
-Run `fvm flutter test test/features/payment_links/compact_payment_link_test.dart`
-for codec, persistence, copy, and QR navigation regressions. The existing
-regtest lane exercises default v3 sharing:
+The funded regtest uses temporary claim DBs and an explicitly selected isolated
+node stack. `VIZOR_DIRECT_GIFT_PROJECT` can select an owned Compose project;
+`VIZOR_DIRECT_GIFT_IRONWOOD_GAP` bounds a fresh fixture's mining workload while
+the default retains the 5,000-block lane. The desktop round-trip fixture accepts
+`--dart-define=VIZOR_E2E_FUNDING_HEIGHT_GIFT_CARD=true` to exercise the height
+locator through Settings and the generated Rust bridge. Shared v4 remains
+mainnet-only; regtest uses the same model's local recovery envelope.
 
-```sh
-scripts/e2e/flutter-macos-regtest-payment-link-round-trip.sh
-scripts/e2e/flutter-macos-regtest-payment-link-recovery.sh
-```
+## Funding messages
 
-Use the repository's native signing and local secure-storage setup. The
-regtest lane creates disposable accounts and cleans its regtest wallet. It
-must not be pointed at a personal wallet. Bridge regeneration uses
-`scripts/generate-rust-bridge.sh` from the repository root, which invokes FRB
-with the repository's existing expanded-Rust compatibility wrapper.
+Messages belong to a shielded output, not to a transaction as a whole. Readers
+bind the memo to the isolated gift account, funding transaction, pool, and
+output index. Only a unique transaction with one positive received note equal
+to the advertised recipient amount plus the 10,000-zatoshi reserve is eligible.
+Zero-valued notes, unrelated accounts, split funding, and ambiguous top-ups do
+not supply a display message. Txid mode uses the link identity; height mode
+uses the durable resolution identity even after a reorg.
 
-Reader tests cover v1/v2 equivalence, persistence representation, JSON types and
-positions, truncation, numeric bounds, unknown artwork, custom labels, Unicode,
-and exact sizes. Native tests additionally verify real BIP-39
-conversion and the retained funding address. The round-trip lane checks a real
-funded gift through copy, import, claim, and confirmation. Hardware devices,
-iOS/Android native handoff, and deployed browser behavior still require their
-normal release qualification; unit tests are not a substitute for those checks.
+Direct height/txid preparation already decrypts the funding payload: reading
+its memo adds no RPC. Birthday claim sync skips transaction enhancement, so
+missing metadata is recovered from the isolated claim database through the
+existing payload scheduler, with a five-second total display budget. The SDK
+routes pure Ironwood funding notes to Enhance PIR when Private queries is
+on; transactions it explicitly routes to public transport retain the normal
+lightwalletd lookup. No PIR failure, missing coverage, or timeout authorizes a
+public fallback. A temporarily unavailable message is omitted without blocking
+the claim. Public lookups disclose the funding txid to the chosen endpoint;
+PIR uses the existing position query and authenticated note-recovery path.
 
-## Synthetic reference and sizes
+URL messages in v1-v3 retain precedence. Otherwise readers use a retained
+received-record message, then the newly decoded funding memo. Inspection and
+session carry `fundingMessage` separately from link identity. Checking stays
+read-only; the message is saved with the existing claim/retention operation,
+without rewriting the recovery link, and survives secret/database cleanup.
+The outgoing claim transaction still carries no sender message.
 
-The following unfunded public vector uses 16 zero entropy bytes (11 `abandon`
-words followed by `about`), mainnet, height 3,483,141, amount 1,000,000 zatoshi,
-artwork `knightMagic`, USD 11.17, and the exact message
-`It's a great day to shield your ZEC 🛡️`. Do not fund this published secret.
-
-Its decoded JSON is:
-
-```json
-["main","AAAAAAAAAAAAAAAAAAAAAA",3483141,"1000000","knightMagic",11.17,"It's a great day to shield your ZEC 🛡️"]
-```
-
-The full link is:
-
-```text
-https://link.vizor.cash/payment-links/open#v3=WyJtYWluIiwiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQSIsMzQ4MzE0MSwiMTAwMDAwMCIsImtuaWdodE1hZ2ljIiwxMS4xNywiSXQncyBhIGdyZWF0IGRheSB0byBzaGllbGQgeW91ciBaRUMg8J-boe-4jyJd
-```
-
-It is 202 characters: 46 for the URL prefix and 156 for the Base64url encoding
-of 117 JSON bytes. The message itself occupies 43 UTF-8 bytes.
-
-| Contents, default label | 24 words (legacy) | 12 words (new gifts) |
-| --- | ---: | ---: |
-| Plain | 142 | 114 |
-| Artwork and fiat | 169 | 141 |
-| Artwork, fiat, example message | 230 | 202 |
-| Artwork, fiat, 512-byte message | 856 | 828 |
-
-The original v1 example in planning measured 914 characters. Its bearer secret
-is not included in source or fixtures. Positional JSON retains a 77.9% reduction
-for the decorated example, while using standard JSON tooling.
-
-Twelve-word generation saves about 28 characters. Further size reductions are
-deferred: `/gift` saves 14; placing the example message on-chain saves about 61 but
-adds memo retrieval and its privacy/availability tradeoffs; compression has
-variable savings and adds parser complexity.
+Ledger batch quotes conservatively bound memo review retention at 1,024 bytes
+across randomized outputs (ASCII text length, otherwise a 64-byte hash).
+The signing parser also accounts for the device's actual ordered retention
+across both shielded pools; older apps reject any hash display path. Messages
+remain in Keystone's compact PCZT, so they can increase QR frame count.
+Maximum-device batches still require physical Ledger/Keystone validation.

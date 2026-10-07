@@ -141,7 +141,7 @@ pub(super) fn parse_pczt(bytes: &[u8]) -> Result<ParsedPczt, String> {
     let mut transparent_outputs = Vec::new();
     let mut orchard_bundle = None;
     let mut ironwood_bundle = None;
-    let mut memo_reaches_hash_path = false;
+    let mut memo_budget = MemoReviewBudget::default();
 
     let verifier = Verifier::new(pczt)
         .with_transparent::<String, _>(|bundle| {
@@ -159,8 +159,7 @@ pub(super) fn parse_pczt(bytes: &[u8]) -> Result<ParsedPczt, String> {
 
     let verifier = verifier
         .with_orchard::<String, _>(|bundle| {
-            memo_reaches_hash_path |=
-                bundle_memo_reaches_hash_path(bundle).map_err(OrchardError::Custom)?;
+            check_bundle_memos(bundle, &mut memo_budget).map_err(OrchardError::Custom)?;
             orchard_bundle = convert_shielded_bundle(
                 bundle,
                 branch,
@@ -175,8 +174,7 @@ pub(super) fn parse_pczt(bytes: &[u8]) -> Result<ParsedPczt, String> {
     if global.tx_version >= V6_TX_VERSION {
         verifier
             .with_ironwood::<String, _>(|bundle| {
-                memo_reaches_hash_path |=
-                    bundle_memo_reaches_hash_path(bundle).map_err(OrchardError::Custom)?;
+                check_bundle_memos(bundle, &mut memo_budget).map_err(OrchardError::Custom)?;
                 ironwood_bundle =
                     convert_ironwood_bundle(bundle, branch, shielded_derivation.as_ref())
                         .map_err(OrchardError::Custom)?;
@@ -191,7 +189,7 @@ pub(super) fn parse_pczt(bytes: &[u8]) -> Result<ParsedPczt, String> {
         transparent_outputs,
         orchard_bundle,
         ironwood_bundle,
-        memo_reaches_hash_path,
+        memo_reaches_hash_path: memo_budget.requires_hash,
     })
 }
 
@@ -552,16 +550,19 @@ fn convert_shielded_action(
     })
 }
 
-fn bundle_memo_reaches_hash_path(bundle: &orchard::pczt::Bundle) -> Result<bool, String> {
+fn check_bundle_memos(
+    bundle: &orchard::pczt::Bundle,
+    budget: &mut MemoReviewBudget,
+) -> Result<(), String> {
     for action in bundle.actions() {
-        if output_memo_reaches_hash_path(action)? {
-            return Ok(true);
+        if let Some(memo) = output_memo(action)? {
+            budget.add(&memo)?;
         }
     }
-    Ok(false)
+    Ok(())
 }
 
-fn output_memo_reaches_hash_path(action: &orchard::pczt::Action) -> Result<bool, String> {
+fn output_memo(action: &orchard::pczt::Action) -> Result<Option<[u8; 512]>, String> {
     let output = action.output();
     let note = Note::from_parts(
         output
@@ -591,29 +592,67 @@ fn output_memo_reaches_hash_path(action: &orchard::pczt::Action) -> Result<bool,
     let Some((_, _, memo)) = recovered else {
         // Restricted zero-value outputs can have deliberately random ciphertext.
         return if note.value().inner() == 0 {
-            Ok(false)
+            Ok(None)
         } else {
             Err("Could not verify the memo before Ledger signing".into())
         };
     };
-    Ok(memo_reaches_ledger_hash_path(&memo))
+    Ok(Some(memo))
+}
+
+/// Ledger app 3.9.3/3.9.4 parser/pczt.rs MAX_RETAINED_MEMO_BYTES:
+/// https://github.com/LedgerHQ/app-zcash/blob/stax_1.10.1_3.9.3_sdk_v26.6.1/src/parser/pczt.rs
+pub(crate) const MAX_RETAINED_MEMO_BYTES: usize = 1024;
+
+pub(crate) fn memo_review_cost(memo: &[u8; 512]) -> usize {
+    let len = memo.iter().rposition(|b| *b != 0).map_or(0, |i| i + 1);
+    if len == 0 || (memo[0] == 0xf6 && memo[1..].iter().all(|b| *b == 0)) {
+        return 0;
+    }
+    if memo_reaches_ledger_hash_path(memo) {
+        64
+    } else {
+        len
+    }
+}
+
+#[derive(Default)]
+struct MemoReviewBudget {
+    retained: usize,
+    requires_hash: bool,
+}
+impl MemoReviewBudget {
+    fn add(&mut self, memo: &[u8; 512]) -> Result<(), String> {
+        let cost = memo_review_cost(memo);
+        if cost == 0 {
+            return Ok(());
+        }
+        let remaining = MAX_RETAINED_MEMO_BYTES.saturating_sub(self.retained);
+        let hash = memo_reaches_ledger_hash_path(memo) || cost > remaining;
+        let retained = if hash { 64 } else { cost };
+        if retained > remaining {
+            return Err(
+                "Too much memo data for Ledger. Try fewer cards or a shorter message.".into(),
+            );
+        }
+        self.retained += retained;
+        self.requires_hash |= hash;
+        Ok(())
+    }
 }
 
 /// Keep this string identical to `ledgerMemoHashUnsupportedError` in
 /// `lib/src/features/ledger/ledger_capability.dart`: the Dart failure guidance
 /// recognises this error by matching on it.
 pub(super) const LEDGER_MEMO_HASH_UNSUPPORTED: &str =
-    "Update the Ledger Zcash app to sign non-English memos";
+    "Update the Ledger Zcash app to sign these memos";
 
 /// Whether the Ledger Zcash app would render `memo` as a hash rather than as
 /// text. Apps before 3.9.4 reset the device on that path, so `serialize_pczt`
 /// refuses such a memo for them. Mirrors `memo_display` and
 /// `is_displayable_memo_text` in the device app.
 ///
-/// The device also falls back to hashing once a transaction's retained memo
-/// text passes its budget, which takes three maximum-length memos. Our
-/// proposals carry at most one memo-bearing output, so that case is not
-/// modelled here.
+/// Aggregate retention across both pools is checked by MemoReviewBudget.
 fn memo_reaches_ledger_hash_path(memo: &[u8; 512]) -> bool {
     // ZIP-302 "no memo": 0xF6 followed by zeros. The device shows no field.
     if memo[0] == 0xf6 && memo[1..].iter().all(|byte| *byte == 0) {
@@ -649,6 +688,33 @@ fn map_orchard_error(pool: &str, error: OrchardError<String>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn memo_review_tracks_retention_across_outputs() {
+        let mut text = [0u8; 512];
+        text[..128].fill(b'a');
+        let mut budget = MemoReviewBudget::default();
+        for _ in 0..8 {
+            budget.add(&text).unwrap();
+        }
+        assert_eq!(budget.retained, MAX_RETAINED_MEMO_BYTES);
+        assert!(!budget.requires_hash);
+        assert!(budget.add(&text).is_err());
+        let mut budget = MemoReviewBudget::default();
+        let mut long = [b'a'; 512];
+        budget.add(&long).unwrap();
+        budget.add(&text).unwrap();
+        budget.add(&long).unwrap();
+        assert_eq!(budget.retained, 512 + 128 + 64);
+        assert!(budget.requires_hash); // ASCII can also take the old-app crash path.
+        long[0] = 0xff;
+        let mut budget = MemoReviewBudget::default();
+        for _ in 0..16 {
+            budget.add(&long).unwrap();
+        }
+        assert!(budget.add(&long).is_err());
+        assert_eq!(memo_review_cost(&[0; 512]), 0);
+    }
 
     fn memo_pczt(version: BundleVersion, memo: &[u8], value: u64, with_ovk: bool) -> Vec<u8> {
         use orchard::{

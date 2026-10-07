@@ -19,15 +19,18 @@ void main() {
         VizorDeepLink.routeFor(Uri.parse('https://${VizorDeepLink.host}/')),
         VizorDeepLinkRoute.home,
       );
-      expect(
-        VizorDeepLink.routeFor(
-          Uri.parse(
-            'https://${VizorDeepLink.host}'
-            '${VizorDeepLink.paymentLinkPath}#v1=opaque',
+      for (final path in [
+        VizorDeepLink.giftPath,
+        VizorDeepLink.paymentLinkPath,
+      ]) {
+        expect(
+          VizorDeepLink.routeFor(
+            Uri.parse('https://${VizorDeepLink.host}$path#v1=opaque'),
           ),
-        ),
-        VizorDeepLinkRoute.paymentLink,
-      );
+          VizorDeepLinkRoute.paymentLink,
+          reason: path,
+        );
+      }
       expect(
         VizorDeepLink.routeFor(
           Uri.parse('https://${VizorDeepLink.host}/unsupported'),

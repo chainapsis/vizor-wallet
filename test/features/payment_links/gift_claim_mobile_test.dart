@@ -381,6 +381,37 @@ void main() {
     );
   });
 
+  testWidgets(
+    'funding memo is revealed after checking without changing the incoming link',
+    (tester) async {
+      final container = await pumpWelcome(
+        tester,
+        clipboard: paymentLinkNavigationLink.toUri().toString(),
+      );
+      operations.fundingMessage = 'From the funding transaction';
+      await tester.tap(keyed('mobile_welcome_redeem_card'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Paste card link'));
+      await tester.pumpAndSettle();
+      final flow = container.read(giftClaimFlowProvider)!;
+      expect(flow.inspection!.message, 'From the funding transaction');
+      expect(flow.link.presentation?.message, isNull);
+      expect(
+        flow.link.hasSameCanonicalPayload(paymentLinkNavigationLink),
+        isTrue,
+      );
+      await tester.tap(
+        find.bySemanticsLabel(kPaymentLinkRevealMessageSemanticLabel),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('From the funding transaction'), findsOneWidget);
+      expect(
+        await container.read(paymentLinkReceivedStoreProvider).load(),
+        isEmpty,
+      );
+    },
+  );
+
   testWidgets('Redeem a card waits for an explicit clipboard paste', (
     tester,
   ) async {
@@ -1750,6 +1781,7 @@ class _GiftOperations extends PendingClaimPaymentLinkOperations {
   final claimedDestinations = <String>[];
   final retainedClaimAddresses = <String>[];
   bool waiting = false;
+  String? fundingMessage;
   bool bindFails = false;
   Completer<void>? bindGate;
   Completer<void>? inspectionGate;
@@ -1849,6 +1881,7 @@ class _GiftOperations extends PendingClaimPaymentLinkOperations {
         address: 'u1giftcard',
         createdAt: DateTime.utc(2026, 9, 1),
       ),
+      fundingMessage: fundingMessage,
       directory: Directory.systemTemp,
       dbPath: '/tmp/claim.db',
       accountUuid: 'claim-account',

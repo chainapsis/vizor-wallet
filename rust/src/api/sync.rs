@@ -203,7 +203,10 @@ pub fn is_sync_running() -> bool {
     SYNC_RUNNING.load(Ordering::SeqCst)
 }
 
-/// Runs an isolated scan for one short-lived payment-link claim database.
+/// Prepares one isolated payment-link claim database.
+///
+/// A funding txid or exact funding height selects direct preparation; otherwise
+/// history is scanned. Height discovery requires the funded amount, including fee reserve.
 ///
 /// Claim syncs do not use the main wallet's process-global running guard or
 /// desired mode. Different claim IDs can therefore scan independent databases
@@ -214,6 +217,9 @@ pub fn run_payment_link_claim_sync(
     lightwalletd_url: String,
     network: String,
     allow_resubmit: bool,
+    funding_txid: Option<String>,
+    funding_height: Option<u32>,
+    expected_funding_amount: Option<u64>,
 ) -> Result<(), String> {
     if claim_id.trim().is_empty() {
         return Err("Payment-link claim ID must not be empty".into());
@@ -235,13 +241,36 @@ pub fn run_payment_link_claim_sync(
     let result = catch(panic::AssertUnwindSafe(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
         let runtime = tokio::runtime::Runtime::new().map_err(|error| format!("tokio: {error}"))?;
-        runtime.block_on(sync_engine::run_payment_link_claim_sync(
-            &db_path,
-            &lightwalletd_url,
-            network,
-            cancel,
-            allow_resubmit,
-        ))
+        let locator = match sync_engine::direct_claim::FundingLocator::from_fields(
+            funding_txid.as_deref(),
+            funding_height,
+            expected_funding_amount,
+        ) {
+            Ok(locator) => locator,
+            Err(error) => {
+                sync_engine::direct_claim::clear(&db_path)?;
+                return Err(error);
+            }
+        };
+        if let Some(locator) = locator {
+            runtime.block_on(sync_engine::direct_claim::prepare(
+                &db_path,
+                &lightwalletd_url,
+                network,
+                locator,
+                cancel,
+                allow_resubmit,
+            ))
+        } else {
+            sync_engine::direct_claim::clear(&db_path)?;
+            runtime.block_on(sync_engine::run_payment_link_claim_sync(
+                &db_path,
+                &lightwalletd_url,
+                network,
+                cancel,
+                allow_resubmit,
+            ))
+        }
     }));
 
     PAYMENT_LINK_CLAIM_SYNCS
@@ -252,7 +281,7 @@ pub fn run_payment_link_claim_sync(
     result
 }
 
-/// Independent single-funding Gift Card preparation / post-submit observation.
+/// Progress for birthday discovery/observation or direct funding preparation.
 pub struct ApiGiftCardCheckProgress {
     pub phase: String,
     pub completed: u64,
@@ -271,6 +300,9 @@ pub fn run_payment_link_claim_check(
     fallback_urls: Vec<String>,
     network: String,
     allow_resubmit: bool,
+    funding_txid: Option<String>,
+    funding_height: Option<u32>,
+    expected_funding_amount: Option<u64>,
     sink: StreamSink<ApiGiftCardCheckProgress>,
 ) -> Result<(), String> {
     if claim_id.trim().is_empty() {
@@ -289,13 +321,25 @@ pub fn run_payment_link_claim_check(
     let result = catch(panic::AssertUnwindSafe(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
         let runtime = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
+        let locator = match sync_engine::direct_claim::FundingLocator::from_fields(
+            funding_txid.as_deref(),
+            funding_height,
+            expected_funding_amount,
+        ) {
+            Ok(locator) => locator,
+            Err(error) => {
+                sync_engine::direct_claim::clear(&db_path)?;
+                return Err(error);
+            }
+        };
         runtime.block_on(async {
             for attempt in 0..3 {
-                let result = sync_engine::gift_card_claim::run(
+                let result = sync_engine::gift_card_claim::check(
                     &db_path,
                     &lightwalletd_url,
                     &fallback_urls,
                     network,
+                    locator.as_ref(),
                     cancel.clone(),
                     allow_resubmit,
                     |phase, completed, total, state| {
@@ -1201,11 +1245,20 @@ pub struct ShieldTransparentPcztResult {
     pub needs_sapling_params: bool,
 }
 
-/// Pairs every card address with the same funding amount.
-fn payment_link_batch_pairs(addresses: Vec<String>, amount_zatoshi: u64) -> Vec<(String, u64)> {
-    addresses
+/// One card's destination and its optional, output-specific message.
+pub struct PaymentLinkBatchOutput {
+    pub address: String,
+    pub memo: Option<String>,
+}
+
+/// Pairs every card with the same funding amount, preserving output memos.
+fn payment_link_batch_pairs(
+    outputs: Vec<PaymentLinkBatchOutput>,
+    amount_zatoshi: u64,
+) -> Vec<(String, u64, Option<String>)> {
+    outputs
         .into_iter()
-        .map(|address| (address, amount_zatoshi))
+        .map(|output| (output.address, amount_zatoshi, output.memo))
         .collect()
 }
 
@@ -1214,7 +1267,7 @@ pub fn estimate_payment_link_batch_fee(
     db_path: String,
     network: String,
     account_uuid: String,
-    addresses: Vec<String>,
+    outputs: Vec<PaymentLinkBatchOutput>,
     amount_zatoshi: u64,
 ) -> Result<u64, String> {
     catch(|| {
@@ -1223,7 +1276,7 @@ pub fn estimate_payment_link_batch_fee(
             &db_path,
             network,
             &account_uuid,
-            &payment_link_batch_pairs(addresses, amount_zatoshi),
+            &payment_link_batch_pairs(outputs, amount_zatoshi),
         )
     })
 }
@@ -1234,7 +1287,7 @@ pub fn propose_payment_link_batch(
     network: String,
     account_uuid: String,
     send_flow_id: String,
-    addresses: Vec<String>,
+    outputs: Vec<PaymentLinkBatchOutput>,
     amount_zatoshi: u64,
 ) -> Result<ProposalResult, String> {
     catch(|| {
@@ -1244,7 +1297,7 @@ pub fn propose_payment_link_batch(
             network,
             &account_uuid,
             &send_flow_id,
-            &payment_link_batch_pairs(addresses, amount_zatoshi),
+            &payment_link_batch_pairs(outputs, amount_zatoshi),
         )
         .map(api_proposal_result)
     })
@@ -2660,6 +2713,33 @@ pub fn set_transaction_status(
 }
 
 // ======================== Transaction History ========================
+
+/// Optional message from the unique shielded output funding a Gift Card.
+/// Birthday claims recover missing metadata through the existing public/PIR
+/// routing. A private lookup failure never authorizes public fallback.
+pub fn get_payment_link_funding_message(
+    db_path: String,
+    lightwalletd_url: String,
+    network: String,
+    account_uuid: String,
+    expected_funding_amount: u64,
+    funding_txid: Option<String>,
+    funding_height: Option<u32>,
+) -> Result<Option<String>, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
+        rt.block_on(sync_engine::gift_message::read(
+            &db_path,
+            &lightwalletd_url,
+            network,
+            &account_uuid,
+            expected_funding_amount,
+            funding_txid.as_deref(),
+            funding_height,
+        ))
+    })
+}
 
 pub struct TransactionInfo {
     pub txid_hex: String,

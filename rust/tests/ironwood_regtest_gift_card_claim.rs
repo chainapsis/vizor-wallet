@@ -328,6 +328,9 @@ fn claim_sync(card: &Wallet) {
         lightwalletd_url(),
         NETWORK.into(),
         false,
+        None,
+        None,
+        None,
     )
     .expect("claim sync");
 }

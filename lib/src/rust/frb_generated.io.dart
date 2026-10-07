@@ -704,6 +704,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<NextStepView> dco_decode_list_next_step_view(dynamic raw);
 
   @protected
+  List<PaymentLinkBatchOutput> dco_decode_list_payment_link_batch_output(
+    dynamic raw,
+  );
+
+  @protected
   List<PirSnapshotEndpointDiagnosticView>
   dco_decode_list_pir_snapshot_endpoint_diagnostic_view(dynamic raw);
 
@@ -1044,6 +1049,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   OrchardMigrationPrivatePlan dco_decode_orchard_migration_private_plan(
     dynamic raw,
   );
+
+  @protected
+  PaymentLinkBatchOutput dco_decode_payment_link_batch_output(dynamic raw);
 
   @protected
   PaymentLinkSpendEvidence dco_decode_payment_link_spend_evidence(dynamic raw);
@@ -2169,6 +2177,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<PaymentLinkBatchOutput> sse_decode_list_payment_link_batch_output(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<PirSnapshotEndpointDiagnosticView>
   sse_decode_list_pir_snapshot_endpoint_diagnostic_view(
     SseDeserializer deserializer,
@@ -2587,6 +2600,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   OrchardMigrationPrivatePlan sse_decode_orchard_migration_private_plan(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  PaymentLinkBatchOutput sse_decode_payment_link_batch_output(
     SseDeserializer deserializer,
   );
 
@@ -3972,6 +3990,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_payment_link_batch_output(
+    List<PaymentLinkBatchOutput> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_pir_snapshot_endpoint_diagnostic_view(
     List<PirSnapshotEndpointDiagnosticView> self,
     SseSerializer serializer,
@@ -4466,6 +4490,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_orchard_migration_private_plan(
     OrchardMigrationPrivatePlan self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_payment_link_batch_output(
+    PaymentLinkBatchOutput self,
     SseSerializer serializer,
   );
 

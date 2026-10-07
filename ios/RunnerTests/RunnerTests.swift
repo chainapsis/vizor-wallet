@@ -153,13 +153,14 @@ class RunnerTests: XCTestCase {
     let bridge = IncomingUriChannelBridge.shared
     let host = IncomingUriChannelBridge.deeplinkHost
 
-    XCTAssertTrue(
-      bridge.handles(
-        URL(
-          string: "https://\(host)/payment-links/open#v1=test"
-        )!
+    for path in ["/gift", "/payment-links/open"] {
+      XCTAssertTrue(
+        bridge.handles(
+          URL(string: "https://\(host)\(path)#v1=test")!
+        ),
+        path
       )
-    )
+    }
     XCTAssertFalse(
       bridge.handles(URL(string: "vizor://payment-link?p=test")!)
     )

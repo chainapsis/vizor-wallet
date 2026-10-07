@@ -117,6 +117,24 @@ void main() {
       isNull,
     );
   });
+  test(
+    'funding memo normalization and output pairing preserve each card message',
+    () {
+      final first = _link(message: '  For Alice  ');
+      final second = _link(message: 'For Bob');
+      final outputs = paymentLinkFundingOutputs([first, second]);
+      expect(outputs.map((output) => output.memo), ['For Alice', 'For Bob']);
+      expect(outputs.map((output) => output.address), [
+        first.address,
+        second.address,
+      ]);
+      expect(paymentLinkFundingMemo(_link()), isNull);
+      expect(
+        () => paymentLinkFundingMemo(_link(message: 'hello\u0000')),
+        throwsFormatException,
+      );
+    },
+  );
 
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -614,6 +632,80 @@ void main() {
       },
     );
 
+    test(
+      'event preparation uses the txid path and preserves retry policy',
+      () async {
+        api.poolFixture = true;
+        final link = VizorPaymentLink.parse(
+          _eventLink().toShareUri().toString(),
+        );
+        final wallet = container.read(Provider(PaymentLinkClaimWallet.new));
+        await wallet.runClaimCheck(
+          link: link,
+          dbPath: 'event.db',
+          allowResubmit: true,
+        );
+        expect(api.directClaimTxids, [link.fundingTxid]);
+        expect(api.claimSyncModes, [true]);
+        expect(api.claimSyncCalls, 0);
+        await wallet.runClaimSync(link: _link(), dbPath: 'normal.db');
+        expect(api.claimSyncCalls, 1);
+      },
+    );
+
+    test(
+      'height preparation passes the funded amount and keeps its original locator',
+      () async {
+        api.poolFixture = true;
+        final base = _link();
+        final link = VizorPaymentLink(
+          network: base.network,
+          address: base.address,
+          amountZatoshi: base.amountZatoshi,
+          mnemonic: base.mnemonic,
+          birthdayHeight: base.birthdayHeight,
+          label: base.label,
+          createdAt: base.createdAt,
+          fundingHeight: 3500000,
+        );
+        final wallet = container.read(Provider(PaymentLinkClaimWallet.new));
+        await wallet.runClaimCheck(
+          link: link,
+          dbPath: 'height.db',
+          allowResubmit: true,
+        );
+        expect(api.directClaimTxids, isEmpty);
+        expect(api.directClaimHeights, [3500000]);
+        expect(api.directClaimAmounts, [
+          base.amountZatoshi + BigInt.from(10000),
+        ]);
+        expect(api.claimSyncModes, [true]);
+        final restored = VizorPaymentLink.parse(
+          link.toRecoveryUri().toString(),
+        );
+        expect(restored.fundingHeight, 3500000);
+        expect(
+          paymentLinkClaimWalletDirectoryName(restored),
+          paymentLinkClaimWalletDirectoryName(link),
+        );
+        expect(
+          paymentLinkClaimWalletDirectoryName(base),
+          isNot(paymentLinkClaimWalletDirectoryName(link)),
+        );
+      },
+    );
+
+    test('event wallets cannot reuse a legacy normal-card cache', () async {
+      final wallet = container.read(Provider(PaymentLinkClaimWallet.new));
+      final normal = await wallet.locate(_link());
+      await normal.directory.create(recursive: true);
+      await File(normal.dbPath).writeAsString('normal');
+      final event = await wallet.locate(_eventLink());
+      expect(event.dbPath, isNot(normal.dbPath));
+      expect(await File(event.dbPath).exists(), isFalse);
+      expect(await File(normal.dbPath).readAsString(), 'normal');
+    });
+
     for (final address in ['u1legacy', 'u1current', 'u1legacy-projection']) {
       test('completed receipt $address survives secret cleanup', () async {
         final link = _link().withResolvedMetadata(address: address);
@@ -892,6 +984,42 @@ void main() {
         expect(await store.find(link.address), isNull);
       },
     );
+
+    for (final invalidMessage in [false, true]) {
+      test(
+        'funding memo enriches inspection only and failure stays optional=$invalidMessage',
+        () async {
+          final link = _link();
+          api
+            ..poolFixture = true
+            ..emptyClaimWallet = true
+            ..claimHistory = []
+            ..fundingMessage = 'On-chain gift message'
+            ..fundingMessageFails = invalidMessage;
+          final wallet = container.read(Provider(PaymentLinkClaimWallet.new));
+          final location = await wallet.locate(link);
+          await location.directory.create(recursive: true);
+          await File(location.dbPath).writeAsString('claim DB fixture');
+          final inspection = await service.inspectClaim(
+            link,
+            allowLongSync: true,
+          );
+          expect(
+            inspection.message,
+            invalidMessage ? isNull : 'On-chain gift message',
+          );
+          expect(inspection.link.hasSameCanonicalPayload(link), isTrue);
+          expect(inspection.link.presentation?.message, isNull);
+          expect(api.fundingMessageLookups, 1);
+          expect(
+            await container
+                .read(paymentLinkReceivedStoreProvider)
+                .find(link.address),
+            isNull,
+          );
+        },
+      );
+    }
 
     for (final setupCard in [false, true]) {
       test(
@@ -1311,6 +1439,29 @@ void main() {
       },
     );
 
+    for (final fundingHeight in [null, 3500000]) {
+      test('direct submission refreshes the anchor before estimating a spend: '
+          '${fundingHeight == null ? 'txid' : 'height'}', () async {
+        api.poolFixture = true;
+        api.estimateGate = Completer<rust_sync.SendMaxEstimateResult>();
+        final link = _eventLink(fundingHeight: fundingHeight);
+        final failed = expectLater(
+          service.claimPreparedLink(_claimSession(link: link)),
+          throwsStateError,
+        );
+        await api.estimateStarted.future;
+        expect(api.directClaimTxids, [?link.fundingTxid]);
+        expect(api.directClaimHeights, [?fundingHeight]);
+        expect(api.directClaimAmounts, [
+          if (fundingHeight != null) link.amountZatoshi + BigInt.from(10000),
+        ]);
+        expect(api.claimSyncModes, [false]);
+        expect(api.claimSyncCalls, 0);
+        api.estimateGate!.completeError(StateError('preparation failed'));
+        await failed;
+      });
+    }
+
     for (final price in [200.0, null, 0.0, double.nan, -1.0, double.infinity]) {
       test('claim persists fresh fiat or enclosed fallback: $price', () async {
         container.listen(zecHomeMarketDataStateProvider, (_, _) {});
@@ -1447,6 +1598,7 @@ void main() {
       'retained receipt recovery refreshes a persisted provisional date',
       () async {
         api.poolFixture = true;
+        api.fundingMessage = 'Recovered after submission';
         api.localClaimTxids = ['pending'];
         final link = _link().withResolvedMetadata(isCreatedAtProvisional: true);
         api.claimHistory = [
@@ -1488,6 +1640,18 @@ void main() {
         expect(
           after.createdAt,
           DateTime.fromMillisecondsSinceEpoch(1800000000000, isUtc: true),
+        );
+        expect(after.message, 'Recovered after submission');
+        expect(api.fundingMessageLookups, 1);
+        api.fundingMessage = 'Must not overwrite';
+        await service.inspectReceivedLinkClaims(
+          await store.load(),
+          allowResubmit: false,
+        );
+        expect(api.fundingMessageLookups, 1);
+        expect(
+          (await store.load()).single.message,
+          'Recovered after submission',
         );
         expect(after.isCreatedAtProvisional, isFalse);
         expect(after.claimLink!.isCreatedAtProvisional, isFalse);
@@ -2822,6 +2986,38 @@ void main() {
     expect(sameLinkName, isNot(contains('abandon')));
   });
 
+  test(
+    'event cache identity uses the funding transaction without a birthday',
+    () {
+      final normal = _link();
+      final event = _eventLink();
+      expect(
+        paymentLinkClaimWalletDirectoryName(event),
+        isNot(paymentLinkClaimWalletDirectoryName(normal)),
+      );
+      expect(
+        paymentLinkClaimWalletDirectoryName(_eventLink(fundingTxid: 'bb' * 32)),
+        isNot(paymentLinkClaimWalletDirectoryName(event)),
+      );
+      expect(
+        paymentLinkClaimWalletDirectoryName(
+          event.withResolvedMetadata(address: 'u1other'),
+        ),
+        paymentLinkClaimWalletDirectoryName(event),
+      );
+      expect(
+        paymentLinkClaimWalletDirectoryName(_eventLink(birthdayHeight: 1)),
+        paymentLinkClaimWalletDirectoryName(event),
+      );
+      expect(
+        paymentLinkClaimWalletDirectoryName(
+          VizorPaymentLink.parse(event.toRecoveryUri().toString()),
+        ),
+        paymentLinkClaimWalletDirectoryName(event),
+      );
+    },
+  );
+
   test('claim wallet directory name carries the link network', () {
     final mainName = paymentLinkClaimWalletDirectoryName(_link());
     final regtestName = paymentLinkClaimWalletDirectoryName(
@@ -2983,8 +3179,8 @@ class _UnlockedSecurityNotifier extends AppSecurityNotifier {
       const AppSecurityState(isPasswordConfigured: true, isUnlocked: true);
 }
 
-PaymentLinkClaimSession _claimSession() {
-  final link = _link();
+PaymentLinkClaimSession _claimSession({VizorPaymentLink? link}) {
+  link ??= _link();
   return PaymentLinkClaimSession(
     link: link,
     destinationAddress: 'u1receiver',
@@ -3061,12 +3257,32 @@ const _legacyClaimDirectory =
     'payment_link_claim_main_'
     'df3533c3dc54740770e230053a1f1962724f8653ec41b84e4d53164d46733494';
 
-VizorPaymentLink _link() {
+VizorPaymentLink _eventLink({
+  String? fundingTxid,
+  int? birthdayHeight,
+  int? fundingHeight,
+}) {
+  final link = _link();
+  return VizorPaymentLink(
+    network: link.network,
+    address: link.address,
+    amountZatoshi: link.amountZatoshi,
+    mnemonic: link.mnemonic,
+    birthdayHeight: birthdayHeight ?? link.birthdayHeight,
+    label: link.label,
+    createdAt: link.createdAt,
+    fundingTxid: fundingHeight == null ? fundingTxid ?? 'aa' * 32 : null,
+    fundingHeight: fundingHeight,
+  );
+}
+
+VizorPaymentLink _link({String? message}) {
   return VizorPaymentLink(
     network: 'main',
     address: 'u1paymentlinkaddress',
-    presentation: const PaymentLinkPresentation(
-      fiatSnapshot: PaymentLinkFiatSnapshot(amount: 0.1),
+    presentation: PaymentLinkPresentation(
+      message: message,
+      fiatSnapshot: const PaymentLinkFiatSnapshot(amount: 0.1),
     ),
     amountZatoshi: BigInt.from(100000),
     mnemonic:
@@ -3105,6 +3321,35 @@ rust_sync.TransactionInfo _transaction({
 class _DestinationValidated implements Exception {}
 
 class _ClaimDestinationRustApi implements RustLibApi {
+  String? fundingMessage;
+  int fundingMessageLookups = 0;
+  bool fundingMessageFails = false;
+  @override
+  Future<String?> crateApiSyncGetPaymentLinkFundingMessage({
+    required String dbPath,
+    required String lightwalletdUrl,
+    required String network,
+    required String accountUuid,
+    required BigInt expectedFundingAmount,
+    String? fundingTxid,
+    int? fundingHeight,
+  }) async {
+    fundingMessageLookups++;
+    if (fundingMessageFails) throw StateError('Optional metadata unavailable');
+    return fundingMessage;
+  }
+
+  @override
+  Uint8List crateApiWalletGiftMnemonicToEntropy({required String mnemonic}) =>
+      Uint8List(16);
+
+  @override
+  String crateApiWalletGiftMnemonicFromEntropy({required List<int> entropy}) =>
+      _link().mnemonic;
+
+  final directClaimTxids = <String>[];
+  final directClaimHeights = <int>[];
+  final directClaimAmounts = <BigInt>[];
   final requestedAccounts = <String>[];
   final validatedAddresses = <String>[];
   var lookupStarted = Completer<void>();
@@ -3240,8 +3485,21 @@ class _ClaimDestinationRustApi implements RustLibApi {
     required String lightwalletdUrl,
     required List<String> fallbackUrls,
     required String network,
+    String? fundingTxid,
+    int? fundingHeight,
+    BigInt? expectedFundingAmount,
   }) async* {
     claimCheckCalls++;
+    if (fundingTxid != null || fundingHeight != null) {
+      if (fundingTxid != null) {
+        directClaimTxids.add(fundingTxid);
+      } else {
+        directClaimHeights.add(fundingHeight!);
+        directClaimAmounts.add(expectedFundingAmount!);
+      }
+      claimSyncModes.add(allowResubmit);
+      claimSyncDbPaths.add(dbPath);
+    }
     if (!syncStarted.isCompleted) syncStarted.complete();
     await syncGate?.future;
     yield rust_sync.ApiGiftCardCheckProgress(
@@ -3263,9 +3521,19 @@ class _ClaimDestinationRustApi implements RustLibApi {
     required String dbPath,
     required String lightwalletdUrl,
     required String network,
+    String? fundingTxid,
+    int? fundingHeight,
+    BigInt? expectedFundingAmount,
   }) async {
     if (!poolFixture) throw StateError('Unexpected claim sync');
-    claimSyncCalls++;
+    if (fundingTxid != null) {
+      directClaimTxids.add(fundingTxid);
+    } else if (fundingHeight != null) {
+      directClaimHeights.add(fundingHeight);
+      directClaimAmounts.add(expectedFundingAmount!);
+    } else {
+      claimSyncCalls++;
+    }
     claimSyncModes.add(allowResubmit);
     claimSyncDbPaths.add(dbPath);
     if (!syncStarted.isCompleted) syncStarted.complete();
@@ -3329,6 +3597,12 @@ class _ClaimDestinationRustApi implements RustLibApi {
   }) async {}
 
   void reset() {
+    fundingMessage = null;
+    fundingMessageLookups = 0;
+    fundingMessageFails = false;
+    directClaimTxids.clear();
+    directClaimHeights.clear();
+    directClaimAmounts.clear();
     requestedAccounts.clear();
     cancelledClaimSyncs.clear();
     validatedAddresses.clear();

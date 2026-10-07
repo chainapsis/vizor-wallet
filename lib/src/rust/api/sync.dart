@@ -67,7 +67,10 @@ bool isSyncCancelRequested() =>
 /// Check if a sync is currently running.
 bool isSyncRunning() => RustLib.instance.api.crateApiSyncIsSyncRunning();
 
-/// Runs an isolated scan for one short-lived payment-link claim database.
+/// Prepares one isolated payment-link claim database.
+///
+/// A funding txid or exact funding height selects direct preparation; otherwise
+/// history is scanned. Height discovery requires the funded amount, including fee reserve.
 ///
 /// Claim syncs do not use the main wallet's process-global running guard or
 /// desired mode. Different claim IDs can therefore scan independent databases
@@ -78,12 +81,18 @@ Future<void> runPaymentLinkClaimSync({
   required String lightwalletdUrl,
   required String network,
   required bool allowResubmit,
+  String? fundingTxid,
+  int? fundingHeight,
+  BigInt? expectedFundingAmount,
 }) => RustLib.instance.api.crateApiSyncRunPaymentLinkClaimSync(
   claimId: claimId,
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
   network: network,
   allowResubmit: allowResubmit,
+  fundingTxid: fundingTxid,
+  fundingHeight: fundingHeight,
+  expectedFundingAmount: expectedFundingAmount,
 );
 
 Stream<ApiGiftCardCheckProgress> runPaymentLinkClaimCheck({
@@ -93,6 +102,9 @@ Stream<ApiGiftCardCheckProgress> runPaymentLinkClaimCheck({
   required List<String> fallbackUrls,
   required String network,
   required bool allowResubmit,
+  String? fundingTxid,
+  int? fundingHeight,
+  BigInt? expectedFundingAmount,
 }) => RustLib.instance.api.crateApiSyncRunPaymentLinkClaimCheck(
   claimId: claimId,
   dbPath: dbPath,
@@ -100,6 +112,9 @@ Stream<ApiGiftCardCheckProgress> runPaymentLinkClaimCheck({
   fallbackUrls: fallbackUrls,
   network: network,
   allowResubmit: allowResubmit,
+  fundingTxid: fundingTxid,
+  fundingHeight: fundingHeight,
+  expectedFundingAmount: expectedFundingAmount,
 );
 
 /// None identifies a retained claim from a version using ordinary wallet sync.
@@ -281,13 +296,13 @@ Future<BigInt> estimatePaymentLinkBatchFee({
   required String dbPath,
   required String network,
   required String accountUuid,
-  required List<String> addresses,
+  required List<PaymentLinkBatchOutput> outputs,
   required BigInt amountZatoshi,
 }) => RustLib.instance.api.crateApiSyncEstimatePaymentLinkBatchFee(
   dbPath: dbPath,
   network: network,
   accountUuid: accountUuid,
-  addresses: addresses,
+  outputs: outputs,
   amountZatoshi: amountZatoshi,
 );
 
@@ -297,14 +312,14 @@ Future<ProposalResult> proposePaymentLinkBatch({
   required String network,
   required String accountUuid,
   required String sendFlowId,
-  required List<String> addresses,
+  required List<PaymentLinkBatchOutput> outputs,
   required BigInt amountZatoshi,
 }) => RustLib.instance.api.crateApiSyncProposePaymentLinkBatch(
   dbPath: dbPath,
   network: network,
   accountUuid: accountUuid,
   sendFlowId: sendFlowId,
-  addresses: addresses,
+  outputs: outputs,
   amountZatoshi: amountZatoshi,
 );
 
@@ -967,6 +982,27 @@ Future<void> setTransactionStatus({
   status: status,
 );
 
+/// Optional message from the unique shielded output funding a Gift Card.
+/// Birthday claims recover missing metadata through the existing public/PIR
+/// routing. A private lookup failure never authorizes public fallback.
+Future<String?> getPaymentLinkFundingMessage({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required String accountUuid,
+  required BigInt expectedFundingAmount,
+  String? fundingTxid,
+  int? fundingHeight,
+}) => RustLib.instance.api.crateApiSyncGetPaymentLinkFundingMessage(
+  dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
+  network: network,
+  accountUuid: accountUuid,
+  expectedFundingAmount: expectedFundingAmount,
+  fundingTxid: fundingTxid,
+  fundingHeight: fundingHeight,
+);
+
 Future<List<TransactionInfo>> getTransactionHistory({
   required String dbPath,
   required String network,
@@ -1281,7 +1317,7 @@ class AddressValidationResult {
           wrongNetwork == other.wrongNetwork;
 }
 
-/// Independent single-funding Gift Card preparation / post-submit observation.
+/// Progress for birthday discovery/observation or direct funding preparation.
 class ApiGiftCardCheckProgress {
   final String phase;
   final BigInt completed;
@@ -2441,6 +2477,25 @@ class OrchardMigrationPrivatePlan {
           proofReadinessDelayBlocks == other.proofReadinessDelayBlocks &&
           estimatedProofReadyHeight == other.estimatedProofReadyHeight &&
           scheduledTransfers == other.scheduledTransfers;
+}
+
+/// One card's destination and its optional, output-specific message.
+class PaymentLinkBatchOutput {
+  final String address;
+  final String? memo;
+
+  const PaymentLinkBatchOutput({required this.address, this.memo});
+
+  @override
+  int get hashCode => address.hashCode ^ memo.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PaymentLinkBatchOutput &&
+          runtimeType == other.runtimeType &&
+          address == other.address &&
+          memo == other.memo;
 }
 
 /// Positive, scanned evidence for a Gift Card's shielded inputs. This reads

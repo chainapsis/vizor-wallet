@@ -48,12 +48,14 @@ use {
 mod address_history;
 mod block_source;
 mod claim_roots;
+pub(crate) mod direct_claim;
 pub(crate) mod enhancement;
 mod ephemeral_checks;
 #[cfg(test)]
 mod ephemeral_checks_tests;
 mod error;
 pub(crate) mod gift_card_claim;
+pub(crate) mod gift_message;
 pub(crate) mod ledger_discovery;
 mod lwd;
 pub(crate) mod mempool;

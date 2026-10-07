@@ -93,20 +93,47 @@ void main() {
       await supportDirectory.delete(recursive: true);
     });
 
-    test(
-      'background pause rejects late native progress and drains completion',
-      () async {
-        api.checkGate = Completer<void>();
-        final checking = service.inspectClaim(_link());
-        final failure = expectLater(checking, throwsStateError);
-        await api.checkStarted.future;
-        container.read(paymentLinkClaimCoordinatorProvider).pauseForLifecycle();
-        api.checkGate!.complete();
-        await failure;
-        expect(container.read(giftCardCheckProgressProvider), isEmpty);
-        expect(api.cancelCalls, greaterThan(0));
-      },
-    );
+    for (final locator in PaymentLinkLocatorKind.values) {
+      test(
+        '$locator background pause rejects late native progress and drains completion',
+        () async {
+          api.checkGate = Completer<void>();
+          final checking = service.inspectClaim(_link(locator: locator));
+          final failure = expectLater(checking, throwsStateError);
+          await api.checkStarted.future;
+          container
+              .read(paymentLinkClaimCoordinatorProvider)
+              .pauseForLifecycle();
+          api.checkGate!.complete();
+          await failure;
+          expect(container.read(giftCardCheckProgressProvider), isEmpty);
+          expect(api.cancelCalls, greaterThan(0));
+        },
+      );
+    }
+
+    for (final locator in PaymentLinkLocatorKind.values) {
+      test('$locator inspection preserves its funding locator', () async {
+        final link = _link(locator: locator);
+        final inspection = await service.inspectClaim(link);
+        expect(
+          api.directClaimTxids,
+          link.fundingTxid == null ? isEmpty : [link.fundingTxid],
+        );
+        expect(
+          api.directClaimHeights,
+          link.fundingHeight == null ? isEmpty : [link.fundingHeight],
+        );
+        expect(
+          api.directClaimAmounts,
+          link.fundingHeight == null
+              ? isEmpty
+              : [paymentLinkFundingAmountZatoshi(link.amountZatoshi)],
+        );
+        expect(inspection.claimableZatoshi, link.amountZatoshi);
+        expect(receivedStorage.value, isNull);
+      });
+    }
 
     for (final stage in ['tip', 'storage', 'import']) {
       for (final resumeBeforeCompletion in [false, true]) {
@@ -225,6 +252,37 @@ void main() {
           isFalse,
         );
         expect(receivedStorage.value, isNull);
+      },
+    );
+
+    test(
+      'event inspection imports at activation without a supplied birthday or long scan',
+      () async {
+        final ordinary = _link();
+        final link = VizorPaymentLink(
+          network: ordinary.network,
+          address: ordinary.address,
+          amountZatoshi: ordinary.amountZatoshi,
+          mnemonic: ordinary.mnemonic,
+          birthdayHeight: api.tipHeight + 1,
+          label: ordinary.label,
+          createdAt: ordinary.createdAt,
+          fundingTxid: 'aa' * 32,
+        );
+        final inspection = await service.inspectClaim(link);
+        expect(
+          api.importedBirthday,
+          BigInt.from(ZcashNetwork.mainnet.saplingActivationHeight),
+        );
+        expect(api.directClaimTxids, [link.fundingTxid]);
+        expect(inspection.claimableZatoshi, ordinary.amountZatoshi);
+        expect(api.importCalls, 1);
+
+        // Restoring the local envelope preserves the same imported wallet.
+        await service.inspectClaim(
+          VizorPaymentLink.parse(link.toRecoveryUri().toString()),
+        );
+        expect(api.importCalls, 1);
       },
     );
 
@@ -681,7 +739,9 @@ void main() {
   });
 }
 
-VizorPaymentLink _link() {
+VizorPaymentLink _link({
+  PaymentLinkLocatorKind locator = PaymentLinkLocatorKind.birthday,
+}) {
   return VizorPaymentLink(
     network: 'main',
     address: 'u1paymentlinkaddress',
@@ -689,6 +749,12 @@ VizorPaymentLink _link() {
     mnemonic:
         'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
     birthdayHeight: 3_456_789,
+    fundingHeight: locator == PaymentLinkLocatorKind.fundingHeight
+        ? 3_456_789
+        : null,
+    fundingTxid: locator == PaymentLinkLocatorKind.fundingTxid
+        ? 'aa' * 32
+        : null,
     label: 'Payment link',
     createdAt: DateTime.utc(2026, 8, 5, 12),
   );
@@ -805,6 +871,10 @@ class _InspectRustApi implements RustLibApi {
   int? fundingHeight;
   int? checkedTip;
   String? importedDbPath;
+  BigInt? importedBirthday;
+  final directClaimTxids = <String>[];
+  final directClaimHeights = <int>[];
+  final directClaimAmounts = <BigInt>[];
   Completer<String>? lookupGate;
   Completer<void> lookupStarted = Completer<void>();
 
@@ -830,6 +900,10 @@ class _InspectRustApi implements RustLibApi {
     fundingHeight = null;
     checkedTip = null;
     importedDbPath = null;
+    importedBirthday = null;
+    directClaimTxids.clear();
+    directClaimHeights.clear();
+    directClaimAmounts.clear();
     lookupGate = null;
     lookupStarted = Completer<void>();
   }
@@ -845,6 +919,7 @@ class _InspectRustApi implements RustLibApi {
   }) async {
     importCalls++;
     importedDbPath = dbPath;
+    importedBirthday = birthdayHeight;
     await File(dbPath).writeAsString('claim wallet fixture');
     if (!importStarted.isCompleted) importStarted.complete();
     await importGate?.future;
@@ -870,8 +945,16 @@ class _InspectRustApi implements RustLibApi {
     required String lightwalletdUrl,
     required List<String> fallbackUrls,
     required String network,
+    String? fundingTxid,
+    int? fundingHeight,
+    BigInt? expectedFundingAmount,
   }) async* {
     syncCalls++;
+    if (fundingTxid != null) directClaimTxids.add(fundingTxid);
+    if (fundingHeight != null) {
+      directClaimHeights.add(fundingHeight);
+      directClaimAmounts.add(expectedFundingAmount!);
+    }
     checkUrls.add(lightwalletdUrl);
     if (!checkStarted.isCompleted) checkStarted.complete();
     await checkGate?.future;
@@ -884,7 +967,9 @@ class _InspectRustApi implements RustLibApi {
       phase: 'complete',
       completed: BigInt.one,
       total: BigInt.one,
-      fundingHeight: total > BigInt.zero ? (fundingHeight ?? tipHeight - 1) : 0,
+      fundingHeight: total > BigInt.zero
+          ? (this.fundingHeight ?? fundingHeight ?? tipHeight - 1)
+          : 0,
       checkedHeight: checkedTip ?? tipHeight,
       totalZatoshi: total,
       unspentZatoshi: total,

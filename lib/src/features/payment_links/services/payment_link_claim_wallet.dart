@@ -10,17 +10,23 @@
 part of 'payment_link_service.dart';
 
 /// Claim databases are cached by the fields that determine the recovered
-/// account and its scan range. Share-payload fields such as amount, label,
+/// account and its scan range or funding locator. Height discovery also binds
+/// the expected amount. Other share-payload fields such as label,
 /// address, timestamp, and presentation deliberately do not participate, so a
 /// corrected payload can reuse already-scanned state.
 ///
 /// The network is also kept outside the hash, as a readable name segment, so a
 /// cleanup sweep can scope itself to one network.
 String paymentLinkClaimWalletDirectoryName(VizorPaymentLink link) {
+  final recovery = switch (link.locatorKind) {
+    PaymentLinkLocatorKind.birthday => '${link.birthdayHeight}',
+    PaymentLinkLocatorKind.fundingHeight =>
+      'height:${link.fundingHeight}:${link.amountZatoshi}',
+    PaymentLinkLocatorKind.fundingTxid =>
+      'direct:${VizorPaymentLink.validateFundingTxid(link.fundingTxid)}',
+  };
   final identity = sha256
-      .convert(
-        utf8.encode('${link.network}:${link.mnemonic}:${link.birthdayHeight}'),
-      )
+      .convert(utf8.encode('${link.network}:${link.mnemonic}:$recovery'))
       .toString();
   return paymentLinkClaimWalletDirectoryNameFor(
     network: link.network.trim(),
@@ -118,6 +124,11 @@ class PaymentLinkClaimWallet {
                         .toList(),
                 network: link.network,
                 allowResubmit: allowResubmit,
+                fundingTxid: link.fundingTxid,
+                fundingHeight: link.fundingHeight,
+                expectedFundingAmount: link.fundingHeight == null
+                    ? null
+                    : paymentLinkFundingAmountZatoshi(link.amountZatoshi),
               )) {
                 if (epoch != _checkCancellationEpoch ||
                     _ref.read(appSecurityProvider).requiresUnlock ||
@@ -221,7 +232,7 @@ class PaymentLinkClaimWallet {
     final future = _runClaimSyncOnce(
       claimId: claimId,
       dbPath: dbPath,
-      network: link.network,
+      link: link,
       allowResubmit: allowResubmit,
     );
     _claimSyncs[claimId] = future;
@@ -235,7 +246,7 @@ class PaymentLinkClaimWallet {
   Future<void> _runClaimSyncOnce({
     required String claimId,
     required String dbPath,
-    required String network,
+    required VizorPaymentLink link,
     required bool allowResubmit,
   }) {
     return _ref
@@ -243,9 +254,9 @@ class PaymentLinkClaimWallet {
         .runWithEndpointFallback<void>(
           operation: 'Gift Card claim sync',
           action: (endpoint) {
-            if (endpoint.networkName != network) {
+            if (endpoint.networkName != link.network) {
               throw StateError(
-                'Payment link is for $network, but this wallet is using '
+                'Payment link is for ${link.network}, but this wallet is using '
                 '${endpoint.networkName}.',
               );
             }
@@ -253,11 +264,48 @@ class PaymentLinkClaimWallet {
               claimId: claimId,
               dbPath: dbPath,
               lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-              network: network,
+              network: link.network,
               allowResubmit: allowResubmit,
+              fundingTxid: link.fundingTxid,
+              fundingHeight: link.fundingHeight,
+              expectedFundingAmount: link.fundingHeight == null
+                  ? null
+                  : paymentLinkFundingAmountZatoshi(link.amountZatoshi),
             );
           },
         );
+  }
+
+  /// Display metadata is optional and follows the current endpoint after sync
+  /// failover. Settings changes drain this read before changing query policy.
+  Future<String?> readFundingMessage({
+    required VizorPaymentLink link,
+    required String dbPath,
+    required String accountUuid,
+  }) async {
+    try {
+      return await _ref.read(syncProvider.notifier).runRecoveryQuery(() async {
+        final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
+        if (endpoint.networkName != link.network) return null;
+        final message = await rust_sync.getPaymentLinkFundingMessage(
+          dbPath: dbPath,
+          lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+          network: link.network,
+          accountUuid: accountUuid,
+          expectedFundingAmount: paymentLinkFundingAmountZatoshi(
+            link.amountZatoshi,
+          ),
+          fundingTxid: link.fundingTxid,
+          fundingHeight: link.fundingHeight,
+        );
+        return PaymentLinkPresentation.fromPayload({
+          'message': message,
+        })?.message;
+      });
+    } catch (_) {
+      log('PaymentLinkClaim: funding message unavailable');
+      return null;
+    }
   }
 
   Future<PaymentLinkAvailability?> syncRetained({
@@ -278,7 +326,7 @@ class PaymentLinkClaimWallet {
       dbPath: tempWallet.dbPath,
       claimTxids: claimTxids,
     );
-    if (fastConfirmations != null) {
+    if (link.isDirectClaim || fastConfirmations != null) {
       await runClaimCheck(
         link: link,
         dbPath: tempWallet.dbPath,
@@ -301,6 +349,18 @@ class PaymentLinkClaimWallet {
         'Gift Card identity; leaving it recoverable from the stored link',
       );
       return null;
+    }
+    if (record.message == null) {
+      final message = await readFundingMessage(
+        link: link,
+        dbPath: tempWallet.dbPath,
+        accountUuid: accounts.single.uuid,
+      );
+      if (message != null) {
+        await _ref
+            .read(paymentLinkReceivedStoreProvider)
+            .fillFundingMessage(address: record.address, message: message);
+      }
     }
     final transactions = await rust_sync.getTransactionHistory(
       dbPath: tempWallet.dbPath,
@@ -373,7 +433,7 @@ class PaymentLinkClaimWallet {
     if (accountUuid == null) {
       final imported = await importClaimAccount(
         link: link,
-        birthdayHeight: link.birthdayHeight,
+        birthdayHeight: link.claimBirthdayHeight,
         dbPath: tempWallet.dbPath,
         network: link.network,
       );
@@ -417,7 +477,7 @@ class PaymentLinkClaimWallet {
     // Prefer it even if a newer cache also exists: a rescan of that cache cannot
     // replace the original attempt's locally recorded transaction evidence.
     final legacyAddress = link.knownAddress;
-    if (legacyAddress != null) {
+    if (!link.isDirectClaim && legacyAddress != null) {
       final legacyIdentity = sha256.convert(
         utf8.encode(
           '${link.network}:$legacyAddress:${link.mnemonic}:'

@@ -7,6 +7,71 @@ import 'package:zcash_wallet/src/features/payment_links/services/payment_link_li
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 
 void main() {
+  test('late funding message fills only missing display data', () async {
+    final storage = _FakePaymentLinkReceivedStorage();
+    final store = PaymentLinkReceivedStore(storage);
+    final link = _link(message: null);
+    await store.saveReady(link);
+    await store.markClaimStarted(
+      address: link.address,
+      destinationAccountUuid: 'receiver',
+    );
+    await store.markReceiving(
+      address: link.address,
+      destinationAccountUuid: 'receiver',
+      claimTxids: 'pending',
+    );
+    final before = (await store.load()).single;
+    await store.fillFundingMessage(
+      address: link.address,
+      message: '  From Alice  ',
+    );
+    final after = (await PaymentLinkReceivedStore(storage).load()).single;
+    expect(after.message, 'From Alice');
+    expect(after.status, before.status);
+    expect(after.updatedAt, before.updatedAt);
+    expect(after.claimSubmittedAt, before.claimSubmittedAt);
+    expect(after.claimTxids, before.claimTxids);
+    expect(after.claimLink!.hasSameCanonicalPayload(link), isTrue);
+    await store.fillFundingMessage(
+      address: link.address,
+      message: 'Another transaction',
+    );
+    expect((await store.load()).single.message, 'From Alice');
+    await store.remove(link.address);
+    await store.fillFundingMessage(
+      address: link.address,
+      message: 'Must not recreate',
+    );
+    expect(await store.load(), isEmpty);
+  });
+
+  test(
+    'funding message survives intake and receipt without changing link identity',
+    () async {
+      final storage = _FakePaymentLinkReceivedStorage();
+      var store = PaymentLinkReceivedStore(storage);
+      final link = _link(message: null);
+      await store.saveReady(link, fundingMessage: 'From the funding output');
+      store = PaymentLinkReceivedStore(storage);
+      final saved = await store.saveReady(link, fundingMessage: 'Later top-up');
+      expect(saved.message, 'From the funding output');
+      expect(saved.claimLink!.hasSameCanonicalPayload(link), isTrue);
+      expect(link.presentation?.message, isNull);
+      await store.markClaimStarted(
+        address: link.address,
+        destinationAccountUuid: 'receiver',
+      );
+      await store.markReceiving(
+        address: link.address,
+        destinationAccountUuid: 'receiver',
+        claimTxids: 'pending',
+      );
+      await store.markReceived(address: link.address);
+      expect((await store.load()).single.message, 'From the funding output');
+    },
+  );
+
   test(
     'provisional date survives restart and lifecycle, enrichment preserves claim metadata',
     () async {
@@ -903,6 +968,7 @@ void main() {
 VizorPaymentLink _link({
   String address = 'u1paymentlinkaddress',
   double? fiatAmount = 142.23,
+  String? message = 'Enjoy your gift!',
 }) {
   return VizorPaymentLink(
     network: 'main',
@@ -918,7 +984,7 @@ VizorPaymentLink _link({
       fiatSnapshot: fiatAmount == null
           ? null
           : PaymentLinkFiatSnapshot(amount: fiatAmount),
-      message: 'Enjoy your gift!',
+      message: message,
     ),
   );
 }

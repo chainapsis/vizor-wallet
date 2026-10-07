@@ -692,13 +692,27 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     _outcomeAvailability = availability;
   }
 
-  void _rememberReceivedLink(VizorPaymentLink link) {
+  void _rememberReceivedLink(VizorPaymentLink link, {String? fundingMessage}) {
     final existingIndex = _receivedCards.indexWhere(
       (record) => record.address == link.address,
     );
-    if (existingIndex >= 0) return;
+    if (existingIndex >= 0) {
+      if (_receivedCards[existingIndex].message == null &&
+          fundingMessage != null) {
+        _receivedCards = [
+          for (final record in _receivedCards)
+            if (record.address == link.address)
+              record.copyWith(message: fundingMessage)
+            else
+              record,
+        ];
+      }
+      return;
+    }
     _receivedCards = [
-      PaymentLinkReceivedRecord.fromLink(link),
+      PaymentLinkReceivedRecord.fromLink(
+        link,
+      ).copyWith(message: link.presentation?.message ?? fundingMessage),
       ..._receivedCards,
     ];
   }
@@ -2221,7 +2235,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
         .submit(session);
     setState(() {
       _receivedShowsBack = false;
-      _rememberReceivedLink(link);
+      _rememberReceivedLink(link, fundingMessage: session.fundingMessage);
       _setReceivedCardStatus(link.address, PaymentLinkReceivedStatus.receiving);
       _activeCardsTab = PaymentLinkCardsTab.received;
       // The coordinator owns the session once submission starts. Keep only
@@ -2447,6 +2461,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
         fundingProgressByAddress: _fundingProgressByAddress,
         readyShowsBack: _readyShowsBack,
         receivedLink: _receivedLink,
+        receivedMessage: _receivedCardMessage,
         receivedFiatText: _savedCardFiatText(_receivedLink),
         receivedShowsBack: _receivedShowsBack,
         receivedClaimSession: _receivedClaimSession,
@@ -3524,13 +3539,21 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     return swapFormatCompactFiatValue(snapshot.amount);
   }
 
+  String? get _receivedCardMessage =>
+      _receivedLink?.presentation?.message ??
+      _receivedCards
+          .where((record) => record.address == _receivedLink?.address)
+          .firstOrNull
+          ?.message ??
+      _receivedClaimSession?.fundingMessage;
+
   Widget _buildReceived() {
     final link = _receivedLink;
     if (link == null) return _buildHome();
     final artwork = PaymentLinkCardArtwork.fromProtocolId(
       link.presentation?.artworkId,
     );
-    final message = link.presentation?.message ?? '';
+    final message = _receivedCardMessage ?? '';
     final hasMessage = message.isNotEmpty;
     final front = PaymentLinkGiftCard(
       artwork: artwork,

@@ -37,6 +37,9 @@ pub fn sync_gift_card_observers(
         lightwalletd_url,
         network,
         false,
+        None,
+        None,
+        None,
     )
 }
 
