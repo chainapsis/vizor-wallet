@@ -779,6 +779,15 @@ there is no separate release gate.
 
 ## Library dependency
 
+**Draft pin on the history-fixes branch.** This branch pins wallet-libraries
+`a88dff6067e4f4ec07625b9bcb1447b2779fa388` on `claude/tpir-history-fixes-libs`:
+main `a3dee2ab5` with the open draft PRs #91 and #92 (spends by transactions the
+wallet has not seen, and public UTXO absences scoped to public authority) and
+#90 (sole-funder attribution, `TransactionFunding`) merged in. Unlike the base
+pin it adds two wallet migrations, `transparent_utxo_absences` and
+`funding_attribution`. Repin to `main` once those PRs merge. The rest of this
+section describes the base pin.
+
 The four patched library crates and the `zakura-pir-transparent` adapter share
 one wallet-libraries revision, `bdebaffcb5d52138c702fde6c78bd079293ebb3d`:
 merged `main` after #97–#103, which carry every library change this branch
