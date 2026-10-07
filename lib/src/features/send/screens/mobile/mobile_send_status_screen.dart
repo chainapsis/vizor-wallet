@@ -60,7 +60,10 @@ class _MobileSendStatusScreenState
   /// The running broadcast; a receipt left while still `sending` hands its
   /// completion to the terminal flag instead of a release of its own.
   Future<SendBroadcastOutcome>? _broadcast;
+  bool _canRetryBroadcast = false;
+  KeystoneBroadcastArgs? _keystoneRecovery;
   String? _statusMessage;
+  String? _error;
 
   /// Captured in [initState] so [dispose] can release the flag without reading
   /// from `ref` after the element is gone.
@@ -133,13 +136,25 @@ class _MobileSendStatusScreenState
   }
 
   Future<void> _startBroadcast() async {
+    if (!mounted ||
+        (_phase == _MobileSendStatusPhase.sending && _broadcast != null)) {
+      return;
+    }
+    if (_canRetryBroadcast) {
+      _keystoneRecovery = widget.keystone!.forRecoveryRetry();
+    }
+    setState(() {
+      _phase = _MobileSendStatusPhase.sending;
+      _canRetryBroadcast = false;
+      _statusMessage = null;
+    });
     // A broadcast is starting: nothing is safe to leave yet.
     _sendStatusTerminal.reset();
     final runner = widget.broadcastRunner ?? runSendBroadcast;
     final broadcast = runner(
       ref: ref,
       args: widget.args,
-      keystone: widget.keystone,
+      keystone: _keystoneRecovery ?? widget.keystone,
       ledger: widget.ledger,
       confirmSaplingParamsDownload: _confirmSaplingParamsDownload,
       shouldAbort: () async => !mounted,
@@ -150,6 +165,7 @@ class _MobileSendStatusScreenState
     if (outcome.phase == SendBroadcastPhase.aborted || !mounted) return;
 
     setState(() {
+      _canRetryBroadcast = outcome.canRetryBroadcast;
       _phase = switch (outcome.phase) {
         SendBroadcastPhase.succeeded => _MobileSendStatusPhase.succeeded,
         SendBroadcastPhase.pendingBroadcast =>
@@ -158,6 +174,7 @@ class _MobileSendStatusScreenState
         SendBroadcastPhase.aborted => _MobileSendStatusPhase.failed,
       };
       _statusMessage = outcome.statusMessage;
+      _error = outcome.error;
     });
     // Success and failure use custom native haptic patterns without system
     // notification sounds.
@@ -170,6 +187,9 @@ class _MobileSendStatusScreenState
       case _MobileSendStatusPhase.pendingBroadcast:
         break;
     }
+    // A retained signed batch still owns recovery; keep incoming payment
+    // links parked until it completes or the user explicitly leaves.
+    if (_canRetryBroadcast) return;
     if (_phase == _MobileSendStatusPhase.succeeded ||
         _phase == _MobileSendStatusPhase.failed) {
       if (_phase == _MobileSendStatusPhase.failed) {
@@ -241,7 +261,10 @@ class _MobileSendStatusScreenState
       _MobileSendStatusPhase.succeeded =>
         'It will confirm on-chain shortly. Track it in Activity.',
       _MobileSendStatusPhase.failed =>
-        "Nothing was sent, your funds haven't moved. Try again.",
+        _canRetryBroadcast
+            ? (_error ??
+                  'Wait for wallet sync, then retry this signed transaction.')
+            : "Nothing was sent, your funds haven't moved. Try again.",
     };
   }
 
@@ -250,7 +273,8 @@ class _MobileSendStatusScreenState
       _MobileSendStatusPhase.sending => null,
       _MobileSendStatusPhase.pendingBroadcast ||
       _MobileSendStatusPhase.succeeded => 'Done',
-      _MobileSendStatusPhase.failed => 'Return home',
+      _MobileSendStatusPhase.failed =>
+        _canRetryBroadcast ? 'Retry' : 'Return home',
     };
   }
 
@@ -272,7 +296,13 @@ class _MobileSendStatusScreenState
       successRippleKey: const ValueKey('mobile_send_status_success_ripple'),
       primaryActionKey: const ValueKey('mobile_send_status_button'),
       primaryActionLabel: _buttonLabel,
-      onPrimaryAction: _buttonLabel == null ? null : _handleBack,
+      onPrimaryAction: _buttonLabel == null
+          ? null
+          : _canRetryBroadcast
+          ? () => unawaited(_startBroadcast())
+          : _handleBack,
+      secondaryActionLabel: _canRetryBroadcast ? 'Return home' : null,
+      onSecondaryAction: _canRetryBroadcast ? _handleBack : null,
     );
   }
 }

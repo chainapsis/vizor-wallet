@@ -916,6 +916,7 @@ async fn proposal_recovery_preserves_retry_capability_until_mined_evidence_retur
             .err()
             .expect("incomplete mined evidence must remain retryable");
         assert!(error.contains("retry after sync"), "{evidence}: {error}");
+        assert!(error.starts_with("hardware_recovery_retryable:"));
         proposal.assert_retained(&wallet, true);
         conn.execute(
             "UPDATE transactions SET raw = ?1, mined_height = 201",
@@ -978,6 +979,10 @@ async fn partially_mined_proposal_retains_retry_capability_on_rpc_failures() {
                 }
             );
             assert!(service.submitted.lock().unwrap().is_empty());
+            assert_eq!(
+                error.starts_with("hardware_recovery_retryable:"),
+                mined_index.is_some()
+            );
             proposal.assert_retained(&wallet, mined_index.is_some());
             handle.abort();
             if let Some(index) = mined_index {

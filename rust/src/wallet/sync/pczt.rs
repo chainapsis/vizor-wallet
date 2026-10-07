@@ -1275,6 +1275,10 @@ pub(crate) fn extract_transaction_from_pczt(
     finalize_and_extract(combined, sapling_vks.as_ref())
 }
 
+// Keep identical to the Dart send-flow classifier. This marker means the
+// validated signed batch and its proposal remain available for retry.
+const HARDWARE_RECOVERY_RETRYABLE_PREFIX: &str = "hardware_recovery_retryable:";
+
 struct PreparedSignedPczt {
     combined: pczt::Pczt,
     extracted: ExtractedPcztTransaction,
@@ -1731,7 +1735,8 @@ async fn store_and_broadcast_pczts_inner(
     // The signed batch is valid. Missing recovery evidence or a read failure
     // must preserve its retry capability and input reservations until sync can
     // restore that evidence; these errors do not abandon the proposal.
-    let mined = stored_mined_transactions(db_path, network, &prepared)?;
+    let mined = stored_mined_transactions(db_path, network, &prepared)
+        .map_err(|error| format!("{HARDWARE_RECOVERY_RETRYABLE_PREFIX} {error}"))?;
     if mined.iter().all(|mined| *mined) {
         if let Some((proposal_id, send_flow_id)) = proposal {
             if let Err(error) = finish_stored_proposal(proposal_id, send_flow_id, false) {
@@ -1752,7 +1757,7 @@ async fn store_and_broadcast_pczts_inner(
     // failures must preserve its proposal and input reservation for retry.
     let rpc_failure = |error| {
         if mined_count > 0 {
-            Err(error)
+            Err(format!("{HARDWARE_RECOVERY_RETRYABLE_PREFIX} {error}"))
         } else {
             release_signed_pczt_operation_after_failure(proposal, error)
         }
