@@ -23,7 +23,9 @@ chain facts. Per (tx, account, variant), for variants with complete evidence:
 * exact amount and fee, details incomplete: the account spent, the
   transaction has no shielded components, and the account owns every input,
   so the metadata gives the aggregate payment and the whole fee; the public
-  row with `details_complete` false (recipient outputs are not recovered);
+  rows with `details_complete` false (recipient outputs are not recovered).
+  A self-transfer's external-scope self-payment is Sent and Received, as in
+  public mode (vizor-wallet#870);
 * honestly incomplete (only payload or txid PIR could fill): everything else
   the account took part in. A row is present unless the public profile allows
   folding it (TEX leg 1); its movement is exact; any final row is a true one;
@@ -38,8 +40,9 @@ from incomplete evidence; private sync reports success by design and states
 transparent authority separately, so there is no synchronized-claim check.
 
 `ui_rows` applies the same categories to the app layer's fresh restore, where
-private queries are on and the app marks every row whose details are
-incomplete.
+private queries are on: the receipt marks every entry whose details are
+incomplete, and the activity row only one whose role or pool is not
+established (vizor-wallet#876).
 """
 
 import os
@@ -110,13 +113,25 @@ def category(record, facts, effect):
         return "exact"
     if (
         effect["spent"]
-        and intent != "self_transfer"
         and not facts["has_shielded"]
         and effect["owned_input_count"]
         and effect["owned_input_count"] == len(facts["inputs"])
     ):
         return "aggregate"
     return "incomplete"
+
+
+def row_uncertain(facts, effect):
+    """Whether the activity row itself reads "Details incomplete" in place of
+    its time (vizor-wallet#876): the account spent and its role or pool cannot
+    be established from its own evidence (shielded components, or an input
+    another party funded), so the wallet keeps the row provisional. A receive
+    found by scanning and a transparent-only spend the account funded entirely
+    show their time; their receipts still mark the missing recipients or
+    memos."""
+    return bool(effect["spent"]) and (
+        facts["has_shielded"] or effect["owned_input_count"] != len(facts["inputs"])
+    )
 
 
 def honest_amounts(facts, effect, account, attribution):
@@ -279,18 +294,32 @@ def fee_presentations(facts, effect, states):
     subtracted (its own fee share is unknown), so a shown whole fee is part of
     that amount:
 
-    * `fee_only`: the movement is the whole fee (a recovered self-shield or
-      self-transfer): one "Network fee" line, and no amount or "Tx fee" line;
-    * `net_change`: the whole fee is shown and the movement is more than it:
-      the amount reads "Net change (includes network fee)" and "Tx fee" shows
-      the whole fee;
+    * `fee_only`: an established transparent self-transfer whose movement is
+      the whole fee: one "Network fee" line, and no amount or "Tx fee" line;
+    * `net_change`: the whole fee is shown and the movement is more than it,
+      or equal to it in a transaction with shielded components (a shield,
+      self-unshield or TEX leg 1, whose role regtest cannot establish): the
+      amount reads "Net change (includes network fee)" and "Tx fee" shows the
+      whole fee;
     * `separate`: no whole fee is shown: an "Amount" line.
 
     A fee state that may be known or unknown allows the presentation of
     either. None when the account spent nothing."""
     if not states:
         return None
-    fee_only = facts.get("fee") is not None and abs(effect["delta"]) == facts["fee"]
+    # "Network fee" alone is an established transparent self-transfer
+    # (vizor-wallet 4db46f38f, transaction_completeness.dart): transparent
+    # only, every input the account's. A movement equal to the whole fee in a
+    # transaction with shielded components stays a provisional net change:
+    # the shielding or self-move that would replace it needs Enhance evidence,
+    # which regtest does not have.
+    fee_only = (
+        facts.get("fee") is not None
+        and abs(effect["delta"]) == facts["fee"]
+        and not facts["has_shielded"]
+        and bool(effect["owned_input_count"])
+        and effect["owned_input_count"] == len(facts["inputs"])
+    )
     shown = ["fee_only" if fee_only else "net_change"] if "known" in states else []
     return shown + (["separate"] if "unknown" in states else [])
 
@@ -298,9 +327,10 @@ def fee_presentations(facts, effect, states):
 def incomplete_ui_row(record, facts, effect, account, context):
     """The app-layer check of an honestly incomplete row: one row of the
     transaction, of any role, present unless the public profile allows folding
-    it (TEX leg 1); marked incomplete; a real owned amount, the sole funder's
-    real payment, or at most the movement; a shown fee is a whole fee, never
-    zero, and a known fee state shows one."""
+    it (TEX leg 1); its receipt marked incomplete, and the row too when its
+    role or pool is not established (`row_uncertain`); a real owned amount,
+    the sole funder's real payment, or at most the movement; a shown fee is a
+    whole fee, never zero, and a known fee state shows one."""
     row_sets, _ = public.expectations(record["intent"], facts, effect, record, account, context)
     states = fee_states(record, effect, context, account)
     return {
@@ -311,6 +341,7 @@ def incomplete_ui_row(record, facts, effect, account, context):
         "role": None,
         "optional": any(rows == [] for rows in row_sets or []),
         "details_incomplete": True,
+        "row_incomplete": row_uncertain(facts, effect),
         "status": "Completed",
         "block_time": facts["block_time"],
         "amount_values": honest_amounts(facts, effect, account, record.get("attribution", {})),
@@ -323,14 +354,18 @@ def incomplete_ui_row(record, facts, effect, account, context):
 
 def ui_rows(context):
     """App-layer expectations for a fresh restore (variant N), by the rules of
-    `activity`. Private queries are on, so the app marks a row whose details
-    are incomplete ("Details incomplete" on the row, "Details: Incomplete" on
-    its receipt); `details_incomplete` says which way each row must show.
+    `activity`. Private queries are on, so the receipt of an entry whose
+    details are incomplete says "Details: Incomplete" (`details_incomplete`),
+    and its activity row says "Details incomplete" in place of its time only
+    when its role or pool is not established (`row_incomplete`,
+    vizor-wallet#876).
 
     * exact (transparent receives): the public rows, unmarked;
-    * aggregate (a fully funded transparent-only send): the public row, with
-      its exact amount, pool and whole fee, marked incomplete, its fee
-      separate from the amount;
+    * aggregate (a fully funded transparent-only send): the public rows, with
+      their exact amount, pool and whole fee and their time on the row, the
+      receipt marked incomplete, the fee separate from the amount. A
+      self-transfer's external-scope self-payment is Sent and Received as in
+      public (vizor-wallet#870);
     * honestly incomplete: one row per transaction and account
       (`incomplete_ui_row`), with the fee presentations its receipt may have
       (`fee_presentations`).
@@ -357,12 +392,21 @@ def ui_rows(context):
                 continue
             which = category(record, facts, effect)
             if which == "exact":
-                rows += [dict(row, details_incomplete=False) for row in shown]
+                rows += [
+                    dict(row, details_incomplete=False, row_incomplete=False)
+                    for row in shown
+                ]
             elif which == "aggregate":
                 # The reconstructed payment excludes the fee: an "Amount" line
-                # and a separate "Tx fee".
+                # and a separate "Tx fee". Role, pool and amount are known, so
+                # the row shows its time and only the receipt is marked.
                 rows += [
-                    dict(row, details_incomplete=True, fee_presentations=["separate"])
+                    dict(
+                        row,
+                        details_incomplete=True,
+                        row_incomplete=False,
+                        fee_presentations=["separate"],
+                    )
                     for row in shown
                 ]
             else:

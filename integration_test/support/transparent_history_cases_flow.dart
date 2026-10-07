@@ -49,6 +49,7 @@ class ThUiRow {
           (v! as num).toInt(),
       ],
       detailsIncomplete = json['details_incomplete'] as bool?,
+      rowIncomplete = json['row_incomplete'] as bool?,
       amountValues = [
         for (final v in (json['amount_values'] as List<Object?>? ?? const []))
           (v! as num).toInt(),
@@ -90,9 +91,15 @@ class ThUiRow {
   /// may show its combined fee).
   final List<int> feeValues;
 
-  /// Private profile: whether the row and its receipt must mark the details
-  /// incomplete (true) or must not (false); null leaves it unchecked.
+  /// Private profile: whether the receipt must mark the details incomplete
+  /// (true) or must not (false); null leaves it unchecked.
   final bool? detailsIncomplete;
+
+  /// Private profile: whether the activity row must read "Details
+  /// incomplete" in place of its time (true) or must not (false). The row is
+  /// marked only when its role or pool is not established (vizor-wallet#876);
+  /// null leaves it unchecked.
+  final bool? rowIncomplete;
 
   /// Private profile, honestly incomplete rows: the real amounts the row may
   /// show, and the most it may show otherwise (the account's movement).
@@ -213,7 +220,14 @@ const _incompleteDetailLabel = 'Details';
 const _incompleteDetailValue = 'Incomplete';
 
 /// Pool labels an activity row may show (product copy).
-const _poolLabels = {'Transparent', 'Shielded', 'Ironwood', 'Mixed'};
+const _poolLabels = {
+  'Transparent',
+  'Shielded',
+  'Orchard',
+  'Sapling',
+  'Ironwood',
+  'Mixed',
+};
 
 /// Checks that the receipt shows the fee once, in a presentation the oracle
 /// allows for the row (see `fee_presentations` in
@@ -513,7 +527,7 @@ Future<List<String>> thVerifyActivity(
       // The incomplete marker takes the timestamp's place on the row; the
       // receipt's timestamp is checked below instead.
       if (row.blockTime > 0 &&
-          row.detailsIncomplete != true &&
+          row.rowIncomplete != true &&
           !texts.any((t) => t.contains(_hhmm(row.blockTime)))) {
         failures.add(
           '${row.label}: timestamp is not the block time '
@@ -535,34 +549,45 @@ Future<List<String>> thVerifyActivity(
         );
       }
     }
-    if (row.detailsIncomplete == true && !texts.contains(_incompleteRowText)) {
+    if (row.rowIncomplete == true && !texts.contains(_incompleteRowText)) {
       failures.add('${row.label}: no "$_incompleteRowText" marker in $texts');
     }
-    if (row.detailsIncomplete == false && texts.contains(_incompleteRowText)) {
+    if (row.rowIncomplete == false && texts.contains(_incompleteRowText)) {
       failures.add(
-        '${row.label}: a complete row is marked "$_incompleteRowText"',
+        '${row.label}: an established row is marked "$_incompleteRowText"',
       );
     }
-    // A fee-only row reads as its fee: "Network fee" (in-flight and failed
-    // rows keep their phase titles), the signed whole fee, and no pool.
-    if (row.feePresentations.length == 1 &&
-        row.feePresentations.single == 'fee_only' &&
-        row.amountMax != null) {
+    // A movement that is exactly the whole fee reads as one debit of it, with
+    // no pool: "Network fee" when fee-only, "Sent" when a provisional net
+    // change (in-flight and failed rows keep their phase titles).
+    final feeSized =
+        row.feePresentations.length == 1 &&
+        const {
+          'fee_only',
+          'net_change',
+        }.contains(row.feePresentations.single) &&
+        row.amountMax != null &&
+        row.amountMax == row.feeKnown;
+    if (feeSized) {
+      final feeOnly = row.feePresentations.single == 'fee_only';
       final title = row.failed
           ? 'Send failed'
           : row.pending
           ? (mobile ? 'Sending...' : 'Sending ...')
-          : kNetworkFeeText;
+          : feeOnly
+          ? kNetworkFeeText
+          : 'Sent';
+      final kind = feeOnly ? 'fee-only' : 'fee-sized';
       if (!texts.contains(title)) {
-        failures.add('${row.label}: fee-only title "$title" not in $texts');
+        failures.add('${row.label}: $kind title "$title" not in $texts');
       }
       final amount = thActivityAmount(row.amountMax!, '-', ticker);
       if (!texts.any((t) => t == amount || t.startsWith(amount))) {
-        failures.add('${row.label}: fee-only amount "$amount" not in $texts');
+        failures.add('${row.label}: $kind amount "$amount" not in $texts');
       }
       final pools = texts.where(_poolLabels.contains).toList();
       if (pools.isNotEmpty) {
-        failures.add('${row.label}: fee-only row shows a pool $pools');
+        failures.add('${row.label}: $kind row shows a pool $pools');
       }
     }
     // Tappable: the row opens its detail screen.

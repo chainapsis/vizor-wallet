@@ -473,7 +473,33 @@ TITLES = {
     "shielded": "Shielded",
     "unknown": "Transaction",
 }
-POOL_LABELS = {"transparent": "Transparent", "shielded": "Shielded", "mixed": "Mixed"}
+# Vizor labels a payment by its exact pool (vizor-wallet#858, #863): Orchard
+# and Sapling by name, Ironwood as "Shielded". `display_pool` keeps the legacy
+# "shielded" grouping the Rust layer checks, so the shielded label comes from
+# the transaction's bundles.
+POOL_LABELS = {"transparent": "Transparent", "mixed": "Mixed"}
+
+
+def pool_labels(pools, facts):
+    """Every label the app may show for a row whose `display_pool` is one of
+    `pools`."""
+    labels = []
+    for pool in pools:
+        if pool != "shielded":
+            labels += [POOL_LABELS[pool]] if pool in POOL_LABELS else []
+            continue
+        orchard = facts.get("orchard_actions", 0) > 0
+        sapling = facts.get("sapling_outputs", 0) > 0
+        if orchard and not sapling:
+            labels.append("Orchard")
+        elif sapling and not orchard:
+            labels.append("Sapling")
+        elif orchard and sapling:
+            # The owned outputs' pool is not derivable from the bundles.
+            labels += ["Orchard", "Sapling"]
+        else:
+            labels.append("Shielded")
+    return list(dict.fromkeys(labels))
 
 
 def _first(value):
@@ -549,19 +575,16 @@ def ui_rows(context):
                         sign="-"
                         if kind == "sent"
                         else ("+" if kind in ("received", "receiving") else ""),
-                        pool_label=POOL_LABELS.get(pool)
+                        pool_label=_first(pool_labels([pool], facts) or [None])
                         if kind in ("sent", "received", "receiving")
                         else None,
                         # Every pool label the spec accepts for this row.
-                        pool_labels=[
-                            POOL_LABELS[p]
-                            for p in (
-                                row.get("display_pool")
-                                if isinstance(row.get("display_pool"), list)
-                                else [pool]
-                            )
-                            if p in POOL_LABELS
-                        ]
+                        pool_labels=pool_labels(
+                            row.get("display_pool")
+                            if isinstance(row.get("display_pool"), list)
+                            else [pool],
+                            facts,
+                        )
                         if kind in ("sent", "received", "receiving")
                         else [],
                         status="Failed"

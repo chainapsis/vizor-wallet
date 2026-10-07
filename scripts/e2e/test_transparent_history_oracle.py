@@ -226,11 +226,21 @@ class PrivateActivity(unittest.TestCase):
             item(self.private, "ff" * 32, "A1", "N"), item(self.public, "ff" * 32, "A1", "N")
         )
 
-    def test_a_self_transfer_infers_no_gross_payment(self):
-        constraints = names(item(self.private, "cc" * 32, "A0", "N"))
-        self.assertEqual(constraints["delta_is"]["values"], [-FEE])
-        self.assertNotIn(2 * ZEC, constraints["amount_in_or_le"]["values"])
-        self.assertIn(ZEC, constraints["amount_in_or_le"]["values"])
+    def test_a_self_transfer_keeps_the_public_rows_with_details_incomplete(self):
+        # vizor-wallet#870: the external-scope self-payment is Sent and
+        # Received, as in public mode; recipients are not recovered.
+        got = item(self.private, "cc" * 32, "A0", "N")
+        want = item(self.public, "cc" * 32, "A0", "N")
+        self.assertEqual(
+            got["row_sets"],
+            [
+                [
+                    {k: v for k, v in dict(r, details_complete=False).items() if k != "provisional"}
+                    for r in rows
+                ]
+                for rows in want["row_sets"]
+            ],
+        )
 
     def test_the_gift_card_claim_was_not_built_by_the_reference_wallet(self):
         got = item(self.private, "11" * 32, "A1", "R")
@@ -307,19 +317,21 @@ class PrivateUiRows(unittest.TestCase):
     def test_a_transparent_receive_keeps_the_public_row_unmarked(self):
         (row,) = self.rows_for("aa" * 32)
         (want,) = [r for r in public.ui_rows(context()) if r["txid"] == row["txid"]]
-        self.assertEqual(row, dict(want, details_incomplete=False))
+        self.assertEqual(row, dict(want, details_incomplete=False, row_incomplete=False))
 
     def test_a_fully_funded_transparent_send_is_exact_and_marked_incomplete(self):
         (row,) = self.rows_for("bb" * 32)
         self.assertEqual((row["role"], row["amount_zats"], row["fee_known"]), ("sent", ZEC, FEE))
         self.assertEqual(row["pool_labels"], ["Transparent"])
         self.assertTrue(row["details_incomplete"])
+        self.assertFalse(row["row_incomplete"])
         self.assertFalse(row["optional"])
 
     def test_an_incomplete_row_is_marked_with_honest_amounts_and_whole_fees(self):
         (row,) = self.rows_for("dd" * 32)
         self.assertIsNone(row["role"])
         self.assertTrue(row["details_incomplete"])
+        self.assertTrue(row["row_incomplete"])
         self.assertFalse(row["optional"])
         self.assertEqual(row["status"], "Completed")
         self.assertEqual((row["fee_known"], row["fee_values"]), (FEE, [FEE]))
@@ -331,18 +343,31 @@ class PrivateUiRows(unittest.TestCase):
         self.assertIsNone(row["fee_known"])
         self.assertEqual(row["fee_values"], [FEE])
 
-    def test_a_self_transfer_offers_no_gross_payment(self):
-        (row,) = self.rows_for("cc" * 32)
-        self.assertNotIn(2 * ZEC, row["amount_values"])
-        self.assertIn(ZEC, row["amount_values"])
-        self.assertEqual(row["amount_max"], FEE)
+    def test_a_self_transfer_is_sent_and_received_as_in_public(self):
+        rows = {r["role"]: r for r in self.rows_for("cc" * 32)}
+        self.assertEqual(set(rows), {"sent", "received"})
+        self.assertEqual((rows["sent"]["amount_zats"], rows["sent"]["fee_known"]), (ZEC, FEE))
+        self.assertEqual(rows["received"]["amount_zats"], ZEC)
+        for row in rows.values():
+            self.assertEqual(row["pool_labels"], ["Transparent"])
+            self.assertTrue(row["details_incomplete"])
+            self.assertFalse(row["row_incomplete"])
+            self.assertEqual(row["fee_presentations"], ["separate"])
+        self.assertFalse(rows["sent"]["optional"])
+
+    def test_a_receive_found_by_scanning_marks_only_its_receipt(self):
+        (row,) = self.rows_for("11" * 32, "A1")
+        self.assertTrue(row["details_incomplete"])
+        self.assertFalse(row["row_incomplete"])
 
     def test_the_receiving_account_of_a_cross_account_send_is_exact(self):
         (row,) = self.rows_for("ff" * 32, "A1")
         self.assertEqual((row["role"], row["amount_zats"]), ("received", ZEC))
         self.assertFalse(row["details_incomplete"])
+        self.assertFalse(row["row_incomplete"])
         (sender,) = self.rows_for("ff" * 32)
         self.assertTrue(sender["details_incomplete"])
+        self.assertTrue(sender["row_incomplete"])
         self.assertIsNone(sender["fee_known"])
 
     def test_the_unmined_receive_is_optional_and_unmarked(self):
@@ -350,14 +375,21 @@ class PrivateUiRows(unittest.TestCase):
         self.assertTrue(row["optional"])
         self.assertTrue(row["pending"])
         self.assertNotIn("details_incomplete", row)
+        self.assertNotIn("row_incomplete", row)
 
     def test_an_uninvolved_account_has_no_rows(self):
         self.assertEqual(self.rows_for("bb" * 32, "A1"), [])
 
-    def test_a_movement_that_is_the_whole_fee_is_fee_only(self):
-        for txid in ("cc" * 32, "dd" * 32):
-            (row,) = self.rows_for(txid)
-            self.assertEqual(row["fee_presentations"], ["fee_only"], txid[:2])
+    def test_an_established_transparent_movement_of_the_whole_fee_is_fee_only(self):
+        facts = {"fee": FEE, "has_shielded": False, "inputs": [io(0, 2 * ZEC, "A0")]}
+        effect = {"delta": -FEE, "owned_input_count": 1}
+        self.assertEqual(private.fee_presentations(facts, effect, ["known"]), ["fee_only"])
+
+    def test_a_shielded_movement_of_the_whole_fee_is_a_net_change(self):
+        # vizor-wallet 4db46f38f: without Enhance evidence a shield stays a
+        # provisional "Sent" net change.
+        (row,) = self.rows_for("dd" * 32)
+        self.assertEqual(row["fee_presentations"], ["net_change"])
 
     def test_a_reconstructed_payment_keeps_its_fee_separate(self):
         (row,) = self.rows_for("bb" * 32)
@@ -381,6 +413,23 @@ class PrivateUiRows(unittest.TestCase):
     def test_a_receive_has_no_fee_presentation(self):
         (row,) = self.rows_for("aa" * 32)
         self.assertNotIn("fee_presentations", row)
+
+
+class PublicPoolLabels(unittest.TestCase):
+    """vizor-wallet#858: a payment is labelled by its exact shielded pool."""
+
+    def test_an_orchard_payment_is_labelled_orchard(self):
+        rows = public.ui_rows(context())
+        (row,) = [r for r in rows if r["intent"] == "gift_card_claim"]
+        self.assertEqual((row["pool_label"], row["pool_labels"]), ("Orchard", ["Orchard"]))
+
+    def test_the_label_follows_the_bundles(self):
+        self.assertEqual(public.pool_labels(["shielded"], {"sapling_outputs": 2}), ["Sapling"])
+        self.assertEqual(public.pool_labels(["shielded"], {}), ["Shielded"])
+        self.assertEqual(
+            public.pool_labels(["transparent", "mixed"], {"orchard_actions": 2}),
+            ["Transparent", "Mixed"],
+        )
 
 
 class AmountConstraint(unittest.TestCase):
