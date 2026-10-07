@@ -2373,7 +2373,17 @@ fn classify_history_tx(
             }
         }
         if base.total_spent > 0 && base.total_received > 0 {
-            return rows;
+            // Fully known history with nothing visible is a change-only
+            // internal transaction, which Activity does not list.
+            if base.history.details_complete && !base.history.provisional {
+                return rows;
+            }
+            // Otherwise the account spent and received here, but the history
+            // does not yet show where the value went, for example a shielding
+            // whose details are still incomplete. Its net movement is known,
+            // so it stays visible as a provisional, incomplete row: a known
+            // debit never disappears while history is incomplete.
+            return vec![unattributed_movement_row(base)];
         }
         if base.account_balance_delta > 0 {
             rows.push(build_classified_tx(
@@ -2390,6 +2400,35 @@ fn classify_history_tx(
     }
 
     rows
+}
+
+/// One provisional, incomplete row for the account's net movement in `base`,
+/// when the history does not yet show where its value went. A debit is shown
+/// like any movement debit: less the account's known fee, which is shown
+/// beside it, so nothing is attributed as a payment.
+fn unattributed_movement_row(base: &TxBase) -> ClassifiedTx {
+    let delta = base.account_balance_delta;
+    let mut row = match delta.signum() {
+        -1 => {
+            let debit = delta
+                .unsigned_abs()
+                .saturating_sub(base.history.fee.known_or_zero());
+            let tx_kind = if debit > 0 { "sent" } else { "unknown" };
+            build_movement_debit_row(base, tx_kind, debit)
+        }
+        1 => build_classified_tx(
+            base,
+            receiving_tx_kind(base),
+            delta.unsigned_abs(),
+            "unknown",
+            false,
+            2,
+        ),
+        _ => build_classified_tx(base, "unknown", 0, "unknown", false, 3),
+    };
+    row.info.details_complete = false;
+    row.info.provisional = true;
+    row
 }
 
 /// Owned Ironwood outputs do not prove an internal migration when the library
@@ -3213,6 +3252,71 @@ mod tests {
         summary.received.amount = 30_000_000;
         summary.received.has_transparent = true;
         (base, summary)
+    }
+
+    /// V6 (gap 8): a shielding whose effects are settled but whose details are
+    /// still incomplete loses its shielding classification, and its owned
+    /// shielded output reads as neither a payment nor a receipt. It used to
+    /// produce no row at all; its known debit stays visible, provisional and
+    /// incomplete. Like any movement debit, the amount is the movement less
+    /// the account's known fee, or, when only the whole transaction's fee is
+    /// known, the movement that includes it.
+    #[test]
+    fn an_unattributed_spend_and_receipt_keeps_a_provisional_row() {
+        for (fee, whole_fee, tx_kind, amount, includes_fee) in [
+            (Fee::Known(10_000), None, "unknown", 0, false),
+            (Fee::Unknown, Some(10_000), "sent", 10_000, true),
+        ] {
+            let (mut base, _) = provisional_debit();
+            base.account_balance_delta = -10_000;
+            base.is_shielding = true;
+            base.attach_history(HistoryCompleteness {
+                has_transparent_outputs: None,
+                details_complete: false,
+                classification: Some(HistoryClassification::Reconstructed),
+                provisional: false,
+                fee,
+                whole_fee,
+                inferred_payment: None,
+                inferred_outgoing: None,
+            });
+            assert!(!base.is_shielding);
+
+            let rows = classify_history_tx(&base, &ActivitySummary::default(), Fee::NotApplicable);
+
+            assert_eq!(rows.len(), 1, "a known debit never disappears ({fee:?})");
+            let info = &rows[0].info;
+            assert_eq!(info.tx_kind, tx_kind);
+            assert_eq!(info.display_amount, amount);
+            assert_eq!(info.account_balance_delta, -10_000);
+            assert_eq!(info.fee, 10_000);
+            assert_eq!(info.fee_state, TransactionFeeState::Known);
+            assert_eq!(info.amount_includes_fee, includes_fee);
+            assert!(info.provisional);
+            assert!(!info.details_complete);
+        }
+    }
+
+    /// Fully known history with nothing visible is a change-only internal
+    /// transaction, which Activity does not list.
+    #[test]
+    fn a_complete_change_only_transaction_stays_unlisted() {
+        let (mut base, _) = provisional_debit();
+        base.account_balance_delta = -10_000;
+        base.history = HistoryCompleteness {
+            has_transparent_outputs: None,
+            details_complete: true,
+            classification: Some(HistoryClassification::Reconstructed),
+            provisional: false,
+            fee: Fee::Known(10_000),
+            whole_fee: None,
+            inferred_payment: None,
+            inferred_outgoing: None,
+        };
+
+        let rows = classify_history_tx(&base, &ActivitySummary::default(), Fee::NotApplicable);
+
+        assert!(rows.is_empty());
     }
 
     #[test]
