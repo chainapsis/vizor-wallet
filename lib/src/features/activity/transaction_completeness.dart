@@ -1,4 +1,5 @@
 import '../../core/formatting/zec_amount.dart';
+import '../../providers/account_models.dart';
 import '../../rust/api/sync.dart' as rust_sync;
 
 /// Shown for a fee the wallet has not recorded. An unknown fee is never 0.
@@ -153,6 +154,24 @@ bool receiptHasUnknownRecipient(
     !transactionActivitySummaryIncomplete(tx) &&
     transactionFeePresentation(tx) == TransactionFeePresentation.separate &&
     receiptRecipientAddress(detail) == null;
+
+/// The wallet account a receive came from, when the receipt has no exact
+/// source address: the account the wallet recorded as sending its received
+/// outputs, if it is still listed. It names an account, never an address or
+/// a sole funder.
+AccountInfo? receiptSourceAccount(
+  rust_sync.TransactionDetail? detail,
+  Iterable<AccountInfo> accounts,
+) {
+  final address = detail?.sourceAddress?.trim();
+  if (address != null && address.isNotEmpty) return null;
+  final uuid = detail?.sourceAccountUuid;
+  if (uuid == null) return null;
+  for (final account in accounts) {
+    if (account.uuid == uuid) return account;
+  }
+  return null;
+}
 
 /// The transparent outputs a receipt lists as the transaction's, attributed
 /// to no one: every known output the account did not record as its own, in

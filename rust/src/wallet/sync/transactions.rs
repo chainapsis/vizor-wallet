@@ -618,6 +618,11 @@ pub(crate) struct TransactionDetail {
     pub primary_address: Option<String>,
     pub source_address: Option<String>,
     pub source_pool: Option<String>,
+    /// For a receive: the wallet account its `sent_notes` record as having
+    /// sent every received output shown, when they all name the same one.
+    /// It names an account, never an address, and does not say that account
+    /// was the transaction's only funder.
+    pub source_account_uuid: Option<String>,
     pub memo: Option<String>,
     pub outputs: Vec<TransactionDetailOutput>,
     /// See [`TransactionInfo::details_complete`]: `outputs` may be partial.
@@ -1516,6 +1521,11 @@ fn read_transaction_detail(
     } else {
         None
     };
+    let source_account_uuid = if matches!(tx_kind, "received" | "receiving") {
+        received_source_account(&visible_outputs)
+    } else {
+        None
+    };
     let outputs = visible_outputs
         .into_iter()
         .map(|output| TransactionDetailOutput {
@@ -1533,6 +1543,7 @@ fn read_transaction_detail(
         primary_address,
         source_address: source.as_ref().and_then(|s| s.address.clone()),
         source_pool: source.map(|s| s.pool.to_string()),
+        source_account_uuid,
         memo,
         outputs,
         details_complete: base.history.details_complete,
@@ -1544,6 +1555,23 @@ fn read_transaction_detail(
 struct TransactionSource {
     address: Option<String>,
     pool: &'static str,
+}
+
+/// The wallet account that sent the received outputs a receipt shows, from
+/// the sending account `sent_notes` recorded for each output. `None` unless
+/// every output has one and they agree: an output with no recorded sender
+/// leaves the source unknown.
+fn received_source_account(outputs: &[&TxOutput]) -> Option<String> {
+    let mut accounts = outputs
+        .iter()
+        .map(|output| output.from_account_uuid.as_deref());
+    let first = accounts.next()??;
+    if !accounts.all(|account| account == Some(first)) {
+        return None;
+    }
+    uuid::Uuid::from_slice(first)
+        .ok()
+        .map(|uuid| uuid.to_string())
 }
 
 fn received_source_from_raw_transaction(
@@ -7849,9 +7877,88 @@ mod tests {
         assert_eq!(got.primary_address, None);
         assert_eq!(got.source_address, None);
         assert_eq!(got.source_pool.as_deref(), Some("unknown"));
+        assert_eq!(got.source_account_uuid, None, "no recorded sender");
         assert_eq!(got.memo.as_deref(), Some("incoming memo"));
         assert_eq!(got.outputs.len(), 1);
         assert_eq!(got.outputs[0].address.as_deref(), Some("u-my-receiver"));
+    }
+
+    /// A receive whose outputs the wallet recorded as sent: `outputs` lists
+    /// each received output with the account `sent_notes` names, if any.
+    fn received_source_account_fixture(outputs: &[(i64, Option<uuid::Uuid>)]) -> TransactionDetail {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let txid = fake_txid(0xD3);
+        insert_history_tx(
+            &db,
+            account,
+            &txid,
+            Some(1_000_000),
+            1,
+            Some(1_000_100),
+            2_000_000,
+            0,
+            2_000_000,
+            false,
+            Some("2026-04-28T17:01:00Z"),
+        );
+        for (index, (output_pool, from)) in outputs.iter().enumerate() {
+            insert_output_with_address(
+                &db,
+                &txid,
+                *output_pool,
+                *from,
+                Some(account),
+                1_000_000,
+                false,
+                Some(&format!("t-my-receiver-{index}")),
+                Some(0),
+            );
+        }
+        detail_from_fixture(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            &account.to_string(),
+            &hex::encode(txid),
+            "received",
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn detail_received_row_names_the_recorded_sending_account() {
+        let other = uuid::Uuid::from_u128(0x11);
+        // An unshielding from another account of this wallet: no raw
+        // transaction, so no source address or pool, only the account the
+        // wallet recorded as sending the output.
+        let got = received_source_account_fixture(&[(TRANSPARENT_POOL, Some(other))]);
+        let other_string = other.to_string();
+        assert_eq!(
+            got.source_account_uuid.as_deref(),
+            Some(other_string.as_str())
+        );
+        assert_eq!(got.source_address, None, "an account is not an address");
+        assert_eq!(got.source_pool.as_deref(), Some("unknown"));
+    }
+
+    #[test]
+    fn detail_received_row_needs_one_recorded_sender_for_every_output() {
+        let other = uuid::Uuid::from_u128(0x11);
+        let third = uuid::Uuid::from_u128(0x12);
+        // An output with no recorded sender leaves the source unknown.
+        let partial = received_source_account_fixture(&[
+            (TRANSPARENT_POOL, Some(other)),
+            (ORCHARD_POOL, None),
+        ]);
+        assert_eq!(partial.outputs.len(), 2);
+        assert_eq!(partial.source_account_uuid, None);
+        // Outputs recorded as sent by different accounts name neither.
+        let mixed = received_source_account_fixture(&[
+            (TRANSPARENT_POOL, Some(other)),
+            (ORCHARD_POOL, Some(third)),
+        ]);
+        assert_eq!(mixed.outputs.len(), 2);
+        assert_eq!(mixed.source_account_uuid, None);
     }
 
     #[test]

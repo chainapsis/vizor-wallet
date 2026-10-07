@@ -763,8 +763,42 @@ class _MobileTransactionStatusScreenState
               ),
             ),
           );
+    // Without an exact source address, the account the wallet recorded as
+    // sending the received outputs still names where the funds came from.
+    final sourceAccount = _isIncoming && addressRow == null && giftCard == null
+        ? receiptSourceAccount(
+            detail,
+            ref.watch(accountProvider).value?.accounts ?? const <AccountInfo>[],
+          )
+        : null;
+    final sourceAccountPool = switch (sourcePool) {
+      'shielded' => 'Shielded',
+      'transparent' => 'Transparent',
+      _ => null,
+    };
+    final sourceAccountRow = sourceAccount == null
+        ? null
+        : MobileReviewInfoRow(
+            key: const ValueKey('received_from_account'),
+            label: 'From',
+            value: sourceAccount.name,
+            leading: AppProfilePicture(
+              profilePictureId: sourceAccount.profilePictureId,
+              size: AppProfilePictureSize.navLarge,
+            ),
+            bottom: sourceAccountPool == null
+                ? null
+                : _BottomInfoRow(
+                    iconName: _poolIconNameFor(sourceAccountPool),
+                    iconColor: _poolIconColorFor(context, sourceAccountPool),
+                    text: sourceAccountPool,
+                  ),
+          );
     final unknownFromLabel =
-        _isIncoming && addressRow == null && giftCard == null
+        _isIncoming &&
+            addressRow == null &&
+            sourceAccountRow == null &&
+            giftCard == null
         ? _unknownFromLabelForSourcePool(sourcePool)
         : null;
     final unknownFromRow = unknownFromLabel == null
@@ -794,7 +828,7 @@ class _MobileTransactionStatusScreenState
     final fromRow = _isIncoming
         ? detailsLoading
               ? const ReceiptCounterpartySkeleton(label: 'From')
-              : addressRow ?? unknownFromRow
+              : addressRow ?? sourceAccountRow ?? unknownFromRow
         : null;
     // A send whose recipient the account did not record keeps the To row,
     // naming no one and offering nothing to verify.

@@ -620,6 +620,10 @@ class _ActivityTransactionStatusScreenState
             ownAccounts: ownAccounts,
           )
         : null;
+    final fromAccount = receiptSourceAccount(
+      detail,
+      ref.watch(accountProvider).value?.accounts ?? const <AccountInfo>[],
+    );
 
     return _ReceiptContentColumn(
       child: ReceivedReceiptView(
@@ -633,6 +637,17 @@ class _ActivityTransactionStatusScreenState
         timestampText: _timestampText(tx),
         txIdText: _truncatedDisplayTxid(tx.txidHex),
         fromRecipient: fromRecipient,
+        fromAccount: fromAccount == null
+            ? null
+            : (
+                name: fromAccount.name,
+                profilePictureId: fromAccount.profilePictureId,
+                shieldedPool: switch (fromPool) {
+                  'shielded' => true,
+                  'transparent' => false,
+                  _ => null,
+                },
+              ),
         unknownFromKind: hasFromAddress
             ? null
             : _unknownFromKindForSourcePool(fromPool),

@@ -46,6 +46,7 @@ rust_sync.TransactionDetail transparentDetail(
   String? primaryAddress,
   String? sourceAddress,
   String? sourcePool,
+  String? sourceAccountUuid,
   List<rust_sync.TransactionDetailOutput> outputs = const [],
   bool provisional = false,
 }) => rust_sync.TransactionDetail(
@@ -54,6 +55,7 @@ rust_sync.TransactionDetail transparentDetail(
   primaryAddress: primaryAddress,
   sourceAddress: sourceAddress,
   sourcePool: sourcePool,
+  sourceAccountUuid: sourceAccountUuid,
   outputs: outputs,
   detailsComplete: false,
   provisional: provisional,
@@ -235,7 +237,10 @@ void transparentDetailsRefreshTests({
 AppBootstrapState transparentDetailsBootstrap() => AppBootstrapState(
   initialLocation: '/activity',
   initialAccountState: const AccountState(
-    accounts: [AccountInfo(uuid: 'account-1', name: 'Account 1', order: 0)],
+    accounts: [
+      AccountInfo(uuid: 'account-1', name: 'Account 1', order: 0),
+      AccountInfo(uuid: 'account-2', name: 'Savings', order: 1),
+    ],
     activeAccountUuid: 'account-1',
   ),
   initialSyncSnapshot: AppSyncSnapshot.empty,
@@ -964,6 +969,76 @@ void transparentReceiptParityTests({
       expect(find.text('Shielded sender'), findsOneWidget);
       expect(find.text('Unknown sender'), findsNothing);
       expect(find.text('Show full address'), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+    });
+  }
+
+  for (final private in [false, true]) {
+    final mode = private ? 'private' : 'public';
+    // The wallet recorded another of its accounts as sending the received
+    // output; a public wallet also knows the shielded source pool.
+    rust_sync.TransactionDetail fromAccount({
+      String? sourceAddress,
+      String accountUuid = 'account-2',
+    }) => transparentDetail(
+      rust_sync.TransparentDetailsState.available,
+      txKind: 'received',
+      sourceAddress: sourceAddress,
+      sourcePool: private ? 'unknown' : 'shielded',
+      sourceAccountUuid: accountUuid,
+      outputs: transparentReceiveDetail(private: true).outputs,
+    );
+
+    testWidgets('$mode receive names the recorded sending account', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        ScriptedDetails([fromAccount()]),
+        transaction: transparentReceive(),
+        privateQueries: private,
+      );
+      expect(find.byKey(const ValueKey('received_from_account')), findsOne);
+      expect(find.text('Savings'), findsOneWidget);
+      expect(find.text('Unknown sender'), findsNothing);
+      expect(find.text('Shielded sender'), findsNothing);
+      // An account is not an address: nothing to show or verify.
+      expect(find.text('Show full address'), findsNothing);
+      // The pool appears only when the stored transaction established it.
+      expect(find.text('Shielded'), private ? findsNothing : findsOneWidget);
+      expect(find.text('Transparent'), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('$mode exact source address wins over the account', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        ScriptedDetails([fromAccount(sourceAddress: transparentSenderAddress)]),
+        transaction: transparentReceive(),
+        privateQueries: private,
+      );
+      expect(find.byKey(const ValueKey('received_from_account')), findsNothing);
+      expect(_showsAddress(transparentSenderAddress), findsOneWidget);
+      expect(find.text('Show full address'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('$mode receive from an unlisted account stays unknown', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        ScriptedDetails([fromAccount(accountUuid: 'removed-account')]),
+        transaction: transparentReceive(),
+        privateQueries: private,
+      );
+      expect(find.byKey(const ValueKey('received_from_account')), findsNothing);
+      expect(
+        find.text(private ? 'Unknown sender' : 'Shielded sender'),
+        findsOneWidget,
+      );
       await tester.pumpWidget(const SizedBox());
     });
   }

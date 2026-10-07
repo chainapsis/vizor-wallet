@@ -37,6 +37,7 @@ class ReceivedReceiptView extends StatelessWidget {
     required this.txIdText,
     this.status = ReceivedReceiptStatus.completed,
     this.fromRecipient,
+    this.fromAccount,
     this.unknownFromKind,
     this.isShieldedSource = false,
     this.receivingAddress,
@@ -66,6 +67,12 @@ class ReceivedReceiptView extends StatelessWidget {
   /// Sender display data. The From row (and its arrow connector) is omitted
   /// when null unless [unknownFromKind] is present.
   final SendReviewRecipient? fromRecipient;
+
+  /// The wallet account the receive came from when no exact source address
+  /// is known: its name, avatar, and source pool (`null` when the pool is
+  /// unknown). The row offers no address to show.
+  final ({String name, String profilePictureId, bool? shieldedPool})?
+  fromAccount;
 
   /// Why the exact source address is unavailable.
   final ReceivedReceiptUnknownFromKind? unknownFromKind;
@@ -108,7 +115,10 @@ class ReceivedReceiptView extends StatelessWidget {
     final colors = context.colors;
     final memo = memoText?.trim();
     final fromRecipient = this.fromRecipient;
-    final unknownFromKind = fromRecipient == null ? this.unknownFromKind : null;
+    final fromAccount = fromRecipient == null ? this.fromAccount : null;
+    final unknownFromKind = fromRecipient == null && fromAccount == null
+        ? this.unknownFromKind
+        : null;
     final title = switch (status) {
       ReceivedReceiptStatus.inProgress => 'Receive in progress...',
       ReceivedReceiptStatus.completed => 'Received successfully',
@@ -153,11 +163,33 @@ class ReceivedReceiptView extends StatelessWidget {
             children: [
               if (detailsLoading ||
                   fromRecipient != null ||
+                  fromAccount != null ||
                   unknownFromKind != null) ...[
                 if (detailsLoading)
                   const ReceiptCounterpartySkeleton(label: 'From')
                 else if (fromRecipient != null)
                   _fromRow(context, fromRecipient)
+                else if (fromAccount != null)
+                  ReviewInfoRow(
+                    key: const ValueKey('received_from_account'),
+                    label: 'From',
+                    value: fromAccount.name,
+                    leading: AppProfilePicture(
+                      profilePictureId: fromAccount.profilePictureId,
+                      size: AppProfilePictureSize.large,
+                    ),
+                    bottomLeftIconName: fromAccount.shieldedPool == null
+                        ? null
+                        : _poolIconName(fromAccount.shieldedPool!),
+                    bottomLeftIconColor: fromAccount.shieldedPool == null
+                        ? null
+                        : _poolIconColor(context, fromAccount.shieldedPool!),
+                    bottomLeftText: switch (fromAccount.shieldedPool) {
+                      null => null,
+                      true => 'Shielded',
+                      false => 'Transparent',
+                    },
+                  )
                 else
                   _unknownFromRow(context, unknownFromKind!),
                 const _ReceivedArrowSeparator(),
