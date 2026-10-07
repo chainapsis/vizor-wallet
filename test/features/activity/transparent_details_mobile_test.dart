@@ -26,6 +26,9 @@ Future<List<String>> _pump(
   WidgetTester tester,
   ScriptedDetails details, {
   FakeSyncNotifier? sync,
+  bool privacy = false,
+  bool privateTransparentRecovery = false,
+  Future<String> Function(rust_sync.TransactionInfo)? debugLookup,
 }) async {
   await tester.binding.setSurfaceSize(const Size(393, 1600));
   addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -34,7 +37,7 @@ Future<List<String>> _pump(
     ProviderScope(
       overrides: [
         swapFeatureEnabledProvider.overrideWithValue(false),
-        privacyModeProvider.overrideWith(PrivacyOff.new),
+        privacyModeProvider.overrideWith(() => PrivacySetting(privacy)),
         enhancePirProvider.overrideWith(() => FakeEnhancePirNotifier(true)),
         appBootstrapProvider.overrideWithValue(transparentDetailsBootstrap()),
         syncProvider.overrideWith(
@@ -63,7 +66,8 @@ Future<List<String>> _pump(
             detailLoader: details.load,
             transparentDetailsPrioritizer: (txid) async =>
                 prioritized.add(txid),
-            privateTransparentRecovery: false,
+            privateTransparentRecovery: privateTransparentRecovery,
+            transparentDetailsDebugLookup: debugLookup,
           ),
         ),
       ),
@@ -79,6 +83,18 @@ Future<void> _close(WidgetTester tester) async {
 }
 
 void main() {
+  transparentDetailsDebugTests(
+    pump: (tester, details, sync, privacy, lookup) async {
+      await _pump(
+        tester,
+        details,
+        sync: sync,
+        privacy: privacy,
+        privateTransparentRecovery: true,
+        debugLookup: lookup,
+      );
+    },
+  );
   transparentDetailsRefreshTests(
     pump: (tester, details, sync) async {
       await _pump(tester, details, sync: sync);

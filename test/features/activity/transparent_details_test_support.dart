@@ -1,6 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart' show ThemeMode, SizedBox;
+import 'package:flutter/material.dart'
+    show ThemeMode, SizedBox, ValueKey, GestureDetector;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
@@ -243,4 +244,117 @@ class EmptyAddressBook implements AddressBookRepository {
 class PrivacyOff extends PrivacyModeNotifier {
   @override
   bool build() => false;
+}
+
+class PrivacySetting extends PrivacyModeNotifier {
+  PrivacySetting(this.enabled);
+  final bool enabled;
+  @override
+  bool build() => enabled;
+}
+
+void transparentDetailsDebugTests({
+  required Future<void> Function(
+    WidgetTester,
+    ScriptedDetails,
+    FakeSyncNotifier?,
+    bool,
+    Future<String> Function(rust_sync.TransactionInfo),
+  )
+  pump,
+}) {
+  const summary = '1 outputs · fee 0.0002 ZEC · 1 inputs';
+  final button = find.byKey(const ValueKey('transparent_details_debug_lookup'));
+  ScriptedDetails pendingDetails() => ScriptedDetails([
+    transparentDetail(rust_sync.TransparentDetailsState.notCovered),
+  ]);
+  Future<void> flush(WidgetTester tester) async {
+    await tester.pump();
+    await tester.pump();
+  }
+
+  testWidgets('private lookup summary respects hidden amounts', (tester) async {
+    await pump(tester, pendingDetails(), null, true, (_) async => summary);
+    await tester.tap(
+      find.descendant(of: button, matching: find.byType(GestureDetector)),
+    );
+    await flush(tester);
+    expect(find.text(summary), findsNothing);
+    expect(
+      find.descendant(of: button, matching: find.text('******')),
+      findsOneWidget,
+    );
+    await tester.pumpWidget(const SizedBox());
+  });
+  for (final fails in [false, true]) {
+    testWidgets(
+      'receipt refresh supersedes private lookup ${fails ? 'failure' : 'success'}',
+      (tester) async {
+        final delayed = Completer<String>();
+        final sync = FakeSyncNotifier(
+          SyncState(accountUuid: 'account-1', hasAccountScopedData: true),
+        );
+        await pump(
+          tester,
+          pendingDetails(),
+          sync,
+          false,
+          (_) => delayed.future,
+        );
+        await tester.tap(
+          find.descendant(of: button, matching: find.byType(GestureDetector)),
+        );
+        await flush(tester);
+        expect(find.text('Looking up…'), findsOneWidget);
+        sync.emit(
+          SyncState(
+            accountUuid: 'account-1',
+            hasAccountScopedData: true,
+            isSyncComplete: true,
+          ),
+        );
+        await flush(tester);
+        if (fails) {
+          delayed.completeError(StateError('old lookup'));
+        } else {
+          delayed.complete(summary);
+        }
+        await flush(tester);
+        expect(find.text(summary), findsNothing);
+        expect(find.text('Failed: Bad state: old lookup'), findsNothing);
+        expect(find.text('Looking up…'), findsNothing);
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+  }
+  testWidgets('latest private lookup supersedes an older lookup', (
+    tester,
+  ) async {
+    final first = Completer<String>();
+    final second = Completer<String>();
+    var calls = 0;
+    await pump(
+      tester,
+      pendingDetails(),
+      null,
+      false,
+      (_) => ++calls == 1 ? first.future : second.future,
+    );
+    await tester.tap(
+      find.descendant(of: button, matching: find.byType(GestureDetector)),
+    );
+    await flush(tester);
+    expect(find.text('Looking up…'), findsOneWidget);
+    await tester.tap(
+      find.descendant(of: button, matching: find.byType(GestureDetector)),
+    );
+    await flush(tester);
+    second.complete('latest result');
+    await flush(tester);
+    first.complete(summary);
+    await flush(tester);
+    expect(find.text('latest result'), findsOneWidget);
+    expect(find.text(summary), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
 }

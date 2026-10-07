@@ -75,7 +75,12 @@ class TransparentDetailsSection extends StatelessWidget {
         ReviewListRow(
           key: const ValueKey('transparent_details_debug_lookup'),
           label: 'Private lookup (dev)',
-          value: debugLookupText ?? 'Look up',
+          value: debugLookupText == null
+              ? 'Look up'
+              : hideIfPrivacyMode(
+                  debugLookupText!,
+                  privacyModeEnabled: privacyModeEnabled,
+                ),
           trailingIconName: AppIcons.arrowTopRight,
           onPressed: onDebugLookup,
           scaleValueToFit: true,

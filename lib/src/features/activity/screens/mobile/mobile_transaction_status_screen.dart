@@ -150,6 +150,7 @@ class _MobileTransactionStatusScreenState
   bool _transparentDetailsPollInFlight = false;
   bool _transparentDetailsPrioritized = false;
   String? _debugLookupText;
+  int _debugLookupGeneration = 0;
 
   @override
   void dispose() {
@@ -227,10 +228,12 @@ class _MobileTransactionStatusScreenState
 
   Future<void> _loadTransaction() async {
     final generation = ++_loadGeneration;
+    ++_debugLookupGeneration;
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     final accountChanged = accountUuid != _activeAccountUuid;
     _activeAccountUuid = accountUuid;
     setState(() {
+      _debugLookupText = null;
       _detailsPending = true;
       if (accountChanged) {
         _transaction = null;
@@ -357,6 +360,12 @@ class _MobileTransactionStatusScreenState
   }
 
   Future<void> _runDebugLookup(rust_sync.TransactionInfo tx) async {
+    final generation = _loadGeneration;
+    final accountUuid = _activeAccountUuid;
+    final lookupGeneration = ++_debugLookupGeneration;
+    bool isCurrent() =>
+        _loadIsCurrent(generation, accountUuid) &&
+        lookupGeneration == _debugLookupGeneration;
     setState(() => _debugLookupText = 'Looking up…');
     try {
       final lookup = widget.transparentDetailsDebugLookup;
@@ -369,9 +378,9 @@ class _MobileTransactionStatusScreenState
                 minedHeight: tx.minedHeight,
               ),
             );
-      if (mounted) setState(() => _debugLookupText = text);
+      if (isCurrent()) setState(() => _debugLookupText = text);
     } catch (e) {
-      if (mounted) setState(() => _debugLookupText = 'Failed: $e');
+      if (isCurrent()) setState(() => _debugLookupText = 'Failed: $e');
     }
   }
 
