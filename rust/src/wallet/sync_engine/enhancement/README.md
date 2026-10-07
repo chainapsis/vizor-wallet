@@ -542,9 +542,14 @@ history rows, so both describe one database state. Each entry carries:
 - `details_complete`: whether the recipients, payment amounts, and memos are
   known. A missing recipient row does not mean there was no payment.
 - `provisional`: whether later discovery or enhancement can still change the
-  entry. It is true for provisional classifications or any unsettled pool
-  effect. Local construction can know every payment detail before scanning
-  discovers a receipt to the account's own external shielded address.
+  Activity entry. Unsettled pool effects keep it true. A mined mixed transaction
+  with a library-provided outgoing residual can establish its existing Sent/Received
+  rows while payment classification stays provisional: owned effects must be
+  settled, owned transparent scopes known, and the visible residual must cover
+  owned receipts after excluding internal funding. The receipt retains the
+  transaction-wide provisional classification and incomplete payment details.
+  Local construction can know every payment detail before scanning discovers
+  a receipt to the account's own external shielded address.
 
 Classification follows the facts it has:
 
@@ -560,8 +565,9 @@ Classification follows the facts it has:
   `shielded`. A receipt follows a changed role only when that transaction has
   a single row, so separate self-send legs are not conflated.
 
-While Private queries is enabled, Activity rows mark an incomplete entry
-"Details incomplete", and receipts show a "Details: Incomplete" row and an
+While Private queries is enabled, Activity rows mark an uncertain summary
+"Details incomplete"; established summaries keep their dates even when the
+payment details are missing. Receipts show a "Details: Incomplete" row and an
 "Unknown" fee when necessary. This is temporary integration feedback while
 private history approaches public-history completeness. With Private queries
 disabled, the existing presentation is preserved: no completeness notice and

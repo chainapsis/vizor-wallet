@@ -178,3 +178,149 @@ fn an_unsettled_private_receive_never_shows_the_senders_fee() {
         "the sender's fee is never shown on a receive"
     );
 }
+
+/// Private coverage is real; shielded financial rows are synthetic compact-scan
+/// facts. No construction record, raw payload, or sent-note attribution exists.
+#[test]
+fn settled_mixed_activity_does_not_inherit_incomplete_payment_details() {
+    for (owned_receipt, outgoing) in [(250_000, 250_000), (0, 200_000)] {
+        let (mut st, account) = private_wallet();
+        let ws = watch(&st, account);
+        let target = ws.target.unwrap().height;
+        let metadata = Some(TransactionMetadata {
+            fee: WholeTransactionFee::Exact(Zatoshis::const_from_u64(15_000)),
+            transparent_input_count: 0,
+            has_shielded_components: true,
+        });
+        cover(
+            &mut st,
+            account,
+            if owned_receipt == 0 {
+                vec![]
+            } else {
+                vec![output(
+                    0x71,
+                    0,
+                    external(&ws),
+                    owned_receipt,
+                    target - 4,
+                    metadata,
+                )]
+            },
+        );
+        promote(&mut st, account);
+        let conn = st.wallet().conn();
+        let account_id: i64 = conn
+            .query_row(
+                "SELECT id FROM accounts WHERE uuid = ?1",
+                [account.expose_uuid().as_bytes()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        conn.execute(
+            "INSERT INTO transactions (txid, mined_height, tx_index, fee)
+            VALUES (?1, ?2, 0, 15000)
+            ON CONFLICT(txid) DO UPDATE SET fee = 15000",
+            rusqlite::params![[0x71u8; 32], u32::from(target - 4)],
+        )
+        .unwrap();
+        let tx: i64 = conn
+            .query_row(
+                "SELECT id_tx FROM transactions WHERE txid = ?1",
+                [[0x71u8; 32]],
+                |r| r.get(0),
+            )
+            .unwrap();
+        conn.execute(
+            "INSERT INTO transactions (txid, mined_height, tx_index) VALUES (?1, ?2, 0)",
+            rusqlite::params![[0x70u8; 32], u32::from(target - 5)],
+        )
+        .unwrap();
+        let funding = conn.last_insert_rowid();
+        for (transaction, value, change) in [
+            (funding, 1_000_000 + outgoing + 15_000, false),
+            (tx, 1_000_000, true),
+        ] {
+            conn.execute(
+                "INSERT INTO ironwood_received_notes (transaction_id, action_index,
+                account_id, diversifier, value, rho, rseed, is_change, note_version)
+                VALUES (?1, 0, ?2, zeroblob(11), ?3, zeroblob(32), zeroblob(32), ?4, 3)",
+                rusqlite::params![transaction, account_id, value, change],
+            )
+            .unwrap();
+        }
+        conn.execute(
+            "INSERT INTO ironwood_received_note_spends (ironwood_received_note_id, transaction_id)
+            SELECT id, ?1 FROM ironwood_received_notes WHERE transaction_id = ?2",
+            [tx, funding],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO ironwood_enhance_routing (transaction_id, route, has_transparent_outputs)
+            VALUES (?1, 2, 1)",
+            [tx],
+        )
+        .unwrap();
+
+        let settled = rows(&st, account, 0x71);
+        assert_eq!(settled.len(), if owned_receipt == 0 { 1 } else { 2 });
+        assert_eq!(settled[0].tx_kind, "sent");
+        assert_eq!(settled[0].display_amount, outgoing);
+        if owned_receipt != 0 {
+            assert_eq!(settled[1].tx_kind, "received");
+            assert_eq!(settled[1].display_amount, owned_receipt);
+        }
+        assert!(settled
+            .iter()
+            .all(|row| !row.provisional && !row.details_complete));
+        assert!(settled.iter().all(|row| row.display_pool == "transparent"));
+        assert!(settled
+            .iter()
+            .all(|row| row.account_balance_delta
+                == -(outgoing as i64) - 15_000 + owned_receipt as i64));
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db").to_str().unwrap().to_owned();
+        conn.execute("VACUUM INTO ?1", [&path]).unwrap();
+        let detail = get_transaction_detail(
+            &path,
+            NETWORK,
+            &account.expose_uuid().to_string(),
+            &hex::encode([0x71; 32]),
+            "sent",
+        )
+        .unwrap();
+        assert!(detail.provisional);
+        assert!(!detail.details_complete);
+        assert!(detail.primary_address.is_none());
+        assert!(
+            detail.outputs.is_empty(),
+            "no recipient attribution is invented"
+        );
+        assert_eq!(
+            (settled[0].fee_state, settled[0].fee),
+            (TransactionFeeState::Known, 15_000)
+        );
+        assert!(!settled[0].amount_includes_fee);
+
+        // Growing the recovery window withdraws settled coverage, even though
+        // the shielded residual is still available. The warning must return.
+        let ws = watch(&st, account);
+        let mut grow = commit(&ws);
+        grow.receives = vec![output(
+            0x72,
+            0,
+            last_derived(&st, account, TransparentKeyScope::EXTERNAL),
+            30_000,
+            target - 2,
+            transparent_only(10_000, 1),
+        )];
+        assert!(
+            st.wallet_mut()
+                .db_mut()
+                .apply_transparent_ledger_commit(grow)
+                .unwrap()
+                .window_grew
+        );
+        assert!(rows(&st, account, 0x71).iter().all(|row| row.provisional));
+    }
+}

@@ -584,6 +584,39 @@ void main() {
     );
   });
 
+  testWidgets(
+    'settled mixed recovery rows keep dates and incomplete receipts',
+    (tester) async {
+      for (final example in [
+        ('sent', 250000, '-0.0025 ZEC'),
+        ('received', 250000, '+0.0025 ZEC'),
+        ('sent', 200000, '-0.002 ZEC'),
+      ]) {
+        final transaction = _transaction(
+          txKind: example.$1,
+          displayPool: 'transparent',
+          activityPool: 'transparent',
+          displayAmount: BigInt.from(example.$2),
+          detailsComplete: false,
+          provisional: false,
+        );
+        final row = await mapRow(
+          tester,
+          transaction,
+          privateQueriesEnabled: true,
+        );
+        expect(row.amountText, activityAmountTextForFormFactor(example.$3));
+        expect(row.amountSubtitle, isNull);
+        expect(
+          row.timestampText,
+          (await mapRow(tester, transaction)).timestampText,
+        );
+        expect(row.timestampText, isNotEmpty);
+        expect(transactionDetailsIncomplete(transaction), isTrue);
+      }
+    },
+  );
+
   testWidgets('a settled movement with an unknown role or pool stays marked', (
     tester,
   ) async {
