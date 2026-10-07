@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
@@ -29,13 +30,22 @@ class _Account extends AccountNotifier {
 /// Starts from [initial] and never resolves the wallet path, so a sync start
 /// publishes its starting state and goes no further.
 class _CarrySync extends SyncNotifier {
-  _CarrySync(this.initial)
+  _CarrySync(this.initial, {required super.privateTransparentRecovery})
     : super(walletDbPathResolver: () => Completer<String>().future);
 
   final SyncState initial;
 
   @override
   Future<SyncState> build() async => initial;
+}
+
+class _EnhancePir extends EnhancePirNotifier {
+  _EnhancePir(this.enabled);
+
+  final bool enabled;
+
+  @override
+  bool build() => enabled;
 }
 
 SyncState _current({required bool private}) => SyncState(
@@ -53,12 +63,22 @@ void main() {
   setUpAll(() => RustLib.initMock(api: _Api()));
   tearDownAll(RustLib.dispose);
 
-  Future<SyncState> startFrom(SyncState initial) async {
+  Future<SyncState> startFrom(
+    SyncState initial, {
+    bool privateTransparentRecovery = false,
+    bool privateQueries = false,
+  }) async {
     final container = ProviderContainer(
       overrides: [
         appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
         accountProvider.overrideWith(_Account.new),
-        syncProvider.overrideWith(() => _CarrySync(initial)),
+        enhancePirProvider.overrideWith(() => _EnhancePir(privateQueries)),
+        syncProvider.overrideWith(
+          () => _CarrySync(
+            initial,
+            privateTransparentRecovery: privateTransparentRecovery,
+          ),
+        ),
       ],
     );
     addTearDown(container.dispose);
@@ -94,6 +114,42 @@ void main() {
     expect(started.transparentBalance, BigInt.from(5));
     expect(started.transparentPendingBalance, BigInt.from(2));
     expect(started.canShieldTransparentBalance, isTrue);
+  });
+
+  test('a sync start demotes a public current balance read before private '
+      'queries raised the policy', () async {
+    final started = await startFrom(
+      _current(private: false),
+      privateTransparentRecovery: true,
+      privateQueries: true,
+    );
+
+    expect(
+      started.transparentAuthority,
+      rust_sync.TransparentBalanceAuthority.lastKnown,
+    );
+    expect(started.transparentLastKnownBalance, BigInt.from(7));
+    expect(started.transparentBalance, BigInt.zero);
+    expect(started.transparentPendingBalance, BigInt.zero);
+    expect(started.canShieldTransparentBalance, isFalse);
+  });
+
+  test('a sync start carries a public current balance when private queries '
+      'cannot raise the policy', () async {
+    for (final (flag, queries) in [(false, true), (true, false)]) {
+      final started = await startFrom(
+        _current(private: false),
+        privateTransparentRecovery: flag,
+        privateQueries: queries,
+      );
+
+      expect(
+        started.transparentAuthority,
+        rust_sync.TransparentBalanceAuthority.current,
+      );
+      expect(started.transparentBalance, BigInt.from(5));
+      expect(started.canShieldTransparentBalance, isTrue);
+    }
   });
 
   test('a sync start keeps a stopped recovery and its reason', () async {
