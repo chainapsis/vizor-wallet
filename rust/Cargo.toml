@@ -170,7 +170,7 @@ features = ["wallet"]
 # crates.io package; see the `[patch.crates-io]` comment below.
 [dependencies.zakura-pir-transparent]
 git = "https://github.com/zakura-core/wallet-libraries"
-rev = "ce9c819c44a9c63fe2cc03949bc2837306e849ca"
+rev = "a3dee2ab5d393b6ad02184736a5a74d2ba7bc642"
 default-features = false
 features = ["wallet"]
 
@@ -253,13 +253,13 @@ assertions_on_constants = "allow"
 # equal to these so its path dependencies on the backend and SQLite crates
 # resolve to the patched sources.
 #
-# Temporarily pinned to wallet-libraries #116: qualify the funding evidence
-# used to reconcile outgoing Activity. Repin after upstream integration.
+# Pinned to wallet-libraries main: reconcile compact-scanned shielded effects
+# and Enhance metadata into outgoing Activity amounts.
 [patch.crates-io]
-zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries", rev = "ce9c819c44a9c63fe2cc03949bc2837306e849ca" }
-zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries", rev = "ce9c819c44a9c63fe2cc03949bc2837306e849ca" }
-zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries", rev = "ce9c819c44a9c63fe2cc03949bc2837306e849ca" }
-zakura-pir-enhance-types = { git = "https://github.com/zakura-core/wallet-libraries", rev = "ce9c819c44a9c63fe2cc03949bc2837306e849ca" }
+zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries", rev = "a3dee2ab5d393b6ad02184736a5a74d2ba7bc642" }
+zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries", rev = "a3dee2ab5d393b6ad02184736a5a74d2ba7bc642" }
+zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries", rev = "a3dee2ab5d393b6ad02184736a5a74d2ba7bc642" }
+zakura-pir-enhance-types = { git = "https://github.com/zakura-core/wallet-libraries", rev = "a3dee2ab5d393b6ad02184736a5a74d2ba7bc642" }
 
 # Flutter debug builds use Cargokit + Cargo's dev profile (`cargo build`
 # without `--release`). Rust crypto and voting flows are slow under the default
