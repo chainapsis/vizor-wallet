@@ -41,6 +41,10 @@ A new Flutter FFI plugin project.
   }
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
+    # -force_load keeps every Rust object; export only the FFI entry points
+    # so dead stripping can drop code they never reach.
+    'EXPORTED_SYMBOLS_FILE' => '${PODS_TARGET_SRCROOT}/exported_symbols.txt',
+    'DEAD_CODE_STRIPPING' => 'YES',
     # Flutter.framework does not contain a i386 slice.
     'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386',
     'OTHER_LDFLAGS' => '-force_load ${BUILT_PRODUCTS_DIR}/librust_lib_zcash_wallet.a',
