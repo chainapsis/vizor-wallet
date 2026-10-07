@@ -21,13 +21,19 @@ impl CardInput {
         if !state.complete || !state.has_confirmed_anchor() {
             return Err("Insufficient balance: Gift Card check or confirmations pending".into());
         }
-        if !db
-            .anchor_computable(ShieldedPool::Ironwood, state.anchor_height.into())
-            .map_err(|e| e.to_string())?
-        {
+        let c = open_readonly_conn(path)?;
+        // The pinned backend predates InputSource::anchor_computable. Match
+        // that API's checkpoint-existence check for the retained Ironwood anchor.
+        let anchor_computable: bool = c
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM ironwood_tree_checkpoints WHERE checkpoint_id = ?1)",
+                [state.anchor_height],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if !anchor_computable {
             return Err("Gift Card funding witnesses require another check".into());
         }
-        let c = open_readonly_conn(path)?;
         let mut query=c.prepare("SELECT t.txid,n.action_index FROM ironwood_received_notes n JOIN transactions t ON t.id_tx=n.transaction_id JOIN vizor_giftcard_check g ON t.txid=g.funding_txid WHERE n.value>0 AND NOT EXISTS(SELECT 1 FROM vizor_giftcard_spends s WHERE s.nf=n.nf)").map_err(|e|e.to_string())?;
         let ids = query
             .query_map([], |r| Ok((r.get::<_, Vec<u8>>(0)?, r.get::<_, u16>(1)?)))

@@ -382,7 +382,6 @@ impl ClaimFixture {
             // Model bytes already created by the old binary. Production
             // CardInput::load must reject this unsafe state for new attempts.
             CardInput {
-                db: &db,
                 account: self.account(),
                 state,
                 notes,
