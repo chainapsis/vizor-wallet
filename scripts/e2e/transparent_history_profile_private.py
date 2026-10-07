@@ -397,18 +397,16 @@ def ui_rows(context):
                     for row in shown
                 ]
             elif which == "aggregate":
-                # The reconstructed payment excludes the fee: an "Amount" line
-                # and a separate "Tx fee". Role, pool and amount are known, so
-                # the row shows its time and only the receipt is marked.
-                rows += [
-                    dict(
-                        row,
-                        details_incomplete=True,
-                        row_incomplete=False,
-                        fee_presentations=["separate"],
-                    )
-                    for row in shown
-                ]
+                # Role, pool and amount are known, so the row shows its time
+                # and only the receipt is marked. The reconstructed payment
+                # excludes the fee: a sent row's receipt has an "Amount" line
+                # and a separate "Tx fee". A receive (a self-transfer's leg)
+                # has no fee presentation, as everywhere else.
+                for row in shown:
+                    row = dict(row, details_incomplete=True, row_incomplete=False)
+                    if row["role"] == "sent":
+                        row["fee_presentations"] = ["separate"]
+                    rows.append(row)
             else:
                 rows.append(incomplete_ui_row(record, facts, effect, account, context))
     return rows

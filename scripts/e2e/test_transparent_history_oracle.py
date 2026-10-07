@@ -352,7 +352,8 @@ class PrivateUiRows(unittest.TestCase):
             self.assertEqual(row["pool_labels"], ["Transparent"])
             self.assertTrue(row["details_incomplete"])
             self.assertFalse(row["row_incomplete"])
-            self.assertEqual(row["fee_presentations"], ["separate"])
+        self.assertEqual(rows["sent"]["fee_presentations"], ["separate"])
+        self.assertNotIn("fee_presentations", rows["received"])
         self.assertFalse(rows["sent"]["optional"])
 
     def test_a_receive_found_by_scanning_marks_only_its_receipt(self):
