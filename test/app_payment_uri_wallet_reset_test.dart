@@ -9,7 +9,7 @@ import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
-import 'package:zcash_wallet/src/core/navigation/payment_uri_busy_surface_provider.dart';
+import 'package:zcash_wallet/src/core/navigation/external_action_guard_provider.dart';
 import 'package:zcash_wallet/src/core/navigation/payment_uri_drain_policy.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/features/send/services/payment_request_precheck.dart';
@@ -358,8 +358,9 @@ void main() {
 
       // The real review screen acquires this hold after its first frame, then
       // releases it only after discardProposal has completed.
-      final busy = container.read(paymentUriBusySurfaceProvider.notifier);
-      busy.acquire();
+      final busy = container
+          .read(externalActionGuardProvider.notifier)
+          .acquire();
       router.go('/home');
       await tester.pumpAndSettle();
       busy.release();

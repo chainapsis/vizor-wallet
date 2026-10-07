@@ -3418,7 +3418,7 @@ void main() {
             widget is Image &&
             widget.image is AssetImage &&
             (widget.image as AssetImage).assetName ==
-                'assets/illustrations/keystone_qr_scan_error.png',
+                'assets/illustrations/keystone_qr_scan_error.webp',
       ),
     );
     expect(illustration.width, 48);

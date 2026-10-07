@@ -49,6 +49,7 @@ import '../../migration/widgets/ironwood_migration_announcement_modal.dart';
 import '../../swap/models/swap_activity_navigation.dart';
 import '../../swap/models/swap_fiat_value_formatting.dart';
 import '../../swap/providers/swap_activity_tracker.dart';
+import '../widgets/desktop_home_setup_carousel.dart';
 import '../../swap/providers/swap_state_provider.dart';
 import '../services/transparent_balance_display.dart';
 import '../services/transparent_shielding_service.dart';
@@ -58,7 +59,7 @@ import '../widgets/ledger_shield_signing_overlay.dart';
 const _shieldErrorTooltipIconSize = 14.0;
 const _shieldErrorTooltipGap = AppSpacing.xxs;
 const _ironwoodMigrationIllustrationAsset =
-    'assets/illustrations/ironwood_migration_illustration.png';
+    'assets/illustrations/desktop/ironwood_migration_illustration.webp';
 const _ironwoodMigrationCtaBackgroundColor = Color(0xFF1B1F1F);
 const _ironwoodMigrationCtaBorderColor = Color(0x12FFFFFF);
 const _homeDesktopActivationShortcuts = <ShortcutActivator, Intent>{
@@ -323,10 +324,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         !sync.hasAccountScopedData &&
         sync.failure == null;
     final isDark = context.appTheme == AppThemeData.dark;
-    final backgroundVariant = isImportingForBackground
-        ? 'importing'
-        : 'default';
-    final backgroundTheme = isDark ? 'dark' : 'light';
+    final backgroundAsset = isImportingForBackground
+        ? 'assets/illustrations/home_importing_background.webp'
+        : 'assets/illustrations/desktop/'
+              'home_default_background_${isDark ? 'dark' : 'light'}.webp';
     final ironwoodAnnouncementAsync = ref.watch(
       ironwoodMigrationAnnouncementProvider,
     );
@@ -362,10 +363,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
     final visibleIronwoodAnnouncement = _visibleIronwoodAnnouncement;
     return AppDesktopBackdropShell(
-      background: _HomeFullPageBackground(
-        assetName:
-            'assets/illustrations/home_${backgroundVariant}_background_$backgroundTheme.png',
-      ),
+      background: _HomeFullPageBackground(assetName: backgroundAsset),
       sidebar: const AppMainSidebar(),
       pane: Stack(
         fit: StackFit.expand,
@@ -635,6 +633,7 @@ class _HomePaneState extends ConsumerState<_HomePane> {
     );
 
     return _HomeDesktopPane(
+      hasSetupReminders: ref.watch(showDesktopHomeSetupCarouselProvider),
       isImporting: isImporting,
       importingAccountName: activeAccountName,
       hasBalance: hasBalance,
@@ -1171,6 +1170,7 @@ Offset _positionShieldErrorTooltip(TooltipPositionContext context) {
 class _HomeDesktopPane extends StatelessWidget {
   const _HomeDesktopPane({
     required this.isImporting,
+    required this.hasSetupReminders,
     required this.importingAccountName,
     required this.hasBalance,
     required this.showsIronwoodOnlyBalance,
@@ -1200,6 +1200,7 @@ class _HomeDesktopPane extends StatelessWidget {
   });
 
   final bool isImporting;
+  final bool hasSetupReminders;
   final String? importingAccountName;
   final bool hasBalance;
   final bool showsIronwoodOnlyBalance;
@@ -1296,6 +1297,13 @@ class _HomeDesktopPane extends StatelessWidget {
                     child: _HomeNoticeCard(data: notice!),
                   ),
                 ],
+                if (hasSetupReminders)
+                  const SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.only(top: AppSpacing.xs),
+                      child: Center(child: DesktopHomeSetupCarousel()),
+                    ),
+                  ),
                 SliverPadding(
                   padding: EdgeInsets.only(
                     top: hasMigrationHomeState
@@ -1326,32 +1334,35 @@ class _HomeDesktopPane extends StatelessWidget {
           );
         }
 
-        return Stack(
-          fit: StackFit.expand,
-          children: [
-            Positioned.fill(
-              top: contentTop,
-              child: Align(
-                alignment: Alignment.topCenter,
-                child: SizedBox(
+        return AppPaneScrollbar(
+          builder: (context, controller) => SingleChildScrollView(
+            controller: controller,
+            padding: EdgeInsets.only(top: contentTop),
+            child: Column(
+              children: [
+                SizedBox(
                   key: const ValueKey('home_desktop_content'),
                   width: 420,
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.s,
-                      vertical: AppSpacing.sm,
+                    padding: EdgeInsets.fromLTRB(
+                      AppSpacing.s,
+                      AppSpacing.sm,
+                      AppSpacing.s,
+                      hasSetupReminders ? 0 : AppSpacing.sm,
                     ),
                     child: Consumer(
                       builder: (context, ref, _) => _HomeImportingContent(
                         progress: ref.watch(syncDisplayPercentageProvider),
                         accountName: importingAccountName,
+                        height: hasSetupReminders ? 520 : 624,
                       ),
                     ),
                   ),
                 ),
-              ),
+                const DesktopHomeSetupCarousel(),
+              ],
             ),
-          ],
+          ),
         );
       },
     );
@@ -1385,10 +1396,15 @@ class _HomeDesktopCenteredSliver extends StatelessWidget {
 }
 
 class _HomeImportingContent extends StatelessWidget {
-  const _HomeImportingContent({required this.progress, this.accountName});
+  const _HomeImportingContent({
+    required this.progress,
+    this.accountName,
+    this.height = 624,
+  });
 
   final double progress;
   final String? accountName;
+  final double height;
 
   @override
   Widget build(BuildContext context) {
@@ -1401,7 +1417,7 @@ class _HomeImportingContent extends StatelessWidget {
         : 'It might take some time.\nKeep Vizor open & running.';
     return SizedBox(
       width: 396,
-      height: 624,
+      height: height,
       child: Stack(
         children: [
           Positioned(
@@ -1458,7 +1474,7 @@ class _HomeImportingContent extends StatelessWidget {
                   width: 246,
                   height: 192,
                   child: Image.asset(
-                    'assets/illustrations/home_rest_character.png',
+                    'assets/illustrations/home_rest_character.webp',
                     fit: BoxFit.contain,
                   ),
                 ),
@@ -2473,7 +2489,7 @@ class _HomeDesktopEmptyActivity extends StatelessWidget {
                   ),
                   const SizedBox(height: AppSpacing.xxs),
                   Image.asset(
-                    'assets/illustrations/home_rest_character.png',
+                    'assets/illustrations/home_rest_character.webp',
                     width: illustrationWidth,
                     height: illustrationHeight,
                     fit: BoxFit.contain,

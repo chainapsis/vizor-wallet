@@ -24,8 +24,9 @@ import 'src/core/navigation/mobile_exit_back_guard.dart';
 import 'src/core/navigation/mobile_onboarding_routes.dart';
 import 'src/core/navigation/mobile_routes.dart';
 import 'src/core/navigation/incoming_link_dispatch.dart';
-import 'src/core/navigation/payment_uri_busy_surface_provider.dart';
+import 'src/core/navigation/external_action_guard_provider.dart';
 import 'src/core/navigation/payment_uri_drain_policy.dart';
+import 'src/core/navigation/windows_update_prompt_policy.dart';
 import 'src/core/navigation/payload_page_key.dart';
 import 'src/core/motion/onboarding_motion.dart';
 import 'src/core/security/background_auto_lock_host.dart';
@@ -61,10 +62,14 @@ import 'src/features/about/screens/mobile/mobile_about_screens.dart';
 import 'src/features/onboarding/create/address_types_screen.dart';
 import 'src/features/onboarding/create/customise_account_screen.dart';
 import 'src/features/onboarding/create/intro_zcash_screen.dart';
+import 'src/features/onboarding/create/desktop_gift_education_screen.dart';
 import 'src/features/onboarding/create/onboarding_split_view.dart';
 import 'src/features/onboarding/create/secret_passphrase_screen.dart';
 import 'src/features/onboarding/create/things_to_know_screen.dart';
 import 'src/features/onboarding/import/import_secret_passphrase_screen.dart';
+import 'src/features/onboarding/import/desktop_import_method_selection_screen.dart';
+import 'src/features/onboarding/import/desktop_hardware_selection_screen.dart';
+import 'src/features/onboarding/import/desktop_import_navigation.dart';
 import 'src/features/onboarding/import/import_split_view.dart';
 import 'src/features/onboarding/import/import_wallet_birthday_screen.dart';
 import 'src/features/onboarding/keystone/keystone_how_to_connect_screen.dart';
@@ -89,6 +94,12 @@ import 'src/features/payment_links/providers/payment_link_cards_provider.dart';
 import 'src/features/payment_links/providers/payment_link_claim_coordinator_provider.dart';
 import 'src/features/payment_links/providers/payment_link_intake_provider.dart';
 import 'src/features/payment_links/providers/gift_claim_flow_provider.dart';
+import 'src/features/payment_links/screens/gift_claim_screen.dart';
+import 'src/features/payment_links/screens/desktop_payment_link_scan_screen.dart';
+import 'src/features/payment_links/screens/desktop_gift_password_screen.dart';
+import 'src/features/payment_links/screens/desktop_gift_customise_screen.dart';
+import 'src/features/payment_links/screens/gift_customise_account_screen.dart'
+    show GiftCustomiseAccountArgs;
 import 'src/features/payment_links/screens/payment_links_screen.dart';
 import 'src/features/payment_links/services/payment_link_entry_policy.dart';
 import 'src/features/receive/screens/receive_screen.dart';
@@ -143,6 +154,8 @@ import 'src/providers/windows_update_provider.dart';
 import 'src/core/storage/secure_storage_diagnostics.dart';
 import 'src/core/storage/wallet_paths.dart';
 import 'src/core/widgets/linux_keyring_gate.dart';
+import 'src/core/storage/linux_keyring_coordinator.dart';
+import 'src/features/payment_links/services/gift_claim_setup_coordinator.dart';
 import 'src/rust/api/sync.dart' as rust_sync;
 import 'src/rust/api/voting.dart' as rust_voting;
 import 'src/rust/frb_generated.dart';
@@ -611,16 +624,15 @@ String? appRedirect({
   // Creating the account does not finish its storage. Keep that setup
   // actionable on this screen; locking still takes precedence.
   if (hasWallet &&
-      kAppFormFactor == AppFormFactor.mobile &&
       ref.read(giftClaimFlowProvider)?.walletSetupInProgress == true &&
       state.matchedLocation == '/gift/customise') {
     return requiresUnlock ? '/unlock' : null;
   }
   if (_isRouteOrChild(state.matchedLocation, '/gift')) {
-    if (kAppFormFactor != AppFormFactor.mobile) return '/';
     if (hasWallet) {
       if (requiresUnlock) return '/unlock';
-      if (state.matchedLocation == '/gift' &&
+      if ((state.matchedLocation == '/gift' ||
+              state.matchedLocation == '/gift/scan') &&
           state.uri.queryParameters['addAccount'] == 'true') {
         return null;
       }
@@ -720,11 +732,124 @@ OnboardingBackTarget _desktopOnboardingEntryBackTarget(Ref ref) {
   );
 }
 
+OnboardingBackTarget _desktopImportBackTarget(Ref ref, GoRouterState state) {
+  final selection = desktopImportSelectionLocation(state.uri);
+  if (selection == null) return _desktopOnboardingEntryBackTarget(ref);
+  return OnboardingBackTarget.route(
+    label: selection.startsWith('/import/hardware')
+        ? 'Hardware wallets'
+        : 'Import methods',
+    routePath: selection,
+  );
+}
+
 /// Desktop onboarding tree: welcome, the create/import/keystone
 /// split-view shells, and the keystone entry aliases. The mobile tree
 /// replaces these with single-pane mobile onboarding screens (same
 /// route paths, so the shared guard keeps working).
 List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
+  for (final entry in {
+    'intro': DesktopGiftEducationPage.intro,
+    'address-types': DesktopGiftEducationPage.addressTypes,
+    'things-to-know': DesktopGiftEducationPage.thingsToKnow,
+  }.entries)
+    GoRoute(
+      path: '/setup/education/${entry.key}',
+      builder: (_, state) => DesktopGiftEducationScreen(
+        page: entry.value,
+        accountUuid: state.extra is String ? state.extra as String : null,
+      ),
+    ),
+  GoRoute(
+    path: '/gift',
+    builder: (_, state) => GiftClaimScreen(
+      addingAccount: state.uri.queryParameters['addAccount'] == 'true',
+    ),
+  ),
+  GoRoute(
+    path: '/gift/scan',
+    builder: (_, state) => DesktopPaymentLinkScanScreen(
+      networkName: state.uri.queryParameters['network'] ?? 'main',
+      addingAccount: state.uri.queryParameters['addAccount'] == 'true',
+    ),
+  ),
+  GoRoute(
+    path: '/gift/set-password',
+    redirect: (_, _) =>
+        ref.read(giftClaimFlowProvider)?.inspection == null ? '/gift' : null,
+    builder: (_, _) => const DesktopGiftPasswordScreen(),
+  ),
+  GoRoute(
+    path: '/gift/customise',
+    redirect: (_, _) =>
+        ref.read(giftClaimFlowProvider)?.walletSetupInProgress == true
+        ? null
+        : '/gift',
+    builder: (_, _) {
+      final setup = ref.read(giftClaimFlowProvider)!;
+      return DesktopGiftCustomiseScreen(
+        args: GiftCustomiseAccountArgs(
+          passcode: setup.setupPasscode,
+          passwordInputSource: setup.setupPasswordInputSource,
+          inspection: setup.inspection!,
+        ),
+      );
+    },
+  ),
+  GoRoute(
+    path: '/import/method',
+    builder: (context, state) {
+      final origin = state.uri.queryParameters['from'];
+      final fromGift = origin == 'gift';
+      final suffix = {'add-account', 'gift'}.contains(origin)
+          ? 'from=$origin'
+          : null;
+      return DesktopImportMethodSelectionScreen(
+        cancelRoute: origin == 'add-account' ? '/add-account' : '/welcome',
+        onCancel: fromGift
+            ? () async {
+                try {
+                  await ref
+                      .read(giftClaimFlowProvider.notifier)
+                      .cancelSetupReturn();
+                } catch (_) {
+                  if (context.mounted) {
+                    showAppToast(
+                      context,
+                      'Couldn’t close the card. Try again.',
+                      iconName: AppIcons.warning,
+                    );
+                  }
+                  return;
+                }
+                if (!context.mounted) return;
+                context.go(
+                  ref.read(accountProvider).value?.hasAccounts == true
+                      ? '/gift?addAccount=true'
+                      : '/gift',
+                );
+              }
+            : null,
+        hardwareRoute: '/import/hardware${suffix == null ? '' : '?$suffix'}',
+        secretPassphraseRoute:
+            '/import?entry=import-method${suffix == null ? '' : '&$suffix'}',
+      );
+    },
+  ),
+  GoRoute(
+    path: '/import/hardware',
+    builder: (_, state) => DesktopHardwareSelectionScreen(
+      deviceBackRoute: state.uri.toString(),
+      backRoute: Uri(
+        path: '/import/method',
+        queryParameters:
+            {'add-account', 'gift'}.contains(state.uri.queryParameters['from'])
+            ? {'from': state.uri.queryParameters['from']!}
+            : null,
+      ).toString(),
+    ),
+  ),
+
   // Onboarding-route transitions. Desktop acrylic visibly stutters
   // through a snapped page swap, so each route gets a custom
   // page builder that lets contents enter while the acrylic stays
@@ -763,7 +888,7 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
       transitionDuration: kOnboardingForwardDuration,
       reverseTransitionDuration: kOnboardingReverseDuration,
       child: LedgerConnectScreen(
-        backTarget: _desktopOnboardingEntryBackTarget(ref),
+        backTarget: _desktopImportBackTarget(ref, state),
       ),
       transitionsBuilder: _onboardingFadeTransition,
     ),
@@ -787,7 +912,10 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
             if (!context.mounted) return;
             if (!ref.read(appSecurityProvider).isPasswordConfigured) {
               context.go(
-                '/onboarding/ledger/set-password',
+                preserveDesktopImportEntry(
+                  state.uri,
+                  '/onboarding/ledger/set-password',
+                ),
                 extra: LedgerSetPasswordArgs(
                   account: args.account,
                   birthdayHeight: birthdayHeight,
@@ -796,7 +924,10 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
               return;
             }
             context.go(
-              '/onboarding/ledger/customise-account',
+              preserveDesktopImportEntry(
+                state.uri,
+                '/onboarding/ledger/customise-account',
+              ),
               extra: LedgerCustomiseAccountArgs(
                 account: args.account,
                 birthdayHeight: birthdayHeight,
@@ -825,13 +956,19 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
         child: SetPasswordScreen.ledger(
           ledgerBackTarget: OnboardingBackTarget.route(
             label: 'Wallet Birthday Height',
-            routePath: '/onboarding/ledger/birthday',
+            routePath: preserveDesktopImportEntry(
+              state.uri,
+              '/onboarding/ledger/birthday',
+            ),
             routeExtra: LedgerBirthdayArgs(account: args.account),
           ),
           ledgerOnContinue: (password, inputSource) async {
             if (!context.mounted) return;
             context.go(
-              '/onboarding/ledger/customise-account',
+              preserveDesktopImportEntry(
+                state.uri,
+                '/onboarding/ledger/customise-account',
+              ),
               extra: LedgerCustomiseAccountArgs(
                 account: args.account,
                 birthdayHeight: args.birthdayHeight,
@@ -866,9 +1003,12 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
             label: args.pendingPassword == null
                 ? 'Wallet Birthday Height'
                 : 'Set Password',
-            routePath: args.pendingPassword == null
-                ? '/onboarding/ledger/birthday'
-                : '/onboarding/ledger/set-password',
+            routePath: preserveDesktopImportEntry(
+              state.uri,
+              args.pendingPassword == null
+                  ? '/onboarding/ledger/birthday'
+                  : '/onboarding/ledger/set-password',
+            ),
             routeExtra: args.pendingPassword == null
                 ? LedgerBirthdayArgs(account: args.account)
                 : LedgerSetPasswordArgs(
@@ -877,50 +1017,59 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
                   ),
           ),
           onFinish: (name, profilePictureId) async {
-            Future<void> importAccount() =>
-                ref.read(ledgerAccountImporterProvider)(
-                  name: name,
-                  account: args.account,
-                  birthdayHeight: args.birthdayHeight,
-                  profilePictureId: profilePictureId,
-                );
+            await ref.read(linuxKeyringCoordinatorProvider).runMutation(
+              () async {
+                Future<void> importAccount() =>
+                    ref.read(ledgerAccountImporterProvider)(
+                      name: name,
+                      account: args.account,
+                      birthdayHeight: args.birthdayHeight,
+                      profilePictureId: profilePictureId,
+                    );
 
-            final pendingPassword = args.pendingPassword;
-            final inputSourceService = ref.read(appPasswordInputSourceProvider);
-            if (pendingPassword == null) {
-              await importAccount();
-              if (!context.mounted) return;
-              context.go('/home');
-              return;
-            }
+                final pendingPassword = args.pendingPassword;
+                final inputSourceService = ref.read(
+                  appPasswordInputSourceProvider,
+                );
+                if (pendingPassword == null) {
+                  await importAccount();
+                  return;
+                }
 
-            final securityNotifier = ref.read(appSecurityProvider.notifier);
-            final routerRefresh = ref.read(routerRefreshProvider);
-            var passwordPrepared = false;
-            var passwordCommitted = false;
-            try {
-              await routerRefresh.pauseWhile(() async {
-                await securityNotifier.preparePasswordSetup(pendingPassword);
-                passwordPrepared = true;
-                await importAccount();
-                await securityNotifier.completePasswordSetup();
-                passwordCommitted = true;
-                unawaited(
-                  inputSourceService.remember(args.passwordInputSource),
-                );
-                if (!context.mounted) return;
-                context.go('/home');
-              });
-            } catch (error) {
-              if (passwordPrepared && !passwordCommitted) {
-                await securityNotifier.finishPasswordSetupAfterFailure(
-                  accountMayExist:
-                      error is WalletAccountSetupInterruptedException ||
-                      (ref.read(accountProvider).value?.hasAccounts ?? false),
-                );
-              }
-              rethrow;
-            }
+                final securityNotifier = ref.read(appSecurityProvider.notifier);
+                final routerRefresh = ref.read(routerRefreshProvider);
+                var passwordPrepared = false;
+                var passwordCommitted = false;
+                try {
+                  await routerRefresh.pauseWhile(() async {
+                    await securityNotifier.preparePasswordSetup(
+                      pendingPassword,
+                    );
+                    passwordPrepared = true;
+                    await importAccount();
+                    await securityNotifier.completePasswordSetup();
+                    passwordCommitted = true;
+                    unawaited(
+                      inputSourceService.remember(args.passwordInputSource),
+                    );
+                  });
+                } catch (error) {
+                  if (passwordPrepared && !passwordCommitted) {
+                    await securityNotifier.finishPasswordSetupAfterFailure(
+                      accountMayExist:
+                          error is WalletAccountSetupInterruptedException ||
+                          (ref.read(accountProvider).value?.hasAccounts ??
+                              false),
+                    );
+                  }
+                  rethrow;
+                }
+              },
+            );
+            if (!context.mounted) return;
+            await completeGiftClaimImportSetupForRoute(ref, context);
+            if (!context.mounted) return;
+            context.go('/home');
           },
         ),
         transitionsBuilder: _onboardingFadeTransition,
@@ -1044,7 +1193,7 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
           transitionDuration: kOnboardingForwardDuration,
           reverseTransitionDuration: kOnboardingReverseDuration,
           child: KeystoneHowToConnectScreen(
-            backTarget: _desktopOnboardingEntryBackTarget(ref),
+            backTarget: _desktopImportBackTarget(ref, state),
           ),
           transitionsBuilder: _onboardingFadeTransition,
         ),
@@ -1159,7 +1308,7 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
             reverseTransitionDuration: kOnboardingReverseDuration,
             child: ImportSecretPassphraseScreen(
               args: args,
-              backTarget: _desktopOnboardingEntryBackTarget(ref),
+              backTarget: _desktopImportBackTarget(ref, state),
             ),
             transitionsBuilder: _onboardingFadeTransition,
           );
@@ -1312,6 +1461,13 @@ List<RouteBase> _desktopRoutes(Ref ref) => [
       initialCards: state.extra is PaymentLinkCardsSnapshot
           ? state.extra! as PaymentLinkCardsSnapshot
           : null,
+    ),
+  ),
+  GoRoute(
+    path: '/payment-links/scan',
+    builder: (_, state) => DesktopPaymentLinkScanScreen(
+      networkName: state.uri.queryParameters['network'] ?? 'main',
+      onboarding: false,
     ),
   ),
   GoRoute(
@@ -1525,6 +1681,13 @@ List<RouteBase> _desktopRoutes(Ref ref) => [
   GoRoute(path: '/receive', builder: (_, _) => const ReceiveScreen()),
   GoRoute(path: '/accounts', builder: (_, _) => const AccountsScreen()),
   GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
+  GoRoute(
+    path: '/setup/backup',
+    builder: (_, state) => SettingsSeedPhraseScreen(
+      accountUuid: state.extra is String ? state.extra as String : null,
+      showBackupIntro: true,
+    ),
+  ),
   GoRoute(
     path: '/settings/secret-passphrase',
     builder: (_, state) => SettingsSeedPhraseScreen(
@@ -1916,8 +2079,18 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
     });
     // A hardware signing session keeps the link parked rather than dropping
     // it, so the drain has to be re-run when the hold is given back.
-    ref.listen<int>(paymentUriBusySurfaceProvider, (previous, next) {
-      if (next == 0 && (previous ?? 0) > 0) _schedulePendingDrain();
+    ref.listen<ExternalActionGuardState>(externalActionGuardProvider, (
+      previous,
+      next,
+    ) {
+      if (previous?.blocks(ExternalAction.paymentRequest) == true &&
+          !next.blocks(ExternalAction.paymentRequest)) {
+        _schedulePendingDrain();
+      }
+      if (previous?.blocks(ExternalAction.navigation) == true &&
+          !next.blocks(ExternalAction.navigation)) {
+        _openPendingPaymentLink();
+      }
     });
     // Same shape for a send mid-broadcast: the link stays parked until the
     // receipt is on screen, so the drain has to be re-run when it gets there.
@@ -1954,6 +2127,11 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
       case IncomingGiftCardLink():
         _handleGiftCardLink(rawUri);
       case IncomingVizorHomeLink():
+        if (ref
+            .read(externalActionGuardProvider)
+            .blocks(ExternalAction.navigation)) {
+          return;
+        }
         if (ref.read(appSecurityProvider).requiresUnlock) return;
         // Onboarding, import, and add-account keep their state only in the
         // widget tree -- a half-typed seed phrase, a freshly generated
@@ -1962,7 +2140,7 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
         // weakest intent there is ("open Vizor"), and Vizor is already open,
         // so it loses to anything in progress: drop it as silently as an
         // unknown link.
-        if (isOnboardingLocation(_currentLocation)) return;
+        if (isAccountSetupLocation(_currentLocation)) return;
         widget.router.go('/home');
       case IncomingLinkUnknown():
         // Silent by contract — see `classifyIncomingLink`.
@@ -2003,21 +2181,23 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
   void _openPendingPaymentLink() {
     final pendingLink = ref.read(paymentLinkIntakeProvider).pendingLink;
     if (_navigationScheduled ||
+        ref
+            .read(externalActionGuardProvider)
+            .blocks(ExternalAction.navigation) ||
         ref.read(appSecurityProvider).requiresUnlock ||
         pendingLink == null) {
       return;
     }
     final location = widget.router.state.matchedLocation;
     // Unlock owns post-authentication navigation. The Payment Links screen
-    // owns intake while it is already visible, including its local wizard.
+    // owns intake while it is already visible, including its wizard and scanner.
     if (location == '/' ||
         location == '/unlock' ||
-        location == '/payment-links' ||
+        _isRouteOrChild(location, '/payment-links') ||
         _isRouteOrChild(location, '/gift')) {
       return;
     }
-    if (kAppFormFactor == AppFormFactor.mobile &&
-        location == '/welcome' &&
+    if (location == '/welcome' &&
         !(ref.read(walletProvider).value?.hasWallet ??
             ref.read(appBootstrapProvider).hasWallet)) {
       if (ref.read(welcomeNetworkSettingsPresentedProvider) ||
@@ -2028,6 +2208,9 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _navigationScheduled = false;
         if (!mounted ||
+            ref
+                .read(externalActionGuardProvider)
+                .blocks(ExternalAction.navigation) ||
             widget.router.state.matchedLocation != '/welcome' ||
             ref.read(paymentLinkIntakeProvider).pendingLink == null ||
             ref.read(appSecurityProvider).requiresUnlock ||
@@ -2057,6 +2240,9 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _navigationScheduled = false;
       if (!mounted ||
+          ref
+              .read(externalActionGuardProvider)
+              .blocks(ExternalAction.navigation) ||
           ref.read(appSecurityProvider).requiresUnlock ||
           ref.read(paymentLinkIntakeProvider).pendingLink == null) {
         return;
@@ -2064,7 +2250,7 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
       final currentLocation = widget.router.state.matchedLocation;
       if (currentLocation == '/' ||
           currentLocation == '/unlock' ||
-          currentLocation == '/payment-links' ||
+          _isRouteOrChild(currentLocation, '/payment-links') ||
           paymentLinkEntryBlockedAtLocation(
             currentLocation,
             paymentRequestCardPresented: _paymentRequestCardPresented,
@@ -2181,7 +2367,9 @@ class _IncomingLinkHostState extends ConsumerState<_IncomingLinkHost> {
       // In-progress surfaces that own no route of their own — the desktop
       // Keystone shield signing overlay on `/home`, and the Gift Card funding
       // overlay on `/payment-links`.
-      hasBusySurface: ref.read(paymentUriBusySurfaceProvider) > 0,
+      hasBusySurface: ref
+          .read(externalActionGuardProvider)
+          .blocks(ExternalAction.paymentRequest),
       // Desktop review owns a live Rust proposal whose selected inputs stay
       // locked until the screen is disposed. The review also takes a busy hold
       // so leaving it schedules another drain; this route-payload check closes
@@ -2341,22 +2529,8 @@ class _WindowsUpdatePromptHostState
     return widget.router.routerDelegate.currentConfiguration.uri.path;
   }
 
-  bool _canShowForCurrentRoute() {
-    final path = _currentPath;
-    if (path == '/welcome' ||
-        path == '/add-account' ||
-        path == '/lost-password' ||
-        path.startsWith('/onboarding/') ||
-        path.startsWith('/import') ||
-        path.startsWith('/import-keystone') ||
-        path.startsWith('/send') ||
-        path.startsWith('/settings/secret-passphrase') ||
-        path.startsWith('/settings/viewing-key') ||
-        path.startsWith('/settings/change-password')) {
-      return false;
-    }
-    return true;
-  }
+  bool _canShowForCurrentRoute() =>
+      canShowWindowsUpdatePromptAtLocation(_currentPath);
 
   String _promptKey(WindowsUpdateState state) {
     // Each failure gets its own key: dismissing one must not hide the next.
@@ -2405,7 +2579,11 @@ class _WindowsUpdatePromptHostState
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(windowsUpdateProvider);
-    final showPrompt = _shouldShowPrompt(state);
+    final showPrompt =
+        _shouldShowPrompt(state) &&
+        !ref
+            .watch(externalActionGuardProvider)
+            .blocks(ExternalAction.updatePrompt);
 
     return Stack(
       fit: StackFit.expand,
@@ -2444,6 +2622,12 @@ class _WindowsUpdatePromptHostState
                           unawaited(_handleDownload());
                         },
                         onRestart: () {
+                          if (!_canShowForCurrentRoute() ||
+                              ref
+                                  .read(externalActionGuardProvider)
+                                  .blocks(ExternalAction.updatePrompt)) {
+                            return;
+                          }
                           unawaited(
                             ref
                                 .read(windowsUpdateProvider.notifier)

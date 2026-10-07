@@ -55,7 +55,7 @@ class IronwoodMigrationAnnouncementModal extends StatelessWidget {
             height: _heroHeight,
             child: Image(
               image: AssetImage(
-                'assets/illustrations/ironwood_migration_modal_background.png',
+                'assets/illustrations/ironwood_migration_modal_background.webp',
               ),
               fit: BoxFit.cover,
             ),
@@ -67,7 +67,7 @@ class IronwoodMigrationAnnouncementModal extends StatelessWidget {
             height: _symbolHeight,
             child: Image(
               image: AssetImage(
-                'assets/illustrations/ironwood_migration_modal_symbol.png',
+                'assets/illustrations/ironwood_migration_modal_symbol.webp',
               ),
               fit: BoxFit.contain,
             ),

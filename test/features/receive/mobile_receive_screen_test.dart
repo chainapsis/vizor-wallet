@@ -25,6 +25,7 @@ import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 import '../../fixtures/orchard_receive_address.dart';
+import 'receive_qr_bitmap_cases.dart';
 
 const _shielded = 'u1tvg2412a23kshieldedaddressk64123hhq6d';
 const _transparent = 't1aWwWwqk3jYGkZc7nLGuTvuM8hDywMZCo';
@@ -157,6 +158,7 @@ final _priceProvider = NotifierProvider<_PriceNotifier, double?>(
 );
 
 void main() {
+  registerReceiveQrBitmapTests();
   testWidgets('shows the shielded pool by default with share and copy', (
     tester,
   ) async {
