@@ -25,7 +25,7 @@ use std::{
 use rusqlite::{types::Value, vtab::array::Array, OptionalExtension};
 use transparent::address::TransparentAddress;
 #[cfg(test)]
-use zcash_client_backend::data_api::transparent_ledger::WholeTransactionFee;
+use zcash_client_backend::data_api::transparent_ledger::{TransactionFunding, WholeTransactionFee};
 use zcash_client_backend::data_api::{
     transparent_ledger::{
         AggregatePayment, DetailCompleteness, FeeState, HistoryClassification, RecoveryBlocker,
@@ -3873,6 +3873,7 @@ mod tests {
             payment_details: DetailCompleteness::Incomplete,
             fee: FeeState::Known(Zatoshis::from_u64(10_000).unwrap()),
             classification: HistoryClassification::Reconstructed,
+            funding: TransactionFunding::Sole,
             pending_private_details: vec![],
         };
         assert_eq!(
@@ -3943,6 +3944,7 @@ mod tests {
             payment_details: DetailCompleteness::Incomplete,
             fee: FeeState::Unknown,
             classification: HistoryClassification::Provisional,
+            funding: TransactionFunding::Shared,
             pending_private_details: vec![],
         }
     }
@@ -4391,6 +4393,7 @@ mod tests {
             payment_details: DetailCompleteness::Complete,
             fee: FeeState::Known(Zatoshis::from_u64(10_000).unwrap()),
             classification: HistoryClassification::LocalIntent,
+            funding: TransactionFunding::Sole,
             pending_private_details: vec![],
         };
         let pending = HistoryCompleteness::of(&details);
@@ -4453,6 +4456,7 @@ mod tests {
             payment_details: DetailCompleteness::Complete,
             fee: FeeState::NotApplicable,
             classification: HistoryClassification::Reconstructed,
+            funding: TransactionFunding::NotFunded,
             pending_private_details: vec![],
         };
         for classification in [
