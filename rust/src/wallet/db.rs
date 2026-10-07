@@ -241,6 +241,22 @@ fn lock_until<'a>(
     }
 }
 
+/// Holds the wallet write lock from a thread of its own until the returned
+/// sender is dropped, or for `at_most`: contention for tests.
+#[cfg(test)]
+pub(crate) fn hold_wallet_db_write_lock(at_most: Duration) -> std::sync::mpsc::Sender<()> {
+    let (release, released) = std::sync::mpsc::channel::<()>();
+    let (held, holding) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        with_wallet_db_write_lock("test.hold", || {
+            held.send(()).unwrap();
+            let _ = released.recv_timeout(at_most);
+        })
+    });
+    holding.recv().unwrap();
+    release
+}
+
 fn run_wallet_db_write<T>(
     operation: &'static str,
     guard: MutexGuard<'_, ()>,

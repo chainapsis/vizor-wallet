@@ -130,9 +130,15 @@ impl PirSource {
     /// The source for the wallet at `db_path`; `None` off mainnet.
     pub(crate) fn new(db_path: &str, network: WalletNetwork) -> Option<Self> {
         let origin = txid_origin(network)?;
-        // A test's fake service gets a client of its own.
+        // A test's fake service gets a client of its own, shared while its
+        // seam is set.
         #[cfg(test)]
-        let client = Arc::new(Mutex::new(TxidDisplayClient::new()));
+        let seam = test_seam::get(db_path);
+        #[cfg(test)]
+        let client = seam.as_ref().map_or_else(
+            || Arc::new(Mutex::new(TxidDisplayClient::new())),
+            |seam| seam.client.clone(),
+        );
         #[cfg(not(test))]
         let client = client_for(&origin);
         let _ = db_path;
@@ -140,7 +146,7 @@ impl PirSource {
             origin,
             client,
             #[cfg(test)]
-            observer: test_seam::get(db_path),
+            observer: seam.map(|seam| seam.observer),
         })
     }
 }
@@ -415,21 +421,33 @@ impl DetailSource for GateSource {
 }
 
 /// Test seam: the request observer the private source of one wallet file
-/// sends through, standing in for the network. A source without one defers
-/// every lookup as unavailable without a request.
+/// sends through, standing in for the network, and the client its sources
+/// share, standing in for the process-wide client of the origin. A source
+/// without a seam defers every lookup as unavailable without a request.
 #[cfg(test)]
 pub(crate) mod test_seam {
     use std::collections::HashMap;
-    use std::sync::{Mutex, OnceLock, PoisonError};
+    use std::sync::{Arc, Mutex, OnceLock, PoisonError};
+
+    use zakura_pir_transparent::TxidDisplayClient;
 
     use crate::wallet::sync_engine::enhancement::RequestObserver;
 
-    fn seams() -> &'static Mutex<HashMap<String, RequestObserver>> {
-        static SEAMS: OnceLock<Mutex<HashMap<String, RequestObserver>>> = OnceLock::new();
+    /// What the private sources of one wallet file are built with.
+    #[derive(Clone)]
+    pub(crate) struct Seam {
+        pub(crate) observer: RequestObserver,
+        /// Shared by every source built while the seam is set, as sources
+        /// share the process-wide client; a new seam is a restart.
+        pub(crate) client: Arc<Mutex<TxidDisplayClient>>,
+    }
+
+    fn seams() -> &'static Mutex<HashMap<String, Seam>> {
+        static SEAMS: OnceLock<Mutex<HashMap<String, Seam>>> = OnceLock::new();
         SEAMS.get_or_init(Default::default)
     }
 
-    pub(super) fn get(db_path: &str) -> Option<RequestObserver> {
+    pub(super) fn get(db_path: &str) -> Option<Seam> {
         seams()
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -437,14 +455,22 @@ pub(crate) mod test_seam {
             .cloned()
     }
 
-    /// Private sources built for `db_path` send through `observer` until the
-    /// guard drops.
+    /// Private sources built for `db_path` send through `observer`, sharing
+    /// one new client, until the guard drops.
     pub(crate) fn set(db_path: &str, observer: RequestObserver) -> SeamGuard {
-        seams()
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .insert(db_path.to_owned(), observer);
+        seams().lock().unwrap_or_else(PoisonError::into_inner).insert(
+            db_path.to_owned(),
+            Seam {
+                observer,
+                client: Arc::new(Mutex::new(TxidDisplayClient::new())),
+            },
+        );
         SeamGuard(db_path.to_owned())
+    }
+
+    /// The client the sources of `db_path` share while its seam is set.
+    pub(crate) fn client(db_path: &str) -> Arc<Mutex<TxidDisplayClient>> {
+        get(db_path).expect("a seam is set").client
     }
 
     pub(crate) struct SeamGuard(String);
