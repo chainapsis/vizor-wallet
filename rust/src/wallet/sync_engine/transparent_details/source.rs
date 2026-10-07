@@ -1,9 +1,9 @@
 //! The two sources loop 4 chooses between, once per run.
 //!
 //! - [`PirSource`] (`PrivateRequired`): txid display PIR at
-//!   [`DEFAULT_MAINNET_ORIGIN`]`/v1/txid/`, mainnet only, over
-//!   [`TxidPirHttp`]. It holds no lightwalletd client, so it cannot make a
-//!   public request.
+//!   [`DEFAULT_MAINNET_ORIGIN`]`/v1/txid/`, mainnet only, through wallet-pir's
+//!   client over [`TxidPirHttp`]. It holds no lightwalletd client, so it
+//!   cannot make a public request.
 //! - [`GateSource`] (every other policy): lightwalletd `GetTransaction`
 //!   through the [`TransparentLookupGate`], which re-checks the durable
 //!   policy before each request.
@@ -19,12 +19,16 @@ use std::time::Duration;
 
 use tokio::runtime::Handle;
 use tonic::transport::Channel;
-use transparent_shard::txid::TransparentDisplayRecord;
+use zakura_pir_transparent::{
+    deferral, display_facts, map_sha256, TxidDisplayClient, TxidError, TxidLookup,
+};
+use zcash_client_backend::data_api::transparent_ledger::{
+    TransparentDetailOutcome, TransparentDisplayFacts,
+};
 use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::consensus::BlockHeight;
 
-use super::client::{Provenance, TxidDisplayClient, TxidError, TxidLookup};
 use crate::wallet::network::WalletNetwork;
 use crate::wallet::sync_engine::enhancement::{decode_enhancement_payload, TxidPirHttp};
 use crate::wallet::sync_engine::transparent_ledger::pir::{origin_for, origin_override};
@@ -38,49 +42,50 @@ const LOOKUP_BACKSTOP: Duration = Duration::from_secs(60);
 /// What a lookup found.
 #[derive(Debug)]
 pub(crate) enum DetailAnswer {
-    /// Display facts from the private publication.
-    Facts {
-        record: TransparentDisplayRecord,
-        provenance: Provenance,
-    },
+    /// Display facts from the private publication, for the wallet to
+    /// validate and store.
+    Facts(Box<TransparentDisplayFacts>),
     /// The whole transaction, from lightwalletd.
     Raw {
         transaction: Box<Transaction>,
         mined_height: Option<BlockHeight>,
     },
-    /// The private publication does not cover the transaction.
-    NotCovered { map_sha256: Option<String> },
 }
 
 /// Why a lookup found nothing to store. Carries no txid or service text.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum DetailFailure {
-    /// The service refused for capacity, was down, or did not know the
-    /// transaction; retry after its delay or the backoff.
-    Unavailable { retry_after: Option<Duration> },
-    /// The lookup failed, by kind.
-    Failed(&'static str),
+    /// The lookup completed without storable facts; the wallet schedules the
+    /// next attempt from `outcome`. `map_sha256` names the display map the
+    /// lookup used.
+    Deferred {
+        outcome: TransparentDetailOutcome,
+        map_sha256: Option<[u8; 32]>,
+    },
     /// The source's authority is gone: a policy transition withheld the
     /// request. The run ends.
     Withheld,
-    /// The run is stopping.
+    /// The run or its budget stopped the lookup.
     Cancelled,
 }
 
 /// One transaction's details, from whichever source the run chose.
 pub(crate) trait DetailSource {
-
     /// Looks up `txid` mined at `mined_height`. Stops at `should_exit`.
     fn lookup(
         &mut self,
-        txid: [u8; 32],
-        mined_height: u64,
+        txid: TxId,
+        mined_height: BlockHeight,
         should_exit: &(dyn Fn() -> bool + Sync),
     ) -> impl Future<Output = Result<DetailAnswer, DetailFailure>> + Send;
 
     /// The gate a public answer is committed under; `None` for the private
     /// source.
     fn gate(&self) -> Option<&TransparentLookupGate>;
+
+    /// The display map the source last used, which releases work held by an
+    /// older one.
+    fn map_sha256(&self) -> Option<[u8; 32]>;
 }
 
 // ---- private ---------------------------------------------------------------
@@ -91,22 +96,13 @@ static CLIENTS: LazyLock<Mutex<HashMap<String, Arc<Mutex<TxidDisplayClient>>>>> 
     LazyLock::new(Default::default);
 
 /// The process-wide client for `origin`.
-#[cfg_attr(test, allow(dead_code))]
-pub(crate) fn client_for(origin: &str, network: WalletNetwork) -> Arc<Mutex<TxidDisplayClient>> {
+pub(crate) fn client_for(origin: &str) -> Arc<Mutex<TxidDisplayClient>> {
     CLIENTS
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .entry(origin.to_owned())
-        .or_insert_with(|| Arc::new(Mutex::new(TxidDisplayClient::new(network_name(network)))))
+        .or_insert_with(|| Arc::new(Mutex::new(TxidDisplayClient::new())))
         .clone()
-}
-
-fn network_name(network: WalletNetwork) -> &'static str {
-    match network {
-        WalletNetwork::Main => "main",
-        WalletNetwork::Test => "test",
-        WalletNetwork::Regtest => "regtest",
-    }
 }
 
 /// The txid display origin for `network`: the transparent PIR origin, with
@@ -127,74 +123,78 @@ impl PirSource {
     /// The source for the wallet at `db_path`; `None` off mainnet.
     pub(crate) fn new(db_path: &str, network: WalletNetwork) -> Option<Self> {
         let origin = txid_origin(network)?;
-        #[cfg(test)]
-        let observer = test_seam::get(db_path);
-        #[cfg(test)]
         // A test's fake service gets a client of its own.
-        let client = Arc::new(Mutex::new(TxidDisplayClient::new(network_name(network))));
+        #[cfg(test)]
+        let client = Arc::new(Mutex::new(TxidDisplayClient::new()));
         #[cfg(not(test))]
-        let client = client_for(&origin, network);
+        let client = client_for(&origin);
         let _ = db_path;
         Some(Self {
             origin,
             client,
             #[cfg(test)]
-            observer,
+            observer: test_seam::get(db_path),
         })
-    }
-
-    /// One lookup on a blocking thread; `None` when the source has no
-    /// transport (a test without a seam).
-    async fn private_lookup(
-        &self,
-        txid: [u8; 32],
-        mined_height: u64,
-        should_exit: &(dyn Fn() -> bool + Sync),
-    ) -> Result<(TxidLookup, Option<String>), TxidError> {
-        #[cfg(test)]
-        let Some(observer) = self.observer.clone() else {
-            // No test reaches the live service by accident.
-            return Err(TxidError::Transport);
-        };
-        let request = BlockingLookup {
-            origin: self.origin.clone(),
-            client: self.client.clone(),
-            txid,
-            mined_height,
-            handle: Handle::current(),
-            cancel: Arc::new(AtomicBool::new(false)),
-            #[cfg(test)]
-            observer: Some(observer),
-        };
-        run_blocking(request, should_exit).await
     }
 }
 
 impl DetailSource for PirSource {
     async fn lookup(
         &mut self,
-        txid: [u8; 32],
-        mined_height: u64,
+        txid: TxId,
+        mined_height: BlockHeight,
         should_exit: &(dyn Fn() -> bool + Sync),
     ) -> Result<DetailAnswer, DetailFailure> {
-        match self.private_lookup(txid, mined_height, should_exit).await {
-            Ok((TxidLookup::Found { record, provenance }, _)) => {
-                Ok(DetailAnswer::Facts { record, provenance })
+        #[cfg(test)]
+        let Some(observer) = self.observer.clone() else {
+            // No test reaches the live service by accident.
+            return Err(DetailFailure::Deferred {
+                outcome: TransparentDetailOutcome::Unavailable { retry_after: None },
+                map_sha256: None,
+            });
+        };
+        let request = BlockingLookup {
+            origin: self.origin.clone(),
+            client: self.client.clone(),
+            txid: *txid.as_ref(),
+            mined_height: u64::from(u32::from(mined_height)),
+            handle: Handle::current(),
+            cancel: Arc::new(AtomicBool::new(false)),
+            #[cfg(test)]
+            observer: Some(observer),
+        };
+        let (found, map) = run_blocking(request, should_exit).await?;
+        match found {
+            Ok(TxidLookup::Found { record, provenance }) => {
+                match display_facts(&record, &provenance, mined_height) {
+                    Ok(facts) => Ok(DetailAnswer::Facts(Box::new(facts))),
+                    Err(_) => Err(DetailFailure::Deferred {
+                        outcome: TransparentDetailOutcome::Protocol,
+                        map_sha256: map,
+                    }),
+                }
             }
-            Ok((
-                TxidLookup::Absent | TxidLookup::PlacementUnknown | TxidLookup::Unsupported,
-                map_sha256,
-            )) => Ok(DetailAnswer::NotCovered { map_sha256 }),
             Err(TxidError::Cancelled) => Err(DetailFailure::Cancelled),
-            Err(TxidError::Unavailable { retry_after }) => {
-                Err(DetailFailure::Unavailable { retry_after })
-            }
-            Err(error) => Err(DetailFailure::Failed(error.name())),
+            // The transport reports cancellation as a transport failure.
+            Err(TxidError::Transport(_)) if should_exit() => Err(DetailFailure::Cancelled),
+            lookup => Err(DetailFailure::Deferred {
+                outcome: deferral(&lookup)
+                    .unwrap_or(TransparentDetailOutcome::Unavailable { retry_after: None }),
+                map_sha256: map,
+            }),
         }
     }
 
     fn gate(&self) -> Option<&TransparentLookupGate> {
         None
+    }
+
+    fn map_sha256(&self) -> Option<[u8; 32]> {
+        self.client
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .map_sha256()
+            .and_then(map_sha256)
     }
 }
 
@@ -202,6 +202,7 @@ impl DetailSource for PirSource {
 pub(crate) struct BlockingLookup {
     pub(crate) origin: String,
     pub(crate) client: Arc<Mutex<TxidDisplayClient>>,
+    /// Protocol byte order.
     pub(crate) txid: [u8; 32],
     pub(crate) mined_height: u64,
     pub(crate) handle: Handle,
@@ -211,15 +212,27 @@ pub(crate) struct BlockingLookup {
     pub(crate) observer: Option<crate::wallet::sync_engine::enhancement::RequestObserver>,
 }
 
+/// A lookup's result with the map digest the client holds afterwards.
+pub(crate) type Looked = (Result<TxidLookup, TxidError>, Option<[u8; 32]>);
+
 impl BlockingLookup {
-    /// Runs the lookup; returns it with the map digest the client holds and
-    /// the private queries it sent.
-    pub(crate) fn run(self) -> Result<(TxidLookup, Option<String>, u32), TxidError> {
+    /// Runs the lookup on the calling thread, which must not be a runtime
+    /// worker.
+    pub(crate) fn run(self) -> Looked {
         let _runtime = self.handle.enter();
         let cancel = self.cancel.clone();
         let exit = move || cancel.load(Ordering::SeqCst);
-        let http = TxidPirHttp::new(&self.origin, &exit, self.handle.clone())
-            .map_err(|_| TxidError::Transport)?;
+        let http = match TxidPirHttp::new(&self.origin, &exit, self.handle.clone()) {
+            Ok(http) => http,
+            Err(_) => {
+                return (
+                    Err(TxidError::Transport(zakura_pir_transparent::TransportError(
+                        "origin refused".to_owned(),
+                    ))),
+                    None,
+                )
+            }
+        };
         #[cfg(test)]
         let http = match self.observer.clone() {
             Some(observer) => http.with_observer(observer),
@@ -227,10 +240,9 @@ impl BlockingLookup {
         };
         let mut http = http;
         let mut client = self.client.lock().unwrap_or_else(PoisonError::into_inner);
-        let found = client.lookup(&mut http, self.txid, Some(self.mined_height), &exit);
-        let map_sha256 = client.map_sha256().map(str::to_owned);
-        let queries = client.last_queries();
-        found.map(|found| (found, map_sha256, queries))
+        let found = client.lookup(&mut http, self.txid, self.mined_height, &exit);
+        let map = client.map_sha256().and_then(map_sha256);
+        (found, map)
     }
 }
 
@@ -239,7 +251,7 @@ impl BlockingLookup {
 async fn run_blocking(
     request: BlockingLookup,
     should_exit: &(dyn Fn() -> bool + Sync),
-) -> Result<(TxidLookup, Option<String>), TxidError> {
+) -> Result<Looked, DetailFailure> {
     let cancel = request.cancel.clone();
     let _cancel_on_drop = CancelOnDrop(cancel.clone());
     let mut task = tokio::task::spawn_blocking(move || request.run());
@@ -252,15 +264,17 @@ async fn run_blocking(
         joined = tokio::time::timeout(LOOKUP_BACKSTOP, &mut task) => joined,
     };
     if cancel.load(Ordering::SeqCst) || should_exit() {
-        return Err(TxidError::Cancelled);
+        return Err(DetailFailure::Cancelled);
     }
     match joined {
-        Ok(Ok(result)) => result.map(|(found, map, _)| (found, map)),
-        // The lookup panicked or passed its backstop.
-        Ok(Err(_)) => Err(TxidError::Protocol("lookup panicked")),
-        Err(_) => {
+        Ok(Ok(looked)) => Ok(looked),
+        // The lookup panicked, or passed its backstop.
+        Ok(Err(_)) | Err(_) => {
             cancel.store(true, Ordering::SeqCst);
-            Err(TxidError::Transport)
+            Err(DetailFailure::Deferred {
+                outcome: TransparentDetailOutcome::Protocol,
+                map_sha256: None,
+            })
         }
     }
 }
@@ -291,14 +305,13 @@ impl GateSource {
 impl DetailSource for GateSource {
     async fn lookup(
         &mut self,
-        txid: [u8; 32],
-        _mined_height: u64,
+        txid: TxId,
+        _mined_height: BlockHeight,
         should_exit: &(dyn Fn() -> bool + Sync),
     ) -> Result<DetailAnswer, DetailFailure> {
         if should_exit() {
             return Err(DetailFailure::Cancelled);
         }
-        let txid = TxId::from_bytes(txid);
         let response = tokio::select! {
             biased;
             _ = watch_for_exit(&should_exit) => return Err(DetailFailure::Cancelled),
@@ -307,19 +320,23 @@ impl DetailSource for GateSource {
         if should_exit() {
             return Err(DetailFailure::Cancelled);
         }
+        let unavailable = Err(DetailFailure::Deferred {
+            outcome: TransparentDetailOutcome::Unavailable { retry_after: None },
+            map_sha256: None,
+        });
         match response {
-            Err(_) => Err(DetailFailure::Failed("policy check")),
+            Err(_) => unavailable,
             Ok(None) => Err(DetailFailure::Withheld),
-            Ok(Some(Err(status))) if status.code() == tonic::Code::NotFound => {
-                Err(DetailFailure::Unavailable { retry_after: None })
-            }
-            Ok(Some(Err(_))) => Err(DetailFailure::Failed("lightwalletd")),
+            Ok(Some(Err(_))) => unavailable,
             Ok(Some(Ok(raw))) => match decode_enhancement_payload(&raw, txid) {
                 Ok((transaction, mined_height)) => Ok(DetailAnswer::Raw {
                     transaction: Box::new(transaction),
                     mined_height,
                 }),
-                Err(_) => Err(DetailFailure::Failed("payload")),
+                Err(_) => Err(DetailFailure::Deferred {
+                    outcome: TransparentDetailOutcome::Protocol,
+                    map_sha256: None,
+                }),
             },
         }
     }
@@ -327,11 +344,15 @@ impl DetailSource for GateSource {
     fn gate(&self) -> Option<&TransparentLookupGate> {
         Some(&self.gate)
     }
+
+    fn map_sha256(&self) -> Option<[u8; 32]> {
+        None
+    }
 }
 
 /// Test seam: the request observer the private source of one wallet file
-/// sends through, standing in for the network. A source without one is
-/// unavailable.
+/// sends through, standing in for the network. A source without one defers
+/// every lookup as unavailable without a request.
 #[cfg(test)]
 pub(crate) mod test_seam {
     use std::collections::HashMap;

@@ -1424,15 +1424,18 @@ fn transparent_details_view(
     account: AccountUuid,
     txid_hex: &str,
 ) -> Option<TransparentDetailsView> {
-    use crate::wallet::sync_engine::transparent_details::{detail_view, store::DisplayView};
+    use zcash_client_backend::data_api::transparent_ledger::TransparentDisplayView;
     let txid = hex::decode(txid_hex).ok()?;
-    let view = match detail_view(
-        read_tx,
+    let view = crate::wallet::db::open_wallet_db_readonly_with_timeout(
         db_path,
         network,
-        account.expose_uuid().as_bytes(),
-        &txid,
-    ) {
+        crate::wallet::db::READ_DB_BUSY_TIMEOUT,
+    )
+    .map_err(|error| error.to_string())
+    .and_then(|db| {
+        crate::wallet::sync_engine::transparent_details::detail_view(&db, read_tx, account, &txid)
+    });
+    let view = match view {
         Ok(view) => view?,
         Err(_) => {
             log::warn!("transaction detail: transparent details unreadable");
@@ -1440,20 +1443,23 @@ fn transparent_details_view(
         }
     };
     Some(match view {
-        DisplayView::Available { outputs } => TransparentDetailsView::Available(
-            outputs
+        TransparentDisplayView::Available(details) => TransparentDetailsView::Available(
+            details
+                .outputs
                 .into_iter()
                 .map(|output| TransparentRecipientRow {
                     output_index: output.index,
-                    address: output.address,
-                    amount_zatoshi: output.value,
-                    is_own: output.own,
+                    address: output.address.map(|address| {
+                        zcash_keys::encoding::encode_transparent_address_p(&network, &address)
+                    }),
+                    amount_zatoshi: output.value.into_u64(),
+                    is_own: output.owned,
                 })
                 .collect(),
         ),
-        DisplayView::Pending => TransparentDetailsView::Pending,
-        DisplayView::Unavailable => TransparentDetailsView::Unavailable,
-        DisplayView::NotCovered => TransparentDetailsView::NotCovered,
+        TransparentDisplayView::Pending => TransparentDetailsView::Pending,
+        TransparentDisplayView::Unavailable => TransparentDetailsView::Unavailable,
+        TransparentDisplayView::NotCovered => TransparentDetailsView::NotCovered,
     })
 }
 

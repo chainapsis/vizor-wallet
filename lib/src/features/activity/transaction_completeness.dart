@@ -123,13 +123,11 @@ String transparentRecipientLabel(rust_sync.TransparentRecipient recipient) =>
 String describeTransparentDetailsLookup(
   rust_sync.TransparentDetailsLookup lookup,
 ) {
-  if (lookup.outcome != 'found') {
-    return '${lookup.outcome} · ${lookup.privateQueries} private queries';
-  }
+  if (lookup.outcome != 'found') return lookup.outcome;
   final fee = lookup.feeZatoshi;
   return [
     '${lookup.recipients.length} outputs',
     if (fee != null) 'fee ${ZecAmount.fromZatoshi(fee).fee}',
-    '${lookup.privateQueries} private queries',
+    '${lookup.transparentInputCount} inputs',
   ].join(' · ');
 }

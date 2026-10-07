@@ -2871,8 +2871,6 @@ pub struct TransparentDetailsLookup {
     pub fee_zatoshi: Option<u64>,
     pub transparent_input_count: u32,
     pub coinbase: bool,
-    /// Private queries the lookup sent.
-    pub private_queries: u32,
 }
 
 pub struct TransactionDetailOutput {
@@ -3095,17 +3093,17 @@ pub fn debug_lookup_transparent_details(
             recipients: found
                 .outputs
                 .into_iter()
-                .map(|output| TransparentRecipient {
-                    output_index: output.index,
-                    address: output.address,
-                    amount_zatoshi: output.value,
-                    is_own: output.own,
+                .enumerate()
+                .map(|(index, (amount_zatoshi, address))| TransparentRecipient {
+                    output_index: index as u32,
+                    address,
+                    amount_zatoshi,
+                    is_own: false,
                 })
                 .collect(),
             fee_zatoshi: found.fee,
             transparent_input_count: found.transparent_input_count,
             coinbase: found.coinbase,
-            private_queries: found.private_queries,
         })
     })
 }

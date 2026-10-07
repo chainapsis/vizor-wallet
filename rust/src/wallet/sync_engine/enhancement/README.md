@@ -734,56 +734,55 @@ captured policy ── PrivateRequired ──> txid display PIR  (PirSource)
   same SQLite transaction, before storing the payload with
   `decrypt_and_store_transaction`. A capture of `Public` over a wallet whose
   durable policy withholds public lookups runs nothing.
-- **Private lookups.** The client (`transparent_details/client.rs`) follows
-  the tiered display publication: the init document and the map (cached; the
-  map is refetched after a minute, when the height is past its end, or on a
-  409), the shard's manifest and setup (cached per revision), then exactly two
-  directory queries and, for an overflow record, exactly one query per page.
-  Placement comes from the wallet's own mined height. Requests name the tier,
-  shard, revision, table (`directory-{bucket}` or `pages`) and segment, never
+- **Private lookups.** wallet-pir's `transparent-txid-client`, re-exported by
+  `zakura-pir-transparent` with `display_facts` and `deferral`, follows the
+  tiered display publication: the init document and the map (cached and
+  refreshed by the client), the shard's manifest and setup (cached per
+  revision), then exactly two directory queries and, for an overflow record,
+  exactly one query per page. Placement comes from the wallet's own mined
+  height. Requests name the tier, shard, revision, table and segment, never
   the txid or a selected row. The result is the transaction's complete
   transparent output list (values and raw scripts), its coinbase flag, input
   count and exact fee when known. One client per origin lives for the whole
-  process, so the derived native profiles are built once. The client is a
-  stand-in with the announced API of wallet-pir's `transparent-txid-client`,
-  built on the wallet-pir crates already in the graph at the same revision.
+  process, so the derived native profiles are built once.
 - **Transport.** `enhancement/transport/txid_pir.rs`: the shared routed HTTPS
   core (HTTPS only, Tor when desired, direct-route lease otherwise), a 30 s
   bound per request, bodies bounded per route, error bodies never read,
   cancellation before dispatch, during the request and after it. One debug
   line per request with the route template only.
-- **Bounds.** At most 8 lookups and 45 s per run, one lookup at a time, the
-  most recently mined first. Transactions a detail view asked for
-  (`prioritize_transparent_details`, an in-memory interest set) go first and
-  skip a transient backoff. Lookups run on a blocking thread with no database
-  lock held; each result is stored under the wallet write lock in one short
-  transaction.
-- **Failures.** Every failure defers its transaction and is logged by kind,
-  never by txid: a capacity refusal or outage ends the run and retries after
-  the service's `Retry-After` or a backoff from one minute doubling to an
-  hour; a malformed reply or a store failure backs off the same way; a lookup
-  the budget stopped is deferred as unavailable. A height outside the
-  publication, a service without a readable display, or a covering shard
-  without the record is `NotCovered`, retried after six hours. A policy
-  generation that moved since the run began ends it without storing. A panic
-  is caught. Nothing returns an error to the sync, and balances, spendability,
-  sends and history never read what this loop stores.
-- **Storage.** Until the wallet-libraries integration lands
-  (`transparent_detail_work`, `store_transparent_display`,
-  `defer_transparent_detail`, `transparent_display_view`), facts and
-  deferrals live in `{db}.tpir/txid-details.sqlite`, which reset and orphan
-  cleanup delete and backups exclude with the rest of the `.tpir` directory.
-  A run that stored anything reports completion again with `has_new_tx`.
+- **Work and bounds.** The wallet owns the work (`transparent_detail_work`):
+  private recovery and Enhance PIR's mixed transactions queue it; public
+  discovery never does, since its payloads go through `tx_retrieval_queue`.
+  A run reads the due work once, puts transactions a detail view asked for
+  (`prioritize_transparent_details`, an in-memory interest set) first, and
+  makes at most 8 lookups in 45 s, one at a time. Lookups run on a blocking
+  thread with no database lock held; each store or deferral takes the wallet
+  write lock for one short transaction.
+- **Failures.** Every failure is deferred to the wallet
+  (`defer_transparent_detail`), which schedules the retry: unavailable,
+  stale, transport or protocol failures from 30 s doubling to an hour (at
+  least the service's `Retry-After`), an absent record from an hour to a day,
+  and an uncovered height, an unsupported service or a contradiction held
+  until the display map changes. An outage ends the run. A lookup the budget
+  stopped is deferred as unavailable. A store refused for a moved policy
+  generation ends the run without storing; facts that contradict the wallet
+  are held, not stored. Failures are logged by kind, never by txid, a panic
+  is caught, and nothing returns an error to the sync. Balances,
+  spendability, sends and history never read what this loop stores.
+- **Storage.** `store_transparent_display` validates the facts against what
+  the wallet knows (owned outputs, coinbase flag, recovered metadata and fee)
+  and stores them; raw bytes arriving later supersede them. A run that stored
+  anything reports completion again with `has_new_tx`.
 
 Detail-view states (`TransactionDetail.transparent_details_state`):
 
 | State | Meaning | Receipt shows |
 |---|---|---|
-| `available` | Every transparent output: from the raw transaction, or from stored display facts | One row per output: the address it pays (or "Script"), the amount, and whether it is the account's own |
+| `available` | Every transparent output: from the raw transaction, or from validated display facts | One row per output: the address it pays (or "Script"), the amount, and whether it is the account's own |
 | `pending` | No lookup has answered yet | "Details unavailable — will update when the service is reachable" |
 | `unavailable` | The last lookup failed; a later sync retries | the same notice |
 | `notCovered` | Private mode cannot look it up | "Not available in private mode" |
-| absent | No transparent part the account recorded | nothing |
+| absent | No transparent part the account recorded, and no detail work | nothing |
 
 While the state is `pending` or `unavailable`, a receipt asks for the
 transaction to be served first (once per open) and re-reads its detail every

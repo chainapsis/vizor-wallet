@@ -14429,14 +14429,12 @@ impl SseDecode for crate::api::sync::TransparentDetailsLookup {
         let mut var_feeZatoshi = <Option<u64>>::sse_decode(deserializer);
         let mut var_transparentInputCount = <u32>::sse_decode(deserializer);
         let mut var_coinbase = <bool>::sse_decode(deserializer);
-        let mut var_privateQueries = <u32>::sse_decode(deserializer);
         return crate::api::sync::TransparentDetailsLookup {
             outcome: var_outcome,
             recipients: var_recipients,
             fee_zatoshi: var_feeZatoshi,
             transparent_input_count: var_transparentInputCount,
             coinbase: var_coinbase,
-            private_queries: var_privateQueries,
         };
     }
 }
@@ -19213,7 +19211,6 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::TransparentDetailsLooku
             self.fee_zatoshi.into_into_dart().into_dart(),
             self.transparent_input_count.into_into_dart().into_dart(),
             self.coinbase.into_into_dart().into_dart(),
-            self.private_queries.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -23112,7 +23109,6 @@ impl SseEncode for crate::api::sync::TransparentDetailsLookup {
         <Option<u64>>::sse_encode(self.fee_zatoshi, serializer);
         <u32>::sse_encode(self.transparent_input_count, serializer);
         <bool>::sse_encode(self.coinbase, serializer);
-        <u32>::sse_encode(self.private_queries, serializer);
     }
 }
 

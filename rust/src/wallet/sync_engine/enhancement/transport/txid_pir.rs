@@ -1,30 +1,29 @@
 //! Txid display PIR over the wallet's routed HTTPS transport.
 //!
-//! [`TxidPirHttp`] is the [`TxidTransport`] a display lookup sends through:
-//! HTTPS only, Tor when the wallet wants it and the direct-route lease
-//! otherwise, no User-Agent, and the caller's cancellation. It shares
-//! [`RoutedTransport`] with the other private services.
+//! [`TxidPirHttp`] is the [`TxidTransport`] wallet-pir's txid display client
+//! (re-exported by `zakura_pir_transparent`) sends through: HTTPS only, Tor
+//! when the wallet wants it and the direct-route lease otherwise, no
+//! User-Agent, and the caller's cancellation. It shares [`RoutedTransport`]
+//! with the other private services.
 //!
 //! The trait is synchronous and the route is async, so each request blocks on
 //! the runtime handle. Callers run a lookup inside `spawn_blocking`;
 //! `Handle::block_on` panics on a runtime worker.
 //!
-//! Nothing is retried here; the client decides what a refusal is worth. A
-//! success over the request's limit fails the request, and error bodies are
+//! Nothing is retried here; the client interprets every status itself. A
+//! success over its route's bound fails the request, and error bodies are
 //! never read. Logs name the route template, never a shard id, digest, body
 //! or the origin.
 
 use bytes::Bytes;
-use http::header::RETRY_AFTER;
+use http::{header::RETRY_AFTER, Method};
 use http_body_util::BodyExt;
 use hyper::body::Body;
 use std::{fmt, time::Duration};
 use tokio::runtime::Handle;
+use zakura_pir_transparent::{TransportError, TxidReply, TxidRequest, TxidTransport};
 
 use super::{routed_response, secure_endpoint_uri, RoutedHttpError, RoutedTransport};
-use crate::wallet::sync_engine::transparent_details::client::{
-    TxidReply, TxidRequest, TxidTransport, TxidTransportError,
-};
 use crate::wallet::sync_engine::{watch_for_exit, SyncError};
 
 /// One request's bound, from dispatch through the last body byte.
@@ -33,9 +32,45 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 /// The `x-txid-map-sha256` header the map carries.
 const MAP_DIGEST_HEADER: &str = "x-txid-map-sha256";
 
-/// The txid display transport over one routed HTTPS client. One per lookup
-/// batch; every request is bounded by [`REQUEST_TIMEOUT`] and stops when
-/// `should_exit` does.
+/// Largest successful body of a request with `template`. Queries are bounded
+/// by every segment's answer of the widest supported geometry.
+fn response_limit(template: &str) -> usize {
+    match template {
+        "/v1/txid/init" => 256 << 10,
+        "/v1/txid/shards" => 4 << 20,
+        template if template.ends_with("/manifest") => 1 << 20,
+        template if template.contains("/setup/") => 1 << 20,
+        _ => 8 << 20,
+    }
+}
+
+/// Why a request delivered no reply. Its name is the transport error's text,
+/// which carries no URL, body or identifier.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TxidHttpFailure {
+    /// The lookup is stopping: nothing was sent, or the reply is dropped.
+    Cancelled,
+    /// A successful body exceeded its route's bound.
+    TooLarge,
+    /// No whole reply within [`REQUEST_TIMEOUT`].
+    Timeout,
+    /// The route or connection failed.
+    Failed,
+}
+
+impl TxidHttpFailure {
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            TxidHttpFailure::Cancelled => "cancelled",
+            TxidHttpFailure::TooLarge => "too large",
+            TxidHttpFailure::Timeout => "timed out",
+            TxidHttpFailure::Failed => "route failed",
+        }
+    }
+}
+
+/// The txid display transport over one routed HTTPS client. Every request is
+/// bounded by [`REQUEST_TIMEOUT`] and stops when `should_exit` does.
 pub(crate) struct TxidPirHttp<'a, F> {
     route: RoutedTransport<'a, F>,
     /// The configured origin, without a trailing slash.
@@ -75,20 +110,21 @@ impl<'a, F: Fn() -> bool> TxidPirHttp<'a, F> {
         self
     }
 
-    async fn exchange(&self, request: &TxidRequest) -> Result<TxidReply, TxidTransportError> {
+    async fn exchange(&self, request: &TxidRequest) -> Result<TxidReply, TxidHttpFailure> {
         let should_exit = self.route.should_exit;
         if should_exit() {
-            return Err(TxidTransportError::Cancelled);
+            return Err(TxidHttpFailure::Cancelled);
         }
-        let method = request.method();
+        let method = Method::from_bytes(request.method.as_str().as_bytes())
+            .map_err(|_| TxidHttpFailure::Failed)?;
         let path = request.path();
         #[cfg(test)]
         let answer = self
             .observer
             .as_ref()
-            .and_then(|observer| observer.observe(&method, &path, &request.body));
+            .and_then(|observer| observer.observe(&method, path, &request.body));
         let url = format!("{}{path}", self.origin);
-        let limit = request.limit;
+        let limit = response_limit(request.template());
         let exchange = async {
             #[cfg(test)]
             if let Some(response) = answer {
@@ -104,57 +140,48 @@ impl<'a, F: Fn() -> bool> TxidPirHttp<'a, F> {
             )
             .await
             .map_err(|error| match error {
-                RoutedHttpError::Cancelled => TxidTransportError::Cancelled,
+                RoutedHttpError::Cancelled => TxidHttpFailure::Cancelled,
                 // `routed_response` returns headers of every status.
                 RoutedHttpError::HttpStatus(_) | RoutedHttpError::Failed(_) => {
-                    TxidTransportError::Failed
+                    TxidHttpFailure::Failed
                 }
             })?;
             read(response, limit).await
         };
         let received = tokio::select! {
             biased;
-            _ = watch_for_exit(should_exit) => Err(TxidTransportError::Cancelled),
+            _ = watch_for_exit(should_exit) => Err(TxidHttpFailure::Cancelled),
             received = tokio::time::timeout(REQUEST_TIMEOUT, exchange) => {
-                received.unwrap_or(Err(TxidTransportError::Timeout))
+                received.unwrap_or(Err(TxidHttpFailure::Timeout))
             }
         };
         // Cancellation wins a tie: a stopping lookup acts on no reply that
         // raced it.
         if should_exit() {
-            return Err(TxidTransportError::Cancelled);
+            return Err(TxidHttpFailure::Cancelled);
         }
         received
     }
 }
 
 impl<F: Fn() -> bool> TxidTransport for TxidPirHttp<'_, F> {
-    fn send(&mut self, request: TxidRequest) -> Result<TxidReply, TxidTransportError> {
+    fn send(&mut self, request: TxidRequest) -> Result<TxidReply, TransportError> {
         let received = self.handle.block_on(self.exchange(&request));
-        let (method, template) = (request.method(), request.template());
+        let (method, template) = (request.method.as_str(), request.template());
         match &received {
             Ok(reply) => log::debug!(
                 "txid PIR {method} {template}: HTTP {}, {} bytes",
                 reply.status,
                 reply.body.len()
             ),
-            Err(error) => log::debug!("txid PIR {method} {template}: {}", name(*error)),
+            Err(failure) => log::debug!("txid PIR {method} {template}: {}", failure.name()),
         }
-        received
-    }
-}
-
-fn name(error: TxidTransportError) -> &'static str {
-    match error {
-        TxidTransportError::Cancelled => "cancelled",
-        TxidTransportError::TooLarge => "too large",
-        TxidTransportError::Timeout => "timed out",
-        TxidTransportError::Failed => "route failed",
+        received.map_err(|failure| TransportError(failure.name().to_owned()))
     }
 }
 
 /// Reads a success up to `limit`; an error status keeps only its headers.
-async fn read<B>(response: http::Response<B>, limit: usize) -> Result<TxidReply, TxidTransportError>
+async fn read<B>(response: http::Response<B>, limit: usize) -> Result<TxidReply, TxidHttpFailure>
 where
     B: Body<Data = Bytes> + Unpin,
     B::Error: fmt::Display,
@@ -167,9 +194,7 @@ where
             .and_then(|value| value.to_str().ok())
             .map(str::to_owned)
     };
-    let retry_after = header(RETRY_AFTER.as_str())
-        .and_then(|value| value.trim().parse::<u64>().ok())
-        .map(Duration::from_secs);
+    let retry_after = header(RETRY_AFTER.as_str());
     let map_sha256 = header(MAP_DIGEST_HEADER);
     let body = if status.is_success() {
         read_limited(response.into_body(), limit).await?
@@ -184,17 +209,17 @@ where
     })
 }
 
-async fn read_limited<B>(mut body: B, limit: usize) -> Result<Vec<u8>, TxidTransportError>
+async fn read_limited<B>(mut body: B, limit: usize) -> Result<Vec<u8>, TxidHttpFailure>
 where
     B: Body<Data = Bytes> + Unpin,
     B::Error: fmt::Display,
 {
     let mut bytes = Vec::new();
     while let Some(frame) = body.frame().await {
-        let frame = frame.map_err(|_| TxidTransportError::Failed)?;
+        let frame = frame.map_err(|_| TxidHttpFailure::Failed)?;
         if let Some(data) = frame.data_ref() {
             if bytes.len() + data.len() > limit {
-                return Err(TxidTransportError::TooLarge);
+                return Err(TxidHttpFailure::TooLarge);
             }
             bytes.extend_from_slice(data);
         }
@@ -206,14 +231,13 @@ where
 mod tests {
     use super::super::{ObservedRequest, RequestObserver, RoutePolicy};
     use super::*;
-    use crate::wallet::sync_engine::transparent_details::client::{DisplayTable, Tier, TxidRoute};
-    use http::Method;
     use http_body_util::Full;
     use std::sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
     };
     use tokio::runtime::Runtime;
+    use zakura_pir_transparent::{TxidDisplayClient, TxidError};
 
     const ORIGIN: &str = "https://transparent-pir.example";
 
@@ -236,29 +260,18 @@ mod tests {
             .unwrap()
     }
 
-    fn query(limit: usize) -> TxidRequest {
-        TxidRequest {
-            route: TxidRoute::Query {
-                tier: Tier::Archive,
-                shard_id: 4,
-                digest: "cd".repeat(32),
-                table: DisplayTable::Directory(0),
-            },
-            body: vec![0xc3, 0x5a],
-            limit,
-        }
-    }
-
-    fn answered<'a, F: Fn() -> bool>(
-        runtime: &Runtime,
-        should_exit: &'a F,
+    /// One lookup through the transport, its observer answering.
+    fn lookup(
+        should_exit: &dyn Fn() -> bool,
         answer: impl Fn(&ObservedRequest) -> http::Response<Full<Bytes>> + Send + Sync + 'static,
-    ) -> (TxidPirHttp<'a, F>, RequestObserver) {
+    ) -> (Result<(), TxidError>, RequestObserver) {
+        let runtime = runtime();
         let observer = RequestObserver::answering(answer);
-        let http = TxidPirHttp::new(ORIGIN, should_exit, runtime.handle().clone())
+        let mut http = TxidPirHttp::new(ORIGIN, &should_exit, runtime.handle().clone())
             .unwrap()
             .with_observer(observer.clone());
-        (http, observer)
+        let found = TxidDisplayClient::new().lookup(&mut http, [7; 32], 3_460_000, &|| false);
+        (found.map(|_| ()), observer)
     }
 
     #[test]
@@ -286,52 +299,35 @@ mod tests {
     }
 
     #[test]
-    fn replies_carry_status_retry_after_digest_and_bounded_bodies() {
-        let runtime = runtime();
-        let exit = || false;
-        let (mut http, observer) = answered(&runtime, &exit, |request| {
-            if request.method == Method::POST {
-                reply(200, &[], &[7; 8])
-            } else {
-                reply(
-                    503,
-                    &[("retry-after", "7"), (MAP_DIGEST_HEADER, "beef")],
-                    b"busy",
-                )
-            }
-        });
-        let ok = http.send(query(8)).unwrap();
-        assert_eq!((ok.status, ok.body.len()), (200, 8));
+    fn replies_carry_status_and_retry_after_to_the_client() {
+        let (found, observer) = lookup(&|| false, |_| reply(503, &[("retry-after", "7")], b"busy"));
         assert_eq!(
-            http.send(query(7)).unwrap_err(),
-            TxidTransportError::TooLarge
+            found.unwrap_err(),
+            TxidError::Unavailable {
+                retry_after: Some(Duration::from_secs(7))
+            }
         );
-        let refused = http
-            .send(TxidRequest {
-                route: TxidRoute::Map,
-                body: Vec::new(),
-                limit: 64,
-            })
-            .unwrap();
-        assert_eq!(refused.status, 503);
-        assert_eq!(refused.retry_after, Some(Duration::from_secs(7)));
-        assert_eq!(refused.map_sha256.as_deref(), Some("beef"));
-        assert!(refused.body.is_empty(), "error bodies are not read");
         let requests = observer.requests();
-        assert_eq!(requests.len(), 3);
-        assert_eq!(requests[0].body, vec![0xc3, 0x5a]);
-        assert_eq!(requests[2].path, "/v1/txid/shards");
+        assert_eq!(requests.len(), 1);
+        assert_eq!(
+            (requests[0].method.as_str(), requests[0].path.as_str()),
+            ("GET", "/v1/txid/init")
+        );
+    }
+
+    #[test]
+    fn oversized_bodies_fail_as_transport_errors() {
+        let (found, _) = lookup(&|| false, |_| reply(200, &[], &vec![b' '; (256 << 10) + 1]));
+        assert!(
+            matches!(found, Err(TxidError::Transport(ref error)) if error.0 == "too large"),
+            "{found:?}"
+        );
     }
 
     #[test]
     fn a_cancelled_transport_sends_nothing_and_drops_racing_replies() {
-        let runtime = runtime();
-        let exit = || true;
-        let (mut http, observer) = answered(&runtime, &exit, |_| reply(200, &[], b""));
-        assert_eq!(
-            http.send(query(8)).unwrap_err(),
-            TxidTransportError::Cancelled
-        );
+        let (found, observer) = lookup(&|| true, |_| reply(200, &[], b"{}"));
+        assert!(matches!(found, Err(TxidError::Transport(_))), "{found:?}");
         assert!(observer.requests().is_empty());
 
         let cancelled = Arc::new(AtomicBool::new(false));
@@ -339,14 +335,11 @@ mod tests {
             let cancelled = cancelled.clone();
             move || cancelled.load(Ordering::SeqCst)
         };
-        let (mut http, observer) = answered(&runtime, &exit, move |_| {
+        let (found, observer) = lookup(&exit, move |_| {
             cancelled.store(true, Ordering::SeqCst);
-            reply(200, &[], b"")
+            reply(200, &[], b"{}")
         });
-        assert_eq!(
-            http.send(query(8)).unwrap_err(),
-            TxidTransportError::Cancelled
-        );
+        assert!(found.is_err());
         assert_eq!(observer.requests().len(), 1);
     }
 }

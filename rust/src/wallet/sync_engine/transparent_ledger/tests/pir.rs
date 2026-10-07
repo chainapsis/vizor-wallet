@@ -596,12 +596,13 @@ async fn a_dropped_pass_stops_at_its_next_request() {
     let wallet = main_wallet(1);
     let account = wallet.accounts[0].1;
     let watch = watched_by(&wallet, account);
-    let finished = Arc::new(AtomicBool::new(false));
+    let (started, finished) = (Arc::new(AtomicBool::new(false)), Arc::new(AtomicBool::new(false)));
     // The service answers the first request after the call is dropped, as
     // when the coordinator's backstop abandons it.
     let seam = test_transport::set(&wallet.path, {
-        let finished = finished.clone();
+        let (started, finished) = (started.clone(), finished.clone());
         RequestObserver::answering(move |_| {
+            started.store(true, Ordering::SeqCst);
             std::thread::sleep(Duration::from_millis(300));
             finished.store(true, Ordering::SeqCst);
             reply(200, shard_map(BIRTHDAY - 100))
@@ -610,10 +611,19 @@ async fn a_dropped_pass_stops_at_its_next_request() {
 
     let source = TransparentPirSource::new(&wallet.path, MAIN);
     let stay = || false;
-    let call = source.recover(request(account, &watch, &stay));
-    assert!(tokio::time::timeout(Duration::from_millis(50), call)
-        .await
-        .is_err());
+    let mut call = Box::pin(source.recover(request(account, &watch, &stay)));
+    // Drop the call once its first request is in flight, however long the
+    // pass takes to open the wallet and companion first.
+    let in_flight = async {
+        while !started.load(Ordering::SeqCst) {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    };
+    tokio::select! {
+        _ = &mut call => panic!("the pass answered before the service did"),
+        _ = in_flight => {}
+    }
+    drop(call);
     while !finished.load(Ordering::SeqCst) {
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
@@ -791,7 +801,7 @@ async fn txid_routes_whitelisted_no_secret_leak() {
     ))
     .await;
     assert!(
-        matches!(outcome, Some(RunOutcome::Finished(stats)) if stats.not_covered == 1),
+        matches!(outcome, Some(RunOutcome::Finished(stats)) if stats.deferred == 1),
         "{outcome:?}"
     );
 
