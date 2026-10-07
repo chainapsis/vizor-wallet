@@ -622,7 +622,8 @@ pub(crate) struct TransactionDetail {
     pub outputs: Vec<TransactionDetailOutput>,
     /// See [`TransactionInfo::details_complete`]: `outputs` may be partial.
     pub details_complete: bool,
-    /// See [`TransactionInfo::provisional`].
+    /// Whether the transaction's payment classification or owned effects remain
+    /// provisional. An established Activity row can still have incomplete receipt details.
     pub provisional: bool,
 }
 
@@ -702,6 +703,8 @@ struct HistoryCompleteness {
     has_transparent_outputs: Option<bool>,
     details_complete: bool,
     provisional: bool,
+    /// Owned effects are settled independently of payment and fee attribution.
+    effects_settled: bool,
     /// The library's classification of the account's side, once read. A net
     /// reconstruction (a privately recovered mixed shielding) has a final
     /// movement but no attributed fee or payment; see
@@ -733,6 +736,7 @@ impl HistoryCompleteness {
             has_transparent_outputs: None,
             details_complete: true,
             provisional: false,
+            effects_settled: true,
             classification: Some(HistoryClassification::Reconstructed),
             fee: match (base.total_spent > 0, base.fee) {
                 (false, _) => Fee::NotApplicable,
@@ -748,6 +752,10 @@ impl HistoryCompleteness {
     /// Local intent can know every payment detail before scanning discovers
     /// all owned effects. Public discovery still counts as settled.
     fn of(details: &TransactionHistoryDetails) -> Self {
+        let effects_settled = details
+            .effects
+            .iter()
+            .all(|effect| effect.completeness.is_settled());
         Self {
             has_transparent_outputs: details.has_transparent_outputs,
             details_complete: details.payment_details == DetailCompleteness::Complete,
@@ -760,10 +768,8 @@ impl HistoryCompleteness {
                 HistoryClassification::LocalIntent
                 | HistoryClassification::Reconstructed
                 | HistoryClassification::NetReconstructed => false,
-            } || details
-                .effects
-                .iter()
-                .any(|effect| !effect.completeness.is_settled()),
+            } || !effects_settled,
+            effects_settled,
             fee: match details.fee {
                 FeeState::Known(fee) => Fee::Known(fee.into()),
                 FeeState::Unknown => Fee::Unknown,
@@ -798,6 +804,7 @@ impl HistoryCompleteness {
             has_transparent_outputs: None,
             details_complete: false,
             provisional: true,
+            effects_settled: false,
             classification: None,
             fee: fee.map_or(Fee::Unknown, Fee::Known),
             whole_fee: None,
@@ -960,6 +967,8 @@ struct ActivitySummary {
     received_transparent: ActivityAmounts,
     /// Owned transparent change/funding excluded from the visible outgoing residual.
     internal_transparent: ActivityAmounts,
+    /// An owned receiver may later prove to be hidden change rather than a visible receipt.
+    unknown_transparent_scope: bool,
     shielded: ActivityAmounts,
     internal_ironwood_transition: ActivityAmounts,
     own_transparent_output_amount: u64,
@@ -1887,6 +1896,14 @@ fn summarize_activity_outputs(
         let recovered_from_own = output.from_account_uuid.is_none()
             && (base.history.inferred_outgoing.is_some() || recovered_self_transfer);
 
+        if output.output_pool == TRANSPARENT_POOL
+            && to_own
+            && recovered_from_own
+            && !matches!(output.to_key_scope, Some(-1..=2))
+        {
+            summary.unknown_transparent_scope = true;
+        }
+
         if base.is_shielding {
             if to_own && is_shielded_pool(output.output_pool) {
                 summary.shielded.add_output(output);
@@ -2255,7 +2272,16 @@ fn classify_history_tx(
             let outgoing = visible_outgoing
                 .filter(|amount| *amount > 0)
                 .unwrap_or(outgoing);
+            // These are Activity amounts under the recovered funding convention,
+            // not proven payments. Complete owned effects and unambiguous output
+            // scopes establish the rows; missing payment details stay on the receipt.
+            let activity_settled = base.history.effects_settled
+                && base.mined_height.is_some()
+                && !summary.unknown_transparent_scope
+                && visible_outgoing
+                    .is_some_and(|value| value > 0 && value >= summary.received_transparent.amount);
             let mut sent = build_classified_tx(base, "sent", outgoing, "transparent", true, 1);
+            sent.info.provisional = !activity_settled;
             sent.info.activity_pool = Some("transparent".to_string());
             let mut rows = vec![sent];
             if summary.received_transparent.output_count > 0 {
@@ -2267,6 +2293,7 @@ fn classify_history_tx(
                     true,
                     2,
                 );
+                received.info.provisional = !activity_settled;
                 received.info.activity_pool = Some("transparent".to_string());
                 rows.push(received);
             }
@@ -3017,6 +3044,7 @@ mod tests {
                 details_complete: true,
                 classification: Some(HistoryClassification::Reconstructed),
                 provisional: false,
+                effects_settled: true,
                 fee: Fee::Known(20_000),
                 whole_fee: None,
                 inferred_payment: None,
@@ -3078,6 +3106,7 @@ mod tests {
                     details_complete: false,
                     classification: Some(HistoryClassification::Provisional),
                     provisional: true,
+                    effects_settled: false,
                     fee: Fee::Unknown,
                     whole_fee: Some(15_000),
                     inferred_payment: None,
@@ -3167,6 +3196,7 @@ mod tests {
             details_complete: false,
             classification: None,
             provisional: true,
+            effects_settled: false,
             fee: Fee::Unknown,
             whole_fee: None,
             inferred_payment: None,
@@ -3349,8 +3379,9 @@ mod tests {
 
     #[test]
     fn recovered_activity_does_not_hide_unknown_scope_or_erase_conflicting_debits() {
-        let rows =
-            recovered_activity_fixture(compact_funding_base(20_000), &[(20_000, None)], false);
+        let mut base = compact_funding_base(20_000);
+        base.history.effects_settled = true;
+        let rows = recovered_activity_fixture(base.clone(), &[(20_000, None)], false);
         assert_eq!(
             rows.len(),
             2,
@@ -3358,11 +3389,16 @@ mod tests {
         );
         assert_eq!(rows[0].display_amount, 20_000);
         assert!(rows[0].provisional);
-        let rows =
-            recovered_activity_fixture(compact_funding_base(20_000), &[(30_000, Some(2))], false);
+        let rows = recovered_activity_fixture(base.clone(), &[(30_000, Some(2))], false);
         assert_eq!(rows.len(), 1, "conflicting evidence cannot erase the debit");
         assert_eq!(rows[0].display_amount, 20_000);
         assert!(rows[0].provisional);
+        let rows = recovered_activity_fixture(base, &[(30_000, Some(0))], false);
+        assert_eq!(rows.len(), 2);
+        assert!(
+            rows.iter().all(|row| row.provisional),
+            "a receipt exceeding the residual conflicts with the funding convention"
+        );
     }
 
     #[test]
@@ -3392,6 +3428,7 @@ mod tests {
             fee: Fee::Known(10_000),
             details_complete: false,
             provisional: false,
+            effects_settled: true,
             classification: None,
             has_transparent_outputs: Some(true),
             inferred_outgoing: None,
@@ -3495,6 +3532,7 @@ mod tests {
             details_complete: true,
             classification: Some(HistoryClassification::Reconstructed),
             provisional: false,
+            effects_settled: true,
             fee: Fee::Known(10_000),
             whole_fee: None,
             inferred_payment: None,
@@ -3519,6 +3557,7 @@ mod tests {
             details_complete: false,
             classification: None,
             provisional: false,
+            effects_settled: true,
             fee: Fee::Known(10_000),
             whole_fee: None,
             inferred_payment: Some(69_990_000),
@@ -3569,6 +3608,7 @@ mod tests {
             details_complete: false,
             classification: None,
             provisional: false,
+            effects_settled: true,
             fee: Fee::Known(10_000),
             whole_fee: Some(10_000),
             inferred_payment: Some(0),
@@ -3596,6 +3636,7 @@ mod tests {
             details_complete: false,
             classification: None,
             provisional: false,
+            effects_settled: true,
             fee: Fee::Known(10_000),
             whole_fee: None,
             inferred_payment: None,
@@ -3625,6 +3666,7 @@ mod tests {
             details_complete: false,
             classification: None,
             provisional: false,
+            effects_settled: true,
             fee: Fee::Known(10_000),
             whole_fee: Some(10_000),
             inferred_payment: Some(0),
@@ -3659,6 +3701,7 @@ mod tests {
             details_complete: false,
             classification: None,
             provisional: false,
+            effects_settled: true,
             fee: Fee::Known(10_000),
             whole_fee: Some(10_000),
             inferred_payment: Some(0),
@@ -4115,6 +4158,7 @@ mod tests {
                 details_complete,
                 has_transparent_outputs: None,
                 provisional: false,
+                effects_settled: true,
                 classification: details_complete.then_some(HistoryClassification::Reconstructed),
                 fee: Fee::Unknown,
                 whole_fee: Some(WHOLE_FEE),
@@ -4146,6 +4190,7 @@ mod tests {
             details_complete: false,
             classification: None,
             provisional: true,
+            effects_settled: false,
             fee: Fee::Unknown,
             whole_fee: Some(WHOLE_FEE),
             inferred_payment: None,
@@ -4329,6 +4374,7 @@ mod tests {
                 // The unsettled effect need not be the first one.
                 details.effects[1].completeness = completeness;
                 let mapped = HistoryCompleteness::of(&details);
+                assert_eq!(mapped.effects_settled, completeness.is_settled());
                 assert_eq!(
                     mapped.provisional,
                     classification == HistoryClassification::Provisional
@@ -4360,6 +4406,7 @@ mod tests {
             details_complete: false,
             classification: None,
             provisional: true,
+            effects_settled: false,
             fee: Fee::Unknown,
             whole_fee: None,
             inferred_payment: None,
@@ -4374,6 +4421,7 @@ mod tests {
             details_complete: true,
             classification: Some(HistoryClassification::Reconstructed),
             provisional: false,
+            effects_settled: true,
             fee: Fee::Known(10_000),
             whole_fee: None,
             inferred_payment: None,

@@ -497,18 +497,22 @@ void main() {
     expect(unknown.amountText, activityAmountTextForFormFactor('--'));
   });
 
-  testWidgets('transaction rows route the amount through the form-factor gate', (
-    tester,
-  ) async {
-    final row = await mapRow(
-      tester,
-      _transaction(txKind: 'sent', displayAmount: BigInt.from(1234567890000)),
-    );
+  testWidgets(
+    'transaction rows route the amount through the form-factor gate',
+    (tester) async {
+      final row = await mapRow(
+        tester,
+        _transaction(txKind: 'sent', displayAmount: BigInt.from(1234567890000)),
+      );
 
-    // Lane-agnostic: desktop keeps the full amount, mobile compacts it. Both
-    // are exactly what activityAmountTextForFormFactor yields for this raw text.
-    expect(row.amountText, activityAmountTextForFormFactor('-12345.6789 ZEC'));
-  });
+      // Lane-agnostic: desktop keeps the full amount, mobile compacts it. Both
+      // are exactly what activityAmountTextForFormFactor yields for this raw text.
+      expect(
+        row.amountText,
+        activityAmountTextForFormFactor('-12345.6789 ZEC'),
+      );
+    },
+  );
 
   testWidgets('only uncertain activity summaries are marked incomplete', (
     tester,
@@ -583,6 +587,39 @@ void main() {
       reason: 'the expanded receipt still lacks recipient details',
     );
   });
+
+  testWidgets(
+    'settled mixed recovery rows keep dates and incomplete receipts',
+    (tester) async {
+      for (final example in [
+        ('sent', 250000, '-0.0025 ZEC'),
+        ('received', 250000, '+0.0025 ZEC'),
+        ('sent', 200000, '-0.002 ZEC'),
+      ]) {
+        final transaction = _transaction(
+          txKind: example.$1,
+          displayPool: 'transparent',
+          activityPool: 'transparent',
+          displayAmount: BigInt.from(example.$2),
+          detailsComplete: false,
+          provisional: false,
+        );
+        final row = await mapRow(
+          tester,
+          transaction,
+          privateQueriesEnabled: true,
+        );
+        expect(row.amountText, activityAmountTextForFormFactor(example.$3));
+        expect(row.amountSubtitle, isNull);
+        expect(
+          row.timestampText,
+          (await mapRow(tester, transaction)).timestampText,
+        );
+        expect(row.timestampText, isNotEmpty);
+        expect(transactionDetailsIncomplete(transaction), isTrue);
+      }
+    },
+  );
 
   testWidgets('a settled movement with an unknown role or pool stays marked', (
     tester,
