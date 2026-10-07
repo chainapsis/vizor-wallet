@@ -12,6 +12,7 @@ use zcash_client_backend::data_api::{
     chain::{self, error::Error as ChainError, scan_cached_blocks},
     ll::LowLevelWalletWrite,
     scanning::{ScanPriority, ScanRange},
+    transparent_ledger::{ChainPoint, TransparentLedgerRead},
     wallet::ConfirmationsPolicy,
     WalletCommitmentTrees, WalletRead, WalletWrite,
 };
@@ -45,6 +46,7 @@ use {
     zcash_script::script,
 };
 
+pub(crate) mod address_discovery;
 mod address_history;
 mod block_source;
 mod claim_roots;
@@ -54,7 +56,6 @@ mod ephemeral_checks;
 mod ephemeral_checks_tests;
 mod error;
 pub(crate) mod gift_card_claim;
-pub(crate) mod ledger_discovery;
 mod lwd;
 pub(crate) mod mempool;
 #[cfg(test)]
@@ -1297,7 +1298,7 @@ async fn repair_anchor_root_mismatch_if_needed(
         let attempt_result = with_wallet_db_write_lock(
             "sync_engine.truncate_to_chain_state.anchor_root_mismatch",
             || -> Result<Result<Vec<ScanRange>, String>, SyncError> {
-                ledger_discovery::invalidate_for_rewind(db_data_path, db, repair_height)
+                address_discovery::invalidate_for_rewind(db_data_path, db, repair_height)
                     .map_err(|e| SyncError::db(format!("invalidate transparent refresh: {e}")))?;
                 match db.truncate_to_chain_state(repair_chain_state.clone()) {
                     Ok(()) => {}
@@ -1416,6 +1417,10 @@ struct TransparentRefreshCompletion {
 struct DownloadedTransparentRefresh {
     refresh: TransparentRefresh,
     outputs: Vec<WalletTransparentOutput<AccountUuid>>,
+    /// The provider's tip when it was the same immediately before the query
+    /// and after its complete response: the chain state `outputs` speaks for.
+    /// `None` when the tip moved or could not be read.
+    observed_at: Option<ChainPoint>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1446,6 +1451,10 @@ struct TransparentRefreshSummary {
     matched_accounts: usize,
     /// The transparent policy withheld the public UTXO lookup entirely.
     withheld: bool,
+    /// A refresh's result was stored but not reported to the library, so its
+    /// refresh metadata did not advance: typically one made before the chain
+    /// scan reached the provider's tip (see [`store_transparent_refreshes`]).
+    unreported: bool,
 }
 
 async fn refresh_utxos(
@@ -1735,6 +1744,7 @@ async fn refresh_utxos(
         progress(0, total_refreshes);
     }
     let mut completed_refreshes = 0u64;
+    let mut unreported = false;
     let download_client = client.clone();
     let download_gate = gate.clone();
     let outcome = process_bounded_transparent_refreshes(
@@ -1750,26 +1760,41 @@ async fn refresh_utxos(
         |downloaded| {
             let downloaded_count = downloaded.len() as u64;
             let received_outputs = downloaded.iter().any(|batch| !batch.outputs.is_empty());
-            let completion_authorized = std::cell::Cell::new(false);
+            let stored = std::cell::RefCell::new(StoredRefreshes::default());
+            let mut position = 0;
             store_then_mark_transparent_refreshes(
                 downloaded,
                 |downloaded| {
-                    store_transparent_outputs(db, downloaded)?;
-                    // Outputs already received are stored, but a group answered
-                    // after a transition does not advance refresh metadata, so
-                    // a later pass under the new policy re-covers it.
-                    completion_authorized.set(gate.permits()?);
+                    // A group answered after a transition neither reports its
+                    // result nor advances refresh metadata, so a later pass
+                    // under the new policy re-covers it. Nor does a refresh
+                    // that was not reported, so it is made again from the
+                    // same start height rather than leaving the outputs it
+                    // could not judge behind its query window.
+                    *stored.borrow_mut() = store_transparent_refreshes(
+                        db,
+                        Some(UtxoReport {
+                            gate: &gate,
+                            network,
+                        }),
+                        downloaded,
+                    )?;
                     Ok(())
                 },
                 |downloaded| {
-                    if completion_authorized.get() {
+                    let stored = stored.borrow();
+                    if stored.authorized {
+                        let reported = stored.reported.get(position).copied().unwrap_or(false);
+                        unreported |= !reported;
                         update_transparent_refresh_cache_metadata(
                             db_data_path,
                             network,
                             tip_height,
                             downloaded,
+                            reported,
                         )
                     }
+                    position += 1;
                 },
             )?;
             *received_outputs_seen |= received_outputs;
@@ -1790,8 +1815,70 @@ async fn refresh_utxos(
             elapsed(),
         ),
     }
+    summary.unreported = unreported;
 
     Ok(summary)
+}
+
+/// Refreshes `selection` again once the chain scan has reached `tip`, when
+/// its refresh before the scan stored outputs it could not report (see
+/// [`store_transparent_refreshes`]): the library judges absence only at the
+/// wallet's scanned tip. Returns whether it refreshed. A failure is logged,
+/// not returned: the unreported refreshes kept their start heights, so a
+/// later sync makes them again.
+async fn refresh_after_scan(
+    client: &mut CompactTxStreamerClient<Channel>,
+    db_data_path: &str,
+    db: &mut WalletDatabase,
+    network: WalletNetwork,
+    policy: EnhancementPolicy,
+    tip: BlockHeight,
+    selection: Option<TransparentAccountSelection<'_>>,
+    should_exit: &impl Fn() -> bool,
+) -> bool {
+    let Some(selection) = selection else {
+        return false;
+    };
+    if should_exit() {
+        return false;
+    }
+    log::info!(
+        "[{}] sync: refreshing transparent UTXOs at the scanned tip {} to report them ({:?})",
+        elapsed(),
+        u32::from(tip),
+        selection,
+    );
+    let mut received = false;
+    match refresh_utxos(
+        client,
+        db_data_path,
+        db,
+        network,
+        policy,
+        tip,
+        selection,
+        None,
+        &mut received,
+        None,
+        should_exit,
+    )
+    .await
+    {
+        Ok(summary) => {
+            if summary.unreported {
+                log::info!(
+                    "[{}] sync: transparent UTXO refreshes still unreported; a later sync makes them again",
+                    elapsed(),
+                );
+            }
+        }
+        Err(error) => log::warn!(
+            "[{}] sync: transparent UTXO refresh after the scan failed; a later sync reports: {}",
+            elapsed(),
+            error,
+        ),
+    }
+    true
 }
 
 fn prioritize_pending_transparent_refreshes(
@@ -1823,14 +1910,20 @@ fn prioritize_pending_transparent_refreshes(
     }
 }
 
+/// Marks the account's receive cache dirty when the refresh stored outputs,
+/// and, only when its result was `reported`, advances its refresh metadata.
 fn update_transparent_refresh_cache_metadata(
     db_data_path: &str,
     network: WalletNetwork,
     tip_height: BlockHeight,
     downloaded: &DownloadedTransparentRefresh,
+    reported: bool,
 ) {
     if !downloaded.outputs.is_empty() {
         mark_transparent_receive_cache_dirty(db_data_path, &downloaded.refresh.account_uuid);
+    }
+    if !reported {
+        return;
     }
     if let Some(completion) = downloaded.refresh.completion.as_ref() {
         if !completion.non_external_addresses.is_empty() {
@@ -1983,6 +2076,8 @@ fn store_then_mark_transparent_refreshes<T, E>(
     Ok(())
 }
 
+/// Stores the outputs of a group of UTXO refreshes without reporting them.
+#[cfg(test)]
 fn store_transparent_outputs(
     db: &mut WalletDatabase,
     downloaded: &[DownloadedTransparentRefresh],
@@ -1990,9 +2085,61 @@ fn store_transparent_outputs(
     if downloaded.iter().all(|batch| batch.outputs.is_empty()) {
         return Ok(());
     }
+    store_transparent_refreshes(db, None, downloaded).map(|_| ())
+}
 
+/// Who authorizes a refresh group's report, and how its addresses decode.
+struct UtxoReport<'a> {
+    gate: &'a TransparentLookupGate,
+    network: WalletNetwork,
+}
+
+/// One refresh's result for one queried address.
+struct UtxoObservation {
+    address: TransparentAddress,
+    start_height: BlockHeight,
+    unspent: Vec<OutPoint>,
+}
+
+/// What storing a group of UTXO refreshes established.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct StoredRefreshes {
+    /// The lookups were still authorized when the group was stored, under the
+    /// durable policy read in the same transaction.
+    authorized: bool,
+    /// Per refresh, in order: its result was reported to the library. Only a
+    /// reported refresh advances its refresh metadata, so a refresh that was
+    /// not is made again from the same start height.
+    reported: Vec<bool>,
+}
+
+/// Stores a group of UTXO refreshes and reports each one's result to the
+/// library, in one SQLite transaction (gap 5a).
+///
+/// Every refresh is a complete query: no entry limit, and its stream ended
+/// without error. For each queried address it reports the outputs returned
+/// since the refresh's start height, observed at the provider tip the
+/// refresh read before the query and again after its response. A wallet
+/// output mined in that range that was not returned, and whose spend the
+/// wallet has not seen, then stops counting as spendable and its spend is
+/// searched for. The library judges absence only at the wallet's accepted
+/// tip, with that block scanned: a refresh made before the scan reached the
+/// provider's tip, across a reorg, or while the provider's tip moved stores
+/// its outputs but is not reported, and is made again (see
+/// [`refresh_after_scan`]). The report is a completion write: it is made only
+/// while `report.gate` still authorizes the lookups, reading the durable
+/// policy in this transaction.
+fn store_transparent_refreshes(
+    db: &mut WalletDatabase,
+    report: Option<UtxoReport<'_>>,
+    downloaded: &[DownloadedTransparentRefresh],
+) -> Result<StoredRefreshes, SyncError> {
+    let observations = match &report {
+        Some(report) => utxo_observations(report.network, downloaded)?,
+        None => Vec::new(),
+    };
     with_wallet_db_write_lock("sync_engine.put_received_transparent_utxos", || {
-        db.transactionally(|tx_db| -> Result<(), SqliteClientError> {
+        db.transactionally(|tx_db| -> Result<StoredRefreshes, SqliteClientError> {
             for batch in downloaded {
                 for output in &batch.outputs {
                     tx_db.put_received_transparent_utxo(output)?;
@@ -2005,16 +2152,128 @@ fn store_transparent_outputs(
                     tx_db.queue_tx_retrieval(std::iter::once(*output.outpoint().txid()), None)?;
                 }
             }
-            Ok(())
+            let not_reported = || StoredRefreshes {
+                authorized: false,
+                reported: vec![false; downloaded.len()],
+            };
+            let Some(report) = &report else {
+                return Ok(not_reported());
+            };
+            // Outputs already received are stored, but a group answered after
+            // a transition reports nothing, so a later pass under the new
+            // policy observes the addresses again.
+            if !report
+                .gate
+                .permits_applied(TransparentLedgerRead::applied_transparent_policy(&*tx_db)?)
+            {
+                return Ok(not_reported());
+            }
+            let wallet_tip = tx_db.chain_height()?;
+            let mut stored = StoredRefreshes {
+                authorized: true,
+                reported: Vec::with_capacity(downloaded.len()),
+            };
+            for (batch, observations) in downloaded.iter().zip(&observations) {
+                let Some(point) = batch.observed_at else {
+                    stored.reported.push(false);
+                    continue;
+                };
+                // A refresh made before the scan reached this point, or
+                // across a reorg, speaks for another chain state.
+                if wallet_tip != Some(point.height)
+                    || tx_db.get_block_hash(point.height)? != Some(point.hash)
+                {
+                    stored.reported.push(false);
+                    continue;
+                }
+                for observation in observations {
+                    tx_db.notify_transparent_utxos_observed(
+                        &observation.address,
+                        observation.start_height,
+                        point,
+                        point,
+                        &observation.unspent,
+                    )?;
+                }
+                stored.reported.push(true);
+            }
+            let unreported = stored.reported.iter().filter(|r| !**r).count();
+            if unreported > 0 {
+                log::info!(
+                    "sync: {unreported} transparent UTXO refreshes not observed at the wallet's \
+                     scanned tip; they are made again"
+                );
+            }
+            Ok(stored)
         })
         .map_err(|e| SyncError::db(format!("put_received_transparent_utxos: {e}")))
     })
 }
 
+/// For each refresh, in order: each queried address with the refresh's start
+/// height and the outpoints it returned for that address. A refresh that
+/// starts above its observed tip judges nothing, so it has none.
+fn utxo_observations(
+    network: WalletNetwork,
+    downloaded: &[DownloadedTransparentRefresh],
+) -> Result<Vec<Vec<UtxoObservation>>, SyncError> {
+    let query_network = transparent_utxo_query_network(network);
+    downloaded
+        .iter()
+        .map(|batch| {
+            if batch
+                .observed_at
+                .is_some_and(|tip| batch.refresh.start_height > tip.height)
+            {
+                return Ok(Vec::new());
+            }
+            batch
+                .refresh
+                .addresses
+                .iter()
+                .map(|address| {
+                    let address =
+                        TransparentAddress::decode(&query_network, address).map_err(|e| {
+                            SyncError::parse(format!(
+                                "refreshed transparent address {address}: {e}"
+                            ))
+                        })?;
+                    let unspent = batch
+                        .outputs
+                        .iter()
+                        .filter(|output| *output.recipient_address() == address)
+                        .map(|output| output.outpoint().clone())
+                        .collect();
+                    Ok(UtxoObservation {
+                        address,
+                        start_height: batch.refresh.start_height,
+                        unspent,
+                    })
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// The provider's current tip, or `None` when it cannot be read or names no
+/// block hash.
+async fn provider_tip(client: &mut CompactTxStreamerClient<Channel>) -> Option<ChainPoint> {
+    match get_latest_block(client).await {
+        Ok(tip) => Some(ChainPoint {
+            height: BlockHeight::from_u32(u32::try_from(tip.height).ok()?),
+            hash: BlockHash::try_from_slice(&tip.hash)?,
+        }),
+        Err(e) => {
+            log::info!("sync: provider tip unavailable for a UTXO observation: {e}");
+            None
+        }
+    }
+}
+
 async fn download_transparent_outputs(
     mut client: CompactTxStreamerClient<Channel>,
     gate: TransparentLookupGate,
-    mut refresh: TransparentRefresh,
+    refresh: TransparentRefresh,
     should_exit: &impl Fn() -> bool,
 ) -> Result<Option<DownloadedTransparentRefresh>, SyncError> {
     if should_exit() {
@@ -2024,6 +2283,7 @@ async fn download_transparent_outputs(
         return Ok(Some(DownloadedTransparentRefresh {
             refresh,
             outputs: Vec::new(),
+            observed_at: None,
         }));
     }
 
@@ -2038,7 +2298,10 @@ async fn download_transparent_outputs(
         refresh.addresses.len(),
     );
 
-    let addresses = std::mem::take(&mut refresh.addresses);
+    // The result speaks for a chain state only if the provider's tip is the
+    // same before the query and after its complete response.
+    let query_start = provider_tip(&mut client).await;
+    let addresses = refresh.addresses.clone();
     let stream = tokio::select! {
         biased;
         _ = watch_for_exit(should_exit) => {
@@ -2116,12 +2379,19 @@ async fn download_transparent_outputs(
         );
     }
 
+    let query_end = provider_tip(&mut client).await;
+    let observed_at = query_start.filter(|start| Some(*start) == query_end);
+
     log::info!(
         "transparent refresh: account={} batch={:?} addresses={} rpc_count=1 outputs={} response_bytes={} elapsed_ms={}",
         refresh.account_uuid, refresh.label,
         address_count, outputs.len(), response_bytes, started.elapsed().as_millis(),
     );
-    Ok(Some(DownloadedTransparentRefresh { refresh, outputs }))
+    Ok(Some(DownloadedTransparentRefresh {
+        refresh,
+        outputs,
+        observed_at,
+    }))
 }
 
 async fn watch_for_exit(should_exit: &impl Fn() -> bool) {
@@ -2271,7 +2541,7 @@ fn truncate_wallet_to_height(
     invalidate_transparent_checks_before_rewind(db_data_path)?;
     with_wallet_db_write_lock(operation, || {
         truncate_wallet_with(requested_height, fresh_tip_height, |height| {
-            ledger_discovery::truncate(db_data_path, db, height)
+            address_discovery::truncate(db_data_path, db, height)
         })
     })
 }
@@ -2865,7 +3135,7 @@ async fn run_payment_link_claim_sync_once(
                     let requested = confirmed_reorg_rewind_target(fresh_height)?;
                     invalidate_transparent_checks_before_rewind(db_data_path)?;
                     truncate_wallet_with(requested, fresh_height, |height| {
-                        ledger_discovery::truncate(db_data_path, &mut db, height)
+                        address_discovery::truncate(db_data_path, &mut db, height)
                     })?;
                     db.update_chain_tip(fresh_height).map_err(|error| {
                         SyncError::db(format!("payment-link update tip after reorg: {error}"))
@@ -2970,7 +3240,7 @@ async fn run_payment_link_claim_sync_once(
                     block_height_from_u64(current_tip_height, "payment-link scan rewind tip")?;
                 invalidate_transparent_checks_before_rewind(db_data_path)?;
                 truncate_wallet_with(requested, fresh_tip, |height| {
-                    ledger_discovery::truncate(db_data_path, &mut db, height)
+                    address_discovery::truncate(db_data_path, &mut db, height)
                 })?;
             }
         }
@@ -3131,12 +3401,14 @@ async fn run_sync_impl(
         return Ok(());
     }
 
-    // Recovery runs after import, under the existing sync lifetime. Once both
-    // scopes complete it performs no further address-history requests.
-    ledger_discovery::run(
+    // Every account's initial address-history discovery runs under the
+    // existing sync lifetime, before the UTXO refresh. Once both of an
+    // account's scopes complete it performs no further discovery requests.
+    address_discovery::run(
         &mut client,
         &mut db,
         db_data_path,
+        lightwalletd_url,
         network,
         enhancement.policy(),
         tip_height,
@@ -3155,7 +3427,13 @@ async fn run_sync_impl(
             total,
         ));
     };
-    let defer_inactive_transparent_refresh = if let Some(active_account_uuid) =
+    // The refresh before the chain scan stores new outputs early, but at a
+    // new tip it cannot report what is absent: the library judges absence
+    // only at the wallet's scanned tip. `unreported_refresh` keeps the
+    // selection to refresh again once the scan reaches it.
+    let (defer_inactive_transparent_refresh, unreported_refresh) = if let Some(
+        active_account_uuid,
+    ) =
         active_account_uuid.as_deref()
     {
         log::info!(
@@ -3164,6 +3442,7 @@ async fn run_sync_impl(
             active_account_uuid,
         );
         let mut critical_received_outputs = false;
+        let active = TransparentAccountSelection::Only(active_account_uuid);
         let active_summary = refresh_utxos(
             &mut client,
             db_data_path,
@@ -3171,7 +3450,7 @@ async fn run_sync_impl(
             network,
             enhancement.policy(),
             tip_height,
-            TransparentAccountSelection::Only(active_account_uuid),
+            active,
             None,
             &mut critical_received_outputs,
             Some(&active_utxo_progress),
@@ -3184,7 +3463,7 @@ async fn run_sync_impl(
                 elapsed(),
                 active_account_uuid,
             );
-            refresh_utxos(
+            let summary = refresh_utxos(
                 &mut client,
                 db_data_path,
                 &mut db,
@@ -3198,13 +3477,18 @@ async fn run_sync_impl(
                 &should_exit,
             )
             .await?;
-            false
+            (
+                false,
+                summary
+                    .unreported
+                    .then_some(TransparentAccountSelection::All),
+            )
         } else {
-            true
+            (true, active_summary.unreported.then_some(active))
         }
     } else {
         let mut critical_received_outputs = false;
-        refresh_utxos(
+        let summary = refresh_utxos(
             &mut client,
             db_data_path,
             &mut db,
@@ -3218,7 +3502,12 @@ async fn run_sync_impl(
             &should_exit,
         )
         .await?;
-        false
+        (
+            false,
+            summary
+                .unreported
+                .then_some(TransparentAccountSelection::All),
+        )
     };
 
     if should_exit() {
@@ -4065,7 +4354,7 @@ async fn run_sync_impl(
                     let actual_rewind_height = with_wallet_db_write_lock(
                         "sync_engine.truncate_to_height",
                         || -> Result<BlockHeight, SyncError> {
-                            match ledger_discovery::truncate(db_data_path, &mut db, target) {
+                            match address_discovery::truncate(db_data_path, &mut db, target) {
                                 Ok(h) => Ok(h),
                                 Err(SqliteClientError::RequestedRewindInvalid {
                                     safe_rewind_height: Some(safe),
@@ -4076,7 +4365,7 @@ async fn run_sync_impl(
                                          below earliest checkpoint; retrying at safe_rewind_height={safe}",
                                         elapsed(),
                                     );
-                                    ledger_discovery::truncate(db_data_path, &mut db, safe).map_err(|e| {
+                                    address_discovery::truncate(db_data_path, &mut db, safe).map_err(|e| {
                                         if is_sqlite_lock_contention(&e) {
                                             SyncError::other(format!(
                                                 "truncate_to_height({safe}) retry: SQLite lock contention: {e}"
@@ -4512,11 +4801,29 @@ async fn run_sync_impl(
         maybe_sleep_for_e2e_sync_batch_delay().await;
     }
 
+    // The scan has reached the tip, so a refresh that could not be reported
+    // before it is made again and reported now. Spend searches it queues are
+    // serviced by the enhancement pass below, before completion.
+    let refreshed_after_scan = refresh_after_scan(
+        &mut client,
+        db_data_path,
+        &mut db,
+        network,
+        enhancement.policy(),
+        BlockHeight::from_u32(current_tip_height as u32),
+        unreported_refresh,
+        &should_exit,
+    )
+    .await;
+    if should_exit() {
+        return Ok(());
+    }
+
     // A mode change can expose ordinary transaction-ID enhancement requests
     // while the compact scan queue is already empty. Always service both
     // queues once at completion so disabling private recovery takes effect
     // without waiting for another block to arrive.
-    if needs_completion_enhancement_pass(enhancement_after_scan) {
+    if needs_completion_enhancement_pass(enhancement_after_scan) || refreshed_after_scan {
         if enhancement
             .run_checkpoint(&mut db, &mut client, None, &should_exit)
             .await?
@@ -4532,15 +4839,19 @@ async fn run_sync_impl(
 
     let (final_scanned_height, final_tip_height) =
         ensure_complete_scan_state(&mut db, current_tip_height)?;
-    for id in db
-        .get_account_ids()
-        .map_err(|e| SyncError::db(e.to_string()))?
+    // Completion claims the transparent history is complete too: address
+    // discovery and every spend search due at or below the tip. A failure
+    // that left any of it undone (an address-history stream cut, an address
+    // whose transactions failed to store) fails the sync, which retries,
+    // instead of reporting a synchronized wallet. Restored ephemeral checks
+    // are left to the ephemeral slot below, one per sync.
+    if let Some((account, coverage)) =
+        address_discovery::first_incomplete(&mut db, network).map_err(SyncError::db)?
     {
-        if !ledger_discovery::is_ready(db_data_path, network, id).map_err(SyncError::db)? {
-            return Err(SyncError::other(
-                "Ledger recovery was invalidated during sync; retrying",
-            ));
-        }
+        return Err(SyncError::other(format!(
+            "transparent history of account {} is incomplete ({coverage:?}); retrying",
+            account.expose_uuid()
+        )));
     }
     // Reconcile migration chain state only after the scan queue is fully
     // drained, then update generic wallet locks for denomination outputs that
@@ -4735,25 +5046,64 @@ async fn run_sync_impl(
 
     if !should_exit() {
         let mut changed = false;
-        // Each check sends an ephemeral address, so it is authorized under
-        // the transparent policy this sync captured.
-        if let Err(error) = ephemeral_checks::run(
-            lightwalletd_url,
+        // A sync sends at most one ephemeral address, over its own channel,
+        // so that the server cannot link several to each other, or to this
+        // sync, by request time. While a restored TEX operation's first leg
+        // is unchecked (a restore finds it only through the scan), one such
+        // address is checked, so that its second leg and any returned funds
+        // are found; otherwise a due ZIP 320 check runs. Each check is
+        // authorized under the transparent policy this sync captured.
+        let tip = BlockHeight::from_u32(final_tip_height as u32);
+        match address_discovery::run_restored_ephemeral(
+            &mut client,
             &mut db,
             db_data_path,
+            lightwalletd_url,
             network,
             enhancement.policy(),
-            BlockHeight::from_u32(final_tip_height as u32),
-            &mut changed,
+            tip,
             &should_exit,
         )
         .await
         {
-            log::warn!(
-                "[{}] sync: ephemeral address check failed; it will retry on a later sync: {}",
+            Ok(address_discovery::RestoredCheck::NotSent) => {
+                if let Err(error) = ephemeral_checks::run(
+                    lightwalletd_url,
+                    &mut db,
+                    db_data_path,
+                    network,
+                    enhancement.policy(),
+                    tip,
+                    &mut changed,
+                    &should_exit,
+                )
+                .await
+                {
+                    log::warn!(
+                        "[{}] sync: ephemeral address check failed; it will retry on a later sync: {}",
+                        elapsed(),
+                        error,
+                    );
+                }
+            }
+            Ok(address_discovery::RestoredCheck::Sent { stored }) => {
+                log::info!(
+                    "[{}] sync: checked a restored ephemeral address (stored={})",
+                    elapsed(),
+                    stored,
+                );
+                // Recording the address checked can complete the account's
+                // coverage, which changes its balance even with nothing
+                // stored. What it stored is enhanced by a later sync, as for
+                // a scheduled check: a lookup over this sync's channel right
+                // after the isolated query could link the two.
+                changed = true;
+            }
+            Err(error) => log::warn!(
+                "[{}] sync: restored ephemeral address check failed; it will retry on a later sync: {}",
                 elapsed(),
                 error,
-            );
+            ),
         }
         // Refresh even after a failure that followed stored transactions.
         if changed && !should_exit() {

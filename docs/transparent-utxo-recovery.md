@@ -110,6 +110,15 @@ addresses with no mined output, including those funded only by a first leg that
 never mined, are not queried. Debug builds treat scheduled checks as due
 when `ZCASH_E2E_EPHEMERAL_CHECKS_DUE_NOW` is set; the TEX send E2E uses this.
 
+A restore finds a TEX pair's first leg through the scan, not because the
+wallet built it. Until its address is checked, the account's transparent funds
+read as last known and shielding waits, so such an address takes the same slot
+ahead of the schedule: while any restored first leg is unchecked, the sync
+checks one of their addresses, chosen at random, instead of a scheduled check.
+A sync still sends at most one ephemeral address, so a server cannot link a
+restored wallet's TEX addresses to each other by request time, and the sync
+completes while the rest wait for later syncs.
+
 A first leg's output stays unspendable until a check sees it unspent past the
 leg's expiry, which is how the wallet recovers funds a failed second leg left
 behind. The backend records that only for outputs without a stored spend, so a

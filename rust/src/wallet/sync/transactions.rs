@@ -29,8 +29,9 @@ use zcash_client_backend::data_api::transparent_ledger::WholeTransactionFee;
 use zcash_client_backend::data_api::{
     transparent_ledger::{
         AggregatePayment, DetailCompleteness, FeeState, HistoryClassification, RecoveryBlocker,
-        TransactionHistoryDetails, TransparentAuthority, TransparentLedgerBalance,
-        TransparentLedgerMode, TransparentLedgerRead, TransparentLedgerSnapshot,
+        TransactionFunding, TransactionHistoryDetails, TransparentAuthority,
+        TransparentLedgerBalance, TransparentLedgerMode, TransparentLedgerRead,
+        TransparentLedgerSnapshot,
     },
     Account as _, Balance, WalletRead, WalletWrite,
 };
@@ -49,6 +50,7 @@ use crate::wallet::sync_engine::enhancement::selects_private_recovery;
 use crate::wallet::sync_engine::transparent_ledger::{recovery_hold, HoldCause};
 
 use super::{open_readonly_conn, open_wallet_db, open_wallet_db_for_read};
+use crate::wallet::sync_engine::address_discovery::{Coverage, CoverageRead};
 
 const ORCHARD_NOTE_VERSION: i64 = 2;
 const IRONWOOD_NOTE_VERSION: i64 = 3;
@@ -260,7 +262,10 @@ pub(crate) fn get_wallet_balance(
 /// ledger snapshot: its authorized amounts, or none with the last-known
 /// amount when authority is unavailable, and why recovery is stopped when it
 /// will not restore authority on its own. Durable private policy is respected
-/// even when this build opens a Public handle after restart.
+/// even when this build opens a Public handle after restart. Under public
+/// authority the transparent funds are current only once the account's public
+/// transparent history is complete (see `address_discovery::Coverage`);
+/// until then they are last known and nothing is spendable.
 pub(crate) fn get_wallet_balances(
     db_path: &str,
     network: WalletNetwork,
@@ -282,12 +287,12 @@ pub(crate) fn read_wallet_balances(
     network: WalletNetwork,
     target_ids: &[AccountUuid],
 ) -> Result<Vec<WalletBalance>, String> {
-    // Read durable policy, summary, and authority from one snapshot. A
-    // policy applied by another connection since `db` was opened must not
-    // label a private-policy summary's suppressed zero as current funds, so
-    // the handle adopts it here. Configuring this read handle does not change
-    // policy.
-    db.transactionally(|db| {
+    // Read durable policy, summary, authority, and public history coverage
+    // from one snapshot. A policy applied by another connection since `db`
+    // was opened must not label a private-policy summary's suppressed zero as
+    // current funds, so the handle adopts it here. Configuring this read
+    // handle does not change policy.
+    db.transactionally_with_extension(|db, ext| {
         let durable = match db.applied_transparent_policy() {
             Err(
                 zcash_client_sqlite::error::SqliteClientError::TransparentLedgerPolicyConflict {
@@ -317,6 +322,7 @@ pub(crate) fn read_wallet_balances(
                 })
                 .collect());
         };
+        let mut coverage = None;
 
         target_ids
             .iter()
@@ -336,8 +342,23 @@ pub(crate) fn read_wallet_balances(
                     *target_id,
                     crate::wallet::confirmations_policy(),
                 )?;
-                let (mut status, transparent) = ledger_transparent_balance(&snapshot, private);
-                if status.authority != TransparentBalanceAuthority::Current {
+                // Public coverage is read only for an account whose authority
+                // is public, and the due spend searches once per snapshot.
+                let public_history_complete = snapshot.authority != TransparentAuthority::Public
+                    || {
+                        if coverage.is_none() {
+                            coverage = Some(CoverageRead::new(&*db, network)?);
+                        }
+                        let read = coverage.as_ref().expect("coverage was just read");
+                        read.account(&*db, ext, *target_id)? == Coverage::Complete
+                    };
+                let (mut status, transparent) =
+                    ledger_transparent_balance(&snapshot, private, public_history_complete);
+                // Public coverage that is still completing is not a stopped
+                // private recovery.
+                if status.authority != TransparentBalanceAuthority::Current
+                    && snapshot.authority != TransparentAuthority::Public
+                {
                     if let Some(reason) =
                         transparent_stop_reason(&*db, db_path, &snapshot, not_selected)?
                     {
@@ -357,10 +378,17 @@ pub(crate) fn read_wallet_balances(
     .map_err(|e| format!("Failed to read wallet balances: {e}"))
 }
 
-/// The transparent part of a balance under a private ledger mode.
+/// The transparent part of a balance, from the ledger snapshot.
+///
+/// Under public authority, the authorized amounts are current only once the
+/// account's public history is complete (`public_history_complete`): until
+/// discovery, restored ephemeral checks, and every due spend search are done,
+/// a spent output may still read as unspent, so the amount is shown as last
+/// known and nothing is spendable.
 fn ledger_transparent_balance<A>(
     snapshot: &TransparentLedgerSnapshot<A>,
     private: bool,
+    public_history_complete: bool,
 ) -> (TransparentStatus, PoolBalance) {
     let status = |authority, last_known| TransparentStatus {
         authority,
@@ -369,6 +397,15 @@ fn ledger_transparent_balance<A>(
         private,
     };
     match (snapshot.authority, &snapshot.authorized) {
+        (TransparentAuthority::Public, Some(authorized)) if !public_history_complete => (
+            status(
+                TransparentBalanceAuthority::LastKnown,
+                Some(
+                    u64::from(authorized.regular.total()) + u64::from(authorized.coinbase.total()),
+                ),
+            ),
+            PoolBalance::default(),
+        ),
         (TransparentAuthority::Public | TransparentAuthority::Private, Some(authorized)) => (
             status(TransparentBalanceAuthority::Current, None),
             PoolBalance::of_transparent(authorized),
@@ -723,6 +760,11 @@ struct HistoryCompleteness {
     inferred_payment: Option<u64>,
     /// Activity-only residual supplied by the library; recipient and fee attribution stay unknown.
     inferred_outgoing: Option<u64>,
+    /// Who funded the transaction, as the library's history read establishes
+    /// it. A [`TransactionFunding::Shared`] transaction has no payment or fee
+    /// share that is the account's own, so its `fee` is unknown and the whole
+    /// transaction's fee is `whole_fee`.
+    funding: TransactionFunding,
 }
 
 impl HistoryCompleteness {
@@ -742,12 +784,24 @@ impl HistoryCompleteness {
             whole_fee: None,
             inferred_payment: None,
             inferred_outgoing: None,
+            funding: if base.total_spent > 0 {
+                TransactionFunding::Sole
+            } else {
+                TransactionFunding::NotFunded
+            },
         }
     }
 
     /// Local intent can know every payment detail before scanning discovers
     /// all owned effects. Public discovery still counts as settled.
     fn of(details: &TransactionHistoryDetails) -> Self {
+        // A jointly funded transaction's fee is the whole transaction's: the
+        // account's share of it is unknown.
+        let shared = details.funding == TransactionFunding::Shared;
+        let shared_whole_fee = match details.fee {
+            FeeState::Known(fee) if shared => Some(fee),
+            _ => None,
+        };
         Self {
             has_transparent_outputs: details.has_transparent_outputs,
             details_complete: details.payment_details == DetailCompleteness::Complete,
@@ -765,6 +819,7 @@ impl HistoryCompleteness {
                 .iter()
                 .any(|effect| !effect.completeness.is_settled()),
             fee: match details.fee {
+                FeeState::Known(_) if shared => Fee::Unknown,
                 FeeState::Known(fee) => Fee::Known(fee.into()),
                 FeeState::Unknown => Fee::Unknown,
                 FeeState::NotApplicable => Fee::NotApplicable,
@@ -773,6 +828,7 @@ impl HistoryCompleteness {
             // settled or not, never shows its sender's fee.
             whole_fee: details
                 .whole_fee
+                .or(shared_whole_fee)
                 .filter(|_| details.account_movement.spent > 0)
                 .map(|fee| fee.into_u64()),
             inferred_outgoing: details.inferred_outgoing.map(|amount| amount.into_u64()),
@@ -788,6 +844,7 @@ impl HistoryCompleteness {
                 }
                 _ => None,
             },
+            funding: details.funding,
         }
     }
 
@@ -803,6 +860,7 @@ impl HistoryCompleteness {
             whole_fee: None,
             inferred_payment: None,
             inferred_outgoing: None,
+            funding: TransactionFunding::Undetermined,
         }
     }
 
@@ -2188,6 +2246,14 @@ fn classify_history_tx(
     summary: &ActivitySummary,
     extra_sent_fee: Fee,
 ) -> Vec<ClassifiedTx> {
+    // A jointly funded transaction has no payment or fee share that is the
+    // account's own (H05): its whole movement, with the whole transaction's
+    // fee beside it, is all that is the account's. Nothing is subtracted or
+    // attributed, and none of its outputs is a separate receive or shielding.
+    if base.history.funding == TransactionFunding::Shared {
+        return vec![movement_row(base)];
+    }
+
     if base.is_shielding {
         let amount = if summary.shielded.amount > 0 {
             summary.shielded.amount
@@ -2337,7 +2403,17 @@ fn classify_history_tx(
             }
         }
         if base.total_spent > 0 && base.total_received > 0 {
-            return rows;
+            // Fully known history with nothing visible is a change-only
+            // internal transaction, which Activity does not list.
+            if base.history.details_complete && !base.history.provisional {
+                return rows;
+            }
+            // Otherwise the account spent and received here, but the history
+            // does not yet show where the value went, for example a shielding
+            // whose details are still incomplete. Its net movement is known,
+            // so it stays visible as a provisional, incomplete row: a known
+            // debit never disappears while history is incomplete.
+            return vec![unattributed_movement_row(base)];
         }
         if base.account_balance_delta > 0 {
             rows.push(build_classified_tx(
@@ -2354,6 +2430,40 @@ fn classify_history_tx(
     }
 
     rows
+}
+
+/// One provisional, incomplete row for the account's net movement in `base`,
+/// when the history does not yet show where its value went.
+fn unattributed_movement_row(base: &TxBase) -> ClassifiedTx {
+    let mut row = movement_row(base);
+    row.info.details_complete = false;
+    row.info.provisional = true;
+    row
+}
+
+/// One row for the account's net movement in `base`, with no payment or
+/// receipt attributed. A debit is shown like any movement debit: less the
+/// account's known fee, which is shown beside it.
+fn movement_row(base: &TxBase) -> ClassifiedTx {
+    let delta = base.account_balance_delta;
+    match delta.signum() {
+        -1 => {
+            let debit = delta
+                .unsigned_abs()
+                .saturating_sub(base.history.fee.known_or_zero());
+            let tx_kind = if debit > 0 { "sent" } else { "unknown" };
+            build_movement_debit_row(base, tx_kind, debit)
+        }
+        1 => build_classified_tx(
+            base,
+            receiving_tx_kind(base),
+            delta.unsigned_abs(),
+            "unknown",
+            false,
+            2,
+        ),
+        _ => build_classified_tx(base, "unknown", 0, "unknown", false, 3),
+    }
 }
 
 /// Owned Ironwood outputs do not prove an internal migration when the library
@@ -3021,6 +3131,7 @@ mod tests {
                 whole_fee: None,
                 inferred_payment: None,
                 inferred_outgoing: None,
+                funding: TransactionFunding::Sole,
             },
         }
     }
@@ -3082,6 +3193,7 @@ mod tests {
                     whole_fee: Some(15_000),
                     inferred_payment: None,
                     inferred_outgoing: Some(250_000),
+                    funding: TransactionFunding::Sole,
                 });
                 let change = TxOutput {
                     txid: base.txid.clone(),
@@ -3171,12 +3283,80 @@ mod tests {
             whole_fee: None,
             inferred_payment: None,
             inferred_outgoing: None,
+            funding: TransactionFunding::Sole,
         });
         let mut summary = ActivitySummary::default();
         // The change arrived on an address that reads as a receive.
         summary.received.amount = 30_000_000;
         summary.received.has_transparent = true;
         (base, summary)
+    }
+
+    /// V6 (gap 8): a shielding whose effects are settled but whose details are
+    /// still incomplete loses its shielding classification, and its owned
+    /// shielded output reads as neither a payment nor a receipt. It used to
+    /// produce no row at all; its known debit stays visible, provisional and
+    /// incomplete. Like any movement debit, the amount is the movement less
+    /// the account's known fee, or, when only the whole transaction's fee is
+    /// known, the movement that includes it.
+    #[test]
+    fn an_unattributed_spend_and_receipt_keeps_a_provisional_row() {
+        for (fee, whole_fee, tx_kind, amount, includes_fee) in [
+            (Fee::Known(10_000), None, "unknown", 0, false),
+            (Fee::Unknown, Some(10_000), "sent", 10_000, true),
+        ] {
+            let (mut base, _) = provisional_debit();
+            base.account_balance_delta = -10_000;
+            base.is_shielding = true;
+            base.attach_history(HistoryCompleteness {
+                has_transparent_outputs: None,
+                details_complete: false,
+                classification: Some(HistoryClassification::Reconstructed),
+                provisional: false,
+                fee,
+                whole_fee,
+                inferred_payment: None,
+                inferred_outgoing: None,
+                funding: TransactionFunding::Sole,
+            });
+            assert!(!base.is_shielding);
+
+            let rows = classify_history_tx(&base, &ActivitySummary::default(), Fee::NotApplicable);
+
+            assert_eq!(rows.len(), 1, "a known debit never disappears ({fee:?})");
+            let info = &rows[0].info;
+            assert_eq!(info.tx_kind, tx_kind);
+            assert_eq!(info.display_amount, amount);
+            assert_eq!(info.account_balance_delta, -10_000);
+            assert_eq!(info.fee, 10_000);
+            assert_eq!(info.fee_state, TransactionFeeState::Known);
+            assert_eq!(info.amount_includes_fee, includes_fee);
+            assert!(info.provisional);
+            assert!(!info.details_complete);
+        }
+    }
+
+    /// Fully known history with nothing visible is a change-only internal
+    /// transaction, which Activity does not list.
+    #[test]
+    fn a_complete_change_only_transaction_stays_unlisted() {
+        let (mut base, _) = provisional_debit();
+        base.account_balance_delta = -10_000;
+        base.history = HistoryCompleteness {
+            has_transparent_outputs: None,
+            details_complete: true,
+            classification: Some(HistoryClassification::Reconstructed),
+            provisional: false,
+            fee: Fee::Known(10_000),
+            whole_fee: None,
+            inferred_payment: None,
+            inferred_outgoing: None,
+            funding: TransactionFunding::Sole,
+        };
+
+        let rows = classify_history_tx(&base, &ActivitySummary::default(), Fee::NotApplicable);
+
+        assert!(rows.is_empty());
     }
 
     #[test]
@@ -3395,6 +3575,7 @@ mod tests {
             classification: None,
             has_transparent_outputs: Some(true),
             inferred_outgoing: None,
+            funding: TransactionFunding::Sole,
         };
         for scope in [0, -1] {
             let public = recovered_activity_fixture(base.clone(), &[(100_000, Some(scope))], true);
@@ -3499,6 +3680,7 @@ mod tests {
             whole_fee: None,
             inferred_payment: None,
             inferred_outgoing: None,
+            funding: TransactionFunding::Sole,
         };
 
         let rows = classify_history_tx(&base, &summary, Fee::NotApplicable);
@@ -3523,6 +3705,7 @@ mod tests {
             whole_fee: None,
             inferred_payment: Some(69_990_000),
             inferred_outgoing: None,
+            funding: TransactionFunding::Sole,
         };
 
         let rows = classify_history_tx(&base, &summary, Fee::NotApplicable);
@@ -3573,6 +3756,7 @@ mod tests {
             whole_fee: Some(10_000),
             inferred_payment: Some(0),
             inferred_outgoing: None,
+            funding: TransactionFunding::Sole,
         });
 
         let rows = classify_history_tx(&base, &summary, Fee::NotApplicable);
@@ -3600,6 +3784,7 @@ mod tests {
             whole_fee: None,
             inferred_payment: None,
             inferred_outgoing: None,
+            funding: TransactionFunding::Sole,
         });
 
         let rows = classify_history_tx(&base, &summary, Fee::NotApplicable);
@@ -3629,6 +3814,7 @@ mod tests {
             whole_fee: Some(10_000),
             inferred_payment: Some(0),
             inferred_outgoing: None,
+            funding: TransactionFunding::Sole,
         };
         // No exact payment.
         received(HistoryCompleteness {
@@ -3663,6 +3849,7 @@ mod tests {
             whole_fee: Some(10_000),
             inferred_payment: Some(0),
             inferred_outgoing: None,
+            funding: TransactionFunding::Sole,
         };
         summary.received.amount = 100_000;
         summary.received.output_count = 1;
@@ -3733,6 +3920,7 @@ mod tests {
             payment_details: DetailCompleteness::Incomplete,
             fee: FeeState::Known(Zatoshis::from_u64(10_000).unwrap()),
             classification: HistoryClassification::Reconstructed,
+            funding: TransactionFunding::Sole,
             pending_private_details: vec![],
         };
         assert_eq!(
@@ -3803,6 +3991,7 @@ mod tests {
             payment_details: DetailCompleteness::Incomplete,
             fee: FeeState::Unknown,
             classification: HistoryClassification::Provisional,
+            funding: TransactionFunding::Shared,
             pending_private_details: vec![],
         }
     }
@@ -3885,6 +4074,9 @@ mod tests {
         }
         details.payment_details = DetailCompleteness::Complete;
         details.classification = HistoryClassification::NetReconstructed;
+        // Every transparent input is the account's, but shielded components
+        // leave the funding undetermined.
+        details.funding = TransactionFunding::Undetermined;
         let history = HistoryCompleteness::of(&details);
         assert!(history.justifies_shielding());
         assert_eq!(history.fee, Fee::Unknown);
@@ -3904,6 +4096,9 @@ mod tests {
         }
         details.classification = HistoryClassification::NetReconstructed;
         details.payment_details = DetailCompleteness::Incomplete;
+        // Every transparent input is the account's, but shielded components
+        // leave the funding undetermined.
+        details.funding = TransactionFunding::Undetermined;
         assert!(!HistoryCompleteness::of(&details).justifies_shielding());
 
         details.payment_details = DetailCompleteness::Complete;
@@ -3955,6 +4150,9 @@ mod tests {
         }
         details.payment_details = DetailCompleteness::Complete;
         details.classification = HistoryClassification::Reconstructed;
+        // Complete payment details from balance accounting need the account
+        // to be the only funder.
+        details.funding = TransactionFunding::Sole;
 
         let mut base = tx_base_for_history();
         base.spent_orchard_note = false;
@@ -4032,10 +4230,127 @@ mod tests {
         );
     }
 
+    /// H05 in public mode: the account and another party jointly funded a
+    /// transaction the wallet has the full data of. The library reports it
+    /// as shared and its fee as the whole transaction's.
+    fn public_shared_details() -> TransactionHistoryDetails {
+        let mut details = shared_funding_details(exact_whole_fee());
+        details.transaction_metadata = None;
+        details.fee =
+            FeeState::Known(zcash_protocol::value::Zatoshis::from_u64(WHOLE_FEE).unwrap());
+        details
+    }
+
+    /// V2 (H05, G2): a shared transaction is one row of the account's whole
+    /// movement, with the whole transaction's fee beside it. Neither a
+    /// payment nor a fee share is attributed: a visible payment output, the
+    /// change that reads as a receive, and a shielding all stay inside the
+    /// movement.
+    #[test]
+    fn a_shared_transaction_is_its_whole_movement_with_the_whole_fee() {
+        let public = public_shared_details();
+        let mut constructed = public_shared_details();
+        constructed.classification = HistoryClassification::LocalIntent;
+        constructed.payment_details = DetailCompleteness::Complete;
+        for (details, complete) in [(public, false), (constructed, true)] {
+            for payment_visible in [false, true] {
+                let history = HistoryCompleteness::of(&details);
+                assert_eq!(history.fee, Fee::Unknown, "the account's share is unknown");
+                assert_eq!(history.whole_fee, Some(WHOLE_FEE));
+                let (mut base, mut summary) = provisional_debit();
+                base.is_shielding = complete;
+                base.attach_history(history);
+                if payment_visible {
+                    summary.sent.amount = 50_000_000;
+                    summary.sent.output_count = 1;
+                    summary.sent.has_transparent = true;
+                }
+
+                let rows = classify_history_tx(&base, &summary, Fee::NotApplicable);
+
+                let case = format!("complete={complete} payment_visible={payment_visible}");
+                assert_eq!(rows.len(), 1, "{case}");
+                let info = &rows[0].info;
+                assert_eq!(info.tx_kind, "sent", "{case}");
+                assert_eq!(
+                    info.display_amount, 70_000_000,
+                    "neither a payment nor a fee share is attributed ({case})"
+                );
+                assert_eq!(info.account_balance_delta, -70_000_000);
+                assert_eq!(info.display_pool, "unknown");
+                assert_eq!(info.fee_state, TransactionFeeState::Known);
+                assert_eq!(info.fee, WHOLE_FEE, "the whole transaction's fee");
+                assert!(info.amount_includes_fee, "{case}");
+                assert_eq!(info.provisional, !complete, "{case}");
+                assert_eq!(info.details_complete, complete, "{case}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_shared_receipt_is_the_whole_inflow() {
+        let (mut base, mut summary) = provisional_debit();
+        base.attach_history(HistoryCompleteness::of(&public_shared_details()));
+        base.account_balance_delta = 20_000_000;
+        summary.received.amount = 120_000_000;
+
+        let rows = classify_history_tx(&base, &summary, Fee::NotApplicable);
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].info.tx_kind, "received");
+        assert_eq!(rows[0].info.display_amount, 20_000_000);
+    }
+
+    #[test]
+    fn history_mapping_carries_the_funding() {
+        let known = FeeState::Known(zcash_protocol::value::Zatoshis::from_u64(WHOLE_FEE).unwrap());
+        let mut details = public_shared_details();
+        for funding in [
+            TransactionFunding::NotFunded,
+            TransactionFunding::Sole,
+            TransactionFunding::Shared,
+            TransactionFunding::Undetermined,
+        ] {
+            details.funding = funding;
+            assert_eq!(HistoryCompleteness::of(&details).funding, funding);
+        }
+
+        // Only a shared transaction's fee is the whole transaction's rather
+        // than the account's, even when no other whole-fee evidence exists.
+        details.whole_fee = None;
+        details.fee = known;
+        details.funding = TransactionFunding::Shared;
+        let shared = HistoryCompleteness::of(&details);
+        assert_eq!(shared.fee, Fee::Unknown);
+        assert_eq!(shared.whole_fee, Some(WHOLE_FEE));
+        details.funding = TransactionFunding::Sole;
+        let sole = HistoryCompleteness::of(&details);
+        assert_eq!(sole.fee, Fee::Known(WHOLE_FEE));
+        assert_eq!(sole.whole_fee, None);
+
+        assert_eq!(
+            HistoryCompleteness::unread(None).funding,
+            TransactionFunding::Undetermined
+        );
+        let mut base = tx_base_for_history();
+        assert_eq!(
+            HistoryCompleteness::complete_for(&base).funding,
+            TransactionFunding::Sole
+        );
+        base.total_spent = 0;
+        assert_eq!(
+            HistoryCompleteness::complete_for(&base).funding,
+            TransactionFunding::NotFunded
+        );
+    }
+
     #[test]
     fn only_an_exact_whole_fee_replaces_an_unknown_account_fee() {
         let shown = |whole, fee| {
             let mut details = shared_funding_details(whole);
+            // A shared transaction's fee is the whole transaction's; see
+            // history_mapping_carries_the_funding.
+            details.funding = TransactionFunding::Sole;
             details.fee = fee;
             HistoryCompleteness::of(&details).shown_fee()
         };
@@ -4075,6 +4390,7 @@ mod tests {
             evidence.metadata.has_shielded_components = true;
         }
         details.account_movement.received = 100_000_000 - WHOLE_FEE;
+        details.funding = TransactionFunding::Undetermined;
 
         let mut base = tx_base_for_history();
         base.spent_orchard_note = false;
@@ -4120,6 +4436,7 @@ mod tests {
                 whole_fee: Some(WHOLE_FEE),
                 inferred_payment: None,
                 inferred_outgoing: None,
+                funding: TransactionFunding::Sole,
             };
 
             let rows = classify_history_tx(&base, &ActivitySummary::default(), Fee::NotApplicable);
@@ -4150,6 +4467,7 @@ mod tests {
             whole_fee: Some(WHOLE_FEE),
             inferred_payment: None,
             inferred_outgoing: None,
+            funding: TransactionFunding::Sole,
         };
         let (_, change) = provisional_debit();
         let flags = |history: HistoryCompleteness, summary: &ActivitySummary| {
@@ -4251,6 +4569,7 @@ mod tests {
             payment_details: DetailCompleteness::Complete,
             fee: FeeState::Known(Zatoshis::from_u64(10_000).unwrap()),
             classification: HistoryClassification::LocalIntent,
+            funding: TransactionFunding::Sole,
             pending_private_details: vec![],
         };
         let pending = HistoryCompleteness::of(&details);
@@ -4313,6 +4632,7 @@ mod tests {
             payment_details: DetailCompleteness::Complete,
             fee: FeeState::NotApplicable,
             classification: HistoryClassification::Reconstructed,
+            funding: TransactionFunding::NotFunded,
             pending_private_details: vec![],
         };
         for classification in [
@@ -4364,6 +4684,7 @@ mod tests {
             whole_fee: None,
             inferred_payment: None,
             inferred_outgoing: None,
+            funding: TransactionFunding::Sole,
         });
         assert!(!base.is_shielding);
 
@@ -4378,6 +4699,7 @@ mod tests {
             whole_fee: None,
             inferred_payment: None,
             inferred_outgoing: None,
+            funding: TransactionFunding::Sole,
         });
         assert!(base.is_shielding);
     }

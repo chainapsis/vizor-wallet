@@ -314,17 +314,34 @@ handle and re-checks that generation at two kinds of check point:
 - **Every completing write.** Received data is still stored, but nothing is
   acknowledged or marked complete after the transition: an in-flight history
   range, even one answered empty, stays unchecked; a public status observation
-  or payload `NotFound` is not committed; UTXO refresh metadata and Ledger
+  or payload `NotFound` is not committed; a UTXO refresh's result is not
+  reported to the library, and UTXO refresh metadata and Ledger
   discovery progress are not advanced; an ephemeral address check is neither
   notified, rescheduled, nor allowed to observe outputs of expired spends, so
   the address stays due. Later passes re-cover them. The history
   acknowledgement, public status persistence, payload `NotFound` retirement,
-  the ephemeral check's notification and expired-spend observation, and Ledger
+  the UTXO refresh's report, the ephemeral check's notification and
+  expired-spend observation, and Ledger
   checkpoints (`transactionally_with_extension`) read the
   generation in the writing SQLite
   transaction, so a concurrent transition fails the write instead of slipping
   past the check. The UTXO receive cache lives outside the wallet database and
   re-checks just before writing, not atomically.
+
+A public UTXO refresh reports each queried address's result
+(`notify_transparent_utxos_observed`) in the transaction that stores its
+outputs, so a wallet output the complete query no longer returns stops
+counting as spendable and its unseen spend is searched for (gap 5a). It reads
+the provider's tip with `GetLatestBlock`, which names no transparent subject,
+before the query and after its complete response; a result is reported only
+when both match the wallet's accepted tip and that block is scanned. A refresh
+that is not reported (one made across a reorg, or while the provider's tip
+moved) stores its outputs but does not advance its refresh metadata, so it is
+made again from the same start height. A sync starts when the provider's tip
+moves, so the active account's refresh before the chain scan is usually not
+reported; once the scan reaches the tip, the sync makes it again, reports it,
+and services the spend searches it queues before completing. Under
+`PrivateRequired` the refresh is withheld, so no such query or report is made.
 
 `Withheld` sends nothing and completes nothing. Queued work, unchecked ranges,
 and UTXO query heights stay durable for a later authorized pass. A later
@@ -761,6 +778,15 @@ the same routing contract. Mainnet private preference enables private status;
 there is no separate release gate.
 
 ## Library dependency
+
+**Draft pin on the history-fixes branch.** This branch pins wallet-libraries
+`a88dff6067e4f4ec07625b9bcb1447b2779fa388` on `claude/tpir-history-fixes-libs`:
+main `a3dee2ab5` with the open draft PRs #91 and #92 (spends by transactions the
+wallet has not seen, and public UTXO absences scoped to public authority) and
+#90 (sole-funder attribution, `TransactionFunding`) merged in. Unlike the base
+pin it adds two wallet migrations, `transparent_utxo_absences` and
+`funding_attribution`. Repin to `main` once those PRs merge. The rest of this
+section describes the base pin.
 
 The four patched library crates and the `zakura-pir-transparent` adapter share
 one wallet-libraries revision, `bdebaffcb5d52138c702fde6c78bd079293ebb3d`:
