@@ -23,7 +23,9 @@ use crate::wallet::{db::with_wallet_db_write_lock, network::WalletNetwork};
 
 use super::{
     super::{
-        super::{block_source::MemoryBlockSource, SyncError, WalletDatabase},
+        super::{
+            block_source::MemoryBlockSource, SyncError, TransparentLookupGate, WalletDatabase,
+        },
         transport::await_request_with_cancel,
     },
     private::{
@@ -141,6 +143,7 @@ pub(in crate::wallet::sync_engine) struct ProductionEnhancementEffects<'a> {
     db_path: &'a str,
     lwd: &'a mut CompactTxStreamerClient<Channel>,
     cached: Option<&'a MemoryBlockSource>,
+    gate: TransparentLookupGate,
     public: PublicPayloadExecutor,
 }
 
@@ -150,12 +153,14 @@ impl<'a> ProductionEnhancementEffects<'a> {
         db_path: &'a str,
         lwd: &'a mut CompactTxStreamerClient<Channel>,
         cached: Option<&'a MemoryBlockSource>,
+        gate: TransparentLookupGate,
     ) -> Self {
         Self {
             network,
             db_path,
             lwd,
             cached,
+            gate,
             public: PublicPayloadExecutor::default(),
         }
     }
@@ -221,6 +226,10 @@ impl EnhancementEffects<WalletDatabase> for ProductionEnhancementEffects<'_> {
         requests: &[PublicTransactionEnhancementRequest],
         should_exit: &impl Fn() -> bool,
     ) {
+        // Durable routing already withholds public work under a private policy;
+        // the gate re-checks the captured generation before each request so a
+        // transition made by another connection cannot release work routed
+        // before it.
         self.public
             .run(
                 self.lwd,
@@ -228,6 +237,7 @@ impl EnhancementEffects<WalletDatabase> for ProductionEnhancementEffects<'_> {
                 self.db_path,
                 self.network,
                 requests,
+                &self.gate,
                 should_exit,
             )
             .await;

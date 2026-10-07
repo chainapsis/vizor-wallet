@@ -6,16 +6,20 @@ use futures::{FutureExt, StreamExt};
 use tonic::transport::Channel;
 use transparent::address::TransparentAddress;
 use zcash_client_backend::{
-    data_api::{wallet::decrypt_and_store_transaction, TransactionDataRequest, WalletWrite},
+    data_api::{
+        transparent_ledger::TransparentLedgerRead, wallet::decrypt_and_store_transaction,
+        TransactionDataRequest, WalletWrite,
+    },
     proto::service::compact_tx_streamer_client::CompactTxStreamerClient,
 };
+use zcash_client_sqlite::error::SqliteClientError;
 use zcash_primitives::transaction::Transaction;
 use zcash_protocol::consensus::BranchId;
 
 use crate::wallet::{
     db::with_wallet_db_write_lock,
     network::WalletNetwork,
-    sync_engine::{lwd, SyncError, WalletDatabase},
+    sync_engine::{lwd, SyncError, TransparentLookupGate, WalletDatabase},
 };
 
 use super::{super::payload::public::mined_height_from_raw_height, fees::fill_missing_fee};
@@ -33,6 +37,7 @@ impl HistoryPass {
         db_path: &str,
         requests: &[TransactionDataRequest],
         network: WalletNetwork,
+        gate: &TransparentLookupGate,
         should_exit: &impl Fn() -> bool,
     ) -> Result<bool, SyncError> {
         let mut planned = super::super::super::address_history::plan(requests);
@@ -43,18 +48,25 @@ impl HistoryPass {
         }
 
         let download_client = client.clone();
+        let open_gate = gate.clone();
+        // Every open sends a transparent address, so the gate authorizes each
+        // one as it is first polled, including every stream of the initial
+        // fill. A withheld open surfaces as an error the loop resolves below.
         let open: super::super::super::address_history::OpenHistory = Box::new(move |req| {
             let mut client = download_client.clone();
+            let gate = open_gate.clone();
             async move {
                 let address =
                     zcash_keys::encoding::encode_transparent_address_p(&network, &req.address());
-                let stream = lwd::get_taddress_txids(
-                    &mut client,
-                    address,
-                    u64::from(u32::from(req.block_range_start())),
-                    u64::from(u32::from(req.block_range_end().unwrap())) - 1,
-                )
-                .await?;
+                let stream = gate
+                    .taddress_txids(
+                        &mut client,
+                        address,
+                        u64::from(u32::from(req.block_range_start())),
+                        u64::from(u32::from(req.block_range_end().unwrap())) - 1,
+                    )
+                    .await?
+                    .ok_or_else(|| SyncError::other("address history withheld by policy"))?;
                 Ok(
                     futures::stream::try_unfold(stream, |mut stream| async move {
                         Ok(
@@ -82,7 +94,14 @@ impl HistoryPass {
                 return Ok(actionable);
             }
             let req = read.request().clone();
-            match result? {
+            // A withheld open, or any failure once authority is revoked, ends
+            // the lane quietly: unacknowledged ranges stay unchecked and
+            // durable, and dropping `reads` cancels the open streams.
+            let result = match result {
+                Err(_) if !gate.permits()? => return Ok(false),
+                result => result?,
+            };
+            match result {
                 Some(raw) => {
                     let tx = match store_address_transaction(&network, db, &raw.data, raw.height) {
                         Ok(tx) => tx,
@@ -109,21 +128,36 @@ impl HistoryPass {
                     }
                 }
                 None => {
-                    if let Err(error) =
+                    // A transition while this stream was open withholds the
+                    // acknowledgement, so the range is retried under the new
+                    // policy rather than marked checked under the old one. The
+                    // generation is read in the acknowledging transaction, so a
+                    // commit by another connection between the two fails the
+                    // write instead of slipping past the check.
+                    let acknowledged =
                         with_wallet_db_write_lock("sync_engine.notify_address_checked", || {
-                            db.notify_address_checked(
-                                req.clone(),
-                                req.block_range_end().unwrap() - 1,
-                            )
-                        })
-                    {
-                        log::warn!(
-                            "sync: address completion write failed; retrying on a later sync: {error}"
-                        );
-                        self.failed_addresses.insert(req.address());
-                        continue;
+                            db.transactionally(|tx| {
+                                if !gate.permits_applied(tx.applied_transparent_policy()?) {
+                                    return Ok(false);
+                                }
+                                tx.notify_address_checked(
+                                    req.clone(),
+                                    req.block_range_end().unwrap() - 1,
+                                )?;
+                                Ok::<_, SqliteClientError>(true)
+                            })
+                        });
+                    match acknowledged {
+                        Ok(true) => read.finish_range(),
+                        Ok(false) => return Ok(false),
+                        Err(error) => {
+                            log::warn!(
+                                "sync: address completion write failed; retrying on a later sync: {error}"
+                            );
+                            self.failed_addresses.insert(req.address());
+                            continue;
+                        }
                     }
-                    read.finish_range();
                 }
             }
             reads.resume(read);

@@ -1,11 +1,15 @@
 use std::panic;
 
+use crate::wallet::sync_engine::{enhancement::EnhancementPolicy, TransparentLookupGate};
 use crate::wallet::{keys, network::WalletNetwork, transparent_receive_cache};
 use bip0039::{Count, English, Mnemonic};
-use tonic::{transport::Channel, Request};
-use zcash_client_backend::proto::service::{
-    self, compact_tx_streamer_client::CompactTxStreamerClient,
-};
+use tonic::transport::Channel;
+use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
+
+/// Returned before any request when the transparent policy withholds public
+/// UTXO lookups; an unavailable preview is not a zero balance.
+const TRANSPARENT_PREVIEW_UNAVAILABLE: &str =
+    "Transparent balance preview is unavailable under the private transparent policy";
 use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
 
 const SOFTWARE_ACCOUNT_DISCOVERY_MAX_INDEX: u32 = 20;
@@ -456,6 +460,7 @@ pub fn discover_software_wallet_import_accounts(
         let primary_account_already_exists = existing_seed_accounts
             .as_ref()
             .is_some_and(|state| state.contains(0));
+        let gate = import_gate(network, &db_path, is_first_wallet_account)?;
 
         let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
         let discovered_accounts = rt.block_on(discover_used_software_accounts(
@@ -463,6 +468,7 @@ pub fn discover_software_wallet_import_accounts(
             &seed,
             birthday_height,
             &lightwalletd_url,
+            &gate,
         ));
 
         let accounts = discovered_accounts
@@ -483,18 +489,29 @@ pub fn discover_software_wallet_import_accounts(
 
 /// Preview the spendable transparent UTXO balance for a software ZIP32 account.
 ///
-/// This does not import the account or touch the wallet DB. It checks a bounded
-/// standard BIP44 transparent address range so the onboarding modal can update
-/// balance rows after discovery has already returned.
+/// This does not import the account. It checks a bounded standard BIP44
+/// transparent address range so the onboarding modal can update balance rows
+/// after discovery has already returned.
+///
+/// Importing into an existing wallet reads that wallet's durably applied
+/// transparent policy, like discovery; only a first account, which has no
+/// wallet database, is limited to the captured mode.
 pub fn preview_software_account_transparent_balance(
     mnemonic: String,
     bip39_passphrase: String,
     network: String,
+    db_path: String,
     lightwalletd_url: String,
     zip32_account_index: u32,
+    is_first_wallet_account: bool,
 ) -> Result<u64, String> {
     catch(|| {
-        let network = keys::parse_network(&network)?;
+        let network = if is_first_wallet_account {
+            keys::parse_network(&network)?
+        } else {
+            parse_network_and_migrate(&db_path, &network)?
+        };
+        let gate = import_gate(network, &db_path, is_first_wallet_account)?;
         let seed = keys::mnemonic_to_seed_with_passphrase(&mnemonic, &bip39_passphrase)?;
         let addresses = keys::software_account_transparent_addresses(
             network,
@@ -507,6 +524,7 @@ pub fn preview_software_account_transparent_balance(
         rt.block_on(preview_transparent_balance_for_addresses(
             &lightwalletd_url,
             addresses,
+            &gate,
         ))
     })
 }
@@ -799,12 +817,42 @@ fn import_discovered_software_wallet_accounts(
     })
 }
 
+/// Gates import-time lookups. A first account has no wallet database, so only
+/// the captured mode applies; an existing wallet's durably applied policy may
+/// be stricter and wins, and a transition by another connection revokes it.
+fn import_gate(
+    network: WalletNetwork,
+    db_path: &str,
+    is_first_wallet_account: bool,
+) -> Result<TransparentLookupGate, String> {
+    let policy = EnhancementPolicy::current(network);
+    if is_first_wallet_account {
+        return Ok(TransparentLookupGate::pre_db(
+            policy.pre_db_public_transparent_lookups(),
+        ));
+    }
+    let db = crate::wallet::sync::open_wallet_db_for_read(db_path, network)?;
+    let lookups = policy
+        .public_transparent_lookups(&db)
+        .map_err(|e| e.to_string())?;
+    TransparentLookupGate::for_wallet(lookups, db_path, network).map_err(|e| e.to_string())
+}
+
+/// Probes ZIP 32 account indices for transparent history. Each probe sends an
+/// account's first transparent address to lightwalletd, so `gate` authorizes
+/// every probe and the first withheld one ends discovery with the accounts
+/// found so far.
 async fn discover_used_software_accounts(
     network: WalletNetwork,
     seed: &secrecy::SecretVec<u8>,
     birthday_height: Option<u64>,
     lightwalletd_url: &str,
+    gate: &TransparentLookupGate,
 ) -> Vec<SoftwareWalletDiscoveredAccount> {
+    if !gate.is_allowed() {
+        log::info!("software account discovery: withheld by the transparent policy");
+        return Vec::new();
+    }
     let start_height = discovery_start_height(network, birthday_height);
     let mut client = match crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await {
         Ok(client) => client,
@@ -837,8 +885,9 @@ async fn discover_used_software_accounts(
     for &(start, end) in SOFTWARE_ACCOUNT_DISCOVERY_BATCHES {
         let mut found_in_batch = false;
         for account_index in start..=end.min(SOFTWARE_ACCOUNT_DISCOVERY_MAX_INDEX) {
-            if let Some(account) = discover_software_account_at_index(
+            match discover_software_account_at_index(
                 &mut client,
+                gate,
                 network,
                 seed,
                 account_index,
@@ -847,8 +896,15 @@ async fn discover_used_software_accounts(
             )
             .await
             {
-                discovered.push(account);
-                found_in_batch = true;
+                Probe::Used(account) => {
+                    discovered.push(account);
+                    found_in_batch = true;
+                }
+                Probe::Unused => {}
+                Probe::Withheld => {
+                    log::info!("software account discovery: transparent policy changed; stopping");
+                    return discovered;
+                }
             }
         }
         if !found_in_batch {
@@ -859,14 +915,23 @@ async fn discover_used_software_accounts(
     discovered
 }
 
+/// The outcome of probing one account index.
+enum Probe {
+    Used(SoftwareWalletDiscoveredAccount),
+    Unused,
+    /// The gate withheld the request; nothing was sent.
+    Withheld,
+}
+
 async fn discover_software_account_at_index(
     client: &mut CompactTxStreamerClient<Channel>,
+    gate: &TransparentLookupGate,
     network: WalletNetwork,
     seed: &secrecy::SecretVec<u8>,
     account_index: u32,
     start_height: u64,
     tip_height: u64,
-) -> Option<SoftwareWalletDiscoveredAccount> {
+) -> Probe {
     let address = match keys::software_account_first_external_transparent_address(
         network,
         seed,
@@ -877,24 +942,21 @@ async fn discover_software_account_at_index(
             log::warn!(
                     "software account discovery: could not derive account {account_index} transparent address: {e}"
                 );
-            return None;
+            return Probe::Unused;
         }
     };
 
-    let mut stream = match crate::wallet::sync_engine::get_taddress_txids(
-        client,
-        address.clone(),
-        start_height,
-        tip_height,
-    )
-    .await
+    let mut stream = match gate
+        .taddress_txids(client, address.clone(), start_height, tip_height)
+        .await
     {
-        Ok(stream) => stream,
+        Ok(Some(stream)) => stream,
+        Ok(None) => return Probe::Withheld,
         Err(e) => {
             log::warn!(
                 "software account discovery: failed to query account {account_index} address {address} from {start_height} to {tip_height}: {e}"
             );
-            return None;
+            return Probe::Unused;
         }
     };
 
@@ -908,17 +970,17 @@ async fn discover_software_account_at_index(
             log::info!(
                 "software account discovery: account {account_index} has transparent history"
             );
-            Some(SoftwareWalletDiscoveredAccount {
+            Probe::Used(SoftwareWalletDiscoveredAccount {
                 zip32_account_index: account_index,
                 first_transparent_address: address,
             })
         }
-        Ok(None) => None,
+        Ok(None) => Probe::Unused,
         Err(e) => {
             log::warn!(
                 "software account discovery: failed while reading account {account_index} address {address} from {start_height} to {tip_height}: {e}"
             );
-            None
+            Probe::Unused
         }
     }
 }
@@ -942,10 +1004,16 @@ fn discovery_start_height(network: WalletNetwork, birthday_height: Option<u64>) 
     })
 }
 
+/// Opening the channel yields, so the gate authorizes the RPC after it; the
+/// captured check before it only avoids opening a channel for nothing.
 async fn preview_transparent_balance_for_addresses(
     lightwalletd_url: &str,
     addresses: Vec<String>,
+    gate: &TransparentLookupGate,
 ) -> Result<u64, String> {
+    if !gate.is_allowed() {
+        return Err(TRANSPARENT_PREVIEW_UNAVAILABLE.to_string());
+    }
     if addresses.is_empty() {
         return Ok(0);
     }
@@ -953,15 +1021,13 @@ async fn preview_transparent_balance_for_addresses(
     let mut client = crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url)
         .await
         .map_err(|e| e.to_string())?;
-    let mut stream = client
-        .get_address_utxos_stream(Request::new(service::GetAddressUtxosArg {
-            addresses,
-            start_height: 0,
-            max_entries: 0,
-        }))
+    let Some(mut stream) = gate
+        .address_utxos(&mut client, addresses, BlockHeight::from_u32(0))
         .await
-        .map_err(|e| format!("get_address_utxos_stream: {e}"))?
-        .into_inner();
+        .map_err(|e| e.to_string())?
+    else {
+        return Err(TRANSPARENT_PREVIEW_UNAVAILABLE.to_string());
+    };
 
     let mut balance = 0u64;
     while let Some(reply) = stream
@@ -1819,5 +1885,167 @@ mod tests {
             1,
         )
         .unwrap());
+    }
+
+    #[tokio::test]
+    async fn private_transparent_policy_withholds_pre_db_discovery_and_preview() {
+        use zcash_client_backend::data_api::transparent_ledger::TransparentLedgerMode;
+        let network = WalletNetwork::Main;
+        let gate = TransparentLookupGate::pre_db(
+            EnhancementPolicy::for_preference(network, true)
+                .with_transparent_mode(TransparentLedgerMode::PrivateRequired)
+                .pre_db_public_transparent_lookups(),
+        );
+        assert!(!gate.is_allowed());
+
+        // Any connection to this endpoint would be a disclosure.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
+        let addresses = keys::software_account_transparent_addresses(network, &seed, 0, 2).unwrap();
+
+        assert!(
+            discover_used_software_accounts(network, &seed, None, &url, &gate)
+                .await
+                .is_empty()
+        );
+        assert_eq!(
+            preview_transparent_balance_for_addresses(&url, addresses, &gate).await,
+            Err(TRANSPARENT_PREVIEW_UNAVAILABLE.to_string()),
+            "an unavailable preview is not a zero balance"
+        );
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(100), listener.accept())
+                .await
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn existing_wallet_preview_honors_the_durable_transparent_policy() {
+        use zcash_client_backend::data_api::transparent_ledger::{
+            TransparentLedgerMode, TransparentLedgerWrite,
+        };
+        let network = WalletNetwork::Main;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db");
+        let path = path.to_str().unwrap();
+        let phrase = keys::generate_mnemonic();
+        let seed = keys::mnemonic_to_seed(&phrase).unwrap();
+        keys::init_db_and_create_account(path, network, &seed, Some(2_000_000), "existing")
+            .unwrap();
+        // A newer build or another connection made the wallet strictly private.
+        crate::wallet::db::open_wallet_db_with_timeout(
+            path,
+            network,
+            crate::wallet::db::SYNC_DB_BUSY_TIMEOUT,
+        )
+        .unwrap()
+        .apply_transparent_policy(TransparentLedgerMode::PrivateRequired)
+        .unwrap();
+        // Any connection to this endpoint would be a disclosure.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+
+        let preview = |is_first_wallet_account| {
+            preview_software_account_transparent_balance(
+                phrase.clone(),
+                String::new(),
+                "main".into(),
+                path.into(),
+                url.clone(),
+                1,
+                is_first_wallet_account,
+            )
+        };
+        // This build's Public handle fails closed on the stricter wallet.
+        assert!(
+            preview(false).is_err(),
+            "an unavailable preview is not a balance"
+        );
+
+        listener.set_nonblocking(true).unwrap();
+        assert_eq!(
+            listener.accept().map(|_| ()).unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock,
+            "no request reaches lightwalletd"
+        );
+    }
+
+    #[tokio::test]
+    async fn preview_rechecks_policy_after_opening_the_channel() {
+        use crate::wallet::sync_engine::test_lwd::CapturingLwd;
+        use zcash_client_backend::data_api::transparent_ledger::{
+            TransparentLedgerMode, TransparentLedgerWrite,
+        };
+        let _route = crate::network_privacy::test_route_policy::lock_route_policy();
+        let network = WalletNetwork::Main;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db");
+        let path = path.to_str().unwrap();
+        let seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
+        keys::init_db_and_create_account(path, network, &seed, Some(2_000_000), "existing")
+            .unwrap();
+        // Authorized when captured, revoked before the RPC: the captured check
+        // lets the channel open, and the dispatch check reads the new policy.
+        let gate = import_gate(network, path, false).unwrap();
+        crate::wallet::db::open_wallet_db_with_timeout(
+            path,
+            network,
+            crate::wallet::db::SYNC_DB_BUSY_TIMEOUT,
+        )
+        .unwrap()
+        .apply_transparent_policy(TransparentLedgerMode::PrivateShadow)
+        .unwrap();
+        let lwd = CapturingLwd::start(Vec::new()).await;
+
+        let result =
+            preview_transparent_balance_for_addresses(&lwd.url, vec!["t1address".into()], &gate)
+                .await;
+
+        assert_eq!(result, Err(TRANSPARENT_PREVIEW_UNAVAILABLE.to_string()));
+        assert_eq!(lwd.count("/GetAddressUtxosStream"), 0);
+    }
+
+    #[tokio::test]
+    async fn transition_during_software_discovery_stops_probing() {
+        use crate::wallet::sync_engine::test_lwd::{transition_on_first, CapturingLwd};
+        use zcash_client_backend::data_api::transparent_ledger::TransparentLedgerMode;
+        // Discovery opens its own direct channel, which reads the route policy.
+        let _route = crate::network_privacy::test_route_policy::lock_route_policy();
+        let network = WalletNetwork::Main;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db");
+        let path = path.to_str().unwrap();
+        let seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
+        keys::init_db_and_create_account(path, network, &seed, Some(2_000_000), "existing")
+            .unwrap();
+        let gate = import_gate(network, path, false).unwrap();
+        // Every probe finds history, so an unrevoked run probes every index.
+        // PrivateShadow keeps public authority; only the generation revokes.
+        let lwd = CapturingLwd::start_with(
+            vec![0],
+            3_000_000,
+            transition_on_first(
+                "/GetTaddressTxids",
+                path,
+                network,
+                TransparentLedgerMode::PrivateShadow,
+            ),
+        )
+        .await;
+
+        let discovered =
+            discover_used_software_accounts(network, &seed, Some(2_000_000), &lwd.url, &gate).await;
+
+        assert_eq!(lwd.count("/GetTaddressTxids"), 1);
+        assert_eq!(
+            discovered
+                .iter()
+                .map(|account| account.zip32_account_index)
+                .collect::<Vec<_>>(),
+            vec![1],
+            "accounts found before the transition are kept"
+        );
     }
 }

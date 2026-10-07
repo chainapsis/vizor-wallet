@@ -22,6 +22,7 @@ import '../../../../core/widgets/mobile/mobile_address_verify_sheet.dart';
 import '../../../../core/widgets/mobile/mobile_review_row.dart';
 import '../../../../core/widgets/mobile/mobile_tx_fee_info_sheet.dart';
 import '../../../../providers/account_provider.dart';
+import '../../../../providers/enhance_pir_provider.dart';
 import '../../../../providers/privacy_mode_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/sync_provider.dart';
@@ -45,6 +46,7 @@ import '../../activity_row_mapper.dart'
         transactionActivityPool,
         transactionShowsZeroAmount;
 import '../../gift_card_activity_index.dart';
+import '../../transaction_completeness.dart';
 
 /// Route arguments for [MobileTransactionStatusScreen]. The row that
 /// was tapped passes its [initialTransaction] so the screen renders
@@ -268,6 +270,13 @@ class _MobileTransactionStatusScreenState
       if (!_txidsMatch(widget.args.txidHex, tx.txidHex)) continue;
       if (txKind == null || _txKindMatches(txKind, tx.txKind)) return tx;
     }
+    final shown = _transaction ?? widget.args.initialTransaction;
+    if (shown != null && shown.provisional) {
+      return provisionalRoleSuccessor(
+        transactions,
+        (other) => _txidsMatch(widget.args.txidHex, other),
+      );
+    }
     return null;
   }
 
@@ -281,7 +290,8 @@ class _MobileTransactionStatusScreenState
     for (final tx in sync?.recentTransactions ?? const []) {
       if (_txidsMatch(widget.args.txidHex, tx.txidHex)) {
         return '${tx.txidHex}:${tx.minedHeight}:${tx.expiredUnmined}:'
-            '${tx.txKind}:${tx.displayAmount}:${tx.fee}:${tx.activityPool}';
+            '${tx.txKind}:${tx.displayAmount}:${tx.fee}:${tx.activityPool}:'
+            '${transactionCompletenessSignature(tx)}';
       }
     }
     return '';
@@ -401,8 +411,13 @@ class _MobileTransactionStatusScreenState
       if (nextUuid != _activeAccountUuid) unawaited(_loadTransaction());
     });
     ref.listen<AsyncValue<SyncState>>(syncProvider, (previous, next) {
+      // Enhancement can change older rows outside the ten recent transactions.
+      final syncCompleted =
+          next.value?.isSyncComplete == true &&
+          previous?.value?.isSyncComplete != true;
       if (_recentTxSignature(previous?.value) !=
-          _recentTxSignature(next.value)) {
+              _recentTxSignature(next.value) ||
+          syncCompleted) {
         unawaited(_loadTransaction());
       }
     });
@@ -807,6 +822,7 @@ class _MobileTransactionStatusScreenState
                           giftCard: giftCard,
                           privacyModeEnabled: privacyModeEnabled,
                         ),
+                        detailsIncomplete: _showIncompleteDetails(tx),
                       ),
                       if (_error != null) ...[
                         const SizedBox(height: AppSpacing.sm),
@@ -856,18 +872,27 @@ class _MobileTransactionStatusScreenState
     );
   }
 
+  // Temporary integration feedback is scoped to the Private queries setting.
+  bool _showUnknownFee(rust_sync.TransactionInfo tx) =>
+      ref.watch(enhancePirProvider) && transactionFeeIsUnknown(tx);
+
+  bool _showIncompleteDetails(rust_sync.TransactionInfo tx) =>
+      ref.watch(enhancePirProvider) && transactionDetailsIncomplete(tx);
+
   String? _feeText(
     rust_sync.TransactionInfo? tx, {
     required bool privacyModeEnabled,
     GiftCardActivityMetadata? giftCard,
   }) {
-    // Receives, including redeemed cards, show no network fee.
-    if (tx == null ||
-        tx.fee <= BigInt.zero ||
-        tx.txKind == 'received' ||
-        tx.txKind == 'receiving') {
+    if (tx == null || giftCard?.kind == GiftCardActivityKind.redeemed) {
       return null;
     }
+    if ((tx.txKind == 'received' || tx.txKind == 'receiving') &&
+        tx.feeState != rust_sync.TransactionFeeState.known) {
+      return null;
+    }
+    if (_showUnknownFee(tx)) return kUnknownFeeText;
+    if (tx.fee <= BigInt.zero) return null;
     final fee = giftCard == null ? tx.fee : giftCard.detailFeeZatoshi(tx.fee);
     if (privacyModeEnabled) {
       return hideAmountIfPrivacyMode('', privacyModeEnabled: true);
@@ -1120,6 +1145,7 @@ class _DetailCard extends StatelessWidget {
     required this.onOpenExplorer,
     required this.feeText,
     this.isCardCreation = false,
+    this.detailsIncomplete = false,
   });
 
   final _TxPhase phase;
@@ -1134,6 +1160,7 @@ class _DetailCard extends StatelessWidget {
   final VoidCallback onOpenExplorer;
   final String? feeText;
   final bool isCardCreation;
+  final bool detailsIncomplete;
 
   @override
   Widget build(BuildContext context) {
@@ -1200,6 +1227,25 @@ class _DetailCard extends StatelessWidget {
               onTap: onOpenExplorer,
             ),
           ),
+          if (detailsIncomplete) ...[
+            const SizedBox(height: AppSpacing.xs),
+            _ListRow(
+              key: const ValueKey('mobile_tx_status_details_incomplete'),
+              label: 'Details',
+              value: _ValueWithIcon(
+                text: 'Incomplete',
+                iconName: AppIcons.help,
+                iconColor: context.colors.icon.regular.withValues(alpha: 0.72),
+                onTap: () => unawaited(
+                  showMobileTxFeeInfoSheet(
+                    context,
+                    title: 'Details incomplete',
+                    description: kIncompleteDetailsHelpText,
+                  ),
+                ),
+              ),
+            ),
+          ],
           if (feeText != null) ...[
             const SizedBox(height: AppSpacing.sm),
             // Figma `border/neutral/default` (#d4d4d4 light).

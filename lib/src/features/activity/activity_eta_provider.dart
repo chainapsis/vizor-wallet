@@ -9,6 +9,7 @@ import '../../providers/sync_failure.dart';
 import '../../rust/api/sync.dart' as rust_sync;
 import '../swap/providers/swap_activity_store.dart';
 import 'gift_card_activity_index.dart';
+import 'transaction_completeness.dart';
 import '../swap/models/swap_chain_txid.dart';
 
 /// Stale observations and local recovery do not imply a lost connection.
@@ -38,7 +39,8 @@ String activityHistoryStatusSignature(
       (tx) =>
           '${tx.txidHex}:${tx.minedHeight}:${tx.expiredUnmined}:${tx.txKind}:'
           '${tx.displayAmount}:${tx.fundingParentTxid}:'
-          '${tx.fundingParentMinedHeight}:${tx.fundingParentExpired}',
+          '${tx.fundingParentMinedHeight}:${tx.fundingParentExpired}:'
+          '${transactionCompletenessSignature(tx)}',
     )
     .join('|');
 

@@ -24,6 +24,7 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../providers/account_provider.dart';
+import '../../../../providers/enhance_pir_provider.dart';
 import '../../../../providers/voting/voting_home_entry_provider.dart';
 import '../../../../providers/voting/voting_home_cache_provider.dart';
 import '../../../../providers/voting/voting_config_source_provider.dart';
@@ -55,6 +56,7 @@ import '../../../migration/widgets/mobile/mobile_ironwood_migration_announcement
 import '../../../swap/models/swap_activity_navigation.dart';
 import '../../../swap/providers/swap_state_provider.dart';
 import '../../../swap/widgets/swap_activity_status_auto_refresh.dart';
+import '../../services/transparent_balance_display.dart';
 import '../../providers/backup_reminder_provider.dart';
 import '../../widgets/mobile_home_carousel.dart';
 import '../../services/transparent_shielding_service.dart';
@@ -868,6 +870,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
       row: buildTransactionActivityRow(
         context: context,
         transaction: transaction,
+        privateQueriesEnabled: ref.watch(enhancePirProvider),
         showPendingEstimate: !ref
             .watch(activityEtaExcludedTxidsProvider)
             .contains(activityTxidKey(transaction.txidHex)),
@@ -1040,10 +1043,10 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
               sync.saplingPendingBalance +
               sync.orchardPendingBalance +
               sync.ironwoodPendingBalance;
-    final transparentBalance =
-        sync.transparentBalance + sync.transparentPendingBalance;
+    final transparentBalance = TransparentBalanceDisplay.of(sync);
     final hasBalance =
-        shieldedBalance > BigInt.zero || transparentBalance > BigInt.zero;
+        shieldedBalance > BigInt.zero ||
+        (transparentBalance.amount ?? BigInt.zero) > BigInt.zero;
     final zecUsdUnitPrice = ref.watch(zecHomeUsdUnitPriceProvider);
     final fiatBalanceText = _mobileHomeFiatTextForZatoshi(
       shieldedBalance,
@@ -1154,10 +1157,11 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                     ).compactBalance.amountText,
               fiatBalanceText: shieldedFiatBalanceText,
               priceChange24hPct: priceChange24hPct,
-              transparentBalanceText: ZecAmount.fromZatoshi(
-                transparentBalance,
-              ).compactBalance.amountText,
-              hasTransparentBalance: transparentBalance > BigInt.zero,
+              transparentBalanceText: transparentBalance.text(
+                (amount) =>
+                    ZecAmount.fromZatoshi(amount).compactBalance.amountText,
+              ),
+              hasTransparentBalance: transparentBalance.visible,
               canShieldBalance: sync.canShieldTransparentBalance,
               isShieldingBalance: _isShieldingBalance,
               privacyModeEnabled: privacyModeEnabled,

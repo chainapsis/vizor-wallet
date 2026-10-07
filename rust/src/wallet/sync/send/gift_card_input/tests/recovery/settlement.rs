@@ -116,7 +116,6 @@ async fn settled_mixed_claims_record_the_mined_leg_without_rewinding_the_failed_
         .collect();
     let state = gift_card_claim::snapshot(&card.path).unwrap().unwrap();
     let proposal = CardInput {
-        db: &db,
         account: card.account(),
         state,
         notes,
@@ -289,7 +288,6 @@ async fn settled_funding_preserves_a_later_top_up_spend_receipt() {
         .filter(|note| note.txid().as_ref() == &[7u8; 32])
         .collect();
     let proposal = CardInput {
-        db: &db,
         account: card.account(),
         notes,
         state: gift_card_claim::Snapshot {

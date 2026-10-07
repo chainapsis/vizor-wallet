@@ -6843,8 +6843,10 @@ fn wire__crate__api__wallet__preview_software_account_transparent_balance_impl(
             let api_mnemonic = <String>::sse_decode(&mut deserializer);
             let api_bip39_passphrase = <String>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
+            let api_db_path = <String>::sse_decode(&mut deserializer);
             let api_lightwalletd_url = <String>::sse_decode(&mut deserializer);
             let api_zip32_account_index = <u32>::sse_decode(&mut deserializer);
+            let api_is_first_wallet_account = <bool>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -6853,8 +6855,10 @@ fn wire__crate__api__wallet__preview_software_account_transparent_balance_impl(
                             api_mnemonic,
                             api_bip39_passphrase,
                             api_network,
+                            api_db_path,
                             api_lightwalletd_url,
                             api_zip32_account_index,
+                            api_is_first_wallet_account,
                         )?;
                     Ok(output_ok)
                 })())
@@ -14086,6 +14090,8 @@ impl SseDecode for crate::api::sync::TransactionDetail {
         let mut var_memo = <Option<String>>::sse_decode(deserializer);
         let mut var_outputs =
             <Vec<crate::api::sync::TransactionDetailOutput>>::sse_decode(deserializer);
+        let mut var_detailsComplete = <bool>::sse_decode(deserializer);
+        let mut var_provisional = <bool>::sse_decode(deserializer);
         return crate::api::sync::TransactionDetail {
             txid_hex: var_txidHex,
             tx_kind: var_txKind,
@@ -14094,6 +14100,8 @@ impl SseDecode for crate::api::sync::TransactionDetail {
             source_pool: var_sourcePool,
             memo: var_memo,
             outputs: var_outputs,
+            details_complete: var_detailsComplete,
+            provisional: var_provisional,
         };
     }
 }
@@ -14116,6 +14124,19 @@ impl SseDecode for crate::api::sync::TransactionDetailOutput {
     }
 }
 
+impl SseDecode for crate::api::sync::TransactionFeeState {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::sync::TransactionFeeState::Known,
+            1 => crate::api::sync::TransactionFeeState::Unknown,
+            2 => crate::api::sync::TransactionFeeState::NotApplicable,
+            _ => unreachable!("Invalid variant for TransactionFeeState: {}", inner),
+        };
+    }
+}
+
 impl SseDecode for crate::api::sync::TransactionInfo {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -14124,6 +14145,7 @@ impl SseDecode for crate::api::sync::TransactionInfo {
         let mut var_expiredUnmined = <bool>::sse_decode(deserializer);
         let mut var_accountBalanceDelta = <i64>::sse_decode(deserializer);
         let mut var_fee = <u64>::sse_decode(deserializer);
+        let mut var_feeState = <crate::api::sync::TransactionFeeState>::sse_decode(deserializer);
         let mut var_blockTime = <u64>::sse_decode(deserializer);
         let mut var_isTransparent = <bool>::sse_decode(deserializer);
         let mut var_txKind = <String>::sse_decode(deserializer);
@@ -14134,12 +14156,15 @@ impl SseDecode for crate::api::sync::TransactionInfo {
         let mut var_fundingParentMinedHeight = <Option<u64>>::sse_decode(deserializer);
         let mut var_fundingParentExpired = <Option<bool>>::sse_decode(deserializer);
         let mut var_createdTime = <u64>::sse_decode(deserializer);
+        let mut var_detailsComplete = <bool>::sse_decode(deserializer);
+        let mut var_provisional = <bool>::sse_decode(deserializer);
         return crate::api::sync::TransactionInfo {
             txid_hex: var_txidHex,
             mined_height: var_minedHeight,
             expired_unmined: var_expiredUnmined,
             account_balance_delta: var_accountBalanceDelta,
             fee: var_fee,
+            fee_state: var_feeState,
             block_time: var_blockTime,
             is_transparent: var_isTransparent,
             tx_kind: var_txKind,
@@ -14150,6 +14175,21 @@ impl SseDecode for crate::api::sync::TransactionInfo {
             funding_parent_mined_height: var_fundingParentMinedHeight,
             funding_parent_expired: var_fundingParentExpired,
             created_time: var_createdTime,
+            details_complete: var_detailsComplete,
+            provisional: var_provisional,
+        };
+    }
+}
+
+impl SseDecode for crate::api::sync::TransparentBalanceAuthority {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::sync::TransparentBalanceAuthority::Current,
+            1 => crate::api::sync::TransparentBalanceAuthority::LastKnown,
+            2 => crate::api::sync::TransparentBalanceAuthority::Unavailable,
+            _ => unreachable!("Invalid variant for TransparentBalanceAuthority: {}", inner),
         };
     }
 }
@@ -14383,6 +14423,9 @@ impl SseDecode for crate::api::sync::WalletBalance {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_availability =
             <crate::api::sync::WalletBalanceAvailability>::sse_decode(deserializer);
+        let mut var_transparentAuthority =
+            <crate::api::sync::TransparentBalanceAuthority>::sse_decode(deserializer);
+        let mut var_transparentLastKnown = <Option<u64>>::sse_decode(deserializer);
         let mut var_transparent = <u64>::sse_decode(deserializer);
         let mut var_sapling = <u64>::sse_decode(deserializer);
         let mut var_orchard = <u64>::sse_decode(deserializer);
@@ -14403,6 +14446,8 @@ impl SseDecode for crate::api::sync::WalletBalance {
         let mut var_total = <u64>::sse_decode(deserializer);
         return crate::api::sync::WalletBalance {
             availability: var_availability,
+            transparent_authority: var_transparentAuthority,
+            transparent_last_known: var_transparentLastKnown,
             transparent: var_transparent,
             sapling: var_sapling,
             orchard: var_orchard,
@@ -18722,6 +18767,8 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::TransactionDetail {
             self.source_pool.into_into_dart().into_dart(),
             self.memo.into_into_dart().into_dart(),
             self.outputs.into_into_dart().into_dart(),
+            self.details_complete.into_into_dart().into_dart(),
+            self.provisional.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -18762,6 +18809,28 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::sync::TransactionDetailOutput
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::sync::TransactionFeeState {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Known => 0.into_dart(),
+            Self::Unknown => 1.into_dart(),
+            Self::NotApplicable => 2.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::sync::TransactionFeeState
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::sync::TransactionFeeState>
+    for crate::api::sync::TransactionFeeState
+{
+    fn into_into_dart(self) -> crate::api::sync::TransactionFeeState {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::sync::TransactionInfo {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -18770,6 +18839,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::TransactionInfo {
             self.expired_unmined.into_into_dart().into_dart(),
             self.account_balance_delta.into_into_dart().into_dart(),
             self.fee.into_into_dart().into_dart(),
+            self.fee_state.into_into_dart().into_dart(),
             self.block_time.into_into_dart().into_dart(),
             self.is_transparent.into_into_dart().into_dart(),
             self.tx_kind.into_into_dart().into_dart(),
@@ -18782,6 +18852,8 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::TransactionInfo {
                 .into_dart(),
             self.funding_parent_expired.into_into_dart().into_dart(),
             self.created_time.into_into_dart().into_dart(),
+            self.details_complete.into_into_dart().into_dart(),
+            self.provisional.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -18794,6 +18866,28 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::sync::TransactionInfo>
     for crate::api::sync::TransactionInfo
 {
     fn into_into_dart(self) -> crate::api::sync::TransactionInfo {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::sync::TransparentBalanceAuthority {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Current => 0.into_dart(),
+            Self::LastKnown => 1.into_dart(),
+            Self::Unavailable => 2.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::sync::TransparentBalanceAuthority
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::sync::TransparentBalanceAuthority>
+    for crate::api::sync::TransparentBalanceAuthority
+{
+    fn into_into_dart(self) -> crate::api::sync::TransparentBalanceAuthority {
         self
     }
 }
@@ -19051,6 +19145,8 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::WalletBalance {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
             self.availability.into_into_dart().into_dart(),
+            self.transparent_authority.into_into_dart().into_dart(),
+            self.transparent_last_known.into_into_dart().into_dart(),
             self.transparent.into_into_dart().into_dart(),
             self.sapling.into_into_dart().into_dart(),
             self.orchard.into_into_dart().into_dart(),
@@ -22483,6 +22579,8 @@ impl SseEncode for crate::api::sync::TransactionDetail {
         <Option<String>>::sse_encode(self.source_pool, serializer);
         <Option<String>>::sse_encode(self.memo, serializer);
         <Vec<crate::api::sync::TransactionDetailOutput>>::sse_encode(self.outputs, serializer);
+        <bool>::sse_encode(self.details_complete, serializer);
+        <bool>::sse_encode(self.provisional, serializer);
     }
 }
 
@@ -22497,6 +22595,23 @@ impl SseEncode for crate::api::sync::TransactionDetailOutput {
     }
 }
 
+impl SseEncode for crate::api::sync::TransactionFeeState {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::sync::TransactionFeeState::Known => 0,
+                crate::api::sync::TransactionFeeState::Unknown => 1,
+                crate::api::sync::TransactionFeeState::NotApplicable => 2,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
 impl SseEncode for crate::api::sync::TransactionInfo {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -22505,6 +22620,7 @@ impl SseEncode for crate::api::sync::TransactionInfo {
         <bool>::sse_encode(self.expired_unmined, serializer);
         <i64>::sse_encode(self.account_balance_delta, serializer);
         <u64>::sse_encode(self.fee, serializer);
+        <crate::api::sync::TransactionFeeState>::sse_encode(self.fee_state, serializer);
         <u64>::sse_encode(self.block_time, serializer);
         <bool>::sse_encode(self.is_transparent, serializer);
         <String>::sse_encode(self.tx_kind, serializer);
@@ -22515,6 +22631,25 @@ impl SseEncode for crate::api::sync::TransactionInfo {
         <Option<u64>>::sse_encode(self.funding_parent_mined_height, serializer);
         <Option<bool>>::sse_encode(self.funding_parent_expired, serializer);
         <u64>::sse_encode(self.created_time, serializer);
+        <bool>::sse_encode(self.details_complete, serializer);
+        <bool>::sse_encode(self.provisional, serializer);
+    }
+}
+
+impl SseEncode for crate::api::sync::TransparentBalanceAuthority {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::sync::TransparentBalanceAuthority::Current => 0,
+                crate::api::sync::TransparentBalanceAuthority::LastKnown => 1,
+                crate::api::sync::TransparentBalanceAuthority::Unavailable => 2,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
     }
 }
 
@@ -22714,6 +22849,11 @@ impl SseEncode for crate::api::sync::WalletBalance {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <crate::api::sync::WalletBalanceAvailability>::sse_encode(self.availability, serializer);
+        <crate::api::sync::TransparentBalanceAuthority>::sse_encode(
+            self.transparent_authority,
+            serializer,
+        );
+        <Option<u64>>::sse_encode(self.transparent_last_known, serializer);
         <u64>::sse_encode(self.transparent, serializer);
         <u64>::sse_encode(self.sapling, serializer);
         <u64>::sse_encode(self.orchard, serializer);

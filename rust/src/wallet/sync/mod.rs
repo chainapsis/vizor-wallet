@@ -25,6 +25,7 @@ use crate::wallet::{
 mod broadcast;
 pub(crate) mod payment_link;
 pub(crate) use payment_link::{payment_link_resubmit_exclusions, payment_link_spend_evidence};
+pub(crate) mod hardware_authority;
 mod migration;
 mod migration_wallet_ops;
 mod pczt;
@@ -129,8 +130,9 @@ pub(crate) use transactions::{
     get_export_birthday_anchor, get_local_block_time, get_oldest_mined_transaction_anchor,
     get_transaction_data_requests, get_transaction_detail, get_transaction_history,
     get_unmined_txids_with_mined_output_evidence, get_wallet_balance, get_wallet_balances,
-    ExportBirthdayAnchor, TransactionDetail, TransactionDetailOutput, TransactionInfo,
-    TxDataRequest, WalletBalance, WalletBalanceAvailability,
+    ExportBirthdayAnchor, TransactionDetail, TransactionDetailOutput, TransactionFeeState,
+    TransactionInfo, TransparentBalanceAuthority, TxDataRequest, WalletBalance,
+    WalletBalanceAvailability,
 };
 
 pub(super) fn open_wallet_db(

@@ -1127,14 +1127,6 @@ impl InputSource for RecordingConsolidationSource {
         Ok(None)
     }
 
-    fn anchor_computable(
-        &self,
-        _protocol: ShieldedPool,
-        _height: BlockHeight,
-    ) -> Result<bool, Self::Error> {
-        Ok(true)
-    }
-
     fn select_spendable_notes(
         &self,
         _account: Self::AccountId,
@@ -4018,6 +4010,136 @@ fn ledger_shielding_limits_inputs_and_preserves_account_scope_paths() {
     assert!(progress.below_threshold);
 }
 #[test]
+fn durable_private_transparent_policy_blocks_shielding_and_survives_startup() {
+    use crate::wallet::keys::{self, HardwareSignerKind};
+    use transparent::keys::{IncomingViewingKey, NonHardenedChildIndex};
+    use zcash_address::unified::{Encoding, Fvk, Ufvk};
+    // Dart's newer-build copy matches this phrase.
+    const NEEDS_NEWER_BUILD: &str = "this build cannot operate on this wallet's transparent funds";
+    const AUTHORITY_UNAVAILABLE: &str = "private transparent authority is required";
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("wallet.db");
+    let path = path.to_str().unwrap();
+    let network = WalletNetwork::Main;
+    let seed = keys::mnemonic_to_seed(
+        "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+    )
+    .unwrap();
+    let ufvk = UnifiedSpendingKey::from_seed(
+        &network,
+        seed.expose_secret(),
+        zip32::AccountId::try_from(7).unwrap(),
+    )
+    .unwrap()
+    .to_unified_full_viewing_key();
+    let encoded = Ufvk::try_from_items(vec![
+        Fvk::Orchard(ufvk.orchard().unwrap().to_bytes()),
+        Fvk::P2pkh(ufvk.transparent().unwrap().serialize().try_into().unwrap()),
+    ])
+    .unwrap()
+    .encode(&network.network_type());
+    let fp = zip32::fingerprint::SeedFingerprint::from_seed(seed.expose_secret())
+        .unwrap()
+        .to_bytes();
+    let (uuid, _) = keys::import_hardware_account(
+        path,
+        network,
+        "Ledger",
+        &encoded,
+        &fp,
+        7,
+        Some(2_500_000),
+        HardwareSignerKind::Ledger,
+    )
+    .unwrap();
+    let id = parse_account_uuid(&uuid).unwrap();
+    let mut db = open_wallet_db(path, network).unwrap();
+    let tip = BlockHeight::from_u32(2_600_000);
+    db.update_chain_tip(tip).unwrap();
+    type CheckpointError = WalletError<
+        (),
+        commitment_tree::Error,
+        (),
+        <ConservativeZip317FeeRule as FeeRule>::Error,
+        (),
+        ReceivedNoteId,
+    >;
+    let _: Result<_, CheckpointError> = db.with_sapling_tree_mut(|tree| Ok(tree.checkpoint(tip)?));
+    let _: Result<_, CheckpointError> = db.with_orchard_tree_mut(|tree| Ok(tree.checkpoint(tip)?));
+    let _: Result<_, CheckpointError> = db.with_ironwood_tree_mut(|tree| Ok(tree.checkpoint(tip)?));
+    let external = ufvk.transparent().unwrap().derive_external_ivk().unwrap();
+    for i in 0..3u32 {
+        let address = external
+            .derive_address(NonHardenedChildIndex::from_index(i).unwrap())
+            .unwrap();
+        let utxo = WalletTransparentOutput::from_parts(
+            OutPoint::new([i as u8 + 1; 32], 0),
+            TxOut::new(Zatoshis::const_from_u64(1_000_000), address.script().into()),
+            Some(tip),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        db.put_received_transparent_utxo(&utxo).unwrap();
+    }
+    let threshold = shielding_threshold().unwrap();
+    // Under the public policy this build supports, the same wallet can shield.
+    build_shielding_proposal(&mut db, network, id, threshold).unwrap();
+
+    // A newer build durably applied PrivateRequired to this wallet.
+    let conn = rusqlite::Connection::open(path).unwrap();
+    conn.execute("UPDATE tpir_meta SET applied_mode = 2", [])
+        .unwrap();
+    let policy = |conn: &rusqlite::Connection| {
+        conn.query_row(
+            "SELECT applied_mode, policy_generation, min_reader_version FROM tpir_meta",
+            [],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            },
+        )
+        .unwrap()
+    };
+
+    let error = build_shielding_proposal(&mut db, network, id, threshold).unwrap_err();
+    assert!(error.contains(AUTHORITY_UNAVAILABLE), "{error}");
+    let utxo = WalletTransparentOutput::from_parts(
+        OutPoint::new([0xaa; 32], 0),
+        TxOut::new(
+            Zatoshis::const_from_u64(1_000_000),
+            external
+                .derive_address(NonHardenedChildIndex::ZERO)
+                .unwrap()
+                .script()
+                .into(),
+        ),
+        Some(tip),
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+    let error = db
+        .put_received_transparent_utxo(&utxo)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains(NEEDS_NEWER_BUILD), "{error}");
+
+    // Startup migration keeps the stricter policy, and a fresh handle stays blocked.
+    keys::ensure_db_initialized(path, network).unwrap();
+    assert_eq!(policy(&conn), (2, 0, 1));
+    let mut reopened = open_wallet_db(path, network).unwrap();
+    let error = build_shielding_proposal(&mut reopened, network, id, threshold).unwrap_err();
+    assert!(error.contains(AUTHORITY_UNAVAILABLE), "{error}");
+    assert_eq!(policy(&conn), (2, 0, 1));
+}
+
+#[test]
 fn gift_card_ledger_preflight_counts_pool_actions_at_the_consensus_version() {
     use orchard::ValuePool;
     use zcash_protocol::consensus::BranchId;
@@ -4306,4 +4428,103 @@ fn gift_card_batch_ledger_limits_orchard_actions() {
         "This group is too large for your Ledger to sign. \
          Try fewer cards or a smaller amount per card."
     );
+}
+
+/// Records the status observations actually sent.
+struct RecordingStatusSource {
+    observed: std::sync::Arc<std::sync::Mutex<Vec<TxId>>>,
+}
+impl zakura_transaction_status::StatusSource for RecordingStatusSource {
+    type Session = Self;
+    async fn open(self) -> Result<Self, zakura_transaction_status::StatusError> {
+        Ok(self)
+    }
+}
+impl zakura_transaction_status::StatusSession for RecordingStatusSource {
+    async fn observe(
+        &mut self,
+        request: zakura_transaction_status::StatusRequest,
+    ) -> Result<zakura_transaction_status::StatusObservation, zakura_transaction_status::StatusError>
+    {
+        self.observed.lock().unwrap().push(request.txid);
+        Ok(zakura_transaction_status::StatusObservation::NotFound)
+    }
+}
+
+#[tokio::test]
+async fn policy_transition_withholds_remaining_migration_status_checks() {
+    let network = WalletNetwork::Regtest;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("wallet.db").to_str().unwrap().to_owned();
+    let seed =
+        crate::wallet::keys::mnemonic_to_seed(&crate::wallet::keys::generate_mnemonic()).unwrap();
+    crate::wallet::keys::init_db_and_create_account(&path, network, &seed, Some(100), "migration")
+        .unwrap();
+    let policy = sync_engine::enhancement::EnhancementPolicy::for_preference(network, false);
+    let mut status_db = super::super::open_wallet_db_for_read(&path, network).unwrap();
+    policy.configure_db(&mut status_db);
+    let candidates: Vec<_> = [0x41u8, 0x42]
+        .iter()
+        .map(
+            |b| super::super::migration::UnbroadcastMigrationRecoveryCandidate {
+                txid_hex: hex::encode([*b; 32]),
+                status: "scheduled".into(),
+                scheduled_height: 100,
+            },
+        )
+        .collect();
+    let txids = [0x41u8, 0x42].map(|b| TxId::from_bytes([b; 32]));
+    // Every dispatch lands a transition that bumps the generation; the modes
+    // keep public authority, so only the generation revokes.
+    let _transitions = sync_engine::test_lwd::transition_on_every_dispatch(&path, network);
+    let observed = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let gated_reader = |gate: &sync_engine::TransparentLookupGate| {
+        sync_engine::enhancement::status::RoutedStatusReader::new(
+            sync_engine::enhancement::status::gated(
+                RecordingStatusSource {
+                    observed: observed.clone(),
+                },
+                gate.clone(),
+            ),
+            RecordingStatusSource {
+                observed: Default::default(),
+            },
+        )
+    };
+    let gate = |status_db: &super::super::WalletDatabase| {
+        sync_engine::TransparentLookupGate::for_wallet(
+            policy.public_transparent_lookups(status_db).unwrap(),
+            &path,
+            network,
+        )
+        .unwrap()
+    };
+
+    let first = gate(&status_db);
+    let result = verify_unbroadcast_migration_txids_absent(
+        &mut gated_reader(&first),
+        &status_db,
+        &first,
+        &candidates,
+        &txids,
+        200,
+    )
+    .await;
+    assert!(result.unwrap_err().contains("private transparent policy"));
+    assert_eq!(*observed.lock().unwrap(), vec![txids[0]]);
+
+    // A single candidate answered absent after a transition cannot retire the
+    // run either: there is no later candidate to notice the revocation.
+    let second = gate(&status_db);
+    let result = verify_unbroadcast_migration_txids_absent(
+        &mut gated_reader(&second),
+        &status_db,
+        &second,
+        &candidates[..1],
+        &txids[..1],
+        200,
+    )
+    .await;
+    assert!(result.unwrap_err().contains("private transparent policy"));
+    assert_eq!(observed.lock().unwrap().len(), 2);
 }

@@ -36,7 +36,10 @@
 //!    extracted round-1 txid. Swaps, duplicates, modified effects, and missing
 //!    shielded or transparent signatures are rejected before persistence.
 //!
-//! 2. **Broadcast precedes persistence.** A definite lightwalletd rejection
+//! 2. **Authority is checked before broadcast; broadcast precedes persistence.**
+//!    Transparent input authorization holds a SQLite writer reservation until
+//!    each request has been handed to the transport, so recovery cannot revoke
+//!    it between check and send. A definite lightwalletd rejection
 //!    must leave that PCZT out of the wallet DB. After each ordered broadcast
 //!    attempt stops, the accepted-or-ambiguous prefix is persisted atomically;
 //!    a later store failure rolls back every earlier write in that prefix.
@@ -73,6 +76,7 @@ use transparent::keys::TransparentKeyScope;
 use zcash_address::{ToAddress, ZcashAddress};
 use zcash_client_backend::data_api::{Account, OutputLockStore, WalletRead};
 use zcash_client_backend::proposal::{Proposal, Step, StepOutputIndex};
+use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 use zcash_client_backend::wallet::WalletTransparentOutput;
 use zcash_primitives::transaction::{
     builder::{cached_orchard_proving_key, BundlePadding},
@@ -1765,15 +1769,15 @@ async fn store_and_broadcast_pczts_inner(
 
     // Only unmined rounds need a live tip and expiry checks. Mined evidence is
     // already a completed submission, even after the original expiry height.
-    let mut expiry_client =
-        match crate::wallet::sync_engine::open_isolated_lwd_channel(lightwalletd_url).await {
-            Ok(client) => client,
+    let expiry_transport =
+        match crate::wallet::sync_engine::open_isolated_lwd_transport(lightwalletd_url).await {
+            Ok(transport) => transport,
             Err(error) => {
                 return rpc_failure(format!("Failed to open the broadcast route: {error}"));
             }
         };
     let latest = match crate::wallet::sync_engine::latest_block_for_transaction_with_client(
-        &mut expiry_client,
+        &mut CompactTxStreamerClient::new(expiry_transport.clone()),
         lightwalletd_url,
         network,
     )
@@ -1822,7 +1826,7 @@ async fn store_and_broadcast_pczts_inner(
             None => Ok(result),
         };
     }
-    let mut first_client = Some(expiry_client);
+    let mut first_transport = Some(expiry_transport);
     let mut newly_broadcasted = 0;
     let broadcast_plan = 'broadcast: loop {
         for (index, item) in prepared.iter().enumerate() {
@@ -1836,13 +1840,13 @@ async fn store_and_broadcast_pczts_inner(
                     PcztBroadcastStep::Fail(_) => unreachable!(),
                 }
             }
-            let client = if let Some(client) = first_client.take() {
-                Ok(client)
+            let transport = if let Some(transport) = first_transport.take() {
+                Ok(transport)
             } else {
-                crate::wallet::sync_engine::open_isolated_lwd_channel(lightwalletd_url).await
+                crate::wallet::sync_engine::open_isolated_lwd_transport(lightwalletd_url).await
             };
-            let mut client = match client {
-                Ok(client) => client,
+            let transport = match transport {
+                Ok(transport) => transport,
                 Err(error) => {
                     match pczt_broadcast_step(
                         index,
@@ -1873,17 +1877,34 @@ async fn store_and_broadcast_pczts_inner(
                     super::mark_proposal_broadcast_started(proposal_id, send_flow_id)?;
                 }
             }
-            let attempt = match crate::wallet::sync_engine::send_transaction_with_status(
-                &mut client,
-                &item.extracted.raw_tx,
+            let earlier = prepared[..index]
+                .iter()
+                .map(|p| &p.extracted.tx)
+                .collect::<Vec<_>>();
+            let attempt = match super::hardware_authority::dispatch(
+                db_path,
+                network,
+                &item.extracted.tx,
+                &earlier,
+                latest.height,
+                |dispatched| {
+                    crate::wallet::sync_engine::send_transaction_signalling(
+                        transport,
+                        &item.extracted.raw_tx,
+                        dispatched,
+                    )
+                },
             )
             .await
             {
-                Ok(response) => match super::broadcast::send_response_rejection_error(&response) {
-                    Some(error) => PcztBroadcastAttempt::DefiniteRejection(error),
-                    None => PcztBroadcastAttempt::Accepted,
-                },
-                Err(error) => PcztBroadcastAttempt::TransportUnknown(error.to_string()),
+                Ok(Ok(response)) => {
+                    match super::broadcast::send_response_rejection_error(&response) {
+                        Some(error) => PcztBroadcastAttempt::DefiniteRejection(error),
+                        None => PcztBroadcastAttempt::Accepted,
+                    }
+                }
+                Ok(Err(error)) => PcztBroadcastAttempt::TransportUnknown(error.to_string()),
+                Err(error) => PcztBroadcastAttempt::RouteUnavailable(error),
             };
             if matches!(attempt, PcztBroadcastAttempt::Accepted) {
                 newly_broadcasted += 1;
@@ -2399,11 +2420,11 @@ pub async fn extract_and_broadcast_pczt(
     // but a response deadline is ambiguous: lightwalletd may already
     // have relayed the transaction, so we store locally and let the
     // normal pending/resubmit path reconcile it.
-    let mut client = crate::wallet::sync_engine::open_isolated_lwd_channel(lightwalletd_url)
+    let transport = crate::wallet::sync_engine::open_isolated_lwd_transport(lightwalletd_url)
         .await
         .map_err(|e| e.to_string())?;
     let latest = crate::wallet::sync_engine::latest_block_for_transaction_with_client(
-        &mut client,
+        &mut CompactTxStreamerClient::new(transport.clone()),
         lightwalletd_url,
         network,
     )
@@ -2415,11 +2436,19 @@ pub async fn extract_and_broadcast_pczt(
         return Err(error);
     }
 
-    let resp = match crate::wallet::sync_engine::send_transaction_with_status(
-        &mut client,
-        &tx_bytes,
+    let resp = match super::hardware_authority::dispatch(
+        db_path,
+        network,
+        &tx,
+        &[],
+        latest.height,
+        |dispatched| {
+            crate::wallet::sync_engine::send_transaction_signalling(
+                transport, &tx_bytes, dispatched,
+            )
+        },
     )
-    .await
+    .await?
     {
         Ok(resp) => resp,
         // Once SendTransaction has started, a gRPC status is not proof that

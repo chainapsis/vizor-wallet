@@ -155,6 +155,7 @@ void main() {
     );
     final balance = rust_sync.WalletBalance(
       availability: rust_sync.WalletBalanceAvailability.available,
+      transparentAuthority: rust_sync.TransparentBalanceAuthority.current,
       transparent: BigInt.from(1),
       sapling: BigInt.from(2),
       orchard: BigInt.from(3),
@@ -277,6 +278,7 @@ void main() {
   test('fetched Ironwood-only balance feeds the spendable display', () {
     final balance = rust_sync.WalletBalance(
       availability: rust_sync.WalletBalanceAvailability.available,
+      transparentAuthority: rust_sync.TransparentBalanceAuthority.current,
       transparent: BigInt.zero,
       sapling: BigInt.zero,
       orchard: BigInt.zero,
@@ -672,6 +674,7 @@ rust_sync.WalletBalance _balance({
 }) {
   return rust_sync.WalletBalance(
     availability: rust_sync.WalletBalanceAvailability.available,
+    transparentAuthority: rust_sync.TransparentBalanceAuthority.current,
     transparent: BigInt.zero,
     sapling: BigInt.zero,
     orchard: orchard,
@@ -700,6 +703,9 @@ rust_sync.TransactionInfo _tx(String txidHex) {
     expiredUnmined: false,
     accountBalanceDelta: 0,
     fee: BigInt.zero,
+    feeState: rust_sync.TransactionFeeState.notApplicable,
+    detailsComplete: true,
+    provisional: false,
     blockTime: BigInt.from(1800000000),
     isTransparent: false,
     txKind: 'received',

@@ -27,6 +27,9 @@ const _txid =
 
 rust_sync.TransactionInfo _tx({String kind = 'received', int height = 100}) =>
     rust_sync.TransactionInfo(
+      detailsComplete: true,
+      feeState: rust_sync.TransactionFeeState.known,
+      provisional: false,
       txidHex: _txid,
       txKind: kind,
       minedHeight: BigInt.from(height),
@@ -42,6 +45,8 @@ rust_sync.TransactionInfo _tx({String kind = 'received', int height = 100}) =>
 
 rust_sync.TransactionDetail _detail(String memo, {String kind = 'received'}) =>
     rust_sync.TransactionDetail(
+      detailsComplete: true,
+      provisional: false,
       txidHex: _txid,
       txKind: kind,
       memo: memo,
@@ -398,6 +403,8 @@ rust_sync.TransactionDetail _completeDetail({
   required String kind,
   String? memo,
 }) => rust_sync.TransactionDetail(
+  detailsComplete: true,
+  provisional: false,
   txidHex: _txid,
   txKind: kind,
   primaryAddress: kind == 'sent'

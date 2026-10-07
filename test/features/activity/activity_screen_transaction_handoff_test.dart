@@ -24,6 +24,9 @@ void main() {
     'same-epoch failed history refresh withholds ETA until recovery',
     (tester) async {
       final pending = rust_sync.TransactionInfo(
+        detailsComplete: true,
+        feeState: rust_sync.TransactionFeeState.known,
+        provisional: false,
         txidHex: 'pending',
         minedHeight: BigInt.zero,
         expiredUnmined: false,
@@ -81,6 +84,9 @@ void main() {
       'sync completion refreshes older pending rows (new block: $newBlock)',
       (tester) async {
         final pending = rust_sync.TransactionInfo(
+          detailsComplete: true,
+          feeState: rust_sync.TransactionFeeState.known,
+          provisional: false,
           txidHex: 'pending',
           minedHeight: BigInt.zero,
           expiredUnmined: false,
@@ -139,6 +145,9 @@ void main() {
     await _pumpActivityScreen(
       tester,
       transaction: rust_sync.TransactionInfo(
+        detailsComplete: true,
+        feeState: rust_sync.TransactionFeeState.known,
+        provisional: false,
         txidHex: 'pending',
         minedHeight: BigInt.zero,
         expiredUnmined: false,
@@ -323,6 +332,9 @@ class _SwitchableAccountNotifier extends AccountNotifier {
 }
 
 final _transaction = rust_sync.TransactionInfo(
+  detailsComplete: true,
+  feeState: rust_sync.TransactionFeeState.known,
+  provisional: false,
   txidHex: 'a' * 64,
   minedHeight: BigInt.from(3000000),
   expiredUnmined: false,

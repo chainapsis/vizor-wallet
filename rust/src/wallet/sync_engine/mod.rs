@@ -57,22 +57,23 @@ pub(crate) mod gift_card_claim;
 pub(crate) mod ledger_discovery;
 mod lwd;
 pub(crate) mod mempool;
+#[cfg(test)]
+pub(crate) mod test_lwd;
 mod tip_cache;
+pub(crate) mod transparent_ledger;
 #[cfg(test)]
 mod transparent_recovery_tests;
 
 use enhancement::{queue_stored_transactions, EnhancementPolicy, EnhancementSession};
 pub(crate) use error::SyncError;
 use error::{RecoveryStrategy, MAX_REWINDS_PER_RUN};
-use lwd::{
-    download_blocks, download_subtree_roots, get_address_utxos_stream, get_tree_state,
-    get_tree_state_for_block,
-};
 pub(crate) use lwd::{
-    get_compact_block_hash, get_latest_block, get_taddress_txids, next_stream_message,
-    open_background_direct_lwd_channel, open_isolated_lwd_channel, open_lwd_channel,
-    open_lwd_channel_with_cancel, send_transaction, send_transaction_with_status,
+    dispatch_signal::Dispatched, get_compact_block_hash, get_latest_block, next_stream_message,
+    open_background_direct_lwd_channel, open_isolated_lwd_channel, open_isolated_lwd_transport,
+    open_lwd_channel, open_lwd_channel_with_cancel, send_transaction, send_transaction_signalling,
+    send_transaction_with_status, transparent_lookup::TransparentLookupGate,
 };
+use lwd::{download_blocks, download_subtree_roots, get_tree_state, get_tree_state_for_block};
 pub(crate) use tip_cache::{
     get_latest_block_recorded, latest_block_for_transaction,
     latest_block_for_transaction_with_client,
@@ -1443,6 +1444,8 @@ impl TransparentAccountSelection<'_> {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct TransparentRefreshSummary {
     matched_accounts: usize,
+    /// The transparent policy withheld the public UTXO lookup entirely.
+    withheld: bool,
 }
 
 async fn refresh_utxos(
@@ -1459,6 +1462,21 @@ async fn refresh_utxos(
 ) -> Result<TransparentRefreshSummary, SyncError> {
     let mut refreshes = Vec::new();
     let mut summary = TransparentRefreshSummary::default();
+    // GetAddressUtxos discloses every refreshed address. When withheld, no query
+    // height advances, so a later authorized refresh still covers the gap.
+    let gate = TransparentLookupGate::for_wallet(
+        EnhancementPolicy::current(network).public_transparent_lookups(db)?,
+        db_data_path,
+        network,
+    )?;
+    if !gate.is_allowed() {
+        log::info!(
+            "[{}] sync: transparent policy withholds public UTXO refresh",
+            elapsed(),
+        );
+        summary.withheld = true;
+        return Ok(summary);
+    }
     for account_id in db
         .get_account_ids()
         .map_err(|e| SyncError::db(format!("get_account_ids: {e}")))?
@@ -1716,22 +1734,40 @@ async fn refresh_utxos(
     }
     let mut completed_refreshes = 0u64;
     let download_client = client.clone();
+    let download_gate = gate.clone();
     let outcome = process_bounded_transparent_refreshes(
         refreshes,
-        move |refresh| download_transparent_outputs(download_client.clone(), refresh, should_exit),
+        move |refresh| {
+            download_transparent_outputs(
+                download_client.clone(),
+                download_gate.clone(),
+                refresh,
+                should_exit,
+            )
+        },
         |downloaded| {
             let downloaded_count = downloaded.len() as u64;
             let received_outputs = downloaded.iter().any(|batch| !batch.outputs.is_empty());
+            let completion_authorized = std::cell::Cell::new(false);
             store_then_mark_transparent_refreshes(
                 downloaded,
-                |downloaded| store_transparent_outputs(db, downloaded),
                 |downloaded| {
-                    update_transparent_refresh_cache_metadata(
-                        db_data_path,
-                        network,
-                        tip_height,
-                        downloaded,
-                    )
+                    store_transparent_outputs(db, downloaded)?;
+                    // Outputs already received are stored, but a group answered
+                    // after a transition does not advance refresh metadata, so
+                    // a later pass under the new policy re-covers it.
+                    completion_authorized.set(gate.permits()?);
+                    Ok(())
+                },
+                |downloaded| {
+                    if completion_authorized.get() {
+                        update_transparent_refresh_cache_metadata(
+                            db_data_path,
+                            network,
+                            tip_height,
+                            downloaded,
+                        )
+                    }
                 },
             )?;
             *received_outputs_seen |= received_outputs;
@@ -1745,11 +1781,12 @@ async fn refresh_utxos(
         should_exit,
     )
     .await?;
-    if outcome == TransparentRefreshOutcome::Cancelled {
-        log::info!(
+    match outcome {
+        TransparentRefreshOutcome::Completed => {}
+        TransparentRefreshOutcome::Cancelled => log::info!(
             "[{}] sync: exiting before transparent UTXO database update",
             elapsed(),
-        );
+        ),
     }
 
     Ok(summary)
@@ -1974,6 +2011,7 @@ fn store_transparent_outputs(
 
 async fn download_transparent_outputs(
     mut client: CompactTxStreamerClient<Channel>,
+    gate: TransparentLookupGate,
     mut refresh: TransparentRefresh,
     should_exit: &impl Fn() -> bool,
 ) -> Result<Option<DownloadedTransparentRefresh>, SyncError> {
@@ -1999,7 +2037,7 @@ async fn download_transparent_outputs(
     );
 
     let addresses = std::mem::take(&mut refresh.addresses);
-    let mut stream = tokio::select! {
+    let stream = tokio::select! {
         biased;
         _ = watch_for_exit(should_exit) => {
             log::info!(
@@ -2009,11 +2047,20 @@ async fn download_transparent_outputs(
             );
             return Ok(None);
         }
-        result = get_address_utxos_stream(
+        result = gate.address_utxos(
             &mut client,
             addresses,
             refresh.start_height,
         ) => result?,
+    };
+    // Withheld: nothing was sent, and the group is not committed.
+    let Some(mut stream) = stream else {
+        log::info!(
+            "[{}] sync: transparent policy withholds {}",
+            elapsed(),
+            refresh.label,
+        );
+        return Ok(None);
     };
 
     let mut outputs = Vec::new();
@@ -3127,7 +3174,7 @@ async fn run_sync_impl(
             &should_exit,
         )
         .await?;
-        if active_summary.matched_accounts == 0 {
+        if active_summary.matched_accounts == 0 && !active_summary.withheld {
             log::warn!(
                 "[{}] sync: active account {} was absent from the wallet DB; refreshing all transparent UTXOs before chain scan",
                 elapsed(),
@@ -4489,6 +4536,37 @@ async fn run_sync_impl(
             ));
         }
     }
+    // Candidate transparent recovery runs at the fully scanned height, after
+    // the shielded scan settles. It keeps its own progress in the library and
+    // never fails the sync. Production captures `Public`, so it returns before
+    // any read.
+    match transparent_ledger::run(
+        &mut db,
+        enhancement.policy(),
+        &transparent_ledger::DisabledSource,
+        &should_exit,
+    )
+    .await
+    {
+        Ok(transparent_ledger::RunOutcome::Exited) => {
+            log::info!(
+                "[{}] sync: exiting during candidate transparent recovery",
+                elapsed()
+            );
+            return Ok(());
+        }
+        Ok(transparent_ledger::RunOutcome::NotEnabled) => {}
+        Ok(outcome) => log::info!(
+            "[{}] sync: candidate transparent recovery: {:?}",
+            elapsed(),
+            outcome
+        ),
+        Err(error) => log::warn!(
+            "[{}] sync: candidate transparent recovery failed: {}",
+            elapsed(),
+            error
+        ),
+    }
     // Reconcile migration chain state only after the scan queue is fully
     // drained, then update generic wallet locks for denomination outputs that
     // became visible in this run. This is intentionally repeated after every
@@ -4662,11 +4740,14 @@ async fn run_sync_impl(
 
     if !should_exit() {
         let mut changed = false;
+        // Each check sends an ephemeral address, so it is authorized under
+        // the transparent policy this sync captured.
         if let Err(error) = ephemeral_checks::run(
             lightwalletd_url,
             &mut db,
             db_data_path,
             network,
+            enhancement.policy(),
             BlockHeight::from_u32(final_tip_height as u32),
             &mut changed,
             &should_exit,

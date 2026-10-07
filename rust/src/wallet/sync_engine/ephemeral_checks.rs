@@ -13,6 +13,15 @@
 //! points at them, and querying them would disclose future TEX sources.
 //! A check also frees a first leg's output whose stored second leg expired
 //! unmined, which the backend's own notification leaves unspendable.
+//!
+//! Every query sends a transparent address to public lightwalletd, so it goes
+//! through [`TransparentLookupGate`]: the request is authorized as it is
+//! dispatched, and each completing write (the checked notification with its
+//! reschedule, and the expired-spend observation) reads the policy generation
+//! in its own SQLite transaction. A transition while a check is in flight
+//! still stores what was received, but completes nothing; the address stays
+//! due for a later authorized pass. A withheld pass sends, defers, and
+//! reschedules nothing.
 use std::collections::HashSet;
 use std::future::Future;
 use std::time::SystemTime;
@@ -20,19 +29,26 @@ use std::time::SystemTime;
 use futures::{stream::BoxStream, StreamExt as _, TryStreamExt as _};
 use transparent::address::TransparentAddress;
 use zcash_client_backend::{
-    data_api::{TransactionDataRequest, TransactionsInvolvingAddress, WalletRead, WalletWrite},
+    data_api::{
+        transparent_ledger::TransparentLedgerRead, TransactionDataRequest,
+        TransactionsInvolvingAddress, WalletRead, WalletWrite,
+    },
     proto::service::RawTransaction,
 };
+use zcash_client_sqlite::error::SqliteClientError;
 use zcash_keys::encoding::{encode_transparent_address_p, AddressCodec as _};
 use zcash_protocol::consensus::BlockHeight;
 
 use crate::wallet::db::{
-    open_readonly_conn_with_timeout, open_wallet_raw_conn_with_timeout, with_wallet_db_write_lock,
-    SYNC_DB_BUSY_TIMEOUT,
+    open_readonly_conn_with_timeout, open_wallet_raw_conn_with_timeout, wallet_db_on,
+    with_wallet_db_write_lock, SYNC_DB_BUSY_TIMEOUT,
 };
 use crate::wallet::network::WalletNetwork;
 
-use super::{enhancement, lwd, SyncError, WalletDatabase};
+use super::{
+    enhancement::{self, EnhancementPolicy},
+    lwd, SyncError, TransparentLookupGate, WalletDatabase,
+};
 
 /// `KeyScope::Ephemeral` as encoded in the `addresses.key_scope` column.
 const EPHEMERAL_KEY_SCOPE: i64 = 2;
@@ -44,13 +60,45 @@ pub(super) type History = BoxStream<'static, Result<RawTransaction, SyncError>>;
 
 /// Checks one due ephemeral address, then reschedules if none remain due.
 /// Sets `changed` when the check changed what the wallet knows at the address,
-/// even if it then failed.
+/// even if it then failed. Public lookups are resolved once from `policy`.
 pub(super) async fn run(
     lightwalletd_url: &str,
     db: &mut WalletDatabase,
     db_path: &str,
     network: WalletNetwork,
+    policy: EnhancementPolicy,
     tip: BlockHeight,
+    changed: &mut bool,
+    should_exit: &impl Fn() -> bool,
+) -> Result<(), SyncError> {
+    let gate = TransparentLookupGate::for_wallet(
+        policy.public_transparent_lookups(db)?,
+        db_path,
+        network,
+    )?;
+    run_gated(
+        lightwalletd_url,
+        db,
+        db_path,
+        network,
+        &gate,
+        tip,
+        SystemTime::now(),
+        changed,
+        should_exit,
+    )
+    .await
+}
+
+/// [`run`] with the lookups already captured in `gate`.
+pub(super) async fn run_gated(
+    lightwalletd_url: &str,
+    db: &mut WalletDatabase,
+    db_path: &str,
+    network: WalletNetwork,
+    gate: &TransparentLookupGate,
+    tip: BlockHeight,
+    now: SystemTime,
     changed: &mut bool,
     should_exit: &impl Fn() -> bool,
 ) -> Result<(), SyncError> {
@@ -58,25 +106,34 @@ pub(super) async fn run(
         db,
         db_path,
         network,
+        gate,
         tip,
-        SystemTime::now(),
+        now,
         should_exit,
         changed,
-        |address, start, end| open_history(lightwalletd_url, address, start, end),
+        |address, start, end| open_history(lightwalletd_url, gate, address, start, end),
     )
     .await
 }
 
+/// Opens `address`'s history through `gate`; `None` means withheld, and then
+/// nothing was sent.
 async fn open_history(
     lightwalletd_url: &str,
+    gate: &TransparentLookupGate,
     address: String,
     start: u64,
     end: u64,
-) -> Result<History, SyncError> {
+) -> Result<Option<History>, SyncError> {
     let mut client = lwd::open_isolated_lwd_channel(lightwalletd_url).await?;
-    let stream = lwd::get_taddress_txids(&mut client, address, start, end).await?;
+    let Some(stream) = gate
+        .taddress_txids(&mut client, address, start, end)
+        .await?
+    else {
+        return Ok(None);
+    };
     // The client lives as long as its stream is read.
-    Ok(
+    Ok(Some(
         futures::stream::try_unfold((client, stream), |(client, mut stream)| async move {
             Ok(
                 lwd::next_stream_message(&mut stream, "ephemeral check get_taddress_txids stream")
@@ -85,26 +142,32 @@ async fn open_history(
             )
         })
         .boxed(),
-    )
+    ))
 }
 
 /// Stores each transaction as it arrives: the server decides how many there are.
+/// A withheld open stores nothing and surfaces as an error.
 async fn store_history(
     network: &WalletNetwork,
     db: &mut WalletDatabase,
-    open: impl Future<Output = Result<History, SyncError>>,
+    open: impl Future<Output = Result<Option<History>, SyncError>>,
 ) -> Result<(), SyncError> {
-    let mut history = open.await?;
+    let mut history = open
+        .await?
+        .ok_or_else(|| SyncError::other("ephemeral check withheld by transparent policy"))?;
     while let Some(raw) = history.try_next().await? {
         enhancement::store_address_transaction(network, db, &raw.data, raw.height)?;
     }
     Ok(())
 }
 
+/// One pass. `fetch` opens an address history; production dispatches it
+/// through `gate`, and `gate` also authorizes every completing write.
 pub(super) async fn run_with<F, Fut>(
     db: &mut WalletDatabase,
     db_path: &str,
     network: WalletNetwork,
+    gate: &TransparentLookupGate,
     tip: BlockHeight,
     now: SystemTime,
     should_exit: &impl Fn() -> bool,
@@ -113,8 +176,13 @@ pub(super) async fn run_with<F, Fut>(
 ) -> Result<(), SyncError>
 where
     F: FnOnce(String, u64, u64) -> Fut,
-    Fut: Future<Output = Result<History, SyncError>>,
+    Fut: Future<Output = Result<Option<History>, SyncError>>,
 {
+    // Withheld lookups leave every due address due and every schedule as it
+    // is, so a later authorized pass checks them.
+    if !gate.is_allowed() {
+        return Ok(());
+    }
     let used = used_ephemeral_addresses(db_path, network)?;
     let mut due = due_requests(db, &used, now)?;
     let Some(request) = due.pop() else {
@@ -138,6 +206,11 @@ where
     if let Err(error) = result {
         // Transactions stored before the error still need a refresh.
         *changed = address_activity(db_path, &address).is_ok_and(|after| after != before);
+        // A withheld open, or any failure once authority is revoked, ends the
+        // pass quietly: the address stays due for a later authorized pass.
+        if !gate.permits()? {
+            return Ok(());
+        }
         // Defer this address so a persistent failure cannot starve the others.
         let _ = with_wallet_db_write_lock("sync_engine.ephemeral_checks.defer", || {
             db.schedule_next_check(&checked, CHECK_INTERVAL_SECS)
@@ -148,22 +221,36 @@ where
         return Ok(());
     }
 
+    // Each completing write reads the policy generation in its own SQLite
+    // transaction, so a transition committed by any connection after the
+    // request withholds it instead of slipping past the check. The
+    // observation goes first: if the notification is then withheld, the
+    // address stays due and is checked again.
     let completed = with_wallet_db_write_lock(
         "sync_engine.ephemeral_checks.notify_address_checked",
         || {
-            db.notify_address_checked(request, tip)
-                .map_err(|e| e.to_string())?;
-            observe_outputs_of_expired_spends(db_path, &address, tip)?;
-            // Move only this address forward; the others keep their overdue slots.
-            db.schedule_next_check(&checked, CHECK_INTERVAL_SECS)
-                .map_err(|e| e.to_string())
+            if !observe_outputs_of_expired_spends(db_path, network, gate, &address, tip)? {
+                return Ok(false);
+            }
+            db.transactionally(|tx| {
+                if !gate.permits_applied(tx.applied_transparent_policy()?) {
+                    return Ok(false);
+                }
+                tx.notify_address_checked(request, tip)?;
+                // Move only this address forward; the others keep their overdue slots.
+                tx.schedule_next_check(&checked, CHECK_INTERVAL_SECS)?;
+                Ok::<_, SqliteClientError>(true)
+            })
+            .map_err(|e| e.to_string())
         },
     )
     .map_err(|e| SyncError::db(format!("complete ephemeral check: {e}")));
     // Compared after the notification, which can make an output spendable.
     // Also catches outputs newly recognized in transactions the wallet had.
     *changed = address_activity(db_path, &address)? != before;
-    completed?;
+    if !completed? {
+        return Ok(());
+    }
 
     if due.is_empty() {
         reschedule(db)?;
@@ -175,13 +262,28 @@ where
 /// stored for them can still be mined. `notify_address_checked` skips outputs
 /// with any stored spend, so a second leg that was stored and then expired
 /// would otherwise leave the first leg's output unspendable.
+///
+/// The observation completes a public lookup, so it is written only if `gate`
+/// still permits the policy read in the same transaction; returns whether it
+/// was written.
 fn observe_outputs_of_expired_spends(
     db_path: &str,
+    network: WalletNetwork,
+    gate: &TransparentLookupGate,
     address: &str,
     tip: BlockHeight,
-) -> Result<(), String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, SYNC_DB_BUSY_TIMEOUT)?;
-    conn.execute(
+) -> Result<bool, String> {
+    let mut conn = open_wallet_raw_conn_with_timeout(db_path, SYNC_DB_BUSY_TIMEOUT)?;
+    let tx = conn
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .map_err(|e| format!("begin ephemeral observation: {e}"))?;
+    let applied = wallet_db_on(&tx, db_path, network)
+        .applied_transparent_policy()
+        .map_err(|e| format!("read transparent policy: {e}"))?;
+    if !gate.permits_applied(applied) {
+        return Ok(false);
+    }
+    tx.execute(
         "UPDATE transparent_received_outputs AS tro
          SET max_observed_unspent_height = ?2
          WHERE tro.address = ?1
@@ -199,7 +301,9 @@ fn observe_outputs_of_expired_spends(
         rusqlite::params![address, u32::from(tip)],
     )
     .map_err(|e| format!("record ephemeral outputs of expired spends: {e}"))?;
-    Ok(())
+    tx.commit()
+        .map_err(|e| format!("commit ephemeral observation: {e}"))?;
+    Ok(true)
 }
 
 /// Outputs the wallet knows at `address`, how many of them it saw spent, and

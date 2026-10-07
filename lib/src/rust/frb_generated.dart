@@ -13,13 +13,17 @@ import 'api/sync.dart';
 import 'api/voting.dart';
 import 'api/voting_session.dart';
 import 'api/wallet.dart';
+
 import 'dart:async';
 import 'dart:convert';
+
 import 'frb_generated.dart';
 import 'frb_generated.io.dart'
     if (dart.library.js_interop) 'frb_generated.web.dart';
 import 'network_privacy.dart';
+
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
+
 import 'third_party/zcash_voting/config.dart';
 import 'third_party/zcash_voting/delegate.dart';
 import 'third_party/zcash_voting/share_policy.dart';
@@ -1123,8 +1127,10 @@ abstract class RustLibApi extends BaseApi {
     required String mnemonic,
     required String bip39Passphrase,
     required String network,
+    required String dbPath,
     required String lightwalletdUrl,
     required int zip32AccountIndex,
+    required bool isFirstWalletAccount,
   });
 
   Future<ProposalResult> crateApiSyncProposePaymentLinkBatch({
@@ -8417,8 +8423,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String mnemonic,
     required String bip39Passphrase,
     required String network,
+    required String dbPath,
     required String lightwalletdUrl,
     required int zip32AccountIndex,
+    required bool isFirstWalletAccount,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -8427,8 +8435,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(mnemonic, serializer);
           sse_encode_String(bip39Passphrase, serializer);
           sse_encode_String(network, serializer);
+          sse_encode_String(dbPath, serializer);
           sse_encode_String(lightwalletdUrl, serializer);
           sse_encode_u_32(zip32AccountIndex, serializer);
+          sse_encode_bool(isFirstWalletAccount, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -8446,8 +8456,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           mnemonic,
           bip39Passphrase,
           network,
+          dbPath,
           lightwalletdUrl,
           zip32AccountIndex,
+          isFirstWalletAccount,
         ],
         apiImpl: this,
       ),
@@ -8462,8 +8474,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "mnemonic",
           "bip39Passphrase",
           "network",
+          "dbPath",
           "lightwalletdUrl",
           "zip32AccountIndex",
+          "isFirstWalletAccount",
         ],
       );
 
@@ -14536,8 +14550,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TransactionDetail dco_decode_transaction_detail(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 7)
-      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    if (arr.length != 9)
+      throw Exception('unexpected arr length: expect 9 but see ${arr.length}');
     return TransactionDetail(
       txidHex: dco_decode_String(arr[0]),
       txKind: dco_decode_String(arr[1]),
@@ -14546,6 +14560,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       sourcePool: dco_decode_opt_String(arr[4]),
       memo: dco_decode_opt_String(arr[5]),
       outputs: dco_decode_list_transaction_detail_output(arr[6]),
+      detailsComplete: dco_decode_bool(arr[7]),
+      provisional: dco_decode_bool(arr[8]),
     );
   }
 
@@ -14565,28 +14581,45 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  TransactionFeeState dco_decode_transaction_fee_state(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return TransactionFeeState.values[raw as int];
+  }
+
+  @protected
   TransactionInfo dco_decode_transaction_info(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 15)
-      throw Exception('unexpected arr length: expect 15 but see ${arr.length}');
+    if (arr.length != 18)
+      throw Exception('unexpected arr length: expect 18 but see ${arr.length}');
     return TransactionInfo(
       txidHex: dco_decode_String(arr[0]),
       minedHeight: dco_decode_u_64(arr[1]),
       expiredUnmined: dco_decode_bool(arr[2]),
       accountBalanceDelta: dco_decode_i_64(arr[3]),
       fee: dco_decode_u_64(arr[4]),
-      blockTime: dco_decode_u_64(arr[5]),
-      isTransparent: dco_decode_bool(arr[6]),
-      txKind: dco_decode_String(arr[7]),
-      displayAmount: dco_decode_u_64(arr[8]),
-      displayPool: dco_decode_String(arr[9]),
-      activityPool: dco_decode_opt_String(arr[10]),
-      fundingParentTxid: dco_decode_opt_String(arr[11]),
-      fundingParentMinedHeight: dco_decode_opt_box_autoadd_u_64(arr[12]),
-      fundingParentExpired: dco_decode_opt_box_autoadd_bool(arr[13]),
-      createdTime: dco_decode_u_64(arr[14]),
+      feeState: dco_decode_transaction_fee_state(arr[5]),
+      blockTime: dco_decode_u_64(arr[6]),
+      isTransparent: dco_decode_bool(arr[7]),
+      txKind: dco_decode_String(arr[8]),
+      displayAmount: dco_decode_u_64(arr[9]),
+      displayPool: dco_decode_String(arr[10]),
+      activityPool: dco_decode_opt_String(arr[11]),
+      fundingParentTxid: dco_decode_opt_String(arr[12]),
+      fundingParentMinedHeight: dco_decode_opt_box_autoadd_u_64(arr[13]),
+      fundingParentExpired: dco_decode_opt_box_autoadd_bool(arr[14]),
+      createdTime: dco_decode_u_64(arr[15]),
+      detailsComplete: dco_decode_bool(arr[16]),
+      provisional: dco_decode_bool(arr[17]),
     );
+  }
+
+  @protected
+  TransparentBalanceAuthority dco_decode_transparent_balance_authority(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return TransparentBalanceAuthority.values[raw as int];
   }
 
   @protected
@@ -14758,28 +14791,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   WalletBalance dco_decode_wallet_balance(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 19)
-      throw Exception('unexpected arr length: expect 19 but see ${arr.length}');
+    if (arr.length != 21)
+      throw Exception('unexpected arr length: expect 21 but see ${arr.length}');
     return WalletBalance(
       availability: dco_decode_wallet_balance_availability(arr[0]),
-      transparent: dco_decode_u_64(arr[1]),
-      sapling: dco_decode_u_64(arr[2]),
-      orchard: dco_decode_u_64(arr[3]),
-      ironwood: dco_decode_u_64(arr[4]),
-      transparentLocked: dco_decode_u_64(arr[5]),
-      saplingLocked: dco_decode_u_64(arr[6]),
-      orchardLocked: dco_decode_u_64(arr[7]),
-      ironwoodLocked: dco_decode_u_64(arr[8]),
-      transparentPending: dco_decode_u_64(arr[9]),
-      saplingPending: dco_decode_u_64(arr[10]),
-      orchardPending: dco_decode_u_64(arr[11]),
-      ironwoodPending: dco_decode_u_64(arr[12]),
-      changePendingConfirmation: dco_decode_u_64(arr[13]),
-      valuePendingSpendability: dco_decode_u_64(arr[14]),
-      uneconomicValue: dco_decode_u_64(arr[15]),
-      spendable: dco_decode_u_64(arr[16]),
-      locked: dco_decode_u_64(arr[17]),
-      total: dco_decode_u_64(arr[18]),
+      transparentAuthority: dco_decode_transparent_balance_authority(arr[1]),
+      transparentLastKnown: dco_decode_opt_box_autoadd_u_64(arr[2]),
+      transparent: dco_decode_u_64(arr[3]),
+      sapling: dco_decode_u_64(arr[4]),
+      orchard: dco_decode_u_64(arr[5]),
+      ironwood: dco_decode_u_64(arr[6]),
+      transparentLocked: dco_decode_u_64(arr[7]),
+      saplingLocked: dco_decode_u_64(arr[8]),
+      orchardLocked: dco_decode_u_64(arr[9]),
+      ironwoodLocked: dco_decode_u_64(arr[10]),
+      transparentPending: dco_decode_u_64(arr[11]),
+      saplingPending: dco_decode_u_64(arr[12]),
+      orchardPending: dco_decode_u_64(arr[13]),
+      ironwoodPending: dco_decode_u_64(arr[14]),
+      changePendingConfirmation: dco_decode_u_64(arr[15]),
+      valuePendingSpendability: dco_decode_u_64(arr[16]),
+      uneconomicValue: dco_decode_u_64(arr[17]),
+      spendable: dco_decode_u_64(arr[18]),
+      locked: dco_decode_u_64(arr[19]),
+      total: dco_decode_u_64(arr[20]),
     );
   }
 
@@ -19490,6 +19525,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_sourcePool = sse_decode_opt_String(deserializer);
     var var_memo = sse_decode_opt_String(deserializer);
     var var_outputs = sse_decode_list_transaction_detail_output(deserializer);
+    var var_detailsComplete = sse_decode_bool(deserializer);
+    var var_provisional = sse_decode_bool(deserializer);
     return TransactionDetail(
       txidHex: var_txidHex,
       txKind: var_txKind,
@@ -19498,6 +19535,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       sourcePool: var_sourcePool,
       memo: var_memo,
       outputs: var_outputs,
+      detailsComplete: var_detailsComplete,
+      provisional: var_provisional,
     );
   }
 
@@ -19521,6 +19560,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  TransactionFeeState sse_decode_transaction_fee_state(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return TransactionFeeState.values[inner];
+  }
+
+  @protected
   TransactionInfo sse_decode_transaction_info(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_txidHex = sse_decode_String(deserializer);
@@ -19528,6 +19576,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_expiredUnmined = sse_decode_bool(deserializer);
     var var_accountBalanceDelta = sse_decode_i_64(deserializer);
     var var_fee = sse_decode_u_64(deserializer);
+    var var_feeState = sse_decode_transaction_fee_state(deserializer);
     var var_blockTime = sse_decode_u_64(deserializer);
     var var_isTransparent = sse_decode_bool(deserializer);
     var var_txKind = sse_decode_String(deserializer);
@@ -19542,12 +19591,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       deserializer,
     );
     var var_createdTime = sse_decode_u_64(deserializer);
+    var var_detailsComplete = sse_decode_bool(deserializer);
+    var var_provisional = sse_decode_bool(deserializer);
     return TransactionInfo(
       txidHex: var_txidHex,
       minedHeight: var_minedHeight,
       expiredUnmined: var_expiredUnmined,
       accountBalanceDelta: var_accountBalanceDelta,
       fee: var_fee,
+      feeState: var_feeState,
       blockTime: var_blockTime,
       isTransparent: var_isTransparent,
       txKind: var_txKind,
@@ -19558,7 +19610,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       fundingParentMinedHeight: var_fundingParentMinedHeight,
       fundingParentExpired: var_fundingParentExpired,
       createdTime: var_createdTime,
+      detailsComplete: var_detailsComplete,
+      provisional: var_provisional,
     );
+  }
+
+  @protected
+  TransparentBalanceAuthority sse_decode_transparent_balance_authority(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return TransparentBalanceAuthority.values[inner];
   }
 
   @protected
@@ -19764,6 +19827,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   WalletBalance sse_decode_wallet_balance(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_availability = sse_decode_wallet_balance_availability(deserializer);
+    var var_transparentAuthority = sse_decode_transparent_balance_authority(
+      deserializer,
+    );
+    var var_transparentLastKnown = sse_decode_opt_box_autoadd_u_64(
+      deserializer,
+    );
     var var_transparent = sse_decode_u_64(deserializer);
     var var_sapling = sse_decode_u_64(deserializer);
     var var_orchard = sse_decode_u_64(deserializer);
@@ -19784,6 +19853,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_total = sse_decode_u_64(deserializer);
     return WalletBalance(
       availability: var_availability,
+      transparentAuthority: var_transparentAuthority,
+      transparentLastKnown: var_transparentLastKnown,
       transparent: var_transparent,
       sapling: var_sapling,
       orchard: var_orchard,
@@ -23746,6 +23817,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_String(self.sourcePool, serializer);
     sse_encode_opt_String(self.memo, serializer);
     sse_encode_list_transaction_detail_output(self.outputs, serializer);
+    sse_encode_bool(self.detailsComplete, serializer);
+    sse_encode_bool(self.provisional, serializer);
   }
 
   @protected
@@ -23762,6 +23835,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_transaction_fee_state(
+    TransactionFeeState self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
   void sse_encode_transaction_info(
     TransactionInfo self,
     SseSerializer serializer,
@@ -23772,6 +23854,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self.expiredUnmined, serializer);
     sse_encode_i_64(self.accountBalanceDelta, serializer);
     sse_encode_u_64(self.fee, serializer);
+    sse_encode_transaction_fee_state(self.feeState, serializer);
     sse_encode_u_64(self.blockTime, serializer);
     sse_encode_bool(self.isTransparent, serializer);
     sse_encode_String(self.txKind, serializer);
@@ -23782,6 +23865,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_box_autoadd_u_64(self.fundingParentMinedHeight, serializer);
     sse_encode_opt_box_autoadd_bool(self.fundingParentExpired, serializer);
     sse_encode_u_64(self.createdTime, serializer);
+    sse_encode_bool(self.detailsComplete, serializer);
+    sse_encode_bool(self.provisional, serializer);
+  }
+
+  @protected
+  void sse_encode_transparent_balance_authority(
+    TransparentBalanceAuthority self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
   }
 
   @protected
@@ -23946,6 +24040,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_wallet_balance(WalletBalance self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_wallet_balance_availability(self.availability, serializer);
+    sse_encode_transparent_balance_authority(
+      self.transparentAuthority,
+      serializer,
+    );
+    sse_encode_opt_box_autoadd_u_64(self.transparentLastKnown, serializer);
     sse_encode_u_64(self.transparent, serializer);
     sse_encode_u_64(self.sapling, serializer);
     sse_encode_u_64(self.orchard, serializer);

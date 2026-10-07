@@ -1,5 +1,6 @@
 import 'package:characters/characters.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/zcash/transparent_ledger_errors.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
 
 void main() {
@@ -10,6 +11,27 @@ void main() {
           'Propose failed: Wallet must sync before sending max',
         ),
         'Finishing wallet sync. Try again shortly.',
+      );
+    });
+
+    test('asks for a newer build when the wallet policy is stricter', () {
+      expect(
+        friendlyProposeSendError(
+          'Propose failed: Transparent ledger mode Some(Public) is weaker '
+          "than the wallet's applied policy PrivateRequired; this build "
+          "cannot operate on this wallet's transparent funds",
+        ),
+        transparentLedgerNeedsNewerBuildMessage,
+      );
+    });
+
+    test('reports incomplete private recovery, not insufficient funds', () {
+      expect(
+        friendlyProposeSendError(
+          'Propose failed: Transparent funds are unavailable: private '
+          'transparent authority is required but not available',
+        ),
+        transparentRecoveryIncompleteMessage,
       );
     });
   });

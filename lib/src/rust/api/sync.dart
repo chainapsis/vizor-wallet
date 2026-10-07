@@ -5,6 +5,7 @@
 
 import '../frb_generated.dart';
 import 'keystone.dart';
+
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `api_proposal_result`, `catch`, `enhance_pir_enabled`, `fetch_block_time`, `migration_status_from_balance`, `parse_network_and_migrate`, `payment_link_batch_pairs`, `run_full_sync_internal`, `to_wallet_action_sigs`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
@@ -2812,6 +2813,12 @@ class TransactionDetail {
   final String? memo;
   final List<TransactionDetailOutput> outputs;
 
+  /// Whether `outputs` holds every recipient and memo.
+  final bool detailsComplete;
+
+  /// See [`TransactionInfo::provisional`].
+  final bool provisional;
+
   const TransactionDetail({
     required this.txidHex,
     required this.txKind,
@@ -2820,6 +2827,8 @@ class TransactionDetail {
     this.sourcePool,
     this.memo,
     required this.outputs,
+    required this.detailsComplete,
+    required this.provisional,
   });
 
   @override
@@ -2830,7 +2839,9 @@ class TransactionDetail {
       sourceAddress.hashCode ^
       sourcePool.hashCode ^
       memo.hashCode ^
-      outputs.hashCode;
+      outputs.hashCode ^
+      detailsComplete.hashCode ^
+      provisional.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -2843,7 +2854,9 @@ class TransactionDetail {
           sourceAddress == other.sourceAddress &&
           sourcePool == other.sourcePool &&
           memo == other.memo &&
-          outputs == other.outputs;
+          outputs == other.outputs &&
+          detailsComplete == other.detailsComplete &&
+          provisional == other.provisional;
 }
 
 class TransactionDetailOutput {
@@ -2883,12 +2896,28 @@ class TransactionDetailOutput {
           usesOrchardReceiver == other.usesOrchardReceiver;
 }
 
+/// The fee of a transaction as it concerns the account.
+enum TransactionFeeState {
+  /// The account paid the recorded `fee`.
+  known,
+
+  /// The account spent funds, or may have, but the fee is not recorded.
+  /// Show it as unknown, never as zero.
+  unknown,
+
+  /// The account spent nothing, so it paid no fee.
+  notApplicable,
+}
+
 class TransactionInfo {
   final String txidHex;
   final BigInt minedHeight;
   final bool expiredUnmined;
   final PlatformInt64 accountBalanceDelta;
+
+  /// The recorded fee. Zero unless `fee_state` is `Known`.
   final BigInt fee;
+  final TransactionFeeState feeState;
   final BigInt blockTime;
   final bool isTransparent;
   final String txKind;
@@ -2907,12 +2936,20 @@ class TransactionInfo {
   final bool? fundingParentExpired;
   final BigInt createdTime;
 
+  /// Whether the recipients, payment amounts, and memos are known.
+  final bool detailsComplete;
+
+  /// Whether later discovery or enhancement can still change this entry.
+  /// A provisional debit is a net amount, not a payment amount.
+  final bool provisional;
+
   const TransactionInfo({
     required this.txidHex,
     required this.minedHeight,
     required this.expiredUnmined,
     required this.accountBalanceDelta,
     required this.fee,
+    required this.feeState,
     required this.blockTime,
     required this.isTransparent,
     required this.txKind,
@@ -2923,6 +2960,8 @@ class TransactionInfo {
     this.fundingParentMinedHeight,
     this.fundingParentExpired,
     required this.createdTime,
+    required this.detailsComplete,
+    required this.provisional,
   });
 
   @override
@@ -2932,6 +2971,7 @@ class TransactionInfo {
       expiredUnmined.hashCode ^
       accountBalanceDelta.hashCode ^
       fee.hashCode ^
+      feeState.hashCode ^
       blockTime.hashCode ^
       isTransparent.hashCode ^
       txKind.hashCode ^
@@ -2941,7 +2981,9 @@ class TransactionInfo {
       fundingParentTxid.hashCode ^
       fundingParentMinedHeight.hashCode ^
       fundingParentExpired.hashCode ^
-      createdTime.hashCode;
+      createdTime.hashCode ^
+      detailsComplete.hashCode ^
+      provisional.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -2953,6 +2995,7 @@ class TransactionInfo {
           expiredUnmined == other.expiredUnmined &&
           accountBalanceDelta == other.accountBalanceDelta &&
           fee == other.fee &&
+          feeState == other.feeState &&
           blockTime == other.blockTime &&
           isTransparent == other.isTransparent &&
           txKind == other.txKind &&
@@ -2962,7 +3005,22 @@ class TransactionInfo {
           fundingParentTxid == other.fundingParentTxid &&
           fundingParentMinedHeight == other.fundingParentMinedHeight &&
           fundingParentExpired == other.fundingParentExpired &&
-          createdTime == other.createdTime;
+          createdTime == other.createdTime &&
+          detailsComplete == other.detailsComplete &&
+          provisional == other.provisional;
+}
+
+/// What the transparent fields of a [`WalletBalance`] represent.
+enum TransparentBalanceAuthority {
+  /// Current authorized amounts.
+  current,
+
+  /// No current authority: the transparent fields are zero because nothing
+  /// is spendable, and `transparent_last_known` holds the prior amount.
+  lastKnown,
+
+  /// No current authority and no prior amount. Show as unavailable, never 0.
+  unavailable,
 }
 
 class TxDataRequest {
@@ -3002,6 +3060,11 @@ class TxDataRequest {
 
 class WalletBalance {
   final WalletBalanceAvailability availability;
+  final TransparentBalanceAuthority transparentAuthority;
+
+  /// Informational prior transparent total, present only with
+  /// `TransparentBalanceAuthority::LastKnown`. It never authorizes a spend.
+  final BigInt? transparentLastKnown;
   final BigInt transparent;
   final BigInt sapling;
   final BigInt orchard;
@@ -3035,6 +3098,8 @@ class WalletBalance {
 
   const WalletBalance({
     required this.availability,
+    required this.transparentAuthority,
+    this.transparentLastKnown,
     required this.transparent,
     required this.sapling,
     required this.orchard,
@@ -3058,6 +3123,8 @@ class WalletBalance {
   @override
   int get hashCode =>
       availability.hashCode ^
+      transparentAuthority.hashCode ^
+      transparentLastKnown.hashCode ^
       transparent.hashCode ^
       sapling.hashCode ^
       orchard.hashCode ^
@@ -3083,6 +3150,8 @@ class WalletBalance {
       other is WalletBalance &&
           runtimeType == other.runtimeType &&
           availability == other.availability &&
+          transparentAuthority == other.transparentAuthority &&
+          transparentLastKnown == other.transparentLastKnown &&
           transparent == other.transparent &&
           sapling == other.sapling &&
           orchard == other.orchard &&

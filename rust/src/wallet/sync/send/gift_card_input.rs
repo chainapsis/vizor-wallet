@@ -4,15 +4,14 @@ use super::*;
 use crate::wallet::sync_engine::gift_card_claim;
 use zcash_client_backend::data_api::{wallet::input_selection::InputSelectorError, PoolMeta};
 
-pub(super) struct CardInput<'a> {
-    db: &'a WalletDatabase,
+pub(super) struct CardInput {
     account: AccountUuid,
     state: gift_card_claim::Snapshot,
     notes: Vec<ReceivedNote<ReceivedNoteId, orchard::Note>>,
 }
-impl<'a> CardInput<'a> {
+impl CardInput {
     pub(super) fn load(
-        db: &'a WalletDatabase,
+        db: &WalletDatabase,
         path: &str,
         account: AccountUuid,
     ) -> Result<Option<Self>, String> {
@@ -22,13 +21,19 @@ impl<'a> CardInput<'a> {
         if !state.complete || !state.has_confirmed_anchor() {
             return Err("Insufficient balance: Gift Card check or confirmations pending".into());
         }
-        if !db
-            .anchor_computable(ShieldedPool::Ironwood, state.anchor_height.into())
-            .map_err(|e| e.to_string())?
-        {
+        let c = open_readonly_conn(path)?;
+        // The pinned backend predates InputSource::anchor_computable. Match
+        // that API's checkpoint-existence check for the retained Ironwood anchor.
+        let anchor_computable: bool = c
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM ironwood_tree_checkpoints WHERE checkpoint_id = ?1)",
+                [state.anchor_height],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if !anchor_computable {
             return Err("Gift Card funding witnesses require another check".into());
         }
-        let c = open_readonly_conn(path)?;
         let mut query=c.prepare("SELECT t.txid,n.action_index FROM ironwood_received_notes n JOIN transactions t ON t.id_tx=n.transaction_id JOIN vizor_giftcard_check g ON t.txid=g.funding_txid WHERE n.value>0 AND NOT EXISTS(SELECT 1 FROM vizor_giftcard_spends s WHERE s.nf=n.nf)").map_err(|e|e.to_string())?;
         let ids = query
             .query_map([], |r| Ok((r.get::<_, Vec<u8>>(0)?, r.get::<_, u16>(1)?)))
@@ -60,7 +65,6 @@ impl<'a> CardInput<'a> {
             }
         }
         Ok(Some(Self {
-            db,
             account,
             state,
             notes,
@@ -88,12 +92,15 @@ impl<'a> CardInput<'a> {
         >,
     > {
         let (change, selector) = zip317_helper::<Self>(None, false);
+        // The pinned transparent-ledger backend uses the selector API without
+        // migration parameters. This source selects only Ironwood notes at the
+        // card's retained anchor and explicitly proposes V6, so no Orchard
+        // migration policy is involved.
         selector.propose_transaction(
             &network,
             self,
             BlockHeight::from_u32(self.state.checked_height + 1).into(),
             BlockHeight::from_u32(self.state.anchor_height),
-            &self.db.pool_migration_params(),
             payment_link_claim_confirmations_policy(),
             self.account,
             request,
@@ -157,15 +164,10 @@ impl<'a> CardInput<'a> {
         )
     }
 }
-impl InputSource for CardInput<'_> {
+impl InputSource for CardInput {
     type Error = String;
     type AccountId = AccountUuid;
     type NoteRef = ReceivedNoteId;
-    fn anchor_computable(&self, pool: ShieldedPool, height: BlockHeight) -> Result<bool, String> {
-        self.db
-            .anchor_computable(pool, height)
-            .map_err(|e| e.to_string())
-    }
     fn get_spendable_note(
         &self,
         id: &TxId,

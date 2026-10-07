@@ -58,13 +58,14 @@ use zcash_client_backend::data_api::wallet::input_selection::{
 use zcash_client_backend::{
     data_api::{
         error::Error as WalletError,
+        transparent_ledger::{TransparentAuthority, TransparentLedgerMode, TransparentLedgerRead},
         wallet::{
             self, create_proposed_transactions, propose_send_max_transfer, propose_shielding,
             ConfirmationsPolicy, TargetHeight,
         },
         Account as _, AccountMeta, Balance, CoinbaseFilter, ConsolidationNotes, InputSource,
         MaxSpendMode, NoteFilter, NoteRetention, OutputLockStore, ReceivedNotes, TargetValue,
-        TransparentKeyOrigin, WalletCommitmentTrees, WalletRead,
+        TransparentBalances, TransparentKeyOrigin, WalletCommitmentTrees, WalletRead,
     },
     fees::{
         zip317::{MultiOutputChangeStrategy, Zip317FeeRule},
@@ -74,7 +75,9 @@ use zcash_client_backend::{
     wallet::{LockOwner, Note, OutputRef, OvkPolicy, ReceivedNote, WalletTransparentOutput},
     zip321::{Payment, TransactionRequest},
 };
-use zcash_client_sqlite::{wallet::commitment_tree, AccountUuid, ReceivedNoteId};
+use zcash_client_sqlite::{
+    error::SqliteClientError, wallet::commitment_tree, AccountUuid, ReceivedNoteId,
+};
 use zcash_keys::{address::Address, keys::UnifiedSpendingKey};
 use zcash_primitives::block::BlockHash;
 use zcash_primitives::transaction::TxVersion;
@@ -1234,9 +1237,7 @@ fn ledger_shielding_progress(
         .chain_height()
         .map_err(|e| e.to_string())?
         .ok_or("Wallet must sync before shielding")?;
-    let balances = db
-        .get_transparent_balances(id, (tip + 1).into(), ConfirmationsPolicy::MIN)
-        .map_err(|e| e.to_string())?;
+    let balances = transparent_shielding_balances(db, id, (tip + 1).into())?;
     let mut progress = LedgerShieldingProgress {
         input_count: 0,
         input_limit: crate::wallet::ledger::MAX_TRANSPARENT_INPUTS as u32,
@@ -2275,7 +2276,6 @@ pub(crate) async fn retire_unbroadcast_orchard_migration(
     account_uuid: &str,
     expected_run_id: &str,
 ) -> Result<(), String> {
-    use zakura_transaction_status::{lightwalletd::LightwalletdSource, StatusObservation};
     let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
     super::migration::backfill_unbroadcast_migration_creation_evidence(
         db_path,
@@ -2299,25 +2299,77 @@ pub(crate) async fn retire_unbroadcast_orchard_migration(
         u32::try_from(chain_tip.height).map_err(|_| "Migration recovery chain tip exceeds u32")?;
     validate_unbroadcast_migration_recovery_candidates(&candidates, chain_tip_height)?;
 
-    let never_exit = || false;
-    let public_source = LightwalletdSource::new(move || async move { Ok(client) }, &never_exit);
     let policy = sync_engine::enhancement::EnhancementPolicy::current(network);
+    let mut status_db = super::open_wallet_db_for_read(db_path, network)?;
+    policy.configure_db(&mut status_db);
+    let gate = sync_engine::TransparentLookupGate::for_wallet(
+        policy
+            .public_transparent_lookups(&status_db)
+            .map_err(|e| e.to_string())?,
+        db_path,
+        network,
+    )
+    .map_err(|e| e.to_string())?;
+    let never_exit = || false;
+    let public_source =
+        sync_engine::enhancement::status::lightwalletd_source(client, gate.clone(), &never_exit);
     let mut reader =
         sync_engine::enhancement::status::reader(db_path, network, &never_exit, public_source);
 
-    use zcash_client_backend::data_api::status::TransactionStatusRead;
-    let mut status_db = super::open_wallet_db_for_read(db_path, network)?;
-    status_db.set_status_mode(policy.status_mode());
-    for candidate in &candidates {
-        let txid = parse_txid_hex(&candidate.txid_hex)?;
-        let observation = reader
-            .observe(
-                status_db
-                    .transaction_status_work_for(txid)
-                    .map_err(|e| e.to_string())?,
-                Some(chain_tip_height),
-            )
-            .await;
+    let txids = candidates
+        .iter()
+        .map(|candidate| parse_txid_hex(&candidate.txid_hex))
+        .collect::<Result<Vec<_>, _>>()?;
+    verify_unbroadcast_migration_txids_absent(
+        &mut reader,
+        &status_db,
+        &gate,
+        &candidates,
+        &txids,
+        chain_tip_height,
+    )
+    .await?;
+
+    super::migration::retire_run_for_rebuild(
+        db_path,
+        network,
+        expected_run_id,
+        "The previous signed migration transactions were absent after their broadcast windows. Rebuilding with a new credential.",
+    )
+}
+
+/// Confirms every unbroadcast migration transaction is absent before its run
+/// is retired. A public observation discloses the txid, so the reader's public
+/// source must be gated by `gate` (`status::lightwalletd_source`): a transition
+/// withholds the rest, reported as `Cancelled`. `gate` is re-checked after each
+/// public observation too, so an absence answered after a transition cannot
+/// retire the run; either way the run is left unchanged.
+/// Private observations are unaffected.
+async fn verify_unbroadcast_migration_txids_absent<P, R>(
+    reader: &mut sync_engine::enhancement::status::RoutedStatusReader<P, R>,
+    status_db: &super::WalletDatabase,
+    gate: &sync_engine::TransparentLookupGate,
+    candidates: &[super::migration::UnbroadcastMigrationRecoveryCandidate],
+    txids: &[TxId],
+    chain_tip_height: u32,
+) -> Result<(), String>
+where
+    P: zakura_transaction_status::StatusSource,
+    R: zakura_transaction_status::StatusSource,
+{
+    use zakura_transaction_status::StatusObservation;
+    use zcash_client_backend::data_api::status::{TransactionStatusRead, TransactionStatusWork};
+    const WITHHELD: &str = "Migration recovery is unavailable under the private transparent policy; the run is unchanged";
+    for (candidate, txid) in candidates.iter().zip(txids) {
+        let work = status_db
+            .transaction_status_work_for(*txid)
+            .map_err(|e| e.to_string())?;
+        let public = matches!(work, TransactionStatusWork::Public(_));
+        let observation = reader.observe(work, Some(chain_tip_height)).await;
+        // An absence answered after a transition must not retire the run.
+        if public && !gate.permits().map_err(|e| e.to_string())? {
+            return Err(WITHHELD.into());
+        }
         match observation {
             Ok(StatusObservation::NotFound) => {}
             Ok(_) => {
@@ -2325,6 +2377,10 @@ pub(crate) async fn retire_unbroadcast_orchard_migration(
                     "Migration transaction {} is present in the mempool or chain",
                     candidate.txid_hex
                 ));
+            }
+            // Recovery never exits early, so only the gate cancels.
+            Err(zakura_transaction_status::StatusError::Cancelled) => {
+                return Err(WITHHELD.into());
             }
             Err(zakura_transaction_status::StatusError::CoverageIncomplete) => {
                 return Err("Migration recovery is pending sufficient private status coverage; the run is unchanged".into());
@@ -2337,13 +2393,7 @@ pub(crate) async fn retire_unbroadcast_orchard_migration(
             }
         }
     }
-
-    super::migration::retire_run_for_rebuild(
-        db_path,
-        network,
-        expected_run_id,
-        "The previous signed migration transactions were absent after their broadcast windows. Rebuilding with a new credential.",
-    )
+    Ok(())
 }
 
 async fn reconcile_scheduled_migration_txs_before_abandon(
@@ -3708,6 +3758,76 @@ fn active_ironwood_migrations() -> &'static Mutex<HashSet<String>> {
     ACTIVE_IRONWOOD_MIGRATIONS.get_or_init(|| Mutex::new(HashSet::new()))
 }
 
+/// Why shielding is unavailable while an account's private transparent
+/// ledger holds no current authority. Shielded-funded operations stay
+/// available.
+pub(crate) const TRANSPARENT_RECOVERY_INCOMPLETE: &str =
+    "Transparent recovery is incomplete; transparent funds are unavailable until it completes";
+
+/// Spendable transparent balances by receiver for shielding at `target`.
+///
+/// Under public authority these are the wallet's transparent balances. Under
+/// a private ledger mode the library withholds that per-address read, so the
+/// balances are summed from the library's gated selector, which admits only
+/// outputs its private authority covers. With no current authority, shielding
+/// reports recovery as incomplete rather than a zero balance.
+fn transparent_shielding_balances(
+    db: &WalletDatabase,
+    account: AccountUuid,
+    target: TargetHeight,
+) -> Result<TransparentBalances, String> {
+    let confirmations = ConfirmationsPolicy::MIN;
+    match db.get_transparent_balances(account, target, confirmations) {
+        Ok(balances) => return Ok(balances),
+        // Only a handle configured for the private ledger reads it; any other
+        // handle keeps the library's refusal.
+        Err(SqliteClientError::TransparentAuthorityUnavailable)
+            if matches!(
+                db.transparent_ledger_mode(),
+                Ok(TransparentLedgerMode::PrivateRequired)
+            ) => {}
+        Err(e) => return Err(format!("Failed to get transparent balances: {e}")),
+    }
+    let snapshot = db
+        .transparent_ledger_snapshot(account, confirmations)
+        .map_err(|e| format!("Failed to read transparent ledger: {e}"))?;
+    if snapshot.authority != TransparentAuthority::Private {
+        return Err(TRANSPARENT_RECOVERY_INCOMPLETE.into());
+    }
+    let receivers = db
+        .get_transparent_receivers(account, true, true)
+        .map_err(|e| e.to_string())?;
+    let addresses: Vec<TransparentAddress> = receivers.keys().copied().collect();
+    let outputs = db
+        .get_spendable_transparent_outputs_for_addresses(
+            &addresses,
+            target,
+            confirmations,
+            CoinbaseFilter::AllTransparentOutputs,
+            LockFilter::Policy(&LockedInputPolicy::default()),
+        )
+        .map_err(|e| e.to_string())?;
+    let mut balances = TransparentBalances::new();
+    for output in outputs {
+        let address = *output.recipient_address();
+        let Some(metadata) = receivers.get(&address) else {
+            continue;
+        };
+        let origin = metadata
+            .scope()
+            .map_or(TransparentKeyOrigin::Imported, |scope| {
+                TransparentKeyOrigin::Derived { scope }
+            });
+        balances
+            .entry(address)
+            .or_insert((origin, Balance::ZERO))
+            .1
+            .add_spendable_value(output.value())
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(balances)
+}
+
 fn shielding_threshold() -> Result<Zatoshis, String> {
     Zatoshis::from_u64(SHIELDING_THRESHOLD_ZATOSHI)
         .map_err(|_| "Bad shielding threshold".to_string())
@@ -3723,13 +3843,7 @@ fn build_shielding_proposal(
         .chain_height()
         .map_err(|e| format!("Failed to read chain height: {e}"))?
         .ok_or("Wallet must sync before shielding transparent funds")?;
-    let balances = db
-        .get_transparent_balances(
-            account_id,
-            (chain_height + 1).into(),
-            ConfirmationsPolicy::MIN,
-        )
-        .map_err(|e| format!("Failed to get transparent balances: {e}"))?;
+    let balances = transparent_shielding_balances(db, account_id, (chain_height + 1).into())?;
     let (from_addrs, selected_value) = select_shielding_sources(balances, shielding_threshold)?;
 
     let account = db
@@ -3842,7 +3956,6 @@ fn build_ledger_shielding_round(
             account,
             target,
             anchor,
-            &db.pool_migration_params(),
             confirmations,
             CoinbaseFilter::AllTransparentOutputs,
         )
@@ -4021,7 +4134,6 @@ fn propose_send_with_reserved_notes(
         migration_locks,
         transparent_allowlist: None,
     };
-    let zip318 = db.pool_migration_params();
     let account = db
         .get_account(account_id)
         .map_err(|e| e.to_string())?
@@ -4037,7 +4149,6 @@ fn propose_send_with_reserved_notes(
             &reserved_db,
             target_height,
             anchor_height,
-            &zip318,
             confirmations_policy,
             account_id,
             request,
@@ -4251,12 +4362,10 @@ impl<I: InputSource> InputSource for ReservedInputSource<'_, I> {
     type AccountId = I::AccountId;
     type NoteRef = I::NoteRef;
 
-    fn anchor_computable(
+    fn anchor_retention_interval(
         &self,
-        protocol: ShieldedPool,
-        height: BlockHeight,
-    ) -> Result<bool, Self::Error> {
-        self.inner.anchor_computable(protocol, height)
+    ) -> zcash_client_backend::data_api::anchor_retention::AnchorRetentionInterval {
+        self.inner.anchor_retention_interval()
     }
 
     fn get_spendable_note(

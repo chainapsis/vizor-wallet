@@ -560,6 +560,9 @@ rust_sync.TransactionInfo _tx(int index) {
     expiredUnmined: false,
     accountBalanceDelta: 0,
     fee: BigInt.zero,
+    feeState: rust_sync.TransactionFeeState.notApplicable,
+    detailsComplete: true,
+    provisional: false,
     blockTime: seconds,
     isTransparent: false,
     txKind: 'received',
@@ -576,6 +579,9 @@ rust_sync.TransactionInfo _sentZecTx({required String txidHex}) {
     expiredUnmined: false,
     accountBalanceDelta: -19540000,
     fee: BigInt.from(15000),
+    feeState: rust_sync.TransactionFeeState.known,
+    detailsComplete: true,
+    provisional: false,
     blockTime: BigInt.from(1800000000),
     isTransparent: false,
     txKind: 'sent',
@@ -620,6 +626,9 @@ rust_sync.TransactionInfo _receivedZecTx({
     expiredUnmined: false,
     accountBalanceDelta: zatoshi.toInt(),
     fee: BigInt.zero,
+    feeState: rust_sync.TransactionFeeState.notApplicable,
+    detailsComplete: true,
+    provisional: false,
     blockTime: BigInt.from(1800000000),
     isTransparent: false,
     txKind: 'received',
@@ -673,6 +682,9 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(393, 1000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final pending = rust_sync.TransactionInfo(
+      detailsComplete: true,
+      feeState: rust_sync.TransactionFeeState.known,
+      provisional: false,
       txidHex: 'pending-receive',
       minedHeight: BigInt.zero,
       expiredUnmined: false,
@@ -2864,6 +2876,9 @@ void main() {
           expiredUnmined: false,
           accountBalanceDelta: 445000000,
           fee: BigInt.zero,
+          feeState: rust_sync.TransactionFeeState.notApplicable,
+          detailsComplete: true,
+          provisional: false,
           blockTime: height == BigInt.zero
               ? BigInt.zero
               : BigInt.from(1800000100),
