@@ -30,6 +30,7 @@ struct SwapTransport<'a, F> {
     enhance: url::Url,
 }
 impl<'a, F> SwapTransport<'a, F> {
+    /// A transport limited to the `enhance` origin.
     fn new(should_exit: &'a F, enhance: url::Url) -> Self {
         Self {
             http: RoutedTransport::new(should_exit),

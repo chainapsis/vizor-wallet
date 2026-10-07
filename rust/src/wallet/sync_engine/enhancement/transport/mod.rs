@@ -305,6 +305,7 @@ impl<F: Fn() -> bool> RoutedTransport<'_, F> {
     }
 }
 
+/// The body of a successful response, refusing one longer than `limit` bytes.
 async fn collect_bytes<B>(
     response: http::Response<B>,
     limit: usize,

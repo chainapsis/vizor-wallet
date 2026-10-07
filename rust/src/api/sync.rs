@@ -3129,6 +3129,7 @@ pub fn set_near_swap_privacy_enabled(enabled: bool) {
     NEAR_SWAP_PRIVACY.store(enabled, Ordering::SeqCst);
 }
 
+/// Whether new private swap addresses are allowed (see [`set_near_swap_privacy_enabled`]).
 pub(crate) fn near_swap_privacy_enabled() -> bool {
     NEAR_SWAP_PRIVACY.load(Ordering::SeqCst)
 }
