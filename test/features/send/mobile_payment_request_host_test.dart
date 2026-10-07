@@ -10,6 +10,8 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_routes.dart';
+import 'package:zcash_wallet/src/core/navigation/external_action_guard_provider.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/send/services/send_proving_key_warmup.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
@@ -529,6 +531,37 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  for (final review in [false, true]) {
+    testWidgets(
+      'captured mobile ${review ? 'Review' : 'Edit'} respects protection',
+      (tester) async {
+        final harness = await _pumpHost(tester);
+        harness.container
+            .read(paymentRequestFlowProvider.notifier)
+            .present(_request, source: PaymentRequestSource.link);
+        await tester.pumpAndSettle();
+        final button = find.byKey(
+          ValueKey(
+            review ? 'payment_request_continue' : 'payment_request_edit',
+          ),
+        );
+        final action = tester.widget<AppButton>(button).onPressed!;
+        final lease = harness.container
+            .read(externalActionGuardProvider.notifier)
+            .tryProtect()!;
+        action();
+        await tester.pumpAndSettle();
+        expect(harness.location, '/home');
+        expect(harness.container.read(paymentRequestFlowProvider), isNotNull);
+        expect(_discarded, isEmpty);
+        lease.release();
+        action();
+        await tester.pumpAndSettle();
+        expect(harness.location, review ? '/send/review' : '/send');
+      },
+    );
+  }
+
   testWidgets(
     'Review opens the wizard only once the card proposal is handed back',
     (tester) async {
@@ -547,6 +580,12 @@ void main() {
       expect(harness.container.read(paymentRequestFlowProvider), isNull);
       expect(harness.location, '/home');
       expect(_discarded, isEmpty);
+      expect(
+        harness.container
+            .read(externalActionGuardProvider.notifier)
+            .tryProtect(),
+        isNull,
+      );
 
       _discardGate!.complete();
       await tester.pumpAndSettle();

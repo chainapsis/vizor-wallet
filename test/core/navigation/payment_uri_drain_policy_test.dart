@@ -118,6 +118,13 @@ void main() {
         '/add-account',
         '/onboarding/create',
         '/import/seed',
+        '/gift',
+        '/gift/set-password',
+        '/gift/customise',
+        '/setup/backup',
+        '/setup/education/intro',
+        '/setup/education/address-types',
+        '/setup/education/things-to-know',
       ]) {
         final decision = decide(matchedLocation: location);
         expect(

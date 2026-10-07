@@ -1,3 +1,10 @@
+import 'desktop_welcome_capture.dart';
+import '../widgetbook/desktop_gift_onboarding_use_cases.dart';
+import '../widgetbook/desktop_gift_import_use_cases.dart';
+import 'desktop_onboarding_intro_capture.dart';
+import 'desktop_onboarding_recovery_capture.dart';
+import 'desktop_backup_capture.dart';
+import 'desktop_onboarding_selection_capture.dart';
 import 'mobile_welcome_capture.dart';
 import '../src/features/payment_links/widgets/payment_link_gift_card.dart';
 import 'ledger_pairing_capture.dart';
@@ -36,6 +43,7 @@ import '../widgetbook/screen_use_cases.dart';
 import '../widgetbook/mobile_welcome_network_use_cases.dart';
 import '../widgetbook/swap_use_cases.dart';
 import '../widgetbook/voting_use_cases.dart';
+import '../widgetbook/address_book_use_cases.dart';
 import '../widgetbook/address_verify_use_cases.dart';
 import 'zip321_prefill_use_cases.dart';
 import 'gift_card_usage_use_cases.dart';
@@ -56,6 +64,7 @@ class FigmaCompareScenario {
     this.mobile = false,
     this.scrollToEnd = false,
     this.allowFocus = false,
+    this.allowPointer = false,
     this.renderShadows = false,
     this.platform,
   });
@@ -67,6 +76,7 @@ class FigmaCompareScenario {
   final bool mobile;
   final bool scrollToEnd;
   final bool allowFocus;
+  final bool allowPointer;
   final bool renderShadows;
   final TargetPlatform? platform;
 }
@@ -78,7 +88,266 @@ class FigmaCompareScenario {
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
   FigmaCompareScenario(
-    id: 'gift-card-claim-checking',
+    id: 'desktop-home-setup',
+    description: 'Desktop Home backup and education reminders',
+    builder: buildDesktopHomeSetupUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-home-setup-importing',
+    description: 'Desktop setup reminders during the initial scan',
+    builder: buildDesktopHomeSetupImportingUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'address-book-no-contacts',
+    description: 'Desktop address book with no saved contacts',
+    builder: buildAddressBookNoContactsUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'address-book-empty-search',
+    description: 'Desktop address book with no search results',
+    builder: buildAddressBookEmptySearchUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-address-book-no-contacts',
+    description: 'Mobile address book with no saved contacts',
+    builder: buildMobileContactsNoContactsUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-address-book-empty-search',
+    description: 'Mobile address book with no search results',
+    builder: buildMobileContactsEmptySearchUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-gift-education',
+    description: 'Desktop post-setup Zcash introduction',
+    builder: buildDesktopZcashEducationIntroUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-gift-education-address-types',
+    description: 'Desktop post-setup address types',
+    builder: buildDesktopZcashEducationAddressTypesUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-gift-education-things-to-know',
+    description: 'Desktop post-setup things to know',
+    builder: buildDesktopZcashEducationThingsToKnowUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-gift-entry',
+    description: 'Gift Card entry',
+    builder: buildDesktopGiftEntryUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-gift-scan-active',
+    description:
+        'Gift Card desktop scan page with a deterministic camera preview',
+    builder: buildDesktopGiftScanActiveUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-gift-scan-denied',
+    description: 'Gift Card desktop scan page camera permission recovery',
+    builder: buildDesktopGiftScanDeniedUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-gift-additional-entry',
+    description: 'Gift Card entry for an additional account',
+    builder: buildDesktopGiftAdditionalEntryUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-gift-checking',
+    description: 'Gift Card inspection pending',
+    builder: buildDesktopGiftCheckingUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-gift-inspected',
+    description: 'Gift Card ready for new wallet setup',
+    builder: buildDesktopGiftInspectedUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-gift-receiving-account',
+    description: 'Gift imported receiving account choice',
+    builder: buildDesktopGiftReceivingAccountUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-gift-receiving-many',
+    description: 'Gift imported account list scrolling',
+    builder: buildDesktopGiftReceivingManyAccountsUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-gift-receiving-pending',
+    description: 'Gift recipient confirmation pending',
+    builder: buildDesktopGiftReceivingPendingUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-gift-receiving-error',
+    description: 'Gift recipient confirmation failure and retry',
+    builder: buildDesktopGiftReceivingErrorUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-gift-password',
+    description: 'Gift Card first-wallet password',
+    builder: buildDesktopGiftPasswordUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-gift-customise',
+    description: 'Gift Card first-wallet customise',
+    builder: buildDesktopGiftCustomiseUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-gift-additional-customise',
+    description: 'Gift Card additional-account customise',
+    builder: buildDesktopGiftAdditionalCustomiseUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-gift-check-error',
+    description: 'Gift Card inspection failure and retry',
+    builder: buildDesktopGiftCheckErrorUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-gift-long-scan',
+    description: 'Gift Card long scan consent',
+    builder: buildDesktopGiftLongScanUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-backup-intro',
+    description: 'Desktop backup warning and reminder actions',
+    builder: buildDesktopBackupIntroCapture,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-backup-gate',
+    description: 'Desktop backup password confirmation',
+    builder: buildDesktopBackupGateCapture,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-backup-reveal',
+    description: 'Desktop masked phrase, birthday and backup completion',
+    builder: buildDesktopBackupRevealCapture,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-backup-reveal-bip39',
+    description:
+        'Desktop backup with a masked phrase and extra BIP39 passphrase',
+    builder: buildDesktopBackupRevealBip39Capture,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-backup-reveal-bip39-end',
+    description: 'Desktop backup with BIP39 scrolled to the birthday card',
+    builder: buildDesktopBackupRevealBip39Capture,
+    scrollToEnd: true,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-backup-save-error-bip39',
+    description: 'Desktop backup with BIP39 after storage failure',
+    builder: buildDesktopBackupSaveErrorBip39Capture,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-backup-save-error-bip39-end',
+    description:
+        'Desktop BIP39 save failure scrolled to the full birthday card',
+    builder: buildDesktopBackupSaveErrorBip39Capture,
+    scrollToEnd: true,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-backup-save-error',
+    description: 'Desktop backup completion after storage failure',
+    builder: buildDesktopBackupSaveErrorCapture,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-backup-save-pending',
+    description: 'Desktop backup completion waiting for persistence',
+    builder: buildDesktopBackupSavePendingCapture,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-backup-defer-error',
+    description: 'Desktop reminder deferral after storage failure',
+    builder: buildDesktopBackupDeferErrorCapture,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-backup-defer-pending',
+    description: 'Desktop reminder deferral waiting for persistence',
+    builder: buildDesktopBackupDeferPendingCapture,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-settings-phrase',
+    description: 'Existing desktop Settings reveal with no pending backup',
+    builder: buildDesktopSettingsPhraseCapture,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-onboarding-recovery',
+    description: 'Desktop interrupted account persistence and retry action',
+    builder: buildDesktopSetupInterruptedCapture,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-onboarding-recovery-uncertain',
+    description: 'Desktop unconfirmed wallet DB state and recovery action',
+    builder: buildDesktopSetupUncertainCapture,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-onboarding-recovery-retry-error',
+    description: 'Desktop interrupted setup after a bootstrap retry failure',
+    builder: buildDesktopSetupRetryErrorCapture,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-onboarding-recovery-pending',
+    description: 'Desktop interrupted setup while reloading bootstrap',
+    builder: buildDesktopSetupPendingCapture,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-onboarding-ledger-recovery',
+    description: 'Desktop Ledger interrupted account persistence',
+    builder: buildDesktopLedgerSetupInterruptedCapture,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-onboarding-submit-error',
+    description: 'Desktop ordinary setup error remains editable and retryable',
+    builder: buildDesktopSetupOrdinaryErrorCapture,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-gift-card-claim-checking',
     description: 'Discovered Gift Card on the checking surface at 50%',
     builder: buildPaymentLinkReceivedCheckingUseCase,
   ),
@@ -95,6 +364,80 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildMobileGiftOnboardingFundingFound,
     desktop: false,
     mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-onboarding-welcome',
+    description: 'Desktop initial Welcome with deterministic video poster',
+    builder: buildDesktopWelcomeCapture,
+    renderShadows: true,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-onboarding-welcome-hover',
+    description: 'Desktop Welcome gift activation with a mouse hover',
+    builder: buildDesktopWelcomeCapture,
+    allowPointer: true,
+    renderShadows: true,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-onboarding-add-account-welcome',
+    description: 'Desktop additional-account Welcome with deterministic poster',
+    builder: buildDesktopAddAccountWelcomeCapture,
+    renderShadows: true,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-onboarding-intro',
+    description: 'Desktop onboarding introduction and sidebar spacing',
+    builder: buildDesktopOnboardingIntroCapture,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-onboarding-customise',
+    description: 'Desktop account name and profile picture customisation',
+    builder: buildCustomiseAccountUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-onboarding-import-customise',
+    description: 'Desktop imported-account sidebar spacing',
+    builder: buildImportCustomiseAccountUseCase,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-onboarding-ledger-sidebar',
+    description: 'Desktop Ledger sidebar spacing without device state',
+    builder: _buildLedgerOnboardingSidebar,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-onboarding-keystone-sidebar',
+    description: 'Desktop Keystone sidebar spacing without camera state',
+    builder: buildDesktopKeystoneSidebarCapture,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-onboarding-import',
+    description: 'Desktop onboarding import method selection',
+    builder: buildDesktopOnboardingImportCapture,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-onboarding-hardware',
+    description: 'Desktop onboarding hardware wallet selection',
+    builder: buildDesktopOnboardingHardwareCapture,
+  ),
+  FigmaCompareScenario(
+    id: 'settings-uninstall-confirm',
+    description: 'Desktop uninstall confirmation with wallet data warning',
+    builder: buildSettingsUninstallConfirmUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'settings-wallet-link-success',
+    description: 'Desktop WalletLink completion with imported item counts',
+    builder: buildSettingsWalletLinkSuccessUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'settings-wallet-link-expired',
+    description: 'Desktop WalletLink expired code recovery',
+    builder: buildSettingsWalletLinkExpiredUseCase,
   ),
   FigmaCompareScenario(
     id: 'gift-card-value',
@@ -1615,6 +1958,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'swap-tor-blocked',
     description: 'Desktop swap when the provider blocks a Tor exit',
     builder: buildSwapPageTorBlockedUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-deposit-timeout',
+    description: 'Desktop swap after the deposit window expires',
+    builder: buildSwapDepositTimeoutUseCase,
   ),
   FigmaCompareScenario(
     id: 'swap-guidance-deposit-desktop',

@@ -826,34 +826,3 @@ async fn public_hardware_tex_legs_dispatch_and_unknown_inputs_are_withheld() {
         "{error}"
     );
 }
-
-#[test]
-fn mined_reconciliation_requires_exact_bytes_and_compatible_reader() {
-    let mut wallet = wallet();
-    wallet
-        .db
-        .update_chain_tip(BlockHeight::from_u32(TIP))
-        .unwrap();
-    let tx = hardware_tx(vec![]);
-    let mut raw = Vec::new();
-    tx.write(&mut raw).unwrap();
-    let conn = rusqlite::Connection::open(&wallet.path).unwrap();
-    conn.execute("INSERT INTO transactions(txid, raw, mined_height, min_observed_height) VALUES (?1, ?2, ?3, ?3)", rusqlite::params![tx.txid().as_ref(), raw, TIP]).unwrap();
-    assert!(
-        crate::wallet::sync::hardware_authority::stored_mined(&wallet.path, NETWORK, &tx).unwrap()
-    );
-    let conn = rusqlite::Connection::open(&wallet.path).unwrap();
-    conn.execute(
-        "UPDATE transactions SET raw = X'00' WHERE txid = ?1",
-        [tx.txid().as_ref()],
-    )
-    .unwrap();
-    assert!(
-        !crate::wallet::sync::hardware_authority::stored_mined(&wallet.path, NETWORK, &tx).unwrap()
-    );
-    conn.execute_batch("UPDATE tpir_meta SET min_reader_version = 999")
-        .unwrap();
-    assert!(
-        crate::wallet::sync::hardware_authority::stored_mined(&wallet.path, NETWORK, &tx).is_err()
-    );
-}

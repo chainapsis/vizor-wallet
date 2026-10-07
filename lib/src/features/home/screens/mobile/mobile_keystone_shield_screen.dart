@@ -10,7 +10,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../../../../main.dart' show log;
 import '../../../../core/config/rpc_endpoint_config.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
-import '../../../../core/navigation/payment_uri_busy_surface_hold.dart';
+import '../../../../core/navigation/external_action_guard_hold.dart';
 import '../../../../core/storage/wallet_paths.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
@@ -62,7 +62,7 @@ class MobileKeystoneShieldScreen extends ConsumerStatefulWidget {
 // screen is a live Keystone session.
 class _MobileKeystoneShieldScreenState
     extends ConsumerState<MobileKeystoneShieldScreen>
-    with WidgetsBindingObserver, PaymentUriBusySurfaceHoldMixin {
+    with WidgetsBindingObserver, ExternalActionGuardHoldMixin {
   var _stage = _ShieldSignStage.preparing;
   String? _error;
   String? _statusMessage;

@@ -89,6 +89,27 @@ the define cannot vary per test. Mobile-UI tests are opt-in via the
   define, so a mobile-lane run missing `--dart-define` fails loudly by
   name instead of as confusing metric mismatches.
 
+### Assets in widget tests
+
+- The mobile token lane automatically filters app `assets/**/desktop/`
+  artwork out of both asset loads and the asset manifest through
+  `test/flutter_test_config.dart`. It forwards allowed loads to the original
+  bundle; it does not copy assets or add a test wrapper command.
+- A desktop-only asset request fails the mobile test even when an image
+  `errorBuilder` consumes the error. Shared artwork belongs outside `desktop/`.
+  Keep asset references and the relevant mobile/desktop screen tests together
+  when adding, moving, or renaming files.
+- `test/core/platform_asset_contract_test.dart` checks that desktop artwork is
+  limited to Linux/macOS/Windows/web and that other runtime assets remain
+  shared. A new subdirectory needs its own pubspec declaration. Run this test
+  after changing assets or pubspec. The mobile-tagged
+  `test/core/mobile_asset_bundle_test.dart` also runs these contracts and the
+  filter regressions, so both normal test lanes validate them.
+- Native video player mocks must check the selected asset against
+  `AssetManifest.loadFromAssetBundle(rootBundle)`; a successful mock decoder
+  alone does not prove availability. Native integration tests use the actual
+  device bundle, not the host-test filter.
+
 Untagged tests may run in either lane and must be lane-agnostic:
 
 - Compare against token constants, not literal numbers:
@@ -177,6 +198,13 @@ header times every 1,000 blocks. The only request left is the chain tip.
 - Bootstrap or refresh before a release cut with
   `scripts/update-mainnet-block-times.py` (needs `grpcurl`); validate offline
   with `--check`. Never edit the data file by hand.
+
+## Image Assets
+
+New raster image assets must be converted to lossless WebP before inclusion.
+Preserve their dimensions and decoded pixels, and update app, Widgetbook, and
+test references to `.webp`. For illustrations, use
+`scripts/convert-illustrations-to-webp.py` (`--apply` writes verified conversions).
 
 ## Editing Figma
 

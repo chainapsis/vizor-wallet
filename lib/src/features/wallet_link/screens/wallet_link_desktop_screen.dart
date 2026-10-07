@@ -13,7 +13,7 @@ import '../../../core/layout/app_desktop_backdrop_shell.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
-import '../../../core/navigation/payment_uri_busy_surface_hold.dart';
+import '../../../core/navigation/external_action_guard_hold.dart';
 import '../../../core/security/password_policy.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
@@ -48,7 +48,7 @@ class WalletLinkDesktopScreen extends ConsumerStatefulWidget {
 // the session, so the hold lasts as long as the screen.
 class _WalletLinkDesktopScreenState
     extends ConsumerState<WalletLinkDesktopScreen>
-    with PaymentUriBusySurfaceHoldMixin {
+    with ExternalActionGuardHoldMixin {
   final _passwordController = TextEditingController();
   bool _accessConfirmed = false;
   bool _isSubmittingPassword = false;
@@ -421,7 +421,7 @@ class _LinkedContent extends StatelessWidget {
         width: 300,
         height: 200,
         child: _Illustration(
-          asset: 'assets/illustrations/wallet_link_success.png',
+          asset: 'assets/illustrations/desktop/wallet_link_success.webp',
           width: 158,
           height: 200,
         ),
@@ -462,7 +462,7 @@ class _ExpiredContent extends StatelessWidget {
         width: 300,
         height: 200,
         child: _Illustration(
-          asset: 'assets/illustrations/wallet_link_expired.png',
+          asset: 'assets/illustrations/desktop/wallet_link_expired.webp',
           width: 160,
           height: 200,
         ),

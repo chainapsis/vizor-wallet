@@ -465,7 +465,7 @@ class _PaymentLinkHomeFixture extends StatelessWidget {
   Widget build(BuildContext context) {
     return PaymentLinksHomeMobileView(
       illustration: Image.asset(
-        'assets/illustrations/payment_links/payment_link_empty_card.png',
+        'assets/illustrations/payment_links/payment_link_empty_card.webp',
         fit: BoxFit.contain,
         excludeFromSemantics: true,
       ),

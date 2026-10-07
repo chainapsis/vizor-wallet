@@ -22,6 +22,8 @@ import '../../features/migration/providers/ironwood_migration_announcement_provi
 import '../../features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import '../../features/swap/models/swap_activity_navigation.dart';
 import '../../features/swap/providers/swap_state_provider.dart';
+import '../navigation/external_action_guard_provider.dart';
+import '../navigation/external_action_guard_hold.dart';
 import '../config/network_config.dart';
 import '../config/swap_feature_config.dart';
 import '../formatting/number_format.dart';
@@ -144,6 +146,11 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
   }
 
   void _navigateTo(String routePath) {
+    if (ref
+        .read(externalActionGuardProvider)
+        .blocks(ExternalAction.navigation)) {
+      return;
+    }
     if (widget.disabledRoutePaths.contains(routePath)) return;
     if (_matches(routePath)) {
       if (routePath == '/voting') {
@@ -160,16 +167,31 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
   }
 
   void _openAddAccount() {
+    if (ref
+        .read(externalActionGuardProvider)
+        .blocks(ExternalAction.navigation)) {
+      return;
+    }
     _closeAccountMenu();
     context.go('/add-account');
   }
 
   void _openActivity() {
+    if (ref
+        .read(externalActionGuardProvider)
+        .blocks(ExternalAction.navigation)) {
+      return;
+    }
     if (_matchedLocation == '/activity') return;
     context.go('/activity');
   }
 
   void _openSettings() {
+    if (ref
+        .read(externalActionGuardProvider)
+        .blocks(ExternalAction.navigation)) {
+      return;
+    }
     if (_matchedLocation == '/settings') return;
     context.go('/settings');
   }
@@ -187,24 +209,29 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
     final router = GoRouter.of(context);
     final entryPath = router.routerDelegate.currentConfiguration.uri.path;
     final swapNotifier = ref.read(swapStateProvider.notifier);
-    final selectedAsset = await swapNotifier.resolvePaySelectedAssetForEntry(
-      accountUuid: accountUuid,
-    );
-    if (!mounted ||
-        selectedAsset == null ||
-        router.routerDelegate.currentConfiguration.uri.path != entryPath) {
-      return;
-    }
-    final prepared = swapNotifier.preparePayFromShieldedZec(
-      preferredAsset: selectedAsset,
-      expectedAccountUuid: accountUuid,
-    );
-    if (!prepared) return;
-    router.go(
-      '/pay',
-      extra: const PayComposerNavigationArgs(preservePreparedComposer: true),
-    );
+    await _trackPendingNavigation(() async {
+      final selectedAsset = await swapNotifier.resolvePaySelectedAssetForEntry(
+        accountUuid: accountUuid,
+      );
+      if (!mounted ||
+          selectedAsset == null ||
+          router.routerDelegate.currentConfiguration.uri.path != entryPath) {
+        return;
+      }
+      final prepared = swapNotifier.preparePayFromShieldedZec(
+        preferredAsset: selectedAsset,
+        expectedAccountUuid: accountUuid,
+      );
+      if (!prepared) return;
+      router.go(
+        '/pay',
+        extra: const PayComposerNavigationArgs(preservePreparedComposer: true),
+      );
+    });
   }
+
+  Future<void> _trackPendingNavigation(Future<void> Function() action) =>
+      ref.read(externalActionGuardProvider.notifier).runNavigation(action);
 
   void _toggleAccountMenu({
     required List<AccountInfo> accounts,
@@ -280,11 +307,13 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
 
     final accountNotifier = ref.read(accountProvider.notifier);
     final syncNotifier = ref.read(syncProvider.notifier);
-    await accountNotifier.switchAccount(uuid);
-    if (mounted) {
-      context.go('/home');
-    }
-    unawaited(_refreshAfterAccountSwitch(syncNotifier));
+    await _trackPendingNavigation(() async {
+      await accountNotifier.switchAccount(uuid);
+      if (mounted) {
+        context.go('/home');
+      }
+      unawaited(_refreshAfterAccountSwitch(syncNotifier));
+    });
   }
 
   Future<void> _refreshAfterAccountSwitch(SyncNotifier syncNotifier) async {
@@ -454,7 +483,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
         ? null
         : migrationCoordinator.statuses[activeAccountUuid];
 
-    return AppDesktopSidebarSurface(
+    final sidebar = AppDesktopSidebarSurface(
       glass: true,
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -613,6 +642,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
         },
       ),
     );
+    return ExternalActionNavigationGuard(child: sidebar);
   }
 }
 

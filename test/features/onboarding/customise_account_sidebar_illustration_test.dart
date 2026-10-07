@@ -5,7 +5,7 @@ import 'package:zcash_wallet/src/features/onboarding/import/import_split_view.da
 import 'package:zcash_wallet/src/features/onboarding/keystone/keystone_onboarding_flow.dart';
 
 const _customiseAccountAsset =
-    'assets/illustrations/onboarding_customise_account_sidebar.png';
+    'assets/illustrations/desktop/onboarding_customise_account_sidebar.webp';
 
 void main() {
   testWidgets('import customisation shows the full-height illustration', (

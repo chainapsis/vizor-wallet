@@ -512,17 +512,14 @@ class _DepositCheckWarning extends StatelessWidget {
 class SwapDepositTimeoutPageContent extends StatelessWidget {
   const SwapDepositTimeoutPageContent({required this.onRestart, super.key});
 
-  static const _lightIllustration =
-      'assets/illustrations/swap_deposit_timeout_illustration_light.png';
-  static const _darkIllustration =
-      'assets/illustrations/swap_deposit_timeout_illustration_dark.png';
+  static const _illustration =
+      'assets/illustrations/desktop/swap_deposit_timeout_illustration.webp';
 
   final VoidCallback onRestart;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final isDark = AppTheme.of(context) == AppThemeData.dark;
     return SizedBox(
       key: const ValueKey('swap_deposit_timeout_panel'),
       width: 340,
@@ -532,7 +529,7 @@ class SwapDepositTimeoutPageContent extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Image.asset(
-            isDark ? _darkIllustration : _lightIllustration,
+            _illustration,
             key: const ValueKey('swap_deposit_timeout_illustration'),
             width: 340,
             height: 220,

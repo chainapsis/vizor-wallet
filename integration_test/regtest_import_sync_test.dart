@@ -39,7 +39,14 @@ void main() {
       await tester.pumpWidget(await buildBootstrappedZcashWalletApp());
 
       _log('opening import flow');
-      await _tapButton(tester, const ValueKey('welcome_import_wallet_button'));
+      await _tapButton(
+        tester,
+        const ValueKey('welcome_import_wallet_button'),
+      );
+      await _tapButton(
+        tester,
+        const ValueKey('desktop_import_secret_passphrase_card'),
+      );
 
       _log('entering mnemonic');
       await _enterText(

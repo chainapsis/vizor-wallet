@@ -3,7 +3,7 @@ import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_progres
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:zcash_wallet/src/core/navigation/payment_uri_busy_surface_provider.dart';
+import 'package:zcash_wallet/src/core/navigation/external_action_guard_provider.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
@@ -80,13 +80,13 @@ void main() {
       final container = ProviderScope.containerOf(
         tester.element(find.byType(MaterialApp)),
       );
-      expect(container.read(paymentUriBusySurfaceProvider), 1);
+      expect(container.read(externalActionGuardProvider).activeHoldCount, 1);
       phase.value = LedgerSigningModalPhase.saving;
       await tester.pump();
-      expect(container.read(paymentUriBusySurfaceProvider), 1);
+      expect(container.read(externalActionGuardProvider).activeHoldCount, 1);
       visible.value = false;
       await tester.pump();
-      expect(container.read(paymentUriBusySurfaceProvider), 0);
+      expect(container.read(externalActionGuardProvider).activeHoldCount, 0);
     },
   );
 

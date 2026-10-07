@@ -620,6 +620,7 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
         state: PaymentLinkRedeemVisualState.paste,
         onBack: _noop,
         onPaste: _noop,
+        onScan: _noop,
         subtitle: 'Copy the card link you’ve received, and paste it below.',
         pasteLabel: 'Paste card link',
       ),
@@ -630,6 +631,7 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
             state: PaymentLinkRedeemVisualState.paste,
             onBack: _noop,
             onPaste: _noop,
+            onScan: _noop,
             subtitle: 'Copy the card link you’ve received, and paste it below.',
             pasteLabel: 'Paste card link',
           ),
@@ -649,6 +651,7 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
         state: PaymentLinkRedeemVisualState.invalid,
         onBack: _noop,
         onPaste: _noop,
+        onScan: _noop,
         onClearClipboard: _noop,
         subtitle: 'Copy the card link you’ve received, and paste it below.',
         pasteLabel: 'Paste card link',
@@ -667,7 +670,7 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
   PaymentLinksHomeDesktopView _home() {
     return PaymentLinksHomeDesktopView(
       illustration: Image.asset(
-        'assets/illustrations/payment_links/payment_link_empty_card.png',
+        'assets/illustrations/payment_links/payment_link_empty_card.webp',
         width: 243,
         height: 162,
         fit: BoxFit.contain,

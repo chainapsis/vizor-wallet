@@ -38,7 +38,10 @@ class FigmaCompareApp extends StatelessWidget {
           child: Focus(
             canRequestFocus: false,
             descendantsAreFocusable: scenario.allowFocus,
-            child: IgnorePointer(child: Builder(builder: scenario.builder)),
+            child: IgnorePointer(
+              ignoring: !scenario.allowPointer,
+              child: Builder(builder: scenario.builder),
+            ),
           ),
         ),
       ),

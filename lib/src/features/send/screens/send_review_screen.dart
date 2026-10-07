@@ -20,8 +20,8 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/zec_price_change_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
-import '../../../core/navigation/payment_uri_busy_surface_hold.dart';
-import '../../../core/navigation/payment_uri_busy_surface_provider.dart';
+import '../../../core/navigation/external_action_guard_hold.dart';
+import '../../../core/navigation/external_action_guard_provider.dart';
 import '../../../core/navigation/app_back_resolver.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../providers/sync_provider.dart';
@@ -91,8 +91,8 @@ class SendReviewScreen extends ConsumerStatefulWidget {
 }
 
 class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
-  late final PaymentUriBusySurfaceNotifier _paymentUriBusySurface;
-  bool _holdsPaymentUriBusySurface = false;
+  late final ExternalActionGuardNotifier _externalActionGuard;
+  ExternalActionLease? _externalActionLease;
   late final SyncNotifier _syncNotifier;
   Future<bool>? _discardFuture;
   bool _cancelling = false;
@@ -133,17 +133,14 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   void initState() {
     super.initState();
     _reviewArgs = widget.args;
-    _paymentUriBusySurface = ref.read(paymentUriBusySurfaceProvider.notifier);
+    _externalActionGuard = ref.read(externalActionGuardProvider.notifier);
     _syncNotifier = ref.read(syncProvider.notifier);
     _cancelLedgerOperation = ref.read(ledgerOperationCancellerProvider);
     _ledgerOperationId =
         'send:${widget.args.proposalAccountUuid}:${widget.args.sendFlowId}';
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      if (!_holdsPaymentUriBusySurface) {
-        _paymentUriBusySurface.acquire();
-        _holdsPaymentUriBusySurface = true;
-      }
+      _externalActionLease ??= _externalActionGuard.acquire();
       ref.read(appLayoutProvider.notifier).setMode(AppLayoutMode.large);
     });
   }
@@ -166,7 +163,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     final discard = _handoffToHardware || hasUncheckpointedLedgerSignature
         ? null
         : _scheduleDiscard();
-    _releasePaymentUriBusySurface(after: discard);
+    _releaseExternalActionLease(after: discard);
     super.dispose();
   }
 
@@ -193,16 +190,17 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
         });
   }
 
-  void _releasePaymentUriBusySurface({Future<void>? after}) {
-    if (!_holdsPaymentUriBusySurface) return;
-    _holdsPaymentUriBusySurface = false;
+  void _releaseExternalActionLease({Future<void>? after}) {
+    final lease = _externalActionLease;
+    _externalActionLease = null;
+    if (lease == null) return;
     if (after == null) {
-      _paymentUriBusySurface.releaseAfterNavigation();
+      lease.releaseAfterNavigation();
       return;
     }
     // The route is already gone, but Rust may still hold the selected inputs.
     // Do not re-drain the parked request until that release has completed.
-    unawaited(after.whenComplete(_paymentUriBusySurface.release));
+    unawaited(after.whenComplete(lease.release));
   }
 
   String _formatAmount(BigInt zatoshi) {
@@ -238,7 +236,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     }
 
     ref.read(sendStatusRoutePayloadProvider.notifier).retain(_reviewArgs);
-    _releasePaymentUriBusySurface();
+    _releaseExternalActionLease();
     await context.push(
       sendStatusRouteLocation(_reviewArgs.sendFlowId),
       extra: _reviewArgs,
@@ -1036,7 +1034,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     if (!mounted) return;
 
     _handoffToHardware = true;
-    _releasePaymentUriBusySurface();
+    _releaseExternalActionLease();
     final statusArgs = KeystoneBroadcastArgs(
       reviewArgs: _reviewArgs,
       pcztWithProofs: _keystonePcztsWithProofs,
@@ -1203,7 +1201,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
               // nested hold protects the live QR as well, so the latch cannot
               // briefly open while signing subtrees change.
               if (keystonePhase != null)
-                PaymentUriBusySurfaceHold(
+                ExternalActionGuardHold(
                   child: AppPaneModalOverlay(
                     onDismiss: () =>
                         unawaited(_cancelSigningAndRefreshReview()),

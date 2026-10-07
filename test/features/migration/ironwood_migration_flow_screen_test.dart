@@ -309,14 +309,19 @@ void main() {
     );
     expect(find.textContaining('continues while minimized'), findsNothing);
 
-    final expectationImages = find.byWidgetPredicate((widget) {
-      if (widget is! Image || widget.image is! AssetImage) return false;
-      final assetName = (widget.image as AssetImage).assetName;
-      return assetName.startsWith(
-        'assets/illustrations/ironwood_migration_expect_',
+    for (var index = 0; index < 4; index++) {
+      expect(
+        find.descendant(
+          of: find.byKey(
+            ValueKey('ironwood_migration_expectation_viewport_$index'),
+          ),
+          matching: find.byWidgetPredicate(
+            (widget) => widget is Image && widget.image is AssetImage,
+          ),
+        ),
+        findsOneWidget,
       );
-    });
-    expect(expectationImages, findsNWidgets(4));
+    }
 
     await tester.tap(find.widgetWithText(AppButton, 'Next'));
     await tester.pumpAndSettle();

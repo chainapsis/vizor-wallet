@@ -19,15 +19,18 @@ class AppCarouselItem {
     required this.tileColor,
     required this.icon,
     this.iconSize = 20,
+    this.onTap,
   }) : imageAsset = null;
 
   const AppCarouselItem.image({
     required this.message,
     required this.tileColor,
     required this.imageAsset,
+    this.onTap,
   }) : icon = null,
        iconSize = 0;
 
+  final VoidCallback? onTap;
   final String message;
   final Color tileColor;
   final String? icon;
@@ -39,11 +42,12 @@ class AppCarouselItem {
 ///
 /// The component owns the fixed Figma geometry, edge mask, page indicator,
 /// autoplay, looping, pointer drag, keyboard navigation, and accessibility.
-/// Feature code supplies only [items].
+/// Feature code supplies the content and whether adjacent cards are visible.
 class AppCarousel extends StatefulWidget {
   const AppCarousel({
     required this.items,
     this.initialPage = 0,
+    this.showAdjacentCards = true,
     this.autoplay = true,
     this.autoplayInterval = const Duration(seconds: 5),
     this.transitionDuration = const Duration(milliseconds: 400),
@@ -58,6 +62,7 @@ class AppCarousel extends StatefulWidget {
 
   final List<AppCarouselItem> items;
   final int initialPage;
+  final bool showAdjacentCards;
   final bool autoplay;
   final Duration autoplayInterval;
   final Duration transitionDuration;
@@ -132,7 +137,8 @@ class _AppCarouselState extends State<AppCarousel> with WidgetsBindingObserver {
     super.didUpdateWidget(oldWidget);
     final controllerMustReset =
         oldWidget.items.length != widget.items.length ||
-        oldWidget.initialPage != widget.initialPage;
+        oldWidget.initialPage != widget.initialPage ||
+        oldWidget.showAdjacentCards != widget.showAdjacentCards;
     if (controllerMustReset) {
       _autoplayTimer?.cancel();
       _pageController.dispose();
@@ -163,7 +169,7 @@ class _AppCarouselState extends State<AppCarousel> with WidgetsBindingObserver {
     _pendingLogicalPage = widget.initialPage;
     _pageController = PageController(
       initialPage: _absolutePage,
-      viewportFraction: _viewportFraction,
+      viewportFraction: widget.showAdjacentCards ? _viewportFraction : 1,
     );
   }
 
@@ -229,6 +235,14 @@ class _AppCarouselState extends State<AppCarousel> with WidgetsBindingObserver {
 
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    if (event.logicalKey == LogicalKeyboardKey.enter ||
+        event.logicalKey == LogicalKeyboardKey.space) {
+      final onTap = widget.items[_activeLogicalPage].onTap;
+      if (onTap != null) {
+        onTap();
+        return KeyEventResult.handled;
+      }
+    }
     if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
       _showPreviousPage();
       return KeyEventResult.handled;
@@ -276,6 +290,54 @@ class _AppCarouselState extends State<AppCarousel> with WidgetsBindingObserver {
       'AppCarousel implements the desktop Figma component.',
     );
     final colors = context.colors;
+    final pages = NotificationListener<ScrollNotification>(
+      onNotification: _handleScrollNotification,
+      child: ScrollConfiguration(
+        behavior: const _AppCarouselScrollBehavior(),
+        child: PageView.builder(
+          key: const ValueKey('app_carousel_page_view'),
+          controller: _pageController,
+          physics: widget.items.length == 1
+              ? const NeverScrollableScrollPhysics()
+              : const PageScrollPhysics(),
+          itemCount: widget.items.length == 1 ? 1 : null,
+          onPageChanged: (page) {
+            _absolutePage = page;
+            _pendingLogicalPage = _logicalPage(page);
+            _commitSettledPage();
+          },
+          itemBuilder: (context, page) {
+            final logicalPage = _logicalPage(page);
+            final item = widget.items[logicalPage];
+            final card = Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: widget.showAdjacentCards ? _pageInset : 0,
+              ),
+              child: Center(
+                child: _AppCarouselCard(
+                  key: ValueKey('app_carousel_card_$logicalPage'),
+                  item: item,
+                ),
+              ),
+            );
+            if (logicalPage != _activeLogicalPage) {
+              return ExcludeSemantics(child: card);
+            }
+            return Semantics(
+              button: item.onTap != null,
+              onTap: item.onTap,
+              container: true,
+              label:
+                  '${widget.semanticLabel} '
+                  '${logicalPage + 1} of '
+                  '${widget.items.length}. '
+                  '${item.message}',
+              child: ExcludeSemantics(child: card),
+            );
+          },
+        ),
+      ),
+    );
     return SizedBox(
       key: const ValueKey('app_carousel'),
       width: _width,
@@ -291,69 +353,24 @@ class _AppCarouselState extends State<AppCarousel> with WidgetsBindingObserver {
             children: [
               SizedBox(
                 key: const ValueKey('app_carousel_viewport'),
-                width: _width,
+                width: widget.showAdjacentCards ? _width : _cardWidth,
                 height: _viewportHeight,
                 child: ClipRect(
-                  child: ShaderMask(
-                    blendMode: BlendMode.dstIn,
-                    shaderCallback: (bounds) => const LinearGradient(
-                      colors: [
-                        Color(0x00FFFFFF),
-                        Color(0xFFFFFFFF),
-                        Color(0xFFFFFFFF),
-                        Color(0x00FFFFFF),
-                      ],
-                      stops: [0, 0.15, 0.85, 1],
-                    ).createShader(bounds),
-                    child: NotificationListener<ScrollNotification>(
-                      onNotification: _handleScrollNotification,
-                      child: ScrollConfiguration(
-                        behavior: const _AppCarouselScrollBehavior(),
-                        child: PageView.builder(
-                          key: const ValueKey('app_carousel_page_view'),
-                          controller: _pageController,
-                          physics: widget.items.length == 1
-                              ? const NeverScrollableScrollPhysics()
-                              : const PageScrollPhysics(),
-                          itemCount: widget.items.length == 1 ? 1 : null,
-                          onPageChanged: (page) {
-                            _absolutePage = page;
-                            _pendingLogicalPage = _logicalPage(page);
-                            _commitSettledPage();
-                          },
-                          itemBuilder: (context, page) {
-                            final logicalPage = _logicalPage(page);
-                            final item = widget.items[logicalPage];
-                            final card = Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: _pageInset,
-                              ),
-                              child: Center(
-                                child: _AppCarouselCard(
-                                  key: ValueKey(
-                                    'app_carousel_card_$logicalPage',
-                                  ),
-                                  item: item,
-                                ),
-                              ),
-                            );
-                            if (logicalPage != _activeLogicalPage) {
-                              return ExcludeSemantics(child: card);
-                            }
-                            return Semantics(
-                              container: true,
-                              label:
-                                  '${widget.semanticLabel} '
-                                  '${logicalPage + 1} of '
-                                  '${widget.items.length}. '
-                                  '${item.message}',
-                              child: ExcludeSemantics(child: card),
-                            );
-                          },
-                        ),
-                      ),
-                    ),
-                  ),
+                  child: widget.showAdjacentCards
+                      ? ShaderMask(
+                          blendMode: BlendMode.dstIn,
+                          shaderCallback: (bounds) => const LinearGradient(
+                            colors: [
+                              Color(0x00FFFFFF),
+                              Color(0xFFFFFFFF),
+                              Color(0xFFFFFFFF),
+                              Color(0x00FFFFFF),
+                            ],
+                            stops: [0, 0.15, 0.85, 1],
+                          ).createShader(bounds),
+                          child: pages,
+                        )
+                      : pages,
                 ),
               ),
               const SizedBox(height: _indicatorGap),
@@ -367,21 +384,41 @@ class _AppCarouselState extends State<AppCarousel> with WidgetsBindingObserver {
                       index < widget.items.length;
                       index++
                     ) ...[
-                      AnimatedContainer(
-                        key: ValueKey('app_carousel_indicator_$index'),
-                        duration: _disableAnimations
-                            ? Duration.zero
-                            : _indicatorDuration,
-                        curve: Curves.easeOutCubic,
-                        width: index == _activeLogicalPage
-                            ? _activeIndicatorWidth
-                            : _inactiveIndicatorWidth,
-                        height: _indicatorHeight,
-                        decoration: BoxDecoration(
-                          color: index == _activeLogicalPage
-                              ? colors.icon.accent
-                              : _inactiveIndicatorColor,
-                          borderRadius: BorderRadius.circular(AppRadii.full),
+                      GestureDetector(
+                        onTap: widget.items.length == 1
+                            ? null
+                            : () => _animateToPage(
+                                _absolutePage + index - _activeLogicalPage,
+                              ),
+                        child: MouseRegion(
+                          cursor: widget.items.length == 1
+                              ? MouseCursor.defer
+                              : SystemMouseCursors.click,
+                          child: Semantics(
+                            label:
+                                'Show ${widget.semanticLabel.toLowerCase()} '
+                                '${index + 1} of ${widget.items.length}',
+                            selected: index == _activeLogicalPage,
+                            child: AnimatedContainer(
+                              key: ValueKey('app_carousel_indicator_$index'),
+                              duration: _disableAnimations
+                                  ? Duration.zero
+                                  : _indicatorDuration,
+                              curve: Curves.easeOutCubic,
+                              width: index == _activeLogicalPage
+                                  ? _activeIndicatorWidth
+                                  : _inactiveIndicatorWidth,
+                              height: _indicatorHeight,
+                              decoration: BoxDecoration(
+                                color: index == _activeLogicalPage
+                                    ? colors.icon.accent
+                                    : _inactiveIndicatorColor,
+                                borderRadius: BorderRadius.circular(
+                                  AppRadii.full,
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                       if (index < widget.items.length - 1)
@@ -415,56 +452,62 @@ class _AppCarouselCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: _AppCarouselState._cardWidth,
-      height: _AppCarouselState._cardHeight,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(AppRadii.large),
-        child: ColoredBox(
-          color: context.colors.background.ground,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-            child: Row(
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(
-                    _AppCarouselState._iconTileRadius,
-                  ),
-                  child: ColoredBox(
-                    color: item.tileColor,
-                    child: SizedBox.square(
-                      dimension: 32,
-                      child: ExcludeSemantics(
-                        child: item.imageAsset != null
-                            ? Image.asset(
-                                item.imageAsset!,
-                                width: 32,
-                                height: 32,
-                                fit: BoxFit.cover,
-                              )
-                            : Center(
-                                child: AppIcon(
-                                  item.icon!,
-                                  size: item.iconSize,
-                                  color: _AppCarouselState._iconColor,
-                                ),
-                              ),
+    return MouseRegion(
+      cursor: item.onTap == null ? MouseCursor.defer : SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: item.onTap,
+        child: SizedBox(
+          width: _AppCarouselState._cardWidth,
+          height: _AppCarouselState._cardHeight,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(AppRadii.large),
+            child: ColoredBox(
+              color: context.colors.background.ground,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+                child: Row(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(
+                        _AppCarouselState._iconTileRadius,
+                      ),
+                      child: ColoredBox(
+                        color: item.tileColor,
+                        child: SizedBox.square(
+                          dimension: 32,
+                          child: ExcludeSemantics(
+                            child: item.imageAsset != null
+                                ? Image.asset(
+                                    item.imageAsset!,
+                                    width: 32,
+                                    height: 32,
+                                    fit: BoxFit.cover,
+                                  )
+                                : Center(
+                                    child: AppIcon(
+                                      item.icon!,
+                                      size: item.iconSize,
+                                      color: _AppCarouselState._iconColor,
+                                    ),
+                                  ),
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.xs),
-                Expanded(
-                  child: Text(
-                    item.message,
-                    maxLines: 2,
-                    overflow: TextOverflow.clip,
-                    style: AppTypography.bodyMedium.copyWith(
-                      color: context.colors.text.accent,
+                    const SizedBox(width: AppSpacing.xs),
+                    Expanded(
+                      child: Text(
+                        item.message,
+                        maxLines: 2,
+                        overflow: TextOverflow.clip,
+                        style: AppTypography.bodyMedium.copyWith(
+                          color: context.colors.text.accent,
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         ),

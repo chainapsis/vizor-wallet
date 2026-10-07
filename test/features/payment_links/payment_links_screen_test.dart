@@ -445,7 +445,7 @@ void main() {
     (PaymentLinkAvailability.noBalance, 'No balance'),
     (PaymentLinkAvailability.failed, 'Claim failed'),
   ]) {
-    testWidgets('shows ${outcome.$2} inside the redeem area', (tester) async {
+    testWidgets('shows ${outcome.$2} inside the claim stage', (tester) async {
       final operations = FakePaymentLinkOperations(claimable: false)
         ..claimAvailability = outcome.$1;
       await pumpPaymentLinksScreen(
@@ -463,7 +463,7 @@ void main() {
       expect(find.text('Redeem the Card'), findsOneWidget);
       expect(
         find.descendant(
-          of: find.byKey(const ValueKey('payment_link_redeem_drop_zone')),
+          of: find.byKey(const ValueKey('payment_link_claim_outcome_content')),
           matching: find.text(outcome.$2),
         ),
         findsOneWidget,

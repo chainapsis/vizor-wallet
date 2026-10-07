@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
@@ -50,6 +51,7 @@ void main() {
 
   setUp(() async {
     _rust.reset();
+    SharedPreferences.setMockInitialValues({});
     FlutterSecureStorage.setMockInitialValues({});
     storage = _FailingStorage();
     store = AppSecureStore.testing(
@@ -488,19 +490,14 @@ void main() {
           accountMayExist: failure is WalletAccountSetupInterruptedException,
         );
         expect(await store.verifyPassword(_passcode), isTrue);
-        final metadata = await store.readString('zcash_accounts');
+        store.clearSessionPassword();
+        final bootstrap = await loadAppBootstrap(secureStore: store);
+        expect(bootstrap.hasBlockingFailure, isFalse);
+        expect(bootstrap.initialLocation, '/unlock');
+        expect(bootstrap.initialAccountState.activeAccountUuid, 'uuid-1');
         final restarted = ProviderContainer(
           overrides: [
-            appBootstrapProvider.overrideWithValue(
-              _bootstrappedGiftAccount(
-                account: metadata == null
-                    ? null
-                    : AccountInfo.fromJson(
-                        (jsonDecode(metadata) as List).single
-                            as Map<String, dynamic>,
-                      ),
-              ),
-            ),
+            appBootstrapProvider.overrideWithValue(bootstrap),
             accountProvider.overrideWith(
               () => AccountNotifier.testing(store: store),
             ),
@@ -511,6 +508,10 @@ void main() {
         );
         addTearDown(restarted.dispose);
         await restarted.read(accountProvider.future);
+        expect(
+          await restarted.read(appSecurityProvider.notifier).unlock(_passcode),
+          isTrue,
+        );
         await restarted.read(accountProvider.notifier).restoreAfterUnlock();
         expect(_rust.importCalls, 1);
         expect(await store.readAccountMnemonic('uuid-1'), _mnemonic);
@@ -1610,6 +1611,12 @@ class _GiftAccountRustApi implements RustLibApi {
     hardwareUfvks.clear();
     listCalls = 0;
   }
+
+  @override
+  Future<void> crateApiWalletEnsureWalletDbMigrated({
+    required String dbPath,
+    required String network,
+  }) async {}
 
   @override
   String crateApiWalletGenerateMnemonic() => _mnemonic;

@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../import/desktop_import_navigation.dart';
 import '../../../core/input/app_password_input_source.dart';
 import '../../../../main.dart' show log;
 import '../../../core/security/password_policy.dart';
@@ -26,18 +27,34 @@ import '../ledger/ledger_connect_screen.dart';
 import 'onboarding_chrome.dart' as onboarding_chrome;
 import 'onboarding_flow_args.dart';
 import 'onboarding_error_messages.dart';
+import '../../payment_links/widgets/desktop_gift_setup_shell.dart';
 
 class SetPasswordScreen extends ConsumerStatefulWidget {
   const SetPasswordScreen({super.key, required this.args})
     : ledgerOnContinue = null,
-      ledgerBackTarget = null;
+      ledgerBackTarget = null,
+      giftPresentation = false;
 
   const SetPasswordScreen.ledger({
     super.key,
     required this.ledgerOnContinue,
     required this.ledgerBackTarget,
-  }) : args = null;
+  }) : args = null,
+       giftPresentation = false;
 
+  const SetPasswordScreen.gift({
+    required Future<void> Function(
+      String password,
+      PasswordInputSourceCandidate? inputSource,
+    )
+    onContinue,
+    super.key,
+  }) : args = null,
+       ledgerOnContinue = onContinue,
+       ledgerBackTarget = null,
+       giftPresentation = true;
+
+  final bool giftPresentation;
   final SetPasswordScreenArgs? args;
   final Future<void> Function(
     String password,
@@ -117,7 +134,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
       try {
         await ledgerOnContinue(password, inputSource);
       } catch (e, st) {
-        log('SetPasswordScreen._submit: Ledger continuation failed: $e\n$st');
+        log('SetPasswordScreen._submit: continuation failed: $e\n$st');
         if (!mounted) return;
         setState(() {
           _submitPhase = _SetPasswordSubmitPhase.idle;
@@ -135,7 +152,13 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
         pendingPassword: password,
         passwordInputSource: inputSource,
       );
-      router.go(customiseArgs.routePath, extra: customiseArgs);
+      router.go(
+        args.flow == SetPasswordFlow.importWallet ||
+                args.flow == SetPasswordFlow.importKeystone
+            ? desktopImportLocation(context, customiseArgs.routePath)
+            : customiseArgs.routePath,
+        extra: customiseArgs,
+      );
       return;
     }
 
@@ -273,6 +296,13 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
           ? 'Set password & finish'
           : 'Set password & continue',
     );
+    if (widget.giftPresentation) {
+      return DesktopGiftSetupShell(
+        step: DesktopGiftSetupStep.password,
+        showPasswordStep: true,
+        child: content,
+      );
+    }
     if (widget.ledgerOnContinue != null) {
       return LedgerOnboardingShell(
         activeStep: LedgerOnboardingStep.setPassword,
@@ -286,7 +316,10 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
         ? null
         : onboarding_chrome.OnboardingBackTarget.route(
             label: _backLabel(standardArgs.flow),
-            routePath: standardArgs.backRoutePath,
+            routePath: desktopImportLocation(
+              context,
+              standardArgs.backRoutePath,
+            ),
             routeExtra: standardArgs.backRouteExtra,
           );
 
