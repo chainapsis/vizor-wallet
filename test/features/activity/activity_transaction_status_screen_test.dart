@@ -1448,6 +1448,33 @@ void main() {
     expect(find.text('Incomplete'), findsOneWidget);
   });
 
+  testWidgets('an exact recovered send still marks missing recipient details', (
+    tester,
+  ) async {
+    await _pumpScreen(
+      tester,
+      privateQueriesEnabled: true,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'sent',
+        initialTransaction: _transaction(
+          txKind: 'sent',
+          displayPool: 'transparent',
+          detailsComplete: false,
+          displayAmount: BigInt.from(10000),
+          fee: BigInt.from(10000),
+          feeState: rust_sync.TransactionFeeState.known,
+          accountBalanceDelta: -20000,
+        ),
+        initialDetail: _detail(txKind: 'sent'),
+      ),
+    );
+
+    expect(find.text('Details'), findsOneWidget);
+    expect(find.text('Incomplete'), findsOneWidget);
+    expect(find.text('Tx fee'), findsOneWidget);
+  });
+
   testWidgets('a complete receipt has no incomplete-details row', (
     tester,
   ) async {

@@ -510,7 +510,7 @@ void main() {
     expect(row.amountText, activityAmountTextForFormFactor('-12345.6789 ZEC'));
   });
 
-  testWidgets('an incomplete entry is marked, a complete one is not', (
+  testWidgets('only uncertain activity summaries are marked incomplete', (
     tester,
   ) async {
     final complete = await mapRow(tester, _transaction(txKind: 'sent'));
@@ -541,13 +541,69 @@ void main() {
       _transaction(txKind: 'received', detailsComplete: false),
       privateQueriesEnabled: true,
     );
-    expect(missingDetails.amountSubtitle, kIncompleteDetailsText);
+    expect(missingDetails.amountSubtitle, isNull);
 
     final publicIncomplete = await mapRow(
       tester,
       _transaction(txKind: 'sent', detailsComplete: false, provisional: true),
     );
     expect(publicIncomplete.amountSubtitle, isNull);
+  });
+
+  testWidgets('a recovered exact send keeps the public activity summary', (
+    tester,
+  ) async {
+    final transaction = _transaction(
+      txKind: 'sent',
+      displayPool: 'transparent',
+      detailsComplete: false,
+      displayAmount: BigInt.from(10000),
+      fee: BigInt.from(10000),
+      accountBalanceDelta: -20000,
+    );
+    final privateRow = await mapRow(
+      tester,
+      transaction,
+      privateQueriesEnabled: true,
+    );
+    final publicRow = await mapRow(tester, transaction);
+
+    expect(privateRow.title, 'Sent');
+    expect(privateRow.subtitle, 'Transparent');
+    expect(
+      privateRow.amountText,
+      activityAmountTextForFormFactor('-0.0001 ZEC'),
+    );
+    expect(privateRow.amountSubtitle, isNull);
+    expect(privateRow.timestampText, publicRow.timestampText);
+    expect(privateRow.timestampText, isNotEmpty);
+    expect(
+      transactionDetailsIncomplete(transaction),
+      isTrue,
+      reason: 'the expanded receipt still lacks recipient details',
+    );
+  });
+
+  testWidgets('a settled movement with an unknown role or pool stays marked', (
+    tester,
+  ) async {
+    for (final transaction in [
+      _transaction(txKind: 'unknown', detailsComplete: false),
+      _transaction(
+        txKind: 'sent',
+        displayPool: 'unknown',
+        activityPool: 'transparent',
+        detailsComplete: false,
+        amountIncludesFee: true,
+      ),
+    ]) {
+      final row = await mapRow(
+        tester,
+        transaction,
+        privateQueriesEnabled: true,
+      );
+      expect(row.amountSubtitle, kIncompleteDetailsText);
+    }
   });
 
   testWidgets('fee-sized net changes keep their incomplete sent row', (
