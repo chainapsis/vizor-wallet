@@ -537,7 +537,10 @@ Future<List<String>> thVerifyActivity(
       if (!texts.any((t) => t == amount || t.startsWith(amount))) {
         failures.add('${row.label}: amount "$amount" not in $texts');
       }
+      // An in-flight row shows its pending estimate in place of the pool
+      // (vizor-wallet#858), so the pool is checked once the row is mined.
       if (row.poolLabel != null &&
+          !row.pending &&
           !texts.contains(row.poolLabel) &&
           !row.poolLabels.any(texts.contains)) {
         failures.add('${row.label}: pool "${row.poolLabel}" not in $texts');
