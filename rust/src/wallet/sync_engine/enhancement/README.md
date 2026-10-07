@@ -753,7 +753,14 @@ captured policy ── PrivateRequired ──> txid display PIR  (PirSource)
 - **Work and bounds.** The wallet owns the work (`transparent_detail_work`):
   private recovery and Enhance PIR's mixed transactions queue it; public
   discovery never does, since its payloads go through `tx_retrieval_queue`.
-  A run reads the due work once, puts transactions a detail view asked for
+  A run reads the due work once, with the mode and policy generation the
+  listing read in the same snapshot: a generation that moved since the sync
+  captured its source ends the run, the gate source runs only while that
+  mode retains public authority, and stores are checked against that
+  generation. When nothing is due but lookups are parked on the display map
+  they last saw (`transparent_detail_parked`), the private source refreshes
+  its map once (`refresh_map`) and lists again under the new hash. The run
+  puts transactions a detail view asked for
   (`prioritize_transparent_details`, an in-memory interest set) first, and
   makes at most 8 lookups in 45 s, one at a time. Lookups run on a blocking
   thread with no database lock held; each store or deferral takes the wallet
@@ -761,9 +768,11 @@ captured policy ── PrivateRequired ──> txid display PIR  (PirSource)
 - **Failures.** Every failure is deferred to the wallet
   (`defer_transparent_detail`), which schedules the retry: unavailable,
   stale, transport or protocol failures from 30 s doubling to an hour (at
-  least the service's `Retry-After`), an absent record from an hour to a day,
-  and an uncovered height, an unsupported service or a contradiction held
-  until the display map changes. An outage ends the run. A lookup the budget
+  least the service's `Retry-After`), a height above the newest shard from a
+  minute to five (shown pending), an absent record from an hour to a day,
+  and an uncovered height, an unsupported service or a contradiction after
+  at least a day, then parked until the display map changes (seven days at
+  most). An outage ends the run. A lookup the budget
   stopped is deferred as unavailable. A store refused for a moved policy
   generation ends the run without storing; facts that contradict the wallet
   are held, not stored. Failures are logged by kind, never by txid, a panic

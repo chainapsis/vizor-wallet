@@ -40,7 +40,8 @@ use futures::FutureExt;
 use tonic::transport::Channel;
 use zcash_client_backend::data_api::{
     transparent_ledger::{
-        TransparentDetailOutcome, TransparentDetailRead, TransparentDetailWrite,
+        TransparentDetailOutcome, TransparentDetailRead, TransparentDetailWork,
+        TransparentDetailWrite,
         TransparentDisplayStore, TransparentDisplayView, TransparentLedgerMode,
         TransparentLedgerRead,
     },
@@ -182,17 +183,23 @@ pub(crate) async fn run<S: DetailSource>(
         return RunOutcome::Exited(stats);
     }
     let deadline = (clock.instant)() + RUN_BUDGET;
-    let mut work = match db.transparent_detail_work(
-        (clock.system)(),
-        WORK_WINDOW,
-        source.map_sha256(),
-    ) {
-        Ok(work) => work,
-        Err(_) => {
-            log::warn!("transparent details: work unreadable; retrying on a later sync");
-            return RunOutcome::Failed;
-        }
+    let budget_exit = move || should_exit() || (clock.instant)() >= deadline;
+    let Some(work) = list_work(db, source, clock, &budget_exit).await else {
+        return RunOutcome::Failed;
     };
+    // The listing's snapshot decides: a policy moved since the run captured
+    // its source ends the run, and public transport needs the listed mode to
+    // retain public authority.
+    if work.policy_generation != expected_generation {
+        log::info!("transparent details: policy changed before the run; ending it");
+        return RunOutcome::Superseded(stats);
+    }
+    if source.gate().is_some() && !work.public_transport() {
+        log::info!("transparent details: transparent policy withholds public lookups");
+        return RunOutcome::Withheld(stats);
+    }
+    let expected_generation = work.policy_generation;
+    let mut work = work.requests;
     let prioritized = interest(db_path);
     work.sort_by_key(|request| {
         prioritized
@@ -201,7 +208,6 @@ pub(crate) async fn run<S: DetailSource>(
             .unwrap_or(usize::MAX)
     });
     work.truncate(MAX_LOOKUPS);
-    let budget_exit = move || should_exit() || (clock.instant)() >= deadline;
 
     for request in work {
         if should_exit() {
@@ -343,6 +349,41 @@ pub(crate) async fn run<S: DetailSource>(
     RunOutcome::Finished(stats)
 }
 
+/// The due work. When nothing is due but lookups are parked on the display
+/// map they last saw, the source refreshes its map once and the work is
+/// listed again under the new map hash. `None` when the work is unreadable.
+async fn list_work<S: DetailSource>(
+    db: &WalletDatabase,
+    source: &mut S,
+    clock: StageClock,
+    should_exit: &(dyn Fn() -> bool + Sync),
+) -> Option<TransparentDetailWork> {
+    let list = |map: Option<[u8; 32]>| {
+        db.transparent_detail_work((clock.system)(), WORK_WINDOW, map)
+            .map_err(|_| log::warn!("transparent details: work unreadable; retrying later"))
+            .ok()
+    };
+    let map = source.map_sha256();
+    let work = list(map)?;
+    if !work.requests.is_empty() {
+        return Some(work);
+    }
+    let parked = db
+        .transparent_detail_parked((clock.system)())
+        .map(|parked| parked.count)
+        .unwrap_or(0);
+    if parked == 0 {
+        return Some(work);
+    }
+    match source.refresh_map(should_exit).await {
+        Some(refreshed) if Some(refreshed) != map => {
+            log::info!("transparent details: display map changed; re-listing parked work");
+            list(Some(refreshed))
+        }
+        _ => Some(work),
+    }
+}
+
 /// Records a failed lookup of `txid` in the wallet, which schedules the next
 /// attempt, and counts it.
 fn defer(
@@ -371,6 +412,7 @@ fn defer(
 fn outcome_name(outcome: TransparentDetailOutcome) -> &'static str {
     match outcome {
         TransparentDetailOutcome::Unavailable { .. } => "unavailable",
+        TransparentDetailOutcome::NotYetPublished => "not yet published",
         TransparentDetailOutcome::Absent => "absent",
         TransparentDetailOutcome::NotCovered => "not covered",
         TransparentDetailOutcome::Unsupported => "unsupported",

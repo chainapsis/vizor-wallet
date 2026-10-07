@@ -261,6 +261,8 @@ struct Scripted {
     answer: Answer,
     delay: Duration,
     lookups: Arc<Mutex<Vec<TxId>>>,
+    /// The map hash a refresh reports.
+    refreshed: Option<[u8; 32]>,
 }
 
 impl Scripted {
@@ -271,6 +273,7 @@ impl Scripted {
             answer: Box::new(answer),
             delay: Duration::ZERO,
             lookups: Default::default(),
+            refreshed: None,
         }
     }
 
@@ -308,6 +311,10 @@ impl DetailSource for Scripted {
 
     fn map_sha256(&self) -> Option<[u8; 32]> {
         Some([0xaa; 32])
+    }
+
+    async fn refresh_map(&mut self, _should_exit: &(dyn Fn() -> bool + Sync)) -> Option<[u8; 32]> {
+        self.refreshed
     }
 }
 
@@ -879,6 +886,32 @@ async fn outage_then_recovery_reconciles_next_sync() {
     assert_eq!(details.outputs.len(), 2);
 }
 
+/// A lookup parked on the display map it saw (after its day's wait) becomes
+/// due once the source's refreshed map differs, within the same run.
+#[tokio::test]
+async fn parked_work_relists_after_map_refresh() {
+    let fixture = wallet();
+    let txid = utxo_receipt(&fixture, 0x70, TOP - 1).txid();
+    let mut source = Scripted::new(|_| deferred(TransparentDetailOutcome::NotCovered));
+    let outcome = run_scripted(&fixture, &mut source).await;
+    assert!(
+        matches!(outcome, Some(RunOutcome::Finished(stats)) if stats.not_covered == 1),
+        "{outcome:?}"
+    );
+    // A day later, on the same map: parked, nothing asked.
+    advance_wall(Duration::from_secs(31 * 60 * 60));
+    let outcome = run_scripted(&fixture, &mut source).await;
+    assert_eq!(outcome, Some(RunOutcome::Finished(RunStats::default())));
+    // A refreshed map releases it.
+    source.refreshed = Some([0xbb; 32]);
+    let outcome = run_scripted(&fixture, &mut source).await;
+    assert!(
+        matches!(outcome, Some(RunOutcome::Finished(stats)) if stats.lookups == 1),
+        "{outcome:?}"
+    );
+    assert_eq!(source.looked_up(), [txid, txid]);
+}
+
 #[tokio::test]
 async fn prioritized_transactions_are_served_first() {
     let fixture = wallet();
@@ -1082,5 +1115,9 @@ impl DetailSource for FirstOnly<'_> {
 
     fn map_sha256(&self) -> Option<[u8; 32]> {
         self.0.map_sha256()
+    }
+
+    async fn refresh_map(&mut self, should_exit: &(dyn Fn() -> bool + Sync)) -> Option<[u8; 32]> {
+        self.0.refresh_map(should_exit).await
     }
 }
