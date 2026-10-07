@@ -567,7 +567,7 @@ fn enhance_output_presence_labels_a_provisional_debit() {
     );
     assert!(row.provisional);
     assert!(!row.details_complete);
-    assert!(row.amount_includes_fee);
+    assert!(row.amount_is_net_change);
     assert_eq!(row.fee, FEE);
     assert_eq!(row.activity_pool.as_deref(), Some("transparent"));
     assert_eq!(history_row(&recovered).activity_pool, row.activity_pool);

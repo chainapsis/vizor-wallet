@@ -242,7 +242,7 @@ void main() {
         transaction,
         privateQueriesEnabled: true,
       );
-      expect(row.title, 'Sent');
+      expect(row.title, kSentNetText);
       expect(row.subtitle, 'Transparent');
       expect(row.subtitleIconName, AppIcons.transparentBalance);
       expect(row.amountText, '-0.00215 ZEC');

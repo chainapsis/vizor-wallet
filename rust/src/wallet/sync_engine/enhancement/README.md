@@ -521,24 +521,29 @@ Activity reads the library's `transaction_history_details` for every history
 transaction, through a configured handle over the same read transaction as the
 history rows, so both describe one database state. Each entry carries:
 
-- `fee_state`: `Known`, `Unknown`, or `NotApplicable`. The raw fee is no
-  longer coalesced to 0, and `fee` is 0 unless the state is `Known`. Receipts
-  in Private queries mode show an unknown fee as "Unknown", and a receive
-  shows no fee. When the account's fee is unknown but qualified private
-  evidence carries the transaction's exact whole fee, that fee is shown as the
-  network fee. It is display only: other funders may have shared it, so the
-  amounts never subtract or add it.
-- `amount_includes_fee`: whether the amount is the account's balance change
-  with that whole fee shown beside it, so the amount already contains the
-  account's share of the fee. A receipt then shows the fee once: when the
-  amount equals the fee (a recovered self-shield), one "Network fee" line and
-  no separate amount or fee line, with "Network fee" as the activity row
-  title; otherwise the amount is labelled "Net change (includes network fee)"
-  and the fee keeps its line. Nothing is subtracted. Only a debit with no
-  visible output that is shown as its movement can carry it: a provisional
-  one, or an unmined one even with complete details. A recorded account fee,
-  public evidence, a visible or reconstructed payment, and a mined row with
-  complete details leave it false.
+- `fee_state`: `Known`, `WholeTransaction`, `Unknown`, or `NotApplicable`.
+  The raw fee is no longer coalesced to 0, and `fee` is 0 unless the state is
+  `Known` or `WholeTransaction`. `Known` is the account's own fee.
+  `WholeTransaction` means the account's share is unknown and `fee` is the
+  transaction's exact whole fee from qualified private evidence, with that of
+  any TEX funding step folded into it: other funders may have shared it, so it
+  is labelled "Network fee" with help that says it is the whole transaction's,
+  never "Tx fee", and amounts never subtract or add it. It applies only when
+  the account spent: a receive, settled or not, never shows its sender's fee,
+  and receive receipts show only a `Known` fee.
+  Receipts in Private queries mode show an unknown fee as "Unknown".
+- `amount_is_net_change`: the amount is the account's whole net balance
+  change, not a payment: no output shows where the value went, and no fee is
+  subtracted. The activity row reads "Sent (net)" and the settled receipt,
+  titled "Transaction", labels the amount "Net change", with the fee on its
+  own line. When the fee is the account's own (`Known`) and equals the change,
+  the row is that fee alone: one "Network fee" line and title, with no pool.
+  A whole-transaction fee equal to the change is never shown as fee-only.
+  In-flight and failed rows and receipts keep "Sending" and "Send failed". A
+  visible, reconstructed or locally known payment leaves it false; so does a
+  debit with complete details and the account's own fee, whose rest is the
+  exact payment, and a provisional or unmined debit with the account's own
+  fee, shown as public history always has (see below).
 - `details_complete`: whether the recipients, payment amounts, and memos are
   known. A missing recipient row does not mean there was no payment.
 - `provisional`: whether later discovery or enhancement can still change the
@@ -551,10 +556,24 @@ Classification follows the facts it has:
 - **Shielding** is inferred only when the payment details are complete. With
   partial details, a transparent spend that funded a shielded output cannot be
   told apart from a payment.
+- **A reconstructed payment** (private recovery: the account funded every
+  transparent input of a transaction with no shielded parts) is one `sent`
+  row of the library's exact payment, with the account's fee beside it and
+  its recipients unknown. A recorded payment output takes precedence.
+- **A reconstructed zero payment** whose settled debit is exactly the whole
+  fee is a self-transfer. When the account's own fee is known and an owned
+  transparent output is at a visible address, its moved amount keeps both
+  `sent` and `received` rows, as public history does. Without a known visible
+  self-payment, it keeps one `sent` row of the net change. That row is the fee
+  alone only when the fee is the account's own; with only the whole fee known
+  it stays a net change.
 - **A provisional debit** whose outputs are unknown, or known only as change,
-  is one `sent` row for the net debit less any recorded fee, with pool
-  `unknown` and no recipient. Its change is not shown as a receive, and the
-  net amount is not presented as a payment amount.
+  is one `sent` row for the net change, with pool `unknown` and no recipient.
+  Its change is not shown as a receive, and the net change is not presented
+  as a payment amount. With the account's own fee known, the provisional or
+  unmined debit is shown as public history always has: the rest of the change
+  after that fee, as `sent`, or an entry of kind `unknown` when nothing is
+  left.
 - **Transaction identity is stable.** Rows keep their txid while details
   arrive, but their role can change, such as a provisional `sent` becoming
   `shielded`. A receipt follows a changed role only when that transaction has
@@ -791,8 +810,8 @@ restack of the library stacks, and to `main` once they merge.
   `TransactionHistoryDetails`. Public handles have no recovery source that
   supplies them. Under private recovery, Activity shows a reconstructed exact
   payment and, where the account fee is unknown, the exact whole fee as a
-  display-only network fee; the account fee keeps its `fee_state` for every
-  amount. Two migrations add empty tables
+  display-only `WholeTransaction` network fee; amounts use the account's own
+  fee only. Two migrations add empty tables
   (`tpir_transaction_metadata`, `tpir_shared_derivations`); writing either
   raises the reader version, and neither changes policy, balances, or
   authority.

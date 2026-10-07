@@ -3615,6 +3615,59 @@ mod tests {
     }
 
     #[test]
+    fn a_recovered_send_shows_the_reconstructed_payment_itself() {
+        let (mut base, summary) = provisional_debit();
+        base.history = HistoryCompleteness {
+            inferred_outgoing: None,
+            has_transparent_outputs: None,
+            details_complete: false,
+            provisional: false,
+            classification: None,
+            fee: Fee::Known(10_000),
+            whole_fee: Some(10_000),
+            inferred_payment: Some(42_000_000),
+        };
+
+        let rows = classify_history_tx(&base, &summary, Fee::NotApplicable);
+
+        assert_eq!(rows.len(), 1);
+        let info = &rows[0].info;
+        assert_eq!(info.display_amount, 42_000_000);
+        assert_ne!(
+            info.display_amount,
+            base.account_balance_delta.unsigned_abs() - 10_000
+        );
+        assert!(info.is_transparent);
+        assert_eq!(info.display_pool, "transparent");
+        assert!(!info.provisional);
+        assert!(!info.amount_is_net_change);
+    }
+
+    #[test]
+    fn a_recorded_payment_output_replaces_the_reconstructed_payment() {
+        let (mut base, mut summary) = provisional_debit();
+        base.history = HistoryCompleteness {
+            inferred_outgoing: None,
+            has_transparent_outputs: None,
+            details_complete: false,
+            provisional: false,
+            classification: None,
+            fee: Fee::Known(10_000),
+            whole_fee: Some(10_000),
+            inferred_payment: Some(69_990_000),
+        };
+        summary.sent.amount = 60_000_000;
+        summary.sent.output_count = 1;
+        summary.sent.has_orchard = true;
+
+        let rows = classify_history_tx(&base, &summary, Fee::NotApplicable);
+
+        assert_eq!(rows[0].info.tx_kind, "sent");
+        assert_eq!(rows[0].info.display_amount, 60_000_000);
+        assert_eq!(rows[0].info.display_pool, "shielded");
+    }
+
+    #[test]
     fn a_recovered_self_transfer_is_its_network_fee() {
         let (base, summary) = self_transfer(HistoryCompleteness {
             has_transparent_outputs: None,
@@ -3643,6 +3696,8 @@ mod tests {
         // With the account's own fee unknown, the movement is still its net
         // change, and the fee shown is the whole transaction's.
         let (base, summary) = self_transfer(HistoryCompleteness {
+            inferred_outgoing: None,
+            has_transparent_outputs: None,
             details_complete: false,
             classification: None,
             provisional: false,
@@ -8401,6 +8456,26 @@ mod tests {
             assert_eq!(history.len(), 1, "expiry {expiry_height:?}");
             assert_eq!(history[0].mined_height, 0);
             assert!(!history[0].expired_unmined, "expiry {expiry_height:?}");
+            // The receipt reads the same row through its own query, where the
+            // expiry is not comparable either: it opens, as pending.
+            let detail = get_transaction_detail(
+                &path,
+                network,
+                &uuid,
+                &history[0].txid_hex,
+                &history[0].tx_kind,
+            )
+            .unwrap_or_else(|e| panic!("expiry {expiry_height:?}: {e}"));
+            assert_eq!(detail.tx_kind, history[0].tx_kind);
+            assert_eq!(
+                detail
+                    .outputs
+                    .iter()
+                    .map(|output| output.amount_zatoshi)
+                    .collect::<Vec<_>>(),
+                [50_000],
+                "expiry {expiry_height:?}"
+            );
         }
     }
 

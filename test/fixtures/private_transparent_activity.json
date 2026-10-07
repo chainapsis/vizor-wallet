@@ -6,10 +6,10 @@
     "activityPool": "transparent",
     "accountBalanceDelta": -215000,
     "fee": 20000,
-    "feeState": "Known",
+    "feeState": "WholeTransaction",
     "detailsComplete": false,
     "provisional": true,
-    "amountIncludesFee": true,
+    "amountIsNetChange": true,
     "isTransparent": false,
     "expiredUnmined": false
   },
