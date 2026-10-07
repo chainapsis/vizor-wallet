@@ -2310,8 +2310,15 @@ fn classify_history_tx(
     rows
 }
 
+/// Owned Ironwood outputs do not prove an internal migration when the library
+/// has reconciled a positive outgoing amount. They may instead be change from
+/// an Orchard-funded payment whose recipient details are still unavailable.
 fn is_internal_ironwood_transition(base: &TxBase, summary: &ActivitySummary) -> bool {
     !base.is_shielding
+        && !base
+            .history
+            .inferred_outgoing
+            .is_some_and(|amount| amount > 0)
         && base.spent_orchard_note
         && base.total_spent > 0
         && summary.internal_ironwood_transition.amount > 0
@@ -2973,13 +2980,17 @@ mod tests {
         let mut summary = ActivitySummary::default();
         summary.internal_ironwood_transition.amount = 624_980_000;
 
-        let rows = classify_history_tx(&tx_base_for_history(), &summary, Fee::NotApplicable);
+        for outgoing in [None, Some(0)] {
+            let mut base = tx_base_for_history();
+            base.history.inferred_outgoing = outgoing;
+            let rows = classify_history_tx(&base, &summary, Fee::NotApplicable);
 
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].info.tx_kind, "migration");
-        assert_eq!(rows[0].info.display_amount, 624_980_000);
-        assert_eq!(rows[0].info.display_pool, "ironwood");
-        assert_eq!(rows[0].info.activity_pool, None);
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].info.tx_kind, "migration");
+            assert_eq!(rows[0].info.display_amount, 624_980_000);
+            assert_eq!(rows[0].info.display_pool, "ironwood");
+            assert_eq!(rows[0].info.activity_pool, None);
+        }
     }
 
     #[test]
@@ -2998,6 +3009,98 @@ mod tests {
         assert!(rows[0].info.expired_unmined);
         assert_eq!(rows[0].info.display_amount, 624_980_000);
         assert_eq!(rows[0].info.display_pool, "ironwood");
+    }
+
+    #[test]
+    fn private_orchard_unshielding_with_ironwood_change_matches_public_activity() {
+        let account = test_account_uuid().as_bytes().to_vec();
+        // Ironwood notes occur both in the legacy Orchard representation and
+        // in the dedicated Ironwood pool. Neither representation proves that
+        // a transaction containing change was only an internal migration.
+        for change_pool in [ORCHARD_POOL, IRONWOOD_POOL] {
+            for owned_receipt in [false, true] {
+                let mut base = tx_base_for_history();
+                base.total_spent = 1_000_000;
+                base.total_received = 735_000 + if owned_receipt { 250_000 } else { 0 };
+                base.account_balance_delta = if owned_receipt { -15_000 } else { -265_000 };
+                base.attach_history(HistoryCompleteness {
+                    has_transparent_outputs: Some(true),
+                    details_complete: false,
+                    classification: Some(HistoryClassification::Provisional),
+                    provisional: true,
+                    fee: Fee::Unknown,
+                    whole_fee: Some(15_000),
+                    inferred_payment: None,
+                    inferred_outgoing: Some(250_000),
+                });
+                let change = TxOutput {
+                    txid: base.txid.clone(),
+                    output_pool: change_pool,
+                    output_index: 0,
+                    from_account_uuid: Some(account.clone()),
+                    to_account_uuid: Some(account.clone()),
+                    to_address: None,
+                    sent_to_address: None,
+                    transparent_receiver_address: None,
+                    to_key_scope: Some(1),
+                    value: 735_000,
+                    memo: None,
+                    note_version: Some(IRONWOOD_NOTE_VERSION),
+                };
+                let recipient = TxOutput {
+                    txid: base.txid.clone(),
+                    output_pool: TRANSPARENT_POOL,
+                    output_index: 0,
+                    from_account_uuid: Some(account.clone()),
+                    to_account_uuid: owned_receipt.then(|| account.clone()),
+                    to_address: None,
+                    sent_to_address: None,
+                    transparent_receiver_address: None,
+                    to_key_scope: Some(0),
+                    value: 250_000,
+                    memo: None,
+                    note_version: None,
+                };
+                let mut private_outputs = vec![change.clone()];
+                if owned_receipt {
+                    let mut receipt = recipient.clone();
+                    // Private address recovery observes our receipt without
+                    // recovering the transaction's outgoing recipient details.
+                    receipt.from_account_uuid = None;
+                    private_outputs.push(receipt);
+                }
+                let private_summary = summarize_activity_outputs(&base, &private_outputs, &account);
+                let private_rows = classify_history_tx(&base, &private_summary, Fee::NotApplicable);
+
+                base.history.inferred_outgoing = None;
+                base.history.provisional = false;
+                base.history.details_complete = true;
+                base.history.classification = Some(HistoryClassification::Reconstructed);
+                base.history.fee = Fee::Known(15_000);
+                let public_summary =
+                    summarize_activity_outputs(&base, &[change, recipient], &account);
+                let public_rows = classify_history_tx(&base, &public_summary, Fee::NotApplicable);
+
+                assert_eq!(private_rows.len(), if owned_receipt { 2 } else { 1 });
+                assert_eq!(private_rows.len(), public_rows.len());
+                assert_eq!(private_rows[0].info.tx_kind, "sent");
+                for (private, public) in private_rows.iter().zip(&public_rows) {
+                    assert_eq!(private.info.tx_kind, public.info.tx_kind);
+                    assert_eq!(private.info.display_amount, 250_000);
+                    assert_eq!(private.info.display_amount, public.info.display_amount);
+                    assert_eq!(private.info.activity_pool, public.info.activity_pool);
+                    assert_eq!(private.info.fee, public.info.fee);
+                    assert_eq!(private.info.fee, 15_000);
+                    assert_eq!(
+                        private.info.amount_includes_fee,
+                        public.info.amount_includes_fee
+                    );
+                    assert!(!private.info.amount_includes_fee);
+                    assert!(private.info.provisional);
+                    assert!(!private.info.details_complete);
+                }
+            }
+        }
     }
 
     /// A mined debit that discovery found without its payment details: the
