@@ -5,7 +5,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
-import 'package:zcash_wallet/src/core/formatting/address_display.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_transaction_status_screen.dart';
 import 'package:zcash_wallet/src/features/activity/transaction_completeness.dart';
@@ -137,9 +136,10 @@ void main() {
       receiving: 'Receive in progress...',
       receiveFailed: 'Receive failed',
       shielded: 'Shielded successfully',
+      sending: 'Send in progress...',
     ),
   );
-  testWidgets('desktop receipt names the transparent payee when available', (
+  testWidgets('desktop receipt never names an output its recipient', (
     tester,
   ) async {
     final details = ScriptedDetails([
@@ -150,16 +150,12 @@ void main() {
     ]);
     final prioritized = await _pump(tester, details);
     expect(find.text('Sent successfully'), findsOneWidget);
-    expect(
-      find.text(truncatedAddress(transparentRecipientAddress)),
-      findsOneWidget,
-    );
-    expect(find.text('Show full address'), findsOneWidget);
-    // One payee needs no list, and the change is never one.
-    expect(
-      find.byKey(const ValueKey('transparent_details_section')),
-      findsNothing,
-    );
+    expect(find.text(kUnknownRecipientText), findsOneWidget);
+    expect(find.text('Show full address'), findsNothing);
+    // The other party's output is listed as the transaction's; the change is
+    // never listed.
+    expect(transactionOutputShown, findsOneWidget);
+    expect(find.byKey(const ValueKey('transaction_output_1')), findsNothing);
     expect(find.text('Your address'), findsNothing);
     expect(find.text(kTransparentDetailsUnavailableText), findsNothing);
     expect(
@@ -224,7 +220,7 @@ void main() {
     await tester.pump(kTransparentDetailsPollInterval);
     await tester.pump();
     expect(details.calls, 3);
-    expect(find.text('Show full address'), findsOneWidget);
+    expect(transactionOutputShown, findsOneWidget);
     expect(find.text(kTransparentDetailsUnavailableText), findsNothing);
     await tester.pump(kTransparentDetailsPollInterval * 4);
     expect(details.calls, 3, reason: 'polling stopped');

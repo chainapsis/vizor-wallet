@@ -1730,12 +1730,21 @@ rust_sync.TransactionDetail _zeroValueDetail(rust_sync.TransactionInfo tx) {
 // One transparent transaction as public and private queries record it. A
 // public wallet stores the raw transaction, so it knows the sender and the
 // recipient it paid; private queries know only the ordered transparent
-// outputs. Both receipts must share one shell.
+// outputs, which name no recipient. A send this wallet built is recorded in
+// either mode. Both receipts must share one shell.
 const _transparentPairSender = 't1PV7nyJ3J6pZBh6sCrd5dSDd6uhXGVSpEX';
 const _transparentPairOwn = 't1Z9N3oVYrYDpnbqDcXJpuLrGpcSLDgHXyo';
 const _transparentPairOther = 't1Ku2KLyndDPsR32jwnrTMd3yvi9tfFP8ML';
 
-rust_sync.TransactionInfo _transparentPairTx(String kind) {
+/// Whether a pair entry is whole: a send private queries recovered without
+/// its recorded recipient is not.
+bool _transparentPairComplete(String kind, bool private, bool recordedSend) =>
+    kind != 'sent' || !private || recordedSend;
+
+rust_sync.TransactionInfo _transparentPairTx(
+  String kind, {
+  bool complete = true,
+}) {
   final sent = kind == 'sent';
   final seconds = BigInt.from(1759852860);
   return rust_sync.TransactionInfo(
@@ -1747,7 +1756,7 @@ rust_sync.TransactionInfo _transparentPairTx(String kind) {
     feeState: sent
         ? rust_sync.TransactionFeeState.known
         : rust_sync.TransactionFeeState.notApplicable,
-    detailsComplete: true,
+    detailsComplete: complete,
     provisional: false,
     amountIncludesFee: false,
     blockTime: seconds,
@@ -1763,9 +1772,10 @@ rust_sync.TransactionInfo _transparentPairTx(String kind) {
 rust_sync.TransactionDetail _transparentPairDetail(
   rust_sync.TransactionInfo tx, {
   required bool private,
+  bool recordedSend = false,
 }) {
   final sent = tx.txKind == 'sent';
-  final recorded = !private || !sent;
+  final recorded = !private || !sent || recordedSend;
   return rust_sync.TransactionDetail(
     txidHex: tx.txidHex,
     txKind: tx.txKind,
@@ -1782,7 +1792,7 @@ rust_sync.TransactionDetail _transparentPairDetail(
           usesOrchardReceiver: false,
         ),
     ],
-    detailsComplete: true,
+    detailsComplete: tx.detailsComplete,
     provisional: false,
     transparentDetailsState: rust_sync.TransparentDetailsState.available,
     // A receive pays the account and returns the sender's change; a send pays
@@ -1807,8 +1817,12 @@ rust_sync.TransactionDetail _transparentPairDetail(
 Widget buildDesktopTransparentReceiptUseCase({
   required String kind,
   required bool private,
+  bool recordedSend = false,
 }) {
-  final tx = _transparentPairTx(kind);
+  final tx = _transparentPairTx(
+    kind,
+    complete: _transparentPairComplete(kind, private, recordedSend),
+  );
   return _buildDesktopHomeUseCase(
     accountState: _accountsDesignState,
     syncState: _homeSyncedState(
@@ -1821,7 +1835,11 @@ Widget buildDesktopTransparentReceiptUseCase({
       txidHex: tx.txidHex,
       txKind: tx.txKind,
       initialTransaction: tx,
-      initialDetail: _transparentPairDetail(tx, private: private),
+      initialDetail: _transparentPairDetail(
+        tx,
+        private: private,
+        recordedSend: recordedSend,
+      ),
     ),
   );
 }
@@ -1829,9 +1847,17 @@ Widget buildDesktopTransparentReceiptUseCase({
 Widget buildMobileTransparentReceiptUseCase({
   required String kind,
   required bool private,
+  bool recordedSend = false,
 }) {
-  final tx = _transparentPairTx(kind);
-  final detail = _transparentPairDetail(tx, private: private);
+  final tx = _transparentPairTx(
+    kind,
+    complete: _transparentPairComplete(kind, private, recordedSend),
+  );
+  final detail = _transparentPairDetail(
+    tx,
+    private: private,
+    recordedSend: recordedSend,
+  );
   return ProviderScope(
     overrides: [
       enhancePirProvider.overrideWith(() => _PreviewPrivateQueries(private)),

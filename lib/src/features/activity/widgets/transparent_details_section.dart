@@ -11,9 +11,10 @@ import '../../../rust/api/sync.dart' as rust_sync;
 import '../transaction_completeness.dart';
 
 /// What the receipt adds from loop 4 (transparent txid enhancement) beyond
-/// its shared shell: every payee of a send paying several transparent
-/// recipients, or a notice while a recipient is not known yet or cannot be
-/// looked up in private mode. Renders nothing otherwise, so a receipt shows
+/// its shared shell, for a receipt with no recorded recipient: the
+/// transaction's other transparent outputs, attributed to no one, or a notice
+/// while they are not known yet or cannot be looked up in private mode.
+/// Renders nothing otherwise, so a receipt with a recorded recipient shows
 /// the same rows whether its details came from a stored transaction or from
 /// private queries.
 class TransparentDetailsSection extends StatelessWidget {
@@ -43,8 +44,8 @@ class TransparentDetailsSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final notice = transparentDetailsNotice(detail);
-    final payees = listedTransparentPayees(detail);
-    if (notice == null && payees.isEmpty && onDebugLookup == null) {
+    final outputs = listedTransactionOutputs(detail);
+    if (notice == null && outputs.isEmpty && onDebugLookup == null) {
       return const SizedBox.shrink();
     }
     final colors = context.colors;
@@ -65,15 +66,29 @@ class TransparentDetailsSection extends StatelessWidget {
           leadingIconName: AppIcons.loader,
           scaleValueToFit: true,
         ),
-      for (final payee in payees)
-        ReviewListRow(
-          key: ValueKey('transparent_recipient_${payee.outputIndex}'),
-          label: 'Recipient',
-          value:
-              '${payee.address == null ? 'Script' : truncatedAddress(payee.address!)}'
-              '  ${hideAmountIfPrivacyMode(ZecAmount.fromZatoshi(payee.amountZatoshi).activityDetail.toString(), privacyModeEnabled: privacyModeEnabled)}',
-          copyText: payee.address,
-          scaleValueToFit: true,
+      // The outputs are the transaction's; none is named a recipient.
+      if (outputs.isNotEmpty)
+        Column(
+          key: const ValueKey('transaction_outputs'),
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ReviewListRow(
+              label: kTransactionOutputsText,
+              value: kTransactionOutputsUnattributedText,
+              valueColor: colors.text.secondary,
+              scaleValueToFit: true,
+            ),
+            for (final output in outputs)
+              ReviewListRow(
+                key: ValueKey('transaction_output_${output.outputIndex}'),
+                label: 'Output',
+                value:
+                    '${output.address == null ? 'Script' : truncatedAddress(output.address!)}'
+                    '  ${hideAmountIfPrivacyMode(ZecAmount.fromZatoshi(output.amountZatoshi).activityDetail.toString(), privacyModeEnabled: privacyModeEnabled)}',
+                copyText: output.address,
+                scaleValueToFit: true,
+              ),
+          ],
         ),
       if (onDebugLookup != null)
         ReviewListRow(

@@ -796,9 +796,26 @@ class _MobileTransactionStatusScreenState
               ? const ReceiptCounterpartySkeleton(label: 'From')
               : addressRow ?? unknownFromRow
         : null;
+    // A send whose recipient the account did not record keeps the To row,
+    // naming no one and offering nothing to verify.
     final toRow = _isSent && detailsLoading
         ? const ReceiptCounterpartySkeleton(label: 'To')
-        : addressRow;
+        : addressRow ??
+              (giftCard == null && receiptHasUnknownRecipient(tx, detail)
+                  ? MobileReviewInfoRow(
+                      key: const ValueKey('receipt_unknown_recipient'),
+                      label: 'To',
+                      value: kUnknownRecipientText,
+                      strikethrough: failed,
+                      leading: MobileReviewIconBadge(
+                        child: AppIcon(
+                          AppIcons.wallet,
+                          size: 18,
+                          color: colors.icon.regular,
+                        ),
+                      ),
+                    )
+                  : null);
     // Self-shield (own transparent -> own shielded) has no external
     // counterparty: mirror the desktop ShieldedReceiptView two-row flow,
     // "From transparent balance" -> "Shielded balance". No Figma frame for

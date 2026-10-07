@@ -47,6 +47,7 @@ rust_sync.TransactionDetail transparentDetail(
   String? sourceAddress,
   String? sourcePool,
   List<rust_sync.TransactionDetailOutput> outputs = const [],
+  bool provisional = false,
 }) => rust_sync.TransactionDetail(
   txidHex: transparentDetailsTxid,
   txKind: txKind,
@@ -55,7 +56,7 @@ rust_sync.TransactionDetail transparentDetail(
   sourcePool: sourcePool,
   outputs: outputs,
   detailsComplete: false,
-  provisional: false,
+  provisional: provisional,
   transparentDetailsState: state,
   transparentRecipients: recipients,
 );
@@ -74,6 +75,12 @@ final transparentRecipients = [
     isOwn: true,
   ),
 ];
+
+/// The first transparent output listed as the transaction's, attributed to no
+/// one.
+final transactionOutputShown = find.byKey(
+  const ValueKey('transaction_output_0'),
+);
 
 /// A detail loader that answers from [states] in order, repeating the last,
 /// and counts its calls.
@@ -144,7 +151,7 @@ void transparentDetailsRefreshTests({
     expect(details.calls, 2, reason: 'one detail read may be in flight');
     delayed.complete(available);
     await flush(tester);
-    expect(find.text('Show full address'), findsOneWidget);
+    expect(transactionOutputShown, findsOneWidget);
     await tester.pump(kTransparentDetailsPollInterval * 2);
     expect(details.calls, 2, reason: 'available details stop polling');
     await tester.pumpWidget(const SizedBox());
@@ -178,10 +185,10 @@ void transparentDetailsRefreshTests({
     expect(details.calls, 3, reason: 'the full refresh owns its detail read');
     refreshed.complete(available);
     await flush(tester);
-    expect(find.text('Show full address'), findsOneWidget);
+    expect(transactionOutputShown, findsOneWidget);
     delayedPoll.complete(pending);
     await flush(tester);
-    expect(find.text('Show full address'), findsOneWidget);
+    expect(transactionOutputShown, findsOneWidget);
     expect(find.text(kTransparentDetailsUnavailableText), findsNothing);
     await tester.pump(kTransparentDetailsPollInterval * 2);
     expect(details.calls, 3, reason: 'stale results cannot restart polling');
@@ -206,7 +213,7 @@ void transparentDetailsRefreshTests({
     await tester.pump(kTransparentDetailsPollInterval);
     await flush(tester);
     expect(details.calls, 3);
-    expect(find.text('Show full address'), findsOneWidget);
+    expect(transactionOutputShown, findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -435,25 +442,30 @@ rust_sync.TransactionDetail transparentReceiveDetail({
       : const [],
 );
 
-/// The send of [transparentSend]: a public wallet records the recipient;
-/// private queries know output 0 pays it and output 1 is the change.
-rust_sync.TransactionDetail transparentSendDetail({required bool private}) =>
-    transparentDetail(
-      rust_sync.TransparentDetailsState.available,
-      primaryAddress: private ? null : transparentRecipientAddress,
-      outputs: private
-          ? const []
-          : [
-              rust_sync.TransactionDetailOutput(
-                address: transparentRecipientAddress,
-                amountZatoshi: BigInt.from(228420040),
-                pool: 'transparent',
-                activityPool: 'transparent',
-                usesOrchardReceiver: false,
-              ),
-            ],
-      recipients: transparentRecipients,
-    );
+/// The send of [transparentSend]. Output 0 pays another party and output 1
+/// returns the account's change. Only a recorded send (a public wallet's, or
+/// one this wallet built) names its recipient; private queries recover the
+/// outputs, which say nothing about which of them the account paid.
+rust_sync.TransactionDetail transparentSendDetail({
+  required bool recorded,
+  String recipient = transparentRecipientAddress,
+  List<rust_sync.TransparentRecipient>? recipients,
+}) => transparentDetail(
+  rust_sync.TransparentDetailsState.available,
+  primaryAddress: recorded ? recipient : null,
+  outputs: recorded
+      ? [
+          rust_sync.TransactionDetailOutput(
+            address: recipient,
+            amountZatoshi: BigInt.from(228420040),
+            pool: 'transparent',
+            activityPool: 'transparent',
+            usesOrchardReceiver: false,
+          ),
+        ]
+      : const [],
+  recipients: recipients ?? transparentRecipients,
+);
 
 typedef TransparentReceiptPump =
     Future<List<String>> Function(
@@ -472,12 +484,80 @@ class ReceiptTitles {
     required this.receiving,
     required this.receiveFailed,
     required this.shielded,
+    required this.sending,
   });
 
   final String received;
   final String receiving;
   final String receiveFailed;
   final String shielded;
+  final String sending;
+}
+
+const _shieldedRecipientAddress =
+    'u1qx6w4zr2vn8gk3dfa9yhc5tlm0ps7ej2ruw8kz4qn5d6vf3hg9al2cxs8ty7mwe0pjr';
+
+final _threeOutputs = [
+  ...transparentRecipients,
+  rust_sync.TransparentRecipient(
+    outputIndex: 2,
+    address: transparentSecondRecipientAddress,
+    amountZatoshi: BigInt.from(3000000),
+    isOwn: false,
+  ),
+];
+
+/// Another party's transparent output and the account's change.
+final _unrelatedTransparentOutput = transparentRecipients;
+
+/// A send from the account's shielded funds whose transaction also carries
+/// transparent outputs.
+rust_sync.TransactionInfo mixedSend() {
+  final sent = transparentSend();
+  return rust_sync.TransactionInfo(
+    txidHex: sent.txidHex,
+    minedHeight: sent.minedHeight,
+    expiredUnmined: false,
+    accountBalanceDelta: sent.accountBalanceDelta,
+    fee: sent.fee,
+    feeState: sent.feeState,
+    detailsComplete: false,
+    provisional: false,
+    amountIncludesFee: false,
+    blockTime: sent.blockTime,
+    isTransparent: true,
+    txKind: 'sent',
+    displayAmount: sent.displayAmount,
+    displayPool: 'shielded',
+    createdTime: sent.createdTime,
+  );
+}
+
+/// The send shell with a To row naming no one and nothing to verify.
+void _expectUnknownRecipientShell({required String title}) {
+  expect(find.text(title), findsOneWidget);
+  expect(find.text('To'), findsOneWidget);
+  expect(find.text(kUnknownRecipientText), findsOneWidget);
+  expect(find.text('Show full address'), findsNothing);
+  expect(find.text('Recipient'), findsNothing);
+}
+
+/// The transaction's outputs [listed] as such, never as recipients; the
+/// account's own outputs [hidden].
+void _expectNeutralOutputs({
+  required List<int> listed,
+  required List<int> hidden,
+}) {
+  expect(_supplementalCard, findsOneWidget);
+  expect(find.text(kTransactionOutputsText), findsOneWidget);
+  expect(find.text(kTransactionOutputsUnattributedText), findsOneWidget);
+  expect(find.text('Output'), findsNWidgets(listed.length));
+  for (final index in listed) {
+    expect(find.byKey(ValueKey('transaction_output_$index')), findsOneWidget);
+  }
+  for (final index in hidden) {
+    expect(find.byKey(ValueKey('transaction_output_$index')), findsNothing);
+  }
 }
 
 Finder _showsAddress(String address) =>
@@ -528,10 +608,12 @@ void transparentReceiptParityTests({
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets('$mode single-recipient send names its payee', (tester) async {
+    // Recorded recipient data is the same in both modes, and so is the
+    // receipt: private mode still records the sends this wallet built.
+    testWidgets('$mode send names its recorded recipient', (tester) async {
       await pump(
         tester,
-        ScriptedDetails([transparentSendDetail(private: private)]),
+        ScriptedDetails([transparentSendDetail(recorded: true)]),
         transaction: transparentSend(),
         privateQueries: private,
       );
@@ -539,57 +621,243 @@ void transparentReceiptParityTests({
       expect(find.text('To'), findsOneWidget);
       expect(_showsAddress(transparentRecipientAddress), findsWidgets);
       expect(find.text('Show full address'), findsOneWidget);
+      expect(find.text(kUnknownRecipientText), findsNothing);
       // The account's change is not a payment.
       expect(_showsAddress(transparentOwnAddress), findsNothing);
       expect(_supplementalCard, findsNothing);
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets('$mode multi-recipient send lists payees in order', (
+    testWidgets('$mode recorded recipient wins over the first output', (
       tester,
     ) async {
-      final recipients = [
-        ...transparentRecipients,
-        rust_sync.TransparentRecipient(
-          outputIndex: 2,
-          address: transparentSecondRecipientAddress,
-          amountZatoshi: BigInt.from(3000000),
-          isOwn: false,
-        ),
-      ];
-      final detail = transparentDetail(
-        rust_sync.TransparentDetailsState.available,
-        primaryAddress: private ? null : transparentRecipientAddress,
-        // Out of order on purpose: the list follows the transaction.
-        recipients: recipients.reversed.toList(),
-      );
+      // The account recorded its payment to output 2; output 0 belongs to
+      // another party funding the same transaction.
       await pump(
         tester,
-        ScriptedDetails([detail]),
+        ScriptedDetails([
+          transparentSendDetail(
+            recorded: true,
+            recipient: transparentSecondRecipientAddress,
+            recipients: _threeOutputs,
+          ),
+        ]),
         transaction: transparentSend(),
         privateQueries: private,
-        privacy: true,
+      );
+      expect(find.text('To'), findsOneWidget);
+      expect(_showsAddress(transparentSecondRecipientAddress), findsWidgets);
+      expect(_showsAddress(transparentRecipientAddress), findsNothing);
+      expect(find.text('Show full address'), findsOneWidget);
+      // A recorded recipient needs no list of the transaction's outputs.
+      expect(_supplementalCard, findsNothing);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('$mode mixed send keeps its recorded shielded recipient', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        ScriptedDetails([
+          transparentDetail(
+            rust_sync.TransparentDetailsState.available,
+            primaryAddress: _shieldedRecipientAddress,
+            recipients: _unrelatedTransparentOutput,
+          ),
+        ]),
+        transaction: mixedSend(),
+        privateQueries: private,
       );
       expect(find.text('Sent successfully'), findsOneWidget);
-      expect(_supplementalCard, findsOneWidget);
-      final first = find.byKey(const ValueKey('transparent_recipient_0'));
-      final second = find.byKey(const ValueKey('transparent_recipient_2'));
-      expect(first, findsOneWidget);
-      expect(second, findsOneWidget);
-      expect(
-        find.byKey(const ValueKey('transparent_recipient_1')),
-        findsNothing,
-        reason: 'change is filtered',
-      );
-      expect(
-        tester.getTopLeft(first).dy,
-        lessThan(tester.getTopLeft(second).dy),
-      );
-      // Hidden amounts stay hidden in the list.
-      expect(find.textContaining('0.03', findRichText: true), findsNothing);
+      expect(_showsAddress(_shieldedRecipientAddress), findsWidgets);
+      expect(_showsAddress(transparentRecipientAddress), findsNothing);
+      expect(find.text('Show full address'), findsOneWidget);
+      expect(_supplementalCard, findsNothing);
       await tester.pumpWidget(const SizedBox());
     });
   }
+
+  testWidgets('private send with only outputs names no recipient', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      ScriptedDetails([transparentSendDetail(recorded: false)]),
+      transaction: transparentSend(),
+      privateQueries: true,
+    );
+    _expectUnknownRecipientShell(title: 'Sent successfully');
+    // The other party's output stays listed, attributed to no one, and the
+    // receipt says its details are incomplete.
+    _expectNeutralOutputs(listed: [0], hidden: [1]);
+    expect(find.text('Incomplete'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('private mixed send never names its transparent output', (
+    tester,
+  ) async {
+    // A shielded payee private queries cannot see, next to another party's
+    // transparent output.
+    await pump(
+      tester,
+      ScriptedDetails([
+        transparentDetail(
+          rust_sync.TransparentDetailsState.available,
+          recipients: _unrelatedTransparentOutput,
+        ),
+      ]),
+      transaction: mixedSend(),
+      privateQueries: true,
+    );
+    _expectUnknownRecipientShell(title: 'Sent successfully');
+    _expectNeutralOutputs(listed: [0], hidden: [1]);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('private shared funding lists counterparty change neutrally', (
+    tester,
+  ) async {
+    // Output 0 is the account's change, output 1 the other funder's change,
+    // output 2 the payment; nothing says which one the account paid.
+    final recipients = [
+      rust_sync.TransparentRecipient(
+        outputIndex: 0,
+        address: transparentOwnAddress,
+        amountZatoshi: BigInt.from(1000000),
+        isOwn: true,
+      ),
+      rust_sync.TransparentRecipient(
+        outputIndex: 1,
+        address: transparentSenderAddress,
+        amountZatoshi: _senderChange,
+        isOwn: false,
+      ),
+      rust_sync.TransparentRecipient(
+        outputIndex: 2,
+        address: transparentRecipientAddress,
+        amountZatoshi: BigInt.from(228420040),
+        isOwn: false,
+      ),
+    ];
+    await pump(
+      tester,
+      ScriptedDetails([
+        transparentSendDetail(recorded: false, recipients: recipients),
+      ]),
+      transaction: transparentSend(),
+      privateQueries: true,
+    );
+    _expectUnknownRecipientShell(title: 'Sent successfully');
+    _expectNeutralOutputs(listed: [1, 2], hidden: [0]);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('private send lists several outputs in order, amounts hidden', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      ScriptedDetails([
+        transparentSendDetail(
+          recorded: false,
+          // Out of order on purpose: the list follows the transaction.
+          recipients: _threeOutputs.reversed.toList(),
+        ),
+      ]),
+      transaction: transparentSend(),
+      privateQueries: true,
+      privacy: true,
+    );
+    _expectUnknownRecipientShell(title: 'Sent successfully');
+    _expectNeutralOutputs(listed: [0, 2], hidden: [1]);
+    expect(
+      tester.getTopLeft(find.byKey(const ValueKey('transaction_output_0'))).dy,
+      lessThan(
+        tester
+            .getTopLeft(find.byKey(const ValueKey('transaction_output_2')))
+            .dy,
+      ),
+    );
+    // Hidden amounts stay hidden in the list.
+    expect(find.textContaining('0.03', findRichText: true), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  for (final (label, expired) in [('pending', false), ('failed', true)]) {
+    testWidgets('private $label send keeps its status without a recipient', (
+      tester,
+    ) async {
+      final sent = transparentSend();
+      final tx = rust_sync.TransactionInfo(
+        txidHex: sent.txidHex,
+        minedHeight: BigInt.zero,
+        expiredUnmined: expired,
+        accountBalanceDelta: sent.accountBalanceDelta,
+        fee: sent.fee,
+        feeState: sent.feeState,
+        detailsComplete: sent.detailsComplete,
+        provisional: false,
+        amountIncludesFee: false,
+        blockTime: sent.blockTime,
+        isTransparent: true,
+        txKind: 'sent',
+        displayAmount: sent.displayAmount,
+        displayPool: 'transparent',
+        createdTime: sent.createdTime,
+      );
+      await pump(
+        tester,
+        ScriptedDetails([transparentSendDetail(recorded: false)]),
+        transaction: tx,
+        privateQueries: true,
+      );
+      _expectUnknownRecipientShell(
+        title: expired ? 'Send failed' : titles.sending,
+      );
+      await tester.pumpWidget(const SizedBox());
+    });
+  }
+
+  testWidgets('a provisional entry names no recipient', (tester) async {
+    final sent = transparentSend();
+    final tx = rust_sync.TransactionInfo(
+      txidHex: sent.txidHex,
+      minedHeight: sent.minedHeight,
+      expiredUnmined: false,
+      accountBalanceDelta: sent.accountBalanceDelta,
+      fee: sent.fee,
+      feeState: sent.feeState,
+      detailsComplete: false,
+      provisional: true,
+      amountIncludesFee: true,
+      blockTime: sent.blockTime,
+      isTransparent: true,
+      txKind: 'sent',
+      displayAmount: sent.displayAmount,
+      displayPool: 'transparent',
+      createdTime: sent.createdTime,
+    );
+    await pump(
+      tester,
+      ScriptedDetails([
+        transparentDetail(
+          rust_sync.TransparentDetailsState.available,
+          provisional: true,
+          recipients: transparentRecipients,
+        ),
+      ]),
+      transaction: tx,
+      privateQueries: true,
+    );
+    // Its role may still change, so it has no To row at all.
+    expect(find.text('To'), findsNothing);
+    expect(find.text(kUnknownRecipientText), findsNothing);
+    expect(find.text('Show full address'), findsNothing);
+    _expectNeutralOutputs(listed: [0], hidden: [1]);
+    await tester.pumpWidget(const SizedBox());
+  });
 
   testWidgets('private receive keeps a known sender and its account name', (
     tester,

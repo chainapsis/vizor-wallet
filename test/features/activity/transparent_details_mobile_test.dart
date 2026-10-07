@@ -128,9 +128,10 @@ void main() {
       receiving: 'Receiving...',
       receiveFailed: 'Receive failed',
       shielded: 'Shielded',
+      sending: 'Sending...',
     ),
   );
-  testWidgets('mobile receipt names the transparent payee when available', (
+  testWidgets('mobile receipt never names an output its recipient', (
     tester,
   ) async {
     final details = ScriptedDetails([
@@ -141,15 +142,19 @@ void main() {
     ]);
     final prioritized = await _pump(tester, details);
     expect(find.text('Sent successfully'), findsOneWidget);
-    expect(find.text('To'), findsOneWidget);
-    expect(find.text('Show full address'), findsOneWidget);
-    // One payee needs no list, and the change is never one.
-    expect(
-      find.byKey(const ValueKey('transparent_details_section')),
-      findsNothing,
-    );
+    expect(find.text(kUnknownRecipientText), findsOneWidget);
+    expect(find.text('Show full address'), findsNothing);
+    // The other party's output is listed as the transaction's; the change is
+    // never listed.
+    expect(transactionOutputShown, findsOneWidget);
+    expect(find.byKey(const ValueKey('transaction_output_1')), findsNothing);
     expect(find.text('Your address'), findsNothing);
-    expect(prioritized, isEmpty);
+    expect(find.text(kTransparentDetailsUnavailableText), findsNothing);
+    expect(
+      prioritized,
+      isEmpty,
+      reason: 'available details are not prioritized',
+    );
     await _close(tester);
   });
 
@@ -189,7 +194,7 @@ void main() {
     await tester.pump(kTransparentDetailsPollInterval);
     await tester.pump();
     expect(details.calls, 2);
-    expect(find.text('Show full address'), findsOneWidget);
+    expect(transactionOutputShown, findsOneWidget);
     await tester.pump(kTransparentDetailsPollInterval * 4);
     expect(details.calls, 2, reason: 'polling stopped');
     await _close(tester);

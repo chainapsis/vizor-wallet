@@ -1106,8 +1106,17 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
   ),
   FigmaCompareScenario(
     id: 'activity-transparent-sent-private',
-    description: 'Desktop transparent send receipt, private queries',
+    description:
+        'Desktop transparent send receipt, private queries, no recorded '
+        'recipient',
     builder: _desktopTransparentSentPrivate,
+  ),
+  FigmaCompareScenario(
+    id: 'activity-transparent-sent-private-recorded',
+    description:
+        'Desktop transparent send receipt, private queries, recorded '
+        'recipient',
+    builder: _desktopTransparentSentPrivateRecorded,
   ),
   FigmaCompareScenario(
     id: 'payment-link-empty',
@@ -1932,8 +1941,18 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
   ),
   FigmaCompareScenario(
     id: 'mobile-activity-transparent-sent-private',
-    description: 'Mobile transparent send receipt, private queries',
+    description:
+        'Mobile transparent send receipt, private queries, no recorded '
+        'recipient',
     builder: _mobileTransparentSentPrivate,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-activity-transparent-sent-private-recorded',
+    description:
+        'Mobile transparent send receipt, private queries, recorded recipient',
+    builder: _mobileTransparentSentPrivateRecorded,
     desktop: false,
     mobile: true,
   ),
@@ -2851,3 +2870,17 @@ Widget _mobileTransparentSentPublic(BuildContext context) =>
 
 Widget _mobileTransparentSentPrivate(BuildContext context) =>
     buildMobileTransparentReceiptUseCase(kind: 'sent', private: true);
+
+Widget _desktopTransparentSentPrivateRecorded(BuildContext context) =>
+    buildDesktopTransparentReceiptUseCase(
+      kind: 'sent',
+      private: true,
+      recordedSend: true,
+    );
+
+Widget _mobileTransparentSentPrivateRecorded(BuildContext context) =>
+    buildMobileTransparentReceiptUseCase(
+      kind: 'sent',
+      private: true,
+      recordedSend: true,
+    );

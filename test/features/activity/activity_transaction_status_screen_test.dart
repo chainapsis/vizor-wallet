@@ -1181,10 +1181,8 @@ void main() {
   });
 
   testWidgets(
-    'falls back to the minimal receipt for a sent tx with no recipient',
+    'keeps the send receipt with an unknown recipient when none is recorded',
     (tester) async {
-      // A sent tx whose detail carries no resolvable recipient address skips
-      // the SendStatusContentView branch and routes to _fallbackContent.
       await _pumpScreen(
         tester,
         args: ActivityTransactionStatusArgs(
@@ -1194,27 +1192,26 @@ void main() {
             txKind: 'sent',
             fee: BigInt.from(10000),
           ),
-          // primaryAddress omitted (null) -> no recipient to resolve.
+          // primaryAddress omitted (null) -> no recorded recipient.
           initialDetail: _detail(txKind: 'sent'),
         ),
       );
 
-      // No dedicated redesigned receipt rendered.
-      expect(find.byType(SendStatusContentView), findsNothing);
+      // The send shell, with a To row that names no one and offers nothing
+      // to verify.
+      expect(find.byType(SendStatusContentView), findsOneWidget);
       expect(find.byType(ReceivedReceiptView), findsNothing);
       expect(find.byType(ShieldedReceiptView), findsNothing);
-
-      // Minimal fallback keeps the send status title: amount, status card.
       expect(find.text('Sent successfully'), findsOneWidget);
       expect(find.text('Transaction'), findsNothing);
       expect(find.text('Amount'), findsOneWidget);
       expect(find.text('120.00 ZEC'), findsOneWidget);
       expect(find.text('Completed'), findsOneWidget);
-      // Non-zero fee renders the fallback "Tx fee" row.
       expect(find.text('Tx fee'), findsOneWidget);
       expect(find.text('0.0001 ZEC'), findsOneWidget);
-      // The fallback has no counterparty row, so no To/From label is forced.
-      expect(find.text('To'), findsNothing);
+      expect(find.text('To'), findsOneWidget);
+      expect(find.text(kUnknownRecipientText), findsOneWidget);
+      expect(find.text('Show full address'), findsNothing);
       expect(find.text('From'), findsNothing);
     },
   );

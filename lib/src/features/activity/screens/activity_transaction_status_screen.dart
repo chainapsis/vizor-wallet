@@ -682,9 +682,19 @@ class _ActivityTransactionStatusScreenState
       phase: _sentPhaseFor(tx),
       amountText: _amountText(tx, privacyModeEnabled: privacyModeEnabled),
       recipient: recipient,
-      recipientRow: recipient == null
+      // A send whose recipient the account did not record keeps the send
+      // shell; nothing names a recipient or offers to verify one.
+      recipientRow: recipient != null
+          ? null
+          : _detailsLoading
           ? const ReceiptCounterpartySkeleton(label: 'To')
-          : null,
+          : ReviewInfoRow(
+              key: const ValueKey('receipt_unknown_recipient'),
+              label: 'To',
+              value: kUnknownRecipientText,
+              struckThrough: _sentPhaseFor(tx) == SendStatusPhase.failed,
+              leading: const ReviewInfoIconCircle(iconName: AppIcons.wallet),
+            ),
       timestampText: _timestampText(tx),
       txIdText: _truncatedDisplayTxid(tx.txidHex),
       feeText: _feeText(tx, privacyModeEnabled: privacyModeEnabled),
@@ -897,14 +907,6 @@ class _ActivityTransactionStatusScreenState
                       : tx.minedHeight == BigInt.zero
                       ? 'Migrating to Ironwood'
                       : 'Migrated to Ironwood'
-                // A send whose recipient is unknown keeps the send status
-                // title; a provisional or fee-only entry stays neutral.
-                : receiptTitlesSend(tx)
-                ? switch (_sentPhaseFor(tx)) {
-                    SendStatusPhase.inProgress => 'Send in progress...',
-                    SendStatusPhase.completed => 'Sent successfully',
-                    SendStatusPhase.failed => 'Send failed',
-                  }
                 : 'Transaction',
             textAlign: TextAlign.center,
             style: AppTypography.bodyLarge.copyWith(
@@ -1069,12 +1071,12 @@ class _ActivityTransactionStatusScreenState
     } else if (tx != null &&
         tx.txKind == 'sent' &&
         (_detailsLoading ||
-            (sentRecipientAddress != null &&
-                sentRecipientAddress.isNotEmpty))) {
+            sentRecipientAddress != null ||
+            receiptHasUnknownRecipient(tx, detail))) {
       redesignedContent = _sentContent(
         tx,
         detail,
-        sentRecipientAddress?.isNotEmpty == true ? sentRecipientAddress : null,
+        sentRecipientAddress,
         addressBookContacts,
         privacyModeEnabled: privacyModeEnabled,
       );
@@ -1104,7 +1106,7 @@ class _ActivityTransactionStatusScreenState
         giftCard == null &&
         (offersDebugLookup ||
             transparentDetailsNotice(detail) != null ||
-            listedTransparentPayees(detail).isNotEmpty)) {
+            listedTransactionOutputs(detail).isNotEmpty)) {
       receiptContent = Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
