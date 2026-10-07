@@ -2499,9 +2499,13 @@ fn classify_history_tx(
     if let Some(outgoing) = base.history.inferred_outgoing {
         if outgoing > 0 && summary.sent.output_count == 0 {
             let visible_outgoing = outgoing.checked_sub(summary.internal_transparent.amount);
-            // A fully accounted funding step has no visible payment. Do not
-            // fall through and recreate it as a provisional fee-sized debit.
+            // Internal change has no visible payment. An ungrouped ephemeral
+            // funding step still needs its net-change row: an Activity-only
+            // residual does not prove that its debit was the account's fee.
             if visible_outgoing == Some(0) && summary.received_transparent.output_count == 0 {
+                if summary.has_own_ephemeral_output && base.account_balance_delta < 0 {
+                    return vec![build_movement_debit_row(base, extra_sent_fee)];
+                }
                 return Vec::new();
             }
             // Inconsistent local evidence must not underflow or erase a debit.
@@ -3611,10 +3615,21 @@ mod tests {
                 } else {
                     assert!(public.is_empty(), "ordinary change remains hidden");
                 }
-                assert!(
-                    private.is_empty(),
-                    "the base's compact-recovered internal output remains suppressed"
-                );
+                if scope == EPHEMERAL_KEY_SCOPE {
+                    assert_eq!(private.len(), 1, "ungrouped funding keeps its debit");
+                    assert_eq!(private[0].tx_kind, "sent");
+                    assert_eq!(private[0].display_amount, 15_000);
+                    assert!(private[0].amount_is_net_change);
+                    assert!(private[0].provisional);
+                    assert!(!private[0].details_complete);
+                    assert_eq!(private[0].display_pool, "unknown");
+                    assert_eq!(
+                        (private[0].fee_state, private[0].fee),
+                        (TransactionFeeState::WholeTransaction, 15_000)
+                    );
+                } else {
+                    assert!(private.is_empty(), "ordinary change remains hidden");
+                }
             }
         }
     }
@@ -8108,8 +8123,8 @@ mod tests {
                 -15_000,
                 107_670_000,
                 HistoryCompleteness {
-                    inferred_outgoing: None,
-                    has_transparent_outputs: None,
+                    inferred_outgoing: Some(110_000),
+                    has_transparent_outputs: Some(true),
                     details_complete: false,
                     provisional: true,
                     classification: None,

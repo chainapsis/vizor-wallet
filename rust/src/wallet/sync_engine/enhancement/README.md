@@ -579,6 +579,8 @@ Classification follows the facts it has:
   have foreign shielded contributors, so their unattributed whole fee cannot
   justify hiding the funding activity or adding that fee to the later send.
   A known account fee still permits folding, including shielded funding.
+  An ungrouped step keeps its net-change row even when the library's inferred
+  outgoing amount is entirely accounted for by its internal funding output.
   Of several spenders of the output, a mined one is the send, then one that
   has not expired.
 - **A provisional debit** whose outputs are unknown, or known only as change,
