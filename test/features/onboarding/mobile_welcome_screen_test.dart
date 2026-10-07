@@ -482,6 +482,7 @@ void main() {
     for (final entry in {
       'Get started': WelcomeButtonTokens.accentLabel,
       'Import wallet': WelcomeButtonTokens.secondaryLabel,
+      'Activate gift card': WelcomeButtonTokens.accentLabel,
     }.entries) {
       final label = find.text(entry.key);
       final gesture = await tester.startGesture(tester.getCenter(label));

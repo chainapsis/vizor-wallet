@@ -189,7 +189,14 @@ Future<void> _sendViaPaymentUri(
 
 Future<void> _importFirstWallet(WidgetTester tester) async {
   _log('importing first wallet');
-  await _tapAppButton(tester, const ValueKey('welcome_import_wallet_button'));
+  await _tapAppButton(
+    tester,
+    const ValueKey('welcome_import_wallet_button'),
+  );
+  await _tapWidget(
+    tester,
+    const ValueKey('desktop_import_secret_passphrase_card'),
+  );
   await _enterText(
     tester,
     const ValueKey('import_mnemonic_first_word_field'),
@@ -219,7 +226,14 @@ Future<void> _importFirstWallet(WidgetTester tester) async {
 
 Future<void> _importAdditionalWallet(WidgetTester tester) async {
   _log('importing second wallet');
-  await _tapAppButton(tester, const ValueKey('welcome_import_wallet_button'));
+  await _tapAppButton(
+    tester,
+    const ValueKey('welcome_import_wallet_button'),
+  );
+  await _tapWidget(
+    tester,
+    const ValueKey('desktop_import_secret_passphrase_card'),
+  );
   await _enterText(
     tester,
     const ValueKey('import_mnemonic_first_word_field'),

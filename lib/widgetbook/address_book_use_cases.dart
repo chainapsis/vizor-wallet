@@ -578,7 +578,7 @@ class _AddressBookNoContacts extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Image.asset(
-          _addressBookEmptyContactsAsset(context),
+          _addressBookEmptyContactsAsset,
           width: 340,
           height: 220,
           fit: BoxFit.contain,
@@ -837,7 +837,7 @@ class _EmptySearchResult extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Image.asset(
-          _addressBookEmptySearchAsset(context),
+          _addressBookEmptySearchAsset,
           width: 170,
           height: 170,
           fit: BoxFit.contain,
@@ -1551,14 +1551,7 @@ class _MobileContactsFrame extends StatelessWidget {
   }
 }
 
-String _addressBookEmptyContactsAsset(BuildContext context) {
-  return AppTheme.of(context) == AppThemeData.dark
-      ? 'assets/illustrations/address_book_empty_contacts_dark.png'
-      : 'assets/illustrations/address_book_empty_contacts_light.png';
-}
-
-String _addressBookEmptySearchAsset(BuildContext context) {
-  return AppTheme.of(context) == AppThemeData.dark
-      ? 'assets/illustrations/address_book_empty_search_dark.png'
-      : 'assets/illustrations/address_book_empty_search_light.png';
-}
+const _addressBookEmptyContactsAsset =
+    'assets/illustrations/address_book_empty_contacts.webp';
+const _addressBookEmptySearchAsset =
+    'assets/illustrations/address_book_empty_search.webp';

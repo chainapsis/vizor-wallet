@@ -24,7 +24,7 @@ import 'app_route_predicates.dart';
 // in `app.dart`) does not need a second import for the two route questions
 // this table asks.
 export 'app_route_predicates.dart'
-    show isOnboardingLocation, isUnlockFlowLocation;
+    show isAccountSetupLocation, isOnboardingLocation, isUnlockFlowLocation;
 
 /// A parked prefill older than this is stale and is dropped instead of
 /// delivered.
@@ -189,7 +189,7 @@ bool paymentUriShouldDropOnWalletTransition({
 ///
 /// [parkedFor] is how long the prefill has been parked (null when nothing is
 /// parked, or when the park time is unknown). [hasBusySurface] is true while a
-/// hardware signing session is mounted — see `paymentUriBusySurfaceProvider`.
+/// hardware signing session is mounted — see `externalActionGuardProvider`.
 /// [hasActiveSendProposal] is true while the current desktop send-review route
 /// owns a proposal and its selected inputs. A second proposal must wait until
 /// that route releases the first one. [sendIsInFlight] is the negation of
@@ -243,7 +243,7 @@ PaymentUriDrainDecision decidePaymentUriDrain({
   // phrase, a freshly generated mnemonic, an in-flight account creation).
   // A card over a half-typed seed phrase is the one presentation that would
   // still cost the user something, so onboarding keeps its drop.
-  if (isOnboardingLocation(matchedLocation)) {
+  if (isAccountSetupLocation(matchedLocation)) {
     // On the welcome screen with no wallet nothing has been started yet, so
     // the plain no-wallet wording fits better than "finish setting up".
     return PaymentUriDrainDecision(

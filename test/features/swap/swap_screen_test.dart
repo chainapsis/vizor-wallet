@@ -754,7 +754,7 @@ void main() {
                   .image
               as AssetImage)
           .assetName,
-      'assets/illustrations/swap_deposit_timeout_illustration_light.png',
+      'assets/illustrations/desktop/swap_deposit_timeout_illustration.webp',
     );
 
     await tester.pumpWidget(
@@ -774,7 +774,7 @@ void main() {
                   .image
               as AssetImage)
           .assetName,
-      'assets/illustrations/swap_deposit_timeout_illustration_dark.png',
+      'assets/illustrations/desktop/swap_deposit_timeout_illustration.webp',
     );
   });
 

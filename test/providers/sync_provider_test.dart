@@ -1,3 +1,8 @@
+import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
+import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';
+import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
+import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/layout/app_form_factor.dart';
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,9 +13,212 @@ import 'package:zcash_wallet/src/core/formatting/sync_status_label.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_failure.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/providers/pending_activity_evidence_provider.dart';
+import 'package:zcash_wallet/src/features/activity/activity_eta_provider.dart';
+import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 void main() {
+  for (final fails in [false, true]) {
+    testWidgets('resume coalesces an in-flight tip check (failure: $fails)', (
+      tester,
+    ) async {
+      var now = DateTime.utc(2026, 10, 6);
+      final tipRead = Completer<BigInt>();
+      var reads = 0;
+      final rpc = _TipTestNotifier(() {
+        reads++;
+        return reads == 1 ? tipRead.future : Future.value(BigInt.from(100));
+      });
+      final sync = _PollingTestSyncNotifier();
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+          accountProvider.overrideWith(_ExistingAccountNotifier.new),
+          syncProvider.overrideWith(() => sync),
+          rpcEndpointFailoverProvider.overrideWith(() => rpc),
+          chainUpgradeStatusProvider.overrideWith(_TipUpgradeNotifier.new),
+          enhancePirProvider.overrideWith(_NoPrivateQueries.new),
+          activityEtaClockProvider.overrideWithValue(() => now),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+      await container.read(syncProvider.future);
+      final evidence = container.read(pendingActivityEvidenceProvider.notifier);
+      evidence.observe(accountUuid: _accountUuid, txids: ['pending']);
+      evidence.networkChecked(100);
+      final first = sync.checkTipForTesting();
+      await tester.pump();
+      expect(reads, 1);
+      sync.handleAppHideForTesting();
+      now = now.add(const Duration(seconds: 5));
+      sync.handleAppResumeForTesting();
+      sync.handleAppResumeForTesting();
+      expect(
+        container
+            .read(pendingActivityEvidenceProvider)
+            .labelFor(_accountUuid, 'pending', 100),
+        'Est. 1–3 min',
+      );
+      if (fails) {
+        tipRead.completeError(StateError('network connection refused'));
+      } else {
+        tipRead.complete(BigInt.from(100));
+      }
+      await first;
+      await tester.pump();
+      // Desktop can accept the ongoing request. Mobile must immediately
+      // replace the read that crossed its background boundary, without 10s delay.
+      expect(reads, fails || kAppFormFactor == AppFormFactor.mobile ? 2 : 1);
+      expect(
+        container
+            .read(pendingActivityEvidenceProvider)
+            .labelFor(_accountUuid, 'pending', 100),
+        'Est. 1–3 min',
+      );
+      expect(
+        container.read(pendingActivityEvidenceProvider).connectionFailed,
+        isFalse,
+      );
+      expect(sync.startSyncs, 0);
+      evidence.clear();
+      sync.stopTipChecksForTesting();
+    });
+  }
+
+  testWidgets('a resumed tip check discovers a new block and withdraws ETA', (
+    tester,
+  ) async {
+    final sync = _PollingTestSyncNotifier();
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+        accountProvider.overrideWith(_ExistingAccountNotifier.new),
+        syncProvider.overrideWith(() => sync),
+        rpcEndpointFailoverProvider.overrideWith(
+          () => _TipTestNotifier(() async => BigInt.from(101)),
+        ),
+        chainUpgradeStatusProvider.overrideWith(_TipUpgradeNotifier.new),
+        enhancePirProvider.overrideWith(_NoPrivateQueries.new),
+      ],
+    );
+    addTearDown(container.dispose);
+    await container.read(accountProvider.future);
+    await container.read(syncProvider.future);
+    final evidence = container.read(pendingActivityEvidenceProvider.notifier);
+    evidence.observe(accountUuid: _accountUuid, txids: ['pending']);
+    evidence.networkChecked(100);
+    sync.handleAppHideForTesting();
+    sync.handleAppResumeForTesting();
+    await tester.pump();
+    expect(sync.startSyncs, 1);
+    expect(
+      container
+          .read(pendingActivityEvidenceProvider)
+          .labelFor(_accountUuid, 'pending', 100),
+      isNull,
+    );
+    evidence.clear();
+    sync.stopTipChecksForTesting();
+  });
+
+  testWidgets(
+    'desktop background tip checks can refresh evidence; mobile does no background query',
+    (tester) async {
+      var reads = 0;
+      final sync = _PollingTestSyncNotifier();
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+          accountProvider.overrideWith(_ExistingAccountNotifier.new),
+          syncProvider.overrideWith(() => sync),
+          rpcEndpointFailoverProvider.overrideWith(
+            () => _TipTestNotifier(() async {
+              reads++;
+              return BigInt.from(100);
+            }),
+          ),
+          chainUpgradeStatusProvider.overrideWith(_TipUpgradeNotifier.new),
+          enhancePirProvider.overrideWith(_NoPrivateQueries.new),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+      await container.read(syncProvider.future);
+      final evidence = container.read(pendingActivityEvidenceProvider.notifier);
+      evidence.observe(accountUuid: _accountUuid, txids: ['pending']);
+      sync.handleAppHideForTesting();
+      await sync.checkTipForTesting();
+      expect(reads, kAppFormFactor == AppFormFactor.mobile ? 0 : 1);
+      expect(
+        container.read(pendingActivityEvidenceProvider).foreground,
+        isFalse,
+      );
+      expect(
+        container.read(pendingActivityEvidenceProvider).checkedTip,
+        kAppFormFactor == AppFormFactor.mobile ? isNull : 100,
+      );
+      evidence.clear();
+      sync.stopTipChecksForTesting();
+    },
+  );
+
+  test(
+    'history read failure suppresses ETA until history recovers even when tip polling succeeds',
+    () async {
+      final now = DateTime.utc(2026, 10, 6);
+      final initial = SyncState(
+        accountUuid: _accountUuid,
+        hasAccountScopedData: true,
+        isSyncComplete: true,
+        scannedHeight: 100,
+        chainTipHeight: 100,
+      );
+      final sync = _BalanceRefreshTestSyncNotifier(
+        () async => 'wallet.db',
+        initialState: initial,
+      )..balance = _availableBalance(BigInt.from(100));
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+          accountProvider.overrideWith(_ExistingAccountNotifier.new),
+          syncProvider.overrideWith(() => sync),
+          activityEtaClockProvider.overrideWithValue(() => now),
+          giftCardActivityIndexProvider(
+            _accountUuid,
+          ).overrideWith((ref) async => GiftCardActivityIndex.empty),
+          swapActivityRecordsProvider(
+            _accountUuid,
+          ).overrideWith((ref) async => []),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+      await container.read(syncProvider.future);
+      await container.read(giftCardActivityIndexProvider(_accountUuid).future);
+      await container.read(swapActivityRecordsProvider(_accountUuid).future);
+      final evidence = container.read(pendingActivityEvidenceProvider.notifier);
+      evidence.observe(accountUuid: _accountUuid, txids: ['pending']);
+      evidence.networkChecked(100);
+      expect(
+        container.read(activityEtaLabelsProvider)['pending'],
+        'Est. 1–3 min',
+      );
+      sync.failHistory = true;
+      await sync.refreshAfterSend();
+      evidence.networkChecked(100);
+      expect(container.read(activityEtaLabelsProvider), isEmpty);
+      sync.failHistory = false;
+      await sync.refreshAfterSend();
+      expect(
+        container.read(activityEtaLabelsProvider)['pending'],
+        'Est. 1–3 min',
+      );
+    },
+  );
+
   test(
     'private status coverage pauses sync only while private queries stay on',
     () {
@@ -796,6 +1004,7 @@ class _BalanceRefreshTestSyncNotifier extends SyncNotifier {
   final SyncState? initialState;
   final List<rust_sync.TransactionInfo> history;
 
+  bool failHistory = false;
   var balanceReadCount = 0;
   rust_sync.WalletBalance? balance;
 
@@ -837,7 +1046,10 @@ class _BalanceRefreshTestSyncNotifier extends SyncNotifier {
     required String network,
     int? limit,
     required String accountUuid,
-  }) async => history;
+  }) async {
+    if (failHistory) throw StateError('history read unavailable');
+    return history;
+  }
 }
 
 class _UnavailableSwitchBalanceNotifier extends SyncNotifier {
@@ -952,4 +1164,55 @@ rust_sync.TransactionInfo _transaction(String txidHex) {
     displayPool: 'shielded',
     createdTime: BigInt.from(1800000000),
   );
+}
+
+class _TipTestNotifier extends RpcEndpointFailoverNotifier {
+  _TipTestNotifier(this.readTip);
+  final Future<BigInt> Function() readTip;
+  @override
+  RpcEndpointFailoverState build() => RpcEndpointFailoverState(
+    primary: defaultRpcEndpointConfig('main'),
+    current: defaultRpcEndpointConfig('main'),
+    fallbackCandidates: const [],
+  );
+  @override
+  Future<BigInt> getLatestBlockHeight() => readTip();
+}
+
+class _TipUpgradeNotifier extends ChainUpgradeStatusNotifier {
+  @override
+  Future<ChainUpgradeStatusState> build() async =>
+      ChainUpgradeStatusState.cachedActive(defaultRpcEndpointConfig('main'));
+  @override
+  Future<void> refreshAtTip(BigInt tipHeight) async {}
+}
+
+class _NoPrivateQueries extends EnhancePirNotifier {
+  @override
+  bool build() => false;
+}
+
+class _PollingTestSyncNotifier extends _BalanceRefreshTestSyncNotifier {
+  _PollingTestSyncNotifier()
+    : super(
+        () async => 'wallet.db',
+        initialState: SyncState(
+          accountUuid: _accountUuid,
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+          scannedHeight: 100,
+          chainTipHeight: 100,
+        ),
+      );
+  @override
+  Future<SyncState> build() async {
+    ref.onDispose(stopTipChecksForTesting);
+    return super.build();
+  }
+
+  int startSyncs = 0;
+  @override
+  void startSync({int? latestTipHeight}) {
+    startSyncs++;
+  }
 }

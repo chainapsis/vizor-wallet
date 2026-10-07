@@ -1,12 +1,13 @@
 @Tags(['mobile'])
 library;
 
-import 'package:flutter/material.dart' show MaterialApp;
+import 'package:flutter/material.dart' show MaterialApp, Scaffold;
 import 'package:flutter/widgets.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/mobile/payment_link_mobile_views.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_copy.dart';
 
 import '../../figma_compare/figma_compare_font_loader.dart';
 
@@ -16,6 +17,91 @@ const _feeHelpText =
 
 void main() {
   setUpAll(loadFigmaCompareFonts);
+
+  for (final width in [375.0, 402.0, 440.0]) {
+    testWidgets(
+      'checking fills the screen and centers content at width $width',
+      (tester) async {
+        await tester.binding.setSurfaceSize(Size(width, 852));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await tester.pumpWidget(
+          MaterialApp(
+            builder: (_, child) =>
+                AppTheme(data: AppThemeData.light, child: child!),
+            home: const Scaffold(
+              body: SafeArea(
+                child: PaymentLinkReadyMobileView(
+                  state: PaymentLinkReadyMobileState.checking,
+                  card: PaymentLinkLoadingMobileCard(),
+                  onHome: _noop,
+                ),
+              ),
+            ),
+          ),
+        );
+        expect(
+          tester
+              .getRect(
+                find.byKey(const ValueKey('payment_link_mobile_loading_card')),
+              )
+              .center
+              .dx,
+          closeTo(width / 2, 0.01),
+        );
+        expect(
+          tester.getRect(find.text(kPaymentLinkClaimCheckingHeading)).center.dx,
+          closeTo(width / 2, 0.01),
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  testWidgets(
+    'checking content scrolls without overlap on a small screen with large text',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(320, 568));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        MaterialApp(
+          builder: (context, child) => AppTheme(
+            data: AppThemeData.dark,
+            child: MediaQuery(
+              data: MediaQuery.of(
+                context,
+              ).copyWith(textScaler: const TextScaler.linear(2)),
+              child: child!,
+            ),
+          ),
+          home: PaymentLinkReadyMobileView(
+            state: PaymentLinkReadyMobileState.checking,
+            card: const SizedBox(width: 361, height: 225.625),
+            onHome: _noop,
+            waitingStatusLabel: 'Checking the gift… 50%',
+          ),
+        ),
+      );
+      final heading = find.text(kPaymentLinkClaimCheckingHeading);
+      final description = find.text(kPaymentLinkClaimCheckingDescription);
+      final progress = find.text('Checking the gift… 50%');
+      expect(
+        tester.getRect(heading).bottom,
+        lessThan(tester.getRect(description).top),
+      );
+      expect(
+        tester.getRect(description).bottom,
+        lessThan(tester.getRect(progress).top),
+      );
+      await tester.ensureVisible(progress);
+      await tester.pumpAndSettle();
+      expect(tester.getRect(progress).bottom, lessThanOrEqualTo(568));
+      expect(
+        find.byKey(const ValueKey('payment_link_mobile_ready_home_button')),
+        findsNothing,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('review defaults describe review and card creation', (
     tester,

@@ -18,7 +18,7 @@ import 'package:zcash_wallet/src/core/security/software_wallet_secret.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
-import 'package:zcash_wallet/src/core/navigation/payment_uri_busy_surface_provider.dart';
+import 'package:zcash_wallet/src/core/navigation/external_action_guard_provider.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_proposal_detail_screen.dart';
@@ -573,7 +573,10 @@ void main() {
     );
     expect(find.byKey(const ValueKey('ledger_voting_cancel')), findsOneWidget);
     expect(find.text('Signing with Keystone'), findsNothing);
-    expect(container.read(paymentUriBusySurfaceProvider), greaterThan(0));
+    expect(
+      container.read(externalActionGuardProvider).activeHoldCount,
+      greaterThan(0),
+    );
   });
 
   testWidgets('status screen requires software account without mnemonic', (
@@ -4061,7 +4064,7 @@ void main() {
         )
         .setChoice(1, 0);
 
-    expect(container.read(paymentUriBusySurfaceProvider), 0);
+    expect(container.read(externalActionGuardProvider).activeHoldCount, 0);
 
     await tester.pumpWidget(
       UncontrolledProviderScope(
@@ -4072,7 +4075,7 @@ void main() {
     await _pumpUntilFound(tester, find.text('Sign 1 voting bundle'));
     await tester.pump();
 
-    expect(container.read(paymentUriBusySurfaceProvider), 1);
+    expect(container.read(externalActionGuardProvider).activeHoldCount, 1);
 
     // The scan screen is pushed over the status screen, so the panel is still
     // mounted and the session is still live: the hold stays.
@@ -4080,14 +4083,14 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('keystone scan route'), findsOneWidget);
-    expect(container.read(paymentUriBusySurfaceProvider), 1);
+    expect(container.read(externalActionGuardProvider).activeHoldCount, 1);
 
     // Signing done: the panel goes away and the hold comes back with it.
     await tester.tap(find.text('Return Signature'));
     await _pumpUntilFound(tester, find.text('submission confirmed route'));
     await tester.pump();
 
-    expect(container.read(paymentUriBusySurfaceProvider), 0);
+    expect(container.read(externalActionGuardProvider).activeHoldCount, 0);
   });
 
   testWidgets('hardware status screen scans Keystone signature and submits', (
@@ -4270,7 +4273,10 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('Voting with Ledger'), findsOneWidget);
-      expect(container.read(paymentUriBusySurfaceProvider), greaterThan(0));
+      expect(
+        container.read(externalActionGuardProvider).activeHoldCount,
+        greaterThan(0),
+      );
       expect(find.text('Preparing voting delegation'), findsOneWidget);
       expect(find.text('Signing with Keystone'), findsNothing);
       expect(find.text('Signing with Ledger'), findsOneWidget);

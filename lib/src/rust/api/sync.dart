@@ -86,6 +86,31 @@ Future<void> runPaymentLinkClaimSync({
   allowResubmit: allowResubmit,
 );
 
+Stream<ApiGiftCardCheckProgress> runPaymentLinkClaimCheck({
+  required String claimId,
+  required String dbPath,
+  required String lightwalletdUrl,
+  required List<String> fallbackUrls,
+  required String network,
+  required bool allowResubmit,
+}) => RustLib.instance.api.crateApiSyncRunPaymentLinkClaimCheck(
+  claimId: claimId,
+  dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
+  fallbackUrls: fallbackUrls,
+  network: network,
+  allowResubmit: allowResubmit,
+);
+
+/// None identifies a retained claim from a version using ordinary wallet sync.
+Future<int?> getPaymentLinkClaimConfirmations({
+  required String dbPath,
+  required String claimTxids,
+}) => RustLib.instance.api.crateApiSyncGetPaymentLinkClaimConfirmations(
+  dbPath: dbPath,
+  claimTxids: claimTxids,
+);
+
 /// Cancels only the isolated scan associated with `claim_id`.
 void cancelPaymentLinkClaimSync({required String claimId}) => RustLib
     .instance
@@ -1295,6 +1320,54 @@ class AddressValidationResult {
           isValid == other.isValid &&
           addressType == other.addressType &&
           wrongNetwork == other.wrongNetwork;
+}
+
+/// Independent single-funding Gift Card preparation / post-submit observation.
+class ApiGiftCardCheckProgress {
+  final String phase;
+  final BigInt completed;
+  final BigInt total;
+  final int fundingHeight;
+  final int checkedHeight;
+  final BigInt totalZatoshi;
+  final BigInt unspentZatoshi;
+  final bool complete;
+
+  const ApiGiftCardCheckProgress({
+    required this.phase,
+    required this.completed,
+    required this.total,
+    required this.fundingHeight,
+    required this.checkedHeight,
+    required this.totalZatoshi,
+    required this.unspentZatoshi,
+    required this.complete,
+  });
+
+  @override
+  int get hashCode =>
+      phase.hashCode ^
+      completed.hashCode ^
+      total.hashCode ^
+      fundingHeight.hashCode ^
+      checkedHeight.hashCode ^
+      totalZatoshi.hashCode ^
+      unspentZatoshi.hashCode ^
+      complete.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiGiftCardCheckProgress &&
+          runtimeType == other.runtimeType &&
+          phase == other.phase &&
+          completed == other.completed &&
+          total == other.total &&
+          fundingHeight == other.fundingHeight &&
+          checkedHeight == other.checkedHeight &&
+          totalZatoshi == other.totalZatoshi &&
+          unspentZatoshi == other.unspentZatoshi &&
+          complete == other.complete;
 }
 
 /// Event emitted by the mempool observer when a wallet-relevant
@@ -2818,12 +2891,16 @@ class TransactionDetailOutput {
   final String? address;
   final BigInt amountZatoshi;
   final String pool;
+
+  /// Exact output pool for activity and Gift Card destination metadata.
+  final String? activityPool;
   final bool usesOrchardReceiver;
 
   const TransactionDetailOutput({
     this.address,
     required this.amountZatoshi,
     required this.pool,
+    this.activityPool,
     required this.usesOrchardReceiver,
   });
 
@@ -2832,6 +2909,7 @@ class TransactionDetailOutput {
       address.hashCode ^
       amountZatoshi.hashCode ^
       pool.hashCode ^
+      activityPool.hashCode ^
       usesOrchardReceiver.hashCode;
 
   @override
@@ -2842,6 +2920,7 @@ class TransactionDetailOutput {
           address == other.address &&
           amountZatoshi == other.amountZatoshi &&
           pool == other.pool &&
+          activityPool == other.activityPool &&
           usesOrchardReceiver == other.usesOrchardReceiver;
 }
 
@@ -2856,6 +2935,17 @@ class TransactionInfo {
   final String txKind;
   final BigInt displayAmount;
   final String displayPool;
+
+  /// Exact output pool for ordinary Activity labels. The legacy display pool
+  /// remains available for Gift Cards; shielding and migration leave this unset.
+  final String? activityPool;
+
+  /// Hidden TEX funding step matched by the existing history classifier.
+  final String? fundingParentTxid;
+
+  /// Zero means unmined; absent means no matched funding dependency.
+  final BigInt? fundingParentMinedHeight;
+  final bool? fundingParentExpired;
   final BigInt createdTime;
 
   const TransactionInfo({
@@ -2869,6 +2959,10 @@ class TransactionInfo {
     required this.txKind,
     required this.displayAmount,
     required this.displayPool,
+    this.activityPool,
+    this.fundingParentTxid,
+    this.fundingParentMinedHeight,
+    this.fundingParentExpired,
     required this.createdTime,
   });
 
@@ -2884,6 +2978,10 @@ class TransactionInfo {
       txKind.hashCode ^
       displayAmount.hashCode ^
       displayPool.hashCode ^
+      activityPool.hashCode ^
+      fundingParentTxid.hashCode ^
+      fundingParentMinedHeight.hashCode ^
+      fundingParentExpired.hashCode ^
       createdTime.hashCode;
 
   @override
@@ -2901,6 +2999,10 @@ class TransactionInfo {
           txKind == other.txKind &&
           displayAmount == other.displayAmount &&
           displayPool == other.displayPool &&
+          activityPool == other.activityPool &&
+          fundingParentTxid == other.fundingParentTxid &&
+          fundingParentMinedHeight == other.fundingParentMinedHeight &&
+          fundingParentExpired == other.fundingParentExpired &&
           createdTime == other.createdTime;
 }
 

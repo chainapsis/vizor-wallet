@@ -107,6 +107,7 @@ use crate::wallet::network::WalletNetwork;
 use crate::wallet::sync_engine;
 use crate::wallet::{confirmations_policy, payment_link_claim_confirmations_policy};
 
+mod gift_card_input;
 use super::migration::MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI;
 use super::migration_wallet_ops::{
     migration_locked_input_policy, select_spendable_orchard_v2_notes,
@@ -1135,6 +1136,12 @@ fn propose_request(
     purpose: SendPurpose,
     context: &str,
 ) -> Result<(Proposal<WalletFeeRule, ReceivedNoteId>, Option<TxVersion>), String> {
+    if purpose == SendPurpose::PaymentLinkClaim {
+        if let Some(source) = gift_card_input::CardInput::load(db, db_path, account_id)? {
+            let proposal = source.propose(network, request.build()?)?;
+            return Ok((proposal, Some(TxVersion::V6)));
+        }
+    }
     let proposed_tx_version = proposed_tx_version_for_wallet_db(db, network, context)?;
     let transaction_request = request.build()?;
     let change_memo = match request {
@@ -1221,6 +1228,11 @@ pub(crate) fn estimate_send_max_for_purpose(
 ) -> Result<SendMaxEstimateResult, String> {
     let mut db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
+    if purpose == SendPurpose::PaymentLinkClaim {
+        if let Some(source) = gift_card_input::CardInput::load(&db, db_path, account_id)? {
+            return source.estimate_max(network, to_address, memo_str);
+        }
+    }
     // librustzcash's max-spend proposal path no longer takes a proposed tx
     // version: the version (and its fee shape) is decided when the PCZT is
     // created, so the quote stays aligned with what `propose_send` can build.
@@ -6795,6 +6807,28 @@ where
             return ResubmitStats::default();
         }
     };
+    resubmit_transactions(
+        lightwalletd_url,
+        client,
+        current_height,
+        candidates,
+        should_exit,
+    )
+    .await
+}
+
+/// Relay an already validated candidate set. Gift Card inspection supplies its
+/// own chain-authoritative candidates; ordinary sync keeps its existing query.
+pub(crate) async fn resubmit_transactions<ShouldExit>(
+    lightwalletd_url: &str,
+    client: &mut zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient<tonic::transport::Channel>,
+    current_height: u32,
+    candidates: Vec<super::transactions::ResubmittableTx>,
+    should_exit: ShouldExit,
+) -> ResubmitStats
+where
+    ShouldExit: Fn() -> bool,
+{
     let candidates = order_resubmittable_transactions(candidates);
 
     if candidates.is_empty() {

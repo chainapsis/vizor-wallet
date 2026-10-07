@@ -1,6 +1,7 @@
 use std::panic;
 
 use crate::wallet::{keys, network::WalletNetwork, transparent_receive_cache};
+use bip0039::{Count, English, Mnemonic};
 use tonic::{transport::Channel, Request};
 use zcash_client_backend::proto::service::{
     self, compact_tx_streamer_client::CompactTxStreamerClient,
@@ -360,13 +361,15 @@ pub fn add_account(
     })
 }
 
-/// Generate a software account mnemonic and shielded address without touching
-/// the wallet DB. Used for an external one-time recipient controlled by a
-/// fresh seed, such as payment-link funding.
+/// Generate a 12-word BIP-39 mnemonic and shielded address for Gift Card funding
+/// without touching the wallet DB. Regular wallets and Gift Card recipients
+/// continue using the 24-word [`keys::generate_mnemonic`] generator.
 pub fn generate_software_account(network: String) -> Result<GeneratedSoftwareAccount, String> {
     catch(|| {
         let network = keys::parse_network(&network)?;
-        let mnemonic = keys::generate_mnemonic();
+        let mnemonic = Mnemonic::<English>::generate(Count::Words12)
+            .phrase()
+            .to_string();
         let seed = keys::mnemonic_to_seed(&mnemonic)?;
         let unified_address = keys::derive_gift_address(network, &seed, 0)?;
 
@@ -1501,14 +1504,6 @@ mod tests {
             let error = gift_mnemonic_to_entropy(phrase.clone()).unwrap_err();
             assert!(!error.contains(&phrase));
         }
-        assert_eq!(
-            generate_software_account("main".into())
-                .unwrap()
-                .mnemonic
-                .split_whitespace()
-                .count(),
-            24
-        );
     }
 
     #[test]
@@ -1568,12 +1563,53 @@ mod tests {
     const BIP39_VECTOR_MAINNET_TADDR: &str = "t1eB9Q9aDobjEnazefA9hdGyx3ku7dHshw5";
 
     #[test]
-    fn generates_valid_software_account_without_creating_a_database() {
-        let account = generate_software_account("main".to_string()).unwrap();
+    fn generated_gift_entropy_recovers_the_funded_account() {
+        use secrecy::ExposeSecret;
 
-        assert_eq!(account.mnemonic.split_whitespace().count(), 24);
-        assert!(validate_mnemonic(account.mnemonic.clone()));
-        assert!(account.unified_address.starts_with("u1"));
+        for network in [WalletNetwork::Main, WalletNetwork::Regtest] {
+            let network_name = network_name(network).to_string();
+            let account = generate_software_account(network_name.clone()).unwrap();
+            assert_eq!(account.mnemonic.split_whitespace().count(), 12);
+            assert!(validate_mnemonic(account.mnemonic.clone()));
+
+            let entropy = gift_mnemonic_to_entropy(account.mnemonic.clone()).unwrap();
+            assert_eq!(entropy.len(), 16);
+            let restored = gift_mnemonic_from_entropy(entropy).unwrap();
+            assert_eq!(restored, account.mnemonic);
+            assert_eq!(
+                keys::mnemonic_to_seed(&restored).unwrap().expose_secret(),
+                keys::mnemonic_to_seed(&account.mnemonic)
+                    .unwrap()
+                    .expose_secret(),
+            );
+            validate_gift_address(
+                restored.clone(),
+                network_name.clone(),
+                account.unified_address.clone(),
+            )
+            .unwrap();
+
+            // Claiming imports the decoded secret into an isolated wallet.
+            let dir = tempfile::tempdir().unwrap();
+            let db_path = temp_db(&dir, "claim.db");
+            let imported = import_wallet(
+                restored.clone(),
+                String::new(),
+                Some(3_483_141),
+                network_name.clone(),
+                db_path.clone(),
+                Some("Gift Card".to_string()),
+            )
+            .unwrap();
+            assert_eq!(imported.unified_address, account.unified_address);
+            assert_eq!(
+                find_software_account_for_mnemonic(restored, network_name, db_path, 0).unwrap(),
+                Some(imported.account_uuid),
+            );
+        }
+
+        // Recipient setup continues to use the ordinary 24-word generator.
+        assert_eq!(generate_mnemonic().split_whitespace().count(), 24);
     }
 
     #[test]

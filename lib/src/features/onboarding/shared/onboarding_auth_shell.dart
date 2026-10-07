@@ -5,7 +5,7 @@ import 'package:flutter/widgets.dart';
 import '../../../core/theme/app_theme.dart';
 
 const onboardingAuthBackgroundAsset =
-    'assets/illustrations/onboarding_auth_background.png';
+    'assets/illustrations/onboarding_auth_background.webp';
 
 class OnboardingAuthShell extends StatelessWidget {
   const OnboardingAuthShell({super.key, required this.card});

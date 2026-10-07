@@ -238,18 +238,25 @@ class _MobileSecretPassphraseScreenState
 /// variant: the words stay off-screen entirely; a centered key badge,
 /// headline, and caution paragraph fill the dark card instead.
 class SecretPassphraseRevealWarningCard extends StatelessWidget {
-  const SecretPassphraseRevealWarningCard({super.key});
+  const SecretPassphraseRevealWarningCard({
+    this.minHeight = 440,
+    this.borderRadius = AppRadii.xLarge,
+    super.key,
+  });
+
+  final double minHeight;
+  final double borderRadius;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Container(
       width: double.infinity,
-      constraints: const BoxConstraints(minHeight: 440),
+      constraints: BoxConstraints(minHeight: minHeight),
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
         color: colors.background.homeCard,
-        borderRadius: BorderRadius.circular(AppRadii.xLarge),
+        borderRadius: BorderRadius.circular(borderRadius),
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,

@@ -26,11 +26,13 @@ import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_qr_
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 
 import '../../support/gift_card_privacy_checks.dart';
+import '../../support/gift_card_claim_checking_checks.dart';
 import '../../support/leading_decimal_input.dart';
 import '../../support/payment_links_screen_support.dart';
 
 void main() {
   registerGiftCardPrivacyChecks(mobile: true);
+  registerGiftCardClaimCheckingChecks(mobile: true);
   final haptics = <String>[];
   const hapticsChannel = MethodChannel('com.zcash.wallet/haptics');
   setUp(() {

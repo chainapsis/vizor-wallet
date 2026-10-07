@@ -21,6 +21,7 @@ import '../../../core/storage/wallet_paths.dart';
 import '../../../core/zcash/zip321_payment_request.dart'
     show stripUnsupportedZip321MemoText;
 import '../../../providers/account_provider.dart';
+import '../../../providers/pending_activity_evidence_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
@@ -1065,6 +1066,21 @@ Future<SendBroadcastOutcome> _runSendBroadcast({
     }
 
     if (canReadProviders) {
+      if (broadcastComplete &&
+          !ref.read(appSecurityProvider).requiresUnlock &&
+          (ref
+                  .read(accountProvider)
+                  .value
+                  ?.accounts
+                  .any((account) => account.uuid == args.proposalAccountUuid) ??
+              false)) {
+        ref
+            .read(pendingActivityEvidenceProvider.notifier)
+            .observe(
+              accountUuid: args.proposalAccountUuid,
+              txids: txids.split(','),
+            );
+      }
       try {
         await ref.read(syncProvider.notifier).refreshAfterSend();
       } catch (e) {

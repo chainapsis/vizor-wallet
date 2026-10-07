@@ -1,3 +1,4 @@
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
@@ -9,7 +10,7 @@ void main() {
     await initializeZcashWalletRuntime();
   });
 
-  testWidgets('Welcome screen shows create and import buttons', (
+  testWidgets('Welcome exposes desktop account entry actions', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
@@ -17,7 +18,17 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Create a new wallet'), findsOneWidget);
-    expect(find.text('Import a wallet'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('welcome_create_wallet_button')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('welcome_import_wallet_button')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('welcome_redeem_card_button')),
+      findsOneWidget,
+    );
   });
 }

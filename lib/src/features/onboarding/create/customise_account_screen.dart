@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../app_bootstrap.dart';
+import '../import/desktop_import_navigation.dart';
 import '../../../core/input/app_password_input_source.dart';
 import '../../../../main.dart' show log;
 import '../../../core/account_name_policy.dart';
@@ -24,8 +26,11 @@ import '../ledger/ledger_connect_screen.dart';
 import '../shared/customise_account_mutation.dart';
 import '../shared/onboarding_error_messages.dart';
 import '../shared/onboarding_flow_args.dart';
-import 'account_persona_generator.dart';
+import '../shared/account_persona_draft.dart';
+import '../shared/account_persona_randomise_button.dart';
 import 'onboarding_split_view.dart';
+import '../../payment_links/services/gift_claim_setup_coordinator.dart';
+import '../../payment_links/widgets/desktop_gift_setup_shell.dart';
 
 typedef CustomiseAccountFinishCallback =
     Future<void> Function(String accountName, String profilePictureId);
@@ -37,7 +42,9 @@ class CustomiseAccountScreen extends ConsumerStatefulWidget {
     this.random,
     super.key,
   }) : ledgerPresentation = false,
-       ledgerBackTarget = null;
+       ledgerBackTarget = null,
+       giftPresentation = false,
+       giftConfiguresPassword = false;
 
   const CustomiseAccountScreen.ledger({
     required this.onFinish,
@@ -45,8 +52,23 @@ class CustomiseAccountScreen extends ConsumerStatefulWidget {
     this.random,
     super.key,
   }) : args = null,
-       ledgerPresentation = true;
+       ledgerPresentation = true,
+       giftPresentation = false,
+       giftConfiguresPassword = false;
 
+  const CustomiseAccountScreen.gift({
+    required this.onFinish,
+    required bool configuresPassword,
+    this.random,
+    super.key,
+  }) : args = null,
+       ledgerPresentation = false,
+       ledgerBackTarget = null,
+       giftPresentation = true,
+       giftConfiguresPassword = configuresPassword;
+
+  final bool giftPresentation;
+  final bool giftConfiguresPassword;
   final CustomiseAccountArgs? args;
 
   /// Optional preview/test seam. Production routes leave this null and use the
@@ -63,21 +85,24 @@ class CustomiseAccountScreen extends ConsumerStatefulWidget {
       _CustomiseAccountScreenState();
 }
 
-enum _FinishPhase { idle, stoppingSync, creatingWallet }
+enum _FinishPhase { idle, stoppingSync, creatingWallet, recoveringSetup }
 
 class _CustomiseAccountScreenState
     extends ConsumerState<CustomiseAccountScreen> {
-  late final TextEditingController _nameController;
-  late String _profilePictureId;
+  late final AccountPersonaDraft _persona;
   var _finishPhase = _FinishPhase.idle;
   String? _submitError;
   var _showProfilePicturePicker = false;
+  var _requiresSetupRecovery = false;
 
-  String get _normalizedName => normalizeAccountName(_nameController.text);
-  int get _nameLength => accountNameCharacterLength(_nameController.text);
-  bool get _nameValid => isAccountNameLengthValid(_nameController.text);
+  String get _normalizedName =>
+      normalizeAccountName(_persona.nameController.text);
+  int get _nameLength =>
+      accountNameCharacterLength(_persona.nameController.text);
+  bool get _nameValid => isAccountNameLengthValid(_persona.nameController.text);
   bool get _isSubmitting => _finishPhase != _FinishPhase.idle;
-  bool get _canFinish => !_isSubmitting && _nameValid;
+  bool get _canFinish =>
+      !_isSubmitting && (_requiresSetupRecovery || _nameValid);
 
   String? get _nameMessage {
     if (_submitError != null) return _submitError;
@@ -89,51 +114,110 @@ class _CustomiseAccountScreenState
   @override
   void initState() {
     super.initState();
-    final suggestion = generateAccountPersona(random: widget.random);
-    _nameController = TextEditingController(text: suggestion.name)
-      ..selection = TextSelection.collapsed(offset: suggestion.name.length);
-    _profilePictureId = suggestion.profilePictureId;
+    _persona = AccountPersonaDraft(random: widget.random);
   }
 
   @override
   void dispose() {
-    _nameController.dispose();
+    _persona.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
     if (!_canFinish) return;
+    if (_requiresSetupRecovery) {
+      await _retryInterruptedSetup();
+      return;
+    }
     setState(() {
       _finishPhase = _FinishPhase.creatingWallet;
       _submitError = null;
     });
 
     try {
-      final onFinish = widget.onFinish;
-      if (onFinish != null) {
-        await onFinish(_normalizedName, _profilePictureId);
-        if (!mounted) return;
-        setState(() => _finishPhase = _FinishPhase.idle);
-        return;
-      }
-      await _finishSetup();
+      await ref.read(routerRefreshProvider).pauseWhile(() async {
+        try {
+          final onFinish = widget.onFinish;
+          if (onFinish != null) {
+            await onFinish(_normalizedName, _persona.profilePictureId);
+            if (mounted) setState(() => _finishPhase = _FinishPhase.idle);
+            return;
+          }
+          await _finishSetup();
+        } catch (error) {
+          if (_isInterruptedSetup(error) &&
+              ref.read(appSecurityProvider).requiresUnlock) {
+            // A lock during persistence must rebuild the account snapshot
+            // before the router can expose Unlock with an empty account list.
+            _requiresSetupRecovery = true;
+            if (mounted) {
+              setState(() => _finishPhase = _FinishPhase.recoveringSetup);
+            }
+            await _reloadInterruptedSetup();
+            return;
+          }
+          rethrow;
+        }
+      });
     } catch (e, st) {
       log('CustomiseAccountScreen._submit: ERROR: $e\n$st');
       if (!mounted) return;
       setState(() {
         _finishPhase = _FinishPhase.idle;
-        _submitError = onboardingSubmitErrorMessage(e);
+        _requiresSetupRecovery =
+            _requiresSetupRecovery || _isInterruptedSetup(e);
+        _submitError = _requiresSetupRecovery
+            ? 'Setup interrupted. Retry to recover your wallet.'
+            : onboardingSubmitErrorMessage(e);
       });
     }
   }
 
-  Future<void> _finishSetup() => ref
-      .read(linuxKeyringCoordinatorProvider)
-      .runMutation(_finishSetupWithOwnership);
+  Future<void> _retryInterruptedSetup() async {
+    setState(() {
+      _finishPhase = _FinishPhase.recoveringSetup;
+      _submitError = null;
+    });
+    try {
+      await ref.read(routerRefreshProvider).pauseWhile(_reloadInterruptedSetup);
+    } catch (error, stack) {
+      log('CustomiseAccountScreen._retryInterruptedSetup: $error\n$stack');
+      if (mounted) {
+        setState(() {
+          _finishPhase = _FinishPhase.idle;
+          _submitError = "Couldn't resume setup. Please try again.";
+        });
+      }
+    }
+  }
+
+  bool _isInterruptedSetup(Object error) =>
+      error is WalletAccountSetupInterruptedException ||
+      error is WalletAccountStateUncertainException;
+
+  Future<void> _reloadInterruptedSetup() async {
+    // Reuse startup's durable DB inspection and credential preservation.
+    // Lock first so recovery must finish on unlock before Home opens.
+    final reloadBootstrap = ref.read(appBootstrapRetryProvider);
+    ref.read(appSecurityProvider.notifier).lock();
+    await reloadBootstrap();
+  }
+
+  Future<void> _finishSetup() async {
+    await ref
+        .read(linuxKeyringCoordinatorProvider)
+        .runMutation(_finishSetupWithOwnership);
+    if (!mounted) return;
+    // Account/credential persistence has released its mutation owner before
+    // the user chooses a recipient and switching acquires its own owner.
+    await completeGiftClaimImportSetup(ref);
+    if (!mounted) return;
+    clearCustomisedAccountDraft(ref, widget.args!.flow);
+    GoRouter.of(context).go('/home');
+  }
 
   Future<void> _finishSetupWithOwnership() async {
     final args = widget.args!;
-    final router = GoRouter.of(context);
     final pendingPassword = args.pendingPassword;
     final inputSourceService = ref.read(appPasswordInputSourceProvider);
 
@@ -141,7 +225,7 @@ class _CustomiseAccountScreenState
       ref,
       setupArgs: args.setupArgs,
       accountName: _normalizedName,
-      profilePictureId: _profilePictureId,
+      profilePictureId: _persona.profilePictureId,
       onStoppingSync: () {
         if (!mounted) return;
         setState(() => _finishPhase = _FinishPhase.stoppingSync);
@@ -154,8 +238,6 @@ class _CustomiseAccountScreenState
 
     if (pendingPassword == null) {
       await createAccount();
-      clearCustomisedAccountDraft(ref, args.flow);
-      router.go('/home');
       return;
     }
 
@@ -171,8 +253,6 @@ class _CustomiseAccountScreenState
         await securityNotifier.completePasswordSetup();
         passwordCommitted = true;
         unawaited(inputSourceService.remember(args.passwordInputSource));
-        clearCustomisedAccountDraft(ref, args.flow);
-        router.go('/home');
       });
     } catch (e) {
       if (passwordPrepared && !passwordCommitted) {
@@ -197,8 +277,16 @@ class _CustomiseAccountScreenState
     setState(() => _submitError = null);
   }
 
+  void _randomisePersona() {
+    if (_isSubmitting || _requiresSetupRecovery) return;
+    setState(() {
+      _persona.randomise(random: widget.random);
+      _submitError = null;
+    });
+  }
+
   void _openProfilePicturePicker() {
-    if (_isSubmitting) return;
+    if (_isSubmitting || _requiresSetupRecovery) return;
     setState(() => _showProfilePicturePicker = true);
   }
 
@@ -208,7 +296,7 @@ class _CustomiseAccountScreenState
 
   Future<void> _selectProfilePicture(String profilePictureId) async {
     setState(() {
-      _profilePictureId = profilePictureId;
+      _persona.profilePictureId = profilePictureId;
       _showProfilePicturePicker = false;
     });
   }
@@ -223,9 +311,14 @@ class _CustomiseAccountScreenState
             'Desktop Ledger uses its dedicated setup routes.',
           ),
           SetPasswordFlow.create => OnboardingStep.setPassword.routePath,
-          SetPasswordFlow.importWallet => '/import/set-password',
-          SetPasswordFlow.importKeystone =>
+          SetPasswordFlow.importWallet => desktopImportLocation(
+            context,
+            '/import/set-password',
+          ),
+          SetPasswordFlow.importKeystone => desktopImportLocation(
+            context,
             KeystoneOnboardingStep.setPassword.routePath,
+          ),
           SetPasswordFlow.importWalletLink => throw StateError(
             'Wallet Link does not use account customisation.',
           ),
@@ -247,7 +340,9 @@ class _CustomiseAccountScreenState
           'Wallet Link does not use account customisation.',
         ),
       },
-      routePath: args.setupArgs.backRoutePath,
+      routePath: args.flow == SetPasswordFlow.create
+          ? args.setupArgs.backRoutePath
+          : desktopImportLocation(context, args.setupArgs.backRoutePath),
       routeExtra: args.setupArgs.backRouteExtra,
     );
   }
@@ -260,7 +355,7 @@ class _CustomiseAccountScreenState
             onDismiss: _closeProfilePicturePicker,
             child: AppProfilePicturePickerModal(
               title: 'Select profile picture',
-              currentProfilePictureId: _profilePictureId,
+              currentProfilePictureId: _persona.profilePictureId,
               optionKeyPrefix: 'customise_account_pfp_option_',
               cancelKey: const ValueKey('customise_account_pfp_cancel'),
               actionKey: const ValueKey('customise_account_pfp_update'),
@@ -270,10 +365,20 @@ class _CustomiseAccountScreenState
           )
         : null;
 
+    if (widget.giftPresentation) {
+      return DesktopGiftSetupShell(
+        step: DesktopGiftSetupStep.customise,
+        showPasswordStep: widget.giftConfiguresPassword,
+        overlay: profilePictureOverlay,
+        child: _buildContent(),
+      );
+    }
     if (widget.ledgerPresentation) {
       return LedgerOnboardingShell(
         activeStep: LedgerOnboardingStep.customiseAccount,
-        backTarget: _isSubmitting ? null : widget.ledgerBackTarget,
+        backTarget: (_isSubmitting || _requiresSetupRecovery)
+            ? null
+            : widget.ledgerBackTarget,
         overlay: profilePictureOverlay,
         child: _buildContent(),
       );
@@ -284,17 +389,23 @@ class _CustomiseAccountScreenState
         'Desktop Ledger uses its dedicated setup routes.',
       ),
       SetPasswordFlow.create => OnboardingTrailingPane(
-        backTarget: _isSubmitting ? null : _backTarget,
+        backTarget: (_isSubmitting || _requiresSetupRecovery)
+            ? null
+            : _backTarget,
         overlay: profilePictureOverlay,
         child: _buildContent(),
       ),
       SetPasswordFlow.importWallet => ImportOnboardingTrailingPane(
-        backTarget: _isSubmitting ? null : _backTarget,
+        backTarget: (_isSubmitting || _requiresSetupRecovery)
+            ? null
+            : _backTarget,
         overlay: profilePictureOverlay,
         child: _buildContent(),
       ),
       SetPasswordFlow.importKeystone => KeystoneOnboardingTrailingPane(
-        backTarget: _isSubmitting ? null : _backTarget,
+        backTarget: (_isSubmitting || _requiresSetupRecovery)
+            ? null
+            : _backTarget,
         overlay: profilePictureOverlay,
         child: _buildContent(),
       ),
@@ -306,13 +417,15 @@ class _CustomiseAccountScreenState
   }
 
   Widget _buildContent() => _CustomiseAccountContent(
-    nameController: _nameController,
-    profilePictureId: _profilePictureId,
+    nameController: _persona.nameController,
+    profilePictureId: _persona.profilePictureId,
     nameMessage: _nameMessage,
     finishPhase: _finishPhase,
     canFinish: _canFinish,
+    requiresSetupRecovery: _requiresSetupRecovery,
     onNameChanged: _handleNameChanged,
     onEditProfilePicture: _openProfilePicturePicker,
+    onRandomisePersona: _randomisePersona,
     onFinish: _submit,
   );
 }
@@ -324,8 +437,10 @@ class _CustomiseAccountContent extends StatelessWidget {
     required this.nameMessage,
     required this.finishPhase,
     required this.canFinish,
+    required this.requiresSetupRecovery,
     required this.onNameChanged,
     required this.onEditProfilePicture,
+    required this.onRandomisePersona,
     required this.onFinish,
   });
 
@@ -334,8 +449,10 @@ class _CustomiseAccountContent extends StatelessWidget {
   final String? nameMessage;
   final _FinishPhase finishPhase;
   final bool canFinish;
+  final bool requiresSetupRecovery;
   final ValueChanged<String> onNameChanged;
   final VoidCallback onEditProfilePicture;
+  final VoidCallback onRandomisePersona;
   final Future<void> Function() onFinish;
 
   static const _contentWidth = 396.0;
@@ -360,9 +477,12 @@ class _CustomiseAccountContent extends StatelessWidget {
                       nameController: nameController,
                       profilePictureId: profilePictureId,
                       message: nameMessage,
-                      enabled: finishPhase == _FinishPhase.idle,
+                      enabled:
+                          finishPhase == _FinishPhase.idle &&
+                          !requiresSetupRecovery,
                       onNameChanged: onNameChanged,
                       onEditProfilePicture: onEditProfilePicture,
+                      onRandomisePersona: onRandomisePersona,
                       onSubmitted: onFinish,
                     ),
                   ],
@@ -375,9 +495,11 @@ class _CustomiseAccountContent extends StatelessWidget {
               minWidth: _buttonMinWidth,
               trailing: const AppIcon(AppIcons.chevronForward),
               child: Text(switch (finishPhase) {
-                _FinishPhase.idle => 'Finish setup',
+                _FinishPhase.idle =>
+                  requiresSetupRecovery ? 'Retry setup' : 'Finish setup',
                 _FinishPhase.stoppingSync => 'Stop syncing...',
                 _FinishPhase.creatingWallet => 'Creating wallet...',
+                _FinishPhase.recoveringSetup => 'Recovering wallet...',
               }),
             ),
           ],
@@ -430,6 +552,7 @@ class _AccountProfileCard extends StatelessWidget {
     required this.enabled,
     required this.onNameChanged,
     required this.onEditProfilePicture,
+    required this.onRandomisePersona,
     required this.onSubmitted,
   });
 
@@ -439,6 +562,7 @@ class _AccountProfileCard extends StatelessWidget {
   final bool enabled;
   final ValueChanged<String> onNameChanged;
   final VoidCallback onEditProfilePicture;
+  final VoidCallback onRandomisePersona;
   final Future<void> Function() onSubmitted;
 
   @override
@@ -512,6 +636,16 @@ class _AccountProfileCard extends StatelessWidget {
                   ),
                 ),
               ],
+            ),
+          ),
+          PositionedDirectional(
+            top: 0,
+            end: 0,
+            child: AccountPersonaRandomiseButton(
+              actionKey: const ValueKey('customise_account_randomise'),
+              visualKey: const ValueKey('customise_account_randomise_visual'),
+              showTooltip: true,
+              onPressed: enabled ? onRandomisePersona : null,
             ),
           ),
           if (message != null)

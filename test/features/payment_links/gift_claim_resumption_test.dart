@@ -1,6 +1,3 @@
-@Tags(['mobile'])
-library;
-
 import 'dart:async';
 import 'dart:io';
 
@@ -78,27 +75,128 @@ void main() {
     },
   );
 
-  test(
-    'a restarted import never infers its recipient from a later UUID',
-    () async {
-      final journal = GiftClaimImportStore(storage: _ImportStorage());
-      await journal.save(
-        GiftClaimImportHandoff(link: _link, accountUuidsBeforeSetup: {}),
-      );
-      journal.resetMemory();
-      final operations = _Operations(_Storage());
-      final container = _container(
-        operations,
-        importStore: journal,
-        recover: true,
-      );
-      addTearDown(container.dispose);
-      await container.read(paymentLinkClaimCoordinatorProvider).refresh();
-      expect(operations.submitCalls, 0);
-      expect((await operations.store.load()).single.setupAccountUuid, isNull);
-      expect((await operations.store.load()).single.claimLink, isNotNull);
-    },
-  );
+  for (final before in [
+    <String>{},
+    {'other-account'},
+  ]) {
+    test(
+      'a restarted import with ${2 - before.length} new accounts restores an unbound Card',
+      () async {
+        final journal = GiftClaimImportStore(storage: _ImportStorage());
+        await journal.save(
+          GiftClaimImportHandoff(link: _link, accountUuidsBeforeSetup: before),
+        );
+        journal.resetMemory();
+        final operations = _Operations(_Storage());
+        final container = _container(
+          operations,
+          importStore: journal,
+          recover: true,
+        );
+        addTearDown(container.dispose);
+        await container.read(paymentLinkClaimCoordinatorProvider).refresh();
+        expect(operations.submitCalls, 0);
+        expect((await operations.store.load()).single.setupAccountUuid, isNull);
+        expect((await operations.store.load()).single.claimLink, isNotNull);
+        expect(await journal.load(), isNull);
+      },
+    );
+  }
+
+  test('import recovery does not race a live recipient choice', () async {
+    final journal = GiftClaimImportStore(storage: _ImportStorage());
+    await journal.save(
+      GiftClaimImportHandoff(link: _link, accountUuidsBeforeSetup: {}),
+    );
+    final operations = _Operations(_Storage());
+    final container = _container(
+      operations,
+      importStore: journal,
+      recover: true,
+    );
+    addTearDown(container.dispose);
+    await container.read(paymentLinkClaimCoordinatorProvider).refresh();
+    expect(await operations.store.load(), isEmpty);
+    expect(await journal.load(), isNotNull);
+    journal.releaseLiveHandoff();
+    await container.read(paymentLinkClaimCoordinatorProvider).refresh();
+    expect((await operations.store.load()).single.setupAccountUuid, isNull);
+    expect(await journal.load(), isNull);
+    expect(operations.submitCalls, 0);
+  });
+
+  test('Received write failure retains the handoff for retry', () async {
+    final journal = GiftClaimImportStore(storage: _ImportStorage());
+    await journal.save(
+      GiftClaimImportHandoff(link: _link, accountUuidsBeforeSetup: {}),
+    );
+    journal.resetMemory();
+    final storage = _Storage()..failWrites = true;
+    final operations = _Operations(storage);
+    final container = _container(
+      operations,
+      importStore: journal,
+      recover: true,
+    );
+    addTearDown(container.dispose);
+    final coordinator = container.read(paymentLinkClaimCoordinatorProvider);
+    await coordinator.refresh();
+    expect(await journal.load(), isNotNull);
+    expect(await operations.store.load(), isEmpty);
+    storage.failWrites = false;
+    await coordinator.refresh();
+    expect((await operations.store.load()).single.setupAccountUuid, isNull);
+    expect(await journal.load(), isNull);
+    expect(operations.submitCalls, 0);
+  });
+
+  test('restart recovery preserves an already pinned recipient', () async {
+    final journal = GiftClaimImportStore(storage: _ImportStorage());
+    await journal.save(
+      GiftClaimImportHandoff(link: _link, accountUuidsBeforeSetup: {}),
+    );
+    journal.resetMemory();
+    final operations = await _operations();
+    final container = _container(operations, importStore: journal);
+    addTearDown(container.dispose);
+    await container.read(paymentLinkClaimCoordinatorProvider).refresh();
+    expect(
+      (await operations.store.load()).single.setupAccountUuid,
+      'setup-account',
+    );
+    expect(await journal.load(), isNull);
+  });
+
+  test('import restoration waits for unlock and account metadata', () async {
+    final journal = GiftClaimImportStore(storage: _ImportStorage());
+    await journal.save(
+      GiftClaimImportHandoff(link: _link, accountUuidsBeforeSetup: {}),
+    );
+    journal.resetMemory();
+    final operations = _Operations(_Storage());
+    final security = _Security(locked: true);
+    final accounts = _RecoveringAccounts();
+    final container = _container(
+      operations,
+      importStore: journal,
+      security: security,
+      accounts: accounts,
+      recover: true,
+    );
+    addTearDown(container.dispose);
+    final coordinator = container.read(paymentLinkClaimCoordinatorProvider);
+    await coordinator.refresh();
+    expect(await operations.store.load(), isEmpty);
+    security.unlockForTest();
+    await coordinator.refresh();
+    expect(await operations.store.load(), isEmpty);
+    expect(await journal.load(), isNotNull);
+    accounts.restoreForTest();
+    await coordinator.refresh();
+    expect((await operations.store.load()).single.setupAccountUuid, isNull);
+    expect(await journal.load(), isNull);
+    expect(operations.submitCalls, 0);
+  });
 
   test(
     'a malformed import handoff cannot stop an existing Received claim',
@@ -568,12 +666,16 @@ class _Operations extends Fake implements PaymentLinkOperations {
 
 class _Storage implements PaymentLinkReceivedStorage {
   String? value;
+  bool failWrites = false;
   @override
   Future<void> delete() async => value = null;
   @override
   Future<String?> read() async => value;
   @override
-  Future<void> write(String next) async => value = next;
+  Future<void> write(String next) async {
+    if (failWrites) throw StateError('Received storage unavailable');
+    value = next;
+  }
 }
 
 class _Security extends AppSecurityNotifier {

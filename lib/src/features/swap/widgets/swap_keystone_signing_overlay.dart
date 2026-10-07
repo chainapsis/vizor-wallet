@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
-import '../../../core/navigation/payment_uri_busy_surface_hold.dart';
+import '../../../core/navigation/external_action_guard_hold.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../keystone/services/keystone_batch_signing.dart';
@@ -42,7 +42,7 @@ enum _SwapKeystonePhase { preparing, ready, broadcasting, failed }
 // tell the payment-URI drain that this surface is mid-session.
 class _SwapKeystoneSigningOverlayState
     extends ConsumerState<SwapKeystoneSigningOverlay>
-    with PaymentUriBusySurfaceHoldMixin {
+    with ExternalActionGuardHoldMixin {
   _SwapKeystonePhase _phase = _SwapKeystonePhase.preparing;
   bool _showSaplingParamsPrompt = false;
   Completer<bool>? _saplingParamsPromptCompleter;

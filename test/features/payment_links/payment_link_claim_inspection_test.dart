@@ -20,6 +20,9 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
+import 'package:zcash_wallet/src/features/payment_links/providers/gift_card_check_progress_provider.dart';
+import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_claim_coordinator_provider.dart';
+
 import '../../fakes/fake_sync_notifier.dart';
 
 void main() {
@@ -60,9 +63,17 @@ void main() {
           ),
           appSecurityProvider.overrideWith(_SetupSecurityNotifier.new),
           rpcEndpointProvider.overrideWith(_RpcNotifier.new),
-          rpcEndpointFailoverLatestBlockHeightGetterProvider.overrideWithValue(
-            (_, _) async => BigInt.from(api.tipHeight),
+          rpcEndpointFailoverChainNameGetterProvider.overrideWithValue(
+            (_) async => 'main',
           ),
+          rpcEndpointFailoverLatestBlockHeightGetterProvider.overrideWithValue((
+            _,
+            _,
+          ) async {
+            if (!api.tipStarted.isCompleted) api.tipStarted.complete();
+            await api.tipGate?.future;
+            return BigInt.from(api.tipHeight);
+          }),
           paymentLinkRecoveryStoreProvider.overrideWithValue(
             PaymentLinkRecoveryStore(_MemoryRecoveryStorage()),
           ),
@@ -81,6 +92,123 @@ void main() {
           .setMockMethodCallHandler(pathChannel, null);
       await supportDirectory.delete(recursive: true);
     });
+
+    test(
+      'background pause rejects late native progress and drains completion',
+      () async {
+        api.checkGate = Completer<void>();
+        final checking = service.inspectClaim(_link());
+        final failure = expectLater(checking, throwsStateError);
+        await api.checkStarted.future;
+        container.read(paymentLinkClaimCoordinatorProvider).pauseForLifecycle();
+        api.checkGate!.complete();
+        await failure;
+        expect(container.read(giftCardCheckProgressProvider), isEmpty);
+        expect(api.cancelCalls, greaterThan(0));
+      },
+    );
+
+    for (final stage in ['tip', 'storage', 'import']) {
+      for (final resumeBeforeCompletion in [false, true]) {
+        test(
+          'pause during $stage blocks inspection even when resume=$resumeBeforeCompletion',
+          () async {
+            final gate = Completer<void>();
+            final started = Completer<void>();
+            switch (stage) {
+              case 'tip':
+                api.tipGate = gate;
+              case 'storage':
+                receivedStorage.onRead = () async {
+                  if (!started.isCompleted) started.complete();
+                  await gate.future;
+                  return receivedStorage.value;
+                };
+              case 'import':
+                api.importGate = gate;
+            }
+            final checking = service.inspectClaim(_link());
+            final failure = expectLater(checking, throwsStateError);
+            await switch (stage) {
+              'tip' => api.tipStarted.future,
+              'import' => api.importStarted.future,
+              _ => started.future,
+            };
+            final coordinator = container.read(
+              paymentLinkClaimCoordinatorProvider,
+            );
+            coordinator.pauseForLifecycle();
+            if (resumeBeforeCompletion) coordinator.resumeForLifecycle();
+            gate.complete();
+            await failure;
+            expect(api.syncCalls, 0);
+            expect(api.estimateDestinations, isEmpty);
+            expect(receivedStorage.value, isNull);
+            expect(container.read(giftCardCheckProgressProvider), isEmpty);
+            if (api.importedDbPath != null) {
+              expect(await File(api.importedDbPath!).exists(), isFalse);
+            }
+          },
+        );
+      }
+    }
+
+    test(
+      'background admission stays closed after account recovery wakeups',
+      () async {
+        final coordinator = container.read(paymentLinkClaimCoordinatorProvider);
+        coordinator.pauseForLifecycle();
+        (container.read(appSecurityProvider.notifier) as _SetupSecurityNotifier)
+            .unlockForTest();
+        coordinator.resumeAfterReset();
+        expect(coordinator.acceptsPreparation, isFalse);
+        await expectLater(service.inspectClaim(_link()), throwsStateError);
+        expect(api.importCalls, 0);
+        expect(api.syncCalls, 0);
+      },
+    );
+
+    test('account-free inspection can retry after foreground resume', () async {
+      final coordinator = container.read(paymentLinkClaimCoordinatorProvider);
+      coordinator.pauseForLifecycle();
+      await expectLater(service.inspectClaim(_link()), throwsStateError);
+      coordinator.resumeForLifecycle();
+      final inspection = await service.inspectClaim(_link());
+      expect(inspection.claimableZatoshi, _link().amountZatoshi);
+      expect(api.syncCalls, 1);
+      expect(container.read(appSecurityProvider).isPasswordConfigured, isFalse);
+    });
+
+    test(
+      'pause prevents fallback dispatch after an in-flight endpoint error',
+      () async {
+        api.failCheckOnce = true;
+        api.checkGate = Completer<void>();
+        final checking = service.inspectClaim(_link());
+        final failure = expectLater(checking, throwsStateError);
+        await api.checkStarted.future;
+        container.read(paymentLinkClaimCoordinatorProvider).pauseForLifecycle();
+        api.checkGate!.complete();
+        await failure;
+        expect(api.checkUrls, hasLength(1));
+        expect(api.estimateDestinations, isEmpty);
+      },
+    );
+
+    test(
+      'a failed configured endpoint resumes checking on an existing fallback',
+      () async {
+        final primary = defaultRpcEndpointConfig('main');
+        (container.read(rpcEndpointProvider.notifier) as _RpcNotifier)
+            .setEndpointForTest(primary);
+        api.failCheckOnce = true;
+        await service.inspectClaim(_link());
+        expect(api.checkUrls, hasLength(2));
+        expect(api.checkUrls[0], primary.normalizedLightwalletdUrl);
+        expect(api.checkUrls[1], isNot(api.checkUrls[0]));
+        expect(api.importCalls, 1);
+      },
+    );
 
     test(
       'inspection needs no wallet, passcode, or receiving account',
@@ -152,6 +280,17 @@ void main() {
       },
     );
 
+    test(
+      'readiness uses the observer tip when the chain advances during inspection',
+      () async {
+        api.fundingHeight = api.tipHeight;
+        api.checkedTip = api.tipHeight + 1;
+        final inspection = await service.inspectClaim(_link());
+        expect(inspection.fundingConfirmationCount, 2);
+        expect(inspection.waitingForFundingConfirmations, isFalse);
+      },
+    );
+
     test('unspendable funding keeps the existing confirmation wait', () async {
       api.maxClaimable = null;
       api.fundingHeight = api.tipHeight;
@@ -186,17 +325,13 @@ void main() {
     }
 
     test(
-      'long scans require consent before a temporary wallet is created',
+      'old cards use the dedicated check without full-sync consent',
       () async {
         api.tipHeight =
             _link().birthdayHeight + kPaymentLinkLongSyncLookbackBlocks + 1;
-        await expectLater(
-          service.inspectClaim(_link()),
-          throwsA(isA<PaymentLinkLongSyncConfirmationRequired>()),
-        );
-        expect(api.importCalls, 0);
-        await service.inspectClaim(_link(), allowLongSync: true);
+        await service.inspectClaim(_link());
         expect(api.importCalls, 1);
+        expect(api.syncCalls, 1);
       },
     );
 
@@ -402,64 +537,61 @@ void main() {
     }
 
     for (final cleanup in ['inspection', 'retention', 'session']) {
-      test(
-        'completed card cache is removed by $cleanup cleanup',
-        () async {
-          final first = await service.inspectClaim(_link());
-          final store = container.read(paymentLinkReceivedStoreProvider);
-          await store.saveReady(first.link);
-          final receiving = await store.markReceiving(
-            address: first.link.address,
-            destinationAccountUuid: 'receiver',
-            claimTxids: 'claim-tx',
-            claimSubmittedAt: DateTime.utc(2026, 10, 1),
-          );
-          await reconcilePaymentLinkClaimReceipt(
-            record: receiving,
-            transactions: [
-              _transaction(
-                txid: 'claim-tx',
-                minedHeight: api.tipHeight - 5,
-                accountBalanceDelta: first.link.amountZatoshi.toInt(),
-              ),
-            ],
-            verifiedHeight: BigInt.from(api.tipHeight),
-            store: store,
-            deleteRetainedWallet: (_) async {
-              await first.directory.delete(recursive: true);
-              return true;
-            },
-          );
-          expect((await store.load()).single.claimLink, isNull);
-          expect(await first.directory.exists(), isFalse);
+      test('completed card cache is removed by $cleanup cleanup', () async {
+        final first = await service.inspectClaim(_link());
+        final store = container.read(paymentLinkReceivedStoreProvider);
+        await store.saveReady(first.link);
+        final receiving = await store.markReceiving(
+          address: first.link.address,
+          destinationAccountUuid: 'receiver',
+          claimTxids: 'claim-tx',
+          claimSubmittedAt: DateTime.utc(2026, 10, 1),
+        );
+        await reconcilePaymentLinkClaimReceipt(
+          record: receiving,
+          transactions: [
+            _transaction(
+              txid: 'claim-tx',
+              minedHeight: api.tipHeight - 5,
+              accountBalanceDelta: first.link.amountZatoshi.toInt(),
+            ),
+          ],
+          verifiedHeight: BigInt.from(api.tipHeight),
+          store: store,
+          deleteRetainedWallet: (_) async {
+            await first.directory.delete(recursive: true);
+            return true;
+          },
+        );
+        expect((await store.load()).single.claimLink, isNull);
+        expect(await first.directory.exists(), isFalse);
 
-          api.total = BigInt.zero;
-          api.maxClaimable = null;
-          if (cleanup != 'inspection') {
-            accounts.select('receiver', 'u1receiveraddress');
-            final reopened = await service.prepareClaim(first.link);
-            expect(await File(reopened.dbPath).exists(), isTrue);
-            if (cleanup == 'retention') {
-              // A stale screen may choose retention for a completed receipt.
-              await service.retainPendingClaim(reopened);
-            } else {
-              await service.discardClaimSession(reopened);
-            }
+        api.total = BigInt.zero;
+        api.maxClaimable = null;
+        if (cleanup != 'inspection') {
+          accounts.select('receiver', 'u1receiveraddress');
+          final reopened = await service.prepareClaim(first.link);
+          expect(await File(reopened.dbPath).exists(), isTrue);
+          if (cleanup == 'retention') {
+            // A stale screen may choose retention for a completed receipt.
+            await service.retainPendingClaim(reopened);
           } else {
-            final reopened = await service.inspectClaim(first.link);
-            expect(await File(reopened.dbPath).exists(), isTrue);
-            await service.discardClaimInspection(reopened);
+            await service.discardClaimSession(reopened);
           }
+        } else {
+          final reopened = await service.inspectClaim(first.link);
+          expect(await File(reopened.dbPath).exists(), isTrue);
+          await service.discardClaimInspection(reopened);
+        }
 
-          expect(api.importCalls, 2);
-          expect(await first.directory.exists(), isFalse);
-          final receipt = (await store.load()).single;
-          expect(receipt.status, PaymentLinkReceivedStatus.received);
-          expect(receipt.claimLink, isNull);
-          expect(receipt.claimTxids, 'claim-tx');
-          expect(receipt.destinationAccountUuid, 'receiver');
-        },
-      );
+        expect(api.importCalls, 2);
+        expect(await first.directory.exists(), isFalse);
+        final receipt = (await store.load()).single;
+        expect(receipt.status, PaymentLinkReceivedStatus.received);
+        expect(receipt.claimLink, isNull);
+        expect(receipt.claimTxids, 'claim-tx');
+        expect(receipt.destinationAccountUuid, 'receiver');
+      });
     }
 
     test(
@@ -605,6 +737,8 @@ class _RpcNotifier extends RpcEndpointNotifier {
     lightwalletdUrl: 'https://example.invalid:9067',
   );
 
+  void setEndpointForTest(RpcEndpointConfig endpoint) => state = endpoint;
+
   void setNetworkForTest(String network) => state = RpcEndpointConfig(
     networkName: network,
     lightwalletdUrl: 'https://example.invalid:9067',
@@ -660,7 +794,16 @@ class _InspectRustApi implements RustLibApi {
   int syncCalls = 0;
   int cancelCalls = 0;
   bool failSync = false;
+  bool failCheckOnce = false;
+  final checkUrls = <String>[];
+  Completer<void>? checkGate;
+  Completer<void> checkStarted = Completer<void>();
+  Completer<void>? tipGate;
+  Completer<void> tipStarted = Completer<void>();
+  Completer<void>? importGate;
+  Completer<void> importStarted = Completer<void>();
   int? fundingHeight;
+  int? checkedTip;
   String? importedDbPath;
   Completer<String>? lookupGate;
   Completer<void> lookupStarted = Completer<void>();
@@ -676,7 +819,16 @@ class _InspectRustApi implements RustLibApi {
     syncCalls = 0;
     cancelCalls = 0;
     failSync = false;
+    failCheckOnce = false;
+    checkUrls.clear();
+    checkGate = null;
+    checkStarted = Completer<void>();
+    tipGate = null;
+    tipStarted = Completer<void>();
+    importGate = null;
+    importStarted = Completer<void>();
     fundingHeight = null;
+    checkedTip = null;
     importedDbPath = null;
     lookupGate = null;
     lookupStarted = Completer<void>();
@@ -694,6 +846,8 @@ class _InspectRustApi implements RustLibApi {
     importCalls++;
     importedDbPath = dbPath;
     await File(dbPath).writeAsString('claim wallet fixture');
+    if (!importStarted.isCompleted) importStarted.complete();
+    await importGate?.future;
     return rust_wallet.WalletImportResult(
       unifiedAddress: _link().address,
       accountUuid: 'claim-wallet',
@@ -708,15 +862,34 @@ class _InspectRustApi implements RustLibApi {
   }) async {}
 
   @override
-  Future<void> crateApiSyncRunPaymentLinkClaimSync({
+  Stream<rust_sync.ApiGiftCardCheckProgress>
+  crateApiSyncRunPaymentLinkClaimCheck({
     required bool allowResubmit,
     required String claimId,
     required String dbPath,
     required String lightwalletdUrl,
+    required List<String> fallbackUrls,
     required String network,
-  }) async {
+  }) async* {
     syncCalls++;
+    checkUrls.add(lightwalletdUrl);
+    if (!checkStarted.isCompleted) checkStarted.complete();
+    await checkGate?.future;
+    if (failCheckOnce) {
+      failCheckOnce = false;
+      throw const SocketException('Connection reset');
+    }
     if (failSync) throw StateError('Claim scan failed');
+    yield rust_sync.ApiGiftCardCheckProgress(
+      phase: 'complete',
+      completed: BigInt.one,
+      total: BigInt.one,
+      fundingHeight: total > BigInt.zero ? (fundingHeight ?? tipHeight - 1) : 0,
+      checkedHeight: checkedTip ?? tipHeight,
+      totalZatoshi: total,
+      unspentZatoshi: total,
+      complete: true,
+    );
   }
 
   @override

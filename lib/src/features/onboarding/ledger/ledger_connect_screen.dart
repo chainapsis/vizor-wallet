@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../import/desktop_import_navigation.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -75,7 +76,7 @@ class LedgerOnboardingShell extends ConsumerWidget {
           child: Align(
             alignment: Alignment.bottomCenter,
             child: Image.asset(
-              'assets/illustrations/onboarding_ledger_sidebar.png',
+              'assets/illustrations/desktop/onboarding_ledger_sidebar.webp',
               width: 256,
               height: 430,
               fit: BoxFit.contain,
@@ -153,7 +154,7 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
       if (!mounted) return;
       setState(() => _phase = _LedgerConnectPhase.idle);
       context.go(
-        '/onboarding/ledger/birthday',
+        desktopImportLocation(context, '/onboarding/ledger/birthday'),
         extra: LedgerBirthdayArgs(account: account),
       );
     } catch (error) {
@@ -179,7 +180,7 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
     );
     if (!mounted || account == null) return;
     context.go(
-      '/onboarding/ledger/birthday',
+      desktopImportLocation(context, '/onboarding/ledger/birthday'),
       extra: LedgerBirthdayArgs(account: account),
     );
   }

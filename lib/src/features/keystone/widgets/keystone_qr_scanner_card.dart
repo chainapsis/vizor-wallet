@@ -44,7 +44,7 @@ class KeystoneQrScannerCard extends StatefulWidget {
     required this.error,
     required this.onProgress,
     required this.onDecodeError,
-    required this.onComplete,
+    required ValueChanged<ScanResult> onComplete,
     required this.unavailableMessage,
     this.decodingLabel = 'Reading QR...',
     this.cardWidth,
@@ -54,14 +54,65 @@ class KeystoneQrScannerCard extends StatefulWidget {
     this.showScanProgress = true,
     this.onControlsReady,
     super.key,
-  });
+  }) : _onComplete = onComplete,
+       onPlainComplete = null,
+       scanSessionResetToken = null,
+       controller = null,
+       cameraViewBuilder = null,
+       permissionDescription =
+           'A camera is required to connect Keystone.\n'
+           'You can revert this in settings anytime later.',
+       troubleScanningTips = _troubleScanningTips;
 
-  final String expectedUrType;
+  /// Uses the existing camera card and controls for single-frame QR payloads.
+  const KeystoneQrScannerCard.plain({
+    required ValueChanged<String> this.onPlainComplete,
+    required this.error,
+    required this.unavailableMessage,
+    this.scanSessionResetToken,
+    this.controller,
+    this.cameraViewBuilder,
+    super.key,
+  }) : expectedUrType = null,
+       decoding = false,
+       onProgress = null,
+       onDecodeError = null,
+       _onComplete = null,
+       decodingLabel = 'Reading QR...',
+       cardWidth = null,
+       cameraHeight = null,
+       fullBleedMobile = false,
+       showScanOverlay = true,
+       showScanProgress = false,
+       onControlsReady = null,
+       permissionDescription =
+           'A camera is required to scan the gift card QR code.\n'
+           'You can revert this in settings anytime later.',
+       troubleScanningTips = const [
+         'Open the gift card QR code full screen on another device.',
+         'Move the QR code a few inches further from the camera so it can focus.',
+         "Make sure the room is well-lit and the QR code isn't reflecting glare.",
+         'On a Mac, you can use Continuity Camera to scan with your iPhone instead.',
+       ];
+
+  final String? expectedUrType;
   final bool decoding;
   final String? error;
-  final ValueChanged<int> onProgress;
-  final ValueChanged<Object> onDecodeError;
-  final ValueChanged<ScanResult> onComplete;
+  final ValueChanged<int>? onProgress;
+  final ValueChanged<Object>? onDecodeError;
+  final ValueChanged<ScanResult>? _onComplete;
+
+  /// The UR completion callback of the default constructor.
+  ValueChanged<ScanResult> get onComplete => _onComplete!;
+  final ValueChanged<String>? onPlainComplete;
+  final Object? scanSessionResetToken;
+  final String permissionDescription;
+  final List<String> troubleScanningTips;
+
+  /// An injected controller remains owned by the caller.
+  final MobileScannerController? controller;
+  final Widget Function(BuildContext, MobileScannerController)?
+  cameraViewBuilder;
   final String unavailableMessage;
   final String decodingLabel;
 
@@ -114,7 +165,7 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _controller = _createController();
+    _controller = widget.controller ?? _createController();
     _restriction = CameraRestrictionProbe(_controller)
       ..addListener(_handleRestrictionChanged);
     _camerasSubscription = _controller.camerasStream.listen(_applyCameras);
@@ -279,7 +330,7 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
 
   void _handleScanProgress(int progress) {
     final clamped = progress.clamp(0, 100);
-    widget.onProgress(clamped);
+    widget.onProgress?.call(clamped);
     if (!mounted || _scanProgress == clamped) return;
     setState(() {
       _scanProgress = clamped;
@@ -423,7 +474,7 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
     WidgetsBinding.instance.removeObserver(this);
     _camerasSubscription?.cancel();
     _restriction.dispose();
-    _controller.dispose();
+    if (widget.controller == null) _controller.dispose();
     super.dispose();
   }
 
@@ -526,15 +577,34 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
                                     clipBehavior: Clip.none,
                                     children: [
                                       if (QrScanner.isAvailable)
-                                        AnimatedUrScannerView(
-                                          controller: _controller,
-                                          expectedUrType: widget.expectedUrType,
-                                          scanSessionResetToken:
-                                              _scanSessionResetToken,
-                                          onProgress: _handleScanProgress,
-                                          onDecodeError: widget.onDecodeError,
-                                          onComplete: _handleScanComplete,
-                                        )
+                                        widget.cameraViewBuilder?.call(
+                                              context,
+                                              _controller,
+                                            ) ??
+                                            (widget.onPlainComplete != null
+                                                ? PlainQrScannerView(
+                                                    controller: _controller,
+                                                    scanSessionResetToken: (
+                                                      _scanSessionResetToken,
+                                                      widget
+                                                          .scanSessionResetToken,
+                                                    ),
+                                                    onComplete:
+                                                        widget.onPlainComplete!,
+                                                  )
+                                                : AnimatedUrScannerView(
+                                                    controller: _controller,
+                                                    expectedUrType:
+                                                        widget.expectedUrType!,
+                                                    scanSessionResetToken:
+                                                        _scanSessionResetToken,
+                                                    onProgress:
+                                                        _handleScanProgress,
+                                                    onDecodeError:
+                                                        widget.onDecodeError,
+                                                    onComplete:
+                                                        _handleScanComplete,
+                                                  ))
                                       else
                                         Center(
                                           child: Padding(
@@ -612,8 +682,7 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
                                               : AppIcons.camera,
                                           title: 'Enable camera access',
                                           description:
-                                              'A camera is required to connect Keystone.\n'
-                                              'You can revert this in settings anytime later.',
+                                              widget.permissionDescription,
                                           iconStyle: _CameraPermissionIconStyle
                                               .inverse,
                                         ),
@@ -753,6 +822,7 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
                     onDismiss: _dismissTroubleScanning,
                     borderRadius: BorderRadius.circular(_cameraRadius),
                     child: _TroubleScanningPopover(
+                      tips: widget.troubleScanningTips,
                       onDismiss: _dismissTroubleScanning,
                     ),
                   ),
@@ -850,9 +920,10 @@ class _TroubleScanningDisclosure extends StatelessWidget {
 }
 
 class _TroubleScanningPopover extends StatelessWidget {
-  const _TroubleScanningPopover({required this.onDismiss});
+  const _TroubleScanningPopover({required this.onDismiss, required this.tips});
 
   final VoidCallback onDismiss;
+  final List<String> tips;
 
   @override
   Widget build(BuildContext context) {
@@ -896,8 +967,7 @@ class _TroubleScanningPopover extends StatelessWidget {
             ],
           ),
           const SizedBox(height: AppSpacing.sm),
-          for (final tip in _troubleScanningTips)
-            _TroubleScanningTip(text: tip),
+          for (final tip in tips) _TroubleScanningTip(text: tip),
         ],
       ),
     );

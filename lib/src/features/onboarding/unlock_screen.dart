@@ -214,7 +214,7 @@ class DesktopUnlockContent extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Image.asset(
-          'assets/illustrations/welcome_badge.png',
+          'assets/illustrations/desktop/welcome_badge.webp',
           width: 50,
           height: 50,
         ),

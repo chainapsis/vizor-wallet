@@ -1,9 +1,9 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:zcash_wallet/src/core/navigation/payment_uri_busy_surface_provider.dart';
+import 'package:zcash_wallet/src/core/navigation/external_action_guard_provider.dart';
 
-/// Asserts that [surface] holds `paymentUriBusySurfaceProvider` for exactly as
+/// Asserts that [surface] holds `externalActionGuardProvider` for exactly as
 /// long as it is mounted: the count is 1 while it is up and back to 0 once it
 /// is gone.
 ///
@@ -28,7 +28,7 @@ Future<void> expectPaymentUriBusySurfaceHeldWhileMounted(
   /// binding's "timer still pending" invariant.
   Duration postUnmountSettle = Duration.zero,
 }) async {
-  expect(container.read(paymentUriBusySurfaceProvider), 0);
+  expect(container.read(externalActionGuardProvider).activeHoldCount, 0);
 
   await tester.pumpWidget(host(surface));
   for (var i = 0; i < settlePumps; i++) {
@@ -37,7 +37,7 @@ Future<void> expectPaymentUriBusySurfaceHeldWhileMounted(
   if (drainExceptions) _drainExceptions(tester);
 
   expect(
-    container.read(paymentUriBusySurfaceProvider),
+    container.read(externalActionGuardProvider).activeHoldCount,
     1,
     reason:
         'a mounted Keystone signing surface makes the payment-URI '
@@ -50,7 +50,7 @@ Future<void> expectPaymentUriBusySurfaceHeldWhileMounted(
   await tester.pump();
   if (drainExceptions) _drainExceptions(tester);
 
-  expect(container.read(paymentUriBusySurfaceProvider), 0);
+  expect(container.read(externalActionGuardProvider).activeHoldCount, 0);
 
   if (postUnmountSettle > Duration.zero) {
     await tester.pump(postUnmountSettle);

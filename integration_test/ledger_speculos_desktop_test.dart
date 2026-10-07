@@ -1028,6 +1028,17 @@ Future<void> _runLedgerSwapScenario(
     description: '${scenario.label} Ledger broadcast acknowledgement',
     timeout: const Duration(minutes: 2),
   );
+  // The tracker counts the acknowledgement when it starts. The overlay closes
+  // only after the Rust acknowledgement returns and the completion callback
+  // rebuilds the panel, so wait for that rather than racing the next frame.
+  await _pumpUntil(
+    tester,
+    () => !tester.any(
+      find.byKey(const ValueKey('swap_ledger_signing_overlay_surface')),
+    ),
+    description: '${scenario.label} Ledger signing overlay dismissal',
+    timeout: const Duration(seconds: 10),
+  );
 
   final operationId =
       '${scenario.operationKind.wireName}:${fixture.accountUuid}:${scenario.intentId}';

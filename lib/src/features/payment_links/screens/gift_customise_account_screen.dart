@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/input/app_password_input_source.dart';
 import '../../onboarding/mobile/mobile_customise_account_screen.dart';
 import '../../onboarding/mobile/mobile_onboarding_progress.dart';
 import '../services/gift_claim_setup_coordinator.dart';
@@ -16,9 +17,11 @@ class GiftCustomiseAccountArgs {
   const GiftCustomiseAccountArgs({
     required this.passcode,
     required this.inspection,
+    this.passwordInputSource,
   });
   final String? passcode;
   final PaymentLinkClaimInspection inspection;
+  final PasswordInputSourceCandidate? passwordInputSource;
 }
 
 /// Uses the same name and profile UI as normal wallet creation.

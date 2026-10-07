@@ -72,6 +72,8 @@ class ReviewInfoRow extends StatelessWidget {
     this.onTrailingAction,
     this.valueFit,
     this.valueStyle,
+    this.valuePlaceholder,
+    this.bottomLeftPlaceholder,
     this.rowHeight = ReviewInfoRow.height,
     this.reserveBottomRow = true,
     super.key,
@@ -120,6 +122,12 @@ class ReviewInfoRow extends StatelessWidget {
   /// smaller Young Serif 28 (`AppTypography.headlineMedium`) while the
   /// send/status screens keep the default 32.
   final TextStyle? valueStyle;
+
+  /// Loading content painted in the headline's usual line box.
+  final Widget? valuePlaceholder;
+
+  /// Loading content in the reserved bottom strip.
+  final Widget? bottomLeftPlaceholder;
 
   /// Optional component height override. Pay review rows use the compact
   /// 76px variant; the send/status component remains 90px by default.
@@ -177,7 +185,22 @@ class ReviewInfoRow extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: AppSpacing.xxs),
-                if (valueFit != null)
+                if (valuePlaceholder != null)
+                  SizedBox(
+                    width: double.infinity,
+                    child: Stack(
+                      children: [
+                        Text('', maxLines: 1, style: valueStyle),
+                        Positioned.fill(
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: valuePlaceholder,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                else if (valueFit != null)
                   FittedBox(
                     fit: valueFit!,
                     alignment: Alignment.centerLeft,
@@ -206,6 +229,7 @@ class ReviewInfoRow extends StatelessWidget {
       reserveBottomRow ||
       bottomLeftIconName != null ||
       bottomLeftText != null ||
+      bottomLeftPlaceholder != null ||
       trailingActionLabel != null;
 
   Widget _bottomRow(AppColors colors) {
@@ -219,7 +243,9 @@ class ReviewInfoRow extends StatelessWidget {
           ),
           const SizedBox(width: AppSpacing.xxs),
         ],
-        if (bottomLeftText != null)
+        if (bottomLeftPlaceholder != null)
+          Expanded(child: bottomLeftPlaceholder!)
+        else if (bottomLeftText != null)
           Expanded(
             child: Text(
               bottomLeftText!,

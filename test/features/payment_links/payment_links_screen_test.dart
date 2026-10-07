@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'package:zcash_wallet/src/features/payment_links/providers/gift_card_check_progress_provider.dart';
+import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -34,11 +36,90 @@ import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 import '../../support/gift_card_privacy_checks.dart';
+import '../../support/gift_card_claim_checking_checks.dart';
 import '../../support/leading_decimal_input.dart';
 import '../../support/payment_links_screen_support.dart';
 
 void main() {
   registerGiftCardPrivacyChecks(mobile: false);
+  registerGiftCardClaimCheckingChecks(mobile: false);
+  testWidgets(
+    'shows the discovered gift on a waiting surface until the claim is prepared',
+    (tester) async {
+      final gate = Completer<void>();
+      final operations = FakePaymentLinkOperations(
+        prepareClaimGates: {1: gate},
+      );
+      await pumpPaymentLinksScreen(
+        tester,
+        operations: operations,
+        clipboard: FakePaymentLinkClipboard(
+          text: incomingLink.toUri().toString(),
+        ),
+      );
+      await tester.tap(find.text('Redeem a card'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Paste card link'));
+      await tester.pump();
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(MaterialApp).first),
+      );
+      container
+          .read(giftCardCheckProgressProvider.notifier)
+          .update(
+            incomingLink,
+            rust_sync.ApiGiftCardCheckProgress(
+              phase: 'checking',
+              completed: BigInt.from(50),
+              total: BigInt.from(100),
+              fundingHeight: incomingLink.birthdayHeight + 1,
+              checkedHeight: incomingLink.birthdayHeight + 50,
+              totalZatoshi: incomingLink.amountZatoshi + BigInt.from(10000),
+              unspentZatoshi: incomingLink.amountZatoshi + BigInt.from(10000),
+              complete: false,
+            ),
+          );
+      await tester.pump();
+      expect(find.text('Checking the gift… 50%'), findsOneWidget);
+      expect(find.text('Checking your\ngift card'), findsOneWidget);
+      expect(find.text('Claim the gift card'), findsNothing);
+      expect(find.byType(PaymentLinkConfetti), findsNothing);
+      expect(
+        find.ancestor(
+          of: find.text('Checking the gift… 50%'),
+          matching: find.byType(AppButton),
+        ),
+        findsNothing,
+      );
+      expect(find.byType(PaymentLinkGiftCard), findsWidgets);
+      container
+          .read(giftCardCheckProgressProvider.notifier)
+          .update(
+            incomingLink,
+            rust_sync.ApiGiftCardCheckProgress(
+              phase: 'checking',
+              completed: BigInt.from(100),
+              total: BigInt.from(100),
+              fundingHeight: incomingLink.birthdayHeight + 1,
+              checkedHeight: incomingLink.birthdayHeight + 100,
+              totalZatoshi: incomingLink.amountZatoshi + BigInt.from(10000),
+              unspentZatoshi: incomingLink.amountZatoshi + BigInt.from(10000),
+              complete: true,
+            ),
+          );
+      await tester.pump();
+      expect(find.text('Checking the gift… 100%'), findsOneWidget);
+      expect(find.text('Claim the gift card'), findsNothing);
+      gate.complete();
+      container
+          .read(giftCardCheckProgressProvider.notifier)
+          .clear(incomingLink);
+      await tester.pumpAndSettle();
+      expect(find.text('Claim the gift card'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets(
     'gift amount normalizes leading separators and preserves precision',
     (tester) async {
@@ -364,7 +445,7 @@ void main() {
     (PaymentLinkAvailability.noBalance, 'No balance'),
     (PaymentLinkAvailability.failed, 'Claim failed'),
   ]) {
-    testWidgets('shows ${outcome.$2} inside the redeem area', (tester) async {
+    testWidgets('shows ${outcome.$2} inside the claim stage', (tester) async {
       final operations = FakePaymentLinkOperations(claimable: false)
         ..claimAvailability = outcome.$1;
       await pumpPaymentLinksScreen(
@@ -382,7 +463,7 @@ void main() {
       expect(find.text('Redeem the Card'), findsOneWidget);
       expect(
         find.descendant(
-          of: find.byKey(const ValueKey('payment_link_redeem_drop_zone')),
+          of: find.byKey(const ValueKey('payment_link_claim_outcome_content')),
           matching: find.text(outcome.$2),
         ),
         findsOneWidget,

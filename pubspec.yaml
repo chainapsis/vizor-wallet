@@ -89,6 +89,8 @@ dev_dependencies:
   # Widgetbook for showcasing the design system in isolation.
   # Entry point: `fvm flutter run -t lib/widgetbook.dart`.
   widgetbook: ^3.14.3
+  # Test-only validation of platform asset declarations.
+  yaml: ^3.1.3
 
 dependency_overrides:
   freezed: ^3.2.5
@@ -116,10 +118,29 @@ flutter:
 
   assets:
     - assets/animations/
+    # Desktop artwork is omitted from iOS and Android bundles.
+    - path: assets/animations/desktop/
+      platforms:
+        - linux
+        - macos
+        - web
+        - windows
     - assets/illustrations/
+    - path: assets/illustrations/desktop/
+      platforms:
+        - linux
+        - macos
+        - web
+        - windows
     - assets/illustrations/payment_links/
     - assets/profile_pictures/
     - assets/icons/
+    - path: assets/icons/desktop/
+      platforms:
+        - linux
+        - macos
+        - web
+        - windows
     - assets/swap/tokens/
     - assets/swap/chains/
 

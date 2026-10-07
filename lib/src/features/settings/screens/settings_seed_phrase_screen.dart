@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/clipboard/sensitive_clipboard.dart';
@@ -11,6 +12,8 @@ import '../../../core/security/password_policy.dart';
 import '../../../core/layout/app_desktop_backdrop_shell.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/navigation/external_action_guard_provider.dart';
+import '../../../core/navigation/external_action_guard_hold.dart';
 import '../../../core/storage/app_secure_store.dart';
 import '../../../core/storage/linux_keyring_coordinator.dart';
 import '../../../core/storage/linux_secret_operation_guard.dart';
@@ -24,17 +27,30 @@ import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../widgets/confirm_access_card.dart';
+import '../../onboarding/mobile/mobile_secret_passphrase_screen.dart'
+    show SecretPassphraseRevealWarningCard;
 import '../widgets/settings_pane_backdrop.dart';
 
 class SettingsSeedPhraseScreen extends ConsumerStatefulWidget {
   const SettingsSeedPhraseScreen({
     this.accountUuid,
+    this.showBackupIntro = false,
     this.privacyOverlayController,
+    this.birthdayHeightLoader,
+    this.birthdayBlockTimeLoader,
     super.key,
   });
 
   final String? accountUuid;
+  final bool showBackupIntro;
   final SensitivePrivacyOverlayController? privacyOverlayController;
+
+  /// Deterministic preview/test loaders; production reads the wallet DB.
+  @visibleForTesting
+  final Future<int> Function(String accountUuid)? birthdayHeightLoader;
+
+  @visibleForTesting
+  final Future<int> Function(int height)? birthdayBlockTimeLoader;
 
   @override
   ConsumerState<SettingsSeedPhraseScreen> createState() =>
@@ -91,7 +107,7 @@ class SettingsSeedPhraseRevealPreview extends StatelessWidget {
 
 Future<void> _noopPreviewCopy() async {}
 
-enum _SettingsSeedPhraseStage { password, reveal }
+enum _SettingsSeedPhraseStage { intro, password, reveal }
 
 enum _SeedPhraseCopyTarget {
   phrase,
@@ -110,6 +126,8 @@ class _SettingsSeedPhraseScreenState
     extends ConsumerState<SettingsSeedPhraseScreen> {
   final _passwordController = TextEditingController();
   bool _isSubmitting = false;
+  bool _savingBackup = false;
+  String? _backupError;
   _SettingsSeedPhraseStage _stage = _SettingsSeedPhraseStage.password;
   String? _passwordError;
   String? _mnemonic;
@@ -129,6 +147,12 @@ class _SettingsSeedPhraseScreenState
 
   bool get _canSubmit =>
       !_isSubmitting && isWalletPasswordValid(_passwordController.text);
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.showBackupIntro) _stage = _SettingsSeedPhraseStage.intro;
+  }
 
   @override
   void dispose() {
@@ -153,6 +177,7 @@ class _SettingsSeedPhraseScreenState
     _isBirthdayDateLoading = false;
     _revealError = null;
     _copiedTarget = null;
+    _backupError = null;
   }
 
   void _handleTargetAccountChanged() {
@@ -390,6 +415,8 @@ class _SettingsSeedPhraseScreenState
   }
 
   Future<int> _loadBirthdayHeight(String targetAccountUuid) async {
+    final loader = widget.birthdayHeightLoader;
+    if (loader != null) return loader(targetAccountUuid);
     final dbPath = await getWalletDbPath();
     final endpoint = ref.read(rpcEndpointProvider);
     final height = await rust_sync.getExportBirthdayHeight(
@@ -401,6 +428,8 @@ class _SettingsSeedPhraseScreenState
   }
 
   Future<int> _loadBirthdayBlockTime(int height) async {
+    final loader = widget.birthdayBlockTimeLoader;
+    if (loader != null) return loader(height);
     // Local first: the scanned block or, on mainnet, the compiled-in table.
     // Only a network without a local answer asks lightwalletd for the height.
     final dbPath = await getWalletDbPath();
@@ -467,6 +496,129 @@ class _SettingsSeedPhraseScreenState
     });
   }
 
+  Future<void> _saveBackup(String uuid, {required bool snooze}) async {
+    if (_savingBackup) return;
+    final lease = ref.read(externalActionGuardProvider.notifier).tryProtect();
+    if (lease == null) return;
+    try {
+      setState(() {
+        _savingBackup = true;
+        _backupError = null;
+      });
+      final accounts = ref.read(accountProvider.notifier);
+      if (snooze) {
+        await accounts.snoozeBackupReminder(uuid);
+      } else {
+        await accounts.markBackedUp(uuid);
+      }
+      if (!mounted) return;
+      setState(() {
+        _savingBackup = false;
+        _clearSensitiveState();
+      });
+      if (widget.showBackupIntro || !context.canPop()) {
+        context.go('/home');
+      } else {
+        context.pop();
+      }
+    } catch (error, stack) {
+      log('SettingsSeedPhraseScreen._saveBackup: $error\n$stack');
+      if (mounted) {
+        setState(() {
+          _savingBackup = false;
+          _backupError = 'Couldn’t save that. Try again.';
+        });
+      }
+    } finally {
+      lease.release();
+    }
+  }
+
+  Widget _buildBackupIntro() => const Align(
+    alignment: Alignment.topCenter,
+    child: SingleChildScrollView(
+      child: SizedBox(
+        width: _seedPhraseCardWidth,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _SeedPhraseHeading(),
+            SizedBox(height: AppSpacing.sm),
+            SecretPassphraseRevealWarningCard(
+              minHeight: _SeedWordsCard.standardHeight,
+              borderRadius: AppRadii.large,
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  Widget? _buildBackupActions(AccountInfo? account) {
+    final isIntro = _stage == _SettingsSeedPhraseStage.intro;
+    final isPending = account?.setupPending == true && !account!.isHardware;
+    if (!isIntro &&
+        (_stage != _SettingsSeedPhraseStage.reveal ||
+            _mnemonic == null ||
+            !isPending)) {
+      return null;
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (_backupError != null) ...[
+          Text(
+            _backupError!,
+            textAlign: TextAlign.center,
+            style: AppTypography.bodyMedium.copyWith(
+              color: context.colors.text.destructive,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+        ],
+        if (isIntro) ...[
+          AppButton(
+            key: const ValueKey('desktop_seed_backup_intro_continue'),
+            minWidth: 196,
+            onPressed:
+                _savingBackup ||
+                    !ref.watch(externalActionGuardProvider).canProtect
+                ? null
+                : () => setState(
+                    () => _stage = _SettingsSeedPhraseStage.password,
+                  ),
+            child: const Text('Continue'),
+          ),
+          if (isPending) ...[
+            const SizedBox(height: AppSpacing.xs),
+            AppButton(
+              key: const ValueKey('desktop_seed_backup_remind_later'),
+              variant: AppButtonVariant.ghost,
+              minWidth: 196,
+              onPressed:
+                  _savingBackup ||
+                      !ref.watch(externalActionGuardProvider).canProtect
+                  ? null
+                  : () => _saveBackup(account.uuid, snooze: true),
+              child: const Text('Remind me later'),
+            ),
+          ],
+        ] else
+          AppButton(
+            key: const ValueKey('desktop_seed_backed_up'),
+            minWidth: 196,
+            onPressed:
+                _savingBackup ||
+                    !ref.watch(externalActionGuardProvider).canProtect
+                ? null
+                : () => _saveBackup(account!.uuid, snooze: false),
+            child: const Text('I’ve written it down'),
+          ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     ref.listen<AccountInfo?>(
@@ -477,50 +629,68 @@ class _SettingsSeedPhraseScreenState
       },
     );
 
-    return AppDesktopBackdropShell(
-      background: _stage == _SettingsSeedPhraseStage.reveal
-          ? ColoredBox(color: context.colors.background.window)
-          : const SettingsPaneBackdrop(art: SettingsBackdropArt.castle),
-      sidebar: const AppMainSidebar(),
-      pane: SensitivePrivacyOverlay(
-        sensitiveContentVisible:
-            _stage == _SettingsSeedPhraseStage.reveal && _mnemonic != null,
-        controller: widget.privacyOverlayController,
-        child: _SettingsSeedPhrasePane(
-          onBeforeNavigateBack: () => _clearSensitiveState(),
-          child: switch (_stage) {
-            _SettingsSeedPhraseStage.password => Center(
-              child: ConfirmAccessCard(
-                subtitle: 'To view the secret passphrase.',
-                controller: _passwordController,
-                errorText: _passwordError ?? _passwordPolicyMessage,
-                isSubmitting: _isSubmitting,
-                canSubmit: _canSubmit,
-                onChanged: _handlePasswordChanged,
-                onSubmit: _submitPassword,
+    final account = _targetAccount(ref.watch(accountProvider).value);
+    return PopScope(
+      canPop: !ref
+          .watch(externalActionGuardProvider)
+          .blocks(ExternalAction.navigation),
+      child: AppDesktopBackdropShell(
+        background: _stage == _SettingsSeedPhraseStage.reveal
+            ? ColoredBox(color: context.colors.background.window)
+            : const SettingsPaneBackdrop(art: SettingsBackdropArt.castle),
+        sidebar: const AppMainSidebar(),
+        pane: SensitivePrivacyOverlay(
+          sensitiveContentVisible:
+              _stage == _SettingsSeedPhraseStage.reveal && _mnemonic != null,
+          controller: widget.privacyOverlayController,
+          child: _SettingsSeedPhrasePane(
+            onBeforeNavigateBack: () => _clearSensitiveState(),
+            bottomActions: _buildBackupActions(account),
+            compactBottomSpacing:
+                _backupError != null &&
+                _stage == _SettingsSeedPhraseStage.reveal,
+            child: switch (_stage) {
+              _SettingsSeedPhraseStage.intro => _buildBackupIntro(),
+              _SettingsSeedPhraseStage.password => Center(
+                child: ConfirmAccessCard(
+                  subtitle: 'To view the secret passphrase.',
+                  controller: _passwordController,
+                  errorText: _passwordError ?? _passwordPolicyMessage,
+                  isSubmitting: _isSubmitting,
+                  canSubmit: _canSubmit,
+                  onChanged: _handlePasswordChanged,
+                  onSubmit: _submitPassword,
+                ),
               ),
-            ),
-            _SettingsSeedPhraseStage.reveal => _SeedPhraseRevealView(
-              mnemonic: _mnemonic,
-              bip39Passphrase: _bip39Passphrase,
-              birthdayHeight: _birthdayHeight,
-              birthdayBlockTime: _birthdayBlockTime,
-              birthdayHeightLoading: _isBirthdayHeightLoading,
-              birthdayDateLoading: _isBirthdayDateLoading,
-              errorText: _revealError,
-              phraseCopied: _copiedTarget == _SeedPhraseCopyTarget.phrase,
-              bip39PassphraseCopied:
-                  _copiedTarget == _SeedPhraseCopyTarget.bip39Passphrase,
-              birthdayDateCopied:
-                  _copiedTarget == _SeedPhraseCopyTarget.birthdayDate,
-              birthdayHeightCopied:
-                  _copiedTarget == _SeedPhraseCopyTarget.birthdayHeight,
-              onCopyPressed: _copyMnemonic,
-              onCopyBip39PassphrasePressed: _copyBip39Passphrase,
-              onCopyBirthdayDatePressed: _copyBirthdayDate,
-              onCopyBirthdayHeightPressed: _copyBirthdayHeight,
-            ),
-          },
+              _SettingsSeedPhraseStage.reveal => Align(
+                alignment: account?.setupPending == true && !account!.isHardware
+                    ? Alignment.topCenter
+                    : Alignment.center,
+                child: SingleChildScrollView(
+                  child: _SeedPhraseRevealView(
+                    mnemonic: _mnemonic,
+                    bip39Passphrase: _bip39Passphrase,
+                    birthdayHeight: _birthdayHeight,
+                    birthdayBlockTime: _birthdayBlockTime,
+                    birthdayHeightLoading: _isBirthdayHeightLoading,
+                    birthdayDateLoading: _isBirthdayDateLoading,
+                    errorText: _revealError,
+                    phraseCopied: _copiedTarget == _SeedPhraseCopyTarget.phrase,
+                    bip39PassphraseCopied:
+                        _copiedTarget == _SeedPhraseCopyTarget.bip39Passphrase,
+                    birthdayDateCopied:
+                        _copiedTarget == _SeedPhraseCopyTarget.birthdayDate,
+                    birthdayHeightCopied:
+                        _copiedTarget == _SeedPhraseCopyTarget.birthdayHeight,
+                    onCopyPressed: _copyMnemonic,
+                    onCopyBip39PassphrasePressed: _copyBip39Passphrase,
+                    onCopyBirthdayDatePressed: _copyBirthdayDate,
+                    onCopyBirthdayHeightPressed: _copyBirthdayHeight,
+                  ),
+                ),
+              ),
+            },
+          ),
         ),
       ),
     );
@@ -531,10 +701,14 @@ class _SettingsSeedPhrasePane extends StatelessWidget {
   const _SettingsSeedPhrasePane({
     required this.onBeforeNavigateBack,
     required this.child,
+    this.bottomActions,
+    this.compactBottomSpacing = false,
   });
 
   final VoidCallback onBeforeNavigateBack;
   final Widget child;
+  final Widget? bottomActions;
+  final bool compactBottomSpacing;
 
   @override
   Widget build(BuildContext context) {
@@ -542,19 +716,37 @@ class _SettingsSeedPhrasePane extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          AppPaneToolbar(
-            backLinkMinWidth: 60,
-            onBeforeNavigate: onBeforeNavigateBack,
+          ExternalActionNavigationGuard(
+            child: AppPaneToolbar(
+              backLinkMinWidth: 60,
+              onBeforeNavigate: onBeforeNavigateBack,
+            ),
           ),
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(
+              // Use the footer's outer spacing for retry feedback before
+              // reducing the viewport available to the recovery cards.
+              padding: EdgeInsets.fromLTRB(
                 AppSpacing.md,
                 0,
                 AppSpacing.md,
-                AppSpacing.md,
+                compactBottomSpacing ? AppSpacing.xs : AppSpacing.md,
               ),
-              child: child,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(child: child),
+                  if (bottomActions != null)
+                    Padding(
+                      padding: EdgeInsets.only(
+                        top: compactBottomSpacing
+                            ? AppSpacing.xs
+                            : AppSpacing.sm,
+                      ),
+                      child: bottomActions,
+                    ),
+                ],
+              ),
             ),
           ),
         ],
@@ -609,30 +801,11 @@ class _SeedPhraseRevealView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            'Secret Passphrase',
-            textAlign: TextAlign.center,
-            style: AppTypography.headlineLarge.copyWith(
-              color: colors.text.accent,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.s),
-          Text(
-            'This is the master key to your wallet.\n'
-            'Don’t share it with anyone.',
-            textAlign: TextAlign.center,
-            style: AppTypography.labelLarge.copyWith(
-              color: colors.text.accent,
-              height: 18 / 14,
-              letterSpacing: -0.14,
-            ),
-          ),
+          const _SeedPhraseHeading(),
           const SizedBox(height: AppSpacing.sm),
           if (errorText == null && mnemonic != null) ...[
             _SeedWordsCard(
@@ -666,6 +839,38 @@ class _SeedPhraseRevealView extends StatelessWidget {
   }
 }
 
+class _SeedPhraseHeading extends StatelessWidget {
+  const _SeedPhraseHeading();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          'Secret Passphrase',
+          textAlign: TextAlign.center,
+          style: AppTypography.headlineLarge.copyWith(
+            color: colors.text.accent,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.s),
+        Text(
+          'This is the master key to your wallet.\n'
+          'Don’t share it with anyone.',
+          textAlign: TextAlign.center,
+          style: AppTypography.labelLarge.copyWith(
+            color: colors.text.accent,
+            height: 18 / 14,
+            letterSpacing: -0.14,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _SeedWordsCard extends StatelessWidget {
   const _SeedWordsCard({
     required this.words,
@@ -683,6 +888,24 @@ class _SeedWordsCard extends StatelessWidget {
   final Future<void> Function() onCopyPressed;
   final Future<void> Function() onCopyBip39PassphrasePressed;
 
+  static const _headerHeight = 32.0;
+  static const _padding = EdgeInsets.fromLTRB(
+    AppSpacing.sm,
+    AppSpacing.sm,
+    AppSpacing.sm,
+    AppSpacing.md,
+  );
+
+  // Reserve the existing 24-word card before authentication, without loading
+  // any wallet secret. The revealed grid keeps its original sizing.
+  static const standardHeight =
+      AppSpacing.sm +
+      AppSpacing.md +
+      _headerHeight +
+      AppSpacing.s +
+      8 * _SeedWordCell.height +
+      7 * AppSpacing.xxs;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
@@ -692,12 +915,7 @@ class _SeedWordsCard extends StatelessWidget {
 
     final seedCard = Container(
       width: _seedPhraseCardWidth,
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.sm,
-        AppSpacing.sm,
-        AppSpacing.sm,
-        AppSpacing.md,
-      ),
+      padding: _padding,
       decoration: BoxDecoration(
         color: colors.background.homeCard,
         borderRadius: BorderRadius.circular(AppRadii.large),
@@ -710,7 +928,7 @@ class _SeedWordsCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            height: 32,
+            height: _headerHeight,
             child: Row(
               children: [
                 AppIcon(

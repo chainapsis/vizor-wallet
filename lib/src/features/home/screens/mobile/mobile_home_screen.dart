@@ -8,7 +8,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../../../../main.dart' show log;
 import '../../../../core/config/swap_feature_config.dart';
 import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/feedback/app_review.dart';
@@ -20,7 +19,6 @@ import '../../../../core/layout/mobile/app_mobile_tab_bar.dart';
 import '../../../../core/layout/mobile/mobile_top_nav_account.dart';
 import '../../../../core/layout/mobile/mobile_top_scroll_fade.dart';
 import '../../../../core/privacy/privacy_mask.dart';
-import '../../../../core/storage/wallet_paths.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
@@ -36,11 +34,13 @@ import '../../../../providers/sync_failure.dart';
 import '../../../../providers/sync_keep_awake_provider.dart';
 import '../../../../providers/sync_display_progress_provider.dart';
 import '../../../../providers/sync_provider.dart';
+import '../../../../providers/pending_activity_evidence_provider.dart';
 import '../../../../providers/zec_price_change_provider.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../accounts/widgets/mobile/mobile_accounts_sheet.dart';
 import '../../../activity/activity_feed_sections.dart';
 import '../../../activity/gift_card_activity_index.dart';
+import '../../../activity/activity_eta_provider.dart';
 import '../../../activity/activity_row_mapper.dart';
 import '../../../activity/screens/mobile/mobile_transaction_status_screen.dart';
 import '../../../activity/swap_activity_row_items_provider.dart';
@@ -409,9 +409,9 @@ class _IronwoodMigrationAttentionHostState
           return MobileIronwoodMigrationAttentionSheetBody(
             kind: attention.kind,
             count: attention.count,
-            onOpenMigration: () =>
-                Navigator.of(sheetContext)
-                    .pop(_IronwoodAttentionAction.openMigration),
+            onOpenMigration: () => Navigator.of(
+              sheetContext,
+            ).pop(_IronwoodAttentionAction.openMigration),
             onLater: () =>
                 Navigator.of(sheetContext).pop(_IronwoodAttentionAction.later),
           );
@@ -479,9 +479,9 @@ class _IronwoodMigrationAnnouncementHostState
       final action = await showAppMobileSheet<_IronwoodAnnouncementAction>(
         context: context,
         builder: (sheetContext) => MobileIronwoodMigrationAnnouncementSheet(
-          onStartMigration: () =>
-              Navigator.of(sheetContext)
-                  .pop(_IronwoodAnnouncementAction.startMigration),
+          onStartMigration: () => Navigator.of(
+            sheetContext,
+          ).pop(_IronwoodAnnouncementAction.startMigration),
           onOpenReleaseNotes: () => unawaited(_openReleaseNotes()),
         ),
       );
@@ -779,14 +779,9 @@ class _ImportingBackground extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = context.appTheme == AppThemeData.dark;
-    final assetName = isDark
-        ? 'assets/illustrations/home_importing_background_dark.png'
-        : 'assets/illustrations/home_importing_background_light.png';
-
     return Positioned.fill(
       child: Image.asset(
-        assetName,
+        'assets/illustrations/home_importing_background.webp',
         key: const ValueKey('mobile_home_importing_background'),
         fit: BoxFit.cover,
         alignment: Alignment.topCenter,
@@ -835,34 +830,14 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
 
   bool _isShieldingBalance = false;
 
-  Future<void> _openTransactionStatus(
+  void _openTransactionStatus(
     BuildContext context,
     WidgetRef ref,
     rust_sync.TransactionInfo transaction, {
     GiftCardActivityMetadata? giftCard,
-  }) async {
+  }) {
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     if (accountUuid == null) return;
-
-    rust_sync.TransactionDetail? detail;
-    try {
-      final dbPath = await getWalletDbPath();
-      final endpoint = ref.read(rpcEndpointProvider);
-      detail = await rust_sync.getTransactionDetail(
-        dbPath: dbPath,
-        network: endpoint.networkName,
-        accountUuid: accountUuid,
-        txidHex: transaction.txidHex,
-        txKind: transaction.txKind,
-      );
-    } catch (e, st) {
-      log('MobileHome: transaction detail load failed: $e\n$st');
-    }
-    if (!mounted) return;
-    if (accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
-      return;
-    }
-    if (!context.mounted) return;
 
     _pushUsedScreen(
       Uri(
@@ -873,7 +848,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         txidHex: transaction.txidHex,
         txKind: transaction.txKind,
         initialTransaction: transaction,
-        initialDetail: detail,
+        sourceAccountUuid: accountUuid,
         giftCard: giftCard,
       ),
     );
@@ -893,6 +868,16 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
       row: buildTransactionActivityRow(
         context: context,
         transaction: transaction,
+        showPendingEstimate: !ref
+            .watch(activityEtaExcludedTxidsProvider)
+            .contains(activityTxidKey(transaction.txidHex)),
+        pendingLabel:
+            activityEtaLabelFor(
+              transaction: transaction,
+              labels: ref.watch(activityEtaLabelsProvider),
+              giftCard: giftCard,
+            ) ??
+            ref.watch(activityPendingFallbackLabelProvider),
         giftCardKind: giftCard?.kind,
         giftCardAmountZatoshi: giftCard?.amountZatoshi,
         giftCardClaimInFlight: giftCard?.isClaimInFlight ?? false,
@@ -902,15 +887,14 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         privacyModeEnabled: privacyModeEnabled,
         dateOnlyTimestamp: true,
         onTap: () => unawaited(
-          duringAppReviewBusy(
-            ref,
-            () => _openTransactionStatus(
+          duringAppReviewBusy(ref, () async {
+            _openTransactionStatus(
               context,
               ref,
               transaction,
               giftCard: giftCard,
-            ),
-          ),
+            );
+          }),
         ),
       ),
     );
@@ -926,6 +910,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         txidHex: transaction.txidHex,
         txKind: transaction.txKind,
         initialTransaction: transaction,
+        sourceAccountUuid: ref.read(accountProvider).value?.activeAccountUuid,
       ),
     );
   }
@@ -1109,7 +1094,10 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
             context,
             ref,
             tx,
-            giftCardActivityIndex.metadataFor(tx),
+            giftCardActivityIndex.metadataFor(
+              tx,
+              transactions: sync.recentTransactions,
+            ),
             privacyModeEnabled: privacyModeEnabled,
           ),
       for (final item in swapItems)
@@ -1161,14 +1149,14 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
             _BalanceCard(
               balanceText: privacyModeEnabled
                   ? fixedPrivacyMask()
-                  : ZecAmount.fromZatoshi(shieldedBalance)
-                        .compactBalance
-                        .amountText,
+                  : ZecAmount.fromZatoshi(
+                      shieldedBalance,
+                    ).compactBalance.amountText,
               fiatBalanceText: shieldedFiatBalanceText,
               priceChange24hPct: priceChange24hPct,
-              transparentBalanceText: ZecAmount.fromZatoshi(transparentBalance)
-                  .compactBalance
-                  .amountText,
+              transparentBalanceText: ZecAmount.fromZatoshi(
+                transparentBalance,
+              ).compactBalance.amountText,
               hasTransparentBalance: transparentBalance > BigInt.zero,
               canShieldBalance: sync.canShieldTransparentBalance,
               isShieldingBalance: _isShieldingBalance,
@@ -2427,7 +2415,7 @@ class _MobileRestImage extends StatelessWidget {
                 left: _imageLeft * scale,
                 top: _imageTop * scale,
                 child: Image.asset(
-                  'assets/illustrations/home_rest_character.png',
+                  'assets/illustrations/home_rest_character.webp',
                   key: const ValueKey('mobile_home_rest_image'),
                   width: _imageWidth * scale,
                   height: _imageHeight * scale,
