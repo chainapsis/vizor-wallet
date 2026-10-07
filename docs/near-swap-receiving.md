@@ -101,9 +101,8 @@ A seed restore finds swap keys without trial-decrypting history for every index:
    a candidate pending without crediting balance; an answer that fails a check is
    asked for again.
 4. A key the recent filter holds, because NEAR was given its address in the last
-   day, keeps scanning after its sweep, catching a payment from a swap in flight
-   at restore: a refund key until 30 days after its funding block, an incoming key
-   for 24 hours. Any other key closes at its sweep. Paid incoming indices extend
+   day, keeps scanning for 24 hours after its sweep, catching a payout or refund
+   from a swap in flight at restore. Any other key closes at its sweep. Paid incoming indices extend
    the lookahead, and the new keys are swept too. A key the seen filter holds,
    because NEAR was ever given its address, is marked quoted, so this device does not
    hand out the old device's addresses again.
@@ -132,13 +131,12 @@ explicit quote rejection releases the request; an uncertain outcome holds the
 address until its deadline is 24 hours past. Starting a swap locks the draft whose
 quote matches the deposit address and memo, and the next swap gets another address.
 
-- At most 15 unfunded incoming reservations may be open per account, half the
-  30-index recovery gap. Provider deposit evidence or a ZEC payment removes one
-  from that count.
 - Issuance takes the lowest address never quoted and reuses the lowest abandoned
   one only when nothing else fits. It never goes more than 30 indices past the
   highest receipt with 10 confirmations, and waits for incoming restore sweeps,
-  which may reveal paid or quoted indices.
+  which may reveal paid or quoted indices. When swaps in progress hold all 30, a
+  new quote is refused with a message to wait for one to finish; an unused quote
+  frees its address 24 hours after its deadline.
 - An unpaid reservation is reclaimed 24 hours after its creation and every quote's
   deposit deadline, given a fresh conclusive provider status and the wallet scanned
   to its tip with no payment to the address. The status refresh loop also checks
