@@ -1354,7 +1354,8 @@ mod tests {
         .derive_external_secret_key(NonHardenedChildIndex::from_index(0).unwrap())
         .unwrap();
         let address = TransparentAddress::from_pubkey(&sk.public_key(&secp256k1::Secp256k1::new()));
-        let (proof, signature, _) = signed_pczt_with_input(200, sk, OutPoint::new([1; 32], 0), 1_000_000);
+        let (proof, signature, _) =
+            signed_pczt_with_input(200, sk, OutPoint::new([1; 32], 0), 1_000_000);
         let mut db =
             open_wallet_db_with_timeout(&path, WalletNetwork::Regtest, WALLET_DB_BUSY_TIMEOUT)
                 .unwrap();

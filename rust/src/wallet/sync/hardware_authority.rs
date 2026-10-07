@@ -111,31 +111,3 @@ where
     };
     Ok(result)
 }
-
-/// Reconciles finalized bytes against mined wallet evidence before considering expiry.
-/// The read transaction binds the compatibility check and evidence to one snapshot.
-pub(crate) fn stored_mined(
-    db_path: &str,
-    network: WalletNetwork,
-    tx: &Transaction,
-) -> Result<bool, String> {
-    use rusqlite::OptionalExtension;
-    use zcash_client_backend::data_api::transparent_ledger::TransparentLedgerRead;
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-    conn.execute_batch("BEGIN").map_err(|e| e.to_string())?;
-    let db = crate::wallet::db::wallet_db_on(&conn, db_path, network);
-    db.transparent_ledger_mode()
-        .map_err(|e| format!("Stored transaction authority unavailable: {e}"))?;
-    let mut raw = Vec::new();
-    tx.write(&mut raw).map_err(|e| e.to_string())?;
-    let stored: Option<Vec<u8>> = conn
-        .query_row(
-            "SELECT raw FROM transactions WHERE txid = ?1 AND mined_height IS NOT NULL",
-            [tx.txid().as_ref()],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(|e| e.to_string())?
-        .flatten();
-    Ok(stored.as_deref() == Some(raw.as_slice()))
-}
