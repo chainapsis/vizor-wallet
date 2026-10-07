@@ -722,9 +722,9 @@ struct HistoryCompleteness {
     /// only.
     fee: Fee,
     /// The exact fee of the whole transaction, reconciled by the library
-    /// from stored and recovered fee evidence. Other funders may have
-    /// shared it, so it is shown as the network fee when the account's fee is
-    /// unknown and never charged to the account.
+    /// from stored and recovered fee evidence, when the account spent in it.
+    /// Other funders may have shared it, so it is shown as the network fee
+    /// when the account's fee is unknown and never charged to the account.
     whole_fee: Option<u64>,
     /// The exact payment outside the account that the library reconstructed
     /// from recovered transaction metadata (private recovery: the account
@@ -780,7 +780,12 @@ impl HistoryCompleteness {
                 FeeState::Unknown => Fee::Unknown,
                 FeeState::NotApplicable => Fee::NotApplicable,
             },
-            whole_fee: details.whole_fee.map(|fee| fee.into_u64()),
+            // Only an account that spent can owe any of the fee: a receive,
+            // settled or not, never shows its sender's fee.
+            whole_fee: details
+                .whole_fee
+                .filter(|_| details.account_movement.spent > 0)
+                .map(|fee| fee.into_u64()),
             inferred_outgoing: details.inferred_outgoing.map(|amount| amount.into_u64()),
             inferred_payment: match details.aggregate_payment {
                 AggregatePayment::Exact(amount)
@@ -2755,6 +2760,10 @@ mod history_summary_tests;
 #[cfg(test)]
 #[path = "transactions/private_shielding_tests.rs"]
 mod private_shielding_tests;
+
+#[cfg(test)]
+#[path = "transactions/private_recovery_tests.rs"]
+mod private_recovery_tests;
 
 #[cfg(test)]
 mod tests {
