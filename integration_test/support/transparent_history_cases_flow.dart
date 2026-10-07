@@ -132,22 +132,43 @@ class ThUiRow {
 ///
 /// The app layer restores A0 alone and waits here before adding A1, so adding
 /// an account rewinds an already synced wallet, the order users reach.
+///
+/// The harness chain is quiet after the handoff, so no new block starts the
+/// app's next sync. A wallet that needs more than one pass to report itself
+/// synchronized would wait forever, so, as [thWaitForHistory] does, the wait
+/// asks the app's own sync notifier to sync again every 20s: the same path a
+/// new block takes in production.
 Future<void> thWaitForSynchronized(
   WidgetTester tester, {
   Duration timeout = const Duration(minutes: 4),
 }) async {
   final dbPath = await getWalletDbPath();
   final deadline = DateTime.now().add(timeout);
+  var nextSync = DateTime.now().add(const Duration(seconds: 20));
+  var syncs = 0;
   while (true) {
     try {
       final status = await rust_sync.getSyncStatus(
         dbPath: dbPath,
         network: 'regtest',
       );
-      if (status.isComplete && !rust_sync.isSyncRunning()) return;
+      if (status.isComplete && !rust_sync.isSyncRunning()) {
+        debugPrint('[th-e2e] synchronized after $syncs extra syncs');
+        return;
+      }
     } catch (_) {}
     if (DateTime.now().isAfter(deadline)) {
-      fail('timed out waiting for the wallet to report itself synchronized');
+      fail(
+        'timed out waiting for the wallet to report itself synchronized '
+        'after $syncs extra syncs',
+      );
+    }
+    if (DateTime.now().isAfter(nextSync) && !rust_sync.isSyncRunning()) {
+      ProviderScope.containerOf(
+        tester.element(find.byType(WidgetsApp).first),
+      ).read(syncProvider.notifier).startSync();
+      syncs++;
+      nextSync = DateTime.now().add(const Duration(seconds: 20));
     }
     await tester.pump(const Duration(milliseconds: 200));
     await Future<void>.delayed(const Duration(milliseconds: 300));
