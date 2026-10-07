@@ -66,6 +66,11 @@ TransactionFeePresentation transactionFeePresentation(
 bool transactionDetailsIncomplete(rust_sync.TransactionInfo tx) =>
     !tx.detailsComplete || tx.provisional;
 
+/// Activity needs an established amount, role, and pool. Missing recipients or
+/// memos belong to the expanded receipt and do not make that summary uncertain.
+bool transactionActivitySummaryIncomplete(rust_sync.TransactionInfo tx) =>
+    tx.provisional || tx.txKind == 'unknown' || tx.displayPool == 'unknown';
+
 /// The completeness part of an entry, for refresh signatures: an entry whose
 /// details or fee arrive changes nothing else a signature compares.
 String transactionCompletenessSignature(rust_sync.TransactionInfo tx) =>

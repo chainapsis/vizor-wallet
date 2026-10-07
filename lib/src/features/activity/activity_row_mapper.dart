@@ -144,7 +144,8 @@ ActivityRowData buildTransactionActivityRow({
         : outgoingAmountColor(colors),
     amountSubtitle: isFailed && amount != BigInt.zero
         ? 'Refunded'
-        : privateQueriesEnabled && transactionDetailsIncomplete(transaction)
+        : privateQueriesEnabled &&
+              transactionActivitySummaryIncomplete(transaction)
         ? kIncompleteDetailsText
         : null,
     statusText: isFailed
