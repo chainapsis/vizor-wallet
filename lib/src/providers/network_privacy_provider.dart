@@ -180,11 +180,12 @@ class RustNetworkPrivacyRuntime implements NetworkPrivacyRuntime {
 const _deviceBackupChannel = MethodChannel('com.zcash.wallet/network_privacy');
 
 Future<void> _excludeFromDeviceBackup(String directory) async {
-  // Android has no runtime equivalent. `android:allowBackup="false"` in the
-  // manifest keeps app files out of cloud backup, but from targetSdk 31 that
-  // attribute no longer covers device-to-device transfer; excluding the
-  // directory from a phone-to-phone migration takes `<device-transfer>`
-  // data-extraction rules in the manifest, which the app does not carry.
+  // Android has no runtime equivalent. `android:allowBackup="false"` keeps app
+  // files out of cloud backup, and device-to-device transfer is governed by
+  // `data_extraction_rules.xml`, whose paths are fixed at build time. A
+  // companion directory is named after the generated wallet database, so it
+  // cannot be listed there; it transfers with that database, which already
+  // records the same transparent activity.
   if (!Platform.isIOS) return;
   try {
     await _deviceBackupChannel.invokeMethod<void>('excludeFromBackup', {
