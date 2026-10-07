@@ -771,6 +771,8 @@ async fn stage_failure_503_sync_ok_balances_unchanged() {
 }
 
 #[tokio::test(start_paused = true)]
+// The serial guard is held for the whole test on purpose; see `SERIAL`.
+#[allow(clippy::await_holding_lock)]
 async fn stage_failure_timeout_sync_ok_balances_unchanged() {
     let _serial = paused_writer();
     let fixture = paused_wallet();
@@ -878,6 +880,8 @@ async fn stage_failure_panic_sync_ok_balances_unchanged() {
 }
 
 #[tokio::test(start_paused = true)]
+// The serial guard is held for the whole test on purpose; see `SERIAL`.
+#[allow(clippy::await_holding_lock)]
 async fn stage_honors_should_exit_and_budget() {
     let _serial = paused_writer();
     let fixture = paused_wallet();
@@ -2224,6 +2228,8 @@ async fn a_held_client_delays_no_run_past_its_exit() {
 /// operation of this process, gives up at its budget or exit instead of
 /// waiting it out; nothing is stored and the transaction stays due.
 #[tokio::test(start_paused = true)]
+// The serial guard is held for the whole test on purpose; see `SERIAL`.
+#[allow(clippy::await_holding_lock)]
 async fn a_held_write_lock_delays_no_run_past_its_budget() {
     let _serial = paused_writer();
     let fixture = paused_wallet();
