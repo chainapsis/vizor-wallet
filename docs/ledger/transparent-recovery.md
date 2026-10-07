@@ -46,7 +46,7 @@ the DB, cancellation, chain changes, and bounded shielding PCZT construction.
 For a device/data check, run the macOS debug app normally and watch Rust logs:
 
 ```sh
-log stream --level info --predicate 'subsystem == "frb_user" AND eventMessage CONTAINS "ledger discovery:"'
+log stream --level info --predicate 'subsystem == "frb_user" AND eventMessage CONTAINS "address discovery:"'
 ```
 
 Import the Ledger account and approve viewing-key export. The device is no longer
@@ -103,7 +103,7 @@ separate; history-body timing includes parsing/storage but excludes stream openi
 To collect them along with discovery progress:
 
 ```sh
-log stream --level info --predicate 'subsystem == "frb_user" AND (eventMessage CONTAINS "transparent refresh" OR eventMessage CONTAINS "ledger discovery")'
+log stream --level info --predicate 'subsystem == "frb_user" AND (eventMessage CONTAINS "transparent refresh" OR eventMessage CONTAINS "address discovery")'
 ```
 
 Deterministic tests exercise 1,000-address bounded round-robin coverage, fresh

@@ -33,7 +33,7 @@ use crate::wallet::sync_engine::enhancement::{EnhancementSession, RoutePolicy};
 use crate::wallet::sync_engine::test_lwd::CapturingLwd;
 use crate::wallet::sync_engine::transparent_recovery_tests::{downloaded, legacy_transaction};
 use crate::wallet::sync_engine::{
-    ephemeral_checks, ledger_discovery, refresh_utxos, store_transparent_outputs,
+    address_discovery, ephemeral_checks, refresh_utxos, store_transparent_outputs,
     transparent_followup, TransparentAccountSelection,
 };
 
@@ -114,7 +114,25 @@ fn legacy_wallet() -> (Wallet, Transaction) {
     let mut wallet = wallet();
     let tx = receipt(&wallet, 0xaa);
     store_publicly(&mut wallet.db, NETWORK, &wallet.uuid, &tx, LEGACY_HEIGHT);
+    complete_public_history(&mut wallet);
     (wallet, tx)
+}
+
+/// Records what a public sync completes before its public transparent
+/// history counts as complete: initial address discovery, and every spend
+/// search due for the outputs it stored.
+fn complete_public_history(wallet: &mut Wallet) {
+    use zcash_client_backend::data_api::{TransactionDataRequest, WalletWrite};
+    address_discovery::record_initial_discovery_for_test(&wallet.path, wallet.account, TIP);
+    let requests = wallet.db.transaction_data_requests().unwrap();
+    for TransactionDataRequest::TransactionsInvolvingAddress(request) in requests {
+        if let Some(end) = request.block_range_end() {
+            wallet
+                .db
+                .transactionally(|tx| tx.notify_address_checked(request, end - 1))
+                .unwrap();
+        }
+    }
 }
 
 /// History rows for `tx`, as `(kind, amount, fee state, provisional)`.
@@ -765,13 +783,32 @@ async fn an_activated_wallet_discloses_nothing_through_any_lane_including_the_pi
     for policy in [EnhancementPolicy::current(MAIN), required] {
         let mut db = open_wallet_db_with_timeout(&path, MAIN, SYNC_DB_BUSY_TIMEOUT).unwrap();
 
-        // Sync: Ledger discovery, the UTXO refresh, and the deferred refresh
-        // of inactive accounts.
-        ledger_discovery::run(&mut lwd.client, &mut db, &path, MAIN, policy, tip, &|| {
-            false
-        })
+        // Sync: address discovery, the restored ephemeral check, the UTXO
+        // refresh, and the deferred refresh of inactive accounts.
+        address_discovery::run(
+            &mut lwd.client,
+            &mut db,
+            &path,
+            &lwd.url,
+            MAIN,
+            policy,
+            tip,
+            &|| false,
+        )
         .await
         .unwrap();
+        assert!(!address_discovery::run_restored_ephemeral(
+            &mut lwd.client,
+            &mut db,
+            &path,
+            &lwd.url,
+            MAIN,
+            policy,
+            tip,
+            &|| false,
+        )
+        .await
+        .unwrap());
         for selection in [
             TransparentAccountSelection::All,
             TransparentAccountSelection::Except(&uuid),
@@ -1024,10 +1061,32 @@ async fn a_flag_build_discloses_nothing_before_it_raises_the_wallet() {
     let tip = BlockHeight::from_u32(TOP);
     let mut db = open_wallet_db_with_timeout(&path, MAIN, SYNC_DB_BUSY_TIMEOUT).unwrap();
 
-    // Sync: Ledger discovery and the UTXO refresh.
-    ledger_discovery::run(&mut lwd.client, &mut db, &path, MAIN, flag, tip, &|| false)
-        .await
-        .unwrap();
+    // Sync: address discovery, the restored ephemeral check, and the UTXO
+    // refresh.
+    address_discovery::run(
+        &mut lwd.client,
+        &mut db,
+        &path,
+        &lwd.url,
+        MAIN,
+        flag,
+        tip,
+        &|| false,
+    )
+    .await
+    .unwrap();
+    assert!(!address_discovery::run_restored_ephemeral(
+        &mut lwd.client,
+        &mut db,
+        &path,
+        &lwd.url,
+        MAIN,
+        flag,
+        tip,
+        &|| false,
+    )
+    .await
+    .unwrap());
     let mut received = false;
     let refreshed = refresh_utxos(
         &mut lwd.client,

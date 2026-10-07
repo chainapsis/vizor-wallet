@@ -1755,12 +1755,15 @@ async fn cancellation_during_a_pass_applies_nothing_from_it() {
 
 #[tokio::test]
 async fn a_ledger_account_is_paused_and_does_not_block_sync() {
-    use crate::wallet::sync_engine::ledger_discovery;
+    use crate::wallet::sync_engine::address_discovery::{self, Coverage};
 
     let mut wallet = wallet();
     let ledger = import_ledger(&wallet);
     // Under public lookups, the Ledger account owes its discovery.
-    assert!(!ledger_discovery::is_ready(&wallet.path, NETWORK, ledger).unwrap());
+    assert_eq!(
+        address_discovery::account_coverage(&mut wallet.db, NETWORK, ledger).unwrap(),
+        Some(Coverage::InitialDiscovery)
+    );
     let _mode = activate(&mut wallet).await;
     let source = funded_source(&wallet);
 
@@ -1773,9 +1776,16 @@ async fn a_ledger_account_is_paused_and_does_not_block_sync() {
     );
     assert_eq!(source.calls_for(ledger), 0);
     assert_eq!(lifecycle(&wallet, ledger), AccountLifecycle::Candidate);
-    // The sync's readiness check passes, so the withheld discovery never
-    // fails a sync.
-    assert!(ledger_discovery::is_ready(&wallet.path, NETWORK, ledger).unwrap());
+    // Public coverage does not govern a private wallet, so the sync's
+    // completion check passes and the withheld discovery never fails a sync.
+    assert_eq!(
+        address_discovery::account_coverage(&mut wallet.db, NETWORK, ledger).unwrap(),
+        None
+    );
+    assert_eq!(
+        address_discovery::first_incomplete(&mut wallet.db, NETWORK).unwrap(),
+        None
+    );
 }
 
 #[tokio::test]

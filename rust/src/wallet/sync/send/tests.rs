@@ -2564,6 +2564,12 @@ fn keystone_transparent_shielding_pczt_targets_orchard_before_nu6_3() {
         WalletTransparentOutput::from_parts(outpoint, txout, Some(tip), None, None, None).unwrap();
     db.put_received_transparent_utxo(&utxo).unwrap();
     drop(db);
+    // The wallet has completed address discovery, as a sync would.
+    crate::wallet::sync_engine::address_discovery::record_initial_discovery_for_test(
+        db_path,
+        account_id,
+        u32::from(tip),
+    );
 
     let result =
         create_shield_transparent_pczt_with_expiry(db_path, network, &account_uuid, None).unwrap();
@@ -2639,6 +2645,12 @@ fn keystone_transparent_shielding_pczt_targets_ironwood_after_nu6_3() {
         WalletTransparentOutput::from_parts(outpoint, txout, Some(tip), None, None, None).unwrap();
     db.put_received_transparent_utxo(&utxo).unwrap();
     drop(db);
+    // The wallet has completed address discovery, as a sync would.
+    crate::wallet::sync_engine::address_discovery::record_initial_discovery_for_test(
+        db_path,
+        account_id,
+        u32::from(tip),
+    );
 
     let result =
         create_shield_transparent_pczt_with_expiry(db_path, network, &account_uuid, None).unwrap();

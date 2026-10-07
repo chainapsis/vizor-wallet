@@ -454,15 +454,18 @@ pub(crate) fn get_sync_progress(
                 log::warn!("sync: completed-height metadata unavailable: {e}");
                 None
             });
+            // A wallet is synchronized only when its transparent history is
+            // complete too; a sync that completed earlier says nothing about
+            // discovery that has since become due or failed.
+            let is_complete =
+                is_completed_sync_status(scanned_height, chain_tip_height, last_completed_height)
+                    && super::sync_engine::address_discovery::first_incomplete(&mut db, network)?
+                        .is_none();
             Ok(SyncProgress {
                 scanned_height,
                 chain_tip_height,
                 is_syncing: scanned_height < chain_tip_height,
-                is_complete: is_completed_sync_status(
-                    scanned_height,
-                    chain_tip_height,
-                    last_completed_height,
-                ),
+                is_complete,
             })
         }
         None => Ok(SyncProgress {
@@ -484,7 +487,7 @@ pub fn rewind_to_height(db_path: &str, network: WalletNetwork, height: u64) -> R
         // If SQLite fails afterward, replaying lookups is safe; stale completion
         // records after a successful rewind could skip transparent recovery.
         super::transparent_receive_cache::invalidate_utxo_checks(db_path)?;
-        crate::wallet::sync_engine::ledger_discovery::truncate(
+        crate::wallet::sync_engine::address_discovery::truncate(
             db_path,
             &mut db,
             BlockHeight::from_u32(height as u32),

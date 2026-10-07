@@ -49,6 +49,7 @@ use crate::wallet::sync_engine::enhancement::selects_private_recovery;
 use crate::wallet::sync_engine::transparent_ledger::{recovery_hold, HoldCause};
 
 use super::{open_readonly_conn, open_wallet_db, open_wallet_db_for_read};
+use crate::wallet::sync_engine::address_discovery::{Coverage, CoverageRead};
 
 const ORCHARD_NOTE_VERSION: i64 = 2;
 const IRONWOOD_NOTE_VERSION: i64 = 3;
@@ -260,7 +261,10 @@ pub(crate) fn get_wallet_balance(
 /// ledger snapshot: its authorized amounts, or none with the last-known
 /// amount when authority is unavailable, and why recovery is stopped when it
 /// will not restore authority on its own. Durable private policy is respected
-/// even when this build opens a Public handle after restart.
+/// even when this build opens a Public handle after restart. Under public
+/// authority the transparent funds are current only once the account's public
+/// transparent history is complete (see `address_discovery::Coverage`);
+/// until then they are last known and nothing is spendable.
 pub(crate) fn get_wallet_balances(
     db_path: &str,
     network: WalletNetwork,
@@ -282,12 +286,12 @@ pub(crate) fn read_wallet_balances(
     network: WalletNetwork,
     target_ids: &[AccountUuid],
 ) -> Result<Vec<WalletBalance>, String> {
-    // Read durable policy, summary, and authority from one snapshot. A
-    // policy applied by another connection since `db` was opened must not
-    // label a private-policy summary's suppressed zero as current funds, so
-    // the handle adopts it here. Configuring this read handle does not change
-    // policy.
-    db.transactionally(|db| {
+    // Read durable policy, summary, authority, and public history coverage
+    // from one snapshot. A policy applied by another connection since `db`
+    // was opened must not label a private-policy summary's suppressed zero as
+    // current funds, so the handle adopts it here. Configuring this read
+    // handle does not change policy.
+    db.transactionally_with_extension(|db, ext| {
         let durable = match db.applied_transparent_policy() {
             Err(
                 zcash_client_sqlite::error::SqliteClientError::TransparentLedgerPolicyConflict {
@@ -317,6 +321,7 @@ pub(crate) fn read_wallet_balances(
                 })
                 .collect());
         };
+        let mut coverage = None;
 
         target_ids
             .iter()
@@ -336,8 +341,23 @@ pub(crate) fn read_wallet_balances(
                     *target_id,
                     crate::wallet::confirmations_policy(),
                 )?;
-                let (mut status, transparent) = ledger_transparent_balance(&snapshot, private);
-                if status.authority != TransparentBalanceAuthority::Current {
+                // Public coverage is read only for an account whose authority
+                // is public, and the due spend searches once per snapshot.
+                let public_history_complete = snapshot.authority != TransparentAuthority::Public
+                    || {
+                        if coverage.is_none() {
+                            coverage = Some(CoverageRead::new(&*db, network)?);
+                        }
+                        let read = coverage.as_ref().expect("coverage was just read");
+                        read.account(&*db, ext, *target_id)? == Coverage::Complete
+                    };
+                let (mut status, transparent) =
+                    ledger_transparent_balance(&snapshot, private, public_history_complete);
+                // Public coverage that is still completing is not a stopped
+                // private recovery.
+                if status.authority != TransparentBalanceAuthority::Current
+                    && snapshot.authority != TransparentAuthority::Public
+                {
                     if let Some(reason) =
                         transparent_stop_reason(&*db, db_path, &snapshot, not_selected)?
                     {
@@ -357,10 +377,17 @@ pub(crate) fn read_wallet_balances(
     .map_err(|e| format!("Failed to read wallet balances: {e}"))
 }
 
-/// The transparent part of a balance under a private ledger mode.
+/// The transparent part of a balance, from the ledger snapshot.
+///
+/// Under public authority, the authorized amounts are current only once the
+/// account's public history is complete (`public_history_complete`): until
+/// discovery, restored ephemeral checks, and every due spend search are done,
+/// a spent output may still read as unspent, so the amount is shown as last
+/// known and nothing is spendable.
 fn ledger_transparent_balance<A>(
     snapshot: &TransparentLedgerSnapshot<A>,
     private: bool,
+    public_history_complete: bool,
 ) -> (TransparentStatus, PoolBalance) {
     let status = |authority, last_known| TransparentStatus {
         authority,
@@ -369,6 +396,15 @@ fn ledger_transparent_balance<A>(
         private,
     };
     match (snapshot.authority, &snapshot.authorized) {
+        (TransparentAuthority::Public, Some(authorized)) if !public_history_complete => (
+            status(
+                TransparentBalanceAuthority::LastKnown,
+                Some(
+                    u64::from(authorized.regular.total()) + u64::from(authorized.coinbase.total()),
+                ),
+            ),
+            PoolBalance::default(),
+        ),
         (TransparentAuthority::Public | TransparentAuthority::Private, Some(authorized)) => (
             status(TransparentBalanceAuthority::Current, None),
             PoolBalance::of_transparent(authorized),
