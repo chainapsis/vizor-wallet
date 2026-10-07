@@ -567,6 +567,14 @@ Classification follows the facts it has:
   self-payment, it keeps one `sent` row of the net change. That row is the fee
   alone only when the fee is the account's own; with only the whole fee known
   it stays a net change.
+- **A TEX funding step** folds into the send that spends its ephemeral
+  output, matched by that output (a restored wallet has no creation time) or,
+  in a retained wallet, by creation time. It has no row, and its fee joins the
+  send's, which names it as its funding parent. It folds only when it moved
+  the account's own funds and only its fee left, and only into a send that
+  shows a `sent` row with a known fee; any other funding step keeps a row with
+  its fee. Of several spenders of the output, a mined one is the send, then
+  one that has not expired.
 - **A provisional debit** whose outputs are unknown, or known only as change,
   is one `sent` row for the net change, with pool `unknown` and no recipient.
   Its change is not shown as a receive, and the net change is not presented
