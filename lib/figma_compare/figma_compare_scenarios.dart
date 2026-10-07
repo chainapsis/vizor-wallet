@@ -403,6 +403,21 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildDesktopOnboardingHardwareCapture,
   ),
   FigmaCompareScenario(
+    id: 'settings-uninstall-confirm',
+    description: 'Desktop uninstall confirmation with wallet data warning',
+    builder: buildSettingsUninstallConfirmUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'settings-wallet-link-success',
+    description: 'Desktop WalletLink completion with imported item counts',
+    builder: buildSettingsWalletLinkSuccessUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'settings-wallet-link-expired',
+    description: 'Desktop WalletLink expired code recovery',
+    builder: buildSettingsWalletLinkExpiredUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'gift-card-value',
     description: 'Gift card value typography and optional fiat amount',
     builder: _giftCardValueCapture,

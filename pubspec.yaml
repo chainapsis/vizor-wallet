@@ -133,6 +133,12 @@ flutter:
     - assets/illustrations/payment_links/
     - assets/profile_pictures/
     - assets/icons/
+    - path: assets/icons/desktop/
+      platforms:
+        - linux
+        - macos
+        - web
+        - windows
     - assets/swap/tokens/
     - assets/swap/chains/
 

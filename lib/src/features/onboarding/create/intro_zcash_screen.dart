@@ -185,8 +185,8 @@ class _ShieldedInfoCard extends StatelessWidget {
     final colors = context.colors;
     final isDark = context.appTheme == AppThemeData.dark;
     final patternAsset = isDark
-        ? 'assets/illustrations/home_balance_card_pattern_dark.webp'
-        : 'assets/illustrations/home_balance_card_pattern_light.webp';
+        ? 'assets/illustrations/desktop/home_balance_card_pattern_dark.webp'
+        : 'assets/illustrations/desktop/home_balance_card_pattern_light.webp';
 
     return Container(
       height: _height,

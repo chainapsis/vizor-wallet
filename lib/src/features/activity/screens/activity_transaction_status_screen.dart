@@ -744,7 +744,7 @@ class _ActivityTransactionStatusScreenState
               value: _amountText(tx, privacyModeEnabled: privacyModeEnabled),
               leading: ClipOval(
                 child: Image.asset(
-                  'assets/icons/network_zec.png',
+                  'assets/icons/desktop/network_zec.png',
                   width: AppAssetSize.size,
                   height: AppAssetSize.size,
                   fit: BoxFit.cover,
