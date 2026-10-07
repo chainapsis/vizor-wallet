@@ -78,6 +78,7 @@ class _StalledSigningService implements PaymentLinkHardwareSigningService {
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
     PaymentLinkPresentation? presentation,
+    int? birthdayHeight,
   }) => Completer<PaymentLinkHardwarePcztDraft>().future;
 
   @override

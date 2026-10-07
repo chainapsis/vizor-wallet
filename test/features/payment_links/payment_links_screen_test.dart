@@ -1744,6 +1744,47 @@ void main() {
     expect(find.text('No Gift Cards yet'), findsOneWidget);
   });
 
+  for (final fails in [false, true]) {
+    testWidgets(
+      'Keystone Create tolerates ${fails ? 'failed' : 'pending'} birthday prefetch',
+      (tester) async {
+        final pending = Completer<int>();
+        final signing = FakePaymentLinkHardwareSigningService();
+        await pumpPaymentLinksScreen(
+          tester,
+          bootstrap: hardwareBootstrap,
+          hardwareSigning: signing,
+          birthdayPrefetch: () async {
+            if (fails) throw StateError('Height unavailable');
+            return pending.future;
+          },
+        );
+        await tester.tap(find.text('Create new card'));
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const ValueKey('payment_link_amount_editor')),
+          '0.1',
+        );
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('payment_link_amount_continue_button')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Skip message'));
+        await tester.pumpAndSettle();
+        expect(signing.createdAmounts, isEmpty);
+        await tester.tap(find.text('Create card'));
+        await tester.pumpAndSettle();
+        expect(signing.createdBirthdayHeights, [null]);
+        expect(find.byType(KeystoneSigningModal), findsOneWidget);
+        pending.complete(3500000);
+        await tester.pumpAndSettle();
+        expect(signing.createdBirthdayHeights, [null]);
+      },
+    );
+  }
+
   testWidgets(
     'hardware creation opens Keystone signing and releases on cancel',
     (tester) async {
@@ -1810,6 +1851,7 @@ void main() {
 
       expect(hardwareSigning.createdAmounts, [BigInt.from(10000000)]);
       expect(hardwareSigning.createdFromAccounts, ['hardware-account']);
+      expect(hardwareSigning.createdBirthdayHeights, [3500000]);
       expect(hardwareSigning.createdArtworkIds, ['ruby']);
       expect(hardwareSigning.createdMessages, ['For Keystone']);
       expect(find.byType(KeystoneSigningModal), findsOneWidget);

@@ -156,6 +156,49 @@ void main() {
       },
     );
   });
+
+  test(
+    'link registration queues behind a scan without holding the caller',
+    () async {
+      final card = await seed(store);
+      backend.scan = Completer<void>();
+      final scanning = service.refresh();
+      while (!backend.events.contains('sync')) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      var finished = false;
+      final registration = service
+          .registerLinks([card.link])
+          .then((_) => finished = true);
+      await Future<void>.delayed(Duration.zero);
+      expect(finished, isFalse);
+      backend.scan!.complete();
+      await scanning;
+      await registration;
+      expect(finished, isTrue);
+      expect((await store.load()).single.usage.accountUuid, card.link.address);
+    },
+  );
+
+  test(
+    'queued link registration is owned by reset before any store read',
+    () async {
+      final card = await seed(store);
+      final registration = service.registerLinks([card.link]);
+      await service.quiesceAndDrain();
+      await registration;
+      expect(backend.ids, isEmpty);
+      expect((await store.load()).single.usage.accountUuid, isNull);
+    },
+  );
+
+  test('removed link is not recreated by deferred registration', () async {
+    final card = await seed(store);
+    await storage.delete();
+    await service.registerLinks([card.link]);
+    expect(backend.ids, isEmpty);
+    expect(await store.load(), isEmpty);
+  });
   test(
     'pending reason survives failure and clears after funding is verified',
     () async {

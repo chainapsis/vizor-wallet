@@ -1385,6 +1385,10 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
         _operationInProgress = true;
         _hardwareFundingRequest = _PaymentLinkHardwareFundingRequest(
           signerKind: _signerFor(sourceAccountUuid),
+          birthdayHeight:
+              _signerFor(sourceAccountUuid) == HardwareSignerKind.keystone
+              ? ref.read(paymentLinkFundingBirthdayProvider).asData?.value
+              : null,
           amountZatoshi: amount,
           sourceAccountUuid: sourceAccountUuid,
           presentation: presentation,
@@ -1528,6 +1532,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       amountZatoshi: request.amountZatoshi,
       sourceAccountUuid: request.sourceAccountUuid,
       presentation: request.presentation,
+      birthdayHeight: request.birthdayHeight,
       onCancel: _cancelHardwareFunding,
       onFundingBroadcast: (link, result) =>
           _completeHardwareFunding(request, link, result),
@@ -2384,6 +2389,11 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     );
     if (pendingLink != null) _schedulePendingPaymentLink();
 
+    if (_page == PaymentLinksLocalPage.review &&
+        _signerFor(_fundingQuote?.sourceAccountUuid) ==
+            HardwareSignerKind.keystone) {
+      ref.watch(paymentLinkFundingBirthdayProvider);
+    }
     final pricingEnabled = ref.watch(swapFeatureEnabledProvider);
     final amount = parseZecAmount(_amountController.text);
     // Keep the price subscription through amount edits and Review so clearing
@@ -3692,8 +3702,10 @@ class _PaymentLinkHardwareFundingRequest {
     required this.sourceAccountUuid,
     required this.presentation,
     required this.signerKind,
+    this.birthdayHeight,
   });
 
+  final int? birthdayHeight;
   final HardwareSignerKind? signerKind;
   final BigInt amountZatoshi;
   final String sourceAccountUuid;

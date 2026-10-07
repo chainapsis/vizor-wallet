@@ -50,6 +50,7 @@ abstract interface class PaymentLinkHardwareSigningService {
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
     PaymentLinkPresentation? presentation,
+    int? birthdayHeight,
   });
 
   Future<List<String>> encodeSigningUrParts({
@@ -189,11 +190,13 @@ class RustPaymentLinkHardwareSigningService
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
     PaymentLinkPresentation? presentation,
+    int? birthdayHeight,
   }) async {
     final link = await _paymentLinkService.createFundingDraft(
       amountZatoshi: amountZatoshi,
       sourceAccountUuid: sourceAccountUuid,
       presentation: presentation,
+      birthdayHeight: birthdayHeight,
     );
     return _createPczt(
       accountUuid: sourceAccountUuid,
