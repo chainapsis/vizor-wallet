@@ -312,9 +312,9 @@ impl BlockingLookup {
             Ok(http) => http,
             Err(_) => {
                 return (
-                    Err(TxidError::Transport(zakura_pir_transparent::TransportError(
-                        "origin refused".to_owned(),
-                    ))),
+                    Err(TxidError::Transport(
+                        zakura_pir_transparent::TransportError("origin refused".to_owned()),
+                    )),
                     None,
                 )
             }
@@ -438,7 +438,10 @@ pub(crate) struct GateSource {
 }
 
 impl GateSource {
-    pub(crate) fn new(client: CompactTxStreamerClient<Channel>, gate: TransparentLookupGate) -> Self {
+    pub(crate) fn new(
+        client: CompactTxStreamerClient<Channel>,
+        gate: TransparentLookupGate,
+    ) -> Self {
         Self { client, gate }
     }
 }
@@ -533,13 +536,16 @@ pub(crate) mod test_seam {
     /// Private sources built for `db_path` send through `observer`, sharing
     /// one new client, until the guard drops.
     pub(crate) fn set(db_path: &str, observer: RequestObserver) -> SeamGuard {
-        seams().lock().unwrap_or_else(PoisonError::into_inner).insert(
-            db_path.to_owned(),
-            Seam {
-                observer,
-                client: Arc::new(Mutex::new(TxidDisplayClient::new())),
-            },
-        );
+        seams()
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(
+                db_path.to_owned(),
+                Seam {
+                    observer,
+                    client: Arc::new(Mutex::new(TxidDisplayClient::new())),
+                },
+            );
         SeamGuard(db_path.to_owned())
     }
 

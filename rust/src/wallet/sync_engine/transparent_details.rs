@@ -52,9 +52,8 @@ use tonic::transport::Channel;
 use zcash_client_backend::data_api::{
     transparent_ledger::{
         TransparentDetailOutcome, TransparentDetailRead, TransparentDetailWork,
-        TransparentDetailWrite,
-        TransparentDisplayStore, TransparentDisplayView, TransparentLedgerMode,
-        TransparentLedgerRead,
+        TransparentDetailWrite, TransparentDisplayStore, TransparentDisplayView,
+        TransparentLedgerMode, TransparentLedgerRead,
     },
     wallet::decrypt_and_store_transaction,
 };
@@ -378,7 +377,12 @@ pub(crate) async fn run<S: DetailSource>(
                             if !gate.permits_applied(tx.applied_transparent_policy()?) {
                                 return Ok(false);
                             }
-                            decrypt_and_store_transaction(&network, tx, &transaction, mined_height)?;
+                            decrypt_and_store_transaction(
+                                &network,
+                                tx,
+                                &transaction,
+                                mined_height,
+                            )?;
                             Ok::<_, SqliteClientError>(true)
                         })
                     },
@@ -849,9 +853,8 @@ pub(crate) fn debug_answer(
     match found {
         TxidLookup::Found { record, provenance } => {
             let height = u32::try_from(mined_height).map_err(|_| "height out of range")?;
-            let facts =
-                zakura_pir_transparent::display_facts(&record, &provenance, height.into())
-                    .map_err(|_| "the service returned unusable facts".to_owned())?;
+            let facts = zakura_pir_transparent::display_facts(&record, &provenance, height.into())
+                .map_err(|_| "the service returned unusable facts".to_owned())?;
             answer.outputs = facts
                 .outputs
                 .iter()

@@ -71,6 +71,7 @@ const PAYEE: [u8; 25] = {
 };
 
 pub(crate) struct Fixture {
+    _serial: Option<Shared>,
     _dir: tempfile::TempDir,
     pub(crate) path: String,
     pub(crate) uuid: String,
@@ -84,8 +85,22 @@ pub(crate) fn wallet() -> Fixture {
     wallet_with_seed().0
 }
 
+/// [`wallet`], for a test that holds [`paused_writer`].
+fn paused_wallet() -> Fixture {
+    let mut fixture = unguarded_wallet().0;
+    fixture._serial = None;
+    fixture
+}
+
 /// [`wallet`], with the account's seed.
 fn wallet_with_seed() -> (Fixture, Vec<u8>) {
+    let serial = Shared::take();
+    let (mut fixture, seed) = unguarded_wallet();
+    fixture._serial = Some(serial);
+    (fixture, seed)
+}
+
+fn unguarded_wallet() -> (Fixture, Vec<u8>) {
     use secrecy::ExposeSecret as _;
     let _ = rustls::crypto::ring::default_provider().install_default();
     let dir = tempfile::tempdir().unwrap();
@@ -126,6 +141,7 @@ fn wallet_with_seed() -> (Fixture, Vec<u8>) {
     let seed = seed.expose_secret().to_vec();
     (
         Fixture {
+            _serial: None,
             _dir: dir,
             path,
             uuid,
@@ -203,6 +219,47 @@ fn count(path: &str, sql: &str) -> i64 {
         .unwrap()
         .query_row(sql, [], |row| row.get(0))
         .unwrap()
+}
+
+/// Runs of these tests wait for the process-wide wallet write lock. On a
+/// paused clock a moment's real contention spends a whole budget, so a test
+/// on a paused clock runs alone among them ([`paused_writer`], with fixtures
+/// from [`paused_wallet`]), and every other fixture holds a shared guard.
+static SERIAL: std::sync::RwLock<()> = std::sync::RwLock::new(());
+
+fn paused_writer() -> std::sync::RwLockWriteGuard<'static, ()> {
+    SERIAL
+        .write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+thread_local! {
+    /// Fixtures alive on this thread: only the first takes the shared guard,
+    /// since a second read could wait behind a queued writer.
+    static FIXTURES: Cell<usize> = const { Cell::new(0) };
+}
+
+/// A fixture's share of [`SERIAL`].
+struct Shared(#[allow(dead_code)] Option<std::sync::RwLockReadGuard<'static, ()>>);
+
+impl Shared {
+    fn take() -> Self {
+        let first = FIXTURES.with(|count| {
+            count.set(count.get() + 1);
+            count.get() == 1
+        });
+        Shared(first.then(|| {
+            SERIAL
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+        }))
+    }
+}
+
+impl Drop for Shared {
+    fn drop(&mut self) {
+        FIXTURES.with(|count| count.set(count.get() - 1));
+    }
 }
 
 /// The clock every stage in these tests measures with: tokio's, so a test
@@ -420,7 +477,11 @@ struct Publication {
 }
 
 /// A service publishing `before` until `advanced` is set, then `after`.
-fn advancing(before: Publication, after: Publication, advanced: Arc<AtomicBool>) -> RequestObserver {
+fn advancing(
+    before: Publication,
+    after: Publication,
+    advanced: Arc<AtomicBool>,
+) -> RequestObserver {
     RequestObserver::answering(move |request| {
         if advanced.load(Ordering::SeqCst) {
             (after.answer)(request)
@@ -681,8 +742,7 @@ async fn stage_failure_503_sync_ok_balances_unchanged() {
     let fixture = wallet();
     let tx = utxo_receipt(&fixture, 0xb1, TOP - 1);
     let _mode = require_private(&fixture.path);
-    let service =
-        RequestObserver::answering(|_| reply(503, &[("retry-after", "30")], Vec::new()));
+    let service = RequestObserver::answering(|_| reply(503, &[("retry-after", "30")], Vec::new()));
     let _seam = test_seam::set(&fixture.path, service);
     let lwd = CapturingLwd::start_with(Vec::new(), 0, |_| {}).await;
     let before = balance(&fixture);
@@ -712,7 +772,8 @@ async fn stage_failure_503_sync_ok_balances_unchanged() {
 
 #[tokio::test(start_paused = true)]
 async fn stage_failure_timeout_sync_ok_balances_unchanged() {
-    let fixture = wallet();
+    let _serial = paused_writer();
+    let fixture = paused_wallet();
     let tx = utxo_receipt(&fixture, 0xb2, TOP - 1);
     let before = balance(&fixture);
     let mut source = Scripted::new(|_| unavailable(None)).slow(Duration::from_secs(600));
@@ -818,7 +879,8 @@ async fn stage_failure_panic_sync_ok_balances_unchanged() {
 
 #[tokio::test(start_paused = true)]
 async fn stage_honors_should_exit_and_budget() {
-    let fixture = wallet();
+    let _serial = paused_writer();
+    let fixture = paused_wallet();
     for tag in 0..10u8 {
         utxo_receipt(&fixture, 0xc0 + tag, TOP - 1 - u32::from(tag % 8));
     }
@@ -834,7 +896,7 @@ async fn stage_honors_should_exit_and_budget() {
     assert_eq!(source.looked_up().len(), MAX_LOOKUPS);
 
     // Cancellation stops the run at once, mid-work.
-    let fixture = wallet();
+    let fixture = paused_wallet();
     for tag in 0..5u8 {
         utxo_receipt(&fixture, 0xd0 + tag, TOP - 1);
     }
@@ -869,7 +931,7 @@ async fn stage_honors_should_exit_and_budget() {
 
     // The budget: twenty-second lookups fit twice in forty-five seconds; the
     // third is stopped at the budget and deferred.
-    let fixture = wallet();
+    let fixture = paused_wallet();
     for tag in 0..5u8 {
         utxo_receipt(&fixture, 0xe0 + tag, TOP - 1);
     }
@@ -942,6 +1004,9 @@ async fn outage_then_recovery_reconciles_next_sync() {
 async fn parked_work_relists_after_map_refresh() {
     let fixture = wallet();
     let txid = utxo_receipt(&fixture, 0x70, TOP - 1).txid();
+    // Parking for a map is private: under public authority the work would
+    // be due at its ordinary retry.
+    let _mode = require_private(&fixture.path);
     let mut source = Scripted::new(|_| deferred(TransparentDetailOutcome::NotCovered));
     let outcome = run_scripted(&fixture, &mut source).await;
     assert!(
@@ -1198,13 +1263,7 @@ enum TransparentSide {
 
 /// Records `txid` mined at `height` without raw bytes, in which `account`
 /// received an Orchard note and has no transparent output or spend.
-fn shielded_part(
-    path: &str,
-    account: AccountUuid,
-    txid: TxId,
-    height: u32,
-    side: TransparentSide,
-) {
+fn shielded_part(path: &str, account: AccountUuid, txid: TxId, height: u32, side: TransparentSide) {
     let conn = rusqlite::Connection::open(path).unwrap();
     conn.execute(
         "INSERT INTO transactions (txid, mined_height, min_observed_height, tx_index)
@@ -1284,7 +1343,9 @@ fn no_transparent_transaction() -> Transaction {
 }
 
 /// `(index, value, owned)` of every output a view shows.
-fn rows(details: &zcash_client_backend::data_api::transparent_ledger::TransparentDisplayDetails) -> Vec<(u32, u64, bool)> {
+fn rows(
+    details: &zcash_client_backend::data_api::transparent_ledger::TransparentDisplayDetails,
+) -> Vec<(u32, u64, bool)> {
     details
         .outputs
         .iter()
@@ -1316,14 +1377,20 @@ async fn mixed_private_details_stay_visible_after_storing() {
         "{outcome:?}"
     );
     assert_eq!(
-        count(&fixture.path, "SELECT COUNT(*) FROM transparent_detail_work"),
+        count(
+            &fixture.path,
+            "SELECT COUNT(*) FROM transparent_detail_work"
+        ),
         0
     );
 
     let Some(TransparentDisplayView::Available(details)) = view(&fixture, &txid) else {
         panic!("the stored details stay visible");
     };
-    assert!(matches!(details.source, TransparentDisplaySource::Display(_)));
+    assert!(matches!(
+        details.source,
+        TransparentDisplaySource::Display(_)
+    ));
     assert!(details.shielded);
     assert_eq!(rows(&details), [(0, 5_000, false)]);
 
@@ -1375,10 +1442,8 @@ async fn mixed_raw_storage_shape_keeps_the_view() {
         rusqlite::params![bytes, tx.txid().as_ref().as_slice()],
     )
     .unwrap();
-    conn.execute_batch(
-        "DELETE FROM transparent_detail_work; DELETE FROM transparent_tx_display;",
-    )
-    .unwrap();
+    conn.execute_batch("DELETE FROM transparent_detail_work; DELETE FROM transparent_tx_display;")
+        .unwrap();
 
     let Some(TransparentDisplayView::Available(details)) = view(&fixture, &tx.txid()) else {
         panic!("the raw transaction stays visible");
@@ -1440,7 +1505,8 @@ async fn shielded_payment_to_a_transparent_recipient_keeps_the_view() {
         rusqlite::params![bytes, id],
     )
     .unwrap();
-    conn.execute("DELETE FROM transparent_detail_work", []).unwrap();
+    conn.execute("DELETE FROM transparent_detail_work", [])
+        .unwrap();
     let Some(TransparentDisplayView::Available(details)) = view(&fixture, &tx.txid()) else {
         panic!("the payment stays visible");
     };
@@ -1571,7 +1637,10 @@ async fn genuine_mixed_raw_details_stay_visible() {
     );
     assert_eq!(lwd.count("/GetTransaction"), 1);
     assert_eq!(
-        count(&fixture.path, "SELECT COUNT(*) FROM transparent_detail_work"),
+        count(
+            &fixture.path,
+            "SELECT COUNT(*) FROM transparent_detail_work"
+        ),
         0
     );
     let account = account_id(&fixture.path, fixture.account);
@@ -1590,7 +1659,9 @@ async fn genuine_mixed_raw_details_stay_visible() {
     assert_eq!(
         count(
             &fixture.path,
-            &format!("SELECT COUNT(*) FROM transparent_received_outputs WHERE transaction_id = {id}")
+            &format!(
+                "SELECT COUNT(*) FROM transparent_received_outputs WHERE transaction_id = {id}"
+            )
         ),
         0,
         "the account owns no transparent output"
@@ -2065,12 +2136,9 @@ async fn held_work_is_fetched_publicly_after_a_return_to_public() {
     let service = RequestObserver::answering(move |request| (held.answer)(request));
     let mut bytes = Vec::new();
     tx.write(&mut bytes).unwrap();
-    let lwd = CapturingLwd::start_serving(
-        vec![(*txid.as_ref(), bytes, u64::from(TOP - 1))],
-        0,
-        |_| {},
-    )
-    .await;
+    let lwd =
+        CapturingLwd::start_serving(vec![(*txid.as_ref(), bytes, u64::from(TOP - 1))], 0, |_| {})
+            .await;
     {
         let _seam = test_seam::set(&fixture.path, service.clone());
         hold(&fixture, &lwd, &txid, map).await;
@@ -2157,7 +2225,8 @@ async fn a_held_client_delays_no_run_past_its_exit() {
 /// waiting it out; nothing is stored and the transaction stays due.
 #[tokio::test(start_paused = true)]
 async fn a_held_write_lock_delays_no_run_past_its_budget() {
-    let fixture = wallet();
+    let _serial = paused_writer();
+    let fixture = paused_wallet();
     let txid = utxo_receipt(&fixture, 0x49, TOP - 1).txid();
     let answer = facts_of(&fixture, txid);
     let answer = Mutex::new(Some(answer));
@@ -2222,7 +2291,10 @@ async fn a_held_write_lock_delays_no_run_past_its_budget() {
     // With the lock released, nothing late is written: the work stays due.
     tokio::time::sleep(Duration::from_secs(5)).await;
     assert_eq!(work_row(&fixture.path, &other), Some((None, None)));
-    assert_eq!(view(&fixture, &other), Some(TransparentDisplayView::Pending));
+    assert_eq!(
+        view(&fixture, &other),
+        Some(TransparentDisplayView::Pending)
+    );
 }
 
 /// A lookup whose transport ignores its cancellation is abandoned within the
@@ -2251,7 +2323,10 @@ fn an_abandoned_lookup_holds_neither_the_run_nor_its_runtime() {
                 let descendant = descendant.clone();
                 let blocked = blocked.clone();
                 tokio::task::spawn_blocking(move || {
-                    let _ = blocked.lock().unwrap().recv_timeout(Duration::from_secs(30));
+                    let _ = blocked
+                        .lock()
+                        .unwrap()
+                        .recv_timeout(Duration::from_secs(30));
                     let _ = descendant.send(());
                 });
                 // Blocks until released, whatever the cancellation says.
@@ -2297,7 +2372,10 @@ fn an_abandoned_lookup_holds_neither_the_run_nor_its_runtime() {
     };
 
     let (outcome, took) = sync(Duration::from_millis(500));
-    assert!(stuck.load(Ordering::SeqCst), "the lookup reached the stuck request");
+    assert!(
+        stuck.load(Ordering::SeqCst),
+        "the lookup reached the stuck request"
+    );
     assert!(
         matches!(outcome, Some(RunOutcome::Exited(stats)) if stats.lookups == 1),
         "{outcome:?}"
@@ -2322,7 +2400,10 @@ fn an_abandoned_lookup_holds_neither_the_run_nor_its_runtime() {
     // client is free, it has returned, and its descendant work has ended.
     drop(test_seam::client(&fixture.path).lock().unwrap());
     descended.recv_timeout(Duration::from_secs(10)).unwrap();
-    assert_eq!(service.requests().len(), sent, "nothing sent after release");
+    // The stuck request is recorded once answered; nothing follows it.
+    let late = paths_since(&service, sent);
+    assert_eq!(late.len(), 1, "{late:?}");
+    assert!(late[0].contains("/query/"), "{late:?}");
     assert_eq!(work_row(&fixture.path, &txid), Some((None, None)));
     assert_eq!(view(&fixture, &txid), Some(TransparentDisplayView::Pending));
 }
@@ -2485,7 +2566,10 @@ async fn genuine_shielded_payment_to_a_transparent_recipient_stays_visible() {
     );
     assert_eq!(lwd.count("/GetTransaction"), 1);
     assert_eq!(
-        count(&fixture.path, "SELECT COUNT(*) FROM transparent_detail_work"),
+        count(
+            &fixture.path,
+            "SELECT COUNT(*) FROM transparent_detail_work"
+        ),
         0
     );
     assert_eq!(
@@ -2503,7 +2587,9 @@ async fn genuine_shielded_payment_to_a_transparent_recipient_stays_visible() {
     assert_eq!(
         count(
             &fixture.path,
-            &format!("SELECT COUNT(*) FROM transparent_received_outputs WHERE transaction_id = {id}")
+            &format!(
+                "SELECT COUNT(*) FROM transparent_received_outputs WHERE transaction_id = {id}"
+            )
         ),
         0
     );
