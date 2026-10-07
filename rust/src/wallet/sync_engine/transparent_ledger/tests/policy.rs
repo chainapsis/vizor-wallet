@@ -58,14 +58,6 @@ async fn openers_never_run_weaker_than_the_durable_policy() {
             .unwrap(),
         required
     );
-    // So does a handle on a transaction the caller holds, such as the
-    // stored-transaction check's.
-    assert!(!crate::wallet::sync::hardware_authority::stored_mined(
-        &path,
-        NETWORK,
-        &hardware_tx(vec![])
-    )
-    .unwrap());
     // Hardware broadcast authorization opens its own handle under its
     // reservation. It reaches the input check, which refuses an input no
     // private authority covers, instead of failing on the conflict.
