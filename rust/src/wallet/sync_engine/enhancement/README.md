@@ -334,10 +334,14 @@ outputs, so a wallet output the complete query no longer returns stops
 counting as spendable and its unseen spend is searched for (gap 5a). It reads
 the provider's tip with `GetLatestBlock`, which names no transparent subject,
 before the query and after its complete response; a result is reported only
-when both match the wallet's accepted tip, so a refresh made before the scan
-reaches the tip, or across a reorg, is stored but reported by a later one.
-Under `PrivateRequired` the refresh is withheld, so no such query or report is
-made.
+when both match the wallet's accepted tip and that block is scanned. A refresh
+that is not reported (one made across a reorg, or while the provider's tip
+moved) stores its outputs but does not advance its refresh metadata, so it is
+made again from the same start height. A sync starts when the provider's tip
+moves, so the active account's refresh before the chain scan is usually not
+reported; once the scan reaches the tip, the sync makes it again, reports it,
+and services the spend searches it queues before completing. Under
+`PrivateRequired` the refresh is withheld, so no such query or report is made.
 
 `Withheld` sends nothing and completes nothing. Queued work, unchecked ranges,
 and UTXO query heights stay durable for a later authorized pass. A later
