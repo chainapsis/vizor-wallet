@@ -291,10 +291,16 @@ fn settled_mixed_activity_does_not_inherit_incomplete_payment_details() {
         .unwrap();
         assert!(detail.provisional);
         assert!(!detail.details_complete);
+        assert!(detail.primary_address.is_none());
         assert!(
-            detail.amount_includes_fee,
-            "the receipt keeps the unattributed balance movement"
+            detail.outputs.is_empty(),
+            "no recipient attribution is invented"
         );
+        assert_eq!(
+            (settled[0].fee_state, settled[0].fee),
+            (TransactionFeeState::Known, 15_000)
+        );
+        assert!(!settled[0].amount_includes_fee);
 
         // Growing the recovery window withdraws settled coverage, even though
         // the shielded residual is still available. The warning must return.

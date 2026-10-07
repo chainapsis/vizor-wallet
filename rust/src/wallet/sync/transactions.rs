@@ -1898,7 +1898,6 @@ fn summarize_activity_outputs(
 
         if output.output_pool == TRANSPARENT_POOL
             && to_own
-            && recovered_from_own
             && !matches!(output.to_key_scope, Some(-1..=2))
         {
             summary.unknown_transparent_scope = true;

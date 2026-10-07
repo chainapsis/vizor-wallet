@@ -497,22 +497,18 @@ void main() {
     expect(unknown.amountText, activityAmountTextForFormFactor('--'));
   });
 
-  testWidgets(
-    'transaction rows route the amount through the form-factor gate',
-    (tester) async {
-      final row = await mapRow(
-        tester,
-        _transaction(txKind: 'sent', displayAmount: BigInt.from(1234567890000)),
-      );
+  testWidgets('transaction rows route the amount through the form-factor gate', (
+    tester,
+  ) async {
+    final row = await mapRow(
+      tester,
+      _transaction(txKind: 'sent', displayAmount: BigInt.from(1234567890000)),
+    );
 
-      // Lane-agnostic: desktop keeps the full amount, mobile compacts it. Both
-      // are exactly what activityAmountTextForFormFactor yields for this raw text.
-      expect(
-        row.amountText,
-        activityAmountTextForFormFactor('-12345.6789 ZEC'),
-      );
-    },
-  );
+    // Lane-agnostic: desktop keeps the full amount, mobile compacts it. Both
+    // are exactly what activityAmountTextForFormFactor yields for this raw text.
+    expect(row.amountText, activityAmountTextForFormFactor('-12345.6789 ZEC'));
+  });
 
   testWidgets('only uncertain activity summaries are marked incomplete', (
     tester,
