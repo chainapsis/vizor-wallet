@@ -290,29 +290,29 @@ class _SidebarIllustration extends StatelessWidget {
       OnboardingStep.secretPassphrase =>
         secretPassphraseRevealed
             ? isDark
-                  ? 'assets/illustrations/onboarding_secret_passphrase_sidebar_open_dark.webp'
-                  : 'assets/illustrations/onboarding_secret_passphrase_sidebar_open_light.webp'
+                  ? 'assets/illustrations/desktop/onboarding_secret_passphrase_sidebar_open_dark.webp'
+                  : 'assets/illustrations/desktop/onboarding_secret_passphrase_sidebar_open_light.webp'
             : isDark
-            ? 'assets/illustrations/onboarding_secret_passphrase_sidebar_closed_dark.webp'
-            : 'assets/illustrations/onboarding_secret_passphrase_sidebar_closed_light.webp',
+            ? 'assets/illustrations/desktop/onboarding_secret_passphrase_sidebar_closed_dark.webp'
+            : 'assets/illustrations/desktop/onboarding_secret_passphrase_sidebar_closed_light.webp',
       OnboardingStep.setPassword =>
         isDark
-            ? 'assets/illustrations/onboarding_set_password_sidebar_dark.webp'
-            : 'assets/illustrations/onboarding_set_password_sidebar_light.webp',
+            ? 'assets/illustrations/desktop/onboarding_set_password_sidebar_dark.webp'
+            : 'assets/illustrations/desktop/onboarding_set_password_sidebar_light.webp',
       OnboardingStep.customiseAccount =>
-        'assets/illustrations/onboarding_customise_account_sidebar.webp',
+        'assets/illustrations/desktop/onboarding_customise_account_sidebar.webp',
       OnboardingStep.thingsToKnow =>
         isDark
-            ? 'assets/illustrations/onboarding_things_to_know_sidebar_dark.webp'
-            : 'assets/illustrations/onboarding_things_to_know_sidebar_light.webp',
+            ? 'assets/illustrations/desktop/onboarding_things_to_know_sidebar_dark.webp'
+            : 'assets/illustrations/desktop/onboarding_things_to_know_sidebar_light.webp',
       OnboardingStep.addressTypes =>
         isDark
-            ? 'assets/illustrations/onboarding_wallet_details_sidebar_dark.webp'
-            : 'assets/illustrations/onboarding_wallet_details_sidebar_light.webp',
+            ? 'assets/illustrations/desktop/onboarding_wallet_details_sidebar_dark.webp'
+            : 'assets/illustrations/desktop/onboarding_wallet_details_sidebar_light.webp',
       _ =>
         isDark
-            ? 'assets/illustrations/onboarding_intro_sidebar_dark.webp'
-            : 'assets/illustrations/onboarding_intro_sidebar_light.webp',
+            ? 'assets/illustrations/desktop/onboarding_intro_sidebar_dark.webp'
+            : 'assets/illustrations/desktop/onboarding_intro_sidebar_light.webp',
     };
     return IgnorePointer(
       child: Align(

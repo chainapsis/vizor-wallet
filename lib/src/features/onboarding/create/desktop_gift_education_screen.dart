@@ -136,7 +136,7 @@ class _DesktopGiftEducationScreenState
         illustration: Align(
           alignment: Alignment.bottomCenter,
           child: Image.asset(
-            'assets/illustrations/onboarding_${illustration}_sidebar_$theme.webp',
+            'assets/illustrations/desktop/onboarding_${illustration}_sidebar_$theme.webp',
             fit: BoxFit.fitWidth,
           ),
         ),

@@ -116,7 +116,20 @@ flutter:
 
   assets:
     - assets/animations/
+    # Desktop artwork is omitted from iOS and Android bundles.
+    - path: assets/animations/desktop/
+      platforms:
+        - linux
+        - macos
+        - web
+        - windows
     - assets/illustrations/
+    - path: assets/illustrations/desktop/
+      platforms:
+        - linux
+        - macos
+        - web
+        - windows
     - assets/illustrations/payment_links/
     - assets/profile_pictures/
     - assets/icons/

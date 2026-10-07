@@ -275,9 +275,9 @@ class _SidebarIllustration extends StatelessWidget {
   static const _defaultFrameHeight = 405.0;
   static const _customiseAccountFrameHeight = 430.0;
   static const _lightAsset =
-      'assets/illustrations/onboarding_keystone_sidebar_light.webp';
+      'assets/illustrations/desktop/onboarding_keystone_sidebar_light.webp';
   static const _darkAsset =
-      'assets/illustrations/onboarding_keystone_sidebar_dark.webp';
+      'assets/illustrations/desktop/onboarding_keystone_sidebar_dark.webp';
 
   @override
   Widget build(BuildContext context) {
@@ -285,14 +285,14 @@ class _SidebarIllustration extends StatelessWidget {
     final asset = switch (activeStep) {
       KeystoneOnboardingStep.walletBirthdayHeight =>
         isDark
-            ? 'assets/illustrations/onboarding_wallet_details_sidebar_dark.webp'
-            : 'assets/illustrations/onboarding_wallet_details_sidebar_light.webp',
+            ? 'assets/illustrations/desktop/onboarding_wallet_details_sidebar_dark.webp'
+            : 'assets/illustrations/desktop/onboarding_wallet_details_sidebar_light.webp',
       KeystoneOnboardingStep.setPassword =>
         isDark
-            ? 'assets/illustrations/onboarding_set_password_sidebar_dark.webp'
-            : 'assets/illustrations/onboarding_set_password_sidebar_light.webp',
+            ? 'assets/illustrations/desktop/onboarding_set_password_sidebar_dark.webp'
+            : 'assets/illustrations/desktop/onboarding_set_password_sidebar_light.webp',
       KeystoneOnboardingStep.customiseAccount =>
-        'assets/illustrations/onboarding_customise_account_sidebar.webp',
+        'assets/illustrations/desktop/onboarding_customise_account_sidebar.webp',
       _ => isDark ? _darkAsset : _lightAsset,
     };
     final frameHeight = activeStep == KeystoneOnboardingStep.customiseAccount

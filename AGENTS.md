@@ -178,6 +178,13 @@ header times every 1,000 blocks. The only request left is the chain tip.
   `scripts/update-mainnet-block-times.py` (needs `grpcurl`); validate offline
   with `--check`. Never edit the data file by hand.
 
+## Image Assets
+
+New raster image assets must be converted to lossless WebP before inclusion.
+Preserve their dimensions and decoded pixels, and update app, Widgetbook, and
+test references to `.webp`. For illustrations, use
+`scripts/convert-illustrations-to-webp.py` (`--apply` writes verified conversions).
+
 ## Editing Figma
 
 When the user explicitly asks you to modify a Figma file or design, read

@@ -195,18 +195,18 @@ class _SidebarIllustration extends StatelessWidget {
     final asset = switch (activeStep) {
       ImportOnboardingStep.secretPassphrase =>
         isDark
-            ? 'assets/illustrations/onboarding_secret_passphrase_sidebar_closed_dark.webp'
-            : 'assets/illustrations/onboarding_secret_passphrase_sidebar_closed_light.webp',
+            ? 'assets/illustrations/desktop/onboarding_secret_passphrase_sidebar_closed_dark.webp'
+            : 'assets/illustrations/desktop/onboarding_secret_passphrase_sidebar_closed_light.webp',
       ImportOnboardingStep.walletBirthdayHeight =>
         isDark
-            ? 'assets/illustrations/onboarding_wallet_details_sidebar_dark.webp'
-            : 'assets/illustrations/onboarding_wallet_details_sidebar_light.webp',
+            ? 'assets/illustrations/desktop/onboarding_wallet_details_sidebar_dark.webp'
+            : 'assets/illustrations/desktop/onboarding_wallet_details_sidebar_light.webp',
       ImportOnboardingStep.setPassword =>
         isDark
-            ? 'assets/illustrations/onboarding_set_password_sidebar_dark.webp'
-            : 'assets/illustrations/onboarding_set_password_sidebar_light.webp',
+            ? 'assets/illustrations/desktop/onboarding_set_password_sidebar_dark.webp'
+            : 'assets/illustrations/desktop/onboarding_set_password_sidebar_light.webp',
       ImportOnboardingStep.customiseAccount =>
-        'assets/illustrations/onboarding_customise_account_sidebar.webp',
+        'assets/illustrations/desktop/onboarding_customise_account_sidebar.webp',
     };
     final frameHeight = activeStep == ImportOnboardingStep.customiseAccount
         ? _customiseAccountFrameHeight

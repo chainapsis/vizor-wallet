@@ -20,11 +20,12 @@ import 'shared/welcome_button_tokens.dart';
 import 'shared/welcome_video_backdrop.dart';
 import 'providers/welcome_network_settings_provider.dart';
 
-const kDesktopWelcomeVideoAsset = 'assets/animations/desktop_welcome.mp4';
+const kDesktopWelcomeVideoAsset =
+    'assets/animations/desktop/desktop_welcome.mp4';
 const kDesktopWelcomeAnimatedImageAsset =
-    'assets/animations/desktop_welcome.webp';
+    'assets/animations/desktop/desktop_welcome.webp';
 const kDesktopWelcomePosterAsset =
-    'assets/illustrations/desktop_welcome_poster.webp';
+    'assets/illustrations/desktop/desktop_welcome_poster.webp';
 const double _welcomePaneWidth = 420;
 const double _welcomeBackButtonTop = AppSpacing.base + AppSpacing.xs;
 
