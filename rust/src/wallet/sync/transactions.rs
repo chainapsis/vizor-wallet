@@ -290,7 +290,7 @@ pub fn decrypt_and_store_transaction(
     tx_bytes: &[u8],
     mined_height: Option<u64>,
 ) -> Result<(), String> {
-    use zcash_client_backend::data_api::wallet::decrypt_and_store_transaction;
+    use zcash_client_backend::data_api::wallet::decrypt_and_store_transaction_with_dynamic_ivks;
     use zcash_primitives::transaction::Transaction;
     use zcash_protocol::consensus::BranchId;
 
@@ -300,7 +300,7 @@ pub fn decrypt_and_store_transaction(
 
     with_wallet_db_write_lock("transactions.decrypt_and_store_transaction", || {
         let mut db = open_wallet_db(db_path, network)?;
-        decrypt_and_store_transaction(&network, &mut db, &tx, height)
+        decrypt_and_store_transaction_with_dynamic_ivks(&network, &mut db, &tx, height)
             .map_err(|e| format!("Failed to decrypt/store transaction: {e}"))
     })
 }

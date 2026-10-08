@@ -52,8 +52,8 @@ use shardtree::{
 };
 use transparent::{address::TransparentAddress, bundle::OutPoint, keys::TransparentKeyScope};
 use zcash_client_backend::data_api::wallet::input_selection::{
-    GreedyInputSelector, InputSelector, LockFilter, LockedInputPolicy, NoteSelection,
-    ShieldingSelector, SpendPolicy,
+    GreedyInputSelector, InputSelector, InputSelectorError, LockFilter, LockedInputPolicy,
+    NoteSelection, ShieldingSelector, SpendPolicy,
 };
 use zcash_client_backend::{
     data_api::{
@@ -74,7 +74,10 @@ use zcash_client_backend::{
     wallet::{LockOwner, Note, OutputRef, OvkPolicy, ReceivedNote, WalletTransparentOutput},
     zip321::{Payment, TransactionRequest},
 };
-use zcash_client_sqlite::{wallet::commitment_tree, AccountUuid, ReceivedNoteId};
+use zcash_client_sqlite::{
+    wallet::{commitment_tree, dynamic_ivk::verify_refund_funding_proposal},
+    AccountUuid, ReceivedNoteId,
+};
 use zcash_keys::{address::Address, keys::UnifiedSpendingKey};
 use zcash_primitives::block::BlockHash;
 use zcash_primitives::transaction::TxVersion;
@@ -828,6 +831,52 @@ pub(crate) fn propose_send_for_purpose(
     )
 }
 
+/// The recovery memo shares the funding transaction and its input locks.
+pub(crate) fn propose_send_with_swap_refund(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    send_flow_id: &str,
+    to_address: &str,
+    amount_zatoshi: u64,
+    refund_index: u64,
+) -> Result<ProposalResult, String> {
+    propose_send_with_request(
+        db_path,
+        network,
+        account_uuid,
+        send_flow_id,
+        SendRequest::SwapFunding {
+            to_address,
+            amount_zatoshi,
+            refund_index: Some(refund_index),
+        },
+        SendPurpose::Ordinary,
+    )
+}
+
+/// The fee [`propose_send_with_swap_refund`] would pay, from Ironwood notes alone. A
+/// refund memo's content does not change the fee, so this needs no recorded refund
+/// quote and also sizes a swap before one exists.
+pub(crate) fn estimate_fee_with_swap_refund(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    to_address: &str,
+    amount_zatoshi: u64,
+) -> Result<u64, String> {
+    estimate_fee_with_request(
+        db_path,
+        network,
+        account_uuid,
+        SendRequest::SwapFunding {
+            to_address,
+            amount_zatoshi,
+            refund_index: None,
+        },
+    )
+}
+
 pub(crate) fn propose_payment_link_batch(
     db_path: &str,
     network: WalletNetwork,
@@ -1023,6 +1072,13 @@ fn estimate_fee_with_request(
 /// card of a Gift Card batch.
 #[derive(Clone, Copy)]
 enum SendRequest<'a> {
+    /// A swap deposit whose change carries the recovery memo of refund key
+    /// `refund_index`, or a placeholder memo for an estimate before the quote.
+    SwapFunding {
+        to_address: &'a str,
+        amount_zatoshi: u64,
+        refund_index: Option<u64>,
+    },
     Single {
         to_address: &'a str,
         amount_zatoshi: u64,
@@ -1034,6 +1090,11 @@ enum SendRequest<'a> {
 impl SendRequest<'_> {
     fn build(self) -> Result<TransactionRequest, String> {
         match self {
+            Self::SwapFunding {
+                to_address,
+                amount_zatoshi,
+                ..
+            } => build_send_request(to_address, amount_zatoshi, None),
             Self::Single {
                 to_address,
                 amount_zatoshi,
@@ -1042,7 +1103,24 @@ impl SendRequest<'_> {
             Self::PaymentLinkBatch(payments) => build_payment_link_batch_request(payments),
         }
     }
+
+    /// The notes this request may spend. Swap funding spends only Ironwood notes,
+    /// because its change carries the refund memo and must stay in Ironwood (see
+    /// `verify_refund_funding_proposal`); a shortfall is [`SWAP_FUNDING_NEEDS_IRONWOOD`].
+    fn spend_policy(self, orchard_reserved_for_migration: bool) -> SpendPolicy {
+        match self {
+            Self::SwapFunding { .. } => SpendPolicy::shielded_pools(vec![ShieldedPool::Ironwood])
+                .with_note_selection(NoteSelection::PreferConsolidation),
+            Self::Single { .. } | Self::PaymentLinkBatch(_) => {
+                ordinary_send_spend_policy(orchard_reserved_for_migration)
+            }
+        }
+    }
 }
+
+/// Starts the error for a swap deposit that Ironwood notes alone cannot fund. Dart's
+/// swap failure policy matches it and asks the user to move funds to Ironwood.
+const SWAP_FUNDING_NEEDS_IRONWOOD: &str = "Swap funding needs Ironwood funds";
 
 /// Shared proposal step of [`propose_send`] and [`estimate_fee`]: pass 1 plus
 /// the [`propose_with_note_version_downgrade`] pass 2, so the displayed
@@ -1068,12 +1146,29 @@ fn propose_request(
     }
     let proposed_tx_version = proposed_tx_version_for_wallet_db(db, network, context)?;
     let transaction_request = request.build()?;
+    let change_memo = match request {
+        SendRequest::SwapFunding {
+            refund_index: None, ..
+        } => Some(
+            MemoBytes::from_bytes(&zakura_dynamic_ivk::RefundMemo::new(0).encode())
+                .map_err(|e| e.to_string())?,
+        ),
+        SendRequest::SwapFunding {
+            to_address,
+            refund_index: Some(refund_index),
+            ..
+        } => Some(
+            db.refund_funding_memo(account_id, refund_index, to_address)
+                .map_err(|e| e.to_string())?,
+        ),
+        _ => None,
+    };
     let migration_locks = super::migration::locked_migration_note_refs(db_path, account_uuid)?;
-    let spend_policy = ordinary_send_spend_policy(
-        super::migration::migration_reserves_orchard_inputs(db_path, account_uuid, network)?,
-    );
+    let orchard_reserved_for_migration =
+        super::migration::migration_reserves_orchard_inputs(db_path, account_uuid, network)?;
+    let spend_policy = request.spend_policy(orchard_reserved_for_migration);
     let propose = |transaction_request: TransactionRequest, tx_version: Option<TxVersion>| {
-        propose_send_with_reserved_notes(
+        let proposal = propose_send_with_reserved_notes(
             db,
             network,
             account_id,
@@ -1083,7 +1178,15 @@ fn propose_request(
             &spend_policy,
             tx_version,
             purpose.confirmations_policy(),
-        )
+            change_memo.clone(),
+        )?;
+        // Keep payment and recovery record atomic. TEX/multi-step proposals must
+        // not silently move the marker into a different transaction.
+        if let (SendRequest::SwapFunding { to_address, .. }, Some(memo)) = (request, &change_memo) {
+            verify_refund_funding_proposal(&proposal, memo, to_address)
+                .map_err(|e| e.to_string())?;
+        }
+        Ok(proposal)
     };
     let pass1_proposal = propose(transaction_request.clone(), proposed_tx_version)?;
     let (proposal, tx_version) =
@@ -3842,7 +3945,6 @@ fn build_ledger_shielding_round(
             account,
             target,
             anchor,
-            &db.pool_migration_params(),
             confirmations,
             CoinbaseFilter::AllTransparentOutputs,
         )
@@ -4010,6 +4112,7 @@ fn propose_send_with_reserved_notes(
     spend_policy: &SpendPolicy,
     proposed_tx_version: Option<TxVersion>,
     confirmations_policy: ConfirmationsPolicy,
+    change_memo: Option<MemoBytes>,
 ) -> Result<Proposal<WalletFeeRule, ReceivedNoteId>, String> {
     let (target_height, anchor_height) = db
         .get_target_and_anchor_heights(confirmations_policy.trusted())
@@ -4021,15 +4124,28 @@ fn propose_send_with_reserved_notes(
         migration_locks,
         transparent_allowlist: None,
     };
-    let zip318 = db.pool_migration_params();
     let account = db
         .get_account(account_id)
         .map_err(|e| e.to_string())?
         .ok_or("Account not found")?;
     let is_ledger = crate::wallet::keys::hardware_signer_kind(account.source())
         == Some(crate::wallet::keys::HardwareSignerKind::Ledger);
-    let (change_strategy, input_selector) =
-        zip317_helper::<ReservedInputSource<'_, WalletDatabase>>(None, is_ledger);
+    // Only swap funding sets a change memo.
+    let swap_funding = change_memo.is_some();
+    let (change_strategy, input_selector) = if swap_funding {
+        (
+            MultiOutputChangeStrategy::new(
+                ConservativeZip317FeeRule,
+                change_memo,
+                ShieldedPool::Ironwood,
+                DustOutputPolicy::default(),
+                SplitPolicy::single_output(),
+            ),
+            GreedyInputSelector::new(),
+        )
+    } else {
+        zip317_helper::<ReservedInputSource<'_, WalletDatabase>>(None, is_ledger)
+    };
 
     input_selector
         .propose_transaction(
@@ -4037,7 +4153,6 @@ fn propose_send_with_reserved_notes(
             &reserved_db,
             target_height,
             anchor_height,
-            &zip318,
             confirmations_policy,
             account_id,
             request,
@@ -4047,7 +4162,12 @@ fn propose_send_with_reserved_notes(
             spend_policy,
             proposed_tx_version,
         )
-        .map_err(|e| format!("Propose failed: {e}"))
+        .map_err(|e| match e {
+            InputSelectorError::InsufficientFunds { .. } if swap_funding => {
+                format!("{SWAP_FUNDING_NEEDS_IRONWOOD}: {e}")
+            }
+            e => format!("Propose failed: {e}"),
+        })
 }
 
 fn ordinary_send_spend_pools(orchard_reserved_for_migration: bool) -> Vec<ShieldedPool> {
@@ -4250,14 +4370,6 @@ impl<I: InputSource> InputSource for ReservedInputSource<'_, I> {
     type Error = I::Error;
     type AccountId = I::AccountId;
     type NoteRef = I::NoteRef;
-
-    fn anchor_computable(
-        &self,
-        protocol: ShieldedPool,
-        height: BlockHeight,
-    ) -> Result<bool, Self::Error> {
-        self.inner.anchor_computable(protocol, height)
-    }
 
     fn get_spendable_note(
         &self,

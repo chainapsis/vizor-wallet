@@ -1,3 +1,4 @@
+pub mod dynamic_ivk;
 pub mod keystone;
 pub mod ledger;
 pub mod network_privacy;

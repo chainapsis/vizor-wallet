@@ -51,7 +51,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use zcash_client_backend::{data_api::WalletRead, proto::service::RawTransaction};
+use zcash_client_backend::{
+    data_api::{dynamic_ivk::DynamicIvkRead as _, WalletRead},
+    proto::service::RawTransaction,
+};
 use zcash_primitives::transaction::Transaction;
 use zcash_protocol::consensus::{BlockHeight, BranchId};
 
@@ -673,8 +676,8 @@ fn update_mempool_chain_tip(
 /// Unmatched transactions (other people's txs) are silently
 /// dropped on the Rust side without crossing the FRB bridge.
 /// Unknown txs may still pay the cost of shielded trial decryption,
-/// but they never take the wallet DB write lock unless a Sapling or
-/// Orchard output decrypts for one of our accounts. Transparent
+/// but they never take the wallet DB write lock unless a shielded
+/// output decrypts for one of our accounts or open swap keys. Transparent
 /// inbound transactions are still discovered by the normal sync path.
 ///
 /// All failures are logged and swallowed — one un-parseable tx
@@ -932,6 +935,21 @@ fn trial_decrypt_account_uuids(
         tx,
         &ufvks,
     );
+    // Payouts to open swap keys, which have their own incoming viewing keys. These
+    // are the keys `decrypt_and_store_transaction` selects to store the payment.
+    let decrypted = if tx.ironwood_bundle().is_some() {
+        let receivers: Vec<_> = decrypted
+            .ironwood_outputs()
+            .iter()
+            .map(|output| output.note().0.recipient())
+            .collect();
+        let keys = db
+            .get_dynamic_transaction_keys(tx.txid(), None, &receivers)
+            .map_err(|e| format!("get dynamic keys: {e}"))?;
+        decrypted.with_dynamic_ivks(keys)
+    } else {
+        decrypted
+    };
 
     let mut accounts = BTreeSet::new();
     for output in decrypted.sapling_outputs() {
@@ -1367,5 +1385,173 @@ mod tests {
             elapsed >= Duration::from_millis(200),
             "sleep must wait at least ~duration: elapsed={elapsed:?}"
         );
+    }
+
+    /// A v6 transaction paying `value` to `recipient` in Ironwood from a transparent
+    /// coin the wallet does not know, as NEAR pays out. Its scripts, proof and
+    /// signatures are placeholders, which parsing and trial decryption ignore.
+    fn ironwood_payment(recipient: orchard::Address, value: u64) -> RawTransaction {
+        use orchard::{
+            builder::{Builder, BundleType},
+            bundle::BundleVersion,
+            primitives::redpallas::Signature,
+        };
+        use transparent::{
+            address::Script,
+            bundle::{Authorized as TransparentAuthorized, Bundle, OutPoint, TxIn},
+        };
+        use zcash_primitives::transaction::{Authorized, TransactionData};
+
+        let funding = Bundle {
+            vin: vec![TxIn::from_parts(
+                OutPoint::new([9; 32], 0),
+                Script::default(),
+                u32::MAX,
+            )],
+            vout: vec![],
+            authorization: TransparentAuthorized,
+        };
+        let version = BundleVersion::ironwood_v3();
+        let mut builder = Builder::new(
+            BundleType::DEFAULT,
+            version,
+            version.default_flags(),
+            orchard::Anchor::empty_tree(),
+        )
+        .unwrap();
+        builder
+            .add_output(
+                None,
+                recipient,
+                orchard::value::NoteValue::from_raw(value),
+                [0; 512],
+            )
+            .unwrap();
+        let (bundle, _) = builder
+            .build::<zcash_protocol::value::ZatBalance>(voting_crypto_deps::rand::rngs::OsRng)
+            .unwrap()
+            .unwrap();
+        let proof_size = orchard::Proof::expected_proof_size(bundle.actions().len());
+        let bundle = bundle.map_authorization(
+            &mut (),
+            |_, _, _| Signature::from([0; 64]),
+            |_, _| {
+                orchard::bundle::Authorized::from_parts(
+                    orchard::Proof::new(vec![0; proof_size]),
+                    Signature::from([0; 64]),
+                )
+            },
+        );
+        let tx = TransactionData::<Authorized>::from_parts_v6(
+            BranchId::Nu6_3,
+            0,
+            BlockHeight::from_u32(140),
+            Some(funding),
+            None,
+            None,
+            Some(bundle),
+        )
+        .freeze()
+        .unwrap();
+        let mut data = Vec::new();
+        tx.write(&mut data).unwrap();
+        RawTransaction { data, height: 0 }
+    }
+
+    /// The observer stores a mempool payout to an open swap key as pending, credited
+    /// to that key, through the same path that stores full transactions.
+    #[test]
+    fn payout_to_open_swap_key_is_stored_as_pending_with_its_key() {
+        use crate::wallet::db::{open_wallet_db_with_timeout, WALLET_DB_BUSY_TIMEOUT};
+        use secrecy::SecretVec;
+        use std::cell::RefCell;
+        use zcash_client_backend::data_api::WalletWrite;
+
+        crate::wallet::network::configure_regtest_nu6_3_activation_height(100).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db");
+        let path = path.to_str().unwrap();
+        let network = WalletNetwork::Regtest;
+        let (account, _) = crate::wallet::keys::init_db_and_create_account(
+            path,
+            network,
+            &SecretVec::new(vec![0; 32]),
+            Some(100),
+            "swap",
+        )
+        .unwrap();
+        // Restore maintenance registers incoming keys, as in the swap receiving tests.
+        let tip = BlockHeight::from_u32(110);
+        let mut db = open_wallet_db_with_timeout(path, network, WALLET_DB_BUSY_TIMEOUT).unwrap();
+        db.update_chain_tip(tip).unwrap();
+        let conn = rusqlite::Connection::open(path).unwrap();
+        conn.execute_batch(
+            "INSERT INTO blocks(height,hash,time,sapling_tree) VALUES(110,zeroblob(32),0,X'000000');
+             DELETE FROM scan_queue;
+             INSERT INTO scan_queue(block_range_start,block_range_end,priority) VALUES(100,111,10);",
+        )
+        .unwrap();
+        crate::wallet::dynamic_ivk::maintain_recovery(&mut db).unwrap();
+        drop(db);
+        // The receiver of the incoming key whose big-endian index is `index_hex`.
+        let receiver = |index_hex: &str| -> orchard::Address {
+            let bytes: Vec<u8> = conn
+                .query_row(
+                    &format!(
+                        "SELECT receiver FROM ironwood_receiving_keys
+                         WHERE purpose = 1 AND key_index = X'{index_hex}'"
+                    ),
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            orchard::Address::from_raw_address_bytes(&bytes.try_into().unwrap()).unwrap()
+        };
+        // Open the first key, as issuing it on this device does. The others wait for a
+        // directory sweep, so, as in block scanning, a payout to one stays unmatched.
+        conn.execute(
+            "UPDATE ironwood_receiving_keys SET active_from = 111
+             WHERE purpose = 1 AND key_index = X'0000000000000000'",
+            [],
+        )
+        .unwrap();
+
+        let events = RefCell::new(Vec::new());
+        let mut seen = TxidSeenCache::new(8);
+        let mut unmatched = TxidTtlCache::new(8, Duration::from_secs(10));
+        let mut stats = MempoolObserverStats::new(Instant::now());
+        let mut handle = |raw: &RawTransaction| {
+            handle_mempool_tx(
+                path,
+                network,
+                tip,
+                &mut seen,
+                &mut unmatched,
+                &mut stats,
+                raw,
+                &|event| events.borrow_mut().push(event),
+            )
+        };
+        handle(&ironwood_payment(receiver("0000000000000001"), 50_000));
+        assert!(events.borrow().is_empty());
+        let payout = ironwood_payment(receiver("0000000000000000"), 100_000);
+        handle(&payout);
+
+        let events = events.into_inner();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].account_uuids, vec![account]);
+        let txid = Transaction::read(&payout.data[..], BranchId::Sapling)
+            .unwrap()
+            .txid();
+        let (mined_height, value, has_key): (Option<u32>, u64, bool) = conn
+            .query_row(
+                "SELECT t.mined_height, n.value, n.receiving_key_id IS NOT NULL
+                 FROM ironwood_received_notes n JOIN transactions t ON t.id_tx = n.transaction_id
+                 WHERE t.txid = ?1",
+                [txid.as_ref()],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!((mined_height, value, has_key), (None, 100_000, true));
     }
 }

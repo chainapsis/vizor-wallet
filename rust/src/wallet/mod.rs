@@ -5,6 +5,7 @@ use zcash_client_backend::data_api::wallet::ConfirmationsPolicy;
 pub(crate) mod addresses;
 pub(crate) mod block_times;
 pub(crate) mod db;
+pub(crate) mod dynamic_ivk;
 pub(crate) mod gift_card_tracking;
 pub mod keys;
 pub mod keystone;

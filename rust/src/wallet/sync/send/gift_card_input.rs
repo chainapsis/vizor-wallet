@@ -2,7 +2,10 @@
 //! spendability is established by the card observer, not the wallet scan queue.
 use super::*;
 use crate::wallet::sync_engine::gift_card_claim;
-use zcash_client_backend::data_api::{wallet::input_selection::InputSelectorError, PoolMeta};
+use zcash_client_backend::data_api::{
+    anchor_retention::AnchorRetentionInterval, wallet::input_selection::InputSelectorError,
+    PoolMeta,
+};
 
 pub(super) struct CardInput<'a> {
     db: &'a WalletDatabase,
@@ -22,13 +25,18 @@ impl<'a> CardInput<'a> {
         if !state.complete || !state.has_confirmed_anchor() {
             return Err("Insufficient balance: Gift Card check or confirmations pending".into());
         }
-        if !db
-            .anchor_computable(ShieldedPool::Ironwood, state.anchor_height.into())
-            .map_err(|e| e.to_string())?
-        {
+        let c = open_readonly_conn(path)?;
+        // Witnesses need the Ironwood tree checkpoint at the claim's anchor.
+        let anchored: bool = c
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM ironwood_tree_checkpoints WHERE checkpoint_id = ?1)",
+                [state.anchor_height],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if !anchored {
             return Err("Gift Card funding witnesses require another check".into());
         }
-        let c = open_readonly_conn(path)?;
         let mut query=c.prepare("SELECT t.txid,n.action_index FROM ironwood_received_notes n JOIN transactions t ON t.id_tx=n.transaction_id JOIN vizor_giftcard_check g ON t.txid=g.funding_txid WHERE n.value>0 AND NOT EXISTS(SELECT 1 FROM vizor_giftcard_spends s WHERE s.nf=n.nf)").map_err(|e|e.to_string())?;
         let ids = query
             .query_map([], |r| Ok((r.get::<_, Vec<u8>>(0)?, r.get::<_, u16>(1)?)))
@@ -93,7 +101,6 @@ impl<'a> CardInput<'a> {
             self,
             BlockHeight::from_u32(self.state.checked_height + 1).into(),
             BlockHeight::from_u32(self.state.anchor_height),
-            &self.db.pool_migration_params(),
             payment_link_claim_confirmations_policy(),
             self.account,
             request,
@@ -161,10 +168,9 @@ impl InputSource for CardInput<'_> {
     type Error = String;
     type AccountId = AccountUuid;
     type NoteRef = ReceivedNoteId;
-    fn anchor_computable(&self, pool: ShieldedPool, height: BlockHeight) -> Result<bool, String> {
-        self.db
-            .anchor_computable(pool, height)
-            .map_err(|e| e.to_string())
+    /// Forwards the wallet's anchor grid, as the trait asks of wrappers.
+    fn anchor_retention_interval(&self) -> AnchorRetentionInterval {
+        self.db.anchor_retention_interval()
     }
     fn get_spendable_note(
         &self,
