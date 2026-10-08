@@ -349,6 +349,17 @@ neither acts on a policy the other is about to change: a toggle-off that lands
 while a raise waits wins, and one that waits behind a raise lowers what it
 applied. A raise that cannot apply checks first and never takes the fence.
 
+The setting transition pauses recovery and saves an explicit opt-out before
+lowering the durable policy. A failed preference save leaves the wallet's
+private policy untouched, even in a default build that cannot raise it again.
+If lowering fails, it changes no durable policy; the transition restores the
+runtime preference to private and attempts to restore the saved preference
+before resuming. A second storage failure leaves the wallet and native work
+private even if the saved opt-out remains. A crash between the
+preference save and lowering can leave a stricter wallet policy than the saved
+setting. Startup preserves that restriction; explicitly toggling Private
+queries on and then off retries the transition.
+
 - Every handle opener selects a mode, then adopts a durable `PrivateRequired`,
   so lookups on such a wallet are withheld in every build. A handle opened
   before the transition cannot read it; the gate then returns an error, which

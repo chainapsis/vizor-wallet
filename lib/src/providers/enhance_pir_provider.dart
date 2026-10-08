@@ -89,9 +89,9 @@ class EnhancePirNotifier extends Notifier<bool> {
     }
   }
 
-  // Each side may be stricter than the saved setting, never laxer: the
-  // stricter state is applied first, and every failure restores it before
-  // reporting the setting unchanged.
+  // Apply the stricter state first. A failed preference save must never
+  // weaken the wallet's durable policy; other failures retain private work
+  // while attempting to restore the saved setting.
 
   Future<void> _enable() async {
     final store = ref.read(enhancePirPreferenceStoreProvider);
@@ -113,22 +113,18 @@ class EnhancePirNotifier extends Notifier<bool> {
   Future<void> _disable() async {
     final store = ref.read(enhancePirPreferenceStoreProvider);
     final reconcile = ref.read(transparentPolicyReconcilerProvider);
+    // Persist the explicit opt-out before weakening the wallet. If saving
+    // fails, its private policy stays untouched, including in default builds
+    // that cannot raise it again through mode selection.
+    await store.writeEnabled(false);
     rust_sync.setEnhancePirEnabled(enabled: false);
-    final bool lowered;
     try {
-      lowered = await reconcile(false);
+      await reconcile(false);
     } catch (_) {
+      // Reconciliation changes nothing on failure. Keep runtime and native
+      // work private, then restore the saved preference while still paused.
       rust_sync.setEnhancePirEnabled(enabled: true);
-      rethrow;
-    }
-    try {
-      await store.writeEnabled(false);
-    } catch (_) {
-      // The wallet is already public; the saved setting is still on. Raise
-      // again only a wallet this disable lowered: one still public was never
-      // raised, for example because the setting could not be read at launch.
-      rust_sync.setEnhancePirEnabled(enabled: true);
-      if (lowered) await reconcile(true);
+      await store.writeEnabled(true);
       rethrow;
     }
     state = false;

@@ -71,6 +71,7 @@ class _Api extends RustLibApi {
 class _Store implements EnhancePirPreferenceStore {
   bool? value;
   bool fail = false;
+  bool failEnabled = false;
   Completer<void>? pending;
   List<String>? events;
   @override
@@ -78,7 +79,7 @@ class _Store implements EnhancePirPreferenceStore {
   @override
   Future<void> writeEnabled(bool enabled) async {
     if (pending != null) await pending!.future;
-    if (fail) throw StateError('disk full');
+    if (fail || (enabled && failEnabled)) throw StateError('disk full');
     events?.add('store:$enabled');
     value = enabled;
   }
@@ -101,6 +102,24 @@ class _Reconciler {
       throw StateError('public lookups did not drain');
     }
     return privateQueries || lowers;
+  }
+}
+
+/// Models the durable policy boundary: every build can lower a private wallet,
+/// but a default build cannot raise it again through mode selection.
+class _DurableReconciler extends _Reconciler {
+  _DurableReconciler({required this.buildFlag});
+
+  final bool buildFlag;
+  bool privateRequired = true;
+
+  @override
+  Future<bool> call(bool privateQueries) async {
+    await super.call(privateQueries);
+    if (privateQueries && !buildFlag) return false;
+    final changed = privateRequired != privateQueries;
+    privateRequired = privateQueries;
+    return changed;
   }
 }
 
@@ -396,9 +415,9 @@ void main() {
         'rust:true',
         'confirmed:true',
         'reconcile:true',
+        'store:false',
         'rust:false',
         'reconcile:false',
-        'store:false',
         'native:false',
       ]);
       expect(container.read(enhancePirProvider), isFalse);
@@ -469,11 +488,13 @@ void main() {
     },
   );
   test(
-    'a failed lowering on disable turns Rust back on and saves nothing',
+    'a failed lowering on disable restores Rust and the saved preference',
     () async {
       final events = <String>[];
       api.events = events;
-      final store = _Store()..events = events;
+      final store = _Store()
+        ..value = true
+        ..events = events;
       final sync = _Sync()..gate.complete();
       final container = setup(
         store,
@@ -486,8 +507,14 @@ void main() {
 
       await container.read(enhancePirProvider.notifier).set(false);
 
-      expect(events, ['rust:false', 'reconcile:false', 'rust:true']);
-      expect(store.value, isNull);
+      expect(events, [
+        'store:false',
+        'rust:false',
+        'reconcile:false',
+        'rust:true',
+        'store:true',
+      ]);
+      expect(store.value, isTrue);
       expect(container.read(enhancePirProvider), isTrue);
       expect(
         container.read(enhancePirTransitionProvider),
@@ -495,41 +522,112 @@ void main() {
       );
     },
   );
-  test('a failed save on disable raises the wallet again', () async {
-    final events = <String>[];
-    api.events = events;
-    final store = _Store()
-      ..events = events
-      ..fail = true;
-    final sync = _Sync()..gate.complete();
-    final container = setup(
-      store,
-      sync,
-      initialEnabled: true,
-      background: _Background(events),
-      reconciler: _Reconciler(events),
-    );
-    addTearDown(container.dispose);
-
-    await container.read(enhancePirProvider.notifier).set(false);
-
-    // The saved setting is still on, so the wallet is made private again and
-    // native background work is never released.
-    expect(events, [
-      'rust:false',
-      'reconcile:false',
-      'rust:true',
-      'reconcile:true',
-    ]);
-    expect(store.value, isNull);
-    expect(container.read(enhancePirProvider), isTrue);
-    expect(
-      container.read(enhancePirTransitionProvider),
-      'Setting unchanged. Try again.',
-    );
-  });
   test(
-    'a failed save on disable raises nothing that the disable did not lower',
+    'a pending disable save leaves durable private policy untouched',
+    () async {
+      final events = <String>[];
+      api.events = events;
+      final store = _Store()
+        ..value = true
+        ..events = events
+        ..pending = Completer<void>();
+      final reconciler = _DurableReconciler(buildFlag: false);
+      final sync = _Sync()..gate.complete();
+      final container = setup(
+        store,
+        sync,
+        initialEnabled: true,
+        background: _Background(events),
+        reconciler: reconciler,
+      );
+      addTearDown(container.dispose);
+
+      final change = container.read(enhancePirProvider.notifier).set(false);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(reconciler.privateRequired, isTrue);
+      expect(reconciler.calls, isEmpty);
+      expect(api.values, isEmpty);
+      expect(events, isEmpty);
+      expect(store.value, isTrue);
+      expect(container.read(enhancePirProvider), isTrue);
+      store.pending!.complete();
+      await change;
+      expect(store.value, isFalse);
+      expect(reconciler.privateRequired, isFalse);
+      expect(reconciler.calls, [false]);
+      expect(api.values, [false]);
+      expect(events, ['store:false', 'rust:false', 'native:false']);
+      expect(container.read(enhancePirProvider), isFalse);
+      expect(container.read(enhancePirTransitionProvider), isNull);
+    },
+  );
+  for (final buildFlag in [false, true]) {
+    test('a failed disable save preserves durable private policy with '
+        'build flag $buildFlag', () async {
+      final store = _Store()
+        ..value = true
+        ..fail = true;
+      final reconciler = _DurableReconciler(buildFlag: buildFlag);
+      final events = <String>[];
+      final container = setup(
+        store,
+        _Sync()..gate.complete(),
+        initialEnabled: true,
+        background: _Background(events),
+        reconciler: reconciler,
+      );
+      addTearDown(container.dispose);
+
+      await container.read(enhancePirProvider.notifier).set(false);
+
+      expect(reconciler.privateRequired, isTrue);
+      expect(reconciler.calls, isEmpty);
+      expect(api.values, isEmpty);
+      expect(events, isEmpty);
+      expect(store.value, isTrue);
+      expect(container.read(enhancePirProvider), isTrue);
+      expect(
+        container.read(enhancePirTransitionProvider),
+        'Setting unchanged. Try again.',
+      );
+    });
+  }
+  test(
+    'a failed preference restore never lowers durable private policy',
+    () async {
+      final store = _Store()
+        ..value = true
+        ..failEnabled = true;
+      final reconciler = _DurableReconciler(buildFlag: false)..failLower = true;
+      final events = <String>[];
+      final container = setup(
+        store,
+        _Sync()..gate.complete(),
+        initialEnabled: true,
+        background: _Background(events),
+        reconciler: reconciler,
+      );
+      addTearDown(container.dispose);
+
+      await container.read(enhancePirProvider.notifier).set(false);
+
+      expect(reconciler.privateRequired, isTrue);
+      expect(reconciler.calls, [false]);
+      expect(api.values, [false, true]);
+      expect(events, isEmpty);
+      // The saved opt-out can remain after a second storage failure, but the
+      // wallet, runtime and native policy all retain the stricter private state.
+      expect(store.value, isFalse);
+      expect(container.read(enhancePirProvider), isTrue);
+      expect(
+        container.read(enhancePirTransitionProvider),
+        'Setting unchanged. Try again.',
+      );
+    },
+  );
+  test(
+    'a failed disable save changes no policy for an unreadable preference',
     () async {
       final events = <String>[];
       api.events = events;
@@ -549,9 +647,9 @@ void main() {
 
       await container.read(enhancePirProvider.notifier).set(false);
 
-      // The wallet was still public, so it stays public, and the rollback
-      // never confirms a setting that was not read.
-      expect(events, ['rust:false', 'reconcile:false', 'rust:true']);
+      // No runtime, durable or native policy changes until the save succeeds.
+      expect(events, isEmpty);
+      expect(api.values, isEmpty);
       expect(store.value, isNull);
       expect(container.read(enhancePirProvider), isTrue);
       expect(
