@@ -298,7 +298,7 @@ fn settled_mixed_activity_does_not_inherit_incomplete_payment_details() {
         );
         assert_eq!(
             (settled[0].fee_state, settled[0].fee),
-            (TransactionFeeState::Unknown, 0)
+            (TransactionFeeState::Known, 15_000)
         );
         assert!(!settled[0].amount_includes_fee);
 

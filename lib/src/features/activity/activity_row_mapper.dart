@@ -58,20 +58,20 @@ ActivityRowData buildTransactionActivityRow({
       ? transactionActivityPool(transaction)
       : giftCardDisplayPool ?? transactionActivityPool(transaction);
   final signedAmount = isSent ? -amount : amount;
-  // A balance movement is shown neutrally, without claiming a payment or
-  // a destination pool, even when its exact fee is known.
-  final isNetChange =
+  // A privately recovered entry whose whole balance change is its network
+  // fee reads as that fee, not as a payment, so it shows no pool.
+  final isFeeOnly =
       giftCardKind == null &&
       giftCardAmountZatoshi == null &&
-      transactionFeePresentation(transaction) !=
-          TransactionFeePresentation.separate;
+      transactionFeePresentation(transaction) ==
+          TransactionFeePresentation.feeOnly;
   final replacesPool =
       showPendingEstimate && isPending && (isInbound || isSent);
   final subtitle = replacesPool
       ? pendingLabel ?? 'Checking status'
       : isMigration
       ? 'Orchard → Ironwood'
-      : isNetChange
+      : isFeeOnly
       ? null
       : isInbound || isSent
       ? _poolLabel(normalizeActivityPool(displayPool), ordinary: isPayment)
@@ -105,8 +105,8 @@ ActivityRowData buildTransactionActivityRow({
                 ? 'Sending'
                 : 'Receiving',
           )
-        : isNetChange
-        ? kNetChangeText
+        : isFeeOnly
+        ? kNetworkFeeText
         : _txTitle(kind),
     leadingIconName: giftCardKind != null && !isInFlight
         ? AppIcons.giftCard
@@ -120,7 +120,7 @@ ActivityRowData buildTransactionActivityRow({
                   subtitle == 'Taking longer'
               ? AppIcons.time
               : null)
-        : isNetChange
+        : isFeeOnly
         ? null
         : _poolIcon(normalizeActivityPool(displayPool), ordinary: isPayment),
     amountText: activityAmountTextForFormFactor(

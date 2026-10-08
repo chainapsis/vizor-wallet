@@ -3005,11 +3005,13 @@ class TransactionDetailOutput {
 
 /// The network fee shown for a transaction.
 enum TransactionFeeState {
-  /// The account's attributed fee is known.
+  /// `fee` is known: the fee the account paid or, when that is not recorded,
+  /// the exact fee of the whole transaction from privately recovered
+  /// metadata, which other funders may have shared.
   known,
 
-  /// The account spent funds, or may have, but its fee share is unknown.
-  /// Show it as unknown, never as zero.
+  /// The account spent funds, or may have, but neither its fee nor the
+  /// whole transaction's is known. Show it as unknown, never as zero.
   unknown,
 
   /// The account spent nothing, so it paid no fee.
@@ -3052,9 +3054,10 @@ class TransactionInfo {
   /// A provisional debit is a net amount, not a payment amount.
   final bool provisional;
 
-  /// Whether `display_amount` is a balance movement that retains its fee,
-  /// rather than an established payment. Show it as a net change, including
-  /// when the account's fee share is unknown.
+  /// Whether `display_amount` already includes the shown `fee`: the amount
+  /// is the account's balance change and `fee` is the whole transaction's
+  /// fee from privately recovered metadata. Show the fee once: when
+  /// `display_amount` equals `fee`, the change is that fee alone.
   final bool amountIncludesFee;
 
   const TransactionInfo({

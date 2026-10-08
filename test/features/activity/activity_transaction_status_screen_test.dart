@@ -1073,7 +1073,7 @@ void main() {
   });
 
   testWidgets(
-    'a privately recovered shielding keeps its receipt and unknown account fee',
+    'a privately recovered shielding has a shielding receipt with the network fee',
     (tester) async {
       final cases = loadPrivateShieldingCases(
         txidHex: _txidHex,
@@ -1101,8 +1101,8 @@ void main() {
         expect(find.text('Shielded successfully'), findsOneWidget);
         expect(find.text(expected[index]), findsOneWidget);
         expect(find.text('Tx fee'), findsOneWidget);
-        expect(find.text('0.0002 ZEC'), findsNothing);
-        expect(find.text(kUnknownFeeText), findsOneWidget);
+        expect(find.text('0.0002 ZEC'), findsOneWidget);
+        expect(find.text(kUnknownFeeText), findsNothing);
       }
     },
   );
@@ -1243,9 +1243,7 @@ void main() {
     },
   );
 
-  testWidgets('a fee-only entry remains one neutral net change line', (
-    tester,
-  ) async {
+  testWidgets('a fee-only entry is one network fee line', (tester) async {
     // Reconstructed zero external payment; recipient details can be missing.
     await _pumpScreen(
       tester,
@@ -1267,7 +1265,7 @@ void main() {
     );
 
     expect(find.text('Transaction'), findsOneWidget);
-    expect(find.text(kNetChangeText), findsOneWidget);
+    expect(find.text(kNetworkFeeText), findsOneWidget);
     expect(find.text('0.00065 ZEC'), findsOneWidget);
     expect(find.text('Amount'), findsNothing);
     expect(find.text('Tx fee'), findsNothing);
@@ -1299,8 +1297,8 @@ void main() {
       );
 
       expect(find.text('Transaction'), findsOneWidget);
-      expect(find.text('Network fee'), findsNothing);
-      expect(find.text(kNetChangeText), findsOneWidget);
+      expect(find.text(kNetworkFeeText), findsNothing);
+      expect(find.text(kNetChangeIncludesFeeText), findsOneWidget);
       expect(find.text('0.0002 ZEC'), findsNWidgets(2));
       expect(find.text('Amount'), findsNothing);
       expect(find.text('Tx fee'), findsOneWidget);
@@ -1328,13 +1326,13 @@ void main() {
       ),
     );
 
-    expect(find.text(kNetChangeText), findsOneWidget);
+    expect(find.text(kNetChangeIncludesFeeText), findsOneWidget);
     expect(find.text('Amount'), findsNothing);
     // Nothing is subtracted, and the fee keeps its own line.
     expect(find.text('0.70 ZEC'), findsOneWidget);
     expect(find.text('Tx fee'), findsOneWidget);
     expect(find.text('0.0001 ZEC'), findsOneWidget);
-    expect(find.text('Network fee'), findsNothing);
+    expect(find.text(kNetworkFeeText), findsNothing);
   });
 
   for (final kind in ['sent', 'received', 'shielded', 'migration']) {

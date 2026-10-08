@@ -600,9 +600,11 @@ pub(crate) struct TransactionInfo {
     /// Whether later discovery or enhancement can still change this row. A
     /// provisional net debit is not a payment amount.
     pub provisional: bool,
-    /// Whether `display_amount` is a balance movement that retains its fee,
-    /// rather than an established payment. Show it as a net change, including
-    /// when the account's fee share is unknown.
+    /// Whether `display_amount` already includes the shown `fee`: the amount
+    /// is the account's balance movement, the account's own fee is unknown,
+    /// and `fee` is the whole transaction's exact fee from recovered
+    /// metadata. When `display_amount` equals `fee`, the whole movement is
+    /// that fee.
     pub amount_includes_fee: bool,
 }
 
@@ -610,9 +612,12 @@ pub(crate) struct TransactionInfo {
 /// applicable stay distinct.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum TransactionFeeState {
-    /// The account's attributed fee is known.
+    /// The fee is known: the account's recorded fee or, when that is not
+    /// recorded, the exact whole-transaction fee from privately recovered
+    /// metadata, which other funders may have shared.
     Known,
-    /// The account spent funds, or may have, but its fee share is unknown.
+    /// The account spent funds, or may have, but neither its fee nor the
+    /// whole transaction's is known.
     Unknown,
     /// The account spent nothing, so it paid no fee.
     NotApplicable,
@@ -763,8 +768,8 @@ struct HistoryCompleteness {
     fee: Fee,
     /// The exact fee of the whole transaction, reconciled by the library
     /// from stored and recovered fee evidence, when the account spent in it.
-    /// Other funders may have shared it. It supports reconstruction but
-    /// never replaces an unknown account fee in the receipt.
+    /// Other funders may have shared it, so it is shown as the network fee
+    /// when the account's fee is unknown and never charged to the account.
     whole_fee: Option<u64>,
     /// The exact payment outside the account that the library reconstructed
     /// from recovered transaction metadata (private recovery: the account
@@ -809,8 +814,8 @@ impl HistoryCompleteness {
             details_complete: details.payment_details == DetailCompleteness::Complete,
             classification: Some(details.classification),
             // A net reconstruction (a privately recovered mixed shielding) has a final
-            // movement: it is shown without attributing the whole transaction's fee
-            // or inferring a payment from it.
+            // movement: it is shown, but its fee stays the whole transaction's and no
+            // payment is inferred from it.
             provisional: match details.classification {
                 HistoryClassification::Provisional => true,
                 HistoryClassification::LocalIntent
@@ -861,25 +866,22 @@ impl HistoryCompleteness {
         }
     }
 
-    /// The account's attributed fee. A whole-transaction fee does not establish
-    /// its share, so an unknown account fee stays unknown in receipts.
+    /// The network fee shown for the transaction: the account's fee, or the
+    /// exact whole-transaction fee when the account's is unknown. A provable
+    /// absence of an account fee stays not applicable. Display only.
     fn shown_fee(self) -> Fee {
-        self.fee
-    }
-
-    /// Fee evidence used only to recognize a fully funded reconstructed
-    /// self-transfer. This does not change the fee shown in a receipt.
-    fn reconstruction_fee(self) -> Fee {
         match (self.fee, self.whole_fee) {
             (Fee::Unknown, Some(whole)) => Fee::Known(whole),
             (fee, _) => fee,
         }
     }
 
-    /// Whether an amount is a balance movement whose unknown account fee
-    /// was not subtracted. Whole-fee evidence identifies this movement but
-    /// does not attribute a share of that fee to the account.
-    fn movement_retains_fee(self) -> bool {
+    /// Whether an amount computed as the account's balance movement less its
+    /// known fee still carries the shown network fee: the account's fee is
+    /// unknown, so nothing was subtracted, and the shown fee is the whole
+    /// transaction's, which is never subtracted because other funders may
+    /// have shared it.
+    fn movement_includes_shown_fee(self) -> bool {
         self.fee == Fee::Unknown && self.whole_fee.is_some()
     }
 
@@ -2329,7 +2331,7 @@ fn recovered_transparent_self_transfer(base: &TxBase) -> bool {
     base.history.inferred_payment == Some(0)
         && base.account_balance_delta < 0
         && base.history.whole_fee == Some(debit)
-        && base.history.reconstruction_fee() == Fee::Known(debit)
+        && base.history.shown_fee() == Fee::Known(debit)
 }
 
 /// Whether the account paid anyone else in the transaction. A self-payment
@@ -2613,7 +2615,7 @@ fn classify_history_tx(
             && base.account_balance_delta < 0
             && summary.sent.output_count == 0
             && base.history.whole_fee == Some(debit)
-            && base.history.reconstruction_fee() == Fee::Known(debit)
+            && base.history.shown_fee() == Fee::Known(debit)
         {
             let mut row = build_classified_tx(base, "sent", debit, "transparent", true, 1);
             row.info.amount_includes_fee = true;
@@ -2801,7 +2803,7 @@ fn build_movement_debit_row(base: &TxBase, tx_kind: &str, debit: u64) -> Classif
     if base.history.has_transparent_outputs == Some(true) {
         row.info.activity_pool = Some("transparent".to_string());
     }
-    row.info.amount_includes_fee = base.history.movement_retains_fee();
+    row.info.amount_includes_fee = base.history.movement_includes_shown_fee();
     row
 }
 
@@ -3532,9 +3534,8 @@ mod tests {
                     assert_eq!(private.info.display_amount, 250_000);
                     assert_eq!(private.info.display_amount, public.info.display_amount);
                     assert_eq!(private.info.activity_pool, public.info.activity_pool);
-                    assert_eq!(private.info.fee, 0);
-                    assert_eq!(private.info.fee_state, TransactionFeeState::Unknown);
-                    assert_eq!(public.info.fee, 15_000);
+                    assert_eq!(private.info.fee, public.info.fee);
+                    assert_eq!(private.info.fee, 15_000);
                     assert_eq!(
                         private.info.amount_includes_fee,
                         public.info.amount_includes_fee
@@ -3596,8 +3597,7 @@ mod tests {
             assert_eq!(rows[0].info.tx_kind, "sent");
             assert_eq!(rows[0].info.display_amount, 250_000);
             assert_eq!(rows[0].info.activity_pool.as_deref(), Some("transparent"));
-            assert_eq!(rows[0].info.fee, 0);
-            assert_eq!(rows[0].info.fee_state, TransactionFeeState::Unknown);
+            assert_eq!(rows[0].info.fee, 15_000);
             assert!(!rows[0].info.amount_includes_fee);
             assert!(rows[0].info.provisional);
             assert!(!rows[0].info.details_complete);
@@ -3619,8 +3619,7 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].info.tx_kind, "sent");
         assert_eq!(rows[0].info.display_amount, 200_000);
-        assert_eq!(rows[0].info.fee, 0);
-        assert_eq!(rows[0].info.fee_state, TransactionFeeState::Unknown);
+        assert_eq!(rows[0].info.fee, 15_000);
         assert!(!rows[0].info.amount_includes_fee);
     }
 
@@ -4238,8 +4237,7 @@ mod tests {
             assert!(!info.is_transparent);
             assert_eq!(info.display_amount, 70_000_000);
             assert_eq!(info.account_balance_delta, -70_000_000);
-            assert_eq!(info.fee, 0);
-            assert_eq!(info.fee_state, TransactionFeeState::Unknown);
+            assert_eq!(info.fee, WHOLE_FEE);
             assert!(info.amount_includes_fee);
             assert!(info.provisional);
             assert!(!info.details_complete);
@@ -4250,7 +4248,7 @@ mod tests {
     /// account's movement stays its known received minus spent. The fee may
     /// have been shared, so none of it is charged to the account.
     #[test]
-    fn a_shared_funding_debit_keeps_its_unknown_account_fee() {
+    fn a_shared_funding_debit_shows_the_whole_fee_without_charging_it() {
         let details = shared_funding_details(exact_whole_fee());
         let history = HistoryCompleteness::of(&details);
         assert_eq!(
@@ -4275,8 +4273,8 @@ mod tests {
             "the movement, with no fee charged"
         );
         assert_eq!(info.account_balance_delta, -70_000_000);
-        assert_eq!(info.fee_state, TransactionFeeState::Unknown);
-        assert_eq!(info.fee, 0);
+        assert_eq!(info.fee_state, TransactionFeeState::Known);
+        assert_eq!(info.fee, WHOLE_FEE);
         assert!(
             info.amount_includes_fee,
             "the movement carries the account's unknown share of the fee"
@@ -4301,7 +4299,7 @@ mod tests {
         assert_eq!(history.fee, Fee::Unknown);
         assert_eq!(history.whole_fee, Some(WHOLE_FEE));
         assert_eq!(history.inferred_payment, None);
-        assert_eq!(history.shown_fee(), Fee::Unknown);
+        assert_eq!(history.shown_fee(), Fee::Known(WHOLE_FEE));
     }
 
     /// Only a complete, final history justifies a shielding: a net
@@ -4344,8 +4342,7 @@ mod tests {
         assert_eq!(info.tx_kind, "shielded");
         assert_eq!(info.display_amount, 100_000_000 - WHOLE_FEE);
         assert_eq!(info.account_balance_delta, -(WHOLE_FEE as i64));
-        assert_eq!(info.fee, 0);
-        assert_eq!(info.fee_state, TransactionFeeState::Unknown);
+        assert_eq!(info.fee, WHOLE_FEE);
         assert!(!info.amount_includes_fee);
         assert!(!info.provisional);
         assert!(info.details_complete);
@@ -4359,7 +4356,7 @@ mod tests {
     }
 
     #[test]
-    fn a_recovered_shielding_keeps_its_unknown_account_fee() {
+    fn a_recovered_shielding_shows_the_whole_fee() {
         let mut details = shared_funding_details(exact_whole_fee());
         if let Some(evidence) = details.transaction_metadata.as_mut() {
             evidence.metadata.transparent_input_count = 1;
@@ -4385,8 +4382,8 @@ mod tests {
         let info = &rows[0].info;
         assert_eq!(info.tx_kind, "shielded");
         assert_eq!(info.display_amount, 100_000_000 - WHOLE_FEE);
-        assert_eq!(info.fee_state, TransactionFeeState::Unknown);
-        assert_eq!(info.fee, 0);
+        assert_eq!(info.fee_state, TransactionFeeState::Known);
+        assert_eq!(info.fee, WHOLE_FEE);
         assert!(
             !info.amount_includes_fee,
             "a complete shielding shows what arrived, fee excluded"
@@ -4418,7 +4415,7 @@ mod tests {
     }
 
     #[test]
-    fn a_public_debit_keeps_its_unknown_share_despite_an_exact_whole_fee() {
+    fn a_public_debit_shows_the_library_whole_fee_without_metadata() {
         let mut details = shared_funding_details(exact_whole_fee());
         details.transaction_metadata = None;
         let history = HistoryCompleteness::of(&details);
@@ -4436,8 +4433,8 @@ mod tests {
         let info = &rows[0].info;
         assert_eq!(info.tx_kind, "sent");
         assert_eq!(info.display_amount, 70_000_000);
-        assert_eq!(info.fee_state, TransactionFeeState::Unknown);
-        assert_eq!(info.fee, 0);
+        assert_eq!(info.fee_state, TransactionFeeState::Known);
+        assert_eq!(info.fee, WHOLE_FEE);
         assert!(
             info.amount_includes_fee,
             "the movement was not reduced by an unknown fee share"
@@ -4445,7 +4442,7 @@ mod tests {
     }
 
     #[test]
-    fn a_whole_fee_never_replaces_an_unknown_account_fee() {
+    fn only_an_exact_whole_fee_replaces_an_unknown_account_fee() {
         let shown = |whole, fee| {
             let mut details = shared_funding_details(whole);
             details.fee = fee;
@@ -4453,7 +4450,10 @@ mod tests {
         };
         let known = |fee| FeeState::Known(zcash_protocol::value::Zatoshis::from_u64(fee).unwrap());
 
-        assert_eq!(shown(exact_whole_fee(), FeeState::Unknown), Fee::Unknown);
+        assert_eq!(
+            shown(exact_whole_fee(), FeeState::Unknown),
+            Fee::Known(WHOLE_FEE)
+        );
         // Unknown metadata stays unknown, and coinbase's not-applicable whole
         // fee proves nothing about an account that spent.
         assert_eq!(
@@ -4505,8 +4505,8 @@ mod tests {
         let info = &rows[0].info;
         assert_eq!(info.tx_kind, "sent");
         assert_eq!(info.display_amount, WHOLE_FEE);
-        assert_eq!(info.fee_state, TransactionFeeState::Unknown);
-        assert_eq!(info.fee, 0);
+        assert_eq!(info.fee_state, TransactionFeeState::Known);
+        assert_eq!(info.fee, WHOLE_FEE);
         assert!(info.amount_includes_fee);
         assert!(info.provisional);
     }
@@ -4538,8 +4538,7 @@ mod tests {
             let info = &rows[0].info;
             assert_eq!(info.tx_kind, "sent");
             assert_eq!(info.display_amount, 70_000_000);
-            assert_eq!(info.fee, 0);
-            assert_eq!(info.fee_state, TransactionFeeState::Unknown);
+            assert_eq!(info.fee, WHOLE_FEE);
             assert!(
                 info.amount_includes_fee,
                 "details_complete: {details_complete}"

@@ -554,11 +554,11 @@ class _MobileTransactionStatusScreenState
         _TxPhase.failed => 'Receive failed',
       };
     }
-    // Unclassified transactions and balance movements stay neutral, like
-    // the desktop fallback receipt: neither establishes an external payment.
+    // An unclassified tx stays neutral, like the desktop fallback receipt, and
+    // so does an entry whose whole balance change is its network fee.
     if (!_isSent ||
-        _feePresentationFor(_transaction, null) !=
-            TransactionFeePresentation.separate) {
+        _feePresentationFor(_transaction, null) ==
+            TransactionFeePresentation.feeOnly) {
       return 'Transaction';
     }
     return switch (_phase) {
@@ -765,8 +765,9 @@ class _MobileTransactionStatusScreenState
     final amountRow = MobileReviewInfoRow(
       label: switch (feePresentation) {
         TransactionFeePresentation.separate => 'Amount',
-        TransactionFeePresentation.includedInAmount => kNetChangeText,
-        TransactionFeePresentation.feeOnly => kNetChangeText,
+        TransactionFeePresentation.includedInAmount =>
+          kNetChangeIncludesFeeText,
+        TransactionFeePresentation.feeOnly => kNetworkFeeText,
       },
       value: amountText,
       leading: const MobileReviewZecBadge(),

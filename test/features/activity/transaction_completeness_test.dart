@@ -3,10 +3,6 @@ import 'package:zcash_wallet/src/features/activity/transaction_completeness.dart
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 void main() {
-  test('conservative receipts label balance movements as net changes', () {
-    expect(kNetChangeText, 'Net change');
-  });
-
   test('a provisional role follows the transaction only to a single row', () {
     bool matches(String txid) => txid == 'aa';
     final shielded = _transaction('aa', 'shielded');

@@ -13,9 +13,13 @@ const kIncompleteDetailsHelpText =
     'Some details of this transaction, such as its recipients, memos, or '
     'fee, are not known yet. The amount shown may change.';
 
-/// Labels a balance movement without claiming an external payment or
-/// attributing the whole transaction's fee to the account.
-const kNetChangeText = 'Net change';
+/// Titles the single line of an entry whose whole balance change is its
+/// network fee, established by a recovered transparent self-transfer.
+const kNetworkFeeText = 'Network fee';
+
+/// Labels an amount that is the account's balance change, network fee
+/// included.
+const kNetChangeIncludesFeeText = 'Net change (includes network fee)';
 
 bool transactionFeeIsUnknown(rust_sync.TransactionInfo tx) =>
     tx.feeState == rust_sync.TransactionFeeState.unknown;
@@ -26,10 +30,10 @@ enum TransactionFeePresentation {
   separate,
 
   /// The amount is the balance change with the fee in it
-  /// ([kNetChangeText]); the fee keeps its own line.
+  /// ([kNetChangeIncludesFeeText]); the fee keeps its own line.
   includedInAmount,
 
-  /// The whole balance change is the fee: one [kNetChangeText] line, with no
+  /// The whole balance change is the fee: one [kNetworkFeeText] line, with no
   /// separate amount or fee line.
   feeOnly,
 }
