@@ -90,7 +90,8 @@ def run_offline_funder(case: NativeCaseLifecycle, artifact: ProducedRegtestFunde
             input_identity = tree.identity(os.fstat(stdin.fileno()))
         # The file descriptor stays open through positive process/output join.
         result = case.run_command([str(artifact.binary), command], env=os.environ,
-                        stdin=stdin, timeout=timeout, cancel_event=cancellation)
+                        stdin=stdin, timeout=timeout, cancel_event=cancellation,
+                        max_output_bytes=_MAX_JSON_BYTES)
         case.workspace.verify_owned()
         artifact.verify_unchanged()
         if stdin is not None:

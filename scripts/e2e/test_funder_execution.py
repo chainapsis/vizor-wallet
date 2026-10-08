@@ -125,6 +125,16 @@ class FunderExecutionTests(unittest.TestCase):
         value = self.execute(artifact, "build", {"schema_version":1})
         self.assertEqual(value["number"], 0.001)
 
+    def test_oversized_signer_output_stops_before_timeout_or_unbounded_log(self):
+        artifact = self.artifact(extra="sys.stdout.write('x'*(2*1024*1024+4096)); sys.stdout.flush(); time.sleep(30)")
+        case = self.fixture.case()
+        with self.assertRaises(EXECUTION.runtime.OutputLimitExceeded):
+            self.execute(artifact, "build", {"schema_version":1}, case)
+        self.assertTrue(case._processes[0].cleanup_completed)
+        self.assertLessEqual(case._processes[0].log_path.stat().st_size, 2*1024*1024)
+        self.assertTrue((case.workspace.root / "funder-input-0000.json").exists())
+        case.close()
+
     def test_replaced_or_changed_publication_prevents_next_consumer_launch(self):
         artifact = self.artifact()
         case = self.fixture.case()

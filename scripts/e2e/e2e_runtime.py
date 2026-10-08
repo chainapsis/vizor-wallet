@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import codecs
 import dataclasses
+import io
 import math
 import os
 from pathlib import Path
@@ -19,6 +21,7 @@ _POLL_INTERVAL = 0.02
 _LINUX_PROC_ROOT = Path("/proc")
 _SENSITIVE_LOG_MARKERS = ("mnemonic:", "unified spending key", '"seed_hex"')
 DEFAULT_PROCESS_CLEANUP_TIMEOUT = 5.0
+_OUTPUT_READ_BYTES = 64 * 1024
 
 
 class RunnerError(RuntimeError):
@@ -30,6 +33,10 @@ class RunnerError(RuntimeError):
 class Cancelled(RunnerError):
     def __init__(self, message: str = "E2E command cancelled"):
         super().__init__(message, 130)
+
+
+class OutputLimitExceeded(RunnerError):
+    """Bounded execution rejection, not an ignored capture/cleanup error."""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -50,6 +57,8 @@ class _Capture:
     zombie_pids: tuple[int, ...] = ()
     closed: bool = False
     cleanup_errors: list[str] = dataclasses.field(default_factory=list)
+    max_output_bytes: int | None = None
+    output_limit_error: OutputLimitExceeded | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -84,11 +93,42 @@ def sanitize_log_line(line: str) -> str:
 def _pump_output(capture: _Capture) -> None:
     try:
         with capture.stream, capture.log_path.open("w", encoding="utf-8") as log:
-            for line in iter(capture.stream.readline, ""):
+            logged_bytes = 0
+            def save(line):
+                nonlocal logged_bytes
+                text = sanitize_log_line(line)
+                logged_bytes += len(text.encode("utf-8"))
+                if capture.max_output_bytes is not None and logged_bytes > capture.max_output_bytes:
+                    raise OutputLimitExceeded(f"process log exceeds {capture.max_output_bytes} bytes")
                 if capture.lines is not None:
                     capture.lines.append(line)
-                log.write(sanitize_log_line(line))
+                log.write(text)
                 log.flush()
+            if capture.max_output_bytes is None:
+                for line in iter(capture.stream.readline, ""):
+                    save(line)
+            else:
+                # Read raw bytes before TextIOWrapper's unbounded readline.
+                # Preserve UTF-8 and universal-newline behavior across chunks.
+                decoder = io.IncrementalNewlineDecoder(codecs.getincrementaldecoder("utf-8")(), translate=True)
+                count, pending = 0, ""
+                while True:
+                    chunk = capture.stream.buffer.read1(min(_OUTPUT_READ_BYTES, capture.max_output_bytes-count+1))
+                    count += len(chunk)
+                    if count > capture.max_output_bytes:
+                        raise OutputLimitExceeded(f"process output exceeds {capture.max_output_bytes} bytes")
+                    pending += decoder.decode(chunk, final=not chunk)
+                    while "\n" in pending:
+                        line, pending = pending.split("\n", 1)
+                        save(line + "\n")
+                    if not chunk:
+                        if pending:
+                            save(pending)
+                        break
+    except OutputLimitExceeded as error:
+        # An intentional bounded rejection still requires original group join.
+        # Real IO/decoding/close errors below remain sticky cleanup failures.
+        capture.output_limit_error = error
     except BaseException as error:
         capture.errors.append(error)
     finally:
@@ -103,6 +143,11 @@ def _positive_timeout(timeout: float) -> None:
         or timeout <= 0
     ):
         raise RunnerError("timeout must be positive and finite")
+
+
+def _output_limit(value):
+    if value is not None and (type(value) is not int or value <= 0):
+        raise RunnerError("output byte limit must be a positive integer")
 
 
 def _require_owned(managed: ManagedProcess) -> None:
@@ -321,6 +366,7 @@ def start_logged_process(
     log_path: Path,
     raw_lines: list[str] | None = None,
     stdin: Any = None,
+    max_output_bytes: int | None = None,
 ) -> ManagedProcess:
     """Create a new owned group; raw output stays in memory, logs are redacted."""
     if os.name != "posix":
@@ -331,7 +377,8 @@ def start_logged_process(
         raise RunnerError("command must be a non-empty argument sequence")
     if stdin == subprocess.PIPE:
         raise RunnerError("stdin PIPE is unsupported; provide an input file instead")
-    capture = _Capture(log_path, raw_lines)
+    _output_limit(max_output_bytes)
+    capture = _Capture(log_path, raw_lines, max_output_bytes=max_output_bytes)
     pump = threading.Thread(target=_pump_output, args=(capture,), daemon=True)
     try:
         process = subprocess.Popen(
@@ -369,6 +416,8 @@ def wait_managed_process(
         while True:
             if cancel_event.is_set():
                 raise Cancelled()
+            if managed._capture.output_limit_error is not None:
+                raise managed._capture.output_limit_error
             if managed._capture.errors:
                 raise RunnerError(f"output capture failed; see {managed.log_path}")
             code = managed.process.poll()
@@ -387,6 +436,8 @@ def wait_managed_process(
         _cleanup_after_error(managed, primary)
         raise
     terminate_process(managed)
+    if managed._capture.output_limit_error is not None:
+        raise managed._capture.output_limit_error
     return code
 
 
@@ -399,11 +450,13 @@ def run_logged_command(
     timeout: float,
     cancel_event: threading.Event,
     stdin: Any = None,
+    max_output_bytes: int | None = None,
 ) -> CommandResult:
     _positive_timeout(timeout)
     lines: list[str] = []
     managed = start_logged_process(
         command, cwd=cwd, env=env, log_path=log_path, raw_lines=lines, stdin=stdin,
+        max_output_bytes=max_output_bytes,
     )
     code = wait_managed_process(managed, timeout=timeout, cancel_event=cancel_event)
     return CommandResult(code, tuple(lines))

@@ -169,6 +169,59 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(result, RUNTIME.CommandResult(0, ("100000000\n",)))
         self.assertEqual((self.root / "result.log").read_text(), "100000000\n")
 
+    def test_bounded_capture_stops_long_unterminated_line_and_continuous_stream(self):
+        for source in ("import sys,time; sys.stdout.write('x'*5000); sys.stdout.flush(); time.sleep(30)",
+                       "import os\nwhile True: os.write(1,b'x'*49+b'\\n')"):
+            lines = []
+            started = time.monotonic()
+            managed = self.start(source, raw_lines=lines, max_output_bytes=1024)
+            with self.subTest(source=source), self.assertRaises(RUNTIME.OutputLimitExceeded):
+                self.wait(managed)
+            self.assertLess(time.monotonic()-started, 2)
+            self.assertLessEqual(sum(len(line.encode("utf-8")) for line in lines), 1024)
+            self.assertLessEqual(managed.log_path.stat().st_size, 1024)
+            self.assert_released(managed)
+
+    def test_bounded_capture_preserves_split_utf8_crlf_and_final_partial_line(self):
+        lines = []
+        with patch.object(RUNTIME, "_OUTPUT_READ_BYTES", 1):
+            managed = self.start("import sys; sys.stdout.buffer.write('안녕\\r\\n끝'.encode())",
+                                 raw_lines=lines, max_output_bytes=32)
+            self.assertEqual(self.wait(managed), 0)
+        self.assertEqual(lines, ["안녕\n", "끝"])
+        self.assertEqual(managed.log_path.read_text(), "안녕\n끝")
+        self.assert_released(managed)
+
+    def test_output_limit_validates_before_spawn(self):
+        with patch.object(RUNTIME.subprocess, "Popen") as spawn:
+            for value in (False, 0, -1, 1.5, "1024"):
+                with self.assertRaises(RUNTIME.RunnerError):
+                    self.start("pass", max_output_bytes=value)
+            spawn.assert_not_called()
+
+    def test_limit_error_arriving_after_wait_check_cannot_become_success(self):
+        release = threading.Event()
+        pump = RUNTIME._pump_output
+        group = RUNTIME._group_active
+        def delayed(capture):
+            release.wait(timeout=3)
+            pump(capture)
+        with patch.object(RUNTIME, "_pump_output", side_effect=delayed):
+            managed = self.start("import sys; sys.stdout.write('x'*4096)", max_output_bytes=512)
+        try:
+            managed.process.wait(timeout=3)
+            def finish_pump_then_probe(owner, *, deadline=None):
+                release.set()
+                managed.pump_thread.join(timeout=3)
+                return group(owner, deadline=deadline)
+            with patch.object(RUNTIME, "_group_active", side_effect=finish_pump_then_probe):
+                with self.assertRaises(RUNTIME.OutputLimitExceeded):
+                    self.wait(managed)
+            self.assert_released(managed)
+        finally:
+            release.set()
+            managed.pump_thread.join(timeout=3)
+
     def test_empty_argument_is_valid_and_unrequested_raw_output_is_not_retained(self):
         managed = RUNTIME.start_logged_process(
             [sys.executable, "-c", "import sys; print(repr(sys.argv[1]))", ""],

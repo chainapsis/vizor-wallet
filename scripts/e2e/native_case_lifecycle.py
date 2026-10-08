@@ -92,7 +92,9 @@ class NativeCaseLifecycle:
     def _start_process(
         self, command: Sequence[str], *, env: Mapping[str, str], stdin: Any = None,
         raw_lines: list[str] | None = None,
+        max_output_bytes: int | None = None,
     ) -> runtime.ManagedProcess:
+        runtime._output_limit(max_output_bytes)
         environment = self.workspace.launch_environment()
         supplied = dict(env)
         if any(key in supplied and supplied[key] != value for key, value in environment.items()):
@@ -108,6 +110,7 @@ class NativeCaseLifecycle:
             managed = runtime.start_logged_process(
                 command, cwd=self.workspace.root, env={**supplied, **environment},
                 log_path=log_path, stdin=stdin, raw_lines=raw_lines,
+                max_output_bytes=max_output_bytes,
             )
             self._processes.append(managed)
             self._receipt = None
@@ -128,6 +131,7 @@ class NativeCaseLifecycle:
     def run_command(
         self, command: Sequence[str], *, env: Mapping[str, str], timeout: float,
         cancel_event: threading.Event, stdin: Any = None,
+        max_output_bytes: int | None = None,
     ) -> runtime.CommandResult:
         """Capture an ordinary owned phase without sealing successful launches."""
         if self._sealed:
@@ -138,7 +142,8 @@ class NativeCaseLifecycle:
         ):
             raise runtime.RunnerError("timeout must be positive and finite")
         lines: list[str] = []
-        managed = self._start_process(command, env=env, raw_lines=lines, stdin=stdin)
+        managed = self._start_process(command, env=env, raw_lines=lines, stdin=stdin,
+                                      max_output_bytes=max_output_bytes)
         code = self.wait_process(managed, timeout=timeout, cancel_event=cancel_event)
         return runtime.CommandResult(code, tuple(lines))
 
