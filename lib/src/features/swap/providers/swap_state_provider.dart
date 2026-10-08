@@ -1,5 +1,4 @@
 import '../../../rust/wallet/swap_receiving/receive.dart';
-
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -1782,13 +1781,8 @@ class SwapNotifier extends Notifier<SwapState> {
   }
 
   void _clearReviewState() {
-    // A provider that quoted the review's swap address is never given it again,
-    // so the next review gets another; a rejected or pending one, or the
-    // wallet's ordinary address, is kept.
-    final quote = state.reviewQuote;
-    if (quote?.swapRefundIndex != null || quote?.receiveRequestId != null) {
-      _reviewStagingAddress = null;
-    }
+    // Composer edits invalidate the quote, not its receiving key. A started
+    // swap or an account/direction change ends the reservation's reuse.
     _quoteGeneration++;
     state = state.copyWith(
       reviewVisible: false,

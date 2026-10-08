@@ -69,15 +69,16 @@ again. Incoming payouts show as pending as soon as they reach the mempool.
 
 Statuses are recorded as they are fetched, by the activity refresh and by deposit
 submission; cached UI status and failed polls record nothing. Swap receiving makes
-no status requests of its own, so NEAR sees the same polling as without it. Keys close only at
-the end of a sync, once the tip is revalidated and scanned, so blocks mined while
-the app was offline are checked first. Closing uses the earlier of the device clock
-and the tip's block time, so a clock that runs fast cannot close a key early.
+no status requests of its own, so NEAR sees the same polling as without it. Keys
+close only at the end of a sync, once the tip is revalidated and scanned, so blocks
+mined while the app was offline are checked first. Closing uses the earlier of the
+device clock and the tip's block time, so a clock that runs fast cannot close a key
+early.
 
 A payment after its key closed, such as a second refund, is found by **Check swap
 history** (or turning NEAR swap privacy off and on), which sweeps every closed key
-once through the receiver directory and starts a sync, or by a seed restore. Swap addresses are not permanent receive
-addresses.
+once through the receiver directory and starts a sync, or by a seed restore. Swap
+addresses are not permanent receive addresses.
 
 ## Restore
 
@@ -132,21 +133,23 @@ replays the account's public Ironwood recovery interval once.
 Incoming swaps persist a reservation separately from notes and activity. Each quote
 request is recorded with its deposit deadline just before it is sent, and each
 accepted deposit instruction is kept even if the user leaves the review screen. An
-explicit quote rejection releases the request. Starting a swap locks the draft whose
-quote matches the deposit address and memo. Each review gets its own address, and
-an address NEAR was given, or may have been, is never quoted again: reusing it
-would let NEAR link the two quotes.
+explicit quote rejection releases the request; an uncertain outcome holds the
+address until its deadline is two hours past. Starting a swap locks the draft whose
+quote matches the deposit address and memo, and the next swap gets another address.
 
-- Issuance takes the lowest address never quoted. It never goes more than 30
-  indices past the highest receipt with 10 confirmations or the highest quoted
-  address, which a restore finds through NEAR's seen set, and waits for incoming
-  restore sweeps, which may reveal paid or quoted indices.
+- Issuance takes the lowest address never quoted and reuses the lowest abandoned
+  one only when nothing else fits. An address in NEAR's seen set, as a restore
+  reports, is never issued. Issuance never goes more than 30 indices past the
+  highest receipt with 10 confirmations or the highest seen address, and waits for
+  incoming restore sweeps, which may reveal paid or seen indices. When swaps in
+  progress hold all 30, a new quote is refused with a message to wait for one to
+  finish; an unused quote frees its address two hours after its deadline.
 - An unpaid reservation is reclaimed two hours after its creation and every
   quote's deposit deadline, with the wallet scanned to its tip and no payment to the
   address. A started one also needs a fresh conclusive status from the activity
   refresh, and a funded one `REFUNDED`. A reservation never started needs no
   status: its deposit instructions were never shown. A reclaimed key stops
-  scanning and its address is never issued again.
+  scanning.
 - Quoting requires the address unpaid, with no queued restore candidate, and the
   wallet scanned to its tip. A paid address is permanently excluded.
 

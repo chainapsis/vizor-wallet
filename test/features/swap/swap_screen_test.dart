@@ -7981,49 +7981,6 @@ void main() {
     );
   }
 
-  testWidgets('a quoted swap address is never quoted again', (tester) async {
-    await _setDesktopViewport(tester);
-    var reservations = 0;
-    await tester.pumpWidget(
-      _routerHarness(
-        GoRouter(
-          initialLocation: '/swap',
-          routes: [_swapRoute(), _swapActivityRoute()],
-        ),
-        seedSwapActivityFixtures: false,
-        swapProvider: _FakeSwapProvider(zecDepositMemo: null),
-        reserveSwapAddress: ({required accountUuid, required direction}) async {
-          reservations++;
-          return SwapZecStagingAddress(
-            address: 'u1swap$reservations',
-            receivingIndex: BigInt.from(reservations),
-          );
-        },
-      ),
-    );
-    await tester.pumpAndSettle();
-    final container = ProviderScope.containerOf(
-      tester.element(find.byType(SwapScreen)),
-    );
-    final notifier = container.read(swapStateProvider.notifier);
-    notifier.selectDirection(SwapDirection.zecToExternal);
-    notifier.updateDestination('0x52908400098527886e0f7030069857d2e4169ee7');
-    Future<String?> reviewedRefundAddress(String amount) async {
-      notifier.updateAmount(amount);
-      await notifier.showReview();
-      await tester.pumpAndSettle();
-      return container
-          .read(swapStateProvider)
-          .reviewAddressPlan
-          ?.oneClickRefundTo;
-    }
-
-    // NEAR quoted the first review's refund address, so the next review gets another.
-    expect(await reviewedRefundAddress('0.5'), 'u1swap1');
-    expect(await reviewedRefundAddress('0.6'), 'u1swap2');
-    expect(reservations, 2);
-  });
-
   testWidgets('POC amount edits share an in-flight address reservation', (
     tester,
   ) async {
