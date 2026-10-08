@@ -7,6 +7,7 @@ from pathlib import Path
 import sys
 import threading
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 try:
@@ -178,6 +179,67 @@ class FunderExecutionTests(unittest.TestCase):
         with self.assertRaisesRegex(EXECUTION.FunderExecutionError, "input attachment changed"):
             self.execute(artifact, "build", {"schema_version":1}, case)
         self.assertTrue(case._processes[0].cleanup_completed)
+
+    def test_replaced_input_after_timeout_or_output_limit_keeps_primary_error(self):
+        replace = ("from pathlib import Path\n"
+            "p=Path('funder-input-0000.json'); p.rename('original-input.json'); "
+            "p.write_text('{\"replaced\":true}'); p.chmod(0o400)\n")
+        for extra, expected, code in (
+            ("time.sleep(30)", EXECUTION.runtime.RunnerError, 124),
+            ("sys.stdout.write('x'*(2*1024*1024+4096)); sys.stdout.flush(); time.sleep(30)",
+             EXECUTION.runtime.OutputLimitExceeded, 1),
+        ):
+            artifact = self.artifact(extra=replace + extra)
+            case = self.fixture.case()
+            with self.subTest(error=expected.__name__), self.assertRaises(expected) as caught:
+                EXECUTION.run_offline_funder(case, artifact, "build", {"schema_version":1}, timeout=0.5)
+            self.assertEqual(caught.exception.exit_code, code)
+            self.assertIn("input attachment changed", str(caught.exception.__cause__))
+            self.assertEqual(json.loads((case.workspace.root / "original-input.json").read_text()),
+                             {"schema_version":1})
+            self.assertTrue(case._processes[0].cleanup_completed)
+            artifact.verify_unchanged()
+
+    def test_every_attachment_checked_on_cancel_interrupt_or_capture_error(self):
+        for primary in (EXECUTION.runtime.Cancelled(), KeyboardInterrupt(),
+                        EXECUTION.runtime.RunnerError("modeled capture failure", 17)):
+            artifact = self.artifact()
+            original_bytes = artifact.binary.read_bytes()
+            case = self.fixture.case()
+            workspace_type = type(case.workspace)
+            original_workspace_check = workspace_type.verify_owned
+            execution_failed = False
+
+            def verify_workspace(workspace):
+                if workspace is case.workspace and execution_failed:
+                    raise EXECUTION.FunderExecutionError("changed consumer workspace")
+                return original_workspace_check(workspace)
+
+            def fail_execution(*args, **kwargs):
+                nonlocal execution_failed
+                artifact.binary.chmod(0o700)
+                artifact.binary.write_text("changed publication")
+                saved = case.workspace.root / "funder-input-0000.json"
+                saved.rename(case.workspace.root / "original-input.json")
+                saved.write_text("changed input")
+                execution_failed = True
+                raise primary
+
+            with patch.object(case, "run_command", side_effect=fail_execution), patch.object(
+                    workspace_type, "verify_owned", verify_workspace):
+                with self.subTest(error=type(primary).__name__), self.assertRaises(type(primary)) as caught:
+                    self.execute(artifact, "build", {"schema_version":1}, case)
+            self.assertIs(caught.exception, primary)
+            self.assertEqual(getattr(caught.exception, "exit_code", None), getattr(primary, "exit_code", None))
+            failures = str(caught.exception.__cause__.__cause__)
+            for text in ("changed consumer workspace", "original funder executable changed", "input attachment changed"):
+                self.assertIn(text, failures)
+            self.assertEqual(json.loads((case.workspace.root / "original-input.json").read_text()),
+                             {"schema_version":1})
+            artifact.binary.write_bytes(original_bytes)
+            artifact.binary.chmod(0o500)
+            with self.assertRaisesRegex(fixtures.BUILD.FunderBuildError, "already failed verification"):
+                artifact.verify_unchanged()
 
 
 if __name__ == "__main__":

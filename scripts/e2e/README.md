@@ -727,7 +727,9 @@ made read-only and supplied through an open descriptor until process/output
 completion. No temporary shared path, stdin pipe or wallet-under-test key is used.
 
 Every consumer has its own launch identity and private process log. Input,
-workspace and producer attachments are checked after execution. Nonzero exit,
+workspace and producer attachments are all checked after both successful and
+exceptional execution exits. Attachment failures accompany the original error
+without replacing its timeout/cancellation/interrupt classification. Nonzero exit,
 timeout/cancellation, changed artifacts, duplicate/nonfinite/malformed JSON or
 the wrong identity remain failures; request/log evidence is preserved. The
 caller owns final case/backend/native shutdown, including after a failed call.

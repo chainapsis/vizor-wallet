@@ -91,21 +91,44 @@ def run_offline_funder(case: NativeCaseLifecycle, artifact: ProducedRegtestFunde
             stdin = stack.enter_context(os.fdopen(descriptor, "rb"))
             if tree.identity(os.fstat(stdin.fileno())) != input_identity:
                 raise FunderExecutionError("original signer input changed before read-only reopen")
-        # The file descriptor stays open through positive process/output join.
-        result = case.run_command([str(artifact.binary), command], env=os.environ,
-                        stdin=stdin, timeout=timeout, cancel_event=cancellation,
-                        max_output_bytes=_MAX_JSON_BYTES)
-        case.workspace.verify_owned()
-        artifact.verify_unchanged()
-        if stdin is not None:
+        def verify_input():
+            if stdin is None:
+                return
             if (tree.identity(os.fstat(stdin.fileno())) != input_identity
                 or tree.identity(os.stat(name, dir_fd=parent, follow_symlinks=False)) != input_identity):
                 raise FunderExecutionError("original signer input attachment changed")
             stdin.seek(0)
             if stdin.read(_MAX_JSON_BYTES + 1) != payload:
                 raise FunderExecutionError("original signer input bytes changed")
-        if result.returncode != 0:
-            raise FunderExecutionError("offline signer failed; preserve its owned process log", result.returncode)
+
+        def verify_attachments():
+            errors = []
+            # A changed consumer workspace must not skip sticky producer checks
+            # or inspection through the original input's still-open parent FD.
+            for check in (case.workspace.verify_owned, artifact.verify_unchanged, verify_input):
+                try:
+                    check()
+                except BaseException as error:
+                    errors.append(error)
+            if errors:
+                detail = "; ".join(f"{type(error).__name__}: {error}" for error in errors)
+                raise errors[0] from FunderExecutionError("signer attachment verification failed: " + detail)
+
+        # Keep the original descriptors open on both normal and exceptional
+        # execution exits. Attachment failure must not reclassify the primary.
+        try:
+            result = case.run_command([str(artifact.binary), command], env=os.environ,
+                            stdin=stdin, timeout=timeout, cancel_event=cancellation,
+                            max_output_bytes=_MAX_JSON_BYTES)
+            if result.returncode != 0:
+                raise FunderExecutionError("offline signer failed; preserve its owned process log", result.returncode)
+        except BaseException as primary:
+            try:
+                verify_attachments()
+            except BaseException as attachment:
+                raise primary from attachment
+            raise
+        verify_attachments()
         output = "".join(result.lines)
         if len(output.encode("utf-8")) > _MAX_JSON_BYTES:
             raise FunderExecutionError("signer output exceeds its bound")
