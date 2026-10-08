@@ -98,8 +98,8 @@ pub(crate) use send::{
     shield_transparent_balance,
 };
 pub(crate) use send::{
-    estimate_send_max_for_purpose, propose_payment_link_batch, propose_send_for_purpose,
-    SendPurpose,
+    estimate_send_max_for_purpose, propose_external_gift_claim, propose_payment_link_batch,
+    propose_send_for_purpose, SendPurpose,
 };
 pub(crate) use send::{get_orchard_migration_immediate_plan, get_orchard_migration_private_plan};
 // Internal-only re-export for `sync_engine::run_sync_impl`'s

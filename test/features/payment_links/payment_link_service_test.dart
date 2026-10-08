@@ -2379,27 +2379,16 @@ void main() {
   });
 
   test('claim exposes only the amount promised by the link', () {
-    final recipientAmount = BigInt.from(100000000);
+    final link = _link();
+    final recipientAmount = link.amountZatoshi;
 
+    expect(link.claimableAmountFromMax(recipientAmount), recipientAmount);
     expect(
-      paymentLinkClaimableAmountZatoshi(
-        recipientAmountZatoshi: recipientAmount,
-        maxSpendableZatoshi: BigInt.from(100000000),
-      ),
+      link.claimableAmountFromMax(recipientAmount + BigInt.from(20000)),
       recipientAmount,
     );
     expect(
-      paymentLinkClaimableAmountZatoshi(
-        recipientAmountZatoshi: recipientAmount,
-        maxSpendableZatoshi: BigInt.from(120000000),
-      ),
-      recipientAmount,
-    );
-    expect(
-      paymentLinkClaimableAmountZatoshi(
-        recipientAmountZatoshi: recipientAmount,
-        maxSpendableZatoshi: BigInt.from(99999999),
-      ),
+      link.claimableAmountFromMax(recipientAmount - BigInt.one),
       BigInt.zero,
     );
   });

@@ -79,6 +79,8 @@ class GiftClaimImportStore {
         'address': handoff.link.address,
         'createdAt': handoff.link.createdAt.toUtc().toIso8601String(),
         'isCreatedAtProvisional': handoff.link.isCreatedAtProvisional,
+        if (handoff.link.isZodl)
+          'amountZatoshi': handoff.link.amountZatoshi.toString(),
         'accountsBeforeSetup': handoff.accountUuidsBeforeSetup.toList(),
       }),
     );
@@ -101,11 +103,14 @@ class GiftClaimImportStore {
     try {
       final value = jsonDecode(raw) as Map<String, dynamic>;
       final handoff = GiftClaimImportHandoff(
-        link: VizorPaymentLink.parse(value['link'] as String)
+        link: VizorPaymentLink.parseForRedemption(value['link'] as String)
             .withResolvedMetadata(
               address: value['address'] as String,
               createdAt: DateTime.parse(value['createdAt'] as String),
               isCreatedAtProvisional: value['isCreatedAtProvisional'] as bool,
+              amountZatoshi: value['amountZatoshi'] == null
+                  ? null
+                  : BigInt.parse(value['amountZatoshi'] as String),
             ),
         accountUuidsBeforeSetup: Set.unmodifiable(
           (value['accountsBeforeSetup'] as List).cast<String>(),

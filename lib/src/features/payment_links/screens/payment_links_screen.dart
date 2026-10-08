@@ -125,7 +125,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
 
   static String _estimatedClaimWaitLabel(PaymentLinkClaimSession session) {
     final remaining =
-        kPaymentLinkClaimConfirmationTarget - session.fundingConfirmationCount;
+        session.link.claimConfirmationTarget - session.fundingConfirmationCount;
     final totalSeconds = max(remaining, 0) * _estimatedBlockTimeSeconds;
     final minutes = totalSeconds ~/ 60;
     final seconds = (totalSeconds % 60).toString().padLeft(2, '0');
@@ -1696,7 +1696,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
         }
         return;
       }
-      final link = VizorPaymentLink.parse(rawLink);
+      final link = VizorPaymentLink.parseForRedemption(rawLink);
       if (!mounted) return;
       setState(() => _redeemState = PaymentLinkRedeemVisualState.loading);
       await _prepareDecodedPaymentLink(link);
@@ -3327,7 +3327,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       key: ValueKey('payment_link_received_${record.address}'),
       thumbnail: _cardThumbnail(record.artworkId, dimmed: record.canRemove),
       amountText: hideAmountIfPrivacyMode(
-        '${formatZecAmount(record.amountZatoshi)} ZEC',
+        paymentLinkAmountText(record.displayAmountZatoshi, includeUnit: true),
         privacyModeEnabled: ref.watch(privacyModeProvider),
       ),
       dateText: _formatCardDate(record.createdAt),
@@ -3344,7 +3344,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       key: ValueKey('payment_link_mobile_received_${record.address}'),
       thumbnail: _cardThumbnail(record.artworkId, dimmed: record.canRemove),
       amountText: hideAmountIfPrivacyMode(
-        '${formatZecAmount(record.amountZatoshi)} ZEC',
+        paymentLinkAmountText(record.displayAmountZatoshi, includeUnit: true),
         privacyModeEnabled: ref.watch(privacyModeProvider),
       ),
       dateText: _formatCardDate(record.createdAt),
@@ -3567,7 +3567,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
         ? const PaymentLinkLoadingCard()
         : PaymentLinkGiftCard(
             artwork: artwork,
-            amountText: formatZecAmount(link!.amountZatoshi),
+            amountText: paymentLinkAmountText(link!.displayAmountZatoshi),
             supportingText: _savedCardFiatText(link),
             showCaret: false,
           );

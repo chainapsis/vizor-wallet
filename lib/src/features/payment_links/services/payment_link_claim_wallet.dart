@@ -91,6 +91,69 @@ class PaymentLinkClaimWallet {
               throw StateError('Gift Card network changed.');
             }
             try {
+              if (link.isZodl) {
+                // Native Zodl cards may predate Ironwood and may have multiple
+                // funding transactions. Scan their complete temporary wallet.
+                // This API has no progress stream; keep the waiting UI indeterminate.
+                // The enclosing operation owns fallback and cancellation.
+                // A nested fallback could dispatch again after preparation pauses.
+                await rust_sync.runPaymentLinkClaimSync(
+                  claimId: paymentLinkClaimWalletDirectoryName(link),
+                  dbPath: dbPath,
+                  lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+                  network: link.network,
+                  allowResubmit: allowResubmit,
+                );
+                coordinator.requirePreparation(generation);
+                final accounts = await rust_wallet.listAccounts(
+                  dbPath: dbPath,
+                  network: link.network,
+                );
+                if (!await matchesLink(link: link, accounts: accounts)) {
+                  throw StateError('Gift Card wallet could not be verified.');
+                }
+                final balance = await rust_sync.getBalance(
+                  dbPath: dbPath,
+                  network: link.network,
+                  accountUuid: accounts.single.uuid,
+                );
+                final status = await rust_sync.getSyncStatus(
+                  dbPath: dbPath,
+                  network: link.network,
+                );
+                coordinator.requirePreparation(generation);
+                if (epoch != _checkCancellationEpoch ||
+                    _ref.read(appSecurityProvider).requiresUnlock ||
+                    balance.availability !=
+                        rust_sync.WalletBalanceAvailability.available ||
+                    !status.isComplete) {
+                  throw StateError('Gift Card check did not complete.');
+                }
+                final total =
+                    balance.sapling +
+                    balance.orchard +
+                    balance.ironwood +
+                    balance.saplingLocked +
+                    balance.orchardLocked +
+                    balance.ironwoodLocked +
+                    balance.saplingPending +
+                    balance.orchardPending +
+                    balance.ironwoodPending;
+                return rust_sync.ApiGiftCardCheckProgress(
+                  phase: 'complete',
+                  completed: BigInt.one,
+                  total: BigInt.one,
+                  fundingHeight: 0,
+                  checkedHeight:
+                      (status.scannedHeight < status.chainTipHeight
+                              ? status.scannedHeight
+                              : status.chainTipHeight)
+                          .toInt(),
+                  totalZatoshi: total,
+                  unspentZatoshi: total,
+                  complete: true,
+                );
+              }
               final failover = _ref.read(rpcEndpointFailoverProvider);
               rust_sync.ApiGiftCardCheckProgress? last;
               var paused = false;
@@ -311,6 +374,7 @@ class PaymentLinkClaimWallet {
     final fundingTime = paymentLinkFundingCreatedAt(
       recipientAmountZatoshi: link.amountZatoshi,
       transactions: transactions,
+      matchFundingAmount: !link.isZodl,
     );
     if (record.isCreatedAtProvisional && fundingTime != null) {
       await _ref

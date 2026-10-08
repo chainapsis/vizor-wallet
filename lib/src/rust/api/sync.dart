@@ -391,6 +391,36 @@ Future<SendMaxEstimateResult> estimatePaymentLinkClaimMax({
   toAddress: toAddress,
 );
 
+/// Propose a full-balance external card claim without exposing the recipient via the OVK.
+Future<ProposalResult> proposeExternalGiftClaim({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required String sendFlowId,
+  required String toAddress,
+  required BigInt reviewedAmountZatoshi,
+}) => RustLib.instance.api.crateApiSyncProposeExternalGiftClaim(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  sendFlowId: sendFlowId,
+  toAddress: toAddress,
+  reviewedAmountZatoshi: reviewedAmountZatoshi,
+);
+
+/// Quote an external bearer card using ordinary input selection and confirmation policy.
+Future<SendMaxEstimateResult> estimateExternalGiftClaimMax({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required String toAddress,
+}) => RustLib.instance.api.crateApiSyncEstimateExternalGiftClaimMax(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  toAddress: toAddress,
+);
+
 /// Step 2: Execute a previously proposed transfer and broadcast to the network.
 /// spend_params_path and output_params_path are required only if needs_sapling_params was true.
 Future<ExecuteProposalResult> executeProposal({

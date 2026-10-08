@@ -99,6 +99,7 @@ class PaymentLinkReceivedRecord {
   factory PaymentLinkReceivedRecord.fromLink(
     VizorPaymentLink link, {
     DateTime? updatedAt,
+    String? setupAccountUuid,
   }) {
     return PaymentLinkReceivedRecord(
       network: link.network,
@@ -114,12 +115,15 @@ class PaymentLinkReceivedRecord {
       destinationAccountUuid: null,
       claimTxids: null,
       updatedAt: (updatedAt ?? DateTime.now()).toUtc(),
+      setupAccountUuid: setupAccountUuid,
     );
   }
 
   final String network;
   final String address;
   final BigInt amountZatoshi;
+  BigInt? get displayAmountZatoshi =>
+      claimLink == null ? amountZatoshi : claimLink!.displayAmountZatoshi;
   final DateTime createdAt;
   final bool isCreatedAtProvisional;
   final String? artworkId;
@@ -513,6 +517,7 @@ class PaymentLinkReceivedStore {
     DateTime? updatedAt,
     List<String> priorTxids = const [],
     PaymentLinkFiatSnapshot? fiatSnapshot,
+    VizorPaymentLink? link,
   }) {
     return _runExclusive(() async {
       final normalizedAccountUuid = destinationAccountUuid.trim();
@@ -524,16 +529,39 @@ class PaymentLinkReceivedStore {
         );
       }
       final records = await _loadUnlocked();
-      final existing = _findRequired(records, address);
+      var existing = _findRequired(records, address);
+      if (link?.isZodl == true) {
+        priorTxids = {...?existing.claimPriorTxids, ...priorTxids}.toList();
+      }
       if (existing.status == PaymentLinkReceivedStatus.received) {
-        return existing;
+        // Only explicit native-card submission can reopen a settled receipt.
+        // Previews and late retention still leave completed receipts untouched.
+        if (link == null || !link.isZodl) return existing;
+        if (existing.claimLink != null) {
+          throw StateError(
+            'Wait for the previous gift card claim to finish recovery.',
+          );
+        }
+        if (link.address != address || link.network != existing.network) {
+          throw StateError('Gift card claim identity changed.');
+        }
+        priorTxids = {
+          ...priorTxids,
+          ...?existing.claimTxids?.split(','),
+        }.toList();
+        existing = PaymentLinkReceivedRecord.fromLink(
+          link,
+          updatedAt: updatedAt,
+          setupAccountUuid: existing.setupAccountUuid,
+        );
       }
       if (existing.setupAccountUuid != null &&
           existing.setupAccountUuid != normalizedAccountUuid) {
         throw StateError('The Gift Card must use its saved setup account.');
       }
       if (existing.status != PaymentLinkReceivedStatus.readyToClaim ||
-          existing.claimLink == null) {
+          existing.claimLink == null ||
+          existing.amountZatoshi <= BigInt.zero) {
         throw StateError('Only a ready Gift Card claim can be started.');
       }
       final submissionTime = (updatedAt ?? DateTime.now()).toUtc();
@@ -690,6 +718,9 @@ class PaymentLinkReceivedStore {
         updatedAt: (updatedAt ?? DateTime.now()).toUtc(),
         claimSubmittedAt: null,
         claimDestinationPool: null,
+        claimPriorTxids: existing.claimLink!.isZodl
+            ? existing.claimPriorTxids
+            : const [],
       );
       await _writeRecords(_replaceByAddress(records, updated));
       return updated;
@@ -924,7 +955,7 @@ PaymentLinkReceivedRecord _recordFromJson(Object? value) {
       ? null
       : DateTime.tryParse(claimSubmittedAtRaw);
   if (amountZatoshi == null ||
-      amountZatoshi <= BigInt.zero ||
+      amountZatoshi < BigInt.zero ||
       createdAt == null ||
       updatedAt == null) {
     throw const PaymentLinkReceivedStoreFormatException(
@@ -952,14 +983,15 @@ PaymentLinkReceivedRecord _recordFromJson(Object? value) {
   }
   final parsedClaimLink = claimLinkRaw == null
       ? null
-      : VizorPaymentLink.parse(claimLinkRaw);
+      : VizorPaymentLink.parseForRedemption(claimLinkRaw);
   // Validate the embedded v1 address before hydration replaces it. V2 omits
   // the address and relies on the resolved metadata stored with the record.
   if (parsedClaimLink != null &&
       (parsedClaimLink.network != network ||
           (parsedClaimLink.knownAddress != null &&
               parsedClaimLink.knownAddress != address) ||
-          parsedClaimLink.amountZatoshi != amountZatoshi)) {
+          (!parsedClaimLink.isZodl &&
+              parsedClaimLink.amountZatoshi != amountZatoshi))) {
     throw const PaymentLinkReceivedStoreFormatException(
       'Received-card link metadata does not match its record.',
     );
@@ -968,7 +1000,15 @@ PaymentLinkReceivedRecord _recordFromJson(Object? value) {
     address: address,
     createdAt: createdAt,
     isCreatedAtProvisional: provisionalRaw == true,
+    amountZatoshi: amountZatoshi,
   );
+  if (amountZatoshi == BigInt.zero &&
+      (claimLink?.isZodl != true ||
+          status != PaymentLinkReceivedStatus.readyToClaim)) {
+    throw const PaymentLinkReceivedStoreFormatException(
+      'Received-card amount is invalid.',
+    );
+  }
   if (status != PaymentLinkReceivedStatus.received && claimLink == null) {
     throw const PaymentLinkReceivedStoreFormatException(
       'An unfinished received Card must retain its claim link.',

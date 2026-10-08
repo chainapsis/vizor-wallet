@@ -106,6 +106,7 @@ VizorPaymentLink resolvePaymentLinkCreatedAt({
   final fundingTime = paymentLinkFundingCreatedAt(
     recipientAmountZatoshi: link.amountZatoshi,
     transactions: transactions,
+    matchFundingAmount: !link.isZodl,
   );
   return link.withResolvedMetadata(
     createdAt:
@@ -118,15 +119,18 @@ VizorPaymentLink resolvePaymentLinkCreatedAt({
 DateTime? paymentLinkFundingCreatedAt({
   required BigInt recipientAmountZatoshi,
   required List<rust_sync.TransactionInfo> transactions,
+  bool matchFundingAmount = true,
 }) {
-  final expectedFunding = paymentLinkFundingAmountZatoshi(
-    recipientAmountZatoshi,
-  );
+  final expectedFunding = matchFundingAmount
+      ? paymentLinkFundingAmountZatoshi(recipientAmountZatoshi)
+      : null;
   DateTime? createdAt;
   for (final transaction in transactions) {
     if (transaction.expiredUnmined ||
         transaction.txKind != 'received' ||
-        BigInt.from(transaction.accountBalanceDelta) != expectedFunding ||
+        (matchFundingAmount
+            ? BigInt.from(transaction.accountBalanceDelta) != expectedFunding
+            : transaction.accountBalanceDelta <= 0) ||
         transaction.blockTime <= BigInt.zero) {
       continue;
     }
@@ -139,6 +143,31 @@ DateTime? paymentLinkFundingCreatedAt({
     }
   }
   return createdAt;
+}
+
+/// External cards can contain many deposits with unrelated amounts. The slowest
+/// deposit describes the wait; max-spend itself decides which notes are usable.
+int externalGiftFundingConfirmationCount(
+  List<rust_sync.TransactionInfo> transactions,
+  BigInt chainTipHeight,
+  int target,
+) {
+  final deposits = transactions.where(
+    (transaction) =>
+        !transaction.expiredUnmined &&
+        transaction.txKind == 'received' &&
+        transaction.accountBalanceDelta > 0,
+  );
+  if (deposits.isEmpty) return 0;
+  return deposits
+      .map(
+        (transaction) => paymentLinkConfirmationCount(
+          minedHeight: transaction.minedHeight,
+          chainTipHeight: chainTipHeight,
+        ),
+      )
+      .reduce(min)
+      .clamp(0, target);
 }
 
 @visibleForTesting
@@ -280,16 +309,6 @@ bool isPaymentLinkFundingSubmitted({
 
 bool isPaymentLinkFundingBroadcastAccepted(String status) {
   return status == 'broadcasted' || status == 'broadcasted_storage_failed';
-}
-
-@visibleForTesting
-BigInt paymentLinkClaimableAmountZatoshi({
-  required BigInt recipientAmountZatoshi,
-  required BigInt maxSpendableZatoshi,
-}) {
-  return maxSpendableZatoshi >= recipientAmountZatoshi
-      ? recipientAmountZatoshi
-      : BigInt.zero;
 }
 
 @visibleForTesting

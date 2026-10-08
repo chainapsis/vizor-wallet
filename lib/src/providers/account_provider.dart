@@ -509,6 +509,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         'giftAddress': link.address,
         'giftCreatedAt': link.createdAt.toIso8601String(),
         'giftIsCreatedAtProvisional': link.isCreatedAtProvisional,
+        if (link.isZodl) 'giftAmountZatoshi': link.amountZatoshi.toString(),
       }),
     );
 
@@ -770,11 +771,16 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       requireCurrentSession();
       await _saveAccounts(accounts);
       requireCurrentSession();
-      final link = VizorPaymentLink.parse(draft['giftLink'] as String)
-          .withResolvedMetadata(
+      final link =
+          VizorPaymentLink.parseForRedemption(
+            draft['giftLink'] as String,
+          ).withResolvedMetadata(
             address: draft['giftAddress'] as String,
             createdAt: DateTime.parse(draft['giftCreatedAt'] as String),
             isCreatedAtProvisional: draft['giftIsCreatedAtProvisional'] as bool,
+            amountZatoshi: draft['giftAmountZatoshi'] == null
+                ? null
+                : BigInt.parse(draft['giftAmountZatoshi'] as String),
           );
       final cards = ref.read(paymentLinkReceivedStoreProvider);
       final card = await cards.find(link.address);

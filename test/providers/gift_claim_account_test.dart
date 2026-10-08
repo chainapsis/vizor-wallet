@@ -15,6 +15,8 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import '../support/payment_links_screen_support.dart' show incomingLink;
+import '../fakes/fake_gift_link_rust_api.dart';
+import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
@@ -990,102 +992,116 @@ void main() {
     expect(card.isCreatedAtProvisional, isFalse);
   });
 
-  test(
-    'an account JSON failure restores backup markers and the provisional card date after restart',
-    () async {
-      final previewTime = DateTime.utc(2026, 9, 1);
-      final link = incomingLink.withResolvedMetadata(
-        createdAt: previewTime,
-        isCreatedAtProvisional: true,
-      );
-      storage.failNextWriteFor('zcash_accounts');
+  for (final zodl in [false, true]) {
+    test(
+      'an account JSON failure restores backup markers and the provisional card date after restart, Zodl $zodl',
+      () async {
+        final previewTime = DateTime.utc(2026, 9, 1);
+        final link =
+            (zodl
+                    ? VizorPaymentLink.parseForRedemption(
+                        '$zodlTestLink&amount=0.001',
+                      )
+                    : incomingLink)
+                .withResolvedMetadata(
+                  address: incomingLink.address,
+                  amountZatoshi: BigInt.from(90000),
+                  createdAt: previewTime,
+                  isCreatedAtProvisional: true,
+                );
+        storage.failNextWriteFor('zcash_accounts');
 
-      await expectLater(
-        accounts().createGiftClaimAccount(
-          name: _name,
-          profilePictureId: _profile,
-          link: link,
-        ),
-        throwsA(isA<GiftClaimAccountCreatedException>()),
-      );
-      expect(await store.readAccountMnemonic('uuid-1'), _mnemonic);
-      expect(
-        jsonDecode((await pending())!),
-        containsPair('mnemonic', _mnemonic),
-      );
-      expect(await store.readString('zcash_accounts'), isNull);
-
-      // Bootstrap reconstructs the Rust account without the UI-only
-      // setupPending metadata when account JSON never reached storage.
-      final restarted = ProviderContainer(
-        overrides: [
-          paymentLinkReceivedStoreProvider.overrideWithValue(cards),
-          appBootstrapProvider.overrideWithValue(_bootstrappedGiftAccount()),
-          accountProvider.overrideWith(
-            () => AccountNotifier.testing(store: store),
+        await expectLater(
+          accounts().createGiftClaimAccount(
+            name: _name,
+            profilePictureId: _profile,
+            link: link,
           ),
-          rpcEndpointFailoverLatestBlockHeightGetterProvider.overrideWithValue(
-            (_, _) async => BigInt.from(3000000),
-          ),
-        ],
-      );
-      addTearDown(restarted.dispose);
-      await restarted.read(accountProvider.future);
-      expect(
-        restarted.read(accountProvider).value!.activeAccount!.setupPending,
-        isFalse,
-      );
-      expect(
-        restarted
-            .read(accountProvider)
-            .value!
-            .activeAccount!
-            .giftEducationPending,
-        isFalse,
-      );
+          throwsA(isA<GiftClaimAccountCreatedException>()),
+        );
+        expect(await store.readAccountMnemonic('uuid-1'), _mnemonic);
+        expect(
+          jsonDecode((await pending())!),
+          containsPair('mnemonic', _mnemonic),
+        );
+        expect(await store.readString('zcash_accounts'), isNull);
 
-      _rust.accountForMnemonic = 'uuid-1';
-      await restarted
-          .read(accountProvider.notifier)
-          .recoverPendingAccountMnemonic();
+        // Bootstrap reconstructs the Rust account without the UI-only
+        // setupPending metadata when account JSON never reached storage.
+        final restarted = ProviderContainer(
+          overrides: [
+            paymentLinkReceivedStoreProvider.overrideWithValue(cards),
+            appBootstrapProvider.overrideWithValue(_bootstrappedGiftAccount()),
+            accountProvider.overrideWith(
+              () => AccountNotifier.testing(store: store),
+            ),
+            rpcEndpointFailoverLatestBlockHeightGetterProvider
+                .overrideWithValue((_, _) async => BigInt.from(3000000)),
+          ],
+        );
+        addTearDown(restarted.dispose);
+        await restarted.read(accountProvider.future);
+        expect(
+          restarted.read(accountProvider).value!.activeAccount!.setupPending,
+          isFalse,
+        );
+        expect(
+          restarted
+              .read(accountProvider)
+              .value!
+              .activeAccount!
+              .giftEducationPending,
+          isFalse,
+        );
 
-      expect(
-        restarted.read(accountProvider).value!.activeAccount!.setupPending,
-        isTrue,
-      );
-      expect(
-        restarted
-            .read(accountProvider)
-            .value!
-            .activeAccount!
-            .giftEducationPending,
-        isTrue,
-      );
-      final saved = jsonDecode((await store.readString('zcash_accounts'))!);
-      expect((saved as List).single['setupPending'], isTrue);
-      expect(saved.single['giftEducationPending'], isTrue);
-      expect(saved.single['name'], _name);
-      expect(saved.single['profilePictureId'], _profile);
-      final recovered = (await cards.load()).single;
-      expect(recovered.setupAccountUuid, 'uuid-1');
-      expect(recovered.createdAt, previewTime);
-      expect(recovered.isCreatedAtProvisional, isTrue);
-      expect(recovered.claimLink!.isCreatedAtProvisional, isTrue);
-      expect(await pending(), isNull);
+        _rust.accountForMnemonic = 'uuid-1';
+        await restarted
+            .read(accountProvider.notifier)
+            .recoverPendingAccountMnemonic();
 
-      // A later funding scan can replace the preview time after recovery.
-      final fundingTime = previewTime.add(const Duration(days: 1));
-      await cards.resolveProvisionalCreatedAt(
-        address: link.address,
-        createdAt: fundingTime,
-      );
-      final funded = (await cards.load()).single;
-      expect(funded.createdAt, fundingTime);
-      expect(funded.isCreatedAtProvisional, isFalse);
-      expect(funded.claimLink!.createdAt, fundingTime);
-      expect(funded.claimLink!.isCreatedAtProvisional, isFalse);
-    },
-  );
+        expect(
+          restarted.read(accountProvider).value!.activeAccount!.setupPending,
+          isTrue,
+        );
+        expect(
+          restarted
+              .read(accountProvider)
+              .value!
+              .activeAccount!
+              .giftEducationPending,
+          isTrue,
+        );
+        final saved = jsonDecode((await store.readString('zcash_accounts'))!);
+        expect((saved as List).single['setupPending'], isTrue);
+        expect(saved.single['giftEducationPending'], isTrue);
+        expect(saved.single['name'], _name);
+        expect(saved.single['profilePictureId'], _profile);
+        final recovered = (await cards.load()).single;
+        if (zodl) {
+          expect(recovered.amountZatoshi, BigInt.from(90000));
+          expect(recovered.claimLink!.statedAmountZatoshi, BigInt.from(100000));
+          expect(recovered.claimLink!.isZodl, isTrue);
+        }
+        expect(recovered.setupAccountUuid, 'uuid-1');
+        expect(recovered.createdAt, previewTime);
+        expect(recovered.isCreatedAtProvisional, isTrue);
+        expect(recovered.claimLink!.isCreatedAtProvisional, isTrue);
+        expect(await pending(), isNull);
+
+        // A later funding scan can replace the preview time after recovery.
+        final fundingTime = previewTime.add(const Duration(days: 1));
+        await cards.resolveProvisionalCreatedAt(
+          address: link.address,
+          createdAt: fundingTime,
+        );
+        final funded = (await cards.load()).single;
+        expect(funded.createdAt, fundingTime);
+        expect(funded.isCreatedAtProvisional, isFalse);
+        expect(funded.claimLink!.createdAt, fundingTime);
+        expect(funded.claimLink!.isCreatedAtProvisional, isFalse);
+      },
+    );
+  }
 
   test(
     'recovery preserves the pending passphrase when metadata save fails',
@@ -1575,6 +1591,10 @@ AppBootstrapState _bootstrappedGiftAccount({
 );
 
 class _GiftAccountRustApi implements RustLibApi {
+  @override
+  rust_wallet.DecodedZodlGiftLink crateApiWalletDecodeZodlGiftLink({
+    required String link,
+  }) => FakeGiftLinkRustApi().crateApiWalletDecodeZodlGiftLink(link: link);
   late AppSecureStore store;
   Object? importError;
   Object? listError;

@@ -7,7 +7,6 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/config/swap_feature_config.dart';
-import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_toast.dart';
@@ -213,7 +212,7 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
     try {
       final raw = await ref.read(paymentLinkClipboardProvider).readText();
       if (!mounted) return;
-      final link = VizorPaymentLink.parse(raw?.trim() ?? '');
+      final link = VizorPaymentLink.parseForRedemption(raw?.trim() ?? '');
       ref.read(giftClaimFlowProvider.notifier).open(link);
     } catch (error) {
       log('GiftClaim: pasted link rejected: ${error.runtimeType}');
@@ -531,13 +530,15 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
       artwork: artwork,
       cardWidth: kPaymentLinkMobileCardWidth,
       cardHeight: kPaymentLinkMobileCardHeight,
-      amountText: formatZecAmount(link.amountZatoshi),
-      supportingText: !ref.watch(swapFeatureEnabledProvider)
+      amountText: paymentLinkAmountText(link.displayAmountZatoshi),
+      supportingText:
+          link.displayAmountZatoshi == null ||
+              !ref.watch(swapFeatureEnabledProvider)
           ? null
           : snapshot != null
           ? swapFormatCompactFiatValue(snapshot.amount)
           : fiatTextForZatoshi(
-              link.amountZatoshi,
+              link.displayAmountZatoshi!,
               zecUsdUnitPrice: ref.watch(giftCardEntryPriceProvider).value,
             ),
       showCaret: false,
@@ -961,7 +962,7 @@ class _GiftClaimStatus extends StatelessWidget {
           return (
             'Waiting for the deposit to confirm · '
                 '${inspection.fundingConfirmationCount} of '
-                '$kPaymentLinkClaimConfirmationTarget',
+                '${inspection.link.claimConfirmationTarget}',
             addingAccount
                 ? 'You can create your account now.'
                 : 'You can create your wallet now.',
