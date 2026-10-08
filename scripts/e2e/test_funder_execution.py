@@ -103,6 +103,45 @@ class FunderExecutionTests(unittest.TestCase):
         self.assertTrue(case._processes[0].cleanup_completed)
         self.assertEqual(case.close().exit_codes, (23,))
 
+    def test_request_encoding_stops_at_bound_before_files_or_launch(self):
+        artifact = self.artifact()
+        case = self.fixture.case()
+        yielded = []
+        def chunks(encoder, value):
+            for chunk in ('{"value":', '"' + 'x'*60 + '"', "}"):
+                yielded.append(chunk)
+                yield chunk
+            raise AssertionError("encoder was consumed after its bound")
+        with patch.object(EXECUTION,"_MAX_JSON_BYTES",64), patch.object(
+                EXECUTION.json.JSONEncoder,"iterencode",chunks):
+            with self.assertRaisesRegex(EXECUTION.FunderExecutionError,"exceeds its bound"):
+                self.execute(artifact,"build",{"value":"small"},case)
+        self.assertEqual(len(yielded),2)
+        self.assertEqual(case.launched_process_count,0)
+        self.assertFalse((case.workspace.root / "funder-input-0000.json").exists())
+
+    def test_encoding_atom_escape_boundary_and_cycles_are_bounded(self):
+        with patch.object(EXECUTION,"_MAX_JSON_BYTES",64):
+            for value in ({"nested":["x"*65]}, {"x"*65:0}, {"integer":1 << 257}):
+                with patch.object(EXECUTION.json.JSONEncoder,"iterencode") as encode:
+                    with self.assertRaisesRegex(EXECUTION.FunderExecutionError,"exceeds its bound"):
+                        EXECUTION._input_payload(value)
+                    encode.assert_not_called()
+            request = {"value":"\u0001"*9}
+            with self.assertRaisesRegex(EXECUTION.FunderExecutionError,"exceeds its bound"):
+                EXECUTION._input_payload(request)
+            exact = {"value":"x"*51}
+            payload = EXECUTION._input_payload(exact)
+            self.assertEqual(len(payload),64)
+            self.assertEqual(json.loads(payload),exact)
+            exact["value"] += "x"
+            with self.assertRaises(EXECUTION.FunderExecutionError):
+                EXECUTION._input_payload(exact)
+        request = {"schema_version":1}
+        request["self"] = request
+        with self.assertRaisesRegex(EXECUTION.FunderExecutionError,"not finite JSON"):
+            EXECUTION._input_payload(request)
+
     def test_malformed_multiple_duplicate_nonfinite_or_wrong_identity_never_returns(self):
         for response in ("not JSON", '{}\n{}', '{"schema_version":1,"schema_version":1}',
             '{"schema_version":1,"value":NaN}', '{"schema_version":true}',
@@ -139,6 +178,15 @@ class FunderExecutionTests(unittest.TestCase):
         artifact = self.artifact(response='{"schema_version":1,"number":1e-3}')
         value = self.execute(artifact, "build", {"schema_version":1})
         self.assertEqual(value["number"], 0.001)
+
+    def test_deeply_nested_output_is_a_signer_error_after_original_join(self):
+        artifact = self.artifact(response='{"schema_version":1,"value":' + '['*10000 + '0' + ']'*10000 + '}')
+        case = self.fixture.case()
+        with self.assertRaisesRegex(EXECUTION.FunderExecutionError,"exactly one JSON object") as caught:
+            self.execute(artifact,"build",{"schema_version":1},case)
+        self.assertIsInstance(caught.exception.__cause__,RecursionError)
+        self.assertTrue(case._processes[0].cleanup_completed)
+        self.assertEqual(case.close().exit_codes,(0,))
 
     def test_oversized_signer_output_stops_before_timeout_or_unbounded_log(self):
         artifact = self.artifact(extra="sys.stdout.write('x'*(2*1024*1024+4096)); sys.stdout.flush(); time.sleep(30)")

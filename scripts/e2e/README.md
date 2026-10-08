@@ -722,7 +722,8 @@ python3 -B -m unittest scripts/e2e/test_funder_build.py
 one accepting `NativeCaseLifecycle`; it never accepts an external binary path
 or build receipt. `run_offline_funder` accepts the five documented commands,
 with no request for `identity` and one finite JSON object for a build command.
-Input is bounded to 2 MiB, exclusively created in the original consumer case,
+Input serialization stops at 2 MiB, with oversized atoms rejected before
+encoding. Input is exclusively created in the original consumer case,
 made read-only and supplied through an open descriptor until process/output
 completion. No temporary shared path, stdin pipe or wallet-under-test key is used.
 
