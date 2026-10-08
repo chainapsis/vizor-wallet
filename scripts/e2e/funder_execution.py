@@ -52,9 +52,25 @@ def _input_payload(request):
     def check_atoms(value):
         nonlocal remaining
         remaining -= 1
-        if (remaining < 0 or (isinstance(value, str) and len(value) > _MAX_JSON_BYTES)
-            or (isinstance(value, int) and value.bit_length() > _MAX_JSON_BYTES * 4)):
+        if remaining < 0:
             raise FunderExecutionError("signer input exceeds its bound")
+        if isinstance(value, str):
+            remaining -= 1  # Both quotes; the node check already counted one.
+            if remaining < 0:
+                raise FunderExecutionError("signer input exceeds its bound")
+            for character in value:
+                code = ord(character)
+                width = (2 if character in '\"\\\b\f\n\r\t' else
+                         1 if 0x20 <= code <= 0x7E else
+                         6 if code <= 0xFFFF else 12)
+                remaining -= width
+                if remaining < 0:
+                    raise FunderExecutionError("signer input exceeds its bound")
+        if isinstance(value, int):
+            # Conservative decimal digit upper bound without a huge str(int).
+            digits = value.bit_length() * 30103 // 100000 + 1 + (value < 0)
+            if digits > _MAX_JSON_BYTES:
+                raise FunderExecutionError("signer input exceeds its bound")
         if isinstance(value, (dict, list, tuple)):
             if len(value) > _MAX_JSON_BYTES:
                 raise FunderExecutionError("signer input exceeds its bound")

@@ -142,6 +142,21 @@ class FunderExecutionTests(unittest.TestCase):
         with self.assertRaisesRegex(EXECUTION.FunderExecutionError,"not finite JSON"):
             EXECUTION._input_payload(request)
 
+    def test_escaped_atom_budget_is_enforced_before_encoder_allocation(self):
+        with patch.object(EXECUTION,"_MAX_JSON_BYTES",64):
+            for request in ({"value":"\U0001F600"*5}, {"value":"\u0001"*11},
+                            {"value":"\u0080"*11}, {"\U0001F600"*6:0},
+                            {"value":["\U0001F600"*2,"\U0001F600"*3]},
+                            {"value":1 << 257}):
+                with self.subTest(request=request), patch.object(EXECUTION.json.JSONEncoder,"iterencode") as encoder:
+                    with self.assertRaisesRegex(EXECUTION.FunderExecutionError,"exceeds its bound"):
+                        EXECUTION._input_payload(request)
+                    encoder.assert_not_called()
+            for text in ('\"\\\b\f\n\r\t', '\U0001F600'*4, '\u007f\u000b\ud800'):
+                request = {"value":text}
+                self.assertEqual(EXECUTION._input_payload(request),
+                    (json.dumps(request,ensure_ascii=True,separators=(",",":"))+"\n").encode("ascii"))
+
     def test_malformed_multiple_duplicate_nonfinite_or_wrong_identity_never_returns(self):
         for response in ("not JSON", '{}\n{}', '{"schema_version":1,"schema_version":1}',
             '{"schema_version":1,"value":NaN}', '{"schema_version":true}',
