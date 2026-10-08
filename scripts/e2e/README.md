@@ -427,6 +427,78 @@ These models use real private fake bundles but model signatures and output;
 they do not run an app or delete native state/devices. A captured file or valid
 historical receipt alone is not proof of a completed owned SDK launch.
 
+### Own the Simulator app and case support lifecycle
+
+`native_ios_case_storage.py` composes a newly acquired, unlaunched Simulator
+with captured helper/cohort artifacts. It claims native ownership before helper
+installation, closing the earlier pre-app deletion route. Preparation boots
+only the owned UUID, installs the helper, requires a completed read-only native
+absence observation, and exclusively allocates the namespace below the SDK's
+canonical app data container. Existing cases/devices are never adopted.
+
+Directory descriptors, original inode identities and a private owner marker
+anchor support ownership. CoreSimulator's group-writable `data` component is
+accepted only behind an already opened owned ancestor that denies group/other
+traversal; arbitrary writable parents and symlinks remain rejected. SDK directory
+permissions are not changed. Case support and its marker remain private.
+SDK app updates may rename the data container. Only immediately after our owned
+install, all original directory identities and marker inode/bytes must match
+under the new canonical SDK path and the old container must be absent. The move
+is recorded separately; original markers/context are not rewritten. Copies or
+path changes during ordinary observations never qualify for adoption.
+
+```python
+simulator = acquire_ios_simulator(case, runtime_identifier=runtime_id,
+                                 device_type_identifier=device_type_id)
+owner = prepare_ios_case_storage(simulator, helper, cancel_event=cancel_event)
+try:
+    launch = owner.start_app(cancel_event=cancel_event)
+    # Execute the selected scenario; restart phases use the same owned support.
+    owner.stop_app(launch)
+    restarted = owner.start_app(cancel_event=cancel_event)
+except BaseException:
+    owner.retain()  # Stop case writers and shut down its UUID; delete nothing.
+    raise
+else:
+    cleanup = owner.close(cancel_event=cancel_event)
+```
+
+The owned `simctl --console` process is not the native app. Startup binds the
+SDK job's actual app PID to the exact namespace, support directory, service names
+and disabled-background context. Caller environment overrides are not inherited;
+only the case identity is forwarded using `SIMCTL_CHILD_`. Restart installs the
+cohort once, preserves support, and tolerates only the previous fully matching
+owned context while the next generation publishes atomically. Context PIDs are
+never global signalling targets. Stop uses the exact owned UUID and bundle ID,
+then proves native job absence independently of console group completion.
+
+Successful close seals/stops case groups, verifies original support/context,
+runs the captured terminal helper internally, and validates its complete
+scope-bound receipt plus native app absence. The SDK console's exact
+`com.keplr.vizor: <positive-PID>` line is separated from the helper's single JSON
+line; extra diagnostics/receipts or missing launch framing fail closed. Cleanup
+never accepts caller-provided JSON, PIDs, context flags or success booleans as
+authority. Only then does it shut down/delete its UUID and positively observe
+both SDK inventory absence and filesystem data/device-directory absence.
+
+Preparation, launch or cleanup failures remain failed, stop/shut down only owned
+writers/device, and retain state/evidence. Cleanup can fail after partial native
+mutation; there is no same-owner retry or adoption. Case manifests/logs/markers
+are never removed, and app context cleanup flags are not rewritten. Operations
+are cooperative/single-owner, with separate process-group and SDK phase budgets,
+not one wall-clock SLA. The cleanup record is not a scenario PASS.
+
+```bash
+python3 -B -m unittest scripts/e2e/test_native_ios_case_storage.py scripts/e2e/test_native_ios_simulator.py scripts/e2e/test_native_ios_cleanup.py
+```
+
+Models use real private trees and separate app/console child groups, but model
+SDK transport, signatures and native observations. The optional
+`VizorIosLifecycleFixture` SDK app exercises the actual native profile and
+publishes synthetic metadata only; it is not a wallet or a financial scenario.
+Trusted build publication, real wallet/backend execution, full worker workspace
+removal and catalog execution remain pending. Catalog execution flags stay false.
+
 ## Gift Cards
 
 Sender usage tracking and empty observer DB reuse:

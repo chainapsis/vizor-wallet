@@ -142,6 +142,16 @@ class OwnedIosSimulatorTests(unittest.TestCase):
             self.assertEqual(file.stat().st_mode & 0o777, 0o600)
         simulator.close()
 
+    def test_claimed_native_owner_cannot_use_pre_app_deletion(self):
+        simulator = self.acquire()
+        simulator.boot()
+        simulator._state.native_owner = object()
+        with self.assertRaisesRegex(SIMULATOR.NativeSimulatorError, "native lifecycle was claimed"):
+            simulator.close()
+        self.assertIn(simulator.udid, self.model.devices)
+        self.assertEqual(self.model.devices[simulator.udid]["state"], "Shutdown")
+        self.assertFalse(any(call[0] == "delete" for call in self.model.calls))
+
     def test_boot_waits_for_readiness_and_targets_only_the_created_uuid(self):
         simulator = self.acquire()
         simulator.boot()
