@@ -35,6 +35,7 @@ class SimctlModel:
         self.create_output = None
         self.failures = {}
         self.keep_deleted = False
+        self.boot_state = "Booted"
         self.runtimes = [{
             "identifier": RUNTIME_ID, "platform": "iOS", "isAvailable": True,
             "supportedDeviceTypes": [{"identifier": DEVICE_ID}],
@@ -77,7 +78,7 @@ class SimctlModel:
                 created = self.add_device(arguments[1])
                 output = (self.create_output or created) + "\n"
         elif operation == "boot":
-            self.devices[arguments[1]]["state"] = "Booted"
+            self.devices[arguments[1]]["state"] = self.boot_state
             output = ""
         elif operation == "bootstatus":
             output = "boot ready\n"
@@ -443,6 +444,35 @@ class OwnedIosSimulatorTests(unittest.TestCase):
             simulator.close()
         self.assertEqual(self.model.devices[simulator.udid]["state"], "Shutdown")
         self.assertFalse(any(entry[0] == "delete" for entry in self.model.calls))
+
+    def test_timed_out_booting_device_is_shut_down_but_not_deleted(self):
+        simulator = self.acquire()
+        self.model.boot_state = "Booting"
+        self.model.failures["bootstatus"] = RUNTIME.RunnerError("boot readiness timed out", 124)
+        with self.assertRaises(RUNTIME.RunnerError) as raised:
+            simulator.boot()
+        self.assertEqual(raised.exception.exit_code, 124)
+        self.assertEqual(self.model.devices[simulator.udid]["state"], "Booting")
+        with self.assertRaisesRegex(SIMULATOR.NativeSimulatorError, "simctl process cleanup unproven"):
+            simulator.close()
+        self.assertIn(("shutdown", simulator.udid), self.model.calls)
+        self.assertEqual(self.model.devices[simulator.udid]["state"], "Shutdown")
+        self.assertFalse(any(entry[0] == "delete" for entry in self.model.calls))
+        self.assertEqual({udid: self.model.devices[udid] for udid in self.before}, self.before)
+
+    def test_cancelled_booting_device_is_shut_down_but_not_deleted(self):
+        simulator = self.acquire()
+        self.model.boot_state = "Booting"
+        self.model.failures["bootstatus"] = RUNTIME.Cancelled()
+        with self.assertRaises(RUNTIME.Cancelled):
+            simulator.boot()
+        self.assertEqual(self.model.devices[simulator.udid]["state"], "Booting")
+        with self.assertRaisesRegex(SIMULATOR.NativeSimulatorError, "simctl process cleanup unproven"):
+            simulator.close()
+        self.assertIn(("shutdown", simulator.udid), self.model.calls)
+        self.assertEqual(self.model.devices[simulator.udid]["state"], "Shutdown")
+        self.assertFalse(any(entry[0] == "delete" for entry in self.model.calls))
+        self.assertEqual({udid: self.model.devices[udid] for udid in self.before}, self.before)
 
     def test_zero_exit_bootstatus_requires_positive_booted_inventory(self):
         simulator = self.acquire()

@@ -252,7 +252,7 @@ class OwnedIosSimulator:
             device = self._owned_device(deadline=deadline, cancel_event=cancellation)
             if device is None:
                 raise NativeSimulatorError("owned simulator is missing without completed deletion proof")
-            if device.get("state") == "Booted":
+            if device.get("state") != "Shutdown":
                 self._commands.run(["shutdown", self.udid], deadline=deadline, cancel_event=cancellation)
                 while True:
                     device = self._owned_device(deadline=deadline, cancel_event=cancellation)
