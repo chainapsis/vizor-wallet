@@ -1,7 +1,10 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:path_provider/path_provider.dart';
 
+import '../config/e2e_namespace.dart';
+import '../config/network_config.dart';
 import 'app_secure_store.dart';
 
 const kPaymentLinkClaimWalletDirectoryPrefix = 'payment_link_claim_';
@@ -25,7 +28,16 @@ RegExp _paymentLinkClaimWalletDirectoryPatternFor(String network) => RegExp(
 );
 
 Future<Directory> getWalletSupportDirectory() async {
-  final dir = await getApplicationSupportDirectory();
+  final baseDirectory = await getApplicationSupportDirectory();
+  final dir = Directory(
+    e2eSupportDirectoryPath(
+      basePath: baseDirectory.path,
+      pathSeparator: Platform.pathSeparator,
+      namespace: kVizorE2eNamespace,
+      defaultNetworkName: kZcashDefaultNetworkName,
+      isDebug: kDebugMode,
+    ),
+  );
   await dir.create(recursive: true);
   return dir;
 }

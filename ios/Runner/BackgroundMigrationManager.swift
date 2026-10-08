@@ -4,8 +4,20 @@ import Foundation
 import Security
 import UserNotifications
 
-let ironwoodMigrationBackgroundCredentialService =
+func cancelBackgroundTaskRequestIfAllowed(
+  taskRequestWithIdentifier identifier: String
+) {
+  guard !E2eRuntimeProfile.current.isIsolated else { return }
+  BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: identifier)
+}
+
+let ironwoodMigrationBackgroundCredentialBaseService =
   "com.keplr.vizor.ironwood-migration-background.v1"
+var ironwoodMigrationBackgroundCredentialService: String {
+  E2eRuntimeProfile.current.keychainService(
+    ironwoodMigrationBackgroundCredentialBaseService
+  )
+}
 
 struct IronwoodMigrationBackgroundManifest: Decodable {
   let version: Int
@@ -300,17 +312,25 @@ final class IronwoodMigrationNotificationGate {
 }
 
 private enum BackgroundMigrationNotification {
-  private static let identifierPrefix =
-    "com.keplr.vizor.ironwood-"
-  static let needsActionIdentifier =
-    "com.keplr.vizor.ironwood-migration.needs-action"
+  private static var identifierPrefix: String {
+    E2eRuntimeProfile.current.notificationIdentifier(
+      "com.keplr.vizor.ironwood-"
+    )
+  }
+  static var needsActionIdentifier: String {
+    E2eRuntimeProfile.current.notificationIdentifier(
+      "com.keplr.vizor.ironwood-migration.needs-action"
+    )
+  }
 
   static func proofReadyIdentifier(batchId: String) -> String {
     let digest = SHA256.hash(data: Data(batchId.utf8))
       .prefix(16)
       .map { String(format: "%02x", $0) }
       .joined()
-    return "com.keplr.vizor.ironwood-migration.proof-ready.\(digest)"
+    return E2eRuntimeProfile.current.notificationIdentifier(
+      "com.keplr.vizor.ironwood-migration.proof-ready.\(digest)"
+    )
   }
 
   static func broadcastCompleteIdentifier(batchId: String) -> String {
@@ -318,7 +338,9 @@ private enum BackgroundMigrationNotification {
       .prefix(16)
       .map { String(format: "%02x", $0) }
       .joined()
-    return "com.keplr.vizor.ironwood-migration.sent.\(digest)"
+    return E2eRuntimeProfile.current.notificationIdentifier(
+      "com.keplr.vizor.ironwood-migration.sent.\(digest)"
+    )
   }
 
   static func remove(batchIds: [String], includeNeedsAction: Bool) {
@@ -477,6 +499,7 @@ final class BackgroundMigrationManager {
   }
 
   func registerBackgroundTask() {
+    guard !E2eRuntimeProfile.current.isIsolated else { return }
     BGTaskScheduler.shared.register(
       forTaskWithIdentifier: Self.taskIdentifier,
       using: nil
@@ -493,6 +516,10 @@ final class BackgroundMigrationManager {
     earliestBeginDate: Date = Date(),
     completion: @escaping (Bool) -> Void
   ) {
+    guard !E2eRuntimeProfile.current.isIsolated else {
+      completion(false)
+      return
+    }
     guard !isMutationQuiesced else {
       completion(false)
       return
@@ -517,12 +544,13 @@ final class BackgroundMigrationManager {
   }
 
   private func submitAuthorized(earliestBeginDate: Date) -> Bool {
-    stateLock.vizorWithLock {
+    guard !E2eRuntimeProfile.current.isIsolated else { return false }
+    return stateLock.vizorWithLock {
       guard !mutationQuiesced && !notificationAuthorization.isDisabled
         && !BackgroundMigrationOutboxExecutionGate.shared.isPaused else {
         return false
       }
-      BGTaskScheduler.shared.cancel(
+      cancelBackgroundTaskRequestIfAllowed(
         taskRequestWithIdentifier: Self.taskIdentifier
       )
       let request = BGProcessingTaskRequest(identifier: Self.taskIdentifier)
@@ -592,7 +620,7 @@ final class BackgroundMigrationManager {
       return authorizationMonitor
     }
     monitor?.cancel()
-    BGTaskScheduler.shared.cancel(
+    cancelBackgroundTaskRequestIfAllowed(
       taskRequestWithIdentifier: Self.taskIdentifier
     )
   }
@@ -893,7 +921,7 @@ final class BackgroundMigrationManager {
       BackgroundMigrationPreparationManager.shared
         .cancelDeferredPass()
     }
-    BGTaskScheduler.shared.cancel(
+    cancelBackgroundTaskRequestIfAllowed(
       taskRequestWithIdentifier: Self.taskIdentifier
     )
   }

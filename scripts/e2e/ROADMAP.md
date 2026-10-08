@@ -40,9 +40,9 @@ linear speedup.
   coverage still exercises pre-activation Orchard funding.
 - Use integer zatoshis and independently signed funding transactions. The direct
   path must not rely on a node wallet RPC, THS server, or faucet.
-- Report cleanup at its actual boundary. Namespaced base/mnemonic Keychain and
-  preference cleanup does not prove deletion of every credential service; fresh
-  simulator ownership is the isolation boundary for fixed background services.
+- Report cleanup at its actual boundary. Declaring owned Keychain services and
+  preferences does not prove their deletion; include recovery staging secrets
+  and retain fresh-simulator ownership for simulator-global resources.
 - Changed-file selection is conservative path-based selection, not a complete
   dependency graph. Unknown changes must widen coverage rather than skip it.
 
@@ -53,10 +53,15 @@ it is under review. Integrate them bottom-up. Keep each intermediate branch
 runnable and update this checklist with its PR link and validation before
 marking it complete. The umbrella targets `main` and merges last.
 
+Catalog and report planning was merged into the umbrella in
+[PR #890](https://github.com/chainapsis/vizor-wallet/pull/890). The
+[app runtime contract](RUNTIME_CONTRACT.md) is the next independent slice;
+worker ownership, native execution, and scenario migrations are still pending.
+
 | Slice | Scope | Prerequisites |
 | --- | --- | --- |
 | Catalog and reports | Stable scenario IDs, suite/exact-ID/tag selection, conservative changed-file selection, failed-case reruns, side-effect-free plans, report schema | None for schema/planning; execution requires an implemented engine |
-| App runtime contract | Regtest-only namespace, endpoints, case manifest, and native storage attestation across Dart/Rust/iOS | Review independently from orchestration |
+| App runtime contract | Regtest-only namespace, endpoints, case manifest, and owned-storage context across Dart/Rust/iOS | Review independently from orchestration |
 | Worker lifecycle | Owned workspaces, ports, simulators, processes, and fail-closed cleanup | App runtime contract for native execution |
 | Direct Zakura backend | Offline funding, readiness and inclusion proofs, Rust test support, native adapter | Zakura fixture contribution; native adapter also needs runtime and lifecycle |
 | Native build-once executor | One compatible app build per OS and shared helper build, with isolated case execution | Runtime contract, worker lifecycle, and native backend |

@@ -2,7 +2,8 @@ import Foundation
 import Security
 
 private let walletDbNameKey = "zcash_wallet_db_name"
-private let secureStoreService = "com.keplr.vizor.secure_store"
+private let secureStoreBaseService = "com.keplr.vizor.secure_store"
+private let regtestSecureStoreBaseService = "com.keplr.vizor.regtest.secure_store"
 private let biometricUnlockService = "com.zcash.wallet.biometric-unlock"
 private let installSentinelKey = "vizor_install_sentinel_v1"
 private let cleanupPendingKey = "vizor_keychain_cleanup_pending_v1"
@@ -20,12 +21,13 @@ func resolveWalletDbPath() throws -> String {
 }
 
 func resolveWalletSupportDirectory() throws -> URL {
-    let supportDir = try FileManager.default.url(
+    let baseSupportDir = try FileManager.default.url(
         for: .applicationSupportDirectory,
         in: .userDomainMask,
         appropriateFor: nil,
         create: true
     )
+    let supportDir = E2eRuntimeProfile.current.supportDirectory(baseSupportDir)
     try FileManager.default.createDirectory(
         at: supportDir,
         withIntermediateDirectories: true
@@ -34,10 +36,13 @@ func resolveWalletSupportDirectory() throws -> URL {
 }
 
 private func resolveWalletDbName() throws -> String {
+    let baseService = E2eRuntimeProfile.current.isIsolated
+        ? regtestSecureStoreBaseService
+        : secureStoreBaseService
     let query: [CFString: Any] = [
         kSecClass: kSecClassGenericPassword,
         kSecAttrAccount: walletDbNameKey,
-        kSecAttrService: secureStoreService,
+        kSecAttrService: E2eRuntimeProfile.current.keychainService(baseService),
         kSecReturnData: true,
         kSecMatchLimit: kSecMatchLimitOne,
     ]
@@ -90,19 +95,19 @@ struct FreshInstallKeychainCleaner {
 
         static let live = Dependencies(
             hasInstallSentinel: {
-                UserDefaults.standard.bool(forKey: installSentinelKey)
+                E2eRuntimeProfile.current.defaults.bool(forKey: installSentinelKey)
             },
             markInstallSentinel: {
-                UserDefaults.standard.set(true, forKey: installSentinelKey)
+                E2eRuntimeProfile.current.defaults.set(true, forKey: installSentinelKey)
             },
             hasCleanupPending: {
-                UserDefaults.standard.bool(forKey: cleanupPendingKey)
+                E2eRuntimeProfile.current.defaults.bool(forKey: cleanupPendingKey)
             },
             markCleanupPending: {
-                UserDefaults.standard.set(true, forKey: cleanupPendingKey)
+                E2eRuntimeProfile.current.defaults.set(true, forKey: cleanupPendingKey)
             },
             clearCleanupPending: {
-                UserDefaults.standard.removeObject(forKey: cleanupPendingKey)
+                E2eRuntimeProfile.current.defaults.removeObject(forKey: cleanupPendingKey)
             },
             readWalletDbNames: {
                 FreshInstallKeychainCleaner.secureStoreServicesToClear.map { service in
@@ -130,11 +135,15 @@ struct FreshInstallKeychainCleaner {
 
     static let servicesToClear = [
         biometricUnlockService,
-        ironwoodMigrationBackgroundCredentialService,
-        ironwoodMigrationOutboxKeyService,
+        ironwoodMigrationBackgroundCredentialBaseService,
+        ironwoodMigrationOutboxKeyBaseService,
     ] + secureStoreServicesToClear
 
-    static func runIfNeeded(dependencies: Dependencies = .live) {
+    static func runIfNeeded(
+        runtimeProfile: E2eRuntimeProfile = .current,
+        dependencies: Dependencies = .live
+    ) {
+        guard !runtimeProfile.isIsolated else { return }
         if dependencies.hasInstallSentinel() {
             return
         }
@@ -230,7 +239,7 @@ struct FreshInstallKeychainCleaner {
     }
 
     private static func readWalletDbNameFromKeychain(
-        service: String = secureStoreService
+        service: String = secureStoreBaseService
     ) -> KeychainDbNameLookup {
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
@@ -262,12 +271,13 @@ struct FreshInstallKeychainCleaner {
         guard isSafeDbName(dbName) else {
             return true
         }
-        guard let supportDir = FileManager.default.urls(
+        guard let baseSupportDir = FileManager.default.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
         ).first else {
             return false
         }
+        let supportDir = E2eRuntimeProfile.current.supportDirectory(baseSupportDir)
         let dbUrl = supportDir.appendingPathComponent(dbName, isDirectory: false)
         return FileManager.default.fileExists(atPath: dbUrl.path)
     }

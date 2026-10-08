@@ -4,6 +4,10 @@ For the planned isolated execution framework and direct Zakura migration, see
 the [E2E roadmap](ROADMAP.md). The roadmap tracks unmerged work. Catalog previews
 are described first; the existing scenario runners below are unchanged.
 
+The [native runtime contract](RUNTIME_CONTRACT.md) defines per-case launch
+identity and storage isolation for the later worker/executor layers. It does
+not add an execution backend or make pending catalog entries runnable.
+
 ## Catalog previews
 
 `run-suite.py` provides a host-only inventory and selection preview. This first
