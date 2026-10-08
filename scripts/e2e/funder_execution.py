@@ -37,6 +37,13 @@ def _nonfinite(value):
     raise FunderExecutionError("signer JSON contains a non-finite number")
 
 
+def _finite_float(value):
+    number = float(value)
+    if not math.isfinite(number):
+        raise FunderExecutionError("signer JSON number overflows its finite range")
+    return number
+
+
 def run_offline_funder(case: NativeCaseLifecycle, artifact: ProducedRegtestFunder,
                        command: str, request=None, *, timeout: float = 60.0,
                        cancel_event=None):
@@ -99,7 +106,8 @@ def run_offline_funder(case: NativeCaseLifecycle, artifact: ProducedRegtestFunde
         if len(output.encode("utf-8")) > _MAX_JSON_BYTES:
             raise FunderExecutionError("signer output exceeds its bound")
         try:
-            value = json.loads(output, object_pairs_hook=_object, parse_constant=_nonfinite)
+            value = json.loads(output, object_pairs_hook=_object, parse_constant=_nonfinite,
+                               parse_float=_finite_float)
         except (TypeError, ValueError) as error:
             raise FunderExecutionError("signer did not return exactly one JSON object") from error
         if (not isinstance(value, dict) or type(value.get("schema_version")) is not int

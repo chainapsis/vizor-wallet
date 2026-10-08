@@ -112,6 +112,19 @@ class FunderExecutionTests(unittest.TestCase):
         self.assertTrue(case._processes[0].cleanup_completed)
         self.assertTrue((case.workspace.root / "funder-input-0000.json").exists())
 
+    def test_build_json_exponent_overflow_is_rejected_at_every_depth(self):
+        for response in ('{"schema_version":1,"number":1e400}',
+                         '{"schema_version":1,"nested":{"numbers":[-1e400]}}'):
+            artifact = self.artifact(response=response)
+            case = self.fixture.case()
+            with self.subTest(response=response), self.assertRaisesRegex(
+                    EXECUTION.FunderExecutionError, "overflows its finite range"):
+                self.execute(artifact, "build", {"schema_version":1}, case)
+            self.assertTrue(case._processes[0].cleanup_completed)
+        artifact = self.artifact(response='{"schema_version":1,"number":1e-3}')
+        value = self.execute(artifact, "build", {"schema_version":1})
+        self.assertEqual(value["number"], 0.001)
+
     def test_replaced_or_changed_publication_prevents_next_consumer_launch(self):
         artifact = self.artifact()
         case = self.fixture.case()
