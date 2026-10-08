@@ -24,7 +24,7 @@ _OWNERSHIP_TOKEN = object()
 _INTENT = "simulator-allocation.json"
 _OWNER = "simulator-owner.json"
 _RUNTIME_RE = re.compile(r"com\.apple\.CoreSimulator\.SimRuntime\.iOS-[0-9]+(?:-[0-9]+)*\Z")
-_DEVICE_RE = re.compile(r"com\.apple\.CoreSimulator\.SimDeviceType\.[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*\Z")
+_DEVICE_PREFIX = "com.apple.CoreSimulator.SimDeviceType."
 
 
 class NativeSimulatorError(runtime.RunnerError):
@@ -322,7 +322,9 @@ def acquire_ios_simulator(
         raise NativeSimulatorError("simulator allocation requires an iOS case")
     if (
         not isinstance(runtime_identifier, str) or not _RUNTIME_RE.fullmatch(runtime_identifier)
-        or not isinstance(device_type_identifier, str) or not _DEVICE_RE.fullmatch(device_type_identifier)
+        or not isinstance(device_type_identifier, str)
+        or not device_type_identifier.startswith(_DEVICE_PREFIX)
+        or len(device_type_identifier) == len(_DEVICE_PREFIX) or "\0" in device_type_identifier
     ):
         raise NativeSimulatorError("explicit iOS runtime and device type identifiers are required")
     commands = _Commands(case, secrets.token_hex(8))

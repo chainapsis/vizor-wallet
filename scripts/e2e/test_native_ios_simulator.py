@@ -78,6 +78,7 @@ class SimctlModel:
                 output = self.create_output + "\n"
             else:
                 created = self.add_device(arguments[1])
+                self.devices[created]["deviceTypeIdentifier"] = arguments[2]
                 output = (self.create_output or created) + "\n"
         elif operation == "boot":
             self.devices[arguments[1]]["state"] = self.boot_state
@@ -237,6 +238,23 @@ class OwnedIosSimulatorTests(unittest.TestCase):
             with self.assertRaises(SIMULATOR.NativeSimulatorError):
                 self.acquire()
         self.assertEqual(self.mutations(), [])
+
+    def test_supported_ipad_identifier_with_encoded_parentheses_is_accepted(self):
+        identifier = "com.apple.CoreSimulator.SimDeviceType.iPad--10th-generation-"
+        self.model.runtimes[0]["supportedDeviceTypes"].append({"identifier": identifier})
+        simulator = self.acquire(device_type_identifier=identifier)
+        simulator.boot()
+        self.assertEqual(self.model.devices[simulator.udid]["deviceTypeIdentifier"], identifier)
+        self.assertIn(("create", simulator.name, identifier, RUNTIME_ID), self.model.calls)
+        simulator.close()
+        self.assertEqual(self.model.devices, self.before)
+
+    def test_installed_type_must_still_be_supported_by_selected_runtime(self):
+        identifier = "com.apple.CoreSimulator.SimDeviceType.iPad--10th-generation-"
+        with self.assertRaisesRegex(SIMULATOR.NativeSimulatorError, "not supported"):
+            self.acquire(device_type_identifier=identifier)
+        self.assertEqual(self.mutations(), [])
+        self.assertFalse((self.case.workspace.root / SIMULATOR._INTENT).exists())
 
     def test_invalid_device_inventory_cannot_authorize_creation(self):
         self.model.devices["broken"] = {"udid": "booted", "name": "broken"}
