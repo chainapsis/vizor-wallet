@@ -6,27 +6,12 @@ package struct MacCleanupScope: Sendable {
   package let expectedTeam: String
 
   package init(namespace: String, expectedTeam: String) throws {
-    let parts = namespace.split(separator: "_", omittingEmptySubsequences: false)
-    guard namespace.utf8.count <= 64, namespace.utf8.allSatisfy({ $0 < 128 }),
-      parts.count == 4, parts[0] == "vizor", parts[1].count == 10,
-      parts[1].allSatisfy({ "0123456789abcdef".contains($0) }),
-      parts[2].first == "w",
-      Self.index(String(parts[2].dropFirst())) != nil,
-      Self.index(String(parts[3])) != nil
-    else { throw CleanupFailure("invalid_namespace") }
+    try validateCleanupNamespace(namespace)
     guard expectedTeam.utf8.count == 10,
       expectedTeam.utf8.allSatisfy({ (48...57).contains($0) || (65...90).contains($0) })
     else { throw CleanupFailure("invalid_expected_team") }
     self.namespace = namespace
     self.expectedTeam = expectedTeam
-  }
-
-  private static func index(_ value: String) -> Int? {
-    guard !value.isEmpty, value.utf8.allSatisfy({ (48...57).contains($0) }),
-      let number = Int(value), (0...1_000_000).contains(number),
-      String(number) == value
-    else { return nil }
-    return number
   }
 
   package var services: [String] {

@@ -1,6 +1,11 @@
-# Case-scoped macOS native storage observations
+# Case-scoped native storage observations
 
-This standalone, non-UI helper deletes or verifies only one canonical case's
+The standalone macOS CLI and iOS Simulator helper are **not connected to ordinary
+app startup or the catalog executor**. No package dependencies or CI changes.
+
+## macOS contract
+
+The non-UI macOS helper deletes or verifies only one canonical case's
 two macOS regtest Keychain services and `flutter.vizor_e2e_<namespace>.` preference
 keys. It is **not connected to ordinary app startup or the catalog executor**.
 Requires macOS 13+ and Swift 6; no package dependencies or CI changes.
@@ -25,7 +30,7 @@ helper's build/signing identity against the actual cohort, capture its owned
 process/output completion and bind the receipt to that launch. A namespace,
 JSON receipt or `completed: true` is **not ownership or deletion permission**.
 These observations do not stop processes, remove wallet/support/workspace files,
-modify `native-context.json`, delete simulators, implement iOS cleanup, or recover
+modify `native-context.json`, delete simulators, or recover
 failed reports. [Host case/launch binding](../README.md#bind-macos-cleanup-to-an-owned-case)
 captures the actual signed artifacts and validates the owned terminal command's
 output. The [macOS support owner](../README.md#own-macos-case-support-storage)
@@ -82,8 +87,9 @@ suffix. Normal wallet builds do not link this package or invoke these modes.
 ## Optional real native smoke
 
 `Tests/NativeCleanupSmoke/Smoke.swift` is manual fixture code, not a package
-product or an automatically executed test. Compile it alongside both library
-sources, using `swiftc -package-name VizorNativeCleanup ... -o <fresh-app>/Contents/MacOS/Smoke`,
+product or an automatically executed test. Compile it alongside `CaseNamespace.swift`,
+`MacCleanup.swift` and `MacCleanupSystem.swift`, using
+`swiftc -package-name VizorNativeCleanup ... -o <fresh-app>/Contents/MacOS/Smoke`,
 then wrap/sign the **fresh** background-only bundle as above. Invoke only that
 new test executable with `--team <actual-team>`, with bounded owned-process
 capture; never launch/modify an existing Vizor app. No app or backend build is
@@ -98,5 +104,64 @@ test mnemonic setting. This does not validate biometric/protected secrets or
 the ordinary mnemonic's `whenUnlocked` availability in a locked/headless session.
 Those paths must fail closed if authentication is unavailable.
 
+## iOS Simulator contract
+
+`SimulatorHelper` is a separate UIKit command app, not a wallet target or a
+SwiftPM product. It only builds/runs on Simulator. `--mode verify|delete
+--namespace <case> --simulator <exact-UUID> --owner-nonce <16-lowercase-hex>
+--team <actual-cohort-team>` binds observations to the canonical case, device,
+original simulator owner nonce and expected application identifier.
+
+Before native I/O, verify the helper's strict boolean build marker, actual
+`SIMULATOR_UDID`, bundle ID and embedded Simulator access rights. Xcode places
+`application-identifier` in the Mach-O `__TEXT,__entitlements` section; the
+ad-hoc `codesign --entitlements` dictionary alone can be empty. Bound parsing
+rejects malformed/truncated/missing sections. Require the actual expected team
+and app identifier, no shared/app groups or unrelated rights, and at most that
+same default Keychain group. Host capture still must verify the trusted helper
+artifact and match the actual cohort's default group; a team string is not a
+cryptographic signing identity or ownership. The host binding remains pending.
+
+Match the wallet's service-only iOS Keychain queries under the helper's own
+minimal access rights (`keychain_scope: application_accessible`), not a guessed
+group. Never return secret values; lookup attributes stay local and are not
+serialized. Disable authentication UI. Preflight all five exact services,
+Flutter-prefixed application preferences, the dedicated native suite and
+prefixed pending/delivered notifications before any deletion. Then require
+positive native absence and synchronized preference observations. Recovery
+staging, biometric, migration credentials and outbox-key services are included.
+Partial/failed observations remain failed, not a simulator deletion capability.
+
+Build the helper using Xcode's Simulator entitlement processing, not bare
+`swiftc` followed only by ad-hoc signing:
+
+```sh
+# Set ios_cleanup_team from the actual cohort's embedded application identifier.
+: "${ios_cleanup_team:?Set the actual cohort team}"
+: "${ios_cleanup_build:?Set a fresh private derived-data directory}"
+: "${ios_cleanup_arch:?Set the case runtime architecture}"
+xcodebuild -project scripts/e2e/native-cleanup/SimulatorHelper/NativeCleanup.xcodeproj \
+  -scheme VizorIosCleanup -configuration Debug -sdk iphonesimulator \
+  -destination 'generic/platform=iOS Simulator' -derivedDataPath "$ios_cleanup_build" \
+  DEVELOPMENT_TEAM="$ios_cleanup_team" ARCHS="$ios_cleanup_arch" build
+```
+
+Install/launch only on a freshly acquired exact-UUID case simulator after its
+wallet writers stop. The helper executable is `vizor-ios-cleanup`; the optional
+manual synthetic fixture target `VizorIosCleanupSmoke` uses
+`vizor-ios-cleanup-smoke`. The latter is not a cleanup-command artifact. Both use
+the same app identifier but must never replace an existing/user simulator app.
+The manual fixture seeds only two fresh namespaces, tests selective deletion and
+sibling/sentinel survival, and removes/proves absence of its inserted state.
+Real smoke uses generic synthetic items, not protected biometric credentials,
+and observes empty notification state; models cover populated notification
+cleanup. No authorization prompt or positive OS-background scheduling is tested.
+
+`simctl launch --console` can return success even when the app reports failure.
+Require its complete scope-bound receipt; do not infer cleanup from SDK exit
+status. Post-wallet host composition, final simulator/workspace teardown,
+trusted build publication and execution engines remain separate boundaries.
+
 Apple API references: [SecItemDelete](https://developer.apple.com/documentation/security/secitemdelete(_:)),
-[CFPreferencesCopyKeyList](https://developer.apple.com/documentation/corefoundation/cfpreferencescopykeylist(_:_:_:)).
+[CFPreferencesCopyKeyList](https://developer.apple.com/documentation/corefoundation/cfpreferencescopykeylist(_:_:_:)),
+[missing entitlement diagnosis](https://developer.apple.com/documentation/security/errsecmissingentitlement).
