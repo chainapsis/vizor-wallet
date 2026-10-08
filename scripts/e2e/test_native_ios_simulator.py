@@ -488,6 +488,41 @@ class OwnedIosSimulatorTests(unittest.TestCase):
                 simulator.boot()
         simulator.close()
 
+    def assert_post_boot_inventory_failure_retains_shutdown_device(self, failure):
+        simulator = self.acquire()
+
+        def fail_final_inventory(command, **kwargs):
+            result = self.model.run(command, **kwargs)
+            if command[2] == "bootstatus":
+                self.model.failures["list"] = failure
+            return result
+
+        with patch.object(RUNTIME, "run_logged_command", side_effect=fail_final_inventory):
+            with self.assertRaises(type(failure) if isinstance(failure, BaseException) else SIMULATOR.NativeSimulatorError) as raised:
+                simulator.boot()
+        if isinstance(failure, RUNTIME.RunnerError):
+            self.assertEqual(raised.exception.exit_code, failure.exit_code)
+        self.assertEqual(self.model.devices[simulator.udid]["state"], "Booted")
+        self.assertIsNone(simulator._state.ownership_error)
+        del self.model.failures["list"]
+        for _ in range(2):
+            with self.assertRaisesRegex(SIMULATOR.NativeSimulatorError, "device inventory unavailable"):
+                simulator.close()
+        self.assertEqual(self.model.calls.count(("shutdown", simulator.udid)), 1)
+        self.assertEqual(self.model.devices[simulator.udid]["state"], "Shutdown")
+        self.assertFalse(any(entry[0] == "delete" for entry in self.model.calls))
+        self.assertIsNone(simulator._state.receipt)
+        self.assertEqual({udid: self.model.devices[udid] for udid in self.before}, self.before)
+
+    def test_timed_out_post_boot_inventory_allows_shutdown_without_deletion(self):
+        self.assert_post_boot_inventory_failure_retains_shutdown_device(RUNTIME.RunnerError("inventory timed out", 124))
+
+    def test_cancelled_post_boot_inventory_allows_shutdown_without_deletion(self):
+        self.assert_post_boot_inventory_failure_retains_shutdown_device(RUNTIME.Cancelled())
+
+    def test_nonzero_post_boot_inventory_allows_shutdown_without_deletion(self):
+        self.assert_post_boot_inventory_failure_retains_shutdown_device(1)
+
     def test_disappearance_during_shutdown_is_not_delete_proof(self):
         simulator = self.acquire()
         simulator.boot()

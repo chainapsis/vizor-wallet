@@ -189,7 +189,20 @@ class OwnedIosSimulator:
                 (_OWNER, self._owner_bytes, self._marker_ids[1]),
             ):
                 _verify_file(self.case.workspace.root / name, payload, identity)
-            entry = _devices(self._commands.inventory("devices", deadline=deadline, cancel_event=cancel_event)).get(self.udid)
+        except (OSError, ValueError, RuntimeError, KeyboardInterrupt) as error:
+            self._state.ownership_error = f"simulator ownership unproven: {error}"
+            if isinstance(error, (runtime.Cancelled, KeyboardInterrupt)):
+                raise
+            raise NativeSimulatorError(self._state.ownership_error, getattr(error, "exit_code", 1)) from error
+        try:
+            inventory = self._commands.inventory("devices", deadline=deadline, cancel_event=cancel_event)
+        except BaseException as error:
+            # Failed observation is not evidence that markers/device identity
+            # changed. Allow fresh teardown evidence, but never delete after it.
+            self._state.cleanup_errors.append(f"device inventory unavailable: {type(error).__name__}: {error}")
+            raise
+        try:
+            entry = _devices(inventory).get(self.udid)
             if entry is None:
                 return None
             identifier, device = entry
