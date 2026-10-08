@@ -23,8 +23,10 @@
 //!   transition while the run is in flight withholds the rest of it.
 //!
 //! [`run`] is bounded: [`MAX_LOOKUPS`] lookups and [`RUN_BUDGET`] per run,
-//! one at a time, in the wallet's order, with any due transaction a detail
-//! view asked for ([`prioritize`]) ahead of the rest. Lookups run with no
+//! one at a time, in the wallet's order, with transactions a detail view
+//! asked for ([`prioritize`]) ahead of the rest within the 64-row work window.
+//! A requested older transaction outside that window must wait to enter it.
+//! Lookups run with no
 //! database lock held; each result is stored, or each failure deferred, under
 //! the wallet write lock in its own short transaction. Once the budget is
 //! spent or the sync exits, a lookup gets [`source::CANCEL_GRACE`] to return
@@ -93,8 +95,9 @@ const MAX_INTEREST: usize = 32;
 static INTEREST: LazyLock<Mutex<HashMap<String, VecDeque<[u8; 32]>>>> =
     LazyLock::new(Default::default);
 
-/// Serves `txid` (protocol byte order) first in the next run for the wallet
-/// at `db_path`, once the wallet has it due.
+/// Prioritizes `txid` (protocol byte order) for the wallet at `db_path` when
+/// it is due and included in the next run's 64-row work window. The hint does
+/// not pull older work outside that window into the run.
 pub(crate) fn prioritize(db_path: &str, txid: [u8; 32]) {
     let mut interest = INTEREST.lock().unwrap_or_else(PoisonError::into_inner);
     let queue = interest.entry(db_path.to_owned()).or_default();

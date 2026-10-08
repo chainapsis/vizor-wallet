@@ -795,7 +795,9 @@ captured policy ── PrivateRequired ──> txid display PIR  (PirSource)
   its map once (`refresh_map`) when the six-hour check interval permits it,
   then lists again under the new hash. The run
   puts transactions a detail view asked for
-  (`prioritize_transparent_details`, an in-memory interest set) first, and
+  (`prioritize_transparent_details`, an in-memory interest set) first within
+  the 64 due rows selected in the wallet's priority order. An older opened receipt outside that
+  window waits to enter it and can stay behind a sustained newer backlog. The run
   makes at most 8 lookups in 45 s, one at a time. Lookups run on a thread
   of their own with no database lock held; each store or deferral takes the wallet
   write lock for one short transaction, within the budget above.
@@ -842,7 +844,7 @@ output. Another account's mixed transaction, and a fully shielded one, have
 no view.
 
 While the state is `pending` or `unavailable`, a receipt asks for the
-transaction to be served first (once per open) and re-reads its detail every
+transaction to be prioritized within that work window (once per open) and re-reads its detail every
 five seconds, stopping when it is available or not covered. Re-reads are
 serialized: a poll does not start while another read, or a full receipt
 load, is in flight, and a read that a newer load or an account switch has
