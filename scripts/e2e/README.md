@@ -211,8 +211,12 @@ that captured UUID, never `booted`, `all`, `unavailable`, or a device name.
 inherit unrelated child-environment overrides.
 
 `close()` seals and closes case process groups first, then uses a separate
-bounded simulator-command budget to shut down the owned device. Only a fresh
-**pre-app** case with no phase launches and proven teardown can be deleted;
+bounded simulator-command budget to shut down the owned device.
+SDK command waits reserve the shared runner's five-second process-cleanup
+allowance inside that budget; a new command cannot start when the remaining
+budget is five seconds or less. This bounds waits/cleanup, not OS spawn or
+system-call latency. Case process groups have their separate per-group budget.
+Only a fresh **pre-app** case with no phase launches and proven teardown can be deleted;
 success also requires positive absence in the device inventory. Any case launch
 (even a backend or Python phase) conservatively requires native cleanup that is
 not implemented here, so it retains the shut-down device and returns an error.

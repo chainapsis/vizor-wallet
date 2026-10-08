@@ -30,6 +30,7 @@ class SimctlModel:
     def __init__(self):
         self.calls = []
         self.environments = []
+        self.timeouts = []
         self.devices = {}
         self.serial = 10
         self.create_output = None
@@ -59,6 +60,7 @@ class SimctlModel:
         arguments = command[2:]
         self.calls.append(tuple(arguments))
         self.environments.append(dict(env))
+        self.timeouts.append(timeout)
         if cancel_event.is_set():
             raise RUNTIME.Cancelled()
         operation = arguments[0]
@@ -548,6 +550,30 @@ class OwnedIosSimulatorTests(unittest.TestCase):
         self.assertEqual(len(self.model.calls), before)
         self.assertTrue(self.case.accepting_launches)
         simulator.close()
+
+    def test_each_sdk_command_reserves_the_shared_cleanup_allowance(self):
+        with patch.object(SIMULATOR.time, "monotonic", return_value=100.0):
+            simulator = self.acquire(timeout=8)
+            self.assertEqual(set(self.model.timeouts), {3.0})
+            self.model.timeouts.clear()
+            simulator.boot(timeout=12)
+            self.assertEqual(set(self.model.timeouts), {7.0})
+            self.model.timeouts.clear()
+            simulator.close(timeout=7)
+            self.assertEqual(set(self.model.timeouts), {2.0})
+        self.assertEqual(RUNTIME.terminate_process.__kwdefaults__["timeout"], RUNTIME.DEFAULT_PROCESS_CLEANUP_TIMEOUT)
+
+    def test_insufficient_cleanup_reserve_never_starts_an_sdk_command(self):
+        simulator = self.acquire()
+        before = len(self.model.calls)
+        with self.assertRaisesRegex(SIMULATOR.NativeSimulatorError, "reserving process cleanup") as raised:
+            simulator.boot(timeout=RUNTIME.DEFAULT_PROCESS_CLEANUP_TIMEOUT)
+        self.assertEqual(raised.exception.exit_code, 124)
+        self.assertEqual(len(self.model.calls), before)
+        with self.assertRaisesRegex(SIMULATOR.NativeSimulatorError, "device inventory unavailable"):
+            simulator.close()
+        self.assertEqual(self.model.devices[simulator.udid]["state"], "Shutdown")
+        self.assertFalse(any(entry[0] == "delete" for entry in self.model.calls))
 
     def test_boot_child_environment_is_not_inherited_from_the_host(self):
         with patch.dict(os.environ, {"SIMCTL_CHILD_UNRELATED": "not-for-this-device"}):

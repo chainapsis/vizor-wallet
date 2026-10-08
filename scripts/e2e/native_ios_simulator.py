@@ -104,9 +104,12 @@ class _Commands:
 
     def run(self, arguments: list[str], *, deadline: float, cancel_event: threading.Event) -> str:
         self.case.workspace.verify_owned()
-        remaining = deadline - time.monotonic()
+        # The shared runner may need its default cleanup budget after timeout,
+        # cancellation, or interrupted launch. Reserve it BEFORE starting SDK
+        # work rather than letting it extend the simulator command deadline.
+        remaining = deadline - time.monotonic() - runtime.DEFAULT_PROCESS_CLEANUP_TIMEOUT
         if remaining <= 0:
-            raise NativeSimulatorError("simulator operation timed out", 124)
+            raise NativeSimulatorError("simulator command budget exhausted after reserving process cleanup", 124)
         log = self.case.workspace.root / f"simulator-{self.nonce}-{self.count:04d}.log"
         self.count += 1
         os.close(os.open(log, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600))
@@ -240,7 +243,10 @@ class OwnedIosSimulator:
     def close(self, *, timeout: float = 30.0) -> SimulatorCleanup:
         """Close case groups with their default per-group budget, then bound simctl.
 
-        The timeout covers simulator commands, not an aggregate process budget.
+        The timeout covers simulator command waits and their cleanup allowance,
+        not an aggregate case-process budget. Each command reserves the shared
+        five-second cleanup allowance; no new command starts with less remaining.
+        OS spawn/system-call latency is not a hard wall-clock guarantee.
         Any case launch retains the device until native cleanup is implemented.
         """
         _deadline(timeout)  # Validate before process or simulator mutations.
