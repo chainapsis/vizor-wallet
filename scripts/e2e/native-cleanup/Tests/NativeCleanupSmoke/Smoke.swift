@@ -1,5 +1,5 @@
 // MANUAL native mutation smoke, not a SwiftPM test target or product.
-// Compile alongside the two NativeCleanup sources, then sign a non-UI app
+// Compile alongside CaseNamespace, MacCleanup and MacCleanupSystem, then sign a non-UI app
 // bundle with the cohort's identity/profile. Never run a real wallet executable.
 import CoreFoundation
 import Foundation

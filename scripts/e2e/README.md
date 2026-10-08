@@ -255,7 +255,7 @@ absence. Partial/uncertain results remain failures; no values are emitted.
 
 This is not wired to app startup or an executor, does not grant ownership from a
 namespace/receipt, and does not remove support/workspace files or simulators.
-iOS recovery/auxiliary secrets and full worker cleanup remain pending. Catalog
+iOS host composition and full worker cleanup remain pending. Catalog
 execution flags are unchanged.
 
 ```bash
@@ -357,7 +357,38 @@ swift test --package-path scripts/e2e/native-cleanup
 
 The host models use real private fake-home files and owned children, not real
 wallets or Keychain secrets. Catalog execution, trusted build publication, iOS
-cleanup and whole-worker teardown remain pending; `runnable` flags stay false.
+host composition and whole-worker teardown remain pending; `runnable` flags stay false.
+
+### iOS Simulator native storage observations
+
+The separate [Simulator helper](native-cleanup/README.md#ios-simulator-contract)
+verifies or deletes one canonical case's five exact Keychain services, prefixed
+application preferences, dedicated defaults suite and prefixed notifications.
+Before native I/O it requires the exact simulator UUID, strict helper marker,
+expected application identifier and bounded embedded Simulator access rights.
+It preflights all resources before deletion and proves absence afterward;
+native errors and partial observations remain failures. No secret values are
+returned, no authentication prompt or broad domain reset is requested.
+
+Use Xcode's Simulator entitlement processing with the actual cohort's team.
+Bare `swiftc` plus ad-hoc signing does not establish the required embedded
+rights. The helper is neither a wallet target nor an app-startup hook, and its
+receipt/owner nonce does not grant process, simulator or filesystem ownership.
+Installing it over the shared bundle ID is permitted only on a newly owned
+case device after wallet writers stop, never on an existing/user simulator.
+Host-owned post-app launch/receipt binding, simulator/workspace teardown,
+trusted build publication and executor integration remain pending. Catalog
+`runnable` flags stay false.
+
+```bash
+swift test --package-path scripts/e2e/native-cleanup
+```
+
+Model tests cover scope/access-right refusals, exact cleanup, sibling survival,
+positive absence and failed partial receipts. The optional SDK smoke seeds only
+synthetic generic Keychain items and preferences on an owned fresh simulator;
+it is not wallet execution, protected biometric validation, populated OS
+notification validation or a financial scenario result.
 
 ## Gift Cards
 

@@ -115,9 +115,17 @@ exclusively allocates the SDK-declared sandbox case directory before app launche
 proves native absence read-only, binds direct app/context identities, and composes
 verified terminal native cleanup with anchored support removal. Failed scenarios
 retain state; cleanup uncertainty stays failed with remaining state/evidence.
-Case workspaces/logs/markers/manifests are never removed by this owner. Trusted
-helper provisioning/build publication, whole-worker workspace removal,
-iOS recovery/auxiliary-secret cleanup, post-app simulator teardown,
+Case workspaces/logs/markers/manifests are never removed by this owner.
+The separate iOS Simulator helper now observes or deletes all five exact
+case services (including recovery staging and auxiliary migration secrets),
+prefixed preferences, the dedicated suite and prefixed notifications. It checks
+the actual UUID/helper marker and bounded embedded Simulator access rights,
+preflights all resources before mutation, and requires positive native absence.
+Swift models cover sibling preservation/errors; a manual owned-device SDK smoke
+proved selective synthetic Keychain/preference cleanup, not real wallet or
+populated notification behavior. No ordinary wallet target links the helper.
+Trusted helper provisioning/build publication, whole-worker workspace removal,
+iOS host receipt binding and post-app simulator teardown,
 backend/executor integration, and scenario migrations remain pending. A native
 observation or process receipt alone never authorizes deleting a run.
 
