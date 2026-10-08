@@ -7,6 +7,7 @@ use zcash_client_backend::proto::service::{
     self, compact_tx_streamer_client::CompactTxStreamerClient,
 };
 use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
+use zeroize::Zeroizing;
 
 const SOFTWARE_ACCOUNT_DISCOVERY_MAX_INDEX: u32 = 20;
 const SOFTWARE_ACCOUNT_DISCOVERY_BATCHES: &[(u32, u32)] = &[(1, 4), (5, 9), (10, 14), (15, 20)];
@@ -390,6 +391,29 @@ pub fn gift_mnemonic_to_entropy(mnemonic: String) -> Result<Vec<u8>, String> {
 #[flutter_rust_bridge::frb(sync)]
 pub fn gift_mnemonic_from_entropy(entropy: Vec<u8>) -> Result<String, String> {
     keys::mnemonic_from_entropy(entropy)
+}
+
+/// Decoded Zodl bearer card. The amount is informational; claimable funds come from chain.
+pub struct DecodedZodlGiftLink {
+    pub network: String,
+    pub mnemonic: String,
+    pub birthday_height: u32,
+    pub stated_amount_zatoshi: Option<u64>,
+    pub description: Option<String>,
+}
+
+/// Decode only; no I/O, sync, or redemption. Callers control the allowed intake surface.
+#[flutter_rust_bridge::frb(sync)]
+pub fn decode_zodl_gift_link(link: String) -> Result<DecodedZodlGiftLink, String> {
+    let link = Zeroizing::new(link);
+    let gift = crate::wallet::zodl_gift_link::decode(&link)?;
+    Ok(DecodedZodlGiftLink {
+        network: gift.network,
+        mnemonic: gift.mnemonic,
+        birthday_height: gift.birthday_height,
+        stated_amount_zatoshi: gift.stated_amount_zatoshi,
+        description: gift.description,
+    })
 }
 
 /// Compare the Orchard receivers of two Unified Addresses on the same network.

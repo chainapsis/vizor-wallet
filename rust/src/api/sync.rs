@@ -1382,6 +1382,54 @@ pub fn estimate_payment_link_claim_max(
     })
 }
 
+/// Propose a full-balance external card claim without exposing the recipient via the OVK.
+pub fn propose_external_gift_claim(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    send_flow_id: String,
+    to_address: String,
+    reviewed_amount_zatoshi: u64,
+) -> Result<ProposalResult, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        wallet_sync::propose_external_gift_claim(
+            &db_path,
+            network,
+            &account_uuid,
+            &send_flow_id,
+            &to_address,
+            reviewed_amount_zatoshi,
+        )
+        .map(api_proposal_result)
+    })
+}
+
+/// Quote an external bearer card using ordinary input selection and confirmation policy.
+pub fn estimate_external_gift_claim_max(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    to_address: String,
+) -> Result<SendMaxEstimateResult, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let r = wallet_sync::estimate_send_max_for_purpose(
+            &db_path,
+            network,
+            &account_uuid,
+            &to_address,
+            None,
+            wallet_sync::SendPurpose::ExternalGiftClaim,
+        )?;
+        Ok(SendMaxEstimateResult {
+            amount_zatoshi: r.amount_zatoshi,
+            fee_zatoshi: r.fee_zatoshi,
+            needs_sapling_params: r.needs_sapling_params,
+        })
+    })
+}
+
 /// Step 2: Execute a previously proposed transfer and broadcast to the network.
 /// spend_params_path and output_params_path are required only if needs_sapling_params was true.
 pub fn execute_proposal(

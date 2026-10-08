@@ -121,6 +121,10 @@ String giftMnemonicFromEntropy({required List<int> entropy}) => RustLib
     .api
     .crateApiWalletGiftMnemonicFromEntropy(entropy: entropy);
 
+/// Decode only; no I/O, sync, or redemption. Callers control the allowed intake surface.
+DecodedZodlGiftLink decodeZodlGiftLink({required String link}) =>
+    RustLib.instance.api.crateApiWalletDecodeZodlGiftLink(link: link);
+
 /// Compare the Orchard receivers of two Unified Addresses on the same network.
 bool sameOrchardReceiver({
   required String network,
@@ -618,6 +622,42 @@ class ChainUpgradeStatus {
           nu63ActivationHeight == other.nu63ActivationHeight &&
           ironwoodActiveAtTip == other.ironwoodActiveAtTip &&
           endpointMatchesNetwork == other.endpointMatchesNetwork;
+}
+
+/// Decoded Zodl bearer card. The amount is informational; claimable funds come from chain.
+class DecodedZodlGiftLink {
+  final String network;
+  final String mnemonic;
+  final int birthdayHeight;
+  final BigInt? statedAmountZatoshi;
+  final String? description;
+
+  const DecodedZodlGiftLink({
+    required this.network,
+    required this.mnemonic,
+    required this.birthdayHeight,
+    this.statedAmountZatoshi,
+    this.description,
+  });
+
+  @override
+  int get hashCode =>
+      network.hashCode ^
+      mnemonic.hashCode ^
+      birthdayHeight.hashCode ^
+      statedAmountZatoshi.hashCode ^
+      description.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is DecodedZodlGiftLink &&
+          runtimeType == other.runtimeType &&
+          network == other.network &&
+          mnemonic == other.mnemonic &&
+          birthdayHeight == other.birthdayHeight &&
+          statedAmountZatoshi == other.statedAmountZatoshi &&
+          description == other.description;
 }
 
 /// A generated software account that has not been imported into the wallet DB.

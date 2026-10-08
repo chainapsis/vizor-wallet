@@ -431,6 +431,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ConfigSwitchKind dco_decode_config_switch_kind(dynamic raw);
 
   @protected
+  DecodedZodlGiftLink dco_decode_decoded_zodl_gift_link(dynamic raw);
+
+  @protected
   DelegationProgressKind dco_decode_delegation_progress_kind(dynamic raw);
 
   @protected
@@ -1802,6 +1805,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ConfigSwitchKind sse_decode_config_switch_kind(SseDeserializer deserializer);
+
+  @protected
+  DecodedZodlGiftLink sse_decode_decoded_zodl_gift_link(
+    SseDeserializer deserializer,
+  );
 
   @protected
   DelegationProgressKind sse_decode_delegation_progress_kind(
@@ -3526,6 +3534,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_config_switch_kind(
     ConfigSwitchKind self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_decoded_zodl_gift_link(
+    DecodedZodlGiftLink self,
     SseSerializer serializer,
   );
 
