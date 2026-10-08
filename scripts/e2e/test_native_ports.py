@@ -116,6 +116,41 @@ class NativePortsTests(unittest.TestCase):
         expected = self.root / f"vizor-wallet-native-e2e-{os.getuid()}" / "ports"
         self.assertTrue(all((expected / f"{port}.lock").exists() for port in lease.ports.values()))
 
+    def test_readable_shared_parent_keeps_private_leaf_and_existing_permissions(self):
+        parent = self.root / f"vizor-wallet-native-e2e-{os.getuid()}"
+        parent.mkdir(mode=0o755)
+        parent.chmod(0o755)
+        with patch.object(PORTS.tempfile, "gettempdir", return_value=str(self.root)):
+            lease = PORTS.lease_native_ports(0, "a1b2c3d4e5")
+        self.addCleanup(lease.close)
+        self.assertEqual(parent.stat().st_mode & 0o777,0o755)
+        self.assertEqual((parent / "ports").stat().st_mode & 0o777,0o700)
+        for port in lease.ports.values():
+            self.assertEqual((parent / "ports" / f"{port}.lock").stat().st_mode & 0o777,0o600)
+
+    def test_shared_parent_writable_by_others_is_rejected_unchanged(self):
+        parent = self.root / f"vizor-wallet-native-e2e-{os.getuid()}"
+        parent.mkdir(mode=0o700)
+        for mode in (0o770,0o707,0o777):
+            parent.chmod(mode)
+            with self.subTest(mode=mode), patch.object(PORTS.tempfile,"gettempdir",return_value=str(self.root)):
+                with self.assertRaises(PORTS.NativePortError):
+                    PORTS.lease_native_ports(0,"a1b2c3d4e5")
+            self.assertEqual(parent.stat().st_mode & 0o777,mode)
+            self.assertFalse((parent / "ports").exists())
+
+    def test_readable_shared_parent_never_allows_a_nonprivate_lock_leaf(self):
+        parent = self.root / f"vizor-wallet-native-e2e-{os.getuid()}"
+        parent.mkdir(mode=0o755)
+        locks = parent / "ports"
+        locks.mkdir(mode=0o755)
+        locks.chmod(0o755)
+        with patch.object(PORTS.tempfile,"gettempdir",return_value=str(self.root)):
+            with self.assertRaises(PORTS.NativePortError):
+                PORTS.lease_native_ports(0,"a1b2c3d4e5")
+        self.assertEqual(locks.stat().st_mode & 0o777,0o755)
+        self.assertEqual(list(locks.iterdir()),[])
+
     def test_unsafe_lock_file_cannot_overwrite_a_symlink_target(self):
         self.locks.mkdir(mode=0o700)
         target = self.root / "foreign-evidence"
