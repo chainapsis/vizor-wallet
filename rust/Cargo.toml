@@ -170,7 +170,7 @@ features = ["wallet"]
 # crates.io package; see the `[patch.crates-io]` comment below.
 [dependencies.zakura-pir-transparent]
 git = "https://github.com/zakura-core/wallet-libraries"
-rev = "652aa866cb07a324d4582feb2ac1e880935b9faf"
+rev = "7f830a7ade2f63e601f0f55fa669d3bef53a8faf"
 default-features = false
 features = ["wallet"]
 
@@ -263,15 +263,14 @@ assertions_on_constants = "allow"
 # equal to these so its path dependencies on the backend and SQLite crates
 # resolve to the patched sources.
 #
-# Pinned to wallet-libraries claude/txid-details-integration: transparent txid
-# enhancement (durable detail work, validated display facts, the detail view)
-# and the txid display client re-exported by `zakura-pir-transparent`, on top
-# of the Activity evidence branch (#116).
+# Pinned to wallet-libraries PR #128: compact txid display v2, durable detail
+# work and the validated detail view, including current qualified spend ownership
+# and raw input binding. Keep every wallet-libraries dependency at this exact rev.
 [patch.crates-io]
-zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries", rev = "652aa866cb07a324d4582feb2ac1e880935b9faf" }
-zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries", rev = "652aa866cb07a324d4582feb2ac1e880935b9faf" }
-zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries", rev = "652aa866cb07a324d4582feb2ac1e880935b9faf" }
-zakura-pir-enhance-types = { git = "https://github.com/zakura-core/wallet-libraries", rev = "652aa866cb07a324d4582feb2ac1e880935b9faf" }
+zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries", rev = "7f830a7ade2f63e601f0f55fa669d3bef53a8faf" }
+zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries", rev = "7f830a7ade2f63e601f0f55fa669d3bef53a8faf" }
+zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries", rev = "7f830a7ade2f63e601f0f55fa669d3bef53a8faf" }
+zakura-pir-enhance-types = { git = "https://github.com/zakura-core/wallet-libraries", rev = "7f830a7ade2f63e601f0f55fa669d3bef53a8faf" }
 
 # Flutter debug builds use Cargokit + Cargo's dev profile (`cargo build`
 # without `--release`). Rust crypto and voting flows are slow under the default
