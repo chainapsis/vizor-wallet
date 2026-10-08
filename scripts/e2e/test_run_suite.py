@@ -1,0 +1,243 @@
+"""Host-only checks for catalog previews; no E2E backends are needed."""
+
+from __future__ import annotations
+
+import builtins
+import contextlib
+import importlib.util
+import io
+import json
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR))
+SPEC = importlib.util.spec_from_file_location("vizor_e2e_preview", SCRIPT_DIR / "run-suite.py")
+assert SPEC is not None and SPEC.loader is not None
+CLI = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(CLI)
+
+
+class PreviewTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.catalog = CLI.e2e_catalog.load_catalog()
+
+    def invoke(self, *arguments: str):
+        output, errors = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+            code = CLI.main(arguments)
+        return code, json.loads(output.getvalue()) if output.getvalue() else None, errors.getvalue()
+
+    def test_list_all_is_pending_inventory(self) -> None:
+        code, output, errors = self.invoke("--list")
+        self.assertEqual((code, errors), (0, ""))
+        self.assertEqual(len(output["scenarios"]), 64)
+        self.assertEqual(output["catalog_sha256"], self.catalog.fingerprint)
+        for record in output["scenarios"]:
+            self.assertFalse(record["supported"])
+            self.assertFalse(record["runnable"])
+            self.assertTrue(record["pending_reason"])
+
+    def test_exact_selection_deduplicates_in_catalog_order(self) -> None:
+        first, second = self.catalog.scenarios[:2]
+        code, output, _ = self.invoke(
+            "--scenario", second.id, "--scenario", first.id,
+            "--scenario", second.id, "--plan",
+        )
+        self.assertEqual(code, 0)
+        self.assertEqual(
+            [item["scenario_id"] for item in output["selected_scenarios"]],
+            [first.id, second.id],
+        )
+        self.assertFalse(output["runnable"])
+        self.assertEqual(output["execution_mode"], "blocked")
+        self.assertTrue(output["pending_blockers"])
+
+    def test_repeated_tags_are_an_intersection(self) -> None:
+        code, output, _ = self.invoke("--suite", "all", "--tag", "ios", "--tag", "ironwood", "--list")
+        expected = [
+            scenario.id for scenario in self.catalog.scenarios
+            if {"ios", "ironwood"}.issubset(scenario.tags)
+        ]
+        self.assertTrue(expected)
+        self.assertEqual(code, 0)
+        self.assertEqual([item["scenario_id"] for item in output["scenarios"]], expected)
+
+    def test_failed_from_selects_failures_and_timeouts_not_cancelled(self) -> None:
+        scenarios = self.catalog.scenarios[:4]
+        statuses = ("passed", "failed", "timed_out", "cancelled")
+        with tempfile.TemporaryDirectory() as directory:
+            report = Path(directory) / "run.json"
+            report.write_text(json.dumps({
+                "schema_version": 2,
+                "results": [
+                    {"scenario_id": scenario.id, "target": scenario.target,
+                     "test": scenario.test, "status": status}
+                    for scenario, status in zip(scenarios, statuses)
+                ],
+            }))
+            original = report.read_bytes()
+            code, output, _ = self.invoke("--failed-from", str(report), "--plan")
+            self.assertEqual(report.read_bytes(), original)
+        self.assertEqual(code, 0)
+        self.assertEqual(
+            [item["scenario_id"] for item in output["selected_scenarios"]],
+            [scenarios[1].id, scenarios[2].id],
+        )
+
+    def test_unknown_changed_path_widens_even_when_everything_is_pending(self) -> None:
+        code, output, _ = self.invoke("--changed-file", "unknown/runtime.file", "--plan")
+        self.assertEqual(code, 0)
+        self.assertEqual(len(output["selected_scenarios"]), 64)
+        self.assertEqual(output["execution_mode"], "blocked")
+        self.assertFalse(output["runnable"])
+        self.assertEqual(output["selection"]["impact"]["fallback_files"], ["unknown/runtime.file"])
+        self.assertEqual(len(output["selection"]["impact"]["coverage_gaps"]), 64)
+
+    def test_shared_test_helper_selects_its_e2e_consumer(self) -> None:
+        code, output, errors = self.invoke(
+            "--changed-file", "test/support/legacy_payment_link.dart", "--plan"
+        )
+        self.assertEqual((code, errors), (0, ""))
+        self.assertEqual(output["execution_mode"], "blocked")
+        self.assertIn(
+            "flutter.macos.payment-link-round-trip",
+            [item["scenario_id"] for item in output["selected_scenarios"]],
+        )
+        self.assertEqual([], output["selection"]["impact"]["ignored_files"])
+
+    def test_duplicate_report_status_cannot_hide_a_failed_scenario(self) -> None:
+        first, second = self.catalog.scenarios[:2]
+        with tempfile.TemporaryDirectory() as directory:
+            report = Path(directory) / "run.json"
+            report.write_text(
+                '{"schema_version":2,"results":['
+                + json.dumps({"scenario_id": first.id, "target": first.target, "test": first.test})[:-1]
+                + ',"status":"failed","status":"passed"},'
+                + json.dumps({"scenario_id": second.id, "target": second.target,
+                              "test": second.test, "status": "failed"})
+                + ']}'
+            )
+            code, output, error = self.invoke("--failed-from", str(report), "--plan")
+        self.assertEqual(code, 2)
+        self.assertIsNone(output)
+        self.assertIn("duplicate JSON key", error)
+
+    def test_documentation_only_is_a_true_empty_selection(self) -> None:
+        code, output, _ = self.invoke("--changed-file", "docs/example.md", "--plan")
+        self.assertEqual(code, 0)
+        self.assertEqual(output["selected_scenarios"], [])
+        self.assertEqual(output["execution_mode"], "no-tests")
+        self.assertEqual(output["pending_blockers"], [])
+        self.assertEqual(output["selection"]["impact"]["coverage_gaps"], [])
+
+    def test_deleted_script_uses_lexical_mapping_without_existence_checks(self) -> None:
+        scenario = next(item for item in self.catalog.scenarios if item.script)
+        with patch.object(Path, "exists", side_effect=AssertionError("must not inspect deleted path")):
+            code, output, _ = self.invoke("--changed-file", scenario.script, "--plan")
+        self.assertEqual(code, 0)
+        self.assertIn(scenario.id, [item["scenario_id"] for item in output["selected_scenarios"]])
+
+    def test_changed_from_collects_once_from_the_checkout_root(self) -> None:
+        changes = CLI.e2e_changes.ChangedFiles(
+            paths=("unknown/runtime.file",),
+            git={"base_ref": "main", "base_commit": "a" * 40,
+                 "merge_bases": ["a" * 40], "head_commit": "b" * 40,
+                 "include_worktree": True},
+        )
+        with patch.object(CLI.e2e_changes, "collect_changed_files", return_value=changes) as collect:
+            code, output, _ = self.invoke("--changed-from", "main", "--plan")
+        collect.assert_called_once_with(CLI.REPO_ROOT, "main")
+        self.assertEqual(code, 0)
+        self.assertEqual(output["selection"]["impact"]["git"], changes.git)
+        self.assertEqual(len(output["selected_scenarios"]), 64)
+
+    def test_empty_git_changes_are_no_tests(self) -> None:
+        changes = CLI.e2e_changes.ChangedFiles(
+            paths=(),
+            git={"base_ref": "HEAD", "base_commit": "a" * 40,
+                 "merge_bases": ["a" * 40], "head_commit": "a" * 40,
+                 "include_worktree": True},
+        )
+        with patch.object(CLI.e2e_changes, "collect_changed_files", return_value=changes):
+            code, output, _ = self.invoke("--changed-from", "HEAD", "--plan")
+        self.assertEqual(code, 0)
+        self.assertEqual(output["execution_mode"], "no-tests")
+
+    def test_invalid_selection_returns_error_without_output(self) -> None:
+        for arguments in (
+            ("--plan",), ("--suite", "unknown", "--plan"),
+            ("--scenario", "unknown", "--list"), ("--list", "--tag", ""),
+            ("--list", "--tag", "ios", "--tag", "ios"),
+            ("--list", "--tag", " ios"), ("--changed-file", "../outside", "--plan"),
+        ):
+            with self.subTest(arguments=arguments):
+                code, output, error = self.invoke(*arguments)
+                self.assertEqual(code, 2)
+                self.assertIsNone(output)
+                self.assertTrue(error.startswith("error:"))
+
+    def test_conflicting_selectors_and_display_flags_are_rejected(self) -> None:
+        for arguments in (
+            ("--suite", "all", "--scenario", self.catalog.scenarios[0].id, "--plan"),
+            ("--list", "--plan"), ("--changed-file", "a", "--changed-from", "HEAD", "--plan"),
+        ):
+            with self.subTest(arguments=arguments), contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit) as error:
+                    CLI.parse_args(arguments)
+                self.assertEqual(error.exception.code, 2)
+
+    def test_execution_is_rejected_before_catalog_or_git_access(self) -> None:
+        with patch.object(CLI.e2e_catalog, "load_catalog", side_effect=AssertionError("catalog access")), \
+             patch.object(CLI.e2e_changes, "collect_changed_files", side_effect=AssertionError("Git access")):
+            code, output, error = self.invoke("--changed-from", "HEAD")
+        self.assertEqual(code, 2)
+        self.assertIsNone(output)
+        self.assertIn("execution is not available", error)
+
+    def test_previews_never_load_backends_start_processes_or_write_artifacts(self) -> None:
+        original_import = builtins.__import__
+
+        def guarded_import(name, *args, **kwargs):
+            if name.startswith(("native_", "e2e_schedule", "e2e_runtime", "direct_zakura", "ths_fixture")):
+                raise AssertionError(f"preview imported backend: {name}")
+            return original_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", side_effect=guarded_import), \
+             patch("subprocess.run", side_effect=AssertionError("spawned a process")), \
+             patch.object(Path, "mkdir", side_effect=AssertionError("created artifacts")), \
+             patch.object(Path, "write_text", side_effect=AssertionError("wrote a file")), \
+             patch.object(Path, "write_bytes", side_effect=AssertionError("wrote a file")):
+            for arguments in (
+                ("--list",), ("--suite", "all", "--plan"),
+                ("--changed-file", "unknown/runtime.file", "--plan"),
+            ):
+                with self.subTest(arguments=arguments):
+                    code, _, errors = self.invoke(*arguments)
+                    self.assertEqual((code, errors), (0, ""))
+
+    def test_fresh_cli_invocations_do_not_create_checkout_artifacts(self) -> None:
+        files = ("run-suite.py", "catalog.json", "e2e_catalog.py", "e2e_changes.py", "e2e_impact.py")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for filename in files:
+                shutil.copyfile(SCRIPT_DIR / filename, root / filename)
+            before = {item.name: item.read_bytes() for item in root.iterdir()}
+            for arguments in (("--list",), ("--suite", "all", "--plan")):
+                result = subprocess.run(
+                    [sys.executable, str(root / "run-suite.py"), *arguments],
+                    cwd=root, capture_output=True, text=True, check=False, timeout=15,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertTrue(json.loads(result.stdout))
+            self.assertEqual({item.name: item.read_bytes() for item in root.iterdir()}, before)
+
+
+if __name__ == "__main__":
+    unittest.main()
