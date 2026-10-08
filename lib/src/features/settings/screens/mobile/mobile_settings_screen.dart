@@ -12,7 +12,6 @@ import '../../../../core/config/zcash_explorer.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/app_mobile_tab_bar.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
-import '../../../../core/navigation/mobile_tab_history.dart';
 import '../../../../core/navigation/route_stack.dart';
 import '../../../../core/profile_pictures.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -70,12 +69,7 @@ class MobileSettingsScreen extends ConsumerWidget {
       bottom: false,
       child: Column(
         children: [
-          MobileTopNav.back(
-            title: 'Settings',
-            onBack: () => context.go(
-              resolveMobileBackPath(ref, currentPath: '/settings'),
-            ),
-          ),
+          MobileTopNav.back(title: 'Settings'),
           Expanded(
             child: ListView(
               padding: EdgeInsets.fromLTRB(

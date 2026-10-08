@@ -432,7 +432,7 @@ void main() {
             widget.name == AppIcons.chevronBackward &&
             widget.size == 24,
       ),
-      findsOneWidget,
+      findsNothing,
     );
     expect(
       tester.getTopLeft(find.byKey(const ValueKey('mobile_activity_feed'))).dy,

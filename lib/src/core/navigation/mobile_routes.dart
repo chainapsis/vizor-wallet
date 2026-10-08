@@ -60,7 +60,6 @@ import '../config/swap_feature_config.dart';
 import '../layout/mobile/app_mobile_shell.dart';
 import '../layout/mobile/app_mobile_tab_bar.dart';
 import '../widgets/app_icon.dart';
-import 'mobile_tab_history.dart';
 import 'payload_page_key.dart';
 
 /// The mobile route tree: the shared entry/onboarding routes, a
@@ -288,21 +287,23 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
     ),
     GoRoute(
       path: '/swap/keystone-sign',
+      redirect: (_, state) =>
+          state.extra is MobileSwapKeystoneSignArgs ? null : '/swap',
       pageBuilder: (context, state) {
-        final extra = state.extra;
-        final child = extra is MobileSwapKeystoneSignArgs
-            ? MobileSwapKeystoneSignScreen(args: extra)
-            : const MobileSwapScreen();
+        final child = MobileSwapKeystoneSignScreen(
+          args: state.extra as MobileSwapKeystoneSignArgs,
+        );
         return CupertinoPage(key: state.pageKey, child: child);
       },
     ),
     GoRoute(
       path: '/swap/ledger-sign',
+      redirect: (_, state) =>
+          state.extra is MobileSwapLedgerSignArgs ? null : '/swap',
       pageBuilder: (context, state) {
-        final extra = state.extra;
-        final child = extra is MobileSwapLedgerSignArgs
-            ? MobileSwapLedgerSignScreen(args: extra)
-            : const MobileSwapScreen();
+        final child = MobileSwapLedgerSignScreen(
+          args: state.extra as MobileSwapLedgerSignArgs,
+        );
         return CustomTransitionPage(
           key: state.pageKey,
           child: child,
@@ -751,17 +752,9 @@ class _MobileTabShell extends ConsumerWidget {
         onSelect: (index) {
           final targetTab = visibleTabs[index];
           final targetBranchIndex = tabs.indexOf(targetTab);
-          // Record the outgoing tab path so a tab root can offer a
-          // "back to where you came from" affordance (the indexedStack
-          // shell keeps no tab history of its own). Skip when re-selecting
-          // the active tab — that just resets it to root.
-          if (targetBranchIndex != currentBranchIndex) {
-            if (targetTab.path != "/home") {
-              expectAppReviewVisit(ref, targetTab.path);
-            }
-            ref
-                .read(mobilePreviousTabPathProvider.notifier)
-                .record(currentTab.path);
+          if (targetBranchIndex != currentBranchIndex &&
+              targetTab.path != '/home') {
+            expectAppReviewVisit(ref, targetTab.path);
           }
           navigationShell.goBranch(
             targetBranchIndex,

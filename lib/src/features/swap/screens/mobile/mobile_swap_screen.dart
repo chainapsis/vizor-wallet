@@ -7,7 +7,6 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
-import '../../../../core/navigation/mobile_tab_history.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
@@ -342,10 +341,6 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
         swapState.externalAssetSupportError ??
         swapState.quoteError;
 
-    // While the amount number-pad is open, the leading nav button becomes a
-    // close (X) that dismisses the keyboard instead of a back chevron.
-    final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
-
     return SafeArea(
       bottom: false,
       child: Stack(
@@ -354,19 +349,6 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
             children: [
               MobileTopNav.back(
                 title: 'Swap',
-                // With the number-pad open the leading button is a close (X)
-                // that dismisses the keyboard; otherwise it's a back chevron
-                // that returns to the tab the user came from (the Swap tab is
-                // an indexedStack root with no navigator history, Home on a
-                // cold start). Figma 4686:101421 / filled frames.
-                backIcon: keyboardOpen
-                    ? AppIcons.cross
-                    : AppIcons.chevronBackward,
-                onBack: keyboardOpen
-                    ? () => FocusManager.instance.primaryFocus?.unfocus()
-                    : () => context.go(
-                        resolveMobileBackPath(ref, currentPath: '/swap'),
-                      ),
                 trailing: const SwapNearIntentsAttribution(alignEnd: true),
               ),
               Expanded(

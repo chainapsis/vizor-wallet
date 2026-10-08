@@ -1140,7 +1140,10 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         if (sync.failure?.kind == SyncFailureKind.privateStatusCoverage) ...[
           _PrivateStatusCoverageNotice(
             message: sync.failure!.userMessage,
-            onSettings: () => _pushUsedScreen('/settings'),
+            onSettings: () {
+              _expectReviewVisit('/settings');
+              context.go('/settings');
+            },
           ),
           const SizedBox(height: AppSpacing.s),
         ],
