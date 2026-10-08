@@ -27,7 +27,8 @@ bool isTransparentRecoveryIncompleteError(String raw) =>
 /// in a build that does not run it.
 const transparentRecoveryNotSelectedMessage =
     'Private transparent recovery is not available in this build. Turn off '
-    'Private queries to use transparent funds.';
+    'Private queries to use transparent funds. If it is already off, '
+    'turn it on and then off.';
 
 /// Whether [raw] is a refusal to use transparent funds because the wallet
 /// requires private recovery and this build does not run it, so no recovery

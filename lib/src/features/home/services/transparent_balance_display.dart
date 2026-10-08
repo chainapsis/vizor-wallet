@@ -83,6 +83,7 @@ class TransparentBalanceDisplay {
           'again later.',
     rust_sync.TransparentStopReason.notSelected =>
       'Private transparent recovery is not available in this build. Turn off '
-          'Private queries to restore public lookups.',
+          'Private queries to restore public lookups. If it is already off, '
+          'turn it on and then off.',
   };
 }

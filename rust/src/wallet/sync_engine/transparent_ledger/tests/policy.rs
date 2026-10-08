@@ -200,7 +200,7 @@ async fn an_explicit_off_lowers_to_public_in_every_build() {
 
 #[cfg(not(ironwood_masquerade))]
 #[tokio::test]
-async fn a_failed_store_on_disable_raises_again() {
+async fn explicit_reenable_after_lowering_advances_policy_generation() {
     let (_dir, path, _db) = main_wallet();
     let start = applied(&path, MAIN).generation;
     // Enabled in a flag build.
@@ -209,15 +209,14 @@ async fn a_failed_store_on_disable_raises_again() {
         .unwrap()
         .unwrap();
     assert_eq!(raised.mode, TransparentLedgerMode::PrivateRequired);
-    // Disable lowers before saving the setting.
+    // An explicit opt-out lowers the policy.
     let lowered = set_transparent_policy(&path, MAIN, false, true)
         .await
         .unwrap()
         .unwrap();
     assert_eq!(lowered.mode, TransparentLedgerMode::Public);
-    // The save failed, so the setting is still on: raising again takes its
-    // selection from the arguments, not from the live preference already
-    // turned off.
+    // Re-enabling takes its selection from the arguments, independently of
+    // the live preference left off by the earlier opt-out.
     let again = set_transparent_policy(&path, MAIN, true, true)
         .await
         .unwrap()

@@ -77,9 +77,14 @@ void main() {
       expect(
         display.hint,
         'Private transparent recovery is not available in this build. Turn '
-        'off Private queries to restore public lookups.',
+        'off Private queries to restore public lookups. If it is already off, '
+        'turn it on and then off.',
       );
       expect(display.hint, isNot(contains('until private recovery')));
+      expect(
+        display.hint,
+        contains('If it is already off, turn it on and then off.'),
+      );
     });
 
     test('a stopped recovery never reads as a spendable amount', () {
@@ -216,6 +221,7 @@ void main() {
       final copy = friendlyShieldBalanceError(Exception(notSelectedRefusal));
       expect(copy, transparentRecoveryNotSelectedMessage);
       expect(copy, contains('Turn off Private queries'));
+      expect(copy, contains('If it is already off, turn it on and then off.'));
       expect(copy, isNot(contains('until private recovery completes')));
     });
   });
