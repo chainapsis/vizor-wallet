@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -15,6 +16,8 @@ try:
     import zakura_fixture_source as SOURCE
 finally:
     sys.path.pop(0)
+
+PUBLISHED_COMMIT = SOURCE.SOURCE_COMMIT
 
 
 def fixture_code() -> bytes:
@@ -97,6 +100,21 @@ class ZakuraFixtureSourceTests(unittest.TestCase):
         self.assertIsNot(first.fixture_class, second.fixture_class)
         self.assertEqual(first.identity(), second.identity())
         self.assertIs(sys.modules[first.fixture_class.__module__].RegtestFixture, first.fixture_class)
+
+    def test_documented_fetch_keeps_the_cached_commit_reachable_after_gc(self):
+        readme = (Path(__file__).parent / "README.md").read_text()
+        example = re.search(r"git -C /path/to/zakura fetch https://github\.com/piatoss3612/zakura\.git (\S+)", readme)
+        self.assertIsNotNone(example)
+        refspec = example.group(1)
+        self.assertEqual(refspec, f"{PUBLISHED_COMMIT}:refs/vizor-e2e/zakura-fixture/{PUBLISHED_COMMIT}")
+        cache = self.root / "isolated-object-cache"
+        cache.mkdir()
+        self.git("-C", str(cache), "init", "--quiet")
+        # This is a local disposable test remote, not the developer's checkout.
+        self.git("-C", str(cache), "fetch", "--quiet", str(self.root), refspec.replace(PUBLISHED_COMMIT, self.commit))
+        self.git("-C", str(cache), "reflog", "expire", "--expire=now", "--all")
+        self.git("-C", str(cache), "gc", "--prune=now")
+        self.assertEqual(SOURCE.load_zakura_fixture_source(cache).fixture_class().marker, "verified-blob")
 
     def test_size_mismatch_stops_before_blob_capture_or_code_execution(self):
         with patch.object(SOURCE, "_git_bytes", side_effect=[b"commit\n", b"99999999\n"]) as git:

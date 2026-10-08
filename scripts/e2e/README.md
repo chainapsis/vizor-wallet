@@ -27,8 +27,12 @@ Git must support `--no-lazy-fetch` (locally checked with Git 2.54): implicit
 promisor-remote fetches are disabled too. To populate the cache explicitly:
 
 ```bash
-git -C /path/to/zakura fetch https://github.com/piatoss3612/zakura.git b22c91ac0770fa1953ced10fdbeed596276875ee
+git -C /path/to/zakura fetch https://github.com/piatoss3612/zakura.git b22c91ac0770fa1953ced10fdbeed596276875ee:refs/vizor-e2e/zakura-fixture/b22c91ac0770fa1953ced10fdbeed596276875ee
 ```
+
+The commit-specific destination ref keeps the cached commit reachable during
+Git garbage collection, without changing HEAD or an existing branch/tag. The
+loader still uses the fixed commit ID, never the mutable ref as source authority.
 
 This source-loading boundary starts no Docker resource, wallet or test, and
 does not enable catalog execution. Offline checks use disposable Git commits:
