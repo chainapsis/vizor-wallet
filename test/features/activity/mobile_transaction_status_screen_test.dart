@@ -804,7 +804,9 @@ void main() {
     },
   );
 
-  testWidgets('a fee-only entry is one network fee line', (tester) async {
+  testWidgets('a fee-only entry remains one neutral net change line', (
+    tester,
+  ) async {
     // Reconstructed zero external payment; recipient details can be missing.
     final tx = _tx(
       fee: BigInt.from(65000),
@@ -825,7 +827,7 @@ void main() {
 
     expect(find.text('Transaction'), findsOneWidget);
     expect(find.text('Sent successfully'), findsNothing);
-    expect(find.text(kNetworkFeeText), findsOneWidget);
+    expect(find.text(kNetChangeText), findsOneWidget);
     expect(find.text('0.00065 ZEC'), findsOneWidget);
     expect(find.text('Amount'), findsNothing);
     expect(find.text('Tx fee'), findsNothing);
@@ -858,10 +860,10 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Transaction'), findsNothing);
-      expect(find.text('Sent successfully'), findsOneWidget);
-      expect(find.text(kNetworkFeeText), findsNothing);
-      expect(find.text(kNetChangeIncludesFeeText), findsOneWidget);
+      expect(find.text('Transaction'), findsOneWidget);
+      expect(find.text('Sent successfully'), findsNothing);
+      expect(find.text('Network fee'), findsNothing);
+      expect(find.text(kNetChangeText), findsOneWidget);
       expect(find.text('0.0002 ZEC'), findsNWidgets(2));
       expect(find.text('Amount'), findsNothing);
       expect(find.text('Tx fee'), findsOneWidget);
@@ -888,13 +890,13 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Sent successfully'), findsOneWidget);
-    expect(find.text(kNetChangeIncludesFeeText), findsOneWidget);
+    expect(find.text(kNetChangeText), findsOneWidget);
     expect(find.text('Amount'), findsNothing);
     // Nothing is subtracted, and the fee keeps its own line.
     expect(find.text('0.70 ZEC'), findsOneWidget);
     expect(find.text('Tx fee'), findsOneWidget);
     expect(find.text('0.0001 ZEC'), findsOneWidget);
-    expect(find.text(kNetworkFeeText), findsNothing);
+    expect(find.text('Network fee'), findsNothing);
   });
 
   for (final kind in ['sent', 'received', 'shielded', 'migration']) {

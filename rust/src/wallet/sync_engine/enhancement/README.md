@@ -535,21 +535,15 @@ history rows, so both describe one database state. Each entry carries:
 - `fee_state`: `Known`, `Unknown`, or `NotApplicable`. The raw fee is no
   longer coalesced to 0, and `fee` is 0 unless the state is `Known`. Receipts
   in Private queries mode show an unknown fee as "Unknown", and a receive
-  shows no fee. When the account's fee is unknown but qualified private
-  evidence carries the transaction's exact whole fee, that fee is shown as the
-  network fee. It is display only: other funders may have shared it, so the
-  amounts never subtract or add it.
-- `amount_includes_fee`: whether the amount is the account's balance change
-  with that whole fee shown beside it, so the amount already contains the
-  account's share of the fee. A receipt then shows the fee once: when the
-  amount equals the fee (a recovered self-shield), one "Network fee" line and
-  no separate amount or fee line, with "Network fee" as the activity row
-  title; otherwise the amount is labelled "Net change (includes network fee)"
-  and the fee keeps its line. Nothing is subtracted. Only a debit with no
-  visible output that is shown as its movement can carry it: a provisional
-  one, or an unmined one even with complete details. A recorded account fee,
-  public evidence, a visible or reconstructed payment, and a mined row with
-  complete details leave it false.
+  shows no fee. An exact whole-transaction fee remains reconstruction
+  evidence: it does not replace an unknown account fee in the receipt, since
+  other funders may have shared it.
+- `amount_includes_fee`: whether the amount is a balance movement retaining
+  the account's fee share rather than an established payment. Activity and
+  receipts label it "Net change". A proven fee-only self-transfer also stays
+  neutral and shows its amount once. An unknown account fee stays "Unknown";
+  no whole fee is subtracted from the amount. The richer whole-fee display
+  and "Network fee" presentation are maintained in a child PR.
 - `details_complete`: whether the recipients, payment amounts, and memos are
   known. A missing recipient row does not mean there was no payment.
 - `provisional`: whether later discovery or enhancement can still change the
@@ -989,9 +983,9 @@ restack of the library stacks, and to `main` once they merge.
   `transaction_metadata`, `aggregate_payment`, and `account_movement` fields of
   `TransactionHistoryDetails`. Public handles have no recovery source that
   supplies them. Under private recovery, Activity shows a reconstructed exact
-  payment and, where the account fee is unknown, the exact whole fee as a
-  display-only network fee; the account fee keeps its `fee_state` for every
-  amount. Two migrations add empty tables
+  payment. Whole-fee evidence supports reconstruction but does not replace
+  an unknown account fee in the receipt; the account fee keeps its
+  `fee_state` for every amount. Two migrations add empty tables
   (`tpir_transaction_metadata`, `tpir_shared_derivations`); writing either
   raises the reader version, and neither changes policy, balances, or
   authority.

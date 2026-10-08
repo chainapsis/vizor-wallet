@@ -1004,8 +1004,8 @@ class _ActivityTransactionStatusScreenState
                   : switch (feePresentation) {
                       TransactionFeePresentation.separate => 'Amount',
                       TransactionFeePresentation.includedInAmount =>
-                        kNetChangeIncludesFeeText,
-                      TransactionFeePresentation.feeOnly => kNetworkFeeText,
+                        kNetChangeText,
+                      TransactionFeePresentation.feeOnly => kNetChangeText,
                     },
               value: feeOnly
                   ? _feeText(tx, privacyModeEnabled: privacyModeEnabled)

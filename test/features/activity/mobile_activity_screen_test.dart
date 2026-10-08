@@ -528,9 +528,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Network fee'), findsOneWidget);
+    expect(find.text('Net change'), findsNWidgets(2));
     expect(find.text('-0.00065 ZEC'), findsOneWidget);
-    expect(find.text('Sent'), findsOneWidget);
+    expect(find.text('Sent'), findsNothing);
     expect(find.text('-0.7 ZEC'), findsOneWidget);
   });
 

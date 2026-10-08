@@ -663,7 +663,7 @@ void main() {
       recovered(displayAmount: 20000, fee: 20000),
       privateQueriesEnabled: true,
     );
-    expect(movement.title, 'Sent');
+    expect(movement.title, kNetChangeText);
     expect(movement.amountText, activityAmountTextForFormFactor('-0.0002 ZEC'));
     expect(movement.amountSubtitle, kIncompleteDetailsText);
 
@@ -673,7 +673,7 @@ void main() {
       tester,
       recovered(displayAmount: 70000000, fee: 10000),
     );
-    expect(netChange.title, 'Sent');
+    expect(netChange.title, kNetChangeText);
     expect(netChange.amountText, activityAmountTextForFormFactor('-0.7 ZEC'));
 
     final payment = await mapRow(
@@ -700,7 +700,7 @@ void main() {
         amountIncludesFee: true,
       ),
     );
-    expect(selfTransfer.title, kNetworkFeeText);
+    expect(selfTransfer.title, kNetChangeText);
     expect(
       selfTransfer.amountText,
       activityAmountTextForFormFactor('-0.0001 ZEC'),

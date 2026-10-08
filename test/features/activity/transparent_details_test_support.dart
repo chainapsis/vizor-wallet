@@ -1157,7 +1157,7 @@ void transparentReceiptParityTests({
       transaction: tx,
       privateQueries: true,
     );
-    expect(find.text(kNetChangeIncludesFeeText), findsOneWidget);
+    expect(find.text(kNetChangeText), findsOneWidget);
     expect(find.text('Amount'), findsNothing);
     expect(find.text(kUnknownRecipientText), findsNothing);
     expect(find.text('To'), findsNothing);
@@ -1439,7 +1439,7 @@ void transparentReceiptParityTests({
     expect(find.text('To'), findsNothing);
     expect(find.text(kUnknownRecipientText), findsNothing);
     // The fee is the entry's one line.
-    expect(find.text(kNetworkFeeText), findsOneWidget);
+    expect(find.text(kNetChangeText), findsOneWidget);
     expect(_supplementalCard, findsNothing);
     await tester.pumpWidget(const SizedBox());
   });

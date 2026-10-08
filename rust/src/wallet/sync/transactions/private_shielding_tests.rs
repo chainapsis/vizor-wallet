@@ -424,7 +424,7 @@ const DISPLAY_FIXTURE: &str = concat!(
 /// The two reported mainnet shapes: shielding 0.0018 and 0.004 ZEC with a
 /// 0.0002 ZEC network fee.
 #[test]
-fn a_privately_recovered_shielding_shows_as_shielded_with_the_network_fee() {
+fn a_privately_recovered_shielding_keeps_its_amount_and_unknown_account_fee() {
     let mut displayed = vec![];
     for (inputs, shielded) in [([120_000, 80_000], 180_000), ([300_000, 120_000], 400_000)] {
         let recovered = privately_recovered_shielding(inputs, shielded);
@@ -433,8 +433,8 @@ fn a_privately_recovered_shielding_shows_as_shielded_with_the_network_fee() {
         assert_eq!(row.tx_kind, "shielded");
         assert_eq!(row.display_amount, shielded);
         assert_eq!(row.account_balance_delta, -(FEE as i64));
-        assert_eq!(row.fee_state, TransactionFeeState::Known);
-        assert_eq!(row.fee, FEE);
+        assert_eq!(row.fee_state, TransactionFeeState::Unknown);
+        assert_eq!(row.fee, 0);
         assert!(row.details_complete);
         assert!(!row.provisional);
         assert!(
@@ -507,8 +507,8 @@ fn a_shielding_with_no_enhance_fee_uses_the_qualified_transparent_fee() {
     let recovered = privately_recovered([120_000, 80_000], 180_000, None, false);
     let row = history_row(&recovered);
     assert_eq!(row.tx_kind, "shielded");
-    assert_eq!(row.fee_state, TransactionFeeState::Known);
-    assert_eq!(row.fee, FEE);
+    assert_eq!(row.fee_state, TransactionFeeState::Unknown);
+    assert_eq!(row.fee, 0);
     assert!(row.details_complete);
     assert!(!row.provisional);
 }
@@ -560,7 +560,7 @@ fn enhance_output_presence_labels_a_provisional_debit() {
     assert!(row.provisional);
     assert!(!row.details_complete);
     assert!(row.amount_includes_fee);
-    assert_eq!(row.fee, FEE);
+    assert_eq!(row.fee, 0);
     assert_eq!(row.activity_pool.as_deref(), Some("transparent"));
     assert_eq!(history_row(&recovered).activity_pool, row.activity_pool);
 
