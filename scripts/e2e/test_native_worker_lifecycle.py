@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import sys
 import threading
+import time
 import unittest
 from unittest.mock import patch
 
@@ -17,6 +18,7 @@ try:
     import native_worker_lifecycle as WORKER
     import test_native_mac_case_storage as MAC_FIXTURES
     import test_native_ios_case_storage as IOS_FIXTURES
+    import test_native_zakura_backend as BACKEND_FIXTURES
 finally:
     sys.path.pop(0)
 
@@ -264,6 +266,131 @@ class MacWorkerTests(unittest.TestCase):
         self.assertTrue(session.storage.path.exists())
         self.assertFalse(session._completed)
 
+    def prepare_backend(self, session, fixture_class=BACKEND_FIXTURES.FixtureModel):
+        with patch.object(WORKER.zakura, "load_zakura_fixture_source",
+                          return_value=BACKEND_FIXTURES.modeled_source(fixture_class)):
+            return session.prepare_zakura_backend(tooling_root=Path("unused-source"),
+                grpcurl=Path("unused-grpcurl"), proto_dir=Path("unused-protos"),
+                miner_address="explicit-regtest-miner-model", timeout=3)
+
+    def test_backend_registered_before_start_and_closed_before_native_state_deletion(self):
+        worker = self.worker()
+        self.native.app_code = "time.sleep(30)"
+        self.native.install_scripts()
+        session = self.case(worker)
+        writer = session.storage.start_app(env=os.environ)
+        deadline = time.monotonic() + 3
+        while "owned-app-ready" not in writer.log_path.read_text() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertIn("owned-app-ready", writer.log_path.read_text())
+        test = self
+        class OrderedFixture(BACKEND_FIXTURES.FixtureModel):
+            def start(self):
+                test.assertIs(session.backend._fixture, self)
+                test.assertTrue(session.storage.path.exists())
+                return super().start()
+
+            def close(self):
+                test.assertFalse(session.case.accepting_launches)
+                test.assertIsNotNone(session.case._receipt)
+                test.assertIsNotNone(writer.process.poll())
+                test.assertFalse(writer.pump_thread.is_alive())
+                test.assertTrue(session.storage.path.exists())
+                return super().close()
+        self.prepare_backend(session, OrderedFixture)
+        session.close(timeout=3)
+        self.assertTrue(session.backend.closed)
+        self.assertEqual(session.backend._fixture.close_calls, 1)
+        self.assertFalse(session.storage.path.exists())
+        self.assertFalse(session.lease.sockets or session.lease.lock_descriptors)
+        worker.close()
+        self.assertFalse(worker.workspace.exists())
+        self.assertTrue((session.backend.root / "start-proof.json").exists())
+
+    def test_failed_backend_cleanup_retains_native_state_without_retry_or_pass(self):
+        worker = self.worker()
+        session = self.case(worker)
+        self.app(session)
+        self.prepare_backend(session)
+        with patch.object(session.backend._fixture, "close", side_effect=RuntimeError("Docker absence unproven")), \
+             patch.object(session.storage, "close") as native_close:
+            with self.assertRaisesRegex(RuntimeError, "Docker absence unproven"):
+                session.close(timeout=3)
+            native_close.assert_not_called()
+        self.assertEqual(session.backend._fixture.retain_calls, 1)
+        self.assertFalse(session._completed)
+        self.assertFalse(session.backend.closed)
+        self.assertTrue(session.storage.path.exists())
+        self.assertTrue(worker.workspace.exists())
+        self.assertFalse(session.lease.lock_descriptors)
+        with self.assertRaises(WORKER.NativeWorkerError):
+            session.close(timeout=3)
+        with self.assertRaises(WORKER.NativeWorkerError):
+            worker.close()
+
+    def test_unproven_backend_retention_keeps_front_port_locks_and_stops_app(self):
+        worker = self.worker()
+        self.native.app_code = "time.sleep(30)"
+        self.native.install_scripts()
+        session = self.case(worker)
+        writer = session.storage.start_app(env=os.environ)
+        self.prepare_backend(session)
+        with patch.object(session.backend._fixture, "retain", side_effect=RuntimeError("Docker stop unproven")) as retain:
+            with self.assertRaisesRegex(RuntimeError, "Docker stop unproven"):
+                session.retain(timeout=3)
+            with self.assertRaises(WORKER.zakura.NativeZakuraError):
+                session.retain(timeout=3)
+            self.assertEqual(retain.call_count, 1)
+        self.assertIsNotNone(writer.process.poll())
+        self.assertTrue(session.lease.sockets and session.lease.lock_descriptors)
+        self.assertTrue(session.storage.path.exists())
+        # Original model leases belong only to this test; terminal failed worker
+        # stays failed. Release these test sockets without granting cleanup/PASS.
+        session.lease.close()
+        self.workers.remove(worker)
+
+    def test_backend_startup_failure_keeps_original_error_and_safe_rollback_evidence(self):
+        worker = self.worker()
+        session = self.case(worker)
+        class FailedFixture(BACKEND_FIXTURES.FixtureModel):
+            def start(self):
+                self._closed = True  # Modeled pinned helper's successful rollback.
+                raise RuntimeError("original startup error")
+        with self.assertRaisesRegex(RuntimeError, "original startup error"):
+            self.prepare_backend(session, FailedFixture)
+        self.assertIsNotNone(session.backend)
+        self.assertEqual(session.backend._fixture.retain_calls, 0)
+        self.assertFalse(session.case.accepting_launches)
+        self.assertFalse(session.lease.lock_descriptors)
+        self.assertTrue(session.storage.path.exists())
+        self.assertTrue(session.backend.root.exists())
+        self.assertFalse(session._completed)
+
+    def test_invalid_backend_timeout_has_no_mutation_and_keeps_worker_usable(self):
+        worker = self.worker()
+        session = self.case(worker)
+        with self.assertRaises(WORKER.runtime.RunnerError):
+            session.prepare_zakura_backend(tooling_root=Path("unused-source"), grpcurl=Path("unused"),
+                proto_dir=Path("unused"), miner_address="model", timeout=0)
+        self.assertIsNone(session.backend)
+        self.assertTrue(session.case.accepting_launches)
+        self.assertTrue(session.lease.lock_descriptors)
+        self.assertIsNone(worker._failure)
+
+    def test_completed_backend_is_not_retained_again_after_native_cleanup_failure(self):
+        worker = self.worker()
+        session = self.case(worker)
+        self.prepare_backend(session)
+        self.native.helper_code = "value['completed']=False"
+        self.native.install_scripts()
+        with self.assertRaises(WORKER.mac_storage.MacCaseStorageError):
+            session.close(timeout=3)
+        self.assertTrue(session._backend_finalized)
+        self.assertTrue(session.backend.closed)
+        self.assertEqual(session.backend._fixture.retain_calls, 0)
+        self.assertTrue(session.storage.path.exists())
+        self.assertFalse(session._completed)
+
 
 class IosWorkerTests(unittest.TestCase):
     def setUp(self):
@@ -326,6 +453,50 @@ class IosWorkerTests(unittest.TestCase):
         self.assertEqual(self.native.model.devices[session.simulator.udid]["state"], "Shutdown")
         self.assertTrue(session.mutable_directory.exists())
         self.assertFalse(any(call[0] == "delete" for call in self.native.model.calls))
+
+    def test_ios_native_job_and_console_stop_before_docker_then_device_deletion(self):
+        session = self.case()
+        app = session.storage.start_app(timeout=15)
+        self.assertNotEqual(app.pid, app.console.process.pid)
+        test = self
+        class OrderedFixture(BACKEND_FIXTURES.FixtureModel):
+            def close(self):
+                test.assertIsNone(session.storage._active)
+                test.assertIsNotNone(test.native.model.writers[session.simulator.udid].process.poll())
+                test.assertIsNotNone(app.console.process.poll())
+                test.assertIsNotNone(session.case._receipt)
+                test.assertTrue(session.storage.path.exists())
+                test.assertIn(session.simulator.udid, test.native.model.devices)
+                test.assertFalse(any(call[0] == "delete" for call in test.native.model.calls))
+                return super().close()
+        with patch.object(WORKER.zakura, "load_zakura_fixture_source",
+                          return_value=BACKEND_FIXTURES.modeled_source(OrderedFixture)):
+            session.prepare_zakura_backend(tooling_root=Path("unused-source"), grpcurl=Path("unused"),
+                proto_dir=Path("unused"), miner_address="explicit-model-miner", timeout=15)
+        session.close(timeout=15)
+        self.assertTrue(session.backend.closed)
+        self.assertTrue(session._completed)
+        self.assertNotIn(session.simulator.udid, self.native.model.devices)
+        self.worker.close()
+        self.assertFalse(self.worker.workspace.exists())
+        self.assertTrue(session.backend.root.exists())
+
+    def test_unproven_ios_app_stop_never_deletes_backend_or_native_state(self):
+        session = self.case()
+        session.storage.start_app(timeout=15)
+        with patch.object(WORKER.zakura, "load_zakura_fixture_source",
+                          return_value=BACKEND_FIXTURES.modeled_source()):
+            session.prepare_zakura_backend(tooling_root=Path("unused-source"), grpcurl=Path("unused"),
+                proto_dir=Path("unused"), miner_address="explicit-model-miner", timeout=15)
+        with patch.object(session.storage, "stop_app", side_effect=RuntimeError("native app stop unproven")):
+            with self.assertRaisesRegex(RuntimeError, "native app stop unproven"):
+                session.close(timeout=15)
+        self.assertEqual(session.backend._fixture.close_calls, 0)
+        self.assertEqual(session.backend._fixture.retain_calls, 1)
+        self.assertTrue(session.storage.path.exists())
+        self.assertIn(session.simulator.udid, self.native.model.devices)
+        self.assertFalse(any(call[0] == "delete" for call in self.native.model.calls))
+        self.assertFalse(session._completed)
 
 
 if __name__ == "__main__":

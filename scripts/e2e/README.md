@@ -594,6 +594,49 @@ These host models compose private signed-artifact/native-output fixtures,
 separate app/console children and real port reservations. They do not execute
 real wallets, chains, protected biometric state or financial scenarios.
 
+### Compose an owned raw Zakura backend
+
+`session.prepare_zakura_backend(tooling_root=..., grpcurl=..., proto_dir=...,
+miner_address=..., timeout=60)` constructs and registers an original backend
+handle before starting Docker. It loads only the pinned source above, maps the
+sealed manifest's activation height to `zakura-direct-height1` or
+`zakura-direct-activation500`, and requires an explicit miner address. Constructor
+or startup failure retains the failed worker and preserves the original error.
+The returned value proves raw fixture readiness, not wallet readiness or PASS.
+
+`native_zakura_backend.py` keeps source identity and raw fixture evidence in a
+new private `zakura-backend` directory under the original case evidence root.
+Every helper artifact write uses its originally opened directory descriptor and
+rechecks attachment; replacement directories are not adopted. The adapter
+overrides artifact writes only, not the pinned helper's Docker ownership checks.
+Existing fixture data, external backend handles and cleanup JSON are not accepted.
+
+On successful session close, the original native app and case/control groups
+stop first. iOS independently proves its SDK app job absent before joining its
+console; the console PID is not app-stop proof. Only then does the raw fixture
+prove removal of its exact Docker IDs and release its own port locks, followed
+by native support/device cleanup and coordinator port release. Unproven backend
+cleanup never grants native state deletion or case completion. Failure retention
+stops only original owned resources, preserves state/evidence, and cannot become
+a successful retry. Unproven writer/backend stops keep coordinator reservations.
+
+This is cooperative, synchronous lifecycle composition, not an executor. The
+raw fixture owns **internal** RPC/lightwalletd ports, separate from the immutable
+manifest's front ports. No front/control server, genesis shim, funder, build
+publication, mid-call cancellation or financial scenario execution is provided
+here; catalog flags remain pending. Helper commands have bounded phase timeouts,
+not a single aggregate run SLA. Stopped retained node state is not a proven
+restart snapshot: non-finalized backups may lag and the mempool is volatile.
+
+```bash
+python3 -B -m unittest scripts/e2e/test_native_zakura_backend.py scripts/e2e/test_native_worker_lifecycle.py scripts/e2e/test_zakura_fixture_source.py
+```
+
+These host models cover original-handle registration, app/backend/native cleanup
+ordering, startup rollback, sticky retention failures and artifact replacement.
+Docker transport is modeled; an owned raw-chain smoke is separate from wallet,
+funding, reorg or full-catalog validation.
+
 ## Gift Cards
 
 Sender usage tracking and empty observer DB reuse:

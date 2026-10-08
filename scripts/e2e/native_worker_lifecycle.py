@@ -22,6 +22,7 @@ import native_ios_simulator as ios_simulator
 import native_mac_case_storage as mac_storage
 import native_mac_cleanup as mac_native
 import native_owned_tree as tree
+import native_zakura_backend as zakura
 from native_ports import lease_native_ports
 import native_workspace as workspace_api
 
@@ -56,6 +57,8 @@ class NativeWorkerCase:
         self._mutable_id = None
         self.storage = None
         self.simulator = None
+        self._backend = None
+        self._backend_finalized = False
         self._finished = False
         self._completed = False
         self._native_finalized = False
@@ -72,6 +75,30 @@ class NativeWorkerCase:
             if tree.identity(os.fstat(mutable_fd)) != self._mutable_id:
                 raise NativeWorkerError("case mutable directory identity changed")
 
+    def prepare_zakura_backend(self, *, tooling_root, grpcurl, proto_dir, miner_address, timeout=60.0):
+        """Register the pinned original fixture before any Docker start attempt."""
+        ios_simulator._deadline(timeout)
+        if self._finished or self._backend is not None or self.storage is None:
+            raise NativeWorkerError("backend allocation is unavailable or already attempted")
+        self.verify_owned()
+        try:
+            self._backend = zakura.prepare_native_zakura_backend(self.case,
+                tooling_root=tooling_root, grpcurl=grpcurl, proto_dir=proto_dir,
+                miner_address=miner_address, timeout=timeout)
+            return self._backend.start()
+        except BaseException as primary:
+            self._failure = "backend preparation failed; retain worker"
+            try:
+                self.retain(timeout=timeout)
+            except BaseException as cleanup:
+                raise primary from cleanup
+            raise
+
+    @property
+    def backend(self):
+        """Original registered raw backend; no external backend/cleanup adoption."""
+        return self._backend
+
     def close(self, *, timeout=60.0, cancel_event=None):
         """Successful scenario teardown; do not supply external cleanup proof."""
         ios_simulator._deadline(timeout)
@@ -81,6 +108,12 @@ class NativeWorkerCase:
         cancellation = cancel_event if cancel_event is not None else threading.Event()
         try:
             self.verify_owned()
+            if self._backend is not None:
+                if isinstance(self.storage, ios_storage.OwnedIosCaseStorage) and self.storage._active is not None:
+                    self.storage.stop_app(self.storage._active, timeout=timeout)
+                self.case.close()
+                self._backend.close()
+                self._backend_finalized = True
             observation = self.storage.close(timeout=timeout, cancel_event=cancellation)
             self._native_finalized = True
             self.case.close()
@@ -124,6 +157,11 @@ class NativeWorkerCase:
             self.case.close()
         except BaseException as error:
             errors.append(error)
+        if self._backend is not None and not self._backend_finalized:
+            try:
+                self._backend.retain()
+            except BaseException as error:
+                errors.append(error)
         # Keep cooperative port locks when any writer/device stop is unproven.
         if not errors:
             try:
