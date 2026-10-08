@@ -233,26 +233,23 @@ void main() {
     expect(legacy.subtitle, 'Shielded');
   });
 
-  testWidgets(
-    'private Enhance shape labels an incomplete debit as Transparent',
-    (tester) async {
-      final transaction = loadPrivateTransparentActivity();
-      final row = await mapRow(
-        tester,
-        transaction,
-        privateQueriesEnabled: true,
-      );
-      expect(row.title, 'Sent');
-      expect(row.subtitle, 'Transparent');
-      expect(row.subtitleIconName, AppIcons.transparentBalance);
-      expect(row.amountText, '-0.00215 ZEC');
-      expect(row.statusText, 'Completed');
-      expect(row.amountSubtitle, kIncompleteDetailsText);
-      expect(transaction.displayPool, 'unknown');
-      expect(transaction.provisional, isTrue);
-      expect(transaction.detailsComplete, isFalse);
-    },
-  );
+  testWidgets('private Enhance shape keeps an incomplete debit neutral', (
+    tester,
+  ) async {
+    final transaction = loadPrivateTransparentActivity();
+    final row = await mapRow(tester, transaction, privateQueriesEnabled: true);
+    expect(row.title, kNetChangeText);
+    expect(row.subtitle, isNull);
+    expect(row.subtitleIconName, isNull);
+    expect(row.amountText, '-0.00215 ZEC');
+    expect(row.statusText, 'Completed');
+    expect(row.amountSubtitle, kIncompleteDetailsText);
+    expect(transaction.displayPool, 'unknown');
+    expect(transaction.provisional, isTrue);
+    expect(transaction.detailsComplete, isFalse);
+    expect(transaction.feeState, rust_sync.TransactionFeeState.unknown);
+    expect(transaction.fee, BigInt.zero);
+  });
 
   testWidgets(
     'a mined gift claim stays in progress until card reconciliation completes',
