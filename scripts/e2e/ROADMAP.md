@@ -56,9 +56,12 @@ marking it complete. The umbrella targets `main` and merges last.
 Catalog and report planning ([PR #890](https://github.com/chainapsis/vizor-wallet/pull/890))
 and the [app runtime contract](RUNTIME_CONTRACT.md)
 ([PR #892](https://github.com/chainapsis/vizor-wallet/pull/892)) are merged into
-the umbrella, not `main`. Worker lifecycle is next, beginning with an independently
-testable port-reservation primitive. Process/workspace/simulator ownership,
-execution wiring, native storage cleanup, and scenario migrations remain pending.
+the umbrella, not `main`. Worker lifecycle now includes the independently
+testable port-reservation primitive
+([PR #893](https://github.com/chainapsis/vizor-wallet/pull/893)). The next local
+slice is owned POSIX process-group and output-pump lifecycle. These primitives
+do not wire execution: case workspaces, simulators, native storage cleanup,
+backend/executor integration, and scenario migrations remain pending.
 
 | Slice | Scope | Prerequisites |
 | --- | --- | --- |
