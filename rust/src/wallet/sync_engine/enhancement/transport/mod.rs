@@ -23,10 +23,18 @@ pub(super) const HTTP_TIMEOUT: Duration = Duration::from_secs(120);
 type DirectHttpsClient = Client<hyper_rustls::HttpsConnector<DirectRouteConnector>, Full<Bytes>>;
 
 #[derive(Debug)]
-pub(super) enum RoutedHttpError {
+pub(in crate::wallet::sync_engine) enum RoutedHttpError {
     Cancelled,
     HttpStatus(u16),
     Failed(SyncError),
+}
+
+impl RoutedHttpError {
+    /// Whether a private service refused the client's session as superseded (HTTP 409
+    /// or 410), which a fresh session repairs.
+    pub(in crate::wallet::sync_engine) fn is_session_conflict(&self) -> bool {
+        matches!(self, Self::HttpStatus(409 | 410))
+    }
 }
 
 impl From<SyncError> for RoutedHttpError {
@@ -274,4 +282,115 @@ where
         }
     }
     Ok(bytes.finish())
+}
+
+impl<F: Fn() -> bool> RoutedTransport<'_, F> {
+    /// Bounded bytes for protocols that supply their own decoding and limits.
+    pub(in crate::wallet::sync_engine) async fn bytes(
+        &self,
+        method: Method,
+        url: &str,
+        body: Vec<u8>,
+        limit: usize,
+    ) -> Result<Vec<u8>, RoutedHttpError> {
+        await_request_with_cancel(
+            async {
+                let response = routed_response(
+                    method,
+                    url,
+                    body,
+                    self.should_exit,
+                    &self.direct,
+                    self.route_policy,
+                )
+                .await?;
+                collect_bytes(response, limit).await
+            },
+            self.should_exit,
+            "Private-service request timed out",
+        )
+        .await
+    }
+}
+
+/// The body of a successful response, refusing one longer than `limit` bytes with a
+/// `SyncError::Parse`.
+async fn collect_bytes<B>(
+    response: http::Response<B>,
+    limit: usize,
+) -> Result<Vec<u8>, RoutedHttpError>
+where
+    B: Body<Data = Bytes> + Unpin,
+    B::Error: std::fmt::Display,
+{
+    if !response.status().is_success() {
+        return Err(RoutedHttpError::HttpStatus(response.status().as_u16()));
+    }
+    let mut incoming = response.into_body();
+    let mut bytes = Vec::new();
+    while let Some(frame) = incoming.frame().await {
+        let frame = frame.map_err(|_| SyncError::net("Read private-service body failed"))?;
+        if let Some(data) = frame.data_ref() {
+            if data.len() > limit.saturating_sub(bytes.len()) {
+                return Err(SyncError::parse("Private-service body exceeds limit").into());
+            }
+            bytes.extend_from_slice(data);
+        }
+    }
+    Ok(bytes)
+}
+
+#[cfg(test)]
+mod byte_tests {
+    use super::*;
+    #[tokio::test]
+    async fn body_limits_and_http_status_survive_collection() {
+        let response = || http::Response::new(Full::new(Bytes::from_static(b"1234")));
+        assert_eq!(collect_bytes(response(), 4).await.unwrap(), b"1234");
+        assert!(matches!(
+            collect_bytes(response(), 3).await,
+            Err(RoutedHttpError::Failed(_))
+        ));
+        let mut conflict = response();
+        *conflict.status_mut() = StatusCode::CONFLICT;
+        assert!(matches!(
+            collect_bytes(conflict, 0).await,
+            Err(RoutedHttpError::HttpStatus(409))
+        ));
+    }
+    #[tokio::test]
+    async fn unavailable_tor_never_opens_a_direct_socket_and_cancel_stops_requests() {
+        let _guard = crate::network_privacy::test_route_policy::lock_route_policy();
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        crate::network_privacy::begin_tor_enable();
+        crate::network_privacy::fail_tor_enable();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!(
+            "https://{}/v1/receiver/init",
+            listener.local_addr().unwrap()
+        );
+        let active = || false;
+        let route = RoutedTransport::new(&active);
+        let result = route.bytes(Method::GET, &url, vec![], 1024).await;
+        assert!(matches!(result, Err(RoutedHttpError::Failed(_))));
+        assert!(
+            tokio::time::timeout(Duration::from_millis(30), listener.accept())
+                .await
+                .is_err()
+        );
+        assert!(route
+            .bytes(Method::GET, "http://127.0.0.1/", vec![], 1024)
+            .await
+            .is_err());
+        let cancelled = || true;
+        let route = RoutedTransport::new(&cancelled);
+        assert!(matches!(
+            route.bytes(Method::POST, &url, vec![1], 1024).await,
+            Err(RoutedHttpError::Cancelled)
+        ));
+        assert!(route
+            .bytes(Method::GET, "http://127.0.0.1/", vec![], 1024)
+            .await
+            .is_err());
+    }
 }

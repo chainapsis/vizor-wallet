@@ -13,6 +13,7 @@ use crate::wallet::{keys, network::WalletNetwork, secret_store, sync as wallet_s
 // 0 = None, 1 = Foreground, 2 = Background
 pub(crate) static DESIRED_SYNC_MODE: AtomicU8 = AtomicU8::new(0);
 static ENHANCE_PIR_ENABLED: AtomicBool = AtomicBool::new(false);
+static NEAR_SWAP_PRIVACY: AtomicBool = AtomicBool::new(false);
 static ACTIVE_SYNC_ACCOUNT: std::sync::LazyLock<sync_engine::ActiveSyncAccountTarget> =
     std::sync::LazyLock::new(|| Arc::new(RwLock::new(None)));
 static PAYMENT_LINK_CLAIM_SYNCS: std::sync::LazyLock<Mutex<HashMap<String, Arc<AtomicBool>>>> =
@@ -635,7 +636,10 @@ fn catch<T>(f: impl FnOnce() -> Result<T, String> + panic::UnwindSafe) -> Result
     }
 }
 
-fn parse_network_and_migrate(db_path: &str, network: &str) -> Result<WalletNetwork, String> {
+pub(crate) fn parse_network_and_migrate(
+    db_path: &str,
+    network: &str,
+) -> Result<WalletNetwork, String> {
     let network = keys::parse_network(network)?;
     keys::ensure_db_migrated_once(db_path, network)?;
     Ok(network)
@@ -3227,4 +3231,66 @@ pub fn get_enhance_recovery_status(
 ) -> Result<EnhanceRecoveryStatus, String> {
     let network = keys::parse_network(&network)?;
     sync_engine::enhance_recovery_status(&db_path, network)
+}
+
+/// Allow new private swap addresses, which also need Private queries (see
+/// `require_new_address`). Existing keys remain stored either way.
+#[frb(sync)]
+pub fn set_near_swap_privacy_enabled(enabled: bool) {
+    NEAR_SWAP_PRIVACY.store(enabled, Ordering::SeqCst);
+}
+
+/// Whether new private swap addresses are allowed (see [`set_near_swap_privacy_enabled`]).
+pub(crate) fn near_swap_privacy_enabled() -> bool {
+    NEAR_SWAP_PRIVACY.load(Ordering::SeqCst)
+}
+
+/// Same software send lifecycle, with an authenticated refund record on change.
+pub fn propose_swap_funding(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    send_flow_id: String,
+    deposit_address: String,
+    amount_zatoshi: u64,
+    refund_index: u64,
+) -> Result<ProposalResult, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let r = wallet_sync::propose_send_with_swap_refund(
+            &db_path,
+            network,
+            &account_uuid,
+            &send_flow_id,
+            &deposit_address,
+            amount_zatoshi,
+            refund_index,
+        )?;
+        Ok(ProposalResult {
+            proposal_id: r.proposal_id,
+            needs_sapling_params: r.needs_sapling_params,
+            fee_zatoshi: r.fee_zatoshi,
+        })
+    })
+}
+
+/// The fee [`propose_swap_funding`] would pay for any refund index: the refund memo
+/// does not change the fee, so this also sizes a swap before its refund quote exists.
+pub fn estimate_swap_funding_fee(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    deposit_address: String,
+    amount_zatoshi: u64,
+) -> Result<u64, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        wallet_sync::estimate_fee_with_swap_refund(
+            &db_path,
+            network,
+            &account_uuid,
+            &deposit_address,
+            amount_zatoshi,
+        )
+    })
 }

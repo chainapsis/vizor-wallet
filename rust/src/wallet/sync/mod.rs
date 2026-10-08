@@ -1,6 +1,6 @@
 use zcash_client_backend::{
     data_api::{
-        chain::{scan_cached_blocks, CommitmentTreeRoot},
+        chain::{scan_cached_blocks_with_dynamic_ivks, CommitmentTreeRoot},
         scanning::ScanPriority,
         WalletCommitmentTrees, WalletRead, WalletWrite,
     },
@@ -72,7 +72,6 @@ pub(crate) use pczt::{
 };
 pub(crate) use proposal_locks::recover_previous_process as recover_orphaned_send_locks;
 pub(crate) use send::estimate_send_max;
-pub(crate) use send::propose_send;
 pub(crate) use send::{
     abandon_orchard_migration, advance_orchard_migration_preparation_for_run,
     complete_orchard_migration_batch_pczt, complete_orchard_migration_denominations_pczt,
@@ -97,6 +96,7 @@ pub(crate) use send::{
     create_shield_transparent_pczt, get_ledger_shielding_progress, get_shield_transparent_status,
     shield_transparent_balance,
 };
+pub(crate) use send::{estimate_fee_with_swap_refund, propose_send, propose_send_with_swap_refund};
 pub(crate) use send::{
     estimate_send_max_for_purpose, propose_payment_link_batch, propose_send_for_purpose,
     SendPurpose,
@@ -365,7 +365,7 @@ pub fn scan_blocks(
     };
     let result = with_wallet_db_write_lock("sync.scan_blocks", || {
         let mut db_data = open_wallet_db(db_path, network)?;
-        scan_cached_blocks(
+        scan_cached_blocks_with_dynamic_ivks(
             &network,
             &db_cache,
             &mut db_data,

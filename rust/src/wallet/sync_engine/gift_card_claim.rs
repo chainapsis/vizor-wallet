@@ -475,7 +475,7 @@ async fn run_inner(
                 BlockHeight::from_u32(end + 1),
             )
             .map_err(|e| e.to_string())?;
-            scan_cached_blocks(
+            scan_cached_blocks_with_dynamic_ivks(
                 &network,
                 &source,
                 &mut db,

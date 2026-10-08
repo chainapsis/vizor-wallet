@@ -1,44 +1,45 @@
 //! Status-PIR adapter with its shorter deadline and conflict semantics.
 
 use http::Method;
-use http_body_util::BodyExt;
 use std::{
-    sync::atomic::{AtomicU16, Ordering},
+    sync::atomic::{AtomicBool, Ordering},
     time::Duration,
 };
 
-use super::{routed_response, RoutedTransport};
+use super::{collect_bytes, routed_response, RoutedHttpError, RoutedTransport};
+use crate::wallet::sync_engine::SyncError;
 
 const STATUS_REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// Status-specific adapter state layered over the protocol-neutral HTTP route.
 pub(crate) struct StatusPirTransport<'a, F> {
     route: RoutedTransport<'a, F>,
-    session_error: AtomicU16,
+    session_conflict: AtomicBool,
 }
 
 impl<'a, F> StatusPirTransport<'a, F> {
     pub(crate) fn new(should_exit: &'a F) -> Self {
         Self {
             route: RoutedTransport::new(should_exit),
-            session_error: AtomicU16::new(0),
+            session_conflict: AtomicBool::new(false),
         }
     }
 
     pub(crate) fn new_direct(should_exit: &'a F) -> Self {
         Self {
             route: RoutedTransport::new_direct(should_exit),
-            session_error: AtomicU16::new(0),
+            session_conflict: AtomicBool::new(false),
         }
     }
 
-    /// Returns and clears a 409/410 observed by the status adapter.
+    /// Returns and clears a session conflict (see `RoutedHttpError::is_session_conflict`)
+    /// observed by the status adapter.
     ///
     /// The upstream status transport error vocabulary collapses HTTP failures
     /// to `Unavailable`; this adapter-local marker preserves only the typed
     /// distinction needed for one session refresh.
     pub(in crate::wallet::sync_engine) fn take_status_session_conflict(&self) -> bool {
-        matches!(self.session_error.swap(0, Ordering::SeqCst), 409 | 410)
+        self.session_conflict.swap(false, Ordering::SeqCst)
     }
 }
 
@@ -69,7 +70,7 @@ impl<F: Fn() -> bool> StatusPirTransport<'_, F> {
     ) -> Result<Vec<u8>, zakura_pir_status::Error> {
         use zakura_pir_status::Error;
 
-        self.session_error.store(0, Ordering::SeqCst);
+        self.session_conflict.store(false, Ordering::SeqCst);
         let request = async {
             let response = routed_response(
                 method,
@@ -81,27 +82,17 @@ impl<F: Fn() -> bool> StatusPirTransport<'_, F> {
             )
             .await
             .map_err(|_| Error::Unavailable)?;
-            match response.status().as_u16() {
-                status @ (409 | 410) => {
-                    self.session_error.store(status, Ordering::SeqCst);
-                    return Err(Error::Unavailable);
-                }
-                _ if !response.status().is_success() => return Err(Error::Unavailable),
-                _ => {}
-            }
-
-            let mut incoming = response.into_body();
-            let mut bytes = Vec::new();
-            while let Some(frame) = incoming.frame().await {
-                let frame = frame.map_err(|_| Error::Unavailable)?;
-                if let Some(data) = frame.data_ref() {
-                    if data.len() > max_bytes.saturating_sub(bytes.len()) {
-                        return Err(Error::Malformed);
+            collect_bytes(response, max_bytes)
+                .await
+                .map_err(|error| match error {
+                    RoutedHttpError::Failed(SyncError::Parse(_)) => Error::Malformed,
+                    error => {
+                        if error.is_session_conflict() {
+                            self.session_conflict.store(true, Ordering::SeqCst);
+                        }
+                        Error::Unavailable
                     }
-                    bytes.extend_from_slice(data);
-                }
-            }
-            Ok(bytes)
+                })
         };
 
         tokio::select! {

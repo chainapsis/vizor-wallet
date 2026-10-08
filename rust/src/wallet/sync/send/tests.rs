@@ -1052,6 +1052,110 @@ fn ordinary_send_policy_keeps_all_shielded_pools_without_migration() {
     assert_eq!(policy.note_selection(), NoteSelection::PreferConsolidation);
 }
 
+/// Swap funding never selects Sapling or Orchard notes, whether or not a migration
+/// reserves Orchard inputs.
+#[test]
+fn swap_funding_spends_only_ironwood_notes() {
+    let swap_funding = SendRequest::SwapFunding {
+        to_address: "t1deposit",
+        amount_zatoshi: 100_000,
+        refund_index: Some(0),
+    };
+    for orchard_reserved_for_migration in [false, true] {
+        let policy = swap_funding.spend_policy(orchard_reserved_for_migration);
+        assert!(!policy.permits_shielded(ShieldedPool::Sapling));
+        assert!(!policy.permits_shielded(ShieldedPool::Orchard));
+        assert!(policy.permits_shielded(ShieldedPool::Ironwood));
+        assert_eq!(policy.note_selection(), NoteSelection::PreferConsolidation);
+    }
+    let ordinary = SendRequest::Single {
+        to_address: "t1deposit",
+        amount_zatoshi: 100_000,
+        memo_str: None,
+    };
+    assert!(ordinary
+        .spend_policy(false)
+        .permits_shielded(ShieldedPool::Orchard));
+}
+
+/// A swap deposit that Ironwood notes cannot cover fails with
+/// [`SWAP_FUNDING_NEEDS_IRONWOOD`].
+#[test]
+fn swap_funding_shortfall_asks_for_ironwood_funds() {
+    crate::wallet::network::configure_regtest_nu6_3_activation_height(100).unwrap();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_str().unwrap();
+    let network = WalletNetwork::Regtest;
+    let seed =
+        crate::wallet::keys::mnemonic_to_seed(&crate::wallet::keys::generate_mnemonic()).unwrap();
+    let (account_uuid, _) =
+        crate::wallet::keys::init_db_and_create_account(db_path, network, &seed, Some(100), "swap")
+            .unwrap();
+    let account_id = parse_account_uuid(&account_uuid).unwrap();
+
+    // A wallet scanned to its tip, as refund key issuance requires, with trees
+    // checkpointed deep enough for the proposal's anchor. It has no notes.
+    let tip = BlockHeight::from_u32(110);
+    let anchor = BlockHeight::from_u32(105);
+    let mut db = open_wallet_db(db_path, network).unwrap();
+    db.update_chain_tip(tip).unwrap();
+    {
+        type CheckpointError = WalletError<
+            (),
+            commitment_tree::Error,
+            (),
+            <ConservativeZip317FeeRule as FeeRule>::Error,
+            (),
+            ReceivedNoteId,
+        >;
+        let result: Result<_, CheckpointError> =
+            db.with_sapling_tree_mut(|tree| Ok(tree.checkpoint(anchor)?));
+        result.unwrap();
+        let result: Result<_, CheckpointError> =
+            db.with_orchard_tree_mut(|tree| Ok(tree.checkpoint(anchor)?));
+        result.unwrap();
+        let result: Result<_, CheckpointError> =
+            db.with_ironwood_tree_mut(|tree| Ok(tree.checkpoint(anchor)?));
+        result.unwrap();
+    }
+    Connection::open(db_path)
+        .unwrap()
+        .execute_batch(
+            "INSERT INTO blocks(height,hash,time,sapling_tree) VALUES(110,zeroblob(32),0,X'000000');
+             DELETE FROM scan_queue;
+             INSERT INTO scan_queue(block_range_start,block_range_end,priority) VALUES(100,111,10);",
+        )
+        .unwrap();
+    let refund_index = db
+        .reserve_refund_key(account_id, tip)
+        .unwrap()
+        .unwrap()
+        .key_id()
+        .index();
+    let deposit = Address::Transparent(taddr(7))
+        .to_zcash_address(&network)
+        .to_string();
+    db.record_refund_operation(account_id, refund_index, &deposit, 1_000_600, 1_000_000)
+        .unwrap();
+    drop(db);
+
+    let error = estimate_fee_with_swap_refund(db_path, network, &account_uuid, &deposit, 100_000)
+        .unwrap_err();
+    assert!(
+        error.starts_with(&format!(
+            "{SWAP_FUNDING_NEEDS_IRONWOOD}: Insufficient balance"
+        )),
+        "{error}"
+    );
+    // An ordinary send keeps the generic shortfall.
+    let error = estimate_fee(db_path, network, &account_uuid, &deposit, 100_000, None).unwrap_err();
+    assert!(
+        error.starts_with("Propose failed: Insufficient balance"),
+        "{error}"
+    );
+}
+
 struct RecordingConsolidationSource {
     ordinary_selection_calls: Cell<usize>,
     consolidation_excludes: RefCell<Vec<Vec<u32>>>,
@@ -1125,14 +1229,6 @@ impl InputSource for RecordingConsolidationSource {
         _lock_filter: LockFilter<'_>,
     ) -> Result<Option<ReceivedNote<Self::NoteRef, Note>>, Self::Error> {
         Ok(None)
-    }
-
-    fn anchor_computable(
-        &self,
-        _protocol: ShieldedPool,
-        _height: BlockHeight,
-    ) -> Result<bool, Self::Error> {
-        Ok(true)
     }
 
     fn select_spendable_notes(
