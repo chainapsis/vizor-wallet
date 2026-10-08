@@ -1294,6 +1294,37 @@ void main() {
     },
   );
 
+  test('status still resolves provider assets marked deprecated', () async {
+    final transport = _FakeOneClickTransport([
+      _FakeResponse.get('/v0/tokens', [
+        for (final token in _tokens)
+          if (token['assetId'] == 'nep141:usdc.example')
+            {...token, 'symbol': 'FUTURE_(DEPRECATED)'}
+          else
+            token,
+      ]),
+      _FakeResponse.get(
+        '/v0/status',
+        _quoteResponse(
+          originAsset: 'nep141:zec.omft.near',
+          destinationAsset: 'nep141:usdc.example',
+          amountInFormatted: '1',
+          amountOutFormatted: '70',
+          minAmountOut: '69650000',
+          depositAddress: 't1deprecated-deposit',
+          status: 'PENDING_DEPOSIT',
+        ),
+      ),
+    ]);
+    final provider = NearIntentsOneClickSwapAdapter(transport: transport);
+
+    final status = await provider.getStatus('t1deprecated-deposit');
+
+    expect(status.status, SwapIntentStatus.awaitingDeposit);
+    expect(status.pairText, 'ZEC -> FUTURE_(DEPRECATED)');
+    expect(status.depositInstruction.address, 't1deprecated-deposit');
+  });
+
   test('supported assets are prioritized without picker grouping', () async {
     final transport = _FakeOneClickTransport([
       _FakeResponse.get('/v0/tokens', _tokensWithAdditionalAssets),
@@ -1314,6 +1345,25 @@ void main() {
 
   test('representative live token icon mappings resolve to bundled images', () {
     final assets = [
+      for (final (symbol, chain) in const [
+        ('QTC', 'qtc'),
+        ('FOGO', 'fogo'),
+        ('USDG', 'hood'),
+        ('PONS', 'hood'),
+        ('CASHCAT', 'hood'),
+        ('USDe', 'hood'),
+        ('GRAM', 'ton'),
+        ('TLO', 'eth'),
+        ('laUSDC', 'base'),
+        ('wNEARKAT', 'sol'),
+        ('COCA', 'pol'),
+      ])
+        SwapAsset.live(
+          assetId: 'icon-test:$chain:$symbol',
+          symbol: symbol,
+          blockchain: chain,
+          decimals: 6,
+        ),
       SwapAsset.live(
         assetId: 'nep141:aptos.omft.near',
         symbol: 'APT',

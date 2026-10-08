@@ -1199,6 +1199,26 @@ class _FakeSwapPersistenceStore
   }
 }
 
+class _DelayedComposerPreferencesStore extends _FakeSwapPersistenceStore {
+  _DelayedComposerPreferencesStore({
+    super.initialPreferences,
+    super.initialPayAsset,
+  });
+
+  final _preferencesGate = Completer<void>();
+
+  void completePreferencesLoad() => _preferencesGate.complete();
+
+  @override
+  Future<SwapComposerPreferences?> loadPreferences({
+    required String accountUuid,
+  }) async {
+    final preferences = await super.loadPreferences(accountUuid: accountUuid);
+    await _preferencesGate.future;
+    return preferences;
+  }
+}
+
 class _DelayedLoadSwapPersistenceStore extends _FakeSwapPersistenceStore {
   _DelayedLoadSwapPersistenceStore({
     required this.delayedAccounts,

@@ -4087,6 +4087,102 @@ void main() {
     expect(find.text('Ethereum USDC'), findsNothing);
   });
 
+  for (final savedSymbol in ['FUTURE', 'FUTURE_(DEPRECATED)']) {
+    testWidgets('deprecated assets stay out of Swap and Pay ($savedSymbol)', (
+      tester,
+    ) async {
+      await _setDesktopViewport(tester);
+      final deprecatedAsset = SwapAsset.live(
+        assetId: 'future-deprecated-asset',
+        symbol: 'FUTURE_(DEPRECATED)',
+        blockchain: 'eth',
+        decimals: 6,
+      );
+      // Also cover preferences saved before the provider added the marker.
+      final savedAsset = SwapAsset.live(
+        assetId: deprecatedAsset.assetId!,
+        symbol: savedSymbol,
+        blockchain: 'eth',
+        decimals: 6,
+      );
+      final sessionStore = _DelayedComposerPreferencesStore(
+        initialPreferences: SwapComposerPreferences(
+          direction: SwapDirection.zecToExternal,
+          externalAsset: savedAsset,
+        ),
+        initialPayAsset: savedAsset,
+      );
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/swap',
+            routes: [_swapRoute(), _swapActivityRoute()],
+          ),
+          seedSwapActivityFixtures: false,
+          sessionStore: sessionStore,
+          swapProvider: _FakeSwapProvider(
+            supportedAssets: [SwapAsset.usdc, deprecatedAsset, SwapAsset.eth],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(SwapScreen)),
+        listen: false,
+      );
+      sessionStore.completePreferencesLoad();
+      await tester.pumpAndSettle();
+
+      final state = container.read(swapStateProvider);
+      expect(state.supportedExternalAssets, [SwapAsset.usdc, SwapAsset.eth]);
+      expect(state.externalAsset, SwapAsset.usdc);
+      await tester.tap(
+        find.byKey(const ValueKey('swap_external_asset_selector')).first,
+      );
+      await tester.pumpAndSettle();
+      expect(find.text(deprecatedAsset.symbol), findsNothing);
+      expect(find.text('USDC'), findsWidgets);
+
+      container.read(swapStateProvider.notifier).preparePayFromShieldedZec();
+      expect(container.read(swapStateProvider).externalAsset, SwapAsset.usdc);
+      expect(container.read(paySelectedAssetProvider), SwapAsset.usdc);
+    });
+  }
+
+  testWidgets('a fully deprecated catalog leaves no selectable assets', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final deprecatedAsset = SwapAsset.live(
+      assetId: 'future-deprecated-asset',
+      symbol: 'FUTURE(DEPRECATED)',
+      blockchain: 'eth',
+      decimals: 6,
+    );
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedSwapActivityFixtures: false,
+        swapProvider: _FakeSwapProvider(supportedAssets: [deprecatedAsset]),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SwapScreen)),
+      listen: false,
+    );
+    final state = container.read(swapStateProvider);
+    expect(state.supportedExternalAssets, isEmpty);
+    expect(state.externalAssetIsAvailable, isFalse);
+    expect(state.canReviewQuote, isFalse);
+    expect(find.text(deprecatedAsset.symbol), findsNothing);
+  });
+
   testWidgets('swap composer explains an unsupported restored asset', (
     tester,
   ) async {

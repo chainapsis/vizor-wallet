@@ -4,6 +4,27 @@ import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 void main() {
   const validEvmRecipient = '0x52908400098527886E0F7030069857D2E4169EE7';
 
+  test(
+    'recognizes deprecated markers without changing saved asset identity',
+    () {
+      for (final symbol in ['FUTURE(DEPRECATED)', 'OTHER_(deprecated)']) {
+        final asset = SwapAsset.live(
+          assetId: 'legacy-$symbol',
+          symbol: symbol,
+          blockchain: 'eth',
+          decimals: 6,
+        );
+        final restored = SwapAsset.fromPersistedJson(asset.toPersistedJson())!;
+
+        expect(asset.isDeprecated, isTrue);
+        expect(restored.isDeprecated, isTrue);
+        expect(restored.assetId, asset.assetId);
+        expect(restored.symbol, asset.symbol);
+      }
+      expect(SwapAsset.usdc.isDeprecated, isFalse);
+    },
+  );
+
   test('defaults Swap and Pay composers to 2% slippage', () {
     const swapState = SwapState(
       direction: SwapDirection.zecToExternal,

@@ -51,6 +51,7 @@ import 'mobile_method_selection_capture.dart';
 import 'mobile_hardware_selection_capture.dart';
 import 'mobile_onboarding_intro_capture.dart';
 import 'ledger_recovery_capture.dart';
+import 'swap_asset_icons_capture.dart';
 
 typedef FigmaCompareScenarioBuilder = Widget Function(BuildContext context);
 
@@ -87,6 +88,12 @@ class FigmaCompareScenario {
 /// storage, network, wallet, and Rust state. Widgetbook fixtures are preferred
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
+  FigmaCompareScenario(
+    id: 'swap-asset-icons',
+    description: 'Bundled swap token logos and chain badges',
+    builder: buildSwapAssetIconsCapture,
+    mobile: true,
+  ),
   FigmaCompareScenario(
     id: 'desktop-home-setup',
     description: 'Desktop Home backup and education reminders',
