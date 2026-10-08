@@ -121,12 +121,14 @@ pub(crate) enum SendPurpose {
     Ordinary,
     /// Spends a Gift Card's bearer wallet into the recipient's account.
     PaymentLinkClaim,
+    /// External bearer cards use ordinary confirmation depths and discard the OVK.
+    ExternalGiftClaim,
 }
 
 impl SendPurpose {
     fn confirmations_policy(self) -> ConfirmationsPolicy {
         match self {
-            Self::Ordinary => confirmations_policy(),
+            Self::Ordinary | Self::ExternalGiftClaim => confirmations_policy(),
             Self::PaymentLinkClaim => payment_link_claim_confirmations_policy(),
         }
     }
@@ -134,7 +136,7 @@ impl SendPurpose {
     fn ovk_policy(self) -> StoredOvkPolicy {
         match self {
             Self::Ordinary => StoredOvkPolicy::Sender,
-            Self::PaymentLinkClaim => StoredOvkPolicy::Discard,
+            Self::PaymentLinkClaim | Self::ExternalGiftClaim => StoredOvkPolicy::Discard,
         }
     }
 }
@@ -845,6 +847,27 @@ pub(crate) fn propose_payment_link_batch(
     )
 }
 
+pub(crate) fn propose_external_gift_claim(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    send_flow_id: &str,
+    to_address: &str,
+    reviewed_amount_zatoshi: u64,
+) -> Result<ProposalResult, String> {
+    propose_send_with_request(
+        db_path,
+        network,
+        account_uuid,
+        send_flow_id,
+        SendRequest::ExternalGiftMax {
+            to_address,
+            reviewed_amount_zatoshi,
+        },
+        SendPurpose::ExternalGiftClaim,
+    )
+}
+
 fn propose_send_with_request(
     db_path: &str,
     network: WalletNetwork,
@@ -864,7 +887,7 @@ fn propose_send_with_request(
         let mut db = open_wallet_db(db_path, network)?;
         let account_id = parse_account_uuid(account_uuid)?;
         let (proposal, stored_tx_version) = propose_request(
-            &db,
+            &mut db,
             db_path,
             network,
             account_uuid,
@@ -1004,10 +1027,10 @@ fn estimate_fee_with_request(
     account_uuid: &str,
     request: SendRequest<'_>,
 ) -> Result<u64, String> {
-    let db = open_wallet_db_for_read(db_path, network)?;
+    let mut db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
     let (proposal, _) = propose_request(
-        &db,
+        &mut db,
         db_path,
         network,
         account_uuid,
@@ -1029,6 +1052,10 @@ enum SendRequest<'a> {
         memo_str: Option<&'a str>,
     },
     PaymentLinkBatch(&'a [(String, u64)]),
+    ExternalGiftMax {
+        to_address: &'a str,
+        reviewed_amount_zatoshi: u64,
+    },
 }
 
 impl SendRequest<'_> {
@@ -1040,6 +1067,9 @@ impl SendRequest<'_> {
                 memo_str,
             } => build_send_request(to_address, amount_zatoshi, memo_str),
             Self::PaymentLinkBatch(payments) => build_payment_link_batch_request(payments),
+            Self::ExternalGiftMax { .. } => {
+                Err("Max-spend request requires its proposal path".into())
+            }
         }
     }
 }
@@ -1051,7 +1081,7 @@ impl SendRequest<'_> {
 /// rejected exactly when the proposal would be.
 #[allow(clippy::too_many_arguments)]
 fn propose_request(
-    db: &WalletDatabase,
+    db: &mut WalletDatabase,
     db_path: &str,
     network: WalletNetwork,
     account_uuid: &str,
@@ -1060,6 +1090,32 @@ fn propose_request(
     purpose: SendPurpose,
     context: &str,
 ) -> Result<(Proposal<WalletFeeRule, ReceivedNoteId>, Option<TxVersion>), String> {
+    if let SendRequest::ExternalGiftMax {
+        to_address,
+        reviewed_amount_zatoshi,
+    } = request
+    {
+        let pools = ordinary_send_spend_pools(super::migration::migration_reserves_orchard_inputs(
+            db_path,
+            account_uuid,
+            network,
+        )?);
+        let proposal = build_send_max_proposal(
+            db,
+            network,
+            account_id,
+            to_address,
+            None,
+            &pools,
+            purpose.confirmations_policy(),
+        )?;
+        // Keep the displayed and durable receipt amount equal to the actual proposal.
+        // Newly arrived or spent funds require a fresh review, before any signing occurs.
+        if summarize_send_max_proposal(&proposal)?.amount_zatoshi != reviewed_amount_zatoshi {
+            return Err("Gift card balance changed. Check the card again.".into());
+        }
+        return Ok((proposal, None));
+    }
     if purpose == SendPurpose::PaymentLinkClaim {
         if let Some(source) = gift_card_input::CardInput::load(db, db_path, account_id)? {
             let proposal = source.propose(network, request.build()?)?;

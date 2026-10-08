@@ -27,6 +27,7 @@ secp256k1 = "0.29"
 
 # Key generation
 bip0039 = "0.12"
+bech32 = "0.11"
 
 # Serialization
 nonempty = "0.11"

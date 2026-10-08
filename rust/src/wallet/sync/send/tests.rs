@@ -16,6 +16,20 @@ const MIGRATION_TEST_PASSWORD: &[u8] = b"correct horse battery staple";
 const MIGRATION_TEST_SALT: &str = "AQIDBAUGBwgJCgsMDQ4PEA==";
 
 #[test]
+fn external_gift_claim_uses_ordinary_confirmations_and_discards_ovk() {
+    let external = SendPurpose::ExternalGiftClaim.confirmations_policy();
+    let ordinary = SendPurpose::Ordinary.confirmations_policy();
+    assert_eq!(external.trusted(), ordinary.trusted());
+    assert_eq!(external.untrusted(), ordinary.untrusted());
+    assert_eq!(external.untrusted().get(), 6);
+    assert_eq!(
+        SendPurpose::ExternalGiftClaim.ovk_policy(),
+        StoredOvkPolicy::Discard
+    );
+    assert_eq!(SendPurpose::Ordinary.ovk_policy(), StoredOvkPolicy::Sender);
+}
+
+#[test]
 fn gift_card_batch_request_accepts_fifty_distinct_payments() {
     let payments: Vec<_> = (1..=50)
         .map(|index| (gift_card_batch_address(index), 20_000))

@@ -19,6 +19,7 @@ pub(crate) mod transparent_receive_cache;
 pub(crate) mod tree_states;
 pub mod voting;
 pub(crate) mod wallet_summary_cache;
+pub(crate) mod zodl_gift_link;
 
 const TRUSTED_CONFIRMATIONS: u32 = 3;
 // Vizor's product policy accepts externally received funds sooner than the
