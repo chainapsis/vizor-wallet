@@ -45,6 +45,7 @@ class NativeCaseLifecycle:
         self._sealed = False
         self._cleanup_errors: list[str] = []
         self._receipt: CaseProcessCleanup | None = None
+        self._final_command_attempted = False
 
     @property
     def workspace(self) -> NativeCaseWorkspace:
@@ -81,6 +82,12 @@ class NativeCaseLifecycle:
         """
         if self._sealed:
             raise runtime.RunnerError("case process lifecycle is sealed")
+        return self._start_process(command, env=env, stdin=stdin)
+
+    def _start_process(
+        self, command: Sequence[str], *, env: Mapping[str, str], stdin: Any = None,
+        raw_lines: list[str] | None = None,
+    ) -> runtime.ManagedProcess:
         environment = self.workspace.launch_environment()
         supplied = dict(env)
         if any(key in supplied and supplied[key] != value for key, value in environment.items()):
@@ -95,9 +102,10 @@ class NativeCaseLifecycle:
         try:
             managed = runtime.start_logged_process(
                 command, cwd=self.workspace.root, env={**supplied, **environment},
-                log_path=log_path, stdin=stdin,
+                log_path=log_path, stdin=stdin, raw_lines=raw_lines,
             )
             self._processes.append(managed)
+            self._receipt = None
         except BaseException as error:
             self._cleanup_failed(error)
             if managed is not None:
@@ -111,6 +119,36 @@ class NativeCaseLifecycle:
                     raise error from cleanup
             raise
         return managed
+
+    def run_final_command(
+        self, command: Sequence[str], *, env: Mapping[str, str], timeout: float,
+        cancel_event: threading.Event,
+    ) -> runtime.CommandResult:
+        """Seal/stop writers, then capture exactly one owned terminal command.
+
+        Never reopen phase launches. A failed attempt cannot be retried on this
+        case. This primitive proves process/output completion only: the caller
+        must verify the cleanup executable and its native observations. All
+        files, including failed/partial command output, remain on disk.
+        """
+        if self._final_command_attempted:
+            raise runtime.RunnerError("case final command was already attempted")
+        if (
+            isinstance(timeout, bool) or not isinstance(timeout, (int, float))
+            or not math.isfinite(timeout) or timeout <= 0
+        ):
+            raise runtime.RunnerError("timeout must be positive and finite")
+        self._final_command_attempted = True
+        self.close()
+        lines: list[str] = []
+        try:
+            managed = self._start_process(command, env=env, raw_lines=lines)
+            code = self.wait_process(managed, timeout=timeout, cancel_event=cancel_event)
+            self.close()
+            return runtime.CommandResult(code, tuple(lines))
+        except BaseException as error:
+            self._cleanup_failed(error)
+            raise
 
     def wait_process(
         self,

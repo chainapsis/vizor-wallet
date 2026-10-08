@@ -107,7 +107,11 @@ established; retain this observation rather than treating reruns as a fix.
 The current slice adds a standalone [macOS native storage helper](native-cleanup/README.md)
 with signing checks, exact case Keychain/preference cleanup, positive native
 observations and failed partial receipts. It does not add production app startup
-wiring or enable execution. Host-owned case/launch binding, directory removal,
+wiring or enable execution. The host binding now captures actual helper/cohort
+signing and unchanged artifact identities, seals/stops the owned case, runs one
+terminal cleanup command and validates its complete scope-bound receipt. It
+retains files and does not rewrite the app context or failed results. Trusted
+helper provisioning/build publication, directory removal,
 iOS recovery/auxiliary-secret cleanup, post-app simulator teardown,
 backend/executor integration, and scenario migrations remain pending. A native
 observation or process receipt alone never authorizes deleting a run.

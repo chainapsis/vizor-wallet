@@ -255,12 +255,57 @@ absence. Partial/uncertain results remain failures; no values are emitted.
 
 This is not wired to app startup or an executor, does not grant ownership from a
 namespace/receipt, and does not remove support/workspace files or simulators.
-iOS recovery/auxiliary secrets, host case/launch binding, and full worker cleanup
-remain pending. Catalog execution flags are unchanged.
+iOS recovery/auxiliary secrets and full worker cleanup remain pending. Catalog
+execution flags are unchanged.
 
 ```bash
 swift test --package-path scripts/e2e/native-cleanup
 ```
+
+### Bind macOS cleanup to an owned case
+
+`native_mac_cleanup.py` captures the actual signed helper and cohort artifacts:
+valid signatures, sandbox/application/Keychain identity, the same leaf certificate
+and public provisioning profile, original directory/file identities and content
+digests. It does not derive a team from Xcode defaults. The distinct helper must
+be background-only, named `vizor-native-cleanup`, and have only the minimal
+cleanup entitlements. The future artifact builder must compile the trusted
+helper sources and correct cohort profile; signature capture alone is not source
+provenance, nor does this module publish a build/cache.
+
+`clean_mac_case()` verifies artifacts, then uses the case owner's single terminal
+command. `run_final_command()` seals normal launches, stops every tracked writer,
+and refuses a terminal launch after any unproven process cleanup. It never
+reopens the lifecycle, even for a successful close; only one terminal attempt is
+allowed. Do not run case methods concurrently or launch untracked native writers.
+The helper receives a minimal environment, not caller loader/user-domain overrides.
+
+Only a successful owned process with completed output, unchanged artifacts and
+an exact schema-1 deletion receipt can yield `CaseMacCleanupObservation`. Reject
+duplicate/extra fields, another namespace/team, partial status, retained items,
+unproven preference synchronization, or nonzero exit. No context PID, external
+JSON/log, or caller cleanup boolean substitutes for that launch. A failure keeps
+logs/state and cannot be retried on the same case. The observation is historical,
+not a test PASS or deletion permission; `native-context.json` remains unchanged.
+
+```python
+helper = capture_mac_cleanup_helper(helper_app, cohort_app=cohort_app)
+observed = clean_mac_case(case, helper, timeout=30, cancel_event=cancel_event)
+```
+
+Artifact probes have a 15-second per-command allowance; the terminal command's
+`timeout` is its execution wait, with the shared five-second error-cleanup
+allowance. Writer close has a separate per-group budget. These are not one hard
+wall-time bound (filesystem/system calls can add latency).
+
+```bash
+python3 -B -m unittest scripts/e2e/test_native_mac_cleanup.py scripts/e2e/test_native_case_lifecycle.py
+```
+
+The host tests model codesign/native receipts but use real private artifacts and
+owned children. They do not establish actual Keychain deletion. Support/workspace
+removal, iOS/post-app simulator cleanup, signed helper provisioning/build-once
+execution and failed-report recovery remain separate implementation boundaries.
 
 ## Gift Cards
 
