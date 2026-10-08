@@ -58,10 +58,18 @@ and the [app runtime contract](RUNTIME_CONTRACT.md)
 ([PR #892](https://github.com/chainapsis/vizor-wallet/pull/892)) are merged into
 the umbrella, not `main`. Worker lifecycle now includes the independently
 testable port-reservation primitive
-([PR #893](https://github.com/chainapsis/vizor-wallet/pull/893)). The next local
-slice is owned POSIX process-group and output-pump lifecycle. These primitives
-do not wire execution: case workspaces, simulators, native storage cleanup,
-backend/executor integration, and scenario migrations remain pending.
+([PR #893](https://github.com/chainapsis/vizor-wallet/pull/893)) and owned POSIX
+process-group/output-pump lifecycle
+([PR #894](https://github.com/chainapsis/vizor-wallet/pull/894)). Both are merged
+into the umbrella, not `main`. The process slice's macOS host regression had
+124 passes and 4 Linux-only skips; its 44 lifecycle tests passed three times
+each with the Linux runner as PID 1 and beneath a non-reaping PID 1.
+
+The current independently testable boundary allocates owned case workspaces and
+publishes the schema-1 launch manifest from the app runtime contract. It retains
+directories/evidence and does not implement removal or native cleanup. These
+primitives do not wire execution: cleanup receipts, simulators, native storage
+cleanup, backend/executor integration, and scenario migrations remain pending.
 
 | Slice | Scope | Prerequisites |
 | --- | --- | --- |
