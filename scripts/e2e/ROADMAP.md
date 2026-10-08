@@ -110,8 +110,13 @@ observations and failed partial receipts. It does not add production app startup
 wiring or enable execution. The host binding now captures actual helper/cohort
 signing and unchanged artifact identities, seals/stops the owned case, runs one
 terminal cleanup command and validates its complete scope-bound receipt. It
-retains files and does not rewrite the app context or failed results. Trusted
-helper provisioning/build publication, directory removal,
+does not rewrite the app context or failed results. The macOS support owner now
+exclusively allocates the SDK-declared sandbox case directory before app launches,
+proves native absence read-only, binds direct app/context identities, and composes
+verified terminal native cleanup with anchored support removal. Failed scenarios
+retain state; cleanup uncertainty stays failed with remaining state/evidence.
+Case workspaces/logs/markers/manifests are never removed by this owner. Trusted
+helper provisioning/build publication, whole-worker workspace removal,
 iOS recovery/auxiliary-secret cleanup, post-app simulator teardown,
 backend/executor integration, and scenario migrations remain pending. A native
 observation or process receipt alone never authorizes deleting a run.

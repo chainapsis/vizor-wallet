@@ -303,9 +303,61 @@ python3 -B -m unittest scripts/e2e/test_native_mac_cleanup.py scripts/e2e/test_n
 ```
 
 The host tests model codesign/native receipts but use real private artifacts and
-owned children. They do not establish actual Keychain deletion. Support/workspace
+owned children. They do not establish actual Keychain deletion. Workspace
 removal, iOS/post-app simulator cleanup, signed helper provisioning/build-once
 execution and failed-report recovery remain separate implementation boundaries.
+
+### Own macOS case support storage
+
+`prepare_mac_case_storage()` composes an owned unlaunched macOS case and captured
+signed helper. First a read-only `--support-location` SDK query declares the
+current sandbox/user-domain support path, using the pinned
+[path_provider_foundation 2.6.0 calculation](https://pub.dev/api/archives/path_provider_foundation-2.6.0.tar.gz).
+The host checks the exact actual-user sandbox path, creates the case directory
+exclusively, and captures original no-follow directory/file identities and a
+private marker. Existing case directories are never adopted. A subsequent
+read-only native `--verify` must prove both services and prefixed preferences
+absent before any wallet launch: a new folder is not proof of fresh secrets.
+Failure retains the partial allocation and evidence, without erasing old state.
+
+Use `owner.start_app()` for each direct cohort app launch/restart; ordinary
+backend/control phases may use the same case owner, but must not write untracked
+native state. The builder still must supply the trusted isolated cohort profile.
+After tracked writers stop, context is checked against the exact original case,
+latest owned app PID, allocated support path and declared services/preferences.
+Context/JSON/PIDs are declarations, not cleanup or signalling permissions.
+
+```python
+owner = prepare_mac_case_storage(case, helper, timeout=30, cancel_event=cancel_event)
+app = owner.start_app(env=app_environment)
+# Execute/observe the scenario and preserve its independent result.
+# For a failed scenario: owner.retain() stops writers without deleting state.
+cleanup = owner.close(timeout=30, cancel_event=cancel_event)  # successful scenario
+```
+
+`close()` seals/stops tracked writers, verifies original identities and a safe
+tree, composes the signed terminal native cleanup internally, then rechecks and
+removes only that owned support tree through anchored descriptors. Reject
+symlinks, hardlinks, nonregular/unowned/writable entries and moved/replaced
+parents/children. Require positive final absence. It never accepts an external
+cleanup boolean/receipt as deletion authority, removes the case workspace,
+rewrites context, or converts an execution failure into PASS.
+
+Use `retain()` for failed scenarios. Unproven cleanup is sticky: do not retry or
+adopt partial state. A native or filesystem failure can occur after some owned
+state has been removed; remaining state and case logs/markers/manifests stay for
+diagnosis. This is not rollback or failed-report recovery. Calls are cooperative
+and single-owner; all native writers must remain tracked in owned groups.
+Each SDK phase has its own wait/error-cleanup allowance, not a total wall-time SLA.
+
+```bash
+python3 -B -m unittest scripts/e2e/test_native_mac_case_storage.py scripts/e2e/test_native_mac_cleanup.py scripts/e2e/test_native_case_lifecycle.py
+swift test --package-path scripts/e2e/native-cleanup
+```
+
+The host models use real private fake-home files and owned children, not real
+wallets or Keychain secrets. Catalog execution, trusted build publication, iOS
+cleanup and whole-worker teardown remain pending; `runnable` flags stay false.
 
 ## Gift Cards
 

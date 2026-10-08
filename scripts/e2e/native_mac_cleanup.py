@@ -59,6 +59,14 @@ class CapturedMacCleanupHelper:
     def team(self) -> str:
         return self._cohort.team
 
+    @property
+    def executable(self) -> Path:
+        return self._helper.executable
+
+    @property
+    def cohort_executable(self) -> Path:
+        return self._cohort.executable
+
     def verify_unchanged(self) -> None:
         if self._capture_token is not _CAPTURE_TOKEN:
             raise MacCleanupError("expected a captured macOS cleanup helper")
@@ -225,7 +233,9 @@ def _require_fields(value: object, fields: set[str]) -> dict:
     return value
 
 
-def _validate_receipt(lines: tuple[str, ...], *, namespace: str, team: str) -> None:
+def _validate_receipt(lines: tuple[str, ...], *, namespace: str, team: str, mode: str = "delete") -> None:
+    if mode not in ("delete", "verify"):
+        raise MacCleanupError("invalid expected native cleanup observation mode")
     try:
         text = "".join(lines)
         if len(text.encode("utf-8")) > _MAX_RECEIPT_BYTES:
@@ -236,7 +246,7 @@ def _validate_receipt(lines: tuple[str, ...], *, namespace: str, team: str) -> N
         })
         if (
             type(receipt["schema_version"]) is not int or receipt["schema_version"] != 1
-            or receipt["platform"] != "macos" or receipt["mode"] != "delete"
+            or receipt["platform"] != "macos" or receipt["mode"] != mode
             or receipt["namespace"] != namespace or receipt["expected_team"] != team
             or receipt["completed"] is not True
         ):
@@ -249,12 +259,16 @@ def _validate_receipt(lines: tuple[str, ...], *, namespace: str, team: str) -> N
         if not isinstance(receipt["keychain"], list) or len(receipt["keychain"]) != 2:
             raise MacCleanupError("native cleanup Keychain observations are incomplete")
         for observed, service in zip(receipt["keychain"], services):
-            item = _require_fields(observed, {"service", "before_status", "delete_status", "after_status"})
+            fields = {"service", "before_status", "after_status"}
+            if mode == "delete":
+                fields.add("delete_status")
+            item = _require_fields(observed, fields)
             if (
                 item["service"] != service
-                or any(type(item[key]) is not int for key in ("before_status", "delete_status", "after_status"))
-                or item["before_status"] not in (0, -25300)
-                or item["delete_status"] not in (0, -25300) or item["after_status"] != -25300
+                or any(type(item[key]) is not int for key in fields - {"service"})
+                or item["before_status"] not in ((0, -25300) if mode == "delete" else (-25300,))
+                or (mode == "delete" and item["delete_status"] not in (0, -25300))
+                or item["after_status"] != -25300
             ):
                 raise MacCleanupError("native cleanup Keychain absence is unproven")
         preferences = _require_fields(receipt["preferences"], {
@@ -264,6 +278,7 @@ def _validate_receipt(lines: tuple[str, ...], *, namespace: str, team: str) -> N
             preferences["prefix"] != f"flutter.vizor_e2e_{namespace}."
             or any(type(preferences[key]) is not int for key in ("before_count", "removed_count", "after_count"))
             or preferences["before_count"] < 0
+            or (mode == "verify" and preferences["before_count"] != 0)
             or preferences["removed_count"] != preferences["before_count"]
             or preferences["after_count"] != 0 or preferences["synchronized"] is not True
         ):

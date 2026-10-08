@@ -56,6 +56,11 @@ class NativeCaseLifecycle:
         """False after final close or any unproven process cleanup."""
         return not self._sealed
 
+    @property
+    def launched_process_count(self) -> int:
+        """Historical phase/terminal launch count; not native-writer identity."""
+        return len(self._processes)
+
     def _require_member(self, managed: runtime.ManagedProcess) -> None:
         if not any(managed is owned for owned in self._processes):
             raise runtime.RunnerError("process was not launched by this case")
@@ -119,6 +124,23 @@ class NativeCaseLifecycle:
                     raise error from cleanup
             raise
         return managed
+
+    def run_command(
+        self, command: Sequence[str], *, env: Mapping[str, str], timeout: float,
+        cancel_event: threading.Event,
+    ) -> runtime.CommandResult:
+        """Capture an ordinary owned phase without sealing successful launches."""
+        if self._sealed:
+            raise runtime.RunnerError("case process lifecycle is sealed")
+        if (
+            isinstance(timeout, bool) or not isinstance(timeout, (int, float))
+            or not math.isfinite(timeout) or timeout <= 0
+        ):
+            raise runtime.RunnerError("timeout must be positive and finite")
+        lines: list[str] = []
+        managed = self._start_process(command, env=env, raw_lines=lines)
+        code = self.wait_process(managed, timeout=timeout, cancel_event=cancel_event)
+        return runtime.CommandResult(code, tuple(lines))
 
     def run_final_command(
         self, command: Sequence[str], *, env: Mapping[str, str], timeout: float,

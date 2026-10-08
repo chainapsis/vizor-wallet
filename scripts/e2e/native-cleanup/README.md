@@ -28,8 +28,10 @@ These observations do not stop processes, remove wallet/support/workspace files,
 modify `native-context.json`, delete simulators, implement iOS cleanup, or recover
 failed reports. [Host case/launch binding](../README.md#bind-macos-cleanup-to-an-owned-case)
 captures the actual signed artifacts and validates the owned terminal command's
-output. Support-directory cleanup and executor integration remain later
-boundaries. Catalog `runnable` flags stay false.
+output. The [macOS support owner](../README.md#own-macos-case-support-storage)
+adds exclusive SDK-declared allocation and internally composed guarded removal;
+the CLI itself owns/deletes no filesystem state. Executor integration remains a
+later boundary. Catalog `runnable` flags stay false.
 
 ## Focused model tests
 
@@ -68,6 +70,14 @@ For the host binding, keep `CFBundleExecutable: vizor-native-cleanup` and set
 exact default Keychain group, if explicit). Do not substitute the manual smoke
 executable. The artifact builder remains responsible for trusted source/build
 provenance; merely renaming/signing an arbitrary executable does not prove it.
+
+`--support-location --namespace <case> --team <team>` only declares the actual
+SDK user-domain application support location, after signing checks; it performs
+no directory creation, native secret observation or deletion. The host validates
+and exclusively allocates that path, then requires read-only `--verify` absence
+before app writers. Neither a location receipt nor an existing directory is
+ownership. The path calculation matches the pinned provider's macOS bundle-ID
+suffix. Normal wallet builds do not link this package or invoke these modes.
 
 ## Optional real native smoke
 
