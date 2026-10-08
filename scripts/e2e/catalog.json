@@ -1,0 +1,1442 @@
+{
+  "schema_version": 1,
+  "profiles": [
+    {
+      "id": "zakura-direct-height1",
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "zakura-direct-activation500",
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter-direct-height1",
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter-direct-activation500",
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "rust.send.basic",
+      "engine": "rust",
+      "script": null,
+      "target": "regtest_send",
+      "test": "funded_wallet_can_send_to_second_wallet",
+      "profile": "zakura-direct-height1",
+      "tags": [
+        "rust",
+        "send",
+        "smoke"
+      ],
+      "timeout_seconds": 600,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "rust.send.second-account",
+      "engine": "rust",
+      "script": null,
+      "target": "regtest_send",
+      "test": "imported_second_account_can_send_using_its_own_seed",
+      "profile": "zakura-direct-height1",
+      "tags": [
+        "rust",
+        "send",
+        "multi-account"
+      ],
+      "timeout_seconds": 600,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "rust.receive.sync",
+      "engine": "rust",
+      "script": null,
+      "target": "regtest_receive_sync",
+      "test": "create_wallet_receives_funds_and_syncs_balance",
+      "profile": "zakura-direct-height1",
+      "tags": [
+        "rust",
+        "receive",
+        "smoke"
+      ],
+      "timeout_seconds": 600,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "rust.receive.direct-zakura",
+      "engine": "rust",
+      "script": null,
+      "target": "regtest_direct_zakura_receive",
+      "test": "empty_wallet_receives_exact_ironwood_funding_from_direct_zakura",
+      "profile": "zakura-direct-height1",
+      "tags": [
+        "rust",
+        "receive",
+        "direct-zakura",
+        "smoke"
+      ],
+      "timeout_seconds": 180,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "rust.import.direct-zakura",
+      "engine": "rust",
+      "script": null,
+      "target": "regtest_direct_zakura_import",
+      "test": "historical_bip39_passphrase_import_recovers_exact_ironwood_funding_from_direct_zakura",
+      "profile": "zakura-direct-height1",
+      "tags": [
+        "rust",
+        "import",
+        "recovery",
+        "birthday",
+        "direct-zakura",
+        "smoke"
+      ],
+      "timeout_seconds": 180,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "rust.import.bip39-passphrase",
+      "engine": "rust",
+      "script": null,
+      "target": "regtest_import",
+      "test": "bip39_passphrase_import_recovers_funds_sent_to_independently_derived_address",
+      "profile": "zakura-direct-height1",
+      "tags": [
+        "rust",
+        "import",
+        "smoke"
+      ],
+      "timeout_seconds": 600,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "rust.import.historical-birthday",
+      "engine": "rust",
+      "script": null,
+      "target": "regtest_import",
+      "test": "import_wallet_with_historical_birthday_recovers_existing_funds",
+      "profile": "zakura-direct-height1",
+      "tags": [
+        "rust",
+        "import",
+        "birthday"
+      ],
+      "timeout_seconds": 600,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "rust.import.future-birthday",
+      "engine": "rust",
+      "script": null,
+      "target": "regtest_import",
+      "test": "import_wallet_with_future_birthday_does_not_rescan_old_receive",
+      "profile": "zakura-direct-height1",
+      "tags": [
+        "rust",
+        "import",
+        "birthday"
+      ],
+      "timeout_seconds": 600,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "rust.import.receive-after-sync",
+      "engine": "rust",
+      "script": null,
+      "target": "regtest_import",
+      "test": "import_wallet_then_receive_new_funds_after_sync_updates_correctly",
+      "profile": "zakura-direct-height1",
+      "tags": [
+        "rust",
+        "import",
+        "receive"
+      ],
+      "timeout_seconds": 600,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "rust.import.deterministic-reimport",
+      "engine": "rust",
+      "script": null,
+      "target": "regtest_import",
+      "test": "same_mnemonic_imported_into_fresh_db_matches_original_ua_and_balance",
+      "profile": "zakura-direct-height1",
+      "tags": [
+        "rust",
+        "import",
+        "recovery"
+      ],
+      "timeout_seconds": 600,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "rust.multi-account.orphaned-range",
+      "engine": "rust",
+      "script": null,
+      "target": "regtest_multi_account",
+      "test": "sync_start_rescues_wallet_stuck_by_orphaned_historical_scan_range",
+      "profile": "zakura-direct-height1",
+      "tags": [
+        "rust",
+        "multi-account",
+        "sync"
+      ],
+      "timeout_seconds": 600,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "rust.multi-account.deleted-range",
+      "engine": "rust",
+      "script": null,
+      "target": "regtest_multi_account",
+      "test": "sync_completes_when_deleted_account_left_scanned_range_below_birthday",
+      "profile": "zakura-direct-height1",
+      "tags": [
+        "rust",
+        "multi-account",
+        "sync"
+      ],
+      "timeout_seconds": 600,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "rust.multi-account.late-add-history-future",
+      "engine": "rust",
+      "script": null,
+      "target": "regtest_multi_account",
+      "test": "adding_second_account_after_tip_sync_recovers_historical_and_future_funds",
+      "profile": "zakura-direct-height1",
+      "tags": [
+        "rust",
+        "multi-account",
+        "recovery"
+      ],
+      "timeout_seconds": 600,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "rust.multi-account.tip-birthday-history",
+      "engine": "rust",
+      "script": null,
+      "target": "regtest_multi_account",
+      "test": "late_added_account_with_tip_birthday_still_recovers_historical_funds",
+      "profile": "zakura-direct-height1",
+      "tags": [
+        "rust",
+        "multi-account",
+        "birthday"
+      ],
+      "timeout_seconds": 600,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "rust.multi-account.two-before-sync",
+      "engine": "rust",
+      "script": null,
+      "target": "regtest_multi_account",
+      "test": "two_new_accounts_added_before_single_sync_are_both_recovered",
+      "profile": "zakura-direct-height1",
+      "tags": [
+        "rust",
+        "multi-account",
+        "sync"
+      ],
+      "timeout_seconds": 600,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "rust.multi-account.preserve-history",
+      "engine": "rust",
+      "script": null,
+      "target": "regtest_multi_account",
+      "test": "existing_account_history_is_unchanged_when_new_account_is_added",
+      "profile": "zakura-direct-height1",
+      "tags": [
+        "rust",
+        "multi-account",
+        "history"
+      ],
+      "timeout_seconds": 600,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "rust.multi-account.isolated-balances",
+      "engine": "rust",
+      "script": null,
+      "target": "regtest_multi_account",
+      "test": "multi_account_sync_keeps_balances_isolated_per_account",
+      "profile": "zakura-direct-height1",
+      "tags": [
+        "rust",
+        "multi-account",
+        "balance"
+      ],
+      "timeout_seconds": 600,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "rust.multi-account.idempotent-sync",
+      "engine": "rust",
+      "script": null,
+      "target": "regtest_multi_account",
+      "test": "repeated_sync_is_idempotent_for_multi_account_wallet",
+      "profile": "zakura-direct-height1",
+      "tags": [
+        "rust",
+        "multi-account",
+        "sync"
+      ],
+      "timeout_seconds": 600,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "rust.gift-card.tracking-multiple",
+      "engine": "rust",
+      "script": null,
+      "target": "regtest_gift_card_tracking",
+      "test": "observer_scans_multiple_view_only_accounts_and_retires_only_used_card",
+      "profile": "zakura-direct-height1",
+      "tags": [
+        "rust",
+        "gift-card",
+        "observer"
+      ],
+      "timeout_seconds": 600,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "rust.gift-card.empty-db-reuse",
+      "engine": "rust",
+      "script": null,
+      "target": "regtest_gift_card_tracking",
+      "test": "observer_reuses_empty_db_without_scanning_idle_gap",
+      "profile": "zakura-direct-height1",
+      "tags": [
+        "rust",
+        "gift-card",
+        "observer"
+      ],
+      "timeout_seconds": 600,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "rust.gift-card.competition",
+      "engine": "rust",
+      "script": null,
+      "target": "regtest_payment_link_competition",
+      "test": "one_card_two_claimants_preserve_and_resolve_losing_transaction",
+      "profile": "zakura-direct-height1",
+      "tags": [
+        "rust",
+        "gift-card",
+        "competition"
+      ],
+      "timeout_seconds": 600,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "rust.ironwood.migration",
+      "engine": "rust",
+      "script": null,
+      "target": "ironwood_regtest_migration",
+      "test": "orchard_funds_migrate_after_controlled_nu6_3_activation",
+      "profile": "zakura-direct-activation500",
+      "tags": [
+        "rust",
+        "ironwood",
+        "migration",
+        "direct-zakura"
+      ],
+      "timeout_seconds": 1200,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "rust.ironwood.gift-card-claim",
+      "engine": "rust",
+      "script": null,
+      "target": "ironwood_regtest_gift_card_claim",
+      "test": "gift_card_claims_at_two_confirmations_and_discards_the_card_ovk",
+      "profile": "zakura-direct-activation500",
+      "tags": [
+        "rust",
+        "ironwood",
+        "gift-card",
+        "reorg",
+        "direct-zakura"
+      ],
+      "timeout_seconds": 1200,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter.macos.import-sync",
+      "engine": "flutter-macos",
+      "script": "scripts/e2e/flutter-macos-regtest-import-sync.sh",
+      "target": "flutter-macos",
+      "test": "flutter-macos-regtest-import-sync",
+      "profile": "flutter-direct-height1",
+      "tags": [
+        "flutter",
+        "macos",
+        "smoke",
+        "import"
+      ],
+      "timeout_seconds": 1200,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter.macos.fallback-endpoint",
+      "engine": "flutter-macos",
+      "script": "scripts/e2e/flutter-macos-regtest-fallback-endpoint.sh",
+      "target": "flutter-macos",
+      "test": "flutter-macos-regtest-fallback-endpoint",
+      "profile": "flutter-direct-height1",
+      "tags": [
+        "flutter",
+        "macos",
+        "endpoint",
+        "fallback"
+      ],
+      "timeout_seconds": 1200,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter.macos.custom-endpoint-no-fallback",
+      "engine": "flutter-macos",
+      "script": "scripts/e2e/flutter-macos-regtest-custom-endpoint-no-fallback.sh",
+      "target": "flutter-macos",
+      "test": "flutter-macos-regtest-custom-endpoint-no-fallback",
+      "profile": "flutter-direct-height1",
+      "tags": [
+        "flutter",
+        "macos",
+        "endpoint",
+        "privacy"
+      ],
+      "timeout_seconds": 1200,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter.macos.sync-startup-stall-recovery",
+      "engine": "flutter-macos",
+      "script": "scripts/e2e/flutter-macos-regtest-sync-startup-stall-recovery.sh",
+      "target": "flutter-macos",
+      "test": "flutter-macos-regtest-sync-startup-stall-recovery",
+      "profile": "flutter-direct-height1",
+      "tags": [
+        "flutter",
+        "macos",
+        "sync",
+        "recovery"
+      ],
+      "timeout_seconds": 1200,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter.macos.slow-height-fallback",
+      "engine": "flutter-macos",
+      "script": "scripts/e2e/flutter-macos-regtest-slow-height-fallback.sh",
+      "target": "flutter-macos",
+      "test": "flutter-macos-regtest-slow-height-fallback",
+      "profile": "flutter-direct-height1",
+      "tags": [
+        "flutter",
+        "macos",
+        "driver",
+        "fallback"
+      ],
+      "timeout_seconds": 1200,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter.macos.shield-transparent",
+      "engine": "flutter-macos",
+      "script": "scripts/e2e/flutter-macos-regtest-shield-transparent.sh",
+      "target": "flutter-macos",
+      "test": "flutter-macos-regtest-shield-transparent",
+      "profile": "flutter-direct-height1",
+      "tags": [
+        "flutter",
+        "macos",
+        "driver",
+        "shielding"
+      ],
+      "timeout_seconds": 1200,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter.macos.shield-transparent-retry",
+      "engine": "flutter-macos",
+      "script": "scripts/e2e/flutter-macos-regtest-shield-transparent-retry.sh",
+      "target": "flutter-macos",
+      "test": "flutter-macos-regtest-shield-transparent-retry",
+      "profile": "flutter-direct-height1",
+      "tags": [
+        "flutter",
+        "macos",
+        "driver",
+        "shielding",
+        "retry"
+      ],
+      "timeout_seconds": 1200,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter.macos.multi-account-send",
+      "engine": "flutter-macos",
+      "script": "scripts/e2e/flutter-macos-regtest-multi-account-send.sh",
+      "target": "flutter-macos",
+      "test": "flutter-macos-regtest-multi-account-send",
+      "profile": "flutter-direct-height1",
+      "tags": [
+        "flutter",
+        "macos",
+        "multi-account",
+        "send"
+      ],
+      "timeout_seconds": 1200,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter.macos.tex-send",
+      "engine": "flutter-macos",
+      "script": "scripts/e2e/flutter-macos-regtest-tex-send.sh",
+      "target": "flutter-macos",
+      "test": "flutter-macos-regtest-tex-send",
+      "profile": "flutter-direct-height1",
+      "tags": [
+        "flutter",
+        "macos",
+        "driver",
+        "send",
+        "tex"
+      ],
+      "timeout_seconds": 1200,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter.macos.mempool-receive-history",
+      "engine": "flutter-macos",
+      "script": "scripts/e2e/flutter-macos-regtest-mempool-receive-history.sh",
+      "target": "flutter-macos",
+      "test": "flutter-macos-regtest-mempool-receive-history",
+      "profile": "flutter-direct-height1",
+      "tags": [
+        "flutter",
+        "macos",
+        "driver",
+        "mempool"
+      ],
+      "timeout_seconds": 1200,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter.macos.mempool-during-sync",
+      "engine": "flutter-macos",
+      "script": "scripts/e2e/flutter-macos-regtest-mempool-during-sync.sh",
+      "target": "flutter-macos",
+      "test": "flutter-macos-regtest-mempool-during-sync",
+      "profile": "flutter-direct-height1",
+      "tags": [
+        "flutter",
+        "macos",
+        "driver",
+        "mempool",
+        "sync"
+      ],
+      "timeout_seconds": 1200,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter.macos.mempool-expiry",
+      "engine": "flutter-macos",
+      "script": "scripts/e2e/flutter-macos-regtest-mempool-expiry.sh",
+      "target": "flutter-macos",
+      "test": "flutter-macos-regtest-mempool-expiry",
+      "profile": "flutter-direct-height1",
+      "tags": [
+        "flutter",
+        "macos",
+        "driver",
+        "mempool",
+        "expiry"
+      ],
+      "timeout_seconds": 1200,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter.macos.voting",
+      "engine": "flutter-macos",
+      "script": "scripts/e2e/flutter-macos-regtest-voting.sh",
+      "target": "flutter-macos",
+      "test": "flutter-macos-regtest-voting",
+      "profile": "flutter-direct-activation500",
+      "tags": [
+        "flutter",
+        "macos",
+        "voting"
+      ],
+      "timeout_seconds": 3600,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter.macos.voting-slow-helper",
+      "engine": "flutter-macos",
+      "script": "scripts/e2e/flutter-macos-regtest-voting-slow-helper.sh",
+      "target": "flutter-macos",
+      "test": "flutter-macos-regtest-voting-slow-helper",
+      "profile": "flutter-direct-activation500",
+      "tags": [
+        "flutter",
+        "macos",
+        "voting",
+        "slow-helper"
+      ],
+      "timeout_seconds": 3600,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter.macos.payment-uri-send",
+      "engine": "flutter-macos",
+      "script": "scripts/e2e/flutter-macos-regtest-payment-uri-send.sh",
+      "target": "flutter-macos",
+      "test": "flutter-macos-regtest-payment-uri-send",
+      "profile": "flutter-direct-height1",
+      "tags": [
+        "flutter",
+        "macos",
+        "payment-uri",
+        "send"
+      ],
+      "timeout_seconds": 1200,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter.macos.payment-uri-locked-send",
+      "engine": "flutter-macos",
+      "script": "scripts/e2e/flutter-macos-regtest-payment-uri-locked-send.sh",
+      "target": "flutter-macos",
+      "test": "flutter-macos-regtest-payment-uri-locked-send",
+      "profile": "flutter-direct-height1",
+      "tags": [
+        "flutter",
+        "macos",
+        "payment-uri",
+        "locked",
+        "send"
+      ],
+      "timeout_seconds": 1200,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter.macos.payment-request-round-trip",
+      "engine": "flutter-macos",
+      "script": "scripts/e2e/flutter-macos-regtest-payment-request-round-trip.sh",
+      "target": "flutter-macos",
+      "test": "flutter-macos-regtest-payment-request-round-trip",
+      "profile": "flutter-direct-height1",
+      "tags": [
+        "flutter",
+        "macos",
+        "payment-request"
+      ],
+      "timeout_seconds": 1200,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter.macos.payment-link-round-trip",
+      "engine": "flutter-macos",
+      "script": "scripts/e2e/flutter-macos-regtest-payment-link-round-trip.sh",
+      "target": "flutter-macos",
+      "test": "flutter-macos-regtest-payment-link-round-trip",
+      "profile": "flutter-direct-height1",
+      "tags": [
+        "flutter",
+        "macos",
+        "gift-card"
+      ],
+      "timeout_seconds": 1200,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter.macos.payment-link-restart",
+      "engine": "flutter-macos",
+      "script": "scripts/e2e/flutter-macos-regtest-payment-link.sh",
+      "target": "flutter-macos",
+      "test": "flutter-macos-regtest-payment-link",
+      "profile": "flutter-direct-height1",
+      "tags": [
+        "flutter",
+        "macos",
+        "gift-card",
+        "restart"
+      ],
+      "timeout_seconds": 1200,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter.macos.payment-link-recovery",
+      "engine": "flutter-macos",
+      "script": "scripts/e2e/flutter-macos-regtest-payment-link-recovery.sh",
+      "target": "flutter-macos",
+      "test": "flutter-macos-regtest-payment-link-recovery",
+      "profile": "flutter-direct-height1",
+      "tags": [
+        "flutter",
+        "macos",
+        "gift-card",
+        "reorg",
+        "recovery"
+      ],
+      "timeout_seconds": 1200,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter.ios.create-sync",
+      "engine": "flutter-ios",
+      "script": "scripts/e2e/flutter-ios-regtest-mobile-create-sync.sh",
+      "target": "flutter-ios",
+      "test": "flutter-ios-regtest-mobile-create-sync",
+      "profile": "flutter-direct-height1",
+      "tags": [
+        "flutter",
+        "ios",
+        "create",
+        "sync"
+      ],
+      "timeout_seconds": 1200,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter.ios.import-sync",
+      "engine": "flutter-ios",
+      "script": "scripts/e2e/flutter-ios-regtest-mobile-import-sync.sh",
+      "target": "flutter-ios",
+      "test": "flutter-ios-regtest-mobile-import-sync",
+      "profile": "flutter-direct-height1",
+      "tags": [
+        "flutter",
+        "ios",
+        "import",
+        "sync"
+      ],
+      "timeout_seconds": 1200,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter.ios.account-management",
+      "engine": "flutter-ios",
+      "script": "scripts/e2e/flutter-ios-regtest-mobile-account-management.sh",
+      "target": "flutter-ios",
+      "test": "flutter-ios-regtest-mobile-account-management",
+      "profile": "flutter-direct-height1",
+      "tags": [
+        "flutter",
+        "ios",
+        "account"
+      ],
+      "timeout_seconds": 1200,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter.ios.multi-account-send",
+      "engine": "flutter-ios",
+      "script": "scripts/e2e/flutter-ios-regtest-mobile-multi-account-send.sh",
+      "target": "flutter-ios",
+      "test": "flutter-ios-regtest-mobile-multi-account-send",
+      "profile": "flutter-direct-height1",
+      "tags": [
+        "flutter",
+        "ios",
+        "multi-account",
+        "send"
+      ],
+      "timeout_seconds": 1200,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter.ios.mempool-receive",
+      "engine": "flutter-ios",
+      "script": "scripts/e2e/flutter-ios-regtest-mobile-mempool-receive.sh",
+      "target": "flutter-ios",
+      "test": "flutter-ios-regtest-mobile-mempool-receive",
+      "profile": "flutter-direct-height1",
+      "tags": [
+        "flutter",
+        "ios",
+        "driver",
+        "mempool"
+      ],
+      "timeout_seconds": 1200,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter.ios.fallback-endpoint",
+      "engine": "flutter-ios",
+      "script": "scripts/e2e/flutter-ios-regtest-mobile-fallback-endpoint.sh",
+      "target": "flutter-ios",
+      "test": "flutter-ios-regtest-mobile-fallback-endpoint",
+      "profile": "flutter-direct-height1",
+      "tags": [
+        "flutter",
+        "ios",
+        "endpoint",
+        "fallback"
+      ],
+      "timeout_seconds": 1200,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter.ios.slow-height-fallback",
+      "engine": "flutter-ios",
+      "script": "scripts/e2e/flutter-ios-regtest-mobile-slow-height-fallback.sh",
+      "target": "flutter-ios",
+      "test": "flutter-ios-regtest-mobile-slow-height-fallback",
+      "profile": "flutter-direct-height1",
+      "tags": [
+        "flutter",
+        "ios",
+        "driver",
+        "fallback"
+      ],
+      "timeout_seconds": 1200,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter.ios.ironwood-pre-migration-send",
+      "engine": "flutter-ios",
+      "script": "scripts/e2e/flutter-ios-regtest-mobile-ironwood-pre-migration-send.sh",
+      "target": "flutter-ios",
+      "test": "flutter-ios-regtest-mobile-ironwood-pre-migration-send",
+      "profile": "flutter-direct-activation500",
+      "tags": [
+        "flutter",
+        "ios",
+        "ironwood",
+        "send"
+      ],
+      "timeout_seconds": 2400,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter.ios.ironwood-migration",
+      "engine": "flutter-ios",
+      "script": "scripts/e2e/flutter-ios-regtest-mobile-ironwood-migration.sh",
+      "target": "flutter-ios",
+      "test": "flutter-ios-regtest-mobile-ironwood-migration",
+      "profile": "flutter-direct-activation500",
+      "tags": [
+        "flutter",
+        "ios",
+        "ironwood",
+        "migration"
+      ],
+      "timeout_seconds": 2400,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter.ios.ironwood-migration-many-notes",
+      "engine": "flutter-ios",
+      "script": "scripts/e2e/flutter-ios-regtest-mobile-ironwood-migration-many-notes.sh",
+      "target": "flutter-ios",
+      "test": "flutter-ios-regtest-mobile-ironwood-migration-many-notes",
+      "profile": "flutter-direct-activation500",
+      "tags": [
+        "flutter",
+        "ios",
+        "ironwood",
+        "migration",
+        "many-notes"
+      ],
+      "timeout_seconds": 2400,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter.ios.ironwood-migration-multi-account",
+      "engine": "flutter-ios",
+      "script": "scripts/e2e/flutter-ios-regtest-mobile-ironwood-migration-multi-account.sh",
+      "target": "flutter-ios",
+      "test": "flutter-ios-regtest-mobile-ironwood-migration-multi-account",
+      "profile": "flutter-direct-activation500",
+      "tags": [
+        "flutter",
+        "ios",
+        "ironwood",
+        "migration",
+        "multi-account"
+      ],
+      "timeout_seconds": 2400,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter.ios.ironwood-migration-reorg",
+      "engine": "flutter-ios",
+      "script": "scripts/e2e/flutter-ios-regtest-mobile-ironwood-migration-reorg.sh",
+      "target": "flutter-ios",
+      "test": "flutter-ios-regtest-mobile-ironwood-migration-reorg",
+      "profile": "flutter-direct-activation500",
+      "tags": [
+        "flutter",
+        "ios",
+        "ironwood",
+        "migration",
+        "reorg"
+      ],
+      "timeout_seconds": 2400,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter.ios.ironwood-migration-restart",
+      "engine": "flutter-ios",
+      "script": "scripts/e2e/flutter-ios-regtest-mobile-ironwood-migration-restart.sh",
+      "target": "flutter-ios",
+      "test": "flutter-ios-regtest-mobile-ironwood-migration-restart",
+      "profile": "flutter-direct-activation500",
+      "tags": [
+        "flutter",
+        "ios",
+        "ironwood",
+        "migration",
+        "restart"
+      ],
+      "timeout_seconds": 3600,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter.ios.ironwood-migration-network-recovery",
+      "engine": "flutter-ios",
+      "script": "scripts/e2e/flutter-ios-regtest-mobile-ironwood-migration-network-recovery.sh",
+      "target": "flutter-ios",
+      "test": "flutter-ios-regtest-mobile-ironwood-migration-network-recovery",
+      "profile": "flutter-direct-activation500",
+      "tags": [
+        "flutter",
+        "ios",
+        "ironwood",
+        "migration",
+        "recovery"
+      ],
+      "timeout_seconds": 2400,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter.ios.ironwood-background-migration",
+      "engine": "flutter-ios",
+      "script": "scripts/e2e/flutter-ios-regtest-mobile-ironwood-background-migration.sh",
+      "target": "flutter-ios",
+      "test": "flutter-ios-regtest-mobile-ironwood-background-migration",
+      "profile": "flutter-direct-activation500",
+      "tags": [
+        "flutter",
+        "ios",
+        "ironwood",
+        "migration",
+        "background",
+        "native-outbox"
+      ],
+      "timeout_seconds": 2400,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter.ios.ironwood-background-restart",
+      "engine": "flutter-ios",
+      "script": "scripts/e2e/flutter-ios-regtest-mobile-ironwood-background-restart.sh",
+      "target": "flutter-ios",
+      "test": "flutter-ios-regtest-mobile-ironwood-background-restart",
+      "profile": "flutter-direct-activation500",
+      "tags": [
+        "flutter",
+        "ios",
+        "ironwood",
+        "background",
+        "restart",
+        "native-outbox"
+      ],
+      "timeout_seconds": 3600,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter.ios.payment-link-round-trip",
+      "engine": "flutter-ios",
+      "script": "scripts/e2e/flutter-ios-regtest-mobile-payment-link-round-trip.sh",
+      "target": "flutter-ios",
+      "test": "flutter-ios-regtest-mobile-payment-link-round-trip",
+      "profile": "flutter-direct-height1",
+      "tags": [
+        "flutter",
+        "ios",
+        "gift-card"
+      ],
+      "timeout_seconds": 1200,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter.ios.payment-uri-send",
+      "engine": "flutter-ios",
+      "script": "scripts/e2e/flutter-ios-regtest-mobile-payment-uri-send.sh",
+      "target": "flutter-ios",
+      "test": "flutter-ios-regtest-mobile-payment-uri-send",
+      "profile": "flutter-direct-height1",
+      "tags": [
+        "flutter",
+        "ios",
+        "payment-uri",
+        "send"
+      ],
+      "timeout_seconds": 1200,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter.ios.gift-onboarding",
+      "engine": "flutter-ios",
+      "script": "scripts/e2e/flutter-ios-regtest-mobile-gift-onboarding.sh",
+      "target": "flutter-ios",
+      "test": "flutter-ios-regtest-mobile-gift-onboarding",
+      "profile": "flutter-direct-height1",
+      "tags": [
+        "flutter",
+        "ios",
+        "driver",
+        "gift-card",
+        "onboarding"
+      ],
+      "timeout_seconds": 1200,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter.ios.ironwood-migration-account-reimport",
+      "engine": "flutter-ios",
+      "script": "scripts/e2e/flutter-ios-regtest-mobile-ironwood-migration-account-reimport.sh",
+      "target": "flutter-ios",
+      "test": "flutter-ios-regtest-mobile-ironwood-migration-account-reimport",
+      "profile": "flutter-direct-activation500",
+      "tags": [
+        "flutter",
+        "ios",
+        "ironwood",
+        "migration",
+        "reimport",
+        "optional"
+      ],
+      "timeout_seconds": 2700,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    },
+    {
+      "id": "flutter.ios.ironwood-migration-500-notes",
+      "engine": "flutter-ios",
+      "script": "scripts/e2e/flutter-ios-regtest-mobile-ironwood-migration-500-notes.sh",
+      "target": "flutter-ios",
+      "test": "flutter-ios-regtest-mobile-ironwood-migration-500-notes",
+      "profile": "flutter-direct-activation500",
+      "tags": [
+        "flutter",
+        "ios",
+        "ironwood",
+        "migration",
+        "many-notes",
+        "optional"
+      ],
+      "timeout_seconds": 6000,
+      "supported": false,
+      "pending_reason": "execution backend and lifecycle are not implemented"
+    }
+  ],
+  "suites": {
+    "smoke": [
+      "rust.send.basic",
+      "rust.receive.sync",
+      "rust.import.bip39-passphrase"
+    ],
+    "rust-current": [
+      "rust.send.basic",
+      "rust.send.second-account",
+      "rust.receive.sync",
+      "rust.import.bip39-passphrase",
+      "rust.import.historical-birthday",
+      "rust.import.future-birthday",
+      "rust.import.receive-after-sync",
+      "rust.import.deterministic-reimport"
+    ],
+    "rust-direct": [
+      "rust.send.basic",
+      "rust.send.second-account",
+      "rust.receive.sync",
+      "rust.receive.direct-zakura",
+      "rust.import.direct-zakura",
+      "rust.import.bip39-passphrase",
+      "rust.import.historical-birthday",
+      "rust.import.future-birthday",
+      "rust.import.receive-after-sync",
+      "rust.import.deterministic-reimport",
+      "rust.multi-account.orphaned-range",
+      "rust.multi-account.deleted-range",
+      "rust.multi-account.late-add-history-future",
+      "rust.multi-account.tip-birthday-history",
+      "rust.multi-account.two-before-sync",
+      "rust.multi-account.preserve-history",
+      "rust.multi-account.isolated-balances",
+      "rust.multi-account.idempotent-sync",
+      "rust.gift-card.tracking-multiple",
+      "rust.gift-card.empty-db-reuse",
+      "rust.gift-card.competition",
+      "rust.ironwood.migration",
+      "rust.ironwood.gift-card-claim"
+    ],
+    "rust-ironwood-migration": [
+      "rust.ironwood.migration"
+    ],
+    "rust-ironwood-gift-card-claim": [
+      "rust.ironwood.gift-card-claim"
+    ],
+    "rust-gift-card": [
+      "rust.gift-card.tracking-multiple",
+      "rust.gift-card.empty-db-reuse",
+      "rust.gift-card.competition",
+      "rust.ironwood.gift-card-claim"
+    ],
+    "rust-multi-account": [
+      "rust.multi-account.orphaned-range",
+      "rust.multi-account.deleted-range",
+      "rust.multi-account.late-add-history-future",
+      "rust.multi-account.tip-birthday-history",
+      "rust.multi-account.two-before-sync",
+      "rust.multi-account.preserve-history",
+      "rust.multi-account.isolated-balances",
+      "rust.multi-account.idempotent-sync"
+    ],
+    "full": [
+      "rust.send.basic",
+      "rust.send.second-account",
+      "rust.receive.sync",
+      "rust.import.bip39-passphrase",
+      "rust.import.historical-birthday",
+      "rust.import.future-birthday",
+      "rust.import.receive-after-sync",
+      "rust.import.deterministic-reimport",
+      "rust.multi-account.orphaned-range",
+      "rust.multi-account.deleted-range",
+      "rust.multi-account.late-add-history-future",
+      "rust.multi-account.tip-birthday-history",
+      "rust.multi-account.two-before-sync",
+      "rust.multi-account.preserve-history",
+      "rust.multi-account.isolated-balances",
+      "rust.multi-account.idempotent-sync",
+      "rust.gift-card.tracking-multiple",
+      "rust.gift-card.empty-db-reuse",
+      "rust.gift-card.competition",
+      "rust.ironwood.migration",
+      "rust.ironwood.gift-card-claim"
+    ],
+    "flutter-macos-smoke": [
+      "flutter.macos.import-sync"
+    ],
+    "flutter-macos-current": [
+      "flutter.macos.import-sync",
+      "flutter.macos.fallback-endpoint",
+      "flutter.macos.custom-endpoint-no-fallback",
+      "flutter.macos.sync-startup-stall-recovery",
+      "flutter.macos.slow-height-fallback",
+      "flutter.macos.shield-transparent",
+      "flutter.macos.shield-transparent-retry",
+      "flutter.macos.multi-account-send",
+      "flutter.macos.tex-send",
+      "flutter.macos.mempool-receive-history",
+      "flutter.macos.mempool-during-sync",
+      "flutter.macos.mempool-expiry",
+      "flutter.macos.voting",
+      "flutter.macos.voting-slow-helper",
+      "flutter.macos.payment-uri-send",
+      "flutter.macos.payment-uri-locked-send",
+      "flutter.macos.payment-request-round-trip",
+      "flutter.macos.payment-link-round-trip",
+      "flutter.macos.payment-link-restart",
+      "flutter.macos.payment-link-recovery"
+    ],
+    "flutter-macos-full": [
+      "flutter.macos.import-sync",
+      "flutter.macos.fallback-endpoint",
+      "flutter.macos.custom-endpoint-no-fallback",
+      "flutter.macos.sync-startup-stall-recovery",
+      "flutter.macos.slow-height-fallback",
+      "flutter.macos.shield-transparent",
+      "flutter.macos.shield-transparent-retry",
+      "flutter.macos.multi-account-send",
+      "flutter.macos.tex-send",
+      "flutter.macos.mempool-receive-history",
+      "flutter.macos.mempool-during-sync",
+      "flutter.macos.mempool-expiry",
+      "flutter.macos.voting",
+      "flutter.macos.voting-slow-helper",
+      "flutter.macos.payment-uri-send",
+      "flutter.macos.payment-uri-locked-send",
+      "flutter.macos.payment-request-round-trip",
+      "flutter.macos.payment-link-round-trip",
+      "flutter.macos.payment-link-restart",
+      "flutter.macos.payment-link-recovery"
+    ],
+    "flutter-ios-full": [
+      "flutter.ios.create-sync",
+      "flutter.ios.import-sync",
+      "flutter.ios.account-management",
+      "flutter.ios.multi-account-send",
+      "flutter.ios.mempool-receive",
+      "flutter.ios.fallback-endpoint",
+      "flutter.ios.slow-height-fallback",
+      "flutter.ios.ironwood-pre-migration-send",
+      "flutter.ios.ironwood-migration",
+      "flutter.ios.ironwood-migration-many-notes",
+      "flutter.ios.ironwood-migration-multi-account",
+      "flutter.ios.ironwood-migration-reorg",
+      "flutter.ios.ironwood-migration-restart",
+      "flutter.ios.ironwood-migration-network-recovery",
+      "flutter.ios.ironwood-background-migration",
+      "flutter.ios.ironwood-background-restart",
+      "flutter.ios.payment-link-round-trip",
+      "flutter.ios.payment-uri-send",
+      "flutter.ios.gift-onboarding",
+      "flutter.ios.ironwood-migration-account-reimport",
+      "flutter.ios.ironwood-migration-500-notes"
+    ],
+    "flutter-ios-current": [
+      "flutter.ios.create-sync",
+      "flutter.ios.import-sync",
+      "flutter.ios.account-management",
+      "flutter.ios.multi-account-send",
+      "flutter.ios.mempool-receive",
+      "flutter.ios.fallback-endpoint",
+      "flutter.ios.slow-height-fallback",
+      "flutter.ios.ironwood-pre-migration-send",
+      "flutter.ios.ironwood-migration",
+      "flutter.ios.ironwood-migration-many-notes",
+      "flutter.ios.ironwood-migration-multi-account",
+      "flutter.ios.ironwood-migration-reorg",
+      "flutter.ios.ironwood-migration-restart",
+      "flutter.ios.ironwood-migration-network-recovery",
+      "flutter.ios.ironwood-background-migration",
+      "flutter.ios.ironwood-background-restart",
+      "flutter.ios.payment-link-round-trip",
+      "flutter.ios.payment-uri-send",
+      "flutter.ios.gift-onboarding"
+    ],
+    "all": [
+      "rust.send.basic",
+      "rust.send.second-account",
+      "rust.receive.sync",
+      "rust.receive.direct-zakura",
+      "rust.import.direct-zakura",
+      "rust.import.bip39-passphrase",
+      "rust.import.historical-birthday",
+      "rust.import.future-birthday",
+      "rust.import.receive-after-sync",
+      "rust.import.deterministic-reimport",
+      "rust.multi-account.orphaned-range",
+      "rust.multi-account.deleted-range",
+      "rust.multi-account.late-add-history-future",
+      "rust.multi-account.tip-birthday-history",
+      "rust.multi-account.two-before-sync",
+      "rust.multi-account.preserve-history",
+      "rust.multi-account.isolated-balances",
+      "rust.multi-account.idempotent-sync",
+      "rust.gift-card.tracking-multiple",
+      "rust.gift-card.empty-db-reuse",
+      "rust.gift-card.competition",
+      "rust.ironwood.migration",
+      "rust.ironwood.gift-card-claim",
+      "flutter.macos.import-sync",
+      "flutter.macos.fallback-endpoint",
+      "flutter.macos.custom-endpoint-no-fallback",
+      "flutter.macos.sync-startup-stall-recovery",
+      "flutter.macos.slow-height-fallback",
+      "flutter.macos.shield-transparent",
+      "flutter.macos.shield-transparent-retry",
+      "flutter.macos.multi-account-send",
+      "flutter.macos.tex-send",
+      "flutter.macos.mempool-receive-history",
+      "flutter.macos.mempool-during-sync",
+      "flutter.macos.mempool-expiry",
+      "flutter.macos.voting",
+      "flutter.macos.voting-slow-helper",
+      "flutter.macos.payment-uri-send",
+      "flutter.macos.payment-uri-locked-send",
+      "flutter.macos.payment-request-round-trip",
+      "flutter.macos.payment-link-round-trip",
+      "flutter.macos.payment-link-restart",
+      "flutter.macos.payment-link-recovery",
+      "flutter.ios.create-sync",
+      "flutter.ios.import-sync",
+      "flutter.ios.account-management",
+      "flutter.ios.multi-account-send",
+      "flutter.ios.mempool-receive",
+      "flutter.ios.fallback-endpoint",
+      "flutter.ios.slow-height-fallback",
+      "flutter.ios.ironwood-pre-migration-send",
+      "flutter.ios.ironwood-migration",
+      "flutter.ios.ironwood-migration-many-notes",
+      "flutter.ios.ironwood-migration-multi-account",
+      "flutter.ios.ironwood-migration-reorg",
+      "flutter.ios.ironwood-migration-restart",
+      "flutter.ios.ironwood-migration-network-recovery",
+      "flutter.ios.ironwood-background-migration",
+      "flutter.ios.ironwood-background-restart",
+      "flutter.ios.payment-link-round-trip",
+      "flutter.ios.payment-uri-send",
+      "flutter.ios.gift-onboarding",
+      "flutter.ios.ironwood-migration-account-reimport",
+      "flutter.ios.ironwood-migration-500-notes"
+    ],
+    "flutter-current": [
+      "flutter.macos.import-sync",
+      "flutter.macos.fallback-endpoint",
+      "flutter.macos.custom-endpoint-no-fallback",
+      "flutter.macos.sync-startup-stall-recovery",
+      "flutter.macos.slow-height-fallback",
+      "flutter.macos.shield-transparent",
+      "flutter.macos.shield-transparent-retry",
+      "flutter.macos.multi-account-send",
+      "flutter.macos.tex-send",
+      "flutter.macos.mempool-receive-history",
+      "flutter.macos.mempool-during-sync",
+      "flutter.macos.mempool-expiry",
+      "flutter.macos.voting",
+      "flutter.macos.voting-slow-helper",
+      "flutter.macos.payment-uri-send",
+      "flutter.macos.payment-uri-locked-send",
+      "flutter.macos.payment-request-round-trip",
+      "flutter.macos.payment-link-round-trip",
+      "flutter.macos.payment-link-restart",
+      "flutter.macos.payment-link-recovery",
+      "flutter.ios.create-sync",
+      "flutter.ios.import-sync",
+      "flutter.ios.account-management",
+      "flutter.ios.multi-account-send",
+      "flutter.ios.mempool-receive",
+      "flutter.ios.fallback-endpoint",
+      "flutter.ios.slow-height-fallback",
+      "flutter.ios.ironwood-pre-migration-send",
+      "flutter.ios.ironwood-migration",
+      "flutter.ios.ironwood-migration-many-notes",
+      "flutter.ios.ironwood-migration-multi-account",
+      "flutter.ios.ironwood-migration-reorg",
+      "flutter.ios.ironwood-migration-restart",
+      "flutter.ios.ironwood-migration-network-recovery",
+      "flutter.ios.ironwood-background-migration",
+      "flutter.ios.ironwood-background-restart",
+      "flutter.ios.payment-link-round-trip",
+      "flutter.ios.payment-uri-send",
+      "flutter.ios.gift-onboarding"
+    ],
+    "flutter-native-all": [
+      "flutter.macos.import-sync",
+      "flutter.macos.fallback-endpoint",
+      "flutter.macos.custom-endpoint-no-fallback",
+      "flutter.macos.sync-startup-stall-recovery",
+      "flutter.macos.slow-height-fallback",
+      "flutter.macos.shield-transparent",
+      "flutter.macos.shield-transparent-retry",
+      "flutter.macos.multi-account-send",
+      "flutter.macos.tex-send",
+      "flutter.macos.mempool-receive-history",
+      "flutter.macos.mempool-during-sync",
+      "flutter.macos.mempool-expiry",
+      "flutter.macos.voting",
+      "flutter.macos.voting-slow-helper",
+      "flutter.macos.payment-uri-send",
+      "flutter.macos.payment-uri-locked-send",
+      "flutter.macos.payment-request-round-trip",
+      "flutter.macos.payment-link-round-trip",
+      "flutter.macos.payment-link-restart",
+      "flutter.macos.payment-link-recovery",
+      "flutter.ios.create-sync",
+      "flutter.ios.import-sync",
+      "flutter.ios.account-management",
+      "flutter.ios.multi-account-send",
+      "flutter.ios.mempool-receive",
+      "flutter.ios.fallback-endpoint",
+      "flutter.ios.slow-height-fallback",
+      "flutter.ios.ironwood-pre-migration-send",
+      "flutter.ios.ironwood-migration",
+      "flutter.ios.ironwood-migration-many-notes",
+      "flutter.ios.ironwood-migration-multi-account",
+      "flutter.ios.ironwood-migration-reorg",
+      "flutter.ios.ironwood-migration-restart",
+      "flutter.ios.ironwood-migration-network-recovery",
+      "flutter.ios.ironwood-background-migration",
+      "flutter.ios.ironwood-background-restart",
+      "flutter.ios.payment-link-round-trip",
+      "flutter.ios.payment-uri-send",
+      "flutter.ios.gift-onboarding",
+      "flutter.ios.ironwood-migration-account-reimport",
+      "flutter.ios.ironwood-migration-500-notes"
+    ]
+  }
+}

@@ -1,8 +1,56 @@
 # End-to-end tests
 
 For the planned isolated execution framework and direct Zakura migration, see
-the [E2E roadmap](ROADMAP.md). The roadmap tracks unmerged work; the commands
-below remain the current runners.
+the [E2E roadmap](ROADMAP.md). The roadmap tracks unmerged work. Catalog previews
+are described first; the existing scenario runners below are unchanged.
+
+## Catalog previews
+
+`run-suite.py` provides a host-only inventory and selection preview. This first
+slice does not include execution backends: all 64 catalog entries are pending,
+and a plan reports `runnable: false` with its blockers. An exit code of 0 means
+the preview succeeded, not that any E2E test ran or passed. Invocation without
+`--list` or `--plan` fails before accessing a backend.
+
+Previews require Python 3.9 or newer and use only the standard library. Git is
+also required for `--changed-from`; Flutter, Docker, and a running regtest stack
+are not needed for previews or the host-only checks below.
+
+```bash
+# List the inventory or preview a suite, exact scenario, or tag intersection.
+python3 scripts/e2e/run-suite.py --list
+python3 scripts/e2e/run-suite.py --suite flutter-native-all --tag ios --plan
+python3 scripts/e2e/run-suite.py --scenario rust.send.basic --plan
+python3 scripts/e2e/run-suite.py --suite all --tag ios --tag ironwood --list
+
+# Preview affected scenarios or failed/timed-out cases from a schema-2 report.
+python3 scripts/e2e/run-suite.py --changed-file integration_test/regtest_payment_link_round_trip_test.dart --plan
+python3 scripts/e2e/run-suite.py --changed-from origin/main --plan
+python3 scripts/e2e/run-suite.py --failed-from /path/to/prior/run.json --plan
+```
+
+Primary selectors are mutually exclusive. Repeat `--scenario` or `--changed-file`
+to combine inputs, and repeat `--tag` to require every tag. Selection is deduplicated
+in catalog order. Prior reports must contain known scenario IDs and matching
+target/test identities; passed, cancelled, and unstarted cases are not failed-case
+candidates, and the original report is never rewritten.
+
+Changed-file selection uses conservative path rules, not a full dependency graph.
+Known scripts, integration phases, and Rust targets select their mapped scenarios;
+shared code and unknown files widen coverage. Pending cases remain in the preview
+and its coverage gaps. Shared helpers under `test/support/` and `test/e2e/` select
+the Flutter inventory; other `test/` paths are treated as unit-only.
+Documentation/unit-only changes can select no E2Es.
+`--changed-from` reads merge-base, committed, staged, unstaged, and nonignored
+untracked paths, including deleted paths and both sides of renames. It rejects
+HEAD or changed-path status drift during collection. Other previews need no
+subprocess; no preview starts services, builds, simulators, or artifact directories.
+
+Host-only checks for this slice:
+
+```bash
+python3 -B -m unittest scripts/e2e/test_e2e_catalog.py scripts/e2e/test_e2e_report.py scripts/e2e/test_e2e_changes.py scripts/e2e/test_e2e_impact.py scripts/e2e/test_run_suite.py
+```
 
 ## Gift Cards
 
