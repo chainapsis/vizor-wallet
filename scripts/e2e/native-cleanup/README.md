@@ -26,8 +26,10 @@ process/output completion and bind the receipt to that launch. A namespace,
 JSON receipt or `completed: true` is **not ownership or deletion permission**.
 These observations do not stop processes, remove wallet/support/workspace files,
 modify `native-context.json`, delete simulators, implement iOS cleanup, or recover
-failed reports. Host binding, support-directory cleanup and executor integration
-are later boundaries. Catalog `runnable` flags stay false.
+failed reports. [Host case/launch binding](../README.md#bind-macos-cleanup-to-an-owned-case)
+captures the actual signed artifacts and validates the owned terminal command's
+output. Support-directory cleanup and executor integration remain later
+boundaries. Catalog `runnable` flags stay false.
 
 ## Focused model tests
 
@@ -61,6 +63,11 @@ prefix `--verify` to observe without item/preference deletion. Nonzero exit or
 The expected team must come from verified cohort signing, not a repository's
 default Xcode setting. This slice does not build/sign/launch helper bundles for
 workers. All such launch/recovery authority remains outside this CLI.
+For the host binding, keep `CFBundleExecutable: vizor-native-cleanup` and set
+`LSBackgroundOnly: true`; use only the minimal required entitlements (and the
+exact default Keychain group, if explicit). Do not substitute the manual smoke
+executable. The artifact builder remains responsible for trusted source/build
+provenance; merely renaming/signing an arbitrary executable does not prove it.
 
 ## Optional real native smoke
 
