@@ -1781,8 +1781,13 @@ class SwapNotifier extends Notifier<SwapState> {
   }
 
   void _clearReviewState() {
-    // Composer edits invalidate the quote, not its receiving key. A started
-    // swap or an account/direction change ends the reservation's reuse.
+    // An address NEAR quoted is in its seen set and never used again, so the
+    // next quote gets another; a rejected or pending one, or the wallet's
+    // ordinary address, is kept.
+    final quote = state.reviewQuote;
+    if (quote?.swapRefundIndex != null || quote?.receiveRequestId != null) {
+      _reviewStagingAddress = null;
+    }
     _quoteGeneration++;
     state = state.copyWith(
       reviewVisible: false,

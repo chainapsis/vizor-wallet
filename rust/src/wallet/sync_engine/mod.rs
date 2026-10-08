@@ -58,6 +58,7 @@ pub(crate) mod ledger_discovery;
 mod lwd;
 pub(crate) mod mempool;
 mod swap_private;
+pub(crate) use swap_private::fetch_seen;
 mod tip_cache;
 #[cfg(test)]
 mod transparent_recovery_tests;

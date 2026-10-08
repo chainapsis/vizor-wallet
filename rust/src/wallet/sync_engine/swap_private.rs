@@ -21,6 +21,8 @@ const DEFAULT_RECEIVER_ORIGIN: &str = "https://receiver-pir.valargroup.dev";
 const RECEIVER_ORIGIN_ENV: &str = "VIZOR_RECEIVER_PIR_URL";
 /// Time one recovery run may take. Sweeps it does not reach wait for a later sync.
 const RUN_BUDGET: Duration = Duration::from_secs(180);
+/// Time the seen set download before an issuance may take.
+const SEEN_BUDGET: Duration = Duration::from_secs(20);
 /// The receiver directory's origin: [`RECEIVER_ORIGIN_ENV`], then
 /// [`DEFAULT_RECEIVER_ORIGIN`].
 fn receiver_origin() -> String {
@@ -95,6 +97,32 @@ impl WriteLock for WalletWriteLock {
 }
 fn error(e: impl std::fmt::Display) -> String {
     e.to_string()
+}
+
+/// The receiver directory's swap provider seen sets, which issuance checks (see
+/// `prepare_swap_receive_reservation`), over the restore sweep's transport. `None` off
+/// mainnet or when the directory does not answer within [`SEEN_BUDGET`]; issuance then
+/// counts every quote as seen.
+pub(crate) async fn fetch_seen(network: WalletNetwork) -> Option<zakura_pir_receiver::Seen> {
+    if network != WalletNetwork::Main || cfg!(ironwood_masquerade) {
+        return None;
+    }
+    let should_exit = || false;
+    let enhance = url::Url::parse(&super::enhancement::payload_endpoint()).ok()?;
+    let transport = SwapTransport::new(&should_exit, enhance);
+    let origin = receiver_origin();
+    let fetch = zakura_pir_receiver::fetch_seen(&origin, &transport);
+    match tokio::time::timeout(SEEN_BUDGET, fetch).await {
+        Ok(Ok(seen)) => Some(seen),
+        Ok(Err(e)) => {
+            log::warn!("Swap seen set unavailable: {e}");
+            None
+        }
+        Err(_) => {
+            log::warn!("Swap seen set unavailable: timed out");
+            None
+        }
+    }
 }
 
 /// Runs pending restore sweeps for at most [`RUN_BUDGET`], returning whether one
@@ -220,6 +248,16 @@ mod tests {
             &parse("https://127.0.0.1/v1/enhance/init")
         ));
     }
+    /// Reads the live directory's seen sets, as issuance does.
+    #[tokio::test]
+    #[ignore = "requires the live receiver directory"]
+    async fn issuance_reads_the_live_seen_sets() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let seen = fetch_seen(WalletNetwork::Main).await.unwrap();
+        assert!(seen.since() < seen.until());
+        assert_eq!(seen.contains(&[[0; 43]]).len(), 1);
+    }
+
     /// Uses only a public zero-OVK chain fixture and independently checked RPC anchors.
     #[tokio::test]
     #[ignore = "requires the isolated PIR services and VIZOR_SWAP_PUBLIC_ANCHORS"]

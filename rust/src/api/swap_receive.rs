@@ -6,7 +6,7 @@ use crate::wallet::swap_receiving::receive::ReceiveError;
 use crate::wallet::swap_receiving::{self, receive};
 use crate::wallet::{db::WALLET_DB_BUSY_TIMEOUT, keys, network::WalletNetwork};
 use zakura_swap_receiving::lifecycle::near_observation;
-use zcash_client_sqlite::wallet::swap_receiving::{QuoteOutcome, ReceiveDeposit};
+use zcash_client_sqlite::wallet::swap_receiving::{ProviderSeen, QuoteOutcome, ReceiveDeposit};
 use zcash_keys::address::Address;
 
 /// A durably reserved refund address and its key index.
@@ -44,10 +44,11 @@ pub struct ReceiveQuoteStatusRequest {
     pub deposit_memo: Option<String>,
 }
 
-/// Resumes the account's draft or reserves the lowest eligible index. Its key is
-/// scanned from the next unscanned block until it closes, and quoting later
-/// requires that scanning to reach the tip without finding a payment. Does not
-/// start or restart ordinary wallet sync.
+/// Resumes the account's draft or reserves the lowest eligible index, checking the swap
+/// provider's seen set from the receiver directory (see
+/// `prepare_swap_receive_reservation`). Its key is scanned from the next unscanned block
+/// until it closes, and quoting later requires that scanning to reach the tip without
+/// finding a payment. Does not start or restart ordinary wallet sync.
 pub fn prepare_receive_reservation(
     db_path: String,
     network_name: String,
@@ -56,12 +57,26 @@ pub fn prepare_receive_reservation(
 ) -> Result<ReceiveReservation, ReceiveError> {
     let network = parse_network_and_migrate(&db_path, &network_name)?;
     swap_receiving::require_new_address(network)?;
+    // Fetched before taking the wallet lock, so a slow directory never holds it.
+    let seen = tokio::runtime::Runtime::new()
+        .map_err(|e| format!("tokio: {e}"))?
+        .block_on(crate::wallet::sync_engine::fetch_seen(network));
+    let contains = |receivers: &[[u8; 43]]| {
+        seen.as_ref()
+            .map_or_else(|| vec![true; receivers.len()], |s| s.contains(receivers))
+    };
+    let view = seen.as_ref().map(|s| ProviderSeen {
+        since: s.since(),
+        until: s.until(),
+        contains: &contains,
+    });
     let r = receive::with_db(&db_path, network, &account_uuid, |db, a| {
         swap_receiving::require_software_account(db, a)?;
         db.prepare_swap_receive_reservation(
             a,
             receive::now()?,
             swap_receiving::network_tip(live_tip)?,
+            view.as_ref(),
         )
         .map_err(ReceiveError::from)
     })?;

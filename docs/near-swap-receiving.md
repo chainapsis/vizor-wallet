@@ -137,13 +137,19 @@ explicit quote rejection releases the request; an uncertain outcome holds the
 address until its deadline is two hours past. Starting a swap locks the draft whose
 quote matches the deposit address and memo, and the next swap gets another address.
 
+- Before issuing, Vizor downloads NEAR's seen set from the receiver directory, the
+  same small file for every wallet: every address NEAR was given in a quote, funded
+  or not, since its feed started. An address the set holds, one NEAR accepted a
+  quote for, or one with a quote newer than the set's last read (less an hour for
+  clock differences) is never issued again. If the directory cannot be reached,
+  every quote that was not rejected counts. So a review whose address NEAR quoted
+  drops it, and the next quote gets another.
 - Issuance takes the lowest address never quoted and reuses the lowest abandoned
-  one only when nothing else fits. An address in NEAR's seen set, as a restore
-  reports, is never issued. Issuance never goes more than 30 indices past the
-  highest receipt with 10 confirmations or the highest seen address, and waits for
-  incoming restore sweeps, which may reveal paid or seen indices. When swaps in
-  progress hold all 30, a new quote is refused with a message to wait for one to
-  finish; an unused quote frees its address two hours after its deadline.
+  one, such as a request NEAR never received, only when nothing else fits. Seen
+  addresses move the 30-index recovery gap like received ones, since a restore walks
+  past them, so issuance never goes more than 30 indices past the highest receipt
+  with 10 confirmations or the highest seen address. It waits for incoming restore
+  sweeps, which may reveal paid or seen indices.
 - An unpaid reservation is reclaimed two hours after its creation and every
   quote's deposit deadline, with the wallet scanned to its tip and no payment to the
   address. A started one also needs a fresh conclusive status from the activity
