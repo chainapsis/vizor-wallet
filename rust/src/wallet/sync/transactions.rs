@@ -644,9 +644,10 @@ pub(crate) struct TransactionDetail {
     /// Transparent txid enhancement's view of the transaction: `None` when
     /// it has no transparent part the account recorded.
     pub transparent_details: Option<TransparentDetailsView>,
-    /// The account's net balance change, and the fee when it is known: with
-    /// the transparent view they show whether its listed outputs are the
-    /// transaction's only payees ([`apply_display_recipient`]).
+    /// The account's net balance change, and the fee when it is known (the
+    /// account's, or the whole transaction's): with the transparent view they
+    /// show whether its listed outputs are the transaction's only payees
+    /// ([`apply_display_recipient`]).
     pub account_balance_delta: i64,
     pub fee: Option<u64>,
 }
@@ -1749,9 +1750,12 @@ fn read_transaction_detail(
         provisional: base.history.provisional,
         transparent_details: None,
         account_balance_delta: base.account_balance_delta,
+        // The account's fee, or the whole transaction's exact fee when the
+        // account's share is unknown (a private recovery): a payment shared
+        // with another funder then fails the balance check below.
         fee: match base.history.fee {
             Fee::Known(fee) => Some(fee),
-            Fee::Unknown | Fee::NotApplicable => None,
+            Fee::Unknown | Fee::NotApplicable => base.history.whole_fee,
         },
     })
 }
