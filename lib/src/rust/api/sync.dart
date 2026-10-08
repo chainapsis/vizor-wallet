@@ -1273,7 +1273,8 @@ Future<ProposalResult> proposeSwapFunding({
   refundIndex: refundIndex,
 );
 
-/// The fee [`propose_swap_funding`] would pay.
+/// The fee [`propose_swap_funding`] would pay, for any `refund_index`: the refund memo
+/// does not change the fee, so this also sizes a swap before its refund quote exists.
 Future<BigInt> estimateSwapFundingFee({
   required String dbPath,
   required String network,
