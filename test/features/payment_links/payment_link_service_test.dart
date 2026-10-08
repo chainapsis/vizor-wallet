@@ -57,6 +57,7 @@ void main() {
                     usesOrchardReceiver: exactPool != 'sapling',
                   ),
                 ],
+                transparentRecipients: const [],
               ),
             ],
           ),
@@ -88,6 +89,7 @@ void main() {
                   usesOrchardReceiver: pool == 'orchard',
                 ),
             ],
+            transparentRecipients: const [],
           ),
         ],
       ),
@@ -117,6 +119,7 @@ void main() {
                   usesOrchardReceiver: true,
                 ),
               ],
+              transparentRecipients: const [],
             ),
         ],
       ),
@@ -404,6 +407,7 @@ void main() {
                 pool: 'ironwood',
               ),
             ],
+            transparentRecipients: const [],
           ),
         ],
         destinationAddress: 'destination-ua',
@@ -451,6 +455,7 @@ void main() {
             pool: pool,
           ),
         ],
+        transparentRecipients: const [],
       );
       String? pool(List<rust_sync.TransactionDetail> details) =>
           paymentLinkClaimDestinationPoolFromDetails(
@@ -522,6 +527,7 @@ void main() {
                   usesOrchardReceiver: usesOrchard,
                 ),
               ],
+              transparentRecipients: const [],
             ),
           ],
           destinationAddress: projection,
@@ -3342,6 +3348,7 @@ class _ClaimDestinationRustApi implements RustLibApi {
           activityPool: detailActivityPool,
         ),
       ],
+      transparentRecipients: const [],
     );
   }
 

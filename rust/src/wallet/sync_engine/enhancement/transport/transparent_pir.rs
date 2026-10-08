@@ -504,7 +504,7 @@ impl RequestObserver {
     }
 
     /// Records the request, and answers it unless this observer only records.
-    fn observe(
+    pub(super) fn observe(
         &self,
         method: &Method,
         path: &str,
@@ -526,12 +526,9 @@ mod tests {
     use super::super::RoutePolicy;
     use super::*;
     use http_body_util::Full;
-    use std::{
-        cell::RefCell,
-        sync::{
-            atomic::{AtomicBool, Ordering},
-            Arc,
-        },
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
     };
     use tokio::runtime::Runtime;
     use zakura_pir_transparent::StaleRevision;
@@ -833,45 +830,7 @@ mod tests {
         }
     }
 
-    thread_local! {
-        static LOG_LINES: RefCell<Option<Vec<(String, String)>>> = const { RefCell::new(None) };
-    }
-
-    /// Captures the log records emitted on the calling thread. The transport
-    /// logs where it blocks, on its caller's thread.
-    struct ThreadLog;
-
-    impl log::Log for ThreadLog {
-        fn enabled(&self, _: &log::Metadata<'_>) -> bool {
-            true
-        }
-
-        fn log(&self, record: &log::Record<'_>) {
-            LOG_LINES.with(|lines| {
-                if let Some(lines) = lines.borrow_mut().as_mut() {
-                    lines.push((
-                        record.target().to_owned(),
-                        format!("{} {}", record.level(), record.args()),
-                    ));
-                }
-            });
-        }
-
-        fn flush(&self) {}
-    }
-
-    /// Every record logged on this thread while `run` runs, with its target.
-    fn log_lines(run: impl FnOnce()) -> Vec<(String, String)> {
-        static LOGGER: ThreadLog = ThreadLog;
-        static INSTALL: std::sync::Once = std::sync::Once::new();
-        INSTALL.call_once(|| {
-            log::set_logger(&LOGGER).expect("no other logger in the test binary");
-            log::set_max_level(log::LevelFilter::Debug);
-        });
-        LOG_LINES.with(|lines| *lines.borrow_mut() = Some(Vec::new()));
-        run();
-        LOG_LINES.with(|lines| lines.borrow_mut().take().unwrap())
-    }
+    use super::super::test_log::log_lines;
 
     #[test]
     fn debug_log_lines_carry_only_route_templates() {

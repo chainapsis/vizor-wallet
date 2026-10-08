@@ -99,6 +99,7 @@ PrivateShieldingCase _case(
             usesOrchardReceiver: false,
           ),
       ],
+      transparentRecipients: const [],
     ),
   );
 }

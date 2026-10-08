@@ -507,13 +507,13 @@ impl Pass {
 
 /// The origin a source on `network` recovers from: `configured` or the
 /// default service, on mainnet only.
-pub(super) fn origin_for(network: WalletNetwork, configured: Option<String>) -> Option<String> {
+pub(crate) fn origin_for(network: WalletNetwork, configured: Option<String>) -> Option<String> {
     (network == WalletNetwork::Main)
         .then(|| configured.unwrap_or_else(|| DEFAULT_MAINNET_ORIGIN.to_owned()))
 }
 
 /// The configured origin override, read with `read`, in debug builds only.
-pub(super) fn origin_override(read: impl FnOnce(&str) -> Option<String>) -> Option<String> {
+pub(crate) fn origin_override(read: impl FnOnce(&str) -> Option<String>) -> Option<String> {
     if cfg!(debug_assertions) {
         read(ORIGIN_ENV)
     } else {

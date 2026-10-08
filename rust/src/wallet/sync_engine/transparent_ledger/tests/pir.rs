@@ -146,15 +146,30 @@ pub(super) fn refusing() -> RequestObserver {
     RequestObserver::answering(|_| reply(503, vec![]))
 }
 
-/// The service's six routes, as `METHOD path`: the library's end-to-end
-/// check, verbatim.
-pub(super) const ROUTES: &str = r"^(GET /v1/(filters/shards(/[0-9]+/filter)?|shards/init|shards/[0-9]+/revisions/[0-9a-f]{64}/(manifest|setup/(directory|pages)/[0-9]+))|POST /v1/shards/[0-9]+/revisions/[0-9a-f]{64}/query/(directory|pages))$";
+/// The history service's six routes, as `METHOD path`: the library's
+/// end-to-end check, verbatim.
+pub(super) const HISTORY_ROUTES: &str = r"^(GET /v1/(filters/shards(/[0-9]+/filter)?|shards/init|shards/[0-9]+/revisions/[0-9a-f]{64}/(manifest|setup/(directory|pages)/[0-9]+))|POST /v1/shards/[0-9]+/revisions/[0-9a-f]{64}/query/(directory|pages))$";
 
-/// Asserts that every request used one of the service's routes with that
+/// The txid display service's five routes, as `METHOD path`: the public init
+/// and map, then a shard revision's manifest, setup and queries, named by
+/// tier, shard, revision, table and segment only.
+pub(crate) const TXID_ROUTES: &str = r"^(GET /v1/txid/(init|shards|shards/[0-9]+/revisions/[0-9a-f]{64}/manifest|(archive|recent)/shards/[0-9]+/revisions/[0-9a-f]{64}/setup/(directory-[0-9]+|pages)/[0-9]+)|POST /v1/txid/(archive|recent)/shards/[0-9]+/revisions/[0-9a-f]{64}/query/(directory-[0-9]+|pages))$";
+
+/// Every route either service serves.
+pub(crate) const ROUTES: &str = concat!(
+    r"^(",
+    r"GET /v1/(filters/shards(/[0-9]+/filter)?|shards/init|shards/[0-9]+/revisions/[0-9a-f]{64}/(manifest|setup/(directory|pages)/[0-9]+))",
+    r"|POST /v1/shards/[0-9]+/revisions/[0-9a-f]{64}/query/(directory|pages)",
+    r"|GET /v1/txid/(init|shards|shards/[0-9]+/revisions/[0-9a-f]{64}/manifest|(archive|recent)/shards/[0-9]+/revisions/[0-9a-f]{64}/setup/(directory-[0-9]+|pages)/[0-9]+)",
+    r"|POST /v1/txid/(archive|recent)/shards/[0-9]+/revisions/[0-9a-f]{64}/query/(directory-[0-9]+|pages)",
+    r")$"
+);
+
+/// Asserts that every request used one of the services' routes with that
 /// route's method, with no query string, and that no path or body carries
 /// any of `secrets`, in bytes or in hex. A failure names the request by its
 /// index, never by its path, which holds shard ids and digests.
-pub(super) fn assert_private(requests: &[ObservedRequest], secrets: &[Vec<u8>]) {
+pub(crate) fn assert_private(requests: &[ObservedRequest], secrets: &[Vec<u8>]) {
     let routes = regex::Regex::new(ROUTES).unwrap();
     let needles: Vec<Vec<u8>> = secrets
         .iter()
@@ -663,12 +678,13 @@ async fn a_dropped_pass_stops_at_its_next_request() {
     let wallet = main_wallet(1);
     let account = wallet.accounts[0].1;
     let watch = watched_by(&wallet, account);
-    let finished = Arc::new(AtomicBool::new(false));
+    let (started, finished) = (Arc::new(AtomicBool::new(false)), Arc::new(AtomicBool::new(false)));
     // The service answers the first request after the call is dropped, as
     // when the coordinator's backstop abandons it.
     let seam = test_transport::set(&wallet.path, {
-        let finished = finished.clone();
+        let (started, finished) = (started.clone(), finished.clone());
         RequestObserver::answering(move |_| {
+            started.store(true, Ordering::SeqCst);
             std::thread::sleep(Duration::from_millis(300));
             finished.store(true, Ordering::SeqCst);
             reply(200, shard_map(BIRTHDAY - 100))
@@ -677,10 +693,19 @@ async fn a_dropped_pass_stops_at_its_next_request() {
 
     let source = TransparentPirSource::new(&wallet.path, MAIN);
     let stay = || false;
-    let call = source.recover(request(account, &watch, &stay));
-    assert!(tokio::time::timeout(Duration::from_millis(50), call)
-        .await
-        .is_err());
+    let mut call = Box::pin(source.recover(request(account, &watch, &stay)));
+    // Drop the call once its first request is in flight, however long the
+    // pass takes to open the wallet and companion first.
+    let in_flight = async {
+        while !started.load(Ordering::SeqCst) {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    };
+    tokio::select! {
+        _ = &mut call => panic!("the pass answered before the service did"),
+        _ = in_flight => {}
+    }
+    drop(call);
     while !finished.load(Ordering::SeqCst) {
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
@@ -799,4 +824,96 @@ async fn passes_and_acknowledgments_on_one_companion_are_serialized() {
     assert_eq!(waiting.await.unwrap(), Ok(COMPLETE));
     // A batch without retired revisions may also be settled as reconciled.
     assert_eq!(second.acknowledge(account, true).await, Ok(()));
+}
+
+#[test]
+fn routes_are_the_union_of_both_services() {
+    let all = regex::Regex::new(ROUTES).unwrap();
+    let history = regex::Regex::new(HISTORY_ROUTES).unwrap();
+    let txid = regex::Regex::new(TXID_ROUTES).unwrap();
+    let digest = "ab".repeat(32);
+    for line in [
+        "GET /v1/filters/shards".to_owned(),
+        "GET /v1/shards/init".to_owned(),
+        format!("POST /v1/shards/3/revisions/{digest}/query/pages"),
+        "GET /v1/txid/init".to_owned(),
+        "GET /v1/txid/shards".to_owned(),
+        format!("GET /v1/txid/shards/3/revisions/{digest}/manifest"),
+        format!("GET /v1/txid/archive/shards/3/revisions/{digest}/setup/directory-0/0"),
+        format!("POST /v1/txid/recent/shards/3/revisions/{digest}/query/pages"),
+    ] {
+        assert!(all.is_match(&line), "{line}");
+        assert!(history.is_match(&line) != txid.is_match(&line), "{line}");
+    }
+    for line in [
+        format!("GET /v1/txid/recent/shards/3/revisions/{digest}/query/pages"),
+        format!("POST /v1/txid/archive/shards/3/revisions/{digest}/query/txdirectory"),
+        format!("GET /v1/txid/{digest}"),
+        "GET /v1/txid/shards?txid=1".to_owned(),
+    ] {
+        assert!(!all.is_match(&line), "{line}");
+    }
+}
+
+/// Loop 4's private source sends a whole lookup transcript over the txid
+/// display routes only, on the wallet's route, and no request names the
+/// transaction or any watched script; lightwalletd sees nothing.
+#[tokio::test(flavor = "multi_thread")]
+async fn txid_routes_whitelisted_no_secret_leak() {
+    use crate::wallet::sync_engine::test_lwd::CapturingLwd;
+    use crate::wallet::sync_engine::transparent_details::{
+        followup, guarded, source::test_seam, tests as details, RunOutcome, StageClock,
+    };
+
+    let fixture = details::wallet();
+    let tx = details::utxo_receipt(&fixture, 0x7e, details::TOP - 1);
+    let _mode = details::require_private(&fixture.path);
+    let service = details::empty_publication(details::BIRTHDAY, details::TOP);
+    let _seam = test_seam::set(&fixture.path, service.clone());
+    let lwd = CapturingLwd::start_with(Vec::new(), 0, |_| {}).await;
+    let mut db = open_wallet_db_with_timeout(&fixture.path, MAIN, SYNC_DB_BUSY_TIMEOUT).unwrap();
+    let outcome = guarded(followup(
+        &mut db,
+        &fixture.path,
+        MAIN,
+        details::required(),
+        &lwd.client,
+        StageClock::system(),
+        &|| false,
+    ))
+    .await;
+    assert!(
+        matches!(outcome, Some(RunOutcome::Finished(stats)) if stats.deferred == 1),
+        "{outcome:?}"
+    );
+
+    let requests = service.requests();
+    let digest = "[0-9a-f]{64}";
+    let transcript = [
+        "^/v1/txid/init$".to_owned(),
+        "^/v1/txid/shards$".to_owned(),
+        format!("^/v1/txid/shards/0/revisions/{digest}/manifest$"),
+        format!("^/v1/txid/recent/shards/0/revisions/{digest}/setup/directory-0/0$"),
+        format!("^/v1/txid/recent/shards/0/revisions/{digest}/query/directory-0$"),
+        format!("^/v1/txid/recent/shards/0/revisions/{digest}/query/directory-0$"),
+    ];
+    assert_eq!(requests.len(), transcript.len(), "{:?}", paths(&requests));
+    for (request, expected) in requests.iter().zip(&transcript) {
+        assert!(regex::Regex::new(expected).unwrap().is_match(&request.path));
+    }
+    let txid = regex::Regex::new(TXID_ROUTES).unwrap();
+    assert!(requests
+        .iter()
+        .all(|request| txid.is_match(&format!("{} {}", request.method, request.path))));
+    let mut secrets = vec![tx.txid().as_ref().to_vec()];
+    let mut reversed = tx.txid().as_ref().to_vec();
+    reversed.reverse();
+    secrets.push(reversed);
+    match fixture.address {
+        TransparentAddress::PublicKeyHash(hash) | TransparentAddress::ScriptHash(hash) => {
+            secrets.push(hash.to_vec())
+        }
+    }
+    assert_private(&requests, &secrets);
+    assert!(lwd.requests().is_empty(), "nothing reached lightwalletd");
 }

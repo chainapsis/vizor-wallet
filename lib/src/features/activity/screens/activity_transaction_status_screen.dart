@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/config/private_transparent_recovery_config.dart';
 import '../../../core/config/swap_feature_config.dart';
 import '../../../core/config/zcash_explorer.dart';
 import '../../../core/formatting/address_display.dart';
@@ -43,6 +44,7 @@ import '../transaction_completeness.dart';
 import '../widgets/gift_card_activity_detail_view.dart';
 import '../widgets/received_receipt_view.dart';
 import '../widgets/shielded_receipt_view.dart';
+import '../widgets/transparent_details_section.dart';
 
 class ActivityTransactionStatusArgs {
   const ActivityTransactionStatusArgs({
@@ -76,15 +78,39 @@ typedef ActivityTxDetailLoader =
       rust_sync.TransactionInfo transaction,
     );
 
+/// Asks the next sync to look a transaction's transparent details up first;
+/// injectable for widget tests.
+typedef TransparentDetailsPrioritizer = Future<void> Function(String txidHex);
+
+/// Development builds only: one private lookup, described in a line;
+/// injectable for widget tests.
+typedef TransparentDetailsDebugLookup =
+    Future<String> Function(rust_sync.TransactionInfo transaction);
+
 class ActivityTransactionStatusScreen extends ConsumerStatefulWidget {
   const ActivityTransactionStatusScreen({
     super.key,
     required this.args,
     this.historyLoader,
     this.detailLoader,
+    this.transparentDetailsPrioritizer,
+    this.transparentDetailsDebugLookup,
+    this.privateTransparentRecovery = kZcashPrivateTransparentRecovery,
   });
 
   final ActivityTransactionStatusArgs args;
+
+  /// Test seam — production asks Rust.
+  @visibleForTesting
+  final TransparentDetailsPrioritizer? transparentDetailsPrioritizer;
+
+  /// Test seam — production asks Rust.
+  @visibleForTesting
+  final TransparentDetailsDebugLookup? transparentDetailsDebugLookup;
+
+  /// Whether this is a development build that offers the private lookup
+  /// button.
+  final bool privateTransparentRecovery;
 
   /// Test seam — production reads the wallet DB through Rust.
   @visibleForTesting
@@ -113,6 +139,17 @@ class _ActivityTransactionStatusScreenState
   int _loadGeneration = 0;
   bool _messageExpanded = false;
   String? _verifyAddress;
+  Timer? _transparentDetailsPoll;
+  bool _transparentDetailsPollInFlight = false;
+  bool _transparentDetailsPrioritized = false;
+  String? _debugLookupText;
+  int _debugLookupGeneration = 0;
+
+  @override
+  void dispose() {
+    _transparentDetailsPoll?.cancel();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -140,10 +177,12 @@ class _ActivityTransactionStatusScreenState
 
   Future<void> _loadTransaction() async {
     final generation = ++_loadGeneration;
+    ++_debugLookupGeneration;
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     final accountChanged = accountUuid != _activeAccountUuid;
     _activeAccountUuid = accountUuid;
     setState(() {
+      _debugLookupText = null;
       if (accountChanged) {
         _transaction = null;
         _detail = null;
@@ -197,6 +236,7 @@ class _ActivityTransactionStatusScreenState
         _detail = detail ?? _detail;
         _detailsPending = false;
       });
+      _followTransparentDetails();
     } catch (e, st) {
       if (!_loadIsCurrent(generation, accountUuid)) return;
       log('ActivityTransactionStatus: transaction load failed: $e\n$st');
@@ -239,6 +279,98 @@ class _ActivityTransactionStatusScreenState
       txidHex: transaction.txidHex,
       txKind: transaction.txKind,
     );
+  }
+
+  /// While the shown transaction's transparent details may still arrive,
+  /// asks the next sync to look them up first (once) and re-reads the detail
+  /// until they do.
+  void _followTransparentDetails() {
+    final detail = _matchingDetailFor(_transaction);
+    if (!transparentDetailsAwaited(detail)) {
+      _transparentDetailsPoll?.cancel();
+      _transparentDetailsPoll = null;
+      return;
+    }
+    if (!_transparentDetailsPrioritized) {
+      _transparentDetailsPrioritized = true;
+      unawaited(_prioritizeTransparentDetails(detail!.txidHex));
+    }
+    _transparentDetailsPoll ??= Timer.periodic(
+      kTransparentDetailsPollInterval,
+      (_) => unawaited(_pollTransparentDetails()),
+    );
+  }
+
+  Future<void> _prioritizeTransparentDetails(String txidHex) async {
+    try {
+      final prioritizer = widget.transparentDetailsPrioritizer;
+      if (prioritizer != null) return await prioritizer(txidHex);
+      rust_sync.prioritizeTransparentDetails(
+        dbPath: await getWalletDbPath(),
+        txidHex: txidHex,
+      );
+    } catch (e) {
+      log('ActivityTransactionStatus: prioritize failed: $e');
+    }
+  }
+
+  Future<void> _pollTransparentDetails() async {
+    // Full receipt loads supersede polls through the same generation guard.
+    // Do not start a second read while either refresh is still running.
+    if (_detailsPending || _transparentDetailsPollInFlight) return;
+    final generation = _loadGeneration;
+    final tx = _transaction;
+    final accountUuid = _activeAccountUuid;
+    if (tx == null || accountUuid == null) return;
+    _transparentDetailsPollInFlight = true;
+    try {
+      final detail = await _loadDetail(accountUuid, tx);
+      if (!_loadIsCurrent(generation, accountUuid) || detail == null) {
+        return;
+      }
+      setState(() => _detail = detail);
+      _followTransparentDetails();
+    } catch (e) {
+      log('ActivityTransactionStatus: transparent details refresh failed: $e');
+    } finally {
+      _transparentDetailsPollInFlight = false;
+    }
+  }
+
+  bool _offersDebugLookup(
+    rust_sync.TransactionInfo tx,
+    rust_sync.TransactionDetail? detail,
+  ) {
+    final state = detail?.transparentDetailsState;
+    return widget.privateTransparentRecovery &&
+        state != null &&
+        state != rust_sync.TransparentDetailsState.available &&
+        tx.minedHeight > BigInt.zero;
+  }
+
+  Future<void> _runDebugLookup(rust_sync.TransactionInfo tx) async {
+    final generation = _loadGeneration;
+    final accountUuid = _activeAccountUuid;
+    final lookupGeneration = ++_debugLookupGeneration;
+    bool isCurrent() =>
+        _loadIsCurrent(generation, accountUuid) &&
+        lookupGeneration == _debugLookupGeneration;
+    setState(() => _debugLookupText = 'Looking up…');
+    try {
+      final lookup = widget.transparentDetailsDebugLookup;
+      final text = lookup != null
+          ? await lookup(tx)
+          : describeTransparentDetailsLookup(
+              await rust_sync.debugLookupTransparentDetails(
+                network: ref.read(rpcEndpointProvider).networkName,
+                txidHex: tx.txidHex,
+                minedHeight: tx.minedHeight,
+              ),
+            );
+      if (isCurrent()) setState(() => _debugLookupText = text);
+    } catch (e) {
+      if (isCurrent()) setState(() => _debugLookupText = 'Failed: $e');
+    }
   }
 
   rust_sync.TransactionInfo? _findTransaction(
@@ -488,6 +620,10 @@ class _ActivityTransactionStatusScreenState
             ownAccounts: ownAccounts,
           )
         : null;
+    final fromAccount = receiptSourceAccount(
+      detail,
+      ref.watch(accountProvider).value?.accounts ?? const <AccountInfo>[],
+    );
 
     return _ReceiptContentColumn(
       child: ReceivedReceiptView(
@@ -501,6 +637,17 @@ class _ActivityTransactionStatusScreenState
         timestampText: _timestampText(tx),
         txIdText: _truncatedDisplayTxid(tx.txidHex),
         fromRecipient: fromRecipient,
+        fromAccount: fromAccount == null
+            ? null
+            : (
+                name: fromAccount.name,
+                profilePictureId: fromAccount.profilePictureId,
+                shieldedPool: switch (fromPool) {
+                  'shielded' => true,
+                  'transparent' => false,
+                  _ => null,
+                },
+              ),
         unknownFromKind: hasFromAddress
             ? null
             : _unknownFromKindForSourcePool(fromPool),
@@ -550,9 +697,19 @@ class _ActivityTransactionStatusScreenState
       phase: _sentPhaseFor(tx),
       amountText: _amountText(tx, privacyModeEnabled: privacyModeEnabled),
       recipient: recipient,
-      recipientRow: recipient == null
+      // A send whose recipient the account did not record keeps the send
+      // shell; nothing names a recipient or offers to verify one.
+      recipientRow: recipient != null
+          ? null
+          : _detailsLoading
           ? const ReceiptCounterpartySkeleton(label: 'To')
-          : null,
+          : ReviewInfoRow(
+              key: const ValueKey('receipt_unknown_recipient'),
+              label: 'To',
+              value: kUnknownRecipientText,
+              struckThrough: _sentPhaseFor(tx) == SendStatusPhase.failed,
+              leading: const ReviewInfoIconCircle(iconName: AppIcons.wallet),
+            ),
       timestampText: _timestampText(tx),
       txIdText: _truncatedDisplayTxid(tx.txidHex),
       feeText: _feeText(tx, privacyModeEnabled: privacyModeEnabled),
@@ -910,7 +1067,7 @@ class _ActivityTransactionStatusScreenState
     final giftCard =
         _resolvedGiftCard(tx, activeAccountUuid) ?? suppliedGiftCard;
 
-    final sentRecipientAddress = detail?.primaryAddress?.trim();
+    final sentRecipientAddress = receiptRecipientAddress(detail);
     Widget? redesignedContent;
     if (tx != null && giftCard != null) {
       redesignedContent = _giftCardContent(
@@ -929,12 +1086,12 @@ class _ActivityTransactionStatusScreenState
     } else if (tx != null &&
         tx.txKind == 'sent' &&
         (_detailsLoading ||
-            (sentRecipientAddress != null &&
-                sentRecipientAddress.isNotEmpty))) {
+            sentRecipientAddress != null ||
+            receiptHasUnknownRecipient(tx, detail))) {
       redesignedContent = _sentContent(
         tx,
         detail,
-        sentRecipientAddress?.isNotEmpty == true ? sentRecipientAddress : null,
+        sentRecipientAddress,
         addressBookContacts,
         privacyModeEnabled: privacyModeEnabled,
       );
@@ -959,6 +1116,31 @@ class _ActivityTransactionStatusScreenState
     Widget receiptContent =
         redesignedContent ??
         _fallbackContent(tx, privacyModeEnabled: privacyModeEnabled);
+    final offersDebugLookup = tx != null && _offersDebugLookup(tx, detail);
+    if (tx != null &&
+        giftCard == null &&
+        (offersDebugLookup ||
+            transparentDetailsNotice(detail) != null ||
+            listedTransactionOutputs(detail).isNotEmpty)) {
+      receiptContent = Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          receiptContent,
+          _ReceiptContentColumn(
+            child: TransparentDetailsSection(
+              detail: detail,
+              privacyModeEnabled: privacyModeEnabled,
+              debugLookupText: _debugLookupText,
+              onDebugLookup: offersDebugLookup
+                  ? () => unawaited(_runDebugLookup(tx))
+                  : null,
+              spaced: false,
+            ),
+          ),
+        ],
+      );
+    }
     // Both dedicated and summary-only receipts retain refresh errors. When
     // there is no row, the fallback already displays its loading/error state.
     if (tx != null && _error != null) {

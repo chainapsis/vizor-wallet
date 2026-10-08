@@ -5,7 +5,6 @@
 
 import '../frb_generated.dart';
 import 'keystone.dart';
-
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `api_proposal_result`, `catch`, `enhance_pir_enabled`, `fetch_block_time`, `migration_status_from_balance`, `parse_network_and_migrate`, `payment_link_batch_pairs`, `run_full_sync_internal`, `to_wallet_action_sigs`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
@@ -1062,6 +1061,30 @@ Future<TransactionDetail> getTransactionDetail({
   accountUuid: accountUuid,
   txidHex: txidHex,
   txKind: txKind,
+);
+
+/// Serves `txid_hex` (as [`TransactionInfo::txid_hex`]) first in the next
+/// transparent txid enhancement run for the wallet at `db_path`. A detail
+/// view calls it on open while the details are pending or unavailable.
+void prioritizeTransparentDetails({
+  required String dbPath,
+  required String txidHex,
+}) => RustLib.instance.api.crateApiSyncPrioritizeTransparentDetails(
+  dbPath: dbPath,
+  txidHex: txidHex,
+);
+
+/// Development builds only (`ZCASH_PRIVATE_TRANSPARENT_RECOVERY`): one
+/// private txid display lookup of `txid_hex` (as [`TransactionInfo::txid_hex`])
+/// mined at `mined_height`, on mainnet, persisting nothing.
+Future<TransparentDetailsLookup> debugLookupTransparentDetails({
+  required String network,
+  required String txidHex,
+  required BigInt minedHeight,
+}) => RustLib.instance.api.crateApiSyncDebugLookupTransparentDetails(
+  network: network,
+  txidHex: txidHex,
+  minedHeight: minedHeight,
 );
 
 String getBlocksDir({required String cachePath}) =>
@@ -2836,6 +2859,10 @@ class TransactionDetail {
   final String? primaryAddress;
   final String? sourceAddress;
   final String? sourcePool;
+
+  /// For a receive: the wallet account recorded as having sent every
+  /// received output shown. An account, never an address.
+  final String? sourceAccountUuid;
   final String? memo;
   final List<TransactionDetailOutput> outputs;
 
@@ -2845,16 +2872,27 @@ class TransactionDetail {
   /// See [`TransactionInfo::provisional`].
   final bool provisional;
 
+  /// What transparent txid enhancement knows about the transaction's
+  /// transparent outputs; `None` when it has no transparent part the
+  /// account recorded.
+  final TransparentDetailsState? transparentDetailsState;
+
+  /// Every transparent output, in order, when the state is `Available`.
+  final List<TransparentRecipient> transparentRecipients;
+
   const TransactionDetail({
     required this.txidHex,
     required this.txKind,
     this.primaryAddress,
     this.sourceAddress,
     this.sourcePool,
+    this.sourceAccountUuid,
     this.memo,
     required this.outputs,
     required this.detailsComplete,
     required this.provisional,
+    this.transparentDetailsState,
+    required this.transparentRecipients,
   });
 
   @override
@@ -2864,10 +2902,13 @@ class TransactionDetail {
       primaryAddress.hashCode ^
       sourceAddress.hashCode ^
       sourcePool.hashCode ^
+      sourceAccountUuid.hashCode ^
       memo.hashCode ^
       outputs.hashCode ^
       detailsComplete.hashCode ^
-      provisional.hashCode;
+      provisional.hashCode ^
+      transparentDetailsState.hashCode ^
+      transparentRecipients.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -2879,10 +2920,13 @@ class TransactionDetail {
           primaryAddress == other.primaryAddress &&
           sourceAddress == other.sourceAddress &&
           sourcePool == other.sourcePool &&
+          sourceAccountUuid == other.sourceAccountUuid &&
           memo == other.memo &&
           outputs == other.outputs &&
           detailsComplete == other.detailsComplete &&
-          provisional == other.provisional;
+          provisional == other.provisional &&
+          transparentDetailsState == other.transparentDetailsState &&
+          transparentRecipients == other.transparentRecipients;
 }
 
 class TransactionDetailOutput {
@@ -3065,6 +3109,98 @@ enum TransparentBalanceAuthority {
   /// own: `transparent_stop` says why. The transparent fields are zero, and
   /// `transparent_last_known` holds the prior amount, if any.
   stopped,
+}
+
+/// What a development lookup found. Nothing is stored.
+class TransparentDetailsLookup {
+  /// `found`, `absent`, `placementUnknown` or `unsupported`.
+  final String outcome;
+  final List<TransparentRecipient> recipients;
+
+  /// The whole transaction's exact fee, when the publication knows it.
+  final BigInt? feeZatoshi;
+  final int transparentInputCount;
+  final bool coinbase;
+
+  const TransparentDetailsLookup({
+    required this.outcome,
+    required this.recipients,
+    this.feeZatoshi,
+    required this.transparentInputCount,
+    required this.coinbase,
+  });
+
+  @override
+  int get hashCode =>
+      outcome.hashCode ^
+      recipients.hashCode ^
+      feeZatoshi.hashCode ^
+      transparentInputCount.hashCode ^
+      coinbase.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TransparentDetailsLookup &&
+          runtimeType == other.runtimeType &&
+          outcome == other.outcome &&
+          recipients == other.recipients &&
+          feeZatoshi == other.feeZatoshi &&
+          transparentInputCount == other.transparentInputCount &&
+          coinbase == other.coinbase;
+}
+
+/// Whether a transparent or mixed transaction's outputs are known.
+enum TransparentDetailsState {
+  /// `transparent_recipients` holds every transparent output.
+  available,
+
+  /// No lookup has answered yet; a later sync fills them in.
+  pending,
+
+  /// The last lookup failed; a later sync retries when the service is
+  /// reachable.
+  unavailable,
+
+  /// Private mode cannot look the transaction up: the private publication
+  /// does not cover it.
+  notCovered,
+}
+
+/// One transparent output of a transaction.
+class TransparentRecipient {
+  final int outputIndex;
+
+  /// The P2PKH or P2SH address it pays; `None` for other scripts.
+  final String? address;
+  final BigInt amountZatoshi;
+
+  /// Whether the account recorded this output as its own.
+  final bool isOwn;
+
+  const TransparentRecipient({
+    required this.outputIndex,
+    this.address,
+    required this.amountZatoshi,
+    required this.isOwn,
+  });
+
+  @override
+  int get hashCode =>
+      outputIndex.hashCode ^
+      address.hashCode ^
+      amountZatoshi.hashCode ^
+      isOwn.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TransparentRecipient &&
+          runtimeType == other.runtimeType &&
+          outputIndex == other.outputIndex &&
+          address == other.address &&
+          amountZatoshi == other.amountZatoshi &&
+          isOwn == other.isOwn;
 }
 
 /// Why private transparent recovery cannot restore an account's authority.

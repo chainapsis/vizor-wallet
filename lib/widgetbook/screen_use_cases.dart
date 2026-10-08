@@ -1779,6 +1779,181 @@ rust_sync.TransactionDetail _zeroValueDetail(rust_sync.TransactionInfo tx) {
     ],
     detailsComplete: true,
     provisional: false,
+    transparentRecipients: const [],
+  );
+}
+
+// One transparent transaction as public and private queries record it. A
+// public wallet stores the raw transaction, so it knows the sender and the
+// recipient it paid; private queries know only the ordered transparent
+// outputs, which name no recipient. A send this wallet built is recorded in
+// either mode. Both receipts must share one shell.
+const _transparentPairSender = 't1PV7nyJ3J6pZBh6sCrd5dSDd6uhXGVSpEX';
+const _transparentPairOwn = 't1Z9N3oVYrYDpnbqDcXJpuLrGpcSLDgHXyo';
+const _transparentPairOther = 't1Ku2KLyndDPsR32jwnrTMd3yvi9tfFP8ML';
+
+/// Whether a pair entry is whole: a send private queries recovered without
+/// its recorded recipient is not.
+bool _transparentPairComplete(String kind, bool private, bool recordedSend) =>
+    kind != 'sent' || !private || recordedSend;
+
+rust_sync.TransactionInfo _transparentPairTx(
+  String kind, {
+  bool complete = true,
+}) {
+  final sent = kind == 'sent';
+  final seconds = BigInt.from(1759852860);
+  return rust_sync.TransactionInfo(
+    txidHex: 'preview-transparent-pair-$kind',
+    minedHeight: BigInt.from(3080000),
+    expiredUnmined: false,
+    accountBalanceDelta: sent ? -5500831 : 901410,
+    fee: BigInt.from(sent ? 20000 : 0),
+    feeState: sent
+        ? rust_sync.TransactionFeeState.known
+        : rust_sync.TransactionFeeState.notApplicable,
+    detailsComplete: complete,
+    provisional: false,
+    amountIncludesFee: false,
+    blockTime: seconds,
+    isTransparent: true,
+    txKind: kind,
+    displayAmount: BigInt.from(sent ? 5480831 : 901410),
+    displayPool: 'transparent',
+    activityPool: 'transparent',
+    createdTime: seconds,
+  );
+}
+
+rust_sync.TransactionDetail _transparentPairDetail(
+  rust_sync.TransactionInfo tx, {
+  required bool private,
+  bool recordedSend = false,
+}) {
+  final sent = tx.txKind == 'sent';
+  final recorded = !private || !sent || recordedSend;
+  return rust_sync.TransactionDetail(
+    txidHex: tx.txidHex,
+    txKind: tx.txKind,
+    primaryAddress: sent && recorded ? _transparentPairOther : null,
+    sourceAddress: sent || private ? null : _transparentPairSender,
+    sourcePool: sent ? null : (private ? 'unknown' : 'transparent'),
+    outputs: [
+      if (recorded)
+        rust_sync.TransactionDetailOutput(
+          address: sent ? _transparentPairOther : _transparentPairOwn,
+          amountZatoshi: BigInt.from(sent ? 5480831 : 901410),
+          pool: 'transparent',
+          activityPool: 'transparent',
+          usesOrchardReceiver: false,
+        ),
+    ],
+    detailsComplete: tx.detailsComplete,
+    provisional: false,
+    transparentDetailsState: rust_sync.TransparentDetailsState.available,
+    // A receive pays the account and returns the sender's change; a send pays
+    // the recipient and returns the account's change.
+    transparentRecipients: [
+      rust_sync.TransparentRecipient(
+        outputIndex: 0,
+        address: sent ? _transparentPairOther : _transparentPairOwn,
+        amountZatoshi: BigInt.from(sent ? 5480831 : 901410),
+        isOwn: !sent,
+      ),
+      rust_sync.TransparentRecipient(
+        outputIndex: 1,
+        address: sent ? _transparentPairOwn : _transparentPairOther,
+        amountZatoshi: BigInt.from(sent ? 901410 : 5480831),
+        isOwn: sent,
+      ),
+    ],
+  );
+}
+
+Widget buildDesktopTransparentReceiptUseCase({
+  required String kind,
+  required bool private,
+  bool recordedSend = false,
+}) {
+  final tx = _transparentPairTx(
+    kind,
+    complete: _transparentPairComplete(kind, private, recordedSend),
+  );
+  return _buildDesktopHomeUseCase(
+    accountState: _accountsDesignState,
+    syncState: _homeSyncedState(
+      orchardBalance: BigInt.from(14_323_000_000),
+      recentTransactions: [tx],
+    ),
+    migrationCta: const IronwoodHomeMigrationCtaState.hidden(),
+    privateQueries: private,
+    receiptArgs: ActivityTransactionStatusArgs(
+      txidHex: tx.txidHex,
+      txKind: tx.txKind,
+      initialTransaction: tx,
+      initialDetail: _transparentPairDetail(
+        tx,
+        private: private,
+        recordedSend: recordedSend,
+      ),
+    ),
+  );
+}
+
+Widget buildMobileTransparentReceiptUseCase({
+  required String kind,
+  required bool private,
+  bool recordedSend = false,
+}) {
+  final tx = _transparentPairTx(
+    kind,
+    complete: _transparentPairComplete(kind, private, recordedSend),
+  );
+  final detail = _transparentPairDetail(
+    tx,
+    private: private,
+    recordedSend: recordedSend,
+  );
+  return ProviderScope(
+    overrides: [
+      enhancePirProvider.overrideWith(() => _PreviewPrivateQueries(private)),
+      appBootstrapProvider.overrideWithValue(
+        _homeBootstrap(_accountsDesignState),
+      ),
+      accountProvider.overrideWith(
+        () => _PreviewAccountNotifier(_accountsDesignState),
+      ),
+      syncProvider.overrideWith(
+        () => _PreviewSyncNotifier(
+          _accountsDesignState.activeAccountUuid,
+          initialState: _homeSyncedState(
+            orchardBalance: BigInt.from(14312000000),
+            recentTransactions: [tx],
+          ),
+        ),
+      ),
+      privacyModeProvider.overrideWith(_PreviewPrivacyModeNotifier.new),
+      giftCardActivityIndexProvider.overrideWith(
+        (ref, accountUuid) async => GiftCardActivityIndex.empty,
+      ),
+      swapActivityRowItemsProvider.overrideWith((ref, accountUuid) async {
+        return const [];
+      }),
+      addressBookProvider.overrideWith(_GiftCardPreviewAddressBook.new),
+      ownAccountAddressesProvider.overrideWith((ref) async => const {}),
+    ],
+    child: _MobilePreviewFrame(
+      child: MobileTransactionStatusScreen(
+        args: MobileTransactionStatusArgs(
+          txidHex: tx.txidHex,
+          txKind: kind,
+          initialTransaction: tx,
+          initialDetail: detail,
+        ),
+        historyLoader: (_) async => [tx],
+        detailLoader: (_, _) async => detail,
+      ),
+    ),
   );
 }
 
@@ -3118,11 +3293,16 @@ Widget _buildDesktopHomeUseCase({
   GiftCardActivityIndex giftCardActivityIndex = GiftCardActivityIndex.empty,
   NetworkPrivacyState? networkPrivacyState,
   ActivityTransactionStatusArgs? receiptArgs,
+  bool? privateQueries,
   String initialLocation = '/home',
   bool setupPreview = false,
 }) {
   return ProviderScope(
     overrides: [
+      if (privateQueries != null)
+        enhancePirProvider.overrideWith(
+          () => _PreviewPrivateQueries(privateQueries),
+        ),
       if (etaLabels != null) ...[
         activityEtaLabelsProvider.overrideWithValue(etaLabels),
         swapActivityRecordsProvider.overrideWith((ref, account) async => []),
@@ -6348,6 +6528,13 @@ Widget buildMobileSettingsRecoveryChangingUseCase(BuildContext context) =>
 class _PreviewEnhancePirEnabled extends EnhancePirNotifier {
   @override
   bool build() => true;
+}
+
+class _PreviewPrivateQueries extends EnhancePirNotifier {
+  _PreviewPrivateQueries(this.enabled);
+  final bool enabled;
+  @override
+  bool build() => enabled;
 }
 
 class _PreviewEnhancePirChanging extends EnhancePirTransitionNotifier {

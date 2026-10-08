@@ -182,7 +182,7 @@ pub(in crate::wallet::sync_engine::enhancement) fn mined_height_from_raw_height(
     }
 }
 
-pub(in crate::wallet::sync_engine::enhancement) fn decode_enhancement_payload(
+pub(in crate::wallet::sync_engine) fn decode_enhancement_payload(
     raw: &RawTransaction,
     expected_txid: TxId,
 ) -> Result<(Transaction, Option<BlockHeight>), SyncError> {
