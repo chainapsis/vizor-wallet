@@ -44,6 +44,44 @@ def _finite_float(value):
     return number
 
 
+def _input_payload(request):
+    # iterencode may emit one whole escaped string/integer as a chunk. Bound
+    # those atoms before encoding too; visit containers without copying them.
+    active = set()
+    remaining = _MAX_JSON_BYTES
+    def check_atoms(value):
+        nonlocal remaining
+        remaining -= 1
+        if (remaining < 0 or (isinstance(value, str) and len(value) > _MAX_JSON_BYTES)
+            or (isinstance(value, int) and value.bit_length() > _MAX_JSON_BYTES * 4)):
+            raise FunderExecutionError("signer input exceeds its bound")
+        if isinstance(value, (dict, list, tuple)):
+            if len(value) > _MAX_JSON_BYTES:
+                raise FunderExecutionError("signer input exceeds its bound")
+            marker = id(value)
+            if marker in active:
+                raise ValueError("circular JSON input")
+            active.add(marker)
+            try:
+                children = (child for pair in value.items() for child in pair) if isinstance(value, dict) else value
+                for child in children:
+                    check_atoms(child)
+            finally:
+                active.remove(marker)
+    try:
+        check_atoms(request)
+        payload = bytearray()
+        encoder = json.JSONEncoder(allow_nan=False, ensure_ascii=True, separators=(",", ":"))
+        for chunk in encoder.iterencode(request):
+            if len(chunk) > _MAX_JSON_BYTES - len(payload) - 1:
+                raise FunderExecutionError("signer input exceeds its bound")
+            payload.extend(chunk.encode("ascii"))
+    except (TypeError, ValueError, RecursionError) as error:
+        raise FunderExecutionError("signer input is not finite JSON") from error
+    payload.append(10)
+    return bytes(payload)
+
+
 def run_offline_funder(case: NativeCaseLifecycle, artifact: ProducedRegtestFunder,
                        command: str, request=None, *, timeout: float = 60.0,
                        cancel_event=None):
@@ -62,14 +100,7 @@ def run_offline_funder(case: NativeCaseLifecycle, artifact: ProducedRegtestFunde
         raise FunderExecutionError("identity accepts no input; build commands require one object")
     if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not math.isfinite(timeout) or timeout <= 0:
         raise FunderExecutionError("signer timeout must be positive and finite")
-    payload = None
-    if request is not None:
-        try:
-            payload = (json.dumps(request, allow_nan=False, ensure_ascii=True, separators=(",", ":")) + "\n").encode("ascii")
-        except (TypeError, ValueError) as error:
-            raise FunderExecutionError("signer input is not finite JSON") from error
-        if len(payload) > _MAX_JSON_BYTES:
-            raise FunderExecutionError("signer input exceeds its bound")
+    payload = None if request is None else _input_payload(request)
     cancellation = cancel_event if cancel_event is not None else threading.Event()
     if cancellation.is_set():
         raise runtime.Cancelled()
