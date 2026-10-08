@@ -92,23 +92,9 @@ class PaymentLinkClaimWallet {
             }
             try {
               if (link.isZodl) {
-                _ref
-                    .read(giftCardCheckProgressProvider.notifier)
-                    .update(
-                      link,
-                      rust_sync.ApiGiftCardCheckProgress(
-                        phase: 'finding',
-                        completed: BigInt.zero,
-                        total: BigInt.zero,
-                        fundingHeight: 0,
-                        checkedHeight: 0,
-                        totalZatoshi: BigInt.zero,
-                        unspentZatoshi: BigInt.zero,
-                        complete: false,
-                      ),
-                    );
                 // Native Zodl cards may predate Ironwood and may have multiple
                 // funding transactions. Scan their complete temporary wallet.
+                // This API has no progress stream; keep the waiting UI indeterminate.
                 // The enclosing operation owns fallback and cancellation.
                 // A nested fallback could dispatch again after preparation pauses.
                 await rust_sync.runPaymentLinkClaimSync(
