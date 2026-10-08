@@ -889,7 +889,8 @@ void main() {
     await tester.pumpWidget(_app(tx, detail: _detail(hasRecipient: false)));
     await tester.pumpAndSettle();
 
-    expect(find.text('Sent successfully'), findsOneWidget);
+    expect(find.text('Transaction'), findsOneWidget);
+    expect(find.text('Sent successfully'), findsNothing);
     expect(find.text(kNetChangeText), findsOneWidget);
     expect(find.text('Amount'), findsNothing);
     // Nothing is subtracted, and the fee keeps its own line.
