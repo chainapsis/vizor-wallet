@@ -5,16 +5,23 @@ import NativeCleanup
 // with the stopped cohort's identity. An unsigned CLI fails before native I/O.
 let arguments = Array(CommandLine.arguments.dropFirst())
 let verify = arguments.first == "--verify"
-let fields = verify ? Array(arguments.dropFirst()) : arguments
+let supportLocation = arguments.first == "--support-location"
+let fields = verify || supportLocation ? Array(arguments.dropFirst()) : arguments
 do {
   guard fields.count == 4, fields[0] == "--namespace", fields[2] == "--team" else {
     throw CleanupFailure("invalid_arguments")
   }
   let scope = try MacCleanupScope(namespace: fields[1], expectedTeam: fields[3])
-  let receipt = inspectOrClean(scope, mode: verify ? .verify : .delete, system: MacCleanupSystem())
   let encoder = JSONEncoder()
   encoder.keyEncodingStrategy = .convertToSnakeCase
   encoder.outputFormatting = [.sortedKeys]
+  if supportLocation {
+    let receipt = observeMacSupportLocation(scope, system: MacCleanupSystem())
+    let data = try encoder.encode(receipt)
+    FileHandle.standardOutput.write(data + Data([10]))
+    exit(receipt.completed ? 0 : 1)
+  }
+  let receipt = inspectOrClean(scope, mode: verify ? .verify : .delete, system: MacCleanupSystem())
   let data = try encoder.encode(receipt)
   FileHandle.standardOutput.write(data + Data([10]))
   exit(receipt.completed ? 0 : 1)

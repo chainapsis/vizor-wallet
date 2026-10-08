@@ -62,6 +62,23 @@ class MacCleanupReceiptTests(unittest.TestCase):
         absent["preferences"].update(before_count=0, removed_count=0)
         self.validate(absent)
 
+    def test_read_only_absence_mode_has_no_delete_observation_and_zero_preferences(self):
+        absent = receipt()
+        absent["mode"] = "verify"
+        for item in absent["keychain"]:
+            del item["delete_status"]
+            item.update(before_status=-25300, after_status=-25300)
+        absent["preferences"].update(before_count=0, removed_count=0)
+        CLEANUP._validate_receipt((json.dumps(absent),), namespace=NS, team=TEAM, mode="verify")
+        for update in ({"before_status": 0}, {"delete_status": -25300}):
+            modified = json.loads(json.dumps(absent))
+            modified["keychain"][0].update(update)
+            with self.assertRaises(CLEANUP.MacCleanupError):
+                CLEANUP._validate_receipt((json.dumps(modified),), namespace=NS, team=TEAM, mode="verify")
+        absent["preferences"].update(before_count=1, removed_count=1)
+        with self.assertRaises(CLEANUP.MacCleanupError):
+            CLEANUP._validate_receipt((json.dumps(absent),), namespace=NS, team=TEAM, mode="verify")
+
     def test_case_platform_mode_identity_and_completion_must_match(self):
         for field, value in (
             ("schema_version", True), ("schema_version", 2), ("platform", "ios"),
