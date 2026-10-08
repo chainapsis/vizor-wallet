@@ -50,6 +50,11 @@ class NativeCaseLifecycle:
     def workspace(self) -> NativeCaseWorkspace:
         return self._workspace
 
+    @property
+    def accepting_launches(self) -> bool:
+        """False after final close or any unproven process cleanup."""
+        return not self._sealed
+
     def _require_member(self, managed: runtime.ManagedProcess) -> None:
         if not any(managed is owned for owned in self._processes):
             raise runtime.RunnerError("process was not launched by this case")

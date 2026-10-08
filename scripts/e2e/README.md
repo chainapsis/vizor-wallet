@@ -193,6 +193,58 @@ catalog support flag and changes no app code.
 python3 -B -m unittest scripts/e2e/test_native_case_lifecycle.py
 ```
 
+## Fresh case-owned iOS simulator primitive
+
+`native_ios_simulator.py` allocates a new simulator for an open iOS
+`NativeCaseLifecycle`. `acquire_ios_simulator()` requires explicit installed
+runtime and device-type identifiers and checks runtime support before creation.
+It never adopts an existing UUID or case name and does not choose the newest
+runtime automatically. Allocation requires macOS and Xcode's `simctl`.
+
+The allocation intent is published exclusively before `create`; the successful
+result's new UUID is then bound to private owner metadata. Every operation
+rechecks the original workspace/metadata identities and the exact UUID's
+runtime, type, availability, and name in the current inventory. `boot()` waits
+for `bootstatus` and a positive `Booted` observation. All device mutations use
+that captured UUID, never `booted`, `all`, `unavailable`, or a device name.
+`SIMCTL_CHILD_*` host values are excluded from SDK commands so boot does not
+inherit unrelated child-environment overrides.
+
+`close()` seals and closes case process groups first, then uses a separate
+bounded simulator-command budget to shut down the owned device.
+SDK command waits reserve the shared runner's five-second process-cleanup
+allowance inside that budget; a new command cannot start when the remaining
+budget is five seconds or less. This bounds waits/cleanup, not OS spawn or
+system-call latency. Case process groups have their separate per-group budget.
+Only a fresh **pre-app** case with no phase launches and proven teardown can be deleted;
+success also requires positive absence in the device inventory. Any case launch
+(even a backend or Python phase) conservatively requires native cleanup that is
+not implemented here, so it retains the shut-down device and returns an error.
+Process, ownership, or cleanup uncertainty also prevents deletion and remains
+a failure after a later retry. A helper command exception supplies no process
+handle/proof and conservatively blocks deletion; an ordinary nonzero command
+result retains its execution error but can still permit verified pre-app teardown.
+
+The `SimulatorCleanup` record observes deletion of this fresh pre-app device,
+not Keychain, preferences, wallet-storage cleanup, or an E2E PASS. Case files,
+allocation markers, and command logs remain on disk, including failed/partial
+allocations. Unknown creation outcomes are not recovered by searching names or
+deleting broad sets of devices. Report-scoped recovery is separate work.
+
+Use one cooperative lifecycle owner and do not call these methods concurrently.
+Do not install/launch apps or mutate device state outside the case owner; this
+primitive does not discover untracked activity or contain untrusted code. It
+does not build/install an app, implement native storage cleanup, start a backend,
+wire `run-suite.py`, or make pending catalog entries runnable.
+
+Portable tests use a modelled `simctl` transport and an owned Python phase, not
+real iOS execution. Real-device validation requires a separately allocated
+fresh simulator on macOS; Linux test success is not an iOS support claim.
+
+```bash
+python3 -B -m unittest scripts/e2e/test_native_ios_simulator.py
+```
+
 ## Gift Cards
 
 Sender usage tracking and empty observer DB reuse:

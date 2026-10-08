@@ -18,6 +18,7 @@ _OWNERSHIP_TOKEN = object()
 _POLL_INTERVAL = 0.02
 _LINUX_PROC_ROOT = Path("/proc")
 _SENSITIVE_LOG_MARKERS = ("mnemonic:", "unified spending key", '"seed_hex"')
+DEFAULT_PROCESS_CLEANUP_TIMEOUT = 5.0
 
 
 class RunnerError(RuntimeError):
@@ -239,7 +240,7 @@ def _wait_group_exit(managed: ManagedProcess, deadline: float) -> bool:
         time.sleep(min(_POLL_INTERVAL, remaining))
 
 
-def terminate_process(managed: ManagedProcess, *, timeout: float = 5.0) -> None:
+def terminate_process(managed: ManagedProcess, *, timeout: float = DEFAULT_PROCESS_CLEANUP_TIMEOUT) -> None:
     """Stop only this launch's group and verify output closure within one budget.
 
     Descendants must stay in the session/group created by start_new_session.

@@ -72,12 +72,34 @@ into the umbrella, not `main`. Their macOS host regression had 155 passes and
 31 workspace tests passed five repetitions on each OS, and six local
 Python-to-Dart native-environment probes matched the app contract.
 
-The current boundary composes case ownership with process start, same-case
-restart, and final process/output teardown. A process cleanup record does not
+Case-bound process start, same-case restart, and final process/output teardown
+([PR #897](https://github.com/chainapsis/vizor-wallet/pull/897)) are merged into
+the umbrella, not `main`. Their macOS host regression had 185 passes and
+4 Linux-only skips; the Linux case/workspace/process/port suite had 120 passes
+both as PID 1 and beneath a non-reaping PID 1. A process cleanup record does not
 prove native storage cleanup or authorize deletion. Directories and evidence
-are retained. These primitives do not wire execution: guarded directory removal,
-native cleanup receipts, simulators, native storage cleanup, backend/executor
-integration, and scenario migrations remain pending.
+are retained.
+
+The next boundary adds fresh, explicitly selected case-owned iOS simulators,
+exact-UUID boot/readiness, and verified pre-app shutdown/deletion. Existing
+devices are never adopted. Any case launch or unproven process/native teardown
+retains the device; this is not native storage cleanup. On 2026-10-09, its
+macOS host regression had 219 passes and 4 Linux-only skips, and its Linux
+host-primitive suite had 154 passes. The 34 modelled simulator checks passed
+three repetitions per host. A real fresh iOS 26.3 simulator passed create,
+boot/readiness, shutdown, and positive deletion checks on the final source;
+all 31 pre-existing devices retained their identities and states. No app was
+installed or launched in that smoke check.
+
+One broader macOS repetition failed the unchanged descendant-process teardown
+test with `EPERM` during process-group verification. The final full suite then
+passed three consecutive repetitions; the individual test passed 30 repetitions
+each on the umbrella baseline and this branch. The cause was not reproduced or
+established; retain this observation rather than treating reruns as a fix.
+
+These primitives do not wire execution: guarded directory removal, native
+cleanup receipts, post-app simulator teardown, native storage cleanup,
+backend/executor integration, and scenario migrations remain pending.
 
 | Slice | Scope | Prerequisites |
 | --- | --- | --- |
