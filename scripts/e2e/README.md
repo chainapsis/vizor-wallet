@@ -77,6 +77,34 @@ owned Python subprocess to verify cross-process lock exclusion:
 python3 -B -m unittest scripts/e2e/test_native_ports.py
 ```
 
+## Owned process lifecycle primitive
+
+`e2e_runtime.py` starts each command in a new POSIX session/process group and
+returns an owned `ManagedProcess` handle. `wait_managed_process()` accepts
+that handle, not an arbitrary PID or existing subprocess. A command completes
+only after its direct child is reaped, its group has naturally exited, and its
+output pump has finished. A parent exit or output EOF alone is not completion.
+Cancellation, timeout, and interruption stop the group; termination escalates
+from TERM to KILL within one bounded cleanup budget. Group disappearance is
+latched so repeated cleanup cannot signal a subsequently reused group ID.
+
+Logging and cleanup failures remain failures, even if a later cleanup attempt
+physically releases the resources. Cancellation/interrupt type and timeout
+exit code are retained when cleanup also fails. Callers must not release
+dependent case state unless `cleanup_completed` is true. Handles have one
+lifecycle owner; concurrent waits/cleanup are unsupported. Descendants must
+remain in the launched group: this is not containment of daemonizing code.
+
+The persisted log redacts the prototype's known credential markers, not all
+possible secrets. Raw output in `CommandResult.lines` or `raw_lines` is for
+in-memory protocol consumers and must not be published as sanitized evidence.
+No backend, app, simulator, execution mode, or catalog support flag is wired
+by this library. The host-only tests launch disposable Python children:
+
+```bash
+python3 -B -m unittest scripts/e2e/test_e2e_runtime.py
+```
+
 ## Gift Cards
 
 Sender usage tracking and empty observer DB reuse:
