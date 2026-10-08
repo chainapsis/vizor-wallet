@@ -104,7 +104,8 @@ async fn txid_live() {
     assert_eq!(queries(&observer), sent + 2);
 
     // Placement unknown: a height below the published window sends no query.
-    let (unplaced, _) = lookup(txid, 1_000_000).await.unwrap();
+    // The window starts at height 1, so only genesis is below it.
+    let (unplaced, _) = lookup(txid, 0).await.unwrap();
     assert!(
         matches!(unplaced, Ok(TxidLookup::PlacementUnknown(Placement::Below))),
         "{unplaced:?}"
