@@ -65,11 +65,19 @@ into the umbrella, not `main`. The process slice's macOS host regression had
 124 passes and 4 Linux-only skips; its 44 lifecycle tests passed three times
 each with the Linux runner as PID 1 and beneath a non-reaping PID 1.
 
-The current independently testable boundary allocates owned case workspaces and
-publishes the schema-1 launch manifest from the app runtime contract. It retains
-directories/evidence and does not implement removal or native cleanup. These
-primitives do not wire execution: cleanup receipts, simulators, native storage
-cleanup, backend/executor integration, and scenario migrations remain pending.
+Owned case workspaces and the schema-1 launch manifest
+([PR #896](https://github.com/chainapsis/vizor-wallet/pull/896)) are also merged
+into the umbrella, not `main`. Their macOS host regression had 155 passes and
+4 Linux-only skips; the Linux workspace/process/port suite had 90 passes. The
+31 workspace tests passed five repetitions on each OS, and six local
+Python-to-Dart native-environment probes matched the app contract.
+
+The current boundary composes case ownership with process start, same-case
+restart, and final process/output teardown. A process cleanup record does not
+prove native storage cleanup or authorize deletion. Directories and evidence
+are retained. These primitives do not wire execution: guarded directory removal,
+native cleanup receipts, simulators, native storage cleanup, backend/executor
+integration, and scenario migrations remain pending.
 
 | Slice | Scope | Prerequisites |
 | --- | --- | --- |

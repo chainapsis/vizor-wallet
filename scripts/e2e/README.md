@@ -158,6 +158,41 @@ private temporary directories and owned Python children:
 python3 -B -m unittest scripts/e2e/test_native_workspace.py
 ```
 
+## Case-bound process lifecycle primitive
+
+`native_case_lifecycle.py` composes the owned workspace and process primitives.
+Create one `NativeCaseLifecycle` per workspace. Claiming is cooperative and
+single-owner: a second owner, including a copied workspace handle, cannot adopt
+the case. Do not call its methods concurrently or launch untracked processes
+with the workspace's environment.
+
+`start_process()` binds the case's immutable namespace/manifest, uses its owned
+directory as cwd, and reserves a fresh private log without overwriting a file
+or symlink. Conflicting caller identity fails before spawn. `wait_process()`
+preserves exit codes and timeout/cancellation classification; `stop_process()`
+stops only a handle launched by this case. Restarts keep the same identity and
+state. Failed launch/registration without a returned handle conservatively
+seals the case and prevents a successful cleanup record.
+
+Final `close()` seals future launches and attempts every tracked group, with a
+timeout budget per group. It does not skip remaining groups when one cleanup
+fails or when workspace verification fails. Success requires the shared
+primitive's positive child/group/output cleanup and intact workspace ownership.
+Cleanup failures remain sticky. Repeated successful close does not signal a
+retired numeric group again.
+
+`CaseProcessCleanup` records namespace, workspace, exit codes, and any observed
+external Linux zombies. It is a historical process/output observation, not a
+test PASS, permission to delete files, or proof of native storage/simulator
+cleanup. Nonzero exit codes remain nonzero; zombie PIDs are not future kill
+targets. Files, logs, native context declarations, and failure evidence remain
+on disk. This slice wires no executor, port leases, simulator, backend, or
+catalog support flag and changes no app code.
+
+```bash
+python3 -B -m unittest scripts/e2e/test_native_case_lifecycle.py
+```
+
 ## Gift Cards
 
 Sender usage tracking and empty observer DB reuse:

@@ -28,6 +28,7 @@ class NativeWorkspaceError(RuntimeError):
 @dataclasses.dataclass
 class _Verification:
     error: str | None = None
+    lifecycle_claimed: bool = False
 
 
 @dataclasses.dataclass(frozen=True)
@@ -65,6 +66,13 @@ class NativeCaseWorkspace:
             "VIZOR_E2E_NAMESPACE": self.namespace,
             "VIZOR_E2E_CASE_MANIFEST": self._manifest_bytes.decode("ascii"),
         }
+
+    def claim_process_lifecycle(self) -> None:
+        """Bind one cooperative process owner; never transfer a claimed case."""
+        self.verify_owned()
+        if self._verification.lifecycle_claimed:
+            raise NativeWorkspaceError("case process lifecycle is already claimed")
+        self._verification.lifecycle_claimed = True
 
     def verify_owned(self) -> None:
         """Verify original directories and metadata; this is not cleanup proof."""
