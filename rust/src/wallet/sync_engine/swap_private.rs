@@ -89,20 +89,24 @@ fn error(e: impl std::fmt::Display) -> String {
     e.to_string()
 }
 
-/// Runs pending restore sweeps for at most [`RUN_BUDGET`]. Failures are logged and
-/// retried on the next sync; ordinary sync never waits for the directory.
+/// Runs pending restore sweeps for at most [`RUN_BUDGET`], returning whether one
+/// finished. Sync calls it after reporting completion, so sends never wait for the
+/// directory. Failures are logged and retried on a later sync.
 pub(super) async fn run(
     db: &mut WalletDatabase,
     network: WalletNetwork,
     should_exit: &impl Fn() -> bool,
-) {
+) -> bool {
     if network != WalletNetwork::Main || cfg!(ironwood_masquerade) {
-        return;
+        return false;
     }
     let tip = match db.block_fully_scanned() {
         Ok(Some(tip)) => tip,
-        Ok(None) => return,
-        Err(e) => return log::warn!("Swap recovery deferred: {e}"),
+        Ok(None) => return false,
+        Err(e) => {
+            log::warn!("Swap recovery deferred: {e}");
+            return false;
+        }
     };
     let through = ChainPoint {
         height: tip.block_height(),
@@ -111,7 +115,7 @@ pub(super) async fn run(
     // Stopping at any await is safe (see `zakura_pir_receiver`).
     let result = tokio::select! {
         biased;
-        _ = super::watch_for_exit(should_exit) => return,
+        _ = super::watch_for_exit(should_exit) => return false,
         result = tokio::time::timeout(RUN_BUDGET, run_inner(db, network, through, should_exit)) => {
             result.unwrap_or_else(|_| Err("time budget reached".to_owned()))
         }
@@ -125,8 +129,12 @@ pub(super) async fn run(
             if swept.pending {
                 log::warn!("Swap recovery deferred: restore sweeps remain pending");
             }
+            swept.finished > 0
         }
-        Err(e) => log::warn!("Swap recovery deferred: {e}"),
+        Err(e) => {
+            log::warn!("Swap recovery deferred: {e}");
+            false
+        }
     }
 }
 

@@ -3658,12 +3658,8 @@ async fn run_sync_impl(
                         crate::wallet::swap_receiving::maintain_recovery(&mut db)
                     })
                     .map_err(SyncError::db)?;
-                    swap_private::run(&mut db, network, &should_exit).await;
-                    if should_exit() {
-                        return Ok(());
-                    }
-                    // A finished refund or lookahead sweep scans its key from the
-                    // sweep's anchor; scan that before declaring sync complete.
+                    // Maintenance or an earlier sweep may have queued a key's rescan;
+                    // scan that before declaring sync complete.
                     if db
                         .suggest_scan_ranges()
                         .map_err(|e| SyncError::db(e.to_string()))?
@@ -4725,6 +4721,24 @@ async fn run_sync_impl(
                 phase: String::new(),
             });
         }
+    }
+
+    // Restore sweeps reach the receiver directory, so they run after completion is
+    // reported and sends never wait for them. A finished sweep's rescan runs next sync.
+    if !should_exit() && swap_private::run(&mut db, network, &should_exit).await {
+        progress_fn(SyncProgressEvent {
+            scanned_height: final_scanned_height,
+            chain_tip_height: final_tip_height,
+            percentage: 1.0,
+            display_target_percentage: 1.0,
+            display_target_blocks: 0,
+            is_syncing: false,
+            is_complete: true,
+            has_new_tx: true,
+            phase_completed_units: 0,
+            phase_total_units: 0,
+            phase: String::new(),
+        });
     }
 
     Ok(())

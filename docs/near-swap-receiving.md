@@ -119,9 +119,10 @@ tracked, as with any note, but once its inclusion is checked its index is marked
 used and counts toward that window.
 
 Sweeps resume after interruption without repeating finished lookups. Failed
-lookups back off from one minute to twelve hours, one recovery run takes at most
-three minutes, and an unavailable service is retried on the next sync; none of
-these fails ordinary sync or makes recovery appear complete. Rewinds below a sweep
+lookups back off from one minute to twelve hours, as does every due sweep when the
+directory cannot be reached. One recovery run takes at most three minutes and starts
+after sync reports completion, so sends never wait for it; none of these fails
+ordinary sync or makes recovery appear complete. Rewinds below a sweep
 reopen it. If an included candidate needs pruned spend history, the library
 replays the account's public Ironwood recovery interval once.
 
