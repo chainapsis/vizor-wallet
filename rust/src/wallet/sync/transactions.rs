@@ -1496,7 +1496,8 @@ fn apply_display_source(detail: &mut TransactionDetail, source: DisplaySource) {
 /// Names a send's recipient from its transparent detail view when the wallet
 /// recorded none, as for a send recovered privately.
 ///
-/// Only when the view lists every transparent output and the account's
+/// Only when the view has no unresolved shared or mixed funding, lists every
+/// transparent output, and the account's
 /// balance moved by exactly the fee plus the outputs it does not own: then
 /// those outputs are the transaction's only payees, and no recipient the
 /// wallet cannot see (a shielded one) exists. One such output is the
@@ -1535,19 +1536,31 @@ fn apply_display_recipient(detail: &mut TransactionDetail) {
 }
 
 /// The transparent view's rows when they account for the transaction's whole
-/// effect on the account: every transparent output is listed, and the
-/// account's balance moved by exactly what they say. When the account paid
+/// effect on the account: no shared or mixed funding is unresolved, every
+/// transparent output is listed, and the account's balance moved by exactly
+/// what they say. When the account paid
 /// (its fee is known), that is minus the fee and the outputs it does not
-/// own; when it paid nothing, it is the outputs it owns. An effect the
-/// wallet has not found, or an unseen payee, breaks the equality.
+/// own; when it paid nothing, it is the outputs it owns. Other funders can
+/// offset unseen payments without breaking this equality, so those omissions
+/// must keep attribution and completeness unresolved.
 fn display_accounted_rows(detail: &TransactionDetail) -> Option<&[TransparentRecipientRow]> {
     let Some(TransparentDetailsView::Available {
-        rows, output_count, ..
+        rows,
+        output_count,
+        omissions,
     }) = &detail.transparent_details
     else {
         return None;
     };
-    if rows.is_empty() || rows.len() != *output_count as usize {
+    if rows.is_empty()
+        || rows.len() != *output_count as usize
+        || omissions.iter().any(|omission| {
+            matches!(
+                omission.as_str(),
+                "shared_funding" | "shielded_and_transparent_funding"
+            )
+        })
+    {
         return None;
     }
     let sum = |own: bool| -> i128 {
@@ -1793,8 +1806,8 @@ fn read_transaction_detail(
         transparent_details: None,
         account_balance_delta: base.account_balance_delta,
         // The account's fee, or the whole transaction's exact fee when the
-        // account's share is unknown (a private recovery): a payment shared
-        // with another funder then fails the balance check below.
+        // account's share is unknown (a private recovery). The display view's
+        // funding omissions separately prevent balance-only attribution.
         fee: match base.history.fee {
             Fee::Known(fee) => Some(fee),
             Fee::Unknown | Fee::NotApplicable => base.history.whole_fee,
@@ -8188,6 +8201,59 @@ mod tests {
                 )),
                 "{why}"
             );
+        }
+    }
+
+    #[test]
+    fn shared_or_mixed_funding_keeps_receipt_attribution_incomplete() {
+        for omission in ["shared_funding", "shielded_and_transparent_funding"] {
+            for received in [false, true] {
+                // A foreign input of 50,000 can pay an unseen shielded output
+                // of 50,000 without changing the equality for this account:
+                // its debit still matches its transparent outputs and fee.
+                let mut detail = TransactionDetail {
+                    txid_hex: String::new(),
+                    tx_kind: if received { "received" } else { "sent" }.to_owned(),
+                    primary_address: None,
+                    source_address: Some("t1funder".to_owned()),
+                    source_pool: Some("transparent".to_owned()),
+                    source_account_uuid: None,
+                    memo: None,
+                    outputs: if received {
+                        vec![TransactionDetailOutput {
+                            address: Some("t1self".to_owned()),
+                            amount_zatoshi: 100_000,
+                            pool: "transparent".to_owned(),
+                            activity_pool: None,
+                            uses_orchard_receiver: false,
+                        }]
+                    } else {
+                        Vec::new()
+                    },
+                    details_complete: false,
+                    provisional: true,
+                    transparent_details: Some(TransparentDetailsView::Available {
+                        rows: vec![TransparentRecipientRow {
+                            output_index: 0,
+                            address: Some(if received { "t1self" } else { "t1payee" }.to_owned()),
+                            amount_zatoshi: 100_000,
+                            is_own: received,
+                        }],
+                        output_count: 1,
+                        omissions: vec![omission.to_owned()],
+                    }),
+                    account_balance_delta: if received { -10_000 } else { -110_000 },
+                    fee: Some(10_000),
+                };
+                apply_display_recipient(&mut detail);
+                apply_display_receive_completion(&mut detail);
+                assert_eq!(
+                    detail.primary_address, None,
+                    "{omission}, received={received}"
+                );
+                assert!(!detail.details_complete, "{omission}, received={received}");
+                assert!(detail.provisional, "{omission}, received={received}");
+            }
         }
     }
 
