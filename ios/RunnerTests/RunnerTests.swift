@@ -2527,9 +2527,29 @@ class RunnerTests: XCTestCase {
     let harness = FreshInstallCleanerHarness()
     harness.lookup = .missing
 
-    FreshInstallKeychainCleaner.runIfNeeded(dependencies: harness.dependencies())
+    FreshInstallKeychainCleaner.runIfNeeded(
+      runtimeProfile: .production,
+      dependencies: harness.dependencies()
+    )
 
     XCTAssertTrue(harness.markedInstalled)
+    XCTAssertFalse(harness.cleanupPending)
+    XCTAssertTrue(harness.deletedServices.isEmpty)
+  }
+
+  func testFreshInstallCleanerDoesNothingForIsolatedRuntime() {
+    let harness = FreshInstallCleanerHarness()
+    harness.lookup = .found("stale.db")
+
+    FreshInstallKeychainCleaner.runIfNeeded(
+      runtimeProfile: E2eRuntimeProfile(
+        namespace: "vizor_a1b2c3d4e5_w2_17",
+        runId: "a1b2c3d4e5"
+      ),
+      dependencies: harness.dependencies()
+    )
+
+    XCTAssertFalse(harness.markedInstalled)
     XCTAssertFalse(harness.cleanupPending)
     XCTAssertTrue(harness.deletedServices.isEmpty)
   }
@@ -2539,7 +2559,10 @@ class RunnerTests: XCTestCase {
     harness.lookup = .found("zcash_wallet_existing.db")
     harness.walletDbExists = true
 
-    FreshInstallKeychainCleaner.runIfNeeded(dependencies: harness.dependencies())
+    FreshInstallKeychainCleaner.runIfNeeded(
+      runtimeProfile: .production,
+      dependencies: harness.dependencies()
+    )
 
     XCTAssertTrue(harness.markedInstalled)
     XCTAssertFalse(harness.cleanupPending)
@@ -2552,7 +2575,10 @@ class RunnerTests: XCTestCase {
     harness.stagedLookup = .found("zcash_wallet_existing.db")
     harness.walletDbExists = true
 
-    FreshInstallKeychainCleaner.runIfNeeded(dependencies: harness.dependencies())
+    FreshInstallKeychainCleaner.runIfNeeded(
+      runtimeProfile: .production,
+      dependencies: harness.dependencies()
+    )
 
     XCTAssertTrue(harness.markedInstalled)
     XCTAssertFalse(harness.cleanupPending)
@@ -2564,7 +2590,10 @@ class RunnerTests: XCTestCase {
     harness.lookup = .found("zcash_wallet_deleted.db")
     harness.walletDbExists = false
 
-    FreshInstallKeychainCleaner.runIfNeeded(dependencies: harness.dependencies())
+    FreshInstallKeychainCleaner.runIfNeeded(
+      runtimeProfile: .production,
+      dependencies: harness.dependencies()
+    )
 
     XCTAssertTrue(harness.markedInstalled)
     XCTAssertFalse(harness.cleanupPending)
@@ -2580,7 +2609,10 @@ class RunnerTests: XCTestCase {
     harness.stagedLookup = .found("zcash_wallet_deleted.db")
     harness.walletDbExists = false
 
-    FreshInstallKeychainCleaner.runIfNeeded(dependencies: harness.dependencies())
+    FreshInstallKeychainCleaner.runIfNeeded(
+      runtimeProfile: .production,
+      dependencies: harness.dependencies()
+    )
 
     XCTAssertTrue(harness.markedInstalled)
     XCTAssertFalse(harness.cleanupPending)
@@ -2600,7 +2632,10 @@ class RunnerTests: XCTestCase {
     ]
     harness.walletDbExists = false
 
-    FreshInstallKeychainCleaner.runIfNeeded(dependencies: harness.dependencies())
+    FreshInstallKeychainCleaner.runIfNeeded(
+      runtimeProfile: .production,
+      dependencies: harness.dependencies()
+    )
 
     XCTAssertTrue(harness.markedInstalled)
     XCTAssertFalse(harness.cleanupPending)
@@ -2618,7 +2653,10 @@ class RunnerTests: XCTestCase {
     ]
     harness.existingDbNames = ["zcash_wallet_existing.db"]
 
-    FreshInstallKeychainCleaner.runIfNeeded(dependencies: harness.dependencies())
+    FreshInstallKeychainCleaner.runIfNeeded(
+      runtimeProfile: .production,
+      dependencies: harness.dependencies()
+    )
 
     XCTAssertTrue(harness.markedInstalled)
     XCTAssertFalse(harness.cleanupPending)
@@ -2629,7 +2667,10 @@ class RunnerTests: XCTestCase {
     let harness = FreshInstallCleanerHarness()
     harness.lookup = .failed(errSecInteractionNotAllowed)
 
-    FreshInstallKeychainCleaner.runIfNeeded(dependencies: harness.dependencies())
+    FreshInstallKeychainCleaner.runIfNeeded(
+      runtimeProfile: .production,
+      dependencies: harness.dependencies()
+    )
 
     XCTAssertFalse(harness.markedInstalled)
     XCTAssertFalse(harness.cleanupPending)
@@ -2640,7 +2681,10 @@ class RunnerTests: XCTestCase {
     let harness = FreshInstallCleanerHarness()
     harness.lookup = .invalid
 
-    FreshInstallKeychainCleaner.runIfNeeded(dependencies: harness.dependencies())
+    FreshInstallKeychainCleaner.runIfNeeded(
+      runtimeProfile: .production,
+      dependencies: harness.dependencies()
+    )
 
     XCTAssertFalse(harness.markedInstalled)
     XCTAssertFalse(harness.cleanupPending)
@@ -2656,7 +2700,10 @@ class RunnerTests: XCTestCase {
       FreshInstallKeychainCleaner.servicesToClear.last!: errSecAuthFailed,
     ]
 
-    FreshInstallKeychainCleaner.runIfNeeded(dependencies: harness.dependencies())
+    FreshInstallKeychainCleaner.runIfNeeded(
+      runtimeProfile: .production,
+      dependencies: harness.dependencies()
+    )
 
     XCTAssertFalse(harness.markedInstalled)
     XCTAssertTrue(harness.cleanupPending)
@@ -2674,7 +2721,10 @@ class RunnerTests: XCTestCase {
       FreshInstallKeychainCleaner.servicesToClear[0]: errSecAuthFailed
     ]
 
-    FreshInstallKeychainCleaner.runIfNeeded(dependencies: harness.dependencies())
+    FreshInstallKeychainCleaner.runIfNeeded(
+      runtimeProfile: .production,
+      dependencies: harness.dependencies()
+    )
 
     XCTAssertTrue(harness.markedInstalled)
     XCTAssertFalse(harness.cleanupPending)
@@ -2689,7 +2739,10 @@ class RunnerTests: XCTestCase {
     harness.cleanupPending = true
     harness.lookup = .missing
 
-    FreshInstallKeychainCleaner.runIfNeeded(dependencies: harness.dependencies())
+    FreshInstallKeychainCleaner.runIfNeeded(
+      runtimeProfile: .production,
+      dependencies: harness.dependencies()
+    )
 
     XCTAssertTrue(harness.markedInstalled)
     XCTAssertFalse(harness.cleanupPending)
@@ -2702,7 +2755,10 @@ class RunnerTests: XCTestCase {
     harness.lookup = .found("zcash_wallet_existing.db")
     harness.walletDbExists = true
 
-    FreshInstallKeychainCleaner.runIfNeeded(dependencies: harness.dependencies())
+    FreshInstallKeychainCleaner.runIfNeeded(
+      runtimeProfile: .production,
+      dependencies: harness.dependencies()
+    )
 
     XCTAssertTrue(harness.markedInstalled)
     XCTAssertFalse(harness.cleanupPending)
@@ -2715,7 +2771,10 @@ class RunnerTests: XCTestCase {
     harness.lookup = .found("zcash_wallet_deleted.db")
     harness.walletDbExists = false
 
-    FreshInstallKeychainCleaner.runIfNeeded(dependencies: harness.dependencies())
+    FreshInstallKeychainCleaner.runIfNeeded(
+      runtimeProfile: .production,
+      dependencies: harness.dependencies()
+    )
 
     XCTAssertTrue(harness.markedInstalled)
     XCTAssertFalse(harness.cleanupPending)
@@ -2734,7 +2793,10 @@ class RunnerTests: XCTestCase {
       FreshInstallKeychainCleaner.servicesToClear.last!: errSecAuthFailed
     ]
 
-    FreshInstallKeychainCleaner.runIfNeeded(dependencies: harness.dependencies())
+    FreshInstallKeychainCleaner.runIfNeeded(
+      runtimeProfile: .production,
+      dependencies: harness.dependencies()
+    )
 
     XCTAssertFalse(harness.markedInstalled)
     XCTAssertTrue(harness.cleanupPending)
@@ -2751,7 +2813,10 @@ class RunnerTests: XCTestCase {
     harness.lookup = .found("zcash_wallet_deleted.db")
     harness.walletDbExists = false
 
-    FreshInstallKeychainCleaner.runIfNeeded(dependencies: harness.dependencies())
+    FreshInstallKeychainCleaner.runIfNeeded(
+      runtimeProfile: .production,
+      dependencies: harness.dependencies()
+    )
 
     XCTAssertFalse(harness.markedInstalled)
     XCTAssertTrue(harness.cleanupPending)
@@ -2771,7 +2836,8 @@ class RunnerTests: XCTestCase {
 
     let migrated = try KeychainAccessibilityMigrator(
       store: store,
-      completionStore: completionStore
+      completionStore: completionStore,
+      runtimeProfile: .production
     )
       .ensureFirstUnlockThisDeviceOnly(service: service)
 
@@ -2812,7 +2878,8 @@ class RunnerTests: XCTestCase {
 
     let migrated = try KeychainAccessibilityMigrator(
       store: store,
-      completionStore: completionStore
+      completionStore: completionStore,
+      runtimeProfile: .production
     )
       .ensureFirstUnlockThisDeviceOnly(service: service)
 
@@ -2845,7 +2912,8 @@ class RunnerTests: XCTestCase {
     XCTAssertThrowsError(
       try KeychainAccessibilityMigrator(
         store: store,
-        completionStore: completionStore
+        completionStore: completionStore,
+        runtimeProfile: .production
       )
         .ensureFirstUnlockThisDeviceOnly(service: service)
     ) { error in
@@ -2881,7 +2949,8 @@ class RunnerTests: XCTestCase {
 
     let migrated = try KeychainAccessibilityMigrator(
       store: store,
-      completionStore: completionStore
+      completionStore: completionStore,
+      runtimeProfile: .production
     ).ensureFirstUnlockThisDeviceOnly(service: service)
 
     XCTAssertEqual(migrated, 0)
@@ -2900,7 +2969,8 @@ class RunnerTests: XCTestCase {
 
     let migrator = KeychainAccessibilityMigrator(
       store: store,
-      completionStore: completionStore
+      completionStore: completionStore,
+      runtimeProfile: .production
     )
     XCTAssertEqual(
       try migrator.ensureFirstUnlockThisDeviceOnly(service: completedService),
@@ -2959,7 +3029,8 @@ class RunnerTests: XCTestCase {
       XCTAssertThrowsError(
         try KeychainAccessibilityMigrator(
           store: store,
-          completionStore: completionStore
+          completionStore: completionStore,
+          runtimeProfile: .production
         ).ensureFirstUnlockThisDeviceOnly(service: service),
         "Expected the \(operation) failure to abort migration"
       )

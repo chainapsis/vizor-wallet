@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart' show kDebugMode;
 
+import 'e2e_runtime_case_manifest.dart';
+import 'e2e_runtime_endpoints.dart';
 import 'network_config.dart';
 export 'network_config.dart';
 
@@ -168,14 +170,20 @@ final kRegtestRpcEndpointPresets = List<RpcEndpointPreset>.unmodifiable([
     id: 'default-regtest',
     region: 'Regtest',
     label: 'Local Regtest',
-    url: ZcashNetwork.regtest.lightwalletdUrl,
+    url: resolveE2eRuntimeLightwalletdUrl(
+      defaultPort: ZcashNetwork.regtest.lightwalletdPort,
+      manifest: installedE2eRuntimeCaseManifest,
+    ),
     isDefault: true,
   ),
-  const RpcEndpointPreset(
+  RpcEndpointPreset(
     id: kRegtestSlowRpcEndpointPresetId,
     region: 'Regtest',
     label: 'Slow Regtest',
-    url: 'http://127.0.0.1:19068',
+    url: resolveE2eRuntimePrimaryProxyUrl(
+      defaultPort: 19068,
+      manifest: installedE2eRuntimeCaseManifest,
+    ),
   ),
   const RpcEndpointPreset(
     id: kRegtestUnavailableRpcEndpointPresetId,

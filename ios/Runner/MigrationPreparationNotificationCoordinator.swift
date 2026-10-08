@@ -185,8 +185,11 @@ struct MigrationPreparationNotificationBatchState: Codable, Equatable {
 final class MigrationPreparationNotificationCoordinator: @unchecked Sendable {
   static let shared = MigrationPreparationNotificationCoordinator()
 
-  static let summaryIdentifier =
-    "com.keplr.vizor.ironwood-preparation.summary"
+  static var summaryIdentifier: String {
+    E2eRuntimeProfile.current.notificationIdentifier(
+      "com.keplr.vizor.ironwood-preparation.summary"
+    )
+  }
   private static let stateKey =
     "ironwoodMigrationPreparationNotificationBatchState"
   private static let aggregationWindow: TimeInterval = 30
@@ -209,11 +212,11 @@ final class MigrationPreparationNotificationCoordinator: @unchecked Sendable {
   init(
     center: MigrationPreparationNotificationCenter =
       UNUserNotificationCenter.current(),
-    defaults: UserDefaults = .standard
+    defaults: UserDefaults? = nil
   ) {
     self.center = center
-    self.defaults = defaults
-    if let data = defaults.data(forKey: Self.stateKey),
+    self.defaults = defaults ?? E2eRuntimeProfile.current.defaults
+    if let data = self.defaults.data(forKey: Self.stateKey),
       let decoded = try? JSONDecoder().decode(
         MigrationPreparationNotificationBatchState.self,
         from: data

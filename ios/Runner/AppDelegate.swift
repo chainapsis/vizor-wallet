@@ -14,38 +14,53 @@ import UIKit
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    FreshInstallKeychainCleaner.runIfNeeded()
-    BackgroundMigrationManager.shared.registerBackgroundTask()
+    let runtimeProfile: E2eRuntimeProfile
+    do {
+      runtimeProfile = try E2eRuntimeProfile.installFromEnvironment()
+    } catch {
+      NSLog("[zcash] invalid E2E runtime profile: %@", String(describing: error))
+      return false
+    }
+    if !runtimeProfile.isIsolated {
+      FreshInstallKeychainCleaner.runIfNeeded()
+      BackgroundMigrationManager.shared.registerBackgroundTask()
+    }
 
     if #available(iOS 26.0, *) {
       // One-release tombstone for requests submitted by the removed general
       // background-sync feature. Do not register a handler for this identifier.
-      BGTaskScheduler.shared.cancel(
-        taskRequestWithIdentifier: "com.keplr.vizor.sync"
-      )
+      if !runtimeProfile.isIsolated {
+        cancelBackgroundTaskRequestIfAllowed(
+          taskRequestWithIdentifier: "com.keplr.vizor.sync"
+        )
+      }
       // A BGTask cold-launches the app with a background application state.
       // Cancelling here unconditionally removes the very request iOS is
       // launching us to service. Only a user-driven foreground launch should
       // discard a stale pending preparation request.
-      if application.applicationState != .background {
+      if !runtimeProfile.isIsolated && application.applicationState != .background {
         BackgroundMigrationPreparationManager.shared
           .handoffPendingRequestForForegroundLaunch()
       }
-      BackgroundMigrationPreparationManager.shared.registerBackgroundTask()
-      BGTaskScheduler.shared.cancel(
-        taskRequestWithIdentifier: "com.keplr.vizor.txtrack"
-      )
+      if !runtimeProfile.isIsolated {
+        BackgroundMigrationPreparationManager.shared.registerBackgroundTask()
+        cancelBackgroundTaskRequestIfAllowed(
+          taskRequestWithIdentifier: "com.keplr.vizor.txtrack"
+        )
+      }
     }
-    if application.applicationState != .background {
+    if !runtimeProfile.isIsolated && application.applicationState != .background {
       IronwoodMigrationNotificationGate.shared.enforceOnForeground()
     }
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
   override func applicationWillEnterForeground(_ application: UIApplication) {
-    IronwoodMigrationNotificationGate.shared.enforceOnForeground()
-    if #available(iOS 26.0, *) {
-      BackgroundMigrationManager.shared.handoffToForeground()
+    if !E2eRuntimeProfile.current.isIsolated {
+      IronwoodMigrationNotificationGate.shared.enforceOnForeground()
+      if #available(iOS 26.0, *) {
+        BackgroundMigrationManager.shared.handoffToForeground()
+      }
     }
     super.applicationWillEnterForeground(application)
   }

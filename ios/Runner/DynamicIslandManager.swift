@@ -15,7 +15,12 @@ class DynamicIslandManager {
 
     private(set) var displayMode: DisplayMode = .idle
     private var currentActivity: Activity<LiveActivitiesAppAttributes>?
-    private let defaults = UserDefaults(suiteName: "group.com.keplr.vizor")
+    private lazy var defaults: UserDefaults? = {
+        let profile = E2eRuntimeProfile.current
+        return profile.isIsolated
+            ? profile.defaults
+            : UserDefaults(suiteName: "group.com.keplr.vizor")
+    }()
     private var activityId: UUID?
 
     // Cache last sync progress for restoration after TX tracking

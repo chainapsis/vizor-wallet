@@ -1,3 +1,7 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
+
+import 'e2e_namespace.dart';
+
 enum ZcashNetwork {
   mainnet,
   testnet,
@@ -135,10 +139,18 @@ ZcashNetwork zcashNetworkFromName(String networkName) {
 
 String secureStoreServiceForNetwork(String networkName) {
   final network = normalizeZcashNetworkName(networkName);
+  final String baseService;
   if (kZcashIronwoodMasquerade && network == 'main') {
-    return 'com.keplr.vizor.ironwood.secure_store';
+    baseService = 'com.keplr.vizor.ironwood.secure_store';
+  } else {
+    baseService = network == 'main'
+        ? 'com.keplr.vizor.secure_store'
+        : 'com.keplr.vizor.$network.secure_store';
   }
-  return network == 'main'
-      ? 'com.keplr.vizor.secure_store'
-      : 'com.keplr.vizor.$network.secure_store';
+  return e2eSecureStoreService(
+    baseService: baseService,
+    namespace: kVizorE2eNamespace,
+    defaultNetworkName: kZcashDefaultNetworkName,
+    isDebug: kDebugMode,
+  );
 }

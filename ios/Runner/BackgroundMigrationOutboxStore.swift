@@ -2,8 +2,11 @@ import CryptoKit
 import Foundation
 import Security
 
-let ironwoodMigrationOutboxKeyService =
+let ironwoodMigrationOutboxKeyBaseService =
   "com.keplr.vizor.ironwood-migration-outbox-key.v1"
+var ironwoodMigrationOutboxKeyService: String {
+  E2eRuntimeProfile.current.keychainService(ironwoodMigrationOutboxKeyBaseService)
+}
 
 enum BackgroundMigrationOutboxStoreError: Error, Equatable {
   case temporarilyUnavailable
@@ -104,10 +107,11 @@ final class BackgroundMigrationOutboxStore: @unchecked Sendable {
     if let fileURL {
       self.fileURL = fileURL
     } else {
-      let support = FileManager.default.urls(
+      let baseSupport = FileManager.default.urls(
         for: .applicationSupportDirectory,
         in: .userDomainMask
       ).first!
+      let support = E2eRuntimeProfile.current.supportDirectory(baseSupport)
       self.fileURL =
         support
         .appendingPathComponent("IronwoodMigration", isDirectory: true)

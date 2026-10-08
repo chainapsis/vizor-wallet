@@ -1,6 +1,7 @@
 import 'dart:async';
-import 'dart:io' show Platform;
+import 'dart:io' show Platform, pid;
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
@@ -17,6 +18,8 @@ import 'src/providers/account_provider.dart';
 import 'src/core/lifecycle/signing_shutdown_host.dart';
 import 'src/core/lifecycle/app_shutdown_signal.dart';
 import 'src/core/config/swap_feature_config.dart';
+import 'src/core/config/e2e_namespace.dart';
+import 'src/core/config/e2e_runtime_case_manifest.dart';
 import 'src/core/config/network_config.dart';
 import 'src/core/layout/app_layout.dart';
 import 'src/core/navigation/mobile_exit_back_guard.dart';
@@ -151,6 +154,7 @@ import 'src/providers/voting/voting_share_tracking_restorer_provider.dart';
 import 'src/providers/wallet_provider.dart';
 import 'src/providers/windows_update_provider.dart';
 import 'src/core/storage/secure_storage_diagnostics.dart';
+import 'src/core/storage/wallet_paths.dart';
 import 'src/core/widgets/linux_keyring_gate.dart';
 import 'src/core/storage/linux_keyring_coordinator.dart';
 import 'src/features/payment_links/services/gift_claim_setup_coordinator.dart';
@@ -197,8 +201,79 @@ void _startVotingObservabilityLogging() {
       );
 }
 
-Future<void> initializeZcashWalletRuntime() async {
+Future<E2eRuntimeCaseManifest?> initializeE2eRuntimeConfiguration() async {
   WidgetsFlutterBinding.ensureInitialized();
+  final e2eManifest = installE2eRuntimeCaseManifest(
+    isDebug: kDebugMode,
+    isIos: Platform.isIOS,
+    isMacos: Platform.isMacOS,
+    defaultNetworkName: kZcashDefaultNetworkName,
+  );
+  final e2eNamespace = e2eManifest?.namespace ?? '';
+  if (e2eManifest == null &&
+      (Platform.isIOS
+          ? readE2eNativeEnvironmentBytes(
+                  kVizorE2eCaseManifestEnvKey,
+                  kVizorE2eCaseManifestMaximumBytes,
+                ) !=
+                null
+          : Platform.environment.containsKey(kVizorE2eCaseManifestEnvKey))) {
+    throw StateError(
+      'An E2E case manifest requires a compiled cohort profile.',
+    );
+  }
+  validateE2eRuntimeNamespace(
+    expectedNamespace: e2eNamespace,
+    runtimeNamespace: readE2eRuntimeNamespace(isIos: Platform.isIOS),
+  );
+  configureE2ePreferences(
+    namespace: e2eNamespace,
+    defaultNetworkName: kZcashDefaultNetworkName,
+    isDebug: kDebugMode,
+  );
+  if (e2eManifest != null) {
+    final support = await getWalletSupportDirectory();
+    final service = secureStoreServiceForNetwork(kZcashDefaultNetworkName);
+    final contextPath = resolveE2eContextPath(
+      configuredPath: e2eManifest.contextPath,
+      supportDirectory: support.path,
+      pathSeparator: Platform.pathSeparator,
+      namespace: e2eNamespace,
+      defaultNetworkName: kZcashDefaultNetworkName,
+      isDebug: kDebugMode,
+      isIos: Platform.isIOS,
+    );
+    await writeE2eRuntimeContext(
+      contextPath: contextPath,
+      context: buildE2eRuntimeContext(
+        namespace: e2eNamespace,
+        processId: pid,
+        supportDirectory: support.path,
+        secureStoreServices: e2eRuntimeSecureStoreServices(
+          walletService: service,
+          namespace: e2eNamespace,
+          isIos: Platform.isIOS,
+          isMacos: Platform.isMacOS,
+        ),
+        preferencesPrefix: e2ePreferencesPrefix(
+          namespace: e2eNamespace,
+          defaultNetworkName: kZcashDefaultNetworkName,
+          isDebug: kDebugMode,
+        ),
+        nativePreferencesSuite: Platform.isIOS
+            ? 'com.keplr.vizor.regtest.e2e.$e2eNamespace'
+            : null,
+        notificationIdentifierPrefix: Platform.isIOS
+            ? 'vizor_e2e_$e2eNamespace.'
+            : null,
+      ),
+    );
+  }
+  return e2eManifest;
+}
+
+Future<void> initializeZcashWalletRuntime() async {
+  final e2eManifest = await initializeE2eRuntimeConfiguration();
   await SecureStorageDiagnostics.instance.initialize();
   log('runtime: initializing RustLib');
   await RustLib.init();
@@ -208,10 +283,13 @@ Future<void> initializeZcashWalletRuntime() async {
   await rust_simple.configureFastTestnetMigration(
     enabled: kZcashFastTestnetMigration,
   );
+  final regtestActivationHeight =
+      e2eManifest?.regtestIronwoodActivationHeight ??
+      kZcashRegtestIronwoodActivationHeight;
   if (kZcashDefaultNetworkName == ZcashNetwork.regtest.name &&
-      kZcashRegtestIronwoodActivationHeight > 1) {
+      (e2eManifest != null || regtestActivationHeight > 1)) {
     await rust_simple.configureRegtestIronwoodActivationHeight(
-      height: kZcashRegtestIronwoodActivationHeight,
+      height: regtestActivationHeight,
     );
   }
 

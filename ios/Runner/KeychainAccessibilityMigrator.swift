@@ -62,25 +62,27 @@ enum KeychainAccessibilityMigrationError: Error, Equatable {
 final class KeychainAccessibilityMigrator {
   static let shared = KeychainAccessibilityMigrator()
 
-  private static let allowedServices = Set(
-    keychainAccessibilityMigrationAllowedServices
-  )
-
   private let store: KeychainAccessibilityMigrationStore
   private let completionStore: KeychainAccessibilityMigrationCompletionStore
+  private let runtimeProfile: E2eRuntimeProfile
 
   init(
     store: KeychainAccessibilityMigrationStore = SecurityKeychainMigrationStore(),
     completionStore: KeychainAccessibilityMigrationCompletionStore =
-      UserDefaultsKeychainAccessibilityMigrationCompletionStore()
+      UserDefaultsKeychainAccessibilityMigrationCompletionStore(),
+    runtimeProfile: E2eRuntimeProfile = .current
   ) {
     self.store = store
     self.completionStore = completionStore
+    self.runtimeProfile = runtimeProfile
   }
 
   @discardableResult
   func ensureFirstUnlockThisDeviceOnly(service: String) throws -> Int {
-    guard Self.allowedServices.contains(service) else {
+    let allowedServices = runtimeProfile.isIsolated
+      ? Set([runtimeProfile.keychainService("com.keplr.vizor.regtest.secure_store")])
+      : Set(keychainAccessibilityMigrationAllowedServices)
+    guard allowedServices.contains(service) else {
       throw KeychainAccessibilityMigrationError.invalidService
     }
     if completionStore.isComplete(
@@ -215,8 +217,8 @@ final class UserDefaultsKeychainAccessibilityMigrationCompletionStore:
 {
   private let userDefaults: UserDefaults
 
-  init(userDefaults: UserDefaults = .standard) {
-    self.userDefaults = userDefaults
+  init(userDefaults: UserDefaults? = nil) {
+    self.userDefaults = userDefaults ?? E2eRuntimeProfile.current.defaults
   }
 
   func isComplete(service: String, version: Int) -> Bool {
