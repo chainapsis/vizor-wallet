@@ -42,8 +42,7 @@ class RuntimeTests(unittest.TestCase):
                 self.assertTrue(managed._capture.closed)
             self.assertIsNotNone(managed.process.poll())
             self.assertFalse(managed.pump_thread.is_alive())
-            with self.assertRaises(ProcessLookupError):
-                os.killpg(managed.process.pid, 0)
+            self.assert_group_released(managed)
 
     def start(self, source, **kwargs):
         managed = RUNTIME.start_logged_process(
@@ -72,8 +71,79 @@ class RuntimeTests(unittest.TestCase):
         self.assertTrue(managed._capture.finished.is_set())
         self.assertTrue(managed.process.stdout.closed)
         self.assertTrue(managed.cleanup_completed)
-        with self.assertRaises(ProcessLookupError):
-            os.killpg(managed.process.pid, 0)
+        self.assert_group_released(managed)
+
+    def assert_group_released(self, managed):
+        deadline = time.monotonic() + 1
+        while True:
+            try:
+                os.killpg(managed.process.pid, 0)
+            except ProcessLookupError:
+                return
+            self.assertEqual(sys.platform, "linux", "owned group still exists")
+            self.assertTrue(managed._capture.group_quiescent, "group quiescence was not verified")
+            self.assertTrue(managed.unreaped_zombie_pids, "no external zombies were recorded")
+            snapshot = RUNTIME._linux_zombie_snapshot(managed.process.pid, deadline)
+            if snapshot:
+                self.assertLessEqual(
+                    {member[0] for member in snapshot}, set(managed.unreaped_zombie_pids),
+                    "remaining group contains unrecorded members",
+                )
+                return
+            # An external parent can reap members during the inventory. Retry
+            # the absence probe, but never accept a live/incomplete snapshot.
+            if time.monotonic() >= deadline:
+                self.fail("remaining group is not verifiably zombie-only")
+            time.sleep(0.01)
+
+    def test_release_helper_accepts_group_absence_without_zombie_proof(self):
+        managed = Mock()
+        with patch.object(RUNTIME.os, "killpg", side_effect=ProcessLookupError), patch.object(
+            RUNTIME, "_linux_zombie_snapshot",
+        ) as snapshot:
+            self.assert_group_released(managed)
+            snapshot.assert_not_called()
+
+    def test_release_helper_accepts_only_remaining_recorded_zombies(self):
+        managed = Mock()
+        managed._capture.group_quiescent = True
+        managed.unreaped_zombie_pids = (2002, 2004)
+        snapshot = ((2002, 1, 12345, ((2002, 12345),)),)
+        with patch.object(RUNTIME.sys, "platform", "linux"), patch.object(
+            RUNTIME.os, "killpg", return_value=None,
+        ), patch.object(RUNTIME, "_linux_zombie_snapshot", return_value=snapshot):
+            # Already-reaped members need not remain in the current inventory.
+            self.assert_group_released(managed)
+
+    def test_release_helper_requires_recorded_quiescence(self):
+        managed = Mock()
+        with patch.object(RUNTIME.sys, "platform", "linux"), patch.object(
+            RUNTIME.os, "killpg", return_value=None,
+        ), patch.object(RUNTIME, "_linux_zombie_snapshot") as snapshot:
+            for quiescent, zombies in ((False, (2002,)), (True, ())):
+                with self.subTest(quiescent=quiescent, zombies=zombies):
+                    managed._capture.group_quiescent = quiescent
+                    managed.unreaped_zombie_pids = zombies
+                    with self.assertRaises(AssertionError):
+                        self.assert_group_released(managed)
+            snapshot.assert_not_called()
+
+    def test_release_helper_rejects_incomplete_or_unrecorded_members(self):
+        managed = Mock()
+        managed._capture.group_quiescent = True
+        managed.unreaped_zombie_pids = (2002,)
+        with patch.object(RUNTIME.sys, "platform", "linux"), patch.object(
+            RUNTIME.os, "killpg", return_value=None,
+        ):
+            with patch.object(RUNTIME, "_linux_zombie_snapshot", return_value=None), patch.object(
+                RUNTIME.time, "monotonic", side_effect=(0, 2),
+            ):
+                with self.assertRaisesRegex(AssertionError, "not verifiably zombie-only"):
+                    self.assert_group_released(managed)
+            unrecorded = ((2004, 1, 12345, ((2004, 12345),)),)
+            with patch.object(RUNTIME, "_linux_zombie_snapshot", return_value=unrecorded):
+                with self.assertRaisesRegex(AssertionError, "unrecorded members"):
+                    self.assert_group_released(managed)
 
     def test_success_and_nonzero_codes_keep_complete_stdout_and_stderr(self):
         for code in (0, 7):
@@ -516,6 +586,24 @@ class RuntimeTests(unittest.TestCase):
                         except ProcessLookupError: pass
                     managed.process.wait(timeout=2)
                     managed.pump_thread.join(timeout=2)
+        """)
+        self.run_external_reaper_fixture(observer)
+
+    @unittest.skipUnless(sys.platform == "linux", "requires real Linux adoption/procfs")
+    def test_release_helpers_with_external_reaper(self):
+        observer = textwrap.dedent("""
+            import sys,unittest
+            from test_e2e_runtime import RuntimeTests
+            names = (
+                'test_cancellation_reaps_descendant_but_preserves_sibling',
+                'test_keyboard_interrupt_reaps_started_group',
+                'test_parent_exit_does_not_hide_descendant_holding_stdout',
+                'test_output_eof_does_not_hide_live_descendant',
+                'test_sigkill_reaches_resistant_descendant_after_parent_exits',
+            )
+            suite=unittest.TestSuite(RuntimeTests(name) for name in names)
+            result=unittest.TextTestRunner(verbosity=2).run(suite)
+            sys.exit(0 if result.wasSuccessful() else 1)
         """)
         self.run_external_reaper_fixture(observer)
 

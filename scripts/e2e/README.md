@@ -117,6 +117,14 @@ primitive checks do not enable Linux wallet E2E execution:
 python3 -B -m unittest scripts/e2e/test_e2e_runtime.py
 ```
 
+The Linux checks also run descendant cancellation, interruption, EOF, and
+SIGKILL cases under a private fixture parent that delays zombie reaping. This
+covers an ordinary runner beneath a non-reaping PID 1, not just a runner that
+owns adopted children itself. Release assertions recheck that any remaining
+members are recorded zombies, including their threads; missing proof or live
+members still fail. Subreaper policy remains confined to the disposable fixture
+process.
+
 ## Gift Cards
 
 Sender usage tracking and empty observer DB reuse:
