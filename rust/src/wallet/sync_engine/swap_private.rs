@@ -208,6 +208,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "requires the isolated PIR services and VIZOR_SWAP_PUBLIC_ANCHORS"]
     async fn public_refund_round_trips_the_vizor_dependency_graph() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
         let anchors: serde_json::Value = serde_json::from_slice(
             &std::fs::read(std::env::var("VIZOR_SWAP_PUBLIC_ANCHORS").unwrap()).unwrap(),
         )
