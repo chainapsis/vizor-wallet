@@ -125,6 +125,39 @@ members are recorded zombies, including their threads; missing proof or live
 members still fail. Subreaper policy remains confined to the disposable fixture
 process.
 
+## Owned native case workspace primitive
+
+`native_workspace.py` allocates one private directory per case under an existing,
+private canonical run root: `e2e/vizor_<run_id>_w<worker_id>_<case_index>`.
+`prepare_native_case_workspace()` returns an owned handle only after its marker
+and schema-1 manifest are written and verified. Allocation is exclusive within
+that run root: existing directories and partial allocations are never adopted,
+overwritten, or reset. Failed allocations retain their on-disk evidence.
+
+`launch_environment()` emits the two environment values in the
+[native runtime contract](RUNTIME_CONTRACT.md). `VIZOR_E2E_CASE_MANIFEST` is the
+ASCII JSON value, not a filename. macOS uses the owned case's `native-context.json`
+path; iOS uses `app-support`. Run/worker/case identity, scenario/platform syntax,
+distinct port values, explicit activation height, and the 2048-byte bound match
+that contract. Restarts reuse the same handle and retain mutable state; reruns
+require fresh run identity. Changing the caller's port map cannot rebind a case.
+
+Before each launch phase, the handle rechecks original directory/file identities,
+ownership, permissions, link safety, and exact metadata. Verification failures
+are sticky. This is a cooperative filesystem boundary, not containment of
+untrusted code. Callers must allocate fresh run IDs and hold actual port leases;
+the manifest's port numbers do not prove reservation or service readiness.
+
+There is no deletion or native-cleanup operation in this slice. Workspaces and
+evidence remain on disk; no marker or context declaration authorizes cleanup of
+wallets, Keychain, preferences, or simulators. This library copies no source or
+build cache and wires no executor or catalog support flag. Host-only checks use
+private temporary directories and owned Python children:
+
+```bash
+python3 -B -m unittest scripts/e2e/test_native_workspace.py
+```
+
 ## Gift Cards
 
 Sender usage tracking and empty observer DB reuse:
