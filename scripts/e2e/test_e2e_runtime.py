@@ -9,6 +9,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import textwrap
 import threading
 import time
 import unittest
@@ -411,6 +412,258 @@ class RuntimeTests(unittest.TestCase):
             )
         self.assertIsInstance(failure.exception.__cause__, FileNotFoundError)
         self.assertEqual(failure.exception.exit_code, 1)
+
+    @unittest.skipUnless(sys.platform == "linux", "requires real Linux adoption/procfs")
+    def test_external_reaper_zombies_are_recorded_without_signalling_again(self):
+        observer = textwrap.dedent("""
+            import os,sys,tempfile,threading,time
+            from pathlib import Path
+            import e2e_runtime as runtime
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                source = "import subprocess,sys; subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)'])"
+                managed = runtime.start_logged_process([sys.executable,'-c',source],
+                    cwd=root,env=os.environ.copy(),log_path=root/'child.log')
+                try:
+                    try:
+                        runtime.wait_managed_process(managed,timeout=.2,cancel_event=threading.Event())
+                    except runtime.RunnerError as error:
+                        assert error.exit_code == 124, str(error)
+                    else:
+                        raise AssertionError('live orphan counted as completed')
+                    assert managed.cleanup_completed
+                    assert managed.unreaped_zombie_pids
+                    assert all(runtime._linux_task_state(Path('/proc')/str(pid)/'stat',pid)[0]=='Z'
+                               for pid in managed.unreaped_zombie_pids)
+                    def forbidden(*_args): raise AssertionError('signalled completed group')
+                    original = os.killpg
+                    os.killpg = forbidden
+                    try: runtime.terminate_process(managed)
+                    finally: os.killpg = original
+                    print('external zombies explicitly recorded',flush=True)
+                finally:
+                    # Only this fixture's group; the holder retains zombie IDs
+                    # until the observer exits, so those IDs cannot be reused.
+                    if not managed._capture.group_gone:
+                        try: os.killpg(managed.process.pid,9)
+                        except ProcessLookupError: pass
+                    managed.process.wait(timeout=2)
+                    managed.pump_thread.join(timeout=2)
+        """)
+        self.run_external_reaper_fixture(observer)
+
+    @unittest.skipUnless(sys.platform == "linux", "requires real Linux adoption/procfs")
+    def test_natural_completion_with_external_zombies_preserves_exit_code(self):
+        observer = textwrap.dedent("""
+            import os,sys,tempfile,threading
+            from pathlib import Path
+            import e2e_runtime as runtime
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                for code in (0,7):
+                    source = "import os,subprocess,sys,time; child=subprocess.Popen([sys.executable,'-c','pass']); " + \
+                        "time.sleep(.1); os._exit(%d)" % code
+                    managed = runtime.start_logged_process([sys.executable,'-c',source],
+                        cwd=root,env=os.environ.copy(),log_path=root/('child-%d.log'%code))
+                    try:
+                        assert runtime.wait_managed_process(managed,timeout=3,
+                            cancel_event=threading.Event()) == code
+                        assert managed.cleanup_completed
+                        assert managed.unreaped_zombie_pids
+                    finally:
+                        if not managed._capture.group_gone:
+                            try: os.killpg(managed.process.pid,9)
+                            except ProcessLookupError: pass
+                        managed.process.wait(timeout=2)
+                        managed.pump_thread.join(timeout=2)
+                print('natural completion retained both exit codes',flush=True)
+        """)
+        self.run_external_reaper_fixture(observer)
+
+    @unittest.skipUnless(sys.platform == "linux", "requires real Linux threads/procfs")
+    def test_zombie_leader_with_live_thread_is_not_quiescent(self):
+        observer = textwrap.dedent("""
+            import os,sys,tempfile,threading,time
+            from pathlib import Path
+            import e2e_runtime as runtime
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                ready = root/'ready'
+                thread_source = "import ctypes,threading; from pathlib import Path; " + \
+                    "threading.Thread(target=lambda: threading.Event().wait(60)).start(); " + \
+                    "Path(%r).write_text('ready'); ctypes.CDLL(None).pthread_exit(None)" % str(ready)
+                source = "import subprocess,sys; child=subprocess.Popen([sys.executable,'-c',%r]," % thread_source + \
+                    "stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL); print(child.pid,flush=True)"
+                lines=[]
+                managed = runtime.start_logged_process([sys.executable,'-c',source],
+                    cwd=root,env=os.environ.copy(),log_path=root/'child.log',raw_lines=lines)
+                try:
+                    managed.process.wait(timeout=2)
+                    managed.pump_thread.join(timeout=2)
+                    pid=int(lines[0])
+                    deadline=time.monotonic()+2
+                    while runtime._linux_task_state(Path('/proc')/str(pid)/'stat',pid)[0]!='Z':
+                        assert time.monotonic()<deadline, 'thread leader did not exit'
+                        time.sleep(.01)
+                    assert runtime._group_active(managed,deadline=time.monotonic()+.5), 'live thread was ignored'
+                    assert not managed.cleanup_completed
+                    runtime.terminate_process(managed)
+                    assert managed.cleanup_completed
+                    print('live thread prevented quiescence',flush=True)
+                finally:
+                    if not managed._capture.group_gone:
+                        try: os.killpg(managed.process.pid,9)
+                        except ProcessLookupError: pass
+                    managed.process.wait(timeout=2)
+                    managed.pump_thread.join(timeout=2)
+        """)
+        self.run_external_reaper_fixture(observer)
+
+    def run_external_reaper_fixture(self, observer):
+        # PR_SET_CHILD_SUBREAPER affects only this owned fixture child, not the
+        # test runner or unrelated subprocesses. It deliberately delays reap
+        # until the observer has inspected externally parented zombies.
+        module_root = str(Path(__file__).resolve().parent)
+        holder = textwrap.dedent(f"""
+            import ctypes,os,subprocess,sys
+            result=ctypes.CDLL(None,use_errno=True).prctl(36,1,0,0,0)
+            assert result==0, ctypes.get_errno()
+            observer=subprocess.Popen([sys.executable,'-B','-c',{observer!r}],
+                env={{**os.environ,'PYTHONPATH':{module_root!r}}})
+            code=observer.wait(timeout=12)
+            # Every child in this private fixture belongs to this test.
+            while True:
+                try: os.waitpid(-1,0)
+                except ChildProcessError: break
+            sys.exit(code)
+        """)
+        managed = self.start(holder)
+        self.assertEqual(self.wait(managed, timeout=15), 0, managed.log_path.read_text())
+        self.assert_released(managed)
+
+
+class LinuxGroupProofTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix="vizor-linux-group-proof-")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.group = 2000
+        self.parent = os.getpid() + 100000
+        self.groups = {}
+        process = Mock(pid=self.group)
+        process.poll.return_value = 0
+        self.capture = RUNTIME._Capture(self.root / "unused.log", None)
+        self.managed = RUNTIME.ManagedProcess(
+            process, self.capture.log_path, Mock(), self.capture,
+            self.group, RUNTIME._OWNERSHIP_TOKEN,
+        )
+        for patcher in (
+            patch.object(RUNTIME.sys, "platform", "linux"),
+            patch.object(RUNTIME, "_LINUX_PROC_ROOT", self.root),
+            patch.object(RUNTIME.os, "getpgid", side_effect=lambda pid: self.groups[pid]),
+            patch.object(RUNTIME.os, "killpg", return_value=None),
+            patch.object(RUNTIME.os, "waitpid", side_effect=ChildProcessError),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def add_member(self, pid, state="Z", *, parent=None, session=None, thread_state=None):
+        self.groups[pid] = self.group
+        tail = [b"0"] * 20
+        tail[0] = state.encode()
+        tail[1] = str(self.parent if parent is None else parent).encode()
+        tail[2] = str(self.group).encode()
+        tail[3] = str(self.group if session is None else session).encode()
+        tail[19] = b"12345"
+        raw = str(pid).encode() + b" (fixture ) (\xff) " + b" ".join(tail) + b"\n"
+        entry = self.root / str(pid)
+        task = entry / "task" / str(pid)
+        task.mkdir(parents=True)
+        (entry / "stat").write_bytes(raw)
+        (task / "stat").write_bytes(raw)
+        if thread_state is not None:
+            tid = pid + 1
+            thread = entry / "task" / str(tid)
+            thread.mkdir()
+            tail[0] = thread_state.encode()
+            (thread / "stat").write_bytes(str(tid).encode() + b" (thread) " + b" ".join(tail))
+
+    def active(self):
+        return RUNTIME._group_active(self.managed, deadline=time.monotonic() + 1)
+
+    def test_only_positive_stable_zombie_proof_finishes_group(self):
+        self.add_member(2002)
+        self.add_member(2004)
+        self.assertFalse(self.active())
+        self.assertFalse(self.capture.group_gone, "kernel records still exist")
+        self.assertTrue(self.capture.group_quiescent)
+        self.assertEqual(self.managed.unreaped_zombie_pids, (2002, 2004))
+
+    def test_live_and_stopped_states_are_not_zombies(self):
+        for state in ("R", "S", "D", "T", "t", "X", "I"):
+            with self.subTest(state=state):
+                with patch.object(RUNTIME, "_linux_task_state", return_value=(state, self.parent, self.group, self.group, 1)):
+                    self.add_member(2002 + len(self.groups))
+                    self.assertTrue(self.active())
+                    self.assertFalse(self.capture.group_quiescent)
+
+    def test_zombie_leader_with_live_thread_is_not_a_positive_proof(self):
+        self.add_member(2002, thread_state="S")
+        self.assertTrue(self.active())
+        self.assertEqual(self.managed.unreaped_zombie_pids, ())
+
+    def test_owned_zombies_must_be_reaped_not_recorded_as_external(self):
+        self.add_member(2002, parent=os.getpid())
+        self.assertTrue(self.active())
+        self.assertFalse(self.capture.group_quiescent)
+
+    def test_empty_or_missing_thread_inventory_is_uncertainty(self):
+        self.add_member(2002)
+        task = self.root / "2002" / "task" / "2002"
+        (task / "stat").unlink()
+        self.assertTrue(self.active())
+        task.rmdir()
+        self.assertTrue(self.active())
+        self.assertFalse(self.capture.group_quiescent)
+
+    def test_missing_procfs_and_unreadable_stats_are_errors_not_success(self):
+        with patch.object(RUNTIME, "_LINUX_PROC_ROOT", self.root / "missing"):
+            with self.assertRaises(FileNotFoundError):
+                self.active()
+        self.add_member(2002)
+        with patch.object(RUNTIME, "_linux_task_state", side_effect=PermissionError("injected procfs denial")):
+            with self.assertRaises(PermissionError):
+                self.active()
+        self.assertFalse(self.capture.group_quiescent)
+
+    def test_malformed_stat_and_wrong_session_cannot_prove_completion(self):
+        self.add_member(2002, session=9999)
+        self.assertTrue(self.active())
+        (self.root / "2002" / "stat").write_bytes(b"2002 (broken) Z")
+        with self.assertRaises(RUNTIME.RunnerError):
+            self.active()
+        self.assertFalse(self.capture.group_quiescent)
+
+    def test_changed_members_or_pid_birth_time_require_another_attempt(self):
+        first = ((2002, self.parent, 12345, ((2002, 12345),)),)
+        changed = ((2002, self.parent, 12346, ((2002, 12346),)),)
+        with patch.object(RUNTIME, "_linux_zombie_snapshot", side_effect=(first, changed)):
+            self.assertTrue(self.active())
+        self.assertFalse(self.capture.group_quiescent)
+
+    def test_reap_is_scoped_and_never_steals_the_popen_child_status(self):
+        with patch.object(RUNTIME.os, "waitpid", side_effect=((2002, 0), (2004, 0), ChildProcessError)) as wait:
+            self.active()
+        self.assertEqual(wait.call_args_list, [unittest.mock.call(-self.group, os.WNOHANG)] * 3)
+        self.managed.process.poll.return_value = None
+        with patch.object(RUNTIME.os, "waitpid") as wait:
+            self.assertTrue(self.active())
+            wait.assert_not_called()
+
+    def test_expired_proof_budget_does_not_mark_quiescence(self):
+        self.add_member(2002)
+        self.assertIsNone(RUNTIME._linux_zombie_snapshot(self.group, time.monotonic() - 1))
+        self.assertFalse(self.capture.group_quiescent)
 
 
 if __name__ == "__main__":

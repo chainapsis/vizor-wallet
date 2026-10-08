@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import signal
 import subprocess
+import sys
 import threading
 import time
 from typing import Any, Sequence
@@ -15,6 +16,7 @@ from typing import Any, Sequence
 
 _OWNERSHIP_TOKEN = object()
 _POLL_INTERVAL = 0.02
+_LINUX_PROC_ROOT = Path("/proc")
 _SENSITIVE_LOG_MARKERS = ("mnemonic:", "unified spending key", '"seed_hex"')
 
 
@@ -43,6 +45,8 @@ class _Capture:
     finished: threading.Event = dataclasses.field(default_factory=threading.Event)
     errors: list[BaseException] = dataclasses.field(default_factory=list)
     group_gone: bool = False
+    group_quiescent: bool = False
+    zombie_pids: tuple[int, ...] = ()
     closed: bool = False
     cleanup_errors: list[str] = dataclasses.field(default_factory=list)
 
@@ -60,8 +64,13 @@ class ManagedProcess:
 
     @property
     def cleanup_completed(self) -> bool:
-        """True only after group exit, child reap and error-free pump completion."""
+        """True after child reap, no active group members, and error-free output closure."""
         return self._capture.closed and not self._capture.cleanup_errors
+
+    @property
+    def unreaped_zombie_pids(self) -> tuple[int, ...]:
+        """Externally parented Linux zombies observed at cleanup, not future kill targets."""
+        return self._capture.zombie_pids
 
 
 def sanitize_log_line(line: str) -> str:
@@ -105,7 +114,7 @@ def _require_owned(managed: ManagedProcess) -> None:
 
 
 def _kill_group(managed: ManagedProcess, sig: int, *, deadline: float | None = None) -> bool:
-    if managed._capture.group_gone:
+    if managed._capture.group_gone or managed._capture.group_quiescent:
         return False
     for attempt in range(2):
         try:
@@ -127,8 +136,91 @@ def _kill_group(managed: ManagedProcess, sig: int, *, deadline: float | None = N
                 raise error
 
 
-def _group_exists(managed: ManagedProcess, *, deadline: float | None = None) -> bool:
-    return _kill_group(managed, 0, deadline=deadline)
+def _reap_adopted_group_children(managed: ManagedProcess, deadline: float) -> None:
+    """Only after Popen reaps its child, collect adopted children in this group."""
+    while time.monotonic() < deadline:
+        try:
+            pid, _status = os.waitpid(-managed._group_id, os.WNOHANG)
+        except ChildProcessError:
+            return
+        if pid == 0:
+            return
+
+
+def _linux_task_state(path: Path, pid: int) -> tuple[str, int, int, int, int]:
+    # comm can contain spaces, parentheses, and non-UTF-8 bytes. Fields after
+    # its LAST ')' start with state (3); pgrp/session/starttime are 5/6/22.
+    prefix, separator, tail = path.read_bytes().rpartition(b")")
+    fields = tail.split()
+    try:
+        if not separator or int(prefix.partition(b"(")[0]) != pid:
+            raise ValueError("unexpected process identity")
+        state = fields[0].decode("ascii")
+        parent, group, session, start_ticks = (
+            int(fields[1]), int(fields[2]), int(fields[3]), int(fields[19])
+        )
+        if len(state) != 1 or start_ticks < 0:
+            raise ValueError("invalid process state")
+    except (ValueError, IndexError, UnicodeError) as error:
+        raise RunnerError(f"cannot verify Linux process state: {path}") from error
+    return state, parent, group, session, start_ticks
+
+
+def _linux_zombie_snapshot(group_id: int, deadline: float) -> tuple | None:
+    """Positive, complete zombie-only snapshot, including every member's threads.
+
+    Missing tasks or a changing PID inventory are uncertainty, not group exit.
+    In particular, a zombie thread-group leader can still have live threads.
+    """
+    members = []
+    for entry in _LINUX_PROC_ROOT.iterdir():
+        if not entry.name.isascii() or not entry.name.isdecimal():
+            continue
+        if time.monotonic() >= deadline:
+            return None
+        pid = int(entry.name)
+        try:
+            if os.getpgid(pid) != group_id:
+                continue
+            state, parent, group, session, start = _linux_task_state(entry / "stat", pid)
+            if (
+                state != "Z" or group != group_id or session != group_id
+                or parent == os.getpid()
+            ):
+                return None
+            tasks = []
+            for task in (entry / "task").iterdir():
+                if time.monotonic() >= deadline:
+                    return None
+                tid = int(task.name)
+                state, _parent, group, session, ticks = _linux_task_state(task / "stat", tid)
+                if state != "Z" or group != group_id or session != group_id:
+                    return None
+                tasks.append((tid, ticks))
+            if not tasks:
+                return None
+            members.append((pid, parent, start, tuple(sorted(tasks))))
+        except (FileNotFoundError, ProcessLookupError):
+            return None
+    return tuple(sorted(members)) if members else None
+
+
+def _group_active(managed: ManagedProcess, *, deadline: float | None = None) -> bool:
+    if not _kill_group(managed, 0, deadline=deadline):
+        return False
+    if sys.platform == "linux" and managed.process.poll() is not None:
+        # A PID-1 runner/subreaper owns adopted descendants. Never waitpid(-1)
+        # or globally change subreaper/SIGCHLD policy in the shared runner.
+        until = deadline if deadline is not None else time.monotonic() + _POLL_INTERVAL
+        _reap_adopted_group_children(managed, until)
+        if not _kill_group(managed, 0, deadline=deadline):
+            return False
+        first = _linux_zombie_snapshot(managed._group_id, until)
+        if first and first == _linux_zombie_snapshot(managed._group_id, until):
+            managed._capture.zombie_pids = tuple(member[0] for member in first)
+            managed._capture.group_quiescent = True
+            return False
+    return True
 
 
 def _signal_group(managed: ManagedProcess, sig: signal.Signals, *, deadline: float) -> None:
@@ -139,7 +231,7 @@ def _wait_group_exit(managed: ManagedProcess, deadline: float) -> bool:
     while True:
         # Reap the direct child, but do not confuse its exit with group exit.
         managed.process.poll()
-        if not _group_exists(managed, deadline=deadline) and managed.process.poll() is not None:
+        if not _group_active(managed, deadline=deadline) and managed.process.poll() is not None:
             return True
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -172,7 +264,7 @@ def _terminate_owned_process(managed: ManagedProcess, timeout: float) -> None:
         grace_deadline = time.monotonic() + timeout / 2
         for sig, until in ((signal.SIGTERM, grace_deadline), (signal.SIGKILL, deadline)):
             try:
-                if _group_exists(managed, deadline=until):
+                if _group_active(managed, deadline=until):
                     _signal_group(managed, sig, deadline=until)
                 if _wait_group_exit(managed, until):
                     break
@@ -195,7 +287,7 @@ def _terminate_owned_process(managed: ManagedProcess, timeout: float) -> None:
         for error in capture.errors:
             errors.append(f"output capture failed ({type(error).__name__}: {error})")
         capture.closed = (
-            capture.group_gone
+            (capture.group_gone or capture.group_quiescent)
             and managed.process.poll() is not None
             and not managed.pump_thread.is_alive()
             and capture.finished.is_set()
@@ -264,7 +356,7 @@ def wait_managed_process(
     timeout: float,
     cancel_event: threading.Event,
 ) -> int:
-    """A command completes only after natural group exit and finished output.
+    """A command completes only after natural execution exit and finished output.
 
     Timeout/cancellation/interrupt stops its group. Cleanup uncertainty remains
     a failure, preserving the primary timeout/cancellation classification.
@@ -281,7 +373,7 @@ def wait_managed_process(
             code = managed.process.poll()
             if (
                 code is not None
-                and not _group_exists(managed)
+                and not _group_active(managed, deadline=deadline)
                 and managed._capture.finished.is_set()
                 and not managed.pump_thread.is_alive()
             ):

@@ -82,11 +82,21 @@ python3 -B -m unittest scripts/e2e/test_native_ports.py
 `e2e_runtime.py` starts each command in a new POSIX session/process group and
 returns an owned `ManagedProcess` handle. `wait_managed_process()` accepts
 that handle, not an arbitrary PID or existing subprocess. A command completes
-only after its direct child is reaped, its group has naturally exited, and its
-output pump has finished. A parent exit or output EOF alone is not completion.
+only after its direct child is reaped, no group member or thread remains active,
+and its output pump has finished. A parent exit or output EOF alone is not
+completion.
 Cancellation, timeout, and interruption stop the group; termination escalates
-from TERM to KILL within one bounded cleanup budget. Group disappearance is
+from TERM to KILL within one bounded cleanup budget. Verified completion is
 latched so repeated cleanup cannot signal a subsequently reused group ID.
+
+On Linux, adopted children owned by the runner are reaped only within this
+command's group, after its direct child is reaped. A group containing only
+externally parented zombies can also finish: two matching `/proc` snapshots
+must verify every member and thread is a zombie. Those remaining kernel records
+are exposed as `unreaped_zombie_pids`, an observation at cleanup, not future
+signal targets or a claim that all PIDs were reaped. Live or stopped threads,
+unreadable state, and incomplete inventories cannot prove completion. The
+runner does not change process-wide subreaper or `SIGCHLD` policy.
 
 Logging and cleanup failures remain failures, even if a later cleanup attempt
 physically releases the resources. Cancellation/interrupt type and timeout
@@ -99,7 +109,9 @@ The persisted log redacts the prototype's known credential markers, not all
 possible secrets. Raw output in `CommandResult.lines` or `raw_lines` is for
 in-memory protocol consumers and must not be published as sanitized evidence.
 No backend, app, simulator, execution mode, or catalog support flag is wired
-by this library. The host-only tests launch disposable Python children:
+by this library. The host-only tests launch disposable Python children, with
+Linux-specific adoption and thread checks skipped on other hosts. Linux host
+primitive checks do not enable Linux wallet E2E execution:
 
 ```bash
 python3 -B -m unittest scripts/e2e/test_e2e_runtime.py
