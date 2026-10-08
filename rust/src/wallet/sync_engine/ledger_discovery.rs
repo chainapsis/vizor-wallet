@@ -8,7 +8,8 @@ use tonic::transport::Channel;
 use transparent::keys::TransparentKeyScope;
 use zcash_client_backend::{
     data_api::{
-        ll::LowLevelWalletWrite, wallet::decrypt_and_store_transaction, Account as _, WalletRead,
+        ll::LowLevelWalletWrite, wallet::decrypt_and_store_transaction_with_swap_keys,
+        Account as _, WalletRead,
     },
     proto::service::{compact_tx_streamer_client::CompactTxStreamerClient, RawTransaction},
 };
@@ -503,7 +504,12 @@ async fn store_history(
             return Ok(None);
         }
         with_wallet_db_write_lock("ledger_discovery.transaction", || {
-            decrypt_and_store_transaction(&network, db, &tx, Some(BlockHeight::from_u32(height)))
+            decrypt_and_store_transaction_with_swap_keys(
+                &network,
+                db,
+                &tx,
+                Some(BlockHeight::from_u32(height)),
+            )
         })
         .map_err(|e| SyncError::db(format!("Ledger history store: {e}")))?;
         transactions += 1;

@@ -102,7 +102,10 @@ A seed restore finds swap keys without trial-decrypting history for every index:
    asked for again.
 4. A key the recent filter holds, because NEAR was given its address in the last
    day, keeps scanning for 24 hours after its sweep, catching a payout or refund
-   from a swap in flight at restore. Any other key closes at its sweep. Paid incoming indices extend
+   from a swap in flight at restore. Any other key closes at its sweep. The wallet
+   trusts the recent filter only while it is current, NEAR's feed having been read
+   within the last fifteen minutes, and covers the whole day; otherwise every
+   restored key keeps scanning for 24 hours. Paid incoming indices extend
    the lookahead, and the new keys are swept too. A key the seen filter holds,
    because NEAR was ever given its address, is marked quoted, so this device does not
    hand out the old device's addresses again.

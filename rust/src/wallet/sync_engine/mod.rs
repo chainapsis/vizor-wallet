@@ -9,7 +9,7 @@ use rusqlite::{params, OptionalExtension};
 use shardtree::error::{InsertionError, QueryError, ShardTreeError};
 use tonic::transport::Channel;
 use zcash_client_backend::data_api::{
-    chain::{self, error::Error as ChainError, scan_cached_blocks},
+    chain::{self, error::Error as ChainError, scan_cached_blocks_with_swap_keys},
     ll::LowLevelWalletWrite,
     scanning::{ScanPriority, ScanRange},
     wallet::ConfirmationsPolicy,
@@ -2871,7 +2871,7 @@ async fn run_payment_link_claim_sync_once(
             return Ok(());
         }
 
-        let scan_result = scan_cached_blocks(
+        let scan_result = scan_cached_blocks_with_swap_keys(
             &network,
             &block_source,
             &mut db,
@@ -3928,7 +3928,7 @@ async fn run_sync_impl(
                 );
             }
             voting_scan_end = Some(end);
-            scan_cached_blocks(
+            scan_cached_blocks_with_swap_keys(
                 &network,
                 &block_source,
                 &mut db,

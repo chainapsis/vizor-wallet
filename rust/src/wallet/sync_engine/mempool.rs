@@ -51,7 +51,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use zcash_client_backend::{data_api::WalletRead, proto::service::RawTransaction};
+use zcash_client_backend::{
+    data_api::{swap_receiving::SwapReceivingRead as _, WalletRead},
+    proto::service::RawTransaction,
+};
 use zcash_primitives::transaction::Transaction;
 use zcash_protocol::consensus::{BlockHeight, BranchId};
 

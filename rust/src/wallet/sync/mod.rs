@@ -1,6 +1,6 @@
 use zcash_client_backend::{
     data_api::{
-        chain::{scan_cached_blocks, CommitmentTreeRoot},
+        chain::{scan_cached_blocks_with_swap_keys, CommitmentTreeRoot},
         scanning::ScanPriority,
         WalletCommitmentTrees, WalletRead, WalletWrite,
     },
@@ -365,7 +365,7 @@ pub fn scan_blocks(
     };
     let result = with_wallet_db_write_lock("sync.scan_blocks", || {
         let mut db_data = open_wallet_db(db_path, network)?;
-        scan_cached_blocks(
+        scan_cached_blocks_with_swap_keys(
             &network,
             &db_cache,
             &mut db_data,

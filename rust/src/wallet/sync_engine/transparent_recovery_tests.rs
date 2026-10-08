@@ -1,6 +1,6 @@
 use super::*;
 use zcash_client_backend::data_api::{
-    wallet::decrypt_and_store_transaction, TransactionDataRequest,
+    wallet::decrypt_and_store_transaction_with_swap_keys, TransactionDataRequest,
 };
 use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::consensus::BranchId;
@@ -86,8 +86,13 @@ fn pre_sapling_external_and_internal_outputs_survive_retry_and_track_external_sp
         store_transparent_outputs(&mut db, &batches).unwrap();
         assert!(has_public_payload_work(&mut db, tx.txid()));
         // The real enhancement handler feeds the full transaction here.
-        decrypt_and_store_transaction(&network, &mut db, &tx, Some(BlockHeight::from_u32(100)))
-            .unwrap();
+        decrypt_and_store_transaction_with_swap_keys(
+            &network,
+            &mut db,
+            &tx,
+            Some(BlockHeight::from_u32(100)),
+        )
+        .unwrap();
         store_transparent_outputs(&mut db, &batches).unwrap();
         assert!(
             !has_public_payload_work(&mut db, tx.txid()),
@@ -111,7 +116,8 @@ fn pre_sapling_external_and_internal_outputs_survive_retry_and_track_external_sp
         assert_eq!(request.block_range_start(), tip + 1);
         let outside = TransparentAddress::PublicKeyHash([77; 20]);
         let spend = legacy_transaction(OutPoint::new(*tx.txid().as_ref(), 0), outside, 990_000);
-        decrypt_and_store_transaction(&network, &mut db, &spend, Some(spend_tip)).unwrap();
+        decrypt_and_store_transaction_with_swap_keys(&network, &mut db, &spend, Some(spend_tip))
+            .unwrap();
         assert!(!db.transaction_data_requests().unwrap().iter().any(|request|
             matches!(request, TransactionDataRequest::TransactionsInvolvingAddress(r) if r.address() == address)));
         let conn = rusqlite::Connection::open(path).unwrap();
@@ -225,8 +231,13 @@ fn internal_interval_reduces_utxo_frequency_without_suppressing_spend_history() 
         .collect();
     store_transparent_outputs(&mut db, &downloaded).unwrap();
     for tx in &receipts {
-        decrypt_and_store_transaction(&network, &mut db, tx, Some(BlockHeight::from_u32(100)))
-            .unwrap();
+        decrypt_and_store_transaction_with_swap_keys(
+            &network,
+            &mut db,
+            tx,
+            Some(BlockHeight::from_u32(100)),
+        )
+        .unwrap();
     }
     let addresses: Vec<_> = db
         .get_transparent_receivers(account, true, true)
@@ -301,7 +312,7 @@ fn internal_interval_reduces_utxo_frequency_without_suppressing_spend_history() 
         TransparentAddress::PublicKeyHash([77; 20]),
         990_000,
     );
-    decrypt_and_store_transaction(&network, &mut db, &spend, Some(tip + 1)).unwrap();
+    decrypt_and_store_transaction_with_swap_keys(&network, &mut db, &spend, Some(tip + 1)).unwrap();
     assert!(!db.transaction_data_requests().unwrap().iter().any(|r| matches!(r,
         TransactionDataRequest::TransactionsInvolvingAddress(req) if req.address().encode(&network) == *skipped)));
 }
@@ -325,8 +336,13 @@ fn address_history_real_utxo_queue_coalesces_and_advances_after_storage() {
     for index in 1..=10 {
         let tx = legacy_transaction(OutPoint::new([index; 32], 0), address, 1_000_000);
         store_transparent_outputs(&mut db, &[downloaded(&uuid, &tx, 100)]).unwrap();
-        decrypt_and_store_transaction(&network, &mut db, &tx, Some(BlockHeight::from_u32(100)))
-            .unwrap();
+        decrypt_and_store_transaction_with_swap_keys(
+            &network,
+            &mut db,
+            &tx,
+            Some(BlockHeight::from_u32(100)),
+        )
+        .unwrap();
         receipts.push(tx);
     }
     db.update_chain_tip(tip + 1).unwrap();
@@ -349,7 +365,7 @@ fn address_history_real_utxo_queue_coalesces_and_advances_after_storage() {
         TransparentAddress::PublicKeyHash([77; 20]),
         990_000,
     );
-    decrypt_and_store_transaction(&network, &mut db, &spend, Some(tip + 1)).unwrap();
+    decrypt_and_store_transaction_with_swap_keys(&network, &mut db, &spend, Some(tip + 1)).unwrap();
     let req = planned[0][0].clone();
     db.notify_address_checked(req.clone(), req.block_range_end().unwrap() - 1)
         .unwrap();
@@ -387,7 +403,7 @@ async fn checkpoint_drains_parent_payload_discovered_by_address_history() {
     let mut db = open_wallet_db_with_timeout(path, network, SYNC_DB_BUSY_TIMEOUT).unwrap();
     let receipt = legacy_transaction(OutPoint::new([1; 32], 0), address, 1_000_000);
     store_transparent_outputs(&mut db, &[downloaded(&uuid, &receipt, 100)]).unwrap();
-    decrypt_and_store_transaction(
+    decrypt_and_store_transaction_with_swap_keys(
         &network,
         &mut db,
         &receipt,
@@ -661,8 +677,20 @@ fn scan_enhancement_restores_shared_send_after_account_reimport() {
     db.update_chain_tip(BlockHeight::from_u32(2_000_100))
         .unwrap();
     store_transparent_outputs(&mut db, &[downloaded(&sender, &funding, 2_000_001)]).unwrap();
-    decrypt_and_store_transaction(&network, &mut db, &funding, Some(2_000_001u32.into())).unwrap();
-    decrypt_and_store_transaction(&network, &mut db, &payment, Some(2_000_010u32.into())).unwrap();
+    decrypt_and_store_transaction_with_swap_keys(
+        &network,
+        &mut db,
+        &funding,
+        Some(2_000_001u32.into()),
+    )
+    .unwrap();
+    decrypt_and_store_transaction_with_swap_keys(
+        &network,
+        &mut db,
+        &payment,
+        Some(2_000_010u32.into()),
+    )
+    .unwrap();
     drop(db);
 
     let sent_amount = |uuid: &str| -> i64 {
@@ -688,7 +716,13 @@ fn scan_enhancement_restores_shared_send_after_account_reimport() {
     // Rescanning first rediscovers the sender's funding input. The shared
     // payment's raw bytes survived deletion, but its sender metadata did not.
     store_transparent_outputs(&mut db, &[downloaded(&reimported, &funding, 2_000_001)]).unwrap();
-    decrypt_and_store_transaction(&network, &mut db, &funding, Some(2_000_001u32.into())).unwrap();
+    decrypt_and_store_transaction_with_swap_keys(
+        &network,
+        &mut db,
+        &funding,
+        Some(2_000_001u32.into()),
+    )
+    .unwrap();
     assert_eq!(sent_amount(&reimported), 0);
     assert!(!has_public_payload_work(&mut db, payment.txid()));
 
@@ -704,7 +738,13 @@ fn scan_enhancement_restores_shared_send_after_account_reimport() {
     .unwrap();
     assert!(has_public_payload_work(&mut db, payment.txid()));
     // The existing enhancement handler performs this operation after scanning.
-    decrypt_and_store_transaction(&network, &mut db, &payment, Some(2_000_010u32.into())).unwrap();
+    decrypt_and_store_transaction_with_swap_keys(
+        &network,
+        &mut db,
+        &payment,
+        Some(2_000_010u32.into()),
+    )
+    .unwrap();
     assert_eq!(sent_amount(&reimported), 900_000);
     assert!(!has_public_payload_work(&mut db, payment.txid()));
 }

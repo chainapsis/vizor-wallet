@@ -3,7 +3,9 @@
 pub(crate) mod receive;
 
 use zakura_swap_receiving::lifecycle::ProviderStatus;
-use zcash_client_backend::data_api::{Account as _, WalletRead};
+use zcash_client_backend::data_api::{
+    swap_receiving::SwapReceivingWrite as _, Account as _, WalletRead,
+};
 use zcash_client_sqlite::{wallet::swap_receiving::RegisteredKey, AccountUuid};
 use zcash_keys::address::{Address, UnifiedAddress};
 use zcash_protocol::{consensus::BlockHeight, value::Zatoshis};
@@ -137,7 +139,7 @@ pub(crate) fn close_finished_keys(db: &mut WalletDatabase, tip: BlockHeight) -> 
 mod tests {
     use super::*;
     use secrecy::SecretVec;
-    use zcash_client_backend::data_api::WalletWrite;
+    use zcash_client_backend::data_api::{swap_receiving::SwapReceivingRead as _, WalletWrite};
     use zcash_client_sqlite::wallet::swap_receiving::RECEIVE_GAP_LIMIT;
 
     #[test]

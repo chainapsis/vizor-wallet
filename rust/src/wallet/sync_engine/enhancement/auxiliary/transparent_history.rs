@@ -6,7 +6,9 @@ use futures::{FutureExt, StreamExt};
 use tonic::transport::Channel;
 use transparent::address::TransparentAddress;
 use zcash_client_backend::{
-    data_api::{wallet::decrypt_and_store_transaction, TransactionDataRequest, WalletWrite},
+    data_api::{
+        wallet::decrypt_and_store_transaction_with_swap_keys, TransactionDataRequest, WalletWrite,
+    },
     proto::service::compact_tx_streamer_client::CompactTxStreamerClient,
 };
 use zcash_primitives::transaction::Transaction;
@@ -144,7 +146,7 @@ pub(in crate::wallet::sync_engine) fn store_address_transaction(
     let transaction = Transaction::read(bytes, BranchId::Sapling)
         .map_err(|error| SyncError::parse(format!("Transaction::read (addr): {error}")))?;
     with_wallet_db_write_lock("sync_engine.enhance.decrypt_and_store_transaction", || {
-        decrypt_and_store_transaction(network, db, &transaction, mined_height)
+        decrypt_and_store_transaction_with_swap_keys(network, db, &transaction, mined_height)
     })
     .map_err(|error| SyncError::db(format!("decrypt_and_store_transaction (addr): {error}")))?;
     Ok(transaction)

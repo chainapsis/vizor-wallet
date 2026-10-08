@@ -12,6 +12,7 @@ use zakura_pir_receiver::{
     DirectoryError, EnhanceNotes, Swept, Transport as ReceiverTransport, WriteLock, MAINNET_GENESIS,
 };
 use zcash_client_backend::data_api::{transparent_ledger::ChainPoint, WalletRead};
+use zcash_client_sqlite::wallet::swap_receiving::Error as SwapError;
 
 // Use explicit HTTPS origins and never follow service redirects.
 const RECEIVER_ORIGIN: &str = "https://161-35-182-172.sslip.io";
@@ -111,7 +112,7 @@ pub(super) async fn run(
     let result = tokio::select! {
         biased;
         _ = super::watch_for_exit(should_exit) => return,
-        result = tokio::time::timeout(RUN_BUDGET, run_inner(db, through, should_exit)) => {
+        result = tokio::time::timeout(RUN_BUDGET, run_inner(db, network, through, should_exit)) => {
             result.unwrap_or_else(|_| Err("time budget reached".to_owned()))
         }
     };
@@ -134,21 +135,27 @@ pub(super) async fn run(
 /// maintenance has registered their refund keys.
 async fn run_inner(
     db: &mut WalletDatabase,
+    network: WalletNetwork,
     through: ChainPoint,
     should_exit: &impl Fn() -> bool,
-) -> Result<Swept, String> {
+) -> Result<Swept<SwapError>, String> {
     if Some(through.height) != db.chain_height().map_err(error)? {
-        return Ok(Swept::default());
+        return Ok(Swept {
+            finished: 0,
+            deferred: Vec::new(),
+            pending: false,
+        });
     }
     let enhance_origin = super::enhancement::payload_endpoint();
     let transport = SwapTransport::new(
         should_exit,
         url::Url::parse(&enhance_origin).map_err(error)?,
     );
-    let mut notes = EnhanceNotes::new(&enhance_origin, &transport);
+    let mut notes = EnhanceNotes::new(&enhance_origin, &transport, &network);
     let accounts = crate::wallet::swap_receiving::software_accounts(db)?;
     zakura_pir_receiver::sweep(
         db,
+        &network,
         &accounts,
         through,
         MAINNET_GENESIS,
