@@ -178,9 +178,7 @@ detection, production sizing and hardware qualification remain release work.
 Dependencies are pinned in `rust/Cargo.toml` and `rust/Cargo.lock`. Regenerate the
 bridge with `scripts/generate-rust-bridge.sh` after API changes. For a test install,
 use an isolated bundle, wallet database and secure-store service, the same in Dart
-and Rust, and do not reuse an installed app's wallet identity. A database from a
-prerelease build cannot migrate; restore that wallet from its recovery phrase into
-a new database.
+and Rust, and do not reuse an installed app's wallet identity.
 
 ## Tests
 

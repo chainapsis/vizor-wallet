@@ -104,67 +104,8 @@ fn open_wallet_db_for_init(
     db_path: &str,
     network: WalletNetwork,
 ) -> Result<WalletDatabase, String> {
-    reject_prerelease_swap_database(db_path)?;
     open_wallet_db_with_timeout(db_path, network, WALLET_DB_BUSY_TIMEOUT)
 }
-
-/// Databases from prerelease builds cannot migrate and need a fresh restore
-/// from the recovery phrase. The check reads the database without changing it.
-fn reject_prerelease_swap_database(db_path: &str) -> Result<(), String> {
-    if !std::path::Path::new(db_path).exists() {
-        return Ok(());
-    }
-    let conn =
-        rusqlite::Connection::open_with_flags(db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
-            .map_err(|e| e.to_string())?;
-    let exists: bool = conn
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM sqlite_master
-             WHERE type='table' AND name='schemer_migrations')",
-            [],
-            |r| r.get(0),
-        )
-        .map_err(|e| e.to_string())?;
-    if exists {
-        let mut stmt = conn
-            .prepare("SELECT EXISTS(SELECT 1 FROM schemer_migrations WHERE id=?1)")
-            .map_err(|e| e.to_string())?;
-        for id in PRERELEASE_SWAP_MIGRATIONS {
-            let applied: bool = stmt
-                .query_row([uuid::Uuid::from_u128(id).as_bytes()], |r| r.get(0))
-                .map_err(|e| e.to_string())?;
-            if applied {
-                return Err("This wallet database comes from a prerelease build. Restore the wallet from its recovery phrase into a new database.".into());
-            }
-        }
-    }
-    Ok(())
-}
-
-/// Migrations from prerelease builds that the released library no longer has. The
-/// first is `ironwood_compact_encryption` from zakura-client-sqlite 0.1.0-rc6, withdrawn
-/// in rc7; the rest are swap receiving migrations, each since replaced.
-const PRERELEASE_SWAP_MIGRATIONS: [u128; 19] = [
-    0x2eac815d_67ca_4fb4_b534_066102a0fba2,
-    0x36463314_9e3c_4544_8d2b_65bcc2601da2,
-    0x7aec2ef0_6b82_40f0_a1a4_47c1330b6813,
-    0x75ea2907_2b95_4ba9_af1e_c7a80b4d2136,
-    0x5166ed6d_6ceb_41ee_b225_dd3fd94afc7b,
-    0x8391ee73_d4a6_491d_9a94_4c2a36e91c05,
-    0x38d6e9d9_18e1_4950_9bc2_8c9dbd746da4,
-    0x9176a744_98b0_47d1_b0db_ce18525279bc,
-    0xd91a2496_7a69_4f7e_b18f_b4f602f6a590,
-    0x6875b2c8_105c_4c40_94ac_ee0dd6f48196,
-    0x6ad7c165_4581_4ac7_92b2_5fb9fe30e821,
-    0x87081bfd_f7a9_4830_a6df_6d19681b2135,
-    0xd8c66465_ba41_41ad_8400_a75d2a291fe3,
-    0x5af803d8_d1b5_4637_8909_66a49b7f081a,
-    0x02dbf60f_b9bc_42bd_82d9_f7939391c28b,
-    0x75bb24bd_c390_4791_9694_368a878a7b76,
-    0x19038f09_9eba_45e6_bf67_e8a912a82f99,
-    0xa149818b_e384_4632_9103_4d1d1ac51403,
-    0xd4d1c920_ce9e_4cab_86f2_d96974f17a85,
-];
 
 fn open_wallet_db_for_mutation(
     db_path: &str,
@@ -3585,31 +3526,5 @@ mod tests {
                 .unwrap(),
             address
         );
-    }
-}
-
-#[cfg(test)]
-mod swap_upgrade_gate_tests {
-    #[test]
-    fn prerelease_swap_database_requires_restore_without_modification() {
-        let ids = super::PRERELEASE_SWAP_MIGRATIONS;
-        for id in [ids[0], ids[ids.len() - 1]] {
-            let file = tempfile::NamedTempFile::new().unwrap();
-            let path = file.path().to_str().unwrap();
-            let conn = rusqlite::Connection::open(path).unwrap();
-            conn.execute_batch("CREATE TABLE schemer_migrations(id BLOB PRIMARY KEY)")
-                .unwrap();
-            assert!(super::reject_prerelease_swap_database(path).is_ok());
-            conn.execute(
-                "INSERT INTO schemer_migrations VALUES (?1)",
-                [uuid::Uuid::from_u128(id).as_bytes()],
-            )
-            .unwrap();
-            drop(conn);
-            let before = std::fs::read(path).unwrap();
-            let error = super::reject_prerelease_swap_database(path).unwrap_err();
-            assert!(error.contains("recovery phrase"));
-            assert_eq!(before, std::fs::read(path).unwrap());
-        }
     }
 }
