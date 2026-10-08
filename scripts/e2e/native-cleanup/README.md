@@ -121,8 +121,10 @@ and app identifier, no shared/app groups or unrelated rights, and at most that
 same default Keychain group. Host capture still must verify the trusted helper
 artifact and match the actual cohort's default group; a team string is not a
 cryptographic signing identity or ownership. The [read-only host capture](../README.md#capture-simulator-cleanup-artifacts)
-checks actual files/signatures, architecture and embedded rights. Trusted build
-publication and owned launch/output binding remain pending.
+checks actual files/signatures, architecture and embedded rights. The
+[case owner](../README.md#own-the-simulator-app-and-case-support-lifecycle) binds
+owned SDK launch/output and post-app teardown; trusted build publication remains
+pending.
 
 Match the wallet's service-only iOS Keychain queries under the helper's own
 minimal access rights (`keychain_scope: application_accessible`), not a guessed
@@ -161,8 +163,24 @@ cleanup. No authorization prompt or positive OS-background scheduling is tested.
 
 `simctl launch --console` can return success even when the app reports failure.
 Require its complete scope-bound receipt; do not infer cleanup from SDK exit
-status. Post-wallet host composition, final simulator/workspace teardown,
-trusted build publication and execution engines remain separate boundaries.
+status. The case owner composes Simulator post-app teardown; full worker
+workspace removal, trusted build publication and execution engines remain
+separate boundaries.
+
+The optional `VizorIosLifecycleFixture` target tests the owned SDK lifecycle,
+not native seed data or wallet scenarios. It compiles the actual
+`ios/Runner/E2eRuntimeProfile.swift` into its separate Debug-only Simulator app,
+requires the host-preallocated case support directory, publishes metadata with
+its actual PID and stays in UIKit's loop until owned SDK stop. It writes no
+Keychain/preferences, starts no wallet/backend and requests no authorization.
+Its dedicated target uses MainActor default isolation because the sole profile
+owner/caller is UIKit startup; neither wallet nor helper build settings change.
+Build using the helper command above with scheme `VizorIosLifecycleFixture` and
+another private derived-data directory. Its executable is
+`vizor-ios-lifecycle-fixture`, with separate strict cohort/fixture markers. Never
+add markers to an existing Runner artifact to make it eligible. Capture the
+freshly built fixture/helper pair normally and acquire a new case simulator;
+never substitute a user device. This fixture is not a cleanup command.
 
 Apple API references: [SecItemDelete](https://developer.apple.com/documentation/security/secitemdelete(_:)),
 [CFPreferencesCopyKeyList](https://developer.apple.com/documentation/corefoundation/cfpreferencescopykeylist(_:_:_:)),

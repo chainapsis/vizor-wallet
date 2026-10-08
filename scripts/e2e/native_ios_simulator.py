@@ -154,6 +154,7 @@ class _State:
     ownership_error: str | None = None
     cleanup_errors: list[str] = dataclasses.field(default_factory=list)
     receipt: SimulatorCleanup | None = None
+    native_owner: object | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -260,6 +261,8 @@ class OwnedIosSimulator:
         primary = None
         try:
             process_cleanup = self.case.close()
+            if self._state.native_owner is not None:
+                raise NativeSimulatorError("native lifecycle was claimed; use its owner; simulator retained")
             if process_cleanup.exit_codes:
                 raise NativeSimulatorError("case launches exist; native state cleanup is unimplemented; simulator retained")
         except BaseException as error:

@@ -129,8 +129,16 @@ markers, bounded Simulator Mach-O rights, matching default application identity/
 architecture and original files. Its strict receipt parser rejects wrong scopes
 and incomplete absence; neither capture nor parsing runs an app or grants
 deletion authority.
+The Simulator case owner now binds fresh SDK install/launch/stop/restart and
+the app's actual PID/context independently of console process completion. It
+exclusively allocates canonical private support, claims native ownership before
+installation, composes terminal helper output internally, and permits exact-UUID
+deletion only after verified native absence and original support ownership.
+Failure retains device/state/evidence; an external JSON/PID/cleanup flag never
+authorizes deletion. A separate manual metadata-only lifecycle fixture uses the
+actual native profile without changing ordinary wallet targets. Models exercise
+separate native/console writers and sibling preservation, not wallet scenarios.
 Trusted helper provisioning/build publication, whole-worker workspace removal,
-iOS host receipt binding and post-app simulator teardown,
 backend/executor integration, and scenario migrations remain pending. A native
 observation or process receipt alone never authorizes deleting a run.
 
