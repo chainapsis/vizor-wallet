@@ -220,8 +220,8 @@ impl DetailSource for PirSource {
         let (found, map) = run_blocking(request, should_exit).await?;
         self.map = map;
         match found {
-            Ok(TxidLookup::Found { record, provenance }) => {
-                match display_facts(&record, &provenance, mined_height) {
+            Ok(TxidLookup::Found { entry, provenance }) => {
+                match display_facts(txid, &entry, &provenance, mined_height) {
                     Ok(facts) => Ok(DetailAnswer::Facts(Box::new(facts))),
                     Err(_) => Err(DetailFailure::Deferred {
                         outcome: TransparentDetailOutcome::Protocol,

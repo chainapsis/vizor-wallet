@@ -84,6 +84,7 @@ PrivateShieldingCase _case(
       createdTime: blockTime,
     ),
     rust_sync.TransactionDetail(
+      transparentOmissions: const [],
       txidHex: txidHex,
       txKind: detail['txKind'] as String,
       memo: detail['memo'] as String?,

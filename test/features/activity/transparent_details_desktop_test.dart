@@ -8,6 +8,7 @@ import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_transaction_status_screen.dart';
 import 'package:zcash_wallet/src/features/activity/transaction_completeness.dart';
+import 'package:zcash_wallet/src/features/activity/widgets/public_details_lookup_dialog.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/send/widgets/send_recipient_resolver.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -27,6 +28,8 @@ Future<List<String>> _pump(
   bool privacy = false,
   bool privateTransparentRecovery = false,
   Future<String> Function(rust_sync.TransactionInfo)? debugLookup,
+  Future<void> Function(rust_sync.TransactionInfo)? publicLookup,
+  Future<bool> Function(BuildContext)? confirmPublicLookup,
   rust_sync.TransactionInfo? transaction,
   bool privateQueries = true,
   Map<String, AccountInfo> ownAccounts = const {},
@@ -50,6 +53,9 @@ Future<List<String>> _pump(
           detailLoader: details.load,
           transparentDetailsPrioritizer: (txid) async => prioritized.add(txid),
           transparentDetailsDebugLookup: debugLookup,
+          transparentDetailsPublicLookup: publicLookup,
+          publicLookupConfirmation:
+              confirmPublicLookup ?? confirmPublicDetailsLookup,
           privateTransparentRecovery: privateTransparentRecovery,
         ),
       ),
@@ -107,6 +113,22 @@ void main() {
         privateTransparentRecovery: true,
         debugLookup: lookup,
       );
+    },
+  );
+  transparentDetailsPublicLookupTests(
+    pump: (tester, details, {required lookup, confirm, sync}) async {
+      await _pump(
+        tester,
+        details,
+        sync: sync,
+        publicLookup: lookup,
+        confirmPublicLookup: confirm,
+      );
+    },
+  );
+  transparentDetailsCompletionTests(
+    pump: (tester, details, {required lookup, confirm, sync}) async {
+      await _pump(tester, details, sync: sync, publicLookup: lookup);
     },
   );
   transparentDetailsRefreshTests(

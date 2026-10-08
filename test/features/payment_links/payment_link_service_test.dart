@@ -44,6 +44,7 @@ void main() {
             expectedAmountZatoshi: BigInt.one,
             details: [
               rust_sync.TransactionDetail(
+                transparentOmissions: const [],
                 detailsComplete: true,
                 provisional: false,
                 txidHex: 'a',
@@ -75,6 +76,7 @@ void main() {
         expectedAmountZatoshi: BigInt.from(100),
         details: [
           rust_sync.TransactionDetail(
+            transparentOmissions: const [],
             detailsComplete: true,
             provisional: false,
             txidHex: 'a',
@@ -106,6 +108,7 @@ void main() {
         details: [
           for (final (txid, pool) in [('a', 'orchard'), ('b', null)])
             rust_sync.TransactionDetail(
+              transparentOmissions: const [],
               detailsComplete: true,
               provisional: false,
               txidHex: txid,
@@ -388,6 +391,7 @@ void main() {
         claimTxids: displayTxid,
         details: [
           rust_sync.TransactionDetail(
+            transparentOmissions: const [],
             txidHex: storageTxid,
             detailsComplete: true,
             provisional: false,
@@ -443,6 +447,7 @@ void main() {
         String pool, {
         String address = 'destination',
       }) => rust_sync.TransactionDetail(
+        transparentOmissions: const [],
         txidHex: txid,
         detailsComplete: true,
         provisional: false,
@@ -515,6 +520,7 @@ void main() {
           claimTxids: 'claim',
           details: [
             rust_sync.TransactionDetail(
+              transparentOmissions: const [],
               txidHex: 'claim',
               detailsComplete: true,
               provisional: false,
@@ -3335,6 +3341,7 @@ class _ClaimDestinationRustApi implements RustLibApi {
       throw StateError('Detail unavailable');
     }
     return rust_sync.TransactionDetail(
+      transparentOmissions: const [],
       txidHex: txidHex,
       detailsComplete: true,
       provisional: false,

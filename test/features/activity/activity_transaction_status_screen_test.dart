@@ -1633,6 +1633,7 @@ rust_sync.TransactionDetail _detail({
     memo: memo,
     outputs: outputs,
     transparentRecipients: const [],
+    transparentOmissions: const [],
   );
 }
 

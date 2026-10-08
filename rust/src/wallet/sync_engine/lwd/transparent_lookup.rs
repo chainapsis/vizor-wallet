@@ -121,6 +121,17 @@ impl TransparentLookupGate {
         Ok(Self { lookups, policy })
     }
 
+    /// One public lookup the user asked for, on one transaction, whatever the
+    /// wallet's transparent policy: the request itself is the consent. Only
+    /// [`crate::wallet::sync_engine::transparent_details::enhance_publicly`]
+    /// constructs it; no automatic path may.
+    pub(crate) fn user_requested() -> Self {
+        Self {
+            lookups: PublicTransparentLookups::Allowed { generation: None },
+            policy: None,
+        }
+    }
+
     /// Gates lookups made before any wallet database exists. Only the captured
     /// mode applies.
     pub(crate) fn pre_db(lookups: PublicTransparentLookups) -> Self {

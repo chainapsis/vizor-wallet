@@ -49,8 +49,13 @@ import '../../activity_row_mapper.dart'
 import '../../gift_card_activity_index.dart';
 import '../../transaction_completeness.dart';
 import '../../widgets/transparent_details_section.dart';
+import '../../widgets/public_details_lookup_dialog.dart';
 import '../activity_transaction_status_screen.dart'
-    show TransparentDetailsDebugLookup, TransparentDetailsPrioritizer;
+    show
+        PublicLookupConfirmation,
+        TransparentDetailsDebugLookup,
+        TransparentDetailsPrioritizer,
+        TransparentDetailsPublicLookup;
 
 /// Route arguments for [MobileTransactionStatusScreen]. The row that
 /// was tapped passes its [initialTransaction] so the screen renders
@@ -102,6 +107,8 @@ class MobileTransactionStatusScreen extends ConsumerStatefulWidget {
     this.detailLoader,
     this.transparentDetailsPrioritizer,
     this.transparentDetailsDebugLookup,
+    this.transparentDetailsPublicLookup,
+    this.publicLookupConfirmation = confirmPublicDetailsLookup,
     this.privateTransparentRecovery = kZcashPrivateTransparentRecovery,
     super.key,
   });
@@ -115,6 +122,13 @@ class MobileTransactionStatusScreen extends ConsumerStatefulWidget {
   /// Test seam — production asks Rust.
   @visibleForTesting
   final TransparentDetailsDebugLookup? transparentDetailsDebugLookup;
+
+  /// Test seam — production asks Rust.
+  @visibleForTesting
+  final TransparentDetailsPublicLookup? transparentDetailsPublicLookup;
+
+  /// Test seam — production shows [PublicDetailsLookupDialog].
+  final PublicLookupConfirmation publicLookupConfirmation;
 
   /// Whether this is a development build that offers the private lookup
   /// button.
@@ -150,6 +164,8 @@ class _MobileTransactionStatusScreenState
   bool _transparentDetailsPollInFlight = false;
   bool _transparentDetailsPrioritized = false;
   String? _debugLookupText;
+  String? _publicLookupText;
+  bool _publicLookupRunning = false;
   int _debugLookupGeneration = 0;
 
   @override
@@ -234,6 +250,9 @@ class _MobileTransactionStatusScreenState
     _activeAccountUuid = accountUuid;
     setState(() {
       _debugLookupText = null;
+      // A refresh while a public load runs keeps its state; the load
+      // refreshes again when it finishes.
+      if (!_publicLookupRunning || accountChanged) _publicLookupText = null;
       _detailsPending = true;
       if (accountChanged) {
         _transaction = null;
@@ -381,6 +400,45 @@ class _MobileTransactionStatusScreenState
       if (isCurrent()) setState(() => _debugLookupText = text);
     } catch (e) {
       if (isCurrent()) setState(() => _debugLookupText = 'Failed: $e');
+    }
+  }
+
+  /// Loads [tx]'s full details from the server once the user confirms, then
+  /// refreshes the receipt. Nothing here runs without that confirmation, and a
+  /// refresh while it runs neither drops its result nor offers it again.
+  Future<void> _runPublicLookup(rust_sync.TransactionInfo tx) async {
+    // One load at a time: a tap while one runs asks nothing.
+    if (_publicLookupRunning) return;
+    _publicLookupRunning = true;
+    final accountUuid = _activeAccountUuid;
+    var loaded = false;
+    try {
+      if (!await widget.publicLookupConfirmation(context) || !mounted) return;
+      setState(() => _publicLookupText = kLoadDetailsPubliclyLoadingText);
+      final lookup = widget.transparentDetailsPublicLookup;
+      if (lookup != null) {
+        await lookup(tx);
+      } else {
+        final endpoint = ref.read(rpcEndpointProvider);
+        await rust_sync.enhanceTransactionPublicly(
+          dbPath: await getWalletDbPath(),
+          network: endpoint.networkName,
+          lightwalletdUrl: endpoint.lightwalletdUrl,
+          txidHex: tx.txidHex,
+        );
+      }
+      loaded = true;
+    } catch (e) {
+      log('MobileTransactionStatus: public details lookup failed');
+      if (mounted && _activeAccountUuid == accountUuid) {
+        setState(() => _publicLookupText = kLoadDetailsPubliclyFailedText);
+      }
+    } finally {
+      _publicLookupRunning = false;
+    }
+    // A full refresh supersedes any read that started before the store.
+    if (loaded && mounted && _activeAccountUuid == accountUuid) {
+      await _loadTransaction();
     }
   }
 
@@ -1046,6 +1104,10 @@ class _MobileTransactionStatusScreenState
                           onDebugLookup: _offersDebugLookup(tx, detail)
                               ? () => unawaited(_runDebugLookup(tx))
                               : null,
+                          publicLookupText: _publicLookupText,
+                          onLoadPublicly: offersPublicDetailsLookup(detail)
+                              ? () => unawaited(_runPublicLookup(tx))
+                              : null,
                         ),
                       if (_error != null) ...[
                         const SizedBox(height: AppSpacing.sm),
@@ -1099,8 +1161,12 @@ class _MobileTransactionStatusScreenState
   bool _showUnknownFee(rust_sync.TransactionInfo tx) =>
       ref.watch(enhancePirProvider) && transactionFeeIsUnknown(tx);
 
+  /// The receipt's own detail, once read, can complete what the activity
+  /// entry could not: private transparent details that establish every payee.
   bool _showIncompleteDetails(rust_sync.TransactionInfo tx) =>
-      ref.watch(enhancePirProvider) && transactionDetailsIncomplete(tx);
+      ref.watch(enhancePirProvider) &&
+      transactionDetailsIncomplete(tx) &&
+      !receiptDetailsComplete(_detail);
 
   String? _feeText(
     rust_sync.TransactionInfo? tx, {

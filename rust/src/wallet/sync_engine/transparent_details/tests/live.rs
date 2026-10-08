@@ -83,7 +83,7 @@ async fn txid_live() {
         panic!("found the transaction: {found:?}");
     };
     let (shard, tier) = (provenance.shard_id, provenance.tier.as_str());
-    let answer = debug_answer(MAIN, found, HEIGHT).unwrap();
+    let answer = debug_answer(MAIN, txid, found, HEIGHT).unwrap();
     assert_eq!(answer.outcome, "found");
     assert!(!answer.coinbase);
     assert_eq!(answer.fee, Some(20_000));
@@ -104,7 +104,8 @@ async fn txid_live() {
     assert_eq!(queries(&observer), sent + 2);
 
     // Placement unknown: a height below the published window sends no query.
-    let (unplaced, _) = lookup(txid, 1_000_000).await.unwrap();
+    // The window starts at height 1, so only genesis is below it.
+    let (unplaced, _) = lookup(txid, 0).await.unwrap();
     assert!(
         matches!(unplaced, Ok(TxidLookup::PlacementUnknown(Placement::Below))),
         "{unplaced:?}"

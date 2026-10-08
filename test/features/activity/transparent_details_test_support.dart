@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart'
-    show ThemeMode, SizedBox, ValueKey, GestureDetector;
+    show BuildContext, ThemeMode, SizedBox, ValueKey, GestureDetector;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
@@ -49,6 +49,9 @@ rust_sync.TransactionDetail transparentDetail(
   String? sourceAccountUuid,
   List<rust_sync.TransactionDetailOutput> outputs = const [],
   bool provisional = false,
+  List<String> omissions = const [],
+  int? outputCount,
+  bool detailsComplete = false,
 }) => rust_sync.TransactionDetail(
   txidHex: transparentDetailsTxid,
   txKind: txKind,
@@ -57,10 +60,12 @@ rust_sync.TransactionDetail transparentDetail(
   sourcePool: sourcePool,
   sourceAccountUuid: sourceAccountUuid,
   outputs: outputs,
-  detailsComplete: false,
+  detailsComplete: detailsComplete,
   provisional: provisional,
   transparentDetailsState: state,
   transparentRecipients: recipients,
+  transparentOutputCount: outputCount,
+  transparentOmissions: omissions,
 );
 
 final transparentRecipients = [
@@ -377,6 +382,260 @@ void transparentDetailsDebugTests({
     expect(find.text(summary), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
+}
+
+/// A receipt hook for the public load: [confirm] answers the confirmation
+/// (null shows the real dialog), and [lookup] stands in for the request.
+typedef PublicLookupPump =
+    Future<void> Function(
+      WidgetTester tester,
+      ScriptedDetails details, {
+      required Future<void> Function(rust_sync.TransactionInfo) lookup,
+      Future<bool> Function(BuildContext)? confirm,
+      FakeSyncNotifier? sync,
+    });
+
+/// The desktop and mobile receipts name what private details leave out and
+/// load the full details publicly only after the user confirms.
+void transparentDetailsPublicLookupTests({required PublicLookupPump pump}) {
+  final load = find.byKey(const ValueKey('transparent_details_load_publicly'));
+  final omitted = find.byKey(const ValueKey('transparent_details_omissions'));
+  final partial = transparentDetail(
+    rust_sync.TransparentDetailsState.available,
+    recipients: transparentRecipients,
+    outputCount: 3,
+    omissions: const ['more_than_two_outputs', 'multiple_source_scripts'],
+  );
+  final complete = transparentDetail(
+    rust_sync.TransparentDetailsState.available,
+    recipients: transparentRecipients,
+  );
+  Future<void> flush(WidgetTester tester) async {
+    await tester.pump();
+    await tester.pump();
+  }
+
+  Future<void> tapLoad(WidgetTester tester) async {
+    await tester.ensureVisible(load);
+    await tester.tap(
+      find.descendant(of: load, matching: find.byType(GestureDetector)).first,
+    );
+    await flush(tester);
+  }
+
+  testWidgets('omissions are named and a public load is offered', (
+    tester,
+  ) async {
+    var lookups = 0;
+    await pump(
+      tester,
+      ScriptedDetails([partial]),
+      lookup: (_) async => lookups++,
+      confirm: (_) async => false,
+    );
+    expect(omitted, findsOneWidget);
+    expect(find.text('1 more output, other sending addresses'), findsOneWidget);
+    expect(load, findsOneWidget);
+    expect(find.text(kLoadDetailsPubliclyText), findsOneWidget);
+    expect(lookups, 0, reason: 'nothing is loaded without a tap');
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('omissions a public load cannot show offer no load', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      ScriptedDetails([
+        transparentDetail(
+          rust_sync.TransparentDetailsState.available,
+          recipients: transparentRecipients,
+          omissions: const ['multiple_source_scripts'],
+        ),
+      ]),
+      lookup: (_) async => fail('no public load'),
+    );
+    expect(find.text('other sending addresses'), findsOneWidget);
+    expect(load, findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('complete private details offer no public load', (tester) async {
+    await pump(
+      tester,
+      ScriptedDetails([complete]),
+      lookup: (_) async => fail('no public load'),
+    );
+    expect(transactionOutputShown, findsOneWidget);
+    expect(omitted, findsNothing);
+    expect(load, findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('a transaction private mode cannot cover offers a public load', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      ScriptedDetails([
+        transparentDetail(rust_sync.TransparentDetailsState.notCovered),
+      ]),
+      lookup: (_) async {},
+    );
+    expect(find.text(kTransparentDetailsNotCoveredText), findsOneWidget);
+    expect(load, findsOneWidget);
+    expect(omitted, findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('the dialog must be confirmed; cancel sends nothing', (
+    tester,
+  ) async {
+    final looked = <String>[];
+    final details = ScriptedDetails([partial, complete]);
+    await pump(tester, details, lookup: (tx) async => looked.add(tx.txidHex));
+    final reads = details.calls;
+    await tapLoad(tester);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('public_details_lookup_dialog')),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('public_details_lookup_cancel')),
+    );
+    await tester.pumpAndSettle();
+    expect(looked, isEmpty, reason: 'cancel sends no request');
+    expect(details.calls, reads);
+    expect(load, findsOneWidget);
+
+    await tapLoad(tester);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('public_details_lookup_confirm')),
+    );
+    await tester.pumpAndSettle();
+    expect(looked, [transparentDetailsTxid]);
+    expect(details.calls, reads + 1, reason: 'the receipt is read again');
+    expect(omitted, findsNothing);
+    expect(load, findsNothing);
+    expect(transactionOutputShown, findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('a running public load ignores further taps', (tester) async {
+    final pending = Completer<void>();
+    var lookups = 0;
+    var asked = 0;
+    await pump(
+      tester,
+      ScriptedDetails([partial, complete]),
+      lookup: (_) {
+        lookups++;
+        return pending.future;
+      },
+      confirm: (_) async {
+        asked++;
+        return true;
+      },
+    );
+    await tapLoad(tester);
+    expect(find.text(kLoadDetailsPubliclyLoadingText), findsOneWidget);
+    await tapLoad(tester);
+    expect((asked, lookups), (1, 1));
+    pending.complete();
+    await tester.pumpAndSettle();
+    expect(load, findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('a failed public load says so and can be retried', (
+    tester,
+  ) async {
+    var lookups = 0;
+    await pump(
+      tester,
+      ScriptedDetails([partial, complete]),
+      lookup: (_) async {
+        if (lookups++ == 0) throw StateError('route failed');
+      },
+      confirm: (_) async => true,
+    );
+    await tapLoad(tester);
+    expect(find.text(kLoadDetailsPubliclyFailedText), findsOneWidget);
+    expect(omitted, findsOneWidget);
+    await tapLoad(tester);
+    await tester.pumpAndSettle();
+    expect(lookups, 2);
+    expect(load, findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('a refresh while a public load runs keeps it and its result', (
+    tester,
+  ) async {
+    final pending = Completer<void>();
+    var asked = 0;
+    final sync = FakeSyncNotifier(
+      SyncState(accountUuid: 'account-1', hasAccountScopedData: true),
+    );
+    final details = ScriptedDetails([partial, partial, complete]);
+    await pump(
+      tester,
+      details,
+      lookup: (_) => pending.future,
+      confirm: (_) async {
+        asked++;
+        return true;
+      },
+      sync: sync,
+    );
+    await tapLoad(tester);
+    sync.emit(
+      SyncState(
+        accountUuid: 'account-1',
+        hasAccountScopedData: true,
+        isSyncComplete: true,
+      ),
+    );
+    await flush(tester);
+    expect(details.calls, 2, reason: 'the sync refreshed the receipt');
+    expect(find.text(kLoadDetailsPubliclyLoadingText), findsOneWidget);
+    await tapLoad(tester);
+    expect(asked, 1, reason: 'the running load is not offered again');
+    pending.complete();
+    await tester.pumpAndSettle();
+    expect(details.calls, 3);
+    expect(omitted, findsNothing);
+    expect(load, findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+}
+
+/// A receipt whose detail establishes every payee drops the incomplete
+/// notice its activity entry would show.
+void transparentDetailsCompletionTests({required PublicLookupPump pump}) {
+  for (final complete in [false, true]) {
+    testWidgets('a ${complete ? 'complete' : 'partial'} receipt detail '
+        '${complete ? 'hides' : 'keeps'} the incomplete notice', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        ScriptedDetails([
+          transparentDetail(
+            rust_sync.TransparentDetailsState.available,
+            recipients: transparentRecipients,
+            primaryAddress: complete ? transparentRecipientAddress : null,
+            detailsComplete: complete,
+          ),
+        ]),
+        lookup: (_) async {},
+      );
+      expect(find.text('Incomplete'), complete ? findsNothing : findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    });
+  }
 }
 
 // One transparent transaction as public and private queries record it, after

@@ -40,6 +40,7 @@ import '../../send/widgets/send_verify_address_overlay.dart';
 import '../../swap/models/swap_fiat_value_formatting.dart';
 import '../activity_row_mapper.dart' show transactionShowsZeroAmount;
 import '../gift_card_activity_index.dart';
+import '../widgets/public_details_lookup_dialog.dart';
 import '../transaction_completeness.dart';
 import '../widgets/gift_card_activity_detail_view.dart';
 import '../widgets/received_receipt_view.dart';
@@ -87,6 +88,14 @@ typedef TransparentDetailsPrioritizer = Future<void> Function(String txidHex);
 typedef TransparentDetailsDebugLookup =
     Future<String> Function(rust_sync.TransactionInfo transaction);
 
+/// Loads one transaction's full details from the server after the user
+/// confirmed; injectable for widget tests.
+typedef TransparentDetailsPublicLookup =
+    Future<void> Function(rust_sync.TransactionInfo transaction);
+
+/// Asks the user before a public lookup; injectable for widget tests.
+typedef PublicLookupConfirmation = Future<bool> Function(BuildContext context);
+
 class ActivityTransactionStatusScreen extends ConsumerStatefulWidget {
   const ActivityTransactionStatusScreen({
     super.key,
@@ -95,6 +104,8 @@ class ActivityTransactionStatusScreen extends ConsumerStatefulWidget {
     this.detailLoader,
     this.transparentDetailsPrioritizer,
     this.transparentDetailsDebugLookup,
+    this.transparentDetailsPublicLookup,
+    this.publicLookupConfirmation = confirmPublicDetailsLookup,
     this.privateTransparentRecovery = kZcashPrivateTransparentRecovery,
   });
 
@@ -107,6 +118,13 @@ class ActivityTransactionStatusScreen extends ConsumerStatefulWidget {
   /// Test seam — production asks Rust.
   @visibleForTesting
   final TransparentDetailsDebugLookup? transparentDetailsDebugLookup;
+
+  /// Test seam — production asks Rust.
+  @visibleForTesting
+  final TransparentDetailsPublicLookup? transparentDetailsPublicLookup;
+
+  /// Test seam — production shows [PublicDetailsLookupDialog].
+  final PublicLookupConfirmation publicLookupConfirmation;
 
   /// Whether this is a development build that offers the private lookup
   /// button.
@@ -144,6 +162,8 @@ class _ActivityTransactionStatusScreenState
   bool _transparentDetailsPrioritized = false;
   String? _debugLookupText;
   int _debugLookupGeneration = 0;
+  String? _publicLookupText;
+  bool _publicLookupRunning = false;
 
   @override
   void dispose() {
@@ -183,6 +203,9 @@ class _ActivityTransactionStatusScreenState
     _activeAccountUuid = accountUuid;
     setState(() {
       _debugLookupText = null;
+      // A refresh while a public load runs keeps its state; the load
+      // refreshes again when it finishes.
+      if (!_publicLookupRunning || accountChanged) _publicLookupText = null;
       if (accountChanged) {
         _transaction = null;
         _detail = null;
@@ -373,6 +396,45 @@ class _ActivityTransactionStatusScreenState
     }
   }
 
+  /// Loads [tx]'s full details from the server once the user confirms, then
+  /// refreshes the receipt. Nothing here runs without that confirmation, and a
+  /// refresh while it runs neither drops its result nor offers it again.
+  Future<void> _runPublicLookup(rust_sync.TransactionInfo tx) async {
+    // One load at a time: a tap while one runs asks nothing.
+    if (_publicLookupRunning) return;
+    _publicLookupRunning = true;
+    final accountUuid = _activeAccountUuid;
+    var loaded = false;
+    try {
+      if (!await widget.publicLookupConfirmation(context) || !mounted) return;
+      setState(() => _publicLookupText = kLoadDetailsPubliclyLoadingText);
+      final lookup = widget.transparentDetailsPublicLookup;
+      if (lookup != null) {
+        await lookup(tx);
+      } else {
+        final endpoint = ref.read(rpcEndpointProvider);
+        await rust_sync.enhanceTransactionPublicly(
+          dbPath: await getWalletDbPath(),
+          network: endpoint.networkName,
+          lightwalletdUrl: endpoint.lightwalletdUrl,
+          txidHex: tx.txidHex,
+        );
+      }
+      loaded = true;
+    } catch (e) {
+      log('ActivityTransactionStatus: public details lookup failed');
+      if (mounted && _activeAccountUuid == accountUuid) {
+        setState(() => _publicLookupText = kLoadDetailsPubliclyFailedText);
+      }
+    } finally {
+      _publicLookupRunning = false;
+    }
+    // A full refresh supersedes any read that started before the store.
+    if (loaded && mounted && _activeAccountUuid == accountUuid) {
+      await _loadTransaction();
+    }
+  }
+
   rust_sync.TransactionInfo? _findTransaction(
     Iterable<rust_sync.TransactionInfo> transactions,
     String txidHex, {
@@ -515,8 +577,12 @@ class _ActivityTransactionStatusScreenState
   bool _showUnknownFee(rust_sync.TransactionInfo tx) =>
       ref.watch(enhancePirProvider) && transactionFeeIsUnknown(tx);
 
+  /// The receipt's own detail, once read, can complete what the activity
+  /// entry could not: private transparent details that establish every payee.
   bool _showIncompleteDetails(rust_sync.TransactionInfo tx) =>
-      ref.watch(enhancePirProvider) && transactionDetailsIncomplete(tx);
+      ref.watch(enhancePirProvider) &&
+      transactionDetailsIncomplete(tx) &&
+      !receiptDetailsComplete(_detail);
 
   String _feeText(
     rust_sync.TransactionInfo? tx, {
@@ -1120,6 +1186,7 @@ class _ActivityTransactionStatusScreenState
     if (tx != null &&
         giftCard == null &&
         (offersDebugLookup ||
+            offersPublicDetailsLookup(detail) ||
             transparentDetailsNotice(detail) != null ||
             listedTransactionOutputs(detail).isNotEmpty)) {
       receiptContent = Column(
@@ -1134,6 +1201,10 @@ class _ActivityTransactionStatusScreenState
               debugLookupText: _debugLookupText,
               onDebugLookup: offersDebugLookup
                   ? () => unawaited(_runDebugLookup(tx))
+                  : null,
+              publicLookupText: _publicLookupText,
+              onLoadPublicly: offersPublicDetailsLookup(detail)
+                  ? () => unawaited(_runPublicLookup(tx))
                   : null,
               spaced: false,
             ),

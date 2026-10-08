@@ -751,14 +751,18 @@ captured policy ── PrivateRequired ──> txid display PIR  (PirSource)
   durable policy withholds public lookups runs nothing.
 - **Private lookups.** wallet-pir's `transparent-txid-client`, re-exported by
   `zakura-pir-transparent` with `display_facts` and `deferral`, follows the
-  tiered display publication: the init document and the map (cached and
-  refreshed by the client), the shard's manifest and setup (cached per
-  revision), then exactly two directory queries and, for an overflow record,
-  exactly one query per page. Placement comes from the wallet's own mined
-  height. Requests name the tier, shard, revision, table and segment, never
-  the txid or a selected row. The result is the transaction's complete
-  transparent output list (values and raw scripts), its coinbase flag, input
-  count and exact fee when known. One client per origin lives for the whole
+  tiered display publication: the init document, the recent map and, for an
+  archive, its index chunk (cached and refreshed by the client), the shard's
+  manifest and setup (cached per revision), then exactly two queries of the
+  bucket's one table, for a found and an absent txid alike. Placement comes
+  from the wallet's own mined height. Requests name the tier, shard,
+  revision, table and segment, never the txid or a selected row. The result
+  is one fixed-size display v2 entry: the coinbase and shielded flags, the
+  exact fee, input and output counts, the first address-shaped source, the
+  first two outputs (value and address) and flags naming what it omits
+  (several source scripts, more than two outputs, transparent inputs with
+  net shielded funding). The wallet shows the omissions and offers a public
+  lookup of the whole transaction only when the user asks for one. One client per origin lives for the whole
   process, so the derived native profiles are built once. A client that
   found the service's display unsupported is replaced by a fresh one that
   keeps only those profiles, so the next lookup asks for the init document
@@ -769,7 +773,7 @@ captured policy ── PrivateRequired ──> txid display PIR  (PirSource)
   be due to fetch a newer one. So when nothing is due and the wallet reports
   work parked for want of a map change (`transparent_detail_parked`), the
   private source waits for the reported refresh time, then fetches the map alone (`refresh_map`: one
-  `GET /v1/txid/shards`, no txid, validated as a lookup validates it) and the
+  `GET /v1/txid/map`, no txid, validated as a lookup validates it) and the
   run lists again under its hash. The check is due six hours after the later
   of the newest parked attempt and the last attempted map check. The process
   keeps that check time by origin across sync runs, including failed checks.
