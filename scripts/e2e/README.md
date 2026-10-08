@@ -1,5 +1,9 @@
 # End-to-end tests
 
+For the planned isolated execution framework and direct Zakura migration, see
+the [E2E roadmap](ROADMAP.md). The roadmap tracks unmerged work; the commands
+below remain the current runners.
+
 ## Gift Cards
 
 Sender usage tracking and empty observer DB reuse:
