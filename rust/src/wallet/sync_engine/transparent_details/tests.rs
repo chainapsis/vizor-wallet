@@ -1461,7 +1461,9 @@ async fn mixed_raw_storage_shape_keeps_the_view() {
 /// to an external transparent recipient, with no transparent input or
 /// change of its own, keeps its view once raw bytes replace its work. The
 /// sent note is a fixture row, as the wallet records a payment to a
-/// transparent recipient (`output_pool` 0); another account has no view.
+/// transparent recipient (`output_pool` 0). A route-2 marker makes its
+/// initial work eligible; after raw storage, neither the marker nor the
+/// work supplies recognition. Another account has no view.
 #[tokio::test]
 async fn shielded_payment_to_a_transparent_recipient_keeps_the_view() {
     let fixture = wallet();
@@ -1496,6 +1498,11 @@ async fn shielded_payment_to_a_transparent_recipient_keeps_the_view() {
         [id],
     )
     .unwrap();
+    conn.execute(
+        "INSERT INTO ironwood_enhance_routing (transaction_id, route) VALUES (?1, 2)",
+        [id],
+    )
+    .unwrap();
     assert_eq!(
         view(&fixture, &tx.txid()),
         Some(TransparentDisplayView::Pending)
@@ -1510,6 +1517,8 @@ async fn shielded_payment_to_a_transparent_recipient_keeps_the_view() {
     )
     .unwrap();
     conn.execute("DELETE FROM transparent_detail_work", [])
+        .unwrap();
+    conn.execute("DELETE FROM ironwood_enhance_routing", [])
         .unwrap();
     let Some(TransparentDisplayView::Available(details)) = view(&fixture, &tx.txid()) else {
         panic!("the payment stays visible");
@@ -1801,7 +1810,8 @@ async fn stale_lookup_failures_preserve_remined_or_unmined_work() {
             rusqlite::Connection::open(&path)
                 .unwrap()
                 .execute(
-                    "UPDATE transactions SET mined_height = ?1 WHERE txid = ?2",
+                    "UPDATE transactions SET block = NULL, tx_index = NULL,
+                         mined_height = ?1 WHERE txid = ?2",
                     rusqlite::params![new_height, looked_up_txid.as_ref().as_slice()],
                 )
                 .unwrap();
