@@ -2,17 +2,37 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
 import '../../../providers/network_privacy_provider.dart';
+import '../../ledger/services/ledger_operation_lifecycle.dart';
 import '../models/swap_intent_presentation_mapper.dart';
 import '../models/swap_models.dart';
 import 'swap_activity_store.dart';
 import 'swap_failure_policy.dart';
 import 'swap_provider_config.dart';
+import 'swap_receive_reservation_service.dart';
 
 const swapActivityStatusRefreshInterval = Duration(seconds: 30);
 
 final swapActivityTrackerProvider = Provider<SwapActivityTracker>((ref) {
   return SwapActivityTracker(
     activityStore: ref.read(swapActivityStoreProvider),
+    // Statuses reach the wallet as they are fetched, for swaps that quoted a
+    // private address.
+    onProviderSnapshot: (intent, snapshot, checkedAt) async {
+      final account = intent.accountUuid;
+      final direction = intent.direction;
+      if (account == null || direction == null) return;
+      await ref
+          .read(swapReceiveReservationServiceProvider)
+          .observeStatus(
+            account,
+            direction: direction,
+            depositAddress: intent.depositAddress ?? intent.id,
+            memo: intent.depositMemo,
+            snapshot: snapshot,
+            checkedAt: checkedAt,
+          );
+    },
+    lifecycle: ref.read(ledgerOperationLifecycleProvider),
     swapProvider: ref.read(swapIntentProvider),
     isTorEnabled: () => ref.read(networkPrivacyProvider).torEnabled,
     onRecordsChanged: () {
@@ -152,10 +172,24 @@ class SwapActivityTracker {
     required SwapProvider swapProvider,
     bool Function()? isTorEnabled,
     void Function()? onRecordsChanged,
+    LedgerOperationLifecycle? lifecycle,
+    Future<void> Function(SwapIntent, SwapIntentSnapshot, DateTime)?
+    onProviderSnapshot,
   }) : _activityStore = activityStore,
        _swapProvider = swapProvider,
        _isTorEnabled = isTorEnabled,
-       _onRecordsChanged = onRecordsChanged;
+       _onRecordsChanged = onRecordsChanged,
+       _lifecycle = lifecycle,
+       _onProviderSnapshot = onProviderSnapshot;
+
+  final Future<void> Function(SwapIntent, SwapIntentSnapshot, DateTime)?
+  _onProviderSnapshot;
+  final LedgerOperationLifecycle? _lifecycle;
+
+  // Share the wallet deletion drain with durable send operations. Acquire before
+  // the first await, including status requests whose results later write state.
+  Future<T> _run<T>(Future<T> Function() action) =>
+      _lifecycle?.run(action) ?? action();
 
   final SwapActivityStore _activityStore;
   final SwapProvider _swapProvider;
@@ -171,7 +205,10 @@ class SwapActivityTracker {
     return scopedAccountUuid;
   }
 
-  Future<List<SwapIntent>> loadIntents({required String? accountUuid}) async {
+  Future<List<SwapIntent>> loadIntents({required String? accountUuid}) =>
+      _run(() => _loadIntents(accountUuid: accountUuid));
+
+  Future<List<SwapIntent>> _loadIntents({required String? accountUuid}) async {
     final scopedAccountUuid = normalizeAccountUuid(accountUuid);
     if (scopedAccountUuid == null) return const [];
     final records = await _activityStore.loadRecords(
@@ -180,7 +217,22 @@ class SwapActivityTracker {
     return _intentsFromRecords(records);
   }
 
+  /// Hands a provider status, fetched at `checkedAt`, to the wallet. A failure
+  /// fails the refresh that fetched it, which is retried.
+  Future<void> recordProviderSnapshot(
+    SwapIntent intent,
+    SwapIntentSnapshot snapshot,
+    DateTime checkedAt,
+  ) async {
+    await _onProviderSnapshot?.call(intent, snapshot, checkedAt);
+  }
+
   Future<void> saveIntents({
+    required String? accountUuid,
+    required List<SwapIntent> intents,
+  }) => _run(() => _saveIntents(accountUuid: accountUuid, intents: intents));
+
+  Future<void> _saveIntents({
     required String? accountUuid,
     required List<SwapIntent> intents,
   }) async {
@@ -236,6 +288,20 @@ class SwapActivityTracker {
   }
 
   Future<SwapActivityRefreshResult> refreshIntents({
+    required String accountUuid,
+    required List<SwapIntent> currentIntents,
+    required Iterable<String> intentIds,
+    required bool includeTerminal,
+  }) => _run(
+    () => _refreshIntents(
+      accountUuid: accountUuid,
+      currentIntents: currentIntents,
+      intentIds: intentIds,
+      includeTerminal: includeTerminal,
+    ),
+  );
+
+  Future<SwapActivityRefreshResult> _refreshIntents({
     required String accountUuid,
     required List<SwapIntent> currentIntents,
     required Iterable<String> intentIds,
@@ -329,6 +395,11 @@ class SwapActivityTracker {
     final snapshot = await _swapProvider.getStatus(
       _providerDepositAddress(intent),
       depositMemo: intent.depositMemo,
+    );
+    await recordProviderSnapshot(
+      intent,
+      snapshot,
+      checkedAt ?? DateTime.now().toUtc(),
     );
     return updateSwapIntentFromSnapshot(
       intent,

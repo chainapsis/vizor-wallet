@@ -126,6 +126,48 @@ void main() {
     expect(updated.providerStatusRaw, 'FAILED');
   });
 
+  test('status-only snapshots keep the stored presentation', () {
+    final intent = _intentFromRecord(
+      const SwapIntentRecord(
+        id: 'unlisted-swap',
+        providerLabel: 'NEAR Intents',
+        pairText: 'USDC -> ZEC',
+        sellAmountText: '2.3 USDC',
+        receiveEstimateText: '0.0115 ZEC',
+        status: SwapIntentStatus.processing,
+        nextAction: 'Swap is processing',
+        totalFeesText: '0.01 USDC',
+      ),
+    );
+    final updated = updateSwapIntentFromSnapshot(
+      intent,
+      const SwapIntentSnapshot(
+        id: 'unlisted-swap',
+        providerLabel: 'NEAR Intents',
+        pairText: 'Unlisted token -> ZEC',
+        sellAmountText: 'Not reported',
+        receiveEstimateText: 'Not reported',
+        status: SwapIntentStatus.complete,
+        nextAction: 'Swap complete',
+        depositInstruction: SwapDepositInstruction(
+          asset: SwapAsset.usdc,
+          address: '0xdeposit',
+          expiresInLabel: 'expired',
+          reuseWarning: 'Do not reuse',
+        ),
+        providerStatusRaw: 'SUCCESS',
+        statusOnly: true,
+      ),
+    );
+
+    expect(updated.status, SwapIntentStatus.complete);
+    expect(updated.providerStatusRaw, 'SUCCESS');
+    expect(updated.pair, 'USDC -> ZEC');
+    expect(updated.sellAmount, '2.3 USDC');
+    expect(updated.receiveEstimate, '0.0115 ZEC');
+    expect(updated.totalFeesText, '0.01 USDC');
+  });
+
   test('updates raw lifecycle facts from provider status snapshots', () {
     final createdAt = DateTime.utc(2026, 5, 7, 10);
     final checkedAt = DateTime.utc(2026, 5, 7, 10, 30);

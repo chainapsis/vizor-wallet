@@ -87,6 +87,7 @@ class NearIntentsOneClickSwapAdapter
     final requestedSlippageBps = request.slippageBps ?? slippageBps;
     final requestedRefundTo = request.refundAddress!.trim();
     final requestedRecipient = request.destination.trim();
+    final deadline = _now().toUtc().add(request.deadline ?? quoteDeadline);
 
     final body = <String, Object?>{
       'dry': request.dryRun,
@@ -100,12 +101,13 @@ class NearIntentsOneClickSwapAdapter
       'refundType': 'ORIGIN_CHAIN',
       'recipient': requestedRecipient,
       'recipientType': 'DESTINATION_CHAIN',
-      'deadline': _deadlineIso(request.deadline ?? quoteDeadline),
+      'deadline': _deadlineIso(deadline),
       'depositMode': 'SIMPLE',
       'quoteWaitingTimeMs': quoteWaitingTimeMs,
       if (referral != null && referral!.isNotEmpty) 'referral': referral,
     };
 
+    await request.beforeSend?.call(deadline);
     final response = await transport.post(
       _endpoint('/v0/quote'),
       headers: _headers(contentType: true),
@@ -241,23 +243,20 @@ class NearIntentsOneClickSwapAdapter
     final request = response.quoteResponse.quoteRequest;
     final sellAsset = _assetFromAssetId(request.originAsset, tokens);
     final receiveAsset = _assetFromAssetId(request.destinationAsset, tokens);
-    if (sellAsset == null || receiveAsset == null) {
-      throw OneClickApiException(
-        'Unsupported 1Click status pair: '
-        '${request.originAsset} -> ${request.destinationAsset}',
-        operation: 'status',
-      );
+    final sellToken = sellAsset == null ? null : _tokenFor(sellAsset, tokens);
+    final receiveToken = receiveAsset == null
+        ? null
+        : _tokenFor(receiveAsset, tokens);
+    if (sellAsset == null ||
+        receiveAsset == null ||
+        sellToken == null ||
+        receiveToken == null) {
+      return _statusOnlySnapshot(response, sellAsset, receiveAsset);
     }
     final direction = sellAsset == SwapAsset.zec
         ? SwapDirection.zecToExternal
         : SwapDirection.externalToZec;
     final externalAsset = sellAsset == SwapAsset.zec ? receiveAsset : sellAsset;
-    final sellToken = _requireToken(sellAsset, tokens, operation: 'status');
-    final receiveToken = _requireToken(
-      receiveAsset,
-      tokens,
-      operation: 'status',
-    );
     final quote = _quoteFromOneClick(
       response.quoteResponse,
       direction: direction,
@@ -268,7 +267,7 @@ class NearIntentsOneClickSwapAdapter
       fallbackSlippageBps:
           response.swapDetails?.slippageBps ?? request.slippageToleranceBps,
     );
-    final status = _statusFromOneClick(response.status, quote);
+    final status = _statusFromOneClick(response.status, quote.direction);
     final statusRefundInfo = _statusRefundInfo(
       response.swapDetails,
       sellAsset: sellAsset,
@@ -301,7 +300,7 @@ class NearIntentsOneClickSwapAdapter
       sellAmountText: sellAmountText,
       receiveEstimateText: receiveEstimateText,
       status: status,
-      nextAction: _nextAction(status, quote),
+      nextAction: _nextAction(status, quote.sellAsset.symbol),
       depositInstruction: quote.depositInstruction,
       sellAmountBaseUnits: quote.sellAmountBaseUnits,
       swapFeeText: quote.feeLabel,
@@ -327,6 +326,70 @@ class NearIntentsOneClickSwapAdapter
       destinationChainTxHash: response.swapDetails?.destinationChainTxHash,
       providerRefundInfo: providerRefundInfo,
       fiatValueBasis: quote.fiatValueBasis,
+      providerSwapType: request.swapTypeRaw,
+      refundedAmountBaseUnits: details?.refundedAmount,
+      amountOutBaseUnits: details?.amountOut,
+    );
+  }
+
+  /// The status of a swap with a token the provider no longer lists, or lists
+  /// ambiguously. Its amounts cannot be read without the token, so this reports
+  /// only the status fields, and the swap keeps its saved presentation.
+  SwapIntentSnapshot _statusOnlySnapshot(
+    _OneClickStatusResponse response,
+    SwapAsset? sellAsset,
+    SwapAsset? receiveAsset,
+  ) {
+    final request = response.quoteResponse.quoteRequest;
+    final SwapDirection direction;
+    if (sellAsset == SwapAsset.zec) {
+      direction = SwapDirection.zecToExternal;
+    } else if (receiveAsset == SwapAsset.zec) {
+      direction = SwapDirection.externalToZec;
+    } else {
+      throw OneClickApiException(
+        'Unsupported 1Click status pair: '
+        '${request.originAsset} -> ${request.destinationAsset}',
+        operation: 'status',
+      );
+    }
+    final quote = response.quoteResponse.quote;
+    final details = response.swapDetails;
+    final status = _statusFromOneClick(response.status, direction);
+    final depositAddress = quote.depositAddress ?? _placeholderDepositAddress;
+    return SwapIntentSnapshot(
+      id: depositAddress,
+      providerLabel: providerLabel,
+      pairText:
+          '${sellAsset?.symbol ?? 'Unlisted token'} -> '
+          '${receiveAsset?.symbol ?? 'Unlisted token'}',
+      sellAmountText: _notReportedText,
+      receiveEstimateText: _notReportedText,
+      status: status,
+      nextAction: _nextAction(status, sellAsset?.symbol),
+      depositInstruction: SwapDepositInstruction(
+        asset:
+            sellAsset ??
+            SwapAsset.live(
+              assetId: request.originAsset,
+              symbol: 'Unlisted token',
+              blockchain: 'unknown',
+              decimals: 0,
+            ),
+        address: depositAddress,
+        expiresInLabel: _expiryLabel(request.deadline),
+        reuseWarning: 'Do not reuse this address',
+        memo: quote.depositMemo,
+        deadline: _parseIsoDateTime(request.deadline),
+      ),
+      providerStatusRaw: response.status,
+      nearIntentHash: details?.intentHash,
+      originChainTxHash: details?.originChainTxHash,
+      destinationChainTxHash: details?.destinationChainTxHash,
+      providerSwapType: request.swapTypeRaw,
+      refundedAmountBaseUnits: details?.refundedAmount,
+      amountOutBaseUnits: details?.amountOut,
+      statusOnly: true,
     );
   }
 
@@ -951,10 +1014,8 @@ class NearIntentsOneClickSwapAdapter
         : uri.replace(queryParameters: queryParameters);
   }
 
-  String _deadlineIso(Duration offset) {
-    final deadline = _now().toUtc().add(offset);
-    return deadline.toIso8601String().replaceFirst(RegExp(r'\.\d+Z$'), 'Z');
-  }
+  String _deadlineIso(DateTime deadline) =>
+      deadline.toIso8601String().replaceFirst(RegExp(r'\.\d+Z$'), 'Z');
 }
 
 class _MinimumReceiveDisplay {

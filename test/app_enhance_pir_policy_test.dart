@@ -29,6 +29,7 @@ void main() {
   Future<void> apply(AppBootstrapState bootstrap) => applyEnhancePirPolicy(
     bootstrap,
     setRustEnabled: (enabled) => applied.add('rust:$enabled'),
+    setRustSwapPrivacyEnabled: (_) {},
     setNativePrivateRecovery: (enabled) async => applied.add('native:$enabled'),
   );
 

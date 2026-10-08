@@ -499,6 +499,7 @@ class _SettingsList extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final enhancePirEnabled = ref.watch(enhancePirProvider);
+    final nearSwapPrivacy = ref.watch(nearSwapPrivacyProvider);
     final enhancePirAvailable = ref.watch(enhancePirAvailableProvider);
     final recoveryTransition = ref.watch(enhancePirTransitionProvider);
     final changingRecovery = recoveryTransition == 'Changing setting…';
@@ -613,6 +614,30 @@ class _SettingsList extends ConsumerWidget {
                     : () => unawaited(
                         ref.read(enhancePirProvider.notifier).toggle(),
                       ),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              EnhancePirPrivacyControl(
+                label: 'NEAR swap privacy',
+                keyPrefix: 'settings_near_swap_privacy',
+                description: enhancePirEnabled
+                    ? 'Uses a separate receiving key for each swap. Recovery always uses private queries.'
+                    : 'Turn on Private queries to create private swap addresses.',
+                enabled: nearSwapPrivacy,
+                transition: null,
+                onToggle: changingRecovery || !enhancePirEnabled
+                    ? null
+                    : () => unawaited(
+                        ref.read(nearSwapPrivacyProvider.notifier).toggle(),
+                      ),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              _SettingsRow(
+                key: const ValueKey('settings_check_swap_history'),
+                iconName: AppIcons.history,
+                label: 'Check swap history',
+                onTap: changingRecovery
+                    ? null
+                    : () => unawaited(recheckSwapHistory(context, ref)),
               ),
             ],
           ],

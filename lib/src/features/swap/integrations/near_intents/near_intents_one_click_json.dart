@@ -232,10 +232,7 @@ String _decimalStringToBaseUnits(String value, int decimals) {
 }
 
 String _expiryLabel(String? isoDate) {
-  if (isoDate == null) {
-    return 'Quote expiry pending';
-  }
-  final parsed = DateTime.tryParse(isoDate);
+  final parsed = _parseIsoDateTime(isoDate);
   if (parsed == null) {
     return 'Quote expiry pending';
   }
@@ -245,9 +242,22 @@ String _expiryLabel(String? isoDate) {
   return 'Expires $hour:$minute';
 }
 
+/// 1Click reports UTC timestamps. Dart reads one without a zone designator as
+/// device-local time, so such a timestamp is taken as UTC instead.
 DateTime? _parseIsoDateTime(String? isoDate) {
   if (isoDate == null) return null;
-  return DateTime.tryParse(isoDate)?.toUtc();
+  final parsed = DateTime.tryParse(isoDate);
+  if (parsed == null || parsed.isUtc) return parsed;
+  return DateTime.utc(
+    parsed.year,
+    parsed.month,
+    parsed.day,
+    parsed.hour,
+    parsed.minute,
+    parsed.second,
+    parsed.millisecond,
+    parsed.microsecond,
+  );
 }
 
 String _rateText({
@@ -265,10 +275,10 @@ String _rateText({
       '${rate.toStringAsFixed(precision)} ${receiveAsset.symbol}';
 }
 
-SwapIntentStatus _statusFromOneClick(String status, SwapQuote quote) {
+SwapIntentStatus _statusFromOneClick(String status, SwapDirection direction) {
   return switch (status) {
     'PENDING_DEPOSIT' =>
-      quote.direction.sendsZec
+      direction.sendsZec
           ? SwapIntentStatus.awaitingDeposit
           : SwapIntentStatus.awaitingExternalDeposit,
     'KNOWN_DEPOSIT_TX' => SwapIntentStatus.depositObserved,
@@ -281,11 +291,13 @@ SwapIntentStatus _statusFromOneClick(String status, SwapQuote quote) {
   };
 }
 
-String _nextAction(SwapIntentStatus status, SwapQuote quote) {
+/// The next step for `status`. `depositSymbol` is null for a token the provider
+/// no longer lists.
+String _nextAction(SwapIntentStatus status, String? depositSymbol) {
   return switch (status) {
     SwapIntentStatus.awaitingDeposit ||
     SwapIntentStatus.awaitingExternalDeposit =>
-      'Send ${quote.sellAsset.symbol} to the one-time deposit address',
+      'Send ${depositSymbol ?? 'the deposit'} to the one-time deposit address',
     SwapIntentStatus.depositObserved => 'Deposit detected',
     SwapIntentStatus.processing => 'Swap is processing',
     SwapIntentStatus.providerStatusUnknown =>

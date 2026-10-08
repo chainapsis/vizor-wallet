@@ -580,6 +580,12 @@ void main() {
     );
     expect(find.text('Advanced'), findsNothing);
     expect(find.text('Private queries'), findsOneWidget);
+    expect(find.text('NEAR swap privacy'), findsOneWidget);
+    final swapToggle = tester.widget<PrivacyToggle>(
+      find.byKey(const ValueKey('settings_near_swap_privacy_toggle')),
+    );
+    expect(swapToggle.enabled, isFalse);
+    expect(swapToggle.onToggle, isNull);
     expect(
       tester.getSize(
         find.byKey(const ValueKey('settings_enhance_pir_toggle_track')),

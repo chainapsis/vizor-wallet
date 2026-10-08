@@ -9,9 +9,11 @@ import '../models/swap_deposit_broadcast_result.dart';
 import '../models/swap_intent_presentation_mapper.dart';
 import '../models/swap_models.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/enhance_pir_provider.dart';
 import '../../../providers/network_privacy_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
+import '../../../rust/api/dynamic_ivk.dart' show ReceiveError;
 import 'swap_activity_tracker.dart';
 import 'swap_deposit_sender.dart';
 import 'swap_failure_policy.dart';
@@ -65,6 +67,9 @@ SwapQuoteMode _inputQuoteModeForDirection(SwapDirection direction) =>
 
 class SwapNotifier extends Notifier<SwapState> {
   var _quoteGeneration = 0;
+  Future<SwapZecStagingAddress>? _reviewStagingAddress;
+  String? _reviewStagingAccount;
+  SwapDirection? _reviewStagingDirection;
   var _pricingLoadGeneration = 0;
   var _accountScopeGeneration = 0;
   var _payEntryGeneration = 0;
@@ -88,6 +93,21 @@ class SwapNotifier extends Notifier<SwapState> {
 
   @override
   SwapState build() {
+    // NEAR swap privacy chooses between a swap address and an ordinary one, so a
+    // change, including Private queries turning it off, drops the cached address
+    // and any quote or review prepared for the other kind.
+    ref.listen<bool>(nearSwapPrivacyProvider, (previous, next) {
+      if (previous == next) return;
+      _quoteGeneration++;
+      _reviewStagingAddress = null;
+      if (state.reviewVisible || state.quoteLoading) {
+        state = state.copyWith(
+          reviewVisible: false,
+          quoteLoading: false,
+          clearReview: true,
+        );
+      }
+    });
     ref.listen<NetworkPrivacyState>(networkPrivacyProvider, (previous, next) {
       final becameDirect =
           !next.torEnabled &&
@@ -691,6 +711,31 @@ class SwapNotifier extends Notifier<SwapState> {
     }
   }
 
+  Future<SwapZecStagingAddress> _prepareReviewAddress(
+    String accountUuid,
+    SwapDirection direction,
+  ) async {
+    if (_reviewStagingAccount != accountUuid ||
+        _reviewStagingDirection != direction) {
+      _reviewStagingAddress = null;
+    }
+    _reviewStagingAccount = accountUuid;
+    _reviewStagingDirection = direction;
+    // Cache the reservation before awaiting it so edits during preparation do
+    // not allocate another key. Incoming attempts are also persisted before quoting.
+    final pending = _reviewStagingAddress ??= ref
+        .read(swapZecStagingAddressServiceProvider)
+        .prepareForQuote(accountUuid: accountUuid, direction: direction);
+    try {
+      return await pending;
+    } catch (_) {
+      if (identical(_reviewStagingAddress, pending)) {
+        _reviewStagingAddress = null;
+      }
+      rethrow;
+    }
+  }
+
   Future<void> showReview({bool preserveCurrentReview = false}) async {
     if (!state.canReviewQuote) return;
 
@@ -724,23 +769,37 @@ class SwapNotifier extends Notifier<SwapState> {
       if (!state.payMode) {
         await _persistComposerPreferences(preferences);
       }
-      final stagingAddress = await ref
-          .read(swapZecStagingAddressServiceProvider)
-          .prepareForQuote(accountUuid: accountUuid);
+      if (generation != _quoteGeneration || !_isAccountActive(accountUuid)) {
+        return;
+      }
+      final stagingAddress = await _prepareReviewAddress(
+        accountUuid,
+        direction,
+      );
+      if (generation != _quoteGeneration || !_isAccountActive(accountUuid)) {
+        return;
+      }
       final addressPlan = stagingAddress.toAddressPlan(
         direction: direction,
         externalAsset: externalAsset,
         userExternalAddress: userExternalAddress,
       );
       final quote = await ref
-          .read(swapIntentProvider)
+          .read(swapZecStagingAddressServiceProvider)
           .quote(
-            addressPlan.toQuoteRequest(
-              mode: quoteMode,
-              amount: amount,
-              amountText: amountText,
-              slippageBps: state.slippageBps,
-            ),
+            accountUuid,
+            stagingAddress,
+            (beforeSend) => ref
+                .read(swapIntentProvider)
+                .quote(
+                  addressPlan.toQuoteRequest(
+                    mode: quoteMode,
+                    amount: amount,
+                    amountText: amountText,
+                    slippageBps: state.slippageBps,
+                    beforeSend: beforeSend,
+                  ),
+                ),
           );
       if (generation != _quoteGeneration) {
         return;
@@ -760,6 +819,11 @@ class SwapNotifier extends Notifier<SwapState> {
       );
     } catch (e) {
       if (generation != _quoteGeneration) return;
+      // A swap address failure drops the cached address. Preparing again
+      // resumes an incoming draft, or reserves a new refund key.
+      if (e is ReceiveError) {
+        _reviewStagingAddress = null;
+      }
       state = state.copyWith(
         reviewVisible: false,
         quoteLoading: false,
@@ -855,6 +919,9 @@ class SwapNotifier extends Notifier<SwapState> {
 
     late final SwapIntentSnapshot snapshot;
     try {
+      await ref
+          .read(swapZecStagingAddressServiceProvider)
+          .startQuote(accountUuid, quote);
       snapshot = await ref.read(swapIntentProvider).startSwap(quote);
     } catch (e) {
       log(
@@ -883,6 +950,7 @@ class SwapNotifier extends Notifier<SwapState> {
       intent = intent.copyWith(nextAction: nextAction);
     }
     _quoteGeneration++;
+    _reviewStagingAddress = null;
     if (activeAccountIsHardware && quote.direction.sendsZec) {
       if (hardwareSignerKind == HardwareSignerKind.ledger) {
         // The provider intent already exists at this point. Persist it before
@@ -1713,6 +1781,13 @@ class SwapNotifier extends Notifier<SwapState> {
   }
 
   void _clearReviewState() {
+    // An address NEAR quoted is in its seen set and never used again, so the
+    // next quote gets another; a rejected or pending one, or the wallet's
+    // ordinary address, is kept.
+    final quote = state.reviewQuote;
+    if (quote?.swapRefundIndex != null || quote?.receiveRequestId != null) {
+      _reviewStagingAddress = null;
+    }
     _quoteGeneration++;
     state = state.copyWith(
       reviewVisible: false,
@@ -1725,6 +1800,7 @@ class SwapNotifier extends Notifier<SwapState> {
   }
 
   void _clearAccountScopedTransientState() {
+    _reviewStagingAddress = null;
     _quoteGeneration++;
     _accountScopeGeneration++;
     _payEntryGeneration++;
@@ -2103,6 +2179,7 @@ class SwapNotifier extends Notifier<SwapState> {
   }
 
   String _friendlyQuoteError(Object error) {
+    if (error is ReceiveError) return error.message;
     if (error is SwapZecStagingAddressUnavailableException) {
       return error.toString();
     }
@@ -2129,14 +2206,25 @@ class SwapNotifier extends Notifier<SwapState> {
   Future<SwapIntentSnapshot> _submitProviderDepositTransaction(
     SwapIntent intent,
     String txHash,
-  ) {
-    return ref
+  ) async {
+    final checkedAt = DateTime.now().toUtc();
+    final snapshot = await ref
         .read(swapIntentProvider)
         .submitDepositTransaction(
           depositAddress: _providerDepositAddress(intent),
           txHash: txHash,
           depositMemo: intent.depositMemo,
         );
+    // Like a refreshed status, it decides when the swap's key stops scanning.
+    // Failing to record it only delays that.
+    try {
+      await ref
+          .read(swapActivityTrackerProvider)
+          .recordProviderSnapshot(intent, snapshot, checkedAt);
+    } catch (e) {
+      log('Swap: deposit status not recorded in the wallet error=$e');
+    }
+    return snapshot;
   }
 
   bool _isHardwareIntent(SwapIntent intent) {
