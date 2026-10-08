@@ -111,6 +111,19 @@ class NativeCaseLifecycleTests(unittest.TestCase):
         self.assertEqual(observed["context_path"], "app-support")
         self.assertFalse((case.workspace.root / "native-context.json").exists())
 
+    def test_run_command_owns_file_input_and_complete_capture(self):
+        request = self.case.workspace.root / "phase-input.json"
+        request.write_text('{"amount_zatoshi":1234567}\n')
+        with request.open("rb") as stdin:
+            result = self.case.run_command([sys.executable, "-B", "-c",
+                "import json,sys; print(json.load(sys.stdin)['amount_zatoshi'])"],
+                env=os.environ, stdin=stdin, timeout=3, cancel_event=threading.Event())
+            self.assertFalse(stdin.closed)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual("".join(result.lines), "1234567\n")
+        self.assertTrue(self.case._processes[0].cleanup_completed)
+        self.assertEqual(self.case.close().exit_codes, (0,))
+
     def test_conflicting_identity_is_rejected_before_log_or_spawn(self):
         expected = self.case.workspace.launch_environment()
         for key in expected:

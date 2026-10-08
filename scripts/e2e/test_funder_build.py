@@ -48,6 +48,7 @@ class FunderBuildTests(unittest.TestCase):
         self.mutate_source = False
         self.compiler_exit = 0
         self.compile_calls = 0
+        self.binary_contents = "modeled-compiler-output"
         self.rustc_identity = "rustc modeled\nhost: aarch64-apple-darwin"
         self.compiler = self.root / "selected-rustc"
         self.compiler.write_text("modeled compiler\n")
@@ -105,7 +106,7 @@ class FunderBuildTests(unittest.TestCase):
                 message["target"]["src_path"] = str(self.source / "rust/examples/regtest_direct_funder.rs")
             script = ("from pathlib import Path; import json,sys,os; "
                 f"p=Path({str(binary)!r}); p.parent.mkdir(mode=0o700,parents=True,exist_ok=True); "
-                "p.write_text('modeled-compiler-output'); p.chmod(0o700); ")
+                f"p.write_text({self.binary_contents!r}); p.chmod(0o700); ")
             if self.hard_link_output:
                 script += "os.link(p, p.with_name(p.name + '-hashed')); "
             if self.mutate_source:
