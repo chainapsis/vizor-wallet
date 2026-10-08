@@ -1448,6 +1448,7 @@ pub(crate) fn get_transaction_detail(
     detail.transparent_details = view;
     apply_display_source(&mut detail, display_source);
     apply_display_recipient(&mut detail);
+    apply_display_receive_completion(&mut detail);
     Ok(detail)
 }
 
@@ -1505,29 +1506,13 @@ fn apply_display_source(detail: &mut TransactionDetail, source: DisplaySource) {
 /// the receipt: its payees are transparent outputs, which carry no memo, and
 /// an owned effect the wallet had not found would have broken the balance.
 fn apply_display_recipient(detail: &mut TransactionDetail) {
-    if detail.tx_kind != "sent" || detail.primary_address.is_some() {
+    if detail.tx_kind != "sent" || detail.primary_address.is_some() || detail.fee.is_none() {
         return;
     }
-    let (
-        Some(TransparentDetailsView::Available {
-            rows, output_count, ..
-        }),
-        Some(fee),
-    ) = (&detail.transparent_details, detail.fee)
-    else {
+    let Some(rows) = display_accounted_rows(detail) else {
         return;
     };
-    if rows.is_empty() || rows.len() != *output_count as usize {
-        return;
-    }
     let others: Vec<&TransparentRecipientRow> = rows.iter().filter(|row| !row.is_own).collect();
-    let paid_out: i128 = others
-        .iter()
-        .map(|row| i128::from(row.amount_zatoshi))
-        .sum();
-    if i128::from(detail.account_balance_delta) != -(paid_out + i128::from(fee)) {
-        return;
-    }
     let recipient = match others.as_slice() {
         [one] => one.address.clone(),
         [] => {
@@ -1547,6 +1532,56 @@ fn apply_display_recipient(detail: &mut TransactionDetail) {
         detail.provisional = false;
     }
     detail.primary_address = recipient;
+}
+
+/// The transparent view's rows when they account for the transaction's whole
+/// effect on the account: every transparent output is listed, and the
+/// account's balance moved by exactly what they say. When the account paid
+/// (its fee is known), that is minus the fee and the outputs it does not
+/// own; when it paid nothing, it is the outputs it owns. An effect the
+/// wallet has not found, or an unseen payee, breaks the equality.
+fn display_accounted_rows(detail: &TransactionDetail) -> Option<&[TransparentRecipientRow]> {
+    let Some(TransparentDetailsView::Available {
+        rows, output_count, ..
+    }) = &detail.transparent_details
+    else {
+        return None;
+    };
+    if rows.is_empty() || rows.len() != *output_count as usize {
+        return None;
+    }
+    let sum = |own: bool| -> i128 {
+        rows.iter()
+            .filter(|row| row.is_own == own)
+            .map(|row| i128::from(row.amount_zatoshi))
+            .sum()
+    };
+    let expected = match detail.fee {
+        Some(fee) => -(sum(false) + i128::from(fee)),
+        None => sum(true),
+    };
+    (i128::from(detail.account_balance_delta) == expected).then_some(rows.as_slice())
+}
+
+/// Completes and settles a receive whose transparent details establish it:
+/// its source is known (the shielded pool or an address), everything it shows
+/// is a transparent output, which carries no memo, and the rows account for
+/// its whole effect on the account ([`display_accounted_rows`]).
+fn apply_display_receive_completion(detail: &mut TransactionDetail) {
+    let source_known =
+        detail.source_pool.as_deref() == Some("shielded") || detail.source_address.is_some();
+    if detail.tx_kind == "received"
+        && source_known
+        && !detail.outputs.is_empty()
+        && detail
+            .outputs
+            .iter()
+            .all(|output| output.pool == "transparent")
+        && display_accounted_rows(detail).is_some()
+    {
+        detail.details_complete = true;
+        detail.provisional = false;
+    }
 }
 
 /// Whether display facts establish that a transaction was funded only from
@@ -8301,6 +8336,89 @@ mod tests {
             )),
             None
         );
+    }
+
+    #[test]
+    fn display_details_complete_a_receive_they_account_for() {
+        let own = |amount: u64| TransparentRecipientRow {
+            output_index: 0,
+            address: Some("t1self".to_owned()),
+            amount_zatoshi: amount,
+            is_own: true,
+        };
+        let receive = |source_pool: Option<&str>,
+                       source_address: Option<&str>,
+                       pool: &str,
+                       delta: i64,
+                       fee: Option<u64>| TransactionDetail {
+            txid_hex: String::new(),
+            tx_kind: "received".to_owned(),
+            primary_address: None,
+            source_address: source_address.map(str::to_owned),
+            source_pool: source_pool.map(str::to_owned),
+            source_account_uuid: None,
+            memo: None,
+            outputs: vec![TransactionDetailOutput {
+                address: Some("t1self".to_owned()),
+                amount_zatoshi: 1_000_000,
+                pool: pool.to_owned(),
+                activity_pool: None,
+                uses_orchard_receiver: false,
+            }],
+            details_complete: false,
+            provisional: true,
+            transparent_details: Some(TransparentDetailsView::Available {
+                rows: vec![own(1_000_000)],
+                output_count: 1,
+                omissions: Vec::new(),
+            }),
+            account_balance_delta: delta,
+            fee,
+        };
+        let settled = |mut d: TransactionDetail| {
+            apply_display_receive_completion(&mut d);
+            assert_eq!(d.details_complete, !d.provisional);
+            d.details_complete
+        };
+        // The receive leg of an unshielding to the account's own address.
+        assert!(settled(receive(
+            Some("shielded"),
+            None,
+            "transparent",
+            -15_000,
+            Some(15_000)
+        )));
+        // A receive from another wallet's address, the account paying nothing.
+        assert!(settled(receive(
+            Some("transparent"),
+            Some("t1funder"),
+            "transparent",
+            1_000_000,
+            None
+        )));
+        // An owned effect the rows do not show, an unknown source, a shielded
+        // output (its memo is unknown privately).
+        assert!(!settled(receive(
+            Some("transparent"),
+            Some("t1funder"),
+            "transparent",
+            1_500_000,
+            None
+        )));
+        assert!(!settled(receive(
+            Some("unknown"),
+            None,
+            "transparent",
+            1_000_000,
+            None
+        )));
+        assert!(!settled(receive(
+            Some("shielded"),
+            None,
+            "orchard",
+            -15_000,
+            Some(15_000)
+        )));
     }
 
     #[test]
