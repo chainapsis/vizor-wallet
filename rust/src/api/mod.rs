@@ -1,9 +1,9 @@
+pub mod dynamic_ivk;
 pub mod keystone;
 pub mod ledger;
 pub mod network_privacy;
 pub mod secret;
 pub mod simple;
-pub mod swap_receive;
 pub mod sync;
 pub mod voting;
 pub mod voting_session;

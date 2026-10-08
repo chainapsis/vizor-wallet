@@ -6,6 +6,11 @@ linked through a shared address. Every address is recoverable from the seed. A
 software account is one Vizor derives from a seed, including accounts added from
 another seed; hardware and view-only accounts keep their existing swap addresses.
 
+The addresses come from the wallet library's dynamic IVKs
+(`zcash_client_sqlite::wallet::dynamic_ivk`). Vizor's policy is in
+`rust/src/wallet/dynamic_ivk.rs`, its bridge in `rust/src/api/dynamic_ivk.rs`, and
+the swap flows in `lib/src/features/swap/providers/swap_receive_reservation_service.dart`.
+
 ## Settings
 
 On mainnet, turn on **Private queries**, then **NEAR swap privacy** in Settings. Both
@@ -155,7 +160,8 @@ quote matches the deposit address and memo, and the next swap gets another addre
   address. A started one also needs a fresh conclusive status from the activity
   refresh, and a funded one `REFUNDED`. A reservation never started needs no
   status: its deposit instructions were never shown. A reclaimed key stops
-  scanning.
+  scanning. Reserving an address, recording a status and closing keys at the end
+  of a sync each reclaim what has become reclaimable.
 - Quoting requires the address unpaid, with no queued restore candidate, and the
   wallet scanned to its tip. A paid address is permanently excluded.
 
@@ -197,7 +203,7 @@ The shared library covers derivation, funding records, scanning, closing, restor
 sweeps and reservations. In this repository:
 
 ```sh
-cargo test --manifest-path rust/Cargo.toml --lib swap
+cargo test --manifest-path rust/Cargo.toml --lib -- swap dynamic_ivk
 fvm flutter test test/features/swap
 ```
 

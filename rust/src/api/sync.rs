@@ -12,7 +12,7 @@ use crate::wallet::{keys, network::WalletNetwork, secret_store, sync as wallet_s
 // ======================== Sync Mode ========================
 // 0 = None, 1 = Foreground, 2 = Background
 pub(crate) static DESIRED_SYNC_MODE: AtomicU8 = AtomicU8::new(0);
-static PRIVATE_QUERIES: AtomicBool = AtomicBool::new(false);
+static ENHANCE_PIR_ENABLED: AtomicBool = AtomicBool::new(false);
 static NEAR_SWAP_PRIVACY: AtomicBool = AtomicBool::new(false);
 static ACTIVE_SYNC_ACCOUNT: std::sync::LazyLock<sync_engine::ActiveSyncAccountTarget> =
     std::sync::LazyLock::new(|| Arc::new(RwLock::new(None)));
@@ -44,11 +44,11 @@ pub fn set_active_sync_account(account_uuid: Option<String>) {
 /// Enable private Ironwood transaction enhancement for future sync work.
 #[frb(sync)]
 pub fn set_enhance_pir_enabled(enabled: bool) {
-    PRIVATE_QUERIES.store(enabled, Ordering::SeqCst);
+    ENHANCE_PIR_ENABLED.store(enabled, Ordering::SeqCst);
 }
 
 pub(crate) fn enhance_pir_enabled() -> bool {
-    PRIVATE_QUERIES.load(Ordering::SeqCst)
+    ENHANCE_PIR_ENABLED.load(Ordering::SeqCst)
 }
 
 // ======================== Full Sync ========================
@@ -3274,7 +3274,7 @@ pub fn propose_swap_funding(
     })
 }
 
-/// The fee [`propose_swap_funding`] would pay, for any `refund_index`: the refund memo
+/// The fee [`propose_swap_funding`] would pay for any refund index: the refund memo
 /// does not change the fee, so this also sizes a swap before its refund quote exists.
 pub fn estimate_swap_funding_fee(
     db_path: String,
@@ -3282,9 +3282,7 @@ pub fn estimate_swap_funding_fee(
     account_uuid: String,
     deposit_address: String,
     amount_zatoshi: u64,
-    refund_index: u64,
 ) -> Result<u64, String> {
-    let _ = refund_index;
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
         wallet_sync::estimate_fee_with_swap_refund(

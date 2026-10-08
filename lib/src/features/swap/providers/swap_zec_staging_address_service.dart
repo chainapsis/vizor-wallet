@@ -1,21 +1,18 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
-    show PlatformInt64;
 
 import '../../../../main.dart' show log;
 import '../../../providers/receive_address_provider.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/enhance_pir_provider.dart';
-import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
-import '../../../rust/api/swap_receive.dart' as rust_swap;
-import '../../../rust/wallet/swap_receiving/receive.dart';
+import '../../../rust/api/dynamic_ivk.dart' show ReceiveError;
 import '../domain/swap_address_plan.dart';
 import '../domain/swap_contract.dart';
 import 'swap_receive_reservation_service.dart';
 
 final swapZecStagingAddressServiceProvider =
     Provider<SwapZecStagingAddressService>((ref) {
+      final reservations = ref.read(swapReceiveReservationServiceProvider);
       return SwapZecStagingAddressService(
         reserveSwapAddress: ({required accountUuid, required direction}) async {
           if (!ref.read(nearSwapPrivacyProvider) ||
@@ -27,27 +24,15 @@ final swapZecStagingAddressServiceProvider =
           final liveTip = await ref
               .read(rpcEndpointFailoverProvider.notifier)
               .getLatestBlockHeight();
-          if (!direction.sendsZec) {
-            final address = await ref
-                .read(swapReceiveReservationServiceProvider)
-                .prepare(accountUuid, liveTip);
-            return SwapZecStagingAddress(
-              address: address.address,
-              reservationId: address.id,
-            );
-          }
-          final address = await rust_swap.reserveSwapReceivingAddress(
-            dbPath: await getWalletDbPath(),
-            networkName: ref
-                .read(rpcEndpointFailoverProvider)
-                .current
-                .networkName,
-            accountUuid: accountUuid,
-            liveTip: liveTip,
+          final address = await reservations.reserve(
+            accountUuid,
+            direction,
+            liveTip,
           );
           return SwapZecStagingAddress(
             address: address.address,
-            receivingIndex: address.index,
+            refundIndex: address.refundIndex,
+            reservationIndex: address.reservationIndex,
           );
         },
         reserveFreshOrchardAddress: ({required accountUuid}) {
@@ -55,21 +40,7 @@ final swapZecStagingAddressServiceProvider =
               .read(receiveAddressServiceProvider)
               .reserveOrchardAddress(accountUuid: accountUuid);
         },
-        reservations: ref.read(swapReceiveReservationServiceProvider),
-        recordRefundQuote: (account, refundIndex, quote) async {
-          final deadline = requireDepositDeadline(quote);
-          await rust_swap.recordSwapRefundQuote(
-            dbPath: await getWalletDbPath(),
-            networkName: ref
-                .read(rpcEndpointFailoverProvider)
-                .current
-                .networkName,
-            accountUuid: account,
-            refundIndex: refundIndex,
-            depositAddress: quote.depositInstruction.address,
-            deadlineSeconds: unixSeconds(deadline),
-          );
-        },
+        reservations: reservations,
       );
     });
 
@@ -86,24 +57,20 @@ typedef ReserveSwapAddress =
 typedef FetchSwapQuote =
     Future<SwapQuote> Function(SwapQuoteSendHook? beforeSend);
 
-/// Binds a refund quote's deposit address to its reserved refund key.
-typedef RecordRefundQuote =
-    Future<void> Function(String account, BigInt refundIndex, SwapQuote quote);
-
 class SwapZecStagingAddress {
   const SwapZecStagingAddress({
     required this.address,
-    this.receivingIndex,
-    this.reservationId,
+    this.refundIndex,
+    this.reservationIndex,
   });
 
   final String address;
 
   /// The reserved refund key's index. Set only for refund addresses.
-  final BigInt? receivingIndex;
+  final BigInt? refundIndex;
 
-  /// The incoming draft reservation. Set only for incoming addresses.
-  final PlatformInt64? reservationId;
+  /// The incoming draft reservation's index. Set only for incoming addresses.
+  final BigInt? reservationIndex;
 
   SwapAddressPlan toAddressPlan({
     required SwapDirection direction,
@@ -137,40 +104,36 @@ class SwapZecStagingAddressService {
     required ReserveOrchardAddress reserveFreshOrchardAddress,
     ReserveSwapAddress? reserveSwapAddress,
     SwapReceiveReservationService? reservations,
-    RecordRefundQuote? recordRefundQuote,
   }) : _reserveFreshOrchardAddress = reserveFreshOrchardAddress,
        _reserveSwapAddress = reserveSwapAddress,
-       _reservations = reservations,
-       _recordRefundQuote = recordRefundQuote;
+       _reservations = reservations;
 
   final ReserveOrchardAddress _reserveFreshOrchardAddress;
   final ReserveSwapAddress? _reserveSwapAddress;
   final SwapReceiveReservationService? _reservations;
-  final RecordRefundQuote? _recordRefundQuote;
 
-  /// Quotes with `address`, carrying its local key identity. An incoming quote is
-  /// saved with its reservation. A refund quote for a reserved refund key is
-  /// recorded before it is returned, because funding requires that record, and
-  /// must be address-only: the funding transaction's only transparent output is the
-  /// deposit.
+  /// Quotes with `address`, carrying its local key identity: an incoming quote is
+  /// saved with its reservation, and a refund quote recorded on its refund key (see
+  /// [SwapReceiveReservationService]).
   Future<SwapQuote> quote(
     String account,
     SwapZecStagingAddress address,
     FetchSwapQuote fetch,
-  ) async {
-    final reservation = address.reservationId;
+  ) {
     final reservations = _reservations;
-    if (reservation != null && reservations != null) {
-      return reservations.quote(account, reservation, fetch);
+    if (reservations != null) {
+      if (address.reservationIndex case final reservation?) {
+        return reservations.quote(account, reservation, fetch);
+      }
+      if (address.refundIndex case final refundIndex?) {
+        return reservations.quoteRefund(
+          account,
+          refundIndex,
+          () => fetch(null),
+        );
+      }
     }
-    final quote = await fetch(null);
-    final refundIndex = address.receivingIndex;
-    if (refundIndex == null) return quote;
-    if (quote.depositInstruction.memo?.isNotEmpty ?? false) {
-      throw StateError('Swap receiving requires an address-only ZEC deposit');
-    }
-    await _recordRefundQuote?.call(account, refundIndex, quote);
-    return SwapQuote.withLocalIdentity(quote, swapRefundIndex: refundIndex);
+    return fetch(null);
   }
 
   Future<void> startQuote(String account, SwapQuote quote) async {

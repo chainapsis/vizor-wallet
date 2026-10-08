@@ -12,7 +12,7 @@ use zakura_pir_receiver::{
     DirectoryError, EnhanceNotes, Swept, Transport as ReceiverTransport, WriteLock, MAINNET_GENESIS,
 };
 use zcash_client_backend::data_api::{transparent_ledger::ChainPoint, WalletRead};
-use zcash_client_sqlite::wallet::swap_receiving::Error as SwapError;
+use zcash_client_sqlite::error::SqliteClientError;
 
 /// The receiver directory's default origin. Use explicit HTTPS origins and never follow
 /// service redirects.
@@ -61,9 +61,11 @@ impl<F: Fn() -> bool> Transport for SwapTransport<'_, F> {
         self.http.execute(request).await
     }
 }
+/// Maps a receiver directory failure: a session conflict means its publication changed,
+/// and anything else, including overload (HTTP 429), is a retryable transport failure.
 fn receiver_error(error: RoutedHttpError) -> DirectoryError {
     match error {
-        RoutedHttpError::HttpStatus(409 | 410) => DirectoryError::Revision,
+        error if error.is_session_conflict() => DirectoryError::Revision,
         RoutedHttpError::HttpStatus(status) => DirectoryError::Transport(format!("HTTP {status}")),
         RoutedHttpError::Cancelled => DirectoryError::Transport("Cancelled".into()),
         RoutedHttpError::Failed(error) => DirectoryError::Transport(error.to_string()),
@@ -100,11 +102,11 @@ fn error(e: impl std::fmt::Display) -> String {
 }
 
 /// The receiver directory's swap provider seen sets, which issuance checks (see
-/// `prepare_swap_receive_reservation`), over the restore sweep's transport. `None` off
-/// mainnet or when the directory does not answer within [`SEEN_BUDGET`]; issuance then
-/// counts every quote as seen.
+/// `prepare_receive_reservation`), over the restore sweep's transport. `None` where
+/// dynamic IVKs are not `supported`, or when the directory does not answer within
+/// [`SEEN_BUDGET`]; issuance then counts every quote as seen.
 pub(crate) async fn fetch_seen(network: WalletNetwork) -> Option<zakura_pir_receiver::Seen> {
-    if network != WalletNetwork::Main || cfg!(ironwood_masquerade) {
+    if !crate::wallet::dynamic_ivk::supported(network) {
         return None;
     }
     let should_exit = || false;
@@ -127,15 +129,13 @@ pub(crate) async fn fetch_seen(network: WalletNetwork) -> Option<zakura_pir_rece
 
 /// Runs pending restore sweeps for at most [`RUN_BUDGET`], returning whether one
 /// finished. Sync calls it after reporting completion, so sends never wait for the
-/// directory. Failures are logged and retried on a later sync.
+/// directory, and only where dynamic IVKs are `supported`. Failures are logged and
+/// retried on a later sync.
 pub(super) async fn run(
     db: &mut WalletDatabase,
     network: WalletNetwork,
     should_exit: &impl Fn() -> bool,
 ) -> bool {
-    if network != WalletNetwork::Main || cfg!(ironwood_masquerade) {
-        return false;
-    }
     let tip = match db.block_fully_scanned() {
         Ok(Some(tip)) => tip,
         Ok(None) => return false,
@@ -182,7 +182,7 @@ async fn run_inner(
     network: WalletNetwork,
     through: ChainPoint,
     should_exit: &impl Fn() -> bool,
-) -> Result<Swept<SwapError>, String> {
+) -> Result<Swept<SqliteClientError>, String> {
     if Some(through.height) != db.chain_height().map_err(error)? {
         return Ok(Swept {
             finished: 0,
@@ -196,7 +196,7 @@ async fn run_inner(
         url::Url::parse(&enhance_origin).map_err(error)?,
     );
     let mut notes = EnhanceNotes::new(&enhance_origin, &transport, &network);
-    let accounts = crate::wallet::swap_receiving::software_accounts(db)?;
+    let accounts = crate::wallet::dynamic_ivk::software_accounts(db)?;
     zakura_pir_receiver::sweep(
         db,
         &network,
@@ -207,7 +207,7 @@ async fn run_inner(
         &transport,
         &mut notes,
         &WalletWriteLock,
-        crate::wallet::swap_receiving::receive::now()?,
+        crate::wallet::dynamic_ivk::now()?,
     )
     .await
     .map_err(error)
@@ -247,6 +247,19 @@ mod tests {
             &local,
             &parse("https://127.0.0.1/v1/enhance/init")
         ));
+    }
+    #[test]
+    fn receiver_overload_is_retryable_and_conflicts_mean_a_new_publication() {
+        assert!(matches!(
+            receiver_error(RoutedHttpError::HttpStatus(429)),
+            DirectoryError::Transport(_)
+        ));
+        for status in [409, 410] {
+            assert!(matches!(
+                receiver_error(RoutedHttpError::HttpStatus(status)),
+                DirectoryError::Revision
+            ));
+        }
     }
     /// Reads the live directory's seen sets, as issuance does.
     #[tokio::test]

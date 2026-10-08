@@ -9,7 +9,7 @@ import '../core/storage/enhance_pir_preference_store.dart';
 import '../core/storage/wallet_paths.dart';
 import '../core/widgets/app_toast.dart';
 import '../features/migration/services/ironwood_migration_background_credential_store.dart';
-import '../rust/api/swap_receive.dart' as rust_swap;
+import '../rust/api/dynamic_ivk.dart' as rust_swap;
 import '../rust/api/sync.dart' as rust_sync;
 import 'rpc_endpoint_failover_provider.dart';
 import 'sync_provider.dart';

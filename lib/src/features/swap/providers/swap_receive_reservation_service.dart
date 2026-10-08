@@ -6,7 +6,7 @@ import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
-import '../../../rust/api/swap_receive.dart' as api;
+import '../../../rust/api/dynamic_ivk.dart' as api;
 import '../../ledger/services/ledger_operation_lifecycle.dart';
 import '../domain/swap_contract.dart';
 import '../integrations/near_intents/near_intents_one_click_swap_adapter.dart';
@@ -58,33 +58,37 @@ DateTime requireDepositDeadline(SwapQuote quote) =>
     quote.depositInstruction.deadline ??
     (throw StateError('Provider omitted the deposit deadline.'));
 
-/// Persistence boundary used by the quote flow and the existing status refresh loop.
+/// One account's private swap address records, for the quote flow and the existing
+/// status refresh loop.
 abstract interface class ReceiveReservationStore {
-  Future<api.ReceiveReservation> prepare(BigInt tip);
+  /// Reserves an incoming address, or else a refund address. `tip` is the chain tip
+  /// the quote flow fetched.
+  Future<api.SwapAddress> reserve({
+    required bool incoming,
+    required BigInt tip,
+  });
 
   /// Returns the request's identity.
-  Future<String> begin(PlatformInt64 reservation, DateTime deadline);
-  Future<void> record(String request, SwapQuote quote);
-  Future<void> reject(String request);
+  Future<String> begin(BigInt reservation, DateTime deadline);
+
+  /// Records the request's accepted quote, or, given none, its definitive rejection.
+  Future<void> finish(String request, SwapQuote? accepted);
 
   /// Returns the deposit instructions the UI may show.
-  Future<api.ReceiveDepositInstruction> start(String request);
-  Future<List<api.ReceiveQuoteStatusRequest>> due();
-  Future<void> observe(
-    String request,
-    SwapIntentSnapshot snapshot,
-    DateTime checkedAt,
-  );
+  Future<api.ReceiveDeposit> start(String request);
 
-  /// Records a refund quote's provider status on the refund key behind
-  /// `refundAddress`.
-  Future<void> observeRefund(
-    String operation,
-    String refundAddress,
-    SwapIntentSnapshot snapshot,
-    DateTime checkedAt,
-  );
-  Future<void> reap();
+  /// Binds a refund quote's deposit address to its reserved refund key.
+  Future<void> recordRefund(BigInt refundIndex, SwapQuote quote);
+
+  /// Records a provider status, fetched at `checkedAt`, on the swap operations with
+  /// this deposit address and memo.
+  Future<void> observe({
+    required bool incoming,
+    required String depositAddress,
+    required String? memo,
+    required SwapIntentSnapshot snapshot,
+    required DateTime checkedAt,
+  });
 }
 
 /// The fields of `snapshot` that decide when a swap key stops scanning.
@@ -107,65 +111,72 @@ class RustReceiveReservationStore implements ReceiveReservationStore {
   final String account;
 
   @override
-  Future<api.ReceiveReservation> prepare(BigInt tip) =>
-      api.prepareReceiveReservation(
-        dbPath: path,
-        networkName: network,
-        accountUuid: account,
-        liveTip: tip,
-      );
+  Future<api.SwapAddress> reserve({
+    required bool incoming,
+    required BigInt tip,
+  }) => api.reserveSwapAddress(
+    dbPath: path,
+    networkName: network,
+    accountUuid: account,
+    incoming: incoming,
+    liveTip: tip,
+  );
   @override
-  Future<String> begin(PlatformInt64 reservation, DateTime deadline) =>
+  Future<String> begin(BigInt reservation, DateTime deadline) =>
       api.beginReceiveQuote(
         dbPath: path,
         networkName: network,
         accountUuid: account,
-        reservationId: reservation,
+        reservationIndex: reservation,
         deadlineSeconds: unixSeconds(deadline),
       );
   @override
-  Future<void> record(String request, SwapQuote quote) =>
-      api.recordReceiveQuote(
+  Future<void> finish(String request, SwapQuote? accepted) =>
+      api.finishReceiveQuote(
         dbPath: path,
         networkName: network,
         accountUuid: account,
         requestId: request,
-        operationId: quote.depositInstruction.address,
-        depositMemo: quote.depositInstruction.memo,
+        accepted: switch (accepted) {
+          final quote? => api.ReceiveDeposit(
+            address: quote.depositInstruction.address,
+            memo: quote.depositInstruction.memo,
+            deadlineSeconds: unixSeconds(requireDepositDeadline(quote)),
+          ),
+          null => null,
+        },
+      );
+  @override
+  Future<api.ReceiveDeposit> start(String request) => api.startReceiveQuote(
+    dbPath: path,
+    networkName: network,
+    accountUuid: account,
+    requestId: request,
+  );
+  @override
+  Future<void> recordRefund(BigInt refundIndex, SwapQuote quote) =>
+      api.recordSwapRefundQuote(
+        dbPath: path,
+        networkName: network,
+        accountUuid: account,
+        refundIndex: refundIndex,
+        depositAddress: quote.depositInstruction.address,
         deadlineSeconds: unixSeconds(requireDepositDeadline(quote)),
       );
-
   @override
-  Future<void> reject(String request) => api.rejectReceiveQuote(
+  Future<void> observe({
+    required bool incoming,
+    required String depositAddress,
+    required String? memo,
+    required SwapIntentSnapshot snapshot,
+    required DateTime checkedAt,
+  }) => api.observeSwapStatus(
     dbPath: path,
     networkName: network,
     accountUuid: account,
-    requestId: request,
-  );
-  @override
-  Future<api.ReceiveDepositInstruction> start(String request) =>
-      api.startReceiveQuote(
-        dbPath: path,
-        networkName: network,
-        accountUuid: account,
-        requestId: request,
-      );
-  @override
-  Future<List<api.ReceiveQuoteStatusRequest>> due() => api.receiveQuotesDue(
-    dbPath: path,
-    networkName: network,
-    accountUuid: account,
-  );
-  @override
-  Future<void> observe(
-    String request,
-    SwapIntentSnapshot snapshot,
-    DateTime checkedAt,
-  ) => api.observeReceiveQuote(
-    dbPath: path,
-    networkName: network,
-    accountUuid: account,
-    requestId: request,
+    incoming: incoming,
+    depositAddress: depositAddress,
+    depositMemo: memo,
     status: _providerStatus(snapshot),
     funded: swapHasProviderObservedDepositEvidence(
       status: snapshot.status,
@@ -174,29 +185,10 @@ class RustReceiveReservationStore implements ReceiveReservationStore {
     ),
     checkedAtSeconds: unixSeconds(checkedAt),
   );
-  @override
-  Future<void> observeRefund(
-    String operation,
-    String refundAddress,
-    SwapIntentSnapshot snapshot,
-    DateTime checkedAt,
-  ) => api.observeSwapRefundQuote(
-    dbPath: path,
-    networkName: network,
-    accountUuid: account,
-    operationId: operation,
-    refundAddress: refundAddress,
-    status: _providerStatus(snapshot),
-    observedAtSeconds: unixSeconds(checkedAt),
-  );
-  @override
-  Future<void> reap() => api.reapReceiveReservations(
-    dbPath: path,
-    networkName: network,
-    accountUuid: account,
-  );
 }
 
+/// Private swap address records for both swap directions. Every call that writes
+/// the wallet runs inside [lifecycle], so wallet deletion waits for it.
 class SwapReceiveReservationService {
   SwapReceiveReservationService({
     required this.store,
@@ -207,23 +199,27 @@ class SwapReceiveReservationService {
   final bool Function(String) supportsAccount;
   final Future<ReceiveReservationStore> Function(String account) store;
   final LedgerOperationLifecycle? lifecycle;
-  final Map<String, Future<void>> _refreshing = {};
 
   Future<T> _run<T>(Future<T> Function() action) =>
       lifecycle?.run(action) ?? action();
 
-  Future<api.ReceiveReservation> prepare(String account, BigInt tip) =>
-      _run(() async {
-        await reconcile(account);
-        return (await store(account)).prepare(tip);
-      });
+  /// Reserves the swap address `direction` quotes with: an incoming address when
+  /// it pays ZEC to the wallet, else a refund address.
+  Future<api.SwapAddress> reserve(
+    String account,
+    SwapDirection direction,
+    BigInt tip,
+  ) => _run(
+    () async =>
+        (await store(account)).reserve(incoming: !direction.sendsZec, tip: tip),
+  );
 
-  /// A successful quote is persisted even when its UI generation was superseded.
-  /// `fetch` must put the hook on its request, so the unknown outcome is saved
-  /// only when the request is about to leave the device.
+  /// Quotes incoming `reservation`. A successful quote is persisted even when its UI
+  /// generation was superseded. `fetch` must put the hook on its request, so the
+  /// unknown outcome is saved only when the request is about to leave the device.
   Future<SwapQuote> quote(
     String account,
-    PlatformInt64 reservation,
+    BigInt reservation,
     Future<SwapQuote> Function(SwapQuoteSendHook beforeSend) fetch,
   ) => _run(() async {
     final backend = await store(account);
@@ -241,7 +237,7 @@ class SwapReceiveReservationService {
           error is OneClickApiException &&
           error.operation == 'quote' &&
           (error.statusCode == 400 || error.statusCode == 422)) {
-        await backend.reject(sent);
+        await backend.finish(sent, null);
       }
       rethrow;
     }
@@ -249,8 +245,25 @@ class SwapReceiveReservationService {
     if (sent == null) {
       throw StateError('The quote request skipped its receive reservation.');
     }
-    await backend.record(sent, result);
+    await backend.finish(sent, result);
     return SwapQuote.withLocalIdentity(result, receiveRequestId: sent);
+  });
+
+  /// Quotes with the refund key at `refundIndex`, and records the quote before it is
+  /// returned, because funding requires that record. The quote must be address-only:
+  /// the funding transaction's only transparent output is the deposit.
+  Future<SwapQuote> quoteRefund(
+    String account,
+    BigInt refundIndex,
+    Future<SwapQuote> Function() fetch,
+  ) => _run(() async {
+    final backend = await store(account);
+    final quote = await fetch();
+    if (quote.depositInstruction.memo?.isNotEmpty ?? false) {
+      throw StateError('Swap receiving requires an address-only ZEC deposit');
+    }
+    await backend.recordRefund(refundIndex, quote);
+    return SwapQuote.withLocalIdentity(quote, swapRefundIndex: refundIndex);
   });
 
   /// Locks the quote's reservation before its deposit instructions are shown, and
@@ -268,49 +281,26 @@ class SwapReceiveReservationService {
     });
   }
 
-  /// Shares successful activity polls with reservation bookkeeping.
+  /// Shares a successful activity poll, fetched at `checkedAt`, with the wallet,
+  /// which records it on the swap's private address, if it has one, and reclaims
+  /// what that makes reclaimable. It makes no provider requests of its own.
   Future<void> observeStatus(
-    String account,
-    String operation,
-    String? memo,
-    SwapIntentSnapshot snapshot,
-    DateTime checkedAt,
-  ) async {
-    if (!supportsAccount(account)) return;
-    await _run(() async {
-      final backend = await store(account);
-      for (final request in await backend.due()) {
-        if (request.operationId == operation && request.depositMemo == memo) {
-          await backend.observe(request.requestId, snapshot, checkedAt);
-        }
-      }
-    });
-  }
-
-  /// Records a refund quote's provider status on its refund key, as it is fetched.
-  Future<void> observeRefundStatus(
-    String account,
-    String operation,
-    String refundAddress,
-    SwapIntentSnapshot snapshot,
-    DateTime checkedAt,
-  ) async {
+    String account, {
+    required SwapDirection direction,
+    required String depositAddress,
+    required String? memo,
+    required SwapIntentSnapshot snapshot,
+    required DateTime checkedAt,
+  }) async {
     if (!supportsAccount(account)) return;
     await _run(
-      () async =>
-          (await store(account))
-              .observeRefund(operation, refundAddress, snapshot, checkedAt),
+      () async => (await store(account)).observe(
+        incoming: !direction.sendsZec,
+        depositAddress: depositAddress,
+        memo: memo,
+        snapshot: snapshot,
+        checkedAt: checkedAt,
+      ),
     );
-  }
-
-  /// Reclaims abandoned reservations. It makes no provider requests: started swaps'
-  /// statuses arrive from the ordinary activity polls ([observeStatus]), and a quote
-  /// never started needs none.
-  Future<void> reconcile(String account) {
-    if (!supportsAccount(account)) return Future.value();
-    return _refreshing[account] ??=
-        _run(() async => (await store(account)).reap()).whenComplete(() {
-          _refreshing.remove(account);
-        });
   }
 }

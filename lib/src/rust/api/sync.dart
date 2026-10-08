@@ -1273,7 +1273,7 @@ Future<ProposalResult> proposeSwapFunding({
   refundIndex: refundIndex,
 );
 
-/// The fee [`propose_swap_funding`] would pay, for any `refund_index`: the refund memo
+/// The fee [`propose_swap_funding`] would pay for any refund index: the refund memo
 /// does not change the fee, so this also sizes a swap before its refund quote exists.
 Future<BigInt> estimateSwapFundingFee({
   required String dbPath,
@@ -1281,14 +1281,12 @@ Future<BigInt> estimateSwapFundingFee({
   required String accountUuid,
   required String depositAddress,
   required BigInt amountZatoshi,
-  required BigInt refundIndex,
 }) => RustLib.instance.api.crateApiSyncEstimateSwapFundingFee(
   dbPath: dbPath,
   network: network,
   accountUuid: accountUuid,
   depositAddress: depositAddress,
   amountZatoshi: amountZatoshi,
-  refundIndex: refundIndex,
 );
 
 /// Flat address-validation result for the Dart side.

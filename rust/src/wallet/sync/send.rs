@@ -75,7 +75,7 @@ use zcash_client_backend::{
     zip321::{Payment, TransactionRequest},
 };
 use zcash_client_sqlite::{
-    wallet::{commitment_tree, swap_receiving::verify_swap_funding_proposal},
+    wallet::{commitment_tree, dynamic_ivk::verify_refund_funding_proposal},
     AccountUuid, ReceivedNoteId,
 };
 use zcash_keys::{address::Address, keys::UnifiedSpendingKey};
@@ -1106,7 +1106,7 @@ impl SendRequest<'_> {
 
     /// The notes this request may spend. Swap funding spends only Ironwood notes,
     /// because its change carries the refund memo and must stay in Ironwood (see
-    /// `verify_swap_funding_proposal`); a shortfall is [`SWAP_FUNDING_NEEDS_IRONWOOD`].
+    /// `verify_refund_funding_proposal`); a shortfall is [`SWAP_FUNDING_NEEDS_IRONWOOD`].
     fn spend_policy(self, orchard_reserved_for_migration: bool) -> SpendPolicy {
         match self {
             Self::SwapFunding { .. } => SpendPolicy::shielded_pools(vec![ShieldedPool::Ironwood])
@@ -1150,7 +1150,7 @@ fn propose_request(
         SendRequest::SwapFunding {
             refund_index: None, ..
         } => Some(
-            MemoBytes::from_bytes(&zakura_swap_receiving::RefundMemo::new(0).encode())
+            MemoBytes::from_bytes(&zakura_dynamic_ivk::RefundMemo::new(0).encode())
                 .map_err(|e| e.to_string())?,
         ),
         SendRequest::SwapFunding {
@@ -1158,7 +1158,7 @@ fn propose_request(
             refund_index: Some(refund_index),
             ..
         } => Some(
-            db.swap_funding_memo(account_id, refund_index, to_address)
+            db.refund_funding_memo(account_id, refund_index, to_address)
                 .map_err(|e| e.to_string())?,
         ),
         _ => None,
@@ -1183,7 +1183,8 @@ fn propose_request(
         // Keep payment and recovery record atomic. TEX/multi-step proposals must
         // not silently move the marker into a different transaction.
         if let (SendRequest::SwapFunding { to_address, .. }, Some(memo)) = (request, &change_memo) {
-            verify_swap_funding_proposal(&proposal, memo, to_address).map_err(|e| e.to_string())?;
+            verify_refund_funding_proposal(&proposal, memo, to_address)
+                .map_err(|e| e.to_string())?;
         }
         Ok(proposal)
     };

@@ -29,6 +29,14 @@ pub(in crate::wallet::sync_engine) enum RoutedHttpError {
     Failed(SyncError),
 }
 
+impl RoutedHttpError {
+    /// Whether a private service refused the client's session as superseded (HTTP 409
+    /// or 410), which a fresh session repairs.
+    pub(in crate::wallet::sync_engine) fn is_session_conflict(&self) -> bool {
+        matches!(self, Self::HttpStatus(409 | 410))
+    }
+}
+
 impl From<SyncError> for RoutedHttpError {
     fn from(error: SyncError) -> Self {
         Self::Failed(error)
@@ -305,7 +313,8 @@ impl<F: Fn() -> bool> RoutedTransport<'_, F> {
     }
 }
 
-/// The body of a successful response, refusing one longer than `limit` bytes.
+/// The body of a successful response, refusing one longer than `limit` bytes with a
+/// `SyncError::Parse`.
 async fn collect_bytes<B>(
     response: http::Response<B>,
     limit: usize,

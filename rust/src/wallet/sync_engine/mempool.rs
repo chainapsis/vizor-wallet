@@ -52,7 +52,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use zcash_client_backend::{
-    data_api::{swap_receiving::SwapReceivingRead as _, WalletRead},
+    data_api::{dynamic_ivk::DynamicIvkRead as _, WalletRead},
     proto::service::RawTransaction,
 };
 use zcash_primitives::transaction::Transaction;
@@ -944,9 +944,9 @@ fn trial_decrypt_account_uuids(
             .map(|output| output.note().0.recipient())
             .collect();
         let keys = db
-            .get_swap_transaction_keys(tx.txid(), None, &receivers)
-            .map_err(|e| format!("get swap keys: {e}"))?;
-        decrypted.with_swap_receiving_keys(keys)
+            .get_dynamic_transaction_keys(tx.txid(), None, &receivers)
+            .map_err(|e| format!("get dynamic keys: {e}"))?;
+        decrypted.with_dynamic_ivks(keys)
     } else {
         decrypted
     };
@@ -1491,7 +1491,7 @@ mod tests {
              INSERT INTO scan_queue(block_range_start,block_range_end,priority) VALUES(100,111,10);",
         )
         .unwrap();
-        crate::wallet::swap_receiving::maintain_recovery(&mut db).unwrap();
+        crate::wallet::dynamic_ivk::maintain_recovery(&mut db).unwrap();
         drop(db);
         // The receiver of the incoming key whose big-endian index is `index_hex`.
         let receiver = |index_hex: &str| -> orchard::Address {

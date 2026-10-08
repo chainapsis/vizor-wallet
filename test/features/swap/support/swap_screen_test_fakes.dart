@@ -574,6 +574,13 @@ class _FakeNetworkPrivacyNotifier extends NetworkPrivacyNotifier {
   }
 }
 
+/// Swap address records that accept every quote without a wallet database.
+class _FakeReceiveReservationStore extends Fake
+    implements ReceiveReservationStore {
+  @override
+  Future<void> recordRefund(BigInt refundIndex, SwapQuote quote) async {}
+}
+
 /// NEAR swap privacy, off at first, that a test sets without the settings
 /// store or native calls.
 class _FakeNearSwapPrivacyNotifier extends NearSwapPrivacyNotifier {

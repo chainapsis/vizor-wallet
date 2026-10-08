@@ -7,24 +7,6 @@ import 'package:zcash_wallet/src/features/swap/providers/swap_activity_tracker.d
 
 void main() {
   test(
-    'reconciles abandoned reservations even without visible activity',
-    () async {
-      var reconciled = 0;
-      final tracker = SwapActivityTracker(
-        activityStore: _MemorySwapActivityStore(),
-        swapProvider: _StatusSwapProvider({}),
-        reconcileReceiveReservations: (account) async {
-          expect(account, 'account-1');
-          reconciled++;
-        },
-      );
-      final refresher = SwapActivityStatusRefresher(tracker: tracker);
-      await refresher.refreshOpenActivities(accountUuid: 'account-1');
-      expect(reconciled, 1);
-    },
-  );
-
-  test(
     'automatic refresh skips unsigned ZEC deposits but tracks created ones',
     () async {
       final store = _MemorySwapActivityStore();

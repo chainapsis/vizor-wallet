@@ -58,15 +58,13 @@ class RustSwapDepositSender implements SwapDepositSender {
               'deposit=${_shortSwapValue(quote.depositInstruction.address)} '
               'zatoshi=$amountZatoshi',
             );
-            final refundIndex = quote.swapRefundIndex;
-            if (refundIndex != null) {
+            if (quote.swapRefundIndex != null) {
               return rust_sync.estimateSwapFundingFee(
                 dbPath: dbPath,
                 network: endpoint.networkName,
                 accountUuid: accountUuid,
                 depositAddress: quote.depositInstruction.address,
                 amountZatoshi: amountZatoshi,
-                refundIndex: refundIndex,
               );
             }
             return rust_sync.estimateFee(

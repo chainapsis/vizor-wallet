@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
@@ -17,37 +15,22 @@ const swapActivityStatusRefreshInterval = Duration(seconds: 30);
 final swapActivityTrackerProvider = Provider<SwapActivityTracker>((ref) {
   return SwapActivityTracker(
     activityStore: ref.read(swapActivityStoreProvider),
-    reconcileReceiveReservations: (account) =>
-        ref.read(swapReceiveReservationServiceProvider).reconcile(account),
-    // Statuses reach the wallet as they are fetched: an incoming quote's through its
-    // reservation, and a refund quote's on the refund key behind its refund address.
+    // Statuses reach the wallet as they are fetched, for swaps that quoted a
+    // private address.
     onProviderSnapshot: (intent, snapshot, checkedAt) async {
       final account = intent.accountUuid;
-      if (account == null) return;
-      final reservations = ref.read(swapReceiveReservationServiceProvider);
-      final operation = intent.depositAddress ?? intent.id;
-      switch (intent.direction?.sendsZec) {
-        case false:
-          await reservations.observeStatus(
+      final direction = intent.direction;
+      if (account == null || direction == null) return;
+      await ref
+          .read(swapReceiveReservationServiceProvider)
+          .observeStatus(
             account,
-            operation,
-            intent.depositMemo,
-            snapshot,
-            checkedAt,
+            direction: direction,
+            depositAddress: intent.depositAddress ?? intent.id,
+            memo: intent.depositMemo,
+            snapshot: snapshot,
+            checkedAt: checkedAt,
           );
-        case true:
-          final refundTo = intent.oneClickRefundTo;
-          if (refundTo == null) return;
-          await reservations.observeRefundStatus(
-            account,
-            operation,
-            refundTo,
-            snapshot,
-            checkedAt,
-          );
-        case null:
-          return;
-      }
     },
     lifecycle: ref.read(ledgerOperationLifecycleProvider),
     swapProvider: ref.read(swapIntentProvider),
@@ -150,15 +133,13 @@ class SwapActivityStatusRefresher {
           if (_isRefreshDue(intent, accountUuid, startedAt, force: force))
             intent.id,
       ];
-      if (dueIds.isNotEmpty) {
-        await _tracker.refreshIntents(
-          accountUuid: accountUuid,
-          currentIntents: currentIntents,
-          intentIds: dueIds,
-          includeTerminal: false,
-        );
-      }
-      await _tracker.reconcileReceiveReservations(accountUuid);
+      if (dueIds.isEmpty) return;
+      await _tracker.refreshIntents(
+        accountUuid: accountUuid,
+        currentIntents: currentIntents,
+        intentIds: dueIds,
+        includeTerminal: false,
+      );
     } catch (_) {
       // Activity rows are secondary to the wallet shell. Refresh failures are
       // persisted per intent when the provider returns a status error; storage
@@ -192,7 +173,6 @@ class SwapActivityTracker {
     bool Function()? isTorEnabled,
     void Function()? onRecordsChanged,
     LedgerOperationLifecycle? lifecycle,
-    Future<void> Function(String)? reconcileReceiveReservations,
     Future<void> Function(SwapIntent, SwapIntentSnapshot, DateTime)?
     onProviderSnapshot,
   }) : _activityStore = activityStore,
@@ -200,16 +180,10 @@ class SwapActivityTracker {
        _isTorEnabled = isTorEnabled,
        _onRecordsChanged = onRecordsChanged,
        _lifecycle = lifecycle,
-       _reconcileReceiveReservations = reconcileReceiveReservations,
        _onProviderSnapshot = onProviderSnapshot;
 
   final Future<void> Function(SwapIntent, SwapIntentSnapshot, DateTime)?
   _onProviderSnapshot;
-  final Future<void> Function(String)? _reconcileReceiveReservations;
-  Future<void> reconcileReceiveReservations(String account) async {
-    await _reconcileReceiveReservations?.call(account);
-  }
-
   final LedgerOperationLifecycle? _lifecycle;
 
   // Share the wallet deletion drain with durable send operations. Acquire before
@@ -264,19 +238,15 @@ class SwapActivityTracker {
   }) async {
     final scopedAccountUuid = normalizeAccountUuid(accountUuid);
     if (scopedAccountUuid == null) return;
-    final persistable = [
-      for (final intent in intents)
-        if (_isPersistableIntent(intent, accountUuid: scopedAccountUuid))
-          intent,
-    ];
     await _activityStore.saveRecords(
       accountUuid: scopedAccountUuid,
       records: [
-        for (final intent in persistable)
-          swapIntentRecordForPersistence(
-            intent,
-            accountUuid: scopedAccountUuid,
-          ),
+        for (final intent in intents)
+          if (_isPersistableIntent(intent, accountUuid: scopedAccountUuid))
+            swapIntentRecordForPersistence(
+              intent,
+              accountUuid: scopedAccountUuid,
+            ),
       ],
     );
     _onRecordsChanged?.call();

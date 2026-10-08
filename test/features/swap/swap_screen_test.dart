@@ -45,6 +45,7 @@ import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dar
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_tracker.dart';
 import 'package:zcash_wallet/src/features/swap/providers/pay_selected_asset_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_composer_preferences_store.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_receive_reservation_service.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_zec_staging_address_service.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_screen.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_transaction_status_screen.dart';
@@ -7936,7 +7937,7 @@ void main() {
                   reservations++;
                   return SwapZecStagingAddress(
                     address: 'u1poc$reservations',
-                    receivingIndex: BigInt.from(reservations),
+                    refundIndex: BigInt.from(reservations),
                   );
                 },
           ),
@@ -7996,7 +7997,7 @@ void main() {
           reservations++;
           return SwapZecStagingAddress(
             address: 'u1swap$reservations',
-            receivingIndex: BigInt.from(reservations),
+            refundIndex: BigInt.from(reservations),
           );
         },
       ),
@@ -8067,7 +8068,7 @@ void main() {
     await tester.pump();
     expect(reservations, 1);
     pending.complete(
-      SwapZecStagingAddress(address: 'u1poc', receivingIndex: BigInt.zero),
+      SwapZecStagingAddress(address: 'u1poc', refundIndex: BigInt.zero),
     );
     await tester.pumpAndSettle();
     await Future.wait([first, second]);
@@ -8095,9 +8096,7 @@ void main() {
           // Only an address that refunds ZEC has a refund key index.
           return SwapZecStagingAddress(
             address: 'u1poc$reservations',
-            receivingIndex: direction.sendsZec
-                ? BigInt.from(reservations)
-                : null,
+            refundIndex: direction.sendsZec ? BigInt.from(reservations) : null,
           );
         },
       ),
@@ -10321,6 +10320,9 @@ Widget _routerHarness(
                   accountUuid: accountUuid,
                 );
               },
+          reservations: SwapReceiveReservationService(
+            store: (_) async => _FakeReceiveReservationStore(),
+          ),
         ),
       ),
       swapIntentProvider.overrideWithValue(swapProvider ?? _FakeSwapProvider()),

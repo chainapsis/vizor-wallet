@@ -220,7 +220,7 @@ async fn receipts_inside_a_later_scanned_prefix_recover_before_and_after_expiry(
             std::num::NonZeroU32::new(1).unwrap(),
         ),
     );
-    zcash_client_backend::data_api::chain::scan_cached_blocks_with_swap_keys(
+    zcash_client_backend::data_api::chain::scan_cached_blocks_with_dynamic_ivks(
         &WalletNetwork::Main,
         &source,
         &mut db,

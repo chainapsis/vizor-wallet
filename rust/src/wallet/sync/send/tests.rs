@@ -1128,14 +1128,15 @@ fn swap_funding_shortfall_asks_for_ironwood_funds() {
         )
         .unwrap();
     let refund_index = db
-        .reserve_swap_refund_key(account_id, tip)
+        .reserve_refund_key(account_id, tip)
+        .unwrap()
         .unwrap()
         .key_id()
         .index();
     let deposit = Address::Transparent(taddr(7))
         .to_zcash_address(&network)
         .to_string();
-    db.record_swap_refund_quote(account_id, refund_index, &deposit, 1_000_600, 1_000_000)
+    db.record_refund_operation(account_id, refund_index, &deposit, 1_000_600, 1_000_000)
         .unwrap();
     drop(db);
 

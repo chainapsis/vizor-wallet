@@ -63,7 +63,6 @@ class RustSwapMaxAmountEstimator implements SwapMaxAmountEstimator {
                       accountUuid: accountUuid,
                       depositAddress: estimateAddress,
                       amountZatoshi: amountZatoshi,
-                      refundIndex: BigInt.zero,
                     );
                   } else {
                     await rust_sync.estimateFee(

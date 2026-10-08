@@ -8,8 +8,8 @@ use std::collections::HashSet;
 use tonic::{transport::Channel, Code, Status};
 use zcash_client_backend::{
     data_api::{
-        wallet::decrypt_and_store_transaction_with_swap_keys, PublicTransactionEnhancementRequest,
-        WalletWrite,
+        wallet::decrypt_and_store_transaction_with_dynamic_ivks,
+        PublicTransactionEnhancementRequest, WalletWrite,
     },
     proto::service::{compact_tx_streamer_client::CompactTxStreamerClient, RawTransaction},
 };
@@ -67,7 +67,7 @@ impl PublicPayloadExecutor {
                         if let Err(e) = with_wallet_db_write_lock(
                             "sync_engine.enhance.decrypt_and_store_transaction",
                             || {
-                                decrypt_and_store_transaction_with_swap_keys(
+                                decrypt_and_store_transaction_with_dynamic_ivks(
                                     &network,
                                     db,
                                     &tx,

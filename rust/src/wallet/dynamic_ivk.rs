@@ -1,12 +1,10 @@
-//! Thin application policy over the reusable swap receiving registry and recovery helpers.
+//! Thin application policy over the wallet library's dynamic IVKs (see
+//! `zcash_client_sqlite::wallet::dynamic_ivk`), which Vizor uses for private NEAR swap
+//! addresses.
 
-pub(crate) mod receive;
-
-use zakura_swap_receiving::lifecycle::ProviderStatus;
-use zcash_client_backend::data_api::{
-    swap_receiving::SwapReceivingWrite as _, Account as _, WalletRead,
-};
-use zcash_client_sqlite::{wallet::swap_receiving::RegisteredKey, AccountUuid};
+use zakura_dynamic_ivk::lifecycle::NearStatus;
+use zcash_client_backend::data_api::{dynamic_ivk::DynamicIvkWrite as _, Account as _, WalletRead};
+use zcash_client_sqlite::{wallet::dynamic_ivk::DynamicKey, AccountUuid};
 use zcash_keys::address::{Address, UnifiedAddress};
 use zcash_protocol::{consensus::BlockHeight, value::Zatoshis};
 
@@ -17,14 +15,21 @@ use super::{
     },
     keys::parse_account_uuid,
     network::WalletNetwork,
+    sync_engine::enhancement::EnhancementPolicy,
 };
 
-/// Fails unless new private swap addresses are allowed: on mainnet, with both Private
-/// queries and NEAR swap privacy on.
+/// Whether `network` runs dynamic IVKs at all: wherever Private queries could (see
+/// [`EnhancementPolicy`]), whatever the switches say. Restore sweeps, key maintenance
+/// and provider statuses need nothing more; new addresses do (see
+/// [`require_new_address`]).
+pub(crate) fn supported(network: WalletNetwork) -> bool {
+    EnhancementPolicy::for_preference(network, true).is_private()
+}
+
+/// Fails unless new private swap addresses are allowed: where [`supported`], with both
+/// Private queries and NEAR swap privacy on.
 pub(crate) fn require_new_address(network: WalletNetwork) -> Result<(), String> {
-    if network != WalletNetwork::Main
-        || cfg!(ironwood_masquerade)
-        || !crate::api::sync::enhance_pir_enabled()
+    if !EnhancementPolicy::current(network).is_private()
         || !crate::api::sync::near_swap_privacy_enabled()
     {
         return Err(
@@ -33,6 +38,7 @@ pub(crate) fn require_new_address(network: WalletNetwork) -> Result<(), String> 
     }
     Ok(())
 }
+
 /// The network tip a quote flow fetched, which address issuance checks scanning against.
 pub(crate) fn network_tip(live_tip: u64) -> Result<BlockHeight, String> {
     u32::try_from(live_tip)
@@ -42,16 +48,14 @@ pub(crate) fn network_tip(live_tip: u64) -> Result<BlockHeight, String> {
 
 /// Borrows a bridged provider status for the library. Unparseable amounts are
 /// treated as unreported.
-pub(crate) fn provider_status(
-    status: &crate::api::swap_receive::SwapProviderStatus,
-) -> ProviderStatus<'_> {
+pub(crate) fn near_status(status: &crate::api::dynamic_ivk::SwapProviderStatus) -> NearStatus<'_> {
     let amount = |value: &Option<String>| {
         value
             .as_deref()
             .and_then(|v| v.parse::<u64>().ok())
             .and_then(|v| Zatoshis::from_u64(v).ok())
     };
-    ProviderStatus {
+    NearStatus {
         status: &status.status,
         swap_type: status.swap_type.as_deref(),
         refunded_amount: amount(&status.refunded_amount),
@@ -84,7 +88,7 @@ pub(crate) fn require_software_account(
     Ok(())
 }
 
-/// The software accounts that can spend with swap keys.
+/// The software accounts that can spend with dynamic keys.
 pub(crate) fn software_accounts(db: &WalletDatabase) -> Result<Vec<AccountUuid>, String> {
     let mut accounts = Vec::new();
     for account in db.get_account_ids().map_err(|e| e.to_string())? {
@@ -96,10 +100,7 @@ pub(crate) fn software_accounts(db: &WalletDatabase) -> Result<Vec<AccountUuid>,
 }
 
 /// Encodes `key`'s receiver as a unified address with no other receiver.
-pub(crate) fn encode_address(
-    key: &RegisteredKey,
-    network: WalletNetwork,
-) -> Result<String, String> {
+pub(crate) fn encode_address(key: &DynamicKey, network: WalletNetwork) -> Result<String, String> {
     let address = UnifiedAddress::from_receivers(Some(key.receiver()), None, None)
         .ok_or("Invalid swap receiver")?;
     Ok(Address::Unified(address)
@@ -107,29 +108,48 @@ pub(crate) fn encode_address(
         .to_string())
 }
 
-/// Called under the wallet write lock before planning more scan work.
-/// Restore sweeps run independently of both privacy switches. Only new address
-/// issuance is opt-in.
+/// The current Unix time in seconds, as the library's lifecycle takes it.
+pub(crate) fn now() -> Result<i64, String> {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_secs()
+        .try_into()
+        .map_err(|_| "Clock overflow".into())
+}
+
+/// Runs `action` on `uuid`'s account in the wallet at `path`, under the wallet write lock.
+pub(crate) fn with_db<T, E: From<String>>(
+    path: &str,
+    network: WalletNetwork,
+    uuid: &str,
+    action: impl FnOnce(&mut WalletDatabase, AccountUuid) -> Result<T, E>,
+) -> Result<T, E> {
+    with_wallet_db_write_lock("dynamic_ivk", || {
+        let mut db = open_wallet_db_with_timeout(path, network, WALLET_DB_BUSY_TIMEOUT)?;
+        let account = parse_account_uuid(uuid)?;
+        action(&mut db, account)
+    })
+}
+
+/// Keeps every software account's dynamic key recovery current, under the wallet write
+/// lock, when sync starts and at the tip. Sync calls it only where [`supported`]; it runs
+/// with both privacy switches off, since only new address issuance is opt-in.
 pub(crate) fn maintain_recovery(db: &mut WalletDatabase) -> Result<(), String> {
-    if cfg!(ironwood_masquerade) {
-        return Ok(());
-    }
     for account in software_accounts(db)? {
-        db.maintain_swap_receiving(account)
+        db.maintain_dynamic_ivks(account)
             .map_err(|e| e.to_string())?;
     }
     Ok(())
 }
 
-/// Stops scanning finished swap keys, under the wallet write lock, once sync has
-/// scanned to `tip`, the chain tip it revalidated this session.
+/// Stops scanning finished dynamic keys, under the wallet write lock, once sync has
+/// scanned to `tip`, the chain tip it revalidated this session. Sync calls it only where
+/// [`supported`].
 pub(crate) fn close_finished_keys(db: &mut WalletDatabase, tip: BlockHeight) -> Result<(), String> {
-    if cfg!(ironwood_masquerade) {
-        return Ok(());
-    }
-    let now = receive::now()?;
+    let now = now()?;
     for account in software_accounts(db)? {
-        db.close_finished_swap_keys(account, now, tip)
+        db.close_finished_dynamic_keys(account, now, tip)
             .map_err(|e| e.to_string())?;
     }
     Ok(())
@@ -139,8 +159,8 @@ pub(crate) fn close_finished_keys(db: &mut WalletDatabase, tip: BlockHeight) -> 
 mod tests {
     use super::*;
     use secrecy::SecretVec;
-    use zcash_client_backend::data_api::{swap_receiving::SwapReceivingRead as _, WalletWrite};
-    use zcash_client_sqlite::wallet::swap_receiving::RECEIVE_GAP_LIMIT;
+    use zcash_client_backend::data_api::{dynamic_ivk::DynamicIvkRead as _, WalletWrite};
+    use zcash_client_sqlite::wallet::dynamic_ivk::RECEIVE_GAP_LIMIT;
 
     #[test]
     fn restore_prepares_pir_discovery_with_both_settings_off() {
@@ -186,7 +206,7 @@ mod tests {
         maintain_recovery(&mut db).unwrap();
         // Restored lookahead keys wait for a directory sweep; they are not scanned.
         assert_eq!(keys(), (RECEIVE_GAP_LIMIT, 0));
-        assert!(db.get_swap_scanning_keys().unwrap().is_empty());
+        assert!(db.get_dynamic_scanning_keys().unwrap().is_empty());
         assert_eq!(
             db.block_fully_scanned().unwrap().unwrap().block_height(),
             BlockHeight::from_u32(110)
@@ -200,14 +220,14 @@ mod tests {
         assert!(error.contains("Enable Private queries"), "{error}");
     }
 
-    /// Swap receiving covers the first account and accounts added from another seed,
+    /// Dynamic IVKs cover the first account and accounts added from another seed,
     /// whose swap notes Vizor can spend, but not hardware or view-only accounts.
     #[test]
     fn added_seed_accounts_are_software_but_hardware_and_view_only_accounts_are_not() {
         use super::super::keys;
         use secrecy::ExposeSecret;
         use std::collections::HashSet;
-        use zakura_swap_receiving::{has_same_spending_authority, KeyId, Purpose};
+        use zakura_dynamic_ivk::{has_same_spending_authority, KeyId, Purpose};
         use zcash_keys::keys::UnifiedSpendingKey;
 
         let dir = tempfile::tempdir().unwrap();
@@ -306,7 +326,7 @@ mod tests {
         for (account, ufvk) in [(hardware, hardware_ufvk), (observer, observer_ufvk)] {
             let receiver = first_receiver(ufvk.orchard().unwrap());
             assert!(db
-                .get_swap_receiving_key_for_receiver(account, &receiver)
+                .get_dynamic_key_for_receiver(account, &receiver)
                 .unwrap()
                 .is_none());
         }
@@ -335,7 +355,7 @@ mod tests {
         let swap_fvk = KeyId::new(Purpose::Receive, 0).derive(&fvk).unwrap();
         assert!(has_same_spending_authority(&fvk, &swap_fvk));
         let key = db
-            .get_swap_receiving_key_for_receiver(added, &first_receiver(&fvk))
+            .get_dynamic_key_for_receiver(added, &first_receiver(&fvk))
             .unwrap()
             .unwrap();
         assert_eq!(key.key_id(), KeyId::new(Purpose::Receive, 0));
