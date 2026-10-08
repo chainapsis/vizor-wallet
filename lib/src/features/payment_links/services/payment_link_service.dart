@@ -622,6 +622,8 @@ class PaymentLinkFundingResult {
   final bool broadcastAccepted;
 }
 
+enum _PaymentLinkSendPurpose { ordinary, vizorClaim, externalClaim }
+
 class PaymentLinkService
     implements PaymentLinkOperations, PaymentLinkBatchOperations {
   PaymentLinkService(
@@ -1665,7 +1667,8 @@ class PaymentLinkService
     }
     await _requireShieldedAddress(destinationAddress);
     final saved = await _receivedStore.find(inspection.link.address);
-    if (saved?.isClaimInFlight ?? false) {
+    if ((saved?.isClaimInFlight ?? false) ||
+        inspection.link.isZodl && saved?.needsClaimRecovery == true) {
       throw const PaymentLinkClaimInFlightException();
     }
     _requireSetupClaimDestination(saved, destinationAccountUuid);
@@ -1679,15 +1682,15 @@ class PaymentLinkService
       network: inspection.link.network,
       accountUuid: inspection.accountUuid,
       toAddress: destinationAddress,
+      externalGiftClaim: inspection.link.isZodl,
     );
     _requireWalletUnlocked();
     return _sessionFromInspection(
       inspection,
       destinationAddress: destinationAddress,
       destinationAccountUuid: destinationAccountUuid,
-      claimableZatoshi: paymentLinkClaimableAmountZatoshi(
-        recipientAmountZatoshi: inspection.link.amountZatoshi,
-        maxSpendableZatoshi: estimate?.amountZatoshi ?? BigInt.zero,
+      claimableZatoshi: inspection.link.claimableAmountFromMax(
+        estimate?.amountZatoshi ?? BigInt.zero,
       ),
       feeZatoshi: estimate?.feeZatoshi ?? BigInt.zero,
       isSetupClaim: saved?.setupAccountUuid != null,
@@ -1702,7 +1705,9 @@ class PaymentLinkService
     required BigInt feeZatoshi,
     bool isSetupClaim = false,
   }) => PaymentLinkClaimSession(
-    link: inspection.link,
+    link: inspection.link.withResolvedMetadata(
+      amountZatoshi: claimableZatoshi > BigInt.zero ? claimableZatoshi : null,
+    ),
     destinationAddress: destinationAddress,
     destinationAccountUuid: destinationAccountUuid,
     directory: inspection.directory,
@@ -1726,8 +1731,17 @@ class PaymentLinkService
     required String network,
     required String accountUuid,
     required String toAddress,
+    bool externalGiftClaim = false,
   }) async {
     try {
+      if (externalGiftClaim) {
+        return await rust_sync.estimateExternalGiftClaimMax(
+          dbPath: dbPath,
+          network: network,
+          accountUuid: accountUuid,
+          toAddress: toAddress,
+        );
+      }
       return await rust_sync.estimatePaymentLinkClaimMax(
         dbPath: dbPath,
         network: network,
@@ -1771,9 +1785,24 @@ class PaymentLinkService
       currentTipHeight: currentTipHeight.toInt(),
     );
     log('PaymentLinkClaim: birthday validated');
+    if (link.isZodl &&
+        !allowLongSync &&
+        isLongPaymentLinkSync(
+          birthdayHeight: claimBirthdayHeight,
+          currentTipHeight: currentTipHeight.toInt(),
+        )) {
+      throw const PaymentLinkLongSyncConfirmationRequired();
+    }
     final retainedRecords = await _receivedStore.load();
     requirePreparation();
     link = await paymentLinkWithRetainedAddress(link, retainedRecords);
+    if (link.isZodl &&
+        retainedRecords.any(
+          (record) =>
+              record.address == link.knownAddress && record.needsClaimRecovery,
+        )) {
+      throw const PaymentLinkClaimInFlightException();
+    }
 
     requirePreparation();
     final tempWallet = await _claimWallet.createOrOpen(link);
@@ -1857,7 +1886,8 @@ class PaymentLinkService
       );
       final existingRecord = await _receivedStore.find(link.address);
       requirePreparation();
-      if (existingRecord?.isClaimInFlight ?? false) {
+      if ((existingRecord?.isClaimInFlight ?? false) ||
+          link.isZodl && existingRecord?.needsClaimRecovery == true) {
         throw const PaymentLinkClaimInFlightException();
       }
       log('PaymentLinkClaim: recovery address validated');
@@ -1875,12 +1905,15 @@ class PaymentLinkService
         network: endpoint.networkName,
         accountUuid: importedAccountUuid,
         toAddress: estimateDestinationAddress ?? importedAddress,
+        externalGiftClaim: link.isZodl,
       );
       requirePreparation();
-      final claimableZatoshi = paymentLinkClaimableAmountZatoshi(
-        recipientAmountZatoshi: link.amountZatoshi,
-        maxSpendableZatoshi: estimate?.amountZatoshi ?? BigInt.zero,
+      final claimableZatoshi = link.claimableAmountFromMax(
+        estimate?.amountZatoshi ?? BigInt.zero,
       );
+      if (link.isZodl && claimableZatoshi > BigInt.zero) {
+        link = link.withResolvedMetadata(amountZatoshi: claimableZatoshi);
+      }
 
       final transactions = await rust_sync.getTransactionHistory(
         dbPath: tempWallet.dbPath,
@@ -1900,7 +1933,13 @@ class PaymentLinkService
         );
       }
       requirePreparation();
-      final fundingConfirmationCount = check.fundingHeight > 0
+      final fundingConfirmationCount = link.isZodl
+          ? externalGiftFundingConfirmationCount(
+              transactions,
+              currentTipHeight,
+              link.claimConfirmationTarget,
+            )
+          : check.fundingHeight > 0
           ? (check.checkedHeight - check.fundingHeight + 1).clamp(
               0,
               kPaymentLinkClaimConfirmationTarget,
@@ -1930,13 +1969,20 @@ class PaymentLinkService
         await _receivedStore.setAvailability(link.address, availability);
       }
       requirePreparation();
-      final waitingForFundingConfirmations = paymentLinkShouldWaitForFunding(
-        recipientAmountZatoshi: link.amountZatoshi,
-        totalZatoshi: check.unspentZatoshi,
-        fundingConfirmationCount: fundingConfirmationCount,
-        birthdayHeight: claimBirthdayHeight,
-        currentTipHeight: currentTipHeight.toInt(),
-      );
+      final waitingForFundingConfirmations = link.isZodl
+          ? claimableZatoshi == BigInt.zero &&
+                (check.unspentZatoshi > BigInt.zero &&
+                        fundingConfirmationCount <
+                            link.claimConfirmationTarget ||
+                    currentTipHeight.toInt() - claimBirthdayHeight <
+                        kPaymentLinkFreshCardGraceBlocks)
+          : paymentLinkShouldWaitForFunding(
+              recipientAmountZatoshi: link.amountZatoshi,
+              totalZatoshi: check.unspentZatoshi,
+              fundingConfirmationCount: fundingConfirmationCount,
+              birthdayHeight: claimBirthdayHeight,
+              currentTipHeight: currentTipHeight.toInt(),
+            );
 
       log(
         'PaymentLinkClaim: balance checked '
@@ -1984,6 +2030,9 @@ class PaymentLinkService
     // Freeze the available preview price before the first await. Submission
     // never waits for pricing or changes its saved value after a late response.
     final claimFiatSnapshot = _availableClaimFiatSnapshot(session.link);
+    // _activeClaims already excludes this address from newly queued recovery.
+    // Drain an older receipt's cleanup before installing a new native attempt.
+    if (session.link.isZodl) await _claimInspectionTail;
     _requireWalletUnlocked();
     _requireSetupClaimDestination(
       await _receivedStore.find(session.link.address),
@@ -2005,7 +2054,11 @@ class PaymentLinkService
       destinationAccountUuid: session.destinationAccountUuid,
       priorTxids: priorEvidence.localClaimTxids,
       fiatSnapshot: claimFiatSnapshot,
+      link: session.link,
     );
+    if (startedRecord.status != PaymentLinkReceivedStatus.submitting) {
+      throw StateError('This gift card has already been received.');
+    }
     var submissionStarted = false;
     try {
       final result = await _broadcastPreparedSpend(
@@ -2104,21 +2157,25 @@ class PaymentLinkService
       dbPath: session.dbPath,
     );
     _requireWalletUnlocked();
-    final estimate = await rust_sync.estimatePaymentLinkClaimMax(
+    final estimate = await _estimateClaim(
       dbPath: session.dbPath,
       network: endpoint.networkName,
       accountUuid: session.accountUuid,
       toAddress: session.destinationAddress,
+      externalGiftClaim: session.link.isZodl,
     );
-    if (estimate.amountZatoshi < session.link.amountZatoshi) {
+    if (estimate == null ||
+        (session.link.isZodl
+            ? estimate.amountZatoshi != session.link.amountZatoshi
+            : estimate.amountZatoshi < session.link.amountZatoshi)) {
       throw StateError(
-        'Payment link does not yet have enough spendable shielded balance.',
+        session.link.isZodl
+            ? 'Gift card balance changed. Check the card again.'
+            : 'Payment link does not yet have enough spendable shielded balance.',
       );
     }
 
-    // A Vizor-created Gift Card funds exactly the advertised amount plus its
-    // claim fee. Keep that advertised amount as the Card contract instead of
-    // sweeping unrelated top-ups; the bearer link can recover this wallet.
+    // Vizor cards retain their fixed amount; native cards use the reviewed max.
     _requireWalletUnlocked();
     final sendResult = await _sendShielded(
       dbPath: session.dbPath,
@@ -2127,7 +2184,9 @@ class PaymentLinkService
       amountZatoshi: session.link.amountZatoshi,
       memo: null,
       mnemonic: session.link.mnemonic,
-      paymentLinkClaim: true,
+      purpose: session.link.isZodl
+          ? _PaymentLinkSendPurpose.externalClaim
+          : _PaymentLinkSendPurpose.vizorClaim,
       beforeExecute: () => _revalidateClaimDestination(session),
       onSubmissionStarted: onSubmissionStarted,
     );
@@ -2319,35 +2378,48 @@ class PaymentLinkService
     required BigInt amountZatoshi,
     String? memo,
     String? mnemonic,
-    bool paymentLinkClaim = false,
+    _PaymentLinkSendPurpose purpose = _PaymentLinkSendPurpose.ordinary,
     Future<void> Function()? beforeExecute,
     FutureOr<void> Function()? onSubmissionStarted,
   }) async {
     await _requireShieldedAddress(toAddress);
-    assert(!paymentLinkClaim || (dbPath != null && memo == null));
+    assert(
+      purpose == _PaymentLinkSendPurpose.ordinary ||
+          (dbPath != null && memo == null),
+    );
     return _proposeAndExecute(
       dbPath: dbPath,
       fromAccountUuid: fromAccountUuid,
-      // Claims use the claim confirmation policy and discard the link
-      // wallet's OVK, so the shared seed cannot recover the recipient.
-      propose: (proposalDbPath, network, sendFlowId) => paymentLinkClaim
-          ? rust_sync.proposePaymentLinkClaim(
-              dbPath: proposalDbPath,
-              network: network,
-              accountUuid: fromAccountUuid,
-              sendFlowId: sendFlowId,
-              toAddress: toAddress,
-              amountZatoshi: amountZatoshi,
-            )
-          : rust_sync.proposeSend(
-              dbPath: proposalDbPath,
-              network: network,
-              accountUuid: fromAccountUuid,
-              sendFlowId: sendFlowId,
-              toAddress: toAddress,
-              amountZatoshi: amountZatoshi,
-              memo: memo,
-            ),
+      // Both claim purposes discard the OVK; only Vizor cards use the shorter
+      // funding confirmation policy.
+      propose: (proposalDbPath, network, sendFlowId) => switch (purpose) {
+        _PaymentLinkSendPurpose.externalClaim =>
+          rust_sync.proposeExternalGiftClaim(
+            dbPath: proposalDbPath,
+            network: network,
+            accountUuid: fromAccountUuid,
+            sendFlowId: sendFlowId,
+            toAddress: toAddress,
+            reviewedAmountZatoshi: amountZatoshi,
+          ),
+        _PaymentLinkSendPurpose.vizorClaim => rust_sync.proposePaymentLinkClaim(
+          dbPath: proposalDbPath,
+          network: network,
+          accountUuid: fromAccountUuid,
+          sendFlowId: sendFlowId,
+          toAddress: toAddress,
+          amountZatoshi: amountZatoshi,
+        ),
+        _PaymentLinkSendPurpose.ordinary => rust_sync.proposeSend(
+          dbPath: proposalDbPath,
+          network: network,
+          accountUuid: fromAccountUuid,
+          sendFlowId: sendFlowId,
+          toAddress: toAddress,
+          amountZatoshi: amountZatoshi,
+          memo: memo,
+        ),
+      },
       mnemonic: mnemonic,
       beforeExecute: beforeExecute,
       onSubmissionStarted: onSubmissionStarted,

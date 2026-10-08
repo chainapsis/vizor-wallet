@@ -6,7 +6,7 @@ VizorPaymentLink decodePaymentLinkQr(
 }) {
   final VizorPaymentLink link;
   try {
-    link = VizorPaymentLink.parse(raw);
+    link = VizorPaymentLink.parseForRedemption(raw);
   } on FormatException {
     throw const FormatException("This isn't a gift card QR code.");
   }

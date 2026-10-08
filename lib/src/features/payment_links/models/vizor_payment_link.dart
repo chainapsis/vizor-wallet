@@ -165,7 +165,9 @@ class VizorPaymentLink {
     this.presentation,
     this.isCreatedAtProvisional = false,
   }) : _address = address,
-       _createdAt = createdAt;
+       _createdAt = createdAt,
+       _zodlUri = null,
+       _zodlStatedAmountZatoshi = null;
 
   const VizorPaymentLink._parsed({
     required this.network,
@@ -177,8 +179,12 @@ class VizorPaymentLink {
     required DateTime? createdAt,
     required this.presentation,
     this.isCreatedAtProvisional = false,
+    Uri? zodlUri,
+    BigInt? zodlStatedAmountZatoshi,
   }) : _address = address,
-       _createdAt = createdAt;
+       _createdAt = createdAt,
+       _zodlUri = zodlUri,
+       _zodlStatedAmountZatoshi = zodlStatedAmountZatoshi;
 
   static const maxEncodedLength = 16 * 1024;
   static const _version = 2;
@@ -193,6 +199,26 @@ class VizorPaymentLink {
   final int birthdayHeight;
   final String label;
   final DateTime? _createdAt;
+  final Uri? _zodlUri;
+  final BigInt? _zodlStatedAmountZatoshi;
+
+  /// Native Zodl cards sweep spendable funds. Their advertised amount is only a hint.
+  /// [amountZatoshi] holds only the inspected recipient amount (zero before a
+  /// spendable quote). Advertised values remain separate and never authorize a spend.
+  bool get isZodl => _zodlUri != null;
+  BigInt? get statedAmountZatoshi =>
+      isZodl ? _zodlStatedAmountZatoshi : amountZatoshi;
+  BigInt? get verifiedAmountZatoshi =>
+      isZodl && amountZatoshi == BigInt.zero ? null : amountZatoshi;
+  BigInt? get displayAmountZatoshi =>
+      verifiedAmountZatoshi ?? statedAmountZatoshi;
+  int get claimConfirmationTarget => isZodl ? 6 : 2;
+
+  BigInt claimableAmountFromMax(BigInt maxSpendableZatoshi) => isZodl
+      ? maxSpendableZatoshi
+      : maxSpendableZatoshi >= amountZatoshi
+      ? amountZatoshi
+      : BigInt.zero;
 
   /// Local-only provenance; never included in the shared payload.
   final bool isCreatedAtProvisional;
@@ -225,11 +251,14 @@ class VizorPaymentLink {
     String? address,
     DateTime? createdAt,
     bool? isCreatedAtProvisional,
+    BigInt? amountZatoshi,
   }) {
     return VizorPaymentLink._parsed(
       network: network,
       address: address ?? _address,
-      amountZatoshi: amountZatoshi,
+      amountZatoshi: isZodl
+          ? amountZatoshi ?? this.amountZatoshi
+          : this.amountZatoshi,
       mnemonic: mnemonic,
       birthdayHeight: birthdayHeight,
       label: label,
@@ -237,6 +266,8 @@ class VizorPaymentLink {
       isCreatedAtProvisional:
           isCreatedAtProvisional ?? this.isCreatedAtProvisional,
       presentation: presentation,
+      zodlUri: _zodlUri,
+      zodlStatedAmountZatoshi: _zodlStatedAmountZatoshi,
     );
   }
 
@@ -251,6 +282,7 @@ class VizorPaymentLink {
   /// than claim-wallet cache identity: a corrected amount or changed
   /// presentation must remain a distinct intake item.
   bool hasSameCanonicalPayload(VizorPaymentLink other) {
+    if (isZodl || other.isZodl) return _zodlUri == other._zodlUri;
     return _encodedPayload() == other._encodedPayload();
   }
 
@@ -260,11 +292,13 @@ class VizorPaymentLink {
 
   /// Stable local serialization, independent of the selected share writer.
   /// Resolved address, time, and submission evidence live in the enclosing record.
-  Uri toRecoveryUri() => _uri('$_fragmentPrefix${_encodedPayload()}');
+  Uri toRecoveryUri() =>
+      _zodlUri ?? _uri('$_fragmentPrefix${_encodedPayload()}');
 
   /// Serialize for sharing. Callers dropping a known address must first verify
   /// it asynchronously with [rust_wallet.validateGiftAddress].
-  Uri toShareUri() => _uri('v3=${_CompactPaymentLinkCodec.encode(this)}');
+  Uri toShareUri() =>
+      _zodlUri ?? _uri('v3=${_CompactPaymentLinkCodec.encode(this)}');
 
   /// Returns v2 only when legacy mnemonic whitespace cannot be carried by v3.
   /// The caller must first verify the original mnemonic against a known address.
@@ -318,6 +352,35 @@ class VizorPaymentLink {
 
   static bool matchesEndpoint(Uri uri) {
     return VizorDeepLink.routeFor(uri) == VizorDeepLinkRoute.paymentLink;
+  }
+
+  /// Explicit in-app paste/scan and durable recovery only. External intake must
+  /// keep using [parse], whose origin and format remain Vizor-only.
+  static VizorPaymentLink parseForRedemption(String rawLink) {
+    final raw = rawLink.trim();
+    final uri = Uri.tryParse(raw);
+    if (uri?.host.toLowerCase() != 'gift.zodl.com') return parse(raw);
+    try {
+      if (raw.length > maxEncodedLength) throw const FormatException();
+      final decoded = rust_wallet.decodeZodlGiftLink(link: raw);
+      if (!supportsNetwork(decoded.network)) throw const FormatException();
+      return VizorPaymentLink._parsed(
+        network: decoded.network,
+        address: null,
+        amountZatoshi: BigInt.zero,
+        mnemonic: decoded.mnemonic,
+        birthdayHeight: decoded.birthdayHeight,
+        label: 'Payment link',
+        createdAt: null,
+        presentation: decoded.description == null
+            ? null
+            : PaymentLinkPresentation(message: decoded.description),
+        zodlUri: uri,
+        zodlStatedAmountZatoshi: decoded.statedAmountZatoshi,
+      );
+    } catch (_) {
+      throw const FormatException('Gift card link is invalid or unsupported.');
+    }
   }
 
   static VizorPaymentLink parse(String rawLink) {

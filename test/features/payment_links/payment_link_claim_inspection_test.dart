@@ -24,6 +24,7 @@ import 'package:zcash_wallet/src/features/payment_links/providers/gift_card_chec
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_claim_coordinator_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../fakes/fake_gift_link_rust_api.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -92,6 +93,158 @@ void main() {
           .setMockMethodCallHandler(pathChannel, null);
       await supportDirectory.delete(recursive: true);
     });
+
+    test(
+      'Zodl inspection uses full sync and the actual max, even below its stated amount',
+      () async {
+        api.maxClaimable = BigInt.from(90000);
+        api.fundingHeight = api.tipHeight - 5;
+        final inspection = await service.inspectClaim(
+          VizorPaymentLink.parseForRedemption('$zodlTestLink&amount=0.001'),
+        );
+        expect(api.fullSyncCalls, 1);
+        expect(api.syncCalls, 0);
+        expect(api.externalEstimates, 1);
+        expect(inspection.claimableZatoshi, BigInt.from(90000));
+        expect(inspection.link.amountZatoshi, BigInt.from(90000));
+        expect(inspection.link.statedAmountZatoshi, BigInt.from(100000));
+        expect(inspection.waitingForFundingConfirmations, isFalse);
+        final session = await service.bindClaimDestination(
+          inspection,
+          destinationAccountUuid: 'receiver',
+        );
+        await expectLater(service.claimPreparedLink(session), throwsStateError);
+        expect(api.externalProposals, [BigInt.from(90000)]);
+        final saved =
+            (await container.read(paymentLinkReceivedStoreProvider).load())
+                .single;
+        expect(saved.amountZatoshi, BigInt.from(90000));
+        expect(saved.claimLink!.isZodl, isTrue);
+        expect(saved.status, PaymentLinkReceivedStatus.readyToClaim);
+      },
+    );
+
+    test(
+      'Zodl pending funding waits for the ordinary six-confirmation policy',
+      () async {
+        api.maxClaimable = null;
+        api.fundingHeight = api.tipHeight - 3;
+        final inspection = await service.inspectClaim(
+          VizorPaymentLink.parseForRedemption(zodlTestLink),
+        );
+        expect(inspection.claimableZatoshi, BigInt.zero);
+        expect(inspection.fundingConfirmationCount, 4);
+        expect(inspection.link.claimConfirmationTarget, 6);
+        expect(inspection.waitingForFundingConfirmations, isTrue);
+      },
+    );
+
+    test(
+      'a changed Zodl balance stops before creating a spend proposal',
+      () async {
+        api.fundingHeight = api.tipHeight - 5;
+        final inspection = await service.inspectClaim(
+          VizorPaymentLink.parseForRedemption(zodlTestLink),
+        );
+        final session = await service.bindClaimDestination(
+          inspection,
+          destinationAccountUuid: 'receiver',
+        );
+        api.maxClaimable = BigInt.from(200000);
+        await expectLater(service.claimPreparedLink(session), throwsStateError);
+        expect(api.externalProposals, isEmpty);
+        expect(
+          (await container.read(paymentLinkReceivedStoreProvider).load())
+              .single
+              .status,
+          PaymentLinkReceivedStatus.readyToClaim,
+        );
+      },
+    );
+
+    test(
+      'Zodl reclaims wait for cleanup and retain the new attempt on failure',
+      () async {
+        api.fundingHeight = api.tipHeight - 5;
+        api.maxClaimable = BigInt.from(90000);
+        final link = VizorPaymentLink.parseForRedemption(zodlTestLink);
+        final first = await service.inspectClaim(link);
+        final store = container.read(paymentLinkReceivedStoreProvider);
+        await store.saveReady(first.link);
+        await store.markClaimStarted(
+          address: first.link.address,
+          destinationAccountUuid: 'receiver',
+          updatedAt: DateTime.utc(2026, 10, 7),
+        );
+        await store.markReceiving(
+          address: first.link.address,
+          destinationAccountUuid: 'receiver',
+          claimTxids: 'old-tx',
+        );
+        final oldReceipt = await store.markReceived(
+          address: first.link.address,
+        );
+        await expectLater(
+          service.inspectClaim(link),
+          throwsA(isA<PaymentLinkClaimInFlightException>()),
+        );
+        expect(api.fullSyncCalls, 1);
+        expect((await store.find(first.link.address))!.claimTxids, 'old-tx');
+        await store.markClaimRecoveryConfirmed(oldReceipt);
+        await store.clearConfirmedClaimSecret(address: first.link.address);
+
+        api.maxClaimable = BigInt.from(190000);
+        final refilled = await service.inspectClaim(link);
+        final session = await service.bindClaimDestination(
+          refilled,
+          destinationAccountUuid: 'receiver',
+        );
+        await expectLater(service.claimPreparedLink(session), throwsStateError);
+        expect(api.externalProposals, [BigInt.from(190000)]);
+        final retained = (await PaymentLinkReceivedStore(
+          receivedStorage,
+        ).load()).single;
+        expect(retained.status, PaymentLinkReceivedStatus.readyToClaim);
+        expect(retained.amountZatoshi, BigInt.from(190000));
+        expect(retained.claimLink!.isZodl, isTrue);
+        expect(retained.claimTxids, isNull);
+        expect(retained.claimPriorTxids, ['old-tx']);
+        expect(retained.claimRecoveryConfirmed, isFalse);
+      },
+    );
+
+    test(
+      'Zodl full scan drains on pause and cannot publish a late result',
+      () async {
+        api.checkGate = Completer<void>();
+        final checking = service.inspectClaim(
+          VizorPaymentLink.parseForRedemption(zodlTestLink),
+        );
+        final failure = expectLater(checking, throwsStateError);
+        await api.checkStarted.future;
+        container.read(paymentLinkClaimCoordinatorProvider).pauseForLifecycle();
+        api.checkGate!.complete();
+        await failure;
+        expect(api.cancelCalls, greaterThan(0));
+        expect(api.externalEstimates, 0);
+        expect(container.read(giftCardCheckProgressProvider), isEmpty);
+      },
+    );
+
+    test(
+      'old Zodl cards ask for long-scan consent before creating a wallet',
+      () async {
+        api.tipHeight = 3456800 + kPaymentLinkLongSyncLookbackBlocks + 1;
+        final link = VizorPaymentLink.parseForRedemption(zodlTestLink);
+        await expectLater(
+          service.inspectClaim(link),
+          throwsA(isA<PaymentLinkLongSyncConfirmationRequired>()),
+        );
+        expect(api.importCalls, 0);
+        await service.inspectClaim(link, allowLongSync: true);
+        expect(api.fullSyncCalls, 1);
+      },
+    );
 
     test(
       'background pause rejects late native progress and drains completion',
@@ -179,36 +332,48 @@ void main() {
       expect(container.read(appSecurityProvider).isPasswordConfigured, isFalse);
     });
 
-    test(
-      'pause prevents fallback dispatch after an in-flight endpoint error',
-      () async {
-        api.failCheckOnce = true;
-        api.checkGate = Completer<void>();
-        final checking = service.inspectClaim(_link());
-        final failure = expectLater(checking, throwsStateError);
-        await api.checkStarted.future;
-        container.read(paymentLinkClaimCoordinatorProvider).pauseForLifecycle();
-        api.checkGate!.complete();
-        await failure;
-        expect(api.checkUrls, hasLength(1));
-        expect(api.estimateDestinations, isEmpty);
-      },
-    );
+    for (final zodl in [false, true]) {
+      test(
+        'pause prevents fallback dispatch after an in-flight endpoint error, Zodl $zodl',
+        () async {
+          (container.read(rpcEndpointProvider.notifier) as _RpcNotifier)
+              .setEndpointForTest(defaultRpcEndpointConfig('main'));
+          api.failCheckOnce = true;
+          api.checkGate = Completer<void>();
+          final checking = service.inspectClaim(
+            zodl ? VizorPaymentLink.parseForRedemption(zodlTestLink) : _link(),
+          );
+          final failure = expectLater(checking, throwsStateError);
+          await api.checkStarted.future;
+          container
+              .read(paymentLinkClaimCoordinatorProvider)
+              .pauseForLifecycle();
+          api.checkGate!.complete();
+          await failure;
+          expect(api.checkUrls, hasLength(1));
+          expect(api.estimateDestinations, isEmpty);
+        },
+      );
+    }
 
-    test(
-      'a failed configured endpoint resumes checking on an existing fallback',
-      () async {
-        final primary = defaultRpcEndpointConfig('main');
-        (container.read(rpcEndpointProvider.notifier) as _RpcNotifier)
-            .setEndpointForTest(primary);
-        api.failCheckOnce = true;
-        await service.inspectClaim(_link());
-        expect(api.checkUrls, hasLength(2));
-        expect(api.checkUrls[0], primary.normalizedLightwalletdUrl);
-        expect(api.checkUrls[1], isNot(api.checkUrls[0]));
-        expect(api.importCalls, 1);
-      },
-    );
+    for (final zodl in [false, true]) {
+      test(
+        'a failed configured endpoint resumes checking on an existing fallback, Zodl $zodl',
+        () async {
+          final primary = defaultRpcEndpointConfig('main');
+          (container.read(rpcEndpointProvider.notifier) as _RpcNotifier)
+              .setEndpointForTest(primary);
+          api.failCheckOnce = true;
+          await service.inspectClaim(
+            zodl ? VizorPaymentLink.parseForRedemption(zodlTestLink) : _link(),
+          );
+          expect(api.checkUrls, hasLength(2));
+          expect(api.checkUrls[0], primary.normalizedLightwalletdUrl);
+          expect(api.checkUrls[1], isNot(api.checkUrls[0]));
+          expect(api.importCalls, 1);
+        },
+      );
+    }
 
     test(
       'inspection needs no wallet, passcode, or receiving account',
@@ -784,6 +949,9 @@ class _InspectAccountNotifier extends AccountNotifier {
 }
 
 class _InspectRustApi implements RustLibApi {
+  int fullSyncCalls = 0;
+  int externalEstimates = 0;
+  final externalProposals = <BigInt>[];
   int tipHeight = 3_456_900;
   BigInt? maxClaimable;
   BigInt fee = BigInt.from(10000);
@@ -809,6 +977,9 @@ class _InspectRustApi implements RustLibApi {
   Completer<void> lookupStarted = Completer<void>();
 
   void reset() {
+    fullSyncCalls = 0;
+    externalEstimates = 0;
+    externalProposals.clear();
     tipHeight = 3_456_900;
     maxClaimable = BigInt.from(100000);
     fee = BigInt.from(10000);
@@ -832,6 +1003,71 @@ class _InspectRustApi implements RustLibApi {
     importedDbPath = null;
     lookupGate = null;
     lookupStarted = Completer<void>();
+  }
+
+  @override
+  rust_wallet.DecodedZodlGiftLink crateApiWalletDecodeZodlGiftLink({
+    required String link,
+  }) => FakeGiftLinkRustApi().crateApiWalletDecodeZodlGiftLink(link: link);
+
+  @override
+  Future<void> crateApiSyncRunPaymentLinkClaimSync({
+    required String claimId,
+    required String dbPath,
+    required String lightwalletdUrl,
+    required String network,
+    required bool allowResubmit,
+  }) async {
+    fullSyncCalls++;
+    checkUrls.add(lightwalletdUrl);
+    if (!checkStarted.isCompleted) checkStarted.complete();
+    await checkGate?.future;
+    if (failCheckOnce) {
+      failCheckOnce = false;
+      throw const SocketException('Connection reset');
+    }
+    if (failSync) throw StateError('Claim scan failed');
+  }
+
+  @override
+  Future<rust_sync.SyncProgress> crateApiSyncGetSyncStatus({
+    required String dbPath,
+    required String network,
+  }) async => rust_sync.SyncProgress(
+    scannedHeight: BigInt.from(tipHeight),
+    chainTipHeight: BigInt.from(tipHeight),
+    isSyncing: false,
+    isComplete: true,
+  );
+
+  @override
+  Future<rust_sync.SendMaxEstimateResult>
+  crateApiSyncEstimateExternalGiftClaimMax({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+    required String toAddress,
+  }) {
+    externalEstimates++;
+    return crateApiSyncEstimatePaymentLinkClaimMax(
+      dbPath: dbPath,
+      network: network,
+      accountUuid: accountUuid,
+      toAddress: toAddress,
+    );
+  }
+
+  @override
+  Future<rust_sync.ProposalResult> crateApiSyncProposeExternalGiftClaim({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+    required String sendFlowId,
+    required String toAddress,
+    required BigInt reviewedAmountZatoshi,
+  }) async {
+    externalProposals.add(reviewedAmountZatoshi);
+    throw StateError('Stop before signing in this inspection fixture');
   }
 
   @override
