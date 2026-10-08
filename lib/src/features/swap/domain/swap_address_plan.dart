@@ -59,6 +59,7 @@ class SwapAddressPlan {
     bool dryRun = false,
     int? slippageBps,
     Duration? deadline,
+    SwapQuoteSendHook? beforeSend,
   }) {
     return SwapQuoteRequest(
       direction: direction,
@@ -73,6 +74,7 @@ class SwapAddressPlan {
       dryRun: dryRun,
       slippageBps: slippageBps,
       deadline: deadline,
+      beforeSend: beforeSend,
     );
   }
 }

@@ -26,6 +26,10 @@ class SwapIntentSnapshot {
     this.providerRefundInfo,
     this.sellAmountBaseUnits,
     this.fiatValueBasis,
+    this.providerSwapType,
+    this.refundedAmountBaseUnits,
+    this.amountOutBaseUnits,
+    this.statusOnly = false,
   });
 
   factory SwapIntentSnapshot.fromQuote(
@@ -75,6 +79,17 @@ class SwapIntentSnapshot {
   final SwapProviderRefundInfo? providerRefundInfo;
   final BigInt? sellAmountBaseUnits;
   final SwapFiatValueBasis? fiatValueBasis;
+
+  /// Provider fields that decide when a Zcash swap address stops being scanned.
+  /// Amounts are the provider's base-unit decimal strings.
+  final String? providerSwapType;
+  final String? refundedAmountBaseUnits;
+  final String? amountOutBaseUnits;
+
+  /// Whether this reports only the provider status, because the provider no
+  /// longer lists one of the swap's tokens. Its pair and amounts are placeholders,
+  /// so a stored swap keeps its own.
+  final bool statusOnly;
 }
 
 class SwapPricingSnapshot {

@@ -254,6 +254,7 @@ Future<Widget> buildBootstrappedZcashWalletApp({
 Future<void> applyEnhancePirPolicy(
   AppBootstrapState bootstrap, {
   void Function(bool enabled)? setRustEnabled,
+  void Function(bool enabled)? setRustSwapPrivacyEnabled,
   Future<void> Function(bool enabled)? setNativePrivateRecovery,
 }) async {
   if (bootstrap.hasBlockingFailure) {
@@ -265,6 +266,11 @@ Future<void> applyEnhancePirPolicy(
       isEnhancePirAvailableForNetwork(bootstrap.network);
   (setRustEnabled ??
       (enabled) => rust_sync.setEnhancePirEnabled(enabled: enabled))(enabled);
+  // Rust issues new swap addresses only with both settings on.
+  (setRustSwapPrivacyEnabled ??
+      (value) => rust_sync.setNearSwapPrivacyEnabled(enabled: value))(
+    bootstrap.nearSwapPrivacyEnabled,
+  );
   try {
     await (setNativePrivateRecovery ??
         IronwoodMigrationBackgroundLifecycle.instance.setPrivateRecovery)(

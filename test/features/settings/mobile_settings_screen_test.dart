@@ -577,6 +577,11 @@ void main() {
     await tester.scrollUntilVisible(pirThumb, 200);
     expect(find.text('Advanced'), findsNothing);
     expect(find.text('Private queries'), findsOneWidget);
+    expect(find.text('NEAR swap privacy'), findsOneWidget);
+    final swapRow = tester.widget<GestureDetector>(
+      find.byKey(const ValueKey('mobile_settings_near_swap_privacy_row')),
+    );
+    expect(swapRow.onTap, isNull);
     expect(tester.getSize(pirThumb), tester.getSize(torThumb));
     expect(tester.getSize(pirTrack), tester.getSize(torTrack));
   });

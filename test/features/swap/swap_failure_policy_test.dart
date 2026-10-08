@@ -383,6 +383,30 @@ void main() {
     );
   });
 
+  test('private swap funding shortfalls ask to move funds to Ironwood', () {
+    // A Rust error string, as FFI throws it. Its shortfall detail would also
+    // match the generic funding category.
+    const error =
+        'Swap funding needs Ironwood funds: Insufficient balance '
+        '(have 0, need 210000 including fee)';
+
+    expect(
+      swapFailureCategory(SwapFailureOperation.sendZecDeposit, error),
+      SwapFailureCategory.zecDepositIronwoodFunding,
+    );
+    expect(
+      swapFailureMessage(SwapFailureOperation.sendZecDeposit, error),
+      'Private swaps are funded from your Ironwood balance, which cannot '
+      'cover this swap and its network fee.\n'
+      'Move funds to Ironwood first or try a smaller amount.',
+    );
+    // Other operations keep their own categories.
+    expect(
+      swapFailureCategory(SwapFailureOperation.start, error),
+      SwapFailureCategory.unknown,
+    );
+  });
+
   test('generic ZEC deposit failures keep the wallet preflight fallback', () {
     final error = StateError('wallet database locked');
 
