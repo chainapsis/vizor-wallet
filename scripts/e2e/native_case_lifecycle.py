@@ -127,7 +127,7 @@ class NativeCaseLifecycle:
 
     def run_command(
         self, command: Sequence[str], *, env: Mapping[str, str], timeout: float,
-        cancel_event: threading.Event,
+        cancel_event: threading.Event, stdin: Any = None,
     ) -> runtime.CommandResult:
         """Capture an ordinary owned phase without sealing successful launches."""
         if self._sealed:
@@ -138,7 +138,7 @@ class NativeCaseLifecycle:
         ):
             raise runtime.RunnerError("timeout must be positive and finite")
         lines: list[str] = []
-        managed = self._start_process(command, env=env, raw_lines=lines)
+        managed = self._start_process(command, env=env, raw_lines=lines, stdin=stdin)
         code = self.wait_process(managed, timeout=timeout, cancel_event=cancel_event)
         return runtime.CommandResult(code, tuple(lines))
 

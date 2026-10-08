@@ -48,6 +48,7 @@ class FunderBuildTests(unittest.TestCase):
         self.mutate_source = False
         self.compiler_exit = 0
         self.compile_calls = 0
+        self.binary_contents = "modeled-compiler-output"
         self.rustc_identity = "rustc modeled\nhost: aarch64-apple-darwin"
 
     def git(self, *args):
@@ -94,7 +95,7 @@ class FunderBuildTests(unittest.TestCase):
                 message["target"]["src_path"] = str(self.source / "rust/examples/regtest_direct_funder.rs")
             script = ("from pathlib import Path; import json,sys; "
                 f"p=Path({str(binary)!r}); p.parent.mkdir(mode=0o700,parents=True,exist_ok=True); "
-                "p.write_text('modeled-compiler-output'); p.chmod(0o700); ")
+                f"p.write_text({self.binary_contents!r}); p.chmod(0o700); ")
             if self.mutate_source:
                 script += f"s=Path({str(source_file)!r}); s.chmod(0o600); s.write_text('changed'); "
             finished = {"reason": "build-finished", "success": self.completed}

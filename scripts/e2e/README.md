@@ -711,6 +711,30 @@ Host checks use real Git/files/processes with only the compiler modeled:
 python3 -B -m unittest scripts/e2e/test_funder_build.py
 ```
 
+### Owned offline signer execution
+
+`funder_execution.py` runs an original `ProducedRegtestFunder` handle through
+one accepting `NativeCaseLifecycle`; it never accepts an external binary path
+or build receipt. `run_offline_funder` accepts the five documented commands,
+with no request for `identity` and one finite JSON object for a build command.
+Input is bounded to 2 MiB, exclusively created in the original consumer case,
+made read-only and supplied through an open descriptor until process/output
+completion. No temporary shared path, stdin pipe or wallet-under-test key is used.
+
+Every consumer has its own launch identity and private process log. Input,
+workspace and producer attachments are checked after execution. Nonzero exit,
+timeout/cancellation, changed artifacts, duplicate/nonfinite/malformed JSON or
+the wrong identity remain failures; request/log evidence is preserved. The
+caller owns final case/backend/native shutdown, including after a failed call.
+The parsed schema-1 object is only tool output: host funding must still verify
+actual input heights, integer conservation, transaction IDs and exact raw/
+compact-chain inclusion. This module does not broadcast, mine, decrypt notes,
+make catalog entries runnable or establish a wallet/scenario PASS.
+
+```bash
+python3 -B -m unittest scripts/e2e/test_funder_execution.py
+```
+
 ## Gift Cards
 
 Sender usage tracking and empty observer DB reuse:
