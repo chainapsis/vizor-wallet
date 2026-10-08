@@ -637,6 +637,46 @@ ordering, startup rollback, sticky retention failures and artifact replacement.
 Docker transport is modeled; an owned raw-chain smoke is separate from wallet,
 funding, reorg or full-catalog validation.
 
+### Offline direct-fixture signing tool
+
+`rust/examples/regtest_direct_funder.rs` is a standalone development example,
+not a wallet API or a network client. It has no RPC, faucet or THS dependency.
+It signs spends from coinbase outputs to the fixed **public test-only** key
+`[1; 32]`; never send real funds to that key. The owning host fixture must obtain
+and prove the actual source transactions/heights, broadcast, and independently
+check exact raw and compact-chain inclusion. Offline JSON is not inclusion/PASS.
+
+```bash
+cargo test --locked --manifest-path rust/Cargo.toml --example regtest_direct_funder
+cargo run --locked --manifest-path rust/Cargo.toml --example regtest_direct_funder -- identity
+```
+
+`identity` emits the miner address. Other commands read one strict schema-1 JSON
+request from stdin (at most 2 MiB), emit one JSON result on stdout, and use stderr
+plus a nonzero exit for errors. Unknown fields, non-integer amounts/heights,
+out-of-range values, malformed/trailing transaction bytes, non-coinbase sources,
+wrong miner outputs and immature declared input heights are rejected. Amounts,
+fees and change are integer zatoshis; the SDK's ZIP-317 fee is recalculated after
+sizing, with positive change and exact value conservation.
+
+- `build`: one transparent coinbase input to an Ironwood regtest UA, with the
+  fixed height-1 activation profile.
+- `build-orchard`: the same input/payment fields plus
+  `nu6_3_activation_height: 500`, with the target strictly before activation.
+- `build-transparent`: one transparent payment with no shielded bundle.
+- `build-batch`: up to 64 distinct coinbase inputs and 500 payments, explicit
+  pool and activation height (1 or 500), and optional bounded expiry. Repeated
+  payments remain distinct outputs. The selected shielded pool must be active.
+
+Single-payment fields are `schema_version`, `coinbase_hex`, `coinbase_height`,
+`coinbase_vout`, `target_height`, `recipient_address` and `amount_zatoshi`.
+Batch fields are `schema_version`, `coinbase_inputs`, `target_height`,
+`recipient_pool`, `nu6_3_activation_height`, `payments`, and optional
+`expiry_height`. Inputs carry coinbase hex/height/vout; payments carry recipient
+address and integer amount. Neither path spends a wallet-under-test key or skips
+coinbase maturity. No production Rust API, dependency update, vendored SQLite
+fix, host funding adapter or catalog execution is added by this tool.
+
 ## Gift Cards
 
 Sender usage tracking and empty observer DB reuse:
