@@ -81,13 +81,16 @@ def run_offline_funder(case: NativeCaseLifecycle, artifact: ProducedRegtestFunde
         name = f"funder-input-{case.launched_process_count:04d}.json"
         input_identity = None
         if payload is not None:
-            descriptor = os.open(name, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=parent)
-            stdin = stack.enter_context(os.fdopen(descriptor, "w+b"))
-            stdin.write(payload)
-            stdin.flush()
-            stdin.seek(0)
-            os.fchmod(stdin.fileno(), 0o400)
-            input_identity = tree.identity(os.fstat(stdin.fileno()))
+            descriptor = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=parent)
+            with os.fdopen(descriptor, "wb") as writer:
+                writer.write(payload)
+                writer.flush()
+                os.fchmod(writer.fileno(), 0o400)
+                input_identity = tree.identity(os.fstat(writer.fileno()))
+            descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=parent)
+            stdin = stack.enter_context(os.fdopen(descriptor, "rb"))
+            if tree.identity(os.fstat(stdin.fileno())) != input_identity:
+                raise FunderExecutionError("original signer input changed before read-only reopen")
         # The file descriptor stays open through positive process/output join.
         result = case.run_command([str(artifact.binary), command], env=os.environ,
                         stdin=stdin, timeout=timeout, cancel_event=cancellation,

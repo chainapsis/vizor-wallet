@@ -65,6 +65,20 @@ class FunderExecutionTests(unittest.TestCase):
         self.assertEqual(case._processes[0].log_path.stat().st_mode & 0o777, 0o600)
         self.assertTrue(case._processes[0].cleanup_completed)
 
+    def test_signer_stdin_descriptor_is_readonly_not_only_its_file_mode(self):
+        artifact = self.artifact(extra=(
+            "import errno,fcntl\n"
+            "assert fcntl.fcntl(0,fcntl.F_GETFL) & os.O_ACCMODE == os.O_RDONLY\n"
+            "try: os.write(0,b'overwrite')\n"
+            "except OSError as error: assert error.errno == errno.EBADF\n"
+            "else: raise AssertionError('stdin descriptor retained write access')"))
+        request = {"schema_version":1,"amount_zatoshi":1234567}
+        case = self.fixture.case()
+        value = self.execute(artifact,"build",request,case)
+        self.assertEqual(value["request"],request)
+        self.assertEqual(json.loads((case.workspace.root / "funder-input-0000.json").read_text()),request)
+        self.assertTrue(case._processes[0].cleanup_completed)
+
     def test_invalid_request_command_timeout_or_external_handle_launches_nothing(self):
         artifact = self.artifact()
         case = self.fixture.case()
