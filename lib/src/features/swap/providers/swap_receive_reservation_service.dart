@@ -2,7 +2,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
     show PlatformInt64, PlatformInt64Util;
 
-import '../../../../main.dart' show log;
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
@@ -12,7 +11,6 @@ import '../../ledger/services/ledger_operation_lifecycle.dart';
 import '../domain/swap_contract.dart';
 import '../integrations/near_intents/near_intents_one_click_swap_adapter.dart';
 import '../models/swap_intent.dart';
-import 'swap_provider_config.dart';
 
 final swapReceiveReservationServiceProvider = Provider((ref) {
   return SwapReceiveReservationService(
@@ -24,7 +22,6 @@ final swapReceiveReservationServiceProvider = Provider((ref) {
             .any((a) => a.uuid == uuid && !a.isHardware) ??
         false,
     lifecycle: ref.read(ledgerOperationLifecycleProvider),
-    provider: ref.read(swapIntentProvider),
     store: (account) async {
       void validate() {
         if (ref.read(appSecurityProvider).requiresUnlock ||
@@ -203,14 +200,12 @@ class RustReceiveReservationStore implements ReceiveReservationStore {
 class SwapReceiveReservationService {
   SwapReceiveReservationService({
     required this.store,
-    required this.provider,
     this.lifecycle,
     this.supportsAccount = _allAccounts,
   });
   static bool _allAccounts(String _) => true;
   final bool Function(String) supportsAccount;
   final Future<ReceiveReservationStore> Function(String account) store;
-  final SwapProvider provider;
   final LedgerOperationLifecycle? lifecycle;
   final Map<String, Future<void>> _refreshing = {};
 
@@ -302,32 +297,19 @@ class SwapReceiveReservationService {
   ) async {
     if (!supportsAccount(account)) return;
     await _run(
-      () async => (await store(
-        account,
-      )).observeRefund(operation, refundAddress, snapshot, checkedAt),
+      () async =>
+          (await store(account))
+              .observeRefund(operation, refundAddress, snapshot, checkedAt),
     );
   }
 
-  /// Reconciles provider records even when the activity UI considers them expired.
+  /// Reclaims abandoned reservations. It makes no provider requests: started swaps'
+  /// statuses arrive from the ordinary activity polls ([observeStatus]), and a quote
+  /// never started needs none.
   Future<void> reconcile(String account) {
     if (!supportsAccount(account)) return Future.value();
     return _refreshing[account] ??=
-        _run(() async {
-          final backend = await store(account);
-          for (final request in await backend.due()) {
-            final checkedAt = DateTime.now().toUtc();
-            try {
-              final snapshot = await provider.getStatus(
-                request.operationId,
-                depositMemo: request.depositMemo,
-              );
-              await backend.observe(request.requestId, snapshot, checkedAt);
-            } catch (error) {
-              log('Swap receive reconciliation deferred: $error');
-            }
-          }
-          await backend.reap();
-        }).whenComplete(() {
+        _run(() async => (await store(account)).reap()).whenComplete(() {
           _refreshing.remove(account);
         });
   }

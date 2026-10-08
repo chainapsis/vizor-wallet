@@ -1059,7 +1059,7 @@ fn swap_funding_spends_only_ironwood_notes() {
     let swap_funding = SendRequest::SwapFunding {
         to_address: "t1deposit",
         amount_zatoshi: 100_000,
-        refund_index: 0,
+        refund_index: Some(0),
     };
     for orchard_reserved_for_migration in [false, true] {
         let policy = swap_funding.spend_policy(orchard_reserved_for_migration);
@@ -1139,15 +1139,8 @@ fn swap_funding_shortfall_asks_for_ironwood_funds() {
         .unwrap();
     drop(db);
 
-    let error = estimate_fee_with_swap_refund(
-        db_path,
-        network,
-        &account_uuid,
-        &deposit,
-        100_000,
-        refund_index,
-    )
-    .unwrap_err();
+    let error = estimate_fee_with_swap_refund(db_path, network, &account_uuid, &deposit, 100_000)
+        .unwrap_err();
     assert!(
         error.starts_with(&format!(
             "{SWAP_FUNDING_NEEDS_IRONWOOD}: Insufficient balance"

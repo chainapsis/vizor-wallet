@@ -14,10 +14,18 @@ use zakura_pir_receiver::{
 use zcash_client_backend::data_api::{transparent_ledger::ChainPoint, WalletRead};
 use zcash_client_sqlite::wallet::swap_receiving::Error as SwapError;
 
-// Use explicit HTTPS origins and never follow service redirects.
-const RECEIVER_ORIGIN: &str = "https://161-35-182-172.sslip.io";
+/// The receiver directory's default origin. Use explicit HTTPS origins and never follow
+/// service redirects.
+const DEFAULT_RECEIVER_ORIGIN: &str = "https://receiver-pir.valargroup.dev";
+/// Overrides [`DEFAULT_RECEIVER_ORIGIN`], like Enhance's `VIZOR_ENHANCE_PIR_URL`.
+const RECEIVER_ORIGIN_ENV: &str = "VIZOR_RECEIVER_PIR_URL";
 /// Time one recovery run may take. Sweeps it does not reach wait for a later sync.
 const RUN_BUDGET: Duration = Duration::from_secs(180);
+/// The receiver directory's origin: [`RECEIVER_ORIGIN_ENV`], then
+/// [`DEFAULT_RECEIVER_ORIGIN`].
+fn receiver_origin() -> String {
+    std::env::var(RECEIVER_ORIGIN_ENV).unwrap_or_else(|_| DEFAULT_RECEIVER_ORIGIN.into())
+}
 /// Whether `url` stays on `origin`, the configured Enhance endpoint, over HTTPS.
 fn allowed_enhance_route(origin: &url::Url, url: &url::Url) -> bool {
     url.scheme() == "https"
@@ -167,7 +175,7 @@ async fn run_inner(
         &accounts,
         through,
         MAINNET_GENESIS,
-        RECEIVER_ORIGIN,
+        &receiver_origin(),
         &transport,
         &mut notes,
         &WalletWriteLock,
@@ -235,13 +243,18 @@ mod tests {
         let should_exit = || false;
         let enhance_origin = super::super::enhancement::payload_endpoint();
         let transport = SwapTransport::new(&should_exit, url::Url::parse(&enhance_origin).unwrap());
-        let manifest = DirectoryClient::fetch_manifest(RECEIVER_ORIGIN, &&transport)
+        let manifest = DirectoryClient::fetch_manifest(&receiver_origin(), &&transport)
             .await
             .unwrap();
-        let mut client =
-            DirectoryClient::connect_manifest(RECEIVER_ORIGIN, &transport, accepted, manifest, 0)
-                .await
-                .unwrap();
+        let mut client = DirectoryClient::connect_manifest(
+            &receiver_origin(),
+            &transport,
+            accepted,
+            manifest,
+            0,
+        )
+        .await
+        .unwrap();
         let proofs = client.witnesses().await.unwrap();
         assert_eq!(
             hex::encode(proofs.root()),

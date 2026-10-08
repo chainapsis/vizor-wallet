@@ -1,4 +1,5 @@
 import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
     show PlatformInt64;
@@ -10,34 +11,26 @@ import 'package:zcash_wallet/src/rust/api/swap_receive.dart' as api;
 
 void main() {
   late _Store store;
-  late _Provider provider;
   late SwapReceiveReservationService service;
   setUp(() {
     store = _Store();
-    provider = _Provider();
-    service = SwapReceiveReservationService(
-      store: (_) async => store,
-      provider: provider,
-    );
+    service = SwapReceiveReservationService(store: (_) async => store);
   });
 
-  test(
-    'persists unknown request just before contacting provider and saves response',
-    () async {
-      final quote = await service.quote('account', 1, (beforeSend) async {
-        // Local validation and token lookups happen before anything is saved.
-        expect(store.events, isEmpty);
-        await beforeSend(_deadline);
-        expect(store.events, ['begin']);
-        store.events.add('network');
-        return _quote;
-      });
-      expect(quote.receiveRequestId, 'request-1');
-      expect(quote.depositInstruction, same(_quote.depositInstruction));
-      expect(store.events, ['begin', 'network', 'record:request-1']);
-      expect(store.deadlines, [_deadline]);
-    },
-  );
+  test('persists unknown request just before contacting provider and saves response', () async {
+    final quote = await service.quote('account', 1, (beforeSend) async {
+      // Local validation and token lookups happen before anything is saved.
+      expect(store.events, isEmpty);
+      await beforeSend(_deadline);
+      expect(store.events, ['begin']);
+      store.events.add('network');
+      return _quote;
+    });
+    expect(quote.receiveRequestId, 'request-1');
+    expect(quote.depositInstruction, same(_quote.depositInstruction));
+    expect(store.events, ['begin', 'network', 'record:request-1']);
+    expect(store.deadlines, [_deadline]);
+  });
 
   test(
     'explicit amount rejection releases its watch but timeout stays unknown',
@@ -100,57 +93,25 @@ void main() {
     );
   });
 
-  test('polls orphan quotes, forwards deposit memo, then reaps', () async {
+  test('reconciling only reaps; statuses come from activity polls', () async {
     store.pending.add(
       const api.ReceiveQuoteStatusRequest(
-        requestId: 'orphan',
+        requestId: 'visible',
         operationId: 'deposit',
         depositMemo: 'memo',
       ),
     );
     await service.reconcile('account');
-    expect(provider.requests, ['deposit:memo']);
-    expect(store.events, ['observe:orphan', 'reap']);
+    expect(store.events, ['reap']);
+    await service.observeStatus(
+      'account',
+      'deposit',
+      'memo',
+      _snapshot,
+      DateTime.now().toUtc(),
+    );
+    expect(store.events, ['reap', 'observe:visible']);
   });
-
-  test(
-    'provider failure never becomes an empty or terminal observation',
-    () async {
-      store.pending.add(
-        const api.ReceiveQuoteStatusRequest(
-          requestId: 'orphan',
-          operationId: 'deposit',
-        ),
-      );
-      provider.failure = TimeoutException('offline');
-      await service.reconcile('account');
-      expect(store.events, ['reap']);
-      expect(store.pending, hasLength(1));
-    },
-  );
-
-  test(
-    'successful activity poll prevents a duplicate provider request',
-    () async {
-      store.pending.add(
-        const api.ReceiveQuoteStatusRequest(
-          requestId: 'visible',
-          operationId: 'deposit',
-          depositMemo: 'memo',
-        ),
-      );
-      await service.observeStatus(
-        'account',
-        'deposit',
-        'memo',
-        _snapshot,
-        DateTime.now().toUtc(),
-      );
-      await service.reconcile('account');
-      expect(provider.requests, isEmpty);
-      expect(store.events, ['observe:visible', 'reap']);
-    },
-  );
 
   test('records refund statuses only for supported accounts', () async {
     final checkedAt = DateTime.now().toUtc();
@@ -163,7 +124,6 @@ void main() {
     );
     service = SwapReceiveReservationService(
       store: (_) async => store,
-      provider: provider,
       supportsAccount: (_) => false,
     );
     await service.observeRefundStatus(
@@ -182,7 +142,6 @@ void main() {
       final lifecycle = LedgerOperationLifecycle();
       service = SwapReceiveReservationService(
         store: (_) async => store,
-        provider: provider,
         lifecycle: lifecycle,
       );
       final contacted = Completer<void>();
@@ -290,21 +249,4 @@ class _Store implements ReceiveReservationStore {
   Future<void> reap() async {
     events.add('reap');
   }
-}
-
-class _Provider implements SwapProvider {
-  final requests = <String>[];
-  Object? failure;
-  @override
-  Future<SwapIntentSnapshot> getStatus(
-    String intentId, {
-    String? depositMemo,
-  }) async {
-    requests.add('$intentId:$depositMemo');
-    if (failure != null) throw failure!;
-    return _snapshot;
-  }
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

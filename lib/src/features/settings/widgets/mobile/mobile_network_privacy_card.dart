@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
+import '../../../../core/widgets/app_tappable.dart';
 import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../providers/enhance_pir_provider.dart';
 import 'mobile_tor_control.dart';
@@ -107,6 +108,18 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
                   : 'Turn on Private queries to create private swap addresses.',
               style: AppTypography.bodyMedium.copyWith(
                 color: colors.text.secondary,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            AppTappable(
+              key: const ValueKey('mobile_settings_check_swap_history'),
+              enabled: !changingRecovery,
+              onTap: () => unawaited(recheckSwapHistory(context, ref)),
+              child: Text(
+                'Check swap history',
+                style: AppTypography.bodyMedium.copyWith(
+                  color: colors.text.primary,
+                ),
               ),
             ),
           ],

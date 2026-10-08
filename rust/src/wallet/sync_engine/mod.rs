@@ -2984,10 +2984,12 @@ async fn run_sync_impl(
     let mut db =
         with_wallet_db_write_lock("sync_engine.open_db", || open_db(db_data_path, network))?;
     let mut enhancement = EnhancementSession::new(network, db_data_path);
-    with_wallet_db_write_lock("swap_receiving.prepare", || {
+    // Swap maintenance never stops sync: a key it registers later rescans from its start.
+    if let Err(e) = with_wallet_db_write_lock("swap_receiving.prepare", || {
         crate::wallet::swap_receiving::maintain_recovery(&mut db)
-    })
-    .map_err(SyncError::db)?;
+    }) {
+        log::warn!("Swap recovery maintenance deferred: {e}");
+    }
     // The main-phase rewind budget also covers a reorg detected by the
     // initial tip response, before the scan queue has been created.
     let mut main_rewinds_this_run: u32 = 0;
@@ -3654,10 +3656,11 @@ async fn run_sync_impl(
                     {
                         return Ok(());
                     }
-                    with_wallet_db_write_lock("swap_receiving.complete", || {
+                    if let Err(e) = with_wallet_db_write_lock("swap_receiving.complete", || {
                         crate::wallet::swap_receiving::maintain_recovery(&mut db)
-                    })
-                    .map_err(SyncError::db)?;
+                    }) {
+                        log::warn!("Swap recovery maintenance deferred: {e}");
+                    }
                     // Maintenance or an earlier sweep may have queued a key's rescan;
                     // scan that before declaring sync complete.
                     if db
@@ -3671,10 +3674,12 @@ async fn run_sync_impl(
                     }
                     let verified_tip =
                         block_height_from_u64(current_tip_height, "verified chain tip")?;
-                    with_wallet_db_write_lock("swap_receiving.close", || {
+                    // A key that fails to close keeps scanning until a later sync.
+                    if let Err(e) = with_wallet_db_write_lock("swap_receiving.close", || {
                         crate::wallet::swap_receiving::close_finished_keys(&mut db, verified_tip)
-                    })
-                    .map_err(SyncError::db)?;
+                    }) {
+                        log::warn!("Closing finished swap keys deferred: {e}");
+                    }
                     let released = enhancement.take_ready_resubmission();
                     // This path completes without a post-batch pass, so a
                     // transaction released by a final status observation is

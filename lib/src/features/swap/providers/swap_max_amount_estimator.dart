@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/storage/wallet_paths.dart';
+import '../../../providers/account_provider.dart';
+import '../../../providers/enhance_pir_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../migration/providers/ironwood_migration_announcement_provider.dart';
 import '../../../providers/receive_address_provider.dart';
@@ -37,6 +39,13 @@ class RustSwapMaxAmountEstimator implements SwapMaxAmountEstimator {
             final estimateAddress = await _ref
                 .read(receiveAddressServiceProvider)
                 .loadTransparentReceiveAddress(accountUuid: accountUuid);
+            // With NEAR swap privacy, the deposit is funded from Ironwood notes alone
+            // (swap funding), so the largest amount is sized the same way.
+            final swapFunding =
+                _ref.read(nearSwapPrivacyProvider) &&
+                !_ref
+                    .read(accountProvider.notifier)
+                    .isHardwareAccount(accountUuid);
 
             log(
               'SwapMaxAmount: estimate begin account=$accountUuid '
@@ -47,14 +56,25 @@ class RustSwapMaxAmountEstimator implements SwapMaxAmountEstimator {
               spendableZatoshi: spendableZatoshi,
               canSend: (amountZatoshi) async {
                 try {
-                  await rust_sync.estimateFee(
-                    dbPath: dbPath,
-                    network: endpoint.networkName,
-                    accountUuid: accountUuid,
-                    toAddress: estimateAddress,
-                    amountZatoshi: amountZatoshi,
-                    memo: null,
-                  );
+                  if (swapFunding) {
+                    await rust_sync.estimateSwapFundingFee(
+                      dbPath: dbPath,
+                      network: endpoint.networkName,
+                      accountUuid: accountUuid,
+                      depositAddress: estimateAddress,
+                      amountZatoshi: amountZatoshi,
+                      refundIndex: BigInt.zero,
+                    );
+                  } else {
+                    await rust_sync.estimateFee(
+                      dbPath: dbPath,
+                      network: endpoint.networkName,
+                      accountUuid: accountUuid,
+                      toAddress: estimateAddress,
+                      amountZatoshi: amountZatoshi,
+                      memo: null,
+                    );
+                  }
                   return true;
                 } catch (e) {
                   if (_isInsufficientFundsError(e)) return false;

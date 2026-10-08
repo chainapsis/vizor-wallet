@@ -3274,7 +3274,8 @@ pub fn propose_swap_funding(
     })
 }
 
-/// The fee [`propose_swap_funding`] would pay.
+/// The fee [`propose_swap_funding`] would pay, for any `refund_index`: the refund memo
+/// does not change the fee, so this also sizes a swap before its refund quote exists.
 pub fn estimate_swap_funding_fee(
     db_path: String,
     network: String,
@@ -3283,6 +3284,7 @@ pub fn estimate_swap_funding_fee(
     amount_zatoshi: u64,
     refund_index: u64,
 ) -> Result<u64, String> {
+    let _ = refund_index;
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
         wallet_sync::estimate_fee_with_swap_refund(
@@ -3291,7 +3293,6 @@ pub fn estimate_swap_funding_fee(
             &account_uuid,
             &deposit_address,
             amount_zatoshi,
-            refund_index,
         )
     })
 }

@@ -16,8 +16,8 @@ queries back on does not re-enable it. Desktop and mobile share the preference.
 Turning NEAR swap privacy off only stops new addresses. Existing reservations,
 funding memos, keys, notes and status tracking remain, received notes stay
 spendable, and recovery runs for every software account with either setting off.
-Turning NEAR swap privacy on sweeps every closed swap key once more (see
-[Closing](#closing)).
+Turning NEAR swap privacy on, or **Check swap history** in the privacy settings,
+sweeps every closed swap key once more (see [Closing](#closing)).
 
 ## Issuing addresses
 
@@ -68,14 +68,15 @@ as Vizor's own repair rewinds, reopens the key until the receipt is confirmed
 again. Incoming payouts show as pending as soon as they reach the mempool.
 
 Statuses are recorded as they are fetched, by the activity refresh and by deposit
-submission; cached UI status and failed polls record nothing. Keys close only at
+submission; cached UI status and failed polls record nothing. Swap receiving makes
+no status requests of its own, so NEAR sees the same polling as without it. Keys close only at
 the end of a sync, once the tip is revalidated and scanned, so blocks mined while
 the app was offline are checked first. Closing uses the earlier of the device clock
 and the tip's block time, so a clock that runs fast cannot close a key early.
 
-A payment after its key closed, such as a second refund, is found by turning NEAR
-swap privacy off and on, which sweeps every closed key once through the receiver
-directory, or by a seed restore. Swap addresses are not permanent receive
+A payment after its key closed, such as a second refund, is found by **Check swap
+history** (or turning NEAR swap privacy off and on), which sweeps every closed key
+once through the receiver directory and starts a sync, or by a seed restore. Swap addresses are not permanent receive
 addresses.
 
 ## Restore
@@ -131,22 +132,21 @@ replays the account's public Ironwood recovery interval once.
 Incoming swaps persist a reservation separately from notes and activity. Each quote
 request is recorded with its deposit deadline just before it is sent, and each
 accepted deposit instruction is kept even if the user leaves the review screen. An
-explicit quote rejection releases the request; an uncertain outcome holds the
-address until its deadline is two hours past. Starting a swap locks the draft whose
-quote matches the deposit address and memo, and the next swap gets another address.
+explicit quote rejection releases the request. Starting a swap locks the draft whose
+quote matches the deposit address and memo. Each review gets its own address, and
+an address NEAR was given, or may have been, is never quoted again: reusing it
+would let NEAR link the two quotes.
 
-- Issuance takes the lowest address never quoted and reuses the lowest abandoned
-  one only when nothing else fits. It never goes more than 30 indices past the
-  highest receipt with 10 confirmations, and waits for incoming restore sweeps,
-  which may reveal paid or quoted indices. When swaps in progress hold all 30, a
-  new quote is refused with a message to wait for one to finish; an unused quote
-  frees its address two hours after its deadline.
+- Issuance takes the lowest address never quoted. It never goes more than 30
+  indices past the highest receipt with 10 confirmations or the highest quoted
+  address, which a restore finds through NEAR's seen set, and waits for incoming
+  restore sweeps, which may reveal paid or quoted indices.
 - An unpaid reservation is reclaimed two hours after its creation and every
-  quote's deposit deadline, given a fresh conclusive provider status and the
-  wallet scanned to its tip with no payment to the address. The status refresh
-  loop also checks reservations missing from the activity list. A reclaimed key
-  stops scanning: every quote is past its deadline with a conclusive status, so no
-  swap can pay it.
+  quote's deposit deadline, with the wallet scanned to its tip and no payment to the
+  address. A started one also needs a fresh conclusive status from the activity
+  refresh, and a funded one `REFUNDED`. A reservation never started needs no
+  status: its deposit instructions were never shown. A reclaimed key stops
+  scanning and its address is never issued again.
 - Quoting requires the address unpaid, with no queued restore candidate, and the
   wallet scanned to its tip. A paid address is permanently excluded.
 
@@ -156,7 +156,8 @@ Installations of the same seed do not share pending reservations.
 
 Swap recovery uses the configured Enhance endpoint
 (`https://enhance-pir.valargroup.dev` unless `VIZOR_ENHANCE_PIR_URL` overrides it)
-and the receiver directory at `https://161-35-182-172.sslip.io`. Both use the
+and the receiver directory (`https://receiver-pir.valargroup.dev` unless
+`VIZOR_RECEIVER_PIR_URL` overrides it). Both use the
 route-aware HTTPS transport of ordinary Enhance PIR, honoring Tor and cancellation,
 with bounded requests, no redirects and no direct or public fallback. Receiver
 discovery and its note data always use PIR, whatever the Private queries setting;

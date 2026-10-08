@@ -630,6 +630,15 @@ class _SettingsList extends ConsumerWidget {
                         ref.read(nearSwapPrivacyProvider.notifier).toggle(),
                       ),
               ),
+              const SizedBox(height: AppSpacing.sm),
+              _SettingsRow(
+                key: const ValueKey('settings_check_swap_history'),
+                iconName: AppIcons.history,
+                label: 'Check swap history',
+                onTap: changingRecovery
+                    ? null
+                    : () => unawaited(recheckSwapHistory(context, ref)),
+              ),
             ],
           ],
         ),

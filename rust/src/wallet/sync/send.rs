@@ -849,20 +849,21 @@ pub(crate) fn propose_send_with_swap_refund(
         SendRequest::SwapFunding {
             to_address,
             amount_zatoshi,
-            refund_index,
+            refund_index: Some(refund_index),
         },
         SendPurpose::Ordinary,
     )
 }
 
-/// The fee [`propose_send_with_swap_refund`] would pay.
+/// The fee [`propose_send_with_swap_refund`] would pay, from Ironwood notes alone. A
+/// refund memo's content does not change the fee, so this needs no recorded refund
+/// quote and also sizes a swap before one exists.
 pub(crate) fn estimate_fee_with_swap_refund(
     db_path: &str,
     network: WalletNetwork,
     account_uuid: &str,
     to_address: &str,
     amount_zatoshi: u64,
-    refund_index: u64,
 ) -> Result<u64, String> {
     estimate_fee_with_request(
         db_path,
@@ -871,7 +872,7 @@ pub(crate) fn estimate_fee_with_swap_refund(
         SendRequest::SwapFunding {
             to_address,
             amount_zatoshi,
-            refund_index,
+            refund_index: None,
         },
     )
 }
@@ -1071,11 +1072,12 @@ fn estimate_fee_with_request(
 /// card of a Gift Card batch.
 #[derive(Clone, Copy)]
 enum SendRequest<'a> {
-    /// A swap deposit whose change carries the recovery memo of refund key `refund_index`.
+    /// A swap deposit whose change carries the recovery memo of refund key
+    /// `refund_index`, or a placeholder memo for an estimate before the quote.
     SwapFunding {
         to_address: &'a str,
         amount_zatoshi: u64,
-        refund_index: u64,
+        refund_index: Option<u64>,
     },
     Single {
         to_address: &'a str,
@@ -1146,8 +1148,14 @@ fn propose_request(
     let transaction_request = request.build()?;
     let change_memo = match request {
         SendRequest::SwapFunding {
+            refund_index: None, ..
+        } => Some(
+            MemoBytes::from_bytes(&zakura_swap_receiving::RefundMemo::new(0).encode())
+                .map_err(|e| e.to_string())?,
+        ),
+        SendRequest::SwapFunding {
             to_address,
-            refund_index,
+            refund_index: Some(refund_index),
             ..
         } => Some(
             db.swap_funding_memo(account_id, refund_index, to_address)
