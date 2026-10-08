@@ -691,7 +691,12 @@ The original case owns all Git/toolchain/Cargo processes and output capture.
 Cargo uses a fresh target directory, `--offline --locked`, an explicit rustc
 host target and 1–8 jobs (default four). Publication requires successful Cargo
 JSON for this exact example/source, not a test harness, and positive completion
-of every original process group/output writer. The executable becomes read-only.
+of every original process group/output writer. Cargo's output may be hard-linked;
+only after joining writers is it copied into a new private single-link read-only
+publication. Shared file ownership invariants are not relaxed for Cargo aliases.
+An explicit `RUSTC` or the PATH compiler is resolved to the executable actually
+probed (including rustup proxy resolution), then passed as Cargo's `RUSTC`.
+Compiler wrappers are disabled so Cargo cannot silently substitute a compiler.
 
 The returned `ProducedRegtestFunder` is an in-memory original-producer handle,
 not a path/JSON receipt that can be adopted. Call `verify_unchanged()` before

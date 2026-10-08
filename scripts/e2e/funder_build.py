@@ -12,6 +12,7 @@ import math
 import os
 from pathlib import Path, PurePosixPath
 import re
+import shutil
 import stat
 import tarfile
 import threading
@@ -195,6 +196,39 @@ def _snapshot(archive, source, expected):
         return records
 
 
+def _copy_cargo_executable(source, destination):
+    """Copy only a joined original Cargo output; publication stays single-link.
+
+    Cargo may hard-link its named and hashed artifacts. Those original inputs
+    are not the published artifact and never relax shared owned-tree checks.
+    """
+    with contextlib.ExitStack() as stack:
+        parent = tree.open_directory(stack, source.parent)
+        descriptor = os.open(source.name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=parent)
+        stack.callback(os.close, descriptor)
+        before = os.fstat(descriptor)
+        if (not stat.S_ISREG(before.st_mode) or before.st_uid != os.getuid()
+            or before.st_mode & 0o022 or before.st_nlink < 1
+            or not before.st_mode & stat.S_IXUSR or before.st_size > _MAX_BINARY_BYTES):
+            raise FunderBuildError("original Cargo executable is not an owned regular output")
+        output_fd = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o500)
+        digest = hashlib.sha256()
+        count = 0
+        with os.fdopen(os.dup(descriptor), "rb") as reader, os.fdopen(output_fd, "wb") as writer:
+            for chunk in iter(lambda: reader.read(1024 * 1024), b""):
+                count += len(chunk)
+                if count > _MAX_BINARY_BYTES:
+                    raise FunderBuildError("Cargo executable grew beyond publication bound")
+                digest.update(chunk)
+                writer.write(chunk)
+        if tree.identity(os.fstat(descriptor)) != tree.identity(before):
+            raise FunderBuildError("Cargo executable changed during publication")
+        record = _file_record(destination, executable=True, limit=_MAX_BINARY_BYTES)
+        if record[1] != digest.hexdigest():
+            raise FunderBuildError("published executable differs from original Cargo bytes")
+        return record
+
+
 def build_regtest_funder(case: NativeCaseLifecycle, *, source_root: Path,
                         source_commit: str, jobs: int = 4, timeout: float = 1200.0,
                         cancel_event=None):
@@ -248,7 +282,18 @@ def build_regtest_funder(case: NativeCaseLifecycle, *, source_root: Path,
         command([*git, "archive", "--format=tar", f"--output={archive}", source_commit, "rust"])
         records = _snapshot(archive, root / "source", expected)
         source_directories = _source_directories(root / "source")
-        rustc = command(["rustc", "-vV"])
+        compiler_entry = shutil.which(environment.get("RUSTC") or "rustc", path=environment.get("PATH"))
+        if compiler_entry is None:
+            raise FunderBuildError("selected Rust compiler is not executable")
+        compiler = Path(compiler_entry).resolve(strict=True)
+        if compiler.name == "rustup":
+            paths = command([str(compiler), "which", "rustc"])
+            if len(paths) != 1 or not Path(paths[0]).is_absolute():
+                raise FunderBuildError("rustup did not identify one absolute compiler")
+            compiler = Path(paths[0]).resolve(strict=True)
+        if not compiler.is_file() or not os.access(compiler, os.X_OK):
+            raise FunderBuildError("selected Rust compiler is not executable")
+        rustc = command([str(compiler), "-vV"])
         cargo = command(["cargo", "-V"])
         hosts = [line.removeprefix("host: ") for line in rustc if line.startswith("host: ")]
         if len(hosts) != 1 or not re.fullmatch(r"[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)+", hosts[0]):
@@ -256,7 +301,8 @@ def build_regtest_funder(case: NativeCaseLifecycle, *, source_root: Path,
         host = hosts[0]
         target = root / "target"
         target.mkdir(mode=0o700)
-        build_env = {**os.environ, "CARGO_TARGET_DIR": str(target), "CARGO_BUILD_JOBS": str(jobs)}
+        build_env = {**os.environ, "CARGO_TARGET_DIR": str(target), "CARGO_BUILD_JOBS": str(jobs),
+                     "RUSTC": str(compiler), "RUSTC_WRAPPER": "", "RUSTC_WORKSPACE_WRAPPER": ""}
         lines = command(["cargo", "build", "--offline", "--locked", "--manifest-path",
             str(root / "source/rust/Cargo.toml"), "--example", "regtest_direct_funder",
             "--target", host, "--message-format=json"], env=build_env)
@@ -275,20 +321,17 @@ def build_regtest_funder(case: NativeCaseLifecycle, *, source_root: Path,
                 candidates.append(Path(message["executable"]))
         if not completed or len(candidates) != 1:
             raise FunderBuildError("Cargo did not prove one completed funding executable")
-        binary = candidates[0]
-        if not binary.is_absolute() or binary.resolve(strict=True) != binary:
+        cargo_binary = candidates[0]
+        if not cargo_binary.is_absolute() or cargo_binary.resolve(strict=True) != cargo_binary:
             raise FunderBuildError("Cargo executable path is not canonical")
-        binary.relative_to(target)
-        _file_record(binary, executable=True, limit=_MAX_BINARY_BYTES)
+        cargo_binary.relative_to(target)
         _verify_source(root / "source", records, source_directories)
         case.close()
         _verify_root(case, root, root_id)
-        descriptor = os.open(binary, os.O_RDONLY | os.O_NOFOLLOW)
-        try:
-            os.fchmod(descriptor, 0o500)
-        finally:
-            os.close(descriptor)
-        binary_record = _file_record(binary, executable=True, limit=_MAX_BINARY_BYTES)
+        publication = root / "publication"
+        publication.mkdir(mode=0o700)
+        binary = publication / "regtest_direct_funder"
+        binary_record = _copy_cargo_executable(cargo_binary, binary)
         binary_parents = {}
         for parent in binary.parents:
             if parent == root:
@@ -300,7 +343,7 @@ def build_regtest_funder(case: NativeCaseLifecycle, *, source_root: Path,
             "rust_blobs": {name: {"git_blob": expected[name][1], "sha256": record[1]}
                            for name, record in sorted(records.items())},
             "binary": str(binary), "binary_sha256": binary_record[1],
-            "rustc": list(rustc), "cargo": list(cargo), "offline": True,
+            "rustc": list(rustc), "rustc_binary": str(compiler), "cargo": list(cargo), "offline": True,
             "host_target": host, "jobs": jobs, "producer_namespace": case.workspace.namespace}
         artifact = ProducedRegtestFunder(case, root, root_id, binary, binary_record, records,
                                         source_directories, binary_parents, provenance, _TOKEN)
