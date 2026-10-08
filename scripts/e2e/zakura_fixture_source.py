@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -44,14 +45,17 @@ class ZakuraFixtureSource:
 def _git_bytes(root: Path, *arguments: str) -> bytes:
     try:
         completed = subprocess.run(
-            ["git", "--no-replace-objects", "--no-lazy-fetch", "-C", str(root), *arguments],
+            ["git", "--no-replace-objects", "-C", str(root), *arguments],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=_GIT_TIMEOUT,
+            # Empty protocol allow-list overrides repository protocol settings,
+            # denying every transport, including promisor-remote downloads.
+            env={**os.environ, "GIT_ALLOW_PROTOCOL": ""},
         )
     except (OSError, subprocess.TimeoutExpired) as error:
         raise RunnerError("could not read the pinned Zakura Git object") from error
     if completed.returncode != 0:
         # Do not disclose arbitrary Git diagnostics/credentials as sanitized evidence.
-        raise RunnerError("pinned Zakura Git object is unavailable; use Git supporting --no-lazy-fetch and fetch its exact commit first")
+        raise RunnerError("pinned Zakura Git object is unavailable; fetch its exact commit first")
     return completed.stdout
 
 

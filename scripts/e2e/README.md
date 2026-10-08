@@ -17,14 +17,17 @@ commit, path, byte count, SHA-256 and node/lightwalletd image digests are pinned
 in the module. Updates require a reviewed pin change; there is no latest-tag
 fallback or implicit download.
 
-Provide a local Zakura Git object cache containing that exact commit. The
+Provide a local Zakura Git object cache containing that exact commit and blob. The
 loader does not execute the checkout's script, require a clean checkout, change
 HEAD or fetch anything. It disables Git replacement objects and executes the
 same captured bytes that passed SHA-256 verification, avoiding a second file
 read between verification and import. Each load has its own module identity.
 The returned code identity is not resource ownership, readiness or scenario PASS.
-Git must support `--no-lazy-fetch` (locally checked with Git 2.54): implicit
-promisor-remote fetches are disabled too. To populate the cache explicitly:
+Each read sets `GIT_ALLOW_PROTOCOL` to an empty allow-list, denying every Git
+transport even if the cache has a promisor remote or permissive protocol config.
+There is no dependency on the newer `--no-lazy-fetch` option. A partial cache
+missing tree/blob objects is rejected without downloading them. To populate
+a complete local cache explicitly:
 
 ```bash
 git -C /path/to/zakura fetch https://github.com/piatoss3612/zakura.git b22c91ac0770fa1953ced10fdbeed596276875ee:refs/vizor-e2e/zakura-fixture/b22c91ac0770fa1953ced10fdbeed596276875ee

@@ -182,13 +182,28 @@ class ZakuraFixtureSourceTests(unittest.TestCase):
                 SOURCE.load_zakura_fixture_source(self.root)
             self.assertNotIn("credential secret", str(raised.exception))
 
-    def test_git_reads_explicitly_disable_replacement_and_lazy_network_fetch(self):
+    def test_git_reads_disable_replacement_and_all_transports_without_new_options(self):
         with patch.object(SOURCE.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, b"blob", b"")) as run:
             self.assertEqual(SOURCE._git_bytes(self.root, "cat-file", "-t", self.commit), b"blob")
         command = run.call_args.args[0]
         self.assertIn("--no-replace-objects", command)
-        self.assertIn("--no-lazy-fetch", command)
+        self.assertNotIn("--no-lazy-fetch", command)
+        self.assertEqual(run.call_args.kwargs["env"]["GIT_ALLOW_PROTOCOL"], "")
         self.assertEqual(run.call_args.kwargs["timeout"], 15)
+
+    def test_partial_cache_does_not_download_missing_promisor_blob(self):
+        self.git("config", "uploadpack.allowFilter", "true")
+        cache = self.root / "filtered-object-cache.git"
+        self.git("clone", "--quiet", "--bare", "--no-local", "--filter=blob:none", str(self.root), str(cache))
+        self.git("-C", str(cache), "config", "protocol.file.allow", "always")
+        blob = self.git("rev-parse", f"{self.commit}:{SOURCE.SOURCE_PATH}").strip()
+        def local_objects():
+            return self.git("-C", str(cache), "cat-file", "--batch-all-objects", "--batch-check=%(objectname)").splitlines()
+        before = local_objects()
+        self.assertNotIn(blob, before)
+        with self.assertRaisesRegex(SOURCE.RunnerError, "fetch its exact commit"):
+            SOURCE.load_zakura_fixture_source(cache)
+        self.assertEqual(local_objects(), before)
 
 
 if __name__ == "__main__":
