@@ -13,7 +13,9 @@ import '../transaction_completeness.dart';
 /// What the receipt adds from loop 4 (transparent txid enhancement) beyond
 /// its shared shell, for a receipt with no recorded recipient: the
 /// transaction's other transparent outputs, attributed to no one, or a notice
-/// while they are not known yet or cannot be looked up in private mode.
+/// while they are not known yet or cannot be looked up in private mode. When
+/// the private details leave something out, it names what, and offers to
+/// load the full details publicly.
 /// Renders nothing otherwise, so a receipt with a recorded recipient shows
 /// the same rows whether its details came from a stored transaction or from
 /// private queries.
@@ -23,6 +25,8 @@ class TransparentDetailsSection extends StatelessWidget {
     required this.privacyModeEnabled,
     this.debugLookupText,
     this.onDebugLookup,
+    this.publicLookupText,
+    this.onLoadPublicly,
     this.spaced = true,
     super.key,
   });
@@ -37,6 +41,13 @@ class TransparentDetailsSection extends StatelessWidget {
   /// storing anything.
   final VoidCallback? onDebugLookup;
 
+  /// The state of the last public load, while it runs or after it failed.
+  final String? publicLookupText;
+
+  /// Loads the full details from the server, after the user confirms; null
+  /// when the receipt does not offer it.
+  final VoidCallback? onLoadPublicly;
+
   /// Whether the card keeps its own gap from the card above. Off where the
   /// host column already spaces its cards.
   final bool spaced;
@@ -45,7 +56,12 @@ class TransparentDetailsSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final notice = transparentDetailsNotice(detail);
     final outputs = listedTransactionOutputs(detail);
-    if (notice == null && outputs.isEmpty && onDebugLookup == null) {
+    final omissions = transparentOmissionPhrases(detail);
+    if (notice == null &&
+        outputs.isEmpty &&
+        omissions.isEmpty &&
+        onDebugLookup == null &&
+        onLoadPublicly == null) {
       return const SizedBox.shrink();
     }
     final colors = context.colors;
@@ -89,6 +105,23 @@ class TransparentDetailsSection extends StatelessWidget {
                 scaleValueToFit: true,
               ),
           ],
+        ),
+      if (omissions.isNotEmpty)
+        ReviewListRow(
+          key: const ValueKey('transparent_details_omissions'),
+          label: kTransparentDetailsOmittedLabel,
+          value: omissions.join(', '),
+          valueColor: colors.text.secondary,
+          scaleValueToFit: true,
+        ),
+      if (onLoadPublicly != null)
+        ReviewListRow(
+          key: const ValueKey('transparent_details_load_publicly'),
+          label: kLoadDetailsPubliclyLabel,
+          value: publicLookupText ?? kLoadDetailsPubliclyText,
+          trailingIconName: AppIcons.arrowTopRight,
+          onPressed: onLoadPublicly,
+          scaleValueToFit: true,
         ),
       if (onDebugLookup != null)
         ReviewListRow(

@@ -54,6 +54,7 @@ rust_sync.TransactionDetail _detail(String memo, {String kind = 'received'}) =>
       memo: memo,
       outputs: const [],
       transparentRecipients: const [],
+      transparentOmissions: const [],
     );
 
 void transactionLoadingTests({required bool mobile}) {
@@ -423,6 +424,7 @@ rust_sync.TransactionDetail _completeDetail({
         ]
       : const [],
   transparentRecipients: const [],
+  transparentOmissions: const [],
 );
 
 SyncState _sync({int height = 100}) => SyncState(

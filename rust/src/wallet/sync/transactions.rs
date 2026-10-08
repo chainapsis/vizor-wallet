@@ -648,8 +648,16 @@ pub(crate) struct TransactionDetail {
 
 /// What loop 4 knows about a transparent or mixed transaction's outputs.
 pub(crate) enum TransparentDetailsView {
-    /// Every transparent output, in order.
-    Available(Vec<TransparentRecipientRow>),
+    /// The shown transparent outputs, in order: every output of a stored raw
+    /// transaction, or the first two of the private details.
+    Available {
+        rows: Vec<TransparentRecipientRow>,
+        /// Every transparent output, including any `rows` leaves out.
+        output_count: u32,
+        /// What the private details leave out, by name, deduplicated; empty
+        /// when the details came from the raw transaction.
+        omissions: Vec<String>,
+    },
     /// No lookup has answered yet.
     Pending,
     /// The last lookup failed; a later sync retries.
@@ -1426,26 +1434,54 @@ pub(crate) fn get_transaction_detail(
                 std::slice::from_mut(base),
             )
         })?;
-    let (view, shielded_source) =
+    let (view, display_source) =
         transparent_details_view(&read_tx, db_path, network, account, &detail.txid_hex)
-            .map_or((None, false), |(view, shielded)| (Some(view), shielded));
+            .map_or((None, DisplaySource::Unknown), |(view, source)| {
+                (Some(view), source)
+            });
     detail.transparent_details = view;
-    apply_display_source_pool(&mut detail, shielded_source);
+    apply_display_source(&mut detail, display_source);
     Ok(detail)
 }
 
-/// Fills in a receive's source pool from validated display facts when its
-/// raw transaction could not say: a transaction with no transparent input
-/// was funded from the shielded pools, as the raw-transaction source reports
-/// it. Only a receive whose source is still unknown changes, and only to the
-/// pool: no address, account, or funder follows from the facts.
-fn apply_display_source_pool(detail: &mut TransactionDetail, shielded_source: bool) {
-    if shielded_source
-        && matches!(detail.tx_kind.as_str(), "received" | "receiving")
-        && detail.source_address.is_none()
-        && detail.source_pool.as_deref() == Some("unknown")
+/// Who funded a transaction, as the transparent detail view says when the
+/// receipt's own reading of the raw transaction did not: validated display
+/// facts, or the view's reading of a stored raw transaction, which also knows
+/// P2SH and uncompressed-key spends.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum DisplaySource {
+    /// The facts say nothing a receipt does not already show.
+    Unknown,
+    /// No transparent input: funded only from the shielded pools.
+    Shielded,
+    /// The first address-shaped input's address, which the account does not
+    /// own. Other inputs may have other addresses.
+    Address(String),
+}
+
+/// Fills in a receive's source from validated display facts when its raw
+/// transaction could not say: the shielded pool for a transaction with no
+/// transparent input, as the raw-transaction source reports it, or the
+/// funding address the publisher resolved. Only a receive whose source is
+/// still unknown changes; no account or funder name follows from the facts.
+fn apply_display_source(detail: &mut TransactionDetail, source: DisplaySource) {
+    if !matches!(detail.tx_kind.as_str(), "received" | "receiving")
+        || detail.source_address.is_some()
     {
-        detail.source_pool = Some("shielded".to_string());
+        return;
+    }
+    match (detail.source_pool.as_deref(), source) {
+        (_, DisplaySource::Unknown) => {}
+        (Some("unknown"), DisplaySource::Shielded) => {
+            detail.source_pool = Some("shielded".to_string())
+        }
+        // A transparent source the receipt could not name keeps its pool and
+        // gains the address.
+        (Some("unknown" | "transparent"), DisplaySource::Address(address)) => {
+            detail.source_address = Some(address);
+            detail.source_pool = Some("transparent".to_string());
+        }
+        _ => {}
     }
 }
 
@@ -1456,11 +1492,46 @@ fn apply_display_source_pool(detail: &mut TransactionDetail, shielded_source: bo
 fn display_facts_show_shielded_source(
     details: &zcash_client_backend::data_api::transparent_ledger::TransparentDisplayDetails,
 ) -> bool {
-    use zcash_client_backend::data_api::transparent_ledger::TransparentDisplaySource;
+    use zcash_client_backend::data_api::transparent_ledger::{
+        TransparentDisplaySource, TransparentDisplayViewSender,
+    };
     matches!(details.source, TransparentDisplaySource::Display(_))
-        && !details.coinbase
-        && details.input_count == 0
-        && details.shielded
+        && details.sender == TransparentDisplayViewSender::Shielded
+}
+
+/// What the view says about who funded the transaction: the shielded pools
+/// ([`display_facts_show_shielded_source`]) or a funding address the account
+/// does not own, from display facts or a stored raw transaction. A source the
+/// receipt read from raw bytes itself takes precedence.
+fn display_facts_source(
+    details: &zcash_client_backend::data_api::transparent_ledger::TransparentDisplayDetails,
+) -> DisplaySource {
+    use zcash_client_backend::data_api::transparent_ledger::TransparentDisplayViewSender;
+    if display_facts_show_shielded_source(details) {
+        return DisplaySource::Shielded;
+    }
+    match &details.sender {
+        TransparentDisplayViewSender::Address {
+            address,
+            owned: false,
+        } => DisplaySource::Address(address.encoded.clone()),
+        _ => DisplaySource::Unknown,
+    }
+}
+
+/// The name a receipt uses for an omission.
+fn omission_name(
+    omission: &zcash_client_backend::data_api::transparent_ledger::TransparentDisplayOmission,
+) -> &'static str {
+    use zcash_client_backend::data_api::transparent_ledger::TransparentDisplayOmission as O;
+    match omission {
+        O::NonStandardSender => "non_standard_sender",
+        O::MultipleSourceScripts => "multiple_source_scripts",
+        O::SharedFunding => "shared_funding",
+        O::ShieldedAndTransparentFunding => "shielded_and_transparent_funding",
+        O::NonStandardOutput { .. } => "non_standard_output",
+        O::MoreThanTwoOutputs => "more_than_two_outputs",
+    }
 }
 
 /// Loop 4's view of `txid_hex` for `account`, and whether its facts show a
@@ -1472,7 +1543,7 @@ fn transparent_details_view(
     network: WalletNetwork,
     account: AccountUuid,
     txid_hex: &str,
-) -> Option<(TransparentDetailsView, bool)> {
+) -> Option<(TransparentDetailsView, DisplaySource)> {
     use zcash_client_backend::data_api::transparent_ledger::TransparentDisplayView;
     let txid = hex::decode(txid_hex).ok()?;
     let view = crate::wallet::db::open_wallet_db_readonly_with_timeout(
@@ -1493,24 +1564,50 @@ fn transparent_details_view(
     };
     Some(match view {
         TransparentDisplayView::Available(details) => {
-            let shielded_source = display_facts_show_shielded_source(&details);
+            use zcash_client_backend::data_api::transparent_ledger::TransparentDisplaySource;
+            let source = display_facts_source(&details);
+            // What the receipt does not show, whatever the source. A raw
+            // transaction lists every output, so only display facts can omit
+            // outputs; that is the one omission a public load fills in.
+            let raw = !matches!(details.source, TransparentDisplaySource::Display(_));
+            let mut omissions: Vec<String> = Vec::new();
+            for omission in &details.omissions {
+                let name = omission_name(omission);
+                if (raw && name == "more_than_two_outputs")
+                    || omissions.iter().any(|known| known == name)
+                {
+                    continue;
+                }
+                omissions.push(name.to_owned());
+            }
             let rows = details
                 .outputs
                 .into_iter()
                 .map(|output| TransparentRecipientRow {
                     output_index: output.index,
-                    address: output.address.map(|address| {
-                        zcash_keys::encoding::encode_transparent_address_p(&network, &address)
-                    }),
+                    address: output.address.map(|address| address.encoded),
                     amount_zatoshi: output.value.into_u64(),
                     is_own: output.owned,
                 })
                 .collect();
-            (TransparentDetailsView::Available(rows), shielded_source)
+            (
+                TransparentDetailsView::Available {
+                    rows,
+                    output_count: details.output_count,
+                    omissions,
+                },
+                source,
+            )
         }
-        TransparentDisplayView::Pending => (TransparentDetailsView::Pending, false),
-        TransparentDisplayView::Unavailable => (TransparentDetailsView::Unavailable, false),
-        TransparentDisplayView::NotCovered => (TransparentDetailsView::NotCovered, false),
+        TransparentDisplayView::Pending => {
+            (TransparentDetailsView::Pending, DisplaySource::Unknown)
+        }
+        TransparentDisplayView::Unavailable => {
+            (TransparentDetailsView::Unavailable, DisplaySource::Unknown)
+        }
+        TransparentDisplayView::NotCovered => {
+            (TransparentDetailsView::NotCovered, DisplaySource::Unknown)
+        }
     })
 }
 
@@ -7937,10 +8034,19 @@ mod tests {
     ) -> zcash_client_backend::data_api::transparent_ledger::TransparentDisplayDetails {
         use zcash_client_backend::data_api::transparent_ledger::{
             TransparentDisplayDetails, TransparentDisplayProvenance, TransparentDisplaySource,
-            WholeTransactionFee,
+            TransparentDisplayViewSender, WholeTransactionFee,
         };
         TransparentDisplayDetails {
             outputs: Vec::new(),
+            output_count: 0,
+            omissions: Vec::new(),
+            sender: if coinbase {
+                TransparentDisplayViewSender::Coinbase
+            } else if input_count == 0 && shielded {
+                TransparentDisplayViewSender::Shielded
+            } else {
+                TransparentDisplayViewSender::NonStandard
+            },
             coinbase,
             fee: WholeTransactionFee::Unknown,
             input_count,
@@ -7994,7 +8100,12 @@ mod tests {
             transparent_details: None,
         };
         let pool_after = |mut detail: TransactionDetail, shielded: bool| {
-            apply_display_source_pool(&mut detail, shielded);
+            let source = if shielded {
+                DisplaySource::Shielded
+            } else {
+                DisplaySource::Unknown
+            };
+            apply_display_source(&mut detail, source);
             detail.source_pool
         };
         assert_eq!(
@@ -8017,6 +8128,39 @@ mod tests {
         // Only receives have a source, and only one with received outputs.
         assert_eq!(pool_after(detail("sent", None, None), true), None);
         assert_eq!(pool_after(detail("received", None, None), true), None);
+
+        // A funding address the publisher resolved fills an unknown source
+        // the same way, and never overrides one the raw transaction gave.
+        let mut filled = detail("received", None, Some("unknown"));
+        apply_display_source(&mut filled, DisplaySource::Address("t1sender".into()));
+        assert_eq!(
+            (
+                filled.source_address.as_deref(),
+                filled.source_pool.as_deref()
+            ),
+            (Some("t1sender"), Some("transparent"))
+        );
+        let mut kept = detail("received", Some("t1raw"), Some("transparent"));
+        apply_display_source(&mut kept, DisplaySource::Address("t1sender".into()));
+        assert_eq!(kept.source_address.as_deref(), Some("t1raw"));
+        let mut sent = detail("sent", None, Some("unknown"));
+        apply_display_source(&mut sent, DisplaySource::Address("t1sender".into()));
+        assert_eq!(sent.source_address, None);
+        // A transparent source the receipt could not name (a P2SH or
+        // uncompressed-key spend) gains the view's address.
+        let mut named = detail("received", None, Some("transparent"));
+        apply_display_source(&mut named, DisplaySource::Address("t3sender".into()));
+        assert_eq!(
+            (
+                named.source_address.as_deref(),
+                named.source_pool.as_deref()
+            ),
+            (Some("t3sender"), Some("transparent"))
+        );
+        // A shielded source never becomes a transparent one.
+        let mut shielded = detail("received", None, Some("shielded"));
+        apply_display_source(&mut shielded, DisplaySource::Address("t1sender".into()));
+        assert_eq!(shielded.source_address, None);
     }
 
     /// A receive whose outputs the wallet recorded as sent: `outputs` lists

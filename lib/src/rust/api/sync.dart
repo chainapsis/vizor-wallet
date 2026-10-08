@@ -5,6 +5,7 @@
 
 import '../frb_generated.dart';
 import 'keystone.dart';
+
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `api_proposal_result`, `catch`, `enhance_pir_enabled`, `fetch_block_time`, `migration_status_from_balance`, `parse_network_and_migrate`, `payment_link_batch_pairs`, `run_full_sync_internal`, `to_wallet_action_sigs`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
@@ -1071,6 +1072,23 @@ void prioritizeTransparentDetails({
   required String txidHex,
 }) => RustLib.instance.api.crateApiSyncPrioritizeTransparentDetails(
   dbPath: dbPath,
+  txidHex: txidHex,
+);
+
+/// Loads one transaction's full details from lightwalletd because the user
+/// asked to, then stores them as any enhancement payload. This reveals the
+/// transaction (`txid_hex`, as [`TransactionInfo::txid_hex`]) to the server,
+/// so the app calls it only from an explicit, disclosed user action, never
+/// automatically, and it runs whatever the transparent policy is.
+Future<void> enhanceTransactionPublicly({
+  required String dbPath,
+  required String network,
+  required String lightwalletdUrl,
+  required String txidHex,
+}) => RustLib.instance.api.crateApiSyncEnhanceTransactionPublicly(
+  dbPath: dbPath,
+  network: network,
+  lightwalletdUrl: lightwalletdUrl,
   txidHex: txidHex,
 );
 
@@ -2877,8 +2895,21 @@ class TransactionDetail {
   /// account recorded.
   final TransparentDetailsState? transparentDetailsState;
 
-  /// Every transparent output, in order, when the state is `Available`.
+  /// The shown transparent outputs, in order, when the state is
+  /// `Available`: every output, or the first two of private details.
   final List<TransparentRecipient> transparentRecipients;
+
+  /// Every transparent output when the state is `Available`, including any
+  /// `transparent_recipients` leaves out.
+  final int? transparentOutputCount;
+
+  /// What the private details leave out, by name: `non_standard_sender`,
+  /// `multiple_source_scripts`, `shared_funding`,
+  /// `shielded_and_transparent_funding`, `non_standard_output`,
+  /// `more_than_two_outputs`. Empty when nothing is left out or the details
+  /// came from the raw transaction; non-empty is when a receipt may offer
+  /// [`enhance_transaction_publicly`].
+  final List<String> transparentOmissions;
 
   const TransactionDetail({
     required this.txidHex,
@@ -2893,6 +2924,8 @@ class TransactionDetail {
     required this.provisional,
     this.transparentDetailsState,
     required this.transparentRecipients,
+    this.transparentOutputCount,
+    required this.transparentOmissions,
   });
 
   @override
@@ -2908,7 +2941,9 @@ class TransactionDetail {
       detailsComplete.hashCode ^
       provisional.hashCode ^
       transparentDetailsState.hashCode ^
-      transparentRecipients.hashCode;
+      transparentRecipients.hashCode ^
+      transparentOutputCount.hashCode ^
+      transparentOmissions.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -2926,7 +2961,9 @@ class TransactionDetail {
           detailsComplete == other.detailsComplete &&
           provisional == other.provisional &&
           transparentDetailsState == other.transparentDetailsState &&
-          transparentRecipients == other.transparentRecipients;
+          transparentRecipients == other.transparentRecipients &&
+          transparentOutputCount == other.transparentOutputCount &&
+          transparentOmissions == other.transparentOmissions;
 }
 
 class TransactionDetailOutput {

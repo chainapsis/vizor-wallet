@@ -37,7 +37,8 @@ const MAP_DIGEST_HEADER: &str = "x-txid-map-sha256";
 fn response_limit(template: &str) -> usize {
     match template {
         "/v1/txid/init" => 256 << 10,
-        "/v1/txid/shards" => 4 << 20,
+        "/v1/txid/map" => 4 << 20,
+        "/v1/txid/map/{shard}/{digest}" => 4 << 20,
         template if template.ends_with("/manifest") => 1 << 20,
         template if template.contains("/setup/") => 1 << 20,
         _ => 8 << 20,

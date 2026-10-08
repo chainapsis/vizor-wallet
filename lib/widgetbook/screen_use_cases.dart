@@ -1764,6 +1764,7 @@ List<rust_sync.TransactionInfo> _zeroValueActivity() => [
 rust_sync.TransactionDetail _zeroValueDetail(rust_sync.TransactionInfo tx) {
   final sent = tx.txKind == 'sent';
   return rust_sync.TransactionDetail(
+    transparentOmissions: const [],
     txidHex: tx.txidHex,
     txKind: tx.txKind,
     primaryAddress: sent ? _zeroValueRecipient : null,
@@ -1833,6 +1834,7 @@ rust_sync.TransactionDetail _transparentPairDetail(
   final sent = tx.txKind == 'sent';
   final recorded = !private || !sent || recordedSend;
   return rust_sync.TransactionDetail(
+    transparentOmissions: const [],
     txidHex: tx.txidHex,
     txKind: tx.txKind,
     primaryAddress: sent && recorded ? _transparentPairOther : null,

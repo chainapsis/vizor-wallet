@@ -103,6 +103,57 @@ const kTransparentDetailsUnavailableText =
 /// Shown when private mode cannot look the transaction's outputs up.
 const kTransparentDetailsNotCoveredText = 'Not available in private mode';
 
+/// Labels the list of what a transaction's private details leave out.
+const kTransparentDetailsOmittedLabel = 'Not shown';
+
+/// Labels the offer to load one transaction's full details from the server.
+const kLoadDetailsPubliclyLabel = 'Full details';
+
+/// The offer itself; the confirmation says what loading reveals.
+const kLoadDetailsPubliclyText = 'Load publicly';
+
+/// Shown while a public load runs.
+const kLoadDetailsPubliclyLoadingText = 'Loading…';
+
+/// Shown after a public load failed; the row stays tappable.
+const kLoadDetailsPubliclyFailedText = 'Failed — try again';
+
+/// Short phrases for what the private details leave out, by the names
+/// `TransactionDetail.transparentOmissions` uses.
+const Map<String, String> _omissionPhrases = {
+  'multiple_source_scripts': 'other sending addresses',
+  'more_than_two_outputs': 'outputs after the second',
+  'shielded_and_transparent_funding': 'the shielded part of the funding',
+  'non_standard_sender': 'the sending address',
+  'non_standard_output': 'an output address',
+  'shared_funding': 'inputs from other wallets',
+};
+
+/// What [detail]'s transparent details leave out, in the order the wallet
+/// lists them; empty when nothing is left out.
+List<String> transparentOmissionPhrases(rust_sync.TransactionDetail? detail) {
+  final count = detail?.transparentOutputCount;
+  return [
+    for (final omission in detail?.transparentOmissions ?? const <String>[])
+      if (omission == 'more_than_two_outputs' && count != null && count > 2)
+        count == 3 ? '1 more output' : '${count - 2} more outputs'
+      else
+        _omissionPhrases[omission] ?? omission.replaceAll('_', ' '),
+  ];
+}
+
+/// Whether a receipt offers to load [detail]'s full details publicly: where
+/// the load can show more than the receipt does. That is a receipt that shows
+/// private mode cannot cover the transaction, or one listing outputs whose
+/// private details stop after the second. A receipt that lists no outputs (a
+/// receive names its own) or shows one sender gains nothing, so offers
+/// nothing. Loading is always the user's explicit choice.
+bool offersPublicDetailsLookup(rust_sync.TransactionDetail? detail) =>
+    transparentDetailsNotice(detail) ==
+        rust_sync.TransparentDetailsState.notCovered ||
+    (listedTransactionOutputs(detail).isNotEmpty &&
+        detail!.transparentOmissions.contains('more_than_two_outputs'));
+
 /// How often a receipt re-reads details that may still arrive.
 const kTransparentDetailsPollInterval = Duration(seconds: 5);
 

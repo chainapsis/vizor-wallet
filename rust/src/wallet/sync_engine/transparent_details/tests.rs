@@ -24,9 +24,9 @@ use transparent_shard::display::{
 use transparent_shard::manifest::TableGeometry;
 use zcash_client_backend::data_api::{
     transparent_ledger::{
-        TransactionMetadata, TransparentDetailOutcome, TransparentDisplayFacts,
-        TransparentDisplayOutput, TransparentDisplayProvenance, TransparentDisplaySource,
-        TransparentDisplayView, TransparentLedgerMode, TransparentLedgerWrite, WholeTransactionFee,
+        TransparentDetailOutcome, TransparentDisplayFacts, TransparentDisplayOutput,
+        TransparentDisplayProvenance, TransparentDisplaySender, TransparentDisplaySource,
+        TransparentDisplayView, TransparentLedgerMode, TransparentLedgerWrite,
     },
     WalletRead,
 };
@@ -288,26 +288,39 @@ fn clock() -> StageClock {
     }
 }
 
+/// [`PAYEE`]'s address.
+fn payee() -> transparent::address::TransparentAddress {
+    transparent::address::TransparentAddress::PublicKeyHash(PAYEE[3..23].try_into().unwrap())
+}
+
+/// A funder the account does not know.
+fn funder() -> TransparentDisplaySender {
+    TransparentDisplaySender::Address(transparent::address::TransparentAddress::PublicKeyHash(
+        [0x22; 20],
+    ))
+}
+
 /// The facts of `txid` as the account's receipt: its own output, then a
-/// payment to [`PAYEE`].
+/// payment to [`PAYEE`], funded by one input from [`funder`].
 fn facts_of(fixture: &Fixture, txid: TxId) -> DetailAnswer {
-    let own: transparent::address::Script = fixture.address.script().into();
     DetailAnswer::Facts(Box::new(TransparentDisplayFacts {
         txid,
         coinbase: false,
-        metadata: TransactionMetadata {
-            fee: WholeTransactionFee::Exact(Zatoshis::const_from_u64(1_000)),
-            transparent_input_count: 1,
-            has_shielded_components: false,
-        },
+        fee: Zatoshis::const_from_u64(1_000),
+        input_count: 1,
+        output_count: 2,
+        shielded_components: false,
+        sender: funder(),
+        multiple_source_scripts: false,
+        shielded_and_transparent_funding: false,
         outputs: vec![
             TransparentDisplayOutput {
                 value: Zatoshis::const_from_u64(VALUE),
-                script: own.0 .0.to_vec(),
+                address: Some(fixture.address),
             },
             TransparentDisplayOutput {
                 value: Zatoshis::const_from_u64(5_000),
-                script: PAYEE.to_vec(),
+                address: Some(payee()),
             },
         ],
         provenance: TransparentDisplayProvenance {
@@ -502,17 +515,14 @@ fn publication(start: u32, end: u32) -> Publication {
         4096,
     )
     .unwrap();
-    let pages =
-        TableProfile::new(transparent_shard::SCHEMA, "txid-2k", "txpages", 2048, 4096).unwrap();
     let init = serde_json::to_vec(&serde_json::json!({
         "schema": transparent_shard::display::DISPLAY_SCHEMA,
         "codec": transparent_shard::txid::CODEC,
-        "bucket_domain": "transparent-txid-display/bucket/v1",
+        "bucket_domain": "transparent-txid-display/bucket/v2",
         "native_schema": transparent_shard::SCHEMA,
         "geometries": [{
             "name": "txid-2k",
             "txdirectory": {"rows": 2048, "row_bytes": 4096, "scheme": directory.scheme, "setup_seed": setup_seed("txdirectory")},
-            "txpages": {"rows": 2048, "row_bytes": 4096, "scheme": pages.scheme, "setup_seed": setup_seed("txpages")},
         }],
     }))
     .unwrap();
@@ -540,16 +550,11 @@ fn publication(start: u32, end: u32) -> Publication {
         layout: DisplayLayout::current(),
         blocks: end - start + 1,
         records: 0,
-        payload_bytes: 0,
-        page_rows_used: 0,
         buckets: vec![DisplayBucket {
             bucket: 0,
             records: 0,
-            inline_records: 0,
-            directory_segments: vec![table.clone()],
-            page_histogram: Default::default(),
+            directory_segments: vec![table],
         }],
-        page_segments: vec![table],
     };
     manifest.validate().unwrap();
     let digest = manifest.digest();
@@ -569,8 +574,10 @@ fn publication(start: u32, end: u32) -> Publication {
         first_shard_id: 0,
         shards: vec![DisplayMapEntry::from_manifest(&manifest, &digest)],
     };
-    map.check_shape().unwrap();
-    let map_bytes = map.to_bytes();
+    // Served as the recent map; one recent shard needs no index chunk.
+    let split = map.split().unwrap();
+    assert!(split.chunks.is_empty());
+    let map_bytes = split.recent_bytes;
     let map_digest: [u8; 32] = Sha256::digest(&map_bytes).into();
     let map_sha256 = hex::encode(map_digest);
     let public_bytes = directory.scheme.public_bytes;
@@ -580,7 +587,7 @@ fn publication(start: u32, end: u32) -> Publication {
         let path = request.path.as_str();
         if path == "/v1/txid/init" {
             reply(200, &[], init.clone())
-        } else if path == "/v1/txid/shards" {
+        } else if path == "/v1/txid/map" {
             reply(
                 200,
                 &[("x-txid-map-sha256", &map_sha256)],
@@ -593,7 +600,7 @@ fn publication(start: u32, end: u32) -> Publication {
             let params = vec![0u8; public_bytes];
             let setup = serde_json::json!({
                 "manifest_digest": digest, "shard_id": 0, "table": label,
-                "bucket": if label == "pages" { serde_json::Value::Null } else { serde_json::json!(0) },
+                "bucket": 0,
                 "segment": segment.parse::<u32>().unwrap(), "segments": 1, "geometry": "txid-2k",
                 "public_params": B64.encode(&params),
                 "public_params_sha256": hex::encode(Sha256::digest(&params)),
@@ -654,6 +661,72 @@ async fn private_required_zero_get_transaction_even_when_pir_down() {
     assert_eq!(lwd.count("/GetTransaction"), 0);
     assert_eq!(paths(&service).len(), 1);
     assert_eq!(balance(&fixture), before);
+}
+
+/// Under `PrivateRequired`, loop 4 never asks lightwalletd; only the user's
+/// explicit public load of one transaction does, once, and the stored
+/// payload then backs the view instead of private facts.
+#[tokio::test(flavor = "multi_thread")]
+async fn private_required_public_enhance_only_on_consent() {
+    let fixture = wallet();
+    let tx = utxo_receipt(&fixture, 0xa9, TOP - 1);
+    let mut bytes = Vec::new();
+    tx.write(&mut bytes).unwrap();
+    let _mode = require_private(&fixture.path);
+    let service = refusing(503);
+    let _seam = test_seam::set(&fixture.path, service.clone());
+    let lwd = CapturingLwd::start_serving(
+        vec![(*tx.txid().as_ref(), bytes, u64::from(TOP - 1))],
+        u64::from(TOP),
+        |_| {},
+    )
+    .await;
+
+    let outcome = followup_with(&fixture, required(), &lwd).await;
+    assert!(
+        matches!(outcome, Some(RunOutcome::Unavailable(_))),
+        "{outcome:?}"
+    );
+    assert_eq!(lwd.count("/GetTransaction"), 0, "loop 4 stays private");
+
+    let (path, url, txid) = (fixture.path.clone(), lwd.url.clone(), *tx.txid().as_ref());
+    tokio::task::spawn_blocking(move || super::enhance_publicly(&path, MAIN, &url, txid))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(lwd.count("/GetTransaction"), 1);
+    assert_eq!(paths(&service), ["/v1/txid/init"], "no private request");
+    let Some(TransparentDisplayView::Available(details)) = view(&fixture, &tx.txid()) else {
+        panic!("the stored payload shows its outputs");
+    };
+    assert!(matches!(
+        details.source,
+        TransparentDisplaySource::RawTransaction
+    ));
+    assert_eq!(details.outputs.len(), 1);
+    assert_eq!(details.outputs[0].value.into_u64(), VALUE);
+    // A stored transaction lists every output: nothing is left that a public
+    // load could add, so the receipt offers none.
+    let detail = crate::api::sync::get_transaction_detail(
+        fixture.path.clone(),
+        "main".to_owned(),
+        fixture.uuid.clone(),
+        hex::encode(tx.txid().as_ref()),
+        "received".to_owned(),
+    )
+    .unwrap();
+    assert!(
+        !detail
+            .transparent_omissions
+            .iter()
+            .any(|omission| omission == "more_than_two_outputs"),
+        "{:?}",
+        detail.transparent_omissions
+    );
+
+    // Loop 4 has nothing left to do and still sends lightwalletd nothing.
+    followup_with(&fixture, required(), &lwd).await;
+    assert_eq!(lwd.count("/GetTransaction"), 1);
 }
 
 /// Without `PrivateRequired`, the residual transaction is fetched through the
@@ -1189,7 +1262,10 @@ async fn detail_view_states() {
         .map(|output| (output.index, output.value.into_u64(), output.owned))
         .collect();
     assert_eq!(rows, [(0, VALUE, true), (1, 5_000, false)]);
-    assert_eq!(details.outputs[0].address, Some(fixture.address));
+    assert_eq!(
+        details.outputs[0].address.as_ref().map(|a| a.address),
+        Some(fixture.address)
+    );
     // A transaction the account has no transparent part in has no view.
     assert_eq!(view(&fixture, &TxId::from_bytes([0x55; 32])), None);
 
@@ -1202,7 +1278,7 @@ async fn detail_view_states() {
         "received",
     )
     .unwrap();
-    let Some(crate::wallet::sync::TransparentDetailsView::Available(rows)) =
+    let Some(crate::wallet::sync::TransparentDetailsView::Available { rows, .. }) =
         detail.transparent_details
     else {
         panic!("the detail carries the available outputs");
@@ -1212,21 +1288,25 @@ async fn detail_view_states() {
     assert_eq!(rows[1].amount_zatoshi, 5_000);
 }
 
-/// The source pool a receipt detail reports for `fixture`'s receipt `tag`,
-/// recorded without raw bytes, after the private service answers with the
-/// facts `coinbase`, `inputs` and `shielded` (or not at all).
-async fn receipt_source_pool(
+/// The source pool and address a receipt detail reports for `fixture`'s
+/// receipt `tag`, recorded without raw bytes, after the private service
+/// answers with the facts `coinbase`, `inputs` and `shielded` (or not at
+/// all). The facts name [`funder`] whenever there are inputs.
+async fn receipt_source(
     fixture: &Fixture,
     tag: u8,
     facts: Option<(bool, u32, bool)>,
-) -> Option<String> {
+) -> (Option<String>, Option<String>) {
     let txid = utxo_receipt(fixture, tag, TOP - 1).txid();
     if let Some((coinbase, inputs, shielded)) = facts {
         let answer = Mutex::new(Some(match facts_of(fixture, txid) {
             DetailAnswer::Facts(mut facts) => {
                 facts.coinbase = coinbase;
-                facts.metadata.transparent_input_count = inputs;
-                facts.metadata.has_shielded_components = shielded;
+                facts.input_count = inputs;
+                facts.shielded_components = shielded;
+                if inputs == 0 {
+                    facts.sender = TransparentDisplaySender::Absent;
+                }
                 DetailAnswer::Facts(facts)
             }
             other => other,
@@ -1246,13 +1326,15 @@ async fn receipt_source_pool(
             &|| false,
         )
         .await;
-        // Wallet validation refuses coinbase facts for a receipt it knows,
-        // so those never reach the view; every other set is stored.
+        // Wallet validation refuses coinbase facts that carry the receipt's
+        // fee, and facts of a transaction nothing funds, so those never reach
+        // the view; every other set is stored.
         let stored = matches!(
             view(fixture, &txid),
             Some(TransparentDisplayView::Available(_))
         );
-        assert_eq!(stored, !coinbase, "facts {facts:?} stored");
+        let funded = inputs > 0 || shielded;
+        assert_eq!(stored, !coinbase && funded, "facts {facts:?} stored");
     }
     let detail = crate::wallet::sync::get_transaction_detail(
         &fixture.path,
@@ -1263,51 +1345,55 @@ async fn receipt_source_pool(
     )
     .unwrap();
     assert_eq!(
-        detail.source_address, None,
-        "the facts name no sender address"
+        detail.source_account_uuid, None,
+        "the facts name no sending account"
     );
-    assert_eq!(detail.source_account_uuid, None, "nor a sending account");
-    detail.source_pool
+    (detail.source_pool, detail.source_address)
 }
 
-/// Display facts of a transaction with no transparent input and a shielded
-/// component show a shielded-only source, as its raw bytes would; anything
-/// less, or nothing, leaves the source unknown.
+/// Display facts fill an unknown receipt source: a transaction with no
+/// transparent input and a shielded component has a shielded-only source, as
+/// its raw bytes would show; one with inputs names its funder's address.
+/// Coinbase and malformed facts are refused, and no facts leave it unknown.
 #[tokio::test]
-async fn receipt_source_pool_from_display_facts() {
+async fn receipt_source_from_display_facts() {
     let fixture = wallet();
+    let funder = match funder() {
+        TransparentDisplaySender::Address(address) => {
+            zcash_keys::encoding::encode_transparent_address_p(&MAIN, &address)
+        }
+        _ => unreachable!(),
+    };
+    let unknown = (Some("unknown".to_owned()), None);
     assert_eq!(
-        receipt_source_pool(&fixture, 0x91, None).await.as_deref(),
-        Some("unknown"),
+        receipt_source(&fixture, 0x91, None).await,
+        unknown,
         "no facts"
     );
     assert_eq!(
-        receipt_source_pool(&fixture, 0x92, Some((false, 0, true)))
-            .await
-            .as_deref(),
-        Some("shielded"),
-        "no transparent input, a shielded component"
+        receipt_source(&fixture, 0x92, Some((false, 0, true))).await,
+        (Some("shielded".to_owned()), None),
+        "unshielding"
     );
     assert_eq!(
-        receipt_source_pool(&fixture, 0x93, Some((false, 1, true)))
-            .await
-            .as_deref(),
-        Some("unknown"),
-        "a transparent input, possibly another party's"
+        receipt_source(&fixture, 0x93, Some((false, 1, true))).await,
+        (Some("transparent".to_owned()), Some(funder.clone())),
+        "a transparent funder"
     );
     assert_eq!(
-        receipt_source_pool(&fixture, 0x94, Some((false, 0, false)))
-            .await
-            .as_deref(),
-        Some("unknown"),
-        "no shielded component"
+        receipt_source(&fixture, 0x96, Some((false, 1, false))).await,
+        (Some("transparent".to_owned()), Some(funder)),
+        "a transparent funder, no shielded part"
     );
     assert_eq!(
-        receipt_source_pool(&fixture, 0x95, Some((true, 0, true)))
-            .await
-            .as_deref(),
-        Some("unknown"),
-        "coinbase facts, refused by validation"
+        receipt_source(&fixture, 0x94, Some((false, 0, false))).await,
+        unknown,
+        "nothing funds it: refused"
+    );
+    assert_eq!(
+        receipt_source(&fixture, 0x95, Some((true, 0, true))).await,
+        unknown,
+        "coinbase: refused"
     );
 }
 
@@ -1402,14 +1488,16 @@ fn mixed_facts(txid: TxId) -> DetailAnswer {
     DetailAnswer::Facts(Box::new(TransparentDisplayFacts {
         txid,
         coinbase: false,
-        metadata: TransactionMetadata {
-            fee: WholeTransactionFee::Exact(Zatoshis::const_from_u64(1_000)),
-            transparent_input_count: 1,
-            has_shielded_components: true,
-        },
+        fee: Zatoshis::const_from_u64(1_000),
+        input_count: 1,
+        output_count: 1,
+        shielded_components: true,
+        sender: funder(),
+        multiple_source_scripts: false,
+        shielded_and_transparent_funding: false,
         outputs: vec![TransparentDisplayOutput {
             value: Zatoshis::const_from_u64(5_000),
-            script: PAYEE.to_vec(),
+            address: Some(payee()),
         }],
         provenance: TransparentDisplayProvenance {
             shard_id: 3,
@@ -1505,7 +1593,7 @@ async fn mixed_private_details_stay_visible_after_storing() {
         "received",
     )
     .unwrap();
-    let Some(crate::wallet::sync::TransparentDetailsView::Available(rows)) =
+    let Some(crate::wallet::sync::TransparentDetailsView::Available { rows, .. }) =
         detail.transparent_details
     else {
         panic!("the detail carries the stored outputs");
@@ -1994,7 +2082,7 @@ async fn held_work_learns_of_new_coverage_through_the_cached_client() {
         "{outcome:?}"
     );
     let sent = paths_since(&service, sent);
-    assert_eq!(sent[0], "/v1/txid/shards", "{sent:?}");
+    assert_eq!(sent[0], "/v1/txid/map", "{sent:?}");
     assert!(sent.iter().any(|path| path.contains("/query/")), "{sent:?}");
     assert_eq!(
         work_row(&fixture.path, &txid),
@@ -2020,7 +2108,7 @@ async fn held_work_stays_held_while_the_map_is_unchanged() {
         let sent = service.requests().len();
         let outcome = followup_with(&fixture, required(), &lwd).await;
         assert!(finished_with(outcome, 0), "{outcome:?}");
-        assert_eq!(paths_since(&service, sent), ["/v1/txid/shards"]);
+        assert_eq!(paths_since(&service, sent), ["/v1/txid/map"]);
 
         // New sources in consecutive sync runs retain the attempted check.
         let sent = service.requests().len();
@@ -2034,14 +2122,14 @@ async fn held_work_stays_held_while_the_map_is_unchanged() {
         advance_wall(Duration::from_secs(1));
         let outcome = followup_with(&fixture, required(), &lwd).await;
         assert!(finished_with(outcome, 0), "{outcome:?}");
-        assert_eq!(paths_since(&service, sent), ["/v1/txid/shards"]);
+        assert_eq!(paths_since(&service, sent), ["/v1/txid/map"]);
     }
     // A restart: a new client, without a map.
     let _seam = test_seam::set(&fixture.path, service.clone());
     let sent = service.requests().len();
     let outcome = followup_with(&fixture, required(), &lwd).await;
     assert!(finished_with(outcome, 0), "{outcome:?}");
-    assert_eq!(paths_since(&service, sent), ["/v1/txid/shards"]);
+    assert_eq!(paths_since(&service, sent), ["/v1/txid/map"]);
 
     assert_eq!(
         work_row(&fixture.path, &txid),
@@ -2076,7 +2164,7 @@ async fn held_work_learns_of_new_coverage_after_a_restart() {
     let sent = service.requests().len();
     let outcome = followup_with(&fixture, required(), &lwd).await;
     assert!(finished_with(outcome, 1), "{outcome:?}");
-    assert_eq!(paths_since(&service, sent)[0], "/v1/txid/shards");
+    assert_eq!(paths_since(&service, sent)[0], "/v1/txid/map");
     assert_eq!(
         work_row(&fixture.path, &txid),
         Some((Some(ABSENT_CODE), Some(new_map)))
@@ -2106,7 +2194,7 @@ fn held_work_stays_held_when_the_map_cannot_be_fetched() {
             if kind == 0 {
                 return (held.answer)(request);
             }
-            if request.path != "/v1/txid/shards" {
+            if request.path != "/v1/txid/map" {
                 return covering(request);
             }
             match kind {
@@ -2134,7 +2222,7 @@ fn held_work_stays_held_when_the_map_cannot_be_fetched() {
         runtime.block_on(async {
             let lwd = CapturingLwd::start_with(Vec::new(), u64::from(TOP), |_| {}).await;
             let check = |sent: usize| {
-                assert_eq!(paths_since(&service, sent), ["/v1/txid/shards"]);
+                assert_eq!(paths_since(&service, sent), ["/v1/txid/map"]);
                 assert_eq!(
                     work_row(&fixture.path, &txid),
                     Some((Some(NOT_COVERED_CODE), Some(map)))
@@ -2202,7 +2290,7 @@ async fn map_refresh_honors_cancellation() {
             if !refreshing.load(Ordering::SeqCst) {
                 return (held.answer)(request);
             }
-            if request.path == "/v1/txid/shards" {
+            if request.path == "/v1/txid/map" {
                 exit.store(true, Ordering::SeqCst);
             }
             covering(request)
@@ -2227,7 +2315,7 @@ async fn map_refresh_honors_cancellation() {
     )
     .await;
     assert_eq!(outcome, Some(RunOutcome::Exited(RunStats::default())));
-    assert_eq!(paths_since(&service, sent), ["/v1/txid/shards"]);
+    assert_eq!(paths_since(&service, sent), ["/v1/txid/map"]);
     assert_eq!(
         work_row(&fixture.path, &txid),
         Some((Some(NOT_COVERED_CODE), Some(map)))
@@ -2267,7 +2355,7 @@ async fn a_service_that_comes_to_support_the_client_is_found_again() {
                 let init = serde_json::json!({
                     "schema": transparent_shard::display::DISPLAY_SCHEMA,
                     "codec": "transparent-txid-display-v9",
-                    "bucket_domain": "transparent-txid-display/bucket/v1",
+                    "bucket_domain": "transparent-txid-display/bucket/v2",
                     "native_schema": transparent_shard::SCHEMA,
                     "geometries": [],
                 });

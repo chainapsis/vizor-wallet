@@ -136,6 +136,7 @@ rust_sync.TransactionDetail _detail({
     memo: memo,
     outputs: outputs,
     transparentRecipients: const [],
+    transparentOmissions: const [],
   );
 }
 
@@ -1384,6 +1385,7 @@ void main() {
             detailsComplete: true,
             provisional: false,
             transparentRecipients: const [],
+            transparentOmissions: const [],
           ),
         ),
       );

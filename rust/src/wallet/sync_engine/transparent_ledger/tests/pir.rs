@@ -150,18 +150,18 @@ pub(super) fn refusing() -> RequestObserver {
 /// end-to-end check, verbatim.
 pub(super) const HISTORY_ROUTES: &str = r"^(GET /v1/(filters/shards(/[0-9]+/filter)?|shards/init|shards/[0-9]+/revisions/[0-9a-f]{64}/(manifest|setup/(directory|pages)/[0-9]+))|POST /v1/shards/[0-9]+/revisions/[0-9a-f]{64}/query/(directory|pages))$";
 
-/// The txid display service's five routes, as `METHOD path`: the public init
-/// and map, then a shard revision's manifest, setup and queries, named by
-/// tier, shard, revision, table and segment only.
-pub(crate) const TXID_ROUTES: &str = r"^(GET /v1/txid/(init|shards|shards/[0-9]+/revisions/[0-9a-f]{64}/manifest|(archive|recent)/shards/[0-9]+/revisions/[0-9a-f]{64}/setup/(directory-[0-9]+|pages)/[0-9]+)|POST /v1/txid/(archive|recent)/shards/[0-9]+/revisions/[0-9a-f]{64}/query/(directory-[0-9]+|pages))$";
+/// The txid display service's six routes, as `METHOD path`: the public init,
+/// recent map and archive index chunks, then a shard revision's manifest,
+/// setup and queries, named by tier, shard, revision, table and segment only.
+pub(crate) const TXID_ROUTES: &str = r"^(GET /v1/txid/(init|map|map/[0-9]+/[0-9a-f]{64}|shards/[0-9]+/revisions/[0-9a-f]{64}/manifest|(archive|recent)/shards/[0-9]+/revisions/[0-9a-f]{64}/setup/directory-[0-9]+/[0-9]+)|POST /v1/txid/(archive|recent)/shards/[0-9]+/revisions/[0-9a-f]{64}/query/directory-[0-9]+)$";
 
 /// Every route either service serves.
 pub(crate) const ROUTES: &str = concat!(
     r"^(",
     r"GET /v1/(filters/shards(/[0-9]+/filter)?|shards/init|shards/[0-9]+/revisions/[0-9a-f]{64}/(manifest|setup/(directory|pages)/[0-9]+))",
     r"|POST /v1/shards/[0-9]+/revisions/[0-9a-f]{64}/query/(directory|pages)",
-    r"|GET /v1/txid/(init|shards|shards/[0-9]+/revisions/[0-9a-f]{64}/manifest|(archive|recent)/shards/[0-9]+/revisions/[0-9a-f]{64}/setup/(directory-[0-9]+|pages)/[0-9]+)",
-    r"|POST /v1/txid/(archive|recent)/shards/[0-9]+/revisions/[0-9a-f]{64}/query/(directory-[0-9]+|pages)",
+    r"|GET /v1/txid/(init|map|map/[0-9]+/[0-9a-f]{64}|shards/[0-9]+/revisions/[0-9a-f]{64}/manifest|(archive|recent)/shards/[0-9]+/revisions/[0-9a-f]{64}/setup/directory-[0-9]+/[0-9]+)",
+    r"|POST /v1/txid/(archive|recent)/shards/[0-9]+/revisions/[0-9a-f]{64}/query/directory-[0-9]+",
     r")$"
 );
 
@@ -678,7 +678,10 @@ async fn a_dropped_pass_stops_at_its_next_request() {
     let wallet = main_wallet(1);
     let account = wallet.accounts[0].1;
     let watch = watched_by(&wallet, account);
-    let (started, finished) = (Arc::new(AtomicBool::new(false)), Arc::new(AtomicBool::new(false)));
+    let (started, finished) = (
+        Arc::new(AtomicBool::new(false)),
+        Arc::new(AtomicBool::new(false)),
+    );
     // The service answers the first request after the call is dropped, as
     // when the coordinator's backstop abandons it.
     let seam = test_transport::set(&wallet.path, {
@@ -837,19 +840,23 @@ fn routes_are_the_union_of_both_services() {
         "GET /v1/shards/init".to_owned(),
         format!("POST /v1/shards/3/revisions/{digest}/query/pages"),
         "GET /v1/txid/init".to_owned(),
-        "GET /v1/txid/shards".to_owned(),
+        "GET /v1/txid/map".to_owned(),
+        format!("GET /v1/txid/map/32/{digest}"),
         format!("GET /v1/txid/shards/3/revisions/{digest}/manifest"),
         format!("GET /v1/txid/archive/shards/3/revisions/{digest}/setup/directory-0/0"),
-        format!("POST /v1/txid/recent/shards/3/revisions/{digest}/query/pages"),
+        format!("POST /v1/txid/recent/shards/3/revisions/{digest}/query/directory-1"),
     ] {
         assert!(all.is_match(&line), "{line}");
         assert!(history.is_match(&line) != txid.is_match(&line), "{line}");
     }
     for line in [
-        format!("GET /v1/txid/recent/shards/3/revisions/{digest}/query/pages"),
+        format!("GET /v1/txid/recent/shards/3/revisions/{digest}/query/directory-0"),
+        format!("POST /v1/txid/recent/shards/3/revisions/{digest}/query/pages"),
+        format!("GET /v1/txid/recent/shards/3/revisions/{digest}/setup/pages/0"),
         format!("POST /v1/txid/archive/shards/3/revisions/{digest}/query/txdirectory"),
         format!("GET /v1/txid/{digest}"),
-        "GET /v1/txid/shards?txid=1".to_owned(),
+        "GET /v1/txid/shards".to_owned(),
+        "GET /v1/txid/map?txid=1".to_owned(),
     ] {
         assert!(!all.is_match(&line), "{line}");
     }
@@ -891,7 +898,7 @@ async fn txid_routes_whitelisted_no_secret_leak() {
     let digest = "[0-9a-f]{64}";
     let transcript = [
         "^/v1/txid/init$".to_owned(),
-        "^/v1/txid/shards$".to_owned(),
+        "^/v1/txid/map$".to_owned(),
         format!("^/v1/txid/shards/0/revisions/{digest}/manifest$"),
         format!("^/v1/txid/recent/shards/0/revisions/{digest}/setup/directory-0/0$"),
         format!("^/v1/txid/recent/shards/0/revisions/{digest}/query/directory-0$"),

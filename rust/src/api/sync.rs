@@ -2837,8 +2837,19 @@ pub struct TransactionDetail {
     /// transparent outputs; `None` when it has no transparent part the
     /// account recorded.
     pub transparent_details_state: Option<TransparentDetailsState>,
-    /// Every transparent output, in order, when the state is `Available`.
+    /// The shown transparent outputs, in order, when the state is
+    /// `Available`: every output, or the first two of private details.
     pub transparent_recipients: Vec<TransparentRecipient>,
+    /// Every transparent output when the state is `Available`, including any
+    /// `transparent_recipients` leaves out.
+    pub transparent_output_count: Option<u32>,
+    /// What the private details leave out, by name: `non_standard_sender`,
+    /// `multiple_source_scripts`, `shared_funding`,
+    /// `shielded_and_transparent_funding`, `non_standard_output`,
+    /// `more_than_two_outputs`. Empty when nothing is left out or the details
+    /// came from the raw transaction; non-empty is when a receipt may offer
+    /// [`enhance_transaction_publicly`].
+    pub transparent_omissions: Vec<String>,
 }
 
 /// Whether a transparent or mixed transaction's outputs are known.
@@ -3037,7 +3048,7 @@ pub fn get_transaction_detail(
             details_complete: detail.details_complete,
             provisional: detail.provisional,
             transparent_details_state: detail.transparent_details.as_ref().map(|view| match view {
-                wallet_sync::TransparentDetailsView::Available(_) => {
+                wallet_sync::TransparentDetailsView::Available { .. } => {
                     TransparentDetailsState::Available
                 }
                 wallet_sync::TransparentDetailsView::Pending => TransparentDetailsState::Pending,
@@ -3048,8 +3059,20 @@ pub fn get_transaction_detail(
                     TransparentDetailsState::NotCovered
                 }
             }),
+            transparent_output_count: match &detail.transparent_details {
+                Some(wallet_sync::TransparentDetailsView::Available { output_count, .. }) => {
+                    Some(*output_count)
+                }
+                _ => None,
+            },
+            transparent_omissions: match &detail.transparent_details {
+                Some(wallet_sync::TransparentDetailsView::Available { omissions, .. }) => {
+                    omissions.clone()
+                }
+                _ => Vec::new(),
+            },
             transparent_recipients: match detail.transparent_details {
-                Some(wallet_sync::TransparentDetailsView::Available(rows)) => rows
+                Some(wallet_sync::TransparentDetailsView::Available { rows, .. }) => rows
                     .into_iter()
                     .map(|row| TransparentRecipient {
                         output_index: row.output_index,
@@ -3075,6 +3098,32 @@ pub fn prioritize_transparent_details(db_path: String, txid_hex: String) -> Resu
         .map_err(|_| "Invalid txid length".to_string())?;
     sync_engine::transparent_details::prioritize(&db_path, txid);
     Ok(())
+}
+
+/// Loads one transaction's full details from lightwalletd because the user
+/// asked to, then stores them as any enhancement payload. This reveals the
+/// transaction (`txid_hex`, as [`TransactionInfo::txid_hex`]) to the server,
+/// so the app calls it only from an explicit, disclosed user action, never
+/// automatically, and it runs whatever the transparent policy is.
+pub fn enhance_transaction_publicly(
+    db_path: String,
+    network: String,
+    lightwalletd_url: String,
+    txid_hex: String,
+) -> Result<(), String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let txid: [u8; 32] = hex::decode(&txid_hex)
+            .map_err(|e| format!("Invalid txid: {e}"))?
+            .try_into()
+            .map_err(|_| "Invalid txid length".to_string())?;
+        sync_engine::transparent_details::enhance_publicly(
+            &db_path,
+            network,
+            &lightwalletd_url,
+            txid,
+        )
+    })
 }
 
 /// Development builds only (`ZCASH_PRIVATE_TRANSPARENT_RECOVERY`): one

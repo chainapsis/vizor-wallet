@@ -10,6 +10,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
 import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_transaction_status_screen.dart';
 import 'package:zcash_wallet/src/features/activity/transaction_completeness.dart';
+import 'package:zcash_wallet/src/features/activity/widgets/public_details_lookup_dialog.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/send/widgets/send_recipient_resolver.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -29,6 +30,8 @@ Future<List<String>> _pump(
   bool privacy = false,
   bool privateTransparentRecovery = false,
   Future<String> Function(rust_sync.TransactionInfo)? debugLookup,
+  Future<void> Function(rust_sync.TransactionInfo)? publicLookup,
+  Future<bool> Function(BuildContext)? confirmPublicLookup,
   rust_sync.TransactionInfo? transaction,
   bool privateQueries = true,
   Map<String, AccountInfo> ownAccounts = const {},
@@ -60,21 +63,23 @@ Future<List<String>> _pump(
         ),
       ],
       child: MaterialApp(
-        home: AppTheme(
-          data: AppThemeData.light,
-          child: MobileTransactionStatusScreen(
-            args: MobileTransactionStatusArgs(
-              txidHex: transparentDetailsTxid,
-              txKind: tx.txKind,
-              initialTransaction: tx,
-            ),
-            historyLoader: (_) async => [tx],
-            detailLoader: details.load,
-            transparentDetailsPrioritizer: (txid) async =>
-                prioritized.add(txid),
-            privateTransparentRecovery: privateTransparentRecovery,
-            transparentDetailsDebugLookup: debugLookup,
+        // Above the navigator, as in the app, so dialogs see the theme.
+        builder: (_, child) =>
+            AppTheme(data: AppThemeData.light, child: child!),
+        home: MobileTransactionStatusScreen(
+          args: MobileTransactionStatusArgs(
+            txidHex: transparentDetailsTxid,
+            txKind: tx.txKind,
+            initialTransaction: tx,
           ),
+          historyLoader: (_) async => [tx],
+          detailLoader: details.load,
+          transparentDetailsPrioritizer: (txid) async => prioritized.add(txid),
+          privateTransparentRecovery: privateTransparentRecovery,
+          transparentDetailsDebugLookup: debugLookup,
+          transparentDetailsPublicLookup: publicLookup,
+          publicLookupConfirmation:
+              confirmPublicLookup ?? confirmPublicDetailsLookup,
         ),
       ),
     ),
@@ -98,6 +103,17 @@ void main() {
         privacy: privacy,
         privateTransparentRecovery: true,
         debugLookup: lookup,
+      );
+    },
+  );
+  transparentDetailsPublicLookupTests(
+    pump: (tester, details, {required lookup, confirm, sync}) async {
+      await _pump(
+        tester,
+        details,
+        sync: sync,
+        publicLookup: lookup,
+        confirmPublicLookup: confirm,
       );
     },
   );

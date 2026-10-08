@@ -83,7 +83,7 @@ async fn txid_live() {
         panic!("found the transaction: {found:?}");
     };
     let (shard, tier) = (provenance.shard_id, provenance.tier.as_str());
-    let answer = debug_answer(MAIN, found, HEIGHT).unwrap();
+    let answer = debug_answer(MAIN, txid, found, HEIGHT).unwrap();
     assert_eq!(answer.outcome, "found");
     assert!(!answer.coinbase);
     assert_eq!(answer.fee, Some(20_000));

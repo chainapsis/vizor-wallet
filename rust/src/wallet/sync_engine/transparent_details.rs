@@ -687,6 +687,79 @@ pub(crate) async fn followup(
     )
 }
 
+/// Fetches `txid` (protocol byte order) from lightwalletd and stores it,
+/// because the user asked to load this one transaction's full details
+/// publicly. The request reveals the txid to lightwalletd, over an isolated
+/// Tor circuit when Tor is on. Only that explicit request runs it, under any
+/// transparent policy; loop 4 and every automatic path keep to the policy.
+/// Errors carry no txid. Runs on the caller's thread, which must not be a
+/// runtime worker.
+pub(crate) fn enhance_publicly(
+    db_path: &str,
+    network: WalletNetwork,
+    lightwalletd_url: &str,
+    txid: [u8; 32],
+) -> Result<(), String> {
+    let txid = TxId::from_bytes(txid);
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .enable_all()
+        .build()
+        .map_err(|error| format!("tokio: {error}"))?;
+    let raw = runtime.block_on(async {
+        let mut client = super::lwd::open_isolated_lwd_channel(lightwalletd_url)
+            .await
+            .map_err(|error| format!("lightwalletd unavailable ({error})"))?;
+        TransparentLookupGate::user_requested()
+            .transaction(&mut client, txid)
+            .await
+            .map_err(|error| format!("lightwalletd lookup failed ({error})"))
+    })?;
+    let raw = match raw {
+        Some(Ok(raw)) => raw,
+        Some(Err(status)) => {
+            return Err(format!(
+                "lightwalletd refused the lookup ({:?})",
+                status.code()
+            ))
+        }
+        None => return Err("the public lookup was withheld".to_owned()),
+    };
+    let (transaction, mined_height) = super::enhancement::decode_enhancement_payload(&raw, txid)
+        .map_err(|error| format!("lightwalletd answered with an invalid transaction ({error})"))?;
+    let mut db = crate::wallet::db::open_wallet_db_with_timeout(
+        db_path,
+        network,
+        crate::wallet::db::WALLET_DB_BUSY_TIMEOUT,
+    )
+    .map_err(|error| error.to_string())?;
+    crate::wallet::db::with_wallet_db_write_lock(
+        "sync_engine.transparent_details.enhance_publicly",
+        || {
+            db.transactionally(|tx| {
+                decrypt_and_store_transaction(&network, tx, &transaction, mined_height)
+            })
+        },
+    )
+    .map_err(|error: SqliteClientError| format!("storing the transaction failed ({error})"))?;
+    // The store skips a transaction it finds nothing of the wallet's in;
+    // reporting success then would leave the receipt offering the same load.
+    let stored: bool = rusqlite::Connection::open(db_path)
+        .and_then(|conn| {
+            conn.query_row(
+                "SELECT EXISTS (SELECT 1 FROM transactions WHERE txid = ?1 AND raw IS NOT NULL)",
+                [txid.as_ref().as_slice()],
+                |row| row.get(0),
+            )
+        })
+        .map_err(|error| format!("reading the stored transaction failed ({error})"))?;
+    if stored {
+        Ok(())
+    } else {
+        Err("the wallet found nothing of its own in the transaction".to_owned())
+    }
+}
+
 /// The detail view of `txid` (protocol byte order) for `account`, from the
 /// wallet behind `db` and its connection `conn`; `None` when the transaction
 /// has no transparent part the account takes part in.
@@ -858,6 +931,7 @@ pub(crate) fn debug_lookup(
     .run();
     debug_answer(
         network,
+        txid,
         found.map_err(|error| format!("Private lookup failed ({error})"))?,
         mined_height,
     )
@@ -866,6 +940,7 @@ pub(crate) fn debug_lookup(
 /// A lookup's result as a development answer.
 pub(crate) fn debug_answer(
     network: WalletNetwork,
+    txid: [u8; 32],
     found: zakura_pir_transparent::TxidLookup,
     mined_height: u64,
 ) -> Result<DebugLookup, String> {
@@ -879,32 +954,30 @@ pub(crate) fn debug_answer(
         coinbase: false,
     };
     match found {
-        TxidLookup::Found { record, provenance } => {
+        TxidLookup::Found { entry, provenance } => {
             let height = u32::try_from(mined_height).map_err(|_| "height out of range")?;
-            let facts = zakura_pir_transparent::display_facts(&record, &provenance, height.into())
-                .map_err(|_| "the service returned unusable facts".to_owned())?;
+            let facts = zakura_pir_transparent::display_facts(
+                TxId::from_bytes(txid),
+                &entry,
+                &provenance,
+                height.into(),
+            )
+            .map_err(|_| "the service returned unusable facts".to_owned())?;
             answer.outputs = facts
                 .outputs
                 .iter()
                 .map(|output| {
-                    let address = transparent::bundle::TxOut::new(
-                        output.value,
-                        transparent::address::Script(zcash_script::script::Code(
-                            output.script.clone(),
-                        )),
-                    )
-                    .recipient_address()
-                    .map(|address| {
+                    let address = output.address.map(|address| {
                         zcash_keys::encoding::encode_transparent_address_p(&network, &address)
                     });
                     (output.value.into_u64(), address)
                 })
                 .collect();
-            answer.fee = match facts.metadata.fee {
+            answer.fee = match facts.metadata().fee {
                 WholeTransactionFee::Exact(fee) => Some(fee.into_u64()),
                 _ => None,
             };
-            answer.transparent_input_count = facts.metadata.transparent_input_count;
+            answer.transparent_input_count = facts.input_count;
             answer.coinbase = facts.coinbase;
         }
         TxidLookup::Absent => answer.outcome = "absent",
