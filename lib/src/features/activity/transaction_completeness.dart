@@ -68,6 +68,17 @@ TransactionFeePresentation transactionFeePresentation(
 bool transactionDetailsIncomplete(rust_sync.TransactionInfo tx) =>
     !tx.detailsComplete || tx.provisional;
 
+/// Whether a receipt's transparent details establish everything the receipt
+/// shows, so it needs no incomplete-details notice even when its activity
+/// entry does: the wallet marks a detail complete this way only when private
+/// details name every payee.
+bool receiptDetailsComplete(rust_sync.TransactionDetail? detail) =>
+    detail != null &&
+    detail.detailsComplete &&
+    !detail.provisional &&
+    detail.transparentDetailsState ==
+        rust_sync.TransparentDetailsState.available;
+
 /// Activity needs an established amount, role, and pool. Missing recipients or
 /// memos belong to the expanded receipt and do not make that summary uncertain.
 bool transactionActivitySummaryIncomplete(rust_sync.TransactionInfo tx) =>

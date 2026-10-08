@@ -1161,8 +1161,12 @@ class _MobileTransactionStatusScreenState
   bool _showUnknownFee(rust_sync.TransactionInfo tx) =>
       ref.watch(enhancePirProvider) && transactionFeeIsUnknown(tx);
 
+  /// The receipt's own detail, once read, can complete what the activity
+  /// entry could not: private transparent details that establish every payee.
   bool _showIncompleteDetails(rust_sync.TransactionInfo tx) =>
-      ref.watch(enhancePirProvider) && transactionDetailsIncomplete(tx);
+      ref.watch(enhancePirProvider) &&
+      transactionDetailsIncomplete(tx) &&
+      !receiptDetailsComplete(_detail);
 
   String? _feeText(
     rust_sync.TransactionInfo? tx, {

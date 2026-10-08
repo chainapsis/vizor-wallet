@@ -1501,7 +1501,8 @@ fn apply_display_source(detail: &mut TransactionDetail, source: DisplaySource) {
 /// wallet cannot see (a shielded one) exists. One such output is the
 /// recipient. None means the account paid itself, and its one transparent
 /// address among the outputs is the destination. Two payees leave the
-/// recipient unestablished.
+/// recipient unestablished. An established recipient completes the receipt:
+/// its payees are transparent outputs, which carry no memo.
 fn apply_display_recipient(detail: &mut TransactionDetail) {
     if detail.tx_kind != "sent" || detail.primary_address.is_some() {
         return;
@@ -1526,7 +1527,7 @@ fn apply_display_recipient(detail: &mut TransactionDetail) {
     if i128::from(detail.account_balance_delta) != -(paid_out + i128::from(fee)) {
         return;
     }
-    detail.primary_address = match others.as_slice() {
+    let recipient = match others.as_slice() {
         [one] => one.address.clone(),
         [] => {
             let own: std::collections::BTreeSet<&str> = rows
@@ -1540,6 +1541,10 @@ fn apply_display_recipient(detail: &mut TransactionDetail) {
         }
         _ => None,
     };
+    if recipient.is_some() {
+        detail.details_complete = true;
+    }
+    detail.primary_address = recipient;
 }
 
 /// Whether display facts establish that a transaction was funded only from
@@ -8183,7 +8188,10 @@ mod tests {
             }
         };
         let to = |mut d: TransactionDetail| {
+            let recorded = d.primary_address.is_some();
             apply_display_recipient(&mut d);
+            // An established recipient, and only that, completes the receipt.
+            assert_eq!(d.details_complete, !recorded && d.primary_address.is_some());
             d.primary_address
         };
         // Unshielding to the account's own address: the balance moved by the fee only.

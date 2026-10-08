@@ -117,6 +117,11 @@ void main() {
       );
     },
   );
+  transparentDetailsCompletionTests(
+    pump: (tester, details, {required lookup, confirm, sync}) async {
+      await _pump(tester, details, sync: sync, publicLookup: lookup);
+    },
+  );
   transparentDetailsRefreshTests(
     pump: (tester, details, sync) async {
       await _pump(tester, details, sync: sync);

@@ -51,6 +51,7 @@ rust_sync.TransactionDetail transparentDetail(
   bool provisional = false,
   List<String> omissions = const [],
   int? outputCount,
+  bool detailsComplete = false,
 }) => rust_sync.TransactionDetail(
   txidHex: transparentDetailsTxid,
   txKind: txKind,
@@ -59,7 +60,7 @@ rust_sync.TransactionDetail transparentDetail(
   sourcePool: sourcePool,
   sourceAccountUuid: sourceAccountUuid,
   outputs: outputs,
-  detailsComplete: false,
+  detailsComplete: detailsComplete,
   provisional: provisional,
   transparentDetailsState: state,
   transparentRecipients: recipients,
@@ -609,6 +610,32 @@ void transparentDetailsPublicLookupTests({required PublicLookupPump pump}) {
     expect(load, findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
+}
+
+/// A receipt whose detail establishes every payee drops the incomplete
+/// notice its activity entry would show.
+void transparentDetailsCompletionTests({required PublicLookupPump pump}) {
+  for (final complete in [false, true]) {
+    testWidgets('a ${complete ? 'complete' : 'partial'} receipt detail '
+        '${complete ? 'hides' : 'keeps'} the incomplete notice', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        ScriptedDetails([
+          transparentDetail(
+            rust_sync.TransparentDetailsState.available,
+            recipients: transparentRecipients,
+            primaryAddress: complete ? transparentRecipientAddress : null,
+            detailsComplete: complete,
+          ),
+        ]),
+        lookup: (_) async {},
+      );
+      expect(find.text('Incomplete'), complete ? findsNothing : findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    });
+  }
 }
 
 // One transparent transaction as public and private queries record it, after
