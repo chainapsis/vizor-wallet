@@ -644,6 +644,11 @@ pub(crate) struct TransactionDetail {
     /// Transparent txid enhancement's view of the transaction: `None` when
     /// it has no transparent part the account recorded.
     pub transparent_details: Option<TransparentDetailsView>,
+    /// The account's net balance change, and the fee when it is known: with
+    /// the transparent view they show whether its listed outputs are the
+    /// transaction's only payees ([`apply_display_recipient`]).
+    pub account_balance_delta: i64,
+    pub fee: Option<u64>,
 }
 
 /// What loop 4 knows about a transparent or mixed transaction's outputs.
@@ -1441,6 +1446,7 @@ pub(crate) fn get_transaction_detail(
             });
     detail.transparent_details = view;
     apply_display_source(&mut detail, display_source);
+    apply_display_recipient(&mut detail);
     Ok(detail)
 }
 
@@ -1483,6 +1489,56 @@ fn apply_display_source(detail: &mut TransactionDetail, source: DisplaySource) {
         }
         _ => {}
     }
+}
+
+/// Names a send's recipient from its transparent detail view when the wallet
+/// recorded none, as for a send recovered privately.
+///
+/// Only when the view lists every transparent output and the account's
+/// balance moved by exactly the fee plus the outputs it does not own: then
+/// those outputs are the transaction's only payees, and no recipient the
+/// wallet cannot see (a shielded one) exists. One such output is the
+/// recipient. None means the account paid itself, and its one transparent
+/// address among the outputs is the destination. Two payees leave the
+/// recipient unestablished.
+fn apply_display_recipient(detail: &mut TransactionDetail) {
+    if detail.tx_kind != "sent" || detail.primary_address.is_some() {
+        return;
+    }
+    let (
+        Some(TransparentDetailsView::Available {
+            rows, output_count, ..
+        }),
+        Some(fee),
+    ) = (&detail.transparent_details, detail.fee)
+    else {
+        return;
+    };
+    if rows.is_empty() || rows.len() != *output_count as usize {
+        return;
+    }
+    let others: Vec<&TransparentRecipientRow> = rows.iter().filter(|row| !row.is_own).collect();
+    let paid_out: i128 = others
+        .iter()
+        .map(|row| i128::from(row.amount_zatoshi))
+        .sum();
+    if i128::from(detail.account_balance_delta) != -(paid_out + i128::from(fee)) {
+        return;
+    }
+    detail.primary_address = match others.as_slice() {
+        [one] => one.address.clone(),
+        [] => {
+            let own: std::collections::BTreeSet<&str> = rows
+                .iter()
+                .filter_map(|row| row.address.as_deref())
+                .collect();
+            match own.into_iter().collect::<Vec<_>>().as_slice() {
+                [address] => Some((*address).to_owned()),
+                _ => None,
+            }
+        }
+        _ => None,
+    };
 }
 
 /// Whether display facts establish that a transaction was funded only from
@@ -1692,6 +1748,11 @@ fn read_transaction_detail(
         details_complete: base.history.details_complete,
         provisional: base.history.provisional,
         transparent_details: None,
+        account_balance_delta: base.account_balance_delta,
+        fee: match base.history.fee {
+            Fee::Known(fee) => Some(fee),
+            Fee::Unknown | Fee::NotApplicable => None,
+        },
     })
 }
 
@@ -8085,6 +8146,145 @@ mod tests {
     }
 
     #[test]
+    fn display_recipient_names_the_only_payee_of_a_private_send() {
+        let row = |index: u32, address: &str, amount: u64, own: bool| TransparentRecipientRow {
+            output_index: index,
+            address: Some(address.to_owned()),
+            amount_zatoshi: amount,
+            is_own: own,
+        };
+        let detail = |kind: &str,
+                      rows: Vec<TransparentRecipientRow>,
+                      count: u32,
+                      delta: i64,
+                      fee: Option<u64>| {
+            TransactionDetail {
+                txid_hex: String::new(),
+                tx_kind: kind.to_owned(),
+                primary_address: None,
+                source_address: None,
+                source_pool: None,
+                source_account_uuid: None,
+                memo: None,
+                outputs: Vec::new(),
+                details_complete: false,
+                provisional: false,
+                transparent_details: Some(TransparentDetailsView::Available {
+                    rows,
+                    output_count: count,
+                    omissions: Vec::new(),
+                }),
+                account_balance_delta: delta,
+                fee,
+            }
+        };
+        let to = |mut d: TransactionDetail| {
+            apply_display_recipient(&mut d);
+            d.primary_address
+        };
+        // Unshielding to the account's own address: the balance moved by the fee only.
+        assert_eq!(
+            to(detail(
+                "sent",
+                vec![row(0, "t1self", 1_000_000, true)],
+                1,
+                -15_000,
+                Some(15_000)
+            ))
+            .as_deref(),
+            Some("t1self")
+        );
+        // A regular send, and a zcashd send with transparent change.
+        assert_eq!(
+            to(detail(
+                "sent",
+                vec![row(0, "t1payee", 50_000, false)],
+                1,
+                -60_000,
+                Some(10_000)
+            ))
+            .as_deref(),
+            Some("t1payee")
+        );
+        assert_eq!(
+            to(detail(
+                "sent",
+                vec![
+                    row(0, "t1payee", 50_000, false),
+                    row(1, "t1change", 7_000, true)
+                ],
+                2,
+                -60_000,
+                Some(10_000)
+            ))
+            .as_deref(),
+            Some("t1payee")
+        );
+        // Value the listed outputs do not account for went to an unseen payee.
+        assert_eq!(
+            to(detail(
+                "sent",
+                vec![row(0, "t1change", 7_000, true)],
+                1,
+                -60_000,
+                Some(10_000)
+            )),
+            None
+        );
+        // Two payees, outputs beyond the listed two, or an unknown fee.
+        assert_eq!(
+            to(detail(
+                "sent",
+                vec![row(0, "t1a", 25_000, false), row(1, "t1b", 25_000, false)],
+                2,
+                -60_000,
+                Some(10_000)
+            )),
+            None
+        );
+        assert_eq!(
+            to(detail(
+                "sent",
+                vec![row(0, "t1payee", 50_000, false)],
+                3,
+                -60_000,
+                Some(10_000)
+            )),
+            None
+        );
+        assert_eq!(
+            to(detail(
+                "sent",
+                vec![row(0, "t1payee", 50_000, false)],
+                1,
+                -60_000,
+                None
+            )),
+            None
+        );
+        // A recorded recipient and other kinds stay as they are.
+        let mut recorded = detail(
+            "sent",
+            vec![row(0, "t1payee", 50_000, false)],
+            1,
+            -60_000,
+            Some(10_000),
+        );
+        recorded.primary_address = Some("u-recorded".to_owned());
+        assert_eq!(to(recorded).as_deref(), Some("u-recorded"));
+        assert_eq!(
+            to(detail(
+                "received",
+                vec![row(0, "t1self", 5, true)],
+                1,
+                5,
+                None
+            )),
+            None
+        );
+    }
+
+    #[test]
     fn display_source_pool_only_fills_an_unknown_receive_source() {
         let detail = |tx_kind: &str, address: Option<&str>, pool: Option<&str>| TransactionDetail {
             txid_hex: String::new(),
@@ -8098,6 +8298,8 @@ mod tests {
             details_complete: false,
             provisional: false,
             transparent_details: None,
+            account_balance_delta: 0,
+            fee: None,
         };
         let pool_after = |mut detail: TransactionDetail, shielded: bool| {
             let source = if shielded {
