@@ -103,6 +103,11 @@ claim of atomic listener transfer. Lock files remain in place to keep their
 inodes stable. Acquisition failure rolls back this lease's existing handles;
 cleanup errors stay failures rather than becoming a successful retry.
 
+The per-UID shared parent may be readable/searchable, as in the pinned standalone
+fixture, but must be canonical, owned and not writable by other users. The actual
+`ports` directory and lock files remain private. Existing directory permissions
+are checked, never changed to make acquisition succeed.
+
 This library does not start a backend or wire an execution mode into
 `run-suite.py`. All catalog entries remain pending. Process/workspace/simulator
 ownership and actual app-storage cleanup are separate follow-up work. Tests

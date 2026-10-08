@@ -66,7 +66,7 @@ class NativePortLease:
             raise NativePortError(f"native port lease cleanup unproven: {self._cleanup_error}")
 
 
-def _safe_lock_directory(path: Path) -> Path:
+def _safe_lock_directory(path: Path, *, private: bool = True) -> Path:
     if not path.is_absolute() or path.resolve() != path:
         raise NativePortError("port lock directory must be absolute and canonical")
     path.mkdir(mode=0o700, exist_ok=True)
@@ -74,9 +74,10 @@ def _safe_lock_directory(path: Path) -> Path:
     if (
         not stat.S_ISDIR(details.st_mode)
         or details.st_uid != os.getuid()
-        or stat.S_IMODE(details.st_mode) & 0o077
+        or stat.S_IMODE(details.st_mode) & (0o077 if private else 0o022)
     ):
-        raise NativePortError(f"port lock directory must be private and owned: {path}")
+        requirement = "private" if private else "not writable by other users"
+        raise NativePortError(f"port lock directory must be owned and {requirement}: {path}")
     return path
 
 
@@ -133,7 +134,8 @@ def lease_native_ports(
     if lock_root is None:
         parent = _safe_lock_directory(
             Path(tempfile.gettempdir()).resolve()
-            / f"vizor-wallet-native-e2e-{os.getuid()}"
+            / f"vizor-wallet-native-e2e-{os.getuid()}",
+            private=False,
         )
         lock_root = parent / "ports"
     safe_lock_root = _safe_lock_directory(lock_root)
