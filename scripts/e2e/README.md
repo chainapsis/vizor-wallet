@@ -390,6 +390,43 @@ synthetic generic Keychain items and preferences on an owned fresh simulator;
 it is not wallet execution, protected biometric validation, populated OS
 notification validation or a financial scenario result.
 
+### Capture Simulator cleanup artifacts
+
+`native_ios_cleanup.py` captures the actual separate helper and cohort bundles
+read-only. It requires canonical owned files/directories, strict helper/cohort
+boolean markers, thin 64-bit Simulator executables, valid ad-hoc signatures,
+matching embedded application identifiers/default Keychain rights and architecture.
+The helper must be `vizor-ios-cleanup`, not the synthetic smoke or wallet role,
+and cannot inherit widget/app/shared groups. Ordinary cohort widget groups are
+not confused with extra Keychain groups. Both absent signature entitlement data
+and an empty signature dictionary are valid only with required embedded rights;
+nonempty signed/embedded rights must agree. No Xcode default supplies the team.
+
+```python
+helper = capture_ios_cleanup_helper(helper_app, cohort_app=cohort_app)
+helper.verify_unchanged()
+```
+
+Original file identities/digests and directory identities are rechecked, with
+OS signature verification, before reuse. This is not trusted-source publication:
+the builder still must compile the correct isolated helper/cohort sources.
+Artifact probes have a 15-second per-command allowance, not one aggregate SLA.
+
+The internal schema-1 receipt parser rejects duplicate/extra fields, wrong
+namespace/UUID/nonce/team/mode, missing services, retained native state,
+unsynchronized preferences and incomplete notification absence. It exposes no
+successful-cleanup capability: callers cannot use external JSON/logs/PIDs as
+ownership. Host-owned app launch/stop, output provenance and post-app simulator
+teardown are not implemented in this module. Catalog flags remain false.
+
+```bash
+python3 -B -m unittest scripts/e2e/test_native_ios_cleanup.py
+```
+
+These models use real private fake bundles but model signatures and output;
+they do not run an app or delete native state/devices. A captured file or valid
+historical receipt alone is not proof of a completed owned SDK launch.
+
 ## Gift Cards
 
 Sender usage tracking and empty observer DB reuse:

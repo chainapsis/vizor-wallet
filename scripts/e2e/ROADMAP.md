@@ -124,6 +124,11 @@ preflights all resources before mutation, and requires positive native absence.
 Swift models cover sibling preservation/errors; a manual owned-device SDK smoke
 proved selective synthetic Keychain/preference cleanup, not real wallet or
 populated notification behavior. No ordinary wallet target links the helper.
+Read-only host artifact capture now checks actual ad-hoc signatures, role
+markers, bounded Simulator Mach-O rights, matching default application identity/
+architecture and original files. Its strict receipt parser rejects wrong scopes
+and incomplete absence; neither capture nor parsing runs an app or grants
+deletion authority.
 Trusted helper provisioning/build publication, whole-worker workspace removal,
 iOS host receipt binding and post-app simulator teardown,
 backend/executor integration, and scenario migrations remain pending. A native

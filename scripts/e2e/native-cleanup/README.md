@@ -120,7 +120,9 @@ rejects malformed/truncated/missing sections. Require the actual expected team
 and app identifier, no shared/app groups or unrelated rights, and at most that
 same default Keychain group. Host capture still must verify the trusted helper
 artifact and match the actual cohort's default group; a team string is not a
-cryptographic signing identity or ownership. The host binding remains pending.
+cryptographic signing identity or ownership. The [read-only host capture](../README.md#capture-simulator-cleanup-artifacts)
+checks actual files/signatures, architecture and embedded rights. Trusted build
+publication and owned launch/output binding remain pending.
 
 Match the wallet's service-only iOS Keychain queries under the helper's own
 minimal access rights (`keychain_scope: application_accessible`), not a guessed
