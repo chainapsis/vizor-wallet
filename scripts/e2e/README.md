@@ -8,6 +8,35 @@ The [native runtime contract](RUNTIME_CONTRACT.md) defines per-case launch
 identity and storage isolation for the later worker/executor layers. It does
 not add an execution backend or make pending catalog entries runnable.
 
+## Pinned Zakura fixture source
+
+`zakura_fixture_source.py` reads the fixture's Git blob from one published,
+immutable [contributor-fork commit](https://github.com/piatoss3612/zakura/commit/b22c91ac0770fa1953ced10fdbeed596276875ee).
+This is proposed tooling, not an official Zakura release. The helper's exact
+commit, path, byte count, SHA-256 and node/lightwalletd image digests are pinned
+in the module. Updates require a reviewed pin change; there is no latest-tag
+fallback or implicit download.
+
+Provide a local Zakura Git object cache containing that exact commit. The
+loader does not execute the checkout's script, require a clean checkout, change
+HEAD or fetch anything. It disables Git replacement objects and executes the
+same captured bytes that passed SHA-256 verification, avoiding a second file
+read between verification and import. Each load has its own module identity.
+The returned code identity is not resource ownership, readiness or scenario PASS.
+Git must support `--no-lazy-fetch` (locally checked with Git 2.54): implicit
+promisor-remote fetches are disabled too. To populate the cache explicitly:
+
+```bash
+git -C /path/to/zakura fetch https://github.com/piatoss3612/zakura.git b22c91ac0770fa1953ced10fdbeed596276875ee
+```
+
+This source-loading boundary starts no Docker resource, wallet or test, and
+does not enable catalog execution. Offline checks use disposable Git commits:
+
+```bash
+python3 -B -m unittest scripts/e2e/test_zakura_fixture_source.py
+```
+
 ## Catalog previews
 
 `run-suite.py` provides a host-only inventory and selection preview. This first
