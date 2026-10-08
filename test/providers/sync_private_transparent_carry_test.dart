@@ -16,6 +16,18 @@ class _Api extends RustLibApi {
   bool crateApiSyncIsSyncRunning() => false;
 
   @override
+  bool crateApiSyncIsMempoolObserverRunning() => false;
+
+  @override
+  void crateApiSyncSetActiveSyncAccount({String? accountUuid}) {}
+
+  @override
+  void crateApiSyncCancelFullSync() {}
+
+  @override
+  void crateApiSyncStopMempoolObserver() {}
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
@@ -46,6 +58,92 @@ class _EnhancePir extends EnhancePirNotifier {
 
   @override
   bool build() => enabled;
+
+  /// Turns private queries on, as a successful raise does.
+  void raise() => state = true;
+}
+
+const _otherAccountUuid = 'account-2';
+
+/// Two accounts, `account-1` active, switchable with [activate].
+class _Accounts extends AccountNotifier {
+  @override
+  AccountState build() => const AccountState(
+    accounts: [
+      AccountInfo(uuid: _accountUuid, name: 'Account 1', order: 0),
+      AccountInfo(uuid: _otherAccountUuid, name: 'Account 2', order: 1),
+    ],
+    activeAccountUuid: _accountUuid,
+  );
+
+  void activate(String uuid) => state = AsyncData(
+    AccountState(accounts: state.value!.accounts, activeAccountUuid: uuid),
+  );
+}
+
+/// The production [SyncNotifier] build, from the bootstrap snapshot, whose
+/// syncs never resolve the wallet path and so go no further than their start.
+class _LiveSync extends SyncNotifier {
+  _LiveSync({required super.privateTransparentRecovery})
+    : super(walletDbPathResolver: () => Completer<String>().future);
+}
+
+AppBootstrapState _bootstrapWith(AppSyncSnapshot snapshot) => AppBootstrapState(
+  initialLocation: '/home',
+  initialAccountState: const AccountState(),
+  initialSyncSnapshot: snapshot,
+  network: AppBootstrapState.empty.network,
+  rpcEndpointConfig: AppBootstrapState.empty.rpcEndpointConfig,
+  themeMode: AppBootstrapState.empty.themeMode,
+  privacyModeEnabled: false,
+  isPasswordConfigured: false,
+  isUnlocked: true,
+  passwordRotationRecoveryFailed: false,
+);
+
+/// A public, current startup read of `account-1`.
+AppSyncSnapshot _publicSnapshot() => AppSyncSnapshot(
+  accountUuid: _accountUuid,
+  hasAccountScopedData: true,
+  scannedHeight: 10,
+  chainTipHeight: 10,
+  percentage: 1,
+  transparentBalance: BigInt.from(5),
+  saplingBalance: BigInt.zero,
+  orchardBalance: BigInt.zero,
+  ironwoodBalance: BigInt.zero,
+  orchardLockedBalance: BigInt.zero,
+  transparentPendingBalance: BigInt.from(2),
+  saplingPendingBalance: BigInt.zero,
+  orchardPendingBalance: BigInt.zero,
+  ironwoodPendingBalance: BigInt.zero,
+  canShieldTransparentBalance: true,
+  shieldTransparentFee: BigInt.zero,
+  shieldTransparentAmount: BigInt.zero,
+  spendableBalance: BigInt.zero,
+  totalBalance: BigInt.from(7),
+  recentTransactions: const [],
+);
+
+void _expectDemoted(SyncState state) {
+  expect(
+    state.transparentAuthority,
+    rust_sync.TransparentBalanceAuthority.lastKnown,
+  );
+  expect(state.transparentLastKnownBalance, BigInt.from(7));
+  expect(state.transparentBalance, BigInt.zero);
+  expect(state.transparentPendingBalance, BigInt.zero);
+  expect(state.canShieldTransparentBalance, isFalse);
+}
+
+void _expectCurrent(SyncState state) {
+  expect(
+    state.transparentAuthority,
+    rust_sync.TransparentBalanceAuthority.current,
+  );
+  expect(state.transparentBalance, BigInt.from(5));
+  expect(state.transparentPendingBalance, BigInt.from(2));
+  expect(state.canShieldTransparentBalance, isTrue);
 }
 
 SyncState _current({required bool private}) => SyncState(
@@ -173,5 +271,117 @@ void main() {
       rust_sync.TransparentStopReason.notSelected,
     );
     expect(started.transparentLastKnownBalance, BigInt.from(9));
+  });
+
+  group('the carry rule', () {
+    test('demotes only a current amount the carry can make stale', () {
+      for (final (private, mayApply, crossesTip, demoted) in [
+        (true, false, true, true),
+        (true, true, true, true),
+        (true, true, false, false),
+        (false, true, false, true),
+        (false, true, true, true),
+        (false, false, true, false),
+      ]) {
+        final carried = _current(private: private)
+            .carryingTransparentAuthority(
+              privatePolicyMayApply: mayApply,
+              crossesTip: crossesTip,
+            );
+        if (demoted) {
+          _expectDemoted(carried);
+        } else {
+          _expectCurrent(carried);
+        }
+        expect(carried.transparentPrivate, private);
+      }
+    });
+
+    test('leaves an amount that is not current unchanged', () {
+      final stopped = SyncState(
+        accountUuid: _accountUuid,
+        hasAccountScopedData: true,
+        transparentAuthority: rust_sync.TransparentBalanceAuthority.stopped,
+        transparentLastKnownBalance: BigInt.from(9),
+        transparentStop: rust_sync.TransparentStopReason.notSelected,
+        transparentPrivate: true,
+      );
+      expect(
+        stopped.carryingTransparentAuthority(
+          privatePolicyMayApply: true,
+          crossesTip: true,
+        ),
+        same(stopped),
+      );
+    });
+  });
+
+  group('with the production build', () {
+    ProviderContainer containerFor({
+      required bool privateQueries,
+      bool privateTransparentRecovery = true,
+    }) {
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(
+            _bootstrapWith(_publicSnapshot()),
+          ),
+          accountProvider.overrideWith(_Accounts.new),
+          enhancePirProvider.overrideWith(() => _EnhancePir(privateQueries)),
+          syncProvider.overrideWith(
+            () => _LiveSync(
+              privateTransparentRecovery: privateTransparentRecovery,
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      // The build defers its initial sync start; let it run while mounted.
+      addTearDown(pumpEventQueue);
+      container.listen(syncProvider, (_, _) {});
+      return container;
+    }
+
+    test('a startup read before the policy raise is not current', () async {
+      final container = containerFor(privateQueries: true);
+      _expectDemoted(await container.read(syncProvider.future));
+    });
+
+    test('a startup read stays current when nothing raises the policy', () async {
+      for (final (flag, queries) in [(false, true), (true, false)]) {
+        final container = containerFor(
+          privateQueries: queries,
+          privateTransparentRecovery: flag,
+        );
+        _expectCurrent(await container.read(syncProvider.future));
+      }
+    });
+
+    test('switching back after a policy raise on another account demotes '
+        'the cached amount', () async {
+      final container = containerFor(privateQueries: false);
+      _expectCurrent(await container.read(syncProvider.future));
+      final accounts = container.read(accountProvider.notifier) as _Accounts;
+
+      accounts.activate(_otherAccountUuid);
+      (container.read(enhancePirProvider.notifier) as _EnhancePir).raise();
+      accounts.activate(_accountUuid);
+
+      final restored = container.read(syncProvider).requireValue;
+      expect(restored.accountUuid, _accountUuid);
+      _expectDemoted(restored);
+    });
+
+    test('switching back keeps a cached amount current when nothing '
+        'changed', () async {
+      final container = containerFor(privateQueries: false);
+      await container.read(syncProvider.future);
+      final accounts = container.read(accountProvider.notifier) as _Accounts;
+
+      accounts.activate(_otherAccountUuid);
+      accounts.activate(_accountUuid);
+
+      _expectCurrent(container.read(syncProvider).requireValue);
+    });
   });
 }

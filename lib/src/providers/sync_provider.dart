@@ -611,6 +611,35 @@ class SyncState {
     return withoutAccountScopedData(accountUuid: accountUuid);
   }
 
+  /// This state carried to a point where its transparent amount may be stale:
+  /// a `current` amount becomes `lastKnown`, with nothing spendable and no
+  /// Shield action, until a balance read reports Rust's authority again.
+  /// Every path that shows a state not read from Rust just now goes through
+  /// this rule; a fresh read never does.
+  ///
+  /// A privately read amount is current only while the private ledger covers
+  /// the tip, so it goes stale when [crossesTip]: a sync start, or a cache
+  /// from before the tip moved. A publicly read amount goes stale when
+  /// [privatePolicyMayApply]: private queries are on in a build that raises
+  /// the policy, which may have happened after the read.
+  SyncState carryingTransparentAuthority({
+    required bool privatePolicyMayApply,
+    required bool crossesTip,
+  }) {
+    final stale =
+        transparentAuthority == rust_sync.TransparentBalanceAuthority.current &&
+        (transparentPrivate ? crossesTip : privatePolicyMayApply);
+    if (!stale) return this;
+    return copyWith(
+      transparentBalance: BigInt.zero,
+      transparentPendingBalance: BigInt.zero,
+      transparentAuthority: rust_sync.TransparentBalanceAuthority.lastKnown,
+      transparentLastKnownBalance:
+          transparentBalance + transparentPendingBalance,
+      canShieldTransparentBalance: false,
+    );
+  }
+
   /// This state's account-scoped data, carrying [current]'s wallet-wide
   /// sync fields.
   ///
@@ -842,6 +871,12 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   final Future<void> Function(String dbPath) _excludeCompanionsFromBackup;
   final bool _privateTransparentRecovery;
 
+  /// Whether the wallet's transparent policy may be private now even though
+  /// a carried state was read public: this build raises the policy and
+  /// private queries are on.
+  bool get _privatePolicyMayApply =>
+      _privateTransparentRecovery && ref.read(enhancePirProvider);
+
   static const _authoritativeBalanceRecoveryDelays = <Duration>[
     Duration.zero,
     Duration(milliseconds: 250),
@@ -1052,7 +1087,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         initial.accountUuid != null &&
         initial.accountUuid == initialAccountUuid &&
         initial.hasAccountScopedData;
-    return SyncState(
+    final initialState = SyncState(
       accountUuid: initialAccountUuid,
       hasAccountScopedData: initialBelongsToActiveAccount,
       isSyncing: false,
@@ -1122,6 +1157,14 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           : const [],
       phase: '',
     );
+    // Startup may raise the policy after the snapshot was read; the tip has
+    // not moved since. See [SyncState.carryingTransparentAuthority].
+    return initialBelongsToActiveAccount
+        ? initialState.carryingTransparentAuthority(
+            privatePolicyMayApply: _privatePolicyMayApply,
+            crossesTip: false,
+          )
+        : initialState;
   }
 
   SyncState? _previousScopedState(SyncState? prev, String? accountUuid) {
@@ -1159,8 +1202,14 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       // live sync fields so progress cannot regress, and flagged as a
       // snapshot rather than authoritative. The switch's own refresh
       // replaces them shortly.
+      // The cache predates any tip the other account's syncs moved, and any
+      // policy raised since; see [SyncState.carryingTransparentAuthority].
       state = AsyncData(
         restored
+            .carryingTransparentAuthority(
+              privatePolicyMayApply: _privatePolicyMayApply,
+              crossesTip: restored.chainTipHeight != prev.chainTipHeight,
+            )
             .withGlobalSyncFieldsFrom(prev)
             .copyWith(
               displaySpendableFreshness:
@@ -1304,24 +1353,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         : math.max(previousChainTipHeight, latestTipHeight);
     final canPreserveCompletedSpendable =
         SyncState.shouldPreserveCompletedSpendable(scopedPrev);
-    // A durably private wallet's transparent amount is current only while its
-    // private ledger covers the tip, and this sync moves the tip. Carry it as
-    // last known, and stop offering to shield it, until a balance read after
-    // the sync reports authority again. A carried public amount counts too
-    // when private queries are on in a build that raises the policy: the
-    // setting raised it after that amount was read, at startup or on toggle.
-    final transparentMayBePrivate =
-        scopedPrev != null &&
-        (scopedPrev.transparentPrivate ||
-            (_privateTransparentRecovery && ref.read(enhancePirProvider)));
-    final demotedPrivateTransparent =
-        scopedPrev != null &&
-            transparentMayBePrivate &&
-            scopedPrev.transparentAuthority ==
-                rust_sync.TransparentBalanceAuthority.current
-        ? scopedPrev.transparentBalance + scopedPrev.transparentPendingBalance
-        : null;
-    final demotePrivateTransparent = demotedPrivateTransparent != null;
+    // This sync moves the tip; see [SyncState.carryingTransparentAuthority].
+    final carried = scopedPrev?.carryingTransparentAuthority(
+      privatePolicyMayApply: _privatePolicyMayApply,
+      crossesTip: true,
+    );
     state = AsyncData(
       SyncState(
         accountUuid: accountUuid,
@@ -1334,30 +1370,21 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         percentage: 0.0,
         scannedHeight: previousScannedHeight,
         chainTipHeight: nextChainTipHeight,
-        transparentBalance: demotePrivateTransparent
-            ? BigInt.zero
-            : scopedPrev?.transparentBalance,
+        transparentBalance: carried?.transparentBalance,
         saplingBalance: scopedPrev?.saplingBalance,
         orchardBalance: scopedPrev?.orchardBalance,
         ironwoodBalance: scopedPrev?.ironwoodBalance,
         orchardLockedBalance: scopedPrev?.orchardLockedBalance,
-        transparentPendingBalance: demotePrivateTransparent
-            ? BigInt.zero
-            : scopedPrev?.transparentPendingBalance,
-        transparentAuthority: demotePrivateTransparent
-            ? rust_sync.TransparentBalanceAuthority.lastKnown
-            : scopedPrev?.transparentAuthority,
-        transparentLastKnownBalance:
-            demotedPrivateTransparent ??
-            scopedPrev?.transparentLastKnownBalance,
-        transparentStop: scopedPrev?.transparentStop,
+        transparentPendingBalance: carried?.transparentPendingBalance,
+        transparentAuthority: carried?.transparentAuthority,
+        transparentLastKnownBalance: carried?.transparentLastKnownBalance,
+        transparentStop: carried?.transparentStop,
         transparentPrivate: scopedPrev?.transparentPrivate,
         saplingPendingBalance: scopedPrev?.saplingPendingBalance,
         orchardPendingBalance: scopedPrev?.orchardPendingBalance,
         ironwoodPendingBalance: scopedPrev?.ironwoodPendingBalance,
         canShieldTransparentBalance:
-            !demotePrivateTransparent &&
-            (scopedPrev?.canShieldTransparentBalance ?? false),
+            carried?.canShieldTransparentBalance ?? false,
         shieldTransparentFee: scopedPrev?.shieldTransparentFee,
         shieldTransparentAmount: scopedPrev?.shieldTransparentAmount,
         spendableBalance: scopedPrev?.spendableBalance,
