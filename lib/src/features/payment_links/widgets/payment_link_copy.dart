@@ -6,6 +6,13 @@
 /// fixtures.
 library;
 
+import '../../../core/formatting/zec_amount.dart';
+
+String paymentLinkAmountText(BigInt? amount, {bool includeUnit = false}) =>
+    amount == null
+    ? '—'
+    : '${formatZecAmount(amount)}${includeUnit ? ' ZEC' : ''}';
+
 const kPaymentLinkCreateGiftCardTitle = 'Create Gift Card';
 const kPaymentLinkRedeemTheCardTitle = 'Redeem the Card';
 const kPaymentLinkRedeemCardLabel = 'Redeem a card';

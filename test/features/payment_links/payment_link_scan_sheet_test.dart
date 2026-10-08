@@ -11,9 +11,23 @@ import 'package:zcash_wallet/src/features/payment_links/widgets/mobile/payment_l
 import 'package:zcash_wallet/src/services/qr_scanner.dart';
 
 import '../../support/payment_links_screen_support.dart';
+import '../../fakes/fake_gift_link_rust_api.dart';
+import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
 void main() {
   setUpAll(loadPaymentLinksTestFonts);
+
+  testWidgets('an explicitly scanned Zodl card completes once', (tester) async {
+    RustLib.initMock(api: FakeGiftLinkRustApi());
+    addTearDown(RustLib.dispose);
+    final accepted = <VizorPaymentLink>[];
+    await _pumpScanner(tester, onScanned: accepted.add);
+    _scan(tester, zodlTestLink);
+    _scan(tester, zodlTestLink);
+    expect(accepted.single.isZodl, isTrue);
+    expect(accepted.single.statedAmountZatoshi, isNull);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'address and payment QR stay in the scanner; a card completes once',

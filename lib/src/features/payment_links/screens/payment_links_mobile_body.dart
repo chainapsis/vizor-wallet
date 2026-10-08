@@ -462,7 +462,7 @@ class PaymentLinksMobileBody extends StatelessWidget {
       artwork: artwork,
       cardWidth: kPaymentLinkMobileCardWidth,
       cardHeight: kPaymentLinkMobileCardHeight,
-      amountText: formatZecAmount(link.amountZatoshi),
+      amountText: paymentLinkAmountText(link.displayAmountZatoshi),
       supportingText: receivedFiatText,
       showCaret: false,
     );
@@ -490,8 +490,8 @@ class PaymentLinksMobileBody extends StatelessWidget {
     }
     if (session?.waitingForFundingConfirmations ?? false) {
       final remaining =
-          kPaymentLinkClaimConfirmationTarget -
-          session!.fundingConfirmationCount;
+          session!.link.claimConfirmationTarget -
+          session.fundingConfirmationCount;
       return PaymentLinkReadyMobileView(
         state:
             session.fundingConfirmationCount > 0 &&

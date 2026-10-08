@@ -55,6 +55,8 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/services/biometric_unlock.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../fakes/fake_gift_link_rust_api.dart';
+import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import '../../figma_compare/figma_compare_font_loader.dart';
 import '../../support/payment_link_navigation_support.dart';
 import '../../support/payment_links_screen_support.dart'
@@ -541,6 +543,62 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  group('native Zodl cards', () {
+    setUpAll(() => RustLib.initMock(api: FakeGiftLinkRustApi()));
+    tearDownAll(RustLib.dispose);
+    testWidgets('pasted Zodl card shows the verified sweep amount', (
+      tester,
+    ) async {
+      await pumpWelcome(tester, clipboard: zodlTestLink);
+      operations.inspectedAmount = BigInt.from(190000);
+      final gate = operations.inspectionGate = Completer<void>();
+      await tester.tap(keyed('mobile_welcome_redeem_card'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Paste card link'));
+      await tester.pump();
+      expect(find.text('Checking the gift…'), findsOneWidget);
+      gate.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('Gift found'), findsOneWidget);
+      final card = tester.widget<PaymentLinkGiftCard>(
+        find.byType(PaymentLinkGiftCard).first,
+      );
+      expect(card.amountText, '0.0019');
+      await tester.tap(
+        find.bySemanticsLabel(kPaymentLinkRevealMessageSemanticLabel),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('A gift from Zodl'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    for (final stated in [false, true]) {
+      testWidgets('pending Zodl amount stays informational, stated $stated', (
+        tester,
+      ) async {
+        await pumpWelcome(
+          tester,
+          clipboard: stated ? '$zodlTestLink&amount=0.001' : zodlTestLink,
+        );
+        operations.waiting = true;
+        operations.inspectedAmount = BigInt.zero;
+        await tester.tap(keyed('mobile_welcome_redeem_card'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Paste card link'));
+        await tester.pumpAndSettle();
+        final card = tester.widget<PaymentLinkGiftCard>(
+          find.byType(PaymentLinkGiftCard).first,
+        );
+        expect(card.amountText, stated ? '0.001' : '—');
+        expect(
+          find.text('Waiting for the deposit to confirm · 1 of 6'),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+      });
+    }
+  });
 
   testWidgets('a pasted Card is checked and handed to an existing wallet', (
     tester,
@@ -2005,6 +2063,7 @@ class _GiftOperations extends PendingClaimPaymentLinkOperations {
   bool bindFails = false;
   Completer<void>? bindGate;
   Completer<void>? inspectionGate;
+  BigInt? inspectedAmount;
   Completer<void>? broadcastGate;
   final allowLongSyncChecks = <bool>[];
   PaymentLinkClaimBroadcastStatus claimStatus =
@@ -2095,20 +2154,22 @@ class _GiftOperations extends PendingClaimPaymentLinkOperations {
   }) async {
     allowLongSyncChecks.add(allowLongSync);
     await inspectionGate?.future;
+    final amount = inspectedAmount ?? link.amountZatoshi;
     return PaymentLinkClaimInspection(
       // Inspection resolves the Card's address and age, as the service does.
       link: link.withResolvedMetadata(
         address: 'u1giftcard',
         createdAt: DateTime.utc(2026, 9, 1),
+        amountZatoshi: amount,
       ),
       directory: Directory.systemTemp,
       dbPath: '/tmp/claim.db',
       accountUuid: 'claim-account',
-      totalZatoshi: link.amountZatoshi + BigInt.from(10000),
+      totalZatoshi: amount + BigInt.from(10000),
       claimableZatoshi:
           waiting || inspectionAvailability != PaymentLinkAvailability.available
           ? BigInt.zero
-          : link.amountZatoshi,
+          : amount,
       feeZatoshi: waiting ? BigInt.zero : BigInt.from(10000),
       fundingConfirmationCount: waiting ? 1 : 2,
       waitingForFundingConfirmations: waiting,
