@@ -620,6 +620,10 @@ class _ActivityTransactionStatusScreenState
             ownAccounts: ownAccounts,
           )
         : null;
+    final fromAccount = receiptSourceAccount(
+      detail,
+      ref.watch(accountProvider).value?.accounts ?? const <AccountInfo>[],
+    );
 
     return _ReceiptContentColumn(
       child: ReceivedReceiptView(
@@ -633,6 +637,17 @@ class _ActivityTransactionStatusScreenState
         timestampText: _timestampText(tx),
         txIdText: _truncatedDisplayTxid(tx.txidHex),
         fromRecipient: fromRecipient,
+        fromAccount: fromAccount == null
+            ? null
+            : (
+                name: fromAccount.name,
+                profilePictureId: fromAccount.profilePictureId,
+                shieldedPool: switch (fromPool) {
+                  'shielded' => true,
+                  'transparent' => false,
+                  _ => null,
+                },
+              ),
         unknownFromKind: hasFromAddress
             ? null
             : _unknownFromKindForSourcePool(fromPool),
@@ -682,9 +697,19 @@ class _ActivityTransactionStatusScreenState
       phase: _sentPhaseFor(tx),
       amountText: _amountText(tx, privacyModeEnabled: privacyModeEnabled),
       recipient: recipient,
-      recipientRow: recipient == null
+      // A send whose recipient the account did not record keeps the send
+      // shell; nothing names a recipient or offers to verify one.
+      recipientRow: recipient != null
+          ? null
+          : _detailsLoading
           ? const ReceiptCounterpartySkeleton(label: 'To')
-          : null,
+          : ReviewInfoRow(
+              key: const ValueKey('receipt_unknown_recipient'),
+              label: 'To',
+              value: kUnknownRecipientText,
+              struckThrough: _sentPhaseFor(tx) == SendStatusPhase.failed,
+              leading: const ReviewInfoIconCircle(iconName: AppIcons.wallet),
+            ),
       timestampText: _timestampText(tx),
       txIdText: _truncatedDisplayTxid(tx.txidHex),
       feeText: _feeText(tx, privacyModeEnabled: privacyModeEnabled),
@@ -1042,7 +1067,7 @@ class _ActivityTransactionStatusScreenState
     final giftCard =
         _resolvedGiftCard(tx, activeAccountUuid) ?? suppliedGiftCard;
 
-    final sentRecipientAddress = detail?.primaryAddress?.trim();
+    final sentRecipientAddress = receiptRecipientAddress(detail);
     Widget? redesignedContent;
     if (tx != null && giftCard != null) {
       redesignedContent = _giftCardContent(
@@ -1061,12 +1086,12 @@ class _ActivityTransactionStatusScreenState
     } else if (tx != null &&
         tx.txKind == 'sent' &&
         (_detailsLoading ||
-            (sentRecipientAddress != null &&
-                sentRecipientAddress.isNotEmpty))) {
+            sentRecipientAddress != null ||
+            receiptHasUnknownRecipient(tx, detail))) {
       redesignedContent = _sentContent(
         tx,
         detail,
-        sentRecipientAddress?.isNotEmpty == true ? sentRecipientAddress : null,
+        sentRecipientAddress,
         addressBookContacts,
         privacyModeEnabled: privacyModeEnabled,
       );
@@ -1091,7 +1116,12 @@ class _ActivityTransactionStatusScreenState
     Widget receiptContent =
         redesignedContent ??
         _fallbackContent(tx, privacyModeEnabled: privacyModeEnabled);
-    if (tx != null && detail?.transparentDetailsState != null) {
+    final offersDebugLookup = tx != null && _offersDebugLookup(tx, detail);
+    if (tx != null &&
+        giftCard == null &&
+        (offersDebugLookup ||
+            transparentDetailsNotice(detail) != null ||
+            listedTransactionOutputs(detail).isNotEmpty)) {
       receiptContent = Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1102,9 +1132,10 @@ class _ActivityTransactionStatusScreenState
               detail: detail,
               privacyModeEnabled: privacyModeEnabled,
               debugLookupText: _debugLookupText,
-              onDebugLookup: _offersDebugLookup(tx, detail)
+              onDebugLookup: offersDebugLookup
                   ? () => unawaited(_runDebugLookup(tx))
                   : null,
+              spaced: false,
             ),
           ),
         ],

@@ -1,4 +1,5 @@
 import '../../core/formatting/zec_amount.dart';
+import '../../providers/account_models.dart';
 import '../../rust/api/sync.dart' as rust_sync;
 
 /// Shown for a fee the wallet has not recorded. An unknown fee is never 0.
@@ -114,10 +115,108 @@ bool transparentDetailsAwaited(rust_sync.TransactionDetail? detail) =>
       _ => false,
     };
 
-/// One line per transparent output: the address it pays (or "Script" for a
-/// nonstandard one), and whether it is the account's own.
-String transparentRecipientLabel(rust_sync.TransparentRecipient recipient) =>
-    recipient.isOwn ? 'Your address' : 'Recipient';
+/// Names the recipient of a send the account recorded no recipient for.
+const kUnknownRecipientText = 'Unknown recipient';
+
+/// Labels the list of a transaction's other transparent outputs on a receipt
+/// with no recorded recipient.
+const kTransactionOutputsText = 'Transaction outputs';
+
+/// Says the listed outputs are the transaction's, not payments the account
+/// is known to have made.
+const kTransactionOutputsUnattributedText = 'Recipient not confirmed';
+
+/// The address a receipt names as the recipient: only the one the account
+/// recorded for its payment.
+///
+/// Transparent txid enhancement knows every output of the transaction, not
+/// which of them this account paid: a mixed send can pay a shielded recipient
+/// while another party's transparent output follows, and a shared funding can
+/// return someone else's change. So an output is never promoted to the
+/// recipient, whatever its order or ownership.
+String? receiptRecipientAddress(rust_sync.TransactionDetail? detail) {
+  final recorded = detail?.primaryAddress?.trim();
+  return recorded == null || recorded.isEmpty ? null : recorded;
+}
+
+/// Whether a receipt with an established send role but no recorded recipient
+/// keeps the send shell with an unknown recipient.
+///
+/// Only an amount that is a payment, with its fee on its own line, fits that
+/// shell. An amount that includes the fee is a balance change whose payment
+/// role is not established, and a fee-only entry is its one fee line; both
+/// keep the neutral receipt, which labels them as such.
+bool receiptHasUnknownRecipient(
+  rust_sync.TransactionInfo tx,
+  rust_sync.TransactionDetail? detail,
+) =>
+    tx.txKind == 'sent' &&
+    !transactionActivitySummaryIncomplete(tx) &&
+    transactionFeePresentation(tx) == TransactionFeePresentation.separate &&
+    receiptRecipientAddress(detail) == null;
+
+/// The wallet account a receive came from, when the receipt has no exact
+/// source address: the account the wallet recorded as sending its received
+/// outputs, if it is still listed. It names an account, never an address or
+/// a sole funder.
+AccountInfo? receiptSourceAccount(
+  rust_sync.TransactionDetail? detail,
+  Iterable<AccountInfo> accounts,
+) {
+  final address = detail?.sourceAddress?.trim();
+  if (address != null && address.isNotEmpty) return null;
+  final uuid = detail?.sourceAccountUuid;
+  if (uuid == null) return null;
+  for (final account in accounts) {
+    if (account.uuid == uuid) return account;
+  }
+  return null;
+}
+
+/// The transparent outputs a receipt lists as the transaction's, attributed
+/// to no one: every known output the account did not record as its own, in
+/// transaction order, when the receipt has no recorded recipient.
+///
+/// The account's own outputs (a send's change) are left out, as they are from
+/// a receipt built on the stored transaction. Receives and shieldings name
+/// only the account's own outputs, so they list none, and a recorded
+/// recipient makes the list redundant.
+List<rust_sync.TransparentRecipient> listedTransactionOutputs(
+  rust_sync.TransactionDetail? detail,
+) {
+  if (detail == null ||
+      detail.transparentDetailsState !=
+          rust_sync.TransparentDetailsState.available ||
+      receiptRecipientAddress(detail) != null) {
+    return const [];
+  }
+  switch (detail.txKind) {
+    case 'received' || 'receiving' || 'shielded' || 'migration':
+      return const [];
+  }
+  return [
+    for (final output in detail.transparentRecipients)
+      if (!output.isOwn) output,
+  ]..sort((a, b) => a.outputIndex.compareTo(b.outputIndex));
+}
+
+/// The transparent details state a receipt reports, or null when the
+/// receipt is whole without them: the outputs are not known yet or cannot be
+/// looked up, and the receipt has no recorded recipient.
+/// Receives and shieldings name the account's own outputs, which are
+/// recorded, so they never wait on this.
+rust_sync.TransparentDetailsState? transparentDetailsNotice(
+  rust_sync.TransactionDetail? detail,
+) {
+  final state = detail?.transparentDetailsState;
+  if (state == null || state == rust_sync.TransparentDetailsState.available) {
+    return null;
+  }
+  return switch (detail!.txKind) {
+    'received' || 'receiving' || 'shielded' || 'migration' => null,
+    _ => receiptRecipientAddress(detail) == null ? state : null,
+  };
+}
 
 /// One line describing a development lookup's result.
 String describeTransparentDetailsLookup(

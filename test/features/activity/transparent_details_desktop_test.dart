@@ -5,12 +5,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
-import 'package:zcash_wallet/src/core/formatting/address_display.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_transaction_status_screen.dart';
 import 'package:zcash_wallet/src/features/activity/transaction_completeness.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/send/widgets/send_recipient_resolver.dart';
+import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -27,7 +27,11 @@ Future<List<String>> _pump(
   bool privacy = false,
   bool privateTransparentRecovery = false,
   Future<String> Function(rust_sync.TransactionInfo)? debugLookup,
+  rust_sync.TransactionInfo? transaction,
+  bool privateQueries = true,
+  Map<String, AccountInfo> ownAccounts = const {},
 }) async {
+  final tx = transaction ?? transparentSend();
   await tester.binding.setSurfaceSize(const Size(1512, 1400));
   addTearDown(() => tester.binding.setSurfaceSize(null));
   final prioritized = <String>[];
@@ -39,10 +43,10 @@ Future<List<String>> _pump(
         builder: (_, _) => ActivityTransactionStatusScreen(
           args: ActivityTransactionStatusArgs(
             txidHex: transparentDetailsTxid,
-            txKind: 'sent',
-            initialTransaction: transparentSend(),
+            txKind: tx.txKind,
+            initialTransaction: tx,
           ),
-          historyLoader: (_) async => [transparentSend()],
+          historyLoader: (_) async => [tx],
           detailLoader: details.load,
           transparentDetailsPrioritizer: (txid) async => prioritized.add(txid),
           transparentDetailsDebugLookup: debugLookup,
@@ -57,7 +61,9 @@ Future<List<String>> _pump(
       overrides: [
         swapFeatureEnabledProvider.overrideWithValue(false),
         privacyModeProvider.overrideWith(() => PrivacySetting(privacy)),
-        enhancePirProvider.overrideWith(() => FakeEnhancePirNotifier(true)),
+        enhancePirProvider.overrideWith(
+          () => FakeEnhancePirNotifier(privateQueries),
+        ),
         appBootstrapProvider.overrideWithValue(transparentDetailsBootstrap()),
         syncProvider.overrideWith(
           () =>
@@ -71,7 +77,7 @@ Future<List<String>> _pump(
               ),
         ),
         addressBookRepositoryProvider.overrideWithValue(EmptyAddressBook()),
-        ownAccountAddressesProvider.overrideWith((ref) async => const {}),
+        ownAccountAddressesProvider.overrideWith((ref) async => ownAccounts),
       ],
       child: MaterialApp.router(
         routerConfig: router,
@@ -108,7 +114,32 @@ void main() {
       await _pump(tester, details, sync: sync);
     },
   );
-  testWidgets('desktop receipt shows transparent recipients when available', (
+  transparentReceiptParityTests(
+    pump:
+        (
+          tester,
+          details, {
+          required transaction,
+          required privateQueries,
+          ownAccounts = const {},
+          privacy = false,
+        }) => _pump(
+          tester,
+          details,
+          transaction: transaction,
+          privateQueries: privateQueries,
+          ownAccounts: ownAccounts,
+          privacy: privacy,
+        ),
+    titles: const ReceiptTitles(
+      received: 'Received successfully',
+      receiving: 'Receive in progress...',
+      receiveFailed: 'Receive failed',
+      shielded: 'Shielded successfully',
+      sending: 'Send in progress...',
+    ),
+  );
+  testWidgets('desktop receipt never names an output its recipient', (
     tester,
   ) async {
     final details = ScriptedDetails([
@@ -118,16 +149,14 @@ void main() {
       ),
     ]);
     final prioritized = await _pump(tester, details);
-    expect(
-      find.byKey(const ValueKey('transparent_details_section')),
-      findsOneWidget,
-    );
-    expect(find.text('Recipient'), findsOneWidget);
-    expect(find.text('Your address'), findsOneWidget);
-    expect(
-      find.textContaining(truncatedAddress(transparentRecipientAddress)),
-      findsOneWidget,
-    );
+    expect(find.text('Sent successfully'), findsOneWidget);
+    expect(find.text(kUnknownRecipientText), findsOneWidget);
+    expect(find.text('Show full address'), findsNothing);
+    // The other party's output is listed as the transaction's; the change is
+    // never listed.
+    expect(transactionOutputShown, findsOneWidget);
+    expect(find.byKey(const ValueKey('transaction_output_1')), findsNothing);
+    expect(find.text('Your address'), findsNothing);
     expect(find.text(kTransparentDetailsUnavailableText), findsNothing);
     expect(
       prioritized,
@@ -191,7 +220,7 @@ void main() {
     await tester.pump(kTransparentDetailsPollInterval);
     await tester.pump();
     expect(details.calls, 3);
-    expect(find.text('Recipient'), findsOneWidget);
+    expect(transactionOutputShown, findsOneWidget);
     expect(find.text(kTransparentDetailsUnavailableText), findsNothing);
     await tester.pump(kTransparentDetailsPollInterval * 4);
     expect(details.calls, 3, reason: 'polling stopped');

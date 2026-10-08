@@ -14304,6 +14304,7 @@ impl SseDecode for crate::api::sync::TransactionDetail {
         let mut var_primaryAddress = <Option<String>>::sse_decode(deserializer);
         let mut var_sourceAddress = <Option<String>>::sse_decode(deserializer);
         let mut var_sourcePool = <Option<String>>::sse_decode(deserializer);
+        let mut var_sourceAccountUuid = <Option<String>>::sse_decode(deserializer);
         let mut var_memo = <Option<String>>::sse_decode(deserializer);
         let mut var_outputs =
             <Vec<crate::api::sync::TransactionDetailOutput>>::sse_decode(deserializer);
@@ -14319,6 +14320,7 @@ impl SseDecode for crate::api::sync::TransactionDetail {
             primary_address: var_primaryAddress,
             source_address: var_sourceAddress,
             source_pool: var_sourcePool,
+            source_account_uuid: var_sourceAccountUuid,
             memo: var_memo,
             outputs: var_outputs,
             details_complete: var_detailsComplete,
@@ -19072,6 +19074,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::TransactionDetail {
             self.primary_address.into_into_dart().into_dart(),
             self.source_address.into_into_dart().into_dart(),
             self.source_pool.into_into_dart().into_dart(),
+            self.source_account_uuid.into_into_dart().into_dart(),
             self.memo.into_into_dart().into_dart(),
             self.outputs.into_into_dart().into_dart(),
             self.details_complete.into_into_dart().into_dart(),
@@ -23015,6 +23018,7 @@ impl SseEncode for crate::api::sync::TransactionDetail {
         <Option<String>>::sse_encode(self.primary_address, serializer);
         <Option<String>>::sse_encode(self.source_address, serializer);
         <Option<String>>::sse_encode(self.source_pool, serializer);
+        <Option<String>>::sse_encode(self.source_account_uuid, serializer);
         <Option<String>>::sse_encode(self.memo, serializer);
         <Vec<crate::api::sync::TransactionDetailOutput>>::sse_encode(self.outputs, serializer);
         <bool>::sse_encode(self.details_complete, serializer);

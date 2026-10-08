@@ -10,16 +10,20 @@ import '../../../core/widgets/review_wrap_card.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../transaction_completeness.dart';
 
-/// The transparent outputs of a transparent or mixed transaction, as loop 4
-/// (transparent txid enhancement) knows them: every output when available,
-/// otherwise a notice that they will arrive or that private mode cannot look
-/// them up. Renders nothing for a transaction without a transparent part.
+/// What the receipt adds from loop 4 (transparent txid enhancement) beyond
+/// its shared shell, for a receipt with no recorded recipient: the
+/// transaction's other transparent outputs, attributed to no one, or a notice
+/// while they are not known yet or cannot be looked up in private mode.
+/// Renders nothing otherwise, so a receipt with a recorded recipient shows
+/// the same rows whether its details came from a stored transaction or from
+/// private queries.
 class TransparentDetailsSection extends StatelessWidget {
   const TransparentDetailsSection({
     required this.detail,
     required this.privacyModeEnabled,
     this.debugLookupText,
     this.onDebugLookup,
+    this.spaced = true,
     super.key,
   });
 
@@ -33,19 +37,28 @@ class TransparentDetailsSection extends StatelessWidget {
   /// storing anything.
   final VoidCallback? onDebugLookup;
 
+  /// Whether the card keeps its own gap from the card above. Off where the
+  /// host column already spaces its cards.
+  final bool spaced;
+
   @override
   Widget build(BuildContext context) {
-    final state = detail?.transparentDetailsState;
-    if (state == null) return const SizedBox.shrink();
+    final notice = transparentDetailsNotice(detail);
+    final outputs = listedTransactionOutputs(detail);
+    if (notice == null && outputs.isEmpty && onDebugLookup == null) {
+      return const SizedBox.shrink();
+    }
     final colors = context.colors;
     final rows = <Widget>[
-      switch (state) {
-        rust_sync.TransparentDetailsState.available => ReviewListRow(
-          label: 'Transparent outputs',
-          value: '${detail!.transparentRecipients.length}',
-        ),
-        rust_sync.TransparentDetailsState.pending ||
-        rust_sync.TransparentDetailsState.unavailable => ReviewListRow(
+      if (notice == rust_sync.TransparentDetailsState.notCovered)
+        ReviewListRow(
+          key: const ValueKey('transparent_details_not_covered'),
+          label: 'Details',
+          value: kTransparentDetailsNotCoveredText,
+          valueColor: colors.text.secondary,
+        )
+      else if (notice != null)
+        ReviewListRow(
           key: const ValueKey('transparent_details_unavailable'),
           label: 'Details',
           value: kTransparentDetailsUnavailableText,
@@ -53,24 +66,30 @@ class TransparentDetailsSection extends StatelessWidget {
           leadingIconName: AppIcons.loader,
           scaleValueToFit: true,
         ),
-        rust_sync.TransparentDetailsState.notCovered => ReviewListRow(
-          key: const ValueKey('transparent_details_not_covered'),
-          label: 'Details',
-          value: kTransparentDetailsNotCoveredText,
-          valueColor: colors.text.secondary,
+      // The outputs are the transaction's; none is named a recipient.
+      if (outputs.isNotEmpty)
+        Column(
+          key: const ValueKey('transaction_outputs'),
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ReviewListRow(
+              label: kTransactionOutputsText,
+              value: kTransactionOutputsUnattributedText,
+              valueColor: colors.text.secondary,
+              scaleValueToFit: true,
+            ),
+            for (final output in outputs)
+              ReviewListRow(
+                key: ValueKey('transaction_output_${output.outputIndex}'),
+                label: 'Output',
+                value:
+                    '${output.address == null ? 'Script' : truncatedAddress(output.address!)}'
+                    '  ${hideAmountIfPrivacyMode(ZecAmount.fromZatoshi(output.amountZatoshi).activityDetail.toString(), privacyModeEnabled: privacyModeEnabled)}',
+                copyText: output.address,
+                scaleValueToFit: true,
+              ),
+          ],
         ),
-      },
-      if (state == rust_sync.TransparentDetailsState.available)
-        for (final recipient in detail!.transparentRecipients)
-          ReviewListRow(
-            key: ValueKey('transparent_recipient_${recipient.outputIndex}'),
-            label: transparentRecipientLabel(recipient),
-            value:
-                '${recipient.address == null ? 'Script' : truncatedAddress(recipient.address!)}'
-                '  ${hideAmountIfPrivacyMode(ZecAmount.fromZatoshi(recipient.amountZatoshi).activityDetail.toString(), privacyModeEnabled: privacyModeEnabled)}',
-            copyText: recipient.address,
-            scaleValueToFit: true,
-          ),
       if (onDebugLookup != null)
         ReviewListRow(
           key: const ValueKey('transparent_details_debug_lookup'),
@@ -87,7 +106,7 @@ class TransparentDetailsSection extends StatelessWidget {
         ),
     ];
     return Padding(
-      padding: const EdgeInsets.only(top: AppSpacing.base),
+      padding: EdgeInsets.only(top: spaced ? AppSpacing.base : 0),
       child: ReviewWrapCard(
         key: const ValueKey('transparent_details_section'),
         children: rows,

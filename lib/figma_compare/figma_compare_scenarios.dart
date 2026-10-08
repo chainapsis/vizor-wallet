@@ -1433,6 +1433,35 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildDesktopZeroValueSendUseCase,
   ),
   FigmaCompareScenario(
+    id: 'activity-transparent-received-public',
+    description: 'Desktop transparent receive receipt, public queries',
+    builder: _desktopTransparentReceivedPublic,
+  ),
+  FigmaCompareScenario(
+    id: 'activity-transparent-received-private',
+    description: 'Desktop transparent receive receipt, private queries',
+    builder: _desktopTransparentReceivedPrivate,
+  ),
+  FigmaCompareScenario(
+    id: 'activity-transparent-sent-public',
+    description: 'Desktop transparent send receipt, public queries',
+    builder: _desktopTransparentSentPublic,
+  ),
+  FigmaCompareScenario(
+    id: 'activity-transparent-sent-private',
+    description:
+        'Desktop transparent send receipt, private queries, no recorded '
+        'recipient',
+    builder: _desktopTransparentSentPrivate,
+  ),
+  FigmaCompareScenario(
+    id: 'activity-transparent-sent-private-recorded',
+    description:
+        'Desktop transparent send receipt, private queries, recorded '
+        'recipient',
+    builder: _desktopTransparentSentPrivateRecorded,
+  ),
+  FigmaCompareScenario(
     id: 'payment-link-empty',
     description: 'Desktop Gift Cards empty state',
     builder: buildPaymentLinkEmptyUseCase,
@@ -2234,6 +2263,44 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'mobile-activity-zero-value',
     description: 'Mobile Activity with zero-value memo payments',
     builder: buildMobileZeroValueActivityUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-activity-transparent-received-public',
+    description: 'Mobile transparent receive receipt, public queries',
+    builder: _mobileTransparentReceivedPublic,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-activity-transparent-received-private',
+    description: 'Mobile transparent receive receipt, private queries',
+    builder: _mobileTransparentReceivedPrivate,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-activity-transparent-sent-public',
+    description: 'Mobile transparent send receipt, public queries',
+    builder: _mobileTransparentSentPublic,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-activity-transparent-sent-private',
+    description:
+        'Mobile transparent send receipt, private queries, no recorded '
+        'recipient',
+    builder: _mobileTransparentSentPrivate,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-activity-transparent-sent-private-recorded',
+    description:
+        'Mobile transparent send receipt, private queries, recorded recipient',
+    builder: _mobileTransparentSentPrivateRecorded,
     desktop: false,
     mobile: true,
   ),
@@ -3127,3 +3194,41 @@ Widget _giftCardValueCapture(BuildContext context) => const Center(
     showCaret: false,
   ),
 );
+
+Widget _desktopTransparentReceivedPublic(BuildContext context) =>
+    buildDesktopTransparentReceiptUseCase(kind: 'received', private: false);
+
+Widget _desktopTransparentReceivedPrivate(BuildContext context) =>
+    buildDesktopTransparentReceiptUseCase(kind: 'received', private: true);
+
+Widget _desktopTransparentSentPublic(BuildContext context) =>
+    buildDesktopTransparentReceiptUseCase(kind: 'sent', private: false);
+
+Widget _desktopTransparentSentPrivate(BuildContext context) =>
+    buildDesktopTransparentReceiptUseCase(kind: 'sent', private: true);
+
+Widget _mobileTransparentReceivedPublic(BuildContext context) =>
+    buildMobileTransparentReceiptUseCase(kind: 'received', private: false);
+
+Widget _mobileTransparentReceivedPrivate(BuildContext context) =>
+    buildMobileTransparentReceiptUseCase(kind: 'received', private: true);
+
+Widget _mobileTransparentSentPublic(BuildContext context) =>
+    buildMobileTransparentReceiptUseCase(kind: 'sent', private: false);
+
+Widget _mobileTransparentSentPrivate(BuildContext context) =>
+    buildMobileTransparentReceiptUseCase(kind: 'sent', private: true);
+
+Widget _desktopTransparentSentPrivateRecorded(BuildContext context) =>
+    buildDesktopTransparentReceiptUseCase(
+      kind: 'sent',
+      private: true,
+      recordedSend: true,
+    );
+
+Widget _mobileTransparentSentPrivateRecorded(BuildContext context) =>
+    buildMobileTransparentReceiptUseCase(
+      kind: 'sent',
+      private: true,
+      recordedSend: true,
+    );

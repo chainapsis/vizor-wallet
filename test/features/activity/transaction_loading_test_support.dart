@@ -17,6 +17,7 @@ import 'package:zcash_wallet/src/features/address_book/providers/address_book_pr
 import 'package:zcash_wallet/src/features/send/widgets/send_recipient_resolver.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/features/activity/transaction_completeness.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import '../../fakes/fake_sync_notifier.dart';
@@ -164,7 +165,9 @@ void transactionLoadingTests({required bool mobile}) {
     await tester.pump();
     expect(find.byType(ReceiptValueSkeleton), findsNothing);
     expect(find.text('Show full address'), findsNothing);
-    expect(find.text('To'), findsNothing);
+    // The send keeps its To row, naming no one.
+    expect(find.text('To'), findsOneWidget);
+    expect(find.text(kUnknownRecipientText), findsOneWidget);
     expect(find.text('Message'), findsNothing);
   });
 
@@ -220,14 +223,9 @@ void transactionLoadingTests({required bool mobile}) {
           }
           await tester.pump();
           await tester.pump();
+          // Desktop and mobile both keep the send title without a recipient.
           expect(
-            find.text(
-              kind == 'received'
-                  ? receivedTitle
-                  : mobile
-                  ? 'Sent successfully'
-                  : 'Transaction',
-            ),
+            find.text(kind == 'received' ? receivedTitle : 'Sent successfully'),
             findsOneWidget,
           );
           expect(find.text('Completed'), findsOneWidget);
