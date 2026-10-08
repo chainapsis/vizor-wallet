@@ -16,12 +16,12 @@ import os
 from pathlib import Path
 import pwd
 import secrets
-import stat
 import threading
 
 import e2e_runtime as runtime
 from native_case_lifecycle import NativeCaseLifecycle
 import native_mac_cleanup as native
+import native_owned_tree as owned_tree
 
 
 _TOKEN = object()
@@ -40,33 +40,20 @@ class MacCaseStorageCleanup:
     native_observation: native.CaseMacCleanupObservation
 
 
-@dataclasses.dataclass(frozen=True)
-class _Entry:
-    name: str
-    identity: tuple[int, ...]
-    children: tuple[_Entry, ...] | None
-
-
 def _home() -> Path:
     # Do not derive cleanup targets from caller HOME/CFFIXED_USER_HOME overrides.
     return Path(pwd.getpwuid(os.getuid()).pw_dir).resolve(strict=True)
 
 
 def _identity(details: os.stat_result) -> tuple[int, ...]:
-    basic = (details.st_dev, details.st_ino, details.st_uid, details.st_mode)
-    return basic if stat.S_ISDIR(details.st_mode) else basic + (
-        details.st_nlink, details.st_size, details.st_mtime_ns,
-    )
+    return owned_tree.identity(details)
 
 
 def _check(details: os.stat_result, *, directory: bool, private: bool = False) -> None:
-    valid_type = stat.S_ISDIR(details.st_mode) if directory else stat.S_ISREG(details.st_mode)
-    if (
-        not valid_type or details.st_uid != os.getuid()
-        or details.st_mode & (0o077 if private else 0o022)
-        or (not directory and details.st_nlink != 1)
-    ):
-        raise MacCaseStorageError("support entry must have its original owned regular identity")
+    try:
+        owned_tree.check(details, directory=directory, private=private)
+    except owned_tree.OwnedTreeError as error:
+        raise MacCaseStorageError(str(error)) from error
 
 
 def _open_directory(stack: contextlib.ExitStack, path, *, dir_fd=None, private=False) -> int:
@@ -106,53 +93,18 @@ def _read_file(directory_fd: int, name: str, limit: int):
         return stream.read(limit), _identity(details)
 
 
-def _scan(directory_fd: int, depth=0) -> tuple[_Entry, ...]:
-    if depth > 64:
-        raise MacCaseStorageError("support tree depth exceeds cleanup bound")
-    entries = []
-    # Keep the original ownership marker until the other entries are removed.
-    for name in sorted(os.listdir(directory_fd), key=lambda item: (item == _MARKER, item)):
-        details = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
-        directory = stat.S_ISDIR(details.st_mode)
-        _check(details, directory=directory)
-        children = None
-        if directory:
-            with contextlib.ExitStack() as stack:
-                child_fd = _open_directory(stack, name, dir_fd=directory_fd)
-                if _identity(os.fstat(child_fd)) != _identity(details):
-                    raise MacCaseStorageError("support child changed during inspection")
-                children = _scan(child_fd, depth + 1)
-        entries.append(_Entry(name, _identity(details), children))
-    return tuple(entries)
+def _scan(directory_fd: int):
+    try:
+        return owned_tree.scan(directory_fd, marker=_MARKER)
+    except owned_tree.OwnedTreeError as error:
+        raise MacCaseStorageError(str(error)) from error
 
 
-def _remove_entries(directory_fd: int, entries: tuple[_Entry, ...], verify_attachment) -> None:
-    if set(os.listdir(directory_fd)) != {entry.name for entry in entries}:
-        raise MacCaseStorageError("support entries changed after inspection")
-    for entry in entries:
-        verify_attachment()
-        current = os.stat(entry.name, dir_fd=directory_fd, follow_symlinks=False)
-        if _identity(current) != entry.identity:
-            raise MacCaseStorageError("support child changed before removal")
-        if entry.children is not None:
-            with contextlib.ExitStack() as stack:
-                child_fd = _open_directory(stack, entry.name, dir_fd=directory_fd)
-                if _identity(os.fstat(child_fd)) != entry.identity:
-                    raise MacCaseStorageError("support child changed during removal")
-                def verify_child_attachment():
-                    verify_attachment()
-                    # An open fd is not permission to mutate a directory that
-                    # was moved/replaced outside its original case attachment.
-                    attached = os.stat(entry.name, dir_fd=directory_fd, follow_symlinks=False)
-                    if _identity(attached) != entry.identity:
-                        raise MacCaseStorageError("support child attachment changed during removal")
-                _remove_entries(child_fd, entry.children, verify_child_attachment)
-            verify_attachment()
-            if _identity(os.stat(entry.name, dir_fd=directory_fd, follow_symlinks=False)) != entry.identity:
-                raise MacCaseStorageError("support directory changed before removal")
-            os.rmdir(entry.name, dir_fd=directory_fd)
-        else:
-            os.unlink(entry.name, dir_fd=directory_fd)
+def _remove_entries(directory_fd, entries, verify_attachment):
+    try:
+        owned_tree.remove_entries(directory_fd, entries, verify_attachment)
+    except owned_tree.OwnedTreeError as error:
+        raise MacCaseStorageError(str(error)) from error
 
 
 class MacCaseStorage:

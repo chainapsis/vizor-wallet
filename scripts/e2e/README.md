@@ -499,6 +499,65 @@ publishes synthetic metadata only; it is not a wallet or a financial scenario.
 Trusted build publication, real wallet/backend execution, full worker workspace
 removal and catalog execution remain pending. Catalog execution flags stay false.
 
+### Own worker mutable storage and retain case evidence
+
+`native_worker_lifecycle.py` composes the existing port, case and native storage
+owners. `prepare_native_worker_lifecycle()` exclusively creates
+`native-workers/<run>-w<worker>/workspace` and a separate `evidence` directory
+under an existing private artifact root. The worker marker, manifests, process
+logs and app context remain outside the removable mutable workspace.
+Existing or partially allocated workers/cases are never adopted.
+
+```python
+worker = prepare_native_worker_lifecycle(artifacts_root, run_id=run_id, worker_id=0)
+try:
+    session = worker.prepare_case(platform="macos", scenario_id=scenario_id,
+        case_index=0, activation_height=500, helper=captured_helper)
+    # Owned control/backend phases use session.case; place mutable fixture data
+    # under session.mutable_directory. Native writers use session.storage.
+    app = session.storage.start_app(env=app_environment)
+    # Run the selected scenario and any same-case restart phases.
+    session.close(cancel_event=cancel_event)
+    cleanup = worker.close()
+except BaseException:
+    worker.retain()  # Stop owned writers; preserve workspace/native/evidence.
+    raise
+```
+
+iOS cases require explicit installed runtime/device-type identifiers and an
+actual captured Simulator helper/cohort. Native preparation claims/boots a new
+exact-UUID simulator before returning the usable session. Session close runs
+the original native owner internally, verifies process completion and releases
+the original port handles. Neither close API accepts caller-provided cleanup
+booleans, JSON, report receipts or PIDs. The result is cleanup, not scenario PASS.
+Port locks remain held when any owned writer/device stop is unproven.
+
+Worker close requires all originally allocated cases to have completed through
+their sessions, rechecks original worker/case directory and marker identities,
+then removes only the anchored mutable workspace and observes its absence.
+The [shared owned-tree primitive](native_owned_tree.py) retains the macOS
+support owner's strict link rejection. Mutable build workspaces may contain
+owned symlinks; they are unlinked as entries, never traversed. Hardlinks, unsafe
+entries, replaced parents or uncertain cleanup retain remaining state and seal
+new assignment. Closing an unfinished worker stops its case writers and retains
+workspace/state instead of deleting it. Evidence is never removed, including
+after successful cleanup, and partial failures never become successful reruns.
+
+Operations are cooperative/single-owner; all writers must use the owned case
+groups/native app APIs. Phase SDK/native allowances and per-group termination
+budgets are separate, not one aggregate wall-clock SLA. Shared immutable artifacts
+must live outside the removable workspace; source cloning, trusted build
+publication, worker scheduling, backend execution and scenario assertions are
+not implemented by this primitive. Catalog execution flags stay false.
+
+```bash
+python3 -B -m unittest scripts/e2e/test_native_worker_lifecycle.py scripts/e2e/test_native_mac_case_storage.py scripts/e2e/test_native_ios_case_storage.py
+```
+
+These host models compose private signed-artifact/native-output fixtures,
+separate app/console children and real port reservations. They do not execute
+real wallets, chains, protected biometric state or financial scenarios.
+
 ## Gift Cards
 
 Sender usage tracking and empty observer DB reuse:
