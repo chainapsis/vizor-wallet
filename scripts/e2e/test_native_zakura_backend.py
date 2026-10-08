@@ -40,6 +40,9 @@ class FixtureModel:
     def mine(self, count):
         return {"count": count}
 
+    def wait_synced(self, *, deadline=None):
+        return {"synced": True, "deadline": deadline}
+
     def close(self):
         self.close_calls += 1
         self._closed = True
@@ -118,6 +121,7 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(owner.grpc("service", {"height": 1})["params"], {"height": 1})
         self.assertEqual(owner.grpc_stream("range")["method"], "range")
         self.assertEqual(owner.mine(2), {"count": 2})
+        self.assertEqual(owner.wait_synced(deadline=43), {"synced": True, "deadline": 43})
         with self.assertRaises(BACKEND.NativeZakuraError):
             owner.start()
 
@@ -143,6 +147,10 @@ class BackendTests(unittest.TestCase):
             owner.start()
         with self.assertRaises(BACKEND.NativeZakuraError):
             owner.mine(1)
+        with patch.object(owner._fixture, "wait_synced") as wait:
+            with self.assertRaises(BACKEND.NativeZakuraError):
+                owner.wait_synced()
+            wait.assert_not_called()
         with self.assertRaises(BACKEND.NativeZakuraError):
             prepare(owner._case)
         self.assertEqual(owner._fixture.started, 0)
@@ -213,6 +221,8 @@ class BackendTests(unittest.TestCase):
         self.assertFalse(owner.closed)
         with self.assertRaises(BACKEND.NativeZakuraError):
             owner.mine(1)
+        with self.assertRaises(BACKEND.NativeZakuraError):
+            owner.wait_synced()
         with self.assertRaises(BACKEND.NativeZakuraError):
             owner.close()
 

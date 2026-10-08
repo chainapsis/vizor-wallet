@@ -121,6 +121,10 @@ class OwnedNativeZakuraBackend:
         self._running()
         return self._fixture.mine(count)
 
+    def wait_synced(self, *, deadline=None):
+        self._running()
+        return self._fixture.wait_synced(deadline=deadline)
+
     def close(self):
         """Caller must stop SDK-native apps and seal/join original case writers."""
         if self._finished or self._case.accepting_launches or self._case._receipt is None:
