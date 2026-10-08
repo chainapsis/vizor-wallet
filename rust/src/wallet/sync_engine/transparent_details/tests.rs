@@ -1491,6 +1491,13 @@ async fn shielded_payment_to_a_transparent_recipient_keeps_the_view() {
         rusqlite::params![id, account_id(&fixture.path, fixture.account)],
     )
     .unwrap();
+    // Recorded as mixed, as the wallet records a mixed transaction it has
+    // no raw bytes of.
+    conn.execute(
+        "INSERT INTO ironwood_enhance_routing (transaction_id, route) VALUES (?1, 2)",
+        [id],
+    )
+    .unwrap();
     conn.execute(
         "INSERT INTO transparent_detail_work (transaction_id, reasons) VALUES (?1, 4)",
         [id],
@@ -1801,7 +1808,7 @@ async fn stale_lookup_failures_preserve_remined_or_unmined_work() {
             rusqlite::Connection::open(&path)
                 .unwrap()
                 .execute(
-                    "UPDATE transactions SET mined_height = ?1 WHERE txid = ?2",
+                    "UPDATE transactions SET mined_height = ?1, block = ?1 WHERE txid = ?2",
                     rusqlite::params![new_height, looked_up_txid.as_ref().as_slice()],
                 )
                 .unwrap();
