@@ -179,6 +179,15 @@ class FunderExecutionTests(unittest.TestCase):
         value = self.execute(artifact, "build", {"schema_version":1})
         self.assertEqual(value["number"], 0.001)
 
+    def test_deeply_nested_output_is_a_signer_error_after_original_join(self):
+        artifact = self.artifact(response='{"schema_version":1,"value":' + '['*10000 + '0' + ']'*10000 + '}')
+        case = self.fixture.case()
+        with self.assertRaisesRegex(EXECUTION.FunderExecutionError,"exactly one JSON object") as caught:
+            self.execute(artifact,"build",{"schema_version":1},case)
+        self.assertIsInstance(caught.exception.__cause__,RecursionError)
+        self.assertTrue(case._processes[0].cleanup_completed)
+        self.assertEqual(case.close().exit_codes,(0,))
+
     def test_oversized_signer_output_stops_before_timeout_or_unbounded_log(self):
         artifact = self.artifact(extra="sys.stdout.write('x'*(2*1024*1024+4096)); sys.stdout.flush(); time.sleep(30)")
         case = self.fixture.case()

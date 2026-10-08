@@ -166,7 +166,7 @@ def run_offline_funder(case: NativeCaseLifecycle, artifact: ProducedRegtestFunde
         try:
             value = json.loads(output, object_pairs_hook=_object, parse_constant=_nonfinite,
                                parse_float=_finite_float)
-        except (TypeError, ValueError) as error:
+        except (TypeError, ValueError, RecursionError) as error:
             raise FunderExecutionError("signer did not return exactly one JSON object") from error
         if (not isinstance(value, dict) or type(value.get("schema_version")) is not int
             or value["schema_version"] != 1):
