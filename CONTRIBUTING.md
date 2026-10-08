@@ -195,7 +195,7 @@ After changing any file under `rust/src/api/`, regenerate bindings from the
 repository root:
 
 ```bash
-flutter_rust_bridge_codegen generate
+scripts/generate-rust-bridge.sh
 ```
 
 Commit all resulting changes in `lib/src/rust/` and

@@ -1,0 +1,8 @@
+/private/tmp/claude-501/-Users-czstudio/b99d1c9d-c415-44c7-a2eb-4b544c184a84/scratchpad/vz-frbfix/rust/../vz-frbfix-target/debug/deps/tor_general_addr-092a3d27520f23d3.d: /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tor-general-addr-0.35.0/src/lib.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tor-general-addr-0.35.0/src/general.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tor-general-addr-0.35.0/src/unix.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tor-general-addr-0.35.0/src/../README.md
+
+/private/tmp/claude-501/-Users-czstudio/b99d1c9d-c415-44c7-a2eb-4b544c184a84/scratchpad/vz-frbfix/rust/../vz-frbfix-target/debug/deps/libtor_general_addr-092a3d27520f23d3.rmeta: /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tor-general-addr-0.35.0/src/lib.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tor-general-addr-0.35.0/src/general.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tor-general-addr-0.35.0/src/unix.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tor-general-addr-0.35.0/src/../README.md
+
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tor-general-addr-0.35.0/src/lib.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tor-general-addr-0.35.0/src/general.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tor-general-addr-0.35.0/src/unix.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tor-general-addr-0.35.0/src/../README.md:

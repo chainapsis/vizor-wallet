@@ -1,0 +1,11 @@
+/private/tmp/claude-501/-Users-czstudio/b99d1c9d-c415-44c7-a2eb-4b544c184a84/scratchpad/vz-frbfix/rust/../vz-frbfix-target/debug/deps/ctr-06282b7d5a7d91b3.d: /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ctr-0.9.2/src/lib.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ctr-0.9.2/src/flavors.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ctr-0.9.2/src/flavors/ctr128.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ctr-0.9.2/src/flavors/ctr32.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ctr-0.9.2/src/flavors/ctr64.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ctr-0.9.2/src/backend.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ctr-0.9.2/src/ctr_core.rs
+
+/private/tmp/claude-501/-Users-czstudio/b99d1c9d-c415-44c7-a2eb-4b544c184a84/scratchpad/vz-frbfix/rust/../vz-frbfix-target/debug/deps/libctr-06282b7d5a7d91b3.rmeta: /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ctr-0.9.2/src/lib.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ctr-0.9.2/src/flavors.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ctr-0.9.2/src/flavors/ctr128.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ctr-0.9.2/src/flavors/ctr32.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ctr-0.9.2/src/flavors/ctr64.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ctr-0.9.2/src/backend.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ctr-0.9.2/src/ctr_core.rs
+
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ctr-0.9.2/src/lib.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ctr-0.9.2/src/flavors.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ctr-0.9.2/src/flavors/ctr128.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ctr-0.9.2/src/flavors/ctr32.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ctr-0.9.2/src/flavors/ctr64.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ctr-0.9.2/src/backend.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ctr-0.9.2/src/ctr_core.rs:

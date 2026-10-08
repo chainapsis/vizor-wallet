@@ -1,0 +1,9 @@
+/private/tmp/claude-501/-Users-czstudio/b99d1c9d-c415-44c7-a2eb-4b544c184a84/scratchpad/vz-frbfix/rust/../vz-frbfix-target/debug/deps/allo_isolate-86018cac6750e2db.d: /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/allo-isolate-0.1.27/src/lib.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/allo-isolate-0.1.27/src/dart_array.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/allo-isolate-0.1.27/src/into_dart.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/allo-isolate-0.1.27/src/into_dart_extra.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/allo-isolate-0.1.27/src/ffi.rs
+
+/private/tmp/claude-501/-Users-czstudio/b99d1c9d-c415-44c7-a2eb-4b544c184a84/scratchpad/vz-frbfix/rust/../vz-frbfix-target/debug/deps/liballo_isolate-86018cac6750e2db.rmeta: /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/allo-isolate-0.1.27/src/lib.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/allo-isolate-0.1.27/src/dart_array.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/allo-isolate-0.1.27/src/into_dart.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/allo-isolate-0.1.27/src/into_dart_extra.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/allo-isolate-0.1.27/src/ffi.rs
+
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/allo-isolate-0.1.27/src/lib.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/allo-isolate-0.1.27/src/dart_array.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/allo-isolate-0.1.27/src/into_dart.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/allo-isolate-0.1.27/src/into_dart_extra.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/allo-isolate-0.1.27/src/ffi.rs:

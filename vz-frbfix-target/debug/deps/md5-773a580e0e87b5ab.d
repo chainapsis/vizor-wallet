@@ -1,0 +1,10 @@
+/private/tmp/claude-501/-Users-czstudio/b99d1c9d-c415-44c7-a2eb-4b544c184a84/scratchpad/vz-frbfix/rust/../vz-frbfix-target/debug/deps/md5-773a580e0e87b5ab.d: /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/md-5-0.10.6/src/lib.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/md-5-0.10.6/src/compress.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/md-5-0.10.6/src/consts.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/md-5-0.10.6/src/compress/soft.rs
+
+/private/tmp/claude-501/-Users-czstudio/b99d1c9d-c415-44c7-a2eb-4b544c184a84/scratchpad/vz-frbfix/rust/../vz-frbfix-target/debug/deps/libmd5-773a580e0e87b5ab.rlib: /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/md-5-0.10.6/src/lib.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/md-5-0.10.6/src/compress.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/md-5-0.10.6/src/consts.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/md-5-0.10.6/src/compress/soft.rs
+
+/private/tmp/claude-501/-Users-czstudio/b99d1c9d-c415-44c7-a2eb-4b544c184a84/scratchpad/vz-frbfix/rust/../vz-frbfix-target/debug/deps/libmd5-773a580e0e87b5ab.rmeta: /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/md-5-0.10.6/src/lib.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/md-5-0.10.6/src/compress.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/md-5-0.10.6/src/consts.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/md-5-0.10.6/src/compress/soft.rs
+
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/md-5-0.10.6/src/lib.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/md-5-0.10.6/src/compress.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/md-5-0.10.6/src/consts.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/md-5-0.10.6/src/compress/soft.rs:

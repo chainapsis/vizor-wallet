@@ -1,0 +1,2 @@
+cargo:rustc-check-cfg=cfg(derive_deftly_dprint)
+cargo:rustc-check-cfg=cfg(feature, values("bizarre"))

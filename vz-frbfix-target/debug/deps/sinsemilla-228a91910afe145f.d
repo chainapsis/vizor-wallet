@@ -1,0 +1,9 @@
+/private/tmp/claude-501/-Users-czstudio/b99d1c9d-c415-44c7-a2eb-4b544c184a84/scratchpad/vz-frbfix/rust/../vz-frbfix-target/debug/deps/sinsemilla-228a91910afe145f.d: /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zakura-sinsemilla-2.0.0/src/lib.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zakura-sinsemilla-2.0.0/src/addition.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zakura-sinsemilla-2.0.0/src/once.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zakura-sinsemilla-2.0.0/src/sinsemilla_s.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zakura-sinsemilla-2.0.0/src/weighted.rs
+
+/private/tmp/claude-501/-Users-czstudio/b99d1c9d-c415-44c7-a2eb-4b544c184a84/scratchpad/vz-frbfix/rust/../vz-frbfix-target/debug/deps/libsinsemilla-228a91910afe145f.rmeta: /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zakura-sinsemilla-2.0.0/src/lib.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zakura-sinsemilla-2.0.0/src/addition.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zakura-sinsemilla-2.0.0/src/once.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zakura-sinsemilla-2.0.0/src/sinsemilla_s.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zakura-sinsemilla-2.0.0/src/weighted.rs
+
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zakura-sinsemilla-2.0.0/src/lib.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zakura-sinsemilla-2.0.0/src/addition.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zakura-sinsemilla-2.0.0/src/once.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zakura-sinsemilla-2.0.0/src/sinsemilla_s.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zakura-sinsemilla-2.0.0/src/weighted.rs:

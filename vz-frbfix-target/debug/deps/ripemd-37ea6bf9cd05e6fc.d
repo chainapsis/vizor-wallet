@@ -1,0 +1,10 @@
+/private/tmp/claude-501/-Users-czstudio/b99d1c9d-c415-44c7-a2eb-4b544c184a84/scratchpad/vz-frbfix/rust/../vz-frbfix-target/debug/deps/ripemd-37ea6bf9cd05e6fc.d: /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ripemd-0.2.0-pre.4/src/lib.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ripemd-0.2.0-pre.4/src/c128.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ripemd-0.2.0-pre.4/src/c160.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ripemd-0.2.0-pre.4/src/c256.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ripemd-0.2.0-pre.4/src/c320.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ripemd-0.2.0-pre.4/src/../README.md
+
+/private/tmp/claude-501/-Users-czstudio/b99d1c9d-c415-44c7-a2eb-4b544c184a84/scratchpad/vz-frbfix/rust/../vz-frbfix-target/debug/deps/libripemd-37ea6bf9cd05e6fc.rmeta: /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ripemd-0.2.0-pre.4/src/lib.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ripemd-0.2.0-pre.4/src/c128.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ripemd-0.2.0-pre.4/src/c160.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ripemd-0.2.0-pre.4/src/c256.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ripemd-0.2.0-pre.4/src/c320.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ripemd-0.2.0-pre.4/src/../README.md
+
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ripemd-0.2.0-pre.4/src/lib.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ripemd-0.2.0-pre.4/src/c128.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ripemd-0.2.0-pre.4/src/c160.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ripemd-0.2.0-pre.4/src/c256.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ripemd-0.2.0-pre.4/src/c320.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ripemd-0.2.0-pre.4/src/../README.md:

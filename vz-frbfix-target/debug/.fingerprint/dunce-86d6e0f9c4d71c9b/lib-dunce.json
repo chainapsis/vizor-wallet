@@ -1,0 +1,1 @@
+{"rustc":17329007180185699724,"features":"[]","declared_features":"[]","target":2507403751003635712,"profile":13756204469667138204,"path":11139260865335393231,"deps":[],"local":[{"CheckDepInfo":{"dep_info":"debug/.fingerprint/dunce-86d6e0f9c4d71c9b/dep-lib-dunce","checksum":false}}],"rustflags":["--cfg","frb_expand"],"config":9396254390672932401,"compile_kind":0}

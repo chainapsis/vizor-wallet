@@ -1,0 +1,8 @@
+/private/tmp/claude-501/-Users-czstudio/b99d1c9d-c415-44c7-a2eb-4b544c184a84/scratchpad/vz-frbfix/rust/../vz-frbfix-target/debug/deps/serde_with_macros-18b04b90ea8b4181.d: /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_with_macros-3.24.0/src/lib.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_with_macros-3.24.0/src/apply.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_with_macros-3.24.0/src/lazy_bool.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_with_macros-3.24.0/src/utils.rs
+
+/private/tmp/claude-501/-Users-czstudio/b99d1c9d-c415-44c7-a2eb-4b544c184a84/scratchpad/vz-frbfix/rust/../vz-frbfix-target/debug/deps/libserde_with_macros-18b04b90ea8b4181.dylib: /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_with_macros-3.24.0/src/lib.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_with_macros-3.24.0/src/apply.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_with_macros-3.24.0/src/lazy_bool.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_with_macros-3.24.0/src/utils.rs
+
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_with_macros-3.24.0/src/lib.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_with_macros-3.24.0/src/apply.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_with_macros-3.24.0/src/lazy_bool.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_with_macros-3.24.0/src/utils.rs:

@@ -5,7 +5,7 @@
 # lifetimes. Remove this shim once FRB accepts super-let expressions.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-export VIZOR_CODEGEN_REAL_CARGO
+export VIZOR_CODEGEN_REAL_CARGO VIZOR_CODEGEN_PATH="$PATH"
 VIZOR_CODEGEN_REAL_CARGO="$(command -v cargo)"
 shim_dir="$(mktemp -d "${TMPDIR:-/tmp}/vizor-frb-expand.XXXXXX")"
 trap 'rm -rf "$shim_dir"' EXIT
@@ -17,6 +17,9 @@ import subprocess
 import sys
 
 cargo = os.environ['VIZOR_CODEGEN_REAL_CARGO']
+# Hide this shim from cargo: a shim manager (mise, asdf) resolves `cargo` from
+# PATH again and would otherwise recurse into this script forever.
+os.environ['PATH'] = os.environ['VIZOR_CODEGEN_PATH']
 args = sys.argv[1:]
 if args and args[0] == 'expand':
     result = subprocess.run([cargo, *args], stdout=subprocess.PIPE)

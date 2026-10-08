@@ -1,0 +1,1 @@
+{"rustc":17329007180185699724,"features":"[]","declared_features":"[\"full\"]","target":4896925186787281036,"profile":6045031025150363531,"path":12434054696888875835,"deps":[],"local":[{"CheckDepInfo":{"dep_info":"debug/.fingerprint/caret-88b83450d91e7147/dep-lib-caret","checksum":false}}],"rustflags":["--cfg","frb_expand"],"config":9396254390672932401,"compile_kind":0}

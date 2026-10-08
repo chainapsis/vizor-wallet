@@ -1,0 +1,9 @@
+/private/tmp/claude-501/-Users-czstudio/b99d1c9d-c415-44c7-a2eb-4b544c184a84/scratchpad/vz-frbfix/rust/../vz-frbfix-target/debug/deps/zip32-5614bb3e7a551fc1.d: /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zip32-0.2.1/src/lib.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zip32-0.2.1/src/arbitrary.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zip32-0.2.1/src/fingerprint.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zip32-0.2.1/src/hardened_only.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zip32-0.2.1/src/registered.rs
+
+/private/tmp/claude-501/-Users-czstudio/b99d1c9d-c415-44c7-a2eb-4b544c184a84/scratchpad/vz-frbfix/rust/../vz-frbfix-target/debug/deps/libzip32-5614bb3e7a551fc1.rmeta: /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zip32-0.2.1/src/lib.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zip32-0.2.1/src/arbitrary.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zip32-0.2.1/src/fingerprint.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zip32-0.2.1/src/hardened_only.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zip32-0.2.1/src/registered.rs
+
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zip32-0.2.1/src/lib.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zip32-0.2.1/src/arbitrary.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zip32-0.2.1/src/fingerprint.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zip32-0.2.1/src/hardened_only.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zip32-0.2.1/src/registered.rs:

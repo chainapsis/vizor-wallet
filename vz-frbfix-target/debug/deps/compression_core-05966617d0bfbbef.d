@@ -1,0 +1,8 @@
+/private/tmp/claude-501/-Users-czstudio/b99d1c9d-c415-44c7-a2eb-4b544c184a84/scratchpad/vz-frbfix/rust/../vz-frbfix-target/debug/deps/compression_core-05966617d0bfbbef.d: /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/compression-core-0.4.33/src/lib.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/compression-core-0.4.33/src/level.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/compression-core-0.4.33/src/unshared.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/compression-core-0.4.33/src/util.rs
+
+/private/tmp/claude-501/-Users-czstudio/b99d1c9d-c415-44c7-a2eb-4b544c184a84/scratchpad/vz-frbfix/rust/../vz-frbfix-target/debug/deps/libcompression_core-05966617d0bfbbef.rmeta: /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/compression-core-0.4.33/src/lib.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/compression-core-0.4.33/src/level.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/compression-core-0.4.33/src/unshared.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/compression-core-0.4.33/src/util.rs
+
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/compression-core-0.4.33/src/lib.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/compression-core-0.4.33/src/level.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/compression-core-0.4.33/src/unshared.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/compression-core-0.4.33/src/util.rs:

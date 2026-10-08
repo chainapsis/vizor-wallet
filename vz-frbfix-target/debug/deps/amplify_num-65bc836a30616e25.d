@@ -1,0 +1,10 @@
+/private/tmp/claude-501/-Users-czstudio/b99d1c9d-c415-44c7-a2eb-4b544c184a84/scratchpad/vz-frbfix/rust/../vz-frbfix-target/debug/deps/amplify_num-65bc836a30616e25.d: /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/amplify_num-0.5.4/src/lib.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/amplify_num-0.5.4/src/bigint.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/amplify_num-0.5.4/src/error.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/amplify_num-0.5.4/src/hex.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/amplify_num-0.5.4/src/posit.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/amplify_num-0.5.4/src/smallint.rs
+
+/private/tmp/claude-501/-Users-czstudio/b99d1c9d-c415-44c7-a2eb-4b544c184a84/scratchpad/vz-frbfix/rust/../vz-frbfix-target/debug/deps/libamplify_num-65bc836a30616e25.rmeta: /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/amplify_num-0.5.4/src/lib.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/amplify_num-0.5.4/src/bigint.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/amplify_num-0.5.4/src/error.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/amplify_num-0.5.4/src/hex.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/amplify_num-0.5.4/src/posit.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/amplify_num-0.5.4/src/smallint.rs
+
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/amplify_num-0.5.4/src/lib.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/amplify_num-0.5.4/src/bigint.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/amplify_num-0.5.4/src/error.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/amplify_num-0.5.4/src/hex.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/amplify_num-0.5.4/src/posit.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/amplify_num-0.5.4/src/smallint.rs:

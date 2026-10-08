@@ -1,0 +1,1 @@
+{"rustc":17329007180185699724,"features":"","declared_features":"","target":0,"profile":0,"path":0,"deps":[[17705238635785893858,"build_script_build",false,5949232036820373171]],"local":[{"Precalculated":"2.11.1"}],"rustflags":["--cfg","frb_expand"],"config":0,"compile_kind":0}

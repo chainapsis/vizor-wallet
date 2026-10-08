@@ -1,0 +1,10 @@
+/private/tmp/claude-501/-Users-czstudio/b99d1c9d-c415-44c7-a2eb-4b544c184a84/scratchpad/vz-frbfix/rust/../vz-frbfix-target/debug/deps/liblzma-335a7e6edd7848ad.d: /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/liblzma-0.4.8/src/lib.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/liblzma-0.4.8/src/stream.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/liblzma-0.4.8/src/bufread.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/liblzma-0.4.8/src/read.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/liblzma-0.4.8/src/write.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/liblzma-0.4.8/src/write/auto_finish.rs
+
+/private/tmp/claude-501/-Users-czstudio/b99d1c9d-c415-44c7-a2eb-4b544c184a84/scratchpad/vz-frbfix/rust/../vz-frbfix-target/debug/deps/libliblzma-335a7e6edd7848ad.rmeta: /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/liblzma-0.4.8/src/lib.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/liblzma-0.4.8/src/stream.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/liblzma-0.4.8/src/bufread.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/liblzma-0.4.8/src/read.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/liblzma-0.4.8/src/write.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/liblzma-0.4.8/src/write/auto_finish.rs
+
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/liblzma-0.4.8/src/lib.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/liblzma-0.4.8/src/stream.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/liblzma-0.4.8/src/bufread.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/liblzma-0.4.8/src/read.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/liblzma-0.4.8/src/write.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/liblzma-0.4.8/src/write/auto_finish.rs:

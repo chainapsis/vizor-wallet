@@ -1,0 +1,10 @@
+/private/tmp/claude-501/-Users-czstudio/b99d1c9d-c415-44c7-a2eb-4b544c184a84/scratchpad/vz-frbfix/rust/../vz-frbfix-target/debug/deps/hidapi-34733773118540a2.d: /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hidapi-2.6.7/src/lib.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hidapi-2.6.7/src/error.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hidapi-2.6.7/src/ffi.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hidapi-2.6.7/src/hidapi.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hidapi-2.6.7/src/hidapi/macos.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hidapi-2.6.7/src/macos.rs
+
+/private/tmp/claude-501/-Users-czstudio/b99d1c9d-c415-44c7-a2eb-4b544c184a84/scratchpad/vz-frbfix/rust/../vz-frbfix-target/debug/deps/libhidapi-34733773118540a2.rmeta: /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hidapi-2.6.7/src/lib.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hidapi-2.6.7/src/error.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hidapi-2.6.7/src/ffi.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hidapi-2.6.7/src/hidapi.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hidapi-2.6.7/src/hidapi/macos.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hidapi-2.6.7/src/macos.rs
+
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hidapi-2.6.7/src/lib.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hidapi-2.6.7/src/error.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hidapi-2.6.7/src/ffi.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hidapi-2.6.7/src/hidapi.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hidapi-2.6.7/src/hidapi/macos.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hidapi-2.6.7/src/macos.rs:

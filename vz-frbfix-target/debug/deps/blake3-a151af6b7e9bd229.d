@@ -1,0 +1,11 @@
+/private/tmp/claude-501/-Users-czstudio/b99d1c9d-c415-44c7-a2eb-4b544c184a84/scratchpad/vz-frbfix/rust/../vz-frbfix-target/debug/deps/blake3-a151af6b7e9bd229.d: /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/blake3-1.8.7/src/lib.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/blake3-1.8.7/src/guts.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/blake3-1.8.7/src/hazmat.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/blake3-1.8.7/src/platform.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/blake3-1.8.7/src/ffi_neon.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/blake3-1.8.7/src/portable.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/blake3-1.8.7/src/join.rs
+
+/private/tmp/claude-501/-Users-czstudio/b99d1c9d-c415-44c7-a2eb-4b544c184a84/scratchpad/vz-frbfix/rust/../vz-frbfix-target/debug/deps/libblake3-a151af6b7e9bd229.rmeta: /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/blake3-1.8.7/src/lib.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/blake3-1.8.7/src/guts.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/blake3-1.8.7/src/hazmat.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/blake3-1.8.7/src/platform.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/blake3-1.8.7/src/ffi_neon.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/blake3-1.8.7/src/portable.rs /Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/blake3-1.8.7/src/join.rs
+
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/blake3-1.8.7/src/lib.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/blake3-1.8.7/src/guts.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/blake3-1.8.7/src/hazmat.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/blake3-1.8.7/src/platform.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/blake3-1.8.7/src/ffi_neon.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/blake3-1.8.7/src/portable.rs:
+/Users/czstudio/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/blake3-1.8.7/src/join.rs:

@@ -38,7 +38,7 @@
 
 <h3 id="ffi-codegen">2.3 Codegen 워크플로우</h3>
 <pre><code># rust/src/api/*.rs 파일을 수정한 후 (pub fn 시그니처나 pub struct 변경 시):
-flutter_rust_bridge_codegen generate
+scripts/generate-rust-bridge.sh
 
 # 재생성되는 파일:
 #   lib/src/rust/api/*.dart        (Dart 바인딩)
