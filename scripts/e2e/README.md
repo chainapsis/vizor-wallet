@@ -56,6 +56,27 @@ Host-only checks for this slice:
 python3 -B -m unittest scripts/e2e/test_e2e_catalog.py scripts/e2e/test_e2e_report.py scripts/e2e/test_e2e_changes.py scripts/e2e/test_e2e_impact.py scripts/e2e/test_run_suite.py
 ```
 
+## Native port ownership primitive
+
+`native_ports.py` is the first host-only worker-lifecycle component for macOS
+and iOS Simulator runners. It reserves distinct loopback RPC, lightwalletd,
+and proxy sockets and per-UID POSIX file locks. A service takes over a port
+after `release_sockets()`; the cooperative lock remains until `close()`.
+Uncooperative processes can still bind after socket handoff, so this is not a
+claim of atomic listener transfer. Lock files remain in place to keep their
+inodes stable. Acquisition failure rolls back this lease's existing handles;
+cleanup errors stay failures rather than becoming a successful retry.
+
+This library does not start a backend or wire an execution mode into
+`run-suite.py`. All catalog entries remain pending. Process/workspace/simulator
+ownership and actual app-storage cleanup are separate follow-up work. Tests
+use private temporary directories, real ephemeral loopback sockets, and one
+owned Python subprocess to verify cross-process lock exclusion:
+
+```bash
+python3 -B -m unittest scripts/e2e/test_native_ports.py
+```
+
 ## Gift Cards
 
 Sender usage tracking and empty observer DB reuse:

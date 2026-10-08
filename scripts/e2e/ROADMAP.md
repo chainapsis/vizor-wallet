@@ -53,10 +53,12 @@ it is under review. Integrate them bottom-up. Keep each intermediate branch
 runnable and update this checklist with its PR link and validation before
 marking it complete. The umbrella targets `main` and merges last.
 
-Catalog and report planning was merged into the umbrella in
-[PR #890](https://github.com/chainapsis/vizor-wallet/pull/890). The
-[app runtime contract](RUNTIME_CONTRACT.md) is the next independent slice;
-worker ownership, native execution, and scenario migrations are still pending.
+Catalog and report planning ([PR #890](https://github.com/chainapsis/vizor-wallet/pull/890))
+and the [app runtime contract](RUNTIME_CONTRACT.md)
+([PR #892](https://github.com/chainapsis/vizor-wallet/pull/892)) are merged into
+the umbrella, not `main`. Worker lifecycle is next, beginning with an independently
+testable port-reservation primitive. Process/workspace/simulator ownership,
+execution wiring, native storage cleanup, and scenario migrations remain pending.
 
 | Slice | Scope | Prerequisites |
 | --- | --- | --- |
