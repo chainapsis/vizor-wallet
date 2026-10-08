@@ -80,16 +80,23 @@ both as PID 1 and beneath a non-reaping PID 1. A process cleanup record does not
 prove native storage cleanup or authorize deletion. Directories and evidence
 are retained.
 
-The next boundary adds fresh, explicitly selected case-owned iOS simulators,
+Fresh, explicitly selected case-owned iOS simulators
+([PR #898](https://github.com/chainapsis/vizor-wallet/pull/898)) are merged into
+the umbrella, not `main`. They provide
 exact-UUID boot/readiness, and verified pre-app shutdown/deletion. Existing
 devices are never adopted. Any case launch or unproven process/native teardown
 retains the device; this is not native storage cleanup. On 2026-10-09, its
 macOS host regression had 219 passes and 4 Linux-only skips, and its Linux
 host-primitive suite had 154 passes. The 34 modelled simulator checks passed
 three repetitions per host. A real fresh iOS 26.3 simulator passed create,
-boot/readiness, shutdown, and positive deletion checks on the final source;
+boot/readiness, shutdown, and positive deletion checks on the initial slice head;
 all 31 pre-existing devices retained their identities and states. No app was
 installed or launched in that smoke check.
+Four review findings were fixed before merging: shutdown while still booting,
+shutdown after failed readiness inventory, reserving SDK process-cleanup time,
+and accepting installed encoded iPad type IDs. Latest focused simulator/case
+validation had 73 passes. Broad suites and the actual simulator smoke were not
+rerun on those localized review corrections.
 
 One broader macOS repetition failed the unchanged descendant-process teardown
 test with `EPERM` during process-group verification. The final full suite then
@@ -97,9 +104,13 @@ passed three consecutive repetitions; the individual test passed 30 repetitions
 each on the umbrella baseline and this branch. The cause was not reproduced or
 established; retain this observation rather than treating reruns as a fix.
 
-These primitives do not wire execution: guarded directory removal, native
-cleanup receipts, post-app simulator teardown, native storage cleanup,
-backend/executor integration, and scenario migrations remain pending.
+The current slice adds a standalone [macOS native storage helper](native-cleanup/README.md)
+with signing checks, exact case Keychain/preference cleanup, positive native
+observations and failed partial receipts. It does not add production app startup
+wiring or enable execution. Host-owned case/launch binding, directory removal,
+iOS recovery/auxiliary-secret cleanup, post-app simulator teardown,
+backend/executor integration, and scenario migrations remain pending. A native
+observation or process receipt alone never authorizes deleting a run.
 
 | Slice | Scope | Prerequisites |
 | --- | --- | --- |

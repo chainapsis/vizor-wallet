@@ -245,6 +245,23 @@ fresh simulator on macOS; Linux test success is not an iOS support claim.
 python3 -B -m unittest scripts/e2e/test_native_ios_simulator.py
 ```
 
+### macOS native storage cleanup helper
+
+The standalone [native cleanup helper](native-cleanup/README.md) observes or
+deletes one canonical case's exact macOS regtest Keychain services and preference
+prefix. It requires a sandboxed helper signed with the stopped cohort's actual
+identity, explicit team matching, noninteractive queries and positive native
+absence. Partial/uncertain results remain failures; no values are emitted.
+
+This is not wired to app startup or an executor, does not grant ownership from a
+namespace/receipt, and does not remove support/workspace files or simulators.
+iOS recovery/auxiliary secrets, host case/launch binding, and full worker cleanup
+remain pending. Catalog execution flags are unchanged.
+
+```bash
+swift test --package-path scripts/e2e/native-cleanup
+```
+
 ## Gift Cards
 
 Sender usage tracking and empty observer DB reuse:
