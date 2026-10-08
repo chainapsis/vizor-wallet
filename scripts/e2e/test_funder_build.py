@@ -50,6 +50,12 @@ class FunderBuildTests(unittest.TestCase):
         self.compile_calls = 0
         self.binary_contents = "modeled-compiler-output"
         self.rustc_identity = "rustc modeled\nhost: aarch64-apple-darwin"
+        self.compiler = self.root / "selected-rustc"
+        self.compiler.write_text("modeled compiler\n")
+        self.compiler.chmod(0o700)
+        self.compiler_entry = self.compiler
+        self.rustup = None
+        self.hard_link_output = False
 
     def git(self, *args):
         return subprocess.run(["git", "-C", str(self.source), *args], check=True,
@@ -72,7 +78,9 @@ class FunderBuildTests(unittest.TestCase):
         case = case or self.case()
         original = case.run_command
         def command(arguments, **options):
-            if arguments[:2] == ["rustc", "-vV"]:
+            if self.rustup is not None and arguments == [str(self.rustup), "which", "rustc"]:
+                return original([sys.executable, "-B", "-c", f"print({str(self.compiler)!r})"], **options)
+            if arguments == [str(self.compiler), "-vV"]:
                 return original([sys.executable, "-B", "-c", f"print({self.rustc_identity!r})"], **options)
             if arguments[:2] == ["cargo", "-V"]:
                 return original([sys.executable, "-B", "-c", "print('cargo modeled')"], **options)
@@ -81,6 +89,9 @@ class FunderBuildTests(unittest.TestCase):
             self.compile_calls += 1
             self.assertIn("--offline", arguments)
             self.assertIn("--locked", arguments)
+            self.assertEqual(options["env"]["RUSTC"], str(self.compiler))
+            self.assertEqual(options["env"]["RUSTC_WRAPPER"], "")
+            self.assertEqual(options["env"]["RUSTC_WORKSPACE_WRAPPER"], "")
             self.assertEqual(arguments[arguments.index("--target") + 1], "aarch64-apple-darwin")
             target = Path(options["env"]["CARGO_TARGET_DIR"])
             binary = target / "debug/examples/regtest_direct_funder"
@@ -93,9 +104,11 @@ class FunderBuildTests(unittest.TestCase):
                 "profile": {"test": self.candidate_mode == "test-harness"}}
             if self.candidate_mode == "wrong-source":
                 message["target"]["src_path"] = str(self.source / "rust/examples/regtest_direct_funder.rs")
-            script = ("from pathlib import Path; import json,sys; "
+            script = ("from pathlib import Path; import json,sys,os; "
                 f"p=Path({str(binary)!r}); p.parent.mkdir(mode=0o700,parents=True,exist_ok=True); "
                 f"p.write_text({self.binary_contents!r}); p.chmod(0o700); ")
+            if self.hard_link_output:
+                script += "os.link(p, p.with_name(p.name + '-hashed')); "
             if self.mutate_source:
                 script += f"s=Path({str(source_file)!r}); s.chmod(0o600); s.write_text('changed'); "
             finished = {"reason": "build-finished", "success": self.completed}
@@ -104,9 +117,12 @@ class FunderBuildTests(unittest.TestCase):
                 f"print(json.dumps({finished!r})); "
                 f"raise SystemExit({self.compiler_exit})")
             return original([sys.executable, "-B", "-c", script], **options)
-        with patch.object(case, "run_command", side_effect=command):
-            return BUILD.build_regtest_funder(case, source_root=self.source, source_commit=self.commit,
-                                            timeout=5, **updates)
+        with patch.object(case, "run_command", side_effect=command), patch.object(
+                BUILD.shutil, "which", return_value=str(self.compiler_entry)) as chosen:
+            artifact = BUILD.build_regtest_funder(case, source_root=self.source, source_commit=self.commit,
+                                                timeout=5, **updates)
+            self.selected_compiler_request = chosen.call_args.args[0]
+            return artifact
 
     def test_original_git_bytes_not_dirty_checkout_and_published_only_after_join(self):
         (self.source / "rust/examples/regtest_direct_funder.rs").write_text("dirty-checkout")
@@ -257,6 +273,41 @@ class FunderBuildTests(unittest.TestCase):
         with self.assertRaisesRegex(BUILD.FunderBuildError, "regular Git blob"):
             self.build()
         self.assertEqual(self.compile_calls, 0)
+
+    def test_cargo_hard_links_are_copied_only_after_positive_join(self):
+        self.hard_link_output = True
+        case = self.case()
+        copy = BUILD._copy_cargo_executable
+        def joined_copy(source, destination):
+            self.assertFalse(case.accepting_launches)
+            self.assertIsNotNone(case._receipt)
+            self.assertTrue(all(process.cleanup_completed for process in case._processes))
+            self.assertEqual(source.stat().st_nlink, 2)
+            return copy(source, destination)
+        with patch.object(BUILD, "_copy_cargo_executable", side_effect=joined_copy):
+            artifact = self.build(case)
+        self.assertEqual(artifact.binary.stat().st_nlink, 1)
+        original = case.workspace.root / "funder-build/target/debug/examples/regtest_direct_funder"
+        self.assertEqual(artifact.binary.read_bytes(), original.read_bytes())
+        original.write_text("Cargo alias changed after publication")
+        self.assertEqual(artifact.binary.read_text(), "modeled-compiler-output")
+        artifact.verify_unchanged()
+
+    def test_explicit_compiler_and_wrappers_cannot_drift_from_probed_compiler(self):
+        with patch.dict(os.environ, {"RUSTC":"custom-rustc", "RUSTC_WRAPPER":"other-wrapper",
+                                    "RUSTC_WORKSPACE_WRAPPER":"other-workspace-wrapper"}):
+            artifact = self.build()
+        self.assertEqual(self.selected_compiler_request, "custom-rustc")
+        self.assertEqual(artifact.identity()["rustc_binary"], str(self.compiler))
+
+    def test_rustup_proxy_resolves_to_actual_compiler_before_probe_and_build(self):
+        self.rustup = self.root / "rustup"
+        self.rustup.write_text("modeled rustup\n")
+        self.rustup.chmod(0o700)
+        self.compiler_entry = self.root / "rustc"
+        self.compiler_entry.symlink_to(self.rustup)
+        artifact = self.build()
+        self.assertEqual(artifact.identity()["rustc_binary"], str(self.compiler))
 
 
 if __name__ == "__main__":
