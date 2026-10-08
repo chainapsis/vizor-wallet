@@ -2824,6 +2824,9 @@ pub struct TransactionDetail {
     pub primary_address: Option<String>,
     pub source_address: Option<String>,
     pub source_pool: Option<String>,
+    /// For a receive: the wallet account recorded as having sent every
+    /// received output shown. An account, never an address.
+    pub source_account_uuid: Option<String>,
     pub memo: Option<String>,
     pub outputs: Vec<TransactionDetailOutput>,
     /// Whether `outputs` holds every recipient and memo.
@@ -3018,6 +3021,7 @@ pub fn get_transaction_detail(
             primary_address: detail.primary_address,
             source_address: detail.source_address,
             source_pool: detail.source_pool,
+            source_account_uuid: detail.source_account_uuid,
             memo: detail.memo,
             outputs: detail
                 .outputs

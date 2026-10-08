@@ -475,7 +475,13 @@ class _MobileTransactionStatusScreenState
       );
     }
 
-    if (_isShielding) return 'Shielded';
+    if (_isShielding) {
+      return switch (_phase) {
+        _TxPhase.pending => 'Shielding...',
+        _TxPhase.succeeded => 'Shielded',
+        _TxPhase.failed => 'Shielding failed',
+      };
+    }
     if (_isMigration) {
       return switch (_phase) {
         _TxPhase.pending => 'Migrating to Ironwood...',
@@ -484,7 +490,11 @@ class _MobileTransactionStatusScreenState
       };
     }
     if (_isIncoming) {
-      return _phase == _TxPhase.pending ? 'Receiving...' : 'Received';
+      return switch (_phase) {
+        _TxPhase.pending => 'Receiving...',
+        _TxPhase.succeeded => 'Received',
+        _TxPhase.failed => 'Receive failed',
+      };
     }
     // An unclassified tx stays neutral, like the desktop fallback receipt, and
     // so does an entry whose whole balance change is its network fee.
@@ -619,7 +629,7 @@ class _MobileTransactionStatusScreenState
     // receipt drops the address row and its verify affordance.
     final primaryAddress = giftCard != null
         ? null
-        : detail?.primaryAddress?.trim();
+        : receiptRecipientAddress(detail);
     final sourceAddress = giftCard != null
         ? null
         : detail?.sourceAddress?.trim();
@@ -753,8 +763,42 @@ class _MobileTransactionStatusScreenState
               ),
             ),
           );
+    // Without an exact source address, the account the wallet recorded as
+    // sending the received outputs still names where the funds came from.
+    final sourceAccount = _isIncoming && addressRow == null && giftCard == null
+        ? receiptSourceAccount(
+            detail,
+            ref.watch(accountProvider).value?.accounts ?? const <AccountInfo>[],
+          )
+        : null;
+    final sourceAccountPool = switch (sourcePool) {
+      'shielded' => 'Shielded',
+      'transparent' => 'Transparent',
+      _ => null,
+    };
+    final sourceAccountRow = sourceAccount == null
+        ? null
+        : MobileReviewInfoRow(
+            key: const ValueKey('received_from_account'),
+            label: 'From',
+            value: sourceAccount.name,
+            leading: AppProfilePicture(
+              profilePictureId: sourceAccount.profilePictureId,
+              size: AppProfilePictureSize.navLarge,
+            ),
+            bottom: sourceAccountPool == null
+                ? null
+                : _BottomInfoRow(
+                    iconName: _poolIconNameFor(sourceAccountPool),
+                    iconColor: _poolIconColorFor(context, sourceAccountPool),
+                    text: sourceAccountPool,
+                  ),
+          );
     final unknownFromLabel =
-        _isIncoming && addressRow == null && giftCard == null
+        _isIncoming &&
+            addressRow == null &&
+            sourceAccountRow == null &&
+            giftCard == null
         ? _unknownFromLabelForSourcePool(sourcePool)
         : null;
     final unknownFromRow = unknownFromLabel == null
@@ -784,11 +828,28 @@ class _MobileTransactionStatusScreenState
     final fromRow = _isIncoming
         ? detailsLoading
               ? const ReceiptCounterpartySkeleton(label: 'From')
-              : addressRow ?? unknownFromRow
+              : addressRow ?? sourceAccountRow ?? unknownFromRow
         : null;
+    // A send whose recipient the account did not record keeps the To row,
+    // naming no one and offering nothing to verify.
     final toRow = _isSent && detailsLoading
         ? const ReceiptCounterpartySkeleton(label: 'To')
-        : addressRow;
+        : addressRow ??
+              (giftCard == null && receiptHasUnknownRecipient(tx, detail)
+                  ? MobileReviewInfoRow(
+                      key: const ValueKey('receipt_unknown_recipient'),
+                      label: 'To',
+                      value: kUnknownRecipientText,
+                      strikethrough: failed,
+                      leading: MobileReviewIconBadge(
+                        child: AppIcon(
+                          AppIcons.wallet,
+                          size: 18,
+                          color: colors.icon.regular,
+                        ),
+                      ),
+                    )
+                  : null);
     // Self-shield (own transparent -> own shielded) has no external
     // counterparty: mirror the desktop ShieldedReceiptView two-row flow,
     // "From transparent balance" -> "Shielded balance". No Figma frame for

@@ -629,6 +629,11 @@ pub(crate) struct TransactionDetail {
     pub primary_address: Option<String>,
     pub source_address: Option<String>,
     pub source_pool: Option<String>,
+    /// For a receive: the wallet account its `sent_notes` record as having
+    /// sent every received output shown, when they all name the same one.
+    /// It names an account, never an address, and does not say that account
+    /// was the transaction's only funder.
+    pub source_account_uuid: Option<String>,
     pub memo: Option<String>,
     pub outputs: Vec<TransactionDetailOutput>,
     /// See [`TransactionInfo::details_complete`]: `outputs` may be partial.
@@ -1421,20 +1426,53 @@ pub(crate) fn get_transaction_detail(
                 std::slice::from_mut(base),
             )
         })?;
-    detail.transparent_details =
-        transparent_details_view(&read_tx, db_path, network, account, &detail.txid_hex);
+    let (view, shielded_source) =
+        transparent_details_view(&read_tx, db_path, network, account, &detail.txid_hex)
+            .map_or((None, false), |(view, shielded)| (Some(view), shielded));
+    detail.transparent_details = view;
+    apply_display_source_pool(&mut detail, shielded_source);
     Ok(detail)
 }
 
-/// Loop 4's view of `txid_hex` for `account`. A view that cannot be read is
-/// left out rather than failing the detail.
+/// Fills in a receive's source pool from validated display facts when its
+/// raw transaction could not say: a transaction with no transparent input
+/// was funded from the shielded pools, as the raw-transaction source reports
+/// it. Only a receive whose source is still unknown changes, and only to the
+/// pool: no address, account, or funder follows from the facts.
+fn apply_display_source_pool(detail: &mut TransactionDetail, shielded_source: bool) {
+    if shielded_source
+        && matches!(detail.tx_kind.as_str(), "received" | "receiving")
+        && detail.source_address.is_none()
+        && detail.source_pool.as_deref() == Some("unknown")
+    {
+        detail.source_pool = Some("shielded".to_string());
+    }
+}
+
+/// Whether display facts establish that a transaction was funded only from
+/// the shielded pools: validated service facts (raw bytes already decided the
+/// source when present) for a non-coinbase transaction with no transparent
+/// input and a shielded component.
+fn display_facts_show_shielded_source(
+    details: &zcash_client_backend::data_api::transparent_ledger::TransparentDisplayDetails,
+) -> bool {
+    use zcash_client_backend::data_api::transparent_ledger::TransparentDisplaySource;
+    matches!(details.source, TransparentDisplaySource::Display(_))
+        && !details.coinbase
+        && details.input_count == 0
+        && details.shielded
+}
+
+/// Loop 4's view of `txid_hex` for `account`, and whether its facts show a
+/// shielded-only source ([`display_facts_show_shielded_source`]). A view that
+/// cannot be read is left out rather than failing the detail.
 fn transparent_details_view(
     read_tx: &rusqlite::Connection,
     db_path: &str,
     network: WalletNetwork,
     account: AccountUuid,
     txid_hex: &str,
-) -> Option<TransparentDetailsView> {
+) -> Option<(TransparentDetailsView, bool)> {
     use zcash_client_backend::data_api::transparent_ledger::TransparentDisplayView;
     let txid = hex::decode(txid_hex).ok()?;
     let view = crate::wallet::db::open_wallet_db_readonly_with_timeout(
@@ -1454,8 +1492,9 @@ fn transparent_details_view(
         }
     };
     Some(match view {
-        TransparentDisplayView::Available(details) => TransparentDetailsView::Available(
-            details
+        TransparentDisplayView::Available(details) => {
+            let shielded_source = display_facts_show_shielded_source(&details);
+            let rows = details
                 .outputs
                 .into_iter()
                 .map(|output| TransparentRecipientRow {
@@ -1466,11 +1505,12 @@ fn transparent_details_view(
                     amount_zatoshi: output.value.into_u64(),
                     is_own: output.owned,
                 })
-                .collect(),
-        ),
-        TransparentDisplayView::Pending => TransparentDetailsView::Pending,
-        TransparentDisplayView::Unavailable => TransparentDetailsView::Unavailable,
-        TransparentDisplayView::NotCovered => TransparentDetailsView::NotCovered,
+                .collect();
+            (TransparentDetailsView::Available(rows), shielded_source)
+        }
+        TransparentDisplayView::Pending => (TransparentDetailsView::Pending, false),
+        TransparentDisplayView::Unavailable => (TransparentDetailsView::Unavailable, false),
+        TransparentDisplayView::NotCovered => (TransparentDetailsView::NotCovered, false),
     })
 }
 
@@ -1527,6 +1567,11 @@ fn read_transaction_detail(
     } else {
         None
     };
+    let source_account_uuid = if matches!(tx_kind, "received" | "receiving") {
+        received_source_account(&visible_outputs)
+    } else {
+        None
+    };
     let outputs = visible_outputs
         .into_iter()
         .map(|output| TransactionDetailOutput {
@@ -1544,6 +1589,7 @@ fn read_transaction_detail(
         primary_address,
         source_address: source.as_ref().and_then(|s| s.address.clone()),
         source_pool: source.map(|s| s.pool.to_string()),
+        source_account_uuid,
         memo,
         outputs,
         details_complete: base.history.details_complete,
@@ -1555,6 +1601,23 @@ fn read_transaction_detail(
 struct TransactionSource {
     address: Option<String>,
     pool: &'static str,
+}
+
+/// The wallet account that sent the received outputs a receipt shows, from
+/// the sending account `sent_notes` recorded for each output. `None` unless
+/// every output has one and they agree: an output with no recorded sender
+/// leaves the source unknown.
+fn received_source_account(outputs: &[&TxOutput]) -> Option<String> {
+    let mut accounts = outputs
+        .iter()
+        .map(|output| output.from_account_uuid.as_deref());
+    let first = accounts.next()??;
+    if !accounts.all(|account| account == Some(first)) {
+        return None;
+    }
+    uuid::Uuid::from_slice(first)
+        .ok()
+        .map(|uuid| uuid.to_string())
 }
 
 fn received_source_from_raw_transaction(
@@ -7860,9 +7923,178 @@ mod tests {
         assert_eq!(got.primary_address, None);
         assert_eq!(got.source_address, None);
         assert_eq!(got.source_pool.as_deref(), Some("unknown"));
+        assert_eq!(got.source_account_uuid, None, "no recorded sender");
         assert_eq!(got.memo.as_deref(), Some("incoming memo"));
         assert_eq!(got.outputs.len(), 1);
         assert_eq!(got.outputs[0].address.as_deref(), Some("u-my-receiver"));
+    }
+
+    fn display_details(
+        coinbase: bool,
+        input_count: u32,
+        shielded: bool,
+        raw: bool,
+    ) -> zcash_client_backend::data_api::transparent_ledger::TransparentDisplayDetails {
+        use zcash_client_backend::data_api::transparent_ledger::{
+            TransparentDisplayDetails, TransparentDisplayProvenance, TransparentDisplaySource,
+            WholeTransactionFee,
+        };
+        TransparentDisplayDetails {
+            outputs: Vec::new(),
+            coinbase,
+            fee: WholeTransactionFee::Unknown,
+            input_count,
+            shielded,
+            source: if raw {
+                TransparentDisplaySource::RawTransaction
+            } else {
+                TransparentDisplaySource::Display(TransparentDisplayProvenance {
+                    shard_id: 0,
+                    revision: 0,
+                    map_sha256: [0; 32],
+                    looked_up_height: zcash_protocol::consensus::BlockHeight::from_u32(1),
+                })
+            },
+        }
+    }
+
+    #[test]
+    fn display_facts_show_a_shielded_source_only_when_conclusive() {
+        assert!(display_facts_show_shielded_source(&display_details(
+            false, 0, true, false
+        )));
+        for (coinbase, inputs, shielded, raw, why) in [
+            (true, 0, true, false, "coinbase"),
+            (false, 1, true, false, "a transparent input"),
+            (false, 0, false, false, "no shielded component"),
+            (false, 0, true, true, "raw bytes already decided the source"),
+        ] {
+            assert!(
+                !display_facts_show_shielded_source(&display_details(
+                    coinbase, inputs, shielded, raw
+                )),
+                "{why}"
+            );
+        }
+    }
+
+    #[test]
+    fn display_source_pool_only_fills_an_unknown_receive_source() {
+        let detail = |tx_kind: &str, address: Option<&str>, pool: Option<&str>| TransactionDetail {
+            txid_hex: String::new(),
+            tx_kind: tx_kind.to_string(),
+            primary_address: None,
+            source_address: address.map(str::to_string),
+            source_pool: pool.map(str::to_string),
+            source_account_uuid: None,
+            memo: None,
+            outputs: Vec::new(),
+            details_complete: false,
+            provisional: false,
+            transparent_details: None,
+        };
+        let pool_after = |mut detail: TransactionDetail, shielded: bool| {
+            apply_display_source_pool(&mut detail, shielded);
+            detail.source_pool
+        };
+        assert_eq!(
+            pool_after(detail("received", None, Some("unknown")), true).as_deref(),
+            Some("shielded")
+        );
+        assert_eq!(
+            pool_after(detail("received", None, Some("unknown")), false).as_deref(),
+            Some("unknown")
+        );
+        // The raw transaction's source wins.
+        assert_eq!(
+            pool_after(detail("received", None, Some("transparent")), true).as_deref(),
+            Some("transparent")
+        );
+        assert_eq!(
+            pool_after(detail("received", Some("t-sender"), Some("unknown")), true).as_deref(),
+            Some("unknown")
+        );
+        // Only receives have a source, and only one with received outputs.
+        assert_eq!(pool_after(detail("sent", None, None), true), None);
+        assert_eq!(pool_after(detail("received", None, None), true), None);
+    }
+
+    /// A receive whose outputs the wallet recorded as sent: `outputs` lists
+    /// each received output with the account `sent_notes` names, if any.
+    fn received_source_account_fixture(outputs: &[(i64, Option<uuid::Uuid>)]) -> TransactionDetail {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let txid = fake_txid(0xD3);
+        insert_history_tx(
+            &db,
+            account,
+            &txid,
+            Some(1_000_000),
+            1,
+            Some(1_000_100),
+            2_000_000,
+            0,
+            2_000_000,
+            false,
+            Some("2026-04-28T17:01:00Z"),
+        );
+        for (index, (output_pool, from)) in outputs.iter().enumerate() {
+            insert_output_with_address(
+                &db,
+                &txid,
+                *output_pool,
+                *from,
+                Some(account),
+                1_000_000,
+                false,
+                Some(&format!("t-my-receiver-{index}")),
+                Some(0),
+            );
+        }
+        detail_from_fixture(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            &account.to_string(),
+            &hex::encode(txid),
+            "received",
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn detail_received_row_names_the_recorded_sending_account() {
+        let other = uuid::Uuid::from_u128(0x11);
+        // An unshielding from another account of this wallet: no raw
+        // transaction, so no source address or pool, only the account the
+        // wallet recorded as sending the output.
+        let got = received_source_account_fixture(&[(TRANSPARENT_POOL, Some(other))]);
+        let other_string = other.to_string();
+        assert_eq!(
+            got.source_account_uuid.as_deref(),
+            Some(other_string.as_str())
+        );
+        assert_eq!(got.source_address, None, "an account is not an address");
+        assert_eq!(got.source_pool.as_deref(), Some("unknown"));
+    }
+
+    #[test]
+    fn detail_received_row_needs_one_recorded_sender_for_every_output() {
+        let other = uuid::Uuid::from_u128(0x11);
+        let third = uuid::Uuid::from_u128(0x12);
+        // An output with no recorded sender leaves the source unknown.
+        let partial = received_source_account_fixture(&[
+            (TRANSPARENT_POOL, Some(other)),
+            (ORCHARD_POOL, None),
+        ]);
+        assert_eq!(partial.outputs.len(), 2);
+        assert_eq!(partial.source_account_uuid, None);
+        // Outputs recorded as sent by different accounts name neither.
+        let mixed = received_source_account_fixture(&[
+            (TRANSPARENT_POOL, Some(other)),
+            (ORCHARD_POOL, Some(third)),
+        ]);
+        assert_eq!(mixed.outputs.len(), 2);
+        assert_eq!(mixed.source_account_uuid, None);
     }
 
     #[test]

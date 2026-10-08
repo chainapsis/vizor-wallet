@@ -14787,21 +14787,22 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TransactionDetail dco_decode_transaction_detail(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 11)
-      throw Exception('unexpected arr length: expect 11 but see ${arr.length}');
+    if (arr.length != 12)
+      throw Exception('unexpected arr length: expect 12 but see ${arr.length}');
     return TransactionDetail(
       txidHex: dco_decode_String(arr[0]),
       txKind: dco_decode_String(arr[1]),
       primaryAddress: dco_decode_opt_String(arr[2]),
       sourceAddress: dco_decode_opt_String(arr[3]),
       sourcePool: dco_decode_opt_String(arr[4]),
-      memo: dco_decode_opt_String(arr[5]),
-      outputs: dco_decode_list_transaction_detail_output(arr[6]),
-      detailsComplete: dco_decode_bool(arr[7]),
-      provisional: dco_decode_bool(arr[8]),
+      sourceAccountUuid: dco_decode_opt_String(arr[5]),
+      memo: dco_decode_opt_String(arr[6]),
+      outputs: dco_decode_list_transaction_detail_output(arr[7]),
+      detailsComplete: dco_decode_bool(arr[8]),
+      provisional: dco_decode_bool(arr[9]),
       transparentDetailsState:
-          dco_decode_opt_box_autoadd_transparent_details_state(arr[9]),
-      transparentRecipients: dco_decode_list_transparent_recipient(arr[10]),
+          dco_decode_opt_box_autoadd_transparent_details_state(arr[10]),
+      transparentRecipients: dco_decode_list_transparent_recipient(arr[11]),
     );
   }
 
@@ -19865,6 +19866,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_primaryAddress = sse_decode_opt_String(deserializer);
     var var_sourceAddress = sse_decode_opt_String(deserializer);
     var var_sourcePool = sse_decode_opt_String(deserializer);
+    var var_sourceAccountUuid = sse_decode_opt_String(deserializer);
     var var_memo = sse_decode_opt_String(deserializer);
     var var_outputs = sse_decode_list_transaction_detail_output(deserializer);
     var var_detailsComplete = sse_decode_bool(deserializer);
@@ -19880,6 +19882,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       primaryAddress: var_primaryAddress,
       sourceAddress: var_sourceAddress,
       sourcePool: var_sourcePool,
+      sourceAccountUuid: var_sourceAccountUuid,
       memo: var_memo,
       outputs: var_outputs,
       detailsComplete: var_detailsComplete,
@@ -24281,6 +24284,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_String(self.primaryAddress, serializer);
     sse_encode_opt_String(self.sourceAddress, serializer);
     sse_encode_opt_String(self.sourcePool, serializer);
+    sse_encode_opt_String(self.sourceAccountUuid, serializer);
     sse_encode_opt_String(self.memo, serializer);
     sse_encode_list_transaction_detail_output(self.outputs, serializer);
     sse_encode_bool(self.detailsComplete, serializer);

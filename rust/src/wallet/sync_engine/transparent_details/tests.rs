@@ -1212,6 +1212,105 @@ async fn detail_view_states() {
     assert_eq!(rows[1].amount_zatoshi, 5_000);
 }
 
+/// The source pool a receipt detail reports for `fixture`'s receipt `tag`,
+/// recorded without raw bytes, after the private service answers with the
+/// facts `coinbase`, `inputs` and `shielded` (or not at all).
+async fn receipt_source_pool(
+    fixture: &Fixture,
+    tag: u8,
+    facts: Option<(bool, u32, bool)>,
+) -> Option<String> {
+    let txid = utxo_receipt(fixture, tag, TOP - 1).txid();
+    if let Some((coinbase, inputs, shielded)) = facts {
+        let answer = Mutex::new(Some(match facts_of(fixture, txid) {
+            DetailAnswer::Facts(mut facts) => {
+                facts.coinbase = coinbase;
+                facts.metadata.transparent_input_count = inputs;
+                facts.metadata.has_shielded_components = shielded;
+                DetailAnswer::Facts(facts)
+            }
+            other => other,
+        }));
+        prioritize(&fixture.path, *txid.as_ref());
+        let mut source = Scripted::new(move |_| Ok(answer.lock().unwrap().take().unwrap()));
+        let mut db = open(&fixture.path);
+        let generation = db.applied_transparent_policy().unwrap().generation;
+        let mut first_only = FirstOnly(&mut source, false);
+        run(
+            &mut db,
+            &fixture.path,
+            MAIN,
+            &mut first_only,
+            generation,
+            clock(),
+            &|| false,
+        )
+        .await;
+        // Wallet validation refuses coinbase facts for a receipt it knows,
+        // so those never reach the view; every other set is stored.
+        let stored = matches!(
+            view(fixture, &txid),
+            Some(TransparentDisplayView::Available(_))
+        );
+        assert_eq!(stored, !coinbase, "facts {facts:?} stored");
+    }
+    let detail = crate::wallet::sync::get_transaction_detail(
+        &fixture.path,
+        MAIN,
+        &fixture.uuid,
+        &hex::encode(txid.as_ref()),
+        "received",
+    )
+    .unwrap();
+    assert_eq!(
+        detail.source_address, None,
+        "the facts name no sender address"
+    );
+    assert_eq!(detail.source_account_uuid, None, "nor a sending account");
+    detail.source_pool
+}
+
+/// Display facts of a transaction with no transparent input and a shielded
+/// component show a shielded-only source, as its raw bytes would; anything
+/// less, or nothing, leaves the source unknown.
+#[tokio::test]
+async fn receipt_source_pool_from_display_facts() {
+    let fixture = wallet();
+    assert_eq!(
+        receipt_source_pool(&fixture, 0x91, None).await.as_deref(),
+        Some("unknown"),
+        "no facts"
+    );
+    assert_eq!(
+        receipt_source_pool(&fixture, 0x92, Some((false, 0, true)))
+            .await
+            .as_deref(),
+        Some("shielded"),
+        "no transparent input, a shielded component"
+    );
+    assert_eq!(
+        receipt_source_pool(&fixture, 0x93, Some((false, 1, true)))
+            .await
+            .as_deref(),
+        Some("unknown"),
+        "a transparent input, possibly another party's"
+    );
+    assert_eq!(
+        receipt_source_pool(&fixture, 0x94, Some((false, 0, false)))
+            .await
+            .as_deref(),
+        Some("unknown"),
+        "no shielded component"
+    );
+    assert_eq!(
+        receipt_source_pool(&fixture, 0x95, Some((true, 0, true)))
+            .await
+            .as_deref(),
+        Some("unknown"),
+        "coinbase facts, refused by validation"
+    );
+}
+
 /// Looks up only the run's first transaction and ends the run after it.
 struct FirstOnly<'s>(&'s mut Scripted, bool);
 

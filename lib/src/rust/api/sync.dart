@@ -2859,6 +2859,10 @@ class TransactionDetail {
   final String? primaryAddress;
   final String? sourceAddress;
   final String? sourcePool;
+
+  /// For a receive: the wallet account recorded as having sent every
+  /// received output shown. An account, never an address.
+  final String? sourceAccountUuid;
   final String? memo;
   final List<TransactionDetailOutput> outputs;
 
@@ -2882,6 +2886,7 @@ class TransactionDetail {
     this.primaryAddress,
     this.sourceAddress,
     this.sourcePool,
+    this.sourceAccountUuid,
     this.memo,
     required this.outputs,
     required this.detailsComplete,
@@ -2897,6 +2902,7 @@ class TransactionDetail {
       primaryAddress.hashCode ^
       sourceAddress.hashCode ^
       sourcePool.hashCode ^
+      sourceAccountUuid.hashCode ^
       memo.hashCode ^
       outputs.hashCode ^
       detailsComplete.hashCode ^
@@ -2914,6 +2920,7 @@ class TransactionDetail {
           primaryAddress == other.primaryAddress &&
           sourceAddress == other.sourceAddress &&
           sourcePool == other.sourcePool &&
+          sourceAccountUuid == other.sourceAccountUuid &&
           memo == other.memo &&
           outputs == other.outputs &&
           detailsComplete == other.detailsComplete &&
