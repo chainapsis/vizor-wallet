@@ -322,7 +322,7 @@ print('owned-app-ready',flush=True)
         child.mkdir()
         (child / "original.bin").write_text("preserve-original")
         moved = self.host.root / "moved-child"
-        remove = STORAGE._remove_entries
+        remove = STORAGE.owned_tree.remove_entries
         swapped = False
         def swap_on_recursion(fd, entries, verify):
             nonlocal swapped
@@ -332,7 +332,7 @@ print('owned-app-ready',flush=True)
                 child.mkdir()
                 (child / "replacement.bin").write_text("preserve-replacement")
             return remove(fd, entries, verify)
-        with patch.object(STORAGE, "_remove_entries", side_effect=swap_on_recursion):
+        with patch.object(STORAGE.owned_tree, "remove_entries", side_effect=swap_on_recursion):
             with self.assertRaises(STORAGE.MacCaseStorageError):
                 self.close(owner)
         self.assertTrue(swapped)

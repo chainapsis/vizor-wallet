@@ -138,7 +138,14 @@ Failure retains device/state/evidence; an external JSON/PID/cleanup flag never
 authorizes deletion. A separate manual metadata-only lifecycle fixture uses the
 actual native profile without changing ordinary wallet targets. Models exercise
 separate native/console writers and sibling preservation, not wallet scenarios.
-Trusted helper provisioning/build publication, whole-worker workspace removal,
+The worker lifecycle now allocates a private mutable workspace separately from
+retained case evidence, owns per-case port/native/process handles from allocation,
+and executes their teardown internally. Only completed original sessions permit
+anchored workspace removal; incomplete/failed cases stop assignment and retain
+state. Native support rejects links; mutable workspace links are only unlinked,
+never followed. Shared build artifacts must remain outside the removable tree.
+No source cloning/build publication, backend, scheduler or execution is added.
+Trusted helper provisioning/build publication,
 backend/executor integration, and scenario migrations remain pending. A native
 observation or process receipt alone never authorizes deleting a run.
 
