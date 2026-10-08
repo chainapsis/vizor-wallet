@@ -677,6 +677,40 @@ address and integer amount. Neither path spends a wallet-under-test key or skips
 coinbase maturity. No production Rust API, dependency update, vendored SQLite
 fix, host funding adapter or catalog execution is added by this tool.
 
+### Original offline signer build producer
+
+`funder_build.py` builds the signer once for later case reuse. Pass a fresh,
+dedicated `NativeCaseLifecycle`, a local Vizor Git object cache and one full
+commit SHA to `build_regtest_funder`. It never builds the dirty checkout or
+downloads missing Git/dependency objects. Git replacement objects are disabled.
+The complete Rust subtree is inventoried from that commit; only exact regular
+Git blobs are copied into new private directories, with read-only source files.
+Archive links, omitted/export-transformed blobs and unexpected files fail.
+
+The original case owns all Git/toolchain/Cargo processes and output capture.
+Cargo uses a fresh target directory, `--offline --locked`, an explicit rustc
+host target and 1–8 jobs (default four). Publication requires successful Cargo
+JSON for this exact example/source, not a test harness, and positive completion
+of every original process group/output writer. The executable becomes read-only.
+
+The returned `ProducedRegtestFunder` is an in-memory original-producer handle,
+not a path/JSON receipt that can be adopted. Call `verify_unchanged()` before
+and after an owning case runs it. `identity()` records the exact commit, Rust
+Git/blob hashes, toolchain, host target and executable SHA-256. Changed source,
+executable or original parent attachments invalidate that handle permanently;
+all failure evidence is retained. Two cases can consume the same publication
+without starting another Cargo build, but each owns its own process/output.
+
+This is not persistent cache lookup, a portable hermetic/environment attestation,
+native app build publication, funding/inclusion validation or catalog execution.
+The source cache and compiler remain trusted cooperative inputs, not a sandbox.
+Missing offline dependencies remain errors rather than triggering downloads.
+Host checks use real Git/files/processes with only the compiler modeled:
+
+```bash
+python3 -B -m unittest scripts/e2e/test_funder_build.py
+```
+
 ## Gift Cards
 
 Sender usage tracking and empty observer DB reuse:
