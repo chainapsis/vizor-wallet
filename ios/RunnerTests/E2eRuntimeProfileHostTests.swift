@@ -24,7 +24,8 @@ enum E2eRuntimeProfileHostTests {
         E2eRuntimeProfile.manifestEnvironmentKey: encoded,
         E2eRuntimeProfile.namespaceEnvironmentKey: namespace,
       ],
-      supportsIsolation: true
+      supportsIsolation: true,
+      isCohortBuild: true
     )
 
     precondition(profile.namespace == namespace)
@@ -39,15 +40,59 @@ enum E2eRuntimeProfileHostTests {
     )
     let production = try E2eRuntimeProfile.parse(
       environment: [:],
-      supportsIsolation: false
+      supportsIsolation: false,
+      isCohortBuild: false
     )
     precondition(!production.isIsolated)
     precondition(production.keychainService("service") == "service")
 
+    let cohortMarker = try E2eRuntimeProfile.readCohortBuildMarker(
+      infoDictionary: [E2eRuntimeProfile.cohortBuildInfoKey: true]
+    )
+    let ordinaryMarker = try E2eRuntimeProfile.readCohortBuildMarker(
+      infoDictionary: [E2eRuntimeProfile.cohortBuildInfoKey: false]
+    )
+    precondition(cohortMarker)
+    precondition(!ordinaryMarker)
+    try expectError(.missingBuildMarker) {
+      _ = try E2eRuntimeProfile.readCohortBuildMarker(infoDictionary: nil)
+    }
+    for invalidMarker in ["true" as Any, 1 as Any] {
+      try expectError(.invalidBuildMarker) {
+        _ = try E2eRuntimeProfile.readCohortBuildMarker(
+          infoDictionary: [E2eRuntimeProfile.cohortBuildInfoKey: invalidMarker]
+        )
+      }
+    }
+    try expectError(.missingEnvironment) {
+      _ = try E2eRuntimeProfile.parse(
+        environment: [:],
+        supportsIsolation: true,
+        isCohortBuild: true
+      )
+    }
+    for unexpectedEnvironment in [
+      [E2eRuntimeProfile.manifestEnvironmentKey: encoded],
+      [E2eRuntimeProfile.namespaceEnvironmentKey: namespace],
+      [
+        E2eRuntimeProfile.manifestEnvironmentKey: encoded,
+        E2eRuntimeProfile.namespaceEnvironmentKey: namespace,
+      ],
+    ] {
+      try expectError(.unexpectedEnvironment) {
+        _ = try E2eRuntimeProfile.parse(
+          environment: unexpectedEnvironment,
+          supportsIsolation: true,
+          isCohortBuild: false
+        )
+      }
+    }
+
     try expectError(.partialEnvironment) {
       _ = try E2eRuntimeProfile.parse(
         environment: [E2eRuntimeProfile.manifestEnvironmentKey: encoded],
-        supportsIsolation: true
+        supportsIsolation: true,
+        isCohortBuild: true
       )
     }
     try expectError(.unsupportedBuild) {
@@ -56,7 +101,15 @@ enum E2eRuntimeProfileHostTests {
           E2eRuntimeProfile.manifestEnvironmentKey: encoded,
           E2eRuntimeProfile.namespaceEnvironmentKey: namespace,
         ],
-        supportsIsolation: false
+        supportsIsolation: false,
+        isCohortBuild: true
+      )
+    }
+    try expectError(.unsupportedBuild) {
+      _ = try E2eRuntimeProfile.parse(
+        environment: [:],
+        supportsIsolation: false,
+        isCohortBuild: true
       )
     }
     try expectError(.namespaceMismatch) {
@@ -65,7 +118,8 @@ enum E2eRuntimeProfileHostTests {
           E2eRuntimeProfile.manifestEnvironmentKey: encoded,
           E2eRuntimeProfile.namespaceEnvironmentKey: "vizor_0000000000_w0_0",
         ],
-        supportsIsolation: true
+        supportsIsolation: true,
+        isCohortBuild: true
       )
     }
 
@@ -87,7 +141,8 @@ enum E2eRuntimeProfileHostTests {
             E2eRuntimeProfile.manifestEnvironmentKey: invalidEncoded,
             E2eRuntimeProfile.namespaceEnvironmentKey: namespace,
           ],
-          supportsIsolation: true
+          supportsIsolation: true,
+          isCohortBuild: true
         )
       }
       manifest[invalid.0] = original
@@ -104,7 +159,8 @@ enum E2eRuntimeProfileHostTests {
           E2eRuntimeProfile.manifestEnvironmentKey: fractional,
           E2eRuntimeProfile.namespaceEnvironmentKey: namespace,
         ],
-        supportsIsolation: true
+        supportsIsolation: true,
+        isCohortBuild: true
       )
     }
     for invalidManifest in [
@@ -117,7 +173,8 @@ enum E2eRuntimeProfileHostTests {
             E2eRuntimeProfile.manifestEnvironmentKey: invalidManifest,
             E2eRuntimeProfile.namespaceEnvironmentKey: namespace,
           ],
-          supportsIsolation: true
+          supportsIsolation: true,
+          isCohortBuild: true
         )
       }
     }
@@ -131,7 +188,8 @@ enum E2eRuntimeProfileHostTests {
             E2eRuntimeProfile.manifestEnvironmentKey: encoded,
             E2eRuntimeProfile.namespaceEnvironmentKey: invalidNamespace,
           ],
-          supportsIsolation: true
+          supportsIsolation: true,
+          isCohortBuild: true
         )
       }
     }

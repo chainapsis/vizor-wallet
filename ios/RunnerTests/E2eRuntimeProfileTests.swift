@@ -9,7 +9,8 @@ final class E2eRuntimeProfileTests: XCTestCase {
   func testAbsentEnvironmentPreservesProductionNames() throws {
     let profile = try E2eRuntimeProfile.parse(
       environment: [:],
-      supportsIsolation: false
+      supportsIsolation: false,
+      isCohortBuild: false
     )
     let support = URL(fileURLWithPath: "/tmp/support", isDirectory: true)
 
@@ -22,6 +23,57 @@ final class E2eRuntimeProfileTests: XCTestCase {
     XCTAssertEqual(profile.keychainService("service"), "service")
     XCTAssertEqual(profile.supportDirectory(support), support)
     XCTAssertEqual(profile.notificationIdentifier("notice"), "notice")
+  }
+
+  func testBuildMarkerMustBePresentAndBoolean() throws {
+    XCTAssertThrowsError(
+      try E2eRuntimeProfile.readCohortBuildMarker(infoDictionary: nil)
+    ) { XCTAssertEqual($0 as? E2eRuntimeProfileError, .missingBuildMarker) }
+    for invalidMarker in ["true" as Any, 1 as Any] {
+      XCTAssertThrowsError(
+        try E2eRuntimeProfile.readCohortBuildMarker(
+          infoDictionary: [E2eRuntimeProfile.cohortBuildInfoKey: invalidMarker]
+        )
+      ) { XCTAssertEqual($0 as? E2eRuntimeProfileError, .invalidBuildMarker) }
+    }
+    let ordinaryMarker = try E2eRuntimeProfile.readCohortBuildMarker(
+      infoDictionary: [E2eRuntimeProfile.cohortBuildInfoKey: false]
+    )
+    let cohortMarker = try E2eRuntimeProfile.readCohortBuildMarker(
+      infoDictionary: [E2eRuntimeProfile.cohortBuildInfoKey: true]
+    )
+    XCTAssertFalse(ordinaryMarker)
+    XCTAssertTrue(cohortMarker)
+  }
+
+  func testCohortBuildWithoutEnvironmentFailsClosed() {
+    XCTAssertThrowsError(
+      try E2eRuntimeProfile.parse(
+        environment: [:],
+        supportsIsolation: true,
+        isCohortBuild: true
+      )
+    ) { XCTAssertEqual($0 as? E2eRuntimeProfileError, .missingEnvironment) }
+  }
+
+  func testNonCohortBuildRejectsAnyE2eEnvironment() throws {
+    let encoded = try encodedManifest()
+    for environment in [
+      [E2eRuntimeProfile.manifestEnvironmentKey: encoded],
+      [E2eRuntimeProfile.namespaceEnvironmentKey: namespace],
+      [
+        E2eRuntimeProfile.manifestEnvironmentKey: encoded,
+        E2eRuntimeProfile.namespaceEnvironmentKey: namespace,
+      ],
+    ] {
+      XCTAssertThrowsError(
+        try E2eRuntimeProfile.parse(
+          environment: environment,
+          supportsIsolation: true,
+          isCohortBuild: false
+        )
+      ) { XCTAssertEqual($0 as? E2eRuntimeProfileError, .unexpectedEnvironment) }
+    }
   }
 
   func testValidManifestDerivesAllNativeIsolationNames() throws {
@@ -54,27 +106,35 @@ final class E2eRuntimeProfileTests: XCTestCase {
     XCTAssertThrowsError(
       try E2eRuntimeProfile.parse(
         environment: [E2eRuntimeProfile.manifestEnvironmentKey: manifest],
-        supportsIsolation: true
+        supportsIsolation: true,
+        isCohortBuild: true
       )
     ) { XCTAssertEqual($0 as? E2eRuntimeProfileError, .partialEnvironment) }
     XCTAssertThrowsError(
       try E2eRuntimeProfile.parse(
         environment: [E2eRuntimeProfile.namespaceEnvironmentKey: namespace],
-        supportsIsolation: true
+        supportsIsolation: true,
+        isCohortBuild: true
       )
     ) { XCTAssertEqual($0 as? E2eRuntimeProfileError, .partialEnvironment) }
   }
 
   func testUnsupportedBuildFailsClosedBeforeParsingManifest() {
-    XCTAssertThrowsError(
-      try E2eRuntimeProfile.parse(
-        environment: [
-          E2eRuntimeProfile.manifestEnvironmentKey: "not-json",
-          E2eRuntimeProfile.namespaceEnvironmentKey: namespace,
-        ],
-        supportsIsolation: false
-      )
-    ) { XCTAssertEqual($0 as? E2eRuntimeProfileError, .unsupportedBuild) }
+    for environment in [
+      [:],
+      [
+        E2eRuntimeProfile.manifestEnvironmentKey: "not-json",
+        E2eRuntimeProfile.namespaceEnvironmentKey: namespace,
+      ],
+    ] {
+      XCTAssertThrowsError(
+        try E2eRuntimeProfile.parse(
+          environment: environment,
+          supportsIsolation: false,
+          isCohortBuild: true
+        )
+      ) { XCTAssertEqual($0 as? E2eRuntimeProfileError, .unsupportedBuild) }
+    }
   }
 
   func testNamespaceMismatchFailsClosed() throws {
@@ -132,7 +192,8 @@ final class E2eRuntimeProfileTests: XCTestCase {
           E2eRuntimeProfile.manifestEnvironmentKey: fractional,
           E2eRuntimeProfile.namespaceEnvironmentKey: namespace,
         ],
-        supportsIsolation: true
+        supportsIsolation: true,
+        isCohortBuild: true
       )
     ) { XCTAssertEqual($0 as? E2eRuntimeProfileError, .invalidManifest) }
   }
@@ -149,7 +210,8 @@ final class E2eRuntimeProfileTests: XCTestCase {
             E2eRuntimeProfile.manifestEnvironmentKey: invalidManifest,
             E2eRuntimeProfile.namespaceEnvironmentKey: namespace,
           ],
-          supportsIsolation: true
+          supportsIsolation: true,
+          isCohortBuild: true
         )
       ) { XCTAssertEqual($0 as? E2eRuntimeProfileError, .invalidManifest) }
     }
@@ -163,7 +225,8 @@ final class E2eRuntimeProfileTests: XCTestCase {
             E2eRuntimeProfile.manifestEnvironmentKey: encoded,
             E2eRuntimeProfile.namespaceEnvironmentKey: invalidNamespace,
           ],
-          supportsIsolation: true
+          supportsIsolation: true,
+          isCohortBuild: true
         )
       ) { XCTAssertEqual($0 as? E2eRuntimeProfileError, .invalidManifest) }
     }
@@ -187,7 +250,8 @@ final class E2eRuntimeProfileTests: XCTestCase {
         E2eRuntimeProfile.manifestEnvironmentKey: try encodedManifest(manifest),
         E2eRuntimeProfile.namespaceEnvironmentKey: environmentNamespace ?? namespace,
       ],
-      supportsIsolation: true
+      supportsIsolation: true,
+      isCohortBuild: true
     )
   }
 

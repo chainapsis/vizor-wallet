@@ -1,13 +1,18 @@
 import Foundation
 
 enum E2eRuntimeProfileError: Error, Equatable {
+  case missingBuildMarker
+  case invalidBuildMarker
+  case missingEnvironment
   case partialEnvironment
+  case unexpectedEnvironment
   case unsupportedBuild
   case invalidManifest
   case namespaceMismatch
 }
 
 struct E2eRuntimeProfile: Equatable {
+  static let cohortBuildInfoKey = "VizorE2eIosCohort"
   static let manifestEnvironmentKey = "VIZOR_E2E_CASE_MANIFEST"
   static let namespaceEnvironmentKey = "VIZOR_E2E_NAMESPACE"
 
@@ -44,6 +49,9 @@ struct E2eRuntimeProfile: Equatable {
   }
 
   static func installFromEnvironment() throws -> E2eRuntimeProfile {
+    let isCohortBuild = try readCohortBuildMarker(
+      infoDictionary: Bundle.main.infoDictionary
+    )
     #if DEBUG && targetEnvironment(simulator)
       let supportsIsolation = true
     #else
@@ -51,7 +59,8 @@ struct E2eRuntimeProfile: Equatable {
     #endif
     let profile = try parse(
       environment: ProcessInfo.processInfo.environment,
-      supportsIsolation: supportsIsolation
+      supportsIsolation: supportsIsolation,
+      isCohortBuild: isCohortBuild
     )
     if let installedProfile, installedProfile != profile {
       throw E2eRuntimeProfileError.invalidManifest
@@ -62,16 +71,26 @@ struct E2eRuntimeProfile: Equatable {
 
   static func parse(
     environment: [String: String],
-    supportsIsolation: Bool
+    supportsIsolation: Bool,
+    isCohortBuild: Bool
   ) throws -> E2eRuntimeProfile {
     let encoded = environment[manifestEnvironmentKey]
     let runtimeNamespace = environment[namespaceEnvironmentKey]
-    if encoded == nil && runtimeNamespace == nil { return .production }
-    guard let encoded, let runtimeNamespace else {
-      throw E2eRuntimeProfileError.partialEnvironment
+
+    guard isCohortBuild else {
+      guard encoded == nil, runtimeNamespace == nil else {
+        throw E2eRuntimeProfileError.unexpectedEnvironment
+      }
+      return .production
     }
     guard supportsIsolation else {
       throw E2eRuntimeProfileError.unsupportedBuild
+    }
+    guard encoded != nil || runtimeNamespace != nil else {
+      throw E2eRuntimeProfileError.missingEnvironment
+    }
+    guard let encoded, let runtimeNamespace else {
+      throw E2eRuntimeProfileError.partialEnvironment
     }
     guard encoded.utf8.count <= 2_048,
       encoded.utf8.allSatisfy({ $0 < 0x80 }),
@@ -130,6 +149,20 @@ struct E2eRuntimeProfile: Equatable {
       throw E2eRuntimeProfileError.namespaceMismatch
     }
     return E2eRuntimeProfile(namespace: expectedNamespace, runId: runId)
+  }
+
+  static func readCohortBuildMarker(
+    infoDictionary: [String: Any]?
+  ) throws -> Bool {
+    guard let value = infoDictionary?[cohortBuildInfoKey] else {
+      throw E2eRuntimeProfileError.missingBuildMarker
+    }
+    guard let marker = value as? NSNumber,
+      CFGetTypeID(marker) == CFBooleanGetTypeID()
+    else {
+      throw E2eRuntimeProfileError.invalidBuildMarker
+    }
+    return marker.boolValue
   }
 
   func keychainService(_ base: String) -> String {

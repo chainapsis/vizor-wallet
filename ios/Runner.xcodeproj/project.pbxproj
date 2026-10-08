@@ -468,13 +468,14 @@
 			);
 			inputPaths = (
 				"${TARGET_BUILD_DIR}/${INFOPLIST_PATH}",
+				"${SRCROOT}/../scripts/e2e/stamp-ios-runtime-profile.swift",
 			);
 			name = "Thin Binary";
 			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "/bin/sh \"$FLUTTER_ROOT/packages/flutter_tools/bin/xcode_backend.sh\" embed_and_thin";
+			shellScript = "set -e\n/bin/sh \"$FLUTTER_ROOT/packages/flutter_tools/bin/xcode_backend.sh\" embed_and_thin\n/usr/bin/xcrun --sdk macosx swift \"$SRCROOT/../scripts/e2e/stamp-ios-runtime-profile.swift\" \"$TARGET_BUILD_DIR/$INFOPLIST_PATH\"\n";
 		};
 		435B39CD6F1688C3010D8AC8 /* [CP] Check Pods Manifest.lock */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -1041,6 +1042,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.keplr.vizor;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;

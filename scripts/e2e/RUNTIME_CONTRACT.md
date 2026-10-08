@@ -15,6 +15,14 @@ Compile exactly one profile with `ZCASH_DEFAULT_NETWORK=regtest`:
 
 iOS builds also require the existing `VIZOR_FORM_FACTOR=mobile` define.
 
+The iOS build derives the native `VizorE2eIosCohort` boolean in the processed
+app `Info.plist` from that same `VIZOR_E2E_IOS_COHORT` entry in `DART_DEFINES`.
+The stamp runs after Flutter embedding and before code signing; it is not a
+separate configuration knob. Native startup requires this build marker and
+rejects a cohort build with missing or partial launch identity before the
+fresh-install Keychain cleaner or any background registration can run.
+Ordinary builds stamp `false` and reject stray E2E launch configuration.
+
 Pass both `VIZOR_E2E_CASE_MANIFEST` and `VIZOR_E2E_NAMESPACE` in the process
 environment, not as per-case Dart defines. The manifest is ASCII JSON of at
 most 2048 bytes with exactly these schema-1 fields:
