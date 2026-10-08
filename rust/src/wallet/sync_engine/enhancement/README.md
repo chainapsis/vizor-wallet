@@ -826,11 +826,17 @@ Detail-view states (`TransactionDetail.transparent_details_state`):
 
 | State | Meaning | Receipt shows |
 |---|---|---|
-| `available` | Every transparent output: from the raw transaction, or from validated display facts | One row per output: the address it pays (or "Script"), the amount, and whether it is the account's own |
-| `pending` | No lookup has answered yet | "Details unavailable — will update when the service is reachable" |
-| `unavailable` | The last lookup failed; a later sync retries | the same notice |
-| `notCovered` | Private mode cannot look it up | "Not available in private mode" |
+| `available` | Every transparent output: from the raw transaction, or from validated display facts | With no recorded recipient, eligible receipts list only unowned outputs as "Transaction outputs", with "Recipient not confirmed"; no output is promoted to a payment recipient |
+| `pending` | Eligible work has not answered yet | With no recorded recipient, eligible receipts show "Details unavailable — will update when the service is reachable" |
+| `unavailable` | The details are unavailable; eligible work may retry in a later sync | the same notice where eligible |
+| `notCovered` | Private mode cannot look it up | Where eligible, "Not available in private mode" |
 | absent | No transparent part the account takes part in | nothing |
+
+Receives, shieldings and migrations add neither this output list nor its notice;
+their shared receipt shows the account's recorded outputs. A recorded payment
+recipient also makes the addition unnecessary. Other receipts keep the recovered
+transaction outputs explicitly unattributed, in transaction order, without the
+account's own outputs.
 
 The view belongs to the account. It shows when the account has a transparent
 output or spend in the transaction, or a shielded part (a received, spent or
