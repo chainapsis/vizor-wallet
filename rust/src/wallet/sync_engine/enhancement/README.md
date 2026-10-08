@@ -635,7 +635,9 @@ trusted, since every commit comes from the configured origin.
   derives the ones the wallet holds. Opening one deletes the account's
   companions for other origins or schemas and those of deleted accounts.
   Deleting an account removes its companion and SQLite sidecars once the
-  deletion commits. A reset deletes the `.tpir` directory with the database,
+  deletion commits; one that removal leaves behind is deleted at the next sync
+  start, in every build, with the companions of any other deleted account.
+  A reset deletes the `.tpir` directory with the database,
   and a failure keeps the database name for a retry; startup and reset delete
   `.tpir` directories of no current wallet. On iOS a flag build excludes the
   directory from device backups.

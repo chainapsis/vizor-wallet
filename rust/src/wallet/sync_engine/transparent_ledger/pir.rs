@@ -15,7 +15,9 @@
 //! companion derives the ones the wallet already holds. Companions are created
 //! on an account's first pass; opening one deletes the account's companions for
 //! other origins or schemas and those of deleted accounts, and deleting an
-//! account removes its companion with [`remove_companions`].
+//! account removes its companion with [`remove_companions`]. Every sync start
+//! deletes those of deleted accounts with [`remove_orphan_companions`], so a
+//! removal that failed converges.
 //!
 //! One lock per companion path serializes every pass, acknowledgment and
 //! removal on it across sources. A source parks each companion it opened with
@@ -637,9 +639,54 @@ fn remove_files(base: &Path) -> io::Result<()> {
 ///
 /// Waits up to five seconds for a pass or a parked source holding one; account
 /// deletion runs with sync paused, so a wait that times out is a failure, and
-/// the companion is left for the next open to delete.
+/// the companion is left for [`remove_orphan_companions`] at the next sync
+/// start.
 pub(crate) fn remove_companions(db_path: &str, account_uuid: &str) -> Result<(), String> {
     remove_account_companions(db_path, account_uuid, REMOVE_WAIT)
+}
+
+/// Deletes the companions, with their sidecars, of accounts the wallet at
+/// `db_path` no longer has, so a removal that failed after an account was
+/// deleted converges at the next sync start whether or not private recovery is
+/// still selected.
+///
+/// Companions are listed before the accounts are read, so one created for an
+/// account added meanwhile is never mistaken for an orphan. A companion whose
+/// lock is held is left for a later sweep. Attempts every orphan and then
+/// returns the first failure; an unreadable account list deletes nothing.
+pub(crate) fn remove_orphan_companions(db_path: &str) -> Result<(), String> {
+    let found = match companions(&companion_dir(db_path)) {
+        Ok(found) => found,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => {
+            return Err(format!(
+                "Failed to list transparent PIR companions: {error}"
+            ))
+        }
+    };
+    if found.is_empty() {
+        return Ok(());
+    }
+    let accounts = crate::wallet::keys::list_account_uuids_from_db(db_path)?
+        .iter()
+        .map(|account| uuid::Uuid::try_parse(account))
+        .collect::<Result<BTreeSet<_>, _>>()
+        .map_err(|error| format!("Invalid account UUID: {error}"))?;
+    let mut first_error = None;
+    for (_, base) in found
+        .into_iter()
+        .filter(|(owner, _)| !accounts.contains(owner))
+    {
+        let Ok(_lock) = companion_lock(&base).try_lock_owned() else {
+            continue;
+        };
+        if let Err(error) = remove_files(&base) {
+            first_error.get_or_insert_with(|| {
+                format!("Failed to remove an orphan transparent PIR companion: {error}")
+            });
+        }
+    }
+    first_error.map_or(Ok(()), Err)
 }
 
 /// [`remove_companions`], waiting at most `wait` for each companion's lock.

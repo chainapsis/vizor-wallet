@@ -1006,8 +1006,9 @@ pub fn list_account_uuids_from_db(db_path: &str) -> Result<Vec<String>, String> 
 ///
 /// The account's transparent PIR companions are deleted after the wallet write
 /// lock is released: a recovery source holding one may be waiting for that lock
-/// to apply its commits. A companion left behind is deleted when another
-/// account's companion is next opened.
+/// to apply its commits. A companion left behind is deleted at the next sync
+/// start (`remove_orphan_companions`) or when another account's companion is
+/// next opened.
 pub fn delete_account(
     db_path: &str,
     network: WalletNetwork,

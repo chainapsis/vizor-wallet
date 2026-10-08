@@ -2617,6 +2617,16 @@ pub async fn run_sync_inner(
         if crate::wallet::sync::proposal_locks::is_shutting_down() {
             return Ok(());
         }
+        // Account deletion removes its companions best-effort; one it left
+        // behind is deleted here, in every build, so none outlives its account.
+        if attempt == 0 {
+            if let Err(error) = transparent_ledger::pir::remove_orphan_companions(db_data_path) {
+                log::warn!(
+                    "[{}] sync: could not delete orphan transparent PIR companions: {error}",
+                    elapsed()
+                );
+            }
+        }
         if attempt > 0 {
             let delay_secs = 1u64 << attempt; // 2, 4, 8
             log::warn!(

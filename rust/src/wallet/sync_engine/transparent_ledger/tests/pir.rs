@@ -446,6 +446,88 @@ async fn deleting_an_account_removes_its_companion_and_sidecars() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_sync_start_deletes_a_companion_its_account_deletion_left_behind() {
+    let wallet = main_wallet(2);
+    let (a_uuid, _) = wallet.accounts[0].clone();
+    let (b_uuid, _) = wallet.accounts[1].clone();
+    keys::delete_account(&wallet.path, MAIN, &a_uuid).unwrap();
+    // The removal after the deletion failed: its files are still there.
+    std::fs::create_dir_all(pir::companion_dir(&wallet.path)).unwrap();
+    let left = companion(&wallet.path, &a_uuid);
+    let left_files = [left.clone(), with_suffix(&left, "-wal")];
+    for path in &left_files {
+        touch(path);
+    }
+    let live = companion(&wallet.path, &b_uuid);
+    touch(&live);
+
+    // A cancelled sync to an unreachable server stops after its first attempt.
+    let _ = crate::wallet::sync_engine::run_sync_inner(
+        &wallet.path,
+        "http://127.0.0.1:1",
+        MAIN,
+        Arc::new(AtomicBool::new(true)),
+        1,
+        &std::sync::atomic::AtomicU8::new(0),
+        None,
+        false,
+        |_| {},
+    )
+    .await;
+
+    for path in &left_files {
+        assert!(!path.exists(), "{path:?} survived");
+    }
+    assert!(live.exists(), "a live account's companion was deleted");
+}
+
+#[test]
+fn the_orphan_sweep_deletes_only_companions_of_accounts_the_wallet_lacks() {
+    let wallet = main_wallet(1);
+    let (uuid, _) = wallet.accounts[0].clone();
+    // No companion directory is not an error.
+    pir::remove_orphan_companions(&wallet.path).unwrap();
+
+    let dir = pir::companion_dir(&wallet.path);
+    std::fs::create_dir_all(&dir).unwrap();
+    let orphan = dir.join(format!(
+        "{}-{}.sqlite",
+        uuid::Uuid::new_v4(),
+        tag("https://old.example")
+    ));
+    let doomed = [orphan.clone(), with_suffix(&orphan, "-shm")];
+    let kept = [
+        companion(&wallet.path, &uuid),
+        dir.join(format!("{uuid}-{}.sqlite", tag("https://old.example"))),
+        dir.join("notes.txt"),
+    ];
+    for path in doomed.iter().chain(&kept) {
+        touch(path);
+    }
+
+    pir::remove_orphan_companions(&wallet.path).unwrap();
+
+    for path in &doomed {
+        assert!(!path.exists(), "{path:?} survived");
+    }
+    for path in &kept {
+        assert!(path.exists(), "{path:?} was deleted");
+    }
+}
+
+#[test]
+fn the_orphan_sweep_deletes_nothing_without_the_account_list() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("missing.db").to_str().unwrap().to_owned();
+    std::fs::create_dir_all(pir::companion_dir(&db_path)).unwrap();
+    let companion = companion(&db_path, &uuid::Uuid::new_v4().to_string());
+    touch(&companion);
+
+    assert!(pir::remove_orphan_companions(&db_path).is_err());
+    assert!(companion.exists());
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_publication_change_retries_once_keeping_the_companion() {
     let wallet = main_wallet(1);
     let (uuid, account) = wallet.accounts[0].clone();
