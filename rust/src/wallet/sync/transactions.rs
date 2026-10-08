@@ -1501,8 +1501,9 @@ fn apply_display_source(detail: &mut TransactionDetail, source: DisplaySource) {
 /// wallet cannot see (a shielded one) exists. One such output is the
 /// recipient. None means the account paid itself, and its one transparent
 /// address among the outputs is the destination. Two payees leave the
-/// recipient unestablished. An established recipient completes the receipt:
-/// its payees are transparent outputs, which carry no memo.
+/// recipient unestablished. An established recipient completes and settles
+/// the receipt: its payees are transparent outputs, which carry no memo, and
+/// an owned effect the wallet had not found would have broken the balance.
 fn apply_display_recipient(detail: &mut TransactionDetail) {
     if detail.tx_kind != "sent" || detail.primary_address.is_some() {
         return;
@@ -1543,6 +1544,7 @@ fn apply_display_recipient(detail: &mut TransactionDetail) {
     };
     if recipient.is_some() {
         detail.details_complete = true;
+        detail.provisional = false;
     }
     detail.primary_address = recipient;
 }
@@ -8177,7 +8179,7 @@ mod tests {
                 memo: None,
                 outputs: Vec::new(),
                 details_complete: false,
-                provisional: false,
+                provisional: true,
                 transparent_details: Some(TransparentDetailsView::Available {
                     rows,
                     output_count: count,
@@ -8190,8 +8192,13 @@ mod tests {
         let to = |mut d: TransactionDetail| {
             let recorded = d.primary_address.is_some();
             apply_display_recipient(&mut d);
-            // An established recipient, and only that, completes the receipt.
-            assert_eq!(d.details_complete, !recorded && d.primary_address.is_some());
+            // An established recipient, and only that, completes and settles
+            // the receipt.
+            let established = !recorded && d.primary_address.is_some();
+            assert_eq!(
+                (d.details_complete, d.provisional),
+                (established, !established)
+            );
             d.primary_address
         };
         // Unshielding to the account's own address: the balance moved by the fee only.
