@@ -619,10 +619,13 @@ class _MobileTransactionStatusScreenState
       if (nextUuid != _activeAccountUuid) unawaited(_loadTransaction());
     });
     ref.listen<AsyncValue<SyncState>>(syncProvider, (previous, next) {
-      // Enhancement can change older rows outside the ten recent transactions.
+      // Recovery and detail follow-ups complete again after scanning already
+      // completed, and can change rows outside the ten recent transactions.
       final syncCompleted =
           next.value?.isSyncComplete == true &&
-          previous?.value?.isSyncComplete != true;
+          (previous?.value?.isSyncComplete != true ||
+              previous?.value?.lastSyncCompletedAt !=
+                  next.value?.lastSyncCompletedAt);
       if (_recentTxSignature(previous?.value) !=
               _recentTxSignature(next.value) ||
           syncCompleted) {

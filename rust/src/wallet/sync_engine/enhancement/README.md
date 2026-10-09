@@ -1057,9 +1057,11 @@ restack of the library stacks, and to `main` once they merge.
 ### History refresh and batch receipt totals
 
 Activity lists and open receipts reload when sync completes, even when the ten
-recent transactions are unchanged. This exposes newly enhanced older entries
-without reopening the screen. Repeated completed snapshots do not trigger a
-reload by themselves.
+recent transactions are unchanged. Open receipts also recognize the new
+completion timestamp from recovery and detail follow-ups that finish after
+scanning has already completed. This exposes newly enhanced older entries
+without reopening the screen. Updates retaining the same completion timestamp
+do not trigger a reload by themselves.
 
 In Private queries mode, a batch gift-card receipt with an unknown network fee
 shows an unknown total and an unknown network-fee breakdown. It does not add

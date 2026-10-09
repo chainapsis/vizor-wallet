@@ -143,6 +143,45 @@ void transparentDetailsRefreshTests({
     await tester.pump();
   }
 
+  testWidgets('a follow-up completion refreshes an older receipt', (
+    tester,
+  ) async {
+    final completedAt = DateTime.utc(2026, 10, 9);
+    final sync = FakeSyncNotifier(
+      SyncState(
+        accountUuid: 'account-1',
+        hasAccountScopedData: true,
+        isSyncComplete: true,
+        lastSyncCompletedAt: completedAt,
+      ),
+    );
+    // Not-covered details do not poll. The transaction is also absent from
+    // recentTransactions, so only a new completion can refresh this receipt.
+    final details = ScriptedDetails([
+      transparentDetail(rust_sync.TransparentDetailsState.notCovered),
+      available,
+    ]);
+    await pump(tester, details, sync);
+    expect(find.text(kTransparentDetailsNotCoveredText), findsOneWidget);
+    final initialReads = details.calls;
+    final followup = SyncState(
+      accountUuid: 'account-1',
+      hasAccountScopedData: true,
+      isSyncComplete: true,
+      lastSyncCompletedAt: completedAt.add(const Duration(seconds: 1)),
+    );
+    sync.emit(followup);
+    await flush(tester);
+    expect(details.calls, initialReads + 1);
+    expect(transactionOutputShown, findsOneWidget);
+    expect(find.text(kTransparentDetailsNotCoveredText), findsNothing);
+    // An unrelated balance update retaining that completion is not a new run.
+    sync.emit(followup.copyWith(transparentBalance: BigInt.one));
+    await flush(tester);
+    expect(details.calls, initialReads + 1);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('transparent detail polls do not overlap', (tester) async {
     final delayed = Completer<rust_sync.TransactionDetail?>();
     final details = ControlledDetails([
