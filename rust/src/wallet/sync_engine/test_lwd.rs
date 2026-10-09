@@ -392,63 +392,63 @@ fn grpc_frame(message: &impl Message) -> Bytes {
     Bytes::from(frame)
 }
 
-/// An `on_request` hook that durably applies `mode` through another connection
-/// when the first `rpc` request arrives, as a settings transition racing an
-/// in-flight lane would.
+/// Toggles private queries on and off through another connection: applies
+/// `PrivateRequired`, then `Public`. The policy generation advances by two
+/// while the wallet ends where it started, with public authority, so only the
+/// generation check can revoke work captured before the toggle.
+pub(crate) fn toggle_private_round_trip(db_path: &str, network: WalletNetwork) {
+    let mut db = open_wallet_db_with_timeout(db_path, network, SYNC_DB_BUSY_TIMEOUT).unwrap();
+    for mode in [
+        TransparentLedgerMode::PrivateRequired,
+        TransparentLedgerMode::Public,
+    ] {
+        db.apply_transparent_policy(mode).unwrap();
+    }
+}
+
+/// An `on_request` hook that toggles private queries on and off through
+/// another connection ([`toggle_private_round_trip`]) when the first `rpc`
+/// request arrives, as a settings transition racing an in-flight lane would.
 pub(crate) fn transition_on_first(
     rpc: &'static str,
     db_path: &str,
     network: WalletNetwork,
-    mode: TransparentLedgerMode,
 ) -> impl Fn(&str) + Send + Sync + 'static {
     let db_path = db_path.to_owned();
     let fired = AtomicBool::new(false);
     move |path| {
         if path.ends_with(rpc) && !fired.swap(true, Ordering::SeqCst) {
-            open_wallet_db_with_timeout(&db_path, network, SYNC_DB_BUSY_TIMEOUT)
-                .unwrap()
-                .apply_transparent_policy(mode)
-                .unwrap();
+            toggle_private_round_trip(&db_path, network);
         }
     }
 }
 
-/// Durably applies `mode` through another connection right after the first
-/// authorized transparent lookup dispatch on this thread, before that RPC or
-/// any other request of its batch is polled. The transition lands between two
-/// requests of one concurrent batch, which a per-batch check cannot see.
+/// Toggles private queries on and off through another connection
+/// ([`toggle_private_round_trip`]) right after the first authorized
+/// transparent lookup dispatch on this thread, before that RPC or any other
+/// request of its batch is polled. The transition lands between two requests
+/// of one concurrent batch, which a per-batch check cannot see.
 pub(crate) fn transition_on_first_dispatch(
     db_path: &str,
     network: WalletNetwork,
-    mode: TransparentLedgerMode,
 ) -> super::lwd::transparent_lookup::test_hooks::DispatchHook {
     let db_path = db_path.to_owned();
     let mut fired = false;
     super::lwd::transparent_lookup::test_hooks::on_dispatch(move || {
         if !std::mem::replace(&mut fired, true) {
-            open_wallet_db_with_timeout(&db_path, network, SYNC_DB_BUSY_TIMEOUT)
-                .unwrap()
-                .apply_transparent_policy(mode)
-                .unwrap();
+            toggle_private_round_trip(&db_path, network);
         }
     })
 }
 
-/// Like [`transition_on_first_dispatch`], but on every authorized dispatch,
-/// alternating `PrivateShadow` and `Public` so each one bumps the generation
-/// while keeping public authority.
+/// Like [`transition_on_first_dispatch`], but on every authorized dispatch:
+/// each one advances the generation while keeping public authority.
 pub(crate) fn transition_on_every_dispatch(
     db_path: &str,
     network: WalletNetwork,
 ) -> super::lwd::transparent_lookup::test_hooks::DispatchHook {
-    use zcash_client_backend::data_api::transparent_ledger::TransparentLedgerRead;
     let db_path = db_path.to_owned();
     super::lwd::transparent_lookup::test_hooks::on_dispatch(move || {
-        let mut db = open_wallet_db_with_timeout(&db_path, network, SYNC_DB_BUSY_TIMEOUT).unwrap();
-        let next = match db.applied_transparent_policy().unwrap().mode {
-            TransparentLedgerMode::PrivateShadow => TransparentLedgerMode::Public,
-            _ => TransparentLedgerMode::PrivateShadow,
-        };
-        db.apply_transparent_policy(next).unwrap();
+        toggle_private_round_trip(&db_path, network);
     })
 }

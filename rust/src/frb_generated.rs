@@ -10624,8 +10624,7 @@ impl SseDecode for crate::api::sync::ApiTransparentLedgerMode {
         let mut inner = <i32>::sse_decode(deserializer);
         return match inner {
             0 => crate::api::sync::ApiTransparentLedgerMode::Public,
-            1 => crate::api::sync::ApiTransparentLedgerMode::PrivateShadow,
-            2 => crate::api::sync::ApiTransparentLedgerMode::PrivateRequired,
+            1 => crate::api::sync::ApiTransparentLedgerMode::PrivateRequired,
             _ => unreachable!("Invalid variant for ApiTransparentLedgerMode: {}", inner),
         };
     }
@@ -16038,8 +16037,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::ApiTransparentLedgerMod
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self {
             Self::Public => 0.into_dart(),
-            Self::PrivateShadow => 1.into_dart(),
-            Self::PrivateRequired => 2.into_dart(),
+            Self::PrivateRequired => 1.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -20389,8 +20387,7 @@ impl SseEncode for crate::api::sync::ApiTransparentLedgerMode {
         <i32>::sse_encode(
             match self {
                 crate::api::sync::ApiTransparentLedgerMode::Public => 0,
-                crate::api::sync::ApiTransparentLedgerMode::PrivateShadow => 1,
-                crate::api::sync::ApiTransparentLedgerMode::PrivateRequired => 2,
+                crate::api::sync::ApiTransparentLedgerMode::PrivateRequired => 1,
                 _ => {
                     unimplemented!("");
                 }

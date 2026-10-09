@@ -12,9 +12,8 @@
 //!
 //! Under `PrivateRequired`, a trusted source's commits are qualified as they
 //! are applied ([`Trust::Trusted`]): the trusted-indexer decision, which is
-//! what lets a recovered account be promoted. Commits of an untrusted source,
-//! or under `PrivateShadow`, are only observed, and never qualify an account
-//! for promotion.
+//! what lets a recovered account be promoted. Commits of an untrusted source
+//! are only observed, and never qualify an account for promotion.
 //!
 //! A `Ready` batch can resolve retired revisions, provisional revisions an
 //! earlier batch exported that its commits succeed. Only trusted commits
@@ -380,13 +379,11 @@ enum AccountOutcome {
     Stop(RunOutcome),
 }
 
-/// Runs private recovery for every account under `policy`, then, under
-/// `PrivateRequired`, offers each recovered candidate account for promotion.
+/// Runs private recovery for every account under `policy`, then offers each
+/// recovered candidate account for promotion.
 ///
-/// Runs only when both the captured mode and the wallet's durable policy
-/// permit private recovery (`PrivateShadow` or `PrivateRequired`). Under a
-/// captured `PrivateRequired`, a weaker durable policy is first raised behind
-/// the policy fence, but only while [`may_raise`] holds for the wallet at
+/// Runs only when the captured mode is `PrivateRequired`. A `Public` durable
+/// policy is first raised behind the policy fence, but only while [`may_raise`] holds for the wallet at
 /// `db_path`: an unconfirmed preference or a concurrent toggle-off raises
 /// nothing. `first`, the active account, is visited first. `clock` measures
 /// the budgets and holds. Holds the wallet write lock for each batch's whole
@@ -417,19 +414,14 @@ pub(crate) async fn run<S: RecoverySource>(
     if durable == TransparentLedgerMode::Public {
         return Ok(RunOutcome::NotEnabled);
     }
-    // The configured mode, not the handle's effective one: a durable
-    // `PrivateRequired` governs every read, but qualification and promotion
-    // need the handle configured `PrivateRequired` as well.
-    let required = policy.transparent_mode() == TransparentLedgerMode::PrivateRequired;
     let deadline = clock() + RUN_BUDGET;
     let accounts = visiting_order(db_path, db.get_account_ids().map_err(db_error)?, first);
     let mut run = Run {
         db,
         db_path,
         source,
-        required,
         // Qualification needs `PrivateRequired` durably as well.
-        qualify: source.trusted() && required && durable == TransparentLedgerMode::PrivateRequired,
+        qualify: source.trusted() && durable == TransparentLedgerMode::PrivateRequired,
         clock,
         should_exit,
         stats: RunStats::default(),
@@ -463,7 +455,7 @@ pub(crate) async fn run<S: RecoverySource>(
                     Some(Continuation::Complete) => clear_stalls(db_path, account),
                     _ => {}
                 }
-                if required && run.promote(account)? {
+                if run.promote(account)? {
                     run.stats.promoted += 1;
                 }
             }
@@ -485,10 +477,6 @@ struct Run<'a, S> {
     db: &'a mut WalletDatabase,
     db_path: &'a str,
     source: &'a S,
-    /// The handle is configured `PrivateRequired`: Ledger and quarantined
-    /// accounts are skipped, and recovered candidates are offered for
-    /// promotion.
-    required: bool,
     /// Commits are qualified as they are applied.
     qualify: bool,
     clock: fn() -> Instant,
@@ -502,7 +490,7 @@ impl<S: RecoverySource> Run<'_, S> {
     fn skip(&mut self, account: AccountUuid, now: Instant) -> Result<bool, SyncError> {
         // Recovery from the birthday would miss a Ledger account's earlier
         // history, and its public discovery is withheld.
-        if self.required && is_ledger(self.db, account)? {
+        if is_ledger(self.db, account)? {
             self.stats.paused_ledger += 1;
             return Ok(true);
         }
@@ -513,7 +501,7 @@ impl<S: RecoverySource> Run<'_, S> {
         }
         // A quarantined account accepts no commit, so a pass would only cost
         // traffic. Only a private snapshot reports quarantine.
-        if self.required && quarantined(self.db, account)? {
+        if quarantined(self.db, account)? {
             self.stats.quarantined += 1;
             return Ok(true);
         }

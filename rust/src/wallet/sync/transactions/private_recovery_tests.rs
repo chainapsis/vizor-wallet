@@ -37,7 +37,7 @@ fn private_wallet() -> (State, AccountUuid) {
         .with_account_from_sapling_activation(BlockHash([0; 32]))
         .build();
     scan_unrelated_blocks(&mut st, 10);
-    set_policy(&mut st, TransparentLedgerMode::PrivateShadow);
+    set_policy(&mut st, TransparentLedgerMode::PrivateRequired);
     let account = st.test_account().unwrap().id();
     (st, account)
 }
@@ -695,7 +695,7 @@ fn inputs_of_two_accounts_keep_each_receipt_shared() {
     // Every account is created before anything is scanned.
     let (b, _) = st.create_account_from_test_seed("second");
     scan_unrelated_blocks(&mut st, 10);
-    set_policy(&mut st, TransparentLedgerMode::PrivateShadow);
+    set_policy(&mut st, TransparentLedgerMode::PrivateRequired);
 
     let target = watch(&st, a).target.unwrap().height;
     let funder_a = external(&watch(&st, a));

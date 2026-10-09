@@ -271,6 +271,33 @@ impl FixtureSource {
     }
 }
 
+/// A [`FixtureSource`] reported untrusted, whatever [`FixtureSource::trust`]
+/// says: the coordinator observes its commits without qualifying them, as it
+/// would for an origin the wallet does not trust.
+pub(crate) struct Observed<'a>(pub(crate) &'a FixtureSource);
+
+impl RecoverySource for Observed<'_> {
+    fn trusted(&self) -> bool {
+        false
+    }
+
+    fn recover(
+        &self,
+        request: SourceRequest<'_>,
+    ) -> impl Future<Output = Result<SourceBatch, SourceError>> + Send {
+        self.0.recover(request)
+    }
+
+    fn apply(
+        &self,
+        account: AccountUuid,
+        db: &mut WalletDatabase,
+        trust: Trust,
+    ) -> impl Future<Output = Settlement> + Send {
+        self.0.apply(account, db, trust)
+    }
+}
+
 impl RecoverySource for FixtureSource {
     fn trusted(&self) -> bool {
         self.state.lock().unwrap().trusted

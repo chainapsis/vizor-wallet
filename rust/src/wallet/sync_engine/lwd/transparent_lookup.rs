@@ -578,7 +578,7 @@ mod tests {
 
         // A clone shares the policy handle; the transition revokes both.
         let clone = gate.clone();
-        apply(&path, TransparentLedgerMode::PrivateShadow);
+        apply(&path, TransparentLedgerMode::PrivateRequired);
         assert!(
             gate.is_allowed(),
             "the captured value is only an early exit"
@@ -630,7 +630,7 @@ mod tests {
         let blocked = apply_transparent_policy_fenced(
             &mut db,
             &path,
-            TransparentLedgerMode::PrivateShadow,
+            TransparentLedgerMode::PrivateRequired,
             Duration::from_millis(100),
         )
         .await;
@@ -645,7 +645,7 @@ mod tests {
         apply_transparent_policy_fenced(
             &mut db,
             &path,
-            TransparentLedgerMode::PrivateShadow,
+            TransparentLedgerMode::PrivateRequired,
             Duration::from_secs(5),
         )
         .await
@@ -677,7 +677,7 @@ mod tests {
             apply_transparent_policy_fenced(
                 &mut db,
                 &path,
-                TransparentLedgerMode::PrivateShadow,
+                TransparentLedgerMode::PrivateRequired,
                 Duration::from_secs(5),
             )
             .await
@@ -728,7 +728,7 @@ mod tests {
         apply_transparent_policy_fenced(
             &mut db,
             &path,
-            TransparentLedgerMode::PrivateShadow,
+            TransparentLedgerMode::PrivateRequired,
             Duration::from_secs(2),
         )
         .await
@@ -764,7 +764,7 @@ mod tests {
         apply_transparent_policy_fenced(
             &mut db,
             &path,
-            TransparentLedgerMode::PrivateShadow,
+            TransparentLedgerMode::PrivateRequired,
             Duration::from_secs(2),
         )
         .await
@@ -775,7 +775,7 @@ mod tests {
         assert!(apply_transparent_policy_fenced(
             &mut other,
             &other_path,
-            TransparentLedgerMode::PrivateShadow,
+            TransparentLedgerMode::PrivateRequired,
             Duration::from_millis(200),
         )
         .await
@@ -832,7 +832,7 @@ mod tests {
             let transition = apply_transparent_policy_fenced(
                 &mut db,
                 &path,
-                TransparentLedgerMode::PrivateShadow,
+                TransparentLedgerMode::PrivateRequired,
                 Duration::from_millis(2000),
             )
             .await;
@@ -928,7 +928,7 @@ mod tests {
         let refused = apply_transparent_policy_fenced(
             &mut db,
             &path,
-            TransparentLedgerMode::PrivateShadow,
+            TransparentLedgerMode::PrivateRequired,
             Duration::from_millis(200),
         )
         .await;

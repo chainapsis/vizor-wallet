@@ -1101,13 +1101,15 @@ mod tests {
             assert_eq!(lwd.count("/GetTransaction"), 1);
 
             // A transition that lands after authorization, as a toggle racing
-            // the call would, is caught as the request is dispatched. Even one
-            // that keeps public authority revokes the captured generation.
+            // the call would, is caught as the request is dispatched. Even a
+            // toggle on and off, which ends with public authority, revokes the
+            // captured generation.
             let (url, wallet_path) = (lwd.url.clone(), path.clone());
             let raced = tokio::task::spawn_blocking(move || {
                 let transition_path = wallet_path.clone();
                 test_hooks::after_authorization(move || {
-                    apply(&transition_path, TransparentLedgerMode::PrivateShadow)
+                    apply(&transition_path, TransparentLedgerMode::PrivateRequired);
+                    apply(&transition_path, TransparentLedgerMode::Public);
                 });
                 observe_c(&url, Some(&wallet_path), Some("regtest"))
             })
@@ -1145,7 +1147,7 @@ mod tests {
             let transition = crate::wallet::sync_engine::test_lwd::apply_fenced(
                 &path,
                 WalletNetwork::Regtest,
-                TransparentLedgerMode::PrivateShadow,
+                TransparentLedgerMode::PrivateRequired,
             )
             .await;
             release.notify_one();

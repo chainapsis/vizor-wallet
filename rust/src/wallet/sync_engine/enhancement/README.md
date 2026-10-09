@@ -412,9 +412,9 @@ until an account is promoted.
   trusted-indexer decision: the wallet trusts the configured indexer and does
   not verify the publication; nothing here is publication verification. A superseded revision's events
   survive only where another independent or sealed observation supports
-  them, so a complete replacement can withdraw receives and spends. Shadow
-  runs and untrusted sources only apply (`apply_transparent_ledger_commit`)
-  and never qualify.
+  them, so a complete replacement can withdraw receives and spends.
+  Untrusted sources only apply (`apply_transparent_ledger_commit`) and never
+  qualify.
 - **Acknowledgment and withdrawals.** A batch is acknowledged only after every
   commit's wallet transaction committed; the companion and the wallet are
   separate databases and are never treated as atomic. A batch can resolve
@@ -618,9 +618,9 @@ way public discovery stores them (UTXO refresh plus payload retrieval).
 
 | Scenario | Result |
 | --- | --- |
-| Public → shadow → private | Shadow leaves every non-`tpir_*` table unchanged and qualifies nothing; activation shows the public amount as last-known; the first trusted run qualifies, promotes, and restores the same amount, shielding, and one history row. |
+| Public → private | Activation shows the public amount as last-known; the first trusted run qualifies, promotes, and restores the same amount, shielding, and one history row. |
 | Unreported legacy UTXO | Promotion stays blocked (`LegacyDiscrepancy`), and the account is held and shows `Stopped(LegacyDiscrepancy)` with its last-known amount. Once the source reports it, the run after the hold promotes. |
-| Shadow reuse | Shadow evidence survives activation but is unqualified, so promotion refuses. At the same tip, one trusted pass qualifies the same revision and promotes; after the chain advances, a pass covering the new tip does. |
+| Observed reuse | Evidence from an untrusted run is reused but unqualified, so promotion refuses. At the same tip, one trusted pass qualifies the same revision and promotes; after the chain advances, a pass covering the new tip does. |
 | Interrupted activation | A run cancelled mid-source-call keeps the account a candidate; after a restart, lookups stay withheld and a later run promotes. |
 | Restart | Private authority survives new handles; a replayed pass changes no production row. |
 | Discovery order and payload replay | Ledger-first and payload-first reach the same balance, history, and rows (one transaction, one output); a second replay changes nothing. |
@@ -1001,8 +1001,10 @@ there is no separate release gate.
 ## Library dependency
 
 The seven patched library crates and the `zakura-pir-transparent` adapter share
-one pushed wallet-libraries revision, `29986ce459037e7c37c8ca4600ad7afbf7832ab4`,
-from [companion PR #130](https://github.com/zakura-core/wallet-libraries/pull/130).
+one pushed wallet-libraries revision, `fc775a358308f9d7de22fb71b0caba48dac83fbe`,
+from [companion PR #132](https://github.com/zakura-core/wallet-libraries/pull/132),
+which removes the unused `PrivateShadow` ledger mode on top of
+[PR #130](https://github.com/zakura-core/wallet-libraries/pull/130).
 It retains the parent's private-recovery and compact txid-display changes and
 adds durable privacy-policy resolution at each sensitive read plus optional
 SQLite `apply_and_acknowledge`. Vizor supplies explicit trust, then the library

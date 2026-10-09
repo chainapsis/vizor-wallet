@@ -64,8 +64,6 @@ pub fn set_enhance_pir_preference_confirmed(confirmed: bool) {
 pub enum ApiTransparentLedgerMode {
     /// Public transparent lookups are authoritative.
     Public,
-    /// Public lookups stay authoritative while private recovery qualifies.
-    PrivateShadow,
     /// Public transparent lookups are forbidden.
     PrivateRequired,
 }
@@ -89,7 +87,6 @@ impl From<zcash_client_backend::data_api::transparent_ledger::AppliedTransparent
         Self {
             mode: match applied.mode {
                 TransparentLedgerMode::Public => ApiTransparentLedgerMode::Public,
-                TransparentLedgerMode::PrivateShadow => ApiTransparentLedgerMode::PrivateShadow,
                 TransparentLedgerMode::PrivateRequired => ApiTransparentLedgerMode::PrivateRequired,
             },
             generation: applied.generation,

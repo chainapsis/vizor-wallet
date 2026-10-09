@@ -1539,9 +1539,6 @@ enum ApiTransparentLedgerMode {
   /// Public transparent lookups are authoritative.
   public,
 
-  /// Public lookups stay authoritative while private recovery qualifies.
-  privateShadow,
-
   /// Public transparent lookups are forbidden.
   privateRequired,
 }

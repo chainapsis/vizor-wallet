@@ -1008,8 +1008,7 @@ async fn fenced_transition_midrun_withholds() {
     let lwd = CapturingLwd::start_serving(served, 0, |_| {}).await;
     let raw = "SELECT COUNT(*) FROM transactions WHERE raw IS NOT NULL";
     let raw_before = count(&fixture.path, raw);
-    let _transition =
-        transition_on_first_dispatch(&fixture.path, MAIN, TransparentLedgerMode::PrivateShadow);
+    let _transition = transition_on_first_dispatch(&fixture.path, MAIN);
 
     let outcome = followup_with(&fixture, public(), &lwd).await;
     assert!(

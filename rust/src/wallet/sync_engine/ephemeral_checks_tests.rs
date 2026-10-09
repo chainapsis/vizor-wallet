@@ -669,17 +669,12 @@ async fn a_transition_during_a_check_withholds_its_completion_and_later_checks()
     let returned = legacy_transaction(OutPoint::new([9; 32], 0), a, 70_000);
     let mut returned_bytes = Vec::new();
     returned.write(&mut returned_bytes).unwrap();
-    // `PrivateShadow` keeps public authority, so only the new generation
-    // revokes the lookups captured before it.
+    // The toggle ends Public, keeping public authority, so only the new
+    // generation revokes the lookups captured before it.
     let lwd = CapturingLwd::start_with(
         returned_bytes,
         0,
-        transition_on_first(
-            "/GetTaddressTxids",
-            &w.path,
-            w.network,
-            TransparentLedgerMode::PrivateShadow,
-        ),
+        transition_on_first("/GetTaddressTxids", &w.path, w.network),
     )
     .await;
     let gate = w.gate();
@@ -763,10 +758,7 @@ async fn a_transition_before_completion_leaves_the_address_due() {
         &|| false,
         &mut changed,
         |_, _, _| {
-            open_wallet_db_with_timeout(&path, network, SYNC_DB_BUSY_TIMEOUT)
-                .unwrap()
-                .apply_transparent_policy(TransparentLedgerMode::PrivateShadow)
-                .unwrap();
+            super::test_lwd::toggle_private_round_trip(&path, network);
             async move { Ok(Some(history(response))) }
         },
     )

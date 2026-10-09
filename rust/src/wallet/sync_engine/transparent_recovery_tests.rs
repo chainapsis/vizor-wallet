@@ -916,18 +916,13 @@ mod private_transparent_policy {
     }
 
     /// Starts a lightwalletd on which the first `rpc` request makes another
-    /// connection apply `PrivateShadow`. That mode keeps public authority, so
-    /// only the new generation revokes lookups captured before it.
+    /// connection toggle private queries on and off. The wallet ends Public,
+    /// so only the new generation revokes lookups captured before it.
     async fn transitioning_lwd(f: &Fixture, rpc: &'static str) -> CapturingLwd {
         CapturingLwd::start_with(
             f.history_tx.clone(),
             0,
-            transition_on_first(
-                rpc,
-                &f.path,
-                f.network,
-                TransparentLedgerMode::PrivateShadow,
-            ),
+            transition_on_first(rpc, &f.path, f.network),
         )
         .await
     }
@@ -996,8 +991,7 @@ mod private_transparent_policy {
         let planned = address_history::plan(&f.db.transaction_data_requests().unwrap()).len();
         assert!(planned > 4, "more addresses than one fill: {planned}");
         let mut lwd = CapturingLwd::start(f.history_tx.clone()).await;
-        let _transition =
-            transition_on_first_dispatch(&f.path, f.network, TransparentLedgerMode::PrivateShadow);
+        let _transition = transition_on_first_dispatch(&f.path, f.network);
 
         enhancement::EnhancementSession::new(f.network, &f.path)
             .run_checkpoint(&mut f.db, &mut lwd.client, None, &|| false)
@@ -1064,8 +1058,7 @@ mod private_transparent_policy {
 
         let mut f = three_accounts();
         let mut lwd = CapturingLwd::start(f.history_tx.clone()).await;
-        let _transition =
-            transition_on_first_dispatch(&f.path, f.network, TransparentLedgerMode::PrivateShadow);
+        let _transition = transition_on_first_dispatch(&f.path, f.network);
         refresh(&mut f, &mut lwd).await.unwrap();
 
         assert_eq!(lwd.count("/GetAddressUtxosStream"), 1);
@@ -1084,9 +1077,10 @@ mod private_transparent_policy {
         let lookups = policy.public_transparent_lookups(&f.db).unwrap();
         assert!(lookups.still_allowed(&f.db).unwrap());
 
-        // PrivateShadow keeps public authority, but a new generation still
-        // revokes lookups captured under the old one.
-        f.apply(TransparentLedgerMode::PrivateShadow);
+        // A toggle on and off ends Public, but a new generation still revokes
+        // lookups captured under the old one.
+        f.apply(TransparentLedgerMode::PrivateRequired);
+        f.apply(TransparentLedgerMode::Public);
         assert!(!lookups.still_allowed(&f.db).unwrap());
         let renewed = policy.public_transparent_lookups(&f.db).unwrap();
         assert!(renewed.still_allowed(&f.db).unwrap());

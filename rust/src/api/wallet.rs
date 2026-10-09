@@ -2080,7 +2080,7 @@ mod tests {
             crate::wallet::db::SYNC_DB_BUSY_TIMEOUT,
         )
         .unwrap()
-        .apply_transparent_policy(TransparentLedgerMode::PrivateShadow)
+        .apply_transparent_policy(TransparentLedgerMode::PrivateRequired)
         .unwrap();
         let lwd = CapturingLwd::start(Vec::new()).await;
 
@@ -2107,16 +2107,12 @@ mod tests {
             .unwrap();
         let gate = import_gate(network, path, false, EnhancementPolicy::current(network)).unwrap();
         // Every probe finds history, so an unrevoked run probes every index.
-        // PrivateShadow keeps public authority; only the generation revokes.
+        // The toggle ends Public, keeping public authority; only the
+        // generation revokes.
         let lwd = CapturingLwd::start_with(
             vec![0],
             3_000_000,
-            transition_on_first(
-                "/GetTaddressTxids",
-                path,
-                network,
-                TransparentLedgerMode::PrivateShadow,
-            ),
+            transition_on_first("/GetTaddressTxids", path, network),
         )
         .await;
 
@@ -2157,7 +2153,7 @@ mod tests {
         })
         .await
         .unwrap();
-        let transition = apply_fenced(&path, network, TransparentLedgerMode::PrivateShadow).await;
+        let transition = apply_fenced(&path, network, TransparentLedgerMode::PrivateRequired).await;
         release.notify_one();
         assert!(transition.is_ok(), "{transition:?}");
         let discovered = discovery.await.unwrap();

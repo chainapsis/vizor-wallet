@@ -215,7 +215,7 @@ fn privately_recovered_with_metadata_fee(
         .with_account_from_sapling_activation(BlockHash([0; 32]))
         .build();
     scan_unrelated_blocks(&mut st, 10);
-    set_policy(&mut st, TransparentLedgerMode::PrivateShadow);
+    set_policy(&mut st, TransparentLedgerMode::PrivateRequired);
     let account = st.test_account().unwrap().id();
 
     // Private transparent recovery finds the two outputs that fund the shielding.

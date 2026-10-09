@@ -1269,7 +1269,6 @@ mod tests {
         let _transition = crate::wallet::sync_engine::test_lwd::transition_on_first_dispatch(
             &path,
             WalletNetwork::Main,
-            TransparentLedgerMode::PrivateShadow,
         );
         run_with(
             &mut rpc,
