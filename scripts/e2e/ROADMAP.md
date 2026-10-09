@@ -144,11 +144,13 @@ and executes their teardown internally. Only completed original sessions permit
 anchored workspace removal; incomplete/failed cases stop assignment and retain
 state. Native support rejects links; mutable workspace links are only unlinked,
 never followed. Shared build artifacts must remain outside the removable tree.
-The composed macOS executor now wires `flutter.macos.import-sync` to one native
-cohort/helper build and one offline signer build per invocation, with original
-per-case Zakura/native owners. Fresh repetitions have independent schema-2
-reports and may overlap under a bounded worker count. The other 63 catalog
-scenarios, iOS/Rust executors, persistent build-cache publication/invalidation,
+The composed executor wires five macOS import/endpoint cases and eight existing
+Rust receive/import/send cases to original per-case Zakura/native owners.
+Compatible app/helper artifacts are built once when selected; selected Rust
+targets and the signer share one offline Cargo producer. Rust-only selections
+build no app/helper. Fresh repetitions have independent schema-2 reports and
+may overlap under one bounded worker count, including mixed Rust/macOS selections.
+The other 51 catalog scenarios, iOS execution, persistent build-cache publication/invalidation,
 resource scheduling and final-source catalog/performance validation remain
 pending. A native observation or process receipt alone never authorizes deletion.
 
