@@ -50,6 +50,19 @@ matched, while SDK scripts and writable runtime copies had fresh private roots
 and independent inodes. Rust/Go dependency caches were already populated; this
 is not an empty-machine baseline or a voting-wallet/catalog PASS.
 
+On clean `4429038fc`, the latest single iOS migration and same-case restart
+receipt call sites passed actual two-worker validation (`7b9a8d7577`), both
+original assertions and native/backend cleanup proved. Its402.209s included
+one shared app/helper build each and a signer/address-tool cache hit. Matched
+warm invocations on that exact source/workload passed2/2 with all build counts
+zero: one worker227.533s (`a127c6e326`), two workers157.747s (`8009b90765`).
+All15 native producer groups joined successfully in each warm invocation.
+The measured30.7-percent wall-time reduction is one two-case observation, not
+general resource efficiency. Host parent/child CPU80.55to89.00s and maximum
+RSS436,125,696to451,477,504bytes do not include complete Simulator/Docker VM
+costs or a concurrent aggregate memory peak. The native cache-miss run was not
+fully cold; Gift SDK repair and same-final-source21/64 coverage remain unproved.
+
 Broader resource/performance evidence, iOS completion and final-source validation
 remain open. Once those gates are satisfied, ask the user before starting the
 umbrella's final review. Keep it draft and do not merge it to `main` without

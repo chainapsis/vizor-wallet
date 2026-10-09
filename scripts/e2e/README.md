@@ -1152,6 +1152,34 @@ outcomes. `persistent_cache_attestation` describes this cooperative local
 publication, not portable hermetic provenance or a wallet/catalog PASS.
 Wallets, storage, devices, Keychain and chain state remain case-local.
 
+Actual preactivation validation on clean `4429038fc` selected single iOS
+migration plus same-case app restart through the normal selectors and original
+owned executor on arm64, Flutter3.47.2 and iOS26.3. Each invocation used fresh
+case devices, wallets and backends, with unchanged assertions, `--build-jobs 8`
+and short-first without timing history:
+
+| Native cache / case workers | Total seconds | Signer / app / helper builds | Result |
+| --- | ---: | --- | --- |
+| App/helper miss, 2 workers (`7b9a8d7577`) | 402.209 | 0 / 1 / 1 | 2 PASS |
+| Warm, 1 worker (`a127c6e326`) | 227.533 | 0 / 0 / 0 | 2 PASS |
+| Warm, 2 workers (`8009b90765`) | 157.747 | 0 / 0 / 0 | 2 PASS |
+
+Both warm invocations reused the same captured signer/native keys, joined all
+15 native producer groups successfully, and proved original Driver assertions
+and native/backend cleanup with no cleanup errors. The real restart changed
+the app PID while retaining its case Simulator and wallet, not a restored state.
+The miss shared one app/helper build between the cases; the signer and existing
+dependency caches were already warm. It is not an empty-machine cold baseline.
+
+This single matched warm comparison reduced wall time by30.7 percent, not total
+system resource use. One trial per worker count ran serial-first, not randomized;
+host load and OS caches were not controlled. `/usr/bin/time -l` observed host
+parent/child CPU80.55 to89.00 seconds and maximum RSS436,125,696 to451,477,504 bytes. Daemon-parented
+Simulator apps and Docker VM CPU/memory are outside that accounting; maximum
+RSS is not a concurrent aggregate peak. This does not prove a general speedup,
+Gift SDK repair or same-final-source21/64-case coverage. The public iOS catalog
+remains pending until its functional integration gate is satisfied.
+
 ```bash
 python3 -B -m unittest scripts/e2e/test_native_build_cache.py scripts/e2e/test_native_ios_build.py scripts/e2e/test_native_macos_build.py scripts/e2e/test_native_macos_suite.py
 ```
