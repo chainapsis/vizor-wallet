@@ -334,6 +334,7 @@ Future<void> _importFirstWallet(
     tester,
     const ValueKey('unknown_birthday_confirm_button'),
   );
+  await finishDesktopAccountCustomisation(tester);
   await _enterText(
     tester,
     const ValueKey('set_password_password_field'),
@@ -345,7 +346,7 @@ Future<void> _importFirstWallet(
     _password,
   );
   await _tapAppButton(tester, const ValueKey('set_password_submit_button'));
-  await finishDesktopAccountCustomisation(tester);
+
   if (waitForHomeBalance) await _waitForHome(tester);
   _log('first wallet imported');
 }

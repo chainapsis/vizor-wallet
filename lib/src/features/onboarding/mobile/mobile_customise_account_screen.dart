@@ -40,7 +40,9 @@ class MobileCustomiseAccountScreen extends ConsumerStatefulWidget {
     this.onFinish,
     this.position,
     this.onBack,
+    this.onPopped,
     this.random,
+    this.initialPersona,
     this.actionsEnabled = true,
     this.setupCommitted = false,
     super.key,
@@ -56,9 +58,11 @@ class MobileCustomiseAccountScreen extends ConsumerStatefulWidget {
 
   final OnboardingProgressPosition? position;
   final VoidCallback? onBack;
+  final VoidCallback? onPopped;
 
   /// Optional entropy source for deterministic previews and tests.
   final Random? random;
+  final AccountPersona? initialPersona;
 
   /// A terminal setup failure can require reopening instead of creating again.
   final bool actionsEnabled;
@@ -81,6 +85,7 @@ class _MobileCustomiseAccountScreenState
   var _initialFocusMonitoringScheduled = false;
   var _initialFocusRequested = false;
   var _submitPhase = _SubmitPhase.idle;
+  var _openingSecurity = false;
   String? _submitError;
 
   String get _normalizedName =>
@@ -88,7 +93,8 @@ class _MobileCustomiseAccountScreenState
   int get _nameLength =>
       accountNameCharacterLength(_persona.nameController.text);
   bool get _nameValid => isAccountNameLengthValid(_persona.nameController.text);
-  bool get _isSubmitting => _submitPhase != _SubmitPhase.idle;
+  bool get _isSubmitting =>
+      _openingSecurity || _submitPhase != _SubmitPhase.idle;
   bool get _canContinue =>
       widget.actionsEnabled && !_isSubmitting && _nameValid;
 
@@ -102,7 +108,10 @@ class _MobileCustomiseAccountScreenState
   @override
   void initState() {
     super.initState();
-    _persona = AccountPersonaDraft(random: widget.random);
+    _persona = AccountPersonaDraft(
+      random: widget.random,
+      initialPersona: widget.initialPersona ?? widget.args?.setupArgs.persona,
+    );
   }
 
   @override
@@ -182,6 +191,27 @@ class _MobileCustomiseAccountScreenState
   Future<void> _submit() async {
     if (!_canContinue) return;
     _nameFocusNode.unfocus();
+    final args = widget.args;
+    if (args != null &&
+        args.pendingPassword == null &&
+        !ref.read(appSecurityProvider).isPasswordConfigured &&
+        widget.onFinish == null) {
+      setState(() => _openingSecurity = true);
+      try {
+        await context.pushOnboarding(
+          '/onboarding/set-passcode',
+          extra: args.setupArgs.withPersona(
+            AccountPersona(
+              name: _normalizedName,
+              profilePictureId: _persona.profilePictureId,
+            ),
+          ),
+        );
+      } finally {
+        if (mounted) setState(() => _openingSecurity = false);
+      }
+      return;
+    }
     setState(() {
       _submitPhase = _SubmitPhase.creatingWallet;
       _submitError = null;
@@ -268,6 +298,24 @@ class _MobileCustomiseAccountScreenState
     }
   }
 
+  VoidCallback? get _backAction {
+    if (widget.setupCommitted) return null;
+    if (widget.onBack != null) return widget.onBack;
+    if (widget.onFinish != null) return null;
+    final args = widget.args;
+    if (args == null || args.pendingPassword != null) return null;
+    return () {
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).maybePop();
+      } else {
+        context.goOnboarding(
+          args.setupArgs.backRoutePath,
+          extra: args.setupArgs.backRouteExtra,
+        );
+      }
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
     final content = MobileOnboardingStepScaffold(
@@ -279,8 +327,8 @@ class _MobileCustomiseAccountScreenState
                 OnboardingStage.customiseAccount,
               )
               .value,
-      onBack: _isSubmitting ? null : widget.onBack,
-      showBackButton: widget.onBack != null,
+      onBack: _isSubmitting ? null : _backAction,
+      showBackButton: _backAction != null,
       title: 'Customise Account',
       subtitle:
           'Add personality to your account by setting an account name and '
@@ -320,7 +368,10 @@ class _MobileCustomiseAccountScreenState
       ),
     );
     return PopScope<void>(
-      canPop: widget.onBack != null && !_isSubmitting,
+      canPop: _backAction != null && !_isSubmitting,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) widget.onPopped?.call();
+      },
       child: content,
     );
   }

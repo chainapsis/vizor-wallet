@@ -20,7 +20,6 @@ import 'package:zcash_wallet/src/features/onboarding/create/customise_account_sc
 import 'package:zcash_wallet/src/features/onboarding/create/onboarding_split_view.dart';
 import 'package:zcash_wallet/src/features/onboarding/ledger/ledger_connect_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
-import 'package:zcash_wallet/src/features/onboarding/shared/set_password_screen.dart';
 
 void main() {
   testWidgets('Ledger duplicate error preserves branding and permits retry', (
@@ -238,7 +237,7 @@ void main() {
 
   setUpAll(_loadAppFonts);
 
-  test('customise account is the final create-onboarding step', () {
+  test('customise account keeps its route and sidebar label', () {
     expect(OnboardingStep.customiseAccount.label, 'Customise wallet');
     expect(
       OnboardingStep.customiseAccount.routePath,
@@ -285,91 +284,68 @@ void main() {
     });
   }
 
-  testWidgets('set password continues to customise without creating a wallet', (
-    tester,
-  ) async {
-    await _setDesktopViewport(tester);
-    CustomiseAccountArgs? routedArgs;
-    final router = GoRouter(
-      initialLocation: '/onboarding/set-password',
-      routes: [
-        GoRoute(
-          path: '/onboarding/set-password',
-          builder: (_, _) => const SetPasswordScreen(
-            args: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
-          ),
-        ),
-        GoRoute(
-          path: '/onboarding/customise-account',
-          builder: (_, state) {
-            routedArgs = state.extra! as CustomiseAccountArgs;
-            return const Text('Customise destination');
-          },
-        ),
-      ],
+  for (final setup in _setupArgsByFlow) {
+    testWidgets(
+      'personalisation forwards its draft and survives back for ${setup.flow.name}',
+      (tester) async {
+        await _setDesktopViewport(tester);
+        SetPasswordScreenArgs? routedArgs;
+        final router = GoRouter(
+          initialLocation: '/customise',
+          routes: [
+            GoRoute(
+              path: '/customise',
+              builder: (_, state) => CustomiseAccountScreen(
+                args:
+                    state.extra as CustomiseAccountArgs? ??
+                    CustomiseAccountArgs(setupArgs: setup),
+                random: _SequenceRandom([0, 1, 2]),
+              ),
+            ),
+            GoRoute(
+              path: setup.desktopPasswordRoutePath,
+              builder: (context, state) {
+                routedArgs = state.extra as SetPasswordScreenArgs;
+                return TextButton(
+                  onPressed: () => context.go(
+                    '/customise',
+                    extra: CustomiseAccountArgs(setupArgs: routedArgs!),
+                  ),
+                  child: const Text('Back to persona'),
+                );
+              },
+            ),
+          ],
+        );
+        addTearDown(router.dispose);
+        await tester.pumpWidget(_routerHarness(router));
+        await tester.enterText(
+          find.byKey(const ValueKey('customise_account_name_field')),
+          'My savings',
+        );
+        await tester.tap(
+          find.byKey(const ValueKey('customise_account_finish_button')),
+        );
+        await tester.pumpAndSettle();
+        expect(routedArgs?.persona?.name, 'My savings');
+        expect(routedArgs?.persona?.profilePictureId, 'pfp-03');
+        expect(routedArgs?.mnemonic, setup.mnemonic);
+        expect(routedArgs?.bip39Passphrase, setup.bip39Passphrase);
+        expect(routedArgs?.birthdayHeight, setup.birthdayHeight);
+        expect(
+          routedArgs?.selectedAdditionalAccountIndices,
+          setup.selectedAdditionalAccountIndices,
+        );
+        await tester.tap(find.text('Back to persona'));
+        await tester.pumpAndSettle();
+        expect(find.text('My savings'), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('customise_account_card')),
+          findsOneWidget,
+        );
+      },
     );
-
-    await tester.pumpWidget(_routerHarness(router));
-    expect(
-      tester
-          .widget<OnboardingTrailingPane>(find.byType(OnboardingTrailingPane))
-          .backTarget,
-      isNull,
-    );
-    await tester.enterText(find.byType(TextField).at(0), 'Password1!');
-    await tester.enterText(find.byType(TextField).at(1), 'Password1!');
-    await tester.pump();
-
-    expect(find.text('Set password & continue'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('set_password_submit_button')));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Customise destination'), findsOneWidget);
-    expect(routedArgs?.mnemonic, _mnemonic);
-    expect(routedArgs?.pendingPassword, 'Password1!');
-  });
-
-  testWidgets('import password forwards its complete draft to customise', (
-    tester,
-  ) async {
-    await _setDesktopViewport(tester);
-    CustomiseAccountArgs? routedArgs;
-    const setupArgs = SetPasswordScreenArgs.importWallet(
-      mnemonic: _mnemonic,
-      bip39Passphrase: 'hidden words',
-      birthdayHeight: 2500000,
-      selectedAdditionalAccountIndices: [1, 2],
-    );
-    final router = GoRouter(
-      initialLocation: '/import/set-password',
-      routes: [
-        GoRoute(
-          path: '/import/set-password',
-          builder: (_, _) => const SetPasswordScreen(args: setupArgs),
-        ),
-        GoRoute(
-          path: '/import/customise-account',
-          builder: (_, state) {
-            routedArgs = state.extra! as CustomiseAccountArgs;
-            return const Text('Import customise destination');
-          },
-        ),
-      ],
-    );
-
-    await tester.pumpWidget(_routerHarness(router));
-    await tester.enterText(find.byType(TextField).at(0), 'Password1!');
-    await tester.enterText(find.byType(TextField).at(1), 'Password1!');
-    await tester.pump();
-    await tester.tap(find.byKey(const ValueKey('set_password_submit_button')));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Import customise destination'), findsOneWidget);
-    expect(routedArgs?.flow, SetPasswordFlow.importWallet);
-    expect(routedArgs?.pendingPassword, 'Password1!');
-    expect(routedArgs?.setupArgs.bip39Passphrase, 'hidden words');
-    expect(routedArgs?.setupArgs.selectedAdditionalAccountIndices, [1, 2]);
-  });
+  }
 
   testWidgets('generates its draft once and keeps it across rebuilds', (
     tester,

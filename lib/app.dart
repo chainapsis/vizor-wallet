@@ -80,6 +80,7 @@ import 'src/features/onboarding/ledger/ledger_connect_screen.dart';
 import 'src/features/onboarding/ledger/ledger_setup_args.dart';
 import 'src/features/onboarding/lost_password_screen.dart';
 import 'src/features/onboarding/shared/onboarding_flow_args.dart';
+import 'src/features/onboarding/shared/account_persona_draft.dart';
 import 'src/features/onboarding/shared/set_password_screen.dart';
 import 'src/features/onboarding/storage_unavailable_screen.dart';
 import 'src/features/onboarding/mobile/mobile_unlock_screen.dart';
@@ -561,7 +562,9 @@ String? appRedirect({
   // actionable on this screen; locking still takes precedence.
   if (hasWallet &&
       ref.read(giftClaimFlowProvider)?.walletSetupInProgress == true &&
-      state.matchedLocation == '/gift/customise') {
+      (state.matchedLocation == '/gift/customise' ||
+          state.matchedLocation == '/gift/set-password' ||
+          state.matchedLocation == '/gift/passcode')) {
     return requiresUnlock ? '/unlock' : null;
   }
   if (_isRouteOrChild(state.matchedLocation, '/gift')) {
@@ -712,7 +715,7 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
   GoRoute(
     path: '/gift/set-password',
     redirect: (_, _) =>
-        ref.read(giftClaimFlowProvider)?.inspection == null ? '/gift' : null,
+        ref.read(giftClaimFlowProvider)?.setupPersona == null ? '/gift' : null,
     builder: (_, _) => const DesktopGiftPasswordScreen(),
   ),
   GoRoute(
@@ -846,19 +849,7 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
         child: ImportWalletBirthdayScreen.ledger(
           onBirthdaySelected: (birthdayHeight) async {
             if (!context.mounted) return;
-            if (!ref.read(appSecurityProvider).isPasswordConfigured) {
-              context.go(
-                preserveDesktopImportEntry(
-                  state.uri,
-                  '/onboarding/ledger/set-password',
-                ),
-                extra: LedgerSetPasswordArgs(
-                  account: args.account,
-                  birthdayHeight: birthdayHeight,
-                ),
-              );
-              return;
-            }
+
             context.go(
               preserveDesktopImportEntry(
                 state.uri,
@@ -881,42 +872,20 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
       if (!ref.read(ledgerStaticCapabilityProvider).supported) {
         return '/add-account';
       }
-      return state.extra is LedgerSetPasswordArgs ? null : '/onboarding/ledger';
+      final args = state.extra;
+      return args is SetPasswordScreenArgs &&
+              args.flow == SetPasswordFlow.importLedger &&
+              args.persona != null
+          ? null
+          : '/onboarding/ledger';
     },
-    pageBuilder: (context, state) {
-      final args = state.extra as LedgerSetPasswordArgs;
-      return CustomTransitionPage<void>(
-        key: state.pageKey,
-        transitionDuration: kOnboardingForwardDuration,
-        reverseTransitionDuration: kOnboardingReverseDuration,
-        child: SetPasswordScreen.ledger(
-          ledgerBackTarget: OnboardingBackTarget.route(
-            label: 'Wallet Birthday Height',
-            routePath: preserveDesktopImportEntry(
-              state.uri,
-              '/onboarding/ledger/birthday',
-            ),
-            routeExtra: LedgerBirthdayArgs(account: args.account),
-          ),
-          ledgerOnContinue: (password, inputSource) async {
-            if (!context.mounted) return;
-            context.go(
-              preserveDesktopImportEntry(
-                state.uri,
-                '/onboarding/ledger/customise-account',
-              ),
-              extra: LedgerCustomiseAccountArgs(
-                account: args.account,
-                birthdayHeight: args.birthdayHeight,
-                pendingPassword: password,
-                passwordInputSource: inputSource,
-              ),
-            );
-          },
-        ),
-        transitionsBuilder: _onboardingFadeTransition,
-      );
-    },
+    pageBuilder: (context, state) => CustomTransitionPage<void>(
+      key: state.pageKey,
+      transitionDuration: kOnboardingForwardDuration,
+      reverseTransitionDuration: kOnboardingReverseDuration,
+      child: SetPasswordScreen(args: state.extra as SetPasswordScreenArgs),
+      transitionsBuilder: _onboardingFadeTransition,
+    ),
   ),
   GoRoute(
     path: '/onboarding/ledger/customise-account',
@@ -930,82 +899,55 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
     },
     pageBuilder: (context, state) {
       final args = state.extra as LedgerCustomiseAccountArgs;
+      final needsPassword = !ref.read(appSecurityProvider).isPasswordConfigured;
       return CustomTransitionPage<void>(
         key: state.pageKey,
         transitionDuration: kOnboardingForwardDuration,
         reverseTransitionDuration: kOnboardingReverseDuration,
         child: CustomiseAccountScreen.ledger(
+          initialPersona: args.persona,
+          continueToSecurity: needsPassword,
           ledgerBackTarget: OnboardingBackTarget.route(
-            label: args.pendingPassword == null
-                ? 'Wallet Birthday Height'
-                : 'Set Password',
+            label: 'Wallet Birthday Height',
             routePath: preserveDesktopImportEntry(
               state.uri,
-              args.pendingPassword == null
-                  ? '/onboarding/ledger/birthday'
-                  : '/onboarding/ledger/set-password',
+              '/onboarding/ledger/birthday',
             ),
-            routeExtra: args.pendingPassword == null
-                ? LedgerBirthdayArgs(account: args.account)
-                : LedgerSetPasswordArgs(
-                    account: args.account,
-                    birthdayHeight: args.birthdayHeight,
-                  ),
+            routeExtra: LedgerBirthdayArgs(account: args.account),
           ),
           onFinish: (name, profilePictureId) async {
-            await ref.read(linuxKeyringCoordinatorProvider).runMutation(
-              () async {
-                Future<void> importAccount() =>
-                    ref.read(ledgerAccountImporterProvider)(
-                      name: name,
+            if (needsPassword) {
+              context.go(
+                preserveDesktopImportEntry(
+                  state.uri,
+                  '/onboarding/ledger/set-password',
+                ),
+                extra:
+                    SetPasswordScreenArgs.importLedger(
                       account: args.account,
                       birthdayHeight: args.birthdayHeight,
-                      profilePictureId: profilePictureId,
-                    );
-
-                final pendingPassword = args.pendingPassword;
-                final inputSourceService = ref.read(
-                  appPasswordInputSourceProvider,
+                    ).withPersona(
+                      AccountPersona(
+                        name: name,
+                        profilePictureId: profilePictureId,
+                      ),
+                    ),
+              );
+              return;
+            }
+            await ref
+                .read(linuxKeyringCoordinatorProvider)
+                .runMutation(
+                  () => ref.read(ledgerAccountImporterProvider)(
+                    name: name,
+                    account: args.account,
+                    birthdayHeight: args.birthdayHeight,
+                    profilePictureId: profilePictureId,
+                  ),
                 );
-                if (pendingPassword == null) {
-                  await importAccount();
-                  return;
-                }
-
-                final securityNotifier = ref.read(appSecurityProvider.notifier);
-                final routerRefresh = ref.read(routerRefreshProvider);
-                var passwordPrepared = false;
-                var passwordCommitted = false;
-                try {
-                  await routerRefresh.pauseWhile(() async {
-                    await securityNotifier.preparePasswordSetup(
-                      pendingPassword,
-                    );
-                    passwordPrepared = true;
-                    await importAccount();
-                    await securityNotifier.completePasswordSetup();
-                    passwordCommitted = true;
-                    unawaited(
-                      inputSourceService.remember(args.passwordInputSource),
-                    );
-                  });
-                } catch (error) {
-                  if (passwordPrepared && !passwordCommitted) {
-                    await securityNotifier.finishPasswordSetupAfterFailure(
-                      accountMayExist:
-                          error is WalletAccountSetupInterruptedException ||
-                          (ref.read(accountProvider).value?.hasAccounts ??
-                              false),
-                    );
-                  }
-                  rethrow;
-                }
-              },
-            );
             if (!context.mounted) return;
             await completeGiftClaimImportSetupForRoute(ref, context);
-            if (!context.mounted) return;
-            context.go('/home');
+            if (context.mounted) context.go('/home');
           },
         ),
         transitionsBuilder: _onboardingFadeTransition,
@@ -1076,7 +1018,8 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
         redirect: (_, state) {
           final args = state.extra;
           if (args is SetPasswordScreenArgs &&
-              args.flow == SetPasswordFlow.create) {
+              args.flow == SetPasswordFlow.create &&
+              args.persona != null) {
             return null;
           }
           return OnboardingStep.secretPassphrase.routePath;
@@ -1184,7 +1127,8 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
         redirect: (_, state) {
           final args = state.extra;
           if (args is SetPasswordScreenArgs &&
-              args.flow == SetPasswordFlow.importKeystone) {
+              args.flow == SetPasswordFlow.importKeystone &&
+              args.persona != null) {
             return null;
           }
           return KeystoneOnboardingStep.walletBirthdayHeight.routePath;
@@ -1269,7 +1213,8 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
         redirect: (_, state) {
           final args = state.extra;
           if (args is SetPasswordScreenArgs &&
-              args.flow == SetPasswordFlow.importWallet) {
+              args.flow == SetPasswordFlow.importWallet &&
+              args.persona != null) {
             return null;
           }
           return '/import';

@@ -270,15 +270,26 @@ void main() {
     await tester.pump();
   }
 
+  Future<void> submitSecurity(WidgetTester tester) async {
+    await tester.enterText(keyed('set_password_password_field'), 'Password1!');
+    await tester.enterText(keyed('set_password_confirm_field'), 'Password1!');
+    await tester.pump();
+    await tester.tap(keyed('set_password_submit_button'));
+    await tester.pumpAndSettle();
+  }
+
+  Future<void> submitPersona(WidgetTester tester) async {
+    await tester.tap(keyed('customise_account_finish_button'));
+    await tester.pumpAndSettle();
+    if (keyed('set_password_password_field').evaluate().isNotEmpty) {
+      await submitSecurity(tester);
+    }
+  }
+
   Future<void> openFirstAccountCustomise(WidgetTester tester) async {
     await paste(tester);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Create a wallet to claim'));
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byType(EditableText).at(0), 'Password1!');
-    await tester.enterText(find.byType(EditableText).at(1), 'Password1!');
-    await tester.pump();
-    await tester.tap(keyed('set_password_submit_button'));
     await tester.pumpAndSettle();
     expect(container.read(_routerProvider).state.uri.path, '/gift/customise');
   }
@@ -341,20 +352,16 @@ void main() {
             appVersion: '3.9.3',
           ),
           birthdayHeight: 3000000,
-          pendingPassword: first ? 'Password1!' : null,
         ),
       );
     } else {
       router.go(
         '${method == 'keystone' ? '/onboarding/keystone' : '/import'}/customise-account$suffix',
-        extra: CustomiseAccountArgs(
-          setupArgs: setup,
-          pendingPassword: first ? 'Password1!' : null,
-        ),
+        extra: CustomiseAccountArgs(setupArgs: setup),
       );
     }
     await tester.pumpAndSettle();
-    await tester.tap(keyed('customise_account_finish_button'));
+    await submitPersona(tester);
     await tester.pumpAndSettle();
   }
 
@@ -489,7 +496,7 @@ void main() {
       expect(await received.load(), isEmpty);
       expect(keyring.hasPendingMutation, isFalse);
       accounts.importError = null;
-      await tester.tap(keyed('customise_account_finish_button'));
+      await submitSecurity(tester);
       await tester.pumpAndSettle();
       expect(find.text('Gift Home'), findsOneWidget);
       expect(accounts.importCalls, 2);
@@ -516,7 +523,7 @@ void main() {
         );
         gate.complete();
         await pending;
-        await tester.tap(keyed('customise_account_finish_button'));
+        await submitSecurity(tester);
         await tester.pumpAndSettle();
         expect(find.text('Gift Home'), findsOneWidget);
         expect(keyring.hasPendingMutation, isFalse);
@@ -713,7 +720,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Create an account to claim'));
       await tester.pumpAndSettle();
-      await tester.tap(keyed('customise_account_finish_button'));
+      await submitPersona(tester);
       await tester.pumpAndSettle();
       expect(find.text('Retry setup'), findsOneWidget);
       expect(accounts.creationCalls, 1);
@@ -749,17 +756,6 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        if (!existing) {
-          expect(
-            container.read(_routerProvider).state.uri.path,
-            '/gift/set-password',
-          );
-          await tester.enterText(find.byType(EditableText).at(0), 'Password1!');
-          await tester.enterText(find.byType(EditableText).at(1), 'Password1!');
-          await tester.pump();
-          await tester.tap(keyed('set_password_submit_button'));
-          await tester.pumpAndSettle();
-        }
         expect(find.byType(CustomiseAccountScreen), findsOneWidget);
         expect(
           container.read(_routerProvider).state.uri.path,
@@ -767,15 +763,12 @@ void main() {
         );
         expect(accounts.creationCalls, 0);
         expect(inputStore.writes, 0);
-        inputPlatform.current = const {
-          'platform': 'macos',
-          'id': 'another.layout',
-        };
+        inputPlatform.current = source;
         await tester.enterText(
           keyed('customise_account_name_field'),
           'My desktop gift',
         );
-        await tester.tap(keyed('customise_account_finish_button'));
+        await submitPersona(tester);
         await tester.pumpAndSettle();
         expect(find.text('Gift Home'), findsOneWidget);
         expect(accounts.creationCalls, 1);
@@ -804,6 +797,52 @@ void main() {
   }
 
   testWidgets(
+    'back after failed Gift security keeps persona and clears credential',
+    (tester) async {
+      await pump(tester, clipboard: incomingLink.toUri().toString());
+      await openFirstAccountCustomise(tester);
+      await tester.enterText(
+        keyed('customise_account_name_field'),
+        'Draft gift',
+      );
+      await tester.tap(keyed('customise_account_finish_button'));
+      await tester.pumpAndSettle();
+      security.prepareError = StateError('Password preparation unavailable');
+      await submitSecurity(tester);
+      expect(container.read(giftClaimFlowProvider)?.setupPasscode, isNotNull);
+      await tester.tap(find.byType(AppBackLink));
+      await tester.pumpAndSettle();
+      expect(container.read(_routerProvider).state.uri.path, '/gift/customise');
+      expect(container.read(giftClaimFlowProvider)?.setupPasscode, isNull);
+      expect(find.text('Draft gift'), findsOneWidget);
+      security.prepareError = null;
+      await tester.tap(keyed('customise_account_finish_button'));
+      await tester.pumpAndSettle();
+      expect(
+        container.read(_routerProvider).state.uri.path,
+        '/gift/set-password',
+      );
+      expect(accounts.creationCalls, 0);
+      expect(
+        tester
+            .widget<TextField>(
+              find.descendant(
+                of: keyed('set_password_password_field'),
+                matching: find.byType(TextField),
+              ),
+            )
+            .controller!
+            .text,
+        isEmpty,
+      );
+      await submitSecurity(tester);
+      expect(find.text('Gift Home'), findsOneWidget);
+      expect(accounts.creationCalls, 1);
+      container.read(paymentLinkClaimCoordinatorProvider).pause();
+    },
+  );
+
+  testWidgets(
     'failed Gift setup remembers the submitted input source only after retry commits',
     (tester) async {
       await pump(tester, clipboard: incomingLink.toUri().toString());
@@ -811,30 +850,22 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Create a wallet to claim'));
       await tester.pumpAndSettle();
-      const submittedSource = {'platform': 'windows', 'hkl': 'test.layout'};
-      inputPlatform.current = submittedSource;
-      await tester.enterText(find.byType(EditableText).at(0), 'Password1!');
-      await tester.enterText(find.byType(EditableText).at(1), 'Password1!');
-      await tester.pump();
-      await tester.tap(keyed('set_password_submit_button'));
-      await tester.pumpAndSettle();
-      expect(inputStore.writes, 0);
-      security.prepareError = StateError('Password preparation unavailable');
       await tester.tap(keyed('customise_account_finish_button'));
       await tester.pumpAndSettle();
-      expect(container.read(_routerProvider).state.uri.path, '/gift/customise');
+      const submittedSource = {'platform': 'windows', 'hkl': 'test.layout'};
+      inputPlatform.current = submittedSource;
+      security.prepareError = StateError('Password preparation unavailable');
+      await submitSecurity(tester);
+      expect(
+        container.read(_routerProvider).state.uri.path,
+        '/gift/set-password',
+      );
       expect(accounts.creationCalls, 0);
       expect(inputStore.writes, 0);
       expect(security.state.isUnlocked, isFalse);
       expect(keyring.hasPendingMutation, isFalse);
-
-      inputPlatform.current = const {
-        'platform': 'windows',
-        'hkl': 'another.layout',
-      };
       security.prepareError = null;
-      await tester.tap(keyed('customise_account_finish_button'));
-      await tester.pumpAndSettle();
+      await submitSecurity(tester);
       expect(find.text('Gift Home'), findsOneWidget);
       expect(accounts.creationCalls, 1);
       expect(security.state.isUnlocked, isTrue);
@@ -861,14 +892,14 @@ void main() {
           pending = keyring.runMutation(() => otherWork.future);
         }
 
-        await tester.tap(keyed('customise_account_finish_button'));
+        await submitPersona(tester);
         await tester.pumpAndSettle();
         expect(security.prepareCalls, 0);
         expect(accounts.creationCalls, 0);
         expect(inputStore.writes, 0);
         expect(
           container.read(_routerProvider).state.uri.path,
-          '/gift/customise',
+          '/gift/set-password',
         );
         expect(
           find.text(
@@ -883,7 +914,7 @@ void main() {
           otherWork.complete();
           await pending;
         }
-        await tester.tap(keyed('customise_account_finish_button'));
+        await submitSecurity(tester);
         await tester.pumpAndSettle();
         expect(find.text('Gift Home'), findsOneWidget);
         expect(security.prepareCalls, 1);
@@ -901,7 +932,7 @@ void main() {
       await openFirstAccountCustomise(tester);
       final preparation = Completer<void>();
       security.prepareGate = preparation;
-      await tester.tap(keyed('customise_account_finish_button'));
+      await submitPersona(tester);
       await tester.pump();
       expect(security.prepareCalls, 1);
       expect(accounts.creationCalls, 0);

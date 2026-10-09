@@ -323,11 +323,6 @@ Future<void> _runMobileImportScenario(WidgetTester tester) async {
   );
   await tester.pumpAndSettle();
 
-  expect(find.text('Create Passcode'), findsOneWidget);
-  await _enterMobilePasscode(tester, '123456');
-  await _enterMobilePasscode(tester, '123456');
-  await tester.pumpAndSettle();
-
   await tester.enterText(
     find.byKey(const ValueKey('mobile_customise_account_name_field')),
     'Speculos Ledger',
@@ -335,6 +330,13 @@ Future<void> _runMobileImportScenario(WidgetTester tester) async {
   await tester.tap(
     find.byKey(const ValueKey('mobile_customise_account_continue')),
   );
+  await tester.pumpAndSettle();
+  expect(find.text('Create Passcode'), findsOneWidget);
+  await _enterMobilePasscode(tester, '123456');
+  await _enterMobilePasscode(tester, '123456');
+  await tester.pumpAndSettle();
+
+
   await _pumpUntil(
     tester,
     () => tester.any(find.byKey(const ValueKey('mobile_biometrics_not_now'))),

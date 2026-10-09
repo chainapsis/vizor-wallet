@@ -243,8 +243,8 @@ class _Sidebar extends StatelessWidget {
     KeystoneOnboardingStep.scanQrCode,
     KeystoneOnboardingStep.selectAccount,
     KeystoneOnboardingStep.walletBirthdayHeight,
-    if (showPasswordStep) KeystoneOnboardingStep.setPassword,
     KeystoneOnboardingStep.customiseAccount,
+    if (showPasswordStep) KeystoneOnboardingStep.setPassword,
   ];
 
   @override

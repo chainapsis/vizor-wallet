@@ -12,7 +12,6 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/account_provider.dart';
-import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
@@ -342,26 +341,6 @@ class _ImportWalletBirthdayScreenState
 
       final args = widget.args!;
       final mnemonic = args.mnemonic;
-      final security = ref.read(appSecurityProvider);
-      if (!security.isPasswordConfigured) {
-        final selectedAdditionalAccountIndices =
-            await _resolveAdditionalAccountIndices(
-              mnemonic: mnemonic,
-              birthdayHeight: birthdayHeight,
-            );
-        if (selectedAdditionalAccountIndices == null) return;
-        if (!mounted) return;
-        context.go(
-          desktopImportLocation(context, '/import/set-password'),
-          extra: SetPasswordScreenArgs.importWallet(
-            mnemonic: mnemonic,
-            bip39Passphrase: args.bip39Passphrase,
-            birthdayHeight: birthdayHeight,
-            selectedAdditionalAccountIndices: selectedAdditionalAccountIndices,
-          ),
-        );
-        return;
-      }
 
       final selectedAdditionalAccountIndices =
           await _resolveAdditionalAccountIndices(

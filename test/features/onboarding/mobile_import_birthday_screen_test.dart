@@ -56,7 +56,6 @@ Widget _app({Future<void> Function(int height)? onHeightConfirmed}) {
 Widget _routerApp({
   required _RecordingAccountNotifier accountNotifier,
   required AppSecurityNotifier appSecurityNotifier,
-  ValueChanged<SetPasswordScreenArgs>? onPasscodeArgs,
   ValueChanged<CustomiseAccountArgs>? onCustomiseArgs,
 }) {
   final router = GoRouter(
@@ -68,15 +67,6 @@ Widget _routerApp({
           args: ImportBirthdayArgs(mnemonic: 'stub mnemonic'),
           loadChainMetadata: false,
         ),
-      ),
-      GoRoute(
-        path: '/onboarding/set-passcode',
-        builder: (_, state) {
-          final args =
-              mobileOnboardingPayload(state.extra) as SetPasswordScreenArgs;
-          onPasscodeArgs?.call(args);
-          return const Text('passcode route');
-        },
       ),
       GoRoute(
         path: '/onboarding/customise-account',
@@ -393,10 +383,10 @@ void main() {
     submitCompleter.complete();
   });
 
-  testWidgets('passes discovered account selection to passcode route', (
+  testWidgets('passes discovered account selection to customisation route', (
     tester,
   ) async {
-    SetPasswordScreenArgs? passcodeArgs;
+    CustomiseAccountArgs? customiseArgs;
     final accountNotifier = _RecordingAccountNotifier(
       discovery: const rust_wallet.SoftwareWalletImportDiscoveryResult(
         primaryAccountAlreadyExists: false,
@@ -410,7 +400,7 @@ void main() {
         appSecurityNotifier: _StaticAppSecurityNotifier(
           isPasswordConfigured: false,
         ),
-        onPasscodeArgs: (args) => passcodeArgs = args,
+        onCustomiseArgs: (args) => customiseArgs = args,
       ),
     );
     await tester.pump();
@@ -423,13 +413,13 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('passcode route'), findsOneWidget);
-    expect(passcodeArgs?.selectedAdditionalAccountIndices, [1, 2]);
+    expect(find.text('customise route'), findsOneWidget);
+    expect(customiseArgs?.setupArgs.selectedAdditionalAccountIndices, [1, 2]);
     expect(accountNotifier.importedAdditionalAccountIndices, isNull);
   });
 
   testWidgets(
-    'returning from passcode after empty discovery restores birthday',
+    'returning from customisation after empty discovery restores birthday',
     (tester) async {
       final accountNotifier = _RecordingAccountNotifier(
         discovery: const rust_wallet.SoftwareWalletImportDiscoveryResult(
@@ -449,9 +439,9 @@ void main() {
       await tester.pump();
 
       await _enterHeightAndContinue(tester);
-      expect(find.text('passcode route'), findsOneWidget);
+      expect(find.text('customise route'), findsOneWidget);
 
-      final context = tester.element(find.text('passcode route'));
+      final context = tester.element(find.text('customise route'));
       GoRouter.of(context).pop();
       await tester.pumpAndSettle();
 

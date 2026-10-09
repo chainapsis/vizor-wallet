@@ -94,15 +94,26 @@ runner passes `VIZOR_PAYMENT_LINK_REGTEST_ENABLED=true` — without which
 payment links stay gated off — plus `VIZOR_DEEPLINK_BASE_URL`. Set
 `SIMULATOR_UDID` when more than one simulator is booted.
 
-The onboarding runner funds fresh external Gift addresses through the existing
-Python driver, then drives **Activate gift card → Paste card link** in a walletless
+The onboarding runner uses the Ironwood regtest stack. It prepares three
+independent faucet notes before activation, then funds fresh external Gift
+addresses through the Rust wallet's transaction builder, driven by
+`ironwood-regtest-driver.py`. Ironwood shares the Orchard receiver; the
+ordinary `zcashd z_sendmany` faucet cannot fund these cards after NU6.3.
+The runner supplies the same activation height to the node and app, defaults
+to lightwalletd port 19067 and node RPC port 19232, and accepts
+`IRONWOOD_LIGHTWALLETD_PORT`, `IRONWOOD_ZCASHD_RPC_PORT`,
+`E2E_LIGHTWALLETD_URL`, and `E2E_ZCASHD_RPC_URL` overrides. Use
+`IRONWOOD_COMPOSE_FILE` for an isolated Compose definition. `RESET_REGTEST=0`
+reuses an already running, activated chain with its prepared Gift funder DB.
+
+The onboarding test drives **Activate gift card → Paste card link** in a walletless
 app. It verifies account/passcode persistence, real claim transactions and Home
 Activity, six-confirmation bearer/temporary DB cleanup, manual setup carousel,
 backup deferral/completion and birthday, education, first-wallet passphrase
 import, and deletion of a waiting card with its removed recipient. The runner
 passes the mobile tag/define and opts into skipped mobile tests. It does not
 capture recovery words or bearer links, and skips native biometric enrollment.
-Both Gift runners reset the disposable regtest chain by default; run them
+Both Gift runners reset their disposable chains by default; run them
 serially. `E2E_DRIVER_PORT` selects the onboarding driver's port.
 
 Both the desktop and simulator Gift Card runs drive the app's **Redeem a

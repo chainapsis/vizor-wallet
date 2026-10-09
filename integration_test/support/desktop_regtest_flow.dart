@@ -46,6 +46,7 @@ Future<void> importDesktopRegtestWallet(WidgetTester tester) async {
   await tapAppButton(tester, const ValueKey('import_secret_submit_button'));
   await tapAppButton(tester, const ValueKey('import_birthday_skip_button'));
   await tapAppButton(tester, const ValueKey('unknown_birthday_confirm_button'));
+  await finishDesktopAccountCustomisation(tester);
   await enterAppText(
     tester,
     const ValueKey('set_password_password_field'),
@@ -57,7 +58,7 @@ Future<void> importDesktopRegtestWallet(WidgetTester tester) async {
     desktopRegtestPassword,
   );
   await tapAppButton(tester, const ValueKey('set_password_submit_button'));
-  await finishDesktopAccountCustomisation(tester);
+
   await pumpUntil(
     tester,
     () => tester.any(

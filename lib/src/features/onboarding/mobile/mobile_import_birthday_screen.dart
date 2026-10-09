@@ -12,7 +12,6 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/account_provider.dart';
-import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../../../services/native_date_picker.dart';
@@ -300,46 +299,6 @@ class _MobileImportBirthdayScreenState
         });
       } catch (e, st) {
         log('MobileImportBirthday: height confirm failed: $e\n$st');
-        if (!mounted) return;
-        setState(() {
-          _submitPhase = _MobileImportSubmitPhase.idle;
-          _error = onboardingSubmitErrorMessage(e);
-        });
-      }
-      return;
-    }
-
-    final security = ref.read(appSecurityProvider);
-    if (!security.isPasswordConfigured) {
-      try {
-        final selectedAdditionalAccountIndices =
-            await _resolveAdditionalAccountIndices(
-              mnemonic: widget.args.mnemonic,
-              birthdayHeight: height,
-            );
-        if (selectedAdditionalAccountIndices == null) {
-          if (mounted) {
-            setState(() {
-              _submitPhase = _MobileImportSubmitPhase.idle;
-            });
-          }
-          return;
-        }
-        if (!mounted) return;
-        setState(() {
-          _submitPhase = _MobileImportSubmitPhase.idle;
-        });
-        context.pushOnboarding(
-          '/onboarding/set-passcode',
-          extra: SetPasswordScreenArgs.importWallet(
-            mnemonic: widget.args.mnemonic,
-            bip39Passphrase: widget.args.bip39Passphrase,
-            birthdayHeight: height,
-            selectedAdditionalAccountIndices: selectedAdditionalAccountIndices,
-          ),
-        );
-      } catch (e, st) {
-        log('MobileImportBirthday: account discovery failed: $e\n$st');
         if (!mounted) return;
         setState(() {
           _submitPhase = _MobileImportSubmitPhase.idle;

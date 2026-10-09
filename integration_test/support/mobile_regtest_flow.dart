@@ -352,7 +352,7 @@ Future<void> restoreWalletDbFromDriver() async {
 
 // ── Mobile flow primitives ───────────────────────────────────────────
 
-/// Welcome → create flow → passcode ×2 → customisation → biometrics → home.
+/// Welcome → create flow → customisation → passcode ×2 → biometrics → home.
 Future<void> createWalletWithPasscode(WidgetTester tester) async {
   logE2e('creating wallet');
   await tapWidget(tester, const ValueKey('mobile_welcome_get_started'));
@@ -367,13 +367,14 @@ Future<void> createWalletWithPasscode(WidgetTester tester) async {
     tester,
     const ValueKey('mobile_secret_passphrase_primary'),
   );
-  await enterPasscode(tester, mobileE2ePasscode);
-  await enterPasscode(tester, mobileE2ePasscode);
+
   await tapAppButton(
     tester,
     const ValueKey('mobile_customise_account_continue'),
     timeout: const Duration(minutes: 2),
   );
+  await enterPasscode(tester, mobileE2ePasscode);
+  await enterPasscode(tester, mobileE2ePasscode);
   await tapWidget(
     tester,
     const ValueKey('mobile_biometrics_not_now'),
@@ -383,8 +384,8 @@ Future<void> createWalletWithPasscode(WidgetTester tester) async {
   logE2e('wallet created');
 }
 
-/// Welcome → import (clipboard paste) → review → birthday height → passcode
-/// (first wallet only) → customisation → biometrics (first wallet only) → home.
+/// Welcome → import (clipboard paste) → review → birthday height → customisation → passcode
+/// (first wallet only) → biometrics (first wallet only) → home.
 Future<void> importWalletViaPaste(
   WidgetTester tester, {
   required String mnemonic,
@@ -424,15 +425,16 @@ Future<void> importPassphraseViaPaste(
     const ValueKey('mobile_import_birthday_continue'),
     timeout: const Duration(minutes: 1),
   );
-  if (isFirstWallet) {
-    await enterPasscode(tester, mobileE2ePasscode);
-    await enterPasscode(tester, mobileE2ePasscode);
-  }
+
   await tapAppButton(
     tester,
     const ValueKey('mobile_customise_account_continue'),
     timeout: const Duration(minutes: 2),
   );
+  if (isFirstWallet) {
+    await enterPasscode(tester, mobileE2ePasscode);
+    await enterPasscode(tester, mobileE2ePasscode);
+  }
   if (isFirstWallet) {
     await tapWidget(
       tester,

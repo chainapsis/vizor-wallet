@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-COMPOSE_FILE="$ROOT_DIR/docker-compose.zcash-ironwood-regtest.yml"
+COMPOSE_FILE="${IRONWOOD_COMPOSE_FILE:-$ROOT_DIR/docker-compose.zcash-ironwood-regtest.yml}"
 STATE_DIR="$ROOT_DIR/.ironwood-regtest"
 SNAPSHOT_DIR="$ROOT_DIR/.ironwood-regtest-snapshots"
 ACTIVATION_FILE="$STATE_DIR/activation-height"
@@ -47,6 +47,28 @@ pin_activation_height() {
 
 compose() {
   docker compose -f "$COMPOSE_FILE" "$@"
+}
+
+ensure_ironwood_mount_dirs() {
+  local mount_dir
+  for mount_dir in "$STATE_DIR/zcashd" "$STATE_DIR/lightwalletd"; do
+    if [[ -L "$mount_dir" || ( -e "$mount_dir" && ! -d "$mount_dir" ) ]]; then
+      rm -rf -- "$mount_dir"
+    fi
+    mkdir -p "$mount_dir"
+    chmod 0777 "$mount_dir"
+  done
+}
+
+clear_ironwood_state() {
+  local mount_dir
+  ensure_ironwood_mount_dirs
+  # Keep Docker Desktop's bind-mount sources stable across reset/startup.
+  for mount_dir in "$STATE_DIR/zcashd" "$STATE_DIR/lightwalletd"; do
+    find "$mount_dir" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+  done
+  find "$STATE_DIR" -mindepth 1 -maxdepth 1 \
+    ! -name zcashd ! -name lightwalletd -exec rm -rf -- {} +
 }
 
 zcash_cli() {

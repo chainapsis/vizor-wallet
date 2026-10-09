@@ -9,7 +9,6 @@ import '../../../../main.dart' show log;
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
-import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../import/import_birthday_calendar_overlay.dart';
 import '../import/import_birthday_estimator.dart';
@@ -264,25 +263,6 @@ class _KeystoneWalletBirthdayScreenState
     });
 
     try {
-      final security = ref.read(appSecurityProvider);
-      if (!security.isPasswordConfigured) {
-        if (!mounted) return;
-        context.go(
-          desktopImportLocation(
-            context,
-            KeystoneOnboardingStep.setPassword.routePath,
-          ),
-          extra: SetPasswordScreenArgs.importKeystone(
-            name: account.name,
-            ufvk: account.ufvk,
-            seedFingerprint: account.seedFingerprint.toList(),
-            zip32Index: account.index,
-            birthdayHeight: birthdayHeight,
-          ),
-        );
-        return;
-      }
-
       final setupArgs = SetPasswordScreenArgs.importKeystone(
         name: account.name,
         ufvk: account.ufvk,

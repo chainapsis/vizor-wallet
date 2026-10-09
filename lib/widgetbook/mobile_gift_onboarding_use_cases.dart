@@ -39,6 +39,7 @@ import '../src/features/payment_links/services/payment_link_recovery_store.dart'
 import '../src/features/payment_links/services/payment_link_received_store.dart';
 import '../src/features/payment_links/services/payment_link_service.dart';
 import '../src/providers/account_provider.dart';
+import '../src/features/onboarding/shared/account_persona_draft.dart';
 import '../src/core/profile_pictures.dart';
 import '../src/app_bootstrap.dart';
 import '../src/providers/app_security_provider.dart';
@@ -251,11 +252,13 @@ class _GiftPreviewState extends State<_GiftPreview> {
                 loadChainMetadata: false,
                 onHeightConfirmed: (height) async {
                   context.pushOnboarding(
-                    '/onboarding/set-passcode',
-                    extra: SetPasswordScreenArgs.importWallet(
-                      mnemonic: args.mnemonic,
-                      bip39Passphrase: args.bip39Passphrase,
-                      birthdayHeight: height,
+                    '/onboarding/customise-account',
+                    extra: CustomiseAccountArgs(
+                      setupArgs: SetPasswordScreenArgs.importWallet(
+                        mnemonic: args.mnemonic,
+                        bip39Passphrase: args.bip39Passphrase,
+                        birthdayHeight: height,
+                      ),
                     ),
                   );
                 },
@@ -312,7 +315,7 @@ class _GiftPreviewState extends State<_GiftPreview> {
             key: state.pageKey,
             child: GiftCustomiseAccountScreen(
               args: GiftCustomiseAccountArgs(
-                passcode: setup.setupPasscode!,
+                passcode: setup.setupPasscode,
                 inspection: setup.inspection!,
               ),
               random: Random(1234),
@@ -363,8 +366,12 @@ class _GiftPreviewState extends State<_GiftPreview> {
               widget.initialLocation.startsWith('/gift/'))
             giftClaimFlowProvider.overrideWith(
               () => _InspectedGiftFlow(
-                setupPasscode: widget.initialLocation == '/gift/customise'
-                    ? '123456'
+                settingUp: widget.initialLocation.startsWith('/gift/'),
+                persona: widget.initialLocation == '/gift/passcode'
+                    ? const AccountPersona(
+                        name: 'Gift wallet',
+                        profilePictureId: 'pfp-03',
+                      )
                     : null,
               ),
             ),
@@ -939,16 +946,17 @@ PaymentLinkClaimInspection _previewInspection(VizorPaymentLink link) =>
     );
 
 class _InspectedGiftFlow extends GiftClaimFlowNotifier {
-  _InspectedGiftFlow({this.setupPasscode});
-  final String? setupPasscode;
+  _InspectedGiftFlow({this.settingUp = false, this.persona});
+  final bool settingUp;
+  final AccountPersona? persona;
 
   @override
   GiftClaimFlowState build() => GiftClaimFlowState(
     link: _link,
     phase: GiftClaimPhase.inspected,
     inspection: _previewInspection(_link),
-    setupPasscode: setupPasscode,
-    walletSetupInProgress: setupPasscode != null,
+    setupPersona: persona,
+    walletSetupInProgress: settingUp,
   );
 }
 

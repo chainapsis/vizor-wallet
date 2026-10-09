@@ -57,36 +57,36 @@ class OnboardingProgressPlan {
   static List<OnboardingStage> _stagesFor(OnboardingFlow flow) =>
       switch (flow) {
         OnboardingFlow.gift => const [
-          OnboardingStage.passcode,
           OnboardingStage.customiseAccount,
+          OnboardingStage.passcode,
         ],
         OnboardingFlow.create => const [
           OnboardingStage.addressTypes,
           OnboardingStage.thingsToKnow,
           OnboardingStage.secretPassphrase,
-          OnboardingStage.passcode,
           OnboardingStage.customiseAccount,
+          OnboardingStage.passcode,
         ],
         OnboardingFlow.importWallet => const [
           OnboardingStage.phraseEntry,
           OnboardingStage.phraseReview,
           OnboardingStage.birthday,
-          OnboardingStage.passcode,
           OnboardingStage.customiseAccount,
+          OnboardingStage.passcode,
         ],
         OnboardingFlow.keystone => const [
           OnboardingStage.deviceIntro,
           OnboardingStage.deviceScan,
           OnboardingStage.accountSelection,
           OnboardingStage.birthday,
-          OnboardingStage.passcode,
           OnboardingStage.customiseAccount,
+          OnboardingStage.passcode,
         ],
         OnboardingFlow.ledger => const [
           OnboardingStage.deviceConnect,
           OnboardingStage.birthday,
-          OnboardingStage.passcode,
           OnboardingStage.customiseAccount,
+          OnboardingStage.passcode,
         ],
         OnboardingFlow.walletLink => const [
           OnboardingStage.linkIntro,

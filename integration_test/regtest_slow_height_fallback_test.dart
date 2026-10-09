@@ -154,6 +154,7 @@ Future<void> _importWallet(WidgetTester tester) async {
   await _tapButton(tester, const ValueKey('unknown_birthday_confirm_button'));
 
   _log('setting password');
+  await finishDesktopAccountCustomisation(tester);
   await _enterText(
     tester,
     const ValueKey('set_password_password_field'),
@@ -165,7 +166,7 @@ Future<void> _importWallet(WidgetTester tester) async {
     _password,
   );
   await _tapButton(tester, const ValueKey('set_password_submit_button'));
-  await finishDesktopAccountCustomisation(tester);
+
 }
 
 Future<void> _configureSlowPresetPrimary() async {

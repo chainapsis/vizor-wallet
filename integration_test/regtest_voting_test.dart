@@ -145,6 +145,7 @@ void main() {
           tester,
           const ValueKey('unknown_birthday_confirm_button'),
         );
+        await finishDesktopAccountCustomisation(tester);
         await _enterText(
           tester,
           const ValueKey('set_password_password_field'),
@@ -156,7 +157,7 @@ void main() {
           _password,
         );
         await _tapButton(tester, const ValueKey('set_password_submit_button'));
-        await finishDesktopAccountCustomisation(tester);
+
       }
 
       await _pumpUntil(

@@ -77,8 +77,8 @@ Widget _routerApp(Stream<void> screenshotStream) {
             MobileSecretPassphraseScreen(screenshotStream: screenshotStream),
       ),
       GoRoute(
-        path: '/onboarding/set-passcode',
-        builder: (_, _) => const Text('set passcode route'),
+        path: '/onboarding/customise-account',
+        builder: (_, _) => const Text('customise route'),
       ),
     ],
   );
@@ -317,7 +317,7 @@ void main() {
     ]);
   });
 
-  testWidgets('leaving the phrase replaces it with the passcode route', (
+  testWidgets('leaving the phrase replaces it with the customisation route', (
     tester,
   ) async {
     final screenshots = StreamController<void>();
@@ -346,10 +346,10 @@ void main() {
     await tester.tap(find.text('Continue'));
     await tester.pumpAndSettle();
 
-    expect(find.text('set passcode route'), findsOneWidget);
-    final passcodeContext = tester.element(find.text('set passcode route'));
-    expect(GoRouter.of(passcodeContext).canPop(), isFalse);
-    final container = ProviderScope.containerOf(passcodeContext);
+    expect(find.text('customise route'), findsOneWidget);
+    final customiseContext = tester.element(find.text('customise route'));
+    expect(GoRouter.of(customiseContext).canPop(), isFalse);
+    final container = ProviderScope.containerOf(customiseContext);
     expect(container.read(createOnboardingMnemonicProvider), isNull);
     expect(container.read(onboardingSecretPassphraseRevealedProvider), isFalse);
 

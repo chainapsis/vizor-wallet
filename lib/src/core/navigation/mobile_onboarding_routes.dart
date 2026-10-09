@@ -51,7 +51,7 @@ List<RouteBase> mobileOnboardingRoutes() => [
     redirect: (context, _) =>
         ProviderScope.containerOf(
               context,
-            ).read(giftClaimFlowProvider)?.inspection ==
+            ).read(giftClaimFlowProvider)?.setupPersona ==
             null
         ? '/gift'
         : null,
@@ -141,7 +141,13 @@ List<RouteBase> mobileOnboardingRoutes() => [
   GoRoute(
     path: '/onboarding/set-passcode',
     redirect: (_, state) =>
-        mobileOnboardingPayload(state.extra) is SetPasswordScreenArgs
+        mobileOnboardingPayload(state.extra) is SetPasswordScreenArgs &&
+            ((mobileOnboardingPayload(state.extra) as SetPasswordScreenArgs)
+                        .flow ==
+                    SetPasswordFlow.importWalletLink ||
+                (mobileOnboardingPayload(state.extra) as SetPasswordScreenArgs)
+                        .persona !=
+                    null)
         ? null
         : '/welcome',
     pageBuilder: (context, state) => _mobileOnboardingPage(

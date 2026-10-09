@@ -40,6 +40,8 @@ class CustomiseAccountScreen extends ConsumerStatefulWidget {
     required this.args,
     this.onFinish,
     this.random,
+    this.initialPersona,
+    this.continueToSecurity = false,
     super.key,
   }) : ledgerPresentation = false,
        ledgerBackTarget = null,
@@ -50,6 +52,8 @@ class CustomiseAccountScreen extends ConsumerStatefulWidget {
     required this.onFinish,
     required this.ledgerBackTarget,
     this.random,
+    this.initialPersona,
+    this.continueToSecurity = false,
     super.key,
   }) : args = null,
        ledgerPresentation = true,
@@ -59,14 +63,19 @@ class CustomiseAccountScreen extends ConsumerStatefulWidget {
   const CustomiseAccountScreen.gift({
     required this.onFinish,
     required bool configuresPassword,
+    OnboardingBackTarget? backTarget,
     this.random,
+    this.initialPersona,
+    this.continueToSecurity = false,
     super.key,
   }) : args = null,
        ledgerPresentation = false,
-       ledgerBackTarget = null,
+       ledgerBackTarget = backTarget,
        giftPresentation = true,
        giftConfiguresPassword = configuresPassword;
 
+  final AccountPersona? initialPersona;
+  final bool continueToSecurity;
   final bool giftPresentation;
   final bool giftConfiguresPassword;
   final CustomiseAccountArgs? args;
@@ -114,7 +123,10 @@ class _CustomiseAccountScreenState
   @override
   void initState() {
     super.initState();
-    _persona = AccountPersonaDraft(random: widget.random);
+    _persona = AccountPersonaDraft(
+      random: widget.random,
+      initialPersona: widget.initialPersona ?? widget.args?.setupArgs.persona,
+    );
   }
 
   @override
@@ -127,6 +139,23 @@ class _CustomiseAccountScreenState
     if (!_canFinish) return;
     if (_requiresSetupRecovery) {
       await _retryInterruptedSetup();
+      return;
+    }
+    final args = widget.args;
+    if (args != null &&
+        args.pendingPassword == null &&
+        !ref.read(appSecurityProvider).isPasswordConfigured &&
+        widget.onFinish == null) {
+      final setup = args.setupArgs.withPersona(
+        AccountPersona(
+          name: _normalizedName,
+          profilePictureId: _persona.profilePictureId,
+        ),
+      );
+      GoRouter.of(context).go(
+        desktopImportLocation(context, setup.desktopPasswordRoutePath),
+        extra: setup,
+      );
       return;
     }
     setState(() {
@@ -369,6 +398,9 @@ class _CustomiseAccountScreenState
       return DesktopGiftSetupShell(
         step: DesktopGiftSetupStep.customise,
         showPasswordStep: widget.giftConfiguresPassword,
+        backTarget: _isSubmitting || _requiresSetupRecovery
+            ? null
+            : widget.ledgerBackTarget,
         overlay: profilePictureOverlay,
         child: _buildContent(),
       );
@@ -422,6 +454,12 @@ class _CustomiseAccountScreenState
     nameMessage: _nameMessage,
     finishPhase: _finishPhase,
     canFinish: _canFinish,
+    continueToSecurity:
+        widget.continueToSecurity ||
+        (widget.onFinish == null &&
+            widget.args != null &&
+            widget.args!.pendingPassword == null &&
+            !ref.watch(appSecurityProvider).isPasswordConfigured),
     requiresSetupRecovery: _requiresSetupRecovery,
     onNameChanged: _handleNameChanged,
     onEditProfilePicture: _openProfilePicturePicker,
@@ -437,6 +475,7 @@ class _CustomiseAccountContent extends StatelessWidget {
     required this.nameMessage,
     required this.finishPhase,
     required this.canFinish,
+    required this.continueToSecurity,
     required this.requiresSetupRecovery,
     required this.onNameChanged,
     required this.onEditProfilePicture,
@@ -449,6 +488,7 @@ class _CustomiseAccountContent extends StatelessWidget {
   final String? nameMessage;
   final _FinishPhase finishPhase;
   final bool canFinish;
+  final bool continueToSecurity;
   final bool requiresSetupRecovery;
   final ValueChanged<String> onNameChanged;
   final VoidCallback onEditProfilePicture;
@@ -496,7 +536,11 @@ class _CustomiseAccountContent extends StatelessWidget {
               trailing: const AppIcon(AppIcons.chevronForward),
               child: Text(switch (finishPhase) {
                 _FinishPhase.idle =>
-                  requiresSetupRecovery ? 'Retry setup' : 'Finish setup',
+                  requiresSetupRecovery
+                      ? 'Retry setup'
+                      : continueToSecurity
+                      ? 'Continue'
+                      : 'Finish setup',
                 _FinishPhase.stoppingSync => 'Stop syncing...',
                 _FinishPhase.creatingWallet => 'Creating wallet...',
                 _FinishPhase.recoveringSetup => 'Recovering wallet...',

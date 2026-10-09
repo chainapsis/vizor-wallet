@@ -238,9 +238,10 @@ void main() {
         network: mobileE2eNetwork,
       );
       await openAddAccountFlow(tester);
+      // Gift activation is also available when adding an account.
       expect(
         find.byKey(const ValueKey('mobile_welcome_redeem_card')),
-        findsNothing,
+        findsOneWidget,
       );
       await importWalletViaPaste(
         tester,
@@ -319,7 +320,7 @@ Future<void> _fundGift(
 }) async {
   await postDriver('/fund-confirmed', {
     'address': link.address,
-    // Recipient value plus the actual Orchard claim fee.
+    // Recipient value plus the actual Ironwood claim fee.
     'amount': '0.1001',
     'confirmations': confirmations,
   }, timeout: const Duration(minutes: 5));
@@ -356,11 +357,7 @@ Future<void> _createGiftWallet(
     tester,
     const ValueKey('gift_claim_create_a_wallet_to_claim'),
   );
-  await enterPasscode(tester, mobileE2ePasscode);
-  await enterPasscode(tester, mobileE2ePasscode);
-  // Cupertino keeps the outgoing passcode page mounted during its transition.
-  // Finish that transition before bringing up the name field's native keyboard.
-  await settle(tester, const Duration(milliseconds: 600));
+
   await enterText(
     tester,
     const ValueKey('mobile_customise_account_name_field'),
@@ -371,6 +368,8 @@ Future<void> _createGiftWallet(
     const ValueKey('mobile_customise_account_continue'),
     timeout: const Duration(minutes: 2),
   );
+  await enterPasscode(tester, mobileE2ePasscode);
+  await enterPasscode(tester, mobileE2ePasscode);
   await tapWidget(
     tester,
     const ValueKey('mobile_biometrics_not_now'),
