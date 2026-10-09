@@ -904,11 +904,10 @@ mod private_transparent_policy {
         f.apply(TransparentLedgerMode::PrivateRequired);
         let mut lwd = CapturingLwd::start(f.history_tx.clone()).await;
 
-        // A Public handle opened before the transition cannot operate on the
-        // stricter wallet, so the refresh fails closed.
-        assert!(refresh(&mut f, &mut lwd).await.is_err());
-        // A handle opened after it adopts the durable policy, so the refresh
-        // is withheld: it succeeds, sends nothing, and reports no balance.
+        // A Public handle opened before the transition resolves under the
+        // stricter policy, and so does one opened after it: the refresh is
+        // withheld, succeeds, sends nothing, and reports no balance.
+        assert!(refresh(&mut f, &mut lwd).await.unwrap().withheld);
         f.db = open_wallet_db_with_timeout(&f.path, f.network, SYNC_DB_BUSY_TIMEOUT).unwrap();
         assert!(refresh(&mut f, &mut lwd).await.unwrap().withheld);
 

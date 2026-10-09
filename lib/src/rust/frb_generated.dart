@@ -11457,11 +11457,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 2)
-      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
     return ApiAppliedTransparentPolicy(
       mode: dco_decode_api_transparent_ledger_mode(arr[0]),
       generation: dco_decode_u_64(arr[1]),
+      changed: dco_decode_bool(arr[2]),
     );
   }
 
@@ -15460,9 +15461,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_mode = sse_decode_api_transparent_ledger_mode(deserializer);
     var var_generation = sse_decode_u_64(deserializer);
+    var var_changed = sse_decode_bool(deserializer);
     return ApiAppliedTransparentPolicy(
       mode: var_mode,
       generation: var_generation,
+      changed: var_changed,
     );
   }
 
@@ -20771,6 +20774,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_api_transparent_ledger_mode(self.mode, serializer);
     sse_encode_u_64(self.generation, serializer);
+    sse_encode_bool(self.changed, serializer);
   }
 
   @protected

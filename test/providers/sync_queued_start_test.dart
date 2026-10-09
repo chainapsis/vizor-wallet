@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/layout/app_process_work_policy.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';
 import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
@@ -280,6 +281,49 @@ void main() {
     expect(api.syncs, hasLength(2));
     // The forced drain keeps the highest tip a coalesced request observed.
     expect(sync.state.requireValue.chainTipHeight, 101);
+  });
+
+  test('a queued start is dropped once the app may no longer run it', () async {
+    final sync = await inFollowUp();
+    sync.startSync(latestTipHeight: 101);
+    sync.handleAppHideForTesting();
+    await api.finish(0);
+    await pumpEventQueue();
+    // Desktop keeps running process work while hidden; mobile hands it to the
+    // platform, and a foreground start must not run in the background.
+    final runs = canRunAppProcessWork(isInForeground: false);
+    expect(api.syncs, hasLength(runs ? 2 : 1));
+    expect(sync.queuedSyncStartForTesting, isNull);
+  });
+
+  test('a start requested while the stream end is still being applied is '
+      'queued, not dropped', () async {
+    final sync = _Sync();
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+        accountProvider.overrideWith(_Account.new),
+        rpcEndpointFailoverProvider.overrideWith(_Tip.new),
+        chainUpgradeStatusProvider.overrideWith(_Upgrade.new),
+        enhancePirProvider.overrideWith(_NoPrivateQueries.new),
+        syncProvider.overrideWith(() => sync),
+      ],
+    );
+    addTearDown(container.dispose);
+    container.listen(syncProvider, (_, _) {});
+    await container.read(syncProvider.future);
+    sync.stopTipChecksForTesting();
+    sync.startSync();
+    await pumpEventQueue();
+    // The final completion arrives together with the stream end: its
+    // handling is still pending when the stream's end is processed.
+    api.syncs[0].add(_complete());
+    final ended = api.finish(0);
+    sync.startSync(latestTipHeight: 102);
+    await ended;
+    await pumpEventQueue();
+    sync.stopTipChecksForTesting();
+    expect(api.syncs, hasLength(2), reason: 'the start was queued and ran');
   });
 
   test('stopping sync discards the queued start', () async {

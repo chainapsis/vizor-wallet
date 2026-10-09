@@ -7,9 +7,9 @@ import '../frb_generated.dart';
 import 'keystone.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `api_proposal_result`, `catch`, `enhance_pir_enabled`, `fetch_block_time`, `migration_status_from_balance`, `parse_network_and_migrate`, `payment_link_batch_pairs`, `run_full_sync_internal`, `to_wallet_action_sigs`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
+// These functions are ignored because they are not marked as `pub`: `api_proposal_result`, `catch`, `enhance_pir_enabled`, `fetch_block_time`, `migration_status_from_balance`, `new`, `parse_network_and_migrate`, `payment_link_batch_pairs`, `run_full_sync_internal`, `to_wallet_action_sigs`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `MempoolObserverState`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `eq`, `eq`, `fmt`, `fmt`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `eq`, `eq`, `fmt`, `fmt`
 
 /// Set the desired sync mode. 0=none, 1=foreground, 2=background.
 /// The running sync loop checks this each batch and exits if mismatched.
@@ -1352,7 +1352,7 @@ class AddressValidationResult {
           wrongNetwork == other.wrongNetwork;
 }
 
-/// The durable transparent policy a reconciliation applied.
+/// The wallet's durable transparent policy after a reconciliation.
 class ApiAppliedTransparentPolicy {
   final ApiTransparentLedgerMode mode;
 
@@ -1360,13 +1360,18 @@ class ApiAppliedTransparentPolicy {
   /// generation was authorized by a policy that no longer holds.
   final BigInt generation;
 
+  /// Whether this reconciliation changed the policy. When it did not, the
+  /// policy is reported as found, which another connection may have changed.
+  final bool changed;
+
   const ApiAppliedTransparentPolicy({
     required this.mode,
     required this.generation,
+    required this.changed,
   });
 
   @override
-  int get hashCode => mode.hashCode ^ generation.hashCode;
+  int get hashCode => mode.hashCode ^ generation.hashCode ^ changed.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1374,7 +1379,8 @@ class ApiAppliedTransparentPolicy {
       other is ApiAppliedTransparentPolicy &&
           runtimeType == other.runtimeType &&
           mode == other.mode &&
-          generation == other.generation;
+          generation == other.generation &&
+          changed == other.changed;
 }
 
 /// Independent single-funding Gift Card preparation / post-submit observation.

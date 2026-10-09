@@ -4017,9 +4017,7 @@ fn durable_private_transparent_policy_blocks_shielding_and_survives_startup() {
     use crate::wallet::keys::{self, HardwareSignerKind};
     use transparent::keys::{IncomingViewingKey, NonHardenedChildIndex};
     use zcash_address::unified::{Encoding, Fvk, Ufvk};
-    // Dart's newer-build copy matches this phrase.
-    const NEEDS_NEWER_BUILD: &str = "this build cannot operate on this wallet's transparent funds";
-    const AUTHORITY_UNAVAILABLE: &str = "private transparent authority is required";
+    const DISCOVERY_FORBIDDEN: &str = "Public transparent discovery is forbidden";
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("wallet.db");
     let path = path.to_str().unwrap();
@@ -4109,8 +4107,14 @@ fn durable_private_transparent_policy_blocks_shielding_and_survives_startup() {
         .unwrap()
     };
 
+    // The handle opened before the transition resolves under it, as a fresh
+    // handle does: this build does not run private recovery, so shielding is
+    // refused and says so.
     let error = build_shielding_proposal(&mut db, path, network, id, threshold).unwrap_err();
-    assert!(error.contains(AUTHORITY_UNAVAILABLE), "{error}");
+    assert_eq!(
+        error,
+        crate::wallet::sync::send::TRANSPARENT_RECOVERY_NOT_SELECTED
+    );
     let utxo = WalletTransparentOutput::from_parts(
         OutPoint::new([0xaa; 32], 0),
         TxOut::new(
@@ -4131,7 +4135,8 @@ fn durable_private_transparent_policy_blocks_shielding_and_survives_startup() {
         .put_received_transparent_utxo(&utxo)
         .unwrap_err()
         .to_string();
-    assert!(error.contains(NEEDS_NEWER_BUILD), "{error}");
+    // Nor does it record publicly discovered outputs under it.
+    assert!(error.contains(DISCOVERY_FORBIDDEN), "{error}");
 
     // Startup migration keeps the stricter policy. A fresh handle adopts it
     // instead of failing on the conflict, and shielding stays refused. This

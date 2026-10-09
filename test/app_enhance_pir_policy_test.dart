@@ -28,10 +28,12 @@ AppBootstrapState _ready({required bool? enabled, String network = 'main'}) =>
 final _raised = ApiAppliedTransparentPolicy(
   mode: ApiTransparentLedgerMode.privateRequired,
   generation: BigInt.from(3),
+  changed: true,
 );
 final _lowered = ApiAppliedTransparentPolicy(
   mode: ApiTransparentLedgerMode.public,
   generation: BigInt.from(4),
+  changed: true,
 );
 
 void main() {
