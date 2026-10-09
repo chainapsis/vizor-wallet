@@ -1156,6 +1156,28 @@ Wallets, storage, devices, Keychain and chain state remain case-local.
 python3 -B -m unittest scripts/e2e/test_native_build_cache.py scripts/e2e/test_native_ios_build.py scripts/e2e/test_native_macos_build.py scripts/e2e/test_native_macos_suite.py
 ```
 
+### Immutable voting executable cache
+
+Voting selections use `.regtest-logs/build-cache/voting-v1` for the five pinned
+SDK/PIR/round executables. Inputs bind both exact Git archives, selected Rust,
+Go and Make tool paths/bytes/versions, Cargo/Go configuration content hashes,
+hashed build environment, platform and producer implementation. Build job count
+and case-private output paths are not compilation identities. The cache reuses
+the bounded per-key lock and exclusive, sealed executable publication; changed
+or writable cached bytes fail without rebuild or overwrite.
+
+A hit still reads and extracts the original pinned sources, prepares fresh SDK
+runtime scripts and joins its new producer owner. It copies verified binaries
+into that owner's independent publication; vote-chain homes, keys, PIR data,
+wallets and process owners remain case-local. Reports use the actual
+`voting_build_count` (zero on a hit) and `voting_proof.cache_hit/cache_key`.
+This is cooperative local build reuse, not hermetic provenance, voting success
+or final-source full-catalog coverage.
+
+```bash
+python3 -B -m unittest scripts/e2e/test_native_voting.py scripts/e2e/test_native_macos_suite.py scripts/e2e/test_funder_cache.py
+```
+
 ### Owned offline signer execution
 
 `funder_execution.py` runs an original `ProducedRegtestFunder` handle through

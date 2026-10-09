@@ -37,6 +37,7 @@ class SuiteTests(unittest.TestCase):
         self.ios_build_proof = {"ios_app_build_count":1, "ios_helper_build_count":1}
         self.signer = SimpleNamespace(identity=lambda: {"cargo_build_count":1, "cache_hit":False, "cache_key":"a"*64})
         self.voting = object()
+        self.voting_build_proof = {"build_count": 1}
         self.barrier = threading.Barrier(2)
         self.observed = []
         self.fail = False
@@ -64,7 +65,7 @@ class SuiteTests(unittest.TestCase):
              patch.object(SUITE,"build_native_macos_cohort",return_value=(self.helper,self.macos_build_proof)) as build, \
              patch.object(SUITE,"build_native_ios_cohort",return_value=(self.helper,self.ios_build_proof)) as ios_build, \
              patch.object(SUITE,"build_regtest_funder",return_value=self.signer) as signer, \
-             patch.object(SUITE,"build_voting_artifacts",return_value=(self.voting,{"build_count":1})) as voting, \
+             patch.object(SUITE,"build_voting_artifacts",return_value=(self.voting,self.voting_build_proof)) as voting, \
              patch.object(SUITE,"derive_payment_addresses",return_value={"desktop_transparent":"tm-public-sdk-model",
                  "receiver_tex":"texregtest1publicsdkmodel"}), \
              patch.object(SUITE,"derive_ios_migration_addresses", return_value={
@@ -363,6 +364,21 @@ class SuiteTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "preactivation"):
                 SUITE.validate_options(self.args, (replace(scenario, profile="flutter-direct-height1"),))
         self.assertFalse((self.root/".regtest-logs").exists())
+
+    def test_warm_voting_cache_reports_zero_builds_and_keeps_cases_isolated(self):
+        self.scenarios = tuple(self.catalog.scenarios_by_id[name] for name in sorted(SUITE.VOTING_SCENARIOS))
+        self.args.voting_sdk_cache = self.args.voting_pir_cache = self.root
+        self.voting_build_proof = {"build_count": 0, "cache_hit": True, "cache_key": "b"*64}
+        code, summary, _, _ = self.invoke()
+        self.assertEqual(code, 0)
+        self.voting_builder.assert_called_once()
+        self.assertEqual(self.voting_builder.call_args.kwargs["cache_root"],
+                         self.root/".regtest-logs/build-cache/voting-v1")
+        self.assertEqual(summary["builds"]["voting_build_count"], 0)
+        self.assertEqual(summary["builds"]["voting_proof"], self.voting_build_proof)
+        self.assertEqual(len(self.observed), len(self.scenarios)*self.args.repeat)
+        self.assertEqual(len({item[0] for item in self.observed}), self.args.repeat)
+        self.assertTrue(all(item[5] is self.voting for item in self.observed))
 
     def test_payment_group_keeps_exact_balances_and_independent_funding_sources(self):
         names = ("flutter.macos.shield-transparent", "flutter.macos.shield-transparent-retry",

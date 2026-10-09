@@ -11,6 +11,7 @@ from unittest.mock import Mock, patch
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import native_voting as VOTE
 import native_voting_build as BUILD
+import funder_cache as CACHE
 import test_funder_build as FIXTURE
 
 
@@ -29,25 +30,40 @@ class VotingBuildTests(unittest.TestCase):
         self.case = self.model.case()
         self.make_calls = 0
         self.wrong_round = False
+        self.cache = self.model.root / "voting-cache"
+        self.tool_identity = "modeled tool identity"
+        self.go_configuration = "off"
+        self.tools = {"cargo": self.model.cargo, "rustc": self.model.compiler}
+        for name in ("go", "make"):
+            tool = self.model.root / ("selected-" + name)
+            tool.write_text("modeled " + name + " tool\n")
+            tool.chmod(0o700)
+            self.tools[name] = tool
 
-    def build(self):
+    def build(self, **options):
+        if not self.case.accepting_launches:
+            self.case = self.model.case()
         original = self.case.run_command
 
         def command(arguments, **kwargs):
             if arguments[0] == "git":
                 return original(arguments, **kwargs)
-            actual = arguments[5:] if arguments[0] == sys.executable else arguments
-            cwd = Path(arguments[4]) if arguments[0] == sys.executable else self.case.workspace.root
+            actual = arguments[4:] if arguments[0] == sys.executable else arguments
+            name = Path(actual[0]).name.removeprefix("selected-")
             target = Path(kwargs["env"]["CARGO_TARGET_DIR"])
-            if actual[0] == "make":
+            if name == "go" and actual[1:] == ["env", "GOENV"]:
+                return original([sys.executable, "-c", f"print({str(self.go_configuration)!r})"], **kwargs)
+            if name == "rustup" and actual[1:2] == ["which"]:
+                return original([sys.executable, "-c", f"print({str(self.tools[actual[2]])!r})"], **kwargs)
+            if name == "make" and "-C" in actual:
                 self.make_calls += 1
                 self.assertIn("CIRCUITS_CARGO_FLAGS=--locked --no-default-features --features zakura", actual)
                 sdk = Path(actual[actual.index("-C")+1])
                 outputs = [sdk/"svoted", sdk/"voting-config"]
-            elif actual[:2] == ["cargo", "build"]:
+            elif name == "cargo" and actual[1:2] == ["build"]:
                 self.assertIn("--locked", actual)
                 outputs = [target/"release/pir-export", target/"release/nf-server"]
-            elif actual[:2] == ["cargo", "test"]:
+            elif name == "cargo" and actual[1:2] == ["test"]:
                 self.assertIn("--no-run", actual)
                 sdk = Path(actual[actual.index("--manifest-path")+1]).parent.parent
                 output = target/"release/deps/create_round-modeled"
@@ -57,19 +73,20 @@ class VotingBuildTests(unittest.TestCase):
                               "src_path":str(sdk/"e2e-tests/tests/create_round_for_zashi.rs")},
                     "profile":{"test":not self.wrong_round}}
             else:
-                return original([sys.executable,"-c","print('modeled tool identity')"], **kwargs)
+                return original([sys.executable,"-c", f"print({self.tool_identity!r})"], **kwargs)
             script = "from pathlib import Path; import json; "
             for output in outputs:
                 script += (f"p=Path({str(output)!r}); p.parent.mkdir(mode=0o700,parents=True,exist_ok=True); "
                            "p.write_text('modeled original build output'); p.chmod(0o700); ")
-            if actual[:2] == ["cargo", "test"]:
+            if name == "cargo" and actual[1:2] == ["test"]:
                 script += f"print(json.dumps({record!r})); "
             return original([sys.executable,"-c",script], **kwargs)
 
         with patch.object(BUILD,"VOTE_SDK_REV",self.pin), patch.object(BUILD,"PIR_REV",self.pin), \
-             patch.object(self.case,"run_command",side_effect=command):
+             patch.object(self.case,"run_command",side_effect=command), \
+             patch.object(BUILD.shutil,"which",side_effect=lambda name, **_: str(self.tools[name])):
             return BUILD.build_voting_artifacts(self.case, sdk_cache=self.model.source,
-                pir_cache=self.model.source, timeout=10)
+                pir_cache=self.model.source, cache_root=self.cache, timeout=15, **options)
 
     def test_build_once_publishes_original_joined_outputs_not_dirty_checkout(self):
         (self.model.source/"scripts/init.sh").write_text("dirty checkout")
@@ -93,7 +110,94 @@ class VotingBuildTests(unittest.TestCase):
 
     def test_receipt_cannot_reconstruct_original_producer(self):
         with self.assertRaises(BUILD.VotingBuildError):
-            BUILD.ProducedVotingArtifacts(None, None, {}, {}, None, object())
+            BUILD.ProducedVotingArtifacts(None, None, {}, {}, None, object(), cache_inputs={})
+
+    def test_warm_cache_skips_builds_but_has_new_original_owner_and_runtime_scripts(self):
+        cold, first = self.build()
+        warm, second = self.build()
+        self.assertEqual(self.make_calls, 1)
+        self.assertFalse(first["cache_hit"])
+        self.assertTrue(second["cache_hit"])
+        self.assertEqual(second["build_count"], 0)
+        self.assertEqual(first["cache_key"], second["cache_key"])
+        self.assertNotEqual(cold.sdk, warm.sdk)
+        self.assertEqual(first["binary_sha256"], second["binary_sha256"])
+        for name in cold.binaries:
+            self.assertNotEqual(cold.binaries[name].stat().st_ino, warm.binaries[name].stat().st_ino)
+        self.assertEqual((warm.sdk / "scripts/init.sh").read_text(), "original model input\n")
+        cold.verify_unchanged()
+        warm.verify_unchanged()
+
+    def test_jobs_and_shell_bookkeeping_are_not_build_identity(self):
+        with patch.dict(os.environ, {"_": "first"}):
+            _, first = self.build(jobs=1)
+        with patch.dict(os.environ, {"_": "second"}):
+            _, second = self.build(jobs=8)
+        self.assertEqual(self.make_calls, 1)
+        self.assertEqual(first["cache_key"], second["cache_key"])
+        self.assertNotIn("_", first["cache_inputs"]["environment_sha256"])
+
+    def test_changed_pin_tool_bytes_version_and_environment_invalidate(self):
+        keys = [self.build()[1]["cache_key"]]
+        self.tools["go"].write_text("changed Go bytes\n")
+        keys.append(self.build()[1]["cache_key"])
+        self.tool_identity = "new modeled version"
+        keys.append(self.build()[1]["cache_key"])
+        with patch.dict(os.environ, {"CGO_CFLAGS": "-DNEW_BUILD"}):
+            keys.append(self.build()[1]["cache_key"])
+        (self.model.source / "scripts/init.sh").write_text("changed pinned script\n")
+        self.model.git("add", "scripts/init.sh")
+        self.model.git("commit", "-qm", "changed pin")
+        self.pin = self.model.git("rev-parse", "HEAD").strip()
+        keys.append(self.build()[1]["cache_key"])
+        self.assertEqual(len(set(keys)), 5)
+        self.assertEqual(self.make_calls, 5)
+
+    def test_go_configuration_contents_invalidate_without_logging_values(self):
+        configuration = self.model.root / "go-env"
+        configuration.write_text("first secret configuration\n")
+        self.go_configuration = configuration
+        _, first = self.build()
+        configuration.write_text("second secret configuration\n")
+        _, second = self.build()
+        self.assertNotEqual(first["cache_key"], second["cache_key"])
+        self.assertNotIn("secret configuration", json.dumps(second["cache_inputs"]))
+        self.assertEqual(self.make_calls, 2)
+
+    def test_corrupt_cache_fails_without_rebuild_or_overwrite(self):
+        _, proof = self.build()
+        binary = self.cache / proof["cache_key"] / "svoted"
+        binary.chmod(0o700)
+        binary.write_text("corrupt cached executable")
+        binary.chmod(0o500)
+        with self.assertRaisesRegex(CACHE.FunderCacheError, "bytes changed"):
+            self.build()
+        self.assertEqual(self.make_calls, 1)
+        self.assertEqual(binary.read_text(), "corrupt cached executable")
+
+    def test_one_runtime_copy_cannot_mutate_shared_cache_or_sibling(self):
+        cold, first = self.build()
+        sibling, _ = self.build()
+        cold.binaries["svoted"].chmod(0o700)
+        cold.binaries["svoted"].write_text("changed case-local executable")
+        with self.assertRaises(BUILD.VotingBuildError):
+            cold.verify_unchanged()
+        sibling.verify_unchanged()
+        _, third = self.build()
+        self.assertEqual(self.make_calls, 1)
+        self.assertEqual(first["binary_sha256"], third["binary_sha256"])
+
+    def test_publication_inventory_cannot_be_replaced_with_a_loose_binary(self):
+        artifact, _ = self.build()
+        artifact.binaries["svoted"] = self.tools["go"]
+        with self.assertRaisesRegex(BUILD.VotingBuildError, "inventory changed"):
+            artifact.verify_unchanged()
+
+    def test_failed_original_compile_has_no_immutable_publication(self):
+        self.wrong_round = True
+        with self.assertRaises(BUILD.VotingBuildError):
+            self.build()
+        self.assertFalse(any(path.is_dir() for path in self.cache.iterdir()))
 
 
 class VotingOracleTests(unittest.TestCase):

@@ -351,8 +351,8 @@ def run_native_suite(args, catalog, scenarios, selection, *, source_root):
             voting_artifact, voting_proof = build_voting_artifacts(
                 build_case(3,"rust.voting-build","rust"),
                 sdk_cache=args.voting_sdk_cache, pir_cache=args.voting_pir_cache,
-                jobs=args.build_jobs, cancel_event=cancel)
-            report["builds"].update(voting_build_count=1, voting_proof=voting_proof)
+                cache_root=cache_parent/"voting-v1", jobs=args.build_jobs, cancel_event=cancel)
+            report["builds"].update(voting_build_count=voting_proof["build_count"], voting_proof=voting_proof)
         dart = (args.flutter.resolve(strict=True).parent/"cache/dart-sdk/bin/dart").resolve(strict=True)
         repetitions = []
         for repetition in range(args.repeat):
