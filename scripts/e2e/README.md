@@ -1126,9 +1126,11 @@ The inputs bind checked wallet/test/native/Rust sources, helper and builder
 implementation, actual Dart package contents, semantic package configuration,
 locked Pod versions, Flutter/engine/Dart identity, Xcode/SDK, Cargokit compiler
 identity, Cargo configuration, environment and platform/architecture/TEX fixture.
-Pub generation timestamps and workspace-local Podspec checksums are not keys;
-the local package sources are checked instead. Remote Podspec checksums and
-all locked versions remain inputs. Compiler environment values are hashed.
+The wallet's package-config generation timestamp and workspace-local Podspec
+checksums are not keys; the local package sources are checked instead. External
+package inventories exclude generated directories only at their roots; same-named
+directories beneath source trees remain inputs. Remote Podspec checksums and all
+locked versions remain inputs. Compiler environment values are hashed.
 
 Only the original source-checking native builder with positively joined
 successful command groups can publish. The same bounded per-key lock and

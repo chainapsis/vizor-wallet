@@ -218,6 +218,27 @@ class InputTests(unittest.TestCase):
         self.lock.write_text(self.lock.read_text().replace("b"*40,"d"*40))
         self.assertNotEqual(first,self.inputs())
 
+    def test_nested_generated_directory_names_are_source_inputs(self):
+        for name in ("build", "target", ".git", ".dart_tool", ".regtest-logs", "__pycache__"):
+            with self.subTest(directory=name):
+                source = self.package/"lib/src"/name/"code.dart"
+                source.parent.mkdir(parents=True)
+                source.write_text("original compiled source")
+                first = self.inputs()["package_config"]["dependency"]["sha256"]
+                source.write_text("changed compiled source")
+                self.assertNotEqual(first,self.inputs()["package_config"]["dependency"]["sha256"])
+
+    def test_generated_directories_at_package_root_do_not_invalidate(self):
+        first = self.inputs()
+        for name in ("build", "target", ".git", ".dart_tool", ".regtest-logs", "__pycache__"):
+            with self.subTest(directory=name):
+                output = self.package/name/"generated.dart"
+                output.parent.mkdir()
+                output.write_text("generated output")
+                self.assertEqual(first,self.inputs())
+                output.write_text("changed generated output")
+                self.assertEqual(first,self.inputs())
+
     def test_pod_version_and_package_source_changes_are_not_normalized_away(self):
         first = self.inputs()
         self.lock.write_text(self.lock.read_text().replace("Local (1.0)","Local (2.0)"))

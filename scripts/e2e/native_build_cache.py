@@ -129,7 +129,9 @@ def _package_digest(root, cancel):
     ignored = {".git", ".dart_tool", "build", "target", ".regtest-logs", "__pycache__"}
     digest, count, total = hashlib.sha256(), 0, 0
     for directory, children, files in os.walk(root, followlinks=False):
-        children[:] = sorted(name for name in children if name not in ignored)
+        children[:] = sorted(children)
+        if Path(directory) == root:
+            children[:] = [name for name in children if name not in ignored]
         for name in sorted((*children, *files)):
             if cancel.is_set():
                 from e2e_runtime import Cancelled
