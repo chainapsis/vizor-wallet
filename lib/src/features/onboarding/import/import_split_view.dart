@@ -157,8 +157,8 @@ class _Sidebar extends StatelessWidget {
   List<ImportOnboardingStep> get _steps => [
     ImportOnboardingStep.secretPassphrase,
     ImportOnboardingStep.walletBirthdayHeight,
-    if (showPasswordStep) ImportOnboardingStep.setPassword,
     ImportOnboardingStep.customiseAccount,
+    if (showPasswordStep) ImportOnboardingStep.setPassword,
   ];
 
   @override

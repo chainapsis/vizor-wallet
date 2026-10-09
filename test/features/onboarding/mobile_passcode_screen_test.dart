@@ -11,6 +11,10 @@ import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_pr
 
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/core/navigation/mobile_onboarding_routes.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_customise_account_screen.dart';
+import 'package:zcash_wallet/src/features/onboarding/shared/account_persona_draft.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_passcode_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -34,49 +38,28 @@ Widget _app() {
   );
 }
 
+const _persona = AccountPersona(name: 'My savings', profilePictureId: 'pfp-03');
+
 Widget _importApp({required _RecordingAccountNotifier accountNotifier}) {
   final router = GoRouter(
     routes: [
       GoRoute(
         path: '/',
-        builder: (_, _) => const MobilePasscodeScreen(
-          args: SetPasswordScreenArgs.importWallet(
+        builder: (_, _) => MobilePasscodeScreen(
+          args: const SetPasswordScreenArgs.importWallet(
             mnemonic: 'stub mnemonic words',
             birthdayHeight: 2500000,
             selectedAdditionalAccountIndices: [1, 2],
-          ),
+          ).withPersona(_persona),
         ),
       ),
       GoRoute(
-        path: '/onboarding/customise-account',
-        builder: (_, state) {
-          final args =
-              mobileOnboardingPayload(state.extra)! as CustomiseAccountArgs;
-          return Text(
-            'customise ${args.mnemonic} '
-            '${args.setupArgs.importBirthdayHeight} '
-            '${args.setupArgs.selectedAdditionalAccountIndices.join(',')}',
-          );
-        },
+        path: '/onboarding/biometrics',
+        builder: (_, _) => const Text('biometrics route'),
       ),
     ],
   );
-
-  return ProviderScope(
-    overrides: [
-      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
-      accountProvider.overrideWith(() => accountNotifier),
-      appSecurityProvider.overrideWith(() => _RecordingAppSecurityNotifier()),
-      syncProvider.overrideWith(() => _NoopSyncNotifier()),
-    ],
-    child: MaterialApp.router(
-      routerConfig: router,
-      builder: (_, c) => AppTheme(
-        data: AppThemeData.light,
-        child: MobileOnboardingProgressFrame(child: c!),
-      ),
-    ),
-  );
+  return _routerHarness(router, accountNotifier);
 }
 
 Widget _createRouterApp({
@@ -87,36 +70,45 @@ Widget _createRouterApp({
     routes: [
       GoRoute(
         path: '/',
-        builder: (_, _) => const MobilePasscodeScreen(
-          args: SetPasswordScreenArgs.create(mnemonic: 'stub mnemonic words'),
+        builder: (_, _) => const MobileCustomiseAccountScreen(
+          args: CustomiseAccountArgs(
+            setupArgs: SetPasswordScreenArgs.create(
+              mnemonic: 'stub mnemonic words',
+            ),
+          ),
         ),
       ),
+      ...mobileOnboardingRoutes().whereType<GoRoute>().where(
+        (route) => route.path == '/onboarding/set-passcode',
+      ),
       GoRoute(
-        path: '/onboarding/customise-account',
-        builder: (_, state) {
-          final args =
-              mobileOnboardingPayload(state.extra)! as CustomiseAccountArgs;
-          return Text('customise ${args.mnemonic} ${args.pendingPassword}');
-        },
+        path: '/onboarding/biometrics',
+        builder: (_, _) => const Text('biometrics route'),
       ),
     ],
   );
   onRouter?.call(router);
-
-  return ProviderScope(
-    overrides: [
-      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
-      accountProvider.overrideWith(() => accountNotifier),
-    ],
-    child: MaterialApp.router(
-      routerConfig: router,
-      builder: (_, c) => AppTheme(
-        data: AppThemeData.light,
-        child: MobileOnboardingProgressFrame(child: c!),
-      ),
-    ),
-  );
+  return _routerHarness(router, accountNotifier);
 }
+
+Widget _routerHarness(
+  GoRouter router,
+  _RecordingAccountNotifier accountNotifier,
+) => ProviderScope(
+  overrides: [
+    appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+    accountProvider.overrideWith(() => accountNotifier),
+    appSecurityProvider.overrideWith(_RecordingAppSecurityNotifier.new),
+    syncProvider.overrideWith(_NoopSyncNotifier.new),
+  ],
+  child: MaterialApp.router(
+    routerConfig: router,
+    builder: (_, c) => AppTheme(
+      data: AppThemeData.light,
+      child: MobileOnboardingProgressFrame(child: c!),
+    ),
+  ),
+);
 
 Future<void> _enter(WidgetTester tester, String digits) async {
   for (final d in digits.split('')) {
@@ -138,6 +130,39 @@ void main() {
     binding.platformDispatcher.views.first
       ..physicalSize = const Size(520, 1100)
       ..devicePixelRatio = 1.0;
+  });
+
+  testWidgets('repeated persona Continue opens only one credential screen', (
+    tester,
+  ) async {
+    GoRouter? router;
+    final accounts = _RecordingAccountNotifier();
+    await tester.pumpWidget(
+      _createRouterApp(
+        accountNotifier: accounts,
+        onRouter: (value) => router = value,
+      ),
+    );
+    await tester.pumpAndSettle();
+    final button = tester.widget<AppButton>(
+      find.byKey(const ValueKey('mobile_customise_account_continue')),
+    );
+    button.onPressed!();
+    button.onPressed!();
+    await tester.pumpAndSettle();
+    expect(find.text('Create Passcode').hitTestable(), findsOneWidget);
+    router!.pop();
+    await tester.pumpAndSettle();
+    expect(find.text('Customise Account').hitTestable(), findsOneWidget);
+    expect(find.text('Create Passcode').hitTestable(), findsNothing);
+    expect(
+      tester
+          .widget<AppButton>(
+            find.byKey(const ValueKey('mobile_customise_account_continue')),
+          )
+          .onPressed,
+      isNotNull,
+    );
   });
 
   testWidgets(
@@ -182,7 +207,7 @@ void main() {
   ) async {
     await tester.pumpWidget(_app());
     await tester.pump();
-    expect(_stepsProgress(tester), closeTo(0.76870748299, 0.0001));
+    expect(_stepsProgress(tester), closeTo(0.88435374150, 0.0001));
   });
 
   testWidgets('import passcode progress follows the review import flow', (
@@ -192,7 +217,7 @@ void main() {
       _importApp(accountNotifier: _RecordingAccountNotifier()),
     );
     await tester.pump();
-    expect(_stepsProgress(tester), closeTo(0.76870748299, 0.0001));
+    expect(_stepsProgress(tester), closeTo(0.88435374150, 0.0001));
   });
 
   testWidgets('a mismatched confirmation restarts with an error', (
@@ -209,70 +234,87 @@ void main() {
     expect(find.text("Passcodes didn't match. Try again."), findsOneWidget);
   });
 
-  testWidgets('create flow forwards the passcode without creating a wallet', (
+  testWidgets('create saves the persona only after matching confirmation', (
     tester,
   ) async {
-    final accountNotifier = _RecordingAccountNotifier();
-    await tester.pumpWidget(_createRouterApp(accountNotifier: accountNotifier));
-    await tester.pump();
-
+    final accounts = _RecordingAccountNotifier();
+    await tester.pumpWidget(_createRouterApp(accountNotifier: accounts));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('mobile_customise_account_name_field')),
+      'My savings',
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_customise_account_continue')),
+    );
+    await tester.pumpAndSettle();
+    expect(accounts.createdMnemonic, isNull);
     await _enter(tester, '123456');
+    expect(accounts.createdMnemonic, isNull);
     await _enter(tester, '123456');
     await tester.pumpAndSettle();
-
-    expect(find.text('customise stub mnemonic words 123456'), findsOneWidget);
-    expect(accountNotifier.createdMnemonic, isNull);
+    expect(find.text('biometrics route'), findsOneWidget);
+    expect(accounts.createdMnemonic, 'stub mnemonic words');
+    expect(accounts.accountName, 'My savings');
   });
 
-  testWidgets('create customisation preserves a back route to passcode', (
+  testWidgets(
+    'back from passcode preserves the edited persona and resets passcode',
+    (tester) async {
+      late GoRouter router;
+      final accounts = _RecordingAccountNotifier();
+      await tester.pumpWidget(
+        _createRouterApp(
+          accountNotifier: accounts,
+          onRouter: (value) => router = value,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('mobile_customise_account_name_field')),
+        'My savings',
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_customise_account_continue')),
+      );
+      await tester.pumpAndSettle();
+      await _enter(tester, '123456');
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.text('My savings'), findsOneWidget);
+      expect(accounts.createdMnemonic, isNull);
+      expect(router.canPop(), isFalse);
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_customise_account_continue')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Create Passcode'), findsOneWidget);
+    },
+  );
+
+  testWidgets('import keeps selected additional ZIP32 accounts and persona', (
     tester,
   ) async {
-    late final GoRouter router;
-    await tester.pumpWidget(
-      _createRouterApp(
-        accountNotifier: _RecordingAccountNotifier(),
-        onRouter: (value) => router = value,
-      ),
-    );
+    final accounts = _RecordingAccountNotifier();
+    await tester.pumpWidget(_importApp(accountNotifier: accounts));
     await tester.pump();
-
     await _enter(tester, '123456');
-    await _enter(tester, '123456');
-    await tester.pumpAndSettle();
-
-    expect(find.text('customise stub mnemonic words 123456'), findsOneWidget);
-    expect(router.canPop(), isTrue);
-
-    router.pop();
-    await tester.pumpAndSettle();
-
-    expect(find.text('Create Passcode'), findsOneWidget);
-    expect(find.text('Setting up your wallet...'), findsNothing);
-    expect(router.canPop(), isFalse);
-  });
-
-  testWidgets('import flow forwards selected additional ZIP32 accounts', (
-    tester,
-  ) async {
-    final accountNotifier = _RecordingAccountNotifier();
-
-    await tester.pumpWidget(_importApp(accountNotifier: accountNotifier));
-    await tester.pump();
-
-    await _enter(tester, '123456');
+    expect(accounts.importedMnemonic, isNull);
     await _enter(tester, '123456');
     await tester.pumpAndSettle();
-
-    expect(accountNotifier.importedMnemonic, isNull);
-    expect(
-      find.text('customise stub mnemonic words 2500000 1,2'),
-      findsOneWidget,
-    );
+    expect(find.text('biometrics route'), findsOneWidget);
+    expect(accounts.importedMnemonic, 'stub mnemonic words');
+    expect(accounts.importedBirthdayHeight, 2500000);
+    expect(accounts.importedAdditionalAccountIndices, [1, 2]);
+    expect(accounts.accountName, _persona.name);
+    expect(accounts.pictureId, _persona.profilePictureId);
   });
 }
 
 class _RecordingAccountNotifier extends AccountNotifier {
   String? createdMnemonic;
+  String? accountName;
+  String? pictureId;
   String? importedMnemonic;
   int? importedBirthdayHeight;
   List<int>? importedAdditionalAccountIndices;
@@ -289,6 +331,8 @@ class _RecordingAccountNotifier extends AccountNotifier {
     String profilePictureId = 'pfp-01',
     List<int> additionalAccountIndices = const [],
   }) async {
+    accountName = name;
+    pictureId = profilePictureId;
     importedMnemonic = mnemonic;
     importedBirthdayHeight = birthdayHeight;
     importedAdditionalAccountIndices = additionalAccountIndices;
@@ -300,6 +344,8 @@ class _RecordingAccountNotifier extends AccountNotifier {
     String? name,
     String profilePictureId = 'pfp-01',
   }) async {
+    accountName = name;
+    pictureId = profilePictureId;
     createdMnemonic = mnemonic;
   }
 }
@@ -315,6 +361,9 @@ class _RecordingAppSecurityNotifier extends AppSecurityNotifier {
 
   @override
   Future<void> preparePasswordSetup(String password) async {}
+
+  @override
+  Future<void> completePasswordSetup() async => commitPasswordSetup();
 
   @override
   void commitPasswordSetup() {

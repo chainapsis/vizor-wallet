@@ -24,9 +24,11 @@ import '../create/onboarding_split_view.dart';
 import '../import/import_split_view.dart';
 import '../keystone/keystone_onboarding_flow.dart';
 import '../ledger/ledger_connect_screen.dart';
+import '../ledger/ledger_setup_args.dart';
 import 'onboarding_chrome.dart' as onboarding_chrome;
 import 'onboarding_flow_args.dart';
 import 'onboarding_error_messages.dart';
+import 'account_setup_submission.dart';
 import '../../payment_links/widgets/desktop_gift_setup_shell.dart';
 
 class SetPasswordScreen extends ConsumerStatefulWidget {
@@ -48,10 +50,11 @@ class SetPasswordScreen extends ConsumerStatefulWidget {
       PasswordInputSourceCandidate? inputSource,
     )
     onContinue,
+    onboarding_chrome.OnboardingBackTarget? backTarget,
     super.key,
   }) : args = null,
        ledgerOnContinue = onContinue,
-       ledgerBackTarget = null,
+       ledgerBackTarget = backTarget,
        giftPresentation = true;
 
   final bool giftPresentation;
@@ -74,6 +77,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
   final _confirmController = TextEditingController();
   _SetPasswordSubmitPhase _submitPhase = _SetPasswordSubmitPhase.idle;
   String? _submitError;
+  final _submission = AccountSetupSubmission();
 
   @override
   void dispose() {
@@ -90,8 +94,8 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
 
   bool get _canSubmit =>
       _submitPhase == _SetPasswordSubmitPhase.idle &&
-      _passwordPolicyError == null &&
-      _matches;
+      (_submission.requiresRecovery ||
+          (_passwordPolicyError == null && _matches));
 
   String? get _passwordMessage => _passwordPolicyError;
 
@@ -113,6 +117,20 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
   }
 
   Future<void> _submitWithOwnership() async {
+    if (_submission.requiresRecovery) {
+      setState(() => _submitPhase = _SetPasswordSubmitPhase.settingPassword);
+      try {
+        await _submission.recover(ref);
+      } catch (_) {
+        if (mounted) {
+          setState(() {
+            _submitPhase = _SetPasswordSubmitPhase.idle;
+            _submitError = "Couldn't resume setup. Please try again.";
+          });
+        }
+      }
+      return;
+    }
     final passwordPolicyError = _passwordPolicyError;
     final password = _passwordController.text;
     if (_submitPhase != _SetPasswordSubmitPhase.idle ||
@@ -132,13 +150,18 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
     final ledgerOnContinue = widget.ledgerOnContinue;
     if (ledgerOnContinue != null) {
       try {
-        await ledgerOnContinue(password, inputSource);
+        await _submission.run(
+          ref,
+          () => ledgerOnContinue(password, inputSource),
+        );
       } catch (e, st) {
         log('SetPasswordScreen._submit: continuation failed: $e\n$st');
         if (!mounted) return;
         setState(() {
           _submitPhase = _SetPasswordSubmitPhase.idle;
-          _submitError = onboardingSubmitErrorMessage(e);
+          _submitError = _submission.requiresRecovery
+              ? 'Setup interrupted. Retry to recover your wallet.'
+              : onboardingSubmitErrorMessage(e);
         });
       }
       return;
@@ -147,18 +170,41 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
     final args = widget.args!;
     final router = GoRouter.of(context);
     if (args.flow != SetPasswordFlow.importWalletLink) {
-      final customiseArgs = CustomiseAccountArgs(
-        setupArgs: args,
-        pendingPassword: password,
-        passwordInputSource: inputSource,
-      );
-      router.go(
-        args.flow == SetPasswordFlow.importWallet ||
-                args.flow == SetPasswordFlow.importKeystone
-            ? desktopImportLocation(context, customiseArgs.routePath)
-            : customiseArgs.routePath,
-        extra: customiseArgs,
-      );
+      try {
+        await _submission.run(
+          ref,
+          () => finishPersonalisedAccountSetup(
+            ref,
+            args: args,
+            password: password,
+            passwordInputSource: inputSource,
+            onStoppingSync: () {
+              if (mounted) {
+                setState(
+                  () => _submitPhase = _SetPasswordSubmitPhase.stoppingSync,
+                );
+              }
+            },
+            onSyncPaused: () {
+              if (mounted) {
+                setState(
+                  () => _submitPhase = _SetPasswordSubmitPhase.settingPassword,
+                );
+              }
+            },
+          ),
+        );
+      } catch (error, stack) {
+        log('SetPasswordScreen: account setup failed: $error\n$stack');
+        if (mounted) {
+          setState(() {
+            _submitPhase = _SetPasswordSubmitPhase.idle;
+            _submitError = _submission.requiresRecovery
+                ? 'Setup interrupted. Retry to recover your wallet.'
+                : onboardingSubmitErrorMessage(error);
+          });
+        }
+      }
       return;
     }
 
@@ -271,7 +317,9 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
       if (!mounted) return;
       setState(() {
         _submitPhase = _SetPasswordSubmitPhase.idle;
-        _submitError = onboardingSubmitErrorMessage(e);
+        _submitError = _submission.requiresRecovery
+            ? 'Setup interrupted. Retry to recover your wallet.'
+            : onboardingSubmitErrorMessage(e);
       });
       return;
     }
@@ -292,14 +340,19 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
         _submitError = null;
       }),
       onSubmit: _submit,
-      idleSubmitLabel: args?.flow == SetPasswordFlow.importWalletLink
-          ? 'Set password & finish'
-          : 'Set password & continue',
+      idleSubmitLabel: _submission.requiresRecovery
+          ? 'Retry setup'
+          : 'Set password & finish',
     );
     if (widget.giftPresentation) {
       return DesktopGiftSetupShell(
         step: DesktopGiftSetupStep.password,
         showPasswordStep: true,
+        backTarget:
+            _submitPhase != _SetPasswordSubmitPhase.idle ||
+                _submission.requiresRecovery
+            ? null
+            : widget.ledgerBackTarget,
         child: content,
       );
     }
@@ -312,8 +365,25 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
     }
 
     final standardArgs = args!;
-    final backTarget = standardArgs.flow == SetPasswordFlow.create
+    final backTarget =
+        _submitPhase != _SetPasswordSubmitPhase.idle ||
+            _submission.requiresRecovery
         ? null
+        : standardArgs.persona != null
+        ? onboarding_chrome.OnboardingBackTarget.route(
+            label: 'Customise Account',
+            routePath: desktopImportLocation(
+              context,
+              standardArgs.desktopCustomiseRoutePath,
+            ),
+            routeExtra: standardArgs.flow == SetPasswordFlow.importLedger
+                ? LedgerCustomiseAccountArgs(
+                    account: standardArgs.ledgerAccount!,
+                    birthdayHeight: standardArgs.importBirthdayHeight,
+                    persona: standardArgs.persona,
+                  )
+                : CustomiseAccountArgs(setupArgs: standardArgs),
+          )
         : onboarding_chrome.OnboardingBackTarget.route(
             label: _backLabel(standardArgs.flow),
             routePath: desktopImportLocation(
@@ -324,8 +394,10 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
           );
 
     return switch (standardArgs.flow) {
-      SetPasswordFlow.importLedger => throw StateError(
-        'Desktop Ledger uses its dedicated setup routes.',
+      SetPasswordFlow.importLedger => LedgerOnboardingShell(
+        activeStep: LedgerOnboardingStep.setPassword,
+        backTarget: backTarget,
+        child: content,
       ),
       SetPasswordFlow.create => OnboardingTrailingPane(
         backTarget: backTarget,

@@ -14,6 +14,7 @@ import 'package:zcash_wallet/src/features/ledger/services/ledger_account_service
 import 'package:zcash_wallet/src/features/onboarding/import/import_birthday_estimator.dart';
 import 'package:zcash_wallet/src/features/onboarding/ledger/ledger_setup_args.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
+import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 
 void main() {
@@ -43,9 +44,20 @@ void main() {
       await _enterBirthday(tester);
 
       expect(
-        find.byKey(const ValueKey('set_password_password_field')),
+        find.byKey(const ValueKey('customise_account_name_field')),
         findsOneWidget,
       );
+      expect(import.calls, 0);
+      expect(security.preparedPassword, isNull);
+      await tester.enterText(
+        find.byKey(const ValueKey('customise_account_name_field')),
+        'Ledger savings',
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('customise_account_finish_button')),
+      );
+      await tester.pumpAndSettle();
+      expect(store.value, isNull);
       await tester.enterText(
         find.byKey(const ValueKey('set_password_password_field')),
         'Password1!',
@@ -57,21 +69,6 @@ void main() {
       await tester.pump();
       await tester.tap(
         find.byKey(const ValueKey('set_password_submit_button')),
-      );
-      await tester.pumpAndSettle();
-
-      expect(
-        find.byKey(const ValueKey('customise_account_name_field')),
-        findsOneWidget,
-      );
-      expect(store.value, isNull);
-      platform.current = {'platform': 'macos', 'id': 'different.at.commit'};
-      await tester.enterText(
-        find.byKey(const ValueKey('customise_account_name_field')),
-        'Ledger savings',
-      );
-      await tester.tap(
-        find.byKey(const ValueKey('customise_account_finish_button')),
       );
       await tester.pumpAndSettle();
 
@@ -138,6 +135,7 @@ Widget _harness({
       appSecurityProvider.overrideWith(() => security),
       ledgerTargetPlatformProvider.overrideWithValue(TargetPlatform.macOS),
       ledgerAccountImporterProvider.overrideWithValue(import),
+      syncProvider.overrideWith(_IdleSync.new),
       rpcEndpointFailoverProvider.overrideWith(
         _FakeRpcEndpointFailoverNotifier.new,
       ),
@@ -289,4 +287,11 @@ class _FakeRpcEndpointFailoverNotifier extends RpcEndpointFailoverNotifier {
     }
     return action(state.current);
   }
+}
+
+class _IdleSync extends SyncNotifier {
+  @override
+  Future<SyncState> build() async => SyncState();
+  @override
+  bool needsPauseForWalletMutation() => false;
 }

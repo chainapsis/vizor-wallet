@@ -5,8 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/storage/linux_keyring_coordinator.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/app_security_provider.dart';
+import '../../onboarding/shared/account_persona_draft.dart';
 
 import '../../onboarding/create/customise_account_screen.dart';
+import '../../onboarding/shared/onboarding_chrome.dart';
 import '../providers/gift_claim_flow_provider.dart';
 import '../services/gift_claim_setup_coordinator.dart';
 import 'gift_customise_account_screen.dart' show GiftCustomiseAccountArgs;
@@ -28,6 +31,7 @@ class DesktopGiftCustomiseScreen extends ConsumerStatefulWidget {
 class _DesktopGiftCustomiseState
     extends ConsumerState<DesktopGiftCustomiseScreen> {
   late final GiftClaimFlowNotifier _flow;
+  bool _continuingToSecurity = false;
 
   @override
   void initState() {
@@ -38,36 +42,66 @@ class _DesktopGiftCustomiseState
   @override
   void dispose() {
     final inspection = widget.args.inspection;
-    scheduleMicrotask(() => _flow.finishWalletSetup(inspection));
+    if (!_continuingToSecurity) {
+      scheduleMicrotask(() => _flow.finishWalletSetup(inspection));
+    }
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) => CustomiseAccountScreen.gift(
     random: widget.random,
-    configuresPassword: widget.args.passcode != null,
-    onFinish: (name, profilePictureId) =>
-        ref.read(linuxKeyringCoordinatorProvider).runMutation(() async {
-          try {
-            await completeGiftClaimWalletSetup(
-              ref,
-              password: widget.args.passcode,
-              passwordInputSource: widget.args.passwordInputSource,
-              accountName: name,
-              profilePictureId: profilePictureId,
-              inspection: widget.args.inspection,
-              onComplete: () {
-                if (context.mounted) context.go('/home');
-              },
-            );
-          } on GiftClaimAccountCreatedException catch (error) {
-            // The account is durable. Use desktop startup/unlock recovery so a
-            // retry cannot prepare the password or create another account.
-            throw WalletAccountSetupInterruptedException(
-              error.accountUuid,
-              error.cause,
-            );
-          }
-        }),
+    backTarget: OnboardingBackTarget.callback(
+      label: 'Redeem the card',
+      onTap: () {
+        _continuingToSecurity = true;
+        _flow.cancelWalletSetup(widget.args.inspection);
+        if (context.canPop()) {
+          context.pop();
+        } else {
+          context.go('/gift');
+        }
+      },
+    ),
+    initialPersona: ref.read(giftClaimFlowProvider)?.setupPersona,
+    continueToSecurity: !ref.read(appSecurityProvider).isPasswordConfigured,
+    configuresPassword: !ref.read(appSecurityProvider).isPasswordConfigured,
+    onFinish: (name, profilePictureId) async {
+      if (!ref.read(appSecurityProvider).isPasswordConfigured &&
+          widget.args.passcode == null) {
+        _continuingToSecurity = true;
+        _flow.beginWalletSetup(
+          widget.args.inspection,
+          persona: AccountPersona(
+            name: name,
+            profilePictureId: profilePictureId,
+          ),
+        );
+        context.go('/gift/set-password');
+        return;
+      }
+      await ref.read(linuxKeyringCoordinatorProvider).runMutation(() async {
+        try {
+          await completeGiftClaimWalletSetup(
+            ref,
+            password: widget.args.passcode,
+            passwordInputSource: widget.args.passwordInputSource,
+            accountName: name,
+            profilePictureId: profilePictureId,
+            inspection: widget.args.inspection,
+            onComplete: () {
+              if (context.mounted) context.go('/home');
+            },
+          );
+        } on GiftClaimAccountCreatedException catch (error) {
+          // The account is durable. Use desktop startup/unlock recovery so a
+          // retry cannot prepare the password or create another account.
+          throw WalletAccountSetupInterruptedException(
+            error.accountUuid,
+            error.cause,
+          );
+        }
+      });
+    },
   );
 }

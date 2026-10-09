@@ -227,7 +227,7 @@ void main() {
 
     expect(find.text('Customise Account'), findsOneWidget);
     expect(find.text('Windborne Wardbearer'), findsOneWidget);
-    expect(_stepsProgress(tester), closeTo(0.88435374150, 0.0001));
+    expect(_stepsProgress(tester), closeTo(0.76870748299, 0.0001));
     expect(random.nextIntCallCount, 3);
     expect(
       tester.getSize(
@@ -572,6 +572,9 @@ void main() {
       ProviderScope(
         overrides: [
           appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+          appSecurityProvider.overrideWith(
+            () => _RecordingSecurityNotifier(configured: true),
+          ),
           accountProvider.overrideWith(_RecordingAccountNotifier.new),
           syncProvider.overrideWith(_NoopSyncNotifier.new),
           ledgerAccountImporterProvider.overrideWithValue(({
@@ -596,10 +599,10 @@ void main() {
       ),
     );
     await tester.pump();
-    expect(find.bySemanticsLabel('Back'), findsNothing);
+    expect(find.bySemanticsLabel('Back'), findsOneWidget);
     expect(
       tester.widget<PopScope<void>>(find.byType(PopScope<void>)).canPop,
-      isFalse,
+      isTrue,
     );
 
     await tester.enterText(
@@ -700,6 +703,9 @@ void main() {
       ProviderScope(
         overrides: [
           appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+          appSecurityProvider.overrideWith(
+            () => _RecordingSecurityNotifier(configured: true),
+          ),
           accountProvider.overrideWith(() => accountNotifier),
           syncProvider.overrideWith(_NoopSyncNotifier.new),
         ],
@@ -751,6 +757,9 @@ void main() {
       ProviderScope(
         overrides: [
           appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+          appSecurityProvider.overrideWith(
+            () => _RecordingSecurityNotifier(configured: true),
+          ),
           accountProvider.overrideWith(() => accountNotifier),
           syncProvider.overrideWith(_NoopSyncNotifier.new),
         ],
@@ -806,6 +815,9 @@ void main() {
       ProviderScope(
         overrides: [
           appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+          appSecurityProvider.overrideWith(
+            () => _RecordingSecurityNotifier(configured: true),
+          ),
           accountProvider.overrideWith(() => accountNotifier),
           syncProvider.overrideWith(_NoopSyncNotifier.new),
         ],
@@ -957,12 +969,14 @@ class _RecordingAccountNotifier extends AccountNotifier {
 }
 
 class _RecordingSecurityNotifier extends AppSecurityNotifier {
+  _RecordingSecurityNotifier({this.configured = false});
+  final bool configured;
   String? preparedPassword;
   var committed = false;
 
   @override
   AppSecurityState build() =>
-      const AppSecurityState(isPasswordConfigured: false, isUnlocked: true);
+      AppSecurityState(isPasswordConfigured: configured, isUnlocked: true);
 
   @override
   Future<void> preparePasswordSetup(String password) async {

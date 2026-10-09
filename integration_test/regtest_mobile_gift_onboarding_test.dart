@@ -356,11 +356,7 @@ Future<void> _createGiftWallet(
     tester,
     const ValueKey('gift_claim_create_a_wallet_to_claim'),
   );
-  await enterPasscode(tester, mobileE2ePasscode);
-  await enterPasscode(tester, mobileE2ePasscode);
-  // Cupertino keeps the outgoing passcode page mounted during its transition.
-  // Finish that transition before bringing up the name field's native keyboard.
-  await settle(tester, const Duration(milliseconds: 600));
+
   await enterText(
     tester,
     const ValueKey('mobile_customise_account_name_field'),
@@ -371,6 +367,8 @@ Future<void> _createGiftWallet(
     const ValueKey('mobile_customise_account_continue'),
     timeout: const Duration(minutes: 2),
   );
+  await enterPasscode(tester, mobileE2ePasscode);
+  await enterPasscode(tester, mobileE2ePasscode);
   await tapWidget(
     tester,
     const ValueKey('mobile_biometrics_not_now'),

@@ -26,6 +26,7 @@ import 'package:zcash_wallet/src/features/payment_links/widgets/gift_claim_failu
 import 'package:zcash_wallet/src/providers/sync_keep_awake_provider.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_passcode_screen.dart';
+import 'package:zcash_wallet/src/features/onboarding/shared/account_persona_draft.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_customise_account_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_progress_scope.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
@@ -199,7 +200,14 @@ void main() {
         GoRoute(
           path: '/',
           builder: (_, _) => MobilePasscodeScreen(
-            args: args,
+            args: walletLink
+                ? args
+                : args.withPersona(
+                    const AccountPersona(
+                      name: 'Imported wallet',
+                      profilePictureId: 'pfp-01',
+                    ),
+                  ),
             completeWalletLinkPackage:
                 ({
                   required packageId,
@@ -270,10 +278,7 @@ void main() {
       }
     }
     await tester.pumpAndSettle();
-    if (!walletLink) {
-      await tester.tap(keyed('mobile_customise_account_continue'));
-      await tester.pumpAndSettle();
-    }
+
     return container;
   }
 
@@ -585,6 +590,30 @@ void main() {
     expect(await GiftClaimImportStore().load(), isNull);
   });
 
+  Future<void> submitPersonaOrRetry(WidgetTester tester) async {
+    if (keyed('mobile_passcode_retry_setup').evaluate().isNotEmpty) {
+      await tester.tap(keyed('mobile_passcode_retry_setup'));
+    } else {
+      if (keyed(
+        'mobile_customise_account_continue',
+      ).hitTestable().evaluate().isNotEmpty) {
+        await tester.tap(keyed('mobile_customise_account_continue'));
+        await tester.pumpAndSettle();
+      }
+      if (find.text('Create Passcode').hitTestable().evaluate().isNotEmpty) {
+        for (var round = 0; round < 2; round++) {
+          for (final digit in '135790'.split('')) {
+            await tester.tap(
+              find.bySemanticsLabel('Digit $digit').hitTestable(),
+            );
+            await tester.pump();
+          }
+        }
+      }
+    }
+    await tester.pumpAndSettle();
+  }
+
   testWidgets('repeated create-wallet taps open only one passcode page', (
     tester,
   ) async {
@@ -601,7 +630,7 @@ void main() {
 
     gate.complete(null);
     await tester.pumpAndSettle();
-    expect(location(tester), '/gift/passcode');
+    expect(location(tester), '/gift/customise');
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
     expect(location(tester), '/gift');
@@ -630,7 +659,7 @@ void main() {
     store.loadGate = null;
     await tester.tap(keyed('gift_claim_create_a_wallet_to_claim'));
     await tester.pumpAndSettle();
-    expect(location(tester), '/gift/passcode');
+    expect(location(tester), '/gift/customise');
     expect(tester.takeException(), isNull);
   });
 
@@ -645,13 +674,8 @@ void main() {
 
     await tester.tap(keyed('gift_claim_create_a_wallet_to_claim'));
     await tester.pumpAndSettle();
-    expect(location(tester), '/gift/passcode');
-    for (var round = 0; round < 2; round++) {
-      for (final digit in '135790'.split('')) {
-        await tester.tap(find.bySemanticsLabel('Digit $digit'));
-        await tester.pump();
-      }
-    }
+    expect(location(tester), '/gift/customise');
+
     await tester.pumpAndSettle();
 
     expect(container.read(accountProvider).value?.hasAccounts, isFalse);
@@ -668,7 +692,7 @@ void main() {
       keyed('mobile_customise_account_name_field'),
       'My gift wallet',
     );
-    await tester.tap(keyed('mobile_customise_account_continue'));
+    await submitPersonaOrRetry(tester);
     await tester.pumpAndSettle();
     expect(location(tester), '/home');
     expect(operations.bindDestinations, ['new-account']);
@@ -707,21 +731,52 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(keyed('gift_claim_create_a_wallet_to_claim'));
     await tester.pumpAndSettle();
-    for (var round = 0; round < 2; round++) {
-      for (final digit in '135790'.split('')) {
-        await tester.tap(find.bySemanticsLabel('Digit $digit'));
-        await tester.pump();
-      }
-    }
+
     await tester.pumpAndSettle();
     return container;
   }
+
+  testWidgets('back after failed Gift passcode requires new confirmation', (
+    tester,
+  ) async {
+    final container = await reachGiftCustomise(tester);
+    final security = container.read(appSecurityProvider.notifier) as _Security;
+    security.prepareError = StateError('Passcode preparation unavailable');
+    await tester.enterText(
+      keyed('mobile_customise_account_name_field'),
+      'Draft gift',
+    );
+    await submitPersonaOrRetry(tester);
+    expect(location(tester), '/gift/passcode');
+    expect(container.read(giftClaimFlowProvider)?.setupPasscode, isNotNull);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(location(tester), '/gift/customise');
+    expect(find.text('Draft gift'), findsOneWidget);
+    expect(container.read(giftClaimFlowProvider)?.setupPasscode, isNull);
+    security.prepareError = null;
+    await tester.tap(keyed('mobile_customise_account_continue'));
+    await tester.pumpAndSettle();
+    expect(location(tester), '/gift/passcode');
+    expect(
+      (container.read(accountProvider.notifier) as _NoAccounts).creationCalls,
+      0,
+    );
+    expect(find.text('Create Passcode'), findsOneWidget);
+    await submitPersonaOrRetry(tester);
+    expect(location(tester), '/onboarding/biometrics');
+    expect(
+      (container.read(accountProvider.notifier) as _NoAccounts).creationCalls,
+      1,
+    );
+    container.read(paymentLinkClaimCoordinatorProvider).pause();
+  });
 
   testWidgets('a slow broadcast does not hold Face ID or Home', (tester) async {
     final container = await reachGiftCustomise(tester);
     final broadcast = Completer<void>();
     operations.broadcastGate = broadcast;
-    await tester.tap(keyed('mobile_customise_account_continue'));
+    await submitPersonaOrRetry(tester);
     await tester.pumpAndSettle();
     expect(location(tester), '/onboarding/biometrics');
     expect(broadcast.isCompleted, isFalse);
@@ -760,7 +815,7 @@ void main() {
     };
     final broadcast = Completer<void>();
     operations.broadcastGate = broadcast;
-    await tester.tap(keyed('mobile_customise_account_continue'));
+    await submitPersonaOrRetry(tester);
     await tester.pumpAndSettle();
     expect(location(tester), '/onboarding/biometrics');
     expect(accounts.creationCalls, 1);
@@ -797,26 +852,17 @@ void main() {
         )
         ..recoveryError = StateError('storage still unavailable');
       for (var attempt = 0; attempt < 2; attempt++) {
-        await tester.tap(keyed('mobile_customise_account_continue'));
+        await submitPersonaOrRetry(tester);
         await tester.pumpAndSettle();
-        expect(location(tester), '/gift/customise');
+        expect(location(tester), '/gift/passcode');
         expect(
-          find.text('Couldn’t finish saving your wallet. Try again.'),
+          find.textContaining(
+            attempt == 0 ? 'Setup interrupted.' : "Couldn't resume setup.",
+          ),
           findsOneWidget,
         );
-        expect(find.text('Try again'), findsOneWidget);
-        expect(
-          tester
-              .widget<TextField>(keyed('mobile_customise_account_name_field'))
-              .enabled,
-          isFalse,
-        );
-        expect(
-          tester
-              .widget<AppButton>(keyed('mobile_customise_account_randomise'))
-              .onPressed,
-          isNull,
-        );
+        expect(find.text('Retry setup'), findsOneWidget);
+        expect(find.bySemanticsLabel('Back').hitTestable(), findsNothing);
         expect(accounts.creationCalls, 1);
         expect(accounts.recoveryCalls, attempt + 1);
         expect(operations.claimedDestinations, isEmpty);
@@ -827,7 +873,7 @@ void main() {
       }
 
       accounts.recoveryError = null;
-      await tester.tap(keyed('mobile_customise_account_continue'));
+      await submitPersonaOrRetry(tester);
       await tester.pumpAndSettle();
       expect(location(tester), '/onboarding/biometrics');
       expect(accounts.creationCalls, 1);
@@ -852,10 +898,10 @@ void main() {
         StateError('storage unavailable'),
       )
       ..skipRecoverySave = true;
-    await tester.tap(keyed('mobile_customise_account_continue'));
+    await submitPersonaOrRetry(tester);
     await tester.pumpAndSettle();
-    expect(location(tester), '/gift/customise');
-    expect(find.text('Try again'), findsOneWidget);
+    expect(location(tester), '/gift/passcode');
+    expect(find.text('Retry setup'), findsOneWidget);
     expect(operations.claimedDestinations, isEmpty);
     expect(accounts.creationCalls, 1);
     expect(accounts.recoveryCalls, 1);
@@ -872,9 +918,9 @@ void main() {
           StateError('storage unavailable'),
         )
         ..recoveryError = StateError('storage still unavailable');
-      await tester.tap(keyed('mobile_customise_account_continue'));
+      await submitPersonaOrRetry(tester);
       await tester.pumpAndSettle();
-      expect(location(tester), '/gift/customise');
+      expect(location(tester), '/gift/passcode');
       expect(
         container.read(giftClaimFlowProvider)?.walletSetupInProgress,
         isTrue,
@@ -896,15 +942,16 @@ void main() {
     final container = await reachGiftCustomise(tester);
     (container.read(accountProvider.notifier) as _NoAccounts).creationError =
         GiftClaimAccountCreatedException(null, StateError('DB unavailable'));
-    await tester.tap(keyed('mobile_customise_account_continue'));
+    await submitPersonaOrRetry(tester);
     await tester.pumpAndSettle();
-    expect(location(tester), '/gift/customise');
-    expect(find.text(kWalletAccountStateUncertainMessage), findsOneWidget);
+    expect(location(tester), '/gift/passcode');
     expect(
-      tester
-          .widget<AppButton>(keyed('mobile_customise_account_continue'))
-          .onPressed,
-      isNull,
+      find.text('Setup interrupted. Retry to recover your wallet.'),
+      findsOneWidget,
+    );
+    expect(
+      tester.widget<AppButton>(keyed('mobile_passcode_retry_setup')).onPressed,
+      isNotNull,
     );
     expect(container.read(appSecurityProvider).isPasswordConfigured, isTrue);
   });
@@ -920,19 +967,14 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(keyed('gift_claim_create_a_wallet_to_claim'));
     await tester.pumpAndSettle();
-    for (var round = 0; round < 2; round++) {
-      for (final digit in '135790'.split('')) {
-        await tester.tap(find.bySemanticsLabel('Digit $digit'));
-        await tester.pump();
-      }
-    }
+
     await tester.pumpAndSettle();
 
     await tester.enterText(
       keyed('mobile_customise_account_name_field'),
       'My gift wallet',
     );
-    await tester.tap(keyed('mobile_customise_account_continue'));
+    await submitPersonaOrRetry(tester);
     await tester.pumpAndSettle();
     expect(location(tester), '/home');
     expect(operations.claimedDestinations, ['new-account']);
@@ -952,18 +994,13 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(keyed('gift_claim_create_a_wallet_to_claim'));
       await tester.pumpAndSettle();
-      for (var round = 0; round < 2; round++) {
-        for (final digit in '135790'.split('')) {
-          await tester.tap(find.bySemanticsLabel('Digit $digit'));
-          await tester.pump();
-        }
-      }
+
       await tester.pumpAndSettle();
       await tester.enterText(
         keyed('mobile_customise_account_name_field'),
         'My gift wallet',
       );
-      await tester.tap(keyed('mobile_customise_account_continue'));
+      await submitPersonaOrRetry(tester);
       await tester.pumpAndSettle();
 
       expect(location(tester), '/onboarding/biometrics');
@@ -999,19 +1036,14 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(keyed('gift_claim_create_a_wallet_to_claim'));
     await tester.pumpAndSettle();
-    for (var round = 0; round < 2; round++) {
-      for (final digit in '135790'.split('')) {
-        await tester.tap(find.bySemanticsLabel('Digit $digit'));
-        await tester.pump();
-      }
-    }
+
     await tester.pumpAndSettle();
 
     await tester.enterText(
       keyed('mobile_customise_account_name_field'),
       'My gift wallet',
     );
-    await tester.tap(keyed('mobile_customise_account_continue'));
+    await submitPersonaOrRetry(tester);
     await tester.pumpAndSettle();
     expect(location(tester), '/home');
     expect(operations.bindDestinations, ['new-account']);
@@ -1031,15 +1063,10 @@ void main() {
 
       await tester.tap(keyed('gift_claim_create_a_wallet_to_claim'));
       await tester.pumpAndSettle();
-      for (var round = 0; round < 2; round++) {
-        for (final digit in '135790'.split('')) {
-          await tester.tap(find.bySemanticsLabel('Digit $digit'));
-          await tester.pump();
-        }
-      }
+
       await tester.pumpAndSettle();
 
-      await tester.tap(keyed('mobile_customise_account_continue'));
+      await submitPersonaOrRetry(tester);
       await tester.pumpAndSettle();
       expect(location(tester), '/onboarding/biometrics');
       expect(container.read(giftClaimFailureNoticeProvider), isNotNull);
@@ -1086,7 +1113,7 @@ void main() {
     final gate = Completer<void>();
     operations.bindGate = gate;
     operations.bindFails = true;
-    await tester.tap(keyed('mobile_customise_account_continue'));
+    await submitPersonaOrRetry(tester);
     await tester.pumpAndSettle();
     await tester.tap(keyed('mobile_biometrics_not_now'));
     await tester.pumpAndSettle();
@@ -1306,7 +1333,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(MobileCustomiseAccountScreen), findsOneWidget);
       expect(find.byType(MobilePasscodeScreen), findsNothing);
-      await tester.tap(keyed('mobile_customise_account_continue'));
+      await submitPersonaOrRetry(tester);
       await tester.pumpAndSettle();
       expect(location(tester), '/home');
       expect(
@@ -2248,6 +2275,7 @@ class _Security extends AppSecurityNotifier {
     isUnlocked: false,
   );
 
+  Object? prepareError;
   int prepareCalls = 0;
   int rollbackCalls = 0;
   @override
@@ -2263,6 +2291,7 @@ class _Security extends AppSecurityNotifier {
   @override
   Future<void> preparePasswordSetup(String password) async {
     prepareCalls++;
+    if (prepareError case final error?) throw error;
     _passcode = password;
   }
 

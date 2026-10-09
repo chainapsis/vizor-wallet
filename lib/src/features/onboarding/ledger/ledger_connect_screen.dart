@@ -49,8 +49,8 @@ class LedgerOnboardingShell extends ConsumerWidget {
     final steps = [
       LedgerOnboardingStep.connect,
       LedgerOnboardingStep.birthday,
-      if (showPasswordStep) LedgerOnboardingStep.setPassword,
       LedgerOnboardingStep.customiseAccount,
+      if (showPasswordStep) LedgerOnboardingStep.setPassword,
     ];
     return AppDesktopShell(
       sidebar: OnboardingSidebarChrome(

@@ -72,19 +72,18 @@ void main() {
         );
         await tester.pumpAndSettle();
         await _birthday(tester);
-        if (!existing) {
-          expect(find.text('Create Passcode'), findsOneWidget);
-          await _digits(tester, '123456');
-          expect(find.text('Confirm Passcode'), findsOneWidget);
-          await _digits(tester, '123456');
-        }
         expect(find.text('Customise Account'), findsOneWidget);
-        expect(events, isEmpty); // Passcode remains an in-memory draft.
-        expect(find.textContaining('Keystone'), findsNothing);
+        expect(events, isEmpty);
         await tester.tap(
           find.byKey(const ValueKey('mobile_customise_account_continue')),
         );
         await tester.pumpAndSettle();
+        if (!existing) {
+          expect(find.text('Create Passcode'), findsOneWidget);
+          await _digits(tester, '123456');
+          expect(events, isEmpty);
+          await _digits(tester, '123456');
+        }
         if (failFirst) {
           expect(find.text('Ledger import failed. Try again.'), findsOneWidget);
           expect(find.textContaining('Keystone'), findsNothing);
@@ -93,10 +92,15 @@ void main() {
             existing ? ['import'] : ['prepare', 'import', 'rollback'],
           );
           expect(security.prepared, isFalse);
-          await tester.tap(
-            find.byKey(const ValueKey('mobile_customise_account_continue')),
-          );
-          await tester.pumpAndSettle();
+          if (existing) {
+            await tester.tap(
+              find.byKey(const ValueKey('mobile_customise_account_continue')),
+            );
+            await tester.pumpAndSettle();
+          } else {
+            await _digits(tester, '123456');
+            await _digits(tester, '123456');
+          }
         }
         expect(
           find.text(existing ? 'home route' : 'biometrics route'),
@@ -136,19 +140,20 @@ void main() {
     );
     await tester.pumpAndSettle();
     await _birthday(tester);
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_customise_account_continue')),
+    );
+    await tester.pumpAndSettle();
     await _digits(tester, '123456');
     expect(find.text('Confirm Passcode'), findsOneWidget);
     router.pop();
     await tester.pumpAndSettle();
-    expect(
-      find.text('Around when did you create your wallet?'),
-      findsOneWidget,
-    );
+    expect(find.text('Customise Account'), findsOneWidget);
     expect(events, isEmpty);
   });
 
   testWidgets(
-    'valid direct customise extra cannot import without passcode preparation',
+    'direct personalise entry continues to passcode before any import',
     (tester) async {
       final security = _Security(false, []);
       final router = _router();
@@ -170,10 +175,7 @@ void main() {
         find.byKey(const ValueKey('mobile_customise_account_continue')),
       );
       await tester.pumpAndSettle();
-      expect(
-        find.textContaining('Set up and unlock your wallet'),
-        findsOneWidget,
-      );
+      expect(find.text('Create Passcode'), findsOneWidget);
       expect(find.text('home route'), findsNothing);
       expect(find.text('biometrics route'), findsNothing);
     },

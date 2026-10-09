@@ -12,6 +12,8 @@ import '../services/gift_claim_setup_coordinator.dart';
 import '../services/payment_link_service.dart';
 import '../providers/gift_claim_flow_provider.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/app_security_provider.dart';
+import '../../onboarding/shared/account_persona_draft.dart';
 
 class GiftCustomiseAccountArgs {
   const GiftCustomiseAccountArgs({
@@ -41,6 +43,7 @@ class GiftCustomiseAccountScreen extends ConsumerStatefulWidget {
 
 class _GiftCustomiseAccountScreenState
     extends ConsumerState<GiftCustomiseAccountScreen> {
+  bool _continuingToSecurity = false;
   bool _requiresRestart = false;
   String? _createdAccountUuid;
   late final GiftClaimFlowNotifier _flow;
@@ -54,22 +57,52 @@ class _GiftCustomiseAccountScreenState
   @override
   void dispose() {
     final inspection = widget.args.inspection;
-    scheduleMicrotask(() => _flow.finishWalletSetup(inspection));
+    if (!_continuingToSecurity) {
+      scheduleMicrotask(() => _flow.finishWalletSetup(inspection));
+    }
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) => MobileCustomiseAccountScreen(
     random: widget.random,
+    onBack: () {
+      _continuingToSecurity = true;
+      _flow.cancelWalletSetup(widget.args.inspection);
+      if (context.canPop()) {
+        context.pop();
+      } else {
+        context.go('/gift');
+      }
+    },
+    onPopped: () => scheduleMicrotask(
+      () => _flow.cancelWalletSetup(widget.args.inspection),
+    ),
+    initialPersona: ref.read(giftClaimFlowProvider)?.setupPersona,
     actionsEnabled: !_requiresRestart,
     setupCommitted: _createdAccountUuid != null,
     position: OnboardingProgressPlan.forFlow(
       OnboardingFlow.gift,
-      setupMode: widget.args.passcode == null
+      setupMode: ref.read(appSecurityProvider).isPasswordConfigured
           ? OnboardingSetupMode.reusePasscode
           : OnboardingSetupMode.createPasscode,
     ).at(OnboardingStage.customiseAccount),
     onFinish: (name, profilePictureId) async {
+      if (!ref.read(appSecurityProvider).isPasswordConfigured &&
+          widget.args.passcode == null) {
+        ref
+            .read(giftClaimFlowProvider.notifier)
+            .beginWalletSetup(
+              widget.args.inspection,
+              persona: AccountPersona(
+                name: name,
+                profilePictureId: profilePictureId,
+              ),
+            );
+        _continuingToSecurity = true;
+        context.go('/gift/passcode');
+        return;
+      }
       try {
         await completeGiftClaimWalletSetup(
           ref,

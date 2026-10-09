@@ -259,8 +259,8 @@ class _Sidebar extends StatelessWidget {
     OnboardingStep.addressTypes,
     OnboardingStep.thingsToKnow,
     OnboardingStep.secretPassphrase,
-    if (showPasswordStep) OnboardingStep.setPassword,
     OnboardingStep.customiseAccount,
+    if (showPasswordStep) OnboardingStep.setPassword,
   ];
 
   Widget _fadeTransition(Widget child, Animation<double> animation) {

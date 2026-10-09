@@ -11,11 +11,11 @@ validated in the desktop test lane. Mobile builds, tests, and captures use
 
 | Entry | Account preparation | Completion |
 | --- | --- | --- |
-| Create a wallet | Introduction, address types, things to know, secret passphrase, passcode, account customisation | Optional Face ID, then Home |
-| Import a secret passphrase | Phrase entry and review, wallet birthday, passcode when needed, account customisation | Optional Face ID for initial setup, then Home |
-| Import a hardware wallet | Existing Keystone or Ledger connection, account/birthday steps, passcode when needed, account customisation | Existing capability and device gates apply |
+| Create a wallet | Introduction, address types, things to know, secret passphrase, account customisation, passcode | Optional Face ID, then Home |
+| Import a secret passphrase | Phrase entry and review, wallet birthday, account customisation, passcode when needed | Optional Face ID for initial setup, then Home |
+| Import a hardware wallet | Existing Keystone or Ledger connection, account/birthday steps, account customisation, passcode when needed | Existing capability and device gates apply |
 | Link Vizor Desktop | Introduction, scan, account selection, contacts, passcode when needed | Optional Face ID for initial setup, then Home |
-| Redeem a gift card into a new wallet | Card inspection, passcode, account customisation | Claim handoff, optional Face ID, then Home |
+| Redeem a gift card into a new wallet | Card inspection, account customisation, passcode | Claim handoff, optional Face ID, then Home |
 | Redeem a gift card into an imported wallet | Card inspection, existing import flow, receiving-account selection when needed | Claim handoff, optional Face ID, then Home |
 
 - Both Welcome and Add account offer the gift card entry, with new-account
@@ -56,12 +56,12 @@ Account ready: 1
 
 | Flow | Preparation steps after the entry position |
 | --- | --- |
-| Create | Address types → Things to know → Secret passphrase → Passcode → Customise account |
-| Passphrase import | Phrase entry → Phrase review → Birthday → Passcode → Customise account |
-| Keystone | Device intro → Device scan → Account selection → Birthday → Passcode → Customise account |
-| Ledger | Device connect → Birthday → Passcode → Customise account |
+| Create | Address types → Things to know → Secret passphrase → Customise account → Passcode |
+| Passphrase import | Phrase entry → Phrase review → Birthday → Customise account → Passcode |
+| Keystone | Device intro → Device scan → Account selection → Birthday → Customise account → Passcode |
+| Ledger | Device connect → Birthday → Customise account → Passcode |
 | Wallet Link | Link intro → Link scan → Account selection → Contact selection → Passcode |
-| Gift creation | Passcode → Customise account |
+| Gift creation | Customise account → Passcode |
 
 - Welcome does not show a progress bar. Introduction and method/device selection
   use the common entry position.
@@ -100,9 +100,9 @@ to wallet setup.
 
 ### New-wallet commit boundary
 
-1. Passcode confirmation retains the digits in live flow memory. It does not
-   create the account or finish credential setup.
-2. Customise Continue prepares the credential, creates the account, and durably
+1. Customise Continue retains the name and profile picture as an in-memory draft.
+   It does not create the account or prepare the credential.
+2. Passcode confirmation prepares the credential, creates the account, and durably
    saves its metadata and the incoming card with the receiving account UUID.
 3. Commit the credential and finish the setup journal before handing the checked
    inspection to `PaymentLinkClaimCoordinator.claimSetupCard`.
@@ -112,16 +112,16 @@ to wallet setup.
 Pre-account failures remain inline and can roll back the newly prepared
 credential. If account creation may already have succeeded, retain the credential
 and recover the same account. A known UUID with incomplete storage is recovered
-immediately; repeated failures lock the persona controls and offer **Try again**
-on Customise. Retrying does not create another account or prepare its credential
-again. An uncertain database result uses the existing reopen message and disables
+immediately; repeated failures disable Back and offer **Retry setup** on the
+final passcode screen. Retrying does not create another account or prepare its
+credential again. An uncertain database result uses startup recovery and disables
 recreation.
 
 The recovery journal preserves whether the inspected creation date is provisional.
 After recovery, a later funding scan can still replace it with the transaction's
 block time; an already resolved date remains unchanged.
 
-The live flow retains the inspection/passcode through route refresh and clears
+The live flow retains the inspection/persona through route refresh and clears
 them on completion or exit. They are not serialized into route restoration or
 browser history. Locking routes to unlock; the durable journal supports recovery.
 
@@ -374,7 +374,7 @@ the recovery slice connects and verifies desktop retry and navigation behavior.
    failure, lock and restart; retry recovery instead of creating replacements.
 5. Post-creation backup: password confirmation, phrase and birthday, explicit
    completion and Remind me later, with continued Settings access.
-6. Gift into a new account: inspection, password if needed, customisation,
+6. Gift into a new account: inspection, customisation, password if needed,
    durable setup and claim handoff, then Home; include additional accounts.
 7. Gift into an imported account: software/Keystone/Ledger import, recipient
    selection when needed, and cancellation/restart recovery.
@@ -425,11 +425,11 @@ difference in review. Gift setup is integrated by the later new-account slice.
 
 ### Desktop interrupted setup recovery
 
-Password setup forwards its draft to Customise without creating an account;
+Customise forwards its persona draft to password setup without creating an account;
 additional accounts retain their existing credential and skip password setup.
 
 If account persistence is interrupted or its DB state cannot be confirmed,
-Customise freezes the name/profile and Back controls and offers **Retry setup**.
+The final password step disables Back and offers **Retry setup**.
 Retry locks the session and reloads the existing startup snapshot without
 creating another account or preparing another password. Startup inspects the
 DB: an existing account goes to Unlock, confirmed empty setup goes to Welcome,
@@ -437,7 +437,7 @@ and an unreadable DB goes to the existing startup error/retry screen. Unlock
 must finish pending storage writes before Home opens. A lock during setup
 reloads the snapshot before the router can expose Unlock.
 
-This connection includes Ledger's callback-based Customise screen. Ordinary
+This connection includes Ledger's final password screen. Ordinary
 errors before account creation retain editable fields and the existing inline
 retry flow. The durable recovery journal and restart/unlock behavior remain
 shared with mobile; this slice connects the desktop retry action.
@@ -479,7 +479,7 @@ DB, production secrets, network, or Rust state.
 ### Desktop Gift into a new account
 
 Welcome and Add account now open `/gift` for paste or QR inspection. A fresh
-wallet continues to `/gift/set-password`, then `/gift/customise`. An unlocked
+wallet continues to `/gift/customise`, then `/gift/set-password`. An unlocked
 existing wallet goes directly to Customise to add the receiving account. Both
 use the shared Gift setup coordinator, account journal, and claim runner.
 

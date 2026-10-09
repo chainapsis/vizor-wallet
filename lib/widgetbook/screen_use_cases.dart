@@ -261,9 +261,9 @@ Widget buildImportCustomiseAccountUseCase(BuildContext context) {
               mnemonic: _previewMnemonic,
               birthdayHeight: 2500000,
             ),
-            pendingPassword: 'PreviewPassword1!',
           ),
           random: Random(1234),
+          continueToSecurity: true,
           onFinish: (_, _) async {},
         ),
       ),
@@ -372,7 +372,6 @@ Widget buildMobileCustomiseAccountUseCase(BuildContext context) {
     child: MobileCustomiseAccountScreen(
       args: const CustomiseAccountArgs(
         setupArgs: SetPasswordScreenArgs.create(mnemonic: _previewMnemonic),
-        pendingPassword: '123456',
       ),
       random: Random(1234),
       onFinish: (_, _) async {},
@@ -4402,9 +4401,9 @@ class _CustomiseAccountHarnessState extends State<_CustomiseAccountHarness> {
                 setupArgs: const SetPasswordScreenArgs.create(
                   mnemonic: _previewMnemonic,
                 ),
-                pendingPassword: 'PreviewPassword1!',
               ),
               random: Random(1234),
+              continueToSecurity: true,
               onFinish: (_, _) async {},
             ),
           ),

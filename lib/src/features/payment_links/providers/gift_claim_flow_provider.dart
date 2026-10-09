@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../main.dart' show log;
 import '../../../core/input/app_password_input_source.dart';
 import '../../../providers/app_security_provider.dart';
+import '../../onboarding/shared/account_persona_draft.dart';
 import '../../../providers/wallet_provider.dart';
 import '../models/vizor_payment_link.dart';
 import '../services/payment_link_service.dart';
@@ -29,6 +30,7 @@ class GiftClaimFlowState {
     this.inspection,
     this.failure,
     this.setupPasscode,
+    this.setupPersona,
     this.setupPasswordInputSource,
     this.walletSetupInProgress = false,
   });
@@ -39,6 +41,7 @@ class GiftClaimFlowState {
   final GiftClaimFailure? failure;
   // Kept only until setup leaves the screen. Route refresh must not serialize it.
   final String? setupPasscode;
+  final AccountPersona? setupPersona;
   final PasswordInputSourceCandidate? setupPasswordInputSource;
   final bool walletSetupInProgress;
 }
@@ -157,6 +160,7 @@ class GiftClaimFlowNotifier extends Notifier<GiftClaimFlowState?> {
   void beginWalletSetup(
     PaymentLinkClaimInspection inspection, {
     String? passcode,
+    AccountPersona? persona,
     PasswordInputSourceCandidate? passwordInputSource,
   }) {
     _generation++;
@@ -165,8 +169,32 @@ class GiftClaimFlowNotifier extends Notifier<GiftClaimFlowState?> {
       phase: GiftClaimPhase.inspected,
       inspection: inspection,
       setupPasscode: passcode,
+      setupPersona:
+          persona ??
+          (identical(state?.inspection, inspection)
+              ? state?.setupPersona
+              : null),
       setupPasswordInputSource: passwordInputSource,
       walletSetupInProgress: true,
+    );
+  }
+
+  /// Return from unsaved personalisation to the inspected Card.
+  void cancelWalletSetup(PaymentLinkClaimInspection inspection) {
+    if (!ref.mounted ||
+        state?.walletSetupInProgress != true ||
+        !identical(state?.inspection, inspection)) {
+      return;
+    }
+    if (state?.setupPasscode != null) {
+      finishWalletSetup(inspection);
+      return;
+    }
+    _generation++;
+    state = GiftClaimFlowState(
+      link: inspection.link,
+      phase: GiftClaimPhase.inspected,
+      inspection: inspection,
     );
   }
 

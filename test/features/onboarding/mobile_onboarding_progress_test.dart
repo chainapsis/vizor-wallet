@@ -7,36 +7,36 @@ import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_pr
 void main() {
   const expected = {
     OnboardingFlow.gift: [
-      OnboardingStage.passcode,
       OnboardingStage.customiseAccount,
+      OnboardingStage.passcode,
     ],
     OnboardingFlow.create: [
       OnboardingStage.addressTypes,
       OnboardingStage.thingsToKnow,
       OnboardingStage.secretPassphrase,
-      OnboardingStage.passcode,
       OnboardingStage.customiseAccount,
+      OnboardingStage.passcode,
     ],
     OnboardingFlow.importWallet: [
       OnboardingStage.phraseEntry,
       OnboardingStage.phraseReview,
       OnboardingStage.birthday,
-      OnboardingStage.passcode,
       OnboardingStage.customiseAccount,
+      OnboardingStage.passcode,
     ],
     OnboardingFlow.keystone: [
       OnboardingStage.deviceIntro,
       OnboardingStage.deviceScan,
       OnboardingStage.accountSelection,
       OnboardingStage.birthday,
-      OnboardingStage.passcode,
       OnboardingStage.customiseAccount,
+      OnboardingStage.passcode,
     ],
     OnboardingFlow.ledger: [
       OnboardingStage.deviceConnect,
       OnboardingStage.birthday,
-      OnboardingStage.passcode,
       OnboardingStage.customiseAccount,
+      OnboardingStage.passcode,
     ],
     OnboardingFlow.walletLink: [
       OnboardingStage.linkIntro,
@@ -90,7 +90,7 @@ void main() {
         closeTo(0.42176870748, 1e-10),
       );
       expect(
-        import.at(OnboardingStage.customiseAccount).value,
+        import.at(OnboardingStage.passcode).value,
         closeTo(0.88435374150, 1e-10),
       );
       final ledger = OnboardingProgressPlan.forFlow(

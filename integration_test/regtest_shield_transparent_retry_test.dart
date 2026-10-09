@@ -235,6 +235,7 @@ Future<void> _createFirstWallet(WidgetTester tester) async {
     tester,
     const ValueKey('create_secret_phrase_primary_button'),
   );
+  await finishDesktopAccountCustomisation(tester);
   await _enterText(
     tester,
     const ValueKey('set_password_password_field'),
@@ -250,7 +251,7 @@ Future<void> _createFirstWallet(WidgetTester tester) async {
     const ValueKey('set_password_submit_button'),
     timeout: const Duration(minutes: 4),
   );
-  await finishDesktopAccountCustomisation(tester);
+
   await _waitForHome(tester, timeout: const Duration(minutes: 4));
   _log('first wallet created');
 }

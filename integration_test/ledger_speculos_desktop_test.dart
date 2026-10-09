@@ -157,6 +157,15 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      await tester.enterText(
+        find.byKey(const ValueKey('customise_account_name_field')),
+        'Speculos Ledger',
+      );
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey('customise_account_finish_button')),
+      );
+      await tester.pumpAndSettle();
       expect(
         find.byKey(const ValueKey('set_password_password_field')),
         findsOneWidget,
@@ -175,14 +184,6 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.enterText(
-        find.byKey(const ValueKey('customise_account_name_field')),
-        'Speculos Ledger',
-      );
-      await tester.pump();
-      await tester.tap(
-        find.byKey(const ValueKey('customise_account_finish_button')),
-      );
       await _pumpUntil(
         tester,
         () =>

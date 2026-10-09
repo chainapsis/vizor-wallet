@@ -73,6 +73,7 @@ void main() {
         tester,
         const ValueKey('unknown_birthday_confirm_button'),
       );
+      await finishDesktopAccountCustomisation(tester);
       await enterAppText(
         tester,
         const ValueKey('set_password_password_field'),
@@ -85,7 +86,7 @@ void main() {
       );
       proxy.stallNextAddressUtxosStreamAfterHeaders();
       await tapAppButton(tester, const ValueKey('set_password_submit_button'));
-      await finishDesktopAccountCustomisation(tester);
+
 
       await pumpUntil(
         tester,

@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'mobile_onboarding_progress.dart';
 import 'mobile_onboarding_progress_scope.dart';
-import '../../../providers/app_security_provider.dart';
 import '../ledger/ledger_setup_args.dart';
 import '../shared/onboarding_flow_args.dart';
 import 'mobile_import_birthday_screen.dart';
@@ -32,14 +31,10 @@ class MobileLedgerBirthdayScreen extends ConsumerWidget {
           account: args.account,
           birthdayHeight: height,
         );
-        if (!ref.read(appSecurityProvider).isPasswordConfigured) {
-          context.pushOnboarding('/onboarding/set-passcode', extra: setupArgs);
-        } else {
-          context.pushOnboarding(
-            '/onboarding/customise-account',
-            extra: CustomiseAccountArgs(setupArgs: setupArgs),
-          );
-        }
+        context.pushOnboarding(
+          '/onboarding/customise-account',
+          extra: CustomiseAccountArgs(setupArgs: setupArgs),
+        );
       },
     );
   }
