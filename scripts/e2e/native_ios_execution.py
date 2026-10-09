@@ -96,10 +96,12 @@ def execute_native_ios_case(session, *, dart, source_root, timeout=600.0, cancel
         env={"PATH":"/usr/bin:/bin", "LANG":"en_US.UTF-8"},
         raw_lines=log_lines, max_output_bytes=8*1024*1024)
     app_lines = []
-    app = session.storage.start_app(timeout=min(30.0, timeout), cancel_event=cancel,
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise NativeIosExecutionError("native iOS integration deadline expired", 124)
+    app = session.storage.start_app(timeout=remaining, cancel_event=cancel,
         raw_lines=app_lines, max_output_bytes=8*1024*1024, phase=_phase,
         send_recipient=send_recipient)
-    startup_deadline = min(deadline, time.monotonic() + 30.0)
 
     def check():
         if cancel.is_set():
@@ -142,8 +144,6 @@ def execute_native_ios_case(session, *, dart, source_root, timeout=600.0, cancel
                 raise NativeIosExecutionError("original iOS VM endpoint is ambiguous")
             vm_url = urls[0]
             break
-        if time.monotonic() >= startup_deadline:
-            raise NativeIosExecutionError("original iOS app did not publish its VM endpoint")
         session._control.pump(deadline=deadline, cancel_event=cancel)
     driver_lines = []
     process = session.case.start_process([str(executable),

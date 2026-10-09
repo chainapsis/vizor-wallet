@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import sys
 import threading
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -72,19 +73,66 @@ class ExecutionFixture(unittest.TestCase):
             if self.mode == "flutter-logs":
                 self.log_lines.append(json.dumps({"eventMessage": "flutter: [E2E] ordinary diagnostic", "processID": pid}) + "\n")
             message = "The Dart VM service is listening on http://127.0.0.1:12345/model/"
-            self.log_lines.append(json.dumps({"eventMessage": message, "processID": pid}) + "\n")
+            event = json.dumps({"eventMessage": message, "processID": pid}) + "\n"
+            if self.mode == "late-vm":
+                self.vm_event = event
+            else:
+                self.log_lines.append(event)
         return managed
 
-    def execute(self, **kwargs):
+    def execute(self, timeout=15, **kwargs):
         with patch.object(self.session.case,"start_process",side_effect=self.launch), \
              patch.object(EXECUTE.runtime,"start_logged_process",side_effect=lambda command,**options:
                  self.model.native.real_start(command,**options) if command[0] == sys.executable
                  else self.model.native.start_sdk_console(command,**options)):
             return EXECUTE.execute_native_ios_case(self.session,dart=Path(sys.executable).resolve(),
-                source_root=self.source,timeout=15,**kwargs)
+                source_root=self.source,timeout=timeout,**kwargs)
 
 
 class ExecutionTests(ExecutionFixture):
+    def test_app_start_uses_remaining_whole_case_budget_not_thirty_seconds(self):
+        clock = [EXECUTE.time.monotonic()]
+        original = self.session.storage.start_app
+        def start_app(**options):
+            self.assertGreater(options["timeout"], 30)
+            app = original(**options)
+            clock[0] += 35
+            return app
+        with patch.object(EXECUTE, "time", SimpleNamespace(monotonic=lambda: clock[0])), \
+             patch.object(self.session.storage, "start_app", side_effect=start_app):
+            self.assertTrue(self.execute(timeout=120)["assertions_passed"])
+        self.session.close(timeout=15)
+        self.worker.close()
+
+    def test_vm_event_after_thirty_seconds_keeps_the_original_case_deadline(self):
+        self.mode = "late-vm"
+        clock = [EXECUTE.time.monotonic()]
+        pumps = [0]
+        def publish_vm(**options):
+            pumps[0] += 1
+            if pumps[0] == 1:
+                clock[0] += 35
+            elif pumps[0] == 2:
+                self.log_lines.append(self.vm_event)
+            else:
+                threading.Event().wait(0.005)
+        with patch.object(EXECUTE, "time", SimpleNamespace(monotonic=lambda: clock[0])), \
+             patch.object(self.session._control, "pump", side_effect=publish_vm):
+            self.assertTrue(self.execute(timeout=120)["assertions_passed"])
+        self.session.close(timeout=15)
+        self.worker.close()
+
+    def test_missing_vm_event_still_expires_at_the_whole_case_deadline(self):
+        self.mode = "late-vm"
+        clock = [EXECUTE.time.monotonic()]
+        def exhaust_budget(**options):
+            clock[0] += 121
+        with patch.object(EXECUTE, "time", SimpleNamespace(monotonic=lambda: clock[0])), \
+             patch.object(self.session._control, "pump", side_effect=exhaust_budget):
+            with self.assertRaisesRegex(EXECUTE.NativeIosExecutionError, "integration deadline expired"):
+                self.execute(timeout=120)
+        self.session.retain(timeout=15)
+
     def test_flutter_diagnostics_do_not_replace_the_original_vm_binding(self):
         self.mode = "flutter-logs"
         result = self.execute()
