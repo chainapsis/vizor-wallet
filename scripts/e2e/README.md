@@ -303,6 +303,9 @@ same case. Recovery delegates the original multi-block fork replacement and
 held-transaction release to the pinned fixture; it is not a one-tip substitute.
 Amounts, confirmation/finality, history and claim assertions remain in the tests.
 Clipboard sections serialize briefly; independent chain and wallet state do not.
+Restart and recovery have overall 30- and 32-minute app-execution budgets:
+their existing 15+10 and 15+12-minute test limits plus five minutes for the two
+launches, original stop/join and confirmation mining. Phase limits are unchanged.
 
 ```bash
 python3 -B scripts/e2e/run-suite.py \

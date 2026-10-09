@@ -2,6 +2,7 @@ import copy
 import json
 import math
 from pathlib import Path
+import re
 import sys
 import tempfile
 import unittest
@@ -115,6 +116,31 @@ class E2eCatalogTest(unittest.TestCase):
                           if item.engine == "flutter-macos" and not item.supported})
         self.assertTrue(all(not item.supported for item in self.catalog.scenarios
                             if item.engine == "flutter-ios"))
+
+    def test_gift_restart_budgets_cover_both_declared_phase_limits_and_handoff(self):
+        root = SCRIPT_DIR.parents[1]
+        phases = {
+            "flutter.macos.payment-link-restart": (
+                "regtest_payment_link_restart_prepare_test.dart",
+                "regtest_payment_link_restart_resume_test.dart"),
+            "flutter.macos.payment-link-recovery": (
+                "regtest_payment_link_failure_prepare_test.dart",
+                "regtest_payment_link_failure_reorg_resume_test.dart"),
+        }
+        for scenario_id, files in phases.items():
+            with self.subTest(scenario_id=scenario_id):
+                phase_seconds = 0
+                for filename in files:
+                    source = (root / "integration_test" / filename).read_text()
+                    minutes = re.findall(
+                        r"timeout:\s*const Timeout\(Duration\(minutes:\s*(\d+)\)\)", source)
+                    self.assertEqual(len(minutes), 1, filename)
+                    phase_seconds += int(minutes[0]) * 60
+                # Two app/driver startups, original stop/join, and stopped-app
+                # confirmation mining share the same overall case deadline.
+                self.assertGreaterEqual(
+                    self.catalog.scenarios_by_id[scenario_id].timeout_seconds,
+                    phase_seconds + 300)
 
     def test_exact_selection_deduplicates_in_catalog_order(self):
         selected = catalog_module.select_scenarios(

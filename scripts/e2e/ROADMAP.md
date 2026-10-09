@@ -251,6 +251,12 @@ checks passed and the public six-case preview reported ready with no blockers.
 These are incremental checks, not financial E2E results.
 The actual three-plus-three passes belong to two commits, not one final-source
 six-case/full-catalog pass, CPU/RAM measurement or comparative speedup result.
+Review follow-up corrects the two-phase overall app budgets to 30 minutes for
+restart and 32 for recovery: existing 15+10 and 15+12-minute test limits plus
+five minutes for launch/stop/join/mining. A regression reads both actual Dart
+phase declarations; forty-one focused catalog/CLI checks passed. No phase
+limit or assertion changed, and financial E2Es were not repeated for this
+catalog-only deadline correction.
 This functional group changes test/harness files only, not production source,
 dependencies or CI. Voting and iOS execution remain pending.
 

@@ -719,7 +719,7 @@
         "gift-card",
         "restart"
       ],
-      "timeout_seconds": 1200,
+      "timeout_seconds": 1800,
       "supported": true,
       "pending_reason": null
     },
@@ -737,7 +737,7 @@
         "reorg",
         "recovery"
       ],
-      "timeout_seconds": 1200,
+      "timeout_seconds": 1920,
       "supported": true,
       "pending_reason": null
     },
