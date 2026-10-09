@@ -39,6 +39,7 @@ class OwnedNativeZakuraBackend:
         self._failure = None
         self._ready = None
         self._front = None
+        self._control = None
         self._retention = None
         self._retention_attempted = False
 
@@ -128,6 +129,8 @@ class OwnedNativeZakuraBackend:
 
     def close(self):
         """Caller must stop SDK-native apps and seal/join original case writers."""
+        if self._control is not None and not self._control.closed:
+            raise NativeZakuraError("original control listener must close before backend deletion")
         if self._finished or self._case.accepting_launches or self._case._receipt is None:
             raise NativeZakuraError("backend finalization requires sealed original writers")
         self._finished = True
@@ -149,6 +152,8 @@ class OwnedNativeZakuraBackend:
 
     def retain(self):
         """Stop original Docker writers without permitting later deletion/retry."""
+        if self._control is not None and not self._control.closed:
+            raise NativeZakuraError("original control listener must close before backend retention")
         if self._case.accepting_launches:
             raise NativeZakuraError("backend retention requires sealed original writers")
         self._finished = True

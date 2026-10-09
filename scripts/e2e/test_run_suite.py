@@ -34,15 +34,19 @@ class PreviewTests(unittest.TestCase):
             code = CLI.main(arguments)
         return code, json.loads(output.getvalue()) if output.getvalue() else None, errors.getvalue()
 
-    def test_list_all_is_pending_inventory(self) -> None:
+    def test_list_inventory_marks_only_the_wired_scenarios_runnable(self) -> None:
         code, output, errors = self.invoke("--list")
         self.assertEqual((code, errors), (0, ""))
         self.assertEqual(len(output["scenarios"]), 64)
         self.assertEqual(output["catalog_sha256"], self.catalog.fingerprint)
+        wired_ids = {"flutter.macos.import-sync", "flutter.macos.fallback-endpoint",
+            "flutter.macos.custom-endpoint-no-fallback", "flutter.macos.slow-height-fallback",
+            "flutter.macos.sync-startup-stall-recovery"}
         for record in output["scenarios"]:
-            self.assertFalse(record["supported"])
-            self.assertFalse(record["runnable"])
-            self.assertTrue(record["pending_reason"])
+            wired = record["scenario_id"] in wired_ids
+            self.assertEqual(record["supported"], wired)
+            self.assertEqual(record["runnable"], wired)
+            self.assertEqual(bool(record["pending_reason"]), not wired)
 
     def test_exact_selection_deduplicates_in_catalog_order(self) -> None:
         first, second = self.catalog.scenarios[:2]
@@ -98,7 +102,7 @@ class PreviewTests(unittest.TestCase):
         self.assertEqual(output["execution_mode"], "blocked")
         self.assertFalse(output["runnable"])
         self.assertEqual(output["selection"]["impact"]["fallback_files"], ["unknown/runtime.file"])
-        self.assertEqual(len(output["selection"]["impact"]["coverage_gaps"]), 64)
+        self.assertEqual(len(output["selection"]["impact"]["coverage_gaps"]), 59)
 
     def test_shared_test_helper_selects_its_e2e_consumer(self) -> None:
         code, output, errors = self.invoke(
@@ -199,7 +203,50 @@ class PreviewTests(unittest.TestCase):
             code, output, error = self.invoke("--changed-from", "HEAD")
         self.assertEqual(code, 2)
         self.assertIsNone(output)
-        self.assertIn("execution is not available", error)
+        self.assertIn("execution requires --run", error)
+
+    def test_supported_case_is_ready_without_importing_its_backend(self) -> None:
+        code, output, errors = self.invoke("--scenario", "flutter.macos.import-sync", "--plan")
+        self.assertEqual((code, errors), (0, ""))
+        self.assertTrue(output["runnable"])
+        self.assertEqual(output["execution_mode"], "ready")
+        self.assertEqual(output["pending_blockers"], [])
+
+    def test_pending_run_is_refused_before_any_backend_import(self) -> None:
+        with patch.dict(sys.modules, {"native_macos_suite":None}):
+            code, output, error = self.invoke("--scenario", "rust.send.basic", "--run")
+        self.assertEqual(code, 2)
+        self.assertIsNone(output)
+        self.assertIn("selected execution is pending", error)
+
+    def test_explicit_run_passes_the_existing_selection_to_the_executor(self) -> None:
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        execute = Mock(return_value=0)
+        with patch.dict(sys.modules, {"native_macos_suite":SimpleNamespace(run_native_macos_suite=execute)}):
+            code, output, error = self.invoke("--scenario", "flutter.macos.import-sync", "--run")
+        self.assertEqual((code, output, error), (0, None, ""))
+        args, catalog, scenarios, selection = execute.call_args.args
+        self.assertTrue(args.run)
+        self.assertEqual([s.id for s in scenarios], ["flutter.macos.import-sync"])
+        self.assertEqual(selection["values"], ["flutter.macos.import-sync"])
+
+    def test_endpoint_selection_is_ready_and_reaches_the_existing_executor(self) -> None:
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        ids = ("flutter.macos.fallback-endpoint", "flutter.macos.custom-endpoint-no-fallback",
+            "flutter.macos.slow-height-fallback", "flutter.macos.sync-startup-stall-recovery")
+        arguments = tuple(value for name in ids for value in ("--scenario", name))
+        with patch.dict(sys.modules, {"native_macos_suite": None}):
+            code, plan, error = self.invoke(*arguments, "--plan")
+        self.assertEqual((code, error), (0, ""))
+        self.assertTrue(plan["runnable"])
+        self.assertEqual(plan["pending_blockers"], [])
+        execute = Mock(return_value=0)
+        with patch.dict(sys.modules, {"native_macos_suite": SimpleNamespace(run_native_macos_suite=execute)}):
+            code, output, error = self.invoke(*arguments, "--run")
+        self.assertEqual((code, output, error), (0, None, ""))
+        self.assertEqual({s.id for s in execute.call_args.args[2]}, set(ids))
 
     def test_previews_never_load_backends_start_processes_or_write_artifacts(self) -> None:
         original_import = builtins.__import__

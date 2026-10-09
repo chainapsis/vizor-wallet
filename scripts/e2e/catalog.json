@@ -13,8 +13,8 @@
     },
     {
       "id": "flutter-direct-height1",
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "flutter-direct-activation500",
@@ -412,8 +412,8 @@
         "import"
       ],
       "timeout_seconds": 1200,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "flutter.macos.fallback-endpoint",
@@ -429,8 +429,8 @@
         "fallback"
       ],
       "timeout_seconds": 1200,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "flutter.macos.custom-endpoint-no-fallback",
@@ -446,8 +446,8 @@
         "privacy"
       ],
       "timeout_seconds": 1200,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "flutter.macos.sync-startup-stall-recovery",
@@ -463,8 +463,8 @@
         "recovery"
       ],
       "timeout_seconds": 1200,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "flutter.macos.slow-height-fallback",
@@ -480,8 +480,8 @@
         "fallback"
       ],
       "timeout_seconds": 1200,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "flutter.macos.shield-transparent",

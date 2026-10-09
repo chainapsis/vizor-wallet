@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Preview catalogued E2E selections without starting execution backends."""
+"""Select E2Es without side effects, or explicitly run supported isolated cases."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ import e2e_impact
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Preview Vizor E2E selections; execution backends are not included yet"
+        description="Preview Vizor E2E selections or run supported isolated native cases"
     )
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument("--suite")
@@ -45,6 +45,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     display = parser.add_mutually_exclusive_group()
     display.add_argument("--list", action="store_true")
     display.add_argument("--plan", action="store_true")
+    display.add_argument("--run", action="store_true")
+    parser.add_argument("--flutter", type=Path)
+    parser.add_argument("--zakura-cache", type=Path)
+    parser.add_argument("--grpcurl", type=Path)
+    parser.add_argument("--proto-dir", type=Path)
+    parser.add_argument("--workers", type=int, default=1)
+    parser.add_argument("--repeat", type=int, default=1,
+                        help="fresh isolated repetitions, each with its own rerunnable report")
+    parser.add_argument("--build-jobs", type=int, default=4)
     return parser.parse_args(argv)
 
 
@@ -121,12 +130,22 @@ def _list_record(
 
 
 def run(args: argparse.Namespace) -> int:
-    if not (args.list or args.plan):
+    if not (args.list or args.plan or args.run):
         raise e2e_catalog.CatalogError(
-            "execution is not available in this slice; use --list or --plan"
+            "execution requires --run; use --list or --plan for a side-effect-free preview"
         )
     catalog = e2e_catalog.load_catalog()
     scenarios, selection = _select(args, catalog)
+    if args.run:
+        if not scenarios:
+            print(json.dumps({"selection":selection,"execution_mode":"no-tests","results":[]}))
+            return 0
+        plan = e2e_catalog.plan(catalog, scenarios)
+        if not plan.runnable:
+            raise e2e_catalog.CatalogError("selected execution is pending: " + "; ".join(plan.blockers))
+        # Keep all backend/platform imports out of side-effect-free previews.
+        from native_macos_suite import run_native_macos_suite
+        return run_native_macos_suite(args,catalog,scenarios,selection,source_root=REPO_ROOT)
     if args.list:
         record = {
             "catalog_sha256": catalog.fingerprint,
@@ -152,7 +171,7 @@ def run(args: argparse.Namespace) -> int:
             "required_profiles": list(plan.required_profiles) if plan else [],
             "required_targets": list(plan.required_targets) if plan else [],
             "runnable": plan.runnable if plan else False,
-            "execution_mode": "blocked" if scenarios else "no-tests",
+            "execution_mode": ("ready" if plan.runnable else "blocked") if scenarios else "no-tests",
             "pending_blockers": list(plan.blockers) if plan else [],
         }
     print(json.dumps(record, indent=2, sort_keys=True, allow_nan=False))
@@ -162,7 +181,7 @@ def run(args: argparse.Namespace) -> int:
 def main(argv: Sequence[str] | None = None) -> int:
     try:
         return run(parse_args(argv))
-    except (e2e_catalog.CatalogError, ValueError) as error:
+    except (e2e_catalog.CatalogError, ValueError, OSError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
 

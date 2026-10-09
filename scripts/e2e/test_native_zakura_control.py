@@ -1,0 +1,195 @@
+"""Real owned files/groups/HTTP; modeled Dart/node/native transport, not wallet PASS."""
+import http.client
+import json
+import os
+from pathlib import Path
+import sys
+import tempfile
+import threading
+import time
+import unittest
+from unittest.mock import patch
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+try:
+    import native_zakura_control as CONTROL
+    from native_ports import lease_native_ports
+    import test_native_zakura_front as FRONT_FIXTURES
+    from native_zakura_backend import NativeZakuraError
+finally:
+    sys.path.pop(0)
+
+
+class ControlTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix="vizor-control-owner-")
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name).resolve()
+        self.lease = lease_native_ports(0, "a1b2c3d4e5", lock_root=root / "ports")
+        self.addCleanup(self.lease.close)
+        self.model = FRONT_FIXTURES.FrontTests()
+        workspace_api = FRONT_FIXTURES.WORKSPACE
+        prepare = workspace_api.prepare_native_case_workspace
+        def with_ports(*args, **kwargs):
+            kwargs["ports"] = self.lease.ports
+            return prepare(*args, **kwargs)
+        with patch.object(workspace_api, "prepare_native_case_workspace", side_effect=with_ports):
+            self.model.setUp()
+        self.addCleanup(self.model.doCleanups)
+        self.case, self.backend = self.model.case, self.model.backend
+        self.front = self.model.prepare()
+        first, second = self.model.patches()
+        self.lease.release_sockets()
+        with first, second:
+            self.front.start()
+        self.control = None
+        self.addCleanup(self.close_control)
+        self.cancel = threading.Event()
+        self.calls = []
+
+    def close_control(self):
+        if self.backend._control is not None:
+            self.backend._control.close()
+
+    def prepare(self):
+        self.control = CONTROL.prepare_native_zakura_control(self.case, self.backend, self.front)
+        return self.control
+
+    def request(self, method, path, body=None, headers=None):
+        if self.control is None:
+            self.prepare()
+        result = []
+        failures = []
+        def client():
+            connection = http.client.HTTPConnection("127.0.0.1", self.lease.ports["rpc"], timeout=3)
+            try:
+                connection.request(method, path, body=body, headers=headers or {})
+                response = connection.getresponse()
+                result.append((response.status, response.read()))
+            except BaseException as error:
+                failures.append(error)
+            finally:
+                connection.close()
+        thread = threading.Thread(target=client)
+        thread.start()
+        deadline = time.monotonic() + 4
+        try:
+            while thread.is_alive():
+                self.control.pump(deadline=deadline, cancel_event=self.cancel)
+        finally:
+            thread.join(timeout=4)
+        if failures:
+            raise failures[0]
+        self.assertFalse(thread.is_alive())
+        return result[0]
+
+    def mine(self, count):
+        self.calls.append((count, threading.get_ident()))
+        return {"hashes":["34"*32]*count, "tip":{"height":1+count}}
+
+    def test_loopback_request_runs_mutation_only_on_original_owner(self):
+        self.backend.mine = self.mine
+        status, body = self.request("POST", "/mine", json.dumps({"blocks":2}))
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)["tip"]["height"], 3)
+        self.assertEqual(self.calls, [(2, threading.get_ident())])
+        self.assertEqual(self.control.url, f"http://127.0.0.1:{self.lease.ports['rpc']}")
+        self.assertFalse(self.backend.closed)
+        self.front.assert_running()
+
+    def test_status_and_health_use_original_front_and_parity(self):
+        self.backend.wait_synced = lambda **_kwargs: {"height":123, "consensus_branch_id":"e9ff75a6"}
+        self.assertEqual(json.loads(self.request("GET", "/health")[1]), {"ok":True})
+        status, body = self.request("GET", "/status")
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body), {"zcashdHeight":123,"lightwalletdHeight":123,
+            "ironwoodActivationHeight":1,"ironwoodActive":True,"consensusBranchId":"e9ff75a6"})
+
+    def test_wrong_body_path_json_and_funding_without_original_producer_do_not_mutate(self):
+        self.backend.mine = self.mine
+        for path, body in (("/mine", '{"blocks":true}'), ("/mine", '{"blocks":0}'),
+                ("/mine", '{"blocks":1,"blocks":2}'), ("/mine", '{"blocks":1.0}'),
+                ("/mine", '{"blocks":NaN}'), ("/mine", '[]'), ("/mine", '{"blocks":1,"extra":1}'),
+                ("/node/wallet/reset", '{}'), ("/mine?blocks=1", '{"blocks":1}'),
+                ("/fund-confirmed", '{"address":"public-model","amount_zatoshi":1,"source_height":1,"recipient_pool":"ironwood","confirmations":1}')):
+            with self.subTest(path=path, body=body):
+                self.assertEqual(self.request("POST", path, body)[0], 400)
+        self.assertEqual(self.calls, [])
+        self.assertIsNone(self.control._failure)
+
+    def test_bounded_header_and_body_fail_before_dispatch(self):
+        self.backend.mine = self.mine
+        self.assertEqual(self.request("GET", "/health", headers={"X-Too-Large":"x"*20000})[0], 431)
+        self.assertEqual(self.request("POST", "/mine", "", {"Content-Length":"65537"})[0], 400)
+        self.assertEqual(self.request("POST", "/mine", "{}", {"Transfer-Encoding":"chunked"})[0], 400)
+        self.assertEqual(self.calls, [])
+
+    def test_other_thread_cannot_pump_or_close_original_listener(self):
+        self.prepare()
+        failures = []
+        def other():
+            for action in (self.control.close, lambda:self.control.pump(
+                    deadline=time.monotonic()+1, cancel_event=self.cancel)):
+                try:
+                    action()
+                except CONTROL.NativeZakuraControlError as error:
+                    failures.append(error)
+        thread = threading.Thread(target=other)
+        thread.start()
+        thread.join(timeout=2)
+        self.assertEqual(len(failures), 2)
+        self.assertFalse(self.control.closed)
+        self.assertEqual(self.request("GET", "/health")[0], 200)
+
+    def test_original_owned_child_can_use_controls_while_drive_observes_it(self):
+        self.prepare()
+        self.backend.mine = self.mine
+        code = "import urllib.request; r=urllib.request.urlopen(urllib.request.Request("+repr(self.control.url+"/mine")+",data=b'{\"blocks\":2}')); print(r.read().decode())"
+        child = self.case.start_process([sys.executable, "-u", "-c", code], env=os.environ)
+        self.assertEqual(self.control.drive(child, timeout=4, cancel_event=self.cancel), 0)
+        self.assertTrue(child.cleanup_completed)
+        self.assertEqual(self.calls, [(2, threading.get_ident())])
+        self.assertFalse(self.control.closed)
+
+    def test_backend_close_is_blocked_until_original_control_socket_closes(self):
+        self.prepare()
+        self.case.close()
+        with self.assertRaisesRegex(NativeZakuraError, "control listener"):
+            self.backend.close()
+        self.control.close()
+        self.backend.close()
+        self.assertTrue(self.backend.closed)
+        self.assertTrue(self.control.closed)
+
+    def test_failed_bind_closes_partial_socket_and_remains_registered(self):
+        import socket
+        occupied = socket.socket()
+        self.addCleanup(occupied.close)
+        occupied.bind(("127.0.0.1", self.lease.ports["rpc"]))
+        occupied.listen()
+        with self.assertRaises(OSError):
+            self.prepare()
+        self.assertTrue(self.backend._control.closed)
+        self.assertEqual(self.backend._control._server.socket.fileno(), -1)
+        self.assertFalse(self.backend.closed)
+
+    def test_backend_value_error_is_failure_not_bad_client_input(self):
+        primary = ValueError("original backend failed")
+        def fail(_count):
+            raise primary
+        self.backend.mine = fail
+        with self.assertRaises(ValueError) as caught:
+            self.request("POST", "/mine", '{"blocks":1}')
+        self.assertIs(caught.exception, primary)
+        self.assertIs(self.control._failure, primary)
+
+    def test_precancellation_dispatches_nothing(self):
+        self.prepare()
+        self.cancel.set()
+        with self.assertRaises(CONTROL.runtime.Cancelled):
+            self.control.pump(deadline=time.monotonic()+1, cancel_event=self.cancel)
+        self.assertEqual(self.control._requests, 0)
+
+
+if __name__ == "__main__":
+    unittest.main()

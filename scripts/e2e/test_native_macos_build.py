@@ -1,0 +1,83 @@
+"""Real private source files; modeled SDK commands/signatures/native artifacts."""
+from pathlib import Path
+import os
+import sys
+import tempfile
+from types import SimpleNamespace
+import unittest
+from unittest.mock import patch
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import e2e_runtime as runtime
+import native_macos_build as BUILD
+from native_case_lifecycle import NativeCaseLifecycle
+from native_workspace import prepare_native_case_workspace
+
+
+class BuildTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory(prefix="native-build-model-")
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name).resolve()
+        self.source = self.root/"source"
+        self.source.mkdir(mode=0o700)
+        for name in ("macos/Runner.xcodeproj/project.pbxproj", "lib/app.dart",
+                     ".dart_tool/package_config.json", "bin/flutter"):
+            path = self.source/name
+            path.parent.mkdir(parents=True,exist_ok=True)
+            path.write_text("model source")
+            path.chmod(0o700)
+        self.project = self.source/"macos/Runner.xcodeproj/project.pbxproj"
+        self.case = NativeCaseLifecycle(prepare_native_case_workspace(self.root,platform="macos",
+            scenario_id="flutter.macos.native-build",run_id="abcdef0123",
+            worker_id=0,case_index=0,ports={"rpc":28232,"lwd":29067,"proxy":29068},activation_height=1))
+        self.mode = "same-project-bytes"
+
+    def command(self, arguments, **kwargs):
+        if "ls-files" in arguments:
+            return runtime.CommandResult(0,("lib/app.dart\0macos/Runner.xcodeproj/project.pbxproj\0",))
+        if "--target" in arguments:
+            # Reproduce the SDK's same-content metadata rewrite.
+            timestamp = self.project.stat().st_mtime_ns + 1_000_000
+            os.utime(self.project,ns=(timestamp,timestamp))
+            if self.mode == "changed-project-bytes":
+                self.project.write_text("changed project")
+            elif self.mode == "changed-wallet-source":
+                (self.source/"lib/app.dart").write_text("changed wallet")
+            app = self.source/"build/macos/Build/Products/Debug/Vizor.app/Contents"
+            app.mkdir(parents=True)
+            (app/"embedded.provisionprofile").write_text("modeled profile")
+        elif "--display" in arguments:
+            return runtime.CommandResult(0,("Authority=modeled identity",))
+        elif "swift" in arguments:
+            target = Path(arguments[arguments.index("--scratch-path")+1])/"debug"
+            target.mkdir(parents=True)
+            (target/"vizor-native-cleanup").write_text("modeled executable")
+        return runtime.CommandResult(0,())
+
+    def build(self):
+        captured = SimpleNamespace(team="MODEL",verify_unchanged=lambda:None)
+        with patch.object(self.case,"run_command",side_effect=self.command), \
+             patch.object(BUILD,"_inspect_signed_app",return_value=SimpleNamespace(team="MODEL")), \
+             patch.object(BUILD,"capture_mac_cleanup_helper",return_value=captured):
+            return BUILD.build_native_macos_cohort(self.case,source_root=self.source,
+                                                  flutter=self.source/"bin/flutter")
+
+    def test_sdk_project_metadata_rewrite_preserves_identical_input_bytes(self):
+        _,proof = self.build()
+        self.assertEqual(proof["app_build_count"],1)
+        self.assertFalse(proof["wallet_or_catalog_pass"])
+
+    def test_sdk_project_content_change_is_still_rejected(self):
+        self.mode = "changed-project-bytes"
+        with self.assertRaisesRegex(BUILD.NativeMacosBuildError,"project.pbxproj"):
+            self.build()
+
+    def test_wallet_source_content_change_is_still_rejected(self):
+        self.mode = "changed-wallet-source"
+        with self.assertRaisesRegex(BUILD.NativeMacosBuildError,"lib/app.dart"):
+            self.build()
+
+
+if __name__ == "__main__":
+    unittest.main()
