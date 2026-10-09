@@ -2,7 +2,7 @@
 
 For the planned isolated execution framework and direct Zakura migration, see
 the [E2E roadmap](ROADMAP.md). The roadmap tracks unmerged work. The isolated
-executor implements Rust receive/import/send and macOS import/endpoint cases;
+executor implements all catalog Rust cases and macOS import/endpoint cases;
 existing shell runners remain.
 
 The [native runtime contract](RUNTIME_CONTRACT.md) defines per-case launch
@@ -48,8 +48,8 @@ python3 -B -m unittest scripts/e2e/test_zakura_fixture_source.py
 ## Catalog previews
 
 `run-suite.py` provides a host-only inventory and selection preview. Of 64
-entries, twenty-one Rust receive/import/send/multi-account/Gift and five macOS
-import/endpoint cases are wired to the isolated executor; the other 38 stay pending.
+entries, all twenty-three Rust cases and five macOS import/endpoint cases
+are wired to the isolated executor; the other 36 stay pending.
 A preview exit code of 0 means the preview succeeded,
 not that any test ran or passed. Execution requires explicit `--run`.
 
@@ -157,7 +157,7 @@ This is in-process build reuse, not a persistent verified build cache. The
 other native/Rust scenarios, iOS execution, resource/performance comparison
 and final-source all-green catalog are still pending. No CI behavior changes.
 
-## Isolated Rust receive, import, send, multi-account and Gift execution
+## Isolated Rust execution
 
 The same coordinator runs `rust.receive.sync`, `rust.send.basic`,
 `rust.send.second-account` and the five `rust.import.*` cases for
@@ -178,7 +178,7 @@ worker queue. Only read-only executables are shared, never wallet DBs or chains.
 Rust execution currently targets the host macOS platform; it is not Linux coverage.
 
 The test-only common adapter validates its original manifest, configures the
-height-one profile, uses its case's LWD/control ports and creates DBs under its
+scenario-bound height-one or activation-500 profile, uses its case's LWD/control ports and creates DBs under its
 own wallet root. It rejects shared regtest shell scripts in isolated mode.
 Funding uses exact integer zatoshis, independent coinbase sources, the existing
 signer/inclusion oracles and ten confirmations. The original financial checks
@@ -231,8 +231,26 @@ python3 -B scripts/e2e/run-suite.py \
   --scenario rust.gift-card.empty-db-reuse --scenario rust.gift-card.competition --plan
 ```
 
-Add the documented tooling paths and change to `--run` for execution. The two
-Rust activation-500 Ironwood cases and all iOS execution remain pending.
+Add the documented tooling paths and change to `--run` for execution.
+
+The two `rust.ironwood.*` cases start before NU6.3 with activation fixed at
+height 500, not height one. Their independently signed Orchard funding is
+confirmed before activation. Migration retains denomination scheduling,
+planned change and fee checks. Gift retains the one-versus-two/six-confirmation
+policy, exact claim value, one-block reorg and discarded-versus-sender OVK checks.
+The original pinned fixture owns the donor node, replacement block/raw-transaction
+verification, captured held set, explicit release gate and all backend cleanup.
+The original control owner forwards those operations; it does not reconstruct
+ownership from JSON or implement a second reorg algorithm. Example preview:
+
+```bash
+python3 -B scripts/e2e/run-suite.py \
+  --scenario rust.ironwood.migration --scenario rust.ironwood.gift-card-claim --plan
+```
+
+Use `--run`, the tooling paths above and `--workers 2` to execute both with one
+Cargo signer/two-target build and independent chains/DBs. All iOS execution,
+15 macOS cases and persistent cache/resource/performance gates remain pending.
 
 ## Native port ownership primitive
 
@@ -251,7 +269,7 @@ fixture, but must be canonical, owned and not writable by other users. The actua
 are checked, never changed to make acquisition succeed.
 
 This library does not start a backend or wire an execution mode into
-`run-suite.py` by itself. Only the thirteen composed Rust/macOS cases above are
+`run-suite.py` by itself. Only the twenty-eight composed Rust/macOS cases above are
 runnable; other catalog cases remain pending. Process/workspace/simulator
 ownership and actual app-storage cleanup are separate follow-up work. Tests
 use private temporary directories, real ephemeral loopback sockets, and one

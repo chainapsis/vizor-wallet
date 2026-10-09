@@ -49,7 +49,8 @@ class PreviewTests(unittest.TestCase):
             "rust.multi-account.two-before-sync", "rust.multi-account.preserve-history",
             "rust.multi-account.isolated-balances", "rust.multi-account.idempotent-sync",
             "rust.receive.direct-zakura", "rust.import.direct-zakura", "rust.gift-card.tracking-multiple",
-            "rust.gift-card.empty-db-reuse", "rust.gift-card.competition"}
+            "rust.gift-card.empty-db-reuse", "rust.gift-card.competition",
+            "rust.ironwood.migration", "rust.ironwood.gift-card-claim"}
         for record in output["scenarios"]:
             wired = record["scenario_id"] in wired_ids
             self.assertEqual(record["supported"], wired)
@@ -110,7 +111,7 @@ class PreviewTests(unittest.TestCase):
         self.assertEqual(output["execution_mode"], "blocked")
         self.assertFalse(output["runnable"])
         self.assertEqual(output["selection"]["impact"]["fallback_files"], ["unknown/runtime.file"])
-        self.assertEqual(len(output["selection"]["impact"]["coverage_gaps"]), 38)
+        self.assertEqual(len(output["selection"]["impact"]["coverage_gaps"]), 36)
 
     def test_shared_test_helper_selects_its_e2e_consumer(self) -> None:
         code, output, errors = self.invoke(
@@ -222,7 +223,7 @@ class PreviewTests(unittest.TestCase):
 
     def test_pending_run_is_refused_before_any_backend_import(self) -> None:
         with patch.dict(sys.modules, {"native_macos_suite":None}):
-            code, output, error = self.invoke("--scenario", "rust.ironwood.migration", "--run")
+            code, output, error = self.invoke("--scenario", "flutter.ios.import-sync", "--run")
         self.assertEqual(code, 2)
         self.assertIsNone(output)
         self.assertIn("selected execution is pending", error)
@@ -287,6 +288,24 @@ class PreviewTests(unittest.TestCase):
         self.assertTrue(plan["runnable"])
         self.assertEqual(plan["pending_blockers"], [])
         self.assertEqual({s["scenario_id"] for s in plan["selected_scenarios"]}, ids)
+        execute = Mock(return_value=0)
+        with patch.dict(sys.modules, {"native_macos_suite": SimpleNamespace(run_native_suite=execute)}):
+            code, output, error = self.invoke(*arguments, "--run")
+        self.assertEqual((code, output, error), (0, None, ""))
+        self.assertEqual({s.id for s in execute.call_args.args[2]}, ids)
+
+    def test_ironwood_selection_is_ready_with_its_exact_controlled_profile(self) -> None:
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        ids = {"rust.ironwood.migration", "rust.ironwood.gift-card-claim"}
+        arguments = tuple(value for name in sorted(ids) for value in ("--scenario", name))
+        with patch.dict(sys.modules, {"native_macos_suite": None}):
+            code, plan, error = self.invoke(*arguments, "--plan")
+        self.assertEqual((code, error), (0, ""))
+        self.assertTrue(plan["runnable"])
+        self.assertEqual(plan["pending_blockers"], [])
+        self.assertEqual({s["scenario_id"] for s in plan["selected_scenarios"]}, ids)
+        self.assertEqual({s["profile"] for s in plan["selected_scenarios"]}, {"zakura-direct-activation500"})
         execute = Mock(return_value=0)
         with patch.dict(sys.modules, {"native_macos_suite": SimpleNamespace(run_native_suite=execute)}):
             code, output, error = self.invoke(*arguments, "--run")

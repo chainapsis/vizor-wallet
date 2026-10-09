@@ -60,6 +60,10 @@ impl IsolatedControl {
             manifest.primary_proxy_port,
             manifest.zcashd_rpc_port,
         ];
+        let activation = match manifest.scenario_id.as_str() {
+            "rust.ironwood.migration" | "rust.ironwood.gift-card-claim" => 500,
+            _ => 1,
+        };
         if manifest.schema_version != 1
             || !manifest.scenario_id.starts_with("rust.")
             || manifest.run_id.len() != 10
@@ -79,7 +83,7 @@ impl IsolatedControl {
             || ports[0] == ports[1]
             || ports[0] == ports[2]
             || ports[1] == ports[2]
-            || manifest.regtest_ironwood_activation_height != 1
+            || manifest.regtest_ironwood_activation_height != activation
             || !manifest.context_path.is_absolute()
             || manifest.context_path.file_name().and_then(|s| s.to_str())
                 != Some("native-context.json")
@@ -110,17 +114,30 @@ impl IsolatedControl {
         &self.wallet_root
     }
 
+    pub fn activation_height(&self) -> u32 {
+        self.manifest.regtest_ironwood_activation_height
+    }
+
     pub fn preflight(&self) {
         use rust_lib_zcash_wallet::api::{simple, wallet};
-        simple::configure_regtest_ironwood_activation_height(1).expect("case consensus profile");
+        let activation = u64::from(self.activation_height());
+        simple::configure_regtest_ironwood_activation_height(self.activation_height())
+            .expect("case consensus profile");
         let raw = self.request("GET", "/status", None);
         let observed = wallet::get_chain_upgrade_status(self.lightwalletd_url(), "regtest".into())
             .expect("owned lightwalletd preflight");
         assert_eq!(raw["zcashdHeight"].as_u64(), Some(observed.tip_height));
         assert_eq!(raw["lightwalletdHeight"], raw["zcashdHeight"]);
-        assert_eq!(raw["ironwoodActivationHeight"].as_u64(), Some(1));
-        assert_eq!(observed.nu6_3_activation_height, Some(1));
-        assert!(observed.ironwood_active_at_tip);
+        assert_eq!(raw["ironwoodActivationHeight"].as_u64(), Some(activation));
+        assert_eq!(observed.nu6_3_activation_height, Some(activation));
+        assert_eq!(
+            observed.ironwood_active_at_tip,
+            observed.tip_height >= activation
+        );
+        assert_eq!(
+            raw["ironwoodActive"].as_bool(),
+            Some(observed.ironwood_active_at_tip)
+        );
     }
 
     pub fn mine(&self, blocks: u32) {
@@ -136,6 +153,15 @@ impl IsolatedControl {
     }
 
     pub fn fund_confirmed(&mut self, address: &str, zatoshi: u64, confirmations: u32) -> Value {
+        self.fund_pool(address, zatoshi, confirmations, "ironwood")
+    }
+
+    pub fn fund_orchard(&mut self, address: &str, zatoshi: u64, confirmations: u32) -> Value {
+        assert_eq!(self.activation_height(), 500);
+        self.fund_pool(address, zatoshi, confirmations, "orchard")
+    }
+
+    fn fund_pool(&mut self, address: &str, zatoshi: u64, confirmations: u32, pool: &str) -> Value {
         assert!((1..=2_100_000_000_000_000).contains(&zatoshi));
         assert!((1..=1000).contains(&confirmations));
         let source = self.next_source;
@@ -145,11 +171,11 @@ impl IsolatedControl {
             "/fund-confirmed",
             Some(json!({
                 "address": address, "amount_zatoshi": zatoshi, "source_height": source,
-                "recipient_pool": "ironwood", "confirmations": confirmations,
+                "recipient_pool": pool, "confirmations": confirmations,
             })),
         );
         assert_eq!(result["amount_zatoshi"].as_u64(), Some(zatoshi));
-        assert_eq!(result["pool"].as_str(), Some("ironwood"));
+        assert_eq!(result["pool"].as_str(), Some(pool));
         assert_eq!(result["source_height"].as_u64(), Some(u64::from(source)));
         assert_eq!(result["schema_version"].as_u64(), Some(1));
         assert_eq!(
@@ -163,6 +189,58 @@ impl IsolatedControl {
             .filter(|txid| txid.len() == 64 && txid.bytes().all(|b| b.is_ascii_hexdigit()))
             .expect("direct inclusion oracle transaction id");
         result
+    }
+
+    pub fn activate(&self) {
+        assert_eq!(self.activation_height(), 500);
+        let result = self.request("POST", "/activate", Some(json!({})));
+        assert_eq!(result["tip"]["height"].as_u64(), Some(500));
+        assert_eq!(
+            result["tip"]["consensus_branch_id"].as_str(),
+            Some("37a5165b")
+        );
+        self.preflight();
+    }
+
+    pub fn reorg_tip(&self, required: &[String]) -> Value {
+        assert_eq!(self.activation_height(), 500);
+        let before = self.request("GET", "/status", None)["zcashdHeight"]
+            .as_u64()
+            .expect("pre-reorg height");
+        let result = self.request(
+            "POST",
+            "/reorg-hold-tip",
+            Some(json!({"required_txids": required})),
+        );
+        assert_eq!(result["old_tip_height"].as_u64(), Some(before));
+        assert_eq!(result["fork_height"].as_u64(), Some(before - 1));
+        assert_eq!(result["new_tip_height"].as_u64(), Some(before + 1));
+        assert_eq!(result["invalidated_hash"], result["old_tip_hash"]);
+        let replacements = result["replacement_hashes"]
+            .as_array()
+            .expect("replacement blocks");
+        assert_eq!(replacements.len(), 2);
+        assert_ne!(replacements[0], replacements[1]);
+        assert_eq!(replacements[1], result["new_tip_hash"]);
+        let held = result["held_txids"]
+            .as_array()
+            .expect("original captured held transactions");
+        assert!(required
+            .iter()
+            .all(|txid| held.iter().any(|value| value.as_str() == Some(txid))));
+        let after = self.request("GET", "/status", None);
+        assert_eq!(after["zcashdHeight"].as_u64(), Some(before + 1));
+        result
+    }
+
+    pub fn release_held(&self, txids: &[String]) {
+        assert_eq!(self.activation_height(), 500);
+        let result = self.request("POST", "/release-held", Some(json!({"txids": txids})));
+        let mut expected = txids.to_vec();
+        expected.sort();
+        assert_eq!(result["released_txids"], json!(expected));
+        let status = self.request("GET", "/status", None);
+        assert_eq!(result["tip_height"], status["zcashdHeight"]);
     }
 
     fn request(&self, method: &str, path: &str, payload: Option<Value>) -> Value {
@@ -309,6 +387,31 @@ mod tests {
             wallet.parent().unwrap().to_path_buf()
         )
         .is_err());
+    }
+
+    #[test]
+    fn controlled_activation_is_bound_to_exact_ironwood_scenarios() {
+        let (_directory, mut manifest, wallet) = manifest();
+        for scenario in ["rust.ironwood.migration", "rust.ironwood.gift-card-claim"] {
+            manifest["scenario_id"] = json!(scenario);
+            manifest["regtest_ironwood_activation_height"] = json!(500);
+            let control = IsolatedControl::parse(
+                &manifest.to_string(),
+                "vizor_a1b2c3d4e5_w2_1",
+                wallet.clone(),
+            )
+            .unwrap();
+            assert_eq!(control.activation_height(), 500);
+            for invalid in [1, 499, 501] {
+                manifest["regtest_ironwood_activation_height"] = json!(invalid);
+                assert!(IsolatedControl::parse(
+                    &manifest.to_string(),
+                    "vizor_a1b2c3d4e5_w2_1",
+                    wallet.clone()
+                )
+                .is_err());
+            }
+        }
     }
 
     #[test]

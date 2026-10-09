@@ -157,8 +157,8 @@ class FunderBuildTests(unittest.TestCase):
         evidence["rust_blobs"].clear()
         self.assertEqual(len(artifact.identity()["rust_blobs"]), 3)
 
-    def add_test_sources(self):
-        for name in ("regtest_receive_sync", "regtest_send"):
+    def add_test_sources(self, names=("regtest_receive_sync", "regtest_send")):
+        for name in names:
             path = self.source / f"rust/tests/{name}.rs"
             path.parent.mkdir(mode=0o700, exist_ok=True)
             path.write_text("#[test] fn model() {}\n")
@@ -179,6 +179,15 @@ class FunderBuildTests(unittest.TestCase):
         test.write_text("changed")
         with self.assertRaises(BUILD.FunderBuildError):
             artifact.verify_unchanged()
+
+    def test_existing_ironwood_targets_share_one_original_build(self):
+        targets = ("ironwood_regtest_migration", "ironwood_regtest_gift_card_claim")
+        self.add_test_sources(targets)
+        artifact = self.build(test_targets=targets)
+        self.assertEqual(self.compile_calls, 1)
+        self.assertEqual(set(artifact.identity()["test_binaries"]), set(targets))
+        for target in targets:
+            self.assertEqual(artifact.test_binary(target).stat().st_mode & 0o777, 0o500)
 
     def test_missing_wrong_profile_or_wrong_source_test_output_never_publishes(self):
         self.add_test_sources()
