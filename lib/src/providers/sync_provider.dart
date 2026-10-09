@@ -970,7 +970,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     if (queued == null || !ref.mounted) return;
     log('Sync: starting the queued ${queued.forced ? 'forced ' : ''}sync');
     if (queued.forced) {
-      unawaited(startSyncAnyway());
+      // The highest tip any coalesced request observed carries over.
+      unawaited(startSyncAnyway(latestTipHeight: queued.latestTipHeight));
     } else {
       startSync(latestTipHeight: queued.latestTipHeight);
     }
@@ -1914,14 +1915,14 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   /// Recovery path for cases like unlock-after-sign-out where a previous
   /// sync has already been cancelled, but Rust is still unwinding.
-  Future<void> startSyncAnyway() async {
+  Future<void> startSyncAnyway({int? latestTipHeight}) async {
     if (_isShuttingDown) return;
     if (_requiresUnlock) {
       log('Sync: locked, skipping forced foreground sync start');
       return;
     }
     if (_syncSub != null) {
-      _queueSyncStart(forced: true);
+      _queueSyncStart(forced: true, latestTipHeight: latestTipHeight);
       return;
     }
     if (_isSyncing) {
@@ -1962,7 +1963,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       return;
     }
 
-    startSync();
+    startSync(latestTipHeight: latestTipHeight);
     _startPolling();
   }
 
@@ -2099,6 +2100,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   /// is still deferred to the last exit as usual.
   void endWalletMutationPause() {
     _walletResetEpoch++;
+    // The applied policy belonged to the wallet just reset; a replacement
+    // wallet reports its own.
+    _appliedTransparentPolicy = null;
     _pendingMutationRestartSync = false;
     _pendingMutationRestartPolling = false;
     _endWalletMutationPause(resume: false);

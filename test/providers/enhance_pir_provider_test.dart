@@ -156,7 +156,9 @@ class _Background {
   final List<String> events;
   bool failEnable = false;
   bool failDisable = false;
+  Completer<void>? stall;
   Future<void> call(bool enabled) async {
+    await stall?.future;
     if (enabled ? failEnable : failDisable) {
       throw StateError('native unavailable');
     }
@@ -789,6 +791,50 @@ void main() {
     addTearDown(container.dispose);
     expect(container.read(enhancePirProvider), isTrue);
   });
+  test(
+    'a lowering is adopted before the native sink or marker is awaited',
+    () async {
+      final events = <String>[];
+      final store = _Store()..events = events;
+      final background = _Background(events)..stall = Completer<void>();
+      final sync = _Sync()..gate.complete();
+      final container = setup(
+        store,
+        sync,
+        initialEnabled: true,
+        background: background,
+      );
+      addTearDown(container.dispose);
+
+      final change = container.read(enhancePirProvider.notifier).set(false);
+      await pumpEventQueue();
+      // The native sink is still stalled, but the lowered policy already
+      // drives demotion.
+      expect(
+        sync.appliedTransparentPolicy?.mode,
+        ApiTransparentLedgerMode.public,
+      );
+      background.stall!.complete();
+      await change;
+    },
+  );
+
+  test('a wallet reset forgets the applied policy of the old wallet', () async {
+    final sync = _Sync()..gate.complete();
+    final container = setup(_Store(), sync, initialEnabled: true);
+    addTearDown(container.dispose);
+    await container.read(syncProvider.future);
+    sync.adoptAppliedTransparentPolicy(
+      ApiAppliedTransparentPolicy(
+        mode: ApiTransparentLedgerMode.privateRequired,
+        generation: BigInt.from(7),
+      ),
+    );
+    sync.pauseForWalletMutation();
+    sync.endWalletMutationPause();
+    expect(sync.appliedTransparentPolicy, isNull);
+  });
+
   test('disabling commits even when background work stays private', () async {
     final events = <String>[];
     final store = _Store()..events = events;

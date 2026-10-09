@@ -79,6 +79,20 @@ pub(crate) async fn set_transparent_policy(
     Ok(applied)
 }
 
+/// The durable policy of the wallet at `db_path`, read without creating or
+/// changing anything; `None` when there is no wallet.
+pub(crate) fn current_transparent_policy(
+    db_path: &str,
+    network: WalletNetwork,
+) -> Result<Option<AppliedTransparentPolicy>, SyncError> {
+    let Some(mut db) = open_policy_wallet(db_path, network)? else {
+        return Ok(None);
+    };
+    // Any configured mode reads the stored policy as it is.
+    db.set_transparent_ledger_mode(TransparentLedgerMode::PrivateRequired);
+    applied_policy(&db).map(Some)
+}
+
 /// Opens the wallet at `db_path` for a policy transition without ever
 /// creating one: a wallet reset may delete the file between any check and the
 /// open, and a transition must not leave an empty database in its place.

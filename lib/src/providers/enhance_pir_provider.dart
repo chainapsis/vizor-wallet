@@ -263,10 +263,13 @@ class EnhancePirNotifier extends Notifier<bool> {
     }
     rust_sync.setEnhancePirEnabled(enabled: false);
     state = false;
-    rust_sync.ApiAppliedTransparentPolicy? applied;
     String? outcome;
     try {
-      applied = await reconcile(false);
+      // Adopted at once, before any further wait, so the visible state and
+      // the account-switch cache demote as soon as the policy changed.
+      ref
+          .read(syncProvider.notifier)
+          .adoptAppliedTransparentPolicy(await reconcile(false));
     } catch (error) {
       // Lowering changes nothing on failure: the durable private policy still
       // governs every transparent lookup, so none goes out publicly. The
@@ -284,7 +287,6 @@ class EnhancePirNotifier extends Notifier<bool> {
     }
     if (outcome != null) return outcome;
     await _clearOptOutMarker();
-    ref.read(syncProvider.notifier).adoptAppliedTransparentPolicy(applied);
     return null;
   }
 

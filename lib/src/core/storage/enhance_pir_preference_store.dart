@@ -92,11 +92,28 @@ class SharedPreferencesTransparentOptOutStore
   @override
   Future<void> writePending(bool pending) async {
     final preferences = await SharedPreferences.getInstance();
-    final saved = pending
-        ? await preferences.setBool(kTransparentOptOutPendingKey, true)
-        : await preferences.remove(kTransparentOptOutPendingKey);
-    if (!saved) {
-      throw StateError('Could not save the private queries opt-out.');
+    final previous = preferences.getBool(kTransparentOptOutPendingKey);
+    try {
+      final saved = pending
+          ? await preferences.setBool(kTransparentOptOutPendingKey, true)
+          : await preferences.remove(kTransparentOptOutPendingKey);
+      if (!saved) {
+        throw StateError('Could not save the private queries opt-out.');
+      }
+    } catch (_) {
+      // SharedPreferences changes its memory cache before the platform write.
+      // Restore that cache to the last committed value, so a read in this
+      // launch never reports an intent that was not saved.
+      try {
+        if (previous == null) {
+          await preferences.remove(kTransparentOptOutPendingKey);
+        } else {
+          await preferences.setBool(kTransparentOptOutPendingKey, previous);
+        }
+      } catch (_) {
+        // Preserve the original write failure.
+      }
+      rethrow;
     }
   }
 }

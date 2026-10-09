@@ -278,6 +278,8 @@ void main() {
     await api.finish(0);
     await pumpEventQueue();
     expect(api.syncs, hasLength(2));
+    // The forced drain keeps the highest tip a coalesced request observed.
+    expect(sync.state.requireValue.chainTipHeight, 101);
   });
 
   test('stopping sync discards the queued start', () async {

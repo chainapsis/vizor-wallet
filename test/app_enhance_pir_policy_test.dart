@@ -128,11 +128,12 @@ void main() {
     test('is finished at startup and its marker cleared', () async {
       optOut.value = true;
       await apply(_ready(enabled: false));
+      // The opt-out finishes before the runtime takes the public setting.
       expect(applied, [
-        'rust:false',
-        'confirmed:true',
         'reconcile:false',
         'optout:false',
+        'rust:false',
+        'confirmed:true',
         'native:false',
         'companions',
       ]);
@@ -145,9 +146,9 @@ void main() {
       failLower = true;
       await apply(_ready(enabled: false));
       expect(applied, [
+        'reconcile:false',
         'rust:false',
         'confirmed:true',
-        'reconcile:false',
         'native:false',
         'companions',
       ]);

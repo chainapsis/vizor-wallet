@@ -99,11 +99,14 @@ impl From<zcash_client_backend::data_api::transparent_ledger::AppliedTransparent
 
 /// Reconcile the wallet's durable transparent policy with the private queries
 /// setting. `true` raises it to private recovery when this build selects that
-/// mode; `false` lowers it to public in every build. Returns the policy this
-/// call applied, mode and generation, or `None` when nothing needed to change.
-/// Waits up to 30 s for public lookups already in flight, and changes nothing
-/// on failure. A missing wallet is left alone and never created. It never
-/// confirms the setting: callers do that only for a value read from storage.
+/// mode; `false` lowers it to public in every build. Returns the wallet's
+/// resulting durable policy, mode and generation, whether this call changed it
+/// or found it already so (another connection may have changed it meanwhile),
+/// so the caller always adopts what holds now; `None` only when there is no
+/// wallet. Waits up to 30 s for public lookups already in flight, and changes
+/// nothing on failure. A missing wallet is left alone and never created. It
+/// never confirms the setting: callers do that only for a value read from
+/// storage.
 pub fn reconcile_transparent_policy(
     db_path: String,
     network: String,
@@ -120,7 +123,12 @@ pub fn reconcile_transparent_policy(
                 sync_engine::enhancement::private_transparent_recovery(),
             ))
             .map_err(|e| e.to_string())?;
-        Ok(applied.map(ApiAppliedTransparentPolicy::from))
+        let resulting = match applied {
+            Some(applied) => Some(applied),
+            None => sync_engine::transparent_ledger::current_transparent_policy(&db_path, network)
+                .map_err(|e| e.to_string())?,
+        };
+        Ok(resulting.map(ApiAppliedTransparentPolicy::from))
     })
 }
 

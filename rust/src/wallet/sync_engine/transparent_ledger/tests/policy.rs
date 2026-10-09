@@ -376,14 +376,29 @@ async fn the_bridge_reports_the_applied_policy_and_generation() {
             generation: before.generation + 1,
         })
     );
-    // Already public: nothing applied.
-    let again = tokio::task::spawn_blocking(move || {
-        crate::api::sync::reconcile_transparent_policy(path, "main".into(), false)
-    })
-    .await
-    .unwrap()
-    .unwrap();
-    assert_eq!(again, None);
+    let reconcile_off = |path: String| {
+        tokio::task::spawn_blocking(move || {
+            crate::api::sync::reconcile_transparent_policy(path, "main".into(), false)
+        })
+    };
+    // Already public: nothing applied, and the resulting policy is still
+    // reported, so a caller holding a stale private policy replaces it.
+    assert_eq!(reconcile_off(path.clone()).await.unwrap().unwrap(), lowered);
+    // Another connection raises and lowers it meanwhile: the same-mode
+    // reconcile reports that connection's newer generation.
+    apply_on(&path, MAIN, TransparentLedgerMode::PrivateRequired);
+    apply_on(&path, MAIN, TransparentLedgerMode::Public);
+    assert_eq!(
+        reconcile_off(path.clone()).await.unwrap().unwrap(),
+        Some(ApiAppliedTransparentPolicy {
+            mode: ApiTransparentLedgerMode::Public,
+            generation: before.generation + 3,
+        })
+    );
+    // Only a missing wallet reports none, and nothing is created.
+    let missing = format!("{path}.missing");
+    assert_eq!(reconcile_off(missing.clone()).await.unwrap().unwrap(), None);
+    assert!(!std::path::Path::new(&missing).exists());
 }
 
 /// The fence itself, including giving up after the drain bound, is covered

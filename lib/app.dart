@@ -287,12 +287,15 @@ Future<void> applyEnhancePirPolicy(
   final saved = bootstrap.enhancePirEnabled;
   final enabled =
       (saved ?? true) && isEnhancePirAvailableForNetwork(bootstrap.network);
-  (setRustEnabled ??
-      (enabled) => rust_sync.setEnhancePirEnabled(enabled: enabled))(enabled);
-  (setPreferenceConfirmed ??
-      (confirmed) => rust_sync.setEnhancePirPreferenceConfirmed(
-        confirmed: confirmed,
-      ))(saved != null);
+  void applyRuntimeSetting() {
+    (setRustEnabled ??
+        (enabled) => rust_sync.setEnhancePirEnabled(enabled: enabled))(enabled);
+    (setPreferenceConfirmed ??
+        (confirmed) => rust_sync.setEnhancePirPreferenceConfirmed(
+          confirmed: confirmed,
+        ))(saved != null);
+  }
+
   final reconcile =
       reconcileTransparentPolicy ??
       walletTransparentPolicyReconciler(bootstrap.network);
@@ -306,6 +309,8 @@ Future<void> applyEnhancePirPolicy(
   rust_sync.ApiAppliedTransparentPolicy? applied;
   var optOutUnfinished = false;
   if (saved == false && optOutPending == true) {
+    // Finish the opt-out before the runtime switches to the public setting.
+    // Should it fail, the durable private policy keeps governing every lookup.
     try {
       applied = await reconcile(false);
       try {
@@ -318,12 +323,16 @@ Future<void> applyEnhancePirPolicy(
       optOutUnfinished = true;
       log('bootstrap: could not finish the private queries opt-out: $error');
     }
+    applyRuntimeSetting();
   } else if (enabled && saved == true) {
+    applyRuntimeSetting();
     try {
       applied = await reconcile(true);
     } catch (error) {
       log('bootstrap: could not apply private transparent policy: $error');
     }
+  } else {
+    applyRuntimeSetting();
   }
   TransparentPolicyStartup.current = TransparentPolicyStartup(
     appliedPolicy: applied,
