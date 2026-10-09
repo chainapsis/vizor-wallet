@@ -24,9 +24,7 @@ void main() {
 
   for (final name in <String?>[null, '']) {
     test('a missing recorded wallet ($name) never generates a path', () async {
-      FlutterSecureStorage.setMockInitialValues({
-        if (name != null) kWalletDbNameKey: name,
-      });
+      FlutterSecureStorage.setMockInitialValues({kWalletDbNameKey: ?name});
       final store = AppSecureStore.testing(
         storage: const FlutterSecureStorage(),
       );

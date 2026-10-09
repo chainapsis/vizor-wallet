@@ -70,22 +70,20 @@ pub enum ApiTransparentLedgerMode {
     PrivateRequired,
 }
 
-/// The wallet's durable transparent policy after a reconciliation.
+/// The durable transparent policy a reconciliation applied.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ApiAppliedTransparentPolicy {
     pub mode: ApiTransparentLedgerMode,
     /// Advances on every mode transition. Anything read under an earlier
     /// generation was authorized by a policy that no longer holds.
     pub generation: u64,
-    /// Whether this reconciliation changed the policy. When it did not, the
-    /// policy is reported as found, which another connection may have changed.
-    pub changed: bool,
 }
 
-impl ApiAppliedTransparentPolicy {
-    fn new(
+impl From<zcash_client_backend::data_api::transparent_ledger::AppliedTransparentPolicy>
+    for ApiAppliedTransparentPolicy
+{
+    fn from(
         applied: zcash_client_backend::data_api::transparent_ledger::AppliedTransparentPolicy,
-        changed: bool,
     ) -> Self {
         use zcash_client_backend::data_api::transparent_ledger::TransparentLedgerMode;
         Self {
@@ -95,7 +93,6 @@ impl ApiAppliedTransparentPolicy {
                 TransparentLedgerMode::PrivateRequired => ApiTransparentLedgerMode::PrivateRequired,
             },
             generation: applied.generation,
-            changed,
         }
     }
 }
@@ -126,12 +123,12 @@ pub fn reconcile_transparent_policy(
                 sync_engine::enhancement::private_transparent_recovery(),
             ))
             .map_err(|e| e.to_string())?;
-        Ok(match applied {
-            Some(applied) => Some(ApiAppliedTransparentPolicy::new(applied, true)),
+        let resulting = match applied {
+            Some(applied) => Some(applied),
             None => sync_engine::transparent_ledger::current_transparent_policy(&db_path, network)
-                .map_err(|e| e.to_string())?
-                .map(|found| ApiAppliedTransparentPolicy::new(found, false)),
-        })
+                .map_err(|e| e.to_string())?,
+        };
+        Ok(resulting.map(ApiAppliedTransparentPolicy::from))
     })
 }
 

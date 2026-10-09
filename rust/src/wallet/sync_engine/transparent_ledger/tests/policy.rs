@@ -374,7 +374,6 @@ async fn the_bridge_reports_the_applied_policy_and_generation() {
         Some(ApiAppliedTransparentPolicy {
             mode: ApiTransparentLedgerMode::Public,
             generation: before.generation + 1,
-            changed: true,
         })
     );
     let reconcile_off = |path: String| {
@@ -386,10 +385,7 @@ async fn the_bridge_reports_the_applied_policy_and_generation() {
     // reported, so a caller holding a stale private policy replaces it.
     assert_eq!(
         reconcile_off(path.clone()).await.unwrap().unwrap(),
-        lowered.map(|applied| ApiAppliedTransparentPolicy {
-            changed: false,
-            ..applied
-        })
+        lowered.map(|applied| ApiAppliedTransparentPolicy { ..applied })
     );
     // Another connection raises and lowers it meanwhile: the same-mode
     // reconcile reports that connection's newer generation.
@@ -400,7 +396,6 @@ async fn the_bridge_reports_the_applied_policy_and_generation() {
         Some(ApiAppliedTransparentPolicy {
             mode: ApiTransparentLedgerMode::Public,
             generation: before.generation + 3,
-            changed: false,
         })
     );
     // Only a missing wallet reports none, and nothing is created.

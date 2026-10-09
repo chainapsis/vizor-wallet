@@ -10177,11 +10177,9 @@ impl SseDecode for crate::api::sync::ApiAppliedTransparentPolicy {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_mode = <crate::api::sync::ApiTransparentLedgerMode>::sse_decode(deserializer);
         let mut var_generation = <u64>::sse_decode(deserializer);
-        let mut var_changed = <bool>::sse_decode(deserializer);
         return crate::api::sync::ApiAppliedTransparentPolicy {
             mode: var_mode,
             generation: var_generation,
-            changed: var_changed,
         };
     }
 }
@@ -15424,7 +15422,6 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::ApiAppliedTransparentPo
         [
             self.mode.into_into_dart().into_dart(),
             self.generation.into_into_dart().into_dart(),
-            self.changed.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -20094,7 +20091,6 @@ impl SseEncode for crate::api::sync::ApiAppliedTransparentPolicy {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <crate::api::sync::ApiTransparentLedgerMode>::sse_encode(self.mode, serializer);
         <u64>::sse_encode(self.generation, serializer);
-        <bool>::sse_encode(self.changed, serializer);
     }
 }
 

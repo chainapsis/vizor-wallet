@@ -90,7 +90,6 @@ rust_sync.ApiAppliedTransparentPolicy _policy(
 ) => rust_sync.ApiAppliedTransparentPolicy(
   mode: mode,
   generation: BigInt.from(generation),
-  changed: true,
 );
 
 class _EnhancePir extends EnhancePirNotifier {
@@ -566,6 +565,41 @@ void main() {
           await container.read(syncProvider.future),
           shielded: BigInt.zero,
         );
+      },
+    );
+
+    test(
+      'a no-op startup reconciliation demotes a snapshot without its generation',
+      () async {
+        for (final mode in rust_sync.ApiTransparentLedgerMode.values) {
+          final container = ProviderContainer(
+            overrides: [
+              appBootstrapProvider.overrideWithValue(
+                _bootstrapWith(_publicSnapshot(private: true)),
+              ),
+              accountProvider.overrideWith(_Accounts.new),
+              enhancePirProvider.overrideWith(() => _EnhancePir(false)),
+              transparentPolicyStartupProvider.overrideWithValue(
+                TransparentPolicyStartup(
+                  appliedPolicy: rust_sync.ApiAppliedTransparentPolicy(
+                    mode: mode,
+                    generation: BigInt.from(9),
+                  ),
+                ),
+              ),
+              syncProvider.overrideWith(
+                () => _LiveSync(privateTransparentRecovery: false),
+              ),
+            ],
+          );
+          addTearDown(container.dispose);
+          addTearDown(pumpEventQueue);
+          container.listen(syncProvider, (_, _) {});
+          _expectDemoted(
+            await container.read(syncProvider.future),
+            shielded: BigInt.zero,
+          );
+        }
       },
     );
 

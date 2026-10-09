@@ -1287,9 +1287,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         ? initialState.carryingTransparentAuthority(
             privatePolicyMayApply: _privatePolicyMayApply,
             crossesTip: false,
-            // Only a policy startup actually changed invalidates the snapshot;
-            // one it found unchanged is the policy the snapshot was read under.
-            policyChanged: startupApplied?.changed ?? false,
+            // Bootstrap has no policy generation. Reconciliation may find a
+            // generation another connection changed after the snapshot read,
+            // even when it makes no change itself.
+            policyChanged: startupApplied != null,
           )
         : initialState;
   }

@@ -227,6 +227,32 @@ fn count(path: &str, sql: &str) -> i64 {
 /// from [`paused_wallet`]), and every other fixture holds a shared guard.
 static SERIAL: std::sync::RwLock<()> = std::sync::RwLock::new(());
 
+/// Paused time must not race writers in other test modules. Even a brief real
+/// lock hold lets Tokio advance an idle runtime through the whole run budget.
+/// Run these cases alone in a child test process, retaining their real budget
+/// and cancellation assertions (including deliberately blocked writers).
+fn isolated_paused_test(test: &str) -> bool {
+    let module = module_path!().split_once("::").unwrap().1;
+    let name = format!("{module}::{test}");
+    const MARKER: &str = "VIZOR_TEST_PROCESS";
+    if std::env::var(MARKER).as_deref() == Ok(name.as_str()) {
+        return false;
+    }
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", name.as_str(), "--test-threads=1"])
+        .env(MARKER, &name)
+        .output()
+        .expect("start isolated paused-clock test");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success() && stdout.contains("1 passed; 0 failed; 0 ignored"),
+        "isolated {name} failed or selected no test:\n{}\n{}",
+        stdout,
+        String::from_utf8_lossy(&output.stderr),
+    );
+    true
+}
+
 fn paused_writer() -> std::sync::RwLockWriteGuard<'static, ()> {
     SERIAL
         .write()
@@ -1037,6 +1063,9 @@ async fn stage_failure_503_sync_ok_balances_unchanged() {
 // The serial guard is held for the whole test on purpose; see `SERIAL`.
 #[allow(clippy::await_holding_lock)]
 async fn stage_failure_timeout_sync_ok_balances_unchanged() {
+    if isolated_paused_test("stage_failure_timeout_sync_ok_balances_unchanged") {
+        return;
+    }
     let _serial = paused_writer();
     let fixture = paused_wallet();
     let tx = utxo_receipt(&fixture, 0xb2, TOP - 1);
@@ -1146,6 +1175,9 @@ async fn stage_failure_panic_sync_ok_balances_unchanged() {
 // The serial guard is held for the whole test on purpose; see `SERIAL`.
 #[allow(clippy::await_holding_lock)]
 async fn stage_honors_should_exit_and_budget() {
+    if isolated_paused_test("stage_honors_should_exit_and_budget") {
+        return;
+    }
     let _serial = paused_writer();
     let fixture = paused_wallet();
     for tag in 0..10u8 {
@@ -2684,6 +2716,9 @@ async fn a_held_client_delays_no_run_past_its_exit() {
 // The serial guard is held for the whole test on purpose; see `SERIAL`.
 #[allow(clippy::await_holding_lock)]
 async fn a_held_write_lock_delays_no_run_past_its_budget() {
+    if isolated_paused_test("a_held_write_lock_delays_no_run_past_its_budget") {
+        return;
+    }
     let _serial = paused_writer();
     let fixture = paused_wallet();
     let txid = utxo_receipt(&fixture, 0x49, TOP - 1).txid();

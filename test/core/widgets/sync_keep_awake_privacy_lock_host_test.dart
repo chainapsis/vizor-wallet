@@ -209,6 +209,7 @@ void main() {
     _setMobileViewport(tester);
     await tester.pumpWidget(
       _app(
+        child: _themedApp(idleTimeout: const Duration(minutes: 1)),
         syncNotifier: FakeSyncNotifier(
           _sync(lastSyncStartedAt: DateTime(2026, 7, 9, 12)),
         ),
@@ -216,15 +217,15 @@ void main() {
     );
     await _settleInitialSync(tester);
 
-    await tester.pump(const Duration(milliseconds: 30));
+    await tester.pump(const Duration(seconds: 30));
     await tester.tap(find.byKey(const ValueKey('home_surface')));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 30));
+    await tester.pump(const Duration(seconds: 30));
     await tester.pump();
 
     expect(find.text('Vizor is syncing'), findsNothing);
 
-    await tester.pump(const Duration(milliseconds: 30));
+    await tester.pump(const Duration(seconds: 31));
     await tester.pump();
 
     expect(find.text('Vizor is syncing'), findsOneWidget);
@@ -969,11 +970,11 @@ Widget _privacyScreenApp({
   );
 }
 
-Widget _themedApp() {
+Widget _themedApp({Duration idleTimeout = const Duration(milliseconds: 50)}) {
   return MaterialApp(
     builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
     home: SyncKeepAwakePrivacyLockHost(
-      idleTimeout: const Duration(milliseconds: 50),
+      idleTimeout: idleTimeout,
       child: SyncKeepAwakeInteractionListener(
         child: Scaffold(
           body: GestureDetector(

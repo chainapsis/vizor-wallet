@@ -92,7 +92,6 @@ ApiAppliedTransparentPolicy _applied(bool private, int generation) =>
           ? ApiTransparentLedgerMode.privateRequired
           : ApiTransparentLedgerMode.public,
       generation: BigInt.from(generation),
-      changed: true,
     );
 
 /// Records transparent policy reconciliation, which can fail per direction.
@@ -829,7 +828,6 @@ void main() {
       ApiAppliedTransparentPolicy(
         mode: ApiTransparentLedgerMode.privateRequired,
         generation: BigInt.from(7),
-        changed: true,
       ),
     );
     sync.pauseForWalletMutation();
