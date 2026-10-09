@@ -1245,8 +1245,19 @@ Future<void> _saveRequestQr(
   await tester.runAsync(() async {
     await tester.tap(find.byKey(const ValueKey('request_save_qr_button')));
     await tester.pump();
-    await Future<void>.delayed(const Duration(milliseconds: 200));
-    await tester.pump();
+    // Encoding and the save hand-off use real async work. Wait for the button
+    // to finish instead of assuming a loaded machine completes it in 200 ms.
+    final button = find.descendant(
+      of: find.byKey(const ValueKey('request_save_qr_button')),
+      matching: find.byType(AppButton),
+    );
+    final elapsed = Stopwatch()..start();
+    while (tester.widget<AppButton>(button).onPressed == null &&
+        elapsed.elapsed < const Duration(seconds: 10)) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      await tester.pump();
+    }
+    expect(tester.widget<AppButton>(button).onPressed, isNotNull);
   });
   await tester.pump();
 }
