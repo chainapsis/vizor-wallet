@@ -184,6 +184,14 @@ class InputTests(unittest.TestCase):
         self.lock = self.root/"ios/Podfile.lock"
         self.lock.write_text("PODS:\n  - Local (1.0)\nEXTERNAL SOURCES:\n  Local:\n    :path: source\n"
             "SPEC CHECKSUMS:\n  Local: "+"a"*40+"\n  Remote: "+"b"*40+"\nCOCOAPODS: 1.16.2\n")
+        (self.root/"macos").mkdir()
+        (self.root/"macos/Podfile.lock").write_text(self.lock.read_text())
+        toolchain = self.root/"toolchain"
+        toolchain.mkdir()
+        self.rust_tools = {name:toolchain/name for name in ("rustc", "cargo")}
+        for name, path in self.rust_tools.items():
+            path.write_text("original "+name+" executable")
+            path.chmod(0o700)
         self.tool = self.root/"flutter"
         self.tool.write_text("model Flutter executable")
         self.cancel = threading.Event()
@@ -193,12 +201,38 @@ class InputTests(unittest.TestCase):
             return (json.dumps({"frameworkRevision":"flutter", "engineRevision":"engine", "dartSdkVersion":"3.13"}),)
         if args == ["rustup","toolchain","list"]:
             return ("stable-aarch64-apple-darwin (default)",)
+        if len(args) == 5 and args[:3] == ["rustup", "which", "--toolchain"]:
+            return (str(self.rust_tools[args[-1]]),)
         return ("modeled tool/SDK version",)
 
-    def inputs(self, **options):
+    def inputs(self, *, platform="ios", **options):
         return CACHE.collect_native_cache_inputs(self.root,{self.tool:CACHE._capture(self.tool)},self.tool,
-            platform="ios",architecture="arm64",command=self.command,
+            platform=platform,architecture="arm64",command=self.command,
             environment={"RUSTFLAGS":"private compiler flags"},cancel=self.cancel,**options)
+
+    def test_native_rust_executable_bytes_invalidate_with_unchanged_versions(self):
+        for platform in ("ios", "macos"):
+            for name, executable in self.rust_tools.items():
+                with self.subTest(platform=platform, tool=name):
+                    first = self.inputs(platform=platform)
+                    executable.write_text(platform+" patched "+name+" executable")
+                    second = self.inputs(platform=platform)
+                    for tool in ("rustc", "cargo"):
+                        self.assertEqual(first["rust_toolchains"]["stable"][tool],
+                                         second["rust_toolchains"]["stable"][tool])
+                    self.assertNotEqual(first, second)
+
+    def test_native_rust_resolution_rejects_missing_relative_and_multiple_paths(self):
+        original = self.command
+        for paths in ((), ("relative/rustc",), (str(self.rust_tools["rustc"]),)*2):
+            with self.subTest(paths=paths):
+                def command(args, **options):
+                    if args[:2] == ["rustup", "which"]:
+                        return paths
+                    return original(args, **options)
+                with patch.object(self, "command", side_effect=command):
+                    with self.assertRaisesRegex(CACHE.NativeBuildCacheError, "one absolute"):
+                        self.inputs()
 
     def test_dependency_contents_platform_flags_and_tool_identity_invalidate(self):
         first = self.inputs()

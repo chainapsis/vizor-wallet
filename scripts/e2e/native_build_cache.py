@@ -217,9 +217,18 @@ def collect_native_cache_inputs(root, source, tool, *, platform, architecture,
         toolchains = tuple(name for name in ("stable","beta","nightly") if name+"-"+host in installed)
     else:
         toolchains = ("stable",)  # The actual Cargokit default, not rustup's active toolchain.
-    rust = {name: {"rustc":list(command(["rustup", "run", name, "rustc", "-vV"], in_source=True)),
-                  "cargo":list(command(["rustup", "run", name, "cargo", "-V"], in_source=True))}
-            for name in toolchains}
+    rust = {}
+    for name in toolchains:
+        records = {}
+        for program, flag in (("rustc", "-vV"), ("cargo", "-V")):
+            paths = command(["rustup", "which", "--toolchain", name, program], in_source=True)
+            if len(paths) != 1 or not Path(paths[0]).is_absolute():
+                raise NativeBuildCacheError("rustup must identify one absolute native Rust executable")
+            executable = Path(paths[0]).resolve(strict=True)
+            records[program] = list(command([str(executable), flag], in_source=True))
+            records[program+"_binary"] = str(executable)
+            records[program+"_sha256"] = _file_record(executable, executable=True)[1]
+        rust[name] = records
     if not rust:
         raise NativeBuildCacheError("native Rust toolchain inventory is empty")
     cargo_home = Path(environment.get("CARGO_HOME", str(Path.home()/".cargo")))
