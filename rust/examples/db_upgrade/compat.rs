@@ -78,16 +78,3 @@ pub fn store_transaction(db_path: &str, raw: &[u8], mined_height: u32) -> String
     let bytes: &[u8; 32] = txid.as_ref();
     hex::encode(bytes)
 }
-
-/// Preserve the library's diagnostic for the old-reader probe. Older app APIs
-/// format the outer migration error and hide whether its cause is an unknown
-/// migration or an unrelated failure.
-pub fn try_initialize(db_path: &str) -> Result<(), String> {
-    use rust_lib_zcash_wallet::wallet::network::WalletNetwork;
-    use voting_crypto_deps::rand::rngs::OsRng;
-    use zcash_client_sqlite::{util::SystemClock, wallet::init::init_wallet_db, WalletDb};
-
-    let mut db = WalletDb::for_path(db_path, WalletNetwork::Regtest, SystemClock, OsRng)
-        .map_err(|error| format!("{error:?}"))?;
-    init_wallet_db(&mut db, None).map_err(|error| format!("{error:?}"))
-}

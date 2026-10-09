@@ -857,7 +857,7 @@ fn verify_old_reader(scenario: &str, db_path: &str, require_refusal: bool) {
     let schema = read_schema(db_path);
     match wallet::list_accounts(db_path.to_string(), NETWORK.to_string()) {
         Err(error) => {
-            let cause = compat::try_initialize(db_path)
+            let cause = try_initialize(db_path)
                 .expect_err("the older library must also refuse the database");
             assert!(
                 cause.contains("UnknownMigrations("),
@@ -879,6 +879,20 @@ fn verify_old_reader(scenario: &str, db_path: &str, require_refusal: bool) {
     assert_eq!(read_legacy_state(db_path, scenario), state);
     assert_eq!(read_schema(db_path), schema);
     assert_sqlite_health(db_path);
+}
+
+/// Preserve the library's diagnostic for the old-reader probe. Older app APIs
+/// format the outer migration error and hide whether its cause is an unknown
+/// migration or an unrelated failure. This API is shared by the supported
+/// bases, including those whose account-import signatures require compat files.
+fn try_initialize(db_path: &str) -> Result<(), String> {
+    use rust_lib_zcash_wallet::wallet::network::WalletNetwork;
+    use voting_crypto_deps::rand::rngs::OsRng;
+    use zcash_client_sqlite::{util::SystemClock, wallet::init::init_wallet_db, WalletDb};
+
+    let mut db = WalletDb::for_path(db_path, WalletNetwork::Regtest, SystemClock, OsRng)
+        .map_err(|error| format!("{error:?}"))?;
+    init_wallet_db(&mut db, None).map_err(|error| format!("{error:?}"))
 }
 
 /// What the base APIs report after the base build's own write.
