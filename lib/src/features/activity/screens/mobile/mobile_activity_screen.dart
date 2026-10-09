@@ -8,7 +8,6 @@ import '../../../../../main.dart' show log;
 import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/app_mobile_tab_bar.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
-import '../../../../core/navigation/mobile_tab_history.dart';
 import '../../../../core/storage/wallet_paths.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../providers/account_provider.dart';
@@ -312,12 +311,7 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
         bottom: false,
         child: Column(
           children: [
-            MobileTopNav.back(
-              title: 'Activity',
-              onBack: () => context.go(
-                resolveMobileBackPath(ref, currentPath: '/activity'),
-              ),
-            ),
+            MobileTopNav.back(title: 'Activity'),
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(

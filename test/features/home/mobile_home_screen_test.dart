@@ -770,7 +770,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const ValueKey('mobile_settings_route')), findsOneWidget);
+    final settings = find.byKey(const ValueKey('mobile_settings_route'));
+    expect(settings, findsOneWidget);
+    expect(GoRouter.of(tester.element(settings)).canPop(), isFalse);
   });
 
   testWidgets(

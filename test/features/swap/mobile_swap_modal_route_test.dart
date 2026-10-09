@@ -20,7 +20,6 @@ import 'package:zcash_wallet/src/features/address_book/providers/address_book_pr
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_composer_preferences_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
-import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
 import 'package:zcash_wallet/src/features/swap/screens/mobile/mobile_swap_screen.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_review_content.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_slippage_stepper_modal.dart';
@@ -471,24 +470,37 @@ void main() {
     expect(find.byType(MobileSwapScreen), findsOneWidget);
   });
 
-  testWidgets('swap leading back button returns to the previously active '
-      'tab', (tester) async {
+  testWidgets('swap tab has no back or close button while editing amounts', (
+    tester,
+  ) async {
+    addTearDown(tester.view.resetViewInsets);
     await tester.pumpWidget(_app());
     await tester.pumpAndSettle();
-    expect(find.byType(MobileHomeScreen), findsOneWidget);
-
-    // Switch from Home to the Swap tab; the shell records Home as the
-    // previous tab.
     await tester.tap(find.bySemanticsLabel('Swap').last);
     await tester.pumpAndSettle();
-    expect(find.byType(MobileSwapScreen), findsOneWidget);
 
-    // The composer's leading back button routes back to where the user
-    // came from — the Swap tab is an indexedStack root with no pop stack.
-    await tester.tap(find.bySemanticsLabel('Back'));
+    expect(find.bySemanticsLabel('Back'), findsNothing);
+    expect(find.bySemanticsLabel('Close'), findsNothing);
+    final field = find.descendant(
+      of: find.byKey(const ValueKey('swap_amount_field')),
+      matching: find.byType(TextField),
+    );
+    await tester.enterText(field, '0.25');
+    tester.view.viewInsets = const FakeViewPadding(bottom: 300);
     await tester.pumpAndSettle();
-    expect(find.byType(MobileSwapScreen), findsNothing);
-    expect(find.byType(MobileHomeScreen), findsOneWidget);
+
+    expect(tester.widget<TextField>(field).focusNode!.hasFocus, isTrue);
+    expect(tester.widget<TextField>(field).controller!.text, '0.25');
+    expect(find.bySemanticsLabel('Back'), findsNothing);
+    expect(find.bySemanticsLabel('Close'), findsNothing);
+
+    // The existing native keyboard action can still dismiss the input.
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(field).focusNode!.hasFocus, isFalse);
+    expect(tester.widget<TextField>(field).controller!.text, '0.25');
+    expect(find.bySemanticsLabel('Back'), findsNothing);
+    expect(find.bySemanticsLabel('Close'), findsNothing);
   });
 
   testWidgets('typing an amount keeps the labels shown and the field intact', (
@@ -731,11 +743,7 @@ void main() {
     expect(find.text('Add recipient address'), findsNothing);
   });
 
-  // The screen-level morph (keyboardOpen ? cross : chevron) is driven by
-  // MediaQuery.viewInsets, which the test environment doesn't inset the way a
-  // real number-pad does — that wiring is verified on device. Here we cover
-  // the MobileTopNav.back mechanism it relies on: a cross backIcon renders as
-  // a "Close" affordance rather than the default "Back".
+  // Other mobile flows still use the shared close affordance.
   testWidgets('MobileTopNav.back renders a close affordance for a cross '
       'backIcon', (tester) async {
     await tester.pumpWidget(

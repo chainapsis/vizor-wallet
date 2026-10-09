@@ -32,6 +32,7 @@ import 'package:zcash_wallet/src/features/swap/screens/mobile/mobile_swap_keysto
 import 'package:zcash_wallet/src/features/swap/screens/mobile/mobile_swap_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/providers/sync_failure.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
@@ -72,6 +73,7 @@ GoRouter _router() => GoRouter(
 Widget _app(
   GoRouter router, {
   bool swapFeatureEnabled = true,
+  SyncState? initialSyncState,
   List<Override> overrides = const [],
 }) => ProviderScope(
   overrides: [
@@ -82,11 +84,12 @@ Widget _app(
     // test.
     syncProvider.overrideWith(
       () => FakeSyncNotifier(
-        SyncState(
-          accountUuid: 'account-1',
-          hasAccountScopedData: true,
-          orchardBalance: BigInt.from(100000000),
-        ),
+        initialSyncState ??
+            SyncState(
+              accountUuid: 'account-1',
+              hasAccountScopedData: true,
+              orchardBalance: BigInt.from(100000000),
+            ),
       ),
     ),
     ...overrides,
@@ -171,10 +174,19 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(MobileActivityScreen), findsOneWidget);
     expect(find.byType(MobileHomeScreen), findsNothing);
+    expect(find.bySemanticsLabel('Back'), findsNothing);
 
     await tester.tap(find.bySemanticsLabel('Swap').last);
     await tester.pumpAndSettle();
     expect(find.byType(MobileSwapScreen), findsOneWidget);
+    expect(find.bySemanticsLabel('Back'), findsNothing);
+    expect(find.bySemanticsLabel('Close'), findsNothing);
+
+    await tester.tap(find.bySemanticsLabel('Settings').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Settings'), findsOneWidget);
+    expect(find.bySemanticsLabel('Back'), findsNothing);
+    expect(find.byType(AppMobileShell), findsOneWidget);
   });
 
   testWidgets('swap tab is hidden when the swap feature is disabled', (
@@ -188,6 +200,60 @@ void main() {
       expect(find.bySemanticsLabel(label), findsWidgets);
     }
   });
+
+  testWidgets('home error shortcut switches to the settings tab', (
+    tester,
+  ) async {
+    final router = _router();
+    await tester.pumpWidget(
+      _app(
+        router,
+        initialSyncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          orchardBalance: BigInt.from(100000000),
+          failure: classifySyncFailure('private status coverage incomplete'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_private_status_coverage_settings')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(router.routeInformationProvider.value.uri.path, '/settings');
+    expect(router.canPop(), isFalse);
+    expect(find.byType(AppMobileShell), findsOneWidget);
+    expect(find.bySemanticsLabel('Back'), findsNothing);
+    await tester.tap(find.bySemanticsLabel('Home').last);
+    await tester.pumpAndSettle();
+    expect(find.byType(MobileHomeScreen), findsOneWidget);
+  });
+
+  for (final path in ['/swap/keystone-sign', '/swap/ledger-sign']) {
+    for (final extra in [null, 'invalid signing arguments']) {
+      testWidgets('$path with invalid arguments returns to the swap tab '
+          '($extra)', (tester) async {
+        final router = GoRouter(
+          initialLocation: path,
+          initialExtra: extra,
+          routes: buildMobileRoutes(entryRoutes: const []),
+        );
+        await tester.pumpWidget(_app(router));
+        await tester.pumpAndSettle();
+
+        expect(router.routeInformationProvider.value.uri.path, '/swap');
+        expect(find.byType(MobileSwapScreen), findsOneWidget);
+        expect(find.byType(AppMobileShell), findsOneWidget);
+        expect(find.bySemanticsLabel('Back'), findsNothing);
+        expect(router.canPop(), isFalse);
+        await tester.tap(find.bySemanticsLabel('Home').last);
+        await tester.pumpAndSettle();
+        expect(find.byType(MobileHomeScreen), findsOneWidget);
+      });
+    }
+  }
 
   testWidgets('send pushes over the shell with a swipe-back capable page', (
     tester,
