@@ -53,10 +53,6 @@ use crate::wallet::{
 /// lease well within this; one that does not is withheld.
 pub(crate) const LEASE_WAIT: Duration = Duration::from_secs(45);
 
-/// The fence key of lookups made before any wallet database exists, which no
-/// transition takes: their authority is only the captured mode.
-const PRE_DB: &str = "";
-
 /// One fence per wallet database path, shared by every public transparent
 /// lookup on that wallet and held exclusively by its policy transition.
 /// Tokio's lock is fair: once a transition waits, new leases queue behind it.
@@ -115,8 +111,8 @@ pub(crate) fn register_sync_transport(db_path: &str, transport: Channel) -> Sync
 /// error from `still` also applies nothing.
 ///
 /// `db` is a handle on the wallet at `db_path`, whose fence the transition
-/// takes. Lookups made before any wallet exists answer to no wallet's policy,
-/// so no transition waits for them. The wallet write lock is taken with
+/// takes, as do lookups made before that wallet's database existed. The wallet
+/// write lock is taken with
 /// whatever remains of `drain`, never waited on without bound while the fence
 /// holds lookups back.
 pub(crate) async fn apply_transparent_policy_fenced_if(
@@ -242,15 +238,23 @@ impl TransparentLookupGate {
         }
     }
 
-    /// Gates lookups made before any wallet database exists. Only the captured
-    /// mode applies.
-    pub(crate) fn pre_db(lookups: PublicTransparentLookups) -> Self {
+    /// Gates lookups made before the wallet database at `db_path` exists, as
+    /// for a first account's import. Only the captured mode applies; the
+    /// lookups take that wallet's fence, so only its own transition waits for
+    /// them.
+    pub(crate) fn pre_database(lookups: PublicTransparentLookups, db_path: &str) -> Self {
         Self {
             lookups,
             policy: None,
-            fence: fence(PRE_DB),
+            fence: fence(db_path),
             transport: None,
         }
+    }
+
+    /// [`Self::pre_database`] for a test, on a fence of its own.
+    #[cfg(test)]
+    pub(crate) fn pre_db(lookups: PublicTransparentLookups) -> Self {
+        Self::pre_database(lookups, &format!("test-pre-db-{}", uuid::Uuid::new_v4()))
     }
 
     /// Whether lookups were authorized when captured. A cheap early exit only;
@@ -596,6 +600,50 @@ mod tests {
         )
         .await
         .expect("the other wallet's lookup does not hold this wallet's fence");
+        release.send(()).unwrap();
+        assert_eq!(in_flight.await.unwrap().unwrap(), Some(()));
+    }
+
+    /// A lookup made before a wallet's database existed holds only that
+    /// wallet's fence: another wallet's transition never waits for it, but its
+    /// own does.
+    #[tokio::test]
+    async fn pre_database_lookups_fence_only_their_wallet() {
+        let (_dir, path, _) = wallet();
+        let (_other_dir, other_path, _) = wallet();
+        let importing = TransparentLookupGate::pre_database(
+            PublicTransparentLookups::Allowed { generation: None },
+            &other_path,
+        );
+        let (release, released) = tokio::sync::oneshot::channel::<()>();
+        let in_flight =
+            tokio::spawn(
+                async move { importing.dispatch(async { released.await.unwrap() }).await },
+            );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let mut db =
+            open_wallet_db_with_timeout(&path, WalletNetwork::Regtest, SYNC_DB_BUSY_TIMEOUT)
+                .unwrap();
+        apply_transparent_policy_fenced(
+            &mut db,
+            &path,
+            TransparentLedgerMode::PrivateShadow,
+            Duration::from_secs(2),
+        )
+        .await
+        .expect("another wallet's import does not hold this wallet's fence");
+        let mut other =
+            open_wallet_db_with_timeout(&other_path, WalletNetwork::Regtest, SYNC_DB_BUSY_TIMEOUT)
+                .unwrap();
+        assert!(apply_transparent_policy_fenced(
+            &mut other,
+            &other_path,
+            TransparentLedgerMode::PrivateShadow,
+            Duration::from_millis(200),
+        )
+        .await
+        .is_err());
         release.send(()).unwrap();
         assert_eq!(in_flight.await.unwrap().unwrap(), Some(()));
     }

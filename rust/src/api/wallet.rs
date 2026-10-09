@@ -861,8 +861,11 @@ pub(crate) fn import_gate(
     policy: EnhancementPolicy,
 ) -> Result<TransparentLookupGate, String> {
     if is_first_wallet_account {
-        return Ok(TransparentLookupGate::pre_db(
+        // Fenced as the wallet it is about to create, so a transition on
+        // another wallet never waits for it.
+        return Ok(TransparentLookupGate::pre_database(
             policy.pre_db_public_transparent_lookups(),
+            db_path,
         ));
     }
     let db = crate::wallet::sync::open_wallet_db_for_read(db_path, network)?;
