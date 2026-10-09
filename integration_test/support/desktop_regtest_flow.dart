@@ -439,6 +439,9 @@ Future<void> stopRustWorkForCleanup() async {
       DateTime.now().isBefore(deadline)) {
     await Future<void>.delayed(const Duration(milliseconds: 100));
   }
+  if (rust_sync.isSyncRunning() || rust_sync.isMempoolObserverRunning()) {
+    throw StateError('Refusing wallet cleanup while Rust writers are still active.');
+  }
 }
 
 Future<void> tapAppButton(WidgetTester tester, Key key) async {

@@ -7,6 +7,15 @@ import 'package:zcash_wallet/src/core/config/e2e_runtime_case_manifest.dart';
 Future<Map<String, Object?>> postOwnedRegtestControl(
   String path,
   Map<String, Object?> payload,
+) => _requestOwnedRegtestControl('POST', path, payload);
+
+Future<Map<String, Object?>> getOwnedRegtestControl(String path) =>
+    _requestOwnedRegtestControl('GET', path, null);
+
+Future<Map<String, Object?>> _requestOwnedRegtestControl(
+  String method,
+  String path,
+  Map<String, Object?>? payload,
 ) async {
   final manifest = installedE2eRuntimeCaseManifest;
   if (manifest == null) throw StateError('No owned regtest case is installed.');
@@ -14,12 +23,14 @@ Future<Map<String, Object?>> postOwnedRegtestControl(
   const timeout = Duration(minutes: 2);
   try {
     final request = await client
-        .postUrl(Uri.parse('${manifest.zcashdRpcUrl}$path'))
+        .openUrl(method, Uri.parse('${manifest.zcashdRpcUrl}$path'))
         .timeout(timeout);
-    final bytes = utf8.encode(jsonEncode(payload));
-    request.headers.contentType = ContentType.json;
-    request.contentLength = bytes.length;
-    request.add(bytes);
+    if (payload != null) {
+      final bytes = utf8.encode(jsonEncode(payload));
+      request.headers.contentType = ContentType.json;
+      request.contentLength = bytes.length;
+      request.add(bytes);
+    }
     final response = await request.close().timeout(timeout);
     final body = await utf8.decoder.bind(response).join().timeout(timeout);
     if (response.statusCode != HttpStatus.ok) {

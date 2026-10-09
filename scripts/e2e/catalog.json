@@ -567,8 +567,8 @@
         "mempool"
       ],
       "timeout_seconds": 1200,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "flutter.macos.mempool-during-sync",
@@ -585,8 +585,8 @@
         "sync"
       ],
       "timeout_seconds": 1200,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "flutter.macos.mempool-expiry",
@@ -603,8 +603,8 @@
         "expiry"
       ],
       "timeout_seconds": 1200,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "flutter.macos.voting",
@@ -703,8 +703,8 @@
         "gift-card"
       ],
       "timeout_seconds": 1200,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "flutter.macos.payment-link-restart",
@@ -719,9 +719,9 @@
         "gift-card",
         "restart"
       ],
-      "timeout_seconds": 1200,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "timeout_seconds": 1800,
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "flutter.macos.payment-link-recovery",
@@ -737,9 +737,9 @@
         "reorg",
         "recovery"
       ],
-      "timeout_seconds": 1200,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "timeout_seconds": 1920,
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "flutter.ios.create-sync",

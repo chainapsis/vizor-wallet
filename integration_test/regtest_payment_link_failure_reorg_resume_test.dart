@@ -5,16 +5,18 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
+import 'package:zcash_wallet/src/core/config/e2e_runtime_case_manifest.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 import 'support/desktop_regtest_flow.dart';
+import 'support/owned_regtest_control.dart';
 import 'support/payment_link_regtest_flow.dart';
 import 'support/regtest_lightwalletd_proxy.dart';
 
 void main() {
-  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   setUpAll(initializeZcashWalletRuntime);
 
@@ -25,7 +27,13 @@ void main() {
       await proxy.start();
       addTearDown(proxy.stop);
       addTearDown(() async {
-        await Clipboard.setData(const ClipboardData(text: ''));
+        if (installedE2eRuntimeCaseManifest != null &&
+            binding.reportData?['assertions_completed'] != true) {
+          return;
+        }
+        if (installedE2eRuntimeCaseManifest == null) {
+          await Clipboard.setData(const ClipboardData(text: ''));
+        }
         await cleanupDesktopRegtestWallet();
         await cleanupRegtestPaymentLinkClaimWallets();
         await deletePaymentLinkRestartManifest();
@@ -103,7 +111,7 @@ void main() {
       final forkHeight =
           minedTransactions.values.map((height) => height.toInt()).reduce(min) -
           1;
-      await _replaceClaimBranch(tester, forkHeight, claimTxids);
+      final heldTxids = await _replaceClaimBranch(tester, forkHeight, claimTxids);
 
       for (final claim in manifest.claims) {
         await waitForPaymentLinkHistoryTransaction(
@@ -117,12 +125,19 @@ void main() {
       }
       await _expectReceivingClaimsAndDatabases(tester, manifest);
 
-      for (final txid in claimTxids) {
-        await paymentLinkZcashdRpc<bool>('prioritisetransaction', [
-          paymentLinkClaimTxidToRpcOrder(txid),
-          0,
-          100_000_000,
-        ]);
+      if (installedE2eRuntimeCaseManifest != null) {
+        final released = await postOwnedRegtestControl('/release-held', {
+          'txids': heldTxids,
+        });
+        expect(released['released_txids'], heldTxids);
+      } else {
+        for (final txid in claimTxids) {
+          await paymentLinkZcashdRpc<bool>('prioritisetransaction', [
+            paymentLinkClaimTxidToRpcOrder(txid),
+            0,
+            100_000_000,
+          ]);
+        }
       }
       // Recovery material is released only at claim finality.
       await minePaymentLinkRegtestBlocks(
@@ -177,6 +192,7 @@ void main() {
             ),
       );
       e2eLog('both Gift Card claims survived retry and reorg finality');
+      binding.reportData?['assertions_completed'] = true;
     },
     timeout: const Timeout(Duration(minutes: 12)),
   );
@@ -214,12 +230,32 @@ Future<void> _expectReceivingClaimsAndDatabases(
   }
 }
 
-Future<void> _replaceClaimBranch(
+Future<List<String>> _replaceClaimBranch(
   WidgetTester tester,
   int forkHeight,
   Set<String> claimTxids,
 ) async {
   await ensurePaymentLinkRegtestChain();
+  if (installedE2eRuntimeCaseManifest != null) {
+    final before = await getOwnedRegtestControl('/status');
+    final required = claimTxids.map(paymentLinkClaimTxidToRpcOrder).toList()..sort();
+    final proof = await postOwnedRegtestControl('/reorg-hold-fork', {
+      'fork_height': forkHeight,
+      'required_txids': required,
+    });
+    expect(proof['fork_height'], forkHeight);
+    expect(proof['old_tip_height'], before['zcashdHeight']);
+    expect(proof['new_tip_height'], (before['zcashdHeight']! as int) + 1);
+    expect(forkHeight, lessThan(proof['old_tip_height']! as int));
+    final held = (proof['held_txids']! as List<Object?>).cast<String>();
+    expect(held.toSet().containsAll(required), isTrue);
+    expect(held.toSet().length, held.length);
+    for (final txid in held) {
+      expect(RegExp(r'^[0-9a-f]{64}$').hasMatch(txid), isTrue);
+    }
+    await waitForPaymentLinkMempoolTxids(tester, claimTxids);
+    return held;
+  }
   final oldTip = await paymentLinkZcashdRpc<int>('getblockcount');
   expect(forkHeight, lessThan(oldTip));
   final invalidatedHash = await paymentLinkZcashdRpc<String>('getblockhash', [
@@ -237,4 +273,5 @@ Future<void> _replaceClaimBranch(
   final newTip = await paymentLinkZcashdRpc<int>('getblockcount');
   expect(newTip, oldTip + 1);
   await waitForPaymentLinkMempoolTxids(tester, claimTxids);
+  return const [];
 }

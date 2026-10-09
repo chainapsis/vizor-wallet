@@ -74,6 +74,7 @@ def build_native_macos_cohort(case, *, source_root, flutter, timeout=1200.0, can
             "--dart-define=ZCASH_DEFAULT_NETWORK=regtest",
             "--dart-define=ZCASH_REGTEST_IRONWOOD_ACTIVATION_HEIGHT=1",
             "--dart-define=VIZOR_E2E_MACOS_COHORT=true",
+            "--dart-define=VIZOR_PAYMENT_LINK_REGTEST_ENABLED=true",
             "--dart-define=ZCASH_E2E_FIRST_UNLOCK_MNEMONIC_KEYCHAIN=true",
             *(["--dart-define=ZCASH_E2E_TEX_ADDRESS="+tex_address] if tex_address is not None else []),
             "--dart-define=VIZOR_E2E_HIDDEN_WINDOW=true"],in_source=True)

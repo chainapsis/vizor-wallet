@@ -36,6 +36,8 @@ class ControlFixture(unittest.TestCase):
         def with_ports(*args, **kwargs):
             kwargs["ports"] = self.lease.ports
             kwargs["activation_height"] = self.activation_height
+            if hasattr(self, "scenario_id"):
+                kwargs["scenario_id"] = self.scenario_id
             return prepare(*args, **kwargs)
         with patch.object(workspace_api, "prepare_native_case_workspace", side_effect=with_ports):
             self.model.setUp()
@@ -96,6 +98,42 @@ class ControlFixture(unittest.TestCase):
 
 
 class ControlTests(ControlFixture):
+
+    def test_unmined_controls_bind_original_owner_and_reject_legacy_payloads(self):
+        self.prepare()
+        artifact = object()  # Signer transport modeled; not real artifact production.
+        self.control._artifact = artifact
+        self.backend.rpc = lambda method, **kwargs: 101
+        with patch.object(CONTROL, "fund_zakura_unmined", return_value={"txid_hex":"ab"*32}) as fund:
+            for payload in ({"address":"public", "amount":"0.25"},
+                            {"address":"public", "amount_zatoshi":True, "source_height":1},
+                            {"address":"public", "amount_zatoshi":25000000, "source_height":0}):
+                self.assertEqual(self.request("POST", "/fund-unmined", json.dumps(payload))[0], 400)
+            fund.assert_not_called()
+            for path, expiry in (("/fund-unmined", None), ("/fund-unmined-expiring", 121)):
+                status, _body = self.request("POST", path, json.dumps({
+                    "address":"public", "amount_zatoshi":25000000, "source_height":1}))
+                self.assertEqual(status, 200)
+                self.assertEqual(fund.call_args.args, (self.case, self.backend, artifact))
+                self.assertEqual(fund.call_args.kwargs["amount_zatoshi"], 25000000)
+                self.assertEqual(fund.call_args.kwargs["expiry_height"], expiry)
+                self.assertIs(fund.call_args.kwargs["cancel_event"], self.cancel)
+
+    def test_expiry_control_preserves_exact_hash_integer_and_original_owner(self):
+        self.prepare()
+        with patch.object(CONTROL, "expire_zakura_unmined", return_value={"final_tip_height":121}) as expire:
+            for payload in ({"txid":"bad", "expiry_height":121},
+                            {"txid":"ab"*32, "expiry_height":True},
+                            {"txid":"ab"*32, "expiryHeight":121}):
+                self.assertEqual(self.request("POST", "/mine-to-expiry", json.dumps(payload))[0], 400)
+            expire.assert_not_called()
+            status, _body = self.request("POST", "/mine-to-expiry", json.dumps({
+                "txid":"ab"*32, "expiry_height":121}))
+            self.assertEqual(status, 200)
+            self.assertEqual(expire.call_args.args, (self.case, self.backend))
+            self.assertEqual(expire.call_args.kwargs["txid"], "ab"*32)
+            self.assertEqual(expire.call_args.kwargs["expiry_height"], 121)
+            self.assertIs(expire.call_args.kwargs["cancel_event"], self.cancel)
 
     def test_clipboard_close_retains_lease_until_original_writers_join(self):
         self.assertEqual(self.request("POST", "/host-resource/clipboard/acquire", "{}")[0], 200)
@@ -236,6 +274,44 @@ class ControlTests(ControlFixture):
                 ("/release-held", {"txids":["12"*32]})):
             self.assertEqual(self.request("POST", path, json.dumps(payload))[0], 400)
         self.assertEqual(self.calls, [])
+
+
+class GiftRecoveryControlTests(ControlFixture):
+    scenario_id = "flutter.macos.payment-link-recovery"
+
+    def test_exact_fork_and_release_delegate_to_original_fixture_on_owner_thread(self):
+        self.prepare()
+        txids = ["12"*32, "34"*32]
+        threads = []
+        def replace(required, *, fork_height, deadline):
+            threads.append(threading.get_ident())
+            self.assertEqual(required, txids)
+            self.assertEqual(fork_height, 121)
+            self.assertGreater(deadline, time.monotonic())
+            return {"held_txids":required, "fork_height":fork_height}
+        with patch.object(self.backend._fixture, "replace_fork_holding", side_effect=replace) as reorg:
+            for payload in ({"required_txids":txids, "fork_height":True},
+                            {"required_txids":txids, "fork_height":0},
+                            {"required_txids":["bad"], "fork_height":121},
+                            {"required_txids":txids, "fork_height":121, "reset":True}):
+                self.assertEqual(self.request("POST", "/reorg-hold-fork", json.dumps(payload))[0], 400)
+            reorg.assert_not_called()
+            status, _body = self.request("POST", "/reorg-hold-fork", json.dumps({
+                "required_txids":txids, "fork_height":121}))
+            self.assertEqual(status, 200)
+            reorg.assert_called_once()
+        self.assertEqual(threads, [threading.get_ident()])
+        status, body = self.request("POST", "/release-held", json.dumps({"txids":txids}))
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)["released_txids"], txids)
+
+    def test_another_height1_case_cannot_replace_a_fork(self):
+        self.prepare()
+        self.control._scenario = "flutter.macos.payment-link-round-trip"
+        with patch.object(self.backend._fixture, "replace_fork_holding") as reorg:
+            self.assertEqual(self.request("POST", "/reorg-hold-fork", json.dumps({
+                "required_txids":["12"*32], "fork_height":121}))[0], 400)
+            reorg.assert_not_called()
 
 
 class ActivationControlTests(ControlFixture):

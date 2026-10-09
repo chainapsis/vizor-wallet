@@ -32,11 +32,13 @@ class BuildTests(unittest.TestCase):
             scenario_id="flutter.macos.native-build",run_id="abcdef0123",
             worker_id=0,case_index=0,ports={"rpc":28232,"lwd":29067,"proxy":29068},activation_height=1))
         self.mode = "same-project-bytes"
+        self.native_arguments = None
 
     def command(self, arguments, **kwargs):
         if "ls-files" in arguments:
             return runtime.CommandResult(0,("lib/app.dart\0macos/Runner.xcodeproj/project.pbxproj\0",))
         if "--target" in arguments:
+            self.native_arguments = arguments
             # Reproduce the SDK's same-content metadata rewrite.
             timestamp = self.project.stat().st_mtime_ns + 1_000_000
             os.utime(self.project,ns=(timestamp,timestamp))
@@ -72,6 +74,13 @@ class BuildTests(unittest.TestCase):
         self.mode = "changed-project-bytes"
         with self.assertRaisesRegex(BUILD.NativeMacosBuildError,"project.pbxproj"):
             self.build()
+
+    def test_cohort_build_keeps_the_existing_regtest_gift_creation_gate(self):
+        self.build()
+        for flag in ("--dart-define=ZCASH_DEFAULT_NETWORK=regtest",
+                     "--dart-define=VIZOR_E2E_MACOS_COHORT=true",
+                     "--dart-define=VIZOR_PAYMENT_LINK_REGTEST_ENABLED=true"):
+            self.assertEqual(self.native_arguments.count(flag), 1)
 
     def test_wallet_source_content_change_is_still_rejected(self):
         self.mode = "changed-wallet-source"

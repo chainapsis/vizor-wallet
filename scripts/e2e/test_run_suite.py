@@ -45,7 +45,11 @@ class PreviewTests(unittest.TestCase):
             "flutter.macos.shield-transparent", "flutter.macos.shield-transparent-retry",
             "flutter.macos.multi-account-send", "flutter.macos.tex-send",
             "flutter.macos.payment-uri-send", "flutter.macos.payment-uri-locked-send",
-            "flutter.macos.payment-request-round-trip", "rust.receive.sync", "rust.send.basic",
+            "flutter.macos.payment-request-round-trip",
+            "flutter.macos.mempool-receive-history", "flutter.macos.mempool-during-sync",
+            "flutter.macos.mempool-expiry", "flutter.macos.payment-link-round-trip",
+            "flutter.macos.payment-link-restart", "flutter.macos.payment-link-recovery",
+            "rust.receive.sync", "rust.send.basic",
             "rust.send.second-account", "rust.import.bip39-passphrase", "rust.import.historical-birthday",
             "rust.import.future-birthday", "rust.import.receive-after-sync", "rust.import.deterministic-reimport",
             "rust.multi-account.orphaned-range", "rust.multi-account.deleted-range",
@@ -115,7 +119,7 @@ class PreviewTests(unittest.TestCase):
         self.assertEqual(output["execution_mode"], "blocked")
         self.assertFalse(output["runnable"])
         self.assertEqual(output["selection"]["impact"]["fallback_files"], ["unknown/runtime.file"])
-        self.assertEqual(len(output["selection"]["impact"]["coverage_gaps"]), 29)
+        self.assertEqual(len(output["selection"]["impact"]["coverage_gaps"]), 23)
 
     def test_shared_test_helper_selects_its_e2e_consumer(self) -> None:
         code, output, errors = self.invoke(
@@ -260,6 +264,25 @@ class PreviewTests(unittest.TestCase):
             code, output, error = self.invoke(*arguments, "--run")
         self.assertEqual((code, output, error), (0, None, ""))
         self.assertEqual({s.id for s in execute.call_args.args[2]}, set(ids))
+
+    def test_mempool_and_gift_selection_is_ready_and_reaches_the_exact_executor(self) -> None:
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        ids = ("flutter.macos.mempool-receive-history", "flutter.macos.mempool-during-sync",
+            "flutter.macos.mempool-expiry", "flutter.macos.payment-link-round-trip",
+            "flutter.macos.payment-link-restart", "flutter.macos.payment-link-recovery")
+        arguments = tuple(value for name in ids for value in ("--scenario", name))
+        with patch.dict(sys.modules, {"native_macos_suite": None}):
+            code, plan, error = self.invoke(*arguments, "--plan")
+        self.assertEqual((code, error), (0, ""))
+        self.assertTrue(plan["runnable"])
+        self.assertEqual(plan["pending_blockers"], [])
+        self.assertEqual([s["scenario_id"] for s in plan["selected_scenarios"]], list(ids))
+        execute = Mock(return_value=0)
+        with patch.dict(sys.modules, {"native_macos_suite": SimpleNamespace(run_native_suite=execute)}):
+            code, output, error = self.invoke(*arguments, "--run")
+        self.assertEqual((code, output, error), (0, None, ""))
+        self.assertEqual([s.id for s in execute.call_args.args[2]], list(ids))
 
     def test_multi_account_changed_file_selection_is_ready_and_reaches_executor(self) -> None:
         from types import SimpleNamespace

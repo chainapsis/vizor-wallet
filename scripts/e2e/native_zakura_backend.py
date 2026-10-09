@@ -131,9 +131,19 @@ class OwnedNativeZakuraBackend:
         self._running()
         return self._fixture.replace_tip_holding(required_txids, deadline=deadline)
 
+    def replace_fork_holding(self, required_txids, *, fork_height, deadline=None):
+        self._running()
+        return self._fixture.replace_fork_holding(required_txids,
+            fork_height=fork_height, deadline=deadline)
+
     def release_held_transactions(self, txids, *, deadline=None):
         self._running()
         return self._fixture.release_held_transactions(txids, deadline=deadline)
+
+    def hold_pending_transactions(self, txids, *, expiry_height, deadline=None):
+        self._running()
+        return self._fixture.hold_pending_transactions(txids,
+            expiry_height=expiry_height, deadline=deadline)
 
     def close(self):
         """Caller must stop SDK-native apps and seal/join original case writers."""

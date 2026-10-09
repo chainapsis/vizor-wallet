@@ -113,6 +113,60 @@ print('owned-app-ready',flush=True)
         self.assertTrue(owner.case.workspace.marker_path.exists())
         owner.verify_owned()
 
+    def test_restart_stops_original_writer_and_archives_context_without_native_deletion(self):
+        owner = self.prepare()
+        first = self.app(owner)
+        wallet = owner.path/"wallet.db"
+        identity = (wallet.stat().st_dev, wallet.stat().st_ino, wallet.read_bytes())
+        owner.stop_app_for_restart(first, timeout=3)
+        self.assertTrue(first.cleanup_completed)
+        self.assertTrue(self.case.accepting_launches)
+        context = Path(self.case.workspace.context_path)
+        self.assertFalse(context.exists())
+        archived = context.with_name("native-context-before-restart.json")
+        self.assertEqual(json.loads(archived.read_text())["pid"], first.process.pid)
+        self.assertEqual(archived.stat().st_mode & 0o777, 0o600)
+        second = self.app(owner)
+        self.assertNotEqual(first.process.pid, second.process.pid)
+        self.assertEqual((wallet.stat().st_dev, wallet.stat().st_ino, wallet.read_bytes()), identity)
+        self.close(owner)
+        self.assertTrue(archived.exists())
+
+    def test_restart_does_not_overwrite_existing_evidence(self):
+        owner = self.prepare()
+        app = self.app(owner)
+        archive = self.case.workspace.root/"native-context-before-restart.json"
+        archive.write_text("retained evidence")
+        with self.assertRaises(FileExistsError):
+            owner.stop_app_for_restart(app, timeout=3)
+        self.assertEqual(archive.read_text(), "retained evidence")
+        self.assertTrue(Path(self.case.workspace.context_path).exists())
+        self.assertTrue((owner.path/"wallet.db").exists())
+        owner.retain()
+
+    def test_restart_rejects_another_owned_child_without_signalling_it(self):
+        owner = self.prepare()
+        app = self.app(owner)
+        sibling = self.case.start_process([sys.executable,"-c","import time;time.sleep(30)"], env=os.environ)
+        with self.assertRaisesRegex(STORAGE.MacCaseStorageError, "last original native app"):
+            owner.stop_app_for_restart(sibling, timeout=3)
+        self.assertIsNone(sibling.process.poll())
+        self.assertTrue(app.cleanup_completed)
+        owner.retain()
+
+    def test_restart_context_with_another_pid_is_not_archived_or_removed(self):
+        owner = self.prepare()
+        app = self.app(owner)
+        context = Path(self.case.workspace.context_path)
+        value = json.loads(context.read_text())
+        value["pid"] += 1
+        context.write_text(json.dumps(value))
+        with self.assertRaisesRegex(STORAGE.MacCaseStorageError, "owned app/support"):
+            owner.stop_app_for_restart(app, timeout=3)
+        self.assertTrue(context.exists())
+        self.assertFalse(context.with_name("native-context-before-restart.json").exists())
+        owner.retain()
+
     def test_real_owned_app_context_then_native_cleanup_then_only_support_removed(self):
         owner = self.prepare()
         self.app(owner)

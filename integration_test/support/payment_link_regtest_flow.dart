@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/app.dart';
+import 'package:zcash_wallet/src/core/config/e2e_runtime_case_manifest.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
@@ -19,19 +20,23 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 import 'desktop_regtest_flow.dart';
+import 'owned_regtest_control.dart';
 
 const paymentLinkRegtestNetwork = 'regtest';
-const paymentLinkRegtestLightwalletdUrl = String.fromEnvironment(
-  'ZCASH_E2E_LIGHTWALLETD_URL',
-  defaultValue: 'http://127.0.0.1:9067',
-);
+String get paymentLinkRegtestLightwalletdUrl =>
+    installedE2eRuntimeCaseManifest?.lightwalletdUrl ??
+    const String.fromEnvironment(
+      'ZCASH_E2E_LIGHTWALLETD_URL',
+      defaultValue: 'http://127.0.0.1:9067',
+    );
 const paymentLinkRegtestZcashdRpcUrl = String.fromEnvironment(
   'ZCASH_E2E_ZCASHD_RPC_URL',
   defaultValue: 'http://127.0.0.1:18232',
 );
 const paymentLinkRegtestZcashdRpcUser = 'zcash';
 const paymentLinkRegtestZcashdRpcPassword = 'zcash';
-const paymentLinkRegtestProxyUrl = 'http://127.0.0.1:19068';
+String get paymentLinkRegtestProxyUrl =>
+    installedE2eRuntimeCaseManifest?.primaryProxyUrl ?? 'http://127.0.0.1:19068';
 const paymentLinkRestartManifestName =
     'payment_link_restart_regtest_manifest.json';
 const paymentLinkBatchRestartManifestName =
@@ -209,8 +214,10 @@ Future<VizorPaymentLink> createPaymentLinkForRegtest(
     description: 'payment-link copy action after broadcast acceptance',
     timeout: const Duration(minutes: 2),
   );
-  await tapAppButton(tester, const ValueKey('payment_link_copy_link_button'));
-  final rawLink = await readPaymentLinkFromClipboard();
+  final rawLink = await withNativeClipboard(() async {
+    await tapAppButton(tester, const ValueKey('payment_link_copy_link_button'));
+    return readPaymentLinkFromClipboard();
+  });
   final link = VizorPaymentLink.parse(rawLink);
   expect(link.network, paymentLinkRegtestNetwork);
   expect(link.presentation?.artworkId, artworkId);
@@ -233,9 +240,11 @@ Future<void> claimPaymentLinkForRegtest(
   VizorPaymentLink link, {
   bool waitUntilReceiving = true,
 }) async {
-  await Clipboard.setData(ClipboardData(text: link.toShareUri().toString()));
-  await tapPaymentLinkText(tester, 'Redeem a card');
-  await tapPaymentLinkText(tester, 'Paste card link');
+  await withNativeClipboard(() async {
+    await Clipboard.setData(ClipboardData(text: link.toShareUri().toString()));
+    await tapPaymentLinkText(tester, 'Redeem a card');
+    await tapPaymentLinkText(tester, 'Paste card link');
+  });
   await pumpUntil(
     tester,
     () => tester.any(find.byKey(const ValueKey('payment_link_claim_button'))),
@@ -394,6 +403,20 @@ var _regtestChainVerified = false;
 /// `prioritisetransaction`) when the node on the RPC port is not regtest.
 Future<void> ensurePaymentLinkRegtestChain() async {
   if (_regtestChainVerified) return;
+  final manifest = installedE2eRuntimeCaseManifest;
+  if (manifest != null) {
+    // This listener is the original pinned regtest fixture owner, not a node
+    // selected from shared development ports.
+    final status = await getOwnedRegtestControl('/status');
+    if (status['zcashdHeight'] is! int ||
+        status['zcashdHeight'] != status['lightwalletdHeight'] ||
+        status['ironwoodActivationHeight'] !=
+            manifest.regtestIronwoodActivationHeight) {
+      throw StateError('The original regtest fixture parity is unproven.');
+    }
+    _regtestChainVerified = true;
+    return;
+  }
   final info = await paymentLinkZcashdRpc<Map<String, Object?>>(
     'getblockchaininfo',
   );
@@ -410,6 +433,10 @@ Future<void> ensurePaymentLinkRegtestChain() async {
 Future<void> minePaymentLinkRegtestBlocks(int blocks) async {
   await ensurePaymentLinkRegtestChain();
   e2eLog('mining $blocks regtest block(s)');
+  if (installedE2eRuntimeCaseManifest != null) {
+    await mineOwnedRegtestBlocks(blocks);
+    return;
+  }
   final before = await paymentLinkZcashdRpc<int>('getblockcount');
   await paymentLinkZcashdRpc<List<Object?>>('generate', [blocks]);
   final targetHeight = before + blocks;
@@ -429,6 +456,9 @@ Future<T> paymentLinkZcashdRpc<T>(
   String method, [
   List<Object?> params = const [],
 ]) async {
+  if (installedE2eRuntimeCaseManifest != null) {
+    throw StateError('Isolated Gift tests must use their original owner controls.');
+  }
   final client = HttpClient();
   try {
     final request = await client.postUrl(
@@ -443,7 +473,7 @@ Future<T> paymentLinkZcashdRpc<T>(
     request.headers
       ..set(HttpHeaders.authorizationHeader, 'Basic $credentials')
       ..contentType = ContentType.json;
-    request.write(
+    final bytes = utf8.encode(
       jsonEncode({
         'jsonrpc': '1.0',
         'id': 'payment-link-restart-regtest-e2e',
@@ -451,6 +481,8 @@ Future<T> paymentLinkZcashdRpc<T>(
         'params': params,
       }),
     );
+    request.contentLength = bytes.length;
+    request.add(bytes);
     final response = await request.close();
     final body = await utf8.decoder.bind(response).join();
     if (response.statusCode != HttpStatus.ok) {
@@ -489,7 +521,9 @@ Future<void> waitForPaymentLinkMempoolTxids(
   Set<String> last = const {};
   final deadline = DateTime.now().add(timeout);
   while (DateTime.now().isBefore(deadline)) {
-    final raw = await paymentLinkZcashdRpc<List<Object?>>('getrawmempool');
+    final raw = installedE2eRuntimeCaseManifest == null
+        ? await paymentLinkZcashdRpc<List<Object?>>('getrawmempool')
+        : (await getOwnedRegtestControl('/mempool'))['txids']! as List<Object?>;
     last = raw.map((txid) => normalizePaymentLinkTxid('$txid')).toSet();
     if (last.containsAll(expected)) return;
     await tester.pump(const Duration(milliseconds: 100));

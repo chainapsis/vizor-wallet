@@ -2,8 +2,8 @@
 
 For the planned isolated execution framework and direct Zakura migration, see
 the [E2E roadmap](ROADMAP.md). The roadmap tracks unmerged work. The isolated
-executor implements all catalog Rust cases and twelve macOS import/endpoint,
-send, shielding and payment-request cases;
+executor implements all catalog Rust cases and eighteen macOS import/endpoint,
+send, shielding, payment-request, mempool and Gift cases;
 existing shell runners remain.
 
 The [native runtime contract](RUNTIME_CONTRACT.md) defines per-case launch
@@ -49,8 +49,8 @@ python3 -B -m unittest scripts/e2e/test_zakura_fixture_source.py
 ## Catalog previews
 
 `run-suite.py` provides a host-only inventory and selection preview. Of 64
-entries, all twenty-three Rust cases and twelve macOS cases
-are wired to the isolated executor; the other 29 stay pending.
+entries, all twenty-three Rust cases and eighteen macOS cases
+are wired to the isolated executor; the other 23 stay pending.
 A preview exit code of 0 means the preview succeeded,
 not that any test ran or passed. Execution requires explicit `--run`.
 
@@ -290,7 +290,40 @@ python3 -B scripts/e2e/run-suite.py \
 
 Use `--run`, the tooling paths above and `--workers 2` to execute both with one
 Cargo signer/two-target build and independent chains/DBs. All iOS execution,
-8 macOS cases and persistent cache/resource/performance gates remain pending.
+2 macOS voting cases and persistent cache/resource/performance gates remain pending.
+
+## macOS mempool and Gift execution
+
+The three mempool cases cover pending receive/history, discovery during an
+active scan, and expiry after controlled mining excludes the held transaction.
+Gift round trip, restart and recovery use the same isolated executor. Restart
+stops and joins the original app/driver, retains the case's wallet and backend,
+mines six blocks (five for recovery), then launches a distinct app/driver on the
+same case. Recovery delegates the original multi-block fork replacement and
+held-transaction release to the pinned fixture; it is not a one-tip substitute.
+Amounts, confirmation/finality, history and claim assertions remain in the tests.
+Clipboard sections serialize briefly; independent chain and wallet state do not.
+Restart and recovery have overall 30- and 32-minute app-execution budgets:
+their existing 15+10 and 15+12-minute test limits plus five minutes for the two
+launches, original stop/join and confirmation mining. Phase limits are unchanged.
+
+```bash
+python3 -B scripts/e2e/run-suite.py \
+  --scenario flutter.macos.mempool-receive-history \
+  --scenario flutter.macos.mempool-during-sync \
+  --scenario flutter.macos.mempool-expiry \
+  --scenario flutter.macos.payment-link-round-trip \
+  --scenario flutter.macos.payment-link-restart \
+  --scenario flutter.macos.payment-link-recovery --plan
+```
+
+Use `--run`, the tooling paths above and `--workers 2` to execute with one
+cohort/helper/signer build per invocation. The dedicated E2E app enables the
+existing `VIZOR_PAYMENT_LINK_REGTEST_ENABLED` compile flag; ordinary wallet
+builds and its default are unchanged. `--failed-from /path/to/run.json` selects
+only failed/timed-out cases without rewriting the earlier report.
+The roadmap records incremental three-plus-three actual passes on two source
+commits, not a final-source six-case pass or measured resource/speedup result.
 
 ## Native port ownership primitive
 

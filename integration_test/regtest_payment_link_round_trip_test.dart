@@ -1,12 +1,10 @@
-import 'dart:convert';
-import 'dart:io';
-
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
+import 'package:zcash_wallet/src/core/config/e2e_runtime_case_manifest.dart';
 import 'package:zcash_wallet/src/core/formatting/zec_amount.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
@@ -21,19 +19,10 @@ import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 import '../test/support/legacy_payment_link.dart';
 
 import 'support/desktop_regtest_flow.dart';
+import 'support/owned_regtest_control.dart';
 import 'support/payment_link_regtest_flow.dart' as payment_link_flow;
 
 const _network = 'regtest';
-const _lightwalletdUrl = String.fromEnvironment(
-  'ZCASH_E2E_LIGHTWALLETD_URL',
-  defaultValue: 'http://127.0.0.1:9067',
-);
-const _zcashdRpcUrl = String.fromEnvironment(
-  'ZCASH_E2E_ZCASHD_RPC_URL',
-  defaultValue: 'http://127.0.0.1:18232',
-);
-const _zcashdRpcUser = 'zcash';
-const _zcashdRpcPassword = 'zcash';
 const _giftAmountText = '0.1';
 const _walletSpendableConfirmationTarget = 6;
 final _giftAmountZatoshi = BigInt.from(10_000_000);
@@ -41,7 +30,7 @@ final _fundingAmountZatoshi = BigInt.from(10_010_000);
 const _giftMessage = 'Congrats from the payment link E2E!';
 
 void main() {
-  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   setUpAll(() async {
     await initializeZcashWalletRuntime();
@@ -51,7 +40,13 @@ void main() {
     'creates, opens, and claims a payment link between two regtest accounts',
     (tester) async {
       addTearDown(() async {
-        await Clipboard.setData(const ClipboardData(text: ''));
+        if (installedE2eRuntimeCaseManifest != null &&
+            binding.reportData?['assertions_completed'] != true) {
+          return;
+        }
+        if (installedE2eRuntimeCaseManifest == null) {
+          await Clipboard.setData(const ClipboardData(text: ''));
+        }
         await cleanupDesktopRegtestWallet();
         await cleanupRegtestPaymentLinkClaimWallets();
       });
@@ -128,12 +123,13 @@ void main() {
         findsOneWidget,
       );
 
-      await tapAppButton(
-        tester,
-        const ValueKey('payment_link_copy_link_button'),
-      );
-
-      final rawLink = await payment_link_flow.readPaymentLinkFromClipboard();
+      final rawLink = await withNativeClipboard(() async {
+        await tapAppButton(
+          tester,
+          const ValueKey('payment_link_copy_link_button'),
+        );
+        return payment_link_flow.readPaymentLinkFromClipboard();
+      });
       var link = VizorPaymentLink.parse(rawLink);
       expect(Uri.parse(rawLink).fragment, startsWith('v3='));
       expect(link.mnemonic.split(' ').length, 12);
@@ -204,8 +200,11 @@ void main() {
         receiverAccountUuid,
       );
       await _openPaymentLinksFromSettings(tester);
-      await _tapText(tester, 'Redeem a card');
-      await _tapText(tester, 'Paste card link');
+      await withNativeClipboard(() async {
+        await Clipboard.setData(ClipboardData(text: rawLink));
+        await _tapText(tester, 'Redeem a card');
+        await _tapText(tester, 'Paste card link');
+      });
       await pumpUntil(
         tester,
         () => tester.any(find.text(kPaymentLinkClaimWaitingDescription)),
@@ -319,6 +318,7 @@ void main() {
         ).balance.amountText,
       );
       e2eLog('payment-link round trip completed with two distinct txids');
+      binding.reportData?['assertions_completed'] = true;
     },
     timeout: const Timeout(Duration(minutes: 12)),
   );
@@ -360,65 +360,8 @@ Future<void> _tapText(WidgetTester tester, String text) async {
   await tester.pump(const Duration(milliseconds: 250));
 }
 
-Future<void> _mineRegtestBlocks(int blocks) async {
-  e2eLog('mining $blocks regtest block(s)');
-  final before = await _zcashdRpc<int>('getblockcount');
-  await _zcashdRpc<List<Object?>>('generate', [blocks]);
-  final targetHeight = before + blocks;
-  final deadline = DateTime.now().add(const Duration(seconds: 30));
-
-  while (DateTime.now().isBefore(deadline)) {
-    final lightwalletdHeight = await rust_wallet.getLatestBlockHeight(
-      network: 'regtest',
-      lightwalletdUrl: _lightwalletdUrl,
-    );
-    if (lightwalletdHeight.toInt() >= targetHeight) {
-      e2eLog('lightwalletd reached mined height $targetHeight');
-      return;
-    }
-    await Future<void>.delayed(const Duration(seconds: 1));
-  }
-  throw StateError('Timed out waiting for lightwalletd height $targetHeight.');
-}
-
-Future<T> _zcashdRpc<T>(
-  String method, [
-  List<Object?> params = const [],
-]) async {
-  final client = HttpClient();
-  try {
-    final request = await client.postUrl(Uri.parse(_zcashdRpcUrl));
-    final credentials = base64Encode(
-      utf8.encode('$_zcashdRpcUser:$_zcashdRpcPassword'),
-    );
-    request.headers
-      ..set(HttpHeaders.authorizationHeader, 'Basic $credentials')
-      ..contentType = ContentType.json;
-    request.write(
-      jsonEncode({
-        'jsonrpc': '1.0',
-        'id': 'payment-link-regtest-e2e',
-        'method': method,
-        'params': params,
-      }),
-    );
-    final response = await request.close();
-    final body = await utf8.decoder.bind(response).join();
-    if (response.statusCode != HttpStatus.ok) {
-      throw StateError(
-        'zcashd RPC $method failed: HTTP ${response.statusCode}',
-      );
-    }
-    final decoded = jsonDecode(body) as Map<String, Object?>;
-    final error = decoded['error'];
-    if (error != null) {
-      throw StateError('zcashd RPC $method failed: $error');
-    }
-    return decoded['result'] as T;
-  } finally {
-    client.close(force: true);
-  }
-}
+Future<void> _mineRegtestBlocks(int blocks) =>
+    payment_link_flow.minePaymentLinkRegtestBlocks(blocks);
 
 Future<rust_sync.TransactionInfo> _waitForHistoryTransaction(
   WidgetTester tester, {

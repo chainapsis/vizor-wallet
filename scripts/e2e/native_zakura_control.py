@@ -19,6 +19,7 @@ from native_clipboard import NativeClipboardLease
 from native_zakura_backend import OwnedNativeZakuraBackend
 from native_zakura_front import OwnedNativeZakuraFront
 from zakura_funding import fund_zakura
+from zakura_mempool import expire_zakura_unmined, fund_zakura_unmined
 
 
 _TOKEN = object()
@@ -128,6 +129,8 @@ class OwnedNativeZakuraControl:
             raise NativeZakuraControlError("use prepare_native_zakura_control")
         self._case, self._backend, self._front = case, backend, front
         self._artifact, self._port, self._activation = artifact, port, activation
+        self._scenario = json.loads(case.workspace.launch_environment()[
+            "VIZOR_E2E_CASE_MANIFEST"])["scenario_id"]
         self._owner = threading.get_ident()
         self._server = None
         self._closed = self._serving = False
@@ -264,7 +267,19 @@ class OwnedNativeZakuraControl:
         if method == "POST" and path == "/raw-transaction" and set(payload) == {"txid"}:
             txid = _txids([payload["txid"]])[0]
             return self._backend.rpc("getrawtransaction", [txid, 1], deadline=self._deadline)
-        if method == "POST" and path in {"/activate", "/reorg-hold-tip", "/release-held"}:
+        if method == "POST" and path == "/reorg-hold-fork" and set(payload) == {
+                "required_txids", "fork_height"}:
+            if self._scenario != "flutter.macos.payment-link-recovery" or self._activation != 1:
+                raise _BadRequest("fork replacement requires the owned Gift recovery case")
+            return self._backend.replace_fork_holding(_txids(payload["required_txids"]),
+                fork_height=_integer(payload["fork_height"], "fork height", 1, 0xFFFFFFFF),
+                deadline=self._deadline)
+        if method == "POST" and path == "/release-held" and set(payload) == {"txids"}:
+            if self._activation != 500 and self._scenario != "flutter.macos.payment-link-recovery":
+                raise _BadRequest("held release requires controlled activation or Gift recovery")
+            return self._backend.release_held_transactions(_txids(payload["txids"]),
+                deadline=self._deadline)
+        if method == "POST" and path in {"/activate", "/reorg-hold-tip"}:
             if self._activation != 500:
                 raise _BadRequest("controlled activation/reorg requires the activation500 profile")
             if path == "/activate" and payload == {}:
@@ -279,10 +294,27 @@ class OwnedNativeZakuraControl:
                 # hold gate and cleanup. JSON is not a reconstructed fixture handle.
                 return self._backend.replace_tip_holding(_txids(payload["required_txids"]),
                     deadline=self._deadline)
-            if path == "/release-held" and set(payload) == {"txids"}:
-                # The original fixture accepts only its complete captured held set.
-                return self._backend.release_held_transactions(_txids(payload["txids"]),
-                    deadline=self._deadline)
+        if method == "POST" and path in {"/fund-unmined", "/fund-unmined-expiring"} and set(payload) == {
+                "address", "amount_zatoshi", "source_height"}:
+            if self._artifact is None or self._activation != 1:
+                raise _BadRequest("unmined funding requires an original signer and height1 profile")
+            address = payload["address"]
+            if not isinstance(address, str) or not 1 <= len(address) <= 4096:
+                raise _BadRequest("unmined funding address is invalid")
+            amount = _integer(payload["amount_zatoshi"], "unmined zatoshis", 1, 2_100_000_000_000_000)
+            source = _integer(payload["source_height"], "unmined source height", 1, 0xFFFFFFFF)
+            expiry = None
+            if path == "/fund-unmined-expiring":
+                tip = _integer(self._backend.rpc("getblockcount", deadline=self._deadline),
+                    "expiry initial tip", 1, 0xFFFFFFFF-20)
+                expiry = tip + 20
+            return fund_zakura_unmined(self._case, self._backend, self._artifact,
+                recipient_address=address, amount_zatoshi=amount, source_height=source,
+                expiry_height=expiry, timeout=_remaining(self._deadline, self._cancel), cancel_event=self._cancel)
+        if method == "POST" and path == "/mine-to-expiry" and set(payload) == {"txid", "expiry_height"}:
+            return expire_zakura_unmined(self._case, self._backend, txid=_txids([payload["txid"]])[0],
+                expiry_height=_integer(payload["expiry_height"], "expiry height", 1, 0xFFFFFFFF),
+                timeout=_remaining(self._deadline, self._cancel), cancel_event=self._cancel)
         if method == "POST" and path == "/fund-confirmed" and set(payload) == {
                 "address", "amount_zatoshi", "source_height", "recipient_pool", "confirmations"}:
             if self._artifact is None:
