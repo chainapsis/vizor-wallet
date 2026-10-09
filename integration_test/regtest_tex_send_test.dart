@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
+import 'package:zcash_wallet/src/core/config/e2e_runtime_case_manifest.dart';
 import 'package:zcash_wallet/src/core/config/network_config.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
@@ -15,24 +16,31 @@ import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 import 'support/desktop_activity_flow.dart';
 import 'support/desktop_onboarding_flow.dart';
+import 'support/owned_regtest_control.dart';
 
 const _network = String.fromEnvironment(
   'ZCASH_E2E_NETWORK',
   defaultValue: 'regtest',
 );
-const _lightwalletdUrl = String.fromEnvironment(
-  'ZCASH_E2E_LIGHTWALLETD_URL',
-  defaultValue: 'http://127.0.0.1:9067',
-);
-const _zcashdRpcUrl = String.fromEnvironment(
-  'ZCASH_E2E_ZCASHD_RPC_URL',
-  defaultValue: 'http://127.0.0.1:18232',
-);
+String get _lightwalletdUrl =>
+    installedE2eRuntimeCaseManifest?.lightwalletdUrl ??
+    const String.fromEnvironment(
+      'ZCASH_E2E_LIGHTWALLETD_URL',
+      defaultValue: 'http://127.0.0.1:9067',
+    );
+String get _zcashdRpcUrl =>
+    installedE2eRuntimeCaseManifest?.zcashdRpcUrl ??
+    const String.fromEnvironment(
+      'ZCASH_E2E_ZCASHD_RPC_URL',
+      defaultValue: 'http://127.0.0.1:18232',
+    );
 const _texAddress = String.fromEnvironment('ZCASH_E2E_TEX_ADDRESS');
-const _driverUrl = String.fromEnvironment(
-  'ZCASH_E2E_DRIVER_URL',
-  defaultValue: 'http://127.0.0.1:39068',
-);
+String get _driverUrl =>
+    installedE2eRuntimeCaseManifest?.zcashdRpcUrl ??
+    const String.fromEnvironment(
+      'ZCASH_E2E_DRIVER_URL',
+      defaultValue: 'http://127.0.0.1:39068',
+    );
 const _zcashdRpcUser = 'zcash';
 const _zcashdRpcPassword = 'zcash';
 const _accountsKey = 'zcash_accounts';
@@ -52,7 +60,7 @@ final _returnZatoshi = BigInt.from(10_000_000);
 final _currencyTicker = kZcashDefaultCurrencyTicker;
 
 void main() {
-  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   setUpAll(() async {
     await initializeZcashWalletRuntime();
@@ -155,12 +163,20 @@ void main() {
       // source, and the sender must recognize and be able to spend them.
       final ephemeral = await _texEphemeralSource(receiverAccountUuid);
       _log('TEX ephemeral source $ephemeral');
-      final returned = await _postDriver('/fund-confirmed', {
-        'address': ephemeral,
-        'amount': _returnAmount,
-        'confirmations': 1,
-      });
-      _log('returned funds txid=${returned['txid']}');
+      final String returnedTxid;
+      if (installedE2eRuntimeCaseManifest != null) {
+        returnedTxid = await fundOwnedRegtestTransparent(
+          ephemeral, _returnZatoshi.toInt(), sourceHeight: 2, confirmations: 1,
+        );
+      } else {
+        final returned = await _postDriver('/fund-confirmed', {
+          'address': ephemeral,
+          'amount': _returnAmount,
+          'confirmations': 1,
+        });
+        returnedTxid = returned['txid'] as String;
+      }
+      _log('returned funds txid=$returnedTxid');
       // The source becomes checkable once the first leg can no longer expire.
       await _mineRegtestBlocks(45);
 
@@ -198,6 +214,7 @@ void main() {
         timeout: const Duration(minutes: 4),
       );
       _log('returned TEX funds detected and shielded');
+      binding.reportData?['assertions_completed'] = true;
     },
     timeout: const Timeout(Duration(minutes: 20)),
   );
@@ -326,9 +343,14 @@ Future<BigInt> _estimateSendFee({
 Future<void> _mineRegtestBlocks(int blocks) async {
   _log('mining $blocks regtest blocks');
 
-  final before = await _zcashdRpc<int>('getblockcount');
-  await _zcashdRpc<List<Object?>>('generate', [blocks]);
-  final targetHeight = before + blocks;
+  final int targetHeight;
+  if (installedE2eRuntimeCaseManifest != null) {
+    targetHeight = await mineOwnedRegtestBlocks(blocks);
+  } else {
+    final before = await _zcashdRpc<int>('getblockcount');
+    await _zcashdRpc<List<Object?>>('generate', [blocks]);
+    targetHeight = before + blocks;
+  }
   final deadline = DateTime.now().add(const Duration(seconds: 30));
 
   while (DateTime.now().isBefore(deadline)) {
@@ -448,6 +470,12 @@ Future<T> _zcashdRpc<T>(
   String method, [
   List<Object?> params = const [],
 ]) async {
+  if (installedE2eRuntimeCaseManifest != null) {
+    if (method != 'getrawtransaction' || params.length != 2 || params[1] != 1) {
+      throw StateError('Only the original raw-transaction oracle is supported.');
+    }
+    return await postOwnedRegtestControl('/raw-transaction', {'txid': params[0]}) as T;
+  }
   final client = HttpClient();
   try {
     final request = await client.postUrl(Uri.parse(_zcashdRpcUrl));
@@ -721,9 +749,7 @@ Future<void> _stopRustWorkForCleanup() async {
   }
 
   if (rust_sync.isSyncRunning() || rust_sync.isMempoolObserverRunning()) {
-    _log(
-      'timed out waiting for Rust work to stop; continuing E2E storage cleanup',
-    );
+    throw StateError('Rust work did not stop; retain wallet state for the host.');
   }
 }
 

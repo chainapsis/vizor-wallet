@@ -57,6 +57,7 @@ class FunderBuildTests(unittest.TestCase):
         self.rustup = None
         self.hard_link_output = False
         self.test_candidate_mode = "original"
+        self.address_candidate_mode = "original"
 
     def git(self, *args):
         return subprocess.run(["git", "-C", str(self.source), *args], check=True,
@@ -113,6 +114,18 @@ class FunderBuildTests(unittest.TestCase):
             if self.mutate_source:
                 script += f"s=Path({str(source_file)!r}); s.chmod(0o600); s.write_text('changed'); "
             finished = {"reason": "build-finished", "success": self.completed}
+            if "regtest_wallet_addresses" in arguments:
+                address_binary = target / "debug/examples/regtest_wallet_addresses"
+                address_message = {"reason":"compiler-artifact", "executable":str(address_binary),
+                    "target":{"name":"regtest_wallet_addresses", "kind":["example"],
+                        "src_path":str(manifest.parent / "examples/regtest_wallet_addresses.rs")},
+                    "profile":{"test":False}}
+                if self.address_candidate_mode == "wrong-source":
+                    address_message["target"]["src_path"] = str(self.source / "rust/examples/regtest_wallet_addresses.rs")
+                script += (f"a=Path({str(address_binary)!r}); a.parent.mkdir(mode=0o700,parents=True,exist_ok=True); "
+                    "a.write_text('modeled-address-output'); a.chmod(0o700); ")
+                if self.address_candidate_mode != "missing":
+                    script += f"print(json.dumps({address_message!r})); "
             for index, argument in enumerate(arguments):
                 if argument != "--test":
                     continue
@@ -179,6 +192,39 @@ class FunderBuildTests(unittest.TestCase):
         test.write_text("changed")
         with self.assertRaises(BUILD.FunderBuildError):
             artifact.verify_unchanged()
+
+    def add_address_source(self):
+        (self.source / "rust/examples/regtest_wallet_addresses.rs").write_text("fn main() {}\n")
+        self.git("add", "rust")
+        self.git("commit", "-qm", "modeled address example")
+        self.commit = self.git("rev-parse", "HEAD").strip()
+
+    def test_wallet_address_tool_shares_original_build_and_detects_mutation(self):
+        self.add_address_source()
+        artifact = self.build(wallet_addresses=True)
+        self.assertEqual(self.compile_calls, 1)
+        address = artifact.wallet_addresses_binary()
+        self.assertEqual(address.stat().st_mode & 0o777, 0o500)
+        self.assertEqual(artifact.identity()["wallet_addresses_binary"]["binary"], str(address))
+        address.chmod(0o700)
+        address.write_text("changed")
+        with self.assertRaises(BUILD.FunderBuildError):
+            artifact.verify_unchanged()
+
+    def test_wallet_address_tool_must_have_original_completed_cargo_output(self):
+        self.add_address_source()
+        for mode in ("wrong-source", "missing"):
+            self.address_candidate_mode = mode
+            with self.subTest(mode=mode), self.assertRaises(BUILD.FunderBuildError):
+                self.build(wallet_addresses=True)
+
+    def test_unselected_or_uncommitted_wallet_address_tool_is_not_adopted(self):
+        artifact = self.build()
+        with self.assertRaises(BUILD.FunderBuildError):
+            artifact.wallet_addresses_binary()
+        with self.assertRaises(BUILD.FunderBuildError):
+            self.build(wallet_addresses=True)
+        self.assertEqual(self.compile_calls, 1)
 
     def test_existing_ironwood_targets_share_one_original_build(self):
         targets = ("ironwood_regtest_migration", "ironwood_regtest_gift_card_claim")

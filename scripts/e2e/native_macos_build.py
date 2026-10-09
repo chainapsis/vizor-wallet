@@ -25,7 +25,8 @@ class NativeMacosBuildError(runtime.RunnerError):
     """Trusted build/signing or original build writer completion failed."""
 
 
-def build_native_macos_cohort(case, *, source_root, flutter, timeout=1200.0, cancel_event=None):
+def build_native_macos_cohort(case, *, source_root, flutter, timeout=1200.0, cancel_event=None,
+                            tex_address=None):
     """Build exactly once before workers, retaining all compiler/artifact evidence."""
     if not isinstance(case, NativeCaseLifecycle) or not case.accepting_launches or case.launched_process_count:
         raise NativeMacosBuildError("native build requires a fresh dedicated original case")
@@ -35,6 +36,10 @@ def build_native_macos_cohort(case, *, source_root, flutter, timeout=1200.0, can
     if not root.is_absolute() or root.resolve(strict=True) != root or not os.access(tool, os.X_OK):
         raise NativeMacosBuildError("native source/Flutter must be explicit and canonical")
     cancel = cancel_event if cancel_event is not None else threading.Event()
+    if tex_address is not None and (not isinstance(tex_address, str)
+        or not tex_address.startswith("texregtest1") or not 20 <= len(tex_address) <= 100
+        or not tex_address.isascii() or not tex_address.isalnum()):
+        raise NativeMacosBuildError("TEX fixture must be a derived regtest address")
     deadline = time.monotonic() + timeout
 
     def command(arguments, *, in_source=False):
@@ -70,6 +75,7 @@ def build_native_macos_cohort(case, *, source_root, flutter, timeout=1200.0, can
             "--dart-define=ZCASH_REGTEST_IRONWOOD_ACTIVATION_HEIGHT=1",
             "--dart-define=VIZOR_E2E_MACOS_COHORT=true",
             "--dart-define=ZCASH_E2E_FIRST_UNLOCK_MNEMONIC_KEYCHAIN=true",
+            *(["--dart-define=ZCASH_E2E_TEX_ADDRESS="+tex_address] if tex_address is not None else []),
             "--dart-define=VIZOR_E2E_HIDDEN_WINDOW=true"],in_source=True)
         app = root/"build/macos/Build/Products/Debug/Vizor.app"
         cohort = _inspect_signed_app(app)

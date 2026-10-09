@@ -15,6 +15,7 @@ import time
 import e2e_runtime as runtime
 from funder_build import ProducedRegtestFunder
 from native_case_lifecycle import NativeCaseLifecycle
+from native_clipboard import NativeClipboardLease
 from native_zakura_backend import OwnedNativeZakuraBackend
 from native_zakura_front import OwnedNativeZakuraFront
 from zakura_funding import fund_zakura
@@ -132,6 +133,7 @@ class OwnedNativeZakuraControl:
         self._closed = self._serving = False
         self._failure = None
         self._requests = 0
+        self._clipboard = NativeClipboardLease()
 
     @property
     def closed(self):
@@ -225,6 +227,20 @@ class OwnedNativeZakuraControl:
         self._server.server_activate()
 
     def _dispatch(self, method, path, payload):
+        if method == "POST" and path in {
+                "/host-resource/clipboard/acquire", "/host-resource/clipboard/release"}:
+            if payload != {}:
+                raise _BadRequest("clipboard controls require an empty object")
+            if path.endswith("/acquire"):
+                if self._clipboard.held:
+                    raise _BadRequest("this controller already holds the clipboard")
+                self._clipboard.acquire(deadline=min(self._deadline, time.monotonic() + 30),
+                    cancel_event=self._cancel)
+            else:
+                if not self._clipboard.held:
+                    raise _BadRequest("this controller does not hold the clipboard")
+                self._clipboard.release()
+            return {"ok": True}
         if method == "GET" and payload == {}:
             if path == "/health":
                 return {"ok": True}
@@ -245,6 +261,9 @@ class OwnedNativeZakuraControl:
         if method == "POST" and path == "/mine" and set(payload) == {"blocks"}:
             count = _integer(payload["blocks"], "blocks", 1, 1000)
             return self._backend.mine(count)
+        if method == "POST" and path == "/raw-transaction" and set(payload) == {"txid"}:
+            txid = _txids([payload["txid"]])[0]
+            return self._backend.rpc("getrawtransaction", [txid, 1], deadline=self._deadline)
         if method == "POST" and path in {"/activate", "/reorg-hold-tip", "/release-held"}:
             if self._activation != 500:
                 raise _BadRequest("controlled activation/reorg requires the activation500 profile")
@@ -329,6 +348,14 @@ class OwnedNativeZakuraControl:
             if self._server.socket.fileno() != -1:
                 raise NativeZakuraControlError("original control listener closure is unproven")
         self._closed = True
+
+    def release_clipboard_after_writers(self):
+        """Abandoned copy actions release only after the original writers join."""
+        self._require_owner()
+        if not self._closed or self._case.accepting_launches or self._case._receipt is None:
+            raise NativeZakuraControlError("clipboard writer stop is unproven")
+        if self._clipboard.held:
+            self._clipboard.release()
 
 
 def prepare_native_zakura_control(case, backend, front, *, artifact=None):

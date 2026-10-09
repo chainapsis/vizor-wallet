@@ -40,6 +40,8 @@ def execute_native_macos_case(session, *, dart, source_root, timeout=600.0, canc
     session.storage.helper.verify_unchanged()
     environment = {**os.environ, **session.case.workspace.launch_environment()}
     manifest = json.loads(environment["VIZOR_E2E_CASE_MANIFEST"])
+    if manifest["scenario_id"] == "flutter.macos.tex-send":
+        environment["ZCASH_E2E_EPHEMERAL_CHECKS_DUE_NOW"] = "1"
     cancel = cancel_event if cancel_event is not None else threading.Event()
     deadline = time.monotonic() + timeout
     if cancel.is_set():

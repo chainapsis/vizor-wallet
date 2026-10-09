@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
+import 'package:zcash_wallet/src/core/config/e2e_runtime_case_manifest.dart';
 import 'package:zcash_wallet/src/core/config/network_config.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
@@ -14,6 +15,7 @@ import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 import 'support/desktop_onboarding_flow.dart';
+import 'support/owned_regtest_control.dart';
 
 // End-to-end regtest coverage for the full "Request ZEC" round trip: one
 // account composes a ZIP-321 request in the receive pane, the other opens that
@@ -43,14 +45,18 @@ const _network = String.fromEnvironment(
   'ZCASH_E2E_NETWORK',
   defaultValue: 'regtest',
 );
-const _lightwalletdUrl = String.fromEnvironment(
-  'ZCASH_E2E_LIGHTWALLETD_URL',
-  defaultValue: 'http://127.0.0.1:9067',
-);
-const _zcashdRpcUrl = String.fromEnvironment(
-  'ZCASH_E2E_ZCASHD_RPC_URL',
-  defaultValue: 'http://127.0.0.1:18232',
-);
+String get _lightwalletdUrl =>
+    installedE2eRuntimeCaseManifest?.lightwalletdUrl ??
+    const String.fromEnvironment(
+      'ZCASH_E2E_LIGHTWALLETD_URL',
+      defaultValue: 'http://127.0.0.1:9067',
+    );
+String get _zcashdRpcUrl =>
+    installedE2eRuntimeCaseManifest?.zcashdRpcUrl ??
+    const String.fromEnvironment(
+      'ZCASH_E2E_ZCASHD_RPC_URL',
+      defaultValue: 'http://127.0.0.1:18232',
+    );
 const _zcashdRpcUser = 'zcash';
 const _zcashdRpcPassword = 'zcash';
 const _accountsKey = 'zcash_accounts';
@@ -69,7 +75,7 @@ const _requestMessage = 'Table 4';
 final _currencyTicker = kZcashDefaultCurrencyTicker;
 
 void main() {
-  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   setUpAll(() async {
     await initializeZcashWalletRuntime();
@@ -151,6 +157,7 @@ void main() {
       for (var i = 0; i < 25; i++) {
         await _demoPause(tester);
       }
+      binding.reportData?['assertions_completed'] = true;
     },
     timeout: const Timeout(Duration(minutes: 10)),
   );
@@ -197,12 +204,15 @@ Future<String> _composeRequestLink(WidgetTester tester) async {
     description: 'the request result step',
   );
 
-  await _tapAppButton(tester, const ValueKey('request_copy_link_button'));
-  final data = await Clipboard.getData('text/plain');
-  final uri = data?.text?.trim() ?? '';
-  if (uri.isEmpty) {
-    fail('The request link was not copied to the clipboard.');
-  }
+  final uri = await withNativeClipboard(() async {
+    await _tapAppButton(tester, const ValueKey('request_copy_link_button'));
+    final data = await Clipboard.getData('text/plain');
+    final copiedUri = data?.text?.trim() ?? '';
+    if (copiedUri.isEmpty) {
+      fail('The request link was not copied to the clipboard.');
+    }
+    return copiedUri;
+  });
 
   await _tapWidget(tester, const ValueKey('request_modal_close'));
   return uri;
@@ -394,9 +404,14 @@ Future<void> _openAddAccountFlow(WidgetTester tester) async {
 Future<void> _mineRegtestBlocks(int blocks) async {
   _log('mining $blocks regtest blocks');
 
-  final before = await _zcashdRpc<int>('getblockcount');
-  await _zcashdRpc<List<Object?>>('generate', [blocks]);
-  final targetHeight = before + blocks;
+  final int targetHeight;
+  if (installedE2eRuntimeCaseManifest != null) {
+    targetHeight = await mineOwnedRegtestBlocks(blocks);
+  } else {
+    final before = await _zcashdRpc<int>('getblockcount');
+    await _zcashdRpc<List<Object?>>('generate', [blocks]);
+    targetHeight = before + blocks;
+  }
   final deadline = DateTime.now().add(const Duration(seconds: 30));
 
   while (DateTime.now().isBefore(deadline)) {
@@ -624,9 +639,7 @@ Future<void> _stopRustWorkForCleanup() async {
   }
 
   if (rust_sync.isSyncRunning() || rust_sync.isMempoolObserverRunning()) {
-    _log(
-      'timed out waiting for Rust work to stop; continuing E2E storage cleanup',
-    );
+    throw StateError('Rust work did not stop; retain wallet state for the host.');
   }
 }
 
