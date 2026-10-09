@@ -165,7 +165,7 @@ const kTransparentOptOutPendingMessage =
 /// deliberately leaves it alone — see [kEnhancePirEnabledPreferenceKey].
 ///
 /// The toggle is serialized with wallet resets and account mutations on every
-/// platform through [LinuxKeyringCoordinator.runWalletDbMutation].
+/// platform through [LinuxKeyringCoordinator.runMutation].
 class EnhancePirNotifier extends Notifier<bool> {
   @override
   bool build() {
@@ -199,7 +199,7 @@ class EnhancePirNotifier extends Notifier<bool> {
       String? outcome;
       await ref
           .read(linuxKeyringCoordinatorProvider)
-          .runWalletDbMutation(
+          .runMutation(
             () => ref.read(syncProvider.notifier).withRecoverySettingPaused(
               () async {
                 outcome = await change();

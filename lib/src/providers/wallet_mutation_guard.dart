@@ -29,7 +29,7 @@ Future<T> runWithSyncPausedForAccountMutation<T>(
     .read(linuxKeyringCoordinatorProvider)
     // Serialized against a reset, another account mutation and the private
     // queries toggle on every platform, not only Linux.
-    .runWalletDbMutation(
+    .runMutation(
       () => _runWithSyncPausedForAccountMutation(
         ref,
         action,

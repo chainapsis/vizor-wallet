@@ -868,7 +868,7 @@ void main() {
           addTearDown(container.dispose);
           final release = Completer<void>();
           // A reset or deletion, as `runWithSyncPausedForAccountMutation` runs it.
-          final reset = coordinator.runWalletDbMutation(() => release.future);
+          final reset = coordinator.runMutation(() => release.future);
 
           final notifier = container.read(enhancePirProvider.notifier);
           await notifier.set(true);
@@ -905,7 +905,7 @@ void main() {
           await Future<void>.delayed(Duration.zero);
           expect(sync.transitions, 1);
           await expectLater(
-            coordinator.runWalletDbMutation(() async => fail('reset ran')),
+            coordinator.runMutation(() async => fail('reset ran')),
             throwsA(isA<WalletMutationBusyException>()),
           );
 
@@ -913,7 +913,7 @@ void main() {
           await change;
           expect(store.value, isTrue);
           // The lane is free again.
-          expect(await coordinator.runWalletDbMutation(() async => 7), 7);
+          expect(await coordinator.runMutation(() async => 7), 7);
         },
       );
     }
@@ -931,7 +931,7 @@ void main() {
         );
         addTearDown(container.dispose);
 
-        await coordinator.runWalletDbMutation(
+        await coordinator.runMutation(
           () => container.read(enhancePirProvider.notifier).set(true),
         );
 

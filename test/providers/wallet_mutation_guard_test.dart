@@ -83,8 +83,8 @@ void main() {
     await tester.pump();
     final release = Completer<void>();
     // The private queries toggle holds the lane.
-    final toggle = coordinator.runWalletDbMutation(() => release.future);
-    expect(coordinator.hasPendingWalletDbMutation, isTrue);
+    final toggle = coordinator.runMutation(() => release.future);
+    expect(coordinator.hasPendingMutation, isTrue);
     try {
       await expectLater(
         runWithSyncPausedForWalletReset(capturedRef, () async {
@@ -103,9 +103,9 @@ void main() {
       release.complete();
       await toggle;
     }
-    expect(coordinator.hasPendingWalletDbMutation, isFalse);
+    expect(coordinator.hasPendingMutation, isFalse);
     // Nested inside the lane's owner, a mutation keeps its ownership.
-    await coordinator.runWalletDbMutation(
+    await coordinator.runMutation(
       () => runWithSyncPausedForAccountMutation(capturedRef, () async {
         events.add('action');
       }),
