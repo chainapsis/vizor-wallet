@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/storage/enhance_pir_preference_store.dart';
+import 'package:zcash_wallet/src/core/storage/linux_keyring_coordinator.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -85,6 +86,14 @@ class _Store implements EnhancePirPreferenceStore {
   }
 }
 
+ApiAppliedTransparentPolicy _applied(bool private, int generation) =>
+    ApiAppliedTransparentPolicy(
+      mode: private
+          ? ApiTransparentLedgerMode.privateRequired
+          : ApiTransparentLedgerMode.public,
+      generation: BigInt.from(generation),
+    );
+
 /// Records transparent policy reconciliation, which can fail per direction.
 class _Reconciler {
   _Reconciler([this.events]);
@@ -92,16 +101,18 @@ class _Reconciler {
   final calls = <bool>[];
   bool failRaise = false;
   bool failLower = false;
+  int generation = 1;
 
   /// Whether lowering finds a private wallet to lower.
   bool lowers = true;
-  Future<bool> call(bool privateQueries) async {
+  Future<ApiAppliedTransparentPolicy?> call(bool privateQueries) async {
     calls.add(privateQueries);
     events?.add('reconcile:$privateQueries');
     if (privateQueries ? failRaise : failLower) {
       throw StateError('public lookups did not drain');
     }
-    return privateQueries || lowers;
+    if (!privateQueries && !lowers) return null;
+    return _applied(privateQueries, ++generation);
   }
 }
 
@@ -114,12 +125,28 @@ class _DurableReconciler extends _Reconciler {
   bool privateRequired = true;
 
   @override
-  Future<bool> call(bool privateQueries) async {
+  Future<ApiAppliedTransparentPolicy?> call(bool privateQueries) async {
     await super.call(privateQueries);
-    if (privateQueries && !buildFlag) return false;
+    if (privateQueries && !buildFlag) return null;
     final changed = privateRequired != privateQueries;
     privateRequired = privateQueries;
-    return changed;
+    return changed ? _applied(privateQueries, generation) : null;
+  }
+}
+
+/// The persisted marker of an unfinished opt-out.
+class _OptOut implements TransparentOptOutStore {
+  _OptOut([this.events]);
+  final List<String>? events;
+  bool value = false;
+  bool failWrite = false;
+  @override
+  Future<bool> readPending() async => value;
+  @override
+  Future<void> writePending(bool pending) async {
+    if (failWrite) throw StateError('disk full');
+    events?.add('optout:$pending');
+    value = pending;
   }
 }
 
@@ -140,8 +167,11 @@ class _Background {
 class _Sync extends SyncNotifier {
   var gate = Completer<void>();
   int transitions = 0;
+  int starts = 0;
   @override
   Future<SyncState> build() async => SyncState();
+  @override
+  void startSync({int? latestTipHeight}) => starts++;
   @override
   Future<void> withRecoverySettingPaused(Future<void> Function() action) async {
     transitions++;
@@ -232,8 +262,13 @@ void main() {
     bool hasAccount = false,
     _Background? background,
     _Reconciler? reconciler,
+    _OptOut? optOut,
+    LinuxKeyringCoordinator? coordinator,
   }) => ProviderContainer(
     overrides: [
+      transparentOptOutStoreProvider.overrideWithValue(optOut ?? _OptOut()),
+      if (coordinator != null)
+        linuxKeyringCoordinatorProvider.overrideWithValue(coordinator),
       appBootstrapProvider.overrideWithValue(
         AppBootstrapState(
           initialLocation: '/settings',
@@ -396,11 +431,13 @@ void main() {
       final store = _Store()..events = events;
       final background = _Background(events);
       final sync = _Sync()..gate.complete();
+      final optOut = _OptOut(events);
       final container = setup(
         store,
         sync,
         background: background,
         reconciler: _Reconciler(events),
+        optOut: optOut,
       );
       addTearDown(container.dispose);
       final notifier = container.read(enhancePirProvider.notifier);
@@ -414,12 +451,20 @@ void main() {
         'store:true',
         'rust:true',
         'confirmed:true',
+        // Turning on supersedes an unfinished opt-out.
+        'optout:false',
         'reconcile:true',
+        // The opt-out is persisted before anything weakens, and cleared
+        // only once the lowering applied.
+        'optout:true',
         'store:false',
         'rust:false',
         'reconcile:false',
         'native:false',
+        'optout:false',
       ]);
+      expect(optOut.value, isFalse);
+      expect(container.read(transparentOptOutPendingProvider), isFalse);
       expect(container.read(enhancePirProvider), isFalse);
       expect(container.read(enhancePirTransitionProvider), isNull);
     },
@@ -453,8 +498,11 @@ void main() {
       );
     },
   );
+  // Previously a failed raise rolled the shielded setting back off. The
+  // shielded setting now stays where the user put it; the startup and sync
+  // raise paths retry the transparent raise.
   test(
-    'a failed raise on enable turns Rust and the saved setting back off',
+    'a failed raise on enable keeps private queries on and reports it',
     () async {
       final events = <String>[];
       api.events = events;
@@ -476,52 +524,129 @@ void main() {
         'rust:true',
         'confirmed:true',
         'reconcile:true',
-        'rust:false',
-        'store:false',
       ]);
-      expect(store.value, isFalse);
-      expect(container.read(enhancePirProvider), isFalse);
-      expect(
-        container.read(enhancePirTransitionProvider),
-        'Setting unchanged. Try again.',
-      );
-    },
-  );
-  test(
-    'a failed lowering on disable restores Rust and the saved preference',
-    () async {
-      final events = <String>[];
-      api.events = events;
-      final store = _Store()
-        ..value = true
-        ..events = events;
-      final sync = _Sync()..gate.complete();
-      final container = setup(
-        store,
-        sync,
-        initialEnabled: true,
-        background: _Background(events),
-        reconciler: _Reconciler(events)..failLower = true,
-      );
-      addTearDown(container.dispose);
-
-      await container.read(enhancePirProvider.notifier).set(false);
-
-      expect(events, [
-        'store:false',
-        'rust:false',
-        'reconcile:false',
-        'rust:true',
-        'store:true',
-      ]);
+      expect(api.values, [true], reason: 'no rollback');
       expect(store.value, isTrue);
       expect(container.read(enhancePirProvider), isTrue);
       expect(
         container.read(enhancePirTransitionProvider),
-        'Setting unchanged. Try again.',
+        kTransparentRaisePendingMessage,
       );
+      // Nothing was applied, so nothing is adopted.
+      expect(sync.appliedTransparentPolicy, isNull);
     },
   );
+  // Previously a failed lowering restored Rust and the saved preference to
+  // on. The shielded setting now stays off and the opt-out stays persisted,
+  // so startup retries it; the durable private policy keeps governing every
+  // transparent lookup meanwhile.
+  test('a failed lowering on disable keeps private queries off and persists '
+      'the opt-out', () async {
+    final events = <String>[];
+    api.events = events;
+    final store = _Store()
+      ..value = true
+      ..events = events;
+    final optOut = _OptOut(events);
+    final reconciler = _DurableReconciler(buildFlag: false)..failLower = true;
+    final sync = _Sync()..gate.complete();
+    final container = setup(
+      store,
+      sync,
+      initialEnabled: true,
+      background: _Background(events),
+      reconciler: reconciler,
+      optOut: optOut,
+    );
+    addTearDown(container.dispose);
+
+    await container.read(enhancePirProvider.notifier).set(false);
+
+    expect(events, [
+      'optout:true',
+      'store:false',
+      'rust:false',
+      'native:false',
+    ]);
+    expect(api.values, [false], reason: 'no rollback');
+    expect(store.value, isFalse);
+    expect(container.read(enhancePirProvider), isFalse);
+    // Fail-closed: the wallet is still durably private.
+    expect(reconciler.privateRequired, isTrue);
+    expect(reconciler.calls, [false]);
+    expect(optOut.value, isTrue);
+    expect(container.read(transparentOptOutPendingProvider), isTrue);
+    expect(container.read(transparentOptOutActionProvider), isTrue);
+    expect(
+      container.read(enhancePirTransitionProvider),
+      kTransparentOptOutPendingMessage,
+    );
+    expect(sync.appliedTransparentPolicy, isNull);
+  });
+  test('a pending opt-out can be finished from Settings', () async {
+    final store = _Store()..value = true;
+    final optOut = _OptOut();
+    final reconciler = _DurableReconciler(buildFlag: false)..failLower = true;
+    final sync = _Sync()..gate.complete();
+    final container = setup(
+      store,
+      sync,
+      initialEnabled: true,
+      background: _Background(<String>[]),
+      reconciler: reconciler,
+      optOut: optOut,
+    );
+    addTearDown(container.dispose);
+    final notifier = container.read(enhancePirProvider.notifier);
+    await notifier.set(false);
+    expect(optOut.value, isTrue);
+    // A second off is not a change of the setting.
+    await notifier.set(false);
+    expect(reconciler.calls, [false]);
+
+    reconciler.failLower = false;
+    await notifier.finishTransparentOptOut();
+
+    expect(reconciler.calls, [false, false]);
+    expect(reconciler.privateRequired, isFalse);
+    expect(optOut.value, isFalse);
+    expect(container.read(transparentOptOutPendingProvider), isFalse);
+    expect(container.read(transparentOptOutActionProvider), isFalse);
+    expect(container.read(enhancePirTransitionProvider), isNull);
+    expect(container.read(enhancePirProvider), isFalse);
+    expect(
+      sync.appliedTransparentPolicy?.mode,
+      ApiTransparentLedgerMode.public,
+    );
+  });
+  test('a failed opt-out marker write changes nothing', () async {
+    final events = <String>[];
+    api.events = events;
+    final store = _Store()
+      ..value = true
+      ..events = events;
+    final reconciler = _DurableReconciler(buildFlag: false);
+    final container = setup(
+      store,
+      _Sync()..gate.complete(),
+      initialEnabled: true,
+      background: _Background(events),
+      reconciler: reconciler,
+      optOut: _OptOut()..failWrite = true,
+    );
+    addTearDown(container.dispose);
+
+    await container.read(enhancePirProvider.notifier).set(false);
+
+    expect(events, isEmpty);
+    expect(reconciler.calls, isEmpty);
+    expect(reconciler.privateRequired, isTrue);
+    expect(container.read(enhancePirProvider), isTrue);
+    expect(
+      container.read(enhancePirTransitionProvider),
+      kEnhancePirUnchangedMessage,
+    );
+  });
   test(
     'a pending disable save leaves durable private policy untouched',
     () async {
@@ -570,12 +695,15 @@ void main() {
         ..fail = true;
       final reconciler = _DurableReconciler(buildFlag: buildFlag);
       final events = <String>[];
+      final optOut = _OptOut();
+      addTearDown(() => expect(optOut.value, isFalse));
       final container = setup(
         store,
         _Sync()..gate.complete(),
         initialEnabled: true,
         background: _Background(events),
         reconciler: reconciler,
+        optOut: optOut,
       );
       addTearDown(container.dispose);
 
@@ -593,39 +721,37 @@ void main() {
       );
     });
   }
-  test(
-    'a failed preference restore never lowers durable private policy',
-    () async {
-      final store = _Store()
-        ..value = true
-        ..failEnabled = true;
-      final reconciler = _DurableReconciler(buildFlag: false)..failLower = true;
-      final events = <String>[];
-      final container = setup(
-        store,
-        _Sync()..gate.complete(),
-        initialEnabled: true,
-        background: _Background(events),
-        reconciler: reconciler,
-      );
-      addTearDown(container.dispose);
+  // Previously a failed lowering tried to restore the saved preference to
+  // on. Nothing is restored now: the opt-out stays saved and pending.
+  test('a failed lowering never lowers durable private policy nor restores '
+      'the setting', () async {
+    final store = _Store()
+      ..value = true
+      ..failEnabled = true;
+    final reconciler = _DurableReconciler(buildFlag: false)..failLower = true;
+    final events = <String>[];
+    final container = setup(
+      store,
+      _Sync()..gate.complete(),
+      initialEnabled: true,
+      background: _Background(events),
+      reconciler: reconciler,
+    );
+    addTearDown(container.dispose);
 
-      await container.read(enhancePirProvider.notifier).set(false);
+    await container.read(enhancePirProvider.notifier).set(false);
 
-      expect(reconciler.privateRequired, isTrue);
-      expect(reconciler.calls, [false]);
-      expect(api.values, [false, true]);
-      expect(events, isEmpty);
-      // The saved opt-out can remain after a second storage failure, but the
-      // wallet, runtime and native policy all retain the stricter private state.
-      expect(store.value, isFalse);
-      expect(container.read(enhancePirProvider), isTrue);
-      expect(
-        container.read(enhancePirTransitionProvider),
-        'Setting unchanged. Try again.',
-      );
-    },
-  );
+    expect(reconciler.privateRequired, isTrue);
+    expect(reconciler.calls, [false]);
+    expect(api.values, [false]);
+    expect(events, ['native:false']);
+    expect(store.value, isFalse);
+    expect(container.read(enhancePirProvider), isFalse);
+    expect(
+      container.read(enhancePirTransitionProvider),
+      kTransparentOptOutPendingMessage,
+    );
+  });
   test(
     'a failed disable save changes no policy for an unreadable preference',
     () async {
@@ -719,6 +845,134 @@ void main() {
         isTrue,
       );
       expect(shouldStartSyncForPolledTip(current, 100), isFalse);
+    },
+  );
+
+  group('toggle, reset and deletion serialize on every platform', () {
+    for (final linux in [false, true]) {
+      final platform = linux ? 'Linux' : 'other platforms';
+      test(
+        'a toggle during a reset or deletion changes nothing ($platform)',
+        () async {
+          final coordinator = LinuxKeyringCoordinator.testing(enabled: linux);
+          addTearDown(coordinator.dispose);
+          final store = _Store();
+          final reconciler = _Reconciler();
+          final sync = _Sync()..gate.complete();
+          final container = setup(
+            store,
+            sync,
+            reconciler: reconciler,
+            coordinator: coordinator,
+          );
+          addTearDown(container.dispose);
+          final release = Completer<void>();
+          // A reset or deletion, as `runWithSyncPausedForAccountMutation` runs it.
+          final reset = coordinator.runWalletDbMutation(() => release.future);
+
+          final notifier = container.read(enhancePirProvider.notifier);
+          await notifier.set(true);
+
+          expect(sync.transitions, 0, reason: 'never paused sync');
+          expect(store.value, isNull);
+          expect(reconciler.calls, isEmpty);
+          expect(api.values, isEmpty);
+          expect(container.read(enhancePirProvider), isFalse);
+          expect(
+            container.read(enhancePirTransitionProvider),
+            kEnhancePirUnchangedMessage,
+          );
+
+          release.complete();
+          await reset;
+          await notifier.set(true);
+          expect(store.value, isTrue);
+          expect(container.read(enhancePirProvider), isTrue);
+        },
+      );
+
+      test(
+        'a reset or deletion during a toggle is refused ($platform)',
+        () async {
+          final coordinator = LinuxKeyringCoordinator.testing(enabled: linux);
+          addTearDown(coordinator.dispose);
+          final store = _Store();
+          final sync = _Sync();
+          final container = setup(store, sync, coordinator: coordinator);
+          addTearDown(container.dispose);
+
+          final change = container.read(enhancePirProvider.notifier).set(true);
+          await Future<void>.delayed(Duration.zero);
+          expect(sync.transitions, 1);
+          await expectLater(
+            coordinator.runWalletDbMutation(() async => fail('reset ran')),
+            throwsA(isA<WalletMutationBusyException>()),
+          );
+
+          sync.gate.complete();
+          await change;
+          expect(store.value, isTrue);
+          // The lane is free again.
+          expect(await coordinator.runWalletDbMutation(() async => 7), 7);
+        },
+      );
+    }
+
+    test(
+      'a toggle nested inside the running mutation keeps ownership',
+      () async {
+        final coordinator = LinuxKeyringCoordinator.testing(enabled: false);
+        addTearDown(coordinator.dispose);
+        final store = _Store();
+        final container = setup(
+          store,
+          _Sync()..gate.complete(),
+          coordinator: coordinator,
+        );
+        addTearDown(container.dispose);
+
+        await coordinator.runWalletDbMutation(
+          () => container.read(enhancePirProvider.notifier).set(true),
+        );
+
+        expect(store.value, isTrue);
+        expect(container.read(enhancePirTransitionProvider), isNull);
+      },
+    );
+  });
+
+  test('the wallet reconciler never names a wallet into existence', () async {
+    var resolved = 0;
+    final reconcile = walletTransparentPolicyReconciler(
+      'main',
+      resolveExistingDbPath: () async {
+        resolved++;
+        return null;
+      },
+    );
+    // The mock Rust API would throw if reconciliation reached it.
+    expect(await reconcile(true), isNull);
+    expect(await reconcile(false), isNull);
+    expect(resolved, 2);
+  });
+
+  test(
+    'a policy applied by the toggle is adopted and restarts sync once',
+    () async {
+      final store = _Store();
+      final sync = _Sync()..gate.complete();
+      final container = setup(store, sync, reconciler: _Reconciler());
+      addTearDown(container.dispose);
+      await container.read(syncProvider.future);
+
+      await container.read(enhancePirProvider.notifier).set(true);
+
+      expect(
+        sync.appliedTransparentPolicy?.mode,
+        ApiTransparentLedgerMode.privateRequired,
+      );
+      // `_Sync` takes no pause, so the adopted generation restarts directly.
+      expect(sync.starts, 1);
     },
   );
 

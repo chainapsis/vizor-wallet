@@ -60,3 +60,43 @@ class SharedPreferencesEnhancePirStore implements EnhancePirPreferenceStore {
     }
   }
 }
+
+/// Install-scoped marker of an explicit private queries opt-out whose
+/// transparent lowering has not finished yet.
+///
+/// Written before the wallet's durable transparent policy is lowered and
+/// cleared only once the lowering succeeded, so an opt-out the app did not
+/// live to finish is retried at the next launch. Kept beside the preference,
+/// outside the secure-store bucket a wallet reset wipes, for the same reason.
+const kTransparentOptOutPendingKey = 'zcash_transparent_opt_out_pending';
+
+abstract interface class TransparentOptOutStore {
+  /// Whether an opt-out is pending; `false` when never written. Throws when
+  /// the marker cannot be read, which callers treat as unknown: an unknown
+  /// state never lowers the wallet's policy.
+  Future<bool> readPending();
+
+  Future<void> writePending(bool pending);
+}
+
+class SharedPreferencesTransparentOptOutStore
+    implements TransparentOptOutStore {
+  const SharedPreferencesTransparentOptOutStore();
+
+  @override
+  Future<bool> readPending() async {
+    final preferences = await SharedPreferences.getInstance();
+    return preferences.getBool(kTransparentOptOutPendingKey) ?? false;
+  }
+
+  @override
+  Future<void> writePending(bool pending) async {
+    final preferences = await SharedPreferences.getInstance();
+    final saved = pending
+        ? await preferences.setBool(kTransparentOptOutPendingKey, true)
+        : await preferences.remove(kTransparentOptOutPendingKey);
+    if (!saved) {
+      throw StateError('Could not save the private queries opt-out.');
+    }
+  }
+}

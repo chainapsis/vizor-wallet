@@ -8,6 +8,7 @@ import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/storage/enhance_pir_preference_store.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
+import 'package:zcash_wallet/src/rust/api/sync.dart';
 
 AppBootstrapState _ready({required bool? enabled, String network = 'main'}) =>
     AppBootstrapState(
@@ -24,9 +25,20 @@ AppBootstrapState _ready({required bool? enabled, String network = 'main'}) =>
       enhancePirEnabled: enabled,
     );
 
+final _raised = ApiAppliedTransparentPolicy(
+  mode: ApiTransparentLedgerMode.privateRequired,
+  generation: BigInt.from(3),
+);
+final _lowered = ApiAppliedTransparentPolicy(
+  mode: ApiTransparentLedgerMode.public,
+  generation: BigInt.from(4),
+);
+
 void main() {
   late List<String> applied;
   late bool failRaise;
+  late bool failLower;
+  late _OptOutStore optOut;
 
   Future<void> apply(AppBootstrapState bootstrap) => applyEnhancePirPolicy(
     bootstrap,
@@ -34,9 +46,12 @@ void main() {
     setPreferenceConfirmed: (confirmed) => applied.add('confirmed:$confirmed'),
     reconcileTransparentPolicy: (privateQueries) async {
       applied.add('reconcile:$privateQueries');
-      if (failRaise) throw StateError('public lookups did not drain');
-      return true;
+      if (privateQueries ? failRaise : failLower) {
+        throw StateError('public lookups did not drain');
+      }
+      return privateQueries ? _raised : _lowered;
     },
+    optOutStore: optOut,
     setNativePrivateRecovery: (enabled) async => applied.add('native:$enabled'),
     prepareCompanions: () async => applied.add('companions'),
   );
@@ -44,7 +59,13 @@ void main() {
   setUp(() {
     applied = [];
     failRaise = false;
+    failLower = false;
+    optOut = _OptOutStore((step) => applied.add(step));
+    TransparentPolicyStartup.current = const TransparentPolicyStartup();
   });
+  tearDown(
+    () => TransparentPolicyStartup.current = const TransparentPolicyStartup(),
+  );
 
   // Masquerade builds never enable the production service.
   final available = isEnhancePirAvailableForNetwork('main');
@@ -78,10 +99,18 @@ void main() {
         'native:$available',
         'companions',
       ]);
+      // The providers adopt what startup applied.
+      expect(
+        TransparentPolicyStartup.current.appliedPolicy,
+        available ? _raised : isNull,
+      );
     },
   );
 
-  test('a failed raise keeps both sides private', () async {
+  // Startup never rolled the setting back; with the toggle no longer rolling
+  // it back either, a failed raise keeps private queries on everywhere and
+  // records nothing applied. The next sync retries the raise.
+  test('a failed raise keeps private queries on and applies nothing', () async {
     failRaise = true;
     await apply(_ready(enabled: true));
     expect(applied, [
@@ -91,6 +120,72 @@ void main() {
       'native:$available',
       'companions',
     ]);
+    expect(TransparentPolicyStartup.current.appliedPolicy, isNull);
+    expect(TransparentPolicyStartup.current.optOutPending, isFalse);
+  });
+
+  group('an unfinished opt-out', () {
+    test('is finished at startup and its marker cleared', () async {
+      optOut.value = true;
+      await apply(_ready(enabled: false));
+      expect(applied, [
+        'rust:false',
+        'confirmed:true',
+        'reconcile:false',
+        'optout:false',
+        'native:false',
+        'companions',
+      ]);
+      expect(TransparentPolicyStartup.current.appliedPolicy, _lowered);
+      expect(TransparentPolicyStartup.current.optOutPending, isFalse);
+    });
+
+    test('that fails again stays pending and private', () async {
+      optOut.value = true;
+      failLower = true;
+      await apply(_ready(enabled: false));
+      expect(applied, [
+        'rust:false',
+        'confirmed:true',
+        'reconcile:false',
+        'native:false',
+        'companions',
+      ]);
+      expect(optOut.value, isTrue);
+      expect(TransparentPolicyStartup.current.appliedPolicy, isNull);
+      expect(TransparentPolicyStartup.current.optOutPending, isTrue);
+    });
+
+    test('is finished on a network without the service', () async {
+      optOut.value = true;
+      await apply(_ready(enabled: false, network: 'test'));
+      expect(applied, contains('reconcile:false'));
+      expect(TransparentPolicyStartup.current.optOutPending, isFalse);
+    });
+
+    test('with an unreadable marker never lowers', () async {
+      optOut.unreadable = true;
+      await apply(_ready(enabled: false));
+      expect(applied, [
+        'rust:false',
+        'confirmed:true',
+        'native:false',
+        'companions',
+      ]);
+    });
+
+    test('with an unreadable preference never lowers', () async {
+      optOut.value = true;
+      await apply(_ready(enabled: null));
+      expect(applied, isNot(contains('reconcile:false')));
+      expect(optOut.value, isTrue);
+    });
+
+    test('is superseded while private queries are on', () async {
+      optOut.value = true;
+      await apply(_ready(enabled: true));
+      expect(applied, isNot(contains('reconcile:false')));
+    });
   });
 
   test(
@@ -176,4 +271,24 @@ class _UnusedSecureStore extends AppSecureStore {
   @override
   Future<String?> readPlain(String key) async =>
       fail('legacy flag read after a failed preference read');
+}
+
+class _OptOutStore implements TransparentOptOutStore {
+  _OptOutStore(this.record);
+
+  final void Function(String step) record;
+  bool value = false;
+  bool unreadable = false;
+
+  @override
+  Future<bool> readPending() async {
+    if (unreadable) throw StateError('read failed');
+    return value;
+  }
+
+  @override
+  Future<void> writePending(bool pending) async {
+    record('optout:$pending');
+    value = pending;
+  }
 }

@@ -48,12 +48,19 @@ class LinuxKeyringState {
       };
 }
 
-class LinuxWalletMutationBusyException implements Exception {
-  const LinuxWalletMutationBusyException();
+/// Another wallet database mutation (a reset, an account deletion, or the
+/// private queries toggle) is already running.
+class WalletMutationBusyException implements Exception {
+  const WalletMutationBusyException();
 
   @override
   String toString() =>
       'Finish the current wallet operation before starting another.';
+}
+
+/// A Linux wallet mutation, or a keyring recovery, is already running.
+class LinuxWalletMutationBusyException extends WalletMutationBusyException {
+  const LinuxWalletMutationBusyException();
 }
 
 enum _RecoveryAction { retry, cancel, disposed }
@@ -81,6 +88,8 @@ class LinuxKeyringCoordinator extends ChangeNotifier {
   bool _disposed = false;
   final Object _mutationZoneKey = Object();
   Object? _mutationOwner;
+  final Object _walletDbMutationZoneKey = Object();
+  Object? _walletDbMutationOwner;
 
   LinuxKeyringState get state => _state;
   bool get hasPendingMutation => _hasPendingMutation;
@@ -244,6 +253,46 @@ class LinuxKeyringCoordinator extends ChangeNotifier {
       if (!_disposed) notifyListeners();
     }
   }
+
+  /// Serializes the mutations that replace or rewrite the wallet database
+  /// against each other on every platform: a wallet reset, account creation
+  /// and deletion, and the private queries toggle.
+  ///
+  /// On Linux this is [runMutation], unchanged. Elsewhere [runMutation] runs
+  /// its action directly, so this keeps a lane of its own with the same
+  /// rules: a call nested inside the running mutation keeps its ownership,
+  /// and a separate request is rejected with [WalletMutationBusyException]
+  /// rather than queued with inputs captured before the current mutation.
+  /// Rejecting instead of waiting also means a mutation that triggers
+  /// another can never deadlock on it.
+  Future<T> runWalletDbMutation<T>(Future<T> Function() action) async {
+    if (isEnabled) return runMutation(action);
+    if (_walletDbMutationOwner != null &&
+        identical(
+          Zone.current[_walletDbMutationZoneKey],
+          _walletDbMutationOwner,
+        )) {
+      return action();
+    }
+    if (_walletDbMutationOwner != null) {
+      throw const WalletMutationBusyException();
+    }
+    final owner = Object();
+    _walletDbMutationOwner = owner;
+    try {
+      return await runZoned(
+        action,
+        zoneValues: {_walletDbMutationZoneKey: owner},
+      );
+    } finally {
+      _walletDbMutationOwner = null;
+    }
+  }
+
+  /// Whether a wallet database mutation holds the lane of
+  /// [runWalletDbMutation].
+  bool get hasPendingWalletDbMutation =>
+      isEnabled ? _hasPendingMutation : _walletDbMutationOwner != null;
 
   @visibleForTesting
   void setStateForTesting(LinuxKeyringState state) => _setState(state);

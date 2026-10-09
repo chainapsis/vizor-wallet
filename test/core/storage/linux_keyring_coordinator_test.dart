@@ -254,6 +254,46 @@ void main() {
     expect(await disabled.runMutation(() async => 42), 42);
   });
 
+  test('other platforms still serialize wallet database mutations', () async {
+    final disabled = LinuxKeyringCoordinator.testing(enabled: false);
+    addTearDown(disabled.dispose);
+    final release = Completer<void>();
+    final running = disabled.runWalletDbMutation(() async {
+      // Nested calls keep ownership instead of deadlocking.
+      expect(await disabled.runWalletDbMutation(() async => 7), 7);
+      await release.future;
+      return 42;
+    });
+    await drain();
+    expect(disabled.hasPendingWalletDbMutation, isTrue);
+    await expectLater(
+      disabled.runWalletDbMutation(() async => fail('second mutation')),
+      throwsA(isA<WalletMutationBusyException>()),
+    );
+    // Other Linux-only mutations are unaffected off Linux.
+    expect(await disabled.runMutation(() async => 1), 1);
+    release.complete();
+    expect(await running, 42);
+    expect(disabled.hasPendingWalletDbMutation, isFalse);
+    expect(await disabled.runWalletDbMutation(() async => 3), 3);
+  });
+
+  test(
+    'on Linux wallet database mutations are the keyring mutations',
+    () async {
+      final release = Completer<void>();
+      final running = coordinator.runWalletDbMutation(() => release.future);
+      await drain();
+      expect(coordinator.hasPendingMutation, isTrue);
+      await expectLater(
+        coordinator.runMutation(() async => fail('second mutation')),
+        throwsA(isA<LinuxWalletMutationBusyException>()),
+      );
+      release.complete();
+      await running;
+    },
+  );
+
   test('disposal releases recovery and prevents queued native calls', () async {
     final local = LinuxKeyringCoordinator.testing();
     final read = local.runStorageOperation(() async {

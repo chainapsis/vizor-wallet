@@ -33,6 +33,7 @@ import '../settings_platform.dart';
 import '../widgets/network_privacy_control.dart';
 import '../widgets/enhance_pir_privacy_control.dart';
 import '../widgets/settings_new_badge.dart';
+import '../widgets/transparent_opt_out_action.dart';
 import '../widgets/windows_update_download_flow.dart';
 
 const _settingsRowActivationShortcuts = <ShortcutActivator, Intent>{
@@ -501,7 +502,7 @@ class _SettingsList extends ConsumerWidget {
     final enhancePirEnabled = ref.watch(enhancePirProvider);
     final enhancePirAvailable = ref.watch(enhancePirAvailableProvider);
     final recoveryTransition = ref.watch(enhancePirTransitionProvider);
-    final changingRecovery = recoveryTransition == 'Changing setting…';
+    final changingRecovery = recoveryTransition == kEnhancePirChangingMessage;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -615,6 +616,8 @@ class _SettingsList extends ConsumerWidget {
                       ),
               ),
             ],
+            // Not gated on availability: see [TransparentOptOutAction].
+            TransparentOptOutAction(showTransition: !enhancePirAvailable),
           ],
         ),
         const SizedBox(height: AppSpacing.md),
