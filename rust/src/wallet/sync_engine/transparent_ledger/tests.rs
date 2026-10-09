@@ -16,6 +16,8 @@ use zcash_keys::encoding::AddressCodec as _;
 use zcash_primitives::{block::BlockHash, transaction::TxId};
 use zcash_protocol::{consensus::BlockHeight, value::Zatoshis};
 
+use zakura_pir_transparent::Outcome;
+
 use super::fixture::{FixtureSource, Observed, FIXTURE_SOURCE};
 use super::*;
 use crate::wallet::sync::{get_wallet_balance, TransparentBalanceAuthority};
@@ -859,11 +861,8 @@ impl RecoverySource for Silent {
         _account: AccountUuid,
         _db: &mut WalletDatabase,
         _trust: Trust,
-    ) -> impl Future<Output = Settlement> + Send {
-        std::future::ready(Settlement::Refused {
-            stats: ApplyStats::default(),
-            refusal: Refusal::Skip,
-        })
+    ) -> impl Future<Output = Option<Result<Applied, ApplyFailure>>> + Send {
+        std::future::ready(None)
     }
 }
 
@@ -1228,7 +1227,7 @@ async fn a_pending_batch_applies_and_acknowledges_nothing() {
     let mut wallet = wallet();
     let _mode = activate(&mut wallet).await;
     let source = funded_source(&wallet);
-    source.pending(Some(Continuation::Complete));
+    source.pending(Some(Outcome::Complete));
 
     let RunOutcome::Finished(stats) = run_required(&mut wallet, &source).await else {
         panic!("recovery finishes");
@@ -1513,7 +1512,8 @@ async fn publication_waits_stop_at_the_cap() {
     let mut wallet = private_wallet();
     let (_, other) = add_account(&wallet);
     let source = FixtureSource::new(main_hash);
-    source.next(Some(Continuation::RetryAfter(Duration::from_secs(30))));
+    // A capacity refusal waits thirty seconds.
+    source.next(Some(Outcome::Overloaded));
 
     let outcome = run(
         &mut wallet.db,
@@ -1610,11 +1610,11 @@ async fn a_quarantined_or_held_account_is_skipped_without_a_source_call() {
     assert_eq!(source.order(), [open]);
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn three_stalled_runs_hold_the_account() {
     let mut wallet = private_wallet();
     let source = FixtureSource::new(main_hash);
-    source.next(Some(Continuation::Stalled));
+    source.next(Some(Outcome::Stalled));
     for _ in 0..STALL_RUNS_BEFORE_HOLD {
         assert_eq!(recovery_hold(&wallet.path, wallet.account), None);
         recover(&mut wallet, &source).await;
@@ -1634,28 +1634,27 @@ async fn three_stalled_runs_hold_the_account() {
     let mut other = private_wallet();
     let source = FixtureSource::new(main_hash);
     for next in [
-        Continuation::Stalled,
-        Continuation::Stalled,
-        Continuation::Complete,
-        Continuation::Stalled,
-        Continuation::Stalled,
+        Outcome::Stalled,
+        Outcome::Stalled,
+        Outcome::Complete,
+        Outcome::Stalled,
+        Outcome::Stalled,
     ] {
         source.next(Some(next));
         recover(&mut other, &source).await;
     }
     assert_eq!(recovery_hold(&other.path, other.account), None);
 
-    // A run that ends waiting for a lagging publication does not: the stall
-    // it interrupts is still held.
+    // A run that ends waiting for the service, its waits spent, does not:
+    // the stall it interrupts is still held.
     let mut lagging = private_wallet();
     let source = FixtureSource::new(main_hash);
-    let past_the_wait_cap = Continuation::RetryAfter(PUBLICATION_WAIT_CAP * 2);
     for next in [
-        Continuation::Stalled,
-        past_the_wait_cap,
-        Continuation::Stalled,
-        past_the_wait_cap,
-        Continuation::Stalled,
+        Outcome::Stalled,
+        Outcome::Overloaded,
+        Outcome::Stalled,
+        Outcome::Overloaded,
+        Outcome::Stalled,
     ] {
         source.next(Some(next));
         recover(&mut lagging, &source).await;

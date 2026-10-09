@@ -1,9 +1,9 @@
 //! The two sources loop 4 chooses between, once per run.
 //!
 //! - [`PirSource`] (`PrivateRequired`): txid display PIR at
-//!   [`DEFAULT_MAINNET_ORIGIN`](crate::wallet::sync_engine::transparent_ledger::pir::DEFAULT_MAINNET_ORIGIN)`/v1/txid/`, mainnet only, through wallet-pir's
-//!   client over [`TxidPirHttp`]. It holds no lightwalletd client, so it
-//!   cannot make a public request.
+//!   [`DEFAULT_MAINNET_ORIGIN`](crate::wallet::sync_engine::transparent_ledger::pir::DEFAULT_MAINNET_ORIGIN)`/v1/txid/`, mainnet only, through the
+//!   process's [`TxidDisplayService`] for the origin over a [`RoutedExchange`].
+//!   It holds no lightwalletd client, so it cannot make a public request.
 //! - [`GateSource`] (every other policy): lightwalletd `GetTransaction`
 //!   through the [`TransparentLookupGate`], which re-checks the durable
 //!   policy before each request.
@@ -14,13 +14,14 @@
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, LazyLock, Mutex, PoisonError, TryLockError};
+use std::sync::{Arc, LazyLock, Mutex, PoisonError};
 use std::time::{Duration, SystemTime};
 
 use tokio::runtime::Handle;
 use tonic::transport::Channel;
 use zakura_pir_transparent::{
-    deferral, display_facts, map_sha256, TxidDisplayClient, TxidError, TxidLookup, TxidTransport,
+    deferral, display_facts, HttpExchange, TransportError, TxidDisplayService, TxidError,
+    TxidLookup,
 };
 use zcash_client_backend::data_api::transparent_ledger::{
     TransparentDetailOutcome, TransparentDisplayFacts,
@@ -30,7 +31,7 @@ use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::consensus::BlockHeight;
 
 use crate::wallet::network::WalletNetwork;
-use crate::wallet::sync_engine::enhancement::{decode_enhancement_payload, TxidPirHttp};
+use crate::wallet::sync_engine::enhancement::{decode_enhancement_payload, RoutedExchange};
 use crate::wallet::sync_engine::transparent_ledger::pir::{origin_for, origin_override};
 use crate::wallet::sync_engine::{watch_for_exit, TransparentLookupGate};
 
@@ -42,9 +43,6 @@ const LOOKUP_BACKSTOP: Duration = Duration::from_secs(60);
 /// How long a run waits, once it exits or its budget is spent, for the
 /// lookup or map fetch it cancelled to return before abandoning it.
 pub(crate) const CANCEL_GRACE: Duration = Duration::from_secs(2);
-
-/// How often a blocking request polls for a client another request holds.
-const CLIENT_WAIT_STEP: Duration = Duration::from_millis(5);
 
 /// What a lookup found.
 #[derive(Debug)]
@@ -112,31 +110,20 @@ pub(crate) trait DetailSource {
 
 // ---- private ---------------------------------------------------------------
 
-/// One client per origin for the whole process, so the init document, the
-/// map, manifests, setups and the costly native profiles are derived once.
-static CLIENTS: LazyLock<Mutex<HashMap<String, CachedClient>>> = LazyLock::new(Default::default);
+/// One service per origin for the whole process, so the init document, the
+/// map, manifests, setups and the costly native profiles are derived once,
+/// and the last map check is remembered across sync runs.
+static SERVICES: LazyLock<Mutex<HashMap<String, Arc<TxidDisplayService>>>> =
+    LazyLock::new(Default::default);
 
-#[derive(Clone)]
-struct CachedClient {
-    client: Arc<Mutex<TxidDisplayClient>>,
-    map_checked_at: Arc<Mutex<Option<SystemTime>>>,
-}
-
-fn cached_for(origin: &str) -> CachedClient {
-    CLIENTS
+/// The process-wide service for `origin`.
+pub(crate) fn service_for(origin: &str) -> Arc<TxidDisplayService> {
+    SERVICES
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .entry(origin.to_owned())
-        .or_insert_with(|| CachedClient {
-            client: Arc::new(Mutex::new(TxidDisplayClient::new())),
-            map_checked_at: Arc::new(Mutex::new(None)),
-        })
+        .or_default()
         .clone()
-}
-
-/// The process-wide client for `origin`.
-pub(crate) fn client_for(origin: &str) -> Arc<Mutex<TxidDisplayClient>> {
-    cached_for(origin).client
 }
 
 /// The txid display origin for `network`: the transparent PIR origin, with
@@ -148,12 +135,7 @@ pub(crate) fn txid_origin(network: WalletNetwork) -> Option<String> {
 /// Private lookups through txid display PIR.
 pub(crate) struct PirSource {
     origin: String,
-    client: Arc<Mutex<TxidDisplayClient>>,
-    /// The digest of the map the client held after this source's last
-    /// request, for when another request holds the client.
-    map: Option<[u8; 32]>,
-    /// Kept outside the native-client lock, which an abandoned lookup may hold.
-    map_checked_at: Arc<Mutex<Option<SystemTime>>>,
+    service: Arc<TxidDisplayService>,
     #[cfg(test)]
     observer: Option<crate::wallet::sync_engine::enhancement::RequestObserver>,
 }
@@ -162,34 +144,37 @@ impl PirSource {
     /// The source for the wallet at `db_path`; `None` off mainnet.
     pub(crate) fn new(db_path: &str, network: WalletNetwork) -> Option<Self> {
         let origin = txid_origin(network)?;
-        // A test's fake service gets a client of its own, shared while its
+        // A test's fake service gets a service of its own, shared while its
         // seam is set.
         #[cfg(test)]
         let seam = test_seam::get(db_path);
         #[cfg(test)]
-        let cached = seam.as_ref().map_or_else(
-            || CachedClient {
-                client: Arc::new(Mutex::new(TxidDisplayClient::new())),
-                map_checked_at: Arc::new(Mutex::new(None)),
-            },
-            |seam| CachedClient {
-                client: seam.client.clone(),
-                map_checked_at: seam.map_checked_at.clone(),
-            },
-        );
+        let service = seam
+            .as_ref()
+            .map_or_else(Default::default, |seam| seam.service.clone());
         #[cfg(not(test))]
-        let cached = cached_for(&origin);
+        let service = service_for(&origin);
         let _ = db_path;
-        let mut source = Self {
+        Some(Self {
             origin,
-            client: cached.client,
-            map: None,
-            map_checked_at: cached.map_checked_at,
+            service,
             #[cfg(test)]
             observer: seam.map(|seam| seam.observer),
-        };
-        source.map = source.map_sha256();
-        Some(source)
+        })
+    }
+
+    /// A blocking request for `txid` mined at `mined_height`.
+    fn request(&self, txid: [u8; 32], mined_height: u64) -> BlockingLookup {
+        BlockingLookup {
+            origin: self.origin.clone(),
+            service: self.service.clone(),
+            txid,
+            mined_height,
+            handle: Handle::current(),
+            cancel: Arc::new(AtomicBool::new(false)),
+            #[cfg(test)]
+            observer: self.observer.clone(),
+        }
     }
 }
 
@@ -201,25 +186,15 @@ impl DetailSource for PirSource {
         should_exit: &(dyn Fn() -> bool + Sync),
     ) -> Result<DetailAnswer, DetailFailure> {
         #[cfg(test)]
-        let Some(observer) = self.observer.clone() else {
+        if self.observer.is_none() {
             // No test reaches the live service by accident.
             return Err(DetailFailure::Deferred {
                 outcome: TransparentDetailOutcome::Unavailable { retry_after: None },
                 map_sha256: None,
             });
-        };
-        let request = BlockingLookup {
-            origin: self.origin.clone(),
-            client: self.client.clone(),
-            txid: *txid.as_ref(),
-            mined_height: u64::from(u32::from(mined_height)),
-            handle: Handle::current(),
-            cancel: Arc::new(AtomicBool::new(false)),
-            #[cfg(test)]
-            observer: Some(observer),
-        };
+        }
+        let request = self.request(*txid.as_ref(), u64::from(u32::from(mined_height)));
         let (found, map) = run_blocking(request, should_exit).await?;
-        self.map = map;
         match found {
             Ok(TxidLookup::Found { entry, provenance }) => {
                 match display_facts(txid, &entry, &provenance, mined_height) {
@@ -245,60 +220,35 @@ impl DetailSource for PirSource {
         None
     }
 
-    /// Read without waiting: while a request (perhaps one abandoned at its
-    /// backstop) holds the client, the digest this source last saw.
+    /// Read without waiting, even while a request (perhaps one abandoned at
+    /// its backstop) holds the client.
     fn map_sha256(&self) -> Option<[u8; 32]> {
-        match self.client.try_lock() {
-            Ok(client) => client.map_sha256().and_then(map_sha256),
-            Err(TryLockError::Poisoned(client)) => {
-                client.into_inner().map_sha256().and_then(map_sha256)
-            }
-            Err(TryLockError::WouldBlock) => self.map,
-        }
+        self.service.map_sha256()
     }
 
     fn map_checked_at(&self) -> Option<SystemTime> {
-        *self
-            .map_checked_at
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
+        self.service.map_checked_at()
     }
 
     fn map_check_started(&mut self, now: SystemTime) {
-        *self
-            .map_checked_at
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = Some(now);
+        self.service.map_check_started(now);
     }
 
     async fn refresh_map(&mut self, should_exit: &(dyn Fn() -> bool + Sync)) -> Option<[u8; 32]> {
         #[cfg(test)]
-        let observer = Some(self.observer.clone()?);
-        let request = BlockingLookup {
-            origin: self.origin.clone(),
-            client: self.client.clone(),
-            txid: [0; 32],
-            mined_height: 0,
-            handle: Handle::current(),
-            cancel: Arc::new(AtomicBool::new(false)),
-            #[cfg(test)]
-            observer,
-        };
-        let refreshed = run_blocking_with(request, should_exit, BlockingLookup::refresh_map)
+        self.observer.as_ref()?;
+        let request = self.request([0; 32], 0);
+        run_blocking_with(request, should_exit, BlockingLookup::refresh_map)
             .await
             .ok()
-            .flatten();
-        if refreshed.is_some() {
-            self.map = refreshed;
-        }
-        refreshed
+            .flatten()
     }
 }
 
 /// Everything one private lookup needs on its blocking thread.
 pub(crate) struct BlockingLookup {
     pub(crate) origin: String,
-    pub(crate) client: Arc<Mutex<TxidDisplayClient>>,
+    pub(crate) service: Arc<TxidDisplayService>,
     /// Protocol byte order.
     pub(crate) txid: [u8; 32],
     pub(crate) mined_height: u64,
@@ -309,81 +259,48 @@ pub(crate) struct BlockingLookup {
     pub(crate) observer: Option<crate::wallet::sync_engine::enhancement::RequestObserver>,
 }
 
-/// A lookup's result with the map digest the client holds afterwards.
+/// A lookup's result with the map digest the service holds afterwards.
 pub(crate) type Looked = (Result<TxidLookup, TxidError>, Option<[u8; 32]>);
 
 impl BlockingLookup {
     /// Runs the lookup on the calling thread, which must not be a runtime
     /// worker.
     pub(crate) fn run(self) -> Looked {
-        self.with_client(|client, mut http, exit, txid, height| {
-            let found = client.lookup(&mut http, txid, height, exit);
-            if matches!(found, Ok(TxidLookup::Unsupported)) {
-                // The client keeps an unsupported init document for good.
-                // Start the next lookup afresh, keeping only the derived
-                // profiles, so a service that comes to support this client
-                // is found once the wallet retries the transaction.
-                *client = TxidDisplayClient::with_profiles(client.profiles());
-            }
-            found
-        })
+        let found = self.with_exchange(|service, exchange, exit| {
+            service.lookup(&exchange, self.txid, self.mined_height, exit)
+        });
+        (found, self.service.map_sha256())
     }
 
     /// Fetches the display map now; the hash, or `None` on any failure.
     pub(crate) fn refresh_map(self) -> Option<[u8; 32]> {
-        let (refreshed, _) =
-            self.with_client(|client, mut http, exit, _, _| client.refresh_map(&mut http, exit));
-        refreshed.ok()
+        self.with_exchange(|service, exchange, exit| service.refresh_map(&exchange, exit))
+            .ok()
     }
 
-    /// Runs `call` with the client and a transport bound to this request's
-    /// cancellation; returns its result with the map hash the client holds
-    /// afterwards.
-    fn with_client<T>(
-        self,
+    /// Runs `call` with the service and an exchange bound to this request's
+    /// cancellation.
+    fn with_exchange<T>(
+        &self,
         call: impl FnOnce(
-            &mut TxidDisplayClient,
-            &mut dyn TxidTransport,
+            &TxidDisplayService,
+            &dyn HttpExchange,
             &dyn Fn() -> bool,
-            [u8; 32],
-            u64,
         ) -> Result<T, TxidError>,
-    ) -> (Result<T, TxidError>, Option<[u8; 32]>) {
+    ) -> Result<T, TxidError> {
         let _runtime = self.handle.enter();
-        let cancel = self.cancel.clone();
-        let exit = move || cancel.load(Ordering::SeqCst);
-        let http = match TxidPirHttp::new(&self.origin, &exit, self.handle.clone()) {
-            Ok(http) => http,
-            Err(_) => {
-                return (
-                    Err(TxidError::Transport(
-                        zakura_pir_transparent::TransportError("origin refused".to_owned()),
-                    )),
-                    None,
-                )
-            }
+        let exit = || self.cancel.load(Ordering::SeqCst);
+        let Ok(exchange) = RoutedExchange::txid(&self.origin, &exit, self.handle.clone()) else {
+            return Err(TxidError::Transport(TransportError(
+                "origin refused".to_owned(),
+            )));
         };
         #[cfg(test)]
-        let http = match self.observer.clone() {
-            Some(observer) => http.with_observer(observer),
-            None => http,
+        let exchange = match self.observer.clone() {
+            Some(observer) => exchange.with_observer(observer),
+            None => exchange,
         };
-        let mut http = http;
-        // Another request may hold the client, one abandoned at its backstop
-        // among them: wait only while this one is wanted.
-        let mut client = loop {
-            match self.client.try_lock() {
-                Ok(client) => break client,
-                Err(TryLockError::Poisoned(client)) => break client.into_inner(),
-                Err(TryLockError::WouldBlock) if exit() => {
-                    return (Err(TxidError::Cancelled), None)
-                }
-                Err(TryLockError::WouldBlock) => std::thread::sleep(CLIENT_WAIT_STEP),
-            }
-        };
-        let result = call(&mut client, &mut http, &exit, self.txid, self.mined_height);
-        let map = client.map_sha256().and_then(map_sha256);
-        (result, map)
+        call(&self.service, &exchange, &exit)
     }
 }
 
@@ -551,16 +468,15 @@ impl DetailSource for GateSource {
 }
 
 /// Test seam: the request observer the private source of one wallet file
-/// sends through, standing in for the network, and the client its sources
-/// share, standing in for the process-wide client of the origin. A source
+/// sends through, standing in for the network, and the service its sources
+/// share, standing in for the process-wide service of the origin. A source
 /// without a seam defers every lookup as unavailable without a request.
 #[cfg(test)]
 pub(crate) mod test_seam {
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex, OnceLock, PoisonError};
-    use std::time::SystemTime;
 
-    use zakura_pir_transparent::TxidDisplayClient;
+    use zakura_pir_transparent::TxidDisplayService;
 
     use crate::wallet::sync_engine::enhancement::RequestObserver;
 
@@ -569,9 +485,8 @@ pub(crate) mod test_seam {
     pub(crate) struct Seam {
         pub(crate) observer: RequestObserver,
         /// Shared by every source built while the seam is set, as sources
-        /// share the process-wide client; a new seam is a restart.
-        pub(crate) client: Arc<Mutex<TxidDisplayClient>>,
-        pub(crate) map_checked_at: Arc<Mutex<Option<SystemTime>>>,
+        /// share the process-wide service; a new seam is a restart.
+        pub(crate) service: Arc<TxidDisplayService>,
     }
 
     fn seams() -> &'static Mutex<HashMap<String, Seam>> {
@@ -588,7 +503,7 @@ pub(crate) mod test_seam {
     }
 
     /// Private sources built for `db_path` send through `observer`, sharing
-    /// one new client, until the guard drops.
+    /// one new service, until the guard drops.
     pub(crate) fn set(db_path: &str, observer: RequestObserver) -> SeamGuard {
         seams()
             .lock()
@@ -597,16 +512,15 @@ pub(crate) mod test_seam {
                 db_path.to_owned(),
                 Seam {
                     observer,
-                    client: Arc::new(Mutex::new(TxidDisplayClient::new())),
-                    map_checked_at: Arc::new(Mutex::new(None)),
+                    service: Default::default(),
                 },
             );
         SeamGuard(db_path.to_owned())
     }
 
-    /// The client the sources of `db_path` share while its seam is set.
-    pub(crate) fn client(db_path: &str) -> Arc<Mutex<TxidDisplayClient>> {
-        get(db_path).expect("a seam is set").client
+    /// The service the sources of `db_path` share while its seam is set.
+    pub(crate) fn service(db_path: &str) -> Arc<TxidDisplayService> {
+        get(db_path).expect("a seam is set").service
     }
 
     pub(crate) struct SeamGuard(String);

@@ -7,28 +7,28 @@
 //! Every commit it returns comes from that origin, which is what lets the
 //! coordinator qualify it (the trusted-indexer decision).
 //!
-//! Each account has its own companion database,
-//! `{db}.tpir/{uuid}-{tag}.sqlite`, where the tag binds the origin and the
-//! adapter's shard schema. A companion holds the adapter's retrieval cache and
-//! revision catalog, never wallet balances. Revision identities are derived
-//! from the publication, but the catalog also records what was exported and
-//! lets the adapter detect a contradictory publication. Companions are created
-//! on an account's first pass; opening one deletes the account's companions for
-//! other origins or schemas and those of deleted accounts, and deleting an
-//! account removes its companion with [`remove_companions`]. Every sync start
-//! deletes those of deleted accounts with [`remove_orphan_companions`], so a
-//! removal that failed converges.
+//! Each account has its own companion database in the wallet's
+//! [`CompanionDir`], `{db}.tpir`. A companion holds the adapter's retrieval
+//! cache and revision catalog, never wallet balances. Revision identities are
+//! derived from the publication, but the catalog also records what was
+//! exported and lets the adapter detect a contradictory publication. The
+//! library names companions, binds each to its origin and schema, prunes those
+//! of other origins and of deleted accounts when it opens one, and holds an
+//! operating system lock on an open companion, so no other handle, in this
+//! process or another, opens or deletes it meanwhile. Deleting an account
+//! removes its companions with [`remove_companions`]; every sync start deletes
+//! those of deleted accounts with [`remove_orphan_companions`], so a removal
+//! that failed converges.
 //!
 //! A pass that fails because the service cannot be reached or is not serving
 //! is [`SourceError::Unavailable`], which ends the whole run, rather than a
 //! failure of that account.
 //!
-//! One lock per companion path serializes every pass, settlement and removal
-//! on it across sources. A source parks each companion it opened with that
-//! lock until the source is dropped, so a pass and its settlement see the same
-//! companion and nothing removes it in between. Settlement hands the parked
-//! batch, unopened, to the adapter's `apply_and_acknowledge`, which applies
-//! its commits and acknowledges it only once every one committed.
+//! A source parks each companion it opened, with its lock, until the source is
+//! dropped, so a pass and its settlement see the same companion and nothing
+//! removes it in between. Settlement hands the parked batch, unopened, to the
+//! adapter's `apply_and_acknowledge`, which applies its commits and
+//! acknowledges it only once every one committed.
 //!
 //! A pass runs on a thread and runtime of its own, never the sync's runtime
 //! or its blocking pool: a runtime's shutdown waits for every blocking-pool
@@ -45,31 +45,25 @@
 
 use std::collections::{BTreeSet, HashMap};
 use std::io;
-use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, LazyLock, Mutex, PoisonError};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use sha2::{Digest, Sha256};
 use tokio::runtime::Handle;
-use tokio::sync::OwnedMutexGuard;
 use zakura_pir_transparent::{
-    ApplyError, ApplyFailure, ApplyStats, BatchState, Outcome, Progress, RecoveryBatch,
-    RecoveryConfig, RecoveryError, ReferenceRecovery, Trust, WalletChain, SCHEMA,
+    Applied, ApplyFailure, BatchState, Companion, CompanionDir, OpenError, RecoveryBatch,
+    RecoveryConfig, RecoveryError, TransparentPirHttp, Trust, WalletChain,
 };
 use zcash_client_backend::data_api::{transparent_ledger::TransparentWatchSet, WalletRead};
 use zcash_client_sqlite::AccountUuid;
 
-use super::{
-    commit_refusal, Continuation, RecoverySource, Refusal, Settlement, SourceBatch, SourceError,
-    SourceRequest,
-};
+use super::{RecoverySource, SourceBatch, SourceError, SourceRequest};
 use crate::wallet::db::{
     open_wallet_db_readonly_with_timeout, with_wallet_db_write_lock, WalletDatabase,
     READ_DB_BUSY_TIMEOUT,
 };
 use crate::wallet::network::WalletNetwork;
-use crate::wallet::sync_engine::enhancement::TransparentPirHttp;
+use crate::wallet::sync_engine::enhancement::RoutedExchange;
 use crate::wallet::sync_engine::watch_for_exit;
 
 /// The transparent PIR service mainnet wallets recover from.
@@ -102,24 +96,11 @@ const MAX_PRIVATE_BYTES: u64 = 96 << 20;
 /// Bytes one successful response may carry.
 const MAX_RESPONSE_BYTES: usize = 8 << 20;
 
-/// Wait before asking again about a publication that ends below the target.
-const BEHIND_RETRY: Duration = Duration::from_secs(10);
-/// Wait before asking again a service that refused for capacity.
-const OVERLOADED_RETRY: Duration = Duration::from_secs(30);
-
 /// How long a cancelled pass may take to return before it is abandoned.
 pub(crate) const CANCEL_GRACE: Duration = Duration::from_secs(2);
 
 /// How long account deletion waits for a companion another pass holds.
 pub(crate) const REMOVE_WAIT: Duration = Duration::from_secs(5);
-
-/// Sidecar suffixes SQLite may leave beside a companion file.
-const SIDECARS: [&str; 3] = ["-wal", "-shm", "-journal"];
-
-/// One lock per companion path. Entries nobody holds or awaits are dropped as
-/// others are added.
-static COMPANION_LOCKS: LazyLock<Mutex<HashMap<PathBuf, Arc<tokio::sync::Mutex<()>>>>> =
-    LazyLock::new(Default::default);
 
 /// Private transparent recovery from the transparent PIR service, one
 /// companion per account.
@@ -137,23 +118,12 @@ pub(crate) struct TransparentPirSource {
     transport: Option<test_transport::Seam>,
 }
 
-/// A companion this source opened, kept with its path lock between passes.
+/// A companion this source opened, kept, with its lock, between passes.
 struct Parked {
-    companion: ReferenceRecovery,
+    companion: Companion,
     /// The last pass's `Ready` batch until it is settled. Nothing outside the
     /// adapter reads or changes its commits.
     batch: Option<RecoveryBatch<AccountUuid>>,
-    _lock: OwnedMutexGuard<()>,
-}
-
-/// The companion a pass runs on: one this source parked, or the lock for one
-/// it has yet to open.
-enum Slot {
-    Parked(Box<Parked>),
-    Locked {
-        path: PathBuf,
-        lock: OwnedMutexGuard<()>,
-    },
 }
 
 /// Why a pass failed, for logs. Adapter errors are reduced to their variant.
@@ -255,18 +225,7 @@ impl RecoverySource for TransparentPirSource {
         // coordinator's backstop abandons the call.
         let deadline = (self.clock)() + PASS_DEADLINE;
         let mut parked = self.parked.lock().await;
-        let slot = match parked.remove(&account) {
-            Some(held) => Slot::Parked(Box::new(held)),
-            None => {
-                let path = companion_path(&self.db_path, account, &origin);
-                let lock = companion_lock(&path);
-                tokio::select! {
-                    biased;
-                    _ = watch_for_exit(&should_exit) => return Err(SourceError::Cancelled),
-                    lock = lock.lock_owned() => Slot::Locked { path, lock },
-                }
-            }
-        };
+        let held = parked.remove(&account);
         let cancel = Arc::new(AtomicBool::new(false));
         // A dropped call stops the pass at its next request instead of leaving
         // it running detached.
@@ -302,7 +261,7 @@ impl RecoverySource for TransparentPirSource {
                 pass.handle = io.handle().clone();
                 // A send to an abandoning caller drops the companion here,
                 // releasing its lock.
-                let _ = done.send(pass.run(slot));
+                let _ = done.send(pass.run(held));
                 io.shutdown_background();
             });
         if spawned.is_err() {
@@ -343,25 +302,16 @@ impl RecoverySource for TransparentPirSource {
             match result {
                 Ok(batch) => {
                     let target = watch.target.map_or(0, |target| u32::from(target.height));
-                    let progress = batch.progress();
-                    let next = continuation(progress.outcome);
-                    let behind = behind_by(target, progress);
+                    let (state, progress) = (batch.state(), batch.progress());
                     log::info!(
-                        "transparent PIR: pass {:?}, {:?}, {behind} blocks behind",
-                        batch.state(),
-                        progress.outcome
+                        "transparent PIR: pass {state:?}, {:?}, {} blocks behind",
+                        progress.outcome,
+                        progress.behind(target.into())
                     );
-                    Ok(match batch.state() {
-                        BatchState::Ready => {
-                            held.batch = Some(batch);
-                            SourceBatch::Ready {
-                                next,
-                                behind_by: behind,
-                            }
-                        }
-                        BatchState::Pending => SourceBatch::Pending { next },
-                        BatchState::Withdrawn(cause) => SourceBatch::Withdrawn(cause),
-                    })
+                    if state == BatchState::Ready {
+                        held.batch = Some(batch);
+                    }
+                    Ok(SourceBatch { state, progress })
                 }
                 Err(failure) => Err(fail(Some(failure))),
             }
@@ -376,65 +326,24 @@ impl RecoverySource for TransparentPirSource {
     /// asks: other wallet writes wait until every commit and the
     /// acknowledgment are done.
     ///
-    /// Refuses, as [`Refusal::Skip`], when no unsettled `Ready` batch is
-    /// parked for the account. The batch is consumed either way: a refused
-    /// batch is replayed by the account's next pass.
+    /// `None` when no unsettled `Ready` batch is parked for the account. The
+    /// batch is consumed either way: a refused batch is replayed by the
+    /// account's next pass.
     async fn apply(
         &self,
         account: AccountUuid,
         db: &mut WalletDatabase,
         trust: Trust,
-    ) -> Settlement {
-        let nothing = || {
-            log::warn!("transparent PIR: nothing to settle");
-            Settlement::Refused {
-                stats: ApplyStats::default(),
-                refusal: Refusal::Skip,
-            }
-        };
+    ) -> Option<Result<Applied, ApplyFailure>> {
         let mut parked = self.parked.lock().await;
-        let Some(held) = parked.get_mut(&account) else {
-            return nothing();
-        };
-        let Some(batch) = held.batch.take() else {
-            return nothing();
-        };
+        let held = parked.get_mut(&account)?;
+        let batch = held.batch.take()?;
         let companion = &mut held.companion;
-        let settled = with_wallet_db_write_lock("sync_engine.transparent_ledger.apply", || {
-            companion.apply_and_acknowledge(batch, db, trust)
-        });
-        match settled {
-            Ok(applied) => Settlement::Acknowledged(applied.stats),
-            Err(failure) => settlement(failure),
-        }
+        Some(with_wallet_db_write_lock(
+            "sync_engine.transparent_ledger.apply",
+            || companion.apply_and_acknowledge(batch, db, trust),
+        ))
     }
-}
-
-/// How the coordinator acts on a batch the adapter did not acknowledge.
-/// Logs carry the variant only: nested errors can quote wallet history.
-fn settlement(failure: ApplyFailure) -> Settlement {
-    let ApplyFailure { error, stats, .. } = failure;
-    let refusal = match error {
-        ApplyError::Rejected { rejection, .. } => commit_refusal(&rejection),
-        ApplyError::PolicyChanged => Refusal::Stale,
-        ApplyError::NotEnabled => Refusal::NotEnabled,
-        ApplyError::Unreconciled => Refusal::Unreconciled,
-        ApplyError::Acknowledge(_) => {
-            log::warn!("transparent PIR: acknowledgment failed after every commit applied");
-            Refusal::Skip
-        }
-        ApplyError::NotReady(_) | ApplyError::StaleReceipt => {
-            log::warn!("transparent PIR: the parked batch is not settleable");
-            Refusal::Skip
-        }
-        error @ (ApplyError::OuterTransaction | ApplyError::Wallet(_)) => {
-            return Settlement::Failed {
-                stats,
-                error: error.to_string(),
-            };
-        }
-    };
-    Settlement::Refused { stats, refusal }
 }
 
 /// Sets a pass's cancellation flag when dropped.
@@ -474,11 +383,17 @@ struct Pass {
 }
 
 impl Pass {
-    /// Runs the pass and returns the companion to park, with its lock: none
-    /// when it could not be opened.
+    /// Whether the pass is stopping: cancelled, or past its deadline.
+    fn exit(&self) -> bool {
+        self.cancel.load(Ordering::SeqCst) || (self.clock)() >= self.deadline
+    }
+
+    /// Runs the pass on `held`, the companion this source parked for the
+    /// account, or one it opens, and returns the companion to park: none when
+    /// it could not be opened.
     fn run(
         self,
-        slot: Slot,
+        held: Option<Parked>,
     ) -> (
         Option<Parked>,
         Result<RecoveryBatch<AccountUuid>, PassFailure>,
@@ -490,21 +405,14 @@ impl Pass {
             READ_DB_BUSY_TIMEOUT,
         ) {
             Ok(db) => db,
-            Err(_) => {
-                let held = match slot {
-                    Slot::Parked(held) => Some(*held),
-                    Slot::Locked { .. } => None,
-                };
-                return (held, Err(PassFailure::Wallet));
-            }
+            Err(_) => return (held, Err(PassFailure::Wallet)),
         };
-        let mut held = match slot {
-            Slot::Parked(held) => *held,
-            Slot::Locked { path, lock } => match self.open(&db, &path) {
+        let mut held = match held {
+            Some(held) => held,
+            None => match self.open(&db) {
                 Ok(companion) => Parked {
                     companion,
                     batch: None,
-                    _lock: lock,
                 },
                 Err(failure) => return (None, Err(failure)),
             },
@@ -515,41 +423,36 @@ impl Pass {
         (Some(held), result)
     }
 
-    /// Opens the companion at `path`, first deleting the account's companions
-    /// for other origins or schemas and those of accounts the wallet no longer
-    /// has. A companion another pass holds is left for a later open.
+    /// Opens the account's companion, waiting for one another handle holds
+    /// until the pass stops. The library first deletes the account's
+    /// companions for other origins or schemas and those of accounts the
+    /// wallet no longer has.
     fn open(
         &self,
         db: &impl WalletRead<AccountId = AccountUuid>,
-        path: &Path,
-    ) -> Result<ReferenceRecovery, PassFailure> {
+    ) -> Result<Companion, PassFailure> {
         let accounts: BTreeSet<_> = db
             .get_account_ids()
             .map_err(|_| PassFailure::Wallet)?
             .into_iter()
-            .map(|account| account.expose_uuid())
+            .map(|account| account.expose_uuid().to_string())
             .collect();
-        let dir = companion_dir(&self.db_path);
-        std::fs::create_dir_all(&dir).map_err(|_| PassFailure::Companion)?;
-        let owner = self.account.expose_uuid();
-        for (account, base) in companions(&dir).map_err(|_| PassFailure::Companion)? {
-            if base != path && (account == owner || !accounts.contains(&account)) {
-                if let Ok(_lock) = companion_lock(&base).try_lock_owned() {
-                    if remove_files(&base).is_err() {
-                        log::warn!("transparent PIR: could not delete a stale companion");
-                    }
-                }
-            }
-        }
-        ReferenceRecovery::open(path, recovery_config(self.account, &self.origin)).map_err(
-            |error| {
-                log::warn!(
-                    "transparent PIR: companion refused ({})",
-                    PassFailure::from(&error).name()
-                );
+        companion_dir(&self.db_path)
+            .open(
+                &self.account.expose_uuid().to_string(),
+                recovery_config(self.account, &self.origin),
+                &accounts,
+                &|| !self.exit(),
+            )
+            .map_err(|error| {
+                let name = match &error {
+                    OpenError::Recovery(error) => PassFailure::from(error).name(),
+                    OpenError::Busy => "in use",
+                    OpenError::Account | OpenError::Io(_) => "unusable",
+                };
+                log::warn!("transparent PIR: companion refused ({name})");
                 PassFailure::Companion
-            },
-        )
+            })
     }
 
     /// One adapter pass, retried once on the same companion if the
@@ -559,17 +462,16 @@ impl Pass {
     fn recover(
         &self,
         db: &crate::wallet::db::WalletDatabase,
-        companion: &mut ReferenceRecovery,
+        companion: &mut Companion,
     ) -> Result<RecoveryBatch<AccountUuid>, PassFailure> {
         let target = self.watch.target.ok_or(PassFailure::Invalid)?;
         let chain = WalletChain::new(db, target);
-        let exit = || self.cancel.load(Ordering::SeqCst) || (self.clock)() >= self.deadline;
-        let http =
-            TransparentPirHttp::new(&self.origin, &exit, self.handle.clone(), MAX_RESPONSE_BYTES)
-                .map_err(|_| PassFailure::Transport)?;
+        let exit = || self.exit();
+        let exchange = RoutedExchange::transparent(&self.origin, &exit, self.handle.clone())
+            .map_err(|_| PassFailure::Transport)?;
         #[cfg(test)]
-        let http = self.transport.attach(http);
-        let mut http = http;
+        let exchange = self.transport.attach(exchange);
+        let mut http = TransparentPirHttp::new(exchange, MAX_RESPONSE_BYTES);
         let mut attempt = || {
             let (mut filters, mut shards) = http.split();
             companion.recover(&self.watch, &chain, &mut filters, &mut shards)
@@ -618,103 +520,9 @@ pub(super) fn recovery_config(account: AccountUuid, origin: &str) -> RecoveryCon
     }
 }
 
-/// When to ask again after a pass that stopped with `outcome`.
-pub(super) fn continuation(outcome: Outcome) -> Continuation {
-    match outcome {
-        Outcome::Complete => Continuation::Complete,
-        Outcome::More => Continuation::More,
-        Outcome::Behind => Continuation::RetryAfter(BEHIND_RETRY),
-        Outcome::Overloaded => Continuation::RetryAfter(OVERLOADED_RETRY),
-        Outcome::Stalled => Continuation::Stalled,
-    }
-}
-
-/// Blocks between `target` and the height `progress` covered through.
-pub(super) fn behind_by(target: u32, progress: Progress) -> u32 {
-    u32::try_from(u64::from(target).saturating_sub(progress.covered_through)).unwrap_or(u32::MAX)
-}
-
-/// The directory holding the companions of the wallet at `db_path`.
-pub(crate) fn companion_dir(db_path: &str) -> PathBuf {
-    PathBuf::from(format!("{db_path}{COMPANION_DIR_SUFFIX}"))
-}
-
-/// `account`'s companion for `origin` under the adapter's schema.
-pub(super) fn companion_path(db_path: &str, account: AccountUuid, origin: &str) -> PathBuf {
-    companion_dir(db_path).join(format!(
-        "{}-{}.sqlite",
-        account.expose_uuid(),
-        binding_tag(origin)
-    ))
-}
-
-/// Sixteen hex digits of `sha256(origin || 0 || SCHEMA)`: another origin or
-/// schema names another companion rather than failing the open.
-fn binding_tag(origin: &str) -> String {
-    let digest = Sha256::new()
-        .chain_update(origin.as_bytes())
-        .chain_update([0])
-        .chain_update(SCHEMA.as_bytes())
-        .finalize();
-    hex::encode(&digest[..8])
-}
-
-/// The companions in `dir`, by owning account and companion file path. Each
-/// companion is listed once, whether its file or only a sidecar remains.
-fn companions(dir: &Path) -> io::Result<BTreeSet<(uuid::Uuid, PathBuf)>> {
-    let mut found = BTreeSet::new();
-    for entry in std::fs::read_dir(dir)? {
-        let name = entry?.file_name();
-        if let Some((account, base)) = name.to_str().and_then(companion_name) {
-            found.insert((account, dir.join(base)));
-        }
-    }
-    Ok(found)
-}
-
-/// The owning account and companion file name of `name`, a companion file or
-/// one of its sidecars: `{uuid}-{16 hex}.sqlite`, then an optional sidecar
-/// suffix. Anything else in the directory is not a companion.
-fn companion_name(name: &str) -> Option<(uuid::Uuid, &str)> {
-    const UUID: usize = 36;
-    const TAG: usize = 16;
-    const EXTENSION: &str = ".sqlite";
-    let base = UUID + 1 + TAG + EXTENSION.len();
-    let (file, suffix) = (name.get(..base)?, name.get(base..)?);
-    if !(suffix.is_empty() || SIDECARS.contains(&suffix)) {
-        return None;
-    }
-    let account = uuid::Uuid::try_parse(file.get(..UUID)?).ok()?;
-    let tag = file
-        .get(UUID..)?
-        .strip_prefix('-')?
-        .strip_suffix(EXTENSION)?;
-    tag.bytes()
-        .all(|byte| byte.is_ascii_hexdigit())
-        .then_some((account, file))
-}
-
-/// The lock serializing every pass, acknowledgment and removal on `path`.
-fn companion_lock(path: &Path) -> Arc<tokio::sync::Mutex<()>> {
-    let mut locks = COMPANION_LOCKS
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
-    locks.retain(|_, lock| Arc::strong_count(lock) > 1);
-    locks.entry(path.to_owned()).or_default().clone()
-}
-
-/// Deletes the companion file at `base` and its sidecars. Missing files are
-/// not an error.
-fn remove_files(base: &Path) -> io::Result<()> {
-    for suffix in std::iter::once("").chain(SIDECARS) {
-        let mut path = base.as_os_str().to_owned();
-        path.push(suffix);
-        match std::fs::remove_file(&path) {
-            Err(error) if error.kind() != io::ErrorKind::NotFound => return Err(error),
-            _ => {}
-        }
-    }
-    Ok(())
+/// The companion directory of the wallet at `db_path`.
+pub(crate) fn companion_dir(db_path: &str) -> CompanionDir {
+    CompanionDir::new(format!("{db_path}{COMPANION_DIR_SUFFIX}"))
 }
 
 /// Deletes every companion of the account `account_uuid` in the wallet at
@@ -728,52 +536,27 @@ pub(crate) fn remove_companions(db_path: &str, account_uuid: &str) -> Result<(),
     remove_account_companions(db_path, account_uuid, REMOVE_WAIT)
 }
 
-/// Deletes the companions, with their sidecars, of accounts the wallet at
-/// `db_path` no longer has, so a removal that failed after an account was
-/// deleted converges at the next sync start whether or not private recovery is
-/// still selected.
+/// Deletes the companions of accounts the wallet at `db_path` no longer has,
+/// so a removal that failed after an account was deleted converges at the
+/// next sync start whether or not private recovery is still selected.
 ///
-/// Companions are listed before the accounts are read, so one created for an
-/// account added meanwhile is never mistaken for an orphan. A companion whose
-/// lock is held is left for a later sweep. Attempts every orphan and then
-/// returns the first failure; an unreadable account list deletes nothing.
+/// A companion in use is left for a later sweep, and an unreadable account
+/// list deletes nothing; see [`CompanionDir::retain`].
 pub(crate) fn remove_orphan_companions(db_path: &str) -> Result<(), String> {
-    let found = match companions(&companion_dir(db_path)) {
-        Ok(found) => found,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
-        Err(error) => {
-            return Err(format!(
-                "Failed to list transparent PIR companions: {error}"
-            ))
-        }
-    };
-    if found.is_empty() {
-        return Ok(());
-    }
-    let accounts = crate::wallet::keys::list_account_uuids_from_db(db_path)?
-        .iter()
-        .map(|account| uuid::Uuid::try_parse(account))
-        .collect::<Result<BTreeSet<_>, _>>()
-        .map_err(|error| format!("Invalid account UUID: {error}"))?;
-    let mut first_error = None;
-    for (_, base) in found
-        .into_iter()
-        .filter(|(owner, _)| !accounts.contains(owner))
-    {
-        let Ok(_lock) = companion_lock(&base).try_lock_owned() else {
-            continue;
-        };
-        if let Err(error) = remove_files(&base) {
-            first_error.get_or_insert_with(|| {
-                format!("Failed to remove an orphan transparent PIR companion: {error}")
-            });
-        }
-    }
-    first_error.map_or(Ok(()), Err)
+    companion_dir(db_path)
+        .retain(|| {
+            crate::wallet::keys::list_account_uuids_from_db(db_path)
+                .map_err(io::Error::other)?
+                .iter()
+                .map(|account| uuid::Uuid::try_parse(account).map(|uuid| uuid.to_string()))
+                .collect::<Result<_, _>>()
+                .map_err(io::Error::other)
+        })
+        .map_err(|error| format!("Failed to remove orphan transparent PIR companions: {error}"))
 }
 
 /// Deletes every companion of the wallet at `db_path`, with its sidecars,
-/// waiting at most `wait` for each one's lock.
+/// waiting at most `wait` in all for those another handle holds.
 ///
 /// Forgetting private ledger facts calls this first and forgets nothing
 /// unless it succeeds: a companion records which revisions the wallet holds,
@@ -781,22 +564,12 @@ pub(crate) fn remove_orphan_companions(db_path: &str) -> Result<(), String> {
 /// A companion still locked, as by an abandoned pass, fails the call and is
 /// left for the next attempt.
 pub(crate) fn remove_all_companions(db_path: &str, wait: Duration) -> Result<(), String> {
-    let found = match companions(&companion_dir(db_path)) {
-        Ok(found) => found,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
-        Err(error) => {
-            return Err(format!(
-                "Failed to list transparent PIR companions: {error}"
-            ))
-        }
-    };
-    for (_, base) in found {
-        let _lock = lock_within(&companion_lock(&base), wait)
-            .ok_or_else(|| "A transparent PIR companion is in use".to_owned())?;
-        remove_files(&base)
-            .map_err(|error| format!("Failed to remove a transparent PIR companion: {error}"))?;
-    }
-    Ok(())
+    companion_dir(db_path)
+        .clear(wait)
+        .map_err(|error| match error.kind() {
+            io::ErrorKind::WouldBlock => "A transparent PIR companion is in use".to_owned(),
+            _ => format!("Failed to remove a transparent PIR companion: {error}"),
+        })
 }
 
 /// [`remove_companions`], waiting at most `wait` for each companion's lock.
@@ -807,36 +580,12 @@ pub(super) fn remove_account_companions(
 ) -> Result<(), String> {
     let account = uuid::Uuid::try_parse(account_uuid)
         .map_err(|error| format!("Invalid account UUID: {error}"))?;
-    let found = match companions(&companion_dir(db_path)) {
-        Ok(found) => found,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
-        Err(error) => {
-            return Err(format!(
-                "Failed to list transparent PIR companions: {error}"
-            ))
-        }
-    };
-    for (_, base) in found.into_iter().filter(|(owner, _)| *owner == account) {
-        let _lock = lock_within(&companion_lock(&base), wait)
-            .ok_or_else(|| "A transparent PIR companion is in use".to_owned())?;
-        remove_files(&base)
-            .map_err(|error| format!("Failed to remove a transparent PIR companion: {error}"))?;
-    }
-    Ok(())
-}
-
-/// Takes `lock` from synchronous code, waiting at most `wait`.
-fn lock_within(lock: &Arc<tokio::sync::Mutex<()>>, wait: Duration) -> Option<OwnedMutexGuard<()>> {
-    let deadline = Instant::now() + wait;
-    loop {
-        if let Ok(guard) = lock.clone().try_lock_owned() {
-            return Some(guard);
-        }
-        if Instant::now() >= deadline {
-            return None;
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
+    companion_dir(db_path)
+        .remove(&account.to_string(), wait)
+        .map_err(|error| match error.kind() {
+            io::ErrorKind::WouldBlock => "A transparent PIR companion is in use".to_owned(),
+            _ => format!("Failed to remove a transparent PIR companion: {error}"),
+        })
 }
 
 /// Test seam: the transport a source for one wallet file sends through,
@@ -847,9 +596,7 @@ pub(crate) mod test_transport {
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
-    use crate::wallet::sync_engine::enhancement::{
-        RequestObserver, RoutePolicy, TransparentPirHttp,
-    };
+    use crate::wallet::sync_engine::enhancement::{RequestObserver, RoutePolicy, RoutedExchange};
 
     /// Every request reaches `observer`, which answers it; each pass records
     /// the route policy of the transport it built.
@@ -870,13 +617,13 @@ pub(crate) mod test_transport {
 
         pub(super) fn attach<'a, F: Fn() -> bool>(
             &self,
-            http: TransparentPirHttp<'a, F>,
-        ) -> TransparentPirHttp<'a, F> {
+            exchange: RoutedExchange<'a, F>,
+        ) -> RoutedExchange<'a, F> {
             self.routes
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
-                .push(http.route_policy());
-            http.with_observer(self.observer.clone())
+                .push(exchange.route_policy());
+            exchange.with_observer(self.observer.clone())
         }
     }
 

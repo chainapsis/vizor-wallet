@@ -1664,8 +1664,7 @@ fn transparent_details_view(
     // Funding omissions and output ownership must share the snapshot that
     // supplied the receipt's account movement, fee and settled effects.
     let db = wallet_db_on(read_tx, db_path, network);
-    let view =
-        crate::wallet::sync_engine::transparent_details::detail_view(&db, read_tx, account, &txid);
+    let view = crate::wallet::sync_engine::transparent_details::detail_view(&db, account, &txid);
     let view = match view {
         Ok(view) => view?,
         Err(_) => {

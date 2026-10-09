@@ -680,13 +680,14 @@ trusted, since every commit comes from the configured origin.
   it. Each companion binds the source `vizor/transparent-pir/v1`, the
   account's UUID and the origin, so another origin derives other revision
   sources.
-- **Companions.** One per account, `{db}.tpir/{uuid}-{tag}.sqlite`, where the
-  tag is 16 hex digits of `sha256(origin || 0 || SCHEMA)`. A companion holds
-  the adapter's retrieval cache and revision catalog, never wallet state. It
-  is created on the account's first pass, and losing one costs a re-download:
-  revision identities come from the publication, so a recreated companion
-  derives the ones the wallet holds. Opening one deletes the account's
-  companions for other origins or schemas and those of deleted accounts.
+- **Companions.** One per account in the library's `CompanionDir` at
+  `{db}.tpir`, which names it `{uuid}-{tag}.sqlite`, where the tag is 16 hex
+  digits of `sha256(origin || 0 || SCHEMA)`. A companion holds the adapter's
+  retrieval cache and revision catalog, never wallet state. It is created on
+  the account's first pass, and losing one costs a re-download: revision
+  identities come from the publication, so a recreated companion derives the
+  ones the wallet holds. Opening one deletes the account's companions for
+  other origins or schemas and those of deleted accounts.
   Deleting an account removes its companion and SQLite sidecars once the
   deletion commits; one that removal leaves behind is deleted at the next sync
   start, in every build, with the companions of any other deleted account.
@@ -694,10 +695,11 @@ trusted, since every commit comes from the configured origin.
   and a failure keeps the database name for a retry; startup and reset delete
   `.tpir` directories of no current wallet. On iOS every build excludes the
   directory from device backups.
-- **Locking.** One lock per companion path serializes passes, settlements and
-  removals. A source parks each companion it opened, with its lock, until it is
-  dropped, so a pass and its settlement see the same companion and nothing
-  removes it in between.
+- **Locking.** An open companion holds an operating system lock on its
+  `{uuid}-{tag}.lock` file, so passes, settlements and removals on it are
+  serialized in this process and against any other. A source parks each
+  companion it opened, with its lock, until it is dropped, so a pass and its
+  settlement see the same companion and nothing removes it in between.
 - **Passes.** A pass runs on a thread and runtime of its own, never the
   sync's blocking pool, over a read-only wallet handle, whose blocks answer the
   adapter's chain view up to the watch set's target. It stops at cancellation
@@ -712,23 +714,26 @@ trusted, since every commit comes from the configured origin.
   start queued behind it open until restart. A
   publication whose set identity changed is retried once on the same
   companion, which the adapter has reset, keeping its catalog. A pass that
-  failed because the service could not be reached or was not serving (a
-  failed connection or route, a timeout, a 429 or 5xx on the map, a filter or
-  init, or any other 5xx) is `Unavailable` and ends the whole run instead of
-  failing each account in turn.
+  failed because the service could not be reached or was not serving (the
+  library's outage: a failed connection or route, a timeout, a 429 or 5xx on
+  the map, a filter or init, or a 429 or non-capacity 5xx on a shard route) is
+  `Unavailable` and ends the whole run instead of failing each account in
+  turn.
 - **Limits per pass.** 10,000 scripts, 1,024 shards, 500,000 events, 256
   private queries, 96 MiB of private bytes, and 8 MiB per response.
-- **Transport.** `enhancement/transport/transparent_pir.rs` gives the adapter
-  its filter source and shard transport over one routed HTTPS client: HTTPS
-  only, Tor when the wallet wants it and the direct-route lease otherwise, no
-  User-Agent, a 60 s bound per request, and the sync's cancellation. Nothing
-  is retried and no filter is memoized. A shard-bound 429, or 503 without
-  `Retry-After`, is still capacity: it is reported as `Overloaded`, so the
-  adapter's own bounded backoff (at most four attempts, two seconds at most
-  between them) and the run's 90 s wait cap apply. The adapter's dependency graph has no
-  reqwest. Requests use only the service's six routes: the shard map, a
-  shard's filter, init, a revision's manifest, setup segments, and posted
-  queries.
+- **Transport.** `enhancement/transport/pir_http.rs` is the one raw HTTP
+  exchange (`HttpExchange`) both PIR services send through: HTTPS only, Tor
+  when the wallet wants it and the direct-route lease otherwise, no
+  User-Agent, a bound per request (60 s here) and the caller's cancellation.
+  It reads at most the body limits the request names and never retries. The
+  library's `TransparentPirHttp` owns the routes, their log templates and
+  what each status means: a 409 is a stale revision, and capacity is
+  wallet-pir's own `Overloaded::from_http` (a 503 naming a delay, or the
+  edge's 502 or 504), so the adapter's bounded backoff (at most four attempts,
+  two seconds at most between them) and the run's 90 s wait cap apply. No
+  filter is memoized. The adapter's dependency graph has no reqwest. Requests
+  use only the service's six routes: the shard map, a shard's filter, init, a
+  revision's manifest, setup segments, and posted queries.
 - **Logs.** One debug line per request, with the method, the route template
   (for example `POST /v1/shards/{id}/revisions/{rev}/query/pages`), the status
   and the body length. Pass lines carry the batch state, the outcome and the
@@ -818,14 +823,14 @@ captured policy ── PrivateRequired ──> txid display PIR  (PirSource)
   first two outputs (value and address) and flags naming what it omits
   (several source scripts, more than two outputs, transparent inputs with
   net shielded funding). The wallet shows the omissions and offers a public
-  lookup of the whole transaction only when the user asks for one. One client per origin lives for the whole
-  process, so the derived native profiles are built once. These are process
-  statics: a restart starts with a fresh client, no map and no map check
-  time. A client that
-  found the service's display unsupported is replaced by a fresh one that
-  keeps only those profiles, so the next lookup asks for the init document
-  and map again: a service that comes to support the client is found once
-  the wallet retries the transaction.
+  lookup of the whole transaction only when the user asks for one. One
+  library `TxidDisplayService` per origin lives for the whole process, so the
+  derived native profiles are built once. These are process statics: a
+  restart starts with a fresh service, no map and no map check time. After a
+  lookup finds the service's display unsupported, the service keeps only
+  those profiles, so the next lookup asks for the init document and map
+  again: a service that comes to support the client is found once the wallet
+  retries the transaction.
 - **Display metadata.** Work a lookup held for a map (not covered,
   unsupported, contradicted) waits for that map to change, and no lookup may
   be due to fetch a newer one. So when nothing is due and the wallet reports

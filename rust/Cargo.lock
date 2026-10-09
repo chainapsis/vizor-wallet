@@ -4180,7 +4180,7 @@ dependencies = [
 [[package]]
 name = "pir-native"
 version = "0.1.0"
-source = "git+https://github.com/valargroup/wallet-pir?rev=6e6b96cc5bd2d3110c1003b2c5c1adc88fad81b3#6e6b96cc5bd2d3110c1003b2c5c1adc88fad81b3"
+source = "git+https://github.com/valargroup/wallet-pir?rev=a317455e9feecdd2639d5348188c6a2341819a4d#a317455e9feecdd2639d5348188c6a2341819a4d"
 dependencies = [
  "ipir-sp 0.1.0-rc.6 (git+https://github.com/valargroup/ipir-sp.git?tag=v0.1.0-rc.6)",
  "rand 0.8.8",
@@ -5009,8 +5009,6 @@ dependencies = [
  "tokio",
  "tonic",
  "tower-service",
- "transparent-native",
- "transparent-shard",
  "ur",
  "ur-registry",
  "url",
@@ -7400,7 +7398,7 @@ dependencies = [
 [[package]]
 name = "transparent-events"
 version = "0.1.0"
-source = "git+https://github.com/valargroup/wallet-pir?rev=6e6b96cc5bd2d3110c1003b2c5c1adc88fad81b3#6e6b96cc5bd2d3110c1003b2c5c1adc88fad81b3"
+source = "git+https://github.com/valargroup/wallet-pir?rev=a317455e9feecdd2639d5348188c6a2341819a4d#a317455e9feecdd2639d5348188c6a2341819a4d"
 dependencies = [
  "hex",
  "thiserror 2.0.21",
@@ -7409,7 +7407,7 @@ dependencies = [
 [[package]]
 name = "transparent-filter"
 version = "0.1.0"
-source = "git+https://github.com/valargroup/wallet-pir?rev=6e6b96cc5bd2d3110c1003b2c5c1adc88fad81b3#6e6b96cc5bd2d3110c1003b2c5c1adc88fad81b3"
+source = "git+https://github.com/valargroup/wallet-pir?rev=a317455e9feecdd2639d5348188c6a2341819a4d#a317455e9feecdd2639d5348188c6a2341819a4d"
 dependencies = [
  "bitcoin",
  "hex",
@@ -7421,7 +7419,7 @@ dependencies = [
 [[package]]
 name = "transparent-native"
 version = "0.1.0"
-source = "git+https://github.com/valargroup/wallet-pir?rev=6e6b96cc5bd2d3110c1003b2c5c1adc88fad81b3#6e6b96cc5bd2d3110c1003b2c5c1adc88fad81b3"
+source = "git+https://github.com/valargroup/wallet-pir?rev=a317455e9feecdd2639d5348188c6a2341819a4d#a317455e9feecdd2639d5348188c6a2341819a4d"
 dependencies = [
  "hex",
  "pir-native",
@@ -7434,7 +7432,7 @@ dependencies = [
 [[package]]
 name = "transparent-shard"
 version = "0.1.0"
-source = "git+https://github.com/valargroup/wallet-pir?rev=6e6b96cc5bd2d3110c1003b2c5c1adc88fad81b3#6e6b96cc5bd2d3110c1003b2c5c1adc88fad81b3"
+source = "git+https://github.com/valargroup/wallet-pir?rev=a317455e9feecdd2639d5348188c6a2341819a4d#a317455e9feecdd2639d5348188c6a2341819a4d"
 dependencies = [
  "base64 0.22.1",
  "hex",
@@ -7449,7 +7447,7 @@ dependencies = [
 [[package]]
 name = "transparent-txid-client"
 version = "0.1.0"
-source = "git+https://github.com/valargroup/wallet-pir?rev=6e6b96cc5bd2d3110c1003b2c5c1adc88fad81b3#6e6b96cc5bd2d3110c1003b2c5c1adc88fad81b3"
+source = "git+https://github.com/valargroup/wallet-pir?rev=a317455e9feecdd2639d5348188c6a2341819a4d#a317455e9feecdd2639d5348188c6a2341819a4d"
 dependencies = [
  "base64 0.22.1",
  "hex",
@@ -7464,7 +7462,7 @@ dependencies = [
 [[package]]
 name = "transparent-wallet"
 version = "0.1.0"
-source = "git+https://github.com/valargroup/wallet-pir?rev=6e6b96cc5bd2d3110c1003b2c5c1adc88fad81b3#6e6b96cc5bd2d3110c1003b2c5c1adc88fad81b3"
+source = "git+https://github.com/valargroup/wallet-pir?rev=a317455e9feecdd2639d5348188c6a2341819a4d#a317455e9feecdd2639d5348188c6a2341819a4d"
 dependencies = [
  "base64 0.22.1",
  "hex",
@@ -7481,7 +7479,7 @@ dependencies = [
 [[package]]
 name = "transparent-wallet-store"
 version = "0.1.0"
-source = "git+https://github.com/valargroup/wallet-pir?rev=6e6b96cc5bd2d3110c1003b2c5c1adc88fad81b3#6e6b96cc5bd2d3110c1003b2c5c1adc88fad81b3"
+source = "git+https://github.com/valargroup/wallet-pir?rev=a317455e9feecdd2639d5348188c6a2341819a4d#a317455e9feecdd2639d5348188c6a2341819a4d"
 dependencies = [
  "hex",
  "rusqlite",
@@ -8447,7 +8445,7 @@ dependencies = [
 [[package]]
 name = "zakura-client-backend"
 version = "0.1.0-rc7"
-source = "git+https://github.com/zakura-core/wallet-libraries?rev=31886a020052a54028544ade92c29c2ed2442251#31886a020052a54028544ade92c29c2ed2442251"
+source = "git+https://github.com/zakura-core/wallet-libraries?rev=02dfcb0f7a43a2536401dcdfcb593e2c391c98a0#02dfcb0f7a43a2536401dcdfcb593e2c391c98a0"
 dependencies = [
  "ambassador",
  "arti-client",
@@ -8523,7 +8521,7 @@ dependencies = [
 [[package]]
 name = "zakura-client-sqlite"
 version = "0.1.0-rc7"
-source = "git+https://github.com/zakura-core/wallet-libraries?rev=31886a020052a54028544ade92c29c2ed2442251#31886a020052a54028544ade92c29c2ed2442251"
+source = "git+https://github.com/zakura-core/wallet-libraries?rev=02dfcb0f7a43a2536401dcdfcb593e2c391c98a0#02dfcb0f7a43a2536401dcdfcb593e2c391c98a0"
 dependencies = [
  "ambassador",
  "bip32",
@@ -8731,7 +8729,7 @@ dependencies = [
 [[package]]
 name = "zakura-pczt"
 version = "0.1.0-rc4"
-source = "git+https://github.com/zakura-core/wallet-libraries?rev=31886a020052a54028544ade92c29c2ed2442251#31886a020052a54028544ade92c29c2ed2442251"
+source = "git+https://github.com/zakura-core/wallet-libraries?rev=02dfcb0f7a43a2536401dcdfcb593e2c391c98a0#02dfcb0f7a43a2536401dcdfcb593e2c391c98a0"
 dependencies = [
  "blake2b_simd",
  "document-features",
@@ -8785,12 +8783,12 @@ dependencies = [
 [[package]]
 name = "zakura-pir-enhance-types"
 version = "0.0.1-rc0"
-source = "git+https://github.com/zakura-core/wallet-libraries?rev=31886a020052a54028544ade92c29c2ed2442251#31886a020052a54028544ade92c29c2ed2442251"
+source = "git+https://github.com/zakura-core/wallet-libraries?rev=02dfcb0f7a43a2536401dcdfcb593e2c391c98a0#02dfcb0f7a43a2536401dcdfcb593e2c391c98a0"
 
 [[package]]
 name = "zakura-pir-native"
 version = "0.0.1-rc0"
-source = "git+https://github.com/zakura-core/wallet-libraries?rev=31886a020052a54028544ade92c29c2ed2442251#31886a020052a54028544ade92c29c2ed2442251"
+source = "git+https://github.com/zakura-core/wallet-libraries?rev=02dfcb0f7a43a2536401dcdfcb593e2c391c98a0#02dfcb0f7a43a2536401dcdfcb593e2c391c98a0"
 dependencies = [
  "ipir-sp 0.1.0-rc.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.8.8",
@@ -8801,7 +8799,7 @@ dependencies = [
 [[package]]
 name = "zakura-pir-status"
 version = "0.0.1-rc0"
-source = "git+https://github.com/zakura-core/wallet-libraries?rev=31886a020052a54028544ade92c29c2ed2442251#31886a020052a54028544ade92c29c2ed2442251"
+source = "git+https://github.com/zakura-core/wallet-libraries?rev=02dfcb0f7a43a2536401dcdfcb593e2c391c98a0#02dfcb0f7a43a2536401dcdfcb593e2c391c98a0"
 dependencies = [
  "hex",
  "rand 0.8.8",
@@ -8815,15 +8813,20 @@ dependencies = [
 [[package]]
 name = "zakura-pir-transparent"
 version = "0.0.1-rc0"
-source = "git+https://github.com/zakura-core/wallet-libraries?rev=31886a020052a54028544ade92c29c2ed2442251#31886a020052a54028544ade92c29c2ed2442251"
+source = "git+https://github.com/zakura-core/wallet-libraries?rev=02dfcb0f7a43a2536401dcdfcb593e2c391c98a0#02dfcb0f7a43a2536401dcdfcb593e2c391c98a0"
 dependencies = [
+ "base64 0.22.1",
  "hex",
  "rusqlite",
+ "rustix 1.1.5",
+ "same-file",
  "serde_json",
  "sha2 0.10.9",
  "thiserror 2.0.21",
  "transparent-events",
  "transparent-filter",
+ "transparent-native",
+ "transparent-shard",
  "transparent-txid-client",
  "transparent-wallet",
  "transparent-wallet-store",
@@ -8986,7 +8989,7 @@ dependencies = [
 [[package]]
 name = "zakura-transaction-status"
 version = "0.0.1-rc0"
-source = "git+https://github.com/zakura-core/wallet-libraries?rev=31886a020052a54028544ade92c29c2ed2442251#31886a020052a54028544ade92c29c2ed2442251"
+source = "git+https://github.com/zakura-core/wallet-libraries?rev=02dfcb0f7a43a2536401dcdfcb593e2c391c98a0#02dfcb0f7a43a2536401dcdfcb593e2c391c98a0"
 dependencies = [
  "tokio",
  "tonic",

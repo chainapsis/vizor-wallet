@@ -50,9 +50,9 @@ pub(crate) use policy::{
 };
 #[cfg(test)]
 pub(crate) use transport::test_log;
+pub(super) use transport::RoutedExchange;
 #[cfg(test)]
-pub(super) use transport::{ObservedRequest, RequestObserver, RoutePolicy};
-pub(super) use transport::{TransparentPirHttp, TxidPirHttp};
+pub(super) use transport::{response, ObservedRequest, RequestObserver, RoutePolicy};
 
 use std::collections::HashSet;
 use tonic::transport::Channel;
