@@ -664,6 +664,17 @@ trusted, since every commit comes from the configured origin.
   and a failure keeps the database name for a retry; startup and reset delete
   `.tpir` directories of no current wallet. On iOS a flag build excludes the
   directory from device backups.
+- **Repair.** A companion is rebuilt only when SQLite confirms it is not a
+  database or is corrupt, or when it is in the earlier format the adapter asks
+  to recreate: once per companion per process, under its path lock, keeping
+  every catalog row the damaged file still yields. A busy, locked or
+  unreadable companion, one bound to another account, origin or schema, and a
+  publication change never delete or reset anything. A rebuild is staged
+  beside the damaged companion (`.rebuild`, listed and removed with it) and
+  replaces it by one atomic rename only once complete, so a crash leaves one
+  or the other; while either has a SQLite write-ahead log or journal, the swap
+  is refused. Any doubt keeps the damaged one. A regular file or symlink where the `.tpir` directory
+  belongs is left alone, and the run stops as unavailable until it is removed.
 - **Locking.** One lock per companion path serializes passes, settlements and
   removals. A source parks each companion it opened, with its lock, until it is
   dropped, so a pass and its settlement see the same companion and nothing

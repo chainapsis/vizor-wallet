@@ -696,6 +696,450 @@ async fn an_outage_stops_the_run_instead_of_failing_each_account() {
     assert_eq!(production_dump(&path), before);
 }
 
+/// Writes `garbage` over the first bytes of the file at `path`, so SQLite no
+/// longer reads it as a database.
+fn clobber(path: &Path, garbage: &[u8]) {
+    use std::io::{Seek, SeekFrom, Write};
+    let mut file = std::fs::OpenOptions::new().write(true).open(path).unwrap();
+    file.seek(SeekFrom::Start(0)).unwrap();
+    file.write_all(garbage).unwrap();
+}
+
+/// A catalog row the adapter would write, for `lineage`.
+fn catalog_row(conn: &rusqlite::Connection, lineage: i64) {
+    conn.execute(
+        "INSERT INTO pir_bridge_catalog
+             (source, shard_id, digest, sealed, lineage, revision, height, hash, exported, current)
+         VALUES (?1, 0, ?2, 0, ?3, ?4, 1, ?5, 1, 0)",
+        rusqlite::params![
+            vec![7u8; 32],
+            format!("{lineage:064x}"),
+            lineage,
+            vec![lineage as u8; 32],
+            vec![9u8; 32]
+        ],
+    )
+    .unwrap();
+}
+
+fn catalog_rows(path: &Path) -> i64 {
+    rusqlite::Connection::open(path)
+        .unwrap()
+        .query_row("SELECT COUNT(*) FROM pir_bridge_catalog", [], |row| {
+            row.get(0)
+        })
+        .unwrap()
+}
+
+/// Overwrites the first page of `table` in the database at `path`, leaving the
+/// rest of the file as it was.
+fn corrupt_table(path: &Path, table: &str) {
+    use std::io::{Seek, SeekFrom, Write};
+    let (page_size, root): (i64, i64) = {
+        let conn = rusqlite::Connection::open(path).unwrap();
+        conn.pragma_update(None, "journal_mode", "DELETE").unwrap();
+        (
+            conn.query_row("PRAGMA page_size", [], |row| row.get(0))
+                .unwrap(),
+            conn.query_row(
+                "SELECT rootpage FROM sqlite_master WHERE name = ?1",
+                [table],
+                |row| row.get(0),
+            )
+            .unwrap(),
+        )
+    };
+    let mut file = std::fs::OpenOptions::new().write(true).open(path).unwrap();
+    file.seek(SeekFrom::Start(((root - 1) * page_size) as u64))
+        .unwrap();
+    file.write_all(&vec![0xa5; page_size as usize]).unwrap();
+}
+
+/// A companion whose storage SQLite reports corrupt, but whose binding and
+/// catalog still read whole, is rebuilt once, under its lock, keeping every
+/// catalog row. A second failure is never rebuilt again in the process.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_corrupt_companion_is_rebuilt_once_keeping_its_catalog() {
+    let wallet = main_wallet(1);
+    let (uuid, account) = wallet.accounts[0].clone();
+    let _seam = test_transport::set(&wallet.path, refusing());
+    let source = TransparentPirSource::new(&wallet.path, MAIN);
+    assert_eq!(
+        source
+            .recover(request(account, &bare(account), &|| false))
+            .await,
+        Ok(COMPLETE)
+    );
+    drop(source);
+    let path = companion(&wallet.path, &uuid);
+    {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        catalog_row(&conn, 1);
+        catalog_row(&conn, 2);
+    }
+    corrupt_table(&path, "wallet_meta");
+    let source = TransparentPirSource::new(&wallet.path, MAIN);
+    assert_eq!(
+        source
+            .recover(request(account, &bare(account), &|| false))
+            .await,
+        Ok(COMPLETE)
+    );
+    drop(source);
+    assert_eq!(catalog_rows(&path), 2);
+    assert!(!with_suffix(&path, ".rebuild").exists());
+
+    // Damaged again: not rebuilt a second time, and kept as it is.
+    corrupt_table(&path, "wallet_meta");
+    let damaged = std::fs::read(&path).unwrap();
+    let source = TransparentPirSource::new(&wallet.path, MAIN);
+    assert_eq!(
+        source
+            .recover(request(account, &bare(account), &|| false))
+            .await,
+        Err(SourceError::Failed)
+    );
+    drop(source);
+    assert_eq!(std::fs::read(&path).unwrap(), damaged);
+}
+
+/// Both reasons the adapter reports a legacy format can occur in a correctly
+/// bound v2 companion. Its compatible catalog remains reconciliation evidence.
+#[tokio::test(flavor = "multi_thread")]
+async fn legacy_refusal_preserves_a_compatible_bound_catalog() {
+    for damage in [
+        "DELETE FROM pir_bridge_binding WHERE key = 'format'",
+        "CREATE TABLE pir_bridge_revisions (source BLOB NOT NULL)",
+    ] {
+        let wallet = main_wallet(1);
+        let (uuid, account) = wallet.accounts[0].clone();
+        let _seam = test_transport::set(&wallet.path, refusing());
+        let path = companion(&wallet.path, &uuid);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        drop(
+            ReferenceRecovery::open(
+                &path,
+                pir::recovery_config(account, pir::DEFAULT_MAINNET_ORIGIN),
+            )
+            .unwrap(),
+        );
+        {
+            let conn = rusqlite::Connection::open(&path).unwrap();
+            catalog_row(&conn, 1);
+            catalog_row(&conn, 2);
+            conn.execute_batch(damage).unwrap();
+        }
+        let source = TransparentPirSource::new(&wallet.path, MAIN);
+        assert_eq!(
+            source
+                .recover(request(account, &bare(account), &|| false))
+                .await,
+            Ok(COMPLETE)
+        );
+        drop(source);
+        assert_eq!(catalog_rows(&path), 2);
+        assert!(!with_suffix(&path, ".rebuild").exists());
+    }
+}
+
+/// An existing WAL may contain committed reconciliation records. A repair
+/// keeps the main database and those records while its connection stays open.
+#[tokio::test(flavor = "multi_thread")]
+async fn legacy_refusal_with_an_existing_wal_keeps_all_catalog_evidence() {
+    let wallet = main_wallet(1);
+    let (uuid, account) = wallet.accounts[0].clone();
+    let _seam = test_transport::set(&wallet.path, refusing());
+    let path = companion(&wallet.path, &uuid);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    drop(
+        ReferenceRecovery::open(
+            &path,
+            pir::recovery_config(account, pir::DEFAULT_MAINNET_ORIGIN),
+        )
+        .unwrap(),
+    );
+    let holder = rusqlite::Connection::open(&path).unwrap();
+    catalog_row(&holder, 1);
+    holder
+        .execute_batch("DELETE FROM pir_bridge_binding WHERE key = 'format'")
+        .unwrap();
+    assert!(with_suffix(&path, "-wal").exists());
+    let source = TransparentPirSource::new(&wallet.path, MAIN);
+    assert_eq!(
+        source
+            .recover(request(account, &bare(account), &|| false))
+            .await,
+        Err(SourceError::Failed)
+    );
+    drop(source);
+    assert_eq!(
+        holder
+            .query_row("SELECT COUNT(*) FROM pir_bridge_catalog", [], |row| row
+                .get::<_, i64>(0))
+            .unwrap(),
+        1
+    );
+    drop(holder);
+    assert_eq!(catalog_rows(&path), 1);
+}
+
+/// A readable catalog cannot be transferred without evidence of its identity,
+/// even when the format refusal normally permits rebuilding an older store.
+#[tokio::test(flavor = "multi_thread")]
+async fn legacy_refusal_with_an_unbound_catalog_keeps_the_original() {
+    for damage in [
+        "DELETE FROM pir_bridge_binding",
+        "DELETE FROM pir_bridge_binding WHERE key = 'format';
+         UPDATE pir_bridge_binding SET value = 42 WHERE key = 'account-source'",
+        "DELETE FROM pir_bridge_binding WHERE key = 'format';
+         UPDATE pir_bridge_binding SET value = zeroblob(32) WHERE key = 'account-source'",
+    ] {
+        let wallet = main_wallet(1);
+        let (uuid, account) = wallet.accounts[0].clone();
+        let _seam = test_transport::set(&wallet.path, refusing());
+        let path = companion(&wallet.path, &uuid);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        drop(
+            ReferenceRecovery::open(
+                &path,
+                pir::recovery_config(account, pir::DEFAULT_MAINNET_ORIGIN),
+            )
+            .unwrap(),
+        );
+        {
+            let conn = rusqlite::Connection::open(&path).unwrap();
+            catalog_row(&conn, 1);
+            conn.execute_batch(damage).unwrap();
+        }
+        let before = std::fs::read(&path).unwrap();
+        let source = TransparentPirSource::new(&wallet.path, MAIN);
+        assert_eq!(
+            source
+                .recover(request(account, &bare(account), &|| false))
+                .await,
+            Err(SourceError::Failed)
+        );
+        drop(source);
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+    }
+}
+
+/// A confirmed older store without a current catalog remains reconstructible,
+/// whether it predates the binding table or still has the matching binding.
+#[tokio::test(flavor = "multi_thread")]
+async fn legacy_refusal_without_a_catalog_can_be_rebuilt() {
+    for remove_binding in [false, true] {
+        let wallet = main_wallet(1);
+        let (uuid, account) = wallet.accounts[0].clone();
+        let _seam = test_transport::set(&wallet.path, refusing());
+        let path = companion(&wallet.path, &uuid);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        drop(
+            ReferenceRecovery::open(
+                &path,
+                pir::recovery_config(account, pir::DEFAULT_MAINNET_ORIGIN),
+            )
+            .unwrap(),
+        );
+        {
+            let conn = rusqlite::Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "DROP TABLE pir_bridge_catalog;
+                 CREATE TABLE pir_bridge_revisions (source BLOB NOT NULL);
+                 DELETE FROM pir_bridge_binding WHERE key = 'format'",
+            )
+            .unwrap();
+            if remove_binding {
+                conn.execute_batch("DROP TABLE pir_bridge_binding").unwrap();
+            }
+        }
+        let source = TransparentPirSource::new(&wallet.path, MAIN);
+        assert_eq!(
+            source
+                .recover(request(account, &bare(account), &|| false))
+                .await,
+            Ok(COMPLETE)
+        );
+        drop(source);
+        assert_eq!(catalog_rows(&path), 0);
+    }
+}
+
+/// Corruption alone never licenses deleting a companion: one bound to another
+/// identity, one whose catalog no longer fits, and one SQLite cannot read at
+/// all, so that neither its binding nor its catalog can be carried over, are
+/// all kept exactly as they are.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_corrupt_companion_that_cannot_be_shown_safe_is_kept() {
+    let wallet = main_wallet(3);
+    let _seam = test_transport::set(&wallet.path, refusing());
+    let create = |uuid: &str, bound_to: AccountUuid| {
+        let path = companion(&wallet.path, uuid);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        drop(
+            ReferenceRecovery::open(
+                &path,
+                pir::recovery_config(bound_to, pir::DEFAULT_MAINNET_ORIGIN),
+            )
+            .unwrap(),
+        );
+        catalog_row(&rusqlite::Connection::open(&path).unwrap(), 1);
+        path
+    };
+    let [(a_uuid, a), (b_uuid, b), (c_uuid, c)] = [0, 1, 2].map(|i| wallet.accounts[i].clone());
+
+    // A: bound to another account, then its storage corrupted.
+    let other = AccountUuid::from_uuid(uuid::Uuid::new_v4());
+    let foreign = create(&a_uuid, other);
+    corrupt_table(&foreign, "wallet_meta");
+    // B: its catalog has a column the current format lacks.
+    let changed = create(&b_uuid, b);
+    rusqlite::Connection::open(&changed)
+        .unwrap()
+        .execute_batch("ALTER TABLE pir_bridge_catalog ADD COLUMN extra INTEGER")
+        .unwrap();
+    corrupt_table(&changed, "wallet_meta");
+    // C: not a database at all.
+    let unreadable = create(&c_uuid, c);
+    clobber(&unreadable, &[0x5a; 4096]);
+
+    for (account, path) in [(a, &foreign), (b, &changed), (c, &unreadable)] {
+        let before = std::fs::read(path).unwrap();
+        let source = TransparentPirSource::new(&wallet.path, MAIN);
+        assert_eq!(
+            source
+                .recover(request(account, &bare(account), &|| false))
+                .await,
+            Err(SourceError::Failed)
+        );
+        drop(source);
+        assert_eq!(&std::fs::read(path).unwrap(), &before);
+        assert!(!with_suffix(path, ".rebuild").exists());
+    }
+}
+
+/// Only confirmed corruption is repaired: a companion bound to another
+/// identity, an unreadable one, or one another connection holds busy is left
+/// exactly as it is.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_foreign_unreadable_or_busy_companion_is_never_deleted() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let wallet = main_wallet(1);
+    let (uuid, account) = wallet.accounts[0].clone();
+    let _seam = test_transport::set(&wallet.path, refusing());
+    let path = companion(&wallet.path, &uuid);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+
+    // Bound to another account: the adapter refuses it, and it survives.
+    let other = AccountUuid::from_uuid(uuid::Uuid::new_v4());
+    drop(
+        ReferenceRecovery::open(
+            &path,
+            pir::recovery_config(other, pir::DEFAULT_MAINNET_ORIGIN),
+        )
+        .unwrap(),
+    );
+    catalog_row(&rusqlite::Connection::open(&path).unwrap(), 1);
+    let source = TransparentPirSource::new(&wallet.path, MAIN);
+    assert_eq!(
+        source
+            .recover(request(account, &bare(account), &|| false))
+            .await,
+        Err(SourceError::Failed)
+    );
+    drop(source);
+    assert_eq!(catalog_rows(&path), 1);
+
+    // Unreadable: refused, untouched.
+    let bytes = std::fs::read(&path).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let source = TransparentPirSource::new(&wallet.path, MAIN);
+    let refused = source
+        .recover(request(account, &bare(account), &|| false))
+        .await;
+    drop(source);
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    assert_eq!(refused, Err(SourceError::Failed));
+    assert_eq!(std::fs::read(&path).unwrap(), bytes);
+
+    // Busy: another connection holds it exclusively throughout the open.
+    std::fs::remove_file(&path).unwrap();
+    drop(
+        ReferenceRecovery::open(
+            &path,
+            pir::recovery_config(account, pir::DEFAULT_MAINNET_ORIGIN),
+        )
+        .unwrap(),
+    );
+    catalog_row(&rusqlite::Connection::open(&path).unwrap(), 3);
+    let holder = rusqlite::Connection::open(&path).unwrap();
+    holder
+        .execute_batch("PRAGMA journal_mode = DELETE; BEGIN EXCLUSIVE;")
+        .ok();
+    let source = TransparentPirSource::new(&wallet.path, MAIN);
+    let busy = source
+        .recover(request(account, &bare(account), &|| false))
+        .await;
+    drop(source);
+    holder.execute_batch("ROLLBACK").ok();
+    drop(holder);
+    assert_eq!(busy, Err(SourceError::Failed));
+    assert_eq!(catalog_rows(&path), 1);
+}
+
+/// A regular file where the companion directory belongs is left exactly as it
+/// is: no companion is created beside it or in its place, and the pass is
+/// unavailable for every account until it is removed.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_file_in_place_of_the_companion_directory_is_left_alone() {
+    let wallet = main_wallet(1);
+    let account = wallet.accounts[0].1;
+    let _seam = test_transport::set(&wallet.path, refusing());
+    let dir = pir::companion_dir(&wallet.path);
+    std::fs::write(&dir, b"not a directory").unwrap();
+    // The sweep at sync start has nothing to do.
+    pir::remove_orphan_companions(&wallet.path).unwrap();
+
+    let source = TransparentPirSource::new(&wallet.path, MAIN);
+    assert_eq!(
+        source
+            .recover(request(account, &bare(account), &|| false))
+            .await,
+        Err(SourceError::Unavailable)
+    );
+    drop(source);
+    assert_eq!(std::fs::read(&dir).unwrap(), b"not a directory");
+    let parent = dir.parent().unwrap();
+    assert!(std::fs::read_dir(parent).unwrap().all(|entry| {
+        let name = entry.unwrap().file_name();
+        !name.to_string_lossy().contains(".tpir.")
+    }));
+}
+
+/// A symlink where the companion directory belongs is left alone, and the
+/// pass is unavailable for every account.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_symlink_in_place_of_the_companion_directory_is_left_alone() {
+    let wallet = main_wallet(1);
+    let account = wallet.accounts[0].1;
+    let _seam = test_transport::set(&wallet.path, refusing());
+    let dir = pir::companion_dir(&wallet.path);
+    let target = tempfile::tempdir().unwrap();
+    std::os::unix::fs::symlink(target.path(), &dir).unwrap();
+    let source = TransparentPirSource::new(&wallet.path, MAIN);
+    assert_eq!(
+        source
+            .recover(request(account, &bare(account), &|| false))
+            .await,
+        Err(SourceError::Unavailable)
+    );
+    assert!(std::fs::symlink_metadata(&dir)
+        .unwrap()
+        .file_type()
+        .is_symlink());
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn cancelling_a_pass_waits_for_the_blocking_task() {
     let wallet = main_wallet(1);
