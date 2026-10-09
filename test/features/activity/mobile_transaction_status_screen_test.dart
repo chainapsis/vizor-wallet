@@ -124,9 +124,11 @@ rust_sync.TransactionDetail _detail({
   String? memo,
   List<rust_sync.TransactionDetailOutput> outputs = const [],
   bool hasRecipient = true,
+  BigInt? networkFee,
 }) {
   return rust_sync.TransactionDetail(
     txidHex: txid,
+    networkFee: networkFee,
     detailsComplete: true,
     provisional: false,
     txKind: kind,
@@ -221,6 +223,31 @@ Widget _app(
 }
 
 void main() {
+  testWidgets(
+    'recovered mobile receipt shows known network fee without attribution',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(393, 1200));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final tx = _tx(
+        fee: BigInt.zero,
+        feeState: rust_sync.TransactionFeeState.unknown,
+      );
+      await tester.pumpWidget(
+        _app(
+          tx,
+          privateQueriesEnabled: true,
+          detail: _detail(networkFee: BigInt.from(15000)),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Network fee'), findsOneWidget);
+      expect(find.text('0.00015 ZEC'), findsOneWidget);
+      expect(find.text(kUnknownFeeText), findsNothing);
+      expect(tx.feeState, rust_sync.TransactionFeeState.unknown);
+      expect(tx.fee, BigInt.zero);
+    },
+  );
+
   testWidgets(
     'older mobile receipt refreshes on sync completion without recent changes',
     (tester) async {

@@ -24,6 +24,8 @@ class ShieldedReceiptView extends StatelessWidget {
     required this.txIdText,
     this.status = ShieldedReceiptStatus.completed,
     this.feeText,
+    this.feeLabel = 'Tx fee',
+    this.feeHelpText = kTxFeeHelpTooltip,
     this.memoText,
     this.memoExpanded = false,
     this.memoLoading = false,
@@ -38,6 +40,8 @@ class ShieldedReceiptView extends StatelessWidget {
   final String txIdText;
   final ShieldedReceiptStatus status;
   final String? feeText;
+  final String feeLabel;
+  final String feeHelpText;
   final String? memoText;
   final bool memoExpanded;
 
@@ -154,11 +158,11 @@ class ShieldedReceiptView extends StatelessWidget {
             if (feeText != null) ...[
               const ReviewWrapDivider(),
               ReviewListRow(
-                label: 'Tx fee',
+                label: feeLabel,
                 value: feeText!,
                 trailingIconName: AppIcons.help,
                 trailingIconColor: colors.text.secondary,
-                trailingIconTooltip: kTxFeeHelpTooltip,
+                trailingIconTooltip: feeHelpText,
                 onPressed: onFeeHelpPressed,
               ),
             ],

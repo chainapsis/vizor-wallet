@@ -19,6 +19,7 @@ import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_profile_picture.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/receipt_loading_skeleton.dart';
+import '../../../../core/widgets/review_list_row.dart' show kTxFeeHelpTooltip;
 import '../../../../core/widgets/mobile/mobile_address_verify_sheet.dart';
 import '../../../../core/widgets/mobile/mobile_review_row.dart';
 import '../../../../core/widgets/mobile/mobile_tx_fee_info_sheet.dart';
@@ -1085,6 +1086,9 @@ class _MobileTransactionStatusScreenState
                         onOpenExplorer: () => unawaited(_openExplorer()),
                         isCardCreation:
                             giftCard?.kind == GiftCardActivityKind.created,
+                        showsNetworkFee:
+                            giftCard == null &&
+                            unattributedReceiptNetworkFee(tx, _detail) != null,
                         feeText: feeOnly
                             ? null
                             : _feeText(
@@ -1178,6 +1182,15 @@ class _MobileTransactionStatusScreenState
     if ((tx.txKind == 'received' || tx.txKind == 'receiving') &&
         tx.feeState != rust_sync.TransactionFeeState.known) {
       return null;
+    }
+    final networkFee = giftCard == null
+        ? unattributedReceiptNetworkFee(tx, _detail)
+        : null;
+    if (networkFee != null) {
+      return hideAmountIfPrivacyMode(
+        ZecAmount.fromZatoshi(networkFee).fee.toString(),
+        privacyModeEnabled: privacyModeEnabled,
+      );
     }
     if (_showUnknownFee(tx)) return kUnknownFeeText;
     if (tx.fee <= BigInt.zero) return null;
@@ -1433,6 +1446,7 @@ class _DetailCard extends StatelessWidget {
     required this.onOpenExplorer,
     required this.feeText,
     this.isCardCreation = false,
+    this.showsNetworkFee = false,
     this.detailsIncomplete = false,
   });
 
@@ -1448,6 +1462,7 @@ class _DetailCard extends StatelessWidget {
   final VoidCallback onOpenExplorer;
   final String? feeText;
   final bool isCardCreation;
+  final bool showsNetworkFee;
   final bool detailsIncomplete;
 
   @override
@@ -1540,7 +1555,11 @@ class _DetailCard extends StatelessWidget {
             Container(height: 1, color: colors.border.regular),
             const SizedBox(height: AppSpacing.sm),
             _ListRow(
-              label: isCardCreation ? 'Card fee' : 'Tx fee',
+              label: isCardCreation
+                  ? 'Card fee'
+                  : showsNetworkFee
+                  ? 'Network fee'
+                  : 'Tx fee',
               labelStyle: AppTypography.labelLarge,
               value: _ValueWithIcon(
                 text: feeText,
@@ -1553,7 +1572,13 @@ class _DetailCard extends StatelessWidget {
                           title: 'Card fee',
                           description: kPaymentLinkCardFeeHelpText,
                         )
-                      : showMobileTxFeeInfoSheet(context),
+                      : showMobileTxFeeInfoSheet(
+                          context,
+                          title: showsNetworkFee ? 'Network fee' : 'Tx fee',
+                          description: showsNetworkFee
+                              ? kUnattributedNetworkFeeHelpText
+                              : kTxFeeHelpTooltip,
+                        ),
                 ),
               ),
             ),

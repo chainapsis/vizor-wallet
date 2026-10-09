@@ -1217,6 +1217,44 @@ void main() {
   );
 
   testWidgets(
+    'recovered receipt shows a known network fee without attribution',
+    (tester) async {
+      final tx = _transaction(
+        txKind: 'sent',
+        fee: BigInt.zero,
+        feeState: rust_sync.TransactionFeeState.unknown,
+        displayAmount: BigInt.from(1000000),
+      );
+      await _pumpScreen(
+        tester,
+        privateQueriesEnabled: true,
+        args: ActivityTransactionStatusArgs(
+          txidHex: _txidHex,
+          txKind: 'sent',
+          initialTransaction: tx,
+          initialDetail: _detail(
+            txKind: 'sent',
+            primaryAddress: _recipientAddress,
+            networkFee: BigInt.from(15000),
+          ),
+        ),
+      );
+      expect(find.text('Network fee'), findsOneWidget);
+      expect(find.text('0.00015 ZEC'), findsOneWidget);
+      expect(find.text(kUnknownFeeText), findsNothing);
+      expect(find.text('0.01 ZEC'), findsOneWidget);
+      expect(tx.feeState, rust_sync.TransactionFeeState.unknown);
+      expect(tx.fee, BigInt.zero);
+      expect(
+        tester
+            .widget<SendStatusContentView>(find.byType(SendStatusContentView))
+            .feeHelpText,
+        kUnattributedNetworkFeeHelpText,
+      );
+    },
+  );
+
+  testWidgets(
     'a provisional debit shows an unknown fee and incomplete details',
     (tester) async {
       await _pumpScreen(
@@ -1623,9 +1661,11 @@ rust_sync.TransactionDetail _detail({
   String? sourcePool,
   String? memo,
   List<rust_sync.TransactionDetailOutput> outputs = const [],
+  BigInt? networkFee,
 }) {
   return rust_sync.TransactionDetail(
     txidHex: _txidHex,
+    networkFee: networkFee,
     detailsComplete: true,
     provisional: false,
     txKind: txKind,

@@ -5,7 +5,6 @@
 
 import '../frb_generated.dart';
 import 'keystone.dart';
-
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `api_proposal_result`, `catch`, `enhance_pir_enabled`, `fetch_block_time`, `migration_status_from_balance`, `parse_network_and_migrate`, `payment_link_batch_pairs`, `run_full_sync_internal`, `to_wallet_action_sigs`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
@@ -2874,6 +2873,10 @@ class TexPcztPairResult {
 class TransactionDetail {
   final String txidHex;
   final String txKind;
+
+  /// Exact whole-transaction network fee. Display only; does not identify the payer
+  /// or the account's share, and does not establish payment completeness.
+  final BigInt? networkFee;
   final String? primaryAddress;
   final String? sourceAddress;
   final String? sourcePool;
@@ -2914,6 +2917,7 @@ class TransactionDetail {
   const TransactionDetail({
     required this.txidHex,
     required this.txKind,
+    this.networkFee,
     this.primaryAddress,
     this.sourceAddress,
     this.sourcePool,
@@ -2932,6 +2936,7 @@ class TransactionDetail {
   int get hashCode =>
       txidHex.hashCode ^
       txKind.hashCode ^
+      networkFee.hashCode ^
       primaryAddress.hashCode ^
       sourceAddress.hashCode ^
       sourcePool.hashCode ^
@@ -2952,6 +2957,7 @@ class TransactionDetail {
           runtimeType == other.runtimeType &&
           txidHex == other.txidHex &&
           txKind == other.txKind &&
+          networkFee == other.networkFee &&
           primaryAddress == other.primaryAddress &&
           sourceAddress == other.sourceAddress &&
           sourcePool == other.sourcePool &&

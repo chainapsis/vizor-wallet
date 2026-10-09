@@ -14342,6 +14342,7 @@ impl SseDecode for crate::api::sync::TransactionDetail {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_txidHex = <String>::sse_decode(deserializer);
         let mut var_txKind = <String>::sse_decode(deserializer);
+        let mut var_networkFee = <Option<u64>>::sse_decode(deserializer);
         let mut var_primaryAddress = <Option<String>>::sse_decode(deserializer);
         let mut var_sourceAddress = <Option<String>>::sse_decode(deserializer);
         let mut var_sourcePool = <Option<String>>::sse_decode(deserializer);
@@ -14360,6 +14361,7 @@ impl SseDecode for crate::api::sync::TransactionDetail {
         return crate::api::sync::TransactionDetail {
             txid_hex: var_txidHex,
             tx_kind: var_txKind,
+            network_fee: var_networkFee,
             primary_address: var_primaryAddress,
             source_address: var_sourceAddress,
             source_pool: var_sourcePool,
@@ -19117,6 +19119,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::TransactionDetail {
         [
             self.txid_hex.into_into_dart().into_dart(),
             self.tx_kind.into_into_dart().into_dart(),
+            self.network_fee.into_into_dart().into_dart(),
             self.primary_address.into_into_dart().into_dart(),
             self.source_address.into_into_dart().into_dart(),
             self.source_pool.into_into_dart().into_dart(),
@@ -23063,6 +23066,7 @@ impl SseEncode for crate::api::sync::TransactionDetail {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.txid_hex, serializer);
         <String>::sse_encode(self.tx_kind, serializer);
+        <Option<u64>>::sse_encode(self.network_fee, serializer);
         <Option<String>>::sse_encode(self.primary_address, serializer);
         <Option<String>>::sse_encode(self.source_address, serializer);
         <Option<String>>::sse_encode(self.source_pool, serializer);

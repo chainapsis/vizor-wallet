@@ -584,11 +584,30 @@ class _ActivityTransactionStatusScreenState
       transactionDetailsIncomplete(tx) &&
       !receiptDetailsComplete(_detail);
 
+  bool _showsNetworkFee(rust_sync.TransactionInfo tx) =>
+      unattributedReceiptNetworkFee(tx, _matchingDetailFor(tx)) != null;
+
+  String _feeLabel(rust_sync.TransactionInfo tx) =>
+      _showsNetworkFee(tx) ? 'Network fee' : 'Tx fee';
+
+  String _feeHelpText(rust_sync.TransactionInfo tx) => _showsNetworkFee(tx)
+      ? kUnattributedNetworkFeeHelpText
+      : kTxFeeHelpTooltip;
+
   String _feeText(
     rust_sync.TransactionInfo? tx, {
     required bool privacyModeEnabled,
     GiftCardActivityMetadata? giftCard,
   }) {
+    final networkFee = tx == null || giftCard != null
+        ? null
+        : unattributedReceiptNetworkFee(tx, _matchingDetailFor(tx));
+    if (networkFee != null) {
+      return hideAmountIfPrivacyMode(
+        ZecAmount.fromZatoshi(networkFee).fee.toString(),
+        privacyModeEnabled: privacyModeEnabled,
+      );
+    }
     if (tx != null && _showUnknownFee(tx)) return kUnknownFeeText;
     if (tx == null || tx.fee <= BigInt.zero) return '--';
     final fee = giftCard == null ? tx.fee : giftCard.detailFeeZatoshi(tx.fee);
@@ -778,6 +797,8 @@ class _ActivityTransactionStatusScreenState
             ),
       timestampText: _timestampText(tx),
       txIdText: _truncatedDisplayTxid(tx.txidHex),
+      feeLabel: _feeLabel(tx),
+      feeHelpText: _feeHelpText(tx),
       feeText: _feeText(tx, privacyModeEnabled: privacyModeEnabled),
       isShieldedRecipient:
           recipientAddress != null &&
@@ -816,7 +837,10 @@ class _ActivityTransactionStatusScreenState
         amountText: _amountText(tx, privacyModeEnabled: privacyModeEnabled),
         timestampText: _timestampText(tx),
         txIdText: _truncatedDisplayTxid(tx.txidHex),
-        feeText: tx.fee > BigInt.zero || _showUnknownFee(tx)
+        feeLabel: _feeLabel(tx),
+        feeHelpText: _feeHelpText(tx),
+        feeText:
+            tx.fee > BigInt.zero || _showUnknownFee(tx) || _showsNetworkFee(tx)
             ? _feeText(tx, privacyModeEnabled: privacyModeEnabled)
             : null,
         memoText: hasMemo ? memo : null,
@@ -972,7 +996,11 @@ class _ActivityTransactionStatusScreenState
     // amount that includes the fee says so.
     final feePresentation = transactionFeePresentation(tx);
     final feeOnly = feePresentation == TransactionFeePresentation.feeOnly;
-    final feeText = !feeOnly && (tx.fee > BigInt.zero || _showUnknownFee(tx))
+    final feeText =
+        !feeOnly &&
+            (tx.fee > BigInt.zero ||
+                _showUnknownFee(tx) ||
+                _showsNetworkFee(tx))
         ? _feeText(tx, privacyModeEnabled: privacyModeEnabled)
         : null;
 
@@ -1060,11 +1088,11 @@ class _ActivityTransactionStatusScreenState
               if (feeText != null) ...[
                 const ReviewWrapDivider(),
                 ReviewListRow(
-                  label: 'Tx fee',
+                  label: _feeLabel(tx),
                   value: feeText,
                   trailingIconName: AppIcons.help,
                   trailingIconColor: colors.text.secondary,
-                  trailingIconTooltip: kTxFeeHelpTooltip,
+                  trailingIconTooltip: _feeHelpText(tx),
                 ),
               ],
             ],
