@@ -160,7 +160,7 @@ catalog order; without timings, all modes use catalog order. `--plan` shows the
 dispatch order and report hashes without launching or writing anything.
 
 ```bash
-python3 scripts/e2e/run-suite.py --suite rust-regtest-all --plan \
+python3 scripts/e2e/run-suite.py --suite rust-direct --plan \
   --order long-first --timing-report /path/to/prior/repetition-0/run.json
 ```
 
