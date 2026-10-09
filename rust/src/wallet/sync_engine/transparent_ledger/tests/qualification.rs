@@ -849,7 +849,11 @@ async fn an_activated_wallet_discloses_nothing_through_any_lane_including_the_pi
     })
     .await
     .unwrap();
-    assert!(discovered.unwrap().accounts.is_empty());
+    assert_eq!(
+        discovered.err().as_deref(),
+        Some(crate::api::wallet::SOFTWARE_ACCOUNT_DISCOVERY_UNAVAILABLE),
+        "a withheld discovery is not an empty one"
+    );
     let preview = preview.expect_err("a withheld preview is not a balance");
     assert!(preview.contains("unavailable"), "{preview}");
 
