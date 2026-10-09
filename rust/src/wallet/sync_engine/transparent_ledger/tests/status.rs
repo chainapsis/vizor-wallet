@@ -25,7 +25,7 @@ fn shield_reason(wallet: &Wallet, uuid: &str) -> String {
 
 #[tokio::test]
 async fn a_private_database_in_a_flag_off_build_is_stopped_not_selected() {
-    // Recovered and promoted in a build with the development flag.
+    // Recovered and promoted with private queries on.
     let mut wallet = wallet();
     let mode = activate(&mut wallet).await;
     let source = funded_source(&wallet);
@@ -81,7 +81,7 @@ async fn a_private_database_in_a_flag_off_build_is_stopped_not_selected() {
     }
 
     // Turning private queries off lowers the wallet in this build too.
-    set_transparent_policy(&wallet.path, NETWORK, false, false)
+    set_transparent_policy(&wallet.path, NETWORK, false)
         .await
         .unwrap()
         .unwrap();

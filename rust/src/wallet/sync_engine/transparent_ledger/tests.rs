@@ -992,9 +992,7 @@ async fn raise_does_not_override_a_concurrent_toggle_off() {
         drop(selected);
         let off = test_mode::set(&path, TransparentLedgerMode::Public);
         release.send(()).unwrap();
-        let lowered = set_transparent_policy(&path, NETWORK, false, true)
-            .await
-            .unwrap();
+        let lowered = set_transparent_policy(&path, NETWORK, false).await.unwrap();
         (lowered, off)
     };
     let source = unavailable();
@@ -1057,7 +1055,7 @@ async fn a_toggle_off_behind_a_raise_lowers_what_it_applied() {
 
     let toggle_off = tokio::spawn({
         let path = path.clone();
-        async move { set_transparent_policy(&path, NETWORK, false, true).await }
+        async move { set_transparent_policy(&path, NETWORK, false).await }
     });
     // Long enough for the toggle-off to open the wallet and reach the fence.
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
@@ -1078,7 +1076,7 @@ async fn a_toggle_off_behind_a_raise_lowers_what_it_applied() {
 }
 
 #[tokio::test]
-async fn a_flag_off_build_pauses_a_private_wallet_without_weakening_it() {
+async fn private_queries_off_pauses_a_private_wallet_without_weakening_it() {
     let network = WalletNetwork::Main;
     let (_dir, path, mut db) = main_wallet();
     with_wallet_db_write_lock("test.transparent_ledger.policy", || {
@@ -1086,16 +1084,19 @@ async fn a_flag_off_build_pauses_a_private_wallet_without_weakening_it() {
     })
     .unwrap();
     let before = applied(&path, network);
-    // Private queries on in a build without the development flag.
-    let flag_off = EnhancementPolicy::for_inputs(network, true, false);
-    assert_eq!(flag_off.transparent_mode(), TransparentLedgerMode::Public);
+    // Private queries off while a prior private policy remains applied.
+    let private_queries_off = EnhancementPolicy::for_preference(network, false);
+    assert_eq!(
+        private_queries_off.transparent_mode(),
+        TransparentLedgerMode::Public
+    );
     let source = FixtureSource::new(main_hash);
 
     let outcome = run(
         &mut db,
         &path,
         network,
-        flag_off,
+        private_queries_off,
         &source,
         None,
         now,
@@ -1105,24 +1106,24 @@ async fn a_flag_off_build_pauses_a_private_wallet_without_weakening_it() {
     .unwrap();
     assert_eq!(outcome, RunOutcome::NotEnabled);
     assert_eq!(source.calls(), 0);
-    // Startup in this build reconciles only upward, and selects nothing.
+    // Startup only reconciles upward and preserves this prior policy.
     assert_eq!(
-        set_transparent_policy(&path, network, true, false)
-            .await
-            .unwrap(),
+        set_transparent_policy(&path, network, true).await.unwrap(),
         None
     );
     assert_eq!(applied(&path, network), before);
 
     // Handles keep the wallet's policy, so public lookups stay withheld.
     let mut reopened = open_wallet_db_with_timeout(&path, network, SYNC_DB_BUSY_TIMEOUT).unwrap();
-    flag_off.configure_db(&mut reopened);
+    private_queries_off.configure_db(&mut reopened);
     assert_eq!(
         reopened.transparent_ledger_mode().unwrap(),
         TransparentLedgerMode::PrivateRequired
     );
     assert_eq!(
-        flag_off.public_transparent_lookups(&reopened).unwrap(),
+        private_queries_off
+            .public_transparent_lookups(&reopened)
+            .unwrap(),
         crate::wallet::sync_engine::enhancement::PublicTransparentLookups::Withheld
     );
 }

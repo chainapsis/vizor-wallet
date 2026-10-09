@@ -28,7 +28,7 @@ Future<List<String>> _pump(
   ScriptedDetails details, {
   FakeSyncNotifier? sync,
   bool privacy = false,
-  bool privateTransparentRecovery = false,
+  bool showPrivateLookupDiagnostics = false,
   Future<String> Function(rust_sync.TransactionInfo)? debugLookup,
   Future<void> Function(rust_sync.TransactionInfo)? publicLookup,
   Future<bool> Function(BuildContext)? confirmPublicLookup,
@@ -75,7 +75,7 @@ Future<List<String>> _pump(
           historyLoader: (_) async => [tx],
           detailLoader: details.load,
           transparentDetailsPrioritizer: (txid) async => prioritized.add(txid),
-          privateTransparentRecovery: privateTransparentRecovery,
+          showPrivateLookupDiagnostics: showPrivateLookupDiagnostics,
           transparentDetailsDebugLookup: debugLookup,
           transparentDetailsPublicLookup: publicLookup,
           publicLookupConfirmation:
@@ -101,7 +101,7 @@ void main() {
         details,
         sync: sync,
         privacy: privacy,
-        privateTransparentRecovery: true,
+        showPrivateLookupDiagnostics: true,
         debugLookup: lookup,
       );
     },

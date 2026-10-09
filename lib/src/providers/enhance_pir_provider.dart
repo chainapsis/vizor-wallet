@@ -115,7 +115,7 @@ final transparentOptOutPendingProvider =
 /// Whether Settings offers to finish lowering the wallet's transparent
 /// policy: private queries are off, but an opt-out is unfinished or the
 /// wallet still reads its transparent balance privately. Offered whether or
-/// not the private service is available here, so a wallet a flag build made
+/// not the private service is available here, so a wallet already made
 /// private can always be returned to public lookups.
 final transparentOptOutActionProvider = Provider<bool>((ref) {
   if (ref.watch(enhancePirProvider)) return false;

@@ -23,13 +23,9 @@ const _rowHeight = 44.0;
 /// stores, and its toggle geometry belongs to a settings page rather than a
 /// grouped card. The state machine behind both is the same provider.
 class MobileNetworkPrivacyCard extends ConsumerWidget {
-  const MobileNetworkPrivacyCard({
-    this.privateTransparentRecovery = kZcashPrivateTransparentRecovery,
-    super.key,
-  });
+  const MobileNetworkPrivacyCard({super.key});
 
   /// Whether this build's private queries also recover transparent funds.
-  final bool privateTransparentRecovery;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -159,7 +155,6 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
                 defaultTargetPlatform == TargetPlatform.iOS
                     ? 'Experimental. Queries and enhances transaction data without revealing their IDs to servers. While on, migration confirmations are checked only when Vizor is open.'
                     : 'Experimental. Queries and enhances transaction data without revealing their IDs to servers.',
-                privateTransparentRecovery: privateTransparentRecovery,
               ),
               key: const ValueKey('mobile_settings_enhance_pir_description'),
               style: AppTypography.bodyMedium.copyWith(

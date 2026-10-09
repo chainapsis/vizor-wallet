@@ -26,7 +26,7 @@ Future<List<String>> _pump(
   ScriptedDetails details, {
   FakeSyncNotifier? sync,
   bool privacy = false,
-  bool privateTransparentRecovery = false,
+  bool showPrivateLookupDiagnostics = false,
   Future<String> Function(rust_sync.TransactionInfo)? debugLookup,
   Future<void> Function(rust_sync.TransactionInfo)? publicLookup,
   Future<bool> Function(BuildContext)? confirmPublicLookup,
@@ -56,7 +56,7 @@ Future<List<String>> _pump(
           transparentDetailsPublicLookup: publicLookup,
           publicLookupConfirmation:
               confirmPublicLookup ?? confirmPublicDetailsLookup,
-          privateTransparentRecovery: privateTransparentRecovery,
+          showPrivateLookupDiagnostics: showPrivateLookupDiagnostics,
         ),
       ),
       GoRoute(path: '/activity', builder: (_, _) => const Text('activity')),
@@ -110,7 +110,7 @@ void main() {
         details,
         sync: sync,
         privacy: privacy,
-        privateTransparentRecovery: true,
+        showPrivateLookupDiagnostics: true,
         debugLookup: lookup,
       );
     },
@@ -259,7 +259,7 @@ void main() {
     await _pump(
       tester,
       details,
-      privateTransparentRecovery: true,
+      showPrivateLookupDiagnostics: true,
       debugLookup: (_) async => '1 outputs · 2 private queries',
     );
     final button = find.byKey(
@@ -273,7 +273,9 @@ void main() {
     await _close(tester);
   });
 
-  testWidgets('desktop default builds offer no private lookup', (tester) async {
+  testWidgets('desktop hides private lookup diagnostics when disabled', (
+    tester,
+  ) async {
     final details = ScriptedDetails([
       transparentDetail(rust_sync.TransparentDetailsState.unavailable),
     ]);

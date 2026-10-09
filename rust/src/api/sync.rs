@@ -117,7 +117,6 @@ pub fn reconcile_transparent_policy(
                 &db_path,
                 network,
                 private_queries,
-                sync_engine::enhancement::private_transparent_recovery(),
             ))
             .map_err(|e| e.to_string())?;
         let resulting = match applied {
@@ -3172,7 +3171,7 @@ pub fn enhance_transaction_publicly(
     })
 }
 
-/// Development builds only (`ZCASH_PRIVATE_TRANSPARENT_RECOVERY`): one
+/// Debug builds only: one
 /// private txid display lookup of `txid_hex` (as [`TransactionInfo::txid_hex`])
 /// mined at `mined_height`, on mainnet, persisting nothing.
 pub fn debug_lookup_transparent_details(

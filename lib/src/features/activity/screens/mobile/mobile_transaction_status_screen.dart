@@ -2,11 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart' show Scaffold;
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../../main.dart' show log;
-import '../../../../core/config/private_transparent_recovery_config.dart';
 import '../../../../core/config/swap_feature_config.dart';
 import '../../../../core/config/zcash_explorer.dart';
 import '../../../../core/formatting/address_display.dart';
@@ -110,7 +110,7 @@ class MobileTransactionStatusScreen extends ConsumerStatefulWidget {
     this.transparentDetailsDebugLookup,
     this.transparentDetailsPublicLookup,
     this.publicLookupConfirmation = confirmPublicDetailsLookup,
-    this.privateTransparentRecovery = kZcashPrivateTransparentRecovery,
+    this.showPrivateLookupDiagnostics = kDebugMode,
     super.key,
   });
 
@@ -133,7 +133,7 @@ class MobileTransactionStatusScreen extends ConsumerStatefulWidget {
 
   /// Whether this is a development build that offers the private lookup
   /// button.
-  final bool privateTransparentRecovery;
+  final bool showPrivateLookupDiagnostics;
 
   /// Test seam — production reads the wallet DB through Rust.
   @visibleForTesting
@@ -373,7 +373,7 @@ class _MobileTransactionStatusScreenState
     rust_sync.TransactionDetail? detail,
   ) {
     final state = detail?.transparentDetailsState;
-    return widget.privateTransparentRecovery &&
+    return widget.showPrivateLookupDiagnostics &&
         state != null &&
         state != rust_sync.TransparentDetailsState.available &&
         tx.minedHeight > BigInt.zero;

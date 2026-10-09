@@ -18,7 +18,6 @@ import 'src/core/lifecycle/signing_shutdown_host.dart';
 import 'src/core/lifecycle/app_shutdown_signal.dart';
 import 'src/core/config/swap_feature_config.dart';
 import 'src/core/config/network_config.dart';
-import 'src/core/config/private_transparent_recovery_config.dart';
 import 'src/core/layout/app_layout.dart';
 import 'src/core/navigation/mobile_exit_back_guard.dart';
 import 'src/core/navigation/mobile_onboarding_routes.dart';
@@ -210,9 +209,6 @@ Future<void> initializeZcashWalletRuntime() async {
   await initializeNetworkPrivacyRuntime();
   await rust_simple.configureFastTestnetMigration(
     enabled: kZcashFastTestnetMigration,
-  );
-  await rust_simple.configurePrivateTransparentRecovery(
-    enabled: kZcashPrivateTransparentRecovery,
   );
   if (kZcashDefaultNetworkName == ZcashNetwork.regtest.name &&
       kZcashRegtestIronwoodActivationHeight > 1) {

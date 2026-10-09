@@ -322,9 +322,8 @@ void main() {
     await tester.scrollUntilVisible(note, 200);
     expect(note, findsOneWidget);
     expect(find.textContaining('suspended'), findsNothing);
-    // Default builds keep the copy they had before private transparent
-    // recovery.
-    expect(find.textContaining('transparent funds'), findsNothing);
+    expect(find.textContaining('transparent funds'), findsOneWidget);
+    expect(find.textContaining('Ledger transparent funds'), findsOneWidget);
   });
 
   for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {

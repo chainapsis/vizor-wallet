@@ -41,26 +41,19 @@ void main() {
     );
   });
 
-  testWidgets('only a flag build describes private transparent recovery', (
+  testWidgets('private queries always describes private transparent recovery', (
     tester,
   ) async {
-    Future<String> description({bool? privateTransparentRecovery}) async {
+    Future<String> description() async {
       await tester.pumpWidget(
         MaterialApp(
           home: AppTheme(
             data: AppThemeData.dark,
-            child: privateTransparentRecovery == null
-                ? EnhancePirPrivacyControl(
-                    enabled: true,
-                    onToggle: () {},
-                    transition: null,
-                  )
-                : EnhancePirPrivacyControl(
-                    enabled: true,
-                    onToggle: () {},
-                    transition: null,
-                    privateTransparentRecovery: privateTransparentRecovery,
-                  ),
+            child: EnhancePirPrivacyControl(
+              enabled: true,
+              onToggle: () {},
+              transition: null,
+            ),
           ),
         ),
       );
@@ -73,15 +66,7 @@ void main() {
 
     final defaultCopy = await description();
     expect(defaultCopy, startsWith('Experimental.'));
-    expect(
-      defaultCopy,
-      isNot(contains(kPrivateTransparentRecoverySettingsCopy)),
-    );
-    expect(await description(privateTransparentRecovery: false), defaultCopy);
-    expect(
-      await description(privateTransparentRecovery: true),
-      '$defaultCopy $kPrivateTransparentRecoverySettingsCopy',
-    );
+    expect(defaultCopy, contains(kPrivateTransparentRecoverySettingsCopy));
   });
 
   test('uninstall setting is supported only on macOS and Linux', () {

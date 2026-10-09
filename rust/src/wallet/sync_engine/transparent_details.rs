@@ -944,15 +944,14 @@ pub(crate) struct DebugLookup {
 /// One private txid display lookup of `txid` (protocol byte order) mined at
 /// `mined_height`, through the process-wide client, persisting nothing.
 ///
-/// Development builds only: refused unless the
-/// `ZCASH_PRIVATE_TRANSPARENT_RECOVERY` flag is set, and off mainnet. Runs
+/// Debug builds only: refused in release builds and off mainnet. Runs
 /// on the caller's thread, which must not be a runtime worker.
 pub(crate) fn debug_lookup(
     network: WalletNetwork,
     txid: [u8; 32],
     mined_height: u64,
 ) -> Result<DebugLookup, String> {
-    if !super::enhancement::private_transparent_recovery() {
+    if !cfg!(debug_assertions) {
         return Err("Private transparent lookups need a development build".to_owned());
     }
     let origin =

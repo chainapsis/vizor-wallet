@@ -117,17 +117,15 @@ class _Reconciler {
 }
 
 /// Models the durable policy boundary: every build can lower a private wallet,
-/// but a default build cannot raise it again through mode selection.
+/// and private queries can raise it again on supported mainnet.
 class _DurableReconciler extends _Reconciler {
-  _DurableReconciler({required this.buildFlag});
+  _DurableReconciler();
 
-  final bool buildFlag;
   bool privateRequired = true;
 
   @override
   Future<ApiAppliedTransparentPolicy?> call(bool privateQueries) async {
     await super.call(privateQueries);
-    if (privateQueries && !buildFlag) return null;
     final changed = privateRequired != privateQueries;
     privateRequired = privateQueries;
     return changed ? _applied(privateQueries, generation) : null;
@@ -550,7 +548,7 @@ void main() {
       ..value = true
       ..events = events;
     final optOut = _OptOut(events);
-    final reconciler = _DurableReconciler(buildFlag: false)..failLower = true;
+    final reconciler = _DurableReconciler()..failLower = true;
     final sync = _Sync()..gate.complete();
     final container = setup(
       store,
@@ -588,7 +586,7 @@ void main() {
   test('a pending opt-out can be finished from Settings', () async {
     final store = _Store()..value = true;
     final optOut = _OptOut();
-    final reconciler = _DurableReconciler(buildFlag: false)..failLower = true;
+    final reconciler = _DurableReconciler()..failLower = true;
     final sync = _Sync()..gate.complete();
     final container = setup(
       store,
@@ -627,7 +625,7 @@ void main() {
     final store = _Store()
       ..value = true
       ..events = events;
-    final reconciler = _DurableReconciler(buildFlag: false);
+    final reconciler = _DurableReconciler();
     final container = setup(
       store,
       _Sync()..gate.complete(),
@@ -658,7 +656,7 @@ void main() {
         ..value = true
         ..events = events
         ..pending = Completer<void>();
-      final reconciler = _DurableReconciler(buildFlag: false);
+      final reconciler = _DurableReconciler();
       final sync = _Sync()..gate.complete();
       final container = setup(
         store,
@@ -689,40 +687,38 @@ void main() {
       expect(container.read(enhancePirTransitionProvider), isNull);
     },
   );
-  for (final buildFlag in [false, true]) {
-    test('a failed disable save preserves durable private policy with '
-        'build flag $buildFlag', () async {
-      final store = _Store()
-        ..value = true
-        ..fail = true;
-      final reconciler = _DurableReconciler(buildFlag: buildFlag);
-      final events = <String>[];
-      final optOut = _OptOut();
-      addTearDown(() => expect(optOut.value, isFalse));
-      final container = setup(
-        store,
-        _Sync()..gate.complete(),
-        initialEnabled: true,
-        background: _Background(events),
-        reconciler: reconciler,
-        optOut: optOut,
-      );
-      addTearDown(container.dispose);
+  test('a failed disable save preserves durable private policy with '
+      'private queries enabled', () async {
+    final store = _Store()
+      ..value = true
+      ..fail = true;
+    final reconciler = _DurableReconciler();
+    final events = <String>[];
+    final optOut = _OptOut();
+    addTearDown(() => expect(optOut.value, isFalse));
+    final container = setup(
+      store,
+      _Sync()..gate.complete(),
+      initialEnabled: true,
+      background: _Background(events),
+      reconciler: reconciler,
+      optOut: optOut,
+    );
+    addTearDown(container.dispose);
 
-      await container.read(enhancePirProvider.notifier).set(false);
+    await container.read(enhancePirProvider.notifier).set(false);
 
-      expect(reconciler.privateRequired, isTrue);
-      expect(reconciler.calls, isEmpty);
-      expect(api.values, isEmpty);
-      expect(events, isEmpty);
-      expect(store.value, isTrue);
-      expect(container.read(enhancePirProvider), isTrue);
-      expect(
-        container.read(enhancePirTransitionProvider),
-        'Setting unchanged. Try again.',
-      );
-    });
-  }
+    expect(reconciler.privateRequired, isTrue);
+    expect(reconciler.calls, isEmpty);
+    expect(api.values, isEmpty);
+    expect(events, isEmpty);
+    expect(store.value, isTrue);
+    expect(container.read(enhancePirProvider), isTrue);
+    expect(
+      container.read(enhancePirTransitionProvider),
+      'Setting unchanged. Try again.',
+    );
+  });
   // Previously a failed lowering tried to restore the saved preference to
   // on. Nothing is restored now: the opt-out stays saved and pending.
   test('a failed lowering never lowers durable private policy nor restores '
@@ -730,7 +726,7 @@ void main() {
     final store = _Store()
       ..value = true
       ..failEnabled = true;
-    final reconciler = _DurableReconciler(buildFlag: false)..failLower = true;
+    final reconciler = _DurableReconciler()..failLower = true;
     final events = <String>[];
     final container = setup(
       store,

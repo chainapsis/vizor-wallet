@@ -10,7 +10,6 @@ class EnhancePirPrivacyControl extends StatelessWidget {
     required this.enabled,
     required this.onToggle,
     required this.transition,
-    this.privateTransparentRecovery = kZcashPrivateTransparentRecovery,
     super.key,
   });
 
@@ -24,7 +23,6 @@ class EnhancePirPrivacyControl extends StatelessWidget {
   final String? transition;
 
   /// Whether this build's private queries also recover transparent funds.
-  final bool privateTransparentRecovery;
 
   @override
   Widget build(BuildContext context) {
@@ -106,7 +104,6 @@ class EnhancePirPrivacyControl extends StatelessWidget {
           child: Text(
             privateQueriesDescription(
               'Experimental. Looks up supported transactions without revealing their IDs to servers. Transaction details may take longer to appear.',
-              privateTransparentRecovery: privateTransparentRecovery,
             ),
             key: const ValueKey('settings_enhance_pir_description'),
             style: AppTypography.bodyMedium.copyWith(

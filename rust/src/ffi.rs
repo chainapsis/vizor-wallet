@@ -992,7 +992,7 @@ mod tests {
             (dir, path)
         }
 
-        /// Applies `mode` through another connection, as a flag build or a
+        /// Applies `mode` through another connection, as startup or a
         /// settings transition would.
         fn apply(path: &str, mode: TransparentLedgerMode) {
             open_wallet_db_with_timeout(path, WalletNetwork::Regtest, SYNC_DB_BUSY_TIMEOUT)
@@ -1069,7 +1069,7 @@ mod tests {
                         &url,
                         &main_path,
                         WalletNetwork::Main,
-                        EnhancementPolicy::for_inputs(WalletNetwork::Main, true, false),
+                        EnhancementPolicy::for_preference(WalletNetwork::Main, false),
                         TxId::from_bytes(TXID),
                         &mut output,
                         None,

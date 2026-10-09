@@ -184,7 +184,7 @@ async fn a_fresh_mainnet_account_recovers_and_promotes_against_the_live_service(
     assert!(floor <= target);
     record_chain(&path, floor, target, &before);
 
-    // Private queries on in a build with the development flag.
+    // Private queries on supported mainnet.
     let mut db = open_wallet_db_with_timeout(&path, MAIN, SYNC_DB_BUSY_TIMEOUT).unwrap();
     apply_transparent_policy_fenced(
         &mut db,

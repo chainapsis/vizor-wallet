@@ -1095,7 +1095,7 @@ Future<void> enhanceTransactionPublicly({
   txidHex: txidHex,
 );
 
-/// Development builds only (`ZCASH_PRIVATE_TRANSPARENT_RECOVERY`): one
+/// Debug builds only: one
 /// private txid display lookup of `txid_hex` (as [`TransactionInfo::txid_hex`])
 /// mined at `mined_height`, on mainnet, persisting nothing.
 Future<TransparentDetailsLookup> debugLookupTransparentDetails({

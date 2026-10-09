@@ -4819,8 +4819,9 @@ async fn run_sync_impl(
 /// balances and shielding state the run may have restored.
 ///
 /// Recovery keeps its own progress in the library and never fails the sync:
-/// errors and outcomes are only logged. A default build captures `Public`, so
-/// the run returns before any read, and nothing is re-reported; nor is it when
+/// errors and outcomes are only logged. With private queries off, the policy
+/// captures `Public`, so the run returns before any read, and nothing is
+/// re-reported; nor is it when
 /// the run exited.
 ///
 /// A background preparation sync (`running_mode` 2) skips the run entirely:

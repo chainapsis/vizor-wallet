@@ -10,20 +10,12 @@ import 'package:zcash_wallet/src/rust/network_privacy.dart' as rust_types;
 
 void main() {
   group('transparent recovery companions', () {
-    test('stay out of device backups only in a build with the flag', () async {
+    test('stay out of device backups in every build', () async {
       final excluded = <String>[];
       Future<void> exclude(String directory) async => excluded.add(directory);
 
       await excludeTransparentRecoveryCompanionsFromBackup(
         '/support/zcash_wallet.db',
-        privateTransparentRecovery: false,
-        exclude: exclude,
-      );
-      expect(excluded, isEmpty, reason: 'default builds create no companions');
-
-      await excludeTransparentRecoveryCompanionsFromBackup(
-        '/support/zcash_wallet.db',
-        privateTransparentRecovery: true,
         exclude: exclude,
       );
       expect(excluded, ['/support/zcash_wallet.db.tpir']);

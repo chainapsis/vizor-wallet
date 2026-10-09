@@ -677,7 +677,7 @@ async fn lightwalletd_paying(address: TransparentAddress) -> CapturingLwd {
     CapturingLwd::start_with(history_tx, u64::from(TOP), |_| {}).await
 }
 
-/// A mainnet wallet in a build with the development flag and private queries
+/// A mainnet wallet with private queries
 /// on, with public follow-on work queued before activation and a Ledger
 /// account beside the software one: startup, every sync lane, import,
 /// preview, the private recovery follow-up with the real transparent PIR
@@ -703,14 +703,14 @@ async fn an_activated_wallet_discloses_nothing_through_any_lane_including_the_pi
         "the payload left public follow-on work queued"
     );
 
-    // The development flag with private queries on, read from storage.
+    // Private queries on, read from storage.
     let mode = test_mode::set(&path, TransparentLedgerMode::PrivateRequired);
     let required = EnhancementPolicy::for_preference(MAIN, false)
         .with_transparent_mode(TransparentLedgerMode::PrivateRequired);
 
     // Startup reconciles the setting: it raises the wallet, which sends
     // nothing anywhere.
-    let raised = set_transparent_policy(&path, MAIN, true, true)
+    let raised = set_transparent_policy(&path, MAIN, true)
         .await
         .unwrap()
         .expect("startup raises the public wallet");
@@ -747,9 +747,9 @@ async fn an_activated_wallet_discloses_nothing_through_any_lane_including_the_pi
     let mut lwd = lightwalletd_paying(address).await;
     let tip = BlockHeight::from_u32(TOP);
 
-    // Both a default build's captured policy and the flag build's: once the
+    // Both a public captured policy and a private one: once the
     // wallet is raised, its durable policy withholds lookups in every build.
-    for policy in [EnhancementPolicy::current(MAIN), required] {
+    for policy in [EnhancementPolicy::for_preference(MAIN, false), required] {
         let mut db = open_wallet_db_with_timeout(&path, MAIN, SYNC_DB_BUSY_TIMEOUT).unwrap();
 
         // Sync: Ledger discovery, the UTXO refresh, and the deferred refresh
@@ -942,7 +942,7 @@ async fn an_activated_wallet_discloses_nothing_through_any_lane_including_the_pi
 
     // Positive control: turning private queries off lowers the wallet in
     // every build, and the next UTXO refresh discloses its addresses.
-    let lowered = set_transparent_policy(&path, MAIN, false, true)
+    let lowered = set_transparent_policy(&path, MAIN, false)
         .await
         .unwrap()
         .expect("toggle-off lowers the private wallet");
@@ -955,7 +955,7 @@ async fn an_activated_wallet_discloses_nothing_through_any_lane_including_the_pi
         &path,
         &mut db,
         MAIN,
-        EnhancementPolicy::for_inputs(MAIN, false, true),
+        EnhancementPolicy::for_preference(MAIN, false),
         tip,
         TransparentAccountSelection::All,
         None,
@@ -975,12 +975,12 @@ async fn an_activated_wallet_discloses_nothing_through_any_lane_including_the_pi
     );
 }
 
-/// The window before a flag build raises the wallet: private queries are on
+/// The window before private queries raises the wallet: private queries are on
 /// but not yet read from storage, so nothing may raise the wallet, and its
 /// durable policy is still `Public`. As for a new wallet before its first
 /// follow-up, only the policy each lane captured withholds its lookups.
 ///
-/// Under the flag build's policy, Ledger discovery, the UTXO refresh and the
+/// Under the private policy, Ledger discovery, the UTXO refresh and the
 /// deferred refresh, ephemeral checks, import discovery and the preview, the
 /// follow-up with the real transparent PIR source, and the iOS observe ABI
 /// send lightwalletd nothing that discloses a transparent address, script,
@@ -989,7 +989,7 @@ async fn an_activated_wallet_discloses_nothing_through_any_lane_including_the_pi
 /// queued work stays durable.
 #[cfg(not(ironwood_masquerade))]
 #[tokio::test(flavor = "multi_thread")]
-async fn a_flag_build_discloses_nothing_before_it_raises_the_wallet() {
+async fn private_queries_discloses_nothing_before_it_raises_the_wallet() {
     use crate::api::wallet::{
         discover_used_software_accounts, import_gate, preview_transparent_balance_for_addresses,
     };
@@ -1005,11 +1005,11 @@ async fn a_flag_build_discloses_nothing_before_it_raises_the_wallet() {
     let before = applied(&path, MAIN);
     assert_eq!(before.mode, TransparentLedgerMode::Public);
 
-    // The development flag with private queries on, the preference unread.
+    // Private queries on, the preference unread.
     let _mode = test_mode::select(&path, TransparentLedgerMode::PrivateRequired, false);
-    let flag = EnhancementPolicy::for_inputs(MAIN, true, true);
+    let selected = EnhancementPolicy::for_preference(MAIN, true);
     assert_eq!(
-        flag.transparent_mode(),
+        selected.transparent_mode(),
         TransparentLedgerMode::PrivateRequired
     );
     let mut lwd = lightwalletd_paying(address).await;
@@ -1017,16 +1017,24 @@ async fn a_flag_build_discloses_nothing_before_it_raises_the_wallet() {
     let mut db = open_wallet_db_with_timeout(&path, MAIN, SYNC_DB_BUSY_TIMEOUT).unwrap();
 
     // Sync: Ledger discovery and the UTXO refresh.
-    ledger_discovery::run(&mut lwd.client, &mut db, &path, MAIN, flag, tip, &|| false)
-        .await
-        .unwrap();
+    ledger_discovery::run(
+        &mut lwd.client,
+        &mut db,
+        &path,
+        MAIN,
+        selected,
+        tip,
+        &|| false,
+    )
+    .await
+    .unwrap();
     let mut received = false;
     let refreshed = refresh_utxos(
         &mut lwd.client,
         &path,
         &mut db,
         MAIN,
-        flag,
+        selected,
         tip,
         TransparentAccountSelection::All,
         None,
@@ -1038,7 +1046,7 @@ async fn a_flag_build_discloses_nothing_before_it_raises_the_wallet() {
     .unwrap();
     assert!(refreshed.withheld && !received);
 
-    // Payload recovery and the status and history checkpoint, under the flag
+    // Payload recovery and the status and history checkpoint, under the private
     // build's transparent mode. Its private payload and status routes would
     // reach the live services, so these run with public routes instead, which
     // only adds requests lightwalletd could see.
@@ -1057,7 +1065,7 @@ async fn a_flag_build_discloses_nothing_before_it_raises_the_wallet() {
         &mut db,
         &path,
         MAIN,
-        flag,
+        selected,
         tip,
         &mut changed,
         &|| false,
@@ -1069,7 +1077,7 @@ async fn a_flag_build_discloses_nothing_before_it_raises_the_wallet() {
     // Import into this wallet and as a first account: discovery and preview.
     let seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
     for first_account in [false, true] {
-        let gate = import_gate(MAIN, &path, first_account, flag).unwrap();
+        let gate = import_gate(MAIN, &path, first_account, selected).unwrap();
         assert!(!gate.is_allowed());
         assert!(
             discover_used_software_accounts(
@@ -1106,7 +1114,7 @@ async fn a_flag_build_discloses_nothing_before_it_raises_the_wallet() {
         &mut db,
         &path,
         MAIN,
-        flag,
+        selected,
         &source,
         Some(account),
         &|| false,
@@ -1127,7 +1135,7 @@ async fn a_flag_build_discloses_nothing_before_it_raises_the_wallet() {
         &path,
         &mut db,
         MAIN,
-        flag,
+        selected,
         tip,
         TransparentAccountSelection::Except(&uuid),
         None,
@@ -1150,7 +1158,7 @@ async fn a_flag_build_discloses_nothing_before_it_raises_the_wallet() {
             &url,
             &wallet_path,
             MAIN,
-            flag,
+            selected,
             txid,
             &mut output,
             None,

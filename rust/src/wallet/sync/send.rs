@@ -3779,7 +3779,7 @@ pub(crate) const TRANSPARENT_RECOVERY_INCOMPLETE: &str =
 /// Shares no phrase with [`TRANSPARENT_RECOVERY_INCOMPLETE`], so the app tells
 /// the two apart.
 pub(crate) const TRANSPARENT_RECOVERY_NOT_SELECTED: &str =
-    "Private transparent recovery is not available in this build; turn off private queries to use transparent funds";
+    "Private transparent recovery is not selected; turn off private queries to use transparent funds";
 
 /// Spendable transparent balances by receiver for shielding at `target`, in
 /// the wallet at `db_path`.

@@ -42,14 +42,11 @@ class _Account extends AccountNotifier {
 /// Starts from [initial] and never resolves the wallet path, so a sync start
 /// publishes its starting state and goes no further.
 class _CarrySync extends SyncNotifier {
-  _CarrySync(
-    this.initial, {
-    required super.privateTransparentRecovery,
-    Future<String> Function()? walletDbPathResolver,
-  }) : super(
-         walletDbPathResolver:
-             walletDbPathResolver ?? () => Completer<String>().future,
-       );
+  _CarrySync(this.initial, {Future<String> Function()? walletDbPathResolver})
+    : super(
+        walletDbPathResolver:
+            walletDbPathResolver ?? () => Completer<String>().future,
+      );
 
   final SyncState initial;
   int starts = 0;
@@ -125,8 +122,7 @@ class _Accounts extends AccountNotifier {
 /// The production [SyncNotifier] build, from the bootstrap snapshot, whose
 /// syncs never resolve the wallet path and so go no further than their start.
 class _LiveSync extends SyncNotifier {
-  _LiveSync({required super.privateTransparentRecovery})
-    : super(walletDbPathResolver: () => Completer<String>().future);
+  _LiveSync() : super(walletDbPathResolver: () => Completer<String>().future);
 }
 
 AppBootstrapState _bootstrapWith(AppSyncSnapshot snapshot) => AppBootstrapState(
@@ -212,7 +208,6 @@ void main() {
 
   Future<SyncState> startFrom(
     SyncState initial, {
-    bool privateTransparentRecovery = false,
     bool privateQueries = false,
     int? latestTipHeight,
   }) async {
@@ -221,12 +216,7 @@ void main() {
         appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
         accountProvider.overrideWith(_Account.new),
         enhancePirProvider.overrideWith(() => _EnhancePir(privateQueries)),
-        syncProvider.overrideWith(
-          () => _CarrySync(
-            initial,
-            privateTransparentRecovery: privateTransparentRecovery,
-          ),
-        ),
+        syncProvider.overrideWith(() => _CarrySync(initial)),
       ],
     );
     addTearDown(container.dispose);
@@ -288,7 +278,6 @@ void main() {
         syncProvider.overrideWith(
           () => _CarrySync(
             _current(private: true),
-            privateTransparentRecovery: false,
             walletDbPathResolver: () async => 'wallet.db',
           ),
         ),
@@ -312,8 +301,7 @@ void main() {
 
   group('an applied policy', () {
     Future<(ProviderContainer, _CarrySync)> mounted(SyncState initial) async {
-      final sync = _CarrySync(initial, privateTransparentRecovery: false)
-        ..countStarts = true;
+      final sync = _CarrySync(initial)..countStarts = true;
       final container = ProviderContainer(
         overrides: [
           appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
@@ -411,7 +399,6 @@ void main() {
       'queries raised the policy', () async {
     final started = await startFrom(
       _current(private: false),
-      privateTransparentRecovery: true,
       privateQueries: true,
     );
 
@@ -427,20 +414,17 @@ void main() {
 
   test('a sync start carries a public current balance when private queries '
       'cannot raise the policy', () async {
-    for (final (flag, queries) in [(false, true), (true, false)]) {
-      final started = await startFrom(
-        _current(private: false),
-        privateTransparentRecovery: flag,
-        privateQueries: queries,
-      );
+    final started = await startFrom(
+      _current(private: false),
+      privateQueries: false,
+    );
 
-      expect(
-        started.transparentAuthority,
-        rust_sync.TransparentBalanceAuthority.current,
-      );
-      expect(started.transparentBalance, BigInt.from(5));
-      expect(started.canShieldTransparentBalance, isTrue);
-    }
+    expect(
+      started.transparentAuthority,
+      rust_sync.TransparentBalanceAuthority.current,
+    );
+    expect(started.transparentBalance, BigInt.from(5));
+    expect(started.canShieldTransparentBalance, isTrue);
   });
 
   test('a sync start keeps a stopped recovery and its reason', () async {
@@ -510,10 +494,7 @@ void main() {
   });
 
   group('with the production build', () {
-    ProviderContainer containerFor({
-      required bool privateQueries,
-      bool privateTransparentRecovery = true,
-    }) {
+    ProviderContainer containerFor({required bool privateQueries}) {
       final container = ProviderContainer(
         overrides: [
           appBootstrapProvider.overrideWithValue(
@@ -521,11 +502,7 @@ void main() {
           ),
           accountProvider.overrideWith(_Accounts.new),
           enhancePirProvider.overrideWith(() => _EnhancePir(privateQueries)),
-          syncProvider.overrideWith(
-            () => _LiveSync(
-              privateTransparentRecovery: privateTransparentRecovery,
-            ),
-          ),
+          syncProvider.overrideWith(() => _LiveSync()),
         ],
       );
       addTearDown(container.dispose);
@@ -553,9 +530,7 @@ void main() {
                 ),
               ),
             ),
-            syncProvider.overrideWith(
-              () => _LiveSync(privateTransparentRecovery: false),
-            ),
+            syncProvider.overrideWith(() => _LiveSync()),
           ],
         );
         addTearDown(container.dispose);
@@ -587,9 +562,7 @@ void main() {
                   ),
                 ),
               ),
-              syncProvider.overrideWith(
-                () => _LiveSync(privateTransparentRecovery: false),
-              ),
+              syncProvider.overrideWith(() => _LiveSync()),
             ],
           );
           addTearDown(container.dispose);
@@ -612,9 +585,7 @@ void main() {
             ),
             accountProvider.overrideWith(_Accounts.new),
             enhancePirProvider.overrideWith(() => _EnhancePir(false)),
-            syncProvider.overrideWith(
-              () => _LiveSync(privateTransparentRecovery: false),
-            ),
+            syncProvider.overrideWith(() => _LiveSync()),
           ],
         );
         addTearDown(container.dispose);
@@ -640,13 +611,8 @@ void main() {
     test(
       'a startup read stays current when nothing raises the policy',
       () async {
-        for (final (flag, queries) in [(false, true), (true, false)]) {
-          final container = containerFor(
-            privateQueries: queries,
-            privateTransparentRecovery: flag,
-          );
-          _expectCurrent(await container.read(syncProvider.future));
-        }
+        final container = containerFor(privateQueries: false);
+        _expectCurrent(await container.read(syncProvider.future));
       },
     );
 

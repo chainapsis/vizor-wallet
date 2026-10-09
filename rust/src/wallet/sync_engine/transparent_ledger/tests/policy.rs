@@ -1,7 +1,7 @@
 //! Transparent mode selection, durable policy resolution, and durable transitions.
 //!
 //! Every test selects through its arguments or the per-wallet seam; none
-//! changes the process-wide preference, development flag, or confirmation.
+//! changes the process-wide preference or confirmation.
 
 use std::sync::atomic::AtomicUsize;
 use std::time::Duration;
@@ -173,11 +173,9 @@ async fn startup_never_demotes() {
     let (_dir, path, _db) = main_wallet();
     apply_on(&path, MAIN, TransparentLedgerMode::PrivateRequired);
     let before = applied(&path, MAIN);
-    // Startup passes only `true`, in either build.
-    for build_flag in [false, true] {
-        let changed = set_transparent_policy(&path, MAIN, true, build_flag)
-            .await
-            .unwrap();
+    // Startup passes only `true`; repeated reconciliation never demotes.
+    for _ in [0, 1] {
+        let changed = set_transparent_policy(&path, MAIN, true).await.unwrap();
         assert_eq!(changed, None);
         assert_eq!(applied(&path, MAIN), before);
     }
@@ -227,12 +225,10 @@ async fn an_unconfirmed_preference_withholds_lookups_but_never_raises() {
 #[tokio::test]
 async fn an_explicit_off_lowers_to_public_in_every_build() {
     let (_dir, path, _db) = main_wallet();
-    for build_flag in [false, true] {
+    for _ in [0, 1] {
         apply_on(&path, MAIN, TransparentLedgerMode::PrivateRequired);
         let before = applied(&path, MAIN);
-        let lowered = set_transparent_policy(&path, MAIN, false, build_flag)
-            .await
-            .unwrap();
+        let lowered = set_transparent_policy(&path, MAIN, false).await.unwrap();
         let expected = AppliedTransparentPolicy {
             mode: TransparentLedgerMode::Public,
             generation: before.generation + 1,
@@ -241,9 +237,7 @@ async fn an_explicit_off_lowers_to_public_in_every_build() {
         assert_eq!(applied(&path, MAIN), expected);
         // Already public: nothing to lower.
         assert_eq!(
-            set_transparent_policy(&path, MAIN, false, build_flag)
-                .await
-                .unwrap(),
+            set_transparent_policy(&path, MAIN, false).await.unwrap(),
             None
         );
         assert_eq!(applied(&path, MAIN), expected);
@@ -255,21 +249,21 @@ async fn an_explicit_off_lowers_to_public_in_every_build() {
 async fn explicit_reenable_after_lowering_advances_policy_generation() {
     let (_dir, path, _db) = main_wallet();
     let start = applied(&path, MAIN).generation;
-    // Enabled in a flag build.
-    let raised = set_transparent_policy(&path, MAIN, true, true)
+    // Enabled by private queries on supported mainnet.
+    let raised = set_transparent_policy(&path, MAIN, true)
         .await
         .unwrap()
         .unwrap();
     assert_eq!(raised.mode, TransparentLedgerMode::PrivateRequired);
     // An explicit opt-out lowers the policy.
-    let lowered = set_transparent_policy(&path, MAIN, false, true)
+    let lowered = set_transparent_policy(&path, MAIN, false)
         .await
         .unwrap()
         .unwrap();
     assert_eq!(lowered.mode, TransparentLedgerMode::Public);
     // Re-enabling takes its selection from the arguments, independently of
     // the live preference left off by the earlier opt-out.
-    let again = set_transparent_policy(&path, MAIN, true, true)
+    let again = set_transparent_policy(&path, MAIN, true)
         .await
         .unwrap()
         .unwrap();
@@ -295,21 +289,16 @@ fn reconcile_without_a_wallet_creates_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("wallet.db").to_str().unwrap().to_owned();
     let runtime = tokio::runtime::Runtime::new().unwrap();
-    for (private_queries, build_flag) in [(true, true), (true, false), (false, true)] {
+    for private_queries in [true, false] {
         assert_eq!(
             runtime
-                .block_on(set_transparent_policy(
-                    &path,
-                    MAIN,
-                    private_queries,
-                    build_flag
-                ))
+                .block_on(set_transparent_policy(&path, MAIN, private_queries))
                 .unwrap(),
             None
         );
     }
     // The bridge entry point reports no change. With `true` it selects from
-    // the process-wide flag, which no test sets.
+    // the supported network and the explicit preference.
     for private_queries in [true, false] {
         assert_eq!(
             crate::api::sync::reconcile_transparent_policy(
@@ -404,10 +393,10 @@ async fn reconcile_waits_for_public_lookups_to_drain() {
     });
     tokio::time::sleep(Duration::from_millis(50)).await;
 
-    // Startup in a flag build raises the policy, which must wait.
+    // Startup raises the policy, which must wait.
     let transition = tokio::spawn({
         let path = path.clone();
-        async move { set_transparent_policy(&path, MAIN, true, true).await }
+        async move { set_transparent_policy(&path, MAIN, true).await }
     });
     tokio::time::sleep(Duration::from_millis(100)).await;
     assert_eq!(applied(&path, MAIN), before, "still waiting for the lookup");
@@ -427,29 +416,27 @@ async fn reconcile_waits_for_public_lookups_to_drain() {
 }
 
 #[tokio::test]
-async fn a_default_build_with_the_setting_on_writes_nothing_and_sends_nothing() {
+async fn private_queries_off_writes_nothing_and_sends_no_private_requests() {
     let (_dir, path, mut db) = main_wallet();
     let before = applied(&path, MAIN);
-    // Private queries on, development flag off.
-    let default_build = EnhancementPolicy::for_inputs(MAIN, true, false);
+    // Private queries off: no private source is selected.
+    let public_queries = EnhancementPolicy::for_preference(MAIN, false);
     assert_eq!(
-        default_build.transparent_mode(),
+        public_queries.transparent_mode(),
         TransparentLedgerMode::Public
     );
 
     // Startup reconciliation and the coordinator.
     assert_eq!(
-        set_transparent_policy(&path, MAIN, true, false)
-            .await
-            .unwrap(),
+        set_transparent_policy(&path, MAIN, false).await.unwrap(),
         None
     );
-    // Startup decides before opening the wallet, so it never touches one: not
-    // even a file that is not a wallet fails it.
+    // An unsupported network does not select private recovery or open the
+    // wallet, even when private queries is on.
     let not_a_wallet = format!("{path}.other");
     std::fs::write(&not_a_wallet, b"not a wallet").unwrap();
     assert_eq!(
-        set_transparent_policy(&not_a_wallet, MAIN, true, false)
+        set_transparent_policy(&not_a_wallet, WalletNetwork::Test, true)
             .await
             .unwrap(),
         None
@@ -466,7 +453,7 @@ async fn a_default_build_with_the_setting_on_writes_nothing_and_sends_nothing() 
         &mut db,
         &path,
         MAIN,
-        default_build,
+        public_queries,
         &source,
         None,
         &|| false,
@@ -488,7 +475,7 @@ async fn a_default_build_with_the_setting_on_writes_nothing_and_sends_nothing() 
     assert!(!std::path::Path::new(&format!("{path}.tpir")).exists());
     // Transparent lookups stay public.
     assert_eq!(
-        default_build.public_transparent_lookups(&db).unwrap(),
+        public_queries.public_transparent_lookups(&db).unwrap(),
         PublicTransparentLookups::Allowed {
             generation: Some(before.generation)
         }

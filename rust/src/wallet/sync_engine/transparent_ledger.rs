@@ -38,8 +38,8 @@
 //! in memory for [`HOLD`] and skipped without traffic, as is a quarantined
 //! account and, under `PrivateRequired`, a Ledger account.
 //!
-//! A default build captures `Public`, so [`run`] returns before any read or
-//! request. With the development flag, private queries capture
+//! Private queries off captures `Public`, so [`run`] returns before any read
+//! or request. On supported mainnet, private queries on captures
 //! `PrivateRequired`, and [`run`] first raises the wallet's durable policy
 //! from a confirmed preference. The coordinator takes no lightwalletd client,
 //! so it cannot make a public request.

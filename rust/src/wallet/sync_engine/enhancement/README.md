@@ -360,7 +360,7 @@ applied. A raise that cannot apply checks first and never takes the fence.
 
 The setting transition pauses recovery and saves an explicit opt-out before
 lowering the durable policy. A failed preference save leaves the wallet's
-private policy untouched, even in a default build that cannot raise it again.
+private policy untouched.
 If lowering fails, it changes no durable policy; the transition restores the
 runtime preference to private and attempts to restore the saved preference
 before resuming. A second storage failure leaves the wallet and native work
@@ -373,9 +373,8 @@ opt-out, which lowers the policy only once that transition succeeds.
   durable `PrivateRequired` withholds lookups in every build without being
   written onto the handle. A handle opened before the transition reads it too:
   the gate withholds the lookup and sends nothing.
-- A default build captures `Public`. With the
-  `ZCASH_PRIVATE_TRANSPARENT_RECOVERY` development flag, private queries on
-  mainnet capture `PrivateRequired`.
+- Private queries on supported mainnet captures `PrivateRequired` in every
+  build. Private queries off or an unsupported network captures `Public`.
 
 ## Private transparent recovery and activation
 
@@ -451,7 +450,7 @@ until an account is promoted.
   memory, so a restart retries once. Held and quarantined accounts, and under
   `PrivateRequired` Ledger accounts, are skipped without a source call. The
   balance read reports why as the account's stop reason.
-- **Raise and confirmation.** A default build captures `Public`, so `run`
+- **Raise and confirmation.** Private queries off captures `Public`, so `run`
   returns `NotEnabled` before any read. Under a captured `PrivateRequired` it
   first raises a weaker durable policy behind the policy fence, only while
   `may_raise` holds: the selection is `PrivateRequired` and the preference was
@@ -601,7 +600,7 @@ completion is reported and then reports completion again, flagged with new
 transactions, so its commits refresh history on that event. No history gap
 starts any public lookup.
 
-Under `Public` handles, which is every default build, transparent effects
+Under `Public` handles, with private queries off, transparent effects
 count as settled, so an entry is provisional only while a shielded pool is not
 yet scanned through its height, or while the account spent in it and its
 payment details are missing.
@@ -626,23 +625,22 @@ way public discovery stores them (UTXO refresh plus payload retrieval).
 | Discovery order and payload replay | Ledger-first and payload-first reach the same balance, history, and rows (one transaction, one output); a second replay changes nothing. |
 | Account add and delete | A rescan pauses the active account until the next pass; the new account is promoted on its own; deleting it leaves the active one current. |
 | Shielded-funded send while incomplete | It is refused only for lack of shielded funds, never as transparent recovery unavailable. |
-| Every lane, before the raise | On a mainnet wallet with public work queued and a Ledger account, in a flag build with Private queries on but unread, so the durable policy stays `Public` and only each lane's captured policy withholds: under the flag build's policy, Ledger discovery, the UTXO refresh and the deferred refresh, ephemeral checks, import discovery and the import preview (into the wallet and as a first account), the recovery follow-up with the real source, and the iOS observe ABI; under its transparent mode with public routes, which the live private services would otherwise answer, payload recovery and the status and history checkpoint. None sends lightwalletd a `GetAddressUtxos*`, `GetTaddress*`, or `GetTransaction` request. The follow-up does not raise the wallet, sends the source's service nothing, creates no companion, and reports nothing again; the queued work stays durable. |
-| Every lane, after the raise, including the transparent PIR source | On the same wallet, once startup reconcile has raised it: Ledger discovery, the UTXO refresh and the deferred refresh, payload recovery, the status and history checkpoint, and ephemeral checks, each under both a default build's policy and the flag build's transparent mode; import discovery and the import preview; the recovery follow-up with the real source; and the iOS observe ABI. None sends lightwalletd a disclosing request, the queued work stays durable, and the follow-up reports completion again. The source sends only service routes, on the wallet's route, with no watched script or txid in any path or body. Turning Private queries off then sends `GetAddressUtxos*`: the positive control. |
+| Every lane, before the raise | On a mainnet wallet with public work queued and a Ledger account, with Private queries on but unread, so the durable policy stays `Public` and only each lane's captured policy withholds: under the private policy, Ledger discovery, the UTXO refresh and the deferred refresh, ephemeral checks, import discovery and the import preview (into the wallet and as a first account), the recovery follow-up with the real source, and the iOS observe ABI; under its transparent mode with public routes, which the live private services would otherwise answer, payload recovery and the status and history checkpoint. None sends lightwalletd a `GetAddressUtxos*`, `GetTaddress*`, or `GetTransaction` request. The follow-up does not raise the wallet, sends the source's service nothing, creates no companion, and reports nothing again; the queued work stays durable. |
+| Every lane, after the raise, including the transparent PIR source | On the same wallet, once startup reconcile has raised it: Ledger discovery, the UTXO refresh and the deferred refresh, payload recovery, the status and history checkpoint, and ephemeral checks, each under both a public captured policy and the private transparent mode; import discovery and the import preview; the recovery follow-up with the real source; and the iOS observe ABI. None sends lightwalletd a disclosing request, the queued work stays durable, and the follow-up reports completion again. The source sends only service routes, on the wallet's route, with no watched script or txid in any path or body. Turning Private queries off then sends `GetAddressUtxos*`: the positive control. |
 
 The upgrade probe (`examples/db_upgrade.rs`, run by
 `scripts/test-db-upgrade.sh`) requires the recovery and activation migrations
 and checks that their thirteen tables are empty after an upgrade.
 `transparent_ledger/tests/live.rs` holds the opt-in live test (below).
 
-## Transparent PIR source (development flag)
+## Transparent PIR source
 
 `transparent_ledger/pir.rs` is the production `RecoverySource`: the reference
 adapter `zakura_pir_transparent` over the wallet's routed transport. It is
 trusted, since every commit comes from the configured origin.
 
-- **Enablement.** Only a build launched with
-  `--dart-define=ZCASH_PRIVATE_TRANSPARENT_RECOVERY=true`, on mainnet, with
-  Private queries on and the preference read from storage, raises a wallet to
+- **Enablement.** Every supported mainnet build with Private queries on and
+  the preference read from storage raises a wallet to
   `PrivateRequired` and runs the source. Off mainnet the source has no origin,
   and every pass is `Unavailable` without a request.
 - **Endpoint.** `https://transparent-pir.valargroup.dev`. Debug builds honor
@@ -662,7 +660,7 @@ trusted, since every commit comes from the configured origin.
   start, in every build, with the companions of any other deleted account.
   A reset deletes the `.tpir` directory with the database,
   and a failure keeps the database name for a retry; startup and reset delete
-  `.tpir` directories of no current wallet. On iOS a flag build excludes the
+  `.tpir` directories of no current wallet. On iOS every build excludes the
   directory from device backups.
 - **Locking.** One lock per companion path serializes passes, settlements and
   removals. A source parks each companion it opened, with its lock, until it is
@@ -713,8 +711,7 @@ trusted, since every commit comes from the configured origin.
   transparent-only accounts. Nothing clears a quarantine; deleting and
   re-importing the account, or turning Private queries off, recovers. The
   library's `docs/transparent-pir-private-recovery.md`, at the pinned
-  revision, lists every accepted limitation and the release gates that keep
-  private authority behind the flag.
+  revision, lists the accepted limitations and outstanding release gates.
 - **Live test.** `a_fresh_mainnet_account_recovers_and_promotes_against_the_live_service`
   is ignored by default because it needs the network. It reads the live map,
   gives a fresh mainnet account a birthday at the start of the last sealed
@@ -891,8 +888,8 @@ transaction to be prioritized within that work window (once per open) and re-rea
 five seconds, stopping when it is available or not covered. Re-reads are
 serialized: a poll does not start while another read, or a full receipt
 load, is in flight, and a read that a newer load or an account switch has
-superseded is discarded rather than shown. Development
-builds (`ZCASH_PRIVATE_TRANSPARENT_RECOVERY`) add a button that runs one
+superseded is discarded rather than shown. Debug
+builds add a button that runs one
 private lookup through `debug_lookup_transparent_details` and stores nothing.
 
 **Privacy.** The txid display service learns which shard, tier and bucket a
@@ -1005,7 +1002,7 @@ and lockfile source uses that same revision; Cargo resolution is checked
 without local sibling overrides.
 
 The library also applies three unconditional migrations inherited from the
-parent's repin, including in builds without private transparent recovery:
+parent's repin, whether or not private queries is enabled:
 `ironwood_unsupported_memo_retry` (`3d1c7a52-8e0b-4f6d-9a47-5be2c0f19e84`),
 `ironwood_transparent_output_shape` (`8f4c3210-04e1-49eb-9de2-d713ee0a8426`),
 and `transparent_txid_enhancement` (`73d751a3-dbdc-461a-9154-e061903aae4f`).
@@ -1022,8 +1019,7 @@ rc5/rc7 readers lack that unknown-migration guard and can open the upgraded
 database; the probes report that behavior without qualifying a writable
 downgrade. There is no supported downgrade preparation API. Existing private
 ledger writes also retain their reader-version barrier: version 6 state cannot
-be read by version 5 readers. Private activation remains behind the development
-flag.
+be read by version 5 readers. Private activation follows the mainnet Private queries setting.
 
 The adapter is a direct git dependency rather than a patched crates.io
 package: it depends on wallet-pir's transparent crates, which exist only in git

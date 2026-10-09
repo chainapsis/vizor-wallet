@@ -76,7 +76,7 @@ void main() {
       );
       expect(
         display.hint,
-        'Private transparent recovery is not available in this build. Turn '
+        'Private transparent recovery is not selected. Turn '
         'off Private queries to restore public lookups. If it is already off, '
         'turn it on and then off.',
       );
@@ -194,7 +194,7 @@ void main() {
     // Vizor's shielding refusal for a private wallet in a build that does not
     // recover it; the Rust status test pins its phrase.
     const notSelectedRefusal =
-        'Private transparent recovery is not available in this build; turn '
+        'Private transparent recovery is not selected; turn '
         'off private queries to use transparent funds';
 
     test('match the recovery-incomplete copy', () {

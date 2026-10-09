@@ -1,4 +1,4 @@
-//! Transparent PIR as the private recovery source (development flag).
+//! Transparent PIR as the private recovery source .
 //!
 //! [`TransparentPirSource`] recovers one account per pass from the transparent
 //! PIR service through the reference adapter `zakura_pir_transparent`, over the

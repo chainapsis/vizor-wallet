@@ -8,7 +8,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../main.dart' show log;
 import '../app_bootstrap.dart';
 import '../features/migration/services/ironwood_migration_background_credential_store.dart';
-import '../core/config/private_transparent_recovery_config.dart';
 import '../core/config/rpc_endpoint_config.dart';
 import '../core/layout/app_process_work_policy.dart';
 import '../core/lifecycle/app_shutdown_signal.dart';
@@ -869,9 +868,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     IronwoodMigrationBackgroundLifecycle? recoveryLifecycle,
     Duration recoveryTransitionTimeout = const Duration(seconds: 120),
     Future<void> Function(String dbPath)? excludeCompanionsFromBackup,
-    bool privateTransparentRecovery = kZcashPrivateTransparentRecovery,
   }) : _walletDbPathResolver = walletDbPathResolver ?? getWalletDbPath,
-       _privateTransparentRecovery = privateTransparentRecovery,
        _recoveryLifecycle =
            recoveryLifecycle ?? IronwoodMigrationBackgroundLifecycle.instance,
        _recoveryTransitionTimeout = recoveryTransitionTimeout,
@@ -882,15 +879,14 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   final IronwoodMigrationBackgroundLifecycle _recoveryLifecycle;
   final Duration _recoveryTransitionTimeout;
   final Future<void> Function(String dbPath) _excludeCompanionsFromBackup;
-  final bool _privateTransparentRecovery;
 
   /// Whether the wallet's transparent policy may be private now even though
   /// a carried state was read public: Rust last applied `PrivateRequired`, or
-  /// this build raises the policy and private queries are on.
+  /// private queries are on for supported mainnet.
   bool get _privatePolicyMayApply =>
       _appliedTransparentPolicy?.mode ==
           rust_sync.ApiTransparentLedgerMode.privateRequired ||
-      (_privateTransparentRecovery && ref.read(enhancePirProvider));
+      ref.read(enhancePirProvider);
 
   /// The durable transparent policy Rust last reported applying, at startup
   /// or from the private queries toggle; `null` until one is reported.

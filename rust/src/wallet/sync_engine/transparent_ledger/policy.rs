@@ -7,10 +7,8 @@
 //! old policy is sent after the new one applies, and both decide under it, so
 //! neither acts on a policy the other is about to change.
 //!
-//! A raise needs a selection of `PrivateRequired`, which only a build with the
-//! development flag makes. Lowering needs an explicit toggle-off and works in
-//! every build, so a default build can always return a private wallet to
-//! public lookups. Nothing else weakens a wallet: reads honor a durable
+//! A raise needs private queries on supported mainnet. Lowering needs an
+//! explicit toggle-off, which returns a private wallet to public lookups. Nothing else weakens a wallet: reads honor a durable
 //! `PrivateRequired` whatever the handle selects.
 
 use std::path::Path;
@@ -34,7 +32,7 @@ pub(crate) const POLICY_DRAIN: Duration = Duration::from_secs(30);
 /// private-queries setting, selecting from the arguments rather than the live
 /// preference, so a rollback can raise again while the live preference is off.
 ///
-/// - `true` raises to `PrivateRequired` when `build_flag` and `network` select
+/// - `true` raises to `PrivateRequired` when private queries on `network` select
 ///   it and the applied policy is weaker. It never lowers, so startup, which
 ///   only ever passes `true`, cannot demote a wallet. When nothing is
 ///   selected, the wallet is not opened at all.
@@ -51,13 +49,10 @@ pub(crate) async fn set_transparent_policy(
     db_path: &str,
     network: WalletNetwork,
     private_queries: bool,
-    build_flag: bool,
 ) -> Result<Option<AppliedTransparentPolicy>, SyncError> {
     let target = if !private_queries {
         TransparentLedgerMode::Public
-    } else if select_transparent_mode(network, true, build_flag)
-        == TransparentLedgerMode::PrivateRequired
-    {
+    } else if select_transparent_mode(network, true) == TransparentLedgerMode::PrivateRequired {
         TransparentLedgerMode::PrivateRequired
     } else {
         return Ok(None);
