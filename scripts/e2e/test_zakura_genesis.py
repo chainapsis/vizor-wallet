@@ -119,6 +119,9 @@ class GenesisTests(unittest.TestCase):
             ("z_gettreestate", [HASH]), ("getblockhash", [0])])
         self.assertEqual(len({call[2] for call in backend._fixture.calls}), 1)
         self.assertEqual(backend._case.launched_process_count, 0)
+        state = result.tree_state()
+        state["hash"] = "mutated-copy"
+        self.assertEqual(result.tree_state()["hash"], HASH)
         backend.grpc.assert_not_called()
 
     def test_rejects_unbound_nonempty_and_malformed_observations(self):

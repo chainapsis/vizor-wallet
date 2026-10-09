@@ -38,6 +38,7 @@ class OwnedNativeZakuraBackend:
         self._finished = self._closed = self._resources_finalized = False
         self._failure = None
         self._ready = None
+        self._front = None
         self._retention = None
         self._retention_attempted = False
 

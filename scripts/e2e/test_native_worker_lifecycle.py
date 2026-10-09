@@ -6,6 +6,7 @@ are not wallet, backend, build-publication or financial scenario results.
 from __future__ import annotations
 
 import os
+import json
 from pathlib import Path
 import sys
 import threading
@@ -19,6 +20,7 @@ try:
     import test_native_mac_case_storage as MAC_FIXTURES
     import test_native_ios_case_storage as IOS_FIXTURES
     import test_native_zakura_backend as BACKEND_FIXTURES
+    import test_native_zakura_front as FRONT_FIXTURES
 finally:
     sys.path.pop(0)
 
@@ -69,6 +71,58 @@ class MacWorkerTests(unittest.TestCase):
         self.assertFalse(worker.workspace.exists())
         self.assertTrue(worker.evidence.exists())
         self.assertTrue((worker.root / WORKER._MARKER).exists())
+
+    def front_model(self, session):
+        model = FRONT_FIXTURES.FrontTests()
+        model.setUp()
+        self.addCleanup(model.doCleanups)
+        session.prepare_zakura_backend(tooling_root=model.root, grpcurl=model.root / "unused-grpcurl",
+            proto_dir=model.root, miner_address="explicit-regtest-miner-model")
+        model.original_start = session.case.start_process
+        def query(method, payload, deadline, cancel):
+            if method == "GetLightdInfo":
+                return dict(session.backend.grpc(method), chainName="regtest")
+            if method == "GetTreeState" and payload == {"height": "0"}:
+                return session.backend._front._genesis.tree_state()
+            return session.backend.grpc(method, payload)
+        return model, query
+
+    def test_worker_front_handoff_keeps_locks_and_final_close_joins_daemon(self):
+        worker = self.worker()
+        session = self.case(worker)
+        model, query = self.front_model(session)
+        with patch.object(session.case, "start_process", side_effect=model.launch), patch.object(
+                WORKER.zakura_front.OwnedNativeZakuraFront, "_query", side_effect=query):
+            observed = session.prepare_zakura_front(dart=Path(sys.executable).resolve(), source_root=model.source)
+        self.assertFalse(session.lease.sockets)
+        self.assertTrue(session.lease.lock_descriptors)
+        manifest = json.loads(session.case.workspace.launch_environment()["VIZOR_E2E_CASE_MANIFEST"])
+        self.assertEqual(observed["lightwalletd_url"], f"http://127.0.0.1:{manifest['lightwalletd_port']}")
+        front = session._front
+        front.assert_running()
+        session.close(timeout=3)
+        self.assertTrue(front.process.cleanup_completed)
+        self.assertTrue(session.backend.closed)
+        self.assertFalse(session.lease.lock_descriptors)
+
+    def test_worker_failed_front_retains_native_and_original_backend_evidence(self):
+        worker = self.worker()
+        session = self.case(worker)
+        model, query = self.front_model(session)
+        def bad(*args):
+            value = query(*args)
+            value["unrelated"] = "changed"
+            return value
+        with patch.object(session.case, "start_process", side_effect=model.launch), patch.object(
+                WORKER.zakura_front.OwnedNativeZakuraFront, "_query", side_effect=bad):
+            with self.assertRaises(WORKER.zakura_front.NativeZakuraFrontError):
+                session.prepare_zakura_front(dart=Path(sys.executable).resolve(), source_root=model.source)
+        self.assertTrue(session._front.process.cleanup_completed)
+        self.assertTrue(session.backend._fixture._retained)
+        self.assertFalse(session.backend.closed)
+        self.assertTrue(worker.workspace.exists())
+        self.assertTrue(session.case.workspace.root.exists())
+        self.assertFalse(session.lease.lock_descriptors)
 
     def test_native_case_closes_then_worker_removes_only_mutable_storage(self):
         worker = self.worker()

@@ -23,6 +23,8 @@ import native_mac_case_storage as mac_storage
 import native_mac_cleanup as mac_native
 import native_owned_tree as tree
 import native_zakura_backend as zakura
+import native_zakura_front as zakura_front
+from zakura_genesis import create_zakura_genesis_proof
 from native_ports import lease_native_ports
 import native_workspace as workspace_api
 
@@ -58,6 +60,7 @@ class NativeWorkerCase:
         self.storage = None
         self.simulator = None
         self._backend = None
+        self._front = None
         self._backend_finalized = False
         self._finished = False
         self._completed = False
@@ -98,6 +101,27 @@ class NativeWorkerCase:
     def backend(self):
         """Original registered raw backend; no external backend/cleanup adoption."""
         return self._backend
+
+    def prepare_zakura_front(self, *, dart, source_root, timeout=30.0, cancel_event=None):
+        """Own the front through this case; locks survive the socket handoff."""
+        ios_simulator._deadline(timeout)
+        if self._finished or self._front is not None or self._backend is None:
+            raise NativeWorkerError("front allocation is unavailable or already attempted")
+        self.verify_owned()
+        try:
+            genesis = create_zakura_genesis_proof(self.case, self._backend,
+                timeout=timeout, cancel_event=cancel_event)
+            self._front = zakura_front.prepare_native_zakura_front(self.case, self._backend, genesis,
+                dart=dart, source_root=source_root, timeout=timeout)
+            self.lease.release_sockets()
+            return self._front.start(cancel_event=cancel_event)
+        except BaseException as primary:
+            self._failure = "front preparation failed; retain worker"
+            try:
+                self.retain(timeout=timeout)
+            except BaseException as cleanup:
+                raise primary from cleanup
+            raise
 
     def close(self, *, timeout=60.0, cancel_event=None):
         """Successful scenario teardown; do not supply external cleanup proof."""

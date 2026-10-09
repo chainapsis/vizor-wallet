@@ -78,6 +78,7 @@ class NativeCaseLifecycle:
         *,
         env: Mapping[str, str],
         stdin: Any = None,
+        max_output_bytes: int | None = None,
     ) -> runtime.ManagedProcess:
         """Launch only with this case's identity, cwd, and an exclusive private log.
 
@@ -87,7 +88,8 @@ class NativeCaseLifecycle:
         """
         if self._sealed:
             raise runtime.RunnerError("case process lifecycle is sealed")
-        return self._start_process(command, env=env, stdin=stdin)
+        return self._start_process(command, env=env, stdin=stdin,
+                                   max_output_bytes=max_output_bytes)
 
     def _start_process(
         self, command: Sequence[str], *, env: Mapping[str, str], stdin: Any = None,

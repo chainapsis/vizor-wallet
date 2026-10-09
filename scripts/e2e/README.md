@@ -828,6 +828,37 @@ This test-only server does not adopt a fixture, enable a catalog executor or
 prove wallet synchronization/decryption. No production app or dependency edits
 are required. Native front/control orchestration remains a separate boundary.
 
+### Original-case-owned native Zakura front
+
+`native_zakura_front.py` registers exactly one original case/backend/genesis
+front before launching the standalone Dart shim. It uses the immutable native
+manifest's LWD port, never rewrites it to the internal raw port, and requires
+the package binding to point at the explicit source root. Script/generated
+protocol/package/tool identities and hashes are checked across launch. This is
+source continuity, not hermetic build or reusable-cache attestation.
+
+Readiness proves exact verified genesis, known chainName-only LightdInfo
+adaptation, and unchanged nonzero TreeState/LatestBlock against the original raw
+backend's synchronized tip. Only pre-listen connection refusal is retryable.
+Daemon/probe output is bounded; deadline/cancellation checks are between the
+helper's synchronous calls. The executor must keep monitoring `assert_running()`;
+startup observations are not ongoing backend health or wallet/catalog PASS.
+
+`NativeWorkerCase.prepare_zakura_front(dart=..., source_root=...)` creates the
+original genesis proof, registers the front, and releases reserved sockets while
+keeping its cooperative port locks. Failed preparation stops only new original
+children, then the worker retains native/backend/evidence state. Successful final
+case teardown joins the original daemon/output before raw backend deletion and
+lease release. No external JSON receipt/PID grants these actions.
+
+```sh
+python3 -B -m unittest scripts/e2e/test_native_zakura_front.py
+```
+
+No native app build/launch, control server, funding change or catalog execution
+is enabled by this boundary. Front readiness composes the existing real shim;
+native control-handler ownership and execution engines remain separate work.
+
 ## Gift Cards
 
 Sender usage tracking and empty observer DB reuse:

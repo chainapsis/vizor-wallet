@@ -82,12 +82,18 @@ def _tree_state(genesis_hash, block, node_tree):
 
 class OwnedZakuraGenesisProof:
     """An original published file, bound to its still-running backend handle."""
-    def __init__(self, backend, identity, digest, upstream_port, token):
+    def __init__(self, backend, identity, digest, upstream_port, state, token):
         if token is not _TOKEN:
             raise ZakuraGenesisError("use create_zakura_genesis_proof")
         self._backend, self._identity, self._digest = backend, identity, digest
         self._upstream_port = upstream_port
         self._fixture_run_id = backend._fixture.run_id
+        self._state = copy.deepcopy(state)
+
+    def tree_state(self):
+        """Return the captured node-verified state only after original-file checks."""
+        self.handoff()
+        return copy.deepcopy(self._state)
 
     def handoff(self):
         """Recheck the original attachment before passing the file to a child."""
@@ -188,6 +194,6 @@ def create_zakura_genesis_proof(case, backend, *, timeout=60.0, cancel_event=Non
         os.fsync(output.fileno())
         file_identity = tree.identity(os.fstat(output.fileno()))
     check()
-    result = OwnedZakuraGenesisProof(backend, file_identity, hashlib.sha256(data).hexdigest(), int(match[1]), _TOKEN)
+    result = OwnedZakuraGenesisProof(backend, file_identity, hashlib.sha256(data).hexdigest(), int(match[1]), state, _TOKEN)
     result.handoff()
     return result
