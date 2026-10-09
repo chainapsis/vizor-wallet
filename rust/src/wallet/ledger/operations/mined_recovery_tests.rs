@@ -243,6 +243,88 @@ impl Wallet {
         }
     }
 
+    /// Like [`Self::new`], but a real account owns the signing key and the
+    /// funding output, so the broadcast authorization check accepts the
+    /// signed inputs, as it does for a wallet's own hardware-signed spends.
+    fn funded(batch: bool) -> Self {
+        use secrecy::ExposeSecret as _;
+        use transparent::{address::TransparentAddress, bundle::TxOut, keys::NonHardenedChildIndex};
+        use zcash_client_backend::{
+            data_api::{InputSource as _, WalletWrite},
+            wallet::WalletTransparentOutput,
+        };
+        use zcash_protocol::{consensus::BlockHeight, value::Zatoshis};
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory
+            .path()
+            .join("wallet.db")
+            .to_str()
+            .unwrap()
+            .to_owned();
+        let seed = crate::wallet::keys::mnemonic_to_seed(&crate::wallet::keys::generate_mnemonic())
+            .unwrap();
+        crate::wallet::keys::init_db_and_create_account(
+            &path,
+            WalletNetwork::Regtest,
+            &seed,
+            Some(100),
+            "mined recovery",
+        )
+        .unwrap();
+        let key = zcash_keys::keys::UnifiedSpendingKey::from_seed(
+            &WalletNetwork::Regtest,
+            seed.expose_secret(),
+            zip32::AccountId::ZERO,
+        )
+        .unwrap()
+        .transparent()
+        .derive_external_secret_key(NonHardenedChildIndex::ZERO)
+        .unwrap();
+        let address =
+            TransparentAddress::from_pubkey(&key.public_key(&secp256k1::Secp256k1::new()));
+        // Pending-transaction storage requires the wallet's observed chain tip.
+        let mut db = crate::wallet::db::open_wallet_db_with_timeout(
+            &path,
+            WalletNetwork::Regtest,
+            WALLET_DB_BUSY_TIMEOUT,
+        )
+        .unwrap();
+        db.update_chain_tip(BlockHeight::from_u32(205)).unwrap();
+        let funding = OutPoint::new([1; 32], 0);
+        db.put_received_transparent_utxo(
+            &WalletTransparentOutput::from_parts(
+                funding.clone(),
+                TxOut::new(Zatoshis::const_from_u64(1_000_000), address.script().into()),
+                Some(BlockHeight::from_u32(150)),
+                None,
+                None,
+                None,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(db
+            .get_unspent_transparent_output(&funding, BlockHeight::from_u32(206).into())
+            .unwrap()
+            .is_some());
+        drop(db);
+        let first = Signed::with_key(funding, 1_000_000, key);
+        let mut signed = vec![first];
+        if batch {
+            // Chained: the second spends the first's output to the same key.
+            signed.push(Signed::with_key(
+                OutPoint::new(*signed[0].tx.txid().as_ref(), 0),
+                990_000,
+                key,
+            ));
+        }
+        Self {
+            _directory: directory,
+            path,
+            signed,
+        }
+    }
+
     fn store(&self, index: usize, raw: Option<&[u8]>, mined: Option<u32>) {
         let conn = open_wallet_raw_conn_with_timeout(&self.path, WALLET_DB_BUSY_TIMEOUT).unwrap();
         conn.execute(
@@ -610,7 +692,7 @@ async fn partially_mined_batch_preserves_count_and_mined_row() {
         (1, 205, -1, "partial_broadcast", 1),
         (1, 205, 0, "broadcasted", 2),
     ] {
-        let wallet = Wallet::new(true);
+        let wallet = Wallet::funded(true);
         wallet.store(
             mined_index,
             Some(&wallet.signed[mined_index].raw),
@@ -940,7 +1022,7 @@ async fn partially_mined_proposal_retains_retry_capability_on_rpc_failures() {
     crate::network_privacy::disable_tor();
     for mined_index in [None, Some(0), Some(1)] {
         for failure in ["route", "tip"] {
-            let wallet = Wallet::new(true);
+            let wallet = Wallet::funded(true);
             if let Some(index) = mined_index {
                 wallet.store(index, Some(&wallet.signed[index].raw), Some(201));
             }
