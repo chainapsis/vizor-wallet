@@ -70,6 +70,8 @@ rustls = "0.23"
 # SQLite (re-exported by zcash_client_sqlite but needed for Connection type)
 rusqlite = "0.37"
 redb = "4.1.0"
+# Bind explicit public detail loads to the existing physical wallet file.
+same-file = "1.0.6"
 
 # Logging (FRB forwards to Dart console via setup_default_user_utils)
 log = "0.4"

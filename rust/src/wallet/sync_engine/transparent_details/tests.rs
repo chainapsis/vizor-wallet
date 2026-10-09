@@ -764,6 +764,128 @@ async fn public_enhance_does_not_recreate_a_reset_wallet() {
     }
 }
 
+/// An already missing wallet is rejected by the public API before it can
+/// initialize storage or reveal a transaction to the server.
+#[tokio::test(flavor = "multi_thread")]
+async fn public_enhance_api_rejects_missing_storage_before_dispatch() {
+    let _serial = Shared::take();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("missing.db");
+    let lwd = CapturingLwd::start_with(Vec::new(), u64::from(TOP), |_| {}).await;
+    let (db_path, url) = (path.to_str().unwrap().to_owned(), lwd.url.clone());
+    let result = tokio::task::spawn_blocking(move || {
+        crate::api::sync::enhance_transaction_publicly(
+            db_path,
+            "main".to_owned(),
+            url,
+            hex::encode([0xab; 32]),
+        )
+    })
+    .await
+    .unwrap();
+    assert!(result.is_err(), "{result:?}");
+    assert!(!path.exists(), "the API recreated missing storage");
+    assert_eq!(lwd.count("/GetTransaction"), 0);
+}
+
+/// A second connection can change policy during the network wait; its new
+/// generation invalidates the response without waiting for a held SQL lock.
+#[tokio::test(flavor = "multi_thread")]
+async fn public_enhance_rejects_a_second_connection_policy_change() {
+    let fixture = wallet();
+    let tx = utxo_receipt(&fixture, 0xac, TOP - 1);
+    let mut bytes = Vec::new();
+    tx.write(&mut bytes).unwrap();
+    let _mode = require_private(&fixture.path);
+    let path = fixture.path.clone();
+    let changed = Arc::new(AtomicBool::new(false));
+    let observed = changed.clone();
+    let lwd = CapturingLwd::start_serving(
+        vec![(*tx.txid().as_ref(), bytes, u64::from(TOP - 1))],
+        u64::from(TOP),
+        move |request| {
+            if request.ends_with("/GetTransaction") {
+                let mut db =
+                    open_wallet_db_with_timeout(&path, MAIN, SYNC_DB_BUSY_TIMEOUT).unwrap();
+                db.set_transparent_ledger_mode(TransparentLedgerMode::Public);
+                db.apply_transparent_policy(TransparentLedgerMode::Public)
+                    .unwrap();
+                observed.store(true, Ordering::SeqCst);
+            }
+        },
+    )
+    .await;
+    let (path, url, txid) = (fixture.path.clone(), lwd.url.clone(), *tx.txid().as_ref());
+    let result =
+        tokio::task::spawn_blocking(move || super::enhance_publicly(&path, MAIN, &url, txid))
+            .await
+            .unwrap();
+    assert!(changed.load(Ordering::SeqCst), "policy did not change");
+    assert!(result.is_err(), "a stale-generation load succeeded");
+    assert_eq!(lwd.count("/GetTransaction"), 1);
+    assert_eq!(
+        count(
+            &fixture.path,
+            "SELECT COUNT(*) FROM transactions WHERE raw IS NOT NULL"
+        ),
+        0
+    );
+}
+
+/// A file replacement invalidates the original consent even when the copied
+/// wallet retains the same account UUIDs and policy generation.
+#[tokio::test(flavor = "multi_thread")]
+async fn public_enhance_does_not_store_into_a_replacement_with_the_same_accounts() {
+    let fixture = wallet();
+    let tx = utxo_receipt(&fixture, 0xab, TOP - 1);
+    let mut bytes = Vec::new();
+    tx.write(&mut bytes).unwrap();
+    let _mode = require_private(&fixture.path);
+    let replacement = fixture._dir.path().join("replacement.db");
+    // VACUUM INTO makes a consistent copy including committed WAL content.
+    rusqlite::Connection::open(&fixture.path)
+        .unwrap()
+        .execute("VACUUM INTO ?1", [replacement.to_str().unwrap()])
+        .unwrap();
+    let original = fixture.path.clone();
+    let replaced = Arc::new(AtomicBool::new(false));
+    let observed = replaced.clone();
+    let lwd = CapturingLwd::start_serving(
+        vec![(*tx.txid().as_ref(), bytes, u64::from(TOP - 1))],
+        u64::from(TOP),
+        move |path| {
+            if path.ends_with("/GetTransaction") {
+                for suffix in ["", "-wal", "-shm"] {
+                    match std::fs::remove_file(format!("{original}{suffix}")) {
+                        Ok(()) => {}
+                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                        Err(error) => panic!("replacement could not remove wallet: {error}"),
+                    }
+                }
+                std::fs::rename(&replacement, &original).unwrap();
+                observed.store(true, Ordering::SeqCst);
+            }
+        },
+    )
+    .await;
+    let (path, url, txid) = (fixture.path.clone(), lwd.url.clone(), *tx.txid().as_ref());
+    let result =
+        tokio::task::spawn_blocking(move || super::enhance_publicly(&path, MAIN, &url, txid))
+            .await
+            .unwrap();
+    assert!(replaced.load(Ordering::SeqCst), "replacement did not occur");
+    assert_eq!(lwd.count("/GetTransaction"), 1);
+    assert!(result.is_err(), "a load of the replaced wallet succeeded");
+    assert_eq!(
+        count(
+            &fixture.path,
+            "SELECT COUNT(*) FROM transactions WHERE raw IS NOT NULL"
+        ),
+        0,
+        "the response was stored into the replacement"
+    );
+}
+
 /// Without `PrivateRequired`, the residual transaction is fetched through the
 /// gate, once per authorized dispatch, and the private service sees nothing.
 #[tokio::test]

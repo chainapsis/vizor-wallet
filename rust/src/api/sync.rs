@@ -3113,7 +3113,9 @@ pub fn enhance_transaction_publicly(
     txid_hex: String,
 ) -> Result<(), String> {
     catch(|| {
-        let network = parse_network_and_migrate(&db_path, &network)?;
+        // Migration may create a database a reset just deleted. This explicit
+        // load opens only existing storage, before any network request.
+        let network = keys::parse_network(&network)?;
         let txid: [u8; 32] = hex::decode(&txid_hex)
             .map_err(|e| format!("Invalid txid: {e}"))?
             .try_into()

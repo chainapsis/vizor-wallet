@@ -60,6 +60,7 @@ use zcash_client_backend::data_api::{
         TransparentLedgerMode, TransparentLedgerRead,
     },
     wallet::decrypt_and_store_transaction,
+    WalletRead,
 };
 use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 use zcash_client_sqlite::{error::SqliteClientError, AccountUuid};
@@ -687,6 +688,27 @@ pub(crate) async fn followup(
     )
 }
 
+/// The accounts and policy generation of the wallet a public load started
+/// from. Read together, and checked again in the storage transaction.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PublicLoadIdentity {
+    accounts: Vec<AccountUuid>,
+    generation: u64,
+}
+
+impl PublicLoadIdentity {
+    fn of(
+        db: &impl TransparentLedgerRead<AccountId = AccountUuid, Error = SqliteClientError>,
+    ) -> Result<Self, SqliteClientError> {
+        let mut accounts = db.get_account_ids()?;
+        accounts.sort();
+        Ok(Self {
+            accounts,
+            generation: db.applied_transparent_policy()?.generation,
+        })
+    }
+}
+
 /// Fetches `txid` (protocol byte order) from lightwalletd and stores it,
 /// because the user asked to load this one transaction's full details
 /// publicly. The request reveals the txid to lightwalletd, over an isolated
@@ -694,13 +716,37 @@ pub(crate) async fn followup(
 /// transparent policy; loop 4 and every automatic path keep to the policy.
 /// Errors carry no txid. Runs on the caller's thread, which must not be a
 /// runtime worker.
+///
+/// Retains the original existing SQLite handle and physical file identity.
+/// The network wait holds no SQL transaction or wallet write lock. A reset,
+/// file replacement, account change or policy transition discards the result;
+/// validation and storage share one wallet transaction, including the final
+/// read that checks whether the wallet accepted the transaction.
 pub(crate) fn enhance_publicly(
     db_path: &str,
     network: WalletNetwork,
     lightwalletd_url: &str,
     txid: [u8; 32],
 ) -> Result<(), String> {
+    use crate::wallet::db::{
+        open_existing_wallet_db_with_timeout, with_wallet_db_write_lock, WALLET_DB_BUSY_TIMEOUT,
+    };
     let txid = TxId::from_bytes(txid);
+    let file = same_file::Handle::from_path(db_path)
+        .map_err(|_| "the wallet is unavailable".to_owned())?;
+    let same_file = || {
+        same_file::Handle::from_path(db_path)
+            .map(|current| current == file)
+            .unwrap_or(false)
+    };
+    let mut db = open_existing_wallet_db_with_timeout(db_path, network, WALLET_DB_BUSY_TIMEOUT)
+        .map_err(|error| format!("the wallet is unavailable ({error})"))?;
+    if !same_file() {
+        return Err("the wallet changed before the lookup; nothing was sent".to_owned());
+    }
+    let started = db
+        .transactionally(|tx| PublicLoadIdentity::of(tx))
+        .map_err(|error| format!("reading the wallet failed ({error})"))?;
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(1)
         .enable_all()
@@ -727,42 +773,31 @@ pub(crate) fn enhance_publicly(
     };
     let (transaction, mined_height) = super::enhancement::decode_enhancement_payload(&raw, txid)
         .map_err(|error| format!("lightwalletd answered with an invalid transaction ({error})"))?;
-    // A wallet reset may have deleted the wallet during the lookup; neither
-    // open below recreates it.
-    let mut db = crate::wallet::db::open_existing_wallet_db_with_timeout(
-        db_path,
-        network,
-        crate::wallet::db::WALLET_DB_BUSY_TIMEOUT,
-    )
-    .map_err(|error| error.to_string())?;
-    crate::wallet::db::with_wallet_db_write_lock(
-        "sync_engine.transparent_details.enhance_publicly",
-        || {
-            db.transactionally(|tx| {
-                decrypt_and_store_transaction(&network, tx, &transaction, mined_height)
-            })
-        },
-    )
-    .map_err(|error: SqliteClientError| format!("storing the transaction failed ({error})"))?;
-    // The store skips a transaction it finds nothing of the wallet's in;
-    // reporting success then would leave the receipt offering the same load.
-    let stored: bool = crate::wallet::db::open_readonly_conn_with_timeout(
-        db_path,
-        Some(crate::wallet::db::WALLET_DB_BUSY_TIMEOUT),
-    )
-    .and_then(|conn| {
-        conn.query_row(
-            "SELECT EXISTS (SELECT 1 FROM transactions WHERE txid = ?1 AND raw IS NOT NULL)",
-            [txid.as_ref().as_slice()],
-            |row| row.get(0),
-        )
-        .map_err(|error| error.to_string())
-    })
-    .map_err(|error| format!("reading the stored transaction failed ({error})"))?;
-    if stored {
-        Ok(())
-    } else {
-        Err("the wallet found nothing of its own in the transaction".to_owned())
+    let stored =
+        with_wallet_db_write_lock("sync_engine.transparent_details.enhance_publicly", || {
+            if !same_file() {
+                return Err("the wallet changed during the lookup; nothing was stored".to_owned());
+            }
+            let stored = db
+                .transactionally(|tx| {
+                    if PublicLoadIdentity::of(tx)? != started {
+                        return Ok(None);
+                    }
+                    decrypt_and_store_transaction(&network, tx, &transaction, mined_height)?;
+                    // Read through this transaction, not a second connection
+                    // that could be opened on replacement storage.
+                    Ok::<_, SqliteClientError>(Some(tx.get_transaction(txid)?.is_some()))
+                })
+                .map_err(|error| format!("storing the transaction failed ({error})"))?;
+            if !same_file() {
+                return Err("the wallet changed while storing the lookup".to_owned());
+            }
+            Ok(stored)
+        })?;
+    match stored {
+        Some(true) => Ok(()),
+        Some(false) => Err("the wallet found nothing of its own in the transaction".to_owned()),
+        None => Err("the wallet changed during the lookup; nothing was stored".to_owned()),
     }
 }
 

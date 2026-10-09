@@ -4994,6 +4994,7 @@ dependencies = [
  "regex",
  "rusqlite",
  "rustls",
+ "same-file",
  "secp256k1",
  "secrecy",
  "security-framework",
