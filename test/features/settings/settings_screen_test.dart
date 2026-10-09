@@ -11,9 +11,11 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/private_transparent_recovery_config.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/storage/linux_keyring_coordinator.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/features/accounts/widgets/account_edit_modal.dart';
 import 'package:zcash_wallet/src/features/settings/screens/settings_screen.dart';
 import 'package:zcash_wallet/src/features/settings/settings_platform.dart';
 import 'package:zcash_wallet/src/features/settings/widgets/enhance_pir_privacy_control.dart';
@@ -304,6 +306,45 @@ void main() {
 
     expect(find.text('System (Auto)'), findsOneWidget);
     expect(find.textContaining('payment links route'), findsNothing);
+  });
+
+  testWidgets('busy wallet keeps the rename modal open for retry', (
+    tester,
+  ) async {
+    final coordinator = LinuxKeyringCoordinator.testing(enabled: false);
+    addTearDown(coordinator.dispose);
+    // The private queries toggle holds the wallet while it drains.
+    final release = Completer<void>();
+    final toggle = coordinator.runMutation(() => release.future);
+    await tester.binding.setSurfaceSize(const Size(1512, 1600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      _settingsHarness(
+        extraOverrides: [
+          linuxKeyringCoordinatorProvider.overrideWithValue(coordinator),
+        ],
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('Account name'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Savings');
+    await tester.pump();
+    await tester.tap(find.text('Update'));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(AccountEditModal), findsOneWidget);
+    expect(find.text('Savings'), findsOneWidget);
+    expect(
+      find.text('Finish the current wallet operation before starting another.'),
+      findsOneWidget,
+    );
+    expect(find.text("Couldn't update account."), findsNothing);
+    release.complete();
+    await toggle;
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   testWidgets('settings sections are grouped Personal to Danger zone', (

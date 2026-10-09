@@ -150,12 +150,19 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
 
   Future<void> _commitEditAccount(AccountInfo account, String name) async {
     final notifier = ref.read(accountProvider.notifier);
-    if (name.trim() != account.name.trim()) {
-      await notifier.renameAccount(account.uuid, name);
-    }
-    final draftPicture = _editDraftProfilePictureId;
-    if (draftPicture != null && draftPicture != account.profilePictureId) {
-      await notifier.updateProfilePicture(account.uuid, draftPicture);
+    try {
+      if (name.trim() != account.name.trim()) {
+        await notifier.renameAccount(account.uuid, name);
+      }
+      final draftPicture = _editDraftProfilePictureId;
+      if (draftPicture != null && draftPicture != account.profilePictureId) {
+        await notifier.updateProfilePicture(account.uuid, draftPicture);
+      }
+    } on WalletMutationBusyException catch (error) {
+      // Another wallet mutation, such as the private queries toggle, holds
+      // the wallet. The modal stays open with its drafts for a retry.
+      if (mounted) showAppToast(context, error.toString());
+      return;
     }
     if (!mounted) return;
     _closeModal();
@@ -165,9 +172,14 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
     String uuid,
     String profilePictureId,
   ) async {
-    await ref
-        .read(accountProvider.notifier)
-        .updateProfilePicture(uuid, profilePictureId);
+    try {
+      await ref
+          .read(accountProvider.notifier)
+          .updateProfilePicture(uuid, profilePictureId);
+    } on WalletMutationBusyException catch (error) {
+      if (mounted) showAppToast(context, error.toString());
+      return;
+    }
     if (!mounted) return;
     _closeModal();
   }
