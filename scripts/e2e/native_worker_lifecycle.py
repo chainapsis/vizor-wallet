@@ -159,6 +159,8 @@ class NativeWorkerCase:
                 if isinstance(self.storage, ios_storage.OwnedIosCaseStorage) and self.storage._active is not None:
                     self.storage.stop_app(self.storage._active, timeout=timeout)
                 self.case.close()
+                if self._control is not None:
+                    self._control.release_clipboard_after_writers()
                 self._backend.close()
                 self._backend_finalized = True
             observation = self.storage.close(timeout=timeout, cancel_event=cancellation)
@@ -208,6 +210,8 @@ class NativeWorkerCase:
                     errors.append(error)
         try:
             self.case.close()
+            if self._control is not None:
+                self._control.release_clipboard_after_writers()
         except BaseException as error:
             errors.append(error)
         if self._backend is not None and not self._backend_finalized:

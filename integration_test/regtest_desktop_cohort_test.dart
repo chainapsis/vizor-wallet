@@ -12,6 +12,13 @@ import 'regtest_fallback_endpoint_test.dart' as fallback_endpoint;
 import 'regtest_custom_endpoint_no_fallback_test.dart' as custom_endpoint;
 import 'regtest_slow_height_fallback_test.dart' as slow_height;
 import 'regtest_sync_startup_stall_recovery_test.dart' as startup_recovery;
+import 'regtest_shield_transparent_test.dart' as shield;
+import 'regtest_shield_transparent_retry_test.dart' as shield_retry;
+import 'regtest_multi_account_send_test.dart' as multi_account;
+import 'regtest_tex_send_test.dart' as tex;
+import 'regtest_payment_uri_send_test.dart' as payment_uri;
+import 'regtest_payment_uri_locked_send_test.dart' as locked_uri;
+import 'regtest_payment_request_round_trip_test.dart' as payment_request;
 
 /// One binary, with case identity supplied only by the existing runtime contract.
 void main() {
@@ -48,6 +55,27 @@ void main() {
       return;
     case 'flutter.macos.sync-startup-stall-recovery':
       startup_recovery.main();
+      return;
+    case 'flutter.macos.shield-transparent':
+      shield.main();
+      return;
+    case 'flutter.macos.shield-transparent-retry':
+      shield_retry.main();
+      return;
+    case 'flutter.macos.multi-account-send':
+      multi_account.main();
+      return;
+    case 'flutter.macos.tex-send':
+      tex.main();
+      return;
+    case 'flutter.macos.payment-uri-send':
+      payment_uri.main();
+      return;
+    case 'flutter.macos.payment-uri-locked-send':
+      locked_uri.main();
+      return;
+    case 'flutter.macos.payment-request-round-trip':
+      payment_request.main();
       return;
     default:
       throw StateError(

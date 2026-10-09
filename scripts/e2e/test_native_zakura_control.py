@@ -27,6 +27,7 @@ class ControlFixture(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory(prefix="vizor-control-owner-")
         self.addCleanup(temporary.cleanup)
         root = Path(temporary.name).resolve()
+        self.clipboard_root = root / "clipboard"
         self.lease = lease_native_ports(0, "a1b2c3d4e5", lock_root=root / "ports")
         self.addCleanup(self.lease.close)
         self.model = FRONT_FIXTURES.FrontTests()
@@ -53,9 +54,12 @@ class ControlFixture(unittest.TestCase):
     def close_control(self):
         if self.backend._control is not None:
             self.backend._control.close()
+            self.case.close()
+            self.backend._control.release_clipboard_after_writers()
 
     def prepare(self):
         self.control = CONTROL.prepare_native_zakura_control(self.case, self.backend, self.front)
+        self.control._clipboard._root = self.clipboard_root
         return self.control
 
     def request(self, method, path, body=None, headers=None):
@@ -92,6 +96,35 @@ class ControlFixture(unittest.TestCase):
 
 
 class ControlTests(ControlFixture):
+
+    def test_clipboard_close_retains_lease_until_original_writers_join(self):
+        self.assertEqual(self.request("POST", "/host-resource/clipboard/acquire", "{}")[0], 200)
+        self.assertEqual(self.request("POST", "/host-resource/clipboard/acquire", "{}")[0], 400)
+        self.control.close()
+        self.assertTrue(self.control._clipboard.held)
+        with self.assertRaisesRegex(CONTROL.NativeZakuraControlError, "writer stop"):
+            self.control.release_clipboard_after_writers()
+        self.case.close()
+        self.control.release_clipboard_after_writers()
+        self.assertFalse(self.control._clipboard.held)
+
+    def test_clipboard_exact_empty_payload_and_explicit_release(self):
+        self.assertEqual(self.request("POST", "/host-resource/clipboard/release", "{}")[0], 400)
+        self.assertEqual(self.request("POST", "/host-resource/clipboard/acquire", '{"pid":1}')[0], 400)
+        self.assertEqual(self.request("POST", "/host-resource/clipboard/acquire", "{}")[0], 200)
+        self.assertEqual(self.request("POST", "/host-resource/clipboard/release", "{}")[0], 200)
+        self.assertFalse(self.control._clipboard.held)
+
+    def test_raw_transaction_oracle_forwards_only_a_valid_exact_hash(self):
+        calls = []
+        self.backend.rpc = lambda method, params, **_kwargs: calls.append((method, params)) or {"vin":[]}
+        for body in ('{}', '{"txid":"bad"}', '{"txid":1}', '{"txid":"'+'ab'*32+'","method":"reset"}'):
+            self.assertEqual(self.request("POST", "/raw-transaction", body)[0], 400)
+        self.assertEqual(calls, [])
+        status, body = self.request("POST", "/raw-transaction", json.dumps({"txid":"ab"*32}))
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body), {"vin":[]})
+        self.assertEqual(calls, [("getrawtransaction", ["ab"*32, 1])])
 
     def test_loopback_request_runs_mutation_only_on_original_owner(self):
         self.backend.mine = self.mine

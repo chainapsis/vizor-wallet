@@ -57,6 +57,10 @@ class E2eCatalogTest(unittest.TestCase):
                           "flutter.macos.custom-endpoint-no-fallback",
                           "flutter.macos.slow-height-fallback",
                           "flutter.macos.sync-startup-stall-recovery",
+                          "flutter.macos.shield-transparent", "flutter.macos.shield-transparent-retry",
+                          "flutter.macos.multi-account-send", "flutter.macos.tex-send",
+                          "flutter.macos.payment-uri-send", "flutter.macos.payment-uri-locked-send",
+                          "flutter.macos.payment-request-round-trip",
                           "rust.receive.sync", "rust.send.basic", "rust.send.second-account",
                           "rust.import.bip39-passphrase", "rust.import.historical-birthday",
                           "rust.import.future-birthday", "rust.import.receive-after-sync",
@@ -75,6 +79,23 @@ class E2eCatalogTest(unittest.TestCase):
             {item.id for item in self.catalog.profiles},
             {item.profile for item in self.catalog.scenarios},
         )
+
+    def test_payment_group_is_runnable_without_enabling_other_native_cases(self):
+        ids = ("flutter.macos.shield-transparent", "flutter.macos.shield-transparent-retry",
+               "flutter.macos.multi-account-send", "flutter.macos.tex-send",
+               "flutter.macos.payment-uri-send", "flutter.macos.payment-uri-locked-send",
+               "flutter.macos.payment-request-round-trip")
+        selected = catalog_module.select_scenarios(self.catalog, scenario_ids=ids)
+        preview = catalog_module.plan(self.catalog, selected)
+        self.assertEqual(ids, tuple(item.id for item in preview.selected))
+        self.assertTrue(preview.runnable)
+        self.assertEqual((), preview.blockers)
+        self.assertEqual(("flutter-direct-height1",), preview.required_profiles)
+        self.assertEqual(35, sum(item.supported for item in self.catalog.scenarios))
+        self.assertEqual(8, sum(not item.supported and item.engine == "flutter-macos"
+                                for item in self.catalog.scenarios))
+        self.assertEqual(21, sum(not item.supported and item.engine == "flutter-ios"
+                                 for item in self.catalog.scenarios))
 
     def test_exact_selection_deduplicates_in_catalog_order(self):
         selected = catalog_module.select_scenarios(

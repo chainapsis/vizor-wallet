@@ -497,8 +497,8 @@
         "shielding"
       ],
       "timeout_seconds": 1200,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "flutter.macos.shield-transparent-retry",
@@ -515,8 +515,8 @@
         "retry"
       ],
       "timeout_seconds": 1200,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "flutter.macos.multi-account-send",
@@ -532,8 +532,8 @@
         "send"
       ],
       "timeout_seconds": 1200,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "flutter.macos.tex-send",
@@ -550,8 +550,8 @@
         "tex"
       ],
       "timeout_seconds": 1200,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "flutter.macos.mempool-receive-history",
@@ -653,8 +653,8 @@
         "send"
       ],
       "timeout_seconds": 1200,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "flutter.macos.payment-uri-locked-send",
@@ -671,8 +671,8 @@
         "send"
       ],
       "timeout_seconds": 1200,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "flutter.macos.payment-request-round-trip",
@@ -687,8 +687,8 @@
         "payment-request"
       ],
       "timeout_seconds": 1200,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "flutter.macos.payment-link-round-trip",

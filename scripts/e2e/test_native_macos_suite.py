@@ -54,6 +54,8 @@ class SuiteTests(unittest.TestCase):
              patch.object(SUITE,"prepare_native_case_workspace",return_value=object()), \
              patch.object(SUITE,"build_native_macos_cohort",return_value=(self.helper,{"app_build_count":1})) as build, \
              patch.object(SUITE,"build_regtest_funder",return_value=self.signer) as signer, \
+             patch.object(SUITE,"derive_payment_addresses",return_value={"desktop_transparent":"tm-public-sdk-model",
+                 "receiver_tex":"texregtest1publicsdkmodel"}), \
              patch.object(SUITE,"execute_case",side_effect=self.execute), \
              contextlib.redirect_stdout(output), contextlib.redirect_stderr(io.StringIO()):
             code = SUITE.run_native_suite(self.args,self.catalog,self.scenarios,
@@ -141,6 +143,7 @@ class SuiteTests(unittest.TestCase):
              patch.object(SUITE.subprocess,"run",side_effect=self.git), \
              patch.object(SUITE,"NativeCaseLifecycle",side_effect=lambda x:x), \
              patch.object(SUITE,"prepare_native_case_workspace",return_value=object()), \
+             patch.object(SUITE,"build_regtest_funder",return_value=self.signer), \
              patch.object(SUITE,"build_native_macos_cohort",side_effect=RuntimeError("compiler failed")), \
              contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             code = SUITE.run_native_suite(self.args,self.catalog,self.scenarios,{},source_root=self.root)
@@ -162,6 +165,33 @@ class SuiteTests(unittest.TestCase):
             (SUITE._IMPORT_UA, 125000000, "ironwood", 1),
             (SUITE._IMPORT_TRANSPARENT, 75000000, "transparent", 2),
         ))
+
+    def test_payment_group_keeps_exact_balances_and_independent_funding_sources(self):
+        names = ("flutter.macos.shield-transparent", "flutter.macos.shield-transparent-retry",
+            "flutter.macos.multi-account-send", "flutter.macos.tex-send", "flutter.macos.payment-uri-send",
+            "flutter.macos.payment-uri-locked-send", "flutter.macos.payment-request-round-trip")
+        with patch.object(SUITE.sys, "platform", "darwin"):
+            SUITE.validate_options(self.args, tuple(self.catalog.scenarios_by_id[name] for name in names))
+        self.assertEqual(SUITE.scenario_funding(names[0]), ())
+        self.assertEqual(SUITE.scenario_funding(names[1]), ())
+        with self.assertRaises(ValueError):
+            SUITE.scenario_funding(names[2])
+        self.assertEqual(SUITE.scenario_funding(names[2], desktop_transparent="tm-public-sdk-model"), (
+            (SUITE._DESKTOP_UA,125000000,"ironwood",1),
+            ("tm-public-sdk-model",75000000,"transparent",2)))
+        for name in names[3:]:
+            self.assertEqual(SUITE.scenario_funding(name), ((SUITE._DESKTOP_UA,125000000,"ironwood",1),))
+
+    def test_payment_selection_derives_addresses_before_the_one_common_app_build(self):
+        self.scenarios = tuple(self.catalog.scenarios_by_id[name] for name in (
+            "flutter.macos.multi-account-send", "flutter.macos.tex-send"))
+        code, summary, app, signer = self.invoke()
+        self.assertEqual(code, 0)
+        signer.assert_called_once()
+        self.assertTrue(signer.call_args.kwargs["wallet_addresses"])
+        app.assert_called_once()
+        self.assertEqual(app.call_args.kwargs["tex_address"], "texregtest1publicsdkmodel")
+        self.assertEqual(summary["builds"]["payment_addresses"]["desktop_transparent"], "tm-public-sdk-model")
 
     def test_fallback_cases_fund_the_existing_desktop_fixture_only(self):
         for name in ("flutter.macos.fallback-endpoint", "flutter.macos.slow-height-fallback"):

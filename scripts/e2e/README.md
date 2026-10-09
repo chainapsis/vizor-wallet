@@ -2,7 +2,8 @@
 
 For the planned isolated execution framework and direct Zakura migration, see
 the [E2E roadmap](ROADMAP.md). The roadmap tracks unmerged work. The isolated
-executor implements all catalog Rust cases and macOS import/endpoint cases;
+executor implements all catalog Rust cases and twelve macOS import/endpoint,
+send, shielding and payment-request cases;
 existing shell runners remain.
 
 The [native runtime contract](RUNTIME_CONTRACT.md) defines per-case launch
@@ -48,8 +49,8 @@ python3 -B -m unittest scripts/e2e/test_zakura_fixture_source.py
 ## Catalog previews
 
 `run-suite.py` provides a host-only inventory and selection preview. Of 64
-entries, all twenty-three Rust cases and five macOS import/endpoint cases
-are wired to the isolated executor; the other 36 stay pending.
+entries, all twenty-three Rust cases and twelve macOS cases
+are wired to the isolated executor; the other 29 stay pending.
 A preview exit code of 0 means the preview succeeded,
 not that any test ran or passed. Execution requires explicit `--run`.
 
@@ -154,8 +155,47 @@ and uncertain cleanup remains failure. Cancellation stops owned children and
 new assignment without terminating ordinary wallet processes.
 
 This is in-process build reuse, not a persistent verified build cache. The
-other native/Rust scenarios, iOS execution, resource/performance comparison
+other native scenarios, iOS execution, resource/performance comparison
 and final-source all-green catalog are still pending. No CI behavior changes.
+
+## Isolated macOS send, shielding and payment requests
+
+These seven cases share one macOS cohort/helper build and one offline signer
+build while retaining separate wallet storage, chain state and ports. Use the
+same requirements and absolute tooling paths as the import example above:
+
+```bash
+python3 -B scripts/e2e/run-suite.py \
+  --scenario flutter.macos.shield-transparent \
+  --scenario flutter.macos.shield-transparent-retry \
+  --scenario flutter.macos.multi-account-send \
+  --scenario flutter.macos.tex-send \
+  --scenario flutter.macos.payment-uri-send \
+  --scenario flutter.macos.payment-uri-locked-send \
+  --scenario flutter.macos.payment-request-round-trip --plan
+```
+
+Replace `--plan` with `--run`, add the tooling paths and `--workers 2`.
+The original balance, fee, history, retry, locked-URI and ZIP320 return/shielding
+assertions remain. Funding uses exact integer zatoshis and independent inclusion
+checks. The existing public SDK address example derives the second wallet's TEX
+address in the same Cargo build; the TEX app alone receives its existing debug
+ephemeral-check flag. No production app or dependency code changes here.
+
+Copy/paste still uses the real OS clipboard. Only the copy/read section acquires
+a cooperative per-UID lock, shared across runner processes. A failed section
+retains that lease until the original app/driver writers have stopped; closing
+an HTTP listener alone cannot release it. Other cases can continue concurrently.
+Mining, funding and bounded raw-transaction reads use the original case's
+controller, not shared node-wallet RPC. Existing manual shell runs outside the
+isolated cohort retain their deployed path. Failed cases retain state/logs;
+cleanup does not delete a DB while Rust work is still active.
+
+Rerun only failures from the original schema-2 report with
+`--failed-from .regtest-logs/native-suite-<id>/repetition-0/run.json --run`, plus
+the same tooling arguments. The [roadmap](ROADMAP.md) records the separate
+five-pass/two-failure batch and corrected two-case rerun; they are not one
+final-source seven-case pass or a measured performance improvement.
 
 ## Isolated Rust execution
 
@@ -250,7 +290,7 @@ python3 -B scripts/e2e/run-suite.py \
 
 Use `--run`, the tooling paths above and `--workers 2` to execute both with one
 Cargo signer/two-target build and independent chains/DBs. All iOS execution,
-15 macOS cases and persistent cache/resource/performance gates remain pending.
+8 macOS cases and persistent cache/resource/performance gates remain pending.
 
 ## Native port ownership primitive
 
@@ -269,7 +309,7 @@ fixture, but must be canonical, owned and not writable by other users. The actua
 are checked, never changed to make acquisition succeed.
 
 This library does not start a backend or wire an execution mode into
-`run-suite.py` by itself. Only the twenty-eight composed Rust/macOS cases above are
+`run-suite.py` by itself. Only the thirty-five composed Rust/macOS cases above are
 runnable; other catalog cases remain pending. Process/workspace/simulator
 ownership and actual app-storage cleanup are separate follow-up work. Tests
 use private temporary directories, real ephemeral loopback sockets, and one

@@ -34,23 +34,70 @@ SUPPORTED_SCENARIOS = frozenset({
     "flutter.macos.custom-endpoint-no-fallback",
     "flutter.macos.slow-height-fallback",
     "flutter.macos.sync-startup-stall-recovery",
+    "flutter.macos.shield-transparent",
+    "flutter.macos.shield-transparent-retry",
+    "flutter.macos.multi-account-send",
+    "flutter.macos.tex-send",
+    "flutter.macos.payment-uri-send",
+    "flutter.macos.payment-uri-locked-send",
+    "flutter.macos.payment-request-round-trip",
 }) | frozenset(RUST_CASES)
 _MINER = "tmLomwDqZSUb1Mvsfpjtmt4cLBA7c9tGssX"
 _IMPORT_UA = "uregtest1ykjd398elks624qyz0d0vffn6vpqkl6atp2wsr9795eql4kw47hwlffxyyfakv0l2twj635fpmxmeu3tzyrfhf5s9eg9ea8gsa0srdfwjudp3fs0qaaqxvkxr364a8vjy3y9vglm7lf8rs0vsev9p5mzky52rq4wkr5lhc842vuf5lhn"
 _IMPORT_TRANSPARENT = "tmPTcChwqcza88W1mydzwkZ25C9qQm3ugiM"
 _DESKTOP_UA = "uregtest1nu0qx0nca0ncpshm5x47ldc90835m2fy3gjuh3empp5js9qanzjwxppsw7x07a2ec3z52ute7d7f0z68ez90qlagx5ankjm4eyd6l90p"
+_DESKTOP_MNEMONIC = "winter shiver fetch refuse absurd mail pistol eight market lounge manual roast miracle ethics found child scare curve congress renew salute pig better used"
+_RECEIVER_MNEMONIC = "return try reason flat civil wolf dwarf announce toddler uphold equip range neck proof gauge east rifle swim tray twin venue fossil will version"
 
 
-def scenario_funding(scenario_id):
+def scenario_funding(scenario_id, *, desktop_transparent=None):
     """Prefund only the balances asserted by each unchanged wallet scenario."""
     if scenario_id == "flutter.macos.import-sync":
         return ((_IMPORT_UA,125000000,"ironwood",1),
                 (_IMPORT_TRANSPARENT,75000000,"transparent",2))
     if scenario_id in {"flutter.macos.fallback-endpoint", "flutter.macos.slow-height-fallback"}:
         return ((_DESKTOP_UA,125000000,"ironwood",1),)
+    if scenario_id == "flutter.macos.multi-account-send":
+        if not isinstance(desktop_transparent, str) or not desktop_transparent.startswith("tm"):
+            raise ValueError("multi-account funding needs the independently derived transparent address")
+        return ((_DESKTOP_UA,125000000,"ironwood",1),
+                (desktop_transparent,75000000,"transparent",2))
+    if scenario_id in {"flutter.macos.tex-send", "flutter.macos.payment-uri-send",
+                       "flutter.macos.payment-uri-locked-send", "flutter.macos.payment-request-round-trip"}:
+        return ((_DESKTOP_UA,125000000,"ironwood",1),)
+    if scenario_id in {"flutter.macos.shield-transparent", "flutter.macos.shield-transparent-retry"}:
+        return ()  # Each new random wallet receives external proved funding in its scenario.
     if scenario_id in {"flutter.macos.custom-endpoint-no-fallback", "flutter.macos.sync-startup-stall-recovery"}:
         return ()
     raise ValueError("unsupported native funding scenario")
+
+
+def derive_payment_addresses(case, artifact, *, cancel):
+    """Use the existing public SDK example, never reimplement address encodings."""
+    addresses = []
+    try:
+        for mnemonic in (_DESKTOP_MNEMONIC, _RECEIVER_MNEMONIC):
+            binary = artifact.wallet_addresses_binary()
+            result = case.run_command([str(binary), mnemonic], env=os.environ.copy(),
+                timeout=60, cancel_event=cancel, max_output_bytes=64*1024)
+            if result.returncode:
+                raise runtime.RunnerError("owned wallet address derivation failed", result.returncode)
+            records = [json.loads(line) for line in result.lines if line.lstrip().startswith("{")]
+            if len(records) != 1:
+                raise runtime.RunnerError("wallet address tool did not produce one result")
+            record = records[0]
+            for field, prefix in (("transparentAddress", "tm"), ("texAddress", "texregtest1")):
+                value = record.get(field)
+                if (not isinstance(value, str) or not value.startswith(prefix)
+                    or not value.isascii() or not value.isalnum() or not 20 <= len(value) <= 100):
+                    raise runtime.RunnerError("wallet address tool returned an invalid regtest fixture")
+            addresses.append(record)
+            artifact.verify_unchanged()
+        return {"desktop_transparent": addresses[0]["transparentAddress"],
+                "receiver_tex": addresses[1]["texAddress"],
+                "receiver_transparent": addresses[1]["transparentAddress"]}
+    finally:
+        case.close()
 
 
 def validate_options(args, scenarios):
@@ -87,7 +134,7 @@ def _write_report(path, report):
 
 
 def execute_case(root, run_id, worker_id, scenario, *, helper, artifact, source_root,
-                 dart, args, cancel):
+                 dart, args, cancel, desktop_transparent=None):
     """The worker thread creates, drives and finalizes its own mutable handles."""
     started = time.monotonic()
     result = {"scenario_id":scenario.id, "profile":scenario.profile,
@@ -111,7 +158,8 @@ def execute_case(root, run_id, worker_id, scenario, *, helper, artifact, source_
             raise runtime.Cancelled()
         session.backend.mine(100)
         result["payments"] = []
-        for address, amount, pool, source in (() if is_rust else scenario_funding(scenario.id)):
+        for address, amount, pool, source in (() if is_rust else scenario_funding(
+                scenario.id, desktop_transparent=desktop_transparent)):
             result["payments"].append(fund_zakura(session.case, session.backend, artifact,
                 recipient_address=address, amount_zatoshi=amount, recipient_pool=pool,
                 source_height=source, confirmations=10, timeout=120, cancel_event=cancel))
@@ -187,19 +235,27 @@ def run_native_suite(args, catalog, scenarios, selection, *, source_root):
         "builds":{},"error":None}
     try:
         print("Building selected native artifacts once; logs: "+str(evidence),file=sys.stderr,flush=True)
-        helper = None
-        if any(s.engine == "flutter-macos" for s in scenarios):
-            helper, build_proof = build_native_macos_cohort(build_case(0,"flutter.macos.native-build"),
-                source_root=root, flutter=args.flutter, cancel_event=cancel)
-            report["builds"].update(build_proof)
         targets = tuple(dict.fromkeys(s.target for s in scenarios if s.engine == "rust"))
+        needs_addresses = any(s.id in {"flutter.macos.multi-account-send", "flutter.macos.tex-send"}
+                              for s in scenarios)
         producer = build_case(1, "rust.signer-build", "rust") if targets else build_case(1,"flutter.macos.signer-build")
         artifact = build_regtest_funder(producer,
             source_root=root, source_commit=commit, jobs=args.build_jobs, timeout=1200,
-            cancel_event=cancel, test_targets=targets)
+            cancel_event=cancel, test_targets=targets, wallet_addresses=needs_addresses)
         report["builds"]["signer_build_count"] = 1
         if targets:
             report["builds"].update(rust_build_count=1, rust_test_targets=list(targets))
+        payment_addresses = {}
+        if needs_addresses:
+            payment_addresses = derive_payment_addresses(build_case(2,"rust.wallet-addresses", "rust"),
+                artifact, cancel=cancel)
+            report["builds"]["payment_addresses"] = payment_addresses
+        helper = None
+        if any(s.engine == "flutter-macos" for s in scenarios):
+            helper, build_proof = build_native_macos_cohort(build_case(0,"flutter.macos.native-build"),
+                source_root=root, flutter=args.flutter, cancel_event=cancel,
+                tex_address=payment_addresses.get("receiver_tex"))
+            report["builds"].update(build_proof)
         dart = (args.flutter.resolve(strict=True).parent/"cache/dart-sdk/bin/dart").resolve(strict=True)
         repetitions = []
         jobs = []
@@ -212,7 +268,8 @@ def run_native_suite(args, catalog, scenarios, selection, *, source_root):
         results = [[] for _ in repetitions]
         with ThreadPoolExecutor(max_workers=args.workers) as pool:
             submitted = [(repetition,pool.submit(execute_case,*repetitions[repetition],index,scenario,
-                helper=helper,artifact=artifact,source_root=root,dart=dart,args=args,cancel=cancel))
+                helper=helper,artifact=artifact,source_root=root,dart=dart,args=args,cancel=cancel,
+                desktop_transparent=payment_addresses.get("desktop_transparent")))
                 for repetition,index,scenario in jobs]
             for repetition, future in submitted:
                 results[repetition].append(future.result())
