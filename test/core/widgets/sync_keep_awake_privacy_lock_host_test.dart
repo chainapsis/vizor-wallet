@@ -192,6 +192,8 @@ void main() {
           _sync(
             scannedHeight: 100,
             chainTipHeight: 102,
+            remainingScanBlocks: 2,
+            pendingScanStartHeight: 101,
             lastSyncStartedAt: DateTime(2026, 7, 9, 12),
           ),
         ),
@@ -642,6 +644,8 @@ void main() {
         percentage: 0,
         scannedHeight: 200,
         chainTipHeight: 202,
+        remainingScanBlocks: 2,
+        pendingScanStartHeight: 201,
         lastSyncStartedAt: DateTime(2026, 7, 9, 12, 2),
       ),
     );
@@ -1033,6 +1037,8 @@ SyncState _sync({
   int scannedHeight = 100,
   int chainTipHeight = 200,
   DateTime? lastSyncStartedAt,
+  int? remainingScanBlocks,
+  int? pendingScanStartHeight,
 }) {
   return SyncState(
     isSyncing: isSyncing,
@@ -1040,6 +1046,8 @@ SyncState _sync({
     percentage: percentage,
     scannedHeight: scannedHeight,
     chainTipHeight: chainTipHeight,
+    remainingScanBlocks: remainingScanBlocks,
+    pendingScanStartHeight: pendingScanStartHeight,
     lastSyncStartedAt: lastSyncStartedAt,
   );
 }

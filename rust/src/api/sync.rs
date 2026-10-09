@@ -61,6 +61,10 @@ pub struct ApiSyncProgressEvent {
     /// advances at most `display_target_blocks` virtual blocks to this target.
     pub display_target_percentage: f64,
     pub display_target_blocks: u64,
+    /// Total pending scan blocks. None before queue discovery, Some(0) if empty.
+    pub remaining_scan_blocks: Option<u64>,
+    /// Inclusive start of the earliest pending scan range, regardless of priority.
+    pub pending_scan_start_height: Option<u64>,
     pub is_syncing: bool,
     pub is_complete: bool,
     pub has_new_tx: bool,
@@ -141,6 +145,8 @@ pub fn start_full_sync(
                     percentage: progress.percentage,
                     display_target_percentage: progress.display_target_percentage,
                     display_target_blocks: progress.display_target_blocks,
+                    remaining_scan_blocks: progress.remaining_scan_blocks,
+                    pending_scan_start_height: progress.pending_scan_start_height,
                     is_syncing: progress.is_syncing,
                     is_complete: progress.is_complete,
                     has_new_tx: progress.has_new_tx,

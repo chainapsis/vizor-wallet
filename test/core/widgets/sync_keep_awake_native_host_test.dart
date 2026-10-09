@@ -6,11 +6,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/sync_keep_awake_native_host.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
+import 'package:zcash_wallet/src/providers/sync_keep_awake_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/services/native_screen_awake.dart';
 
@@ -24,6 +26,75 @@ void main() {
       Duration(seconds: 16),
     ]);
   });
+
+  testWidgets('tip batch keeps native awake while historical work remains', (
+    tester,
+  ) async {
+    final calls = _recordScreenAwakeCalls();
+    final startedAt = DateTime(2026, 7, 9, 12);
+    final syncNotifier = FakeSyncNotifier(_sync(lastSyncStartedAt: startedAt));
+    await tester.pumpWidget(_app(syncNotifier: syncNotifier));
+    await _drainNativeQueue(tester);
+    expect(_enabledArgs(calls), [true]);
+
+    syncNotifier.emit(
+      _sync(
+        scannedHeight: 2000,
+        chainTipHeight: 2000,
+        percentage: 0.7,
+        displayTargetBlocks: 2,
+        remainingScanBlocks: 102,
+        pendingScanStartHeight: 1700,
+        lastSyncStartedAt: startedAt,
+      ),
+    );
+    await _drainNativeQueue(tester);
+    expect(_enabledArgs(calls), [true]);
+
+    syncNotifier.emit(
+      _sync(
+        scannedHeight: 1998,
+        chainTipHeight: 2000,
+        remainingScanBlocks: 2,
+        pendingScanStartHeight: 1999,
+        lastSyncStartedAt: startedAt,
+      ),
+    );
+    await _drainNativeQueue(tester);
+    expect(_enabledArgs(calls), [true, false]);
+  });
+
+  testWidgets(
+    'settings enable applies during preparation with old tip heights',
+    (tester) async {
+      FlutterSecureStorage.setMockInitialValues({});
+      final calls = _recordScreenAwakeCalls();
+      final syncNotifier = FakeSyncNotifier(
+        _sync(
+          scannedHeight: 2000,
+          chainTipHeight: 2000,
+          percentage: 0,
+          scanWorkKnown: false,
+          lastSyncStartedAt: DateTime(2026, 7, 9, 12),
+          phase: kSyncPhasePreflight,
+        ),
+      );
+      await tester.pumpWidget(
+        _app(syncNotifier: syncNotifier, syncKeepAwakeEnabled: false),
+      );
+      await _drainNativeQueue(tester);
+      expect(calls, isEmpty);
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(SyncKeepAwakeNativeHost)),
+      );
+      await container.read(syncKeepAwakeProvider.notifier).setEnabled(true);
+      await _drainNativeQueue(tester);
+      expect(_enabledArgs(calls), [true]);
+      await container.read(syncKeepAwakeProvider.notifier).setEnabled(false);
+      await _drainNativeQueue(tester);
+      expect(_enabledArgs(calls), [true, false]);
+    },
+  );
 
   testWidgets('does not call native API for near-tip catch-up', (tester) async {
     final calls = _recordScreenAwakeCalls();
@@ -140,11 +211,9 @@ void main() {
           ),
         );
         await _drainNativeQueue(tester);
-        expect(
-          _enabledArgs(calls),
-          [true],
-          reason: '$phase must not disable keep-awake during preparation',
-        );
+        expect(_enabledArgs(calls), [
+          true,
+        ], reason: '$phase must not disable keep-awake during preparation');
       }
 
       syncNotifier.emit(
@@ -196,6 +265,111 @@ void main() {
     await _drainNativeQueue(tester);
 
     expect(calls, isEmpty);
+  });
+
+  for (final initialLifecycle in [
+    AppLifecycleState.resumed,
+    AppLifecycleState.inactive,
+  ]) {
+    testWidgets('observes setting toggles after mounting $initialLifecycle', (
+      tester,
+    ) async {
+      FlutterSecureStorage.setMockInitialValues({});
+      final calls = _recordScreenAwakeCalls();
+      final syncNotifier = FakeSyncNotifier(
+        _sync(lastSyncStartedAt: DateTime(2026, 7, 9, 12)),
+      );
+      tester.binding.handleAppLifecycleStateChanged(initialLifecycle);
+      await tester.pumpWidget(
+        _app(syncNotifier: syncNotifier, syncKeepAwakeEnabled: false),
+      );
+      await _drainNativeQueue(tester);
+      expect(calls, isEmpty);
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await _drainNativeQueue(tester);
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(SyncKeepAwakeNativeHost)),
+      );
+
+      await container.read(syncKeepAwakeProvider.notifier).setEnabled(true);
+      await _drainNativeQueue(tester);
+      expect(container.read(syncKeepAwakeProvider).enabled, isTrue);
+      expect(container.read(syncKeepAwakeActiveProvider), isTrue);
+      expect(_enabledArgs(calls), [true]);
+
+      await container.read(syncKeepAwakeProvider.notifier).setEnabled(false);
+      await _drainNativeQueue(tester);
+      expect(_enabledArgs(calls), [true, false]);
+    });
+  }
+
+  testWidgets('observes sync restarts after an inactive rebuild', (
+    tester,
+  ) async {
+    final calls = _recordScreenAwakeCalls();
+    final startedAt = DateTime(2026, 7, 9, 12);
+    final syncNotifier = FakeSyncNotifier(_sync(lastSyncStartedAt: startedAt));
+    await tester.pumpWidget(_app(syncNotifier: syncNotifier));
+    await _drainNativeQueue(tester);
+    expect(_enabledArgs(calls), [true]);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await _drainNativeQueue(tester);
+    expect(_enabledArgs(calls), [true, false]);
+
+    // Changing eligibility forces the host to rebuild while not foreground.
+    syncNotifier.emit(_sync(isSyncing: false, lastSyncStartedAt: startedAt));
+    await _drainNativeQueue(tester);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await _drainNativeQueue(tester);
+    expect(_enabledArgs(calls), [true, false]);
+
+    syncNotifier.emit(
+      _sync(lastSyncStartedAt: startedAt.add(const Duration(minutes: 1))),
+    );
+    await _drainNativeQueue(tester);
+    expect(_enabledArgs(calls), [true, false, true]);
+
+    syncNotifier.emit(_sync(isSyncing: false, lastSyncStartedAt: startedAt));
+    await _drainNativeQueue(tester);
+    expect(_enabledArgs(calls), [true, false, true, false]);
+  });
+
+  testWidgets('enabling the setting in background waits for resume', (
+    tester,
+  ) async {
+    FlutterSecureStorage.setMockInitialValues({});
+    final calls = _recordScreenAwakeCalls();
+    final syncNotifier = FakeSyncNotifier(
+      _sync(lastSyncStartedAt: DateTime(2026, 7, 9, 12)),
+    );
+    await tester.pumpWidget(
+      _app(syncNotifier: syncNotifier, syncKeepAwakeEnabled: false),
+    );
+    await _drainNativeQueue(tester);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SyncKeepAwakeNativeHost)),
+    );
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    await _drainNativeQueue(tester);
+
+    await container.read(syncKeepAwakeProvider.notifier).setEnabled(true);
+    await _drainNativeQueue(tester);
+    expect(container.read(syncKeepAwakeActiveProvider), isTrue);
+    expect(calls, isEmpty);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await _drainNativeQueue(tester);
+    expect(_enabledArgs(calls), [true]);
+
+    await container.read(syncKeepAwakeProvider.notifier).setEnabled(false);
+    await _drainNativeQueue(tester);
+    expect(_enabledArgs(calls), [true, false]);
   });
 
   testWidgets('disables native keep-awake when the host is disposed', (
@@ -485,12 +659,22 @@ SyncState _sync({
   int chainTipHeight = 200,
   DateTime? lastSyncStartedAt,
   String phase = '',
+  int? remainingScanBlocks,
+  int? pendingScanStartHeight,
+  bool scanWorkKnown = true,
 }) {
   return SyncState(
     isSyncing: isSyncing,
     isBackgroundMode: isBackgroundMode,
     percentage: percentage,
     displayTargetBlocks: displayTargetBlocks,
+    remainingScanBlocks: scanWorkKnown && chainTipHeight > 0
+        ? remainingScanBlocks ??
+              (chainTipHeight - scannedHeight).clamp(0, chainTipHeight)
+        : null,
+    pendingScanStartHeight: scanWorkKnown && chainTipHeight > scannedHeight
+        ? pendingScanStartHeight ?? scannedHeight + 1
+        : pendingScanStartHeight,
     scannedHeight: scannedHeight,
     chainTipHeight: chainTipHeight,
     lastSyncStartedAt: lastSyncStartedAt,
