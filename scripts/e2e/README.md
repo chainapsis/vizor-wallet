@@ -1174,6 +1174,13 @@ wallets and process owners remain case-local. Reports use the actual
 This is cooperative local build reuse, not hermetic provenance, voting success
 or final-source full-catalog coverage.
 
+Actual original producers on clean `cf256da33` verified an artifact-cache miss
+in138.338s and a hit in1.390s. Build counts were1/0; all22/19 original command
+groups joined exit0, all five binary hashes matched and private runtime inodes
+were independent. The warm owner re-extracted its original pinned SDK scripts.
+Rust/Go dependency caches were already populated: this is not an empty-machine
+baseline, complete voting E2E, aggregate CPU/RAM saving or whole-suite speedup.
+
 ```bash
 python3 -B -m unittest scripts/e2e/test_native_voting.py scripts/e2e/test_native_macos_suite.py scripts/e2e/test_funder_cache.py
 ```
