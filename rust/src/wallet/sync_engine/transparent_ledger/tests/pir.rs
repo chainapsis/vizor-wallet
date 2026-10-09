@@ -842,7 +842,8 @@ async fn legacy_refusal_preserves_a_compatible_bound_catalog() {
     }
 }
 
-/// A readable catalog cannot be transferred without evidence of its identity,
+/// An existing WAL may contain committed reconciliation records. A repair
+/// keeps the main database and those records while its connection stays open.
 #[tokio::test(flavor = "multi_thread")]
 async fn legacy_refusal_with_an_existing_wal_keeps_all_catalog_evidence() {
     let wallet = main_wallet(1);

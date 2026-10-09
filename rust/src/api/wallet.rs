@@ -2159,8 +2159,8 @@ mod tests {
         .unwrap();
         let transition = apply_fenced(&path, network, TransparentLedgerMode::PrivateShadow).await;
         release.notify_one();
-        let discovered = discovery.await.unwrap();
         assert!(transition.is_ok(), "{transition:?}");
+        let discovered = discovery.await.unwrap();
         assert_eq!(lwd.count("/GetTaddressTxids"), 1);
         assert_eq!(discovered.status, SoftwareAccountDiscoveryStatus::Partial);
         assert_eq!(found_indices(&discovered), vec![1]);
