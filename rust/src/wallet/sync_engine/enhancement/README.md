@@ -335,9 +335,10 @@ Per-RPC checks narrow the check-to-dispatch window but cannot close it alone: a
 transition could commit between a check and its request, and a disclosure
 cannot be undone. The in-process **policy fence** closes it. Each wallet
 database has its own fence, so a transition on one wallet never waits for
-another's lookups. Every dispatch holds a shared lease from its check until its
-request has been handed to the transport, and
-`apply_transparent_policy_fenced_if`, the only way this build applies a
+another's lookups. A fence is keyed by the database's file name under its
+canonical directory, so every spelling of one wallet's path shares it. Every
+dispatch holds a shared lease from its check until its request has been handed
+to the transport, and `apply_transparent_policy_fenced_if`, the only way this build applies a
 transparent policy, takes the exclusive side. A gate that knows its transport
 (the sync's registered transport for its lanes, or the one a one-off lookup
 opened) sends through `DispatchSignalService` and releases the lease once the

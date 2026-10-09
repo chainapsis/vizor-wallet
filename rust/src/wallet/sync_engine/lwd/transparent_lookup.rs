@@ -26,6 +26,8 @@
 
 use std::collections::HashMap;
 use std::future::Future;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -54,34 +56,69 @@ use crate::wallet::{
 /// lease well within this; one that does not is withheld.
 pub(crate) const LEASE_WAIT: Duration = Duration::from_secs(45);
 
-/// One fence per wallet database path, shared by every public transparent
-/// lookup on that wallet and held exclusively by its policy transition.
-/// Tokio's lock is fair: once a transition waits, new leases queue behind it.
-/// Entries nobody holds are dropped as others are added.
-static POLICY_FENCES: LazyLock<Mutex<HashMap<String, Arc<RwLock<()>>>>> =
+/// One fence per wallet database, shared by every public transparent lookup
+/// on that wallet and held exclusively by its policy transition. Keyed by
+/// [`wallet_key`]. Tokio's lock is fair: once a transition waits, new leases
+/// queue behind it. Entries nobody holds are dropped as others are added.
+static POLICY_FENCES: LazyLock<Mutex<HashMap<PathBuf, Arc<RwLock<()>>>>> =
     LazyLock::new(Default::default);
 
+/// The key of the wallet at `db_path` in the fence and transport maps, so that
+/// every spelling of one wallet file (a symlinked directory, such as `/var`
+/// for `/private/var`, or a relative path) shares one fence: the file name
+/// under its canonical parent directory. The parent exists before the
+/// database does, so a pre-database lookup and later ones on the same wallet
+/// agree. Falls back to `db_path` as given when the parent cannot be resolved.
+fn wallet_key(db_path: &str) -> PathBuf {
+    let path = Path::new(db_path);
+    let (Some(parent), Some(name)) = (path.parent(), path.file_name()) else {
+        return path.to_path_buf();
+    };
+    let parent = if parent.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        parent
+    };
+    std::fs::canonicalize(parent).map_or_else(|_| path.to_path_buf(), |parent| parent.join(name))
+}
+
 /// The fence of the wallet at `db_path`, or of pre-database lookups.
-fn fence(key: &str) -> Arc<RwLock<()>> {
+fn fence(db_path: &str) -> Arc<RwLock<()>> {
+    let key = wallet_key(db_path);
     let mut fences = POLICY_FENCES.lock().unwrap_or_else(PoisonError::into_inner);
     fences.retain(|_, fence| Arc::strong_count(fence) > 1);
-    fences.entry(key.to_owned()).or_default().clone()
+    fences.entry(key).or_default().clone()
 }
 
 /// The transport the running sync's lookups on each wallet go over, so their
-/// gates can release their leases at hand-off. Registered for the sync's
-/// lifetime by [`register_sync_transport`].
-static SYNC_TRANSPORTS: LazyLock<Mutex<HashMap<String, Channel>>> = LazyLock::new(Default::default);
+/// gates can release their leases at hand-off, with the token of the
+/// registration that set it. Keyed by [`wallet_key`]. Registered for the
+/// sync's lifetime by [`register_sync_transport`].
+static SYNC_TRANSPORTS: LazyLock<Mutex<HashMap<PathBuf, (u64, Channel)>>> =
+    LazyLock::new(Default::default);
+
+/// Tokens that tell registrations on one wallet apart.
+static SYNC_TRANSPORT_TOKENS: AtomicU64 = AtomicU64::new(0);
 
 /// Keeps a sync transport registered until dropped.
-pub(crate) struct SyncTransport(String);
+pub(crate) struct SyncTransport {
+    key: PathBuf,
+    token: u64,
+}
 
 impl Drop for SyncTransport {
     fn drop(&mut self) {
-        SYNC_TRANSPORTS
+        let mut transports = SYNC_TRANSPORTS
             .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .remove(&self.0);
+            .unwrap_or_else(PoisonError::into_inner);
+        // An overlapping sync on the same wallet may have registered its own
+        // since; that one stays.
+        if transports
+            .get(&self.key)
+            .is_some_and(|(token, _)| *token == self.token)
+        {
+            transports.remove(&self.key);
+        }
     }
 }
 
@@ -89,11 +126,13 @@ impl Drop for SyncTransport {
 /// for the gates of the sync's lanes on the wallet at `db_path`
 /// ([`TransparentLookupGate::for_sync`]).
 pub(crate) fn register_sync_transport(db_path: &str, transport: Channel) -> SyncTransport {
+    let key = wallet_key(db_path);
+    let token = SYNC_TRANSPORT_TOKENS.fetch_add(1, Ordering::Relaxed);
     SYNC_TRANSPORTS
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
-        .insert(db_path.to_owned(), transport);
-    SyncTransport(db_path.to_owned())
+        .insert(key.clone(), (token, transport));
+    SyncTransport { key, token }
 }
 
 /// Durably applies `mode` as the wallet's transparent policy behind the fence,
@@ -215,8 +254,8 @@ impl TransparentLookupGate {
         let transport = SYNC_TRANSPORTS
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .get(db_path)
-            .cloned();
+            .get(&wallet_key(db_path))
+            .map(|(_, transport)| transport.clone());
         Ok(match transport {
             Some(transport) => gate.with_transport(transport),
             None => gate,
@@ -907,6 +946,74 @@ mod tests {
             "the wait yielded to the runtime"
         );
         assert!(gate.permits().unwrap(), "nothing was applied");
+    }
+
+    fn lazy_channel() -> Channel {
+        tonic::transport::Endpoint::from_static("http://127.0.0.1:1").connect_lazy()
+    }
+
+    /// Whether gates of a sync on the wallet at `path` find its transport.
+    fn sync_transport_registered(path: &str) -> bool {
+        TransparentLookupGate::for_sync(
+            PublicTransparentLookups::Withheld,
+            path,
+            WalletNetwork::Regtest,
+        )
+        .unwrap()
+        .transport
+        .is_some()
+    }
+
+    /// Two spellings of one wallet file, through a symlinked directory, share
+    /// its fence and its sync transport, even before the database exists.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn spellings_of_one_wallet_share_its_fence_and_transport() {
+        let dir = tempfile::tempdir().unwrap();
+        let links = tempfile::tempdir().unwrap();
+        let link = links.path().join("wallet-dir");
+        std::os::unix::fs::symlink(dir.path(), &link).unwrap();
+        let canonical = dir.path().canonicalize().unwrap().join("wallet.db");
+        let canonical = canonical.to_str().unwrap();
+        let aliased = link.join("wallet.db");
+        let aliased = aliased.to_str().unwrap();
+        assert_ne!(canonical, aliased);
+
+        // An import's lookups and a later lookup on the wallet agree.
+        let importing =
+            TransparentLookupGate::pre_database(PublicTransparentLookups::Withheld, aliased);
+        let consented = TransparentLookupGate::user_requested(canonical);
+        assert!(Arc::ptr_eq(&importing.fence, &consented.fence));
+        // Another wallet in the same directory has a fence of its own.
+        let other = dir.path().join("other.db");
+        assert!(!Arc::ptr_eq(
+            &fence(other.to_str().unwrap()),
+            &importing.fence
+        ));
+
+        // A sync registered under one spelling serves gates under the other.
+        let registered = register_sync_transport(aliased, lazy_channel());
+        assert!(sync_transport_registered(canonical));
+        drop(registered);
+        assert!(!sync_transport_registered(canonical));
+    }
+
+    /// Overlapping syncs on one wallet: the earlier one ending leaves the
+    /// later one's transport registered.
+    #[tokio::test]
+    async fn an_ending_sync_keeps_an_overlapping_syncs_transport() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db");
+        let path = path.to_str().unwrap();
+        let first = register_sync_transport(path, lazy_channel());
+        let second = register_sync_transport(path, lazy_channel());
+        drop(first);
+        assert!(
+            sync_transport_registered(path),
+            "the later sync keeps its transport"
+        );
+        drop(second);
+        assert!(!sync_transport_registered(path));
     }
 }
 
