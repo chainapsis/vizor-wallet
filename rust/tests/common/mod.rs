@@ -28,12 +28,18 @@ pub fn lightwalletd_url() -> String {
 
 fn wallet_tempdir() -> TempDir {
     match isolated_control() {
-        Some(control) => tempfile::Builder::new()
-            .prefix("wallet-")
-            .tempdir_in(control.wallet_root())
-            .expect("case-owned wallet tempdir"),
+        Some(control) => owned_wallet_tempdir(control.wallet_root()),
         None => tempfile::tempdir().expect("tempdir"),
     }
+}
+
+fn owned_wallet_tempdir(root: &Path) -> TempDir {
+    // The host joins original writers before cleanup, and retains failed DBs.
+    tempfile::Builder::new()
+        .prefix("wallet-")
+        .disable_cleanup(true)
+        .tempdir_in(root)
+        .expect("case-owned wallet tempdir")
 }
 
 pub const REGTEST_NETWORK: &str = "regtest";

@@ -297,6 +297,16 @@ mod tests {
     }
 
     #[test]
+    fn isolated_wallet_drop_retains_database_for_the_original_host_owner() {
+        let parent = tempfile::tempdir().unwrap();
+        let directory = super::super::owned_wallet_tempdir(parent.path());
+        let database = directory.path().join("wallet.db");
+        std::fs::write(&database, b"failure evidence").unwrap();
+        drop(directory);
+        assert_eq!(std::fs::read(database).unwrap(), b"failure evidence");
+    }
+
+    #[test]
     fn funding_amounts_are_exact_integer_zatoshis() {
         for (amount, expected) in [
             ("1.0", 100_000_000),
