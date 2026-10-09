@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Upgrade probe: create wallets with the published build at <base-ref>, upgrade
-# and verify them twice with the current tree. Writable downgrades are not qualified.
+# and verify them twice with the current tree. Then verify that the base reader
+# refuses the upgraded storage without changing it. Released readers predating
+# the guard can instead be probed with DB_UPGRADE_OLD_READER_MODE=probe-old;
+# acceptance by such a reader does not qualify a writable downgrade.
 #
 # usage: scripts/test-db-upgrade.sh <base-ref> [scenario...]
 set -euo pipefail
@@ -13,6 +16,11 @@ fi
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BASE_REF="$1"
 shift
+OLD_READER_MODE="${DB_UPGRADE_OLD_READER_MODE:-refuse-old}"
+case "$OLD_READER_MODE" in
+  refuse-old|probe-old) ;;
+  *) echo "invalid DB_UPGRADE_OLD_READER_MODE: $OLD_READER_MODE" >&2; exit 2 ;;
+esac
 SCENARIOS=("$@")
 if [[ ${#SCENARIOS[@]} -eq 0 ]]; then
   SCENARIOS=(single-derived multi-seed imported-only hardware-first)
@@ -62,6 +70,7 @@ for scenario in "${SCENARIOS[@]}"; do
   run_probe "$OLD_WORKTREE" create "$scenario" "$db_path" "$manifest_path"
   run_probe "$ROOT_DIR" verify "$scenario" "$db_path" "$manifest_path"
   run_probe "$ROOT_DIR" verify "$scenario" "$db_path" "$manifest_path"
+  run_probe "$OLD_WORKTREE" "$OLD_READER_MODE" "$scenario" "$db_path" "$manifest_path"
 
 done
 

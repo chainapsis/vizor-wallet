@@ -6,8 +6,8 @@
 //! 2. `verify` (current build) upgrades it and checks that the schema is a
 //!    superset of the base schema, the raw state is unchanged, and the current
 //!    APIs report what the base APIs did.
-//! Published-to-current upgrades are supported. Older writers after a private-ledger
-//! upgrade are not qualified by this probe.
+//! Published-to-current upgrades are supported. `refuse-old` verifies that a
+//! pre-migration reader refuses the upgraded database without changing it.
 //!
 //! API that differs between builds lives in `db_upgrade/compat.rs` (or a
 //! base's `compat_<base>.rs`); current-build-only checks live in
@@ -85,6 +85,14 @@ const RECOVERY_TABLES: [&str; 13] = [
 const LIBRARY_BUMP_MIGRATIONS: [&str; 2] = [
     "935cd43609fd4f4fa808260ee399cb21",
     "a03b0d6a60854859ae77bce948345214",
+];
+/// Memo retry, private output-shape retention, and txid display/work storage.
+/// Their backfills persist obligations; opening the wallet must not dispatch
+/// requests or create private work for these never-private fixtures.
+const PRIVATE_DETAILS_MIGRATIONS: [&str; 3] = [
+    "3d1c7a528e0b4f6d9a475be2c0f19e84",
+    "8f4c321004e149eb9de2d713ee0a8426",
+    "73d751a3dbdc461a9154e061903aae4f",
 ];
 const LEGACY_PUBLIC_ORIGIN: i64 = 0;
 const LOCAL_ORIGIN: i64 = 1;
@@ -240,7 +248,7 @@ fn main() {
     let mut args = std::env::args().skip(1);
     let mode = args.next().expect(
         "usage: db_upgrade \
-             <create|verify|open-old|read-old> <scenario> <db> <manifest>",
+             <create|verify|refuse-old|probe-old|open-old|read-old> <scenario> <db> <manifest>",
     );
     let scenario = args.next().expect("scenario");
     let db_path = args.next().expect("database path");
@@ -249,6 +257,8 @@ fn main() {
     match mode.as_str() {
         "create" => create_fixture(&scenario, &db_path, &manifest_path),
         "verify" => verify_upgraded(&scenario, &db_path, &manifest_path),
+        "refuse-old" => verify_old_reader(&scenario, &db_path, true),
+        "probe-old" => verify_old_reader(&scenario, &db_path, false),
         "open-old" => verify_old_reopen(&scenario, &db_path, &manifest_path),
         "read-old" => read_after_old(&scenario, &db_path, &manifest_path),
         other => panic!("unknown mode {other}"),
@@ -611,10 +621,10 @@ fn assert_migrations(base: &LegacyState, actual: &LegacyState) {
         }
     }
     for id in LIBRARY_BUMP_MIGRATIONS {
-        assert!(
-            !base.migration_ids.contains(id) && actual.migration_ids.contains(id),
-            "migration {id} was not newly applied"
-        );
+        assert!(actual.migration_ids.contains(id), "migration {id} missing");
+    }
+    for id in PRIVATE_DETAILS_MIGRATIONS {
+        assert!(actual.migration_ids.contains(id), "migration {id} missing");
     }
 }
 
@@ -666,6 +676,19 @@ fn assert_transparent_ledger(db_path: &str, after_old: Option<&AfterOld>) {
         )
         .expect("read tpir_meta");
     assert_eq!(meta, (0, 0, 1), "transparent ledger policy is not public");
+    for table in [
+        "ironwood_memo_retrieval_queue",
+        "ironwood_enhance_metadata_queue",
+        "transparent_detail_work",
+        "transparent_tx_display",
+        "transparent_tx_display_outputs",
+    ] {
+        assert_eq!(
+            scalar_i64(&conn, &format!("SELECT COUNT(*) FROM {table}")),
+            0,
+            "upgrade created private work or display evidence in never-private wallet: {table}"
+        );
+    }
     // Queued follow-on work is bound to the initial policy generation.
     assert_eq!(
         scalar_i64(
@@ -818,6 +841,37 @@ fn verify_old_reopen(scenario: &str, db_path: &str, manifest_path: &str) {
         api: None,
     });
     write_manifest(manifest_path, &manifest);
+}
+
+/// Compiled in the base tree: a refusal must identify unknown migrations,
+/// rather than an unrelated account, seed or storage error. A released build
+/// without the fork's reader guard can be probed separately; its successful
+/// open is reported as an unsupported downgrade, never as refusal evidence.
+fn verify_old_reader(scenario: &str, db_path: &str, require_refusal: bool) {
+    let state = read_legacy_state(db_path, scenario);
+    let schema = read_schema(db_path);
+    match wallet::list_accounts(db_path.to_string(), NETWORK.to_string()) {
+        Err(error) => {
+            assert!(
+                error.contains("unknown migrations"),
+                "older reader failed for an unrelated reason: {error}"
+            );
+            println!("refused older reader scenario={scenario}");
+        }
+        Ok(_) => {
+            assert!(
+                !require_refusal,
+                "older reader accepted the upgraded wallet"
+            );
+            println!(
+                "unsupported downgrade: older reader accepted scenario={scenario}; \
+                 this is not a qualified downgrade or a reader-refusal pass"
+            );
+        }
+    }
+    assert_eq!(read_legacy_state(db_path, scenario), state);
+    assert_eq!(read_schema(db_path), schema);
+    assert_sqlite_health(db_path);
 }
 
 /// What the base APIs report after the base build's own write.
@@ -1301,6 +1355,9 @@ fn assert_current_schema(db_path: &str) {
         "sapling_tree_retained_checkpoints",
         "tpir_transaction_metadata",
         "tpir_shared_derivations",
+        "transparent_detail_work",
+        "transparent_tx_display",
+        "transparent_tx_display_outputs",
     ] {
         assert!(
             object_exists(&conn, "table", table),
@@ -1329,6 +1386,7 @@ fn assert_current_schema(db_path: &str) {
         ("transparent_received_outputs", "lock_owner"),
         ("blocks", "ironwood_commitment_tree_size"),
         ("blocks", "ironwood_action_count"),
+        ("ironwood_enhance_routing", "has_transparent_outputs"),
     ] {
         assert!(
             column_exists(&conn, table, column),
