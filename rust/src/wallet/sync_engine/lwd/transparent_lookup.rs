@@ -470,6 +470,32 @@ mod tests {
 
     use super::super::super::enhancement::EnhancementPolicy;
 
+    /// Fence deadlines must measure this case's request and wallet writers.
+    /// Unrelated full-suite tests can hold the process-wide database writer
+    /// beyond these deadlines. Run SQLite cases alone, keeping the competing
+    /// lookups, transitions and production wait bounds inside each case.
+    fn isolated_fence_test(test: &str) -> bool {
+        let module = module_path!().split_once("::").unwrap().1;
+        let name = format!("{module}::{test}");
+        const MARKER: &str = "VIZOR_TEST_PROCESS";
+        if std::env::var(MARKER).as_deref() == Ok(name.as_str()) {
+            return false;
+        }
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", name.as_str(), "--test-threads=1"])
+            .env(MARKER, &name)
+            .output()
+            .expect("start isolated wallet-fence test");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            output.status.success() && stdout.contains("1 passed; 0 failed; 0 ignored"),
+            "isolated {name} failed or selected no test:\n{}\n{}",
+            stdout,
+            String::from_utf8_lossy(&output.stderr),
+        );
+        true
+    }
+
     fn wallet() -> (tempfile::TempDir, String, TransparentLookupGate) {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("wallet.db").to_str().unwrap().to_owned();
@@ -498,6 +524,9 @@ mod tests {
 
     #[tokio::test]
     async fn every_dispatch_rechecks_the_durable_policy() {
+        if isolated_fence_test("every_dispatch_rechecks_the_durable_policy") {
+            return;
+        }
         let (_dir, path, gate) = wallet();
         let sent = AtomicUsize::new(0);
         assert_eq!(gate.dispatch(rpc(&sent)).await.unwrap(), Some(1));
@@ -521,6 +550,9 @@ mod tests {
 
     #[tokio::test]
     async fn a_stricter_durable_policy_withholds() {
+        if isolated_fence_test("a_stricter_durable_policy_withholds") {
+            return;
+        }
         let (_dir, path, gate) = wallet();
         apply(&path, TransparentLedgerMode::PrivateRequired);
         let sent = AtomicUsize::new(0);
@@ -535,6 +567,9 @@ mod tests {
     /// Without the fence, the transition would commit mid-request.
     #[tokio::test]
     async fn a_fenced_transition_waits_for_in_flight_lookups() {
+        if isolated_fence_test("a_fenced_transition_waits_for_in_flight_lookups") {
+            return;
+        }
         let (_dir, path, gate) = wallet();
         let (release, released) = tokio::sync::oneshot::channel::<()>();
         let in_flight = tokio::spawn({
@@ -579,6 +614,9 @@ mod tests {
     /// resumes after the commit and is withheld.
     #[tokio::test]
     async fn a_waiting_transition_blocks_new_lookups() {
+        if isolated_fence_test("a_waiting_transition_blocks_new_lookups") {
+            return;
+        }
         let (_dir, path, gate) = wallet();
         let (release, released) = tokio::sync::oneshot::channel::<()>();
         let in_flight = tokio::spawn({
@@ -628,6 +666,9 @@ mod tests {
     /// A transition on one wallet never waits for another wallet's lookups.
     #[tokio::test]
     async fn fences_are_per_wallet() {
+        if isolated_fence_test("fences_are_per_wallet") {
+            return;
+        }
         let (_dir, path, _) = wallet();
         let (_other_dir, _other_path, other) = wallet();
         let (release, released) = tokio::sync::oneshot::channel::<()>();
@@ -656,6 +697,9 @@ mod tests {
     /// own does.
     #[tokio::test]
     async fn pre_database_lookups_fence_only_their_wallet() {
+        if isolated_fence_test("pre_database_lookups_fence_only_their_wallet") {
+            return;
+        }
         let (_dir, path, _) = wallet();
         let (_other_dir, other_path, _) = wallet();
         let importing = TransparentLookupGate::pre_database(
@@ -700,6 +744,9 @@ mod tests {
     /// Without the transport the same transition cannot drain.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn a_lease_ends_at_hand_off_not_at_a_slow_response() {
+        if isolated_fence_test("a_lease_ends_at_hand_off_not_at_a_slow_response") {
+            return;
+        }
         use crate::wallet::sync_engine::test_lwd::CapturingLwd;
         use std::sync::atomic::AtomicBool;
 
@@ -788,6 +835,9 @@ mod tests {
     /// never sent.
     #[tokio::test(start_paused = true)]
     async fn a_lookup_behind_a_held_fence_is_withheld_after_its_bound() {
+        if isolated_fence_test("a_lookup_behind_a_held_fence_is_withheld_after_its_bound") {
+            return;
+        }
         let (_dir, path, gate) = wallet();
         let held = fence(&path);
         let _transition = held.write().await;
