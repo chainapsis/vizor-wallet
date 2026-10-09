@@ -194,6 +194,12 @@ def build_voting_artifacts(case, *, sdk_cache, pir_cache, cache_root, jobs=4, ti
                 if entry is None:
                     raise VotingBuildError("selected voting build tool is unavailable: " + name)
                 tool = Path(entry).resolve(strict=True)
+                if sys.platform == "darwin" and tool == Path("/usr/bin/make"):
+                    paths = [line.strip() for line in
+                             command(["/usr/bin/xcrun", "--find", "make"], cwd=cwd)]
+                    if len(paths) != 1 or not Path(paths[0]).is_absolute():
+                        raise VotingBuildError("Xcode did not identify one absolute Make implementation")
+                    tool = Path(paths[0]).resolve(strict=True)
                 if tool.name == "rustup" and name in {"rustc", "cargo"}:
                     paths = [line.strip() for line in command([str(tool), "which", name], cwd=cwd)]
                     if len(paths) != 1 or not Path(paths[0]).is_absolute():

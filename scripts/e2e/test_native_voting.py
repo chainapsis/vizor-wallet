@@ -53,6 +53,8 @@ class VotingBuildTests(unittest.TestCase):
             target = Path(kwargs["env"]["CARGO_TARGET_DIR"])
             if name == "go" and actual[1:] == ["env", "GOENV"]:
                 return original([sys.executable, "-c", f"print({str(self.go_configuration)!r})"], **kwargs)
+            if name == "xcrun" and actual[1:] == ["--find", "make"]:
+                return original([sys.executable, "-c", f"print({str(self.sdk_make)!r})"], **kwargs)
             if name == "rustup" and actual[1:2] == ["which"]:
                 return original([sys.executable, "-c", f"print({str(self.tools[actual[2]])!r})"], **kwargs)
             if name == "make" and "-C" in actual:
@@ -136,6 +138,15 @@ class VotingBuildTests(unittest.TestCase):
         self.assertEqual(self.make_calls, 1)
         self.assertEqual(first["cache_key"], second["cache_key"])
         self.assertNotIn("_", first["cache_inputs"]["environment_sha256"])
+
+    @unittest.skipUnless(sys.platform == "darwin", "the Apple Make proxy is macOS-only")
+    def test_system_make_proxy_binds_the_actual_selected_sdk_implementation(self):
+        self.sdk_make = self.tools["make"]
+        self.tools["make"] = Path("/usr/bin/make")
+        _, proof = self.build()
+        for context in ("outer", "sdk"):
+            self.assertEqual(proof["cache_inputs"]["tools"][context]["make"]["path"], str(self.sdk_make))
+        self.assertEqual(self.make_calls, 1)
 
     def test_changed_pin_tool_bytes_version_and_environment_invalidate(self):
         keys = [self.build()[1]["cache_key"]]
