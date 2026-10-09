@@ -12,9 +12,9 @@ use zcash_client_backend::data_api::{
     transparent_ledger::{
         ReceiveEvent, RecoveryRevision, SpendEvent, TransactionMetadata,
         TransparentDetailRead as _, TransparentDetailWrite as _, TransparentDisplayFacts,
-        TransparentDisplayOmission, TransparentDisplayOutput, TransparentDisplayProvenance,
-        TransparentDisplaySender, TransparentDisplayStore, TransparentDisplayView,
-        TransparentLedgerMode, TransparentLedgerWrite as _, WatchOrigin, WholeTransactionFee,
+        TransparentDisplayOutput, TransparentDisplayProvenance, TransparentDisplaySender,
+        TransparentDisplayStore, TransparentLedgerMode, TransparentLedgerWrite as _, WatchOrigin,
+        WholeTransactionFee,
     },
 };
 use zcash_client_sqlite::testing::{db::TestDbFactory, BlockCache};
@@ -548,21 +548,12 @@ fn receipt_keeps_its_snapshot_when_recovery_withdraws_spends() {
         replacement.lineage = 2;
         writer.qualify_transparent_revision(&replacement).unwrap();
         // The real replacement path withdraws the spend, but retains display
-        // facts. A fresh view now has no owned inputs and cannot say shared.
+        // facts. The account no longer takes part in the transaction's
+        // transparent side, so a fresh read has no view of it.
         let fresh = writer
             .transparent_display_view(account, TxId::from_bytes([tag; 32]))
             .unwrap();
-        let Some(TransparentDisplayView::Available(fresh)) = fresh else {
-            panic!("display facts survive recovery replacement");
-        };
-        assert_eq!(
-            fresh.omissions,
-            if shared {
-                vec![TransparentDisplayOmission::MultipleSourceScripts]
-            } else {
-                vec![]
-            }
-        );
+        assert_eq!(fresh, None, "shared: {shared}");
 
         let (view, source) =
             transparent_details_view(&read_tx, &path, NETWORK, account, &txid).unwrap();

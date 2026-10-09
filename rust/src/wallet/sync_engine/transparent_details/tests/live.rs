@@ -10,9 +10,9 @@
 //! VIZOR_TRANSPARENT_PIR_LIVE_TOR=1 cargo test --manifest-path rust/Cargo.toml -- --ignored txid_live
 //! ```
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use zakura_pir_transparent::{Placement, TxidDisplayClient, TxidLookup};
+use zakura_pir_transparent::{Placement, TxidDisplayService, TxidLookup};
 
 use super::super::source::{BlockingLookup, DEFAULT_MAINNET_ORIGIN};
 use super::*;
@@ -49,15 +49,15 @@ async fn txid_live() {
     }
     let txid = protocol_order(TXID_DISPLAY);
     let observer = RequestObserver::recording();
-    let client = Arc::new(Mutex::new(TxidDisplayClient::new()));
+    let service = Arc::new(TxidDisplayService::new());
     let lookup = |txid: [u8; 32], height: u64| {
-        let (client, observer) = (client.clone(), observer.clone());
+        let (service, observer) = (service.clone(), observer.clone());
         let handle = tokio::runtime::Handle::current();
         tokio::task::spawn_blocking(move || {
             let started = Instant::now();
             let (found, _) = BlockingLookup {
                 origin: DEFAULT_MAINNET_ORIGIN.to_owned(),
-                client,
+                service,
                 txid,
                 mined_height: height,
                 handle,

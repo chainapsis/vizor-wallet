@@ -12,16 +12,12 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use bytes::Bytes;
 use http_body_util::Full;
 use sha2::{Digest, Sha256};
 use transparent::{address::TransparentAddress, bundle::OutPoint};
-use transparent_native::TableProfile;
-use transparent_shard::display::{
-    DisplayBucket, DisplayLayout, DisplayManifest, DisplayMap, DisplayMapEntry, DisplaySealParams,
-};
-use transparent_shard::manifest::TableGeometry;
+use zakura_pir_transparent::testing::{unsupported_txid_init, TxidPublication};
+use zakura_pir_transparent::{HttpExchange, HttpFailure, HttpReply, HttpRequest};
 use zcash_client_backend::data_api::{
     transparent_ledger::{
         TransparentDetailOutcome, TransparentDisplayFacts, TransparentDisplayOutput,
@@ -46,11 +42,11 @@ use crate::wallet::db::{
 use crate::wallet::keys;
 use crate::wallet::sync::{get_wallet_balance, WalletBalance};
 use crate::wallet::sync_engine::enhancement::{
-    test_log::log_lines, test_mode, ObservedRequest, RequestObserver,
+    response, test_log::log_lines, test_mode, ObservedRequest, RequestObserver,
 };
 use crate::wallet::sync_engine::test_lwd::{transition_on_first_dispatch, CapturingLwd};
 use crate::wallet::sync_engine::transparent_recovery_tests::{downloaded, legacy_transaction};
-use crate::wallet::sync_engine::{store_transparent_outputs, watch_for_exit};
+use crate::wallet::sync_engine::{store_transparent_outputs, watch_for_exit, SyncEventKind};
 
 mod live;
 
@@ -210,8 +206,7 @@ pub(crate) fn view(fixture: &Fixture, txid: &TxId) -> Option<TransparentDisplayV
 /// The detail view of `txid` for `account`, as the detail API reads it.
 fn view_for(path: &str, account: AccountUuid, txid: &TxId) -> Option<TransparentDisplayView> {
     let db = open_wallet_db_readonly_with_timeout(path, MAIN, READ_DB_BUSY_TIMEOUT).unwrap();
-    let conn = rusqlite::Connection::open(path).unwrap();
-    detail_view(&db, &conn, account, txid.as_ref()).unwrap()
+    detail_view(&db, account, txid.as_ref()).unwrap()
 }
 
 fn count(path: &str, sql: &str) -> i64 {
@@ -487,17 +482,6 @@ fn refusing(status: u16) -> RequestObserver {
     RequestObserver::answering(move |_| reply(status, &[], Vec::new()))
 }
 
-/// The seed a table's public query setup derives from, as the service
-/// publishes it.
-fn setup_seed(kind: &str) -> u64 {
-    let digest = Sha256::new()
-        .chain_update(transparent_shard::SCHEMA.as_bytes())
-        .chain_update(b"/setup-seed\0txid-2k\0")
-        .chain_update(kind.as_bytes())
-        .finalize();
-    u64::from_le_bytes(digest[..8].try_into().unwrap())
-}
-
 /// A txid display service publishing one recent `txid-2k` shard over
 /// `start..=end` that holds no record: every route of a lookup is answered
 /// well-formed, so a lookup sends the whole transcript and finds nothing.
@@ -530,123 +514,52 @@ fn advancing(
     })
 }
 
-/// The answers of [`empty_publication`].
+/// The answers of [`empty_publication`]: the library's fake publication.
 fn publication(start: u32, end: u32) -> Publication {
-    let (start, end) = (u64::from(start), u64::from(end));
-    let directory = TableProfile::new(
-        transparent_shard::SCHEMA,
-        "txid-2k",
-        "txdirectory",
-        2048,
-        4096,
-    )
-    .unwrap();
-    let init = serde_json::to_vec(&serde_json::json!({
-        "schema": transparent_shard::display::DISPLAY_SCHEMA,
-        "codec": transparent_shard::txid::CODEC,
-        "bucket_domain": "transparent-txid-display/bucket/v2",
-        "native_schema": transparent_shard::SCHEMA,
-        "geometries": [{
-            "name": "txid-2k",
-            "txdirectory": {"rows": 2048, "row_bytes": 4096, "scheme": directory.scheme, "setup_seed": setup_seed("txdirectory")},
-        }],
-    }))
-    .unwrap();
-    let table = TableGeometry {
-        rows: 2048,
-        row_bytes: 4096,
-        sha256: "cc".repeat(32),
-    };
-    let manifest = DisplayManifest {
-        schema: transparent_shard::display::DISPLAY_SCHEMA.to_owned(),
-        network: "main".to_owned(),
-        genesis_hash: "ee".repeat(32),
-        shard_id: 0,
-        start_height: start,
-        end_height: end,
-        parent_block_hash: "ff".repeat(32),
-        terminal_block_hash: "dd".repeat(32),
-        parent_manifest_digest: String::new(),
-        sealed: false,
-        revision: 1,
-        supersedes: String::new(),
-        geometry: "txid-2k".to_owned(),
-        n_buckets: 1,
-        archive_target: 1,
-        layout: DisplayLayout::current(),
-        blocks: end - start + 1,
-        records: 0,
-        buckets: vec![DisplayBucket {
-            bucket: 0,
-            records: 0,
-            directory_segments: vec![table],
-        }],
-    };
-    manifest.validate().unwrap();
-    let digest = manifest.digest();
-    let manifest_bytes = manifest.canonical_bytes();
-    let map = DisplayMap {
-        schema: transparent_shard::display::DISPLAY_SCHEMA.to_owned(),
-        network: "main".to_owned(),
-        genesis_hash: "ee".repeat(32),
-        seal: DisplaySealParams {
-            n_archive: 1,
-            n_recent: 1,
-            archive_target: 1,
-            recent_floor: 1,
-            reorg_margin: 1,
-        },
-        start_height: start,
-        first_shard_id: 0,
-        shards: vec![DisplayMapEntry::from_manifest(&manifest, &digest)],
-    };
-    // Served as the recent map; one recent shard needs no index chunk.
-    let split = map.split().unwrap();
-    assert!(split.chunks.is_empty());
-    let map_bytes = split.recent_bytes;
-    let map_digest: [u8; 32] = Sha256::digest(&map_bytes).into();
-    let map_sha256 = hex::encode(map_digest);
-    let public_bytes = directory.scheme.public_bytes;
-    let response_bytes = directory.scheme.response_bytes;
-    let shard = format!("/v1/txid/recent/shards/0/revisions/{digest}");
-    let answer: Responder = Arc::new(move |request: &ObservedRequest| {
-        let path = request.path.as_str();
-        if path == "/v1/txid/init" {
-            reply(200, &[], init.clone())
-        } else if path == "/v1/txid/map" {
-            reply(
-                200,
-                &[("x-txid-map-sha256", &map_sha256)],
-                map_bytes.clone(),
-            )
-        } else if path == format!("/v1/txid/shards/0/revisions/{digest}/manifest") {
-            reply(200, &[], manifest_bytes.clone())
-        } else if let Some(rest) = path.strip_prefix(&format!("{shard}/setup/")) {
-            let (label, segment) = rest.split_once('/').unwrap();
-            let params = vec![0u8; public_bytes];
-            let setup = serde_json::json!({
-                "manifest_digest": digest, "shard_id": 0, "table": label,
-                "bucket": 0,
-                "segment": segment.parse::<u32>().unwrap(), "segments": 1, "geometry": "txid-2k",
-                "public_params": B64.encode(&params),
-                "public_params_sha256": hex::encode(Sha256::digest(&params)),
-                "public_params_epoch": "0000000000000000",
-            });
-            reply(200, &[], serde_json::to_vec(&setup).unwrap())
-        } else if path.starts_with(&format!("{shard}/query/")) {
-            // Echo the binding; an all-zero row holds no entry.
-            let mut body = request.body[..8].to_vec();
-            body.extend([0u8; 8]);
-            body.extend(vec![0u8; response_bytes]);
-            reply(200, &[], body)
-        } else {
-            reply(404, &[], Vec::new())
-        }
-    });
+    let publication = TxidPublication::new(start.into(), end.into());
+    let map_sha256 = publication.map_sha256();
     Publication {
-        answer,
-        map_sha256: map_digest,
+        answer: Arc::new(move |request: &ObservedRequest| {
+            response(publication.answer(request.http_method(), &request.path, &request.body))
+        }),
+        map_sha256,
     }
+}
+
+/// An exchange whose first request reports in on `held` and then waits for
+/// `released`, holding the service's client meanwhile.
+struct Stuck {
+    held: Mutex<Option<std::sync::mpsc::Sender<()>>>,
+    released: Mutex<std::sync::mpsc::Receiver<()>>,
+}
+
+impl HttpExchange for Stuck {
+    fn send(&self, _: &HttpRequest) -> Result<HttpReply, HttpFailure> {
+        if let Some(held) = self.held.lock().unwrap().take() {
+            held.send(()).unwrap();
+        }
+        let _ = self
+            .released
+            .lock()
+            .unwrap()
+            .recv_timeout(Duration::from_secs(30));
+        Err(HttpFailure::Cancelled)
+    }
+}
+
+/// An exchange whose every request fails at once.
+struct Unreachable;
+
+impl HttpExchange for Unreachable {
+    fn send(&self, _: &HttpRequest) -> Result<HttpReply, HttpFailure> {
+        Err(HttpFailure::Unreachable)
+    }
+}
+
+/// Returns once no lookup holds `service`'s client: a map refresh waits for
+/// it, then fails at once.
+fn wait_for_client(service: &zakura_pir_transparent::TxidDisplayService) {
+    let _ = service.refresh_map(&Unreachable, &|| false);
 }
 
 fn paths(observer: &RequestObserver) -> Vec<String> {
@@ -1339,7 +1252,7 @@ async fn prioritized_transactions_are_served_first() {
 }
 
 #[tokio::test]
-async fn store_emits_has_new_tx() {
+async fn store_reports_a_followup_update() {
     let fixture = wallet();
     let tx = utxo_receipt(&fixture, 0xf2, TOP - 1);
     let other = utxo_receipt(&fixture, 0xf3, TOP - 2);
@@ -1355,7 +1268,7 @@ async fn store_emits_has_new_tx() {
     {
         let events = events.lock().unwrap();
         assert_eq!(events.len(), 1);
-        assert!(events[0].is_complete && events[0].has_new_tx);
+        assert_eq!(events[0].kind, SyncEventKind::FollowupUpdated);
         assert_eq!(
             (events[0].scanned_height, events[0].chain_tip_height),
             (7, 8)
@@ -2573,14 +2486,7 @@ async fn a_service_that_comes_to_support_the_client_is_found_again() {
         let covering = covering.answer;
         move |request| {
             if request.path == "/v1/txid/init" && !supported.load(Ordering::SeqCst) {
-                let init = serde_json::json!({
-                    "schema": transparent_shard::display::DISPLAY_SCHEMA,
-                    "codec": "transparent-txid-display-v9",
-                    "bucket_domain": "transparent-txid-display/bucket/v2",
-                    "native_schema": transparent_shard::SCHEMA,
-                    "geometries": [],
-                });
-                return reply(200, &[], serde_json::to_vec(&init).unwrap());
+                return response(unsupported_txid_init());
             }
             covering(request)
         }
@@ -2665,13 +2571,16 @@ async fn a_held_client_delays_no_run_past_its_exit() {
     let service = empty_publication(BIRTHDAY, TOP);
     let _seam = test_seam::set(&fixture.path, service.clone());
     let lwd = CapturingLwd::start_with(Vec::new(), u64::from(TOP), |_| {}).await;
-    let client = test_seam::client(&fixture.path);
+    let shared = test_seam::service(&fixture.path);
     let (release, released) = std::sync::mpsc::channel::<()>();
     let (held, holding) = std::sync::mpsc::channel();
+    // A lookup whose first request does not return holds the client.
     let holder = std::thread::spawn(move || {
-        let _client = client.lock().unwrap();
-        held.send(()).unwrap();
-        let _ = released.recv_timeout(Duration::from_secs(30));
+        let stuck = Stuck {
+            held: Mutex::new(Some(held)),
+            released: Mutex::new(released),
+        };
+        let _ = shared.lookup(&stuck, [0x48; 32], u64::from(TOP), &|| false);
     });
     holding.recv().unwrap();
 
@@ -2903,7 +2812,7 @@ fn an_abandoned_lookup_holds_neither_the_run_nor_its_runtime() {
     unblock.send(()).unwrap();
     // The abandoned lookup sends only while it holds the client: once the
     // client is free, it has returned, and its descendant work has ended.
-    drop(test_seam::client(&fixture.path).lock().unwrap());
+    wait_for_client(&test_seam::service(&fixture.path));
     descended.recv_timeout(Duration::from_secs(10)).unwrap();
     // The stuck request is recorded once answered; nothing follows it.
     let late = paths_since(&service, sent);

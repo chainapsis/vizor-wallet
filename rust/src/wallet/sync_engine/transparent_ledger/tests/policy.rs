@@ -530,9 +530,8 @@ async fn a_public_selection_over_a_private_wallet_does_not_recover() {
 /// Writes a stand-in companion for `wallet`'s account, as a private pass
 /// would leave behind, and returns its path.
 fn companion_file(wallet: &Wallet) -> std::path::PathBuf {
-    let path = super::super::pir::companion_path(
-        &wallet.path,
-        wallet.account,
+    let path = super::super::pir::companion_dir(&wallet.path).companion_path(
+        &wallet.account.expose_uuid().to_string(),
         "https://companion.invalid",
     );
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -692,7 +691,9 @@ async fn a_wallet_that_never_recovered_privately_has_nothing_to_forget() {
         .unwrap()
         .unwrap();
     assert!(forgotten.removed_nothing(), "{forgotten:?}");
-    assert!(!super::super::pir::companion_dir(&wallet.path).exists());
+    assert!(!super::super::pir::companion_dir(&wallet.path)
+        .path()
+        .exists());
     // A missing wallet stays missing.
     let dir = tempfile::tempdir().unwrap();
     let missing = dir.path().join("wallet.db").to_str().unwrap().to_owned();

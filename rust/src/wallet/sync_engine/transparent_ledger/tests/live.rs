@@ -22,13 +22,13 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use zakura_pir_transparent::FilterSource;
+use zakura_pir_transparent::{FilterSource, TransparentPirHttp};
 
 use super::super::pir::{test_transport, TransparentPirSource, DEFAULT_MAINNET_ORIGIN};
 use super::super::policy::POLICY_DRAIN;
 use super::pir::assert_private;
 use super::*;
-use crate::wallet::sync_engine::enhancement::{RequestObserver, RoutePolicy, TransparentPirHttp};
+use crate::wallet::sync_engine::enhancement::{RequestObserver, RoutePolicy, RoutedExchange};
 
 const MAIN: WalletNetwork = WalletNetwork::Main;
 /// Routes the run through Tor when set to `1`.
@@ -51,8 +51,9 @@ async fn published() -> Vec<Shard> {
     let handle = tokio::runtime::Handle::current();
     let map: serde_json::Value = tokio::task::spawn_blocking(move || {
         let exit = || false;
-        let mut http = TransparentPirHttp::new(DEFAULT_MAINNET_ORIGIN, &exit, handle, MAP_LIMIT)
+        let exchange = RoutedExchange::transparent(DEFAULT_MAINNET_ORIGIN, &exit, handle)
             .expect("the default origin is HTTPS");
+        let mut http = TransparentPirHttp::new(exchange, MAP_LIMIT);
         let (mut filters, _) = http.split();
         let (bytes, _) = filters.shard_map().expect("the service publishes a map");
         serde_json::from_slice(&bytes).expect("the map is JSON")

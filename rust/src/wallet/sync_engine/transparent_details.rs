@@ -51,7 +51,6 @@ use std::sync::{LazyLock, Mutex, PoisonError};
 use std::time::{Duration, Instant, SystemTime};
 
 use futures::FutureExt;
-use rusqlite::OptionalExtension as _;
 use tonic::transport::Channel;
 use zcash_client_backend::data_api::{
     transparent_ledger::{
@@ -68,7 +67,9 @@ use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
 
 use super::enhancement::EnhancementPolicy;
-use super::{elapsed, SyncProgressEvent, TransparentLookupGate, WalletDatabase};
+use super::{
+    elapsed, followup_updated_event, SyncProgressEvent, TransparentLookupGate, WalletDatabase,
+};
 use crate::wallet::db::with_wallet_db_write_lock_unless;
 use crate::wallet::network::WalletNetwork;
 
@@ -543,8 +544,8 @@ fn outcome_name(outcome: TransparentDetailOutcome) -> &'static str {
 }
 
 /// Runs loop 4 once a sync has completed and reported completion at
-/// `completed` (scanned height, chain tip), and reports completion again,
-/// flagged with new transactions, when it stored anything.
+/// `completed` (scanned height, chain tip), and reports a follow-up update
+/// when it stored anything.
 ///
 /// The source is chosen once from `policy`: `PrivateRequired` builds only
 /// the private source (mainnet only), anything else only the gate, and only
@@ -587,8 +588,8 @@ pub(crate) async fn guarded(
     }
 }
 
-/// Logs a run's outcome and, when it stored anything, reports completion at
-/// `completed` again, flagged with new transactions.
+/// Logs a run's outcome and, when it stored anything, reports a follow-up
+/// update of the sync that completed at `completed`.
 pub(crate) fn report(
     outcome: Option<RunOutcome>,
     should_exit: &(dyn Fn() -> bool + Sync),
@@ -602,20 +603,7 @@ pub(crate) fn report(
         log::info!("[{}] sync: transparent details: {:?}", elapsed(), outcome);
     }
     if outcome.stats().stored > 0 && !should_exit() {
-        let (scanned_height, chain_tip_height) = completed;
-        progress_fn(SyncProgressEvent {
-            scanned_height,
-            chain_tip_height,
-            percentage: 1.0,
-            display_target_percentage: 1.0,
-            display_target_blocks: 0,
-            is_syncing: false,
-            is_complete: true,
-            has_new_tx: true,
-            phase_completed_units: 0,
-            phase_total_units: 0,
-            phase: String::new(),
-        });
+        progress_fn(followup_updated_event(completed));
     }
 }
 
@@ -804,129 +792,18 @@ pub(crate) fn enhance_publicly(
 }
 
 /// The detail view of `txid` (protocol byte order) for `account`, from the
-/// wallet behind `db` and its connection `conn`; `None` when the transaction
-/// has no transparent part the account takes part in. The caller must bind
-/// both to the same read snapshot, including any receipt reads this overlays.
+/// wallet behind `db`; `None` when the transaction has no transparent part
+/// the account takes part in. The library decides the account's part from
+/// the same read snapshot as the view, so a caller that overlays receipt
+/// reads binds `db` to their snapshot.
 pub(crate) fn detail_view(
     db: &impl TransparentDetailRead<AccountId = AccountUuid, Error = SqliteClientError>,
-    conn: &rusqlite::Connection,
     account: AccountUuid,
     txid: &[u8],
 ) -> Result<Option<TransparentDisplayView>, String> {
     let txid: [u8; 32] = txid.try_into().map_err(|_| "txid length".to_owned())?;
-    let part = transparent_part(conn, account, &txid)?;
-    if part == TransparentPart::None {
-        return Ok(None);
-    }
-    let view = db
-        .transparent_display_view(account, TxId::from_bytes(txid))
-        .map_err(|error| format!("transparent detail view: {error}"))?;
-    // Raw bytes show whether the transaction has a transparent side at all.
-    if part == TransparentPart::IfRawShowsOne
-        && !matches!(&view, Some(TransparentDisplayView::Available(details))
-            if !details.outputs.is_empty() || details.input_count > 0)
-    {
-        return Ok(None);
-    }
-    Ok(view)
-}
-
-/// What the wallet records of an account's part in a transaction's
-/// transparent side.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum TransparentPart {
-    /// The account has no part in the transaction, or the wallet records no
-    /// transparent side of it.
-    None,
-    /// The account has a transparent output or spend in the transaction, or
-    /// a shielded part in a transaction the wallet records as mixed.
-    Recorded,
-    /// The account has a shielded part in a transaction whose raw bytes the
-    /// wallet holds; they show whether it has a transparent side.
-    IfRawShowsOne,
-}
-
-/// The account's part in `txid`'s transparent side.
-///
-/// Its own transparent outputs and spends, recovered or scanned, count. So
-/// does a shielded part (a received, spent or sent note, a payment to a
-/// transparent recipient among them) in a transaction the wallet durably
-/// records as mixed: by detail work, stored display facts or the route-2
-/// marker, which outlive the work they replace. Raw bytes replace work and
-/// display facts alike, so for a shielded part in a transaction with raw
-/// bytes, those bytes decide.
-fn transparent_part(
-    conn: &rusqlite::Connection,
-    account: AccountUuid,
-    txid: &[u8; 32],
-) -> Result<TransparentPart, String> {
-    let (own, shielded, mixed, raw): (bool, bool, bool, bool) = conn
-        .query_row(
-            "SELECT
-                 EXISTS (
-                     SELECT 1 FROM transparent_received_outputs o
-                     WHERE o.transaction_id = t.id_tx AND o.account_id = a.id
-                     UNION ALL
-                     SELECT 1 FROM transparent_received_output_spends s
-                     JOIN transparent_received_outputs o
-                       ON o.id = s.transparent_received_output_id
-                     WHERE s.transaction_id = t.id_tx AND o.account_id = a.id
-                     UNION ALL
-                     SELECT 1 FROM tpir_receive_events r
-                     WHERE r.txid = t.txid AND r.account_id = a.id
-                     UNION ALL
-                     SELECT 1 FROM tpir_spend_events s
-                     WHERE s.spending_txid = t.txid AND s.account_id = a.id
-                 ),
-                 EXISTS (
-                     SELECT 1 FROM sapling_received_notes n
-                     WHERE n.transaction_id = t.id_tx AND n.account_id = a.id
-                     UNION ALL
-                     SELECT 1 FROM orchard_received_notes n
-                     WHERE n.transaction_id = t.id_tx AND n.account_id = a.id
-                     UNION ALL
-                     SELECT 1 FROM ironwood_received_notes n
-                     WHERE n.transaction_id = t.id_tx AND n.account_id = a.id
-                     UNION ALL
-                     SELECT 1 FROM sapling_received_note_spends s
-                     JOIN sapling_received_notes n ON n.id = s.sapling_received_note_id
-                     WHERE s.transaction_id = t.id_tx AND n.account_id = a.id
-                     UNION ALL
-                     SELECT 1 FROM orchard_received_note_spends s
-                     JOIN orchard_received_notes n ON n.id = s.orchard_received_note_id
-                     WHERE s.transaction_id = t.id_tx AND n.account_id = a.id
-                     UNION ALL
-                     SELECT 1 FROM ironwood_received_note_spends s
-                     JOIN ironwood_received_notes n ON n.id = s.ironwood_received_note_id
-                     WHERE s.transaction_id = t.id_tx AND n.account_id = a.id
-                     UNION ALL
-                     SELECT 1 FROM sent_notes n
-                     WHERE n.transaction_id = t.id_tx AND n.from_account_id = a.id
-                 ),
-                 EXISTS (
-                     SELECT 1 FROM transparent_detail_work w WHERE w.transaction_id = t.id_tx
-                     UNION ALL
-                     SELECT 1 FROM transparent_tx_display d WHERE d.transaction_id = t.id_tx
-                     UNION ALL
-                     SELECT 1 FROM ironwood_enhance_routing r
-                     WHERE r.transaction_id = t.id_tx AND r.route = 2
-                 ),
-                 t.raw IS NOT NULL
-             FROM transactions t, accounts a
-             WHERE t.txid = ?2 AND a.uuid = ?1",
-            rusqlite::params![account.expose_uuid().as_bytes().as_slice(), txid.as_slice()],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
-        )
-        .optional()
-        .map_err(|error| format!("transparent detail view: {error}"))?
-        .unwrap_or_default();
-    Ok(if own || (shielded && mixed) {
-        TransparentPart::Recorded
-    } else if shielded && raw {
-        TransparentPart::IfRawShowsOne
-    } else {
-        TransparentPart::None
-    })
+    db.transparent_display_view(account, TxId::from_bytes(txid))
+        .map_err(|error| format!("transparent detail view: {error}"))
 }
 
 /// What a development lookup found, without storing anything.
@@ -962,7 +839,7 @@ pub(crate) fn debug_lookup(
         .build()
         .map_err(|error| format!("tokio: {error}"))?;
     let (found, _) = source::BlockingLookup {
-        client: source::client_for(&origin),
+        service: source::service_for(&origin),
         origin,
         txid,
         mined_height,

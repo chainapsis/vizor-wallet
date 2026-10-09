@@ -485,11 +485,12 @@ until an account is promoted.
   never delays the sync's result. Background preparation syncs (mode 2) skip
   it: they hold the global sync guard, and a foreground sync requested
   meanwhile waits behind them. Unless the run exited or was not enabled, it
-  reports completion again, flagged with new transactions, so the UI re-reads balances
-  and shielding state. Its errors are logged and never fail the sync. It does
-  not touch UTXO refresh, the `.receive.redb` cache, or the shielded
-  checkpoints. While public lookups are withheld, Ledger discovery counts as
-  ready, so a paused Ledger account never holds back a sync.
+  reports a `FollowupUpdated` event, so the UI re-reads balances and
+  shielding state without counting a second completion. Its errors are
+  logged and never fail the sync. It does not touch UTXO refresh, the
+  `.receive.redb` cache, or the shielded checkpoints. While public lookups
+  are withheld, Ledger discovery counts as ready, so a paused Ledger account
+  never holds back a sync.
 - **Diagnostics.** Logs carry variant, cause and blocker names, counts and
   lag. Rejection payloads, which name addresses and outpoints, are never
   logged. Candidate amounts from `transparent_candidate_recovery` are
@@ -626,11 +627,10 @@ payment details are missing. Receipts show a "Details: Incomplete" row and an
 private history approaches public-history completeness. With Private queries
 disabled, the existing presentation is preserved: no completeness notice and
 the previous placeholder or omitted fee row for an unrecorded fee. History
-refreshes on the sync events that already
-refresh it (`hasNewTx` or `isComplete`). Private recovery runs after
-completion is reported and then reports completion again, flagged with new
-transactions, so its commits refresh history on that event. No history gap
-starts any public lookup.
+refreshes on the sync events that already refresh it (`hasNewTx`,
+completion, or a follow-up update). Private recovery runs after completion is
+reported and then reports a `FollowupUpdated` event, so its commits refresh
+history on that event. No history gap starts any public lookup.
 
 Under `Public` handles, with private queries off, transparent effects
 count as settled, so an entry is provisional only while a shielded pool is not
@@ -657,8 +657,8 @@ way public discovery stores them (UTXO refresh plus payload retrieval).
 | Discovery order and payload replay | Ledger-first and payload-first reach the same balance, history, and rows (one transaction, one output); a second replay changes nothing. |
 | Account add and delete | A rescan pauses the active account until the next pass; the new account is promoted on its own; deleting it leaves the active one current. |
 | Shielded-funded send while incomplete | It is refused only for lack of shielded funds, never as transparent recovery unavailable. |
-| Every lane, before the raise | On a mainnet wallet with public work queued and a Ledger account, with Private queries on but unread, so the durable policy stays `Public` and only each lane's captured policy withholds: under the private policy, Ledger discovery, the UTXO refresh and the deferred refresh, ephemeral checks, import discovery and the import preview (into the wallet and as a first account), the recovery follow-up with the real source, and the iOS observe ABI; under its transparent mode with public routes, which the live private services would otherwise answer, payload recovery and the status and history checkpoint. None sends lightwalletd a `GetAddressUtxos*`, `GetTaddress*`, or `GetTransaction` request. The follow-up does not raise the wallet, sends the source's service nothing, creates no companion, and reports nothing again; the queued work stays durable. |
-| Every lane, after the raise, including the transparent PIR source | On the same wallet, once startup reconcile has raised it: Ledger discovery, the UTXO refresh and the deferred refresh, payload recovery, the status and history checkpoint, and ephemeral checks, each under both a public captured policy and the private transparent mode; import discovery and the import preview; the recovery follow-up with the real source; and the iOS observe ABI. None sends lightwalletd a disclosing request, the queued work stays durable, and the follow-up reports completion again. The source sends only service routes, on the wallet's route, with no watched script or txid in any path or body. Turning Private queries off then sends `GetAddressUtxos*`: the positive control. |
+| Every lane, before the raise | On a mainnet wallet with public work queued and a Ledger account, with Private queries on but unread, so the durable policy stays `Public` and only each lane's captured policy withholds: under the private policy, Ledger discovery, the UTXO refresh and the deferred refresh, ephemeral checks, import discovery and the import preview (into the wallet and as a first account), the recovery follow-up with the real source, and the iOS observe ABI; under its transparent mode with public routes, which the live private services would otherwise answer, payload recovery and the status and history checkpoint. None sends lightwalletd a `GetAddressUtxos*`, `GetTaddress*`, or `GetTransaction` request. The follow-up does not raise the wallet, sends the source's service nothing, creates no companion, and reports no follow-up update; the queued work stays durable. |
+| Every lane, after the raise, including the transparent PIR source | On the same wallet, once startup reconcile has raised it: Ledger discovery, the UTXO refresh and the deferred refresh, payload recovery, the status and history checkpoint, and ephemeral checks, each under both a public captured policy and the private transparent mode; import discovery and the import preview; the recovery follow-up with the real source; and the iOS observe ABI. None sends lightwalletd a disclosing request, the queued work stays durable, and the follow-up reports an update. The source sends only service routes, on the wallet's route, with no watched script or txid in any path or body. Turning Private queries off then sends `GetAddressUtxos*`: the positive control. |
 
 The upgrade probe (`examples/db_upgrade.rs`, run by
 `scripts/test-db-upgrade.sh`) requires the recovery and activation migrations
@@ -680,13 +680,14 @@ trusted, since every commit comes from the configured origin.
   it. Each companion binds the source `vizor/transparent-pir/v1`, the
   account's UUID and the origin, so another origin derives other revision
   sources.
-- **Companions.** One per account, `{db}.tpir/{uuid}-{tag}.sqlite`, where the
-  tag is 16 hex digits of `sha256(origin || 0 || SCHEMA)`. A companion holds
-  the adapter's retrieval cache and revision catalog, never wallet state. It
-  is created on the account's first pass, and losing one costs a re-download:
-  revision identities come from the publication, so a recreated companion
-  derives the ones the wallet holds. Opening one deletes the account's
-  companions for other origins or schemas and those of deleted accounts.
+- **Companions.** One per account in the library's `CompanionDir` at
+  `{db}.tpir`, which names it `{uuid}-{tag}.sqlite`, where the tag is 16 hex
+  digits of `sha256(origin || 0 || SCHEMA)`. A companion holds the adapter's
+  retrieval cache and revision catalog, never wallet state. It is created on
+  the account's first pass, and losing one costs a re-download: revision
+  identities come from the publication, so a recreated companion derives the
+  ones the wallet holds. Opening one deletes the account's companions for
+  other origins or schemas and those of deleted accounts.
   Deleting an account removes its companion and SQLite sidecars once the
   deletion commits; one that removal leaves behind is deleted at the next sync
   start, in every build, with the companions of any other deleted account.
@@ -694,10 +695,11 @@ trusted, since every commit comes from the configured origin.
   and a failure keeps the database name for a retry; startup and reset delete
   `.tpir` directories of no current wallet. On iOS every build excludes the
   directory from device backups.
-- **Locking.** One lock per companion path serializes passes, settlements and
-  removals. A source parks each companion it opened, with its lock, until it is
-  dropped, so a pass and its settlement see the same companion and nothing
-  removes it in between.
+- **Locking.** An open companion holds an operating system lock on its
+  `{uuid}-{tag}.lock` file, so passes, settlements and removals on it are
+  serialized in this process and against any other. A source parks each
+  companion it opened, with its lock, until it is dropped, so a pass and its
+  settlement see the same companion and nothing removes it in between.
 - **Passes.** A pass runs on a thread and runtime of its own, never the
   sync's blocking pool, over a read-only wallet handle, whose blocks answer the
   adapter's chain view up to the watch set's target. It stops at cancellation
@@ -712,23 +714,27 @@ trusted, since every commit comes from the configured origin.
   start queued behind it open until restart. A
   publication whose set identity changed is retried once on the same
   companion, which the adapter has reset, keeping its catalog. A pass that
-  failed because the service could not be reached or was not serving (a
-  failed connection or route, a timeout, a 429 or 5xx on the map, a filter or
-  init, or any other 5xx) is `Unavailable` and ends the whole run instead of
-  failing each account in turn.
+  failed because the service could not be reached or was not serving (the
+  library's outage: a failed connection or route, a timeout, a 429 or 5xx on
+  the map, a filter or init, or a 429 or non-capacity 5xx on a shard route) is
+  `Unavailable` and ends the whole run instead of failing each account in
+  turn.
 - **Limits per pass.** 10,000 scripts, 1,024 shards, 500,000 events, 256
   private queries, 96 MiB of private bytes, and 8 MiB per response.
-- **Transport.** `enhancement/transport/transparent_pir.rs` gives the adapter
-  its filter source and shard transport over one routed HTTPS client: HTTPS
-  only, Tor when the wallet wants it and the direct-route lease otherwise, no
-  User-Agent, a 60 s bound per request, and the sync's cancellation. Nothing
-  is retried and no filter is memoized. A shard-bound 429, or 503 without
-  `Retry-After`, is still capacity: it is reported as `Overloaded`, so the
-  adapter's own bounded backoff (at most four attempts, two seconds at most
-  between them) and the run's 90 s wait cap apply. The adapter's dependency graph has no
-  reqwest. Requests use only the service's six routes: the shard map, a
-  shard's filter, init, a revision's manifest, setup segments, and posted
-  queries.
+- **Transport.** `enhancement/transport/pir_http.rs` is the one raw HTTP
+  exchange (`HttpExchange`) both PIR services send through: HTTPS only, Tor
+  when the wallet wants it and the direct-route lease otherwise, no
+  User-Agent, a bound per request (60 s here) and the caller's cancellation.
+  It reads at most the body limits the request names and never retries. The
+  library's `TransparentPirHttp` owns the routes, their log templates and
+  what each status means: a 409 is a stale revision, and capacity is
+  wallet-pir's own `Overloaded::from_http` (a 503 naming a delay, or the
+  edge's 502 or 504), so the adapter's bounded backoff (at most four attempts,
+  two seconds at most between them) and the run's 90 s wait cap apply. A 429
+  is never capacity: the service sends none, so one from an edge in front of
+  it is an outage that ends the run. No filter is memoized. The adapter's dependency graph has no reqwest. Requests
+  use only the service's six routes: the shard map, a shard's filter, init, a
+  revision's manifest, setup segments, and posted queries.
 - **Logs.** One debug line per request, with the method, the route template
   (for example `POST /v1/shards/{id}/revisions/{rev}/query/pages`), the status
   and the body length. Pass lines carry the batch state, the outcome and the
@@ -818,14 +824,14 @@ captured policy ── PrivateRequired ──> txid display PIR  (PirSource)
   first two outputs (value and address) and flags naming what it omits
   (several source scripts, more than two outputs, transparent inputs with
   net shielded funding). The wallet shows the omissions and offers a public
-  lookup of the whole transaction only when the user asks for one. One client per origin lives for the whole
-  process, so the derived native profiles are built once. These are process
-  statics: a restart starts with a fresh client, no map and no map check
-  time. A client that
-  found the service's display unsupported is replaced by a fresh one that
-  keeps only those profiles, so the next lookup asks for the init document
-  and map again: a service that comes to support the client is found once
-  the wallet retries the transaction.
+  lookup of the whole transaction only when the user asks for one. One
+  library `TxidDisplayService` per origin lives for the whole process, so the
+  derived native profiles are built once. These are process statics: a
+  restart starts with a fresh service, no map and no map check time. After a
+  lookup finds the service's display unsupported, the service keeps only
+  those profiles, so the next lookup asks for the init document and map
+  again: a service that comes to support the client is found once the wallet
+  retries the transaction.
 - **Display metadata.** Work a lookup held for a map (not covered,
   unsupported, contradicted) waits for that map to change, and no lookup may
   be due to fetch a newer one. So when nothing is due and the wallet reports
@@ -853,11 +859,12 @@ captured policy ── PrivateRequired ──> txid display PIR  (PirSource)
   again once the lock is taken: what was stored stays, and an unrecorded
   transaction stays due. A run therefore ends within 47 s, plus at most one
   SQLite write already under way.
-- **Transport.** `enhancement/transport/txid_pir.rs`: the shared routed HTTPS
-  core (HTTPS only, Tor when desired, direct-route lease otherwise), a 30 s
-  bound per request, bodies bounded per route, error bodies never read,
-  cancellation before dispatch, during the request and after it. One debug
-  line per request with the route template only.
+- **Transport.** `enhancement/transport/pir_http.rs`, the routed exchange the
+  transparent PIR source also uses: HTTPS only, Tor when desired, the
+  direct-route lease otherwise, a 30 s bound per request, and cancellation
+  before dispatch, during the request and after it. The library's `TxidHttp`
+  bounds bodies per route and reads no error body. One debug line per request
+  with the route template only.
 - **Work and bounds.** The wallet owns the work (`transparent_detail_work`):
   private recovery and Enhance PIR's mixed transactions queue it; public
   discovery never does, since its payloads go through `tx_retrieval_queue`.
@@ -897,7 +904,7 @@ captured policy ── PrivateRequired ──> txid display PIR  (PirSource)
 - **Storage.** `store_transparent_display` validates the facts against what
   the wallet knows (owned outputs, coinbase flag, recovered metadata and fee)
   and stores them; raw bytes arriving later supersede them. A run that stored
-  anything reports completion again with `has_new_tx`.
+  anything reports a `FollowupUpdated` event.
 
 Detail-view states (`TransactionDetail.transparent_details_state`):
 
@@ -1097,12 +1104,17 @@ restack of the library stacks, and to `main` once they merge.
 
 ### History refresh and batch receipt totals
 
-Activity lists and open receipts reload when sync completes, even when the ten
-recent transactions are unchanged. Open receipts also recognize the new
-completion timestamp from recovery and detail follow-ups that finish after
-scanning has already completed. This exposes newly enhanced older entries
-without reopening the screen. Updates retaining the same completion timestamp
-do not trigger a reload by themselves.
+Activity lists reload when sync first completes and whenever the ten recent
+transactions change. Open receipts also reload on every later completion,
+which the deferred account refresh and ephemeral address checks report, and
+on each follow-up update. Recovery and detail follow-ups finish after
+completion is reported and report their own event kind, `FollowupUpdated`,
+rather than a second completion: Dart re-reads balances and recent history
+and bumps `syncFollowupProvider`, which open receipts listen to. An open
+receipt therefore shows a newly enhanced older entry without being reopened;
+an activity list shows it once it is among the ten recent transactions or the
+screen reloads. Repeated completed snapshots do not trigger a reload by
+themselves.
 
 In Private queries mode, a batch gift-card receipt with an unknown network fee
 shows an unknown total and an unknown network-fee breakdown. It does not add

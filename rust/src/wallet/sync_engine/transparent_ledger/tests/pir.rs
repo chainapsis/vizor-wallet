@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use bytes::Bytes;
 use http_body_util::Full;
 use sha2::{Digest, Sha256};
-use zakura_pir_transparent::{Outcome, Progress, ReferenceRecovery, SCHEMA};
+use zakura_pir_transparent::{ApplyStats, Outcome, ReferenceRecovery, SCHEMA};
 use zcash_client_backend::data_api::transparent_ledger::ChainPoint;
 
 use super::super::pir::{self, test_transport, TransparentPirSource, PASS_DEADLINE};
@@ -218,18 +218,9 @@ fn paths(requests: &[ObservedRequest]) -> Vec<&str> {
         .collect()
 }
 
-/// `sha256(origin || 0 || SCHEMA)`, sixteen hex digits.
-fn tag(origin: &str) -> String {
-    let digest = Sha256::digest([origin.as_bytes(), &[0u8][..], SCHEMA.as_bytes()].concat());
-    hex::encode(&digest[..8])
-}
-
 /// `uuid`'s companion file for the default origin.
 fn companion(path: &str, uuid: &str) -> PathBuf {
-    pir::companion_dir(path).join(format!(
-        "{uuid}-{}.sqlite",
-        tag(pir::DEFAULT_MAINNET_ORIGIN)
-    ))
+    pir::companion_dir(path).companion_path(uuid, pir::DEFAULT_MAINNET_ORIGIN)
 }
 
 fn with_suffix(base: &Path, suffix: &str) -> PathBuf {
@@ -256,26 +247,43 @@ fn request<'a>(
 }
 
 /// The `Ready` answer of a pass that needed no retrieval.
-const COMPLETE: SourceBatch = SourceBatch::Ready {
-    next: Continuation::Complete,
-    behind_by: 0,
+const COMPLETE: SourceBatch = SourceBatch {
+    state: BatchState::Ready,
+    progress: Progress {
+        covered_through: TOP as u64,
+        outcome: Outcome::Complete,
+    },
 };
 
-/// Settles `account`'s parked batch on the wallet at `path`, observed.
-async fn settle(source: &TransparentPirSource, path: &str, account: AccountUuid) -> Settlement {
-    let mut db = open_wallet_db_with_timeout(path, MAIN, SYNC_DB_BUSY_TIMEOUT).unwrap();
-    source.apply(account, &mut db, Trust::Observed).await
+/// How a settlement ended, comparably.
+#[derive(Debug, PartialEq, Eq)]
+enum Settled {
+    /// No `Ready` batch was parked.
+    Nothing,
+    Acknowledged(ApplyStats),
+    /// Not acknowledged, after `applied` commits.
+    Refused {
+        applied: usize,
+        action: ApplyAction,
+    },
 }
 
-/// What settling with nothing parked answers.
-const NOTHING: Settlement = Settlement::Refused {
-    stats: ApplyStats {
-        applied: 0,
-        qualified: 0,
-        window_grew: false,
-    },
-    refusal: Refusal::Skip,
-};
+fn settled(settlement: Option<Result<Applied, ApplyFailure>>) -> Settled {
+    match settlement {
+        None => Settled::Nothing,
+        Some(Ok(applied)) => Settled::Acknowledged(applied.stats),
+        Some(Err(failure)) => Settled::Refused {
+            applied: failure.stats.applied,
+            action: failure.action(),
+        },
+    }
+}
+
+/// Settles `account`'s parked batch on the wallet at `path`, observed.
+async fn settle(source: &TransparentPirSource, path: &str, account: AccountUuid) -> Settled {
+    let mut db = open_wallet_db_with_timeout(path, MAIN, SYNC_DB_BUSY_TIMEOUT).unwrap();
+    settled(source.apply(account, &mut db, Trust::Observed).await)
+}
 
 #[tokio::test(flavor = "multi_thread")]
 async fn new_selects_the_origin_gates_mainnet_and_uses_the_wallet_route() {
@@ -311,7 +319,7 @@ async fn new_selects_the_origin_gates_mainnet_and_uses_the_wallet_route() {
         Err(SourceError::Unavailable)
     );
     assert!(seam.seam.observer.requests().is_empty());
-    assert!(!pir::companion_dir(&wallet.path).exists());
+    assert!(!pir::companion_dir(&wallet.path).path().exists());
 
     // On mainnet the pass's transport takes the wallet's route. Its first
     // request fails: a service refusing its shard map is down, so the pass is
@@ -332,11 +340,11 @@ async fn companions_are_per_account_and_bound_to_origin_and_schema() {
     let (b_uuid, b) = wallet.accounts[1].clone();
     let seam = test_transport::set(&wallet.path, refusing());
     let dir = pir::companion_dir(&wallet.path);
-    assert_eq!(dir, PathBuf::from(format!("{}.tpir", wallet.path)));
+    assert_eq!(dir.path(), Path::new(&format!("{}.tpir", wallet.path)));
 
     let source = TransparentPirSource::new(&wallet.path, MAIN);
     assert!(
-        !dir.exists(),
+        !dir.path().exists(),
         "companions are created by a pass, not the source"
     );
     for account in [a, b] {
@@ -349,7 +357,7 @@ async fn companions_are_per_account_and_bound_to_origin_and_schema() {
     }
     assert!(seam.seam.observer.requests().is_empty());
     drop(source);
-    let companions: BTreeSet<_> = std::fs::read_dir(&dir)
+    let companions: BTreeSet<_> = std::fs::read_dir(dir.path())
         .unwrap()
         .map(|entry| entry.unwrap().path())
         .filter(|path| {
@@ -363,14 +371,6 @@ async fn companions_are_per_account_and_bound_to_origin_and_schema() {
     );
     assert_eq!(companions, BTreeSet::from([a_path.clone(), b_path]));
 
-    // Another origin names another companion file.
-    let other = "https://transparent-pir.example";
-    assert_ne!(tag(other), tag(pir::DEFAULT_MAINNET_ORIGIN));
-    assert_eq!(
-        pir::companion_path(&wallet.path, a, other),
-        dir.join(format!("{a_uuid}-{}.sqlite", tag(other)))
-    );
-
     // The adapter binds the source, the account's UUID, the origin and its
     // schema into the companion, and refuses it under any other.
     let config = pir::recovery_config(a, pir::DEFAULT_MAINNET_ORIGIN);
@@ -382,60 +382,9 @@ async fn companions_are_per_account_and_bound_to_origin_and_schema() {
         pir::recovery_config(b, pir::DEFAULT_MAINNET_ORIGIN)
     )
     .is_err());
+    let other = "https://transparent-pir.example";
     assert!(ReferenceRecovery::open(&a_path, pir::recovery_config(a, other)).is_err());
     ReferenceRecovery::open(&a_path, config).unwrap();
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn opening_prunes_stale_origin_and_deleted_account_companions() {
-    let wallet = main_wallet(2);
-    let (a_uuid, a) = wallet.accounts[0].clone();
-    let (b_uuid, _) = wallet.accounts[1].clone();
-    let _seam = test_transport::set(&wallet.path, refusing());
-    let dir = pir::companion_dir(&wallet.path);
-    std::fs::create_dir_all(&dir).unwrap();
-
-    let stale = dir.join(format!("{a_uuid}-{}.sqlite", tag("https://old.example")));
-    let deleted = dir.join(format!(
-        "{}-{}.sqlite",
-        uuid::Uuid::new_v4(),
-        tag(pir::DEFAULT_MAINNET_ORIGIN)
-    ));
-    let doomed = [
-        stale.clone(),
-        with_suffix(&stale, "-wal"),
-        with_suffix(&stale, "-shm"),
-        with_suffix(&deleted, "-journal"),
-        deleted.clone(),
-    ];
-    // Another live account's companion, and files that are not companions.
-    let kept = [
-        companion(&wallet.path, &b_uuid),
-        dir.join(format!("{b_uuid}-{}.sqlite", tag("https://old.example"))),
-        dir.join("notes.txt"),
-        dir.join(format!("{a_uuid}-short.sqlite")),
-        dir.join(format!(
-            "{a_uuid}-{}.sqlite.bak",
-            tag("https://old.example")
-        )),
-    ];
-    for path in doomed.iter().chain(&kept) {
-        touch(path);
-    }
-
-    let source = TransparentPirSource::new(&wallet.path, MAIN);
-    assert_eq!(
-        source.recover(request(a, &bare(a), &|| false)).await,
-        Ok(COMPLETE)
-    );
-
-    assert!(companion(&wallet.path, &a_uuid).exists());
-    for path in &doomed {
-        assert!(!path.exists(), "{path:?} survived");
-    }
-    for path in &kept {
-        assert!(path.exists(), "{path:?} was deleted");
-    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -506,7 +455,7 @@ async fn a_sync_start_deletes_a_companion_its_account_deletion_left_behind() {
     let (b_uuid, _) = wallet.accounts[1].clone();
     keys::delete_account(&wallet.path, MAIN, &a_uuid).unwrap();
     // The removal after the deletion failed: its files are still there.
-    std::fs::create_dir_all(pir::companion_dir(&wallet.path)).unwrap();
+    std::fs::create_dir_all(pir::companion_dir(&wallet.path).path()).unwrap();
     let left = companion(&wallet.path, &a_uuid);
     let left_files = [left.clone(), with_suffix(&left, "-wal")];
     for path in &left_files {
@@ -529,59 +478,13 @@ async fn a_sync_start_deletes_a_companion_its_account_deletion_left_behind() {
 async fn a_public_sync_start_forgets_private_ledger_state() {
     let wallet = main_wallet(1);
     let (uuid, _) = wallet.accounts[0].clone();
-    std::fs::create_dir_all(pir::companion_dir(&wallet.path)).unwrap();
+    std::fs::create_dir_all(pir::companion_dir(&wallet.path).path()).unwrap();
     let live = companion(&wallet.path, &uuid);
     touch(&live);
 
     start_cancelled_sync(&wallet.path).await;
 
     assert!(!live.exists(), "a public wallet kept a companion");
-}
-
-#[test]
-fn the_orphan_sweep_deletes_only_companions_of_accounts_the_wallet_lacks() {
-    let wallet = main_wallet(1);
-    let (uuid, _) = wallet.accounts[0].clone();
-    // No companion directory is not an error.
-    pir::remove_orphan_companions(&wallet.path).unwrap();
-
-    let dir = pir::companion_dir(&wallet.path);
-    std::fs::create_dir_all(&dir).unwrap();
-    let orphan = dir.join(format!(
-        "{}-{}.sqlite",
-        uuid::Uuid::new_v4(),
-        tag("https://old.example")
-    ));
-    let doomed = [orphan.clone(), with_suffix(&orphan, "-shm")];
-    let kept = [
-        companion(&wallet.path, &uuid),
-        dir.join(format!("{uuid}-{}.sqlite", tag("https://old.example"))),
-        dir.join("notes.txt"),
-    ];
-    for path in doomed.iter().chain(&kept) {
-        touch(path);
-    }
-
-    pir::remove_orphan_companions(&wallet.path).unwrap();
-
-    for path in &doomed {
-        assert!(!path.exists(), "{path:?} survived");
-    }
-    for path in &kept {
-        assert!(path.exists(), "{path:?} was deleted");
-    }
-}
-
-#[test]
-fn the_orphan_sweep_deletes_nothing_without_the_account_list() {
-    let dir = tempfile::tempdir().unwrap();
-    let db_path = dir.path().join("missing.db").to_str().unwrap().to_owned();
-    std::fs::create_dir_all(pir::companion_dir(&db_path)).unwrap();
-    let companion = companion(&db_path, &uuid::Uuid::new_v4().to_string());
-    touch(&companion);
-
-    assert!(pir::remove_orphan_companions(&db_path).is_err());
-    assert!(companion.exists());
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -668,7 +571,10 @@ async fn a_failed_pass_reports_failed_and_sends_nothing_public() {
         tpir_before
     );
     // A failed pass leaves nothing to acknowledge.
-    assert_eq!(settle(&source, &wallet.path, account).await, NOTHING);
+    assert_eq!(
+        settle(&source, &wallet.path, account).await,
+        Settled::Nothing
+    );
 
     // A refusal of this request, not an outage of the service, fails only the
     // account's pass. The first source holds the companion; release it.
@@ -754,7 +660,10 @@ async fn cancelling_a_pass_waits_for_the_blocking_task() {
     assert_eq!(paths(&seam.seam.observer.requests()), [MAP]);
     // A cancelled pass leaves nothing to acknowledge, and its companion is
     // parked again for the next pass.
-    assert_eq!(settle(&source, &wallet.path, account).await, NOTHING);
+    assert_eq!(
+        settle(&source, &wallet.path, account).await,
+        Settled::Nothing
+    );
     assert_eq!(
         source
             .recover(request(account, &bare(account), &|| false))
@@ -896,35 +805,10 @@ async fn a_pass_past_its_deadline_fails_without_committing() {
     );
     // Nothing is requested after the deadline, and nothing can be applied.
     assert_eq!(paths(&seam.seam.observer.requests()), [MAP]);
-    assert_eq!(settle(&source, &wallet.path, account).await, NOTHING);
-}
-
-#[test]
-fn outcomes_map_to_continuations() {
-    for (outcome, next) in [
-        (Outcome::Complete, Continuation::Complete),
-        (Outcome::More, Continuation::More),
-        (
-            Outcome::Behind,
-            Continuation::RetryAfter(Duration::from_secs(10)),
-        ),
-        (
-            Outcome::Overloaded,
-            Continuation::RetryAfter(Duration::from_secs(30)),
-        ),
-        (Outcome::Stalled, Continuation::Stalled),
-    ] {
-        assert_eq!(pir::continuation(outcome), next, "{outcome:?}");
-    }
-    let progress = |covered_through| Progress {
-        covered_through,
-        outcome: Outcome::Behind,
-    };
-    assert_eq!(pir::behind_by(TOP, progress(TOP.into())), 0);
-    assert_eq!(pir::behind_by(TOP, progress(u64::from(TOP) - 7)), 7);
-    // Coverage past the target, or from before time, never wraps.
-    assert_eq!(pir::behind_by(TOP, progress(u64::from(TOP) + 3)), 0);
-    assert_eq!(pir::behind_by(u32::MAX, progress(0)), u32::MAX);
+    assert_eq!(
+        settle(&source, &wallet.path, account).await,
+        Settled::Nothing
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -967,9 +851,12 @@ async fn passes_and_acknowledgments_on_one_companion_are_serialized() {
     // The holder settles under its own lock, once.
     assert_eq!(
         settle(&first, &wallet.path, account).await,
-        Settlement::Acknowledged(ApplyStats::default())
+        Settled::Acknowledged(ApplyStats::default())
     );
-    assert_eq!(settle(&first, &wallet.path, account).await, NOTHING);
+    assert_eq!(
+        settle(&first, &wallet.path, account).await,
+        Settled::Nothing
+    );
 
     // Dropping it releases the companion to the waiting pass.
     drop(first);
@@ -977,8 +864,8 @@ async fn passes_and_acknowledgments_on_one_companion_are_serialized() {
     // A batch without retired revisions may also be settled as trusted.
     let mut db = open_wallet_db_with_timeout(&wallet.path, MAIN, SYNC_DB_BUSY_TIMEOUT).unwrap();
     assert_eq!(
-        second.apply(account, &mut db, Trust::Trusted).await,
-        Settlement::Acknowledged(ApplyStats::default())
+        settled(second.apply(account, &mut db, Trust::Trusted).await),
+        Settled::Acknowledged(ApplyStats::default())
     );
 }
 
@@ -1055,12 +942,12 @@ async fn a_covering_pass_settles_trusted_and_is_acknowledged() {
             .covered_through
     };
     let qualified = || count(&path, "SELECT COUNT(*) FROM tpir_qualified_revisions");
-    let refused = |settlement: Settlement| match settlement {
-        Settlement::Refused { stats, refusal } => (stats.applied, refusal),
+    let refused = |settlement| match settled(settlement) {
+        Settled::Refused { applied, action } => (applied, action),
         other => panic!("refused, not {other:?}"),
     };
-    let acknowledged = |settlement: Settlement| match settlement {
-        Settlement::Acknowledged(stats) => stats,
+    let acknowledged = |settlement| match settled(settlement) {
+        Settled::Acknowledged(stats) => stats,
         other => panic!("acknowledged, not {other:?}"),
     };
 
@@ -1074,7 +961,7 @@ async fn a_covering_pass_settles_trusted_and_is_acknowledged() {
     bump_policy_generation(&path);
     assert_eq!(
         refused(source.apply(account, &mut db, Trust::Trusted).await),
-        (0, Refusal::Stale)
+        (0, ApplyAction::Refresh)
     );
     assert_eq!((covered(&db), qualified()), (None, 0));
 
@@ -1097,8 +984,8 @@ async fn a_covering_pass_settles_trusted_and_is_acknowledged() {
     assert_eq!(qualified(), 1);
     // The acknowledged batch is spent.
     assert_eq!(
-        source.apply(account, &mut db, Trust::Trusted).await,
-        NOTHING
+        settled(source.apply(account, &mut db, Trust::Trusted).await),
+        Settled::Nothing
     );
 
     // Replaying the acknowledged publication settles nothing new.
@@ -1132,7 +1019,7 @@ async fn a_covering_pass_settles_trusted_and_is_acknowledged() {
     );
     assert_eq!(
         refused(source.apply(account, &mut db, Trust::Observed).await),
-        (0, Refusal::Unreconciled)
+        (0, ApplyAction::Reconcile)
     );
     let watch = watched_by(&wallet, account);
     assert_eq!(

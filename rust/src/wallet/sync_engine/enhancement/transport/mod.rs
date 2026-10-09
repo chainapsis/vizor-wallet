@@ -3,17 +3,15 @@
 
 mod cancellation;
 mod enhance_pir;
+mod pir_http;
 mod status_pir;
-mod transparent_pir;
-mod txid_pir;
 
 pub(super) use cancellation::cancelable;
 pub(super) use enhance_pir::client_protocol_error;
-pub(crate) use status_pir::StatusPirTransport;
-pub(in crate::wallet::sync_engine) use transparent_pir::TransparentPirHttp;
+pub(in crate::wallet::sync_engine) use pir_http::RoutedExchange;
 #[cfg(test)]
-pub(in crate::wallet::sync_engine) use transparent_pir::{ObservedRequest, RequestObserver};
-pub(in crate::wallet::sync_engine) use txid_pir::TxidPirHttp;
+pub(in crate::wallet::sync_engine) use pir_http::{response, ObservedRequest, RequestObserver};
+pub(crate) use status_pir::StatusPirTransport;
 
 /// Test capture of the log records emitted on one thread.
 #[cfg(test)]

@@ -619,8 +619,9 @@ class _MobileTransactionStatusScreenState
       if (nextUuid != _activeAccountUuid) unawaited(_loadTransaction());
     });
     ref.listen<AsyncValue<SyncState>>(syncProvider, (previous, next) {
-      // Recovery and detail follow-ups complete again after scanning already
-      // completed, and can change rows outside the ten recent transactions.
+      // Enhancement can change older rows outside the ten recent transactions,
+      // and the deferred account refresh and ephemeral address checks report
+      // completion again after scanning already completed.
       final syncCompleted =
           next.value?.isSyncComplete == true &&
           (previous?.value?.isSyncComplete != true ||
@@ -631,6 +632,10 @@ class _MobileTransactionStatusScreenState
           syncCompleted) {
         unawaited(_loadTransaction());
       }
+    });
+    // So can recovery and detail follow-ups that finish after completion.
+    ref.listen<int>(syncFollowupProvider, (_, _) {
+      unawaited(_loadTransaction());
     });
 
     final colors = context.colors;

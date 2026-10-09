@@ -1,21 +1,20 @@
 //! A deterministic in-memory [`RecoverySource`] for tests.
 //!
 //! It answers from a configurable set of mined receives and spends, by default
-//! with one `Ready` commit per pass. Its revisions use [`FIXTURE_SOURCE`] as
+//! with one `Ready` commit per pass, in real adapter batches built with
+//! `zakura_pir_transparent::testing`. Its revisions use [`FIXTURE_SOURCE`] as
 //! their source id. It is untrusted unless [`FixtureSource::trust`] makes it
 //! trusted, as the transparent PIR source is, so the coordinator qualifies its
-//! revisions only when a test asks for it. Its settlement follows the
-//! adapter's `apply_and_acknowledge`: commits apply in order, each in its own
-//! wallet transaction, the first refusal stops the batch unacknowledged, and
-//! a batch that resolves retired revisions is refused under observed trust
-//! before anything applies.
+//! revisions only when a test asks for it. It settles a batch with the
+//! adapter's own settlement, `testing::apply`, which is
+//! `apply_and_acknowledge` without a companion to acknowledge.
 
 use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::future::Future;
 use std::sync::{Arc, Mutex};
 
 use transparent::address::TransparentAddress;
-use zakura_pir_transparent::{Outcome, WithdrawnCause};
+use zakura_pir_transparent::{testing, Outcome, RecoveryBatch, WithdrawnCause};
 use zcash_client_backend::data_api::transparent_ledger::{
     AddressRange, ChainPoint, PageRequest, PublicationAnchor, ReceiveEvent, RecoveryRevision,
     SpendEvent, TransparentLedgerCommit,
@@ -24,11 +23,9 @@ use zcash_client_sqlite::AccountUuid;
 use zcash_primitives::block::BlockHash;
 use zcash_protocol::consensus::BlockHeight;
 
-use zcash_client_backend::data_api::transparent_ledger::TransparentLedgerWrite as _;
-
 use super::{
-    refusal, ApplyStats, Continuation, RecoverySource, Refusal, Settlement, SourceBatch,
-    SourceError, SourceRequest, Trust,
+    Applied, ApplyFailure, BatchState, Progress, RecoverySource, SourceBatch, SourceError,
+    SourceRequest, Trust,
 };
 use crate::wallet::db::{with_wallet_db_write_lock, WalletDatabase};
 
@@ -59,12 +56,12 @@ struct State {
     /// Append a malformed commit to every `Ready` batch.
     then_invalid: bool,
     failure: Option<SourceError>,
-    /// Answer `Pending` with this continuation instead of `Ready`.
-    pending: Option<Continuation>,
+    /// Answer `Pending`, stopped for this reason, instead of `Ready`.
+    pending: Option<Outcome>,
     /// Accounts whose publication the source withdraws, and why.
     withdrawn: HashMap<AccountUuid, WithdrawnCause>,
-    /// Replaces the continuation of every `Ready` answer.
-    next: Option<Continuation>,
+    /// Replaces the outcome of every `Ready` answer.
+    next: Option<Outcome>,
     trusted: bool,
     /// Every `Ready` answer resolves retired revisions until one is
     /// acknowledged as reconciled, as the adapter's do.
@@ -76,9 +73,8 @@ struct State {
     revision: Option<RecoveryRevision>,
     /// The account of each call, in order.
     calls: Vec<AccountUuid>,
-    /// Accounts whose last answer was a `Ready` batch not yet settled, with
-    /// its commits and whether it resolves retired revisions.
-    unacknowledged: HashMap<AccountUuid, (Vec<TransparentLedgerCommit<AccountUuid>>, bool)>,
+    /// Accounts whose last answer was a `Ready` batch not yet settled.
+    unacknowledged: HashMap<AccountUuid, RecoveryBatch<AccountUuid>>,
     acknowledged: usize,
     reconciled: usize,
 }
@@ -180,9 +176,10 @@ impl FixtureSource {
         self.with(|state| state.failure = failure)
     }
 
-    /// Answers `Pending` with `next` instead of `Ready`, until cleared.
-    pub(crate) fn pending(&self, next: Option<Continuation>) -> &Self {
-        self.with(|state| state.pending = next)
+    /// Answers `Pending`, stopped for `outcome`, instead of `Ready`, until
+    /// cleared.
+    pub(crate) fn pending(&self, outcome: Option<Outcome>) -> &Self {
+        self.with(|state| state.pending = outcome)
     }
 
     /// Withdraws `account`'s publication for `cause`, until cleared.
@@ -197,9 +194,9 @@ impl FixtureSource {
         })
     }
 
-    /// Replaces the continuation of every `Ready` answer, until cleared.
-    pub(crate) fn next(&self, next: Option<Continuation>) -> &Self {
-        self.with(|state| state.next = next)
+    /// Replaces the outcome of every `Ready` answer, until cleared.
+    pub(crate) fn next(&self, outcome: Option<Outcome>) -> &Self {
+        self.with(|state| state.next = outcome)
     }
 
     /// Makes the source trusted: under `PrivateRequired` the coordinator
@@ -293,7 +290,7 @@ impl RecoverySource for Observed<'_> {
         account: AccountUuid,
         db: &mut WalletDatabase,
         trust: Trust,
-    ) -> impl Future<Output = Settlement> + Send {
+    ) -> impl Future<Output = Option<Result<Applied, ApplyFailure>>> + Send {
         self.0.apply(account, db, trust)
     }
 }
@@ -323,58 +320,36 @@ impl RecoverySource for FixtureSource {
         account: AccountUuid,
         db: &mut WalletDatabase,
         trust: Trust,
-    ) -> impl Future<Output = Settlement> + Send {
+    ) -> impl Future<Output = Option<Result<Applied, ApplyFailure>>> + Send {
         let parked = self.state.lock().unwrap().unacknowledged.remove(&account);
-        let mut stats = ApplyStats::default();
-        let Some((commits, retired)) = parked else {
-            return std::future::ready(Settlement::Refused {
-                stats,
-                refusal: Refusal::Skip,
-            });
+        let Some(batch) = parked else {
+            return std::future::ready(None);
         };
-        if retired && trust == Trust::Observed {
-            return std::future::ready(Settlement::Refused {
-                stats,
-                refusal: Refusal::Unreconciled,
-            });
-        }
-        for commit in commits {
-            let applied = with_wallet_db_write_lock(
-                "sync_engine.transparent_ledger.commit",
-                || match trust {
-                    Trust::Trusted => db.qualify_and_apply_transparent_ledger_commit(commit),
-                    Trust::Observed => db.apply_transparent_ledger_commit(commit),
-                },
-            );
-            match applied {
-                Ok(outcome) => {
-                    stats.applied += 1;
-                    stats.qualified += usize::from(trust == Trust::Trusted);
-                    stats.window_grew |= outcome.window_grew;
-                }
-                Err(error) => {
-                    return std::future::ready(match refusal(&error) {
-                        Some(refusal) => Settlement::Refused { stats, refusal },
-                        None => Settlement::Failed {
-                            stats,
-                            error: error.to_string(),
-                        },
-                    });
-                }
+        let settled = with_wallet_db_write_lock("sync_engine.transparent_ledger.apply", || {
+            testing::apply(batch, db, trust)
+        });
+        if let Ok(applied) = &settled {
+            let hook = self.state.lock().unwrap().on_acknowledge.clone();
+            if let Some(hook) = hook {
+                hook();
+            }
+            let mut state = self.state.lock().unwrap();
+            state.acknowledged += 1;
+            // Trusted commits resolved the retirements.
+            if applied.retired > 0 {
+                state.reconciled += 1;
+                state.retiring = false;
             }
         }
-        let hook = self.state.lock().unwrap().on_acknowledge.clone();
-        if let Some(hook) = hook {
-            hook();
-        }
-        let mut state = self.state.lock().unwrap();
-        state.acknowledged += 1;
-        state.reconciled += usize::from(retired);
-        // Trusted commits resolved the retirements.
-        if retired {
-            state.retiring = false;
-        }
-        std::future::ready(Settlement::Acknowledged(stats))
+        std::future::ready(Some(settled))
+    }
+}
+
+/// A pass that covered through `height` and stopped for `outcome`.
+fn progress(height: BlockHeight, outcome: Outcome) -> Progress {
+    Progress {
+        covered_through: u32::from(height).into(),
+        outcome,
     }
 }
 
@@ -383,11 +358,15 @@ impl State {
         if let Some(failure) = &self.failure {
             return Err(failure.clone());
         }
+        let unanswered = |state, outcome| SourceBatch {
+            state,
+            progress: progress(BlockHeight::from_u32(0), outcome),
+        };
         if let Some(cause) = self.withdrawn.get(&request.account) {
-            return Ok(SourceBatch::Withdrawn(*cause));
+            return Ok(unanswered(BatchState::Withdrawn(*cause), Outcome::Stalled));
         }
-        if let Some(next) = self.pending {
-            return Ok(SourceBatch::Pending { next });
+        if let Some(outcome) = self.pending {
+            return Ok(unanswered(BatchState::Pending, outcome));
         }
         let watch = request.watch;
         let context = watch
@@ -401,11 +380,10 @@ impl State {
             },
             _ => target,
         };
-        let behind_by = u32::from(target.height) - u32::from(anchor.height);
-        let mut next = if behind_by > 0 {
-            super::pir::continuation(Outcome::Behind)
+        let mut outcome = if anchor.height < target.height {
+            Outcome::Behind
         } else {
-            Continuation::Complete
+            Outcome::Complete
         };
         let revision = self.revision_at(anchor);
         let mut commit = TransparentLedgerCommit {
@@ -441,12 +419,8 @@ impl State {
                     .min(anchor.height),
                 through: anchor.height,
             });
-            self.unacknowledged
-                .insert(request.account, (vec![commit], self.retiring));
-            return Ok(SourceBatch::Ready {
-                next: self.next.unwrap_or(Continuation::More),
-                behind_by,
-            });
+            let progress = progress(anchor.height, self.next.unwrap_or(Outcome::More));
+            return Ok(self.ready(request.account, vec![commit], progress));
         }
 
         let watched: BTreeSet<_> = watch.addresses.iter().map(|a| a.address).collect();
@@ -487,11 +461,35 @@ impl State {
             commits.push(malformed);
         }
         if let Some(fixed) = self.next {
-            next = fixed;
+            outcome = fixed;
         }
-        self.unacknowledged
-            .insert(request.account, (commits, self.retiring));
-        Ok(SourceBatch::Ready { next, behind_by })
+        Ok(self.ready(request.account, commits, progress(anchor.height, outcome)))
+    }
+
+    /// Holds a `Ready` batch of `commits` for `account` until it is settled.
+    /// While the source retires revisions, the batch resolves one.
+    fn ready(
+        &mut self,
+        account: AccountUuid,
+        commits: Vec<TransparentLedgerCommit<AccountUuid>>,
+        progress: Progress,
+    ) -> SourceBatch {
+        let retired = match (&self.revision, self.retiring) {
+            (Some(revision), true) => vec![RecoveryRevision {
+                revision: b"retired".to_vec(),
+                lineage: revision.lineage.saturating_sub(1),
+                ..revision.clone()
+            }],
+            _ => Vec::new(),
+        };
+        self.unacknowledged.insert(
+            account,
+            testing::batch(commits, progress, BatchState::Ready, retired),
+        );
+        SourceBatch {
+            state: BatchState::Ready,
+            progress,
+        }
     }
 
     /// One provisional revision per publication; a new publication replaces

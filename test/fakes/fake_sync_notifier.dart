@@ -20,6 +20,11 @@ class FakeSyncNotifier extends SyncNotifier {
     state = AsyncData(nextState);
   }
 
+  /// Publishes a post-sync follow-up update, as the real notifier does for
+  /// Rust's `followupUpdated` event.
+  void reportFollowupUpdated() =>
+      ref.read(syncFollowupProvider.notifier).updated();
+
   /// Recorded rather than run: the real start reaches Rust, which is not
   /// initialised under widget tests.
   @override
