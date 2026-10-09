@@ -144,15 +144,32 @@ and executes their teardown internally. Only completed original sessions permit
 anchored workspace removal; incomplete/failed cases stop assignment and retain
 state. Native support rejects links; mutable workspace links are only unlinked,
 never followed. Shared build artifacts must remain outside the removable tree.
-The composed executor wires five macOS import/endpoint cases and eight existing
-Rust receive/import/send cases to original per-case Zakura/native owners.
+The composed executor wires five macOS import/endpoint cases and sixteen existing
+Rust receive/import/send/multi-account cases to original per-case Zakura/native owners.
 Compatible app/helper artifacts are built once when selected; selected Rust
 targets and the signer share one offline Cargo producer. Rust-only selections
 build no app/helper. Fresh repetitions have independent schema-2 reports and
 may overlap under one bounded worker count, including mixed Rust/macOS selections.
-The other 51 catalog scenarios, iOS execution, persistent build-cache publication/invalidation,
+The other 43 catalog scenarios, iOS execution, persistent build-cache publication/invalidation,
 resource scheduling and final-source catalog/performance validation remain
 pending. A native observation or process receipt alone never authorizes deletion.
+
+The multi-account group includes the minimum rc7 SQLite backport from upstream
+[wallet-libraries #87](https://github.com/zakura-core/wallet-libraries/pull/87).
+This changes the production SDK's sparse-checkpoint rewind fallback without
+upgrading SDK versions or changing schemas. Provenance and removal conditions
+are in [rust/vendor/README.md](../../rust/vendor/README.md).
+Actual two-worker batch `native-suite-6e3a47e71c` on committed source
+`a947b43ac940a6a791ded75bd0be48d33a05b26b` recorded eight PASS / zero FAIL in
+145.437 seconds, including one 1m53s Cargo build of the signer and one test
+target. Original owners proved wallet/backend/port cleanup for all eight cases.
+The private pending-case entrypoint used the normal CLI selector and shared
+executor before enabling the catalog entries. Old terminal-run compiler-cache
+bytes were input to a new original producer, not published-artifact adoption
+or a verified persistent cache. Existing financial assertions were unchanged.
+The orphaned/deleted range cases inject historical scan-queue state explicitly.
+This is one domain's behavior evidence, not a full-catalog, local upstream SDK
+unit-test, mixed-engine, comparative speedup or CPU/RAM result.
 
 | Slice | Scope | Prerequisites |
 | --- | --- | --- |

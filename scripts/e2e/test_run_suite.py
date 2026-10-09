@@ -43,7 +43,11 @@ class PreviewTests(unittest.TestCase):
             "flutter.macos.custom-endpoint-no-fallback", "flutter.macos.slow-height-fallback",
             "flutter.macos.sync-startup-stall-recovery", "rust.receive.sync", "rust.send.basic",
             "rust.send.second-account", "rust.import.bip39-passphrase", "rust.import.historical-birthday",
-            "rust.import.future-birthday", "rust.import.receive-after-sync", "rust.import.deterministic-reimport"}
+            "rust.import.future-birthday", "rust.import.receive-after-sync", "rust.import.deterministic-reimport",
+            "rust.multi-account.orphaned-range", "rust.multi-account.deleted-range",
+            "rust.multi-account.late-add-history-future", "rust.multi-account.tip-birthday-history",
+            "rust.multi-account.two-before-sync", "rust.multi-account.preserve-history",
+            "rust.multi-account.isolated-balances", "rust.multi-account.idempotent-sync"}
         for record in output["scenarios"]:
             wired = record["scenario_id"] in wired_ids
             self.assertEqual(record["supported"], wired)
@@ -104,7 +108,7 @@ class PreviewTests(unittest.TestCase):
         self.assertEqual(output["execution_mode"], "blocked")
         self.assertFalse(output["runnable"])
         self.assertEqual(output["selection"]["impact"]["fallback_files"], ["unknown/runtime.file"])
-        self.assertEqual(len(output["selection"]["impact"]["coverage_gaps"]), 51)
+        self.assertEqual(len(output["selection"]["impact"]["coverage_gaps"]), 43)
 
     def test_shared_test_helper_selects_its_e2e_consumer(self) -> None:
         code, output, errors = self.invoke(
@@ -249,6 +253,25 @@ class PreviewTests(unittest.TestCase):
             code, output, error = self.invoke(*arguments, "--run")
         self.assertEqual((code, output, error), (0, None, ""))
         self.assertEqual({s.id for s in execute.call_args.args[2]}, set(ids))
+
+    def test_multi_account_changed_file_selection_is_ready_and_reaches_executor(self) -> None:
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        expected = {s.id for s in self.catalog.scenarios if s.target == "regtest_multi_account"}
+        self.assertEqual(len(expected), 8)
+        arguments = ("--changed-file", "rust/tests/regtest_multi_account.rs")
+        with patch.dict(sys.modules, {"native_macos_suite": None}):
+            code, plan, error = self.invoke(*arguments, "--plan")
+        self.assertEqual((code, error), (0, ""))
+        self.assertTrue(plan["runnable"])
+        self.assertEqual(plan["required_targets"], ["regtest_multi_account"])
+        self.assertEqual(plan["pending_blockers"], [])
+        self.assertEqual({s["scenario_id"] for s in plan["selected_scenarios"]}, expected)
+        execute = Mock(return_value=0)
+        with patch.dict(sys.modules, {"native_macos_suite": SimpleNamespace(run_native_suite=execute)}):
+            code, output, error = self.invoke(*arguments, "--run")
+        self.assertEqual((code, output, error), (0, None, ""))
+        self.assertEqual({s.id for s in execute.call_args.args[2]}, expected)
 
     def test_previews_never_load_backends_start_processes_or_write_artifacts(self) -> None:
         original_import = builtins.__import__

@@ -200,8 +200,8 @@
         "sync"
       ],
       "timeout_seconds": 600,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "rust.multi-account.deleted-range",
@@ -216,8 +216,8 @@
         "sync"
       ],
       "timeout_seconds": 600,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "rust.multi-account.late-add-history-future",
@@ -232,8 +232,8 @@
         "recovery"
       ],
       "timeout_seconds": 600,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "rust.multi-account.tip-birthday-history",
@@ -248,8 +248,8 @@
         "birthday"
       ],
       "timeout_seconds": 600,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "rust.multi-account.two-before-sync",
@@ -264,8 +264,8 @@
         "sync"
       ],
       "timeout_seconds": 600,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "rust.multi-account.preserve-history",
@@ -280,8 +280,8 @@
         "history"
       ],
       "timeout_seconds": 600,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "rust.multi-account.isolated-balances",
@@ -296,8 +296,8 @@
         "balance"
       ],
       "timeout_seconds": 600,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "rust.multi-account.idempotent-sync",
@@ -312,8 +312,8 @@
         "sync"
       ],
       "timeout_seconds": 600,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "rust.gift-card.tracking-multiple",

@@ -48,8 +48,8 @@ python3 -B -m unittest scripts/e2e/test_zakura_fixture_source.py
 ## Catalog previews
 
 `run-suite.py` provides a host-only inventory and selection preview. Of 64
-entries, eight Rust receive/import/send and five macOS import/endpoint cases
-are wired to the isolated executor; the other 51 stay pending.
+entries, sixteen Rust receive/import/send/multi-account and five macOS
+import/endpoint cases are wired to the isolated executor; the other 43 stay pending.
 A preview exit code of 0 means the preview succeeded,
 not that any test ran or passed. Execution requires explicit `--run`.
 
@@ -157,7 +157,7 @@ This is in-process build reuse, not a persistent verified build cache. The
 other native/Rust scenarios, iOS execution, resource/performance comparison
 and final-source all-green catalog are still pending. No CI behavior changes.
 
-## Isolated Rust receive, import and send execution
+## Isolated Rust receive, import, send and multi-account execution
 
 The same coordinator runs `rust.receive.sync`, `rust.send.basic`,
 `rust.send.second-account` and the five `rust.import.*` cases for
@@ -193,6 +193,23 @@ does not erase isolated DBs: the original host stops/joins writers before
 anchored wallet/backend/port removal, or retains failed DBs and logs. The same
 schema-2 per-repetition reports support `--failed-from` without rewriting an
 earlier failure. Ordinary shared shell runs keep their existing behavior.
+
+All eight `rust.multi-account.*` cases use the same original owner and one
+`regtest_multi_account` binary. They preserve historical/future recovery,
+account balance separation, existing history and idempotent-sync assertions.
+Select just this domain without building the native app/helper:
+
+```bash
+python3 -B scripts/e2e/run-suite.py \
+  --changed-file rust/tests/regtest_multi_account.rs --plan
+```
+
+Replace `--plan` with `--run` and provide the tooling paths above. The two
+orphaned/deleted scan-range regressions intentionally inject historical
+scan-queue state because regtest cannot naturally reproduce a mainnet partial
+scan. These scenarios use the narrowly scoped rc7 SQLite
+[backport](../../rust/vendor/README.md), which also affects production builds.
+No SDK package versions or database schemas change.
 
 ## Native port ownership primitive
 

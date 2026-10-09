@@ -60,7 +60,12 @@ class E2eCatalogTest(unittest.TestCase):
                           "rust.receive.sync", "rust.send.basic", "rust.send.second-account",
                           "rust.import.bip39-passphrase", "rust.import.historical-birthday",
                           "rust.import.future-birthday", "rust.import.receive-after-sync",
-                          "rust.import.deterministic-reimport"})
+                          "rust.import.deterministic-reimport",
+                          "rust.multi-account.orphaned-range", "rust.multi-account.deleted-range",
+                          "rust.multi-account.late-add-history-future",
+                          "rust.multi-account.tip-birthday-history", "rust.multi-account.two-before-sync",
+                          "rust.multi-account.preserve-history", "rust.multi-account.isolated-balances",
+                          "rust.multi-account.idempotent-sync"})
         self.assertTrue(all(item.pending_reason for item in self.catalog.profiles if not item.supported))
         self.assertTrue(all(item.pending_reason for item in self.catalog.scenarios if not item.supported))
         self.assertEqual(
