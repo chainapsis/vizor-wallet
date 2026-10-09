@@ -1036,13 +1036,20 @@ there is no separate release gate.
 
 ## Library dependency
 
-The seven patched library crates and the `zakura-pir-transparent` adapter share
-one wallet-libraries revision, `31886a020052a54028544ade92c29c2ed2442251`,
-the head of [PR #134](https://github.com/zakura-core/wallet-libraries/pull/134)
-(forget transparent ledger facts under `Public`; repin to its squash merge once
-it lands), on top of main's squash merge of
-[PR #132](https://github.com/zakura-core/wallet-libraries/pull/132), which removes the unused `PrivateShadow` ledger mode on top of
+The eight patched library crates (now including `zakura-pir-enhance`) and the
+`zakura-pir-transparent` adapter share one wallet-libraries revision,
+`f7becfdd61a9e7da9f0d18e4d5a646bfb860b4df` on `claude/dithered-queries-with-forget-ledger`.
+It merges [PR #133](https://github.com/zakura-core/wallet-libraries/pull/133),
+which switches the Transparent, Enhance and Status clients to dithered 44-bit
+native queries, with [PR #134](https://github.com/zakura-core/wallet-libraries/pull/134)
+(forget transparent ledger facts under `Public`); repin to main once both land.
+Both sit on main after [PR #135](https://github.com/zakura-core/wallet-libraries/pull/135),
+[PR #129](https://github.com/zakura-core/wallet-libraries/pull/129) (declared re-cuts)
+and [PR #132](https://github.com/zakura-core/wallet-libraries/pull/132),
+which removes the unused `PrivateShadow` ledger mode on top of
 [PR #130](https://github.com/zakura-core/wallet-libraries/pull/130).
+Enhance and Status uploads need servers at wallet-pir `06a972db` or later, which
+accept both the 49-bit and the 44-bit query.
 It retains the parent's private-recovery and compact txid-display changes and
 adds durable privacy-policy resolution at each sensitive read plus optional
 SQLite `apply_and_acknowledge`. Vizor supplies explicit trust, then the library
