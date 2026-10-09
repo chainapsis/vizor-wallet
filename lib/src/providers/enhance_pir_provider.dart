@@ -42,8 +42,8 @@ final transparentOptOutStoreProvider = Provider<TransparentOptOutStore>(
 /// Reconciles the wallet's durable transparent policy with the private
 /// queries setting. `true` raises it when this build selects private
 /// transparent recovery; `false` lowers it to public in every build. Completes
-/// with the policy it applied, mode and generation, or with `null` once
-/// nothing needed to change; on failure nothing changed.
+/// with the current mode and generation, including a no-op, or with `null`
+/// when no wallet exists. On failure the durable policy is unchanged.
 typedef TransparentPolicyReconciler =
     Future<rust_sync.ApiAppliedTransparentPolicy?> Function(
       bool privateQueries,

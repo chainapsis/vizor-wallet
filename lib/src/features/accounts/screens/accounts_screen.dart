@@ -12,6 +12,7 @@ import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_pane_floating_bar.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/storage/linux_keyring_coordinator.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_context_menu.dart';
@@ -448,7 +449,12 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
     final accountNotifier = ref.read(accountProvider.notifier);
     final syncNotifier = ref.read(syncProvider.notifier);
 
-    await accountNotifier.switchAccount(uuid);
+    try {
+      await accountNotifier.switchAccount(uuid);
+    } on WalletMutationBusyException catch (error) {
+      if (mounted) showAppToast(context, error.toString());
+      return;
+    }
     if (mounted) {
       context.go('/home');
     }
