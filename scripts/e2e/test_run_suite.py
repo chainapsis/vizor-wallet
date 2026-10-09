@@ -41,7 +41,11 @@ class PreviewTests(unittest.TestCase):
         self.assertEqual(output["catalog_sha256"], self.catalog.fingerprint)
         wired_ids = {"flutter.macos.import-sync", "flutter.macos.fallback-endpoint",
             "flutter.macos.custom-endpoint-no-fallback", "flutter.macos.slow-height-fallback",
-            "flutter.macos.sync-startup-stall-recovery", "rust.receive.sync", "rust.send.basic",
+            "flutter.macos.sync-startup-stall-recovery",
+            "flutter.macos.shield-transparent", "flutter.macos.shield-transparent-retry",
+            "flutter.macos.multi-account-send", "flutter.macos.tex-send",
+            "flutter.macos.payment-uri-send", "flutter.macos.payment-uri-locked-send",
+            "flutter.macos.payment-request-round-trip", "rust.receive.sync", "rust.send.basic",
             "rust.send.second-account", "rust.import.bip39-passphrase", "rust.import.historical-birthday",
             "rust.import.future-birthday", "rust.import.receive-after-sync", "rust.import.deterministic-reimport",
             "rust.multi-account.orphaned-range", "rust.multi-account.deleted-range",
@@ -111,7 +115,7 @@ class PreviewTests(unittest.TestCase):
         self.assertEqual(output["execution_mode"], "blocked")
         self.assertFalse(output["runnable"])
         self.assertEqual(output["selection"]["impact"]["fallback_files"], ["unknown/runtime.file"])
-        self.assertEqual(len(output["selection"]["impact"]["coverage_gaps"]), 36)
+        self.assertEqual(len(output["selection"]["impact"]["coverage_gaps"]), 29)
 
     def test_shared_test_helper_selects_its_e2e_consumer(self) -> None:
         code, output, errors = self.invoke(

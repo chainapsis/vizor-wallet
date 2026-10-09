@@ -144,14 +144,14 @@ and executes their teardown internally. Only completed original sessions permit
 anchored workspace removal; incomplete/failed cases stop assignment and retain
 state. Native support rejects links; mutable workspace links are only unlinked,
 never followed. Shared build artifacts must remain outside the removable tree.
-The composed executor wires five macOS import/endpoint cases and all twenty-three
+The composed executor wires twelve macOS import/endpoint/send/payment cases and all twenty-three
 catalog Rust cases to original per-case Zakura/native owners, including controlled
 activation-500 Orchard migration and Gift claim/reorg/OVK coverage.
 Compatible app/helper artifacts are built once when selected; selected Rust
 targets and the signer share one offline Cargo producer. Rust-only selections
 build no app/helper. Fresh repetitions have independent schema-2 reports and
 may overlap under one bounded worker count, including mixed Rust/macOS selections.
-The other 36 catalog scenarios, iOS execution, persistent build-cache publication/invalidation,
+The other 29 catalog scenarios, iOS execution, persistent build-cache publication/invalidation,
 resource scheduling and final-source catalog/performance validation remain
 pending. A native observation or process receipt alone never authorizes deletion.
 
@@ -200,6 +200,29 @@ compiler-cache bytes as input to a new original frozen-source producer. No
 old artifact adoption, persistent-cache attestation, production source/dependency
 changes, mixed-engine or comparative performance claim. Earlier domain results
 do not form a same-final-source all-green Rust catalog.
+
+The macOS send/shield/TEX/payment-request group was executed with two workers.
+Batch `native-suite-03873ec8d9` on clean committed source
+`077fd54774c38a22c4c2ad4a66d9f30f0d3e45ab` recorded five PASS / two FAIL in
+527.265 seconds, including one 2m00s signer/address-tool Cargo build and one
+macOS cohort/helper build. Shielding, shielding retry, multi-account send, TEX
+send and payment-request round trip passed. Both URI cases reached the review
+route but still expected the obsolete `Review payment request` title; the
+production screen already uses `Review Payment`. Financial assertions were not
+weakened and the production UI was not changed.
+The normal `--failed-from` selector chose exactly those two cases for batch
+`native-suite-d201b4e90f` on clean committed source
+`6aeff60a1e02ee9b22625f31ca1b9ae9743e039f`: two PASS / zero FAIL in
+188.393 seconds, including one 1m59s signer build and one cohort/helper build.
+Both runs used a private pending-case entrypoint through the normal selector
+and shared executor before catalog activation. Ordinary compiler-cache bytes
+seeded a new original frozen-source producer; this is not artifact adoption or
+a verified persistent cache. Every successful case proved original native and
+backend cleanup with empty cleanup errors. Initial failed state/logs remain.
+The corrected source also retains failed clipboard sections until the original
+writers join, with six focused Dart unit tests. This is incremental five-plus-
+two evidence across two commits, not one final-source seven-case pass, a full
+catalog run, CPU/RAM measurement or comparative speedup claim.
 
 | Slice | Scope | Prerequisites |
 | --- | --- | --- |
