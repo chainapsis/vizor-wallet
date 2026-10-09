@@ -1,0 +1,70 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:integration_test/integration_test_driver.dart';
+
+/// Connects only to the parent's original app VM; never launches another app.
+Future<void> main() async {
+  final expected = jsonDecode(
+    Platform.environment['VIZOR_E2E_CASE_MANIFEST'] ??
+        (throw StateError('The original case manifest is missing.')),
+  );
+  final expectedPid = int.parse(
+    Platform.environment['VIZOR_E2E_APP_PID'] ??
+        (throw StateError('The original app PID is missing.')),
+  );
+  await integrationDriver(
+    responseDataCallback: (data) async {
+      final result = await persistNativeOwnedCaseResult(
+        expected: expected,
+        expectedPid: expectedPid,
+        data: data,
+      );
+      stdout.writeln('VIZOR_E2E_RESULT=${jsonEncode(result)}');
+    },
+  );
+}
+
+/// Validates real assertion completion before persisting an app observation.
+/// This file never authorizes deletion; the original host owner checks it again.
+Future<Map<String, Object>> persistNativeOwnedCaseResult({
+  required Object? expected,
+  required int expectedPid,
+  required Map<String, dynamic>? data,
+}) async {
+  final actual = data?['case_manifest'];
+  final context = data?['runtime_context'];
+  if (expected is! Map<String, dynamic> ||
+      actual is! Map<String, dynamic> ||
+      data!.length != 4 ||
+      data['pid'] is! int ||
+      data['pid'] != expectedPid ||
+      data['assertions_completed'] != true ||
+      actual.length != expected.length ||
+      expected.entries.any(
+        (entry) =>
+            actual[entry.key] != entry.value ||
+            actual[entry.key].runtimeType != entry.value.runtimeType,
+      ) ||
+      context is! Map<String, dynamic> ||
+      context['schema_version'] != 1 ||
+      context['namespace'] != expected['namespace'] ||
+      context['pid'] is! int ||
+      context['pid'] != expectedPid ||
+      context['storage_cleanup_completed'] != false ||
+      context['os_background_scheduling_enabled'] != false) {
+    throw StateError('The original app/case did not complete its assertions.');
+  }
+  final path = expected['context_path'];
+  if (path is! String || !File(path).isAbsolute) {
+    throw StateError('The original host context path must be absolute.');
+  }
+  final encoded = jsonEncode(context);
+  if (utf8.encode(encoded).length > 8192) {
+    throw StateError('The native context exceeds its host observation limit.');
+  }
+  // Never truncate/adopt an existing case observation or create new parents.
+  final file = await File(path).create(exclusive: true);
+  await file.writeAsString(encoded, flush: true);
+  return <String, Object>{'case_manifest': actual, 'pid': expectedPid};
+}

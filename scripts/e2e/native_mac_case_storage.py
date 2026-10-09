@@ -142,14 +142,16 @@ class MacCaseStorage:
             self._failure = "support ownership unproven"
             raise MacCaseStorageError(self._failure) from error
 
-    def start_app(self, arguments: Sequence[str] = (), *, env: Mapping[str, str]) -> runtime.ManagedProcess:
+    def start_app(self, arguments: Sequence[str] = (), *, env: Mapping[str, str],
+                  raw_lines: list[str] | None = None, max_output_bytes: int | None = None) -> runtime.ManagedProcess:
         if self._finished:
             raise MacCaseStorageError("support lifecycle is finished")
         if isinstance(arguments, (str, bytes)):
             raise MacCaseStorageError("app arguments must be a sequence")
         self.verify_owned()
         self.helper.verify_unchanged()
-        managed = self.case.start_process([str(self.helper.cohort_executable), *arguments], env=env)
+        managed = self.case.start_process([str(self.helper.cohort_executable), *arguments], env=env,
+                                         raw_lines=raw_lines, max_output_bytes=max_output_bytes)
         self._writers.append(managed)
         return managed
 

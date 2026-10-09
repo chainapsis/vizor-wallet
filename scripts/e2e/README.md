@@ -1,8 +1,8 @@
 # End-to-end tests
 
 For the planned isolated execution framework and direct Zakura migration, see
-the [E2E roadmap](ROADMAP.md). The roadmap tracks unmerged work. Catalog previews
-are described first; the existing scenario runners below are unchanged.
+the [E2E roadmap](ROADMAP.md). The roadmap tracks unmerged work. The isolated
+executor currently implements macOS import/sync; existing shell runners remain.
 
 The [native runtime contract](RUNTIME_CONTRACT.md) defines per-case launch
 identity and storage isolation for the later worker/executor layers. It does
@@ -46,11 +46,10 @@ python3 -B -m unittest scripts/e2e/test_zakura_fixture_source.py
 
 ## Catalog previews
 
-`run-suite.py` provides a host-only inventory and selection preview. This first
-slice does not include execution backends: all 64 catalog entries are pending,
-and a plan reports `runnable: false` with its blockers. An exit code of 0 means
-the preview succeeded, not that any E2E test ran or passed. Invocation without
-`--list` or `--plan` fails before accessing a backend.
+`run-suite.py` provides a host-only inventory and selection preview. Of 64
+entries, only `flutter.macos.import-sync` is wired to the isolated executor;
+the other 63 stay pending. A preview exit code of 0 means the preview succeeded,
+not that any test ran or passed. Execution requires explicit `--run`.
 
 Previews require Python 3.9 or newer and use only the standard library. Git is
 also required for `--changed-from`; Flutter, Docker, and a running regtest stack
@@ -92,6 +91,47 @@ Host-only checks for this slice:
 python3 -B -m unittest scripts/e2e/test_e2e_catalog.py scripts/e2e/test_e2e_report.py scripts/e2e/test_e2e_changes.py scripts/e2e/test_e2e_impact.py scripts/e2e/test_run_suite.py
 ```
 
+## Isolated macOS import/sync execution
+
+The selected native cohort, cleanup helper and offline signer are each built
+once per invocation. Each case has fresh wallet/Keychain/preferences storage,
+ports and its own pinned Zakura/lightwalletd containers. The existing import
+test still requires shielded **1.25** and transparent **0.75**; a completed
+Driver connection or empty successful test response is not assertion completion.
+The sandbox app returns its storage observation through its original Driver,
+which writes the host evidence file. Neither that observation nor a JSON receipt
+authorizes cleanup; the original worker must prove terminal cleanup itself.
+
+Requirements: macOS, Flutter dependencies already resolved, Xcode/Swift and an
+available development identity/profile that signs the native app, Docker,
+grpcurl/protos, the pinned Zakura Git object cache above, and Cargo dependencies
+already available for the offline signer build. Commit Rust changes first: the
+signer uses the exact committed Rust subtree rather than mixing source versions.
+Use explicit absolute tooling paths; no automatic installation or download.
+
+```bash
+python3 -B scripts/e2e/run-suite.py \
+  --scenario flutter.macos.import-sync --run \
+  --flutter /absolute/flutter-sdk/bin/flutter \
+  --zakura-cache /absolute/zakura-git-cache \
+  --grpcurl /absolute/bin/grpcurl \
+  --proto-dir /absolute/lightwalletd-protos \
+  --build-jobs 4 --workers 2 --repeat 2
+```
+
+`--repeat 2` creates two independent executions, not a retry that erases the
+first result. `--workers 2` permits both to overlap after one shared build;
+without repetitions, this one supported scenario only uses one worker.
+Evidence stays in `.regtest-logs/native-suite-<id>/`. Each repetition's
+`run.json` is a schema-2 report accepted by the existing `--failed-from` selector;
+`summary.json` records the batch/build counts. Failed cases keep state/logs,
+and uncertain cleanup remains failure. Cancellation stops owned children and
+new assignment without terminating ordinary wallet processes.
+
+This is in-process build reuse, not a persistent verified build cache. The
+other native/Rust scenarios, iOS execution, resource/performance comparison
+and final-source all-green catalog are still pending. No CI behavior changes.
+
 ## Native port ownership primitive
 
 `native_ports.py` is the first host-only worker-lifecycle component for macOS
@@ -109,7 +149,8 @@ fixture, but must be canonical, owned and not writable by other users. The actua
 are checked, never changed to make acquisition succeed.
 
 This library does not start a backend or wire an execution mode into
-`run-suite.py`. All catalog entries remain pending. Process/workspace/simulator
+`run-suite.py` by itself. Only the composed macOS import/sync executor above is
+runnable; other catalog cases remain pending. Process/workspace/simulator
 ownership and actual app-storage cleanup are separate follow-up work. Tests
 use private temporary directories, real ephemeral loopback sockets, and one
 owned Python subprocess to verify cross-process lock exclusion:
@@ -538,7 +579,8 @@ SDK transport, signatures and native observations. The optional
 `VizorIosLifecycleFixture` SDK app exercises the actual native profile and
 publishes synthetic metadata only; it is not a wallet or a financial scenario.
 Trusted build publication, real wallet/backend execution, full worker workspace
-removal and catalog execution remain pending. Catalog execution flags stay false.
+removal and broader catalog execution remain pending. This primitive alone does
+not enable catalog cases; see the composed macOS executor above.
 
 ### Own worker mutable storage and retain case evidence
 
@@ -589,7 +631,8 @@ groups/native app APIs. Phase SDK/native allowances and per-group termination
 budgets are separate, not one aggregate wall-clock SLA. Shared immutable artifacts
 must live outside the removable workspace; source cloning, trusted build
 publication, worker scheduling, backend execution and scenario assertions are
-not implemented by this primitive. Catalog execution flags stay false.
+not implemented by this primitive. It does not itself enable catalog cases;
+see the composed macOS executor above.
 
 ```bash
 python3 -B -m unittest scripts/e2e/test_native_worker_lifecycle.py scripts/e2e/test_native_mac_case_storage.py scripts/e2e/test_native_ios_case_storage.py

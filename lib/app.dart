@@ -201,7 +201,13 @@ void _startVotingObservabilityLogging() {
       );
 }
 
+Map<String, Object>? _e2eRuntimeContext;
+
+/// App-produced locations for the cohort driver, not proof of native cleanup.
+Map<String, Object>? get e2eRuntimeContext => _e2eRuntimeContext;
+
 Future<E2eRuntimeCaseManifest?> initializeE2eRuntimeConfiguration() async {
+  _e2eRuntimeContext = null;
   WidgetsFlutterBinding.ensureInitialized();
   final e2eManifest = installE2eRuntimeCaseManifest(
     isDebug: kDebugMode,
@@ -243,31 +249,34 @@ Future<E2eRuntimeCaseManifest?> initializeE2eRuntimeConfiguration() async {
       isDebug: kDebugMode,
       isIos: Platform.isIOS,
     );
-    await writeE2eRuntimeContext(
-      contextPath: contextPath,
-      context: buildE2eRuntimeContext(
+    final context = buildE2eRuntimeContext(
+      namespace: e2eNamespace,
+      processId: pid,
+      supportDirectory: support.path,
+      secureStoreServices: e2eRuntimeSecureStoreServices(
+        walletService: service,
         namespace: e2eNamespace,
-        processId: pid,
-        supportDirectory: support.path,
-        secureStoreServices: e2eRuntimeSecureStoreServices(
-          walletService: service,
-          namespace: e2eNamespace,
-          isIos: Platform.isIOS,
-          isMacos: Platform.isMacOS,
-        ),
-        preferencesPrefix: e2ePreferencesPrefix(
-          namespace: e2eNamespace,
-          defaultNetworkName: kZcashDefaultNetworkName,
-          isDebug: kDebugMode,
-        ),
-        nativePreferencesSuite: Platform.isIOS
-            ? 'com.keplr.vizor.regtest.e2e.$e2eNamespace'
-            : null,
-        notificationIdentifierPrefix: Platform.isIOS
-            ? 'vizor_e2e_$e2eNamespace.'
-            : null,
+        isIos: Platform.isIOS,
+        isMacos: Platform.isMacOS,
       ),
+      preferencesPrefix: e2ePreferencesPrefix(
+        namespace: e2eNamespace,
+        defaultNetworkName: kZcashDefaultNetworkName,
+        isDebug: kDebugMode,
+      ),
+      nativePreferencesSuite: Platform.isIOS
+          ? 'com.keplr.vizor.regtest.e2e.$e2eNamespace'
+          : null,
+      notificationIdentifierPrefix: Platform.isIOS
+          ? 'vizor_e2e_$e2eNamespace.'
+          : null,
     );
+    // The macOS sandbox cannot write the host's private case evidence tree.
+    // Its original Driver persists this observation after assertion completion.
+    if (!Platform.isMacOS) {
+      await writeE2eRuntimeContext(contextPath: contextPath, context: context);
+    }
+    _e2eRuntimeContext = Map<String, Object>.unmodifiable(context);
   }
   return e2eManifest;
 }

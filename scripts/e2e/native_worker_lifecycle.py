@@ -25,6 +25,7 @@ import native_owned_tree as tree
 import native_zakura_backend as zakura
 import native_zakura_front as zakura_front
 from zakura_genesis import create_zakura_genesis_proof
+from native_zakura_control import prepare_native_zakura_control
 from native_ports import lease_native_ports
 import native_workspace as workspace_api
 
@@ -61,6 +62,7 @@ class NativeWorkerCase:
         self.simulator = None
         self._backend = None
         self._front = None
+        self._control = None
         self._backend_finalized = False
         self._finished = False
         self._completed = False
@@ -123,6 +125,24 @@ class NativeWorkerCase:
                 raise primary from cleanup
             raise
 
+    def prepare_zakura_control(self, *, artifact=None, timeout=30.0):
+        """Bind a synchronous control pump; the executor must drive it on this owner."""
+        ios_simulator._deadline(timeout)
+        if self._finished or self._control is not None or self._front is None:
+            raise NativeWorkerError("control allocation is unavailable or already attempted")
+        self.verify_owned()
+        try:
+            self._control = prepare_native_zakura_control(self.case, self._backend, self._front,
+                artifact=artifact)
+            return self._control
+        except BaseException as primary:
+            self._failure = "control preparation failed; retain worker"
+            try:
+                self.retain(timeout=timeout)
+            except BaseException as cleanup:
+                raise primary from cleanup
+            raise
+
     def close(self, *, timeout=60.0, cancel_event=None):
         """Successful scenario teardown; do not supply external cleanup proof."""
         ios_simulator._deadline(timeout)
@@ -131,6 +151,8 @@ class NativeWorkerCase:
         self._finished = True
         cancellation = cancel_event if cancel_event is not None else threading.Event()
         try:
+            if self._control is not None:
+                self._control.close()
             self.verify_owned()
             if self._backend is not None:
                 if isinstance(self.storage, ios_storage.OwnedIosCaseStorage) and self.storage._active is not None:
@@ -160,6 +182,12 @@ class NativeWorkerCase:
         self._finished = True
         self.worker._failure = "failed case retained; stop worker assignment"
         errors = []
+        control = self._control or (self._backend._control if self._backend is not None else None)
+        if control is not None:
+            try:
+                control.close()
+            except BaseException as error:
+                errors.append(error)
         if self.storage is not None and not self._native_finalized:
             try:
                 if isinstance(self.storage, ios_storage.OwnedIosCaseStorage):
