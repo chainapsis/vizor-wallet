@@ -13,17 +13,13 @@ import 'api/sync.dart';
 import 'api/voting.dart';
 import 'api/voting_session.dart';
 import 'api/wallet.dart';
-
 import 'dart:async';
 import 'dart:convert';
-
 import 'frb_generated.dart';
 import 'frb_generated.io.dart'
     if (dart.library.js_interop) 'frb_generated.web.dart';
 import 'network_privacy.dart';
-
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
-
 import 'third_party/zcash_voting/config.dart';
 import 'third_party/zcash_voting/delegate.dart';
 import 'third_party/zcash_voting/share_policy.dart';
@@ -14837,24 +14833,25 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TransactionDetail dco_decode_transaction_detail(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 14)
-      throw Exception('unexpected arr length: expect 14 but see ${arr.length}');
+    if (arr.length != 15)
+      throw Exception('unexpected arr length: expect 15 but see ${arr.length}');
     return TransactionDetail(
       txidHex: dco_decode_String(arr[0]),
       txKind: dco_decode_String(arr[1]),
-      primaryAddress: dco_decode_opt_String(arr[2]),
-      sourceAddress: dco_decode_opt_String(arr[3]),
-      sourcePool: dco_decode_opt_String(arr[4]),
-      sourceAccountUuid: dco_decode_opt_String(arr[5]),
-      memo: dco_decode_opt_String(arr[6]),
-      outputs: dco_decode_list_transaction_detail_output(arr[7]),
-      detailsComplete: dco_decode_bool(arr[8]),
-      provisional: dco_decode_bool(arr[9]),
+      networkFee: dco_decode_opt_box_autoadd_u_64(arr[2]),
+      primaryAddress: dco_decode_opt_String(arr[3]),
+      sourceAddress: dco_decode_opt_String(arr[4]),
+      sourcePool: dco_decode_opt_String(arr[5]),
+      sourceAccountUuid: dco_decode_opt_String(arr[6]),
+      memo: dco_decode_opt_String(arr[7]),
+      outputs: dco_decode_list_transaction_detail_output(arr[8]),
+      detailsComplete: dco_decode_bool(arr[9]),
+      provisional: dco_decode_bool(arr[10]),
       transparentDetailsState:
-          dco_decode_opt_box_autoadd_transparent_details_state(arr[10]),
-      transparentRecipients: dco_decode_list_transparent_recipient(arr[11]),
-      transparentOutputCount: dco_decode_opt_box_autoadd_u_32(arr[12]),
-      transparentOmissions: dco_decode_list_String(arr[13]),
+          dco_decode_opt_box_autoadd_transparent_details_state(arr[11]),
+      transparentRecipients: dco_decode_list_transparent_recipient(arr[12]),
+      transparentOutputCount: dco_decode_opt_box_autoadd_u_32(arr[13]),
+      transparentOmissions: dco_decode_list_String(arr[14]),
     );
   }
 
@@ -19915,6 +19912,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_txidHex = sse_decode_String(deserializer);
     var var_txKind = sse_decode_String(deserializer);
+    var var_networkFee = sse_decode_opt_box_autoadd_u_64(deserializer);
     var var_primaryAddress = sse_decode_opt_String(deserializer);
     var var_sourceAddress = sse_decode_opt_String(deserializer);
     var var_sourcePool = sse_decode_opt_String(deserializer);
@@ -19935,6 +19933,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     return TransactionDetail(
       txidHex: var_txidHex,
       txKind: var_txKind,
+      networkFee: var_networkFee,
       primaryAddress: var_primaryAddress,
       sourceAddress: var_sourceAddress,
       sourcePool: var_sourcePool,
@@ -24339,6 +24338,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.txidHex, serializer);
     sse_encode_String(self.txKind, serializer);
+    sse_encode_opt_box_autoadd_u_64(self.networkFee, serializer);
     sse_encode_opt_String(self.primaryAddress, serializer);
     sse_encode_opt_String(self.sourceAddress, serializer);
     sse_encode_opt_String(self.sourcePool, serializer);

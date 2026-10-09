@@ -645,6 +645,8 @@ pub(crate) struct TransactionDetail {
     /// ([`apply_display_recipient`]).
     pub account_balance_delta: i64,
     pub fee: Option<u64>,
+    /// Exact whole-transaction fee for receipt display; never an account fee share.
+    pub network_fee: Option<u64>,
 }
 
 /// What loop 4 knows about a transparent or mixed transaction's outputs.
@@ -1803,6 +1805,7 @@ fn read_transaction_detail(
         provisional: base.history.provisional,
         transparent_details: None,
         account_balance_delta: base.account_balance_delta,
+        network_fee: base.history.whole_fee,
         // The account's fee, or the whole transaction's exact fee when the
         // account's share is unknown (a private recovery). The display view's
         // funding omissions separately prevent balance-only attribution.
@@ -4442,6 +4445,48 @@ mod tests {
             info.amount_includes_fee,
             "the movement was not reduced by an unknown fee share"
         );
+    }
+
+    #[test]
+    fn receipt_carries_network_fee_without_promoting_account_attribution() {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let txid = fake_txid(0xE2);
+        insert_history_tx(
+            &db,
+            account,
+            &txid,
+            Some(1_000_000),
+            1,
+            None,
+            -70_000_000,
+            100_000_000,
+            30_000_000,
+            false,
+            None,
+        );
+        let conn = open_readonly_conn(db.path().to_str().unwrap()).unwrap();
+        let detail = read_transaction_detail(
+            &conn,
+            WalletNetwork::Test,
+            AccountUuid::from_uuid(account),
+            &hex::encode(txid),
+            "sent",
+            |base| {
+                base.attach_history(HistoryCompleteness::of(&shared_funding_details(
+                    exact_whole_fee(),
+                )));
+                assert_eq!(base.history.shown_fee(), Fee::Unknown);
+                assert!(!base.history.details_complete);
+                assert!(base.history.provisional);
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(detail.network_fee, Some(WHOLE_FEE));
+        assert_eq!(detail.account_balance_delta, -70_000_000);
+        assert!(!detail.details_complete);
+        assert!(detail.provisional);
     }
 
     #[test]
@@ -8213,6 +8258,7 @@ mod tests {
                 // of 50,000 without changing the equality for this account:
                 // its debit still matches its transparent outputs and fee.
                 let mut detail = TransactionDetail {
+                    network_fee: None,
                     txid_hex: String::new(),
                     tx_kind: if received { "received" } else { "sent" }.to_owned(),
                     primary_address: None,
@@ -8272,6 +8318,7 @@ mod tests {
                       delta: i64,
                       fee: Option<u64>| {
             TransactionDetail {
+                network_fee: None,
                 txid_hex: String::new(),
                 tx_kind: kind.to_owned(),
                 primary_address: None,
@@ -8418,6 +8465,7 @@ mod tests {
                        pool: &str,
                        delta: i64,
                        fee: Option<u64>| TransactionDetail {
+            network_fee: None,
             txid_hex: String::new(),
             tx_kind: "received".to_owned(),
             primary_address: None,
@@ -8491,6 +8539,7 @@ mod tests {
     #[test]
     fn display_source_pool_only_fills_an_unknown_receive_source() {
         let detail = |tx_kind: &str, address: Option<&str>, pool: Option<&str>| TransactionDetail {
+            network_fee: None,
             txid_hex: String::new(),
             tx_kind: tx_kind.to_string(),
             primary_address: None,

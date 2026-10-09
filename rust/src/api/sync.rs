@@ -2818,6 +2818,9 @@ pub enum TransactionFeeState {
 pub struct TransactionDetail {
     pub txid_hex: String,
     pub tx_kind: String,
+    /// Exact whole-transaction network fee. Display only; does not identify the payer
+    /// or the account's share, and does not establish payment completeness.
+    pub network_fee: Option<u64>,
     pub primary_address: Option<String>,
     pub source_address: Option<String>,
     pub source_pool: Option<String>,
@@ -3026,6 +3029,7 @@ pub fn get_transaction_detail(
         Ok(TransactionDetail {
             txid_hex: detail.txid_hex,
             tx_kind: detail.tx_kind,
+            network_fee: detail.network_fee,
             primary_address: detail.primary_address,
             source_address: detail.source_address,
             source_pool: detail.source_pool,

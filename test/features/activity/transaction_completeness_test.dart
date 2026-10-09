@@ -3,6 +3,66 @@ import 'package:zcash_wallet/src/features/activity/transaction_completeness.dart
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 void main() {
+  test('network fee is display-only and bound to the receipt identity', () {
+    final tx = _transaction(
+      'aa',
+      'sent',
+      feeState: rust_sync.TransactionFeeState.unknown,
+      fee: BigInt.zero,
+      detailsComplete: false,
+      provisional: true,
+      accountBalanceDelta: -5000,
+    );
+    rust_sync.TransactionDetail detail({
+      String txid = 'aa',
+      String kind = 'sent',
+      BigInt? fee,
+    }) => rust_sync.TransactionDetail(
+      txidHex: txid,
+      txKind: kind,
+      networkFee: fee,
+      outputs: const [],
+      detailsComplete: false,
+      provisional: true,
+      transparentRecipients: const [],
+      transparentOmissions: const ['shared_funding'],
+    );
+    expect(
+      unattributedReceiptNetworkFee(tx, detail(fee: BigInt.from(15000))),
+      BigInt.from(15000),
+    );
+    expect(
+      unattributedReceiptNetworkFee(tx, detail(fee: BigInt.zero)),
+      BigInt.zero,
+    );
+    expect(unattributedReceiptNetworkFee(tx, detail()), isNull);
+    expect(
+      unattributedReceiptNetworkFee(
+        tx,
+        detail(txid: 'bb', fee: BigInt.from(15000)),
+      ),
+      isNull,
+    );
+    expect(
+      unattributedReceiptNetworkFee(
+        tx,
+        detail(kind: 'received', fee: BigInt.from(15000)),
+      ),
+      isNull,
+    );
+    expect(
+      unattributedReceiptNetworkFee(
+        _transaction('aa', 'sent'),
+        detail(fee: BigInt.from(15000)),
+      ),
+      isNull,
+    );
+    expect(tx.accountBalanceDelta, -5000);
+    expect(tx.feeState, rust_sync.TransactionFeeState.unknown);
+    expect(tx.fee, BigInt.zero);
+    expect(transactionDetailsIncomplete(tx), isTrue);
+  });
+
   test('conservative receipts label balance movements as net changes', () {
     expect(kNetChangeText, 'Net change');
   });
