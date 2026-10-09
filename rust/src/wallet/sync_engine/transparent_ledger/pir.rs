@@ -521,15 +521,23 @@ impl Pass {
                     "transparent PIR: companion refused ({})",
                     PassFailure::from(&error).name()
                 );
-                // A refused open writes nothing, so the file is classified as
-                // the adapter found it.
-                let rebuildable = companion_health(path) == CompanionHealth::Corrupt
-                    || matches!(&error, RecoveryError::Invalid(message) if message == LEGACY_FORMAT);
-                if !rebuildable || !first_rebuild(path) {
+                // Only a storage failure SQLite confirms as corruption, or the
+                // earlier format the adapter asks to recreate, is rebuilt:
+                // never an identity, format or publication refusal.
+                let rebuild = match &error {
+                    RecoveryError::Failure(_)
+                        if companion_health(path) == CompanionHealth::Corrupt =>
+                    {
+                        Rebuild::Corrupt
+                    }
+                    RecoveryError::Invalid(message) if message == LEGACY_FORMAT => Rebuild::Legacy,
+                    _ => return Err(PassFailure::Companion),
+                };
+                if !first_rebuild(path) {
                     return Err(PassFailure::Companion);
                 }
                 log::warn!("transparent PIR: rebuilding an unusable companion once");
-                rebuild_companion(path, config).map_err(|error| {
+                rebuild_companion(path, config, rebuild).map_err(|error| {
                     log::warn!(
                         "transparent PIR: companion rebuild failed ({})",
                         error.name()
@@ -747,20 +755,41 @@ fn first_rebuild(path: &Path) -> bool {
         .insert(path.to_owned())
 }
 
-/// Why rebuilding a companion failed.
+/// Which unusable companion is rebuilt.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Rebuild {
+    /// SQLite confirms corruption. Its binding and whole catalog must still
+    /// be readable, so its identity is checked and its reconciliation
+    /// records carried over.
+    Corrupt,
+    /// The earlier format, which the adapter refuses and asks to recreate.
+    /// Its catalog has no records this format can use.
+    Legacy,
+}
+
+/// Why rebuilding a companion failed. In each case the damaged companion is
+/// kept as it was.
 #[derive(Debug)]
 enum RebuildError {
-    Remove,
-    Open,
-    Catalog,
+    /// The replacement could not be built or validated.
+    Replacement,
+    /// The damaged companion's binding or catalog could not be read whole,
+    /// or its catalog does not fit the replacement: reconstruction cannot be
+    /// shown safe.
+    Unsalvageable,
+    /// The damaged companion is bound to another account, origin or schema.
+    Foreign,
+    /// The validated replacement could not take the damaged one's place.
+    Swap,
 }
 
 impl RebuildError {
     fn name(&self) -> &'static str {
         match self {
-            RebuildError::Remove => "could not remove the damaged companion",
-            RebuildError::Open => "the new companion was refused",
-            RebuildError::Catalog => "could not restore catalog rows",
+            RebuildError::Replacement => "the replacement could not be built",
+            RebuildError::Unsalvageable => "its binding or catalog cannot be carried over",
+            RebuildError::Foreign => "it is bound to another identity",
+            RebuildError::Swap => "the replacement could not take its place",
         }
     }
 }
@@ -768,30 +797,86 @@ impl RebuildError {
 /// A damaged companion's catalog rows, with their column names.
 type SalvagedCatalog = (Vec<String>, Vec<Vec<rusqlite::types::Value>>);
 
-/// Replaces the unusable companion at `path`, under its held path lock, with
-/// a new one that keeps every catalog row the damaged file still yields.
+/// Replaces the unusable companion at `path`, under its held path lock.
+///
+/// The replacement is built beside it, at `{path}.rebuild`, and must take
+/// the damaged companion's place only once it is complete: its binding equals
+/// the damaged one's, every catalog row of a corrupt companion is restored
+/// into it, and the adapter opens it. Until then the damaged companion is
+/// untouched, and any doubt keeps it.
 fn rebuild_companion(
     path: &Path,
     config: RecoveryConfig,
+    rebuild: Rebuild,
 ) -> Result<ReferenceRecovery, RebuildError> {
-    let catalog = salvage_catalog(path);
-    remove_files(path).map_err(|_| RebuildError::Remove)?;
-    drop(ReferenceRecovery::open(path, config.clone()).map_err(|_| RebuildError::Open)?);
-    if let Some((columns, rows)) = catalog {
-        restore_catalog(path, &columns, &rows).map_err(|_| RebuildError::Catalog)?;
+    let staging = sibling(path, ".rebuild");
+    remove_files(&staging).map_err(|_| RebuildError::Replacement)?;
+    let built = (|| {
+        drop(
+            ReferenceRecovery::open(&staging, config.clone())
+                .map_err(|_| RebuildError::Replacement)?,
+        );
+        let expected = read_binding(&staging).ok_or(RebuildError::Replacement)?;
+        match (read_binding(path), rebuild) {
+            (Some(binding), _) if binding == expected => {}
+            (Some(_), _) => return Err(RebuildError::Foreign),
+            // The earlier format may predate the binding row.
+            (None, Rebuild::Legacy) => {}
+            (None, Rebuild::Corrupt) => return Err(RebuildError::Unsalvageable),
+        }
+        if rebuild == Rebuild::Corrupt {
+            let (columns, rows) = salvage_catalog(path).ok_or(RebuildError::Unsalvageable)?;
+            restore_catalog(&staging, &columns, &rows)?;
+        }
+        drop(
+            ReferenceRecovery::open(&staging, config.clone())
+                .map_err(|_| RebuildError::Replacement)?,
+        );
+        Ok(())
+    })();
+    if let Err(error) = built {
+        let _ = remove_files(&staging);
+        return Err(error);
     }
-    ReferenceRecovery::open(path, config).map_err(|_| RebuildError::Open)
+    remove_files(path).map_err(|_| RebuildError::Swap)?;
+    std::fs::rename(&staging, path).map_err(|_| RebuildError::Swap)?;
+    let _ = remove_files(&staging);
+    ReferenceRecovery::open(path, config).map_err(|_| RebuildError::Swap)
 }
 
-/// The catalog rows a damaged companion still yields, when its catalog can
-/// be read whole. Nothing otherwise, or from a file in another format.
-fn salvage_catalog(path: &Path) -> Option<SalvagedCatalog> {
+/// `base` with `suffix` appended to its file name.
+fn sibling(base: &Path, suffix: &str) -> PathBuf {
+    let mut path = base.as_os_str().to_owned();
+    path.push(suffix);
+    path.into()
+}
+
+/// A read-only connection to the companion file at `path`.
+fn read_only(path: &Path) -> Option<rusqlite::Connection> {
     use rusqlite::OpenFlags;
-    let conn = rusqlite::Connection::open_with_flags(
+    rusqlite::Connection::open_with_flags(
         path,
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )
-    .ok()?;
+    .ok()
+}
+
+/// The account, origin and schema binding the companion at `path` records,
+/// when it can be read.
+fn read_binding(path: &Path) -> Option<Vec<u8>> {
+    read_only(path)?
+        .query_row(
+            "SELECT value FROM pir_bridge_binding WHERE key = 'account-source'",
+            [],
+            |row| row.get(0),
+        )
+        .ok()
+}
+
+/// Every catalog row of the companion at `path`, with the column names, when
+/// the whole catalog can be read. Nothing otherwise.
+fn salvage_catalog(path: &Path) -> Option<SalvagedCatalog> {
+    let conn = read_only(path)?;
     let mut statement = conn.prepare("SELECT * FROM pir_bridge_catalog").ok()?;
     let columns: Vec<String> = statement
         .column_names()
@@ -811,40 +896,59 @@ fn salvage_catalog(path: &Path) -> Option<SalvagedCatalog> {
 }
 
 /// Restores salvaged catalog rows into the new companion at `path`, in one
-/// transaction, only when its catalog has exactly the salvaged columns.
+/// transaction, and checks that every row arrived. A catalog whose columns
+/// differ from the new companion's cannot be carried over.
 fn restore_catalog(
     path: &Path,
     columns: &[String],
     rows: &[Vec<rusqlite::types::Value>],
-) -> rusqlite::Result<()> {
-    let mut conn = rusqlite::Connection::open(path)?;
-    let current: Vec<String> = conn
-        .prepare("SELECT * FROM pir_bridge_catalog")?
-        .column_names()
-        .into_iter()
-        .map(str::to_owned)
-        .collect();
-    if current != columns {
-        log::warn!("transparent PIR: the catalog format differs; nothing restored");
-        return Ok(());
-    }
-    let tx = conn.transaction()?;
-    {
-        let placeholders = vec!["?"; columns.len()].join(", ");
-        let mut insert = tx.prepare(&format!(
-            "INSERT OR IGNORE INTO pir_bridge_catalog VALUES ({placeholders})"
-        ))?;
-        for row in rows {
-            insert.execute(rusqlite::params_from_iter(row))?;
+) -> Result<(), RebuildError> {
+    let restore = || -> rusqlite::Result<Result<(), RebuildError>> {
+        let mut conn = rusqlite::Connection::open(path)?;
+        let current: Vec<String> = conn
+            .prepare("SELECT * FROM pir_bridge_catalog")?
+            .column_names()
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        if current != columns {
+            return Ok(Err(RebuildError::Unsalvageable));
         }
-    }
-    tx.commit()
+        let tx = conn.transaction()?;
+        {
+            let placeholders = vec!["?"; columns.len()].join(", ");
+            let mut insert = tx.prepare(&format!(
+                "INSERT INTO pir_bridge_catalog VALUES ({placeholders})"
+            ))?;
+            for row in rows {
+                insert.execute(rusqlite::params_from_iter(row))?;
+            }
+        }
+        let restored: i64 = tx.query_row("SELECT COUNT(*) FROM pir_bridge_catalog", [], |row| {
+            row.get(0)
+        })?;
+        if usize::try_from(restored).ok() != Some(rows.len()) {
+            return Ok(Err(RebuildError::Unsalvageable));
+        }
+        tx.commit()?;
+        Ok(Ok(()))
+    };
+    restore().unwrap_or(Err(RebuildError::Unsalvageable))
 }
 
+/// Serializes moving aside a file where the companion directory belongs, so
+/// two passes never both act on it.
+static COMPANION_DIR_REPAIR: Mutex<()> = Mutex::new(());
+
 /// Makes `dir` a directory for companions. A regular file or other entry in
-/// its place is moved aside, never deleted; if that fails, the directory is
-/// unusable for every account.
+/// its place, which no companion can live beside, is moved aside under
+/// [`COMPANION_DIR_REPAIR`], never deleted; if that fails, the directory is
+/// unusable for every account. Nothing inside an existing directory is
+/// touched here.
 fn prepare_companion_dir(dir: &Path) -> Result<(), PassFailure> {
+    let _repair = COMPANION_DIR_REPAIR
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
     match std::fs::symlink_metadata(dir) {
         Ok(meta) if meta.is_dir() => return Ok(()),
         Ok(_) => {

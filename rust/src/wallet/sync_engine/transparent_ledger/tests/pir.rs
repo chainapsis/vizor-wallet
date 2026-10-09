@@ -755,62 +755,105 @@ fn corrupt_table(path: &Path, table: &str) {
     file.write_all(&vec![0xa5; page_size as usize]).unwrap();
 }
 
-/// A companion SQLite cannot read is rebuilt once, under its lock, keeping the
-/// catalog rows the damaged file still yields; a second failure is never
-/// rebuilt again in the process.
+/// A companion whose storage SQLite reports corrupt, but whose binding and
+/// catalog still read whole, is rebuilt once, under its lock, keeping every
+/// catalog row. A second failure is never rebuilt again in the process.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_corrupt_companion_is_rebuilt_once_keeping_its_catalog() {
-    let wallet = main_wallet(2);
-    let (a_uuid, a) = wallet.accounts[0].clone();
-    let (b_uuid, b) = wallet.accounts[1].clone();
+    let wallet = main_wallet(1);
+    let (uuid, account) = wallet.accounts[0].clone();
     let _seam = test_transport::set(&wallet.path, refusing());
-    for account in [a, b] {
+    let source = TransparentPirSource::new(&wallet.path, MAIN);
+    assert_eq!(
+        source
+            .recover(request(account, &bare(account), &|| false))
+            .await,
+        Ok(COMPLETE)
+    );
+    drop(source);
+    let path = companion(&wallet.path, &uuid);
+    {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        catalog_row(&conn, 1);
+        catalog_row(&conn, 2);
+    }
+    corrupt_table(&path, "wallet_meta");
+    let source = TransparentPirSource::new(&wallet.path, MAIN);
+    assert_eq!(
+        source
+            .recover(request(account, &bare(account), &|| false))
+            .await,
+        Ok(COMPLETE)
+    );
+    drop(source);
+    assert_eq!(catalog_rows(&path), 2);
+    assert!(!with_suffix(&path, ".rebuild").exists());
+
+    // Damaged again: not rebuilt a second time, and kept as it is.
+    corrupt_table(&path, "wallet_meta");
+    let damaged = std::fs::read(&path).unwrap();
+    let source = TransparentPirSource::new(&wallet.path, MAIN);
+    assert_eq!(
+        source
+            .recover(request(account, &bare(account), &|| false))
+            .await,
+        Err(SourceError::Failed)
+    );
+    drop(source);
+    assert_eq!(std::fs::read(&path).unwrap(), damaged);
+}
+
+/// Corruption alone never licenses deleting a companion: one bound to another
+/// identity, one whose catalog no longer fits, and one SQLite cannot read at
+/// all, so that neither its binding nor its catalog can be carried over, are
+/// all kept exactly as they are.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_corrupt_companion_that_cannot_be_shown_safe_is_kept() {
+    let wallet = main_wallet(3);
+    let _seam = test_transport::set(&wallet.path, refusing());
+    let create = |uuid: &str, bound_to: AccountUuid| {
+        let path = companion(&wallet.path, uuid);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        drop(
+            ReferenceRecovery::open(
+                &path,
+                pir::recovery_config(bound_to, pir::DEFAULT_MAINNET_ORIGIN),
+            )
+            .unwrap(),
+        );
+        catalog_row(&rusqlite::Connection::open(&path).unwrap(), 1);
+        path
+    };
+    let [(a_uuid, a), (b_uuid, b), (c_uuid, c)] = [0, 1, 2].map(|i| wallet.accounts[i].clone());
+
+    // A: bound to another account, then its storage corrupted.
+    let other = AccountUuid::from_uuid(uuid::Uuid::new_v4());
+    let foreign = create(&a_uuid, other);
+    corrupt_table(&foreign, "wallet_meta");
+    // B: its catalog has a column the current format lacks.
+    let changed = create(&b_uuid, b);
+    rusqlite::Connection::open(&changed)
+        .unwrap()
+        .execute_batch("ALTER TABLE pir_bridge_catalog ADD COLUMN extra INTEGER")
+        .unwrap();
+    corrupt_table(&changed, "wallet_meta");
+    // C: not a database at all.
+    let unreadable = create(&c_uuid, c);
+    clobber(&unreadable, &[0x5a; 4096]);
+
+    for (account, path) in [(a, &foreign), (b, &changed), (c, &unreadable)] {
+        let before = std::fs::read(path).unwrap();
         let source = TransparentPirSource::new(&wallet.path, MAIN);
         assert_eq!(
             source
                 .recover(request(account, &bare(account), &|| false))
                 .await,
-            Ok(COMPLETE)
+            Err(SourceError::Failed)
         );
+        drop(source);
+        assert_eq!(&std::fs::read(path).unwrap(), &before);
+        assert!(!with_suffix(path, ".rebuild").exists());
     }
-    let (a_path, b_path) = (
-        companion(&wallet.path, &a_uuid),
-        companion(&wallet.path, &b_uuid),
-    );
-
-    // Account A's store metadata is damaged but its catalog is intact: the
-    // rebuild keeps both catalog rows.
-    {
-        let conn = rusqlite::Connection::open(&a_path).unwrap();
-        catalog_row(&conn, 1);
-        catalog_row(&conn, 2);
-    }
-    corrupt_table(&a_path, "wallet_meta");
-    let source = TransparentPirSource::new(&wallet.path, MAIN);
-    assert_eq!(
-        source.recover(request(a, &bare(a), &|| false)).await,
-        Ok(COMPLETE)
-    );
-    drop(source);
-    assert_eq!(catalog_rows(&a_path), 2);
-
-    // Account B's file is no database at all: rebuilt empty, once.
-    clobber(&b_path, &[0x5a; 4096]);
-    let source = TransparentPirSource::new(&wallet.path, MAIN);
-    assert_eq!(
-        source.recover(request(b, &bare(b), &|| false)).await,
-        Ok(COMPLETE)
-    );
-    drop(source);
-    assert_eq!(catalog_rows(&b_path), 0);
-    // Damaged again, it is not rebuilt a second time.
-    clobber(&b_path, &[0x5a; 4096]);
-    let source = TransparentPirSource::new(&wallet.path, MAIN);
-    assert_eq!(
-        source.recover(request(b, &bare(b), &|| false)).await,
-        Err(SourceError::Failed)
-    );
-    assert_eq!(std::fs::read(&b_path).unwrap()[..16], [0x5a; 16]);
 }
 
 /// Only confirmed corruption is repaired: a companion bound to another
