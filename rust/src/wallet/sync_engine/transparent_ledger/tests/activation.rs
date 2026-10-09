@@ -419,37 +419,208 @@ async fn hardware_authority_withholds_stale_or_withdrawn_inputs_before_dispatch(
         .db
         .update_chain_tip(BlockHeight::from_u32(TIP + 1))
         .unwrap();
-    assert!(crate::wallet::sync::hardware_authority::dispatch(
+    // Recovery has yet to cover the new tip: withheld, but only until it does.
+    assert!(matches!(
+        crate::wallet::sync::hardware_authority::dispatch(
+            &wallet.path,
+            NETWORK,
+            &tx,
+            &[],
+            (TIP + 1).into(),
+            move |_| async move {
+                sent.set(sent.get() + 1);
+            }
+        )
+        .await,
+        Err(crate::wallet::sync::hardware_authority::DispatchRefusal::CatchingUp(_))
+    ));
+    // Recovery covers the new block and withdraws the receive: final.
+    scan(&wallet.path, wallet.birthday, TIP + 1, TIP + 1, 0);
+    source.replace_events(vec![], vec![]);
+    run_required(&mut wallet, &source).await;
+    assert!(matches!(
+        crate::wallet::sync::hardware_authority::dispatch(
+            &wallet.path,
+            NETWORK,
+            &tx,
+            &[],
+            (TIP + 1).into(),
+            move |_| async move {
+                sent.set(sent.get() + 1);
+            }
+        )
+        .await,
+        Err(crate::wallet::sync::hardware_authority::DispatchRefusal::Refused(_))
+    ));
+    assert_eq!(sent.get(), 0);
+}
+
+/// A block that lands while the device signs leaves lightwalletd ahead of the
+/// wallet. Private authority covers the block after the wallet's own tip, so
+/// the signature is still sent.
+#[tokio::test]
+async fn hardware_authority_checks_private_inputs_after_the_wallets_own_tip() {
+    let mut wallet = wallet();
+    let _mode = activate(&mut wallet).await;
+    let source = funded_source(&wallet);
+    run_required(&mut wallet, &source).await;
+    let tx = hardware_tx(vec![receive(1, external(&wallet, 0), VALUE, 150).outpoint]);
+    let sent = std::cell::Cell::new(0);
+    let sent = &sent;
+    for network_tip in [TIP + 1, TIP + 3] {
+        crate::wallet::sync::hardware_authority::dispatch(
+            &wallet.path,
+            NETWORK,
+            &tx,
+            &[],
+            network_tip.into(),
+            move |_| async move {
+                sent.set(sent.get() + 1);
+            },
+        )
+        .await
+        .unwrap();
+    }
+    assert_eq!(sent.get(), 2);
+}
+
+/// Once the wallet scans a block that private recovery has yet to cover, the
+/// refusal is a wait, not a failure: the same signature is authorized as soon
+/// as recovery catches up, and nothing is sent before.
+#[tokio::test(flavor = "multi_thread")]
+async fn hardware_authority_waits_for_private_recovery_to_cover_a_new_block() {
+    use crate::wallet::sync::hardware_authority::{await_authority_within, DispatchRefusal};
+
+    let mut wallet = wallet();
+    let _mode = activate(&mut wallet).await;
+    let source = funded_source(&wallet);
+    run_required(&mut wallet, &source).await;
+    let tx = hardware_tx(vec![receive(1, external(&wallet, 0), VALUE, 150).outpoint]);
+    let path = wallet.path.clone();
+    scan(&path, wallet.birthday, TIP + 1, TIP + 1, 0);
+
+    // Without waiting it is refused as catching up, and nothing is sent.
+    assert!(matches!(
+        await_authority_within(&path, NETWORK, &tx, &[], (TIP + 1).into(), Duration::ZERO).await,
+        Err(DispatchRefusal::CatchingUp(_))
+    ));
+    let sent = std::sync::atomic::AtomicUsize::new(0);
+    let refusal = crate::wallet::sync::hardware_authority::dispatch(
+        &path,
+        NETWORK,
+        &tx,
+        &[],
+        (TIP + 1).into(),
+        |_| async {
+            sent.fetch_add(1, Ordering::SeqCst);
+        },
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        matches!(refusal, DispatchRefusal::CatchingUp(_)),
+        "{refusal:?}"
+    );
+    assert_eq!(sent.load(Ordering::SeqCst), 0);
+
+    // Recovery catches up while the broadcast waits.
+    let (waited, _) = tokio::join!(
+        await_authority_within(
+            &path,
+            NETWORK,
+            &tx,
+            &[],
+            (TIP + 1).into(),
+            Duration::from_secs(30),
+        ),
+        async {
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            run_required(&mut wallet, &source).await
+        }
+    );
+    assert_eq!(waited, Ok(()));
+    crate::wallet::sync::hardware_authority::dispatch(
+        &path,
+        NETWORK,
+        &tx,
+        &[],
+        (TIP + 1).into(),
+        |_| async {
+            sent.fetch_add(1, Ordering::SeqCst);
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(sent.load(Ordering::SeqCst), 1);
+}
+
+/// A wait that recovery does not end in time stays retryable, sends nothing,
+/// and returns within its bound.
+#[tokio::test(flavor = "multi_thread")]
+async fn hardware_authority_wait_for_private_recovery_is_bounded() {
+    use crate::wallet::sync::hardware_authority::{await_authority_within, DispatchRefusal};
+
+    let mut wallet = wallet();
+    let _mode = activate(&mut wallet).await;
+    let source = funded_source(&wallet);
+    run_required(&mut wallet, &source).await;
+    let tx = hardware_tx(vec![receive(1, external(&wallet, 0), VALUE, 150).outpoint]);
+    scan(&wallet.path, wallet.birthday, TIP + 1, TIP + 1, 0);
+    let started = std::time::Instant::now();
+    let refusal = await_authority_within(
         &wallet.path,
         NETWORK,
         &tx,
         &[],
         (TIP + 1).into(),
-        move |_| async move {
-            sent.set(sent.get() + 1);
-        }
+        Duration::from_millis(800),
     )
     .await
-    .is_err());
-    wallet
-        .db
-        .update_chain_tip(BlockHeight::from_u32(TIP))
-        .unwrap();
-    source.replace_events(vec![], vec![]);
+    .unwrap_err();
+    assert!(
+        matches!(refusal, DispatchRefusal::CatchingUp(_)),
+        "{refusal:?}"
+    );
+    let took = started.elapsed();
+    assert!(took >= Duration::from_millis(800), "{took:?}");
+    assert!(took < Duration::from_secs(10), "{took:?}");
+}
+
+/// Refusals recovery cannot end are final at once: withdrawn evidence, an
+/// unknown input, and a build that does not recover the wallet privately.
+#[tokio::test(flavor = "multi_thread")]
+async fn hardware_authority_refusals_recovery_cannot_end_do_not_wait() {
+    use crate::wallet::sync::hardware_authority::{await_authority_within, DispatchRefusal};
+
+    let mut wallet = wallet();
+    let mode = activate(&mut wallet).await;
+    let source = funded_source(&wallet);
     run_required(&mut wallet, &source).await;
-    assert!(crate::wallet::sync::hardware_authority::dispatch(
-        &wallet.path,
-        NETWORK,
-        &tx,
-        &[],
-        TIP.into(),
-        move |_| async move {
-            sent.set(sent.get() + 1);
-        }
-    )
-    .await
-    .is_err());
-    assert_eq!(sent.get(), 0);
+    let funded = hardware_tx(vec![receive(1, external(&wallet, 0), VALUE, 150).outpoint]);
+    let unknown = hardware_tx(vec![OutPoint::new([0x77; 32], 0)]);
+    let wait = Duration::from_secs(30);
+    let final_refusal = |result: Result<(), DispatchRefusal>| {
+        assert!(
+            matches!(result, Err(DispatchRefusal::Refused(_))),
+            "{result:?}"
+        );
+    };
+
+    let started = std::time::Instant::now();
+    final_refusal(
+        await_authority_within(&wallet.path, NETWORK, &unknown, &[], TIP.into(), wait).await,
+    );
+    // Even behind a new block, an unknown input is not waited for.
+    scan(&wallet.path, wallet.birthday, TIP + 1, TIP + 1, 0);
+    final_refusal(
+        await_authority_within(&wallet.path, NETWORK, &unknown, &[], (TIP + 1).into(), wait).await,
+    );
+    // A build that does not recover privately never catches up.
+    drop(mode);
+    final_refusal(
+        await_authority_within(&wallet.path, NETWORK, &funded, &[], (TIP + 1).into(), wait).await,
+    );
+    assert!(started.elapsed() < Duration::from_secs(10));
 }
 
 #[tokio::test]
@@ -815,6 +986,7 @@ async fn public_hardware_tex_legs_dispatch_and_unknown_inputs_are_withheld() {
             |_| async { true },
         )
         .await
+        .map_err(String::from)
     }
     assert_eq!(dispatch(&wallet.path, &leg_1, &[]).await, Ok(true));
     assert_eq!(dispatch(&wallet.path, &leg_2, &[&leg_1]).await, Ok(true));

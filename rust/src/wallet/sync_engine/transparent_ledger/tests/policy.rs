@@ -71,7 +71,8 @@ async fn openers_never_run_weaker_than_the_durable_policy() {
         |_| rpc(&sent),
     )
     .await
-    .unwrap_err();
+    .unwrap_err()
+    .to_string();
     assert!(
         error.contains("Transparent funds are unavailable"),
         "{error}"

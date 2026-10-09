@@ -70,6 +70,10 @@ class _MobileKeystoneShieldScreenState
   Uint8List? _pcztWithProofs;
   SaplingParamsStatus? _saplingParams;
   bool _needsSaplingParams = false;
+
+  /// The signature of a broadcast that waits for private recovery, kept so
+  /// the user can send it again without signing again.
+  Uint8List? _retrySignatures;
   bool _proofsFailed = false;
   bool _decoding = false;
   bool _restartCameraOnResume = false;
@@ -295,6 +299,7 @@ class _MobileKeystoneShieldScreenState
       _stage = _ShieldSignStage.broadcasting;
       _error = null;
       _statusMessage = null;
+      _retrySignatures = null;
     });
 
     RpcEndpointConfig? attemptedEndpoint;
@@ -346,11 +351,36 @@ class _MobileKeystoneShieldScreenState
         });
         return;
       }
+      if (isHardwareBroadcastRetryable(e)) {
+        setState(() {
+          _stage = _ShieldSignStage.failed;
+          _error = kShieldWaitingForPrivateRecoveryMessage;
+          _retrySignatures = signatures;
+        });
+        return;
+      }
       setState(() {
         _stage = _ShieldSignStage.failed;
         _error = _friendlyError(e);
       });
     }
+  }
+
+  /// Sends the kept signature again.
+  void _retryBroadcast() {
+    final pcztWithProofs = _pcztWithProofs;
+    final signatures = _retrySignatures;
+    final saplingParams = _saplingParams;
+    if (pcztWithProofs == null || signatures == null || saplingParams == null) {
+      return;
+    }
+    unawaited(
+      _broadcast(
+        pcztWithProofs: pcztWithProofs,
+        signatures: signatures,
+        saplingParams: saplingParams,
+      ),
+    );
   }
 
   Future<void> _maybeSwitchBroadcastEndpoint(
@@ -621,6 +651,8 @@ class _MobileKeystoneShieldScreenState
         _stage == _ShieldSignStage.failed ||
         _stage == _ShieldSignStage.broadcastWarning;
     if (terminal) {
+      final canRetry =
+          _stage == _ShieldSignStage.failed && _retrySignatures != null;
       return Padding(
         padding: const EdgeInsets.fromLTRB(
           AppSpacing.md,
@@ -628,11 +660,36 @@ class _MobileKeystoneShieldScreenState
           AppSpacing.md,
           AppSpacing.md,
         ),
-        child: AppButton(
-          expand: true,
-          onPressed: _finishWarningOrFailure,
-          child: const Text('Back to wallet'),
-        ),
+        child: canRetry
+            ? Row(
+                children: [
+                  Expanded(
+                    child: AppButton(
+                      expand: true,
+                      variant: AppButtonVariant.ghost,
+                      onPressed: _finishWarningOrFailure,
+                      child: const Text(
+                        'Back to wallet',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.s),
+                  Expanded(
+                    child: AppButton(
+                      key: const ValueKey('mobile_keystone_shield_retry'),
+                      expand: true,
+                      onPressed: _retryBroadcast,
+                      child: const Text('Try again'),
+                    ),
+                  ),
+                ],
+              )
+            : AppButton(
+                expand: true,
+                onPressed: _finishWarningOrFailure,
+                child: const Text('Back to wallet'),
+              ),
       );
     }
 
