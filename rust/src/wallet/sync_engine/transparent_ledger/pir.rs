@@ -19,6 +19,20 @@
 //! deletes those of deleted accounts with [`remove_orphan_companions`], so a
 //! removal that failed converges.
 //!
+//! A companion is rebuilt only when it is confirmed unusable and
+//! reconstructible: SQLite reports it is not a database or is corrupt, or it
+//! is in the earlier format the adapter asks to recreate. The rebuild runs
+//! under the companion's path lock, at most once per companion per process,
+//! and keeps every catalog row the damaged file still yields, so the
+//! catalog's reconciliation records survive. A busy, locked or unreadable
+//! companion, one bound to another identity, a publication change or any
+//! other refusal is never deleted or reset. A regular file where the
+//! companion directory belongs is moved aside, never deleted.
+//!
+//! A pass that fails because the service cannot be reached or is not serving
+//! is [`SourceError::Unavailable`], which ends the whole run, rather than a
+//! failure of that account.
+//!
 //! One lock per companion path serializes every pass, settlement and removal
 //! on it across sources. A source parks each companion it opened with that
 //! lock until the source is dropped, so a pass and its settlement see the same
@@ -149,10 +163,14 @@ enum Slot {
 enum PassFailure {
     Wallet,
     Companion,
+    /// The companion directory cannot be created or used, for every account.
+    CompanionDirectory,
     Transport,
     Invalid,
     Failure,
     PublicationChanged,
+    /// The service could not be reached or was not serving.
+    Outage,
 }
 
 impl PassFailure {
@@ -160,10 +178,12 @@ impl PassFailure {
         match self {
             PassFailure::Wallet => "wallet unreadable",
             PassFailure::Companion => "companion unusable",
+            PassFailure::CompanionDirectory => "companion directory unusable",
             PassFailure::Transport => "transport refused the origin",
             PassFailure::Invalid => "invalid",
             PassFailure::Failure => "failure",
             PassFailure::PublicationChanged => "publication changed",
+            PassFailure::Outage => "service unavailable",
         }
     }
 }
@@ -398,11 +418,16 @@ impl Drop for CancelOnDrop {
     }
 }
 
-/// Logs a failed pass by variant and reports it as failed.
+/// Logs a failed pass by variant and reports it: an outage of the service or
+/// of the companion directory, which no other account's pass would avoid, as
+/// unavailable, anything else as failed.
 fn fail(failure: Option<PassFailure>) -> SourceError {
     let name = failure.map_or("unknown", PassFailure::name);
     log::warn!("transparent PIR: pass failed ({name})");
-    SourceError::Failed
+    match failure {
+        Some(PassFailure::Outage | PassFailure::CompanionDirectory) => SourceError::Unavailable,
+        _ => SourceError::Failed,
+    }
 }
 
 /// Everything one pass needs on its blocking thread.
@@ -477,7 +502,7 @@ impl Pass {
             .map(|account| account.expose_uuid())
             .collect();
         let dir = companion_dir(&self.db_path);
-        std::fs::create_dir_all(&dir).map_err(|_| PassFailure::Companion)?;
+        prepare_companion_dir(&dir)?;
         let owner = self.account.expose_uuid();
         for (account, base) in companions(&dir).map_err(|_| PassFailure::Companion)? {
             if base != path && (account == owner || !accounts.contains(&account)) {
@@ -488,15 +513,31 @@ impl Pass {
                 }
             }
         }
-        ReferenceRecovery::open(path, recovery_config(self.account, &self.origin)).map_err(
-            |error| {
+        let config = recovery_config(self.account, &self.origin);
+        match ReferenceRecovery::open(path, config.clone()) {
+            Ok(companion) => Ok(companion),
+            Err(error) => {
                 log::warn!(
                     "transparent PIR: companion refused ({})",
                     PassFailure::from(&error).name()
                 );
-                PassFailure::Companion
-            },
-        )
+                // A refused open writes nothing, so the file is classified as
+                // the adapter found it.
+                let rebuildable = companion_health(path) == CompanionHealth::Corrupt
+                    || matches!(&error, RecoveryError::Invalid(message) if message == LEGACY_FORMAT);
+                if !rebuildable || !first_rebuild(path) {
+                    return Err(PassFailure::Companion);
+                }
+                log::warn!("transparent PIR: rebuilding an unusable companion once");
+                rebuild_companion(path, config).map_err(|error| {
+                    log::warn!(
+                        "transparent PIR: companion rebuild failed ({})",
+                        error.name()
+                    );
+                    PassFailure::Companion
+                })
+            }
+        }
     }
 
     /// One adapter pass, retried once on the same companion if the
@@ -528,7 +569,10 @@ impl Pass {
             }
             result => result,
         };
-        result.map_err(|error| PassFailure::from(&error))
+        result.map_err(|error| match error {
+            RecoveryError::Failure(_) if http.outage() => PassFailure::Outage,
+            error => PassFailure::from(&error),
+        })
     }
 }
 
@@ -647,6 +691,190 @@ fn companion_lock(path: &Path) -> Arc<tokio::sync::Mutex<()>> {
     locks.entry(path.to_owned()).or_default().clone()
 }
 
+/// The adapter's refusal of a companion in the earlier format, which it asks
+/// to recreate.
+const LEGACY_FORMAT: &str = "companion format v1; recreate";
+
+/// What a companion file is before it is opened.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CompanionHealth {
+    /// No file yet, or one SQLite reads.
+    Usable,
+    /// SQLite reports the file is not a database, or its integrity check fails.
+    Corrupt,
+    /// Busy, locked, unreadable or otherwise not classified: never rebuilt.
+    Unknown,
+}
+
+/// Classifies the companion file at `path` from a read-only connection, so a
+/// busy or unreadable one is never mistaken for corruption.
+fn companion_health(path: &Path) -> CompanionHealth {
+    use rusqlite::{ErrorCode, OpenFlags};
+    if !path.exists() {
+        return CompanionHealth::Usable;
+    }
+    let corrupt = |error: &rusqlite::Error| {
+        matches!(
+            error.sqlite_error_code(),
+            Some(ErrorCode::NotADatabase | ErrorCode::DatabaseCorrupt)
+        )
+    };
+    let conn = match rusqlite::Connection::open_with_flags(
+        path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    ) {
+        Ok(conn) => conn,
+        Err(error) if corrupt(&error) => return CompanionHealth::Corrupt,
+        Err(_) => return CompanionHealth::Unknown,
+    };
+    match conn.query_row("PRAGMA quick_check", [], |row| row.get::<_, String>(0)) {
+        Ok(result) if result == "ok" => CompanionHealth::Usable,
+        Ok(_) => CompanionHealth::Corrupt,
+        Err(error) if corrupt(&error) => CompanionHealth::Corrupt,
+        Err(_) => CompanionHealth::Unknown,
+    }
+}
+
+/// Companions this process has rebuilt; each is rebuilt at most once.
+static REBUILT: LazyLock<Mutex<BTreeSet<PathBuf>>> = LazyLock::new(Default::default);
+
+/// Whether `path` has not been rebuilt by this process yet, recording that it
+/// is now.
+fn first_rebuild(path: &Path) -> bool {
+    REBUILT
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .insert(path.to_owned())
+}
+
+/// Why rebuilding a companion failed.
+#[derive(Debug)]
+enum RebuildError {
+    Remove,
+    Open,
+    Catalog,
+}
+
+impl RebuildError {
+    fn name(&self) -> &'static str {
+        match self {
+            RebuildError::Remove => "could not remove the damaged companion",
+            RebuildError::Open => "the new companion was refused",
+            RebuildError::Catalog => "could not restore catalog rows",
+        }
+    }
+}
+
+/// A damaged companion's catalog rows, with their column names.
+type SalvagedCatalog = (Vec<String>, Vec<Vec<rusqlite::types::Value>>);
+
+/// Replaces the unusable companion at `path`, under its held path lock, with
+/// a new one that keeps every catalog row the damaged file still yields.
+fn rebuild_companion(
+    path: &Path,
+    config: RecoveryConfig,
+) -> Result<ReferenceRecovery, RebuildError> {
+    let catalog = salvage_catalog(path);
+    remove_files(path).map_err(|_| RebuildError::Remove)?;
+    drop(ReferenceRecovery::open(path, config.clone()).map_err(|_| RebuildError::Open)?);
+    if let Some((columns, rows)) = catalog {
+        restore_catalog(path, &columns, &rows).map_err(|_| RebuildError::Catalog)?;
+    }
+    ReferenceRecovery::open(path, config).map_err(|_| RebuildError::Open)
+}
+
+/// The catalog rows a damaged companion still yields, when its catalog can
+/// be read whole. Nothing otherwise, or from a file in another format.
+fn salvage_catalog(path: &Path) -> Option<SalvagedCatalog> {
+    use rusqlite::OpenFlags;
+    let conn = rusqlite::Connection::open_with_flags(
+        path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .ok()?;
+    let mut statement = conn.prepare("SELECT * FROM pir_bridge_catalog").ok()?;
+    let columns: Vec<String> = statement
+        .column_names()
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+    let rows = statement
+        .query_map([], |row| {
+            (0..columns.len())
+                .map(|index| row.get::<_, rusqlite::types::Value>(index))
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .ok()?
+        .collect::<Result<Vec<_>, _>>()
+        .ok()?;
+    Some((columns, rows))
+}
+
+/// Restores salvaged catalog rows into the new companion at `path`, in one
+/// transaction, only when its catalog has exactly the salvaged columns.
+fn restore_catalog(
+    path: &Path,
+    columns: &[String],
+    rows: &[Vec<rusqlite::types::Value>],
+) -> rusqlite::Result<()> {
+    let mut conn = rusqlite::Connection::open(path)?;
+    let current: Vec<String> = conn
+        .prepare("SELECT * FROM pir_bridge_catalog")?
+        .column_names()
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+    if current != columns {
+        log::warn!("transparent PIR: the catalog format differs; nothing restored");
+        return Ok(());
+    }
+    let tx = conn.transaction()?;
+    {
+        let placeholders = vec!["?"; columns.len()].join(", ");
+        let mut insert = tx.prepare(&format!(
+            "INSERT OR IGNORE INTO pir_bridge_catalog VALUES ({placeholders})"
+        ))?;
+        for row in rows {
+            insert.execute(rusqlite::params_from_iter(row))?;
+        }
+    }
+    tx.commit()
+}
+
+/// Makes `dir` a directory for companions. A regular file or other entry in
+/// its place is moved aside, never deleted; if that fails, the directory is
+/// unusable for every account.
+fn prepare_companion_dir(dir: &Path) -> Result<(), PassFailure> {
+    match std::fs::symlink_metadata(dir) {
+        Ok(meta) if meta.is_dir() => return Ok(()),
+        Ok(_) => {
+            let mut aside = dir.as_os_str().to_owned();
+            aside.push(format!(
+                ".displaced-{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |elapsed| elapsed.as_secs())
+            ));
+            log::warn!(
+                "transparent PIR: moving aside a file where the companion directory belongs"
+            );
+            std::fs::rename(dir, &aside).map_err(|_| PassFailure::CompanionDirectory)?;
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(_) => return Err(PassFailure::CompanionDirectory),
+    }
+    std::fs::create_dir_all(dir).map_err(|_| PassFailure::CompanionDirectory)
+}
+
+/// Whether listing the companion directory failed only because there is no
+/// directory: nothing to sweep or remove.
+fn no_companions(error: &io::Error) -> bool {
+    matches!(
+        error.kind(),
+        io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
+    )
+}
+
 /// Deletes the companion file at `base` and its sidecars. Missing files are
 /// not an error.
 fn remove_files(base: &Path) -> io::Result<()> {
@@ -684,7 +912,8 @@ pub(crate) fn remove_companions(db_path: &str, account_uuid: &str) -> Result<(),
 pub(crate) fn remove_orphan_companions(db_path: &str) -> Result<(), String> {
     let found = match companions(&companion_dir(db_path)) {
         Ok(found) => found,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        // Nothing to sweep; the next pass moves a file in its place aside.
+        Err(error) if no_companions(&error) => return Ok(()),
         Err(error) => {
             return Err(format!(
                 "Failed to list transparent PIR companions: {error}"
@@ -726,7 +955,7 @@ pub(super) fn remove_account_companions(
         .map_err(|error| format!("Invalid account UUID: {error}"))?;
     let found = match companions(&companion_dir(db_path)) {
         Ok(found) => found,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) if no_companions(&error) => return Ok(()),
         Err(error) => {
             return Err(format!(
                 "Failed to list transparent PIR companions: {error}"

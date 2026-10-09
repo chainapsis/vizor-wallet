@@ -312,11 +312,13 @@ impl RecoverySource for FixtureSource {
             });
         }
         for commit in commits {
-            let applied =
-                with_wallet_db_write_lock("sync_engine.transparent_ledger.commit", || match trust {
+            let applied = with_wallet_db_write_lock(
+                "sync_engine.transparent_ledger.commit",
+                || match trust {
                     Trust::Trusted => db.qualify_and_apply_transparent_ledger_commit(commit),
                     Trust::Observed => db.apply_transparent_ledger_commit(commit),
-                });
+                },
+            );
             match applied {
                 Ok(outcome) => {
                     stats.applied += 1;

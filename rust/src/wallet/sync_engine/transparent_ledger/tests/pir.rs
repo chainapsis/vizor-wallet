@@ -314,11 +314,12 @@ async fn new_selects_the_origin_gates_mainnet_and_uses_the_wallet_route() {
     assert!(!pir::companion_dir(&wallet.path).exists());
 
     // On mainnet the pass's transport takes the wallet's route. Its first
-    // request fails, and the pass with it.
+    // request fails: a service refusing its shard map is down, so the pass is
+    // unavailable.
     let source = TransparentPirSource::new(&wallet.path, MAIN);
     assert_eq!(
         source.recover(request(account, &watch, &|| false)).await,
-        Err(SourceError::Failed)
+        Err(SourceError::Unavailable)
     );
     assert_eq!(paths(&seam.seam.observer.requests()), [MAP]);
     assert_eq!(seam.seam.routes(), [RoutePolicy::WalletPreference]);
@@ -566,11 +567,11 @@ async fn a_publication_change_retries_once_keeping_the_companion() {
     let observer = &seam.seam.observer;
 
     // The first pass binds the companion to the publication's set identity,
-    // then the service refuses the rest.
+    // then the service refuses the rest, its filters among them: an outage.
     let first = TransparentPirSource::new(&wallet.path, MAIN);
     assert_eq!(
         first.recover(request(account, &watch, &|| false)).await,
-        Err(SourceError::Failed)
+        Err(SourceError::Unavailable)
     );
     let bound = observer.requests().len();
     assert!(bound > 2, "the first pass got past the service's init");
@@ -590,7 +591,7 @@ async fn a_publication_change_retries_once_keeping_the_companion() {
     let second = TransparentPirSource::new(&wallet.path, MAIN);
     assert_eq!(
         second.recover(request(account, &watch, &|| false)).await,
-        Err(SourceError::Failed)
+        Err(SourceError::Unavailable)
     );
     let requests = observer.requests();
     let mut expected = vec![MAP, INIT];
@@ -625,9 +626,11 @@ async fn a_failed_pass_reports_failed_and_sends_nothing_public() {
     );
 
     let source = TransparentPirSource::new(&wallet.path, MAIN);
+    // A service that is not serving its init is an outage, which ends the run
+    // rather than failing only this account.
     assert_eq!(
         source.recover(request(account, &watch, &|| false)).await,
-        Err(SourceError::Failed)
+        Err(SourceError::Unavailable)
     );
     // Nothing is retried, and nothing reaches the wallet: the pass reads it
     // only to check the chain, and the source holds no other client.
@@ -638,10 +641,279 @@ async fn a_failed_pass_reports_failed_and_sends_nothing_public() {
         tpir_before
     );
     // A failed pass leaves nothing to acknowledge.
-    assert_eq!(
-        settle(&source, &wallet.path, account).await,
-        NOTHING
+    assert_eq!(settle(&source, &wallet.path, account).await, NOTHING);
+
+    // A refusal of this request, not an outage of the service, fails only the
+    // account's pass. The first source holds the companion; release it.
+    drop(source);
+    let _seam = test_transport::set(
+        &wallet.path,
+        RequestObserver::answering(|request| match request.path.as_str() {
+            MAP => reply(200, shard_map(BIRTHDAY - 100)),
+            _ => reply(404, vec![]),
+        }),
     );
+    let source = TransparentPirSource::new(&wallet.path, MAIN);
+    assert_eq!(
+        source.recover(request(account, &watch, &|| false)).await,
+        Err(SourceError::Failed)
+    );
+}
+
+/// An outage of the service ends the whole run at its first account: no
+/// other account is asked, and nothing is committed.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_outage_stops_the_run_instead_of_failing_each_account() {
+    let wallet = main_wallet(2);
+    let path = wallet.path.clone();
+    let _mode = test_mode::set(&path, TransparentLedgerMode::PrivateRequired);
+    {
+        let mut db = open_wallet_db_with_timeout(&path, MAIN, SYNC_DB_BUSY_TIMEOUT).unwrap();
+        db.apply_transparent_policy(TransparentLedgerMode::PrivateRequired)
+            .unwrap();
+    }
+    let before = production_dump(&path);
+    let seam = test_transport::set(&path, refusing());
+    let source = TransparentPirSource::new(&path, MAIN);
+    let mut db = open_wallet_db_with_timeout(&path, MAIN, SYNC_DB_BUSY_TIMEOUT).unwrap();
+    let policy = EnhancementPolicy::for_preference(MAIN, false)
+        .with_transparent_mode(TransparentLedgerMode::PrivateRequired);
+    let outcome = run(
+        &mut db,
+        &path,
+        MAIN,
+        policy,
+        &source,
+        Some(wallet.accounts[0].1),
+        Instant::now,
+        &|| false,
+    )
+    .await
+    .unwrap();
+    assert_eq!(outcome, RunOutcome::SourceUnavailable);
+    // One account's shard map, then nothing.
+    assert_eq!(paths(&seam.seam.observer.requests()), [MAP]);
+    assert_eq!(production_dump(&path), before);
+}
+
+/// Writes `garbage` over the first bytes of the file at `path`, so SQLite no
+/// longer reads it as a database.
+fn clobber(path: &Path, garbage: &[u8]) {
+    use std::io::{Seek, SeekFrom, Write};
+    let mut file = std::fs::OpenOptions::new().write(true).open(path).unwrap();
+    file.seek(SeekFrom::Start(0)).unwrap();
+    file.write_all(garbage).unwrap();
+}
+
+/// A catalog row the adapter would write, for `lineage`.
+fn catalog_row(conn: &rusqlite::Connection, lineage: i64) {
+    conn.execute(
+        "INSERT INTO pir_bridge_catalog
+             (source, shard_id, digest, sealed, lineage, revision, height, hash, exported, current)
+         VALUES (?1, 0, ?2, 0, ?3, ?4, 1, ?5, 1, 0)",
+        rusqlite::params![
+            vec![7u8; 32],
+            format!("{lineage:064x}"),
+            lineage,
+            vec![lineage as u8; 32],
+            vec![9u8; 32]
+        ],
+    )
+    .unwrap();
+}
+
+fn catalog_rows(path: &Path) -> i64 {
+    rusqlite::Connection::open(path)
+        .unwrap()
+        .query_row("SELECT COUNT(*) FROM pir_bridge_catalog", [], |row| {
+            row.get(0)
+        })
+        .unwrap()
+}
+
+/// Overwrites the first page of `table` in the database at `path`, leaving the
+/// rest of the file as it was.
+fn corrupt_table(path: &Path, table: &str) {
+    use std::io::{Seek, SeekFrom, Write};
+    let (page_size, root): (i64, i64) = {
+        let conn = rusqlite::Connection::open(path).unwrap();
+        conn.pragma_update(None, "journal_mode", "DELETE").unwrap();
+        (
+            conn.query_row("PRAGMA page_size", [], |row| row.get(0))
+                .unwrap(),
+            conn.query_row(
+                "SELECT rootpage FROM sqlite_master WHERE name = ?1",
+                [table],
+                |row| row.get(0),
+            )
+            .unwrap(),
+        )
+    };
+    let mut file = std::fs::OpenOptions::new().write(true).open(path).unwrap();
+    file.seek(SeekFrom::Start(((root - 1) * page_size) as u64))
+        .unwrap();
+    file.write_all(&vec![0xa5; page_size as usize]).unwrap();
+}
+
+/// A companion SQLite cannot read is rebuilt once, under its lock, keeping the
+/// catalog rows the damaged file still yields; a second failure is never
+/// rebuilt again in the process.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_corrupt_companion_is_rebuilt_once_keeping_its_catalog() {
+    let wallet = main_wallet(2);
+    let (a_uuid, a) = wallet.accounts[0].clone();
+    let (b_uuid, b) = wallet.accounts[1].clone();
+    let _seam = test_transport::set(&wallet.path, refusing());
+    for account in [a, b] {
+        let source = TransparentPirSource::new(&wallet.path, MAIN);
+        assert_eq!(
+            source
+                .recover(request(account, &bare(account), &|| false))
+                .await,
+            Ok(COMPLETE)
+        );
+    }
+    let (a_path, b_path) = (
+        companion(&wallet.path, &a_uuid),
+        companion(&wallet.path, &b_uuid),
+    );
+
+    // Account A's store metadata is damaged but its catalog is intact: the
+    // rebuild keeps both catalog rows.
+    {
+        let conn = rusqlite::Connection::open(&a_path).unwrap();
+        catalog_row(&conn, 1);
+        catalog_row(&conn, 2);
+    }
+    corrupt_table(&a_path, "wallet_meta");
+    let source = TransparentPirSource::new(&wallet.path, MAIN);
+    assert_eq!(
+        source.recover(request(a, &bare(a), &|| false)).await,
+        Ok(COMPLETE)
+    );
+    drop(source);
+    assert_eq!(catalog_rows(&a_path), 2);
+
+    // Account B's file is no database at all: rebuilt empty, once.
+    clobber(&b_path, &[0x5a; 4096]);
+    let source = TransparentPirSource::new(&wallet.path, MAIN);
+    assert_eq!(
+        source.recover(request(b, &bare(b), &|| false)).await,
+        Ok(COMPLETE)
+    );
+    drop(source);
+    assert_eq!(catalog_rows(&b_path), 0);
+    // Damaged again, it is not rebuilt a second time.
+    clobber(&b_path, &[0x5a; 4096]);
+    let source = TransparentPirSource::new(&wallet.path, MAIN);
+    assert_eq!(
+        source.recover(request(b, &bare(b), &|| false)).await,
+        Err(SourceError::Failed)
+    );
+    assert_eq!(std::fs::read(&b_path).unwrap()[..16], [0x5a; 16]);
+}
+
+/// Only confirmed corruption is repaired: a companion bound to another
+/// identity, an unreadable one, or one another connection holds busy is left
+/// exactly as it is.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_foreign_unreadable_or_busy_companion_is_never_deleted() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let wallet = main_wallet(1);
+    let (uuid, account) = wallet.accounts[0].clone();
+    let _seam = test_transport::set(&wallet.path, refusing());
+    let path = companion(&wallet.path, &uuid);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+
+    // Bound to another account: the adapter refuses it, and it survives.
+    let other = AccountUuid::from_uuid(uuid::Uuid::new_v4());
+    drop(
+        ReferenceRecovery::open(
+            &path,
+            pir::recovery_config(other, pir::DEFAULT_MAINNET_ORIGIN),
+        )
+        .unwrap(),
+    );
+    catalog_row(&rusqlite::Connection::open(&path).unwrap(), 1);
+    let source = TransparentPirSource::new(&wallet.path, MAIN);
+    assert_eq!(
+        source
+            .recover(request(account, &bare(account), &|| false))
+            .await,
+        Err(SourceError::Failed)
+    );
+    drop(source);
+    assert_eq!(catalog_rows(&path), 1);
+
+    // Unreadable: refused, untouched.
+    let bytes = std::fs::read(&path).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let source = TransparentPirSource::new(&wallet.path, MAIN);
+    let refused = source
+        .recover(request(account, &bare(account), &|| false))
+        .await;
+    drop(source);
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    assert_eq!(refused, Err(SourceError::Failed));
+    assert_eq!(std::fs::read(&path).unwrap(), bytes);
+
+    // Busy: another connection holds it exclusively throughout the open.
+    std::fs::remove_file(&path).unwrap();
+    drop(
+        ReferenceRecovery::open(
+            &path,
+            pir::recovery_config(account, pir::DEFAULT_MAINNET_ORIGIN),
+        )
+        .unwrap(),
+    );
+    catalog_row(&rusqlite::Connection::open(&path).unwrap(), 3);
+    let holder = rusqlite::Connection::open(&path).unwrap();
+    holder
+        .execute_batch("PRAGMA journal_mode = DELETE; BEGIN EXCLUSIVE;")
+        .ok();
+    let source = TransparentPirSource::new(&wallet.path, MAIN);
+    let busy = source
+        .recover(request(account, &bare(account), &|| false))
+        .await;
+    drop(source);
+    holder.execute_batch("ROLLBACK").ok();
+    drop(holder);
+    assert_eq!(busy, Err(SourceError::Failed));
+    assert_eq!(catalog_rows(&path), 1);
+}
+
+/// A regular file where the companion directory belongs is moved aside, never
+/// deleted, and recovery proceeds.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_file_in_place_of_the_companion_directory_is_moved_aside() {
+    let wallet = main_wallet(1);
+    let account = wallet.accounts[0].1;
+    let _seam = test_transport::set(&wallet.path, refusing());
+    let dir = pir::companion_dir(&wallet.path);
+    std::fs::write(&dir, b"not a directory").unwrap();
+    // The sweep at sync start has nothing to do.
+    pir::remove_orphan_companions(&wallet.path).unwrap();
+
+    let source = TransparentPirSource::new(&wallet.path, MAIN);
+    assert_eq!(
+        source
+            .recover(request(account, &bare(account), &|| false))
+            .await,
+        Ok(COMPLETE)
+    );
+    assert!(dir.is_dir());
+    let displaced: Vec<_> = std::fs::read_dir(dir.parent().unwrap())
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.contains(".tpir.displaced-"))
+        })
+        .collect();
+    assert_eq!(displaced.len(), 1);
+    assert_eq!(std::fs::read(&displaced[0]).unwrap(), b"not a directory");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -675,10 +947,7 @@ async fn cancelling_a_pass_waits_for_the_blocking_task() {
     assert_eq!(paths(&seam.seam.observer.requests()), [MAP]);
     // A cancelled pass leaves nothing to acknowledge, and its companion is
     // parked again for the next pass.
-    assert_eq!(
-        settle(&source, &wallet.path, account).await,
-        NOTHING
-    );
+    assert_eq!(settle(&source, &wallet.path, account).await, NOTHING);
     assert_eq!(
         source
             .recover(request(account, &bare(account), &|| false))
@@ -758,10 +1027,7 @@ async fn a_pass_past_its_deadline_fails_without_committing() {
     );
     // Nothing is requested after the deadline, and nothing can be applied.
     assert_eq!(paths(&seam.seam.observer.requests()), [MAP]);
-    assert_eq!(
-        settle(&source, &wallet.path, account).await,
-        NOTHING
-    );
+    assert_eq!(settle(&source, &wallet.path, account).await, NOTHING);
 }
 
 #[test]
