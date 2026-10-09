@@ -156,6 +156,24 @@ void main() {
         timeout: const Duration(minutes: 1),
       );
 
+      // ── Account personalisation ────────────────────────────────────
+      await pumpUntil(
+        tester,
+        () => tester.any(find.byKey(
+          const ValueKey('mobile_customise_account_name_field'),
+        )),
+        description: 'account personalisation',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('mobile_customise_account_name_field')),
+        'Tour wallet',
+      );
+      await shot('04d_customise_account');
+      await tapAppButton(
+        tester,
+        const ValueKey('mobile_customise_account_continue'),
+      );
+
       // ── Passcode setup ─────────────────────────────────────────────
       await pumpUntil(
         tester,
@@ -173,11 +191,6 @@ void main() {
       );
       await shot('07_passcode_confirm');
       await enterPasscode(tester, mobileE2ePasscode);
-      await tapAppButton(
-        tester,
-        const ValueKey('mobile_customise_account_continue'),
-        timeout: const Duration(minutes: 2),
-      );
       await pumpUntil(
         tester,
         () =>
