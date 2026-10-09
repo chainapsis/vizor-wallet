@@ -667,25 +667,18 @@ mod tests {
 
         let (_dir, path, gate) = wallet();
         let received = Arc::new(AtomicBool::new(false));
-        let (release, released) = std::sync::mpsc::channel::<()>();
-        let released = Arc::new(Mutex::new(released));
         let lwd = CapturingLwd::start_with(Vec::new(), 0, {
             let received = received.clone();
             move |request| {
                 if request.ends_with("/GetTransaction") {
                     received.store(true, Ordering::SeqCst);
-                    // Hold the response until the transition has returned.
-                    // Scheduling delays in the parallel suite cannot turn an
-                    // unsignalled call into an already-completed one.
-                    released
-                        .lock()
-                        .unwrap()
-                        .recv_timeout(Duration::from_secs(30))
-                        .unwrap();
                 }
             }
         })
         .await;
+        // An asynchronous barrier keeps the response outstanding without
+        // blocking the runtime's timer driver or relying on a wall-clock nap.
+        let release = lwd.hold_responses("/GetTransaction");
         let txid = TxId::from_bytes([0x5c; 32]);
         // Unsignalled first: its transition applies nothing, so the gate's
         // captured authority still holds for the signalled lookup.
@@ -713,7 +706,7 @@ mod tests {
                 Duration::from_millis(2000),
             )
             .await;
-            release.send(()).unwrap();
+            release.notify_one();
             assert_eq!(transition.is_ok(), drains, "signalled: {signalled}");
             // The lookup itself completes either way, answered "not found".
             let answered = lookup.await.unwrap().unwrap();

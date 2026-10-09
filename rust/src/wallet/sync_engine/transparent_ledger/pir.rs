@@ -731,12 +731,15 @@ enum CompanionHealth {
     Unknown,
 }
 
-/// Classifies the companion file at `path` from a read-only connection, so a
+/// Classifies the companion file at `path` from a query-only connection, so a
 /// busy or unreadable one is never mistaken for corruption.
 fn companion_health(path: &Path) -> CompanionHealth {
-    use rusqlite::{ErrorCode, OpenFlags};
+    use rusqlite::ErrorCode;
     if !path.exists() {
         return CompanionHealth::Usable;
+    }
+    if require_no_sidecars(path).is_err() {
+        return CompanionHealth::Unknown;
     }
     let corrupt = |error: &rusqlite::Error| {
         matches!(
@@ -744,10 +747,7 @@ fn companion_health(path: &Path) -> CompanionHealth {
             Some(ErrorCode::NotADatabase | ErrorCode::DatabaseCorrupt)
         )
     };
-    let conn = match rusqlite::Connection::open_with_flags(
-        path,
-        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-    ) {
+    let conn = match inspection_conn(path) {
         Ok(conn) => conn,
         Err(error) if corrupt(&error) => return CompanionHealth::Corrupt,
         Err(_) => return CompanionHealth::Unknown,
@@ -826,6 +826,8 @@ fn rebuild_companion(
     config: RecoveryConfig,
     rebuild: Rebuild,
 ) -> Result<ReferenceRecovery, RebuildError> {
+    // Do not let inspection checkpoint or clean up somebody else's WAL.
+    require_no_sidecars(path)?;
     let staging = sibling(path, ".rebuild");
     remove_database(&staging).map_err(|_| RebuildError::Replacement)?;
     let built = (|| {
@@ -876,17 +878,21 @@ fn swap_in(
     staging: &Path,
     rename: impl Fn(&Path, &Path) -> io::Result<()>,
 ) -> Result<(), RebuildError> {
-    for base in [path, staging] {
-        for suffix in SIDECARS {
-            match std::fs::symlink_metadata(sibling(base, suffix)) {
-                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-                // A dangling symlink is still an entry; other metadata errors
-                // cannot establish absence. Keep both files in either case.
-                _ => return Err(RebuildError::Unsalvageable),
-            }
+    require_no_sidecars(path)?;
+    require_no_sidecars(staging)?;
+    rename(staging, path).map_err(|_| RebuildError::Swap)
+}
+
+fn require_no_sidecars(path: &Path) -> Result<(), RebuildError> {
+    for suffix in SIDECARS {
+        match std::fs::symlink_metadata(sibling(path, suffix)) {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            // A dangling symlink is still an entry; other metadata errors
+            // cannot establish absence. Keep the original in either case.
+            _ => return Err(RebuildError::Unsalvageable),
         }
     }
-    rename(staging, path).map_err(|_| RebuildError::Swap)
+    Ok(())
 }
 
 /// `base` with `suffix` appended to its file name.
@@ -896,21 +902,25 @@ fn sibling(base: &Path, suffix: &str) -> PathBuf {
     path.into()
 }
 
-/// A read-only connection to the companion file at `path`.
-fn read_only(path: &Path) -> Option<rusqlite::Connection> {
+/// An existing-file connection that rejects SQL writes. Read-only WAL
+/// connections can create empty sidecars and leave them behind; a query-only
+/// connection opened read/write lets SQLite remove its own empty sidecars on
+/// close. The repair checks for pre-existing sidecars before using it.
+fn inspection_conn(path: &Path) -> rusqlite::Result<rusqlite::Connection> {
     use rusqlite::OpenFlags;
-    rusqlite::Connection::open_with_flags(
+    let conn = rusqlite::Connection::open_with_flags(
         path,
-        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-    )
-    .ok()
+        OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )?;
+    conn.pragma_update(None, "query_only", true)?;
+    Ok(conn)
 }
 
 /// The account, origin and schema binding, or a confirmed absent binding.
 /// Failure to read it is never interpreted as absence.
 fn read_binding(path: &Path) -> Result<Option<Vec<u8>>, RebuildError> {
     use rusqlite::OptionalExtension as _;
-    let conn = read_only(path).ok_or(RebuildError::Unsalvageable)?;
+    let conn = inspection_conn(path).map_err(|_| RebuildError::Unsalvageable)?;
     if !has_schema_entry(&conn, "pir_bridge_binding")? {
         return Ok(None);
     }
@@ -926,7 +936,7 @@ fn read_binding(path: &Path) -> Result<Option<Vec<u8>>, RebuildError> {
 /// Whether a catalog exists, distinguishing a confirmed absence from an
 /// unreadable schema. A legacy refusal alone cannot establish absence.
 fn has_catalog(path: &Path) -> Result<bool, RebuildError> {
-    let conn = read_only(path).ok_or(RebuildError::Unsalvageable)?;
+    let conn = inspection_conn(path).map_err(|_| RebuildError::Unsalvageable)?;
     has_schema_entry(&conn, "pir_bridge_catalog")
 }
 
@@ -942,7 +952,7 @@ fn has_schema_entry(conn: &rusqlite::Connection, name: &str) -> Result<bool, Reb
 /// Every catalog row of the companion at `path`, with the column names, when
 /// the whole catalog can be read. Nothing otherwise.
 fn salvage_catalog(path: &Path) -> Option<SalvagedCatalog> {
-    let conn = read_only(path)?;
+    let conn = inspection_conn(path).ok()?;
     let mut statement = conn.prepare("SELECT * FROM pir_bridge_catalog").ok()?;
     let columns: Vec<String> = statement
         .column_names()
@@ -1159,6 +1169,34 @@ mod rebuild_tests {
 
     fn write(path: &Path, bytes: &[u8]) {
         std::fs::write(path, bytes).unwrap();
+    }
+
+    /// Inspecting a WAL database neither changes its bytes nor leaves empty
+    /// sidecars that would prevent a safe replacement. SQL writes are refused.
+    #[test]
+    fn inspection_keeps_wallet_bytes_and_cleans_its_empty_sidecars() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("companion.sqlite");
+        {
+            let conn = rusqlite::Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "PRAGMA journal_mode=WAL; CREATE TABLE a(x); INSERT INTO a VALUES (1)",
+            )
+            .unwrap();
+        }
+        let before = std::fs::read(&path).unwrap();
+        require_no_sidecars(&path).unwrap();
+        {
+            let conn = inspection_conn(&path).unwrap();
+            assert_eq!(
+                conn.query_row("SELECT x FROM a", [], |row| row.get::<_, i64>(0))
+                    .unwrap(),
+                1
+            );
+            assert!(conn.execute("INSERT INTO a VALUES (2)", []).is_err());
+        }
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        require_no_sidecars(&path).unwrap();
     }
 
     /// A failed rename leaves the original as it was; a successful one leaves

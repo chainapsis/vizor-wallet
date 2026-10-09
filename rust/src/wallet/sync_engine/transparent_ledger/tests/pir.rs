@@ -825,9 +825,6 @@ async fn legacy_refusal_preserves_a_compatible_bound_catalog() {
         );
         {
             let conn = rusqlite::Connection::open(&path).unwrap();
-            // Put all catalog evidence in the main file. A WAL companion is
-            // deliberately refused by the repair's atomic-swap check.
-            conn.pragma_update(None, "journal_mode", "DELETE").unwrap();
             catalog_row(&conn, 1);
             catalog_row(&conn, 2);
             conn.execute_batch(damage).unwrap();
@@ -843,6 +840,46 @@ async fn legacy_refusal_preserves_a_compatible_bound_catalog() {
         assert_eq!(catalog_rows(&path), 2);
         assert!(!with_suffix(&path, ".rebuild").exists());
     }
+}
+
+/// A readable catalog cannot be transferred without evidence of its identity,
+#[tokio::test(flavor = "multi_thread")]
+async fn legacy_refusal_with_an_existing_wal_keeps_all_catalog_evidence() {
+    let wallet = main_wallet(1);
+    let (uuid, account) = wallet.accounts[0].clone();
+    let _seam = test_transport::set(&wallet.path, refusing());
+    let path = companion(&wallet.path, &uuid);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    drop(
+        ReferenceRecovery::open(
+            &path,
+            pir::recovery_config(account, pir::DEFAULT_MAINNET_ORIGIN),
+        )
+        .unwrap(),
+    );
+    let holder = rusqlite::Connection::open(&path).unwrap();
+    catalog_row(&holder, 1);
+    holder
+        .execute_batch("DELETE FROM pir_bridge_binding WHERE key = 'format'")
+        .unwrap();
+    assert!(with_suffix(&path, "-wal").exists());
+    let source = TransparentPirSource::new(&wallet.path, MAIN);
+    assert_eq!(
+        source
+            .recover(request(account, &bare(account), &|| false))
+            .await,
+        Err(SourceError::Failed)
+    );
+    drop(source);
+    assert_eq!(
+        holder
+            .query_row("SELECT COUNT(*) FROM pir_bridge_catalog", [], |row| row
+                .get::<_, i64>(0))
+            .unwrap(),
+        1
+    );
+    drop(holder);
+    assert_eq!(catalog_rows(&path), 1);
 }
 
 /// A readable catalog cannot be transferred without evidence of its identity,
@@ -870,7 +907,6 @@ async fn legacy_refusal_with_an_unbound_catalog_keeps_the_original() {
         );
         {
             let conn = rusqlite::Connection::open(&path).unwrap();
-            conn.pragma_update(None, "journal_mode", "DELETE").unwrap();
             catalog_row(&conn, 1);
             conn.execute_batch(damage).unwrap();
         }
@@ -906,7 +942,6 @@ async fn legacy_refusal_without_a_catalog_can_be_rebuilt() {
         );
         {
             let conn = rusqlite::Connection::open(&path).unwrap();
-            conn.pragma_update(None, "journal_mode", "DELETE").unwrap();
             conn.execute_batch(
                 "DROP TABLE pir_bridge_catalog;
                  CREATE TABLE pir_bridge_revisions (source BLOB NOT NULL);

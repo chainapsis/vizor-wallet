@@ -49,10 +49,21 @@ pub(crate) struct CapturingLwd {
     pub(crate) channel: Channel,
     pub(crate) url: String,
     requests: Arc<Mutex<Vec<String>>>,
+    response_gates: Arc<Mutex<std::collections::HashMap<&'static str, Arc<tokio::sync::Notify>>>>,
     server: tokio::task::JoinHandle<()>,
 }
 
 impl CapturingLwd {
+    /// Holds each response to `rpc` asynchronously until its gate is released.
+    pub(crate) fn hold_responses(&self, rpc: &'static str) -> Arc<tokio::sync::Notify> {
+        let gate = Arc::new(tokio::sync::Notify::new());
+        self.response_gates
+            .lock()
+            .unwrap()
+            .insert(rpc, gate.clone());
+        gate
+    }
+
     pub(crate) async fn start(history_tx: Vec<u8>) -> Self {
         Self::start_with(history_tx, 0, |_| {}).await
     }
@@ -179,6 +190,11 @@ impl CapturingLwd {
         fault: FaultHook,
     ) -> Self {
         let requests = Arc::new(Mutex::new(Vec::new()));
+        let response_gates = Arc::new(Mutex::new(std::collections::HashMap::<
+            &'static str,
+            Arc<tokio::sync::Notify>,
+        >::new()));
+        let server_gates = response_gates.clone();
         let recorded = requests.clone();
         let on_request: OnRequest = Arc::new(on_request);
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -187,6 +203,7 @@ impl CapturingLwd {
             loop {
                 let (stream, _) = listener.accept().await.unwrap();
                 let recorded = recorded.clone();
+                let response_gates = server_gates.clone();
                 let on_request = on_request.clone();
                 let history_tx = history_tx.clone();
                 let send_gate = send_gate.clone();
@@ -198,11 +215,20 @@ impl CapturingLwd {
                             let path = request.uri().path().to_owned();
                             recorded.lock().unwrap().push(path.clone());
                             on_request(&path);
+                            let response_gate = response_gates
+                                .lock()
+                                .unwrap()
+                                .iter()
+                                .find(|(rpc, _)| path.ends_with(**rpc))
+                                .map(|(_, gate)| gate.clone());
                             let fault = fault(&path);
                             let history_tx = history_tx.clone();
                             let send_gate = send_gate.clone();
                             let served = served.clone();
                             async move {
+                                if let Some(gate) = response_gate {
+                                    gate.notified().await;
+                                }
                                 if let Some(fault) = fault {
                                     let grpc = hyper::Response::builder()
                                         .header("content-type", "application/grpc");
@@ -310,6 +336,7 @@ impl CapturingLwd {
             channel,
             url,
             requests,
+            response_gates,
             server,
         }
     }
