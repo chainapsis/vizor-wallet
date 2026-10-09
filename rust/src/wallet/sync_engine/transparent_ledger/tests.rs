@@ -23,7 +23,7 @@ use super::*;
 use crate::wallet::sync::{get_wallet_balance, TransparentBalanceAuthority};
 use crate::wallet::sync_engine::enhancement::test_mode;
 use crate::wallet::sync_engine::lwd::transparent_lookup::apply_transparent_policy_fenced;
-use crate::wallet::sync_engine::SyncProgressEvent;
+use crate::wallet::sync_engine::{SyncEventKind, SyncProgressEvent};
 use crate::wallet::{
     db::{open_wallet_db_with_timeout, SYNC_DB_BUSY_TIMEOUT},
     keys,
@@ -1773,7 +1773,7 @@ async fn a_ledger_account_is_paused_and_does_not_block_sync() {
 }
 
 #[tokio::test]
-async fn the_followup_reemits_completion_after_recovery() {
+async fn the_followup_reports_an_update_after_recovery() {
     use crate::wallet::sync_engine::transparent_followup;
 
     let mut wallet = wallet();
@@ -1800,7 +1800,8 @@ async fn the_followup_reemits_completion_after_recovery() {
         let events = events.lock().unwrap();
         assert_eq!(events.len(), 1);
         let event = &events[0];
-        assert!(event.is_complete && event.has_new_tx && !event.is_syncing);
+        assert_eq!(event.kind, SyncEventKind::FollowupUpdated);
+        assert!(!event.is_syncing);
         assert_eq!((event.scanned_height, event.chain_tip_height), completed);
     }
     // The balance the UI re-reads shows the restored authority.

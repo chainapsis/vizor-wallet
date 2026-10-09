@@ -67,7 +67,9 @@ use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
 
 use super::enhancement::EnhancementPolicy;
-use super::{elapsed, SyncProgressEvent, TransparentLookupGate, WalletDatabase};
+use super::{
+    elapsed, followup_updated_event, SyncProgressEvent, TransparentLookupGate, WalletDatabase,
+};
 use crate::wallet::db::with_wallet_db_write_lock_unless;
 use crate::wallet::network::WalletNetwork;
 
@@ -542,8 +544,8 @@ fn outcome_name(outcome: TransparentDetailOutcome) -> &'static str {
 }
 
 /// Runs loop 4 once a sync has completed and reported completion at
-/// `completed` (scanned height, chain tip), and reports completion again,
-/// flagged with new transactions, when it stored anything.
+/// `completed` (scanned height, chain tip), and reports a follow-up update
+/// when it stored anything.
 ///
 /// The source is chosen once from `policy`: `PrivateRequired` builds only
 /// the private source (mainnet only), anything else only the gate, and only
@@ -586,8 +588,8 @@ pub(crate) async fn guarded(
     }
 }
 
-/// Logs a run's outcome and, when it stored anything, reports completion at
-/// `completed` again, flagged with new transactions.
+/// Logs a run's outcome and, when it stored anything, reports a follow-up
+/// update of the sync that completed at `completed`.
 pub(crate) fn report(
     outcome: Option<RunOutcome>,
     should_exit: &(dyn Fn() -> bool + Sync),
@@ -601,20 +603,7 @@ pub(crate) fn report(
         log::info!("[{}] sync: transparent details: {:?}", elapsed(), outcome);
     }
     if outcome.stats().stored > 0 && !should_exit() {
-        let (scanned_height, chain_tip_height) = completed;
-        progress_fn(SyncProgressEvent {
-            scanned_height,
-            chain_tip_height,
-            percentage: 1.0,
-            display_target_percentage: 1.0,
-            display_target_blocks: 0,
-            is_syncing: false,
-            is_complete: true,
-            has_new_tx: true,
-            phase_completed_units: 0,
-            phase_total_units: 0,
-            phase: String::new(),
-        });
+        progress_fn(followup_updated_event(completed));
     }
 }
 

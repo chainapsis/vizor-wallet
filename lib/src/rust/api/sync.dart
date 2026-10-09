@@ -9,7 +9,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `api_proposal_result`, `catch`, `enhance_pir_enabled`, `fetch_block_time`, `migration_status_from_balance`, `parse_network_and_migrate`, `payment_link_batch_pairs`, `run_full_sync_internal`, `to_wallet_action_sigs`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `MempoolObserverState`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `eq`, `eq`, `fmt`, `fmt`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `eq`, `eq`, `fmt`, `fmt`, `from`, `from`
 
 /// Set the desired sync mode. 0=none, 1=foreground, 2=background.
 /// The running sync loop checks this each batch and exits if mismatched.
@@ -1466,8 +1466,25 @@ class ApiMempoolTxEvent {
           matched == other.matched;
 }
 
+/// What an [`ApiSyncProgressEvent`] reports.
+enum ApiSyncEventKind {
+  /// The sync is still running.
+  progress,
+
+  /// The sync completed. Also re-reported after the deferred
+  /// inactive-account refresh or the ephemeral address checks change
+  /// wallet data.
+  completed,
+
+  /// A post-sync follow-up changed wallet data after completion: re-read
+  /// balances, history, and open receipts. The sync stays complete, and
+  /// its stream stays open until every follow-up ends.
+  followupUpdated,
+}
+
 /// Progress event streamed to Dart during sync.
 class ApiSyncProgressEvent {
+  final ApiSyncEventKind kind;
   final BigInt scannedHeight;
   final BigInt chainTipHeight;
   final double percentage;
@@ -1477,7 +1494,6 @@ class ApiSyncProgressEvent {
   final double displayTargetPercentage;
   final BigInt displayTargetBlocks;
   final bool isSyncing;
-  final bool isComplete;
   final bool hasNewTx;
 
   /// Completed and total work units for measurable preparation phases.
@@ -1489,13 +1505,13 @@ class ApiSyncProgressEvent {
   final String phase;
 
   const ApiSyncProgressEvent({
+    required this.kind,
     required this.scannedHeight,
     required this.chainTipHeight,
     required this.percentage,
     required this.displayTargetPercentage,
     required this.displayTargetBlocks,
     required this.isSyncing,
-    required this.isComplete,
     required this.hasNewTx,
     required this.phaseCompletedUnits,
     required this.phaseTotalUnits,
@@ -1504,13 +1520,13 @@ class ApiSyncProgressEvent {
 
   @override
   int get hashCode =>
+      kind.hashCode ^
       scannedHeight.hashCode ^
       chainTipHeight.hashCode ^
       percentage.hashCode ^
       displayTargetPercentage.hashCode ^
       displayTargetBlocks.hashCode ^
       isSyncing.hashCode ^
-      isComplete.hashCode ^
       hasNewTx.hashCode ^
       phaseCompletedUnits.hashCode ^
       phaseTotalUnits.hashCode ^
@@ -1521,13 +1537,13 @@ class ApiSyncProgressEvent {
       identical(this, other) ||
       other is ApiSyncProgressEvent &&
           runtimeType == other.runtimeType &&
+          kind == other.kind &&
           scannedHeight == other.scannedHeight &&
           chainTipHeight == other.chainTipHeight &&
           percentage == other.percentage &&
           displayTargetPercentage == other.displayTargetPercentage &&
           displayTargetBlocks == other.displayTargetBlocks &&
           isSyncing == other.isSyncing &&
-          isComplete == other.isComplete &&
           hasNewTx == other.hasNewTx &&
           phaseCompletedUnits == other.phaseCompletedUnits &&
           phaseTotalUnits == other.phaseTotalUnits &&

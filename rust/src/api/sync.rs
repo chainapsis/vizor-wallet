@@ -130,8 +130,33 @@ pub fn reconcile_transparent_policy(
 
 // ======================== Full Sync ========================
 
+/// What an [`ApiSyncProgressEvent`] reports.
+pub enum ApiSyncEventKind {
+    /// The sync is still running.
+    Progress,
+    /// The sync completed. Also re-reported after the deferred
+    /// inactive-account refresh or the ephemeral address checks change
+    /// wallet data.
+    Completed,
+    /// A post-sync follow-up changed wallet data after completion: re-read
+    /// balances, history, and open receipts. The sync stays complete, and
+    /// its stream stays open until every follow-up ends.
+    FollowupUpdated,
+}
+
+impl From<sync_engine::SyncEventKind> for ApiSyncEventKind {
+    fn from(kind: sync_engine::SyncEventKind) -> Self {
+        match kind {
+            sync_engine::SyncEventKind::Progress => Self::Progress,
+            sync_engine::SyncEventKind::Completed => Self::Completed,
+            sync_engine::SyncEventKind::FollowupUpdated => Self::FollowupUpdated,
+        }
+    }
+}
+
 /// Progress event streamed to Dart during sync.
 pub struct ApiSyncProgressEvent {
+    pub kind: ApiSyncEventKind,
     pub scanned_height: u64,
     pub chain_tip_height: u64,
     pub percentage: f64,
@@ -140,7 +165,6 @@ pub struct ApiSyncProgressEvent {
     pub display_target_percentage: f64,
     pub display_target_blocks: u64,
     pub is_syncing: bool,
-    pub is_complete: bool,
     pub has_new_tx: bool,
     /// Completed and total work units for measurable preparation phases.
     pub phase_completed_units: u64,
@@ -206,13 +230,13 @@ pub fn start_full_sync(
         |progress| {
             if sink
                 .add(ApiSyncProgressEvent {
+                    kind: progress.kind.into(),
                     scanned_height: progress.scanned_height,
                     chain_tip_height: progress.chain_tip_height,
                     percentage: progress.percentage,
                     display_target_percentage: progress.display_target_percentage,
                     display_target_blocks: progress.display_target_blocks,
                     is_syncing: progress.is_syncing,
-                    is_complete: progress.is_complete,
                     has_new_tx: progress.has_new_tx,
                     phase_completed_units: progress.phase_completed_units,
                     phase_total_units: progress.phase_total_units,

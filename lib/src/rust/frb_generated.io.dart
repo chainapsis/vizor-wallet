@@ -190,6 +190,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   dco_decode_api_snapshot_bundle_precompute_result(dynamic raw);
 
   @protected
+  ApiSyncEventKind dco_decode_api_sync_event_kind(dynamic raw);
+
+  @protected
   ApiSyncProgressEvent dco_decode_api_sync_progress_event(dynamic raw);
 
   @protected
@@ -1558,6 +1561,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   sse_decode_api_snapshot_bundle_precompute_result(
     SseDeserializer deserializer,
   );
+
+  @protected
+  ApiSyncEventKind sse_decode_api_sync_event_kind(SseDeserializer deserializer);
 
   @protected
   ApiSyncProgressEvent sse_decode_api_sync_progress_event(
@@ -3306,6 +3312,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_api_snapshot_bundle_precompute_result(
     ApiSnapshotBundlePrecomputeResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_sync_event_kind(
+    ApiSyncEventKind self,
     SseSerializer serializer,
   );
 

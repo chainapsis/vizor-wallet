@@ -1616,6 +1616,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           _syncSub = stream.listen(
             (event) {
               if (!ref.mounted || gen != _syncGen) return;
+              if (event.kind == rust_sync.ApiSyncEventKind.followupUpdated) {
+                unawaited(_onSyncFollowupUpdated());
+                return;
+              }
               final progress = SyncProgressEvent(
                 scannedHeight: event.scannedHeight.toInt(),
                 chainTipHeight: event.chainTipHeight.toInt(),
@@ -1623,7 +1627,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
                 displayTargetPercentage: event.displayTargetPercentage,
                 displayTargetBlocks: event.displayTargetBlocks.toInt(),
                 isSyncing: event.isSyncing,
-                isComplete: event.isComplete,
+                isComplete: event.kind == rust_sync.ApiSyncEventKind.completed,
                 hasNewTx: event.hasNewTx,
                 phaseCompletedUnits: event.phaseCompletedUnits.toInt(),
                 phaseTotalUnits: event.phaseTotalUnits.toInt(),
@@ -2721,6 +2725,27 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   // ======================== Progress Handling ========================
 
+  /// A post-sync follow-up changed wallet data after this sync completed:
+  /// open receipts reload, and balances and recent history are re-read. The
+  /// sync is not completed again.
+  Future<void> _onSyncFollowupUpdated() async {
+    if (!ref.mounted || _requiresUnlock) return;
+    ref.read(syncFollowupProvider.notifier).updated();
+    // Let the completion's own reads land first, so this refresh does not
+    // supersede them.
+    try {
+      await _lastForegroundProgressHandling;
+    } catch (_) {
+      // The stream listener logs it.
+    }
+    if (!ref.mounted || _requiresUnlock) return;
+    try {
+      await _requestBalanceRefresh();
+    } catch (e, st) {
+      log('SyncNotifier: follow-up refresh failed: $e\n$st');
+    }
+  }
+
   Future<void> _onSyncProgress(SyncProgressEvent event) async {
     if (!ref.mounted || _requiresUnlock) {
       return;
@@ -3809,6 +3834,21 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
 final syncProvider = AsyncNotifierProvider<SyncNotifier, SyncState>(
   () => SyncNotifier(),
+);
+
+/// Counts post-sync follow-ups that changed wallet data after a sync
+/// completed, published by [SyncNotifier]. Open receipts reload on each:
+/// a follow-up can change transactions outside the ten recent ones, and it
+/// does not complete the sync again.
+class SyncFollowupNotifier extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  void updated() => state++;
+}
+
+final syncFollowupProvider = NotifierProvider<SyncFollowupNotifier, int>(
+  SyncFollowupNotifier.new,
 );
 
 /// [SyncState.hasSettledSpendableBalance] for [accountUuid], from an unscoped

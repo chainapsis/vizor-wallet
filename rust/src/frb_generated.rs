@@ -10553,28 +10553,41 @@ impl SseDecode for crate::api::voting::ApiSnapshotBundlePrecomputeResult {
     }
 }
 
+impl SseDecode for crate::api::sync::ApiSyncEventKind {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::sync::ApiSyncEventKind::Progress,
+            1 => crate::api::sync::ApiSyncEventKind::Completed,
+            2 => crate::api::sync::ApiSyncEventKind::FollowupUpdated,
+            _ => unreachable!("Invalid variant for ApiSyncEventKind: {}", inner),
+        };
+    }
+}
+
 impl SseDecode for crate::api::sync::ApiSyncProgressEvent {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_kind = <crate::api::sync::ApiSyncEventKind>::sse_decode(deserializer);
         let mut var_scannedHeight = <u64>::sse_decode(deserializer);
         let mut var_chainTipHeight = <u64>::sse_decode(deserializer);
         let mut var_percentage = <f64>::sse_decode(deserializer);
         let mut var_displayTargetPercentage = <f64>::sse_decode(deserializer);
         let mut var_displayTargetBlocks = <u64>::sse_decode(deserializer);
         let mut var_isSyncing = <bool>::sse_decode(deserializer);
-        let mut var_isComplete = <bool>::sse_decode(deserializer);
         let mut var_hasNewTx = <bool>::sse_decode(deserializer);
         let mut var_phaseCompletedUnits = <u64>::sse_decode(deserializer);
         let mut var_phaseTotalUnits = <u64>::sse_decode(deserializer);
         let mut var_phase = <String>::sse_decode(deserializer);
         return crate::api::sync::ApiSyncProgressEvent {
+            kind: var_kind,
             scanned_height: var_scannedHeight,
             chain_tip_height: var_chainTipHeight,
             percentage: var_percentage,
             display_target_percentage: var_displayTargetPercentage,
             display_target_blocks: var_displayTargetBlocks,
             is_syncing: var_isSyncing,
-            is_complete: var_isComplete,
             has_new_tx: var_hasNewTx,
             phase_completed_units: var_phaseCompletedUnits,
             phase_total_units: var_phaseTotalUnits,
@@ -15947,16 +15960,38 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiSnapshotBundlePrec
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::sync::ApiSyncEventKind {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Progress => 0.into_dart(),
+            Self::Completed => 1.into_dart(),
+            Self::FollowupUpdated => 2.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::sync::ApiSyncEventKind
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::sync::ApiSyncEventKind>
+    for crate::api::sync::ApiSyncEventKind
+{
+    fn into_into_dart(self) -> crate::api::sync::ApiSyncEventKind {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::sync::ApiSyncProgressEvent {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
+            self.kind.into_into_dart().into_dart(),
             self.scanned_height.into_into_dart().into_dart(),
             self.chain_tip_height.into_into_dart().into_dart(),
             self.percentage.into_into_dart().into_dart(),
             self.display_target_percentage.into_into_dart().into_dart(),
             self.display_target_blocks.into_into_dart().into_dart(),
             self.is_syncing.into_into_dart().into_dart(),
-            self.is_complete.into_into_dart().into_dart(),
             self.has_new_tx.into_into_dart().into_dart(),
             self.phase_completed_units.into_into_dart().into_dart(),
             self.phase_total_units.into_into_dart().into_dart(),
@@ -20284,16 +20319,33 @@ impl SseEncode for crate::api::voting::ApiSnapshotBundlePrecomputeResult {
     }
 }
 
+impl SseEncode for crate::api::sync::ApiSyncEventKind {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::sync::ApiSyncEventKind::Progress => 0,
+                crate::api::sync::ApiSyncEventKind::Completed => 1,
+                crate::api::sync::ApiSyncEventKind::FollowupUpdated => 2,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
 impl SseEncode for crate::api::sync::ApiSyncProgressEvent {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::api::sync::ApiSyncEventKind>::sse_encode(self.kind, serializer);
         <u64>::sse_encode(self.scanned_height, serializer);
         <u64>::sse_encode(self.chain_tip_height, serializer);
         <f64>::sse_encode(self.percentage, serializer);
         <f64>::sse_encode(self.display_target_percentage, serializer);
         <u64>::sse_encode(self.display_target_blocks, serializer);
         <bool>::sse_encode(self.is_syncing, serializer);
-        <bool>::sse_encode(self.is_complete, serializer);
         <bool>::sse_encode(self.has_new_tx, serializer);
         <u64>::sse_encode(self.phase_completed_units, serializer);
         <u64>::sse_encode(self.phase_total_units, serializer);

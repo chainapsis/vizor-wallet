@@ -871,8 +871,8 @@ async fn an_activated_wallet_discloses_nothing_through_any_lane_including_the_pi
     drop(source);
     {
         let events = events.lock().unwrap();
-        assert_eq!(events.len(), 1, "completion is reported again");
-        assert!(events[0].is_complete && events[0].has_new_tx);
+        assert_eq!(events.len(), 1, "a follow-up update is reported");
+        assert_eq!(events[0].kind, SyncEventKind::FollowupUpdated);
     }
     // The deferred refresh after it is withheld too.
     let mut received = false;

@@ -19,6 +19,7 @@ const _accountUuid = 'account-1';
 /// the test closes that sync's stream, follow-ups included.
 class _Api extends RustLibApi {
   bool running = false;
+  int historyReads = 0;
   final syncs = <StreamController<rust_sync.ApiSyncProgressEvent>>[];
 
   @override
@@ -98,7 +99,10 @@ class _Api extends RustLibApi {
     required String network,
     int? limit,
     required String accountUuid,
-  }) async => const [];
+  }) async {
+    historyReads++;
+    return const [];
+  }
 
   /// Ends the sync that holds the guard: Rust releases it, then the stream
   /// closes.
@@ -162,14 +166,16 @@ class _Sync extends SyncNotifier {
   );
 }
 
-rust_sync.ApiSyncProgressEvent _complete() => rust_sync.ApiSyncProgressEvent(
+rust_sync.ApiSyncProgressEvent _complete({
+  rust_sync.ApiSyncEventKind kind = rust_sync.ApiSyncEventKind.completed,
+}) => rust_sync.ApiSyncProgressEvent(
+  kind: kind,
   scannedHeight: BigInt.from(100),
   chainTipHeight: BigInt.from(100),
   percentage: 1,
   displayTargetPercentage: 1,
   displayTargetBlocks: BigInt.zero,
   isSyncing: false,
-  isComplete: true,
   hasNewTx: false,
   phaseCompletedUnits: BigInt.zero,
   phaseTotalUnits: BigInt.zero,
@@ -183,15 +189,17 @@ void main() {
   tearDownAll(RustLib.dispose);
   setUp(() {
     api.running = false;
+    api.historyReads = 0;
     api.syncs.clear();
   });
+  late ProviderContainer container;
 
   /// A foreground sync that has reported completion and is now running its
   /// post-sync follow-ups: Dart no longer counts it as syncing, but its
   /// stream is open and Rust still holds the guard.
   Future<_Sync> inFollowUp() async {
     final sync = _Sync();
-    final container = ProviderContainer(
+    container = ProviderContainer(
       overrides: [
         appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
         accountProvider.overrideWith(_Account.new),
@@ -218,6 +226,25 @@ void main() {
     expect(api.running, isTrue, reason: 'the follow-ups hold the guard');
     return sync;
   }
+
+  test('a follow-up update re-reads the wallet and reloads receipts without '
+      'completing the sync again', () async {
+    final sync = await inFollowUp();
+    final completed = sync.state.requireValue;
+    final reads = api.historyReads;
+
+    api.syncs[0].add(
+      _complete(kind: rust_sync.ApiSyncEventKind.followupUpdated),
+    );
+    await pumpEventQueue();
+
+    expect(api.historyReads, reads + 1);
+    expect(container.read(syncFollowupProvider), 1);
+    final updated = sync.state.requireValue;
+    expect(updated.isSyncComplete, isTrue);
+    expect(updated.lastSyncCompletedAt, completed.lastSyncCompletedAt);
+    expect(api.running, isTrue, reason: 'the follow-ups still hold the guard');
+  });
 
   test('a foreground start during the follow-up is queued, then started '
       'once the stream ends', () async {

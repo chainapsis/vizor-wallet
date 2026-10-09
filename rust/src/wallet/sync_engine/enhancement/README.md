@@ -485,11 +485,12 @@ until an account is promoted.
   never delays the sync's result. Background preparation syncs (mode 2) skip
   it: they hold the global sync guard, and a foreground sync requested
   meanwhile waits behind them. Unless the run exited or was not enabled, it
-  reports completion again, flagged with new transactions, so the UI re-reads balances
-  and shielding state. Its errors are logged and never fail the sync. It does
-  not touch UTXO refresh, the `.receive.redb` cache, or the shielded
-  checkpoints. While public lookups are withheld, Ledger discovery counts as
-  ready, so a paused Ledger account never holds back a sync.
+  reports a `FollowupUpdated` event, so the UI re-reads balances and
+  shielding state without counting a second completion. Its errors are
+  logged and never fail the sync. It does not touch UTXO refresh, the
+  `.receive.redb` cache, or the shielded checkpoints. While public lookups
+  are withheld, Ledger discovery counts as ready, so a paused Ledger account
+  never holds back a sync.
 - **Diagnostics.** Logs carry variant, cause and blocker names, counts and
   lag. Rejection payloads, which name addresses and outpoints, are never
   logged. Candidate amounts from `transparent_candidate_recovery` are
@@ -626,11 +627,10 @@ payment details are missing. Receipts show a "Details: Incomplete" row and an
 private history approaches public-history completeness. With Private queries
 disabled, the existing presentation is preserved: no completeness notice and
 the previous placeholder or omitted fee row for an unrecorded fee. History
-refreshes on the sync events that already
-refresh it (`hasNewTx` or `isComplete`). Private recovery runs after
-completion is reported and then reports completion again, flagged with new
-transactions, so its commits refresh history on that event. No history gap
-starts any public lookup.
+refreshes on the sync events that already refresh it (`hasNewTx`,
+completion, or a follow-up update). Private recovery runs after completion is
+reported and then reports a `FollowupUpdated` event, so its commits refresh
+history on that event. No history gap starts any public lookup.
 
 Under `Public` handles, with private queries off, transparent effects
 count as settled, so an entry is provisional only while a shielded pool is not
@@ -657,8 +657,8 @@ way public discovery stores them (UTXO refresh plus payload retrieval).
 | Discovery order and payload replay | Ledger-first and payload-first reach the same balance, history, and rows (one transaction, one output); a second replay changes nothing. |
 | Account add and delete | A rescan pauses the active account until the next pass; the new account is promoted on its own; deleting it leaves the active one current. |
 | Shielded-funded send while incomplete | It is refused only for lack of shielded funds, never as transparent recovery unavailable. |
-| Every lane, before the raise | On a mainnet wallet with public work queued and a Ledger account, with Private queries on but unread, so the durable policy stays `Public` and only each lane's captured policy withholds: under the private policy, Ledger discovery, the UTXO refresh and the deferred refresh, ephemeral checks, import discovery and the import preview (into the wallet and as a first account), the recovery follow-up with the real source, and the iOS observe ABI; under its transparent mode with public routes, which the live private services would otherwise answer, payload recovery and the status and history checkpoint. None sends lightwalletd a `GetAddressUtxos*`, `GetTaddress*`, or `GetTransaction` request. The follow-up does not raise the wallet, sends the source's service nothing, creates no companion, and reports nothing again; the queued work stays durable. |
-| Every lane, after the raise, including the transparent PIR source | On the same wallet, once startup reconcile has raised it: Ledger discovery, the UTXO refresh and the deferred refresh, payload recovery, the status and history checkpoint, and ephemeral checks, each under both a public captured policy and the private transparent mode; import discovery and the import preview; the recovery follow-up with the real source; and the iOS observe ABI. None sends lightwalletd a disclosing request, the queued work stays durable, and the follow-up reports completion again. The source sends only service routes, on the wallet's route, with no watched script or txid in any path or body. Turning Private queries off then sends `GetAddressUtxos*`: the positive control. |
+| Every lane, before the raise | On a mainnet wallet with public work queued and a Ledger account, with Private queries on but unread, so the durable policy stays `Public` and only each lane's captured policy withholds: under the private policy, Ledger discovery, the UTXO refresh and the deferred refresh, ephemeral checks, import discovery and the import preview (into the wallet and as a first account), the recovery follow-up with the real source, and the iOS observe ABI; under its transparent mode with public routes, which the live private services would otherwise answer, payload recovery and the status and history checkpoint. None sends lightwalletd a `GetAddressUtxos*`, `GetTaddress*`, or `GetTransaction` request. The follow-up does not raise the wallet, sends the source's service nothing, creates no companion, and reports no follow-up update; the queued work stays durable. |
+| Every lane, after the raise, including the transparent PIR source | On the same wallet, once startup reconcile has raised it: Ledger discovery, the UTXO refresh and the deferred refresh, payload recovery, the status and history checkpoint, and ephemeral checks, each under both a public captured policy and the private transparent mode; import discovery and the import preview; the recovery follow-up with the real source; and the iOS observe ABI. None sends lightwalletd a disclosing request, the queued work stays durable, and the follow-up reports an update. The source sends only service routes, on the wallet's route, with no watched script or txid in any path or body. Turning Private queries off then sends `GetAddressUtxos*`: the positive control. |
 
 The upgrade probe (`examples/db_upgrade.rs`, run by
 `scripts/test-db-upgrade.sh`) requires the recovery and activation migrations
@@ -902,7 +902,7 @@ captured policy ── PrivateRequired ──> txid display PIR  (PirSource)
 - **Storage.** `store_transparent_display` validates the facts against what
   the wallet knows (owned outputs, coinbase flag, recovered metadata and fee)
   and stores them; raw bytes arriving later supersede them. A run that stored
-  anything reports completion again with `has_new_tx`.
+  anything reports a `FollowupUpdated` event.
 
 Detail-view states (`TransactionDetail.transparent_details_state`):
 
@@ -1103,11 +1103,12 @@ restack of the library stacks, and to `main` once they merge.
 ### History refresh and batch receipt totals
 
 Activity lists and open receipts reload when sync completes, even when the ten
-recent transactions are unchanged. Open receipts also recognize the new
-completion timestamp from recovery and detail follow-ups that finish after
-scanning has already completed. This exposes newly enhanced older entries
-without reopening the screen. Updates retaining the same completion timestamp
-do not trigger a reload by themselves.
+recent transactions are unchanged. Recovery and detail follow-ups finish after
+completion is reported and report their own event kind, `FollowupUpdated`,
+rather than a second completion: Dart re-reads balances and recent history
+and bumps `syncFollowupProvider`, which open receipts listen to. This exposes
+newly enhanced older entries without reopening the screen. Repeated completed
+snapshots do not trigger a reload by themselves.
 
 In Private queries mode, a batch gift-card receipt with an unknown network fee
 shows an unknown total and an unknown network-fee breakdown. It does not add

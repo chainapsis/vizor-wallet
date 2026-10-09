@@ -82,16 +82,33 @@ pub(crate) use tip_cache::{
     latest_block_for_transaction_with_client,
 };
 
+/// What a [`SyncProgressEvent`] reports.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SyncEventKind {
+    /// The sync is still running: preparation, download, or scan progress.
+    Progress,
+    /// The sync completed. The deferred inactive-account refresh and the
+    /// ephemeral address checks report it again when they change wallet data.
+    Completed,
+    /// A post-sync follow-up (private transparent recovery, transparent
+    /// details) changed wallet data after completion was reported. The sync
+    /// stays complete; its stream, and the running guard, end only once
+    /// every follow-up has.
+    FollowupUpdated,
+}
+
 /// Progress event sent to caller (Dart or Swift).
 #[derive(Clone, Debug)]
 pub struct SyncProgressEvent {
+    pub kind: SyncEventKind,
     pub scanned_height: u64,
     pub chain_tip_height: u64,
     pub percentage: f64,
     pub display_target_percentage: f64,
     pub display_target_blocks: u64,
     pub is_syncing: bool,
-    pub is_complete: bool,
+    /// A scanned batch found wallet notes, or a re-reported completion stored
+    /// transactions. A `FollowupUpdated` event implies a refresh on its own.
     pub has_new_tx: bool,
     /// Completed and total work units for preparation phases. A zero total
     /// means the phase has no measurable work and should be time-interpolated
@@ -137,17 +154,36 @@ fn preparation_progress_event(
     phase_total_units: u64,
 ) -> SyncProgressEvent {
     SyncProgressEvent {
+        kind: SyncEventKind::Progress,
         scanned_height: 0,
         chain_tip_height,
         percentage: 0.0,
         display_target_percentage: 0.0,
         display_target_blocks: 0,
         is_syncing: true,
-        is_complete: false,
         has_new_tx: false,
         phase_completed_units,
         phase_total_units,
         phase: phase.into(),
+    }
+}
+
+/// Reports that a post-sync follow-up changed wallet data after the sync
+/// reported completion at `completed` (scanned height, chain tip).
+pub(crate) fn followup_updated_event(completed: (u64, u64)) -> SyncProgressEvent {
+    let (scanned_height, chain_tip_height) = completed;
+    SyncProgressEvent {
+        kind: SyncEventKind::FollowupUpdated,
+        scanned_height,
+        chain_tip_height,
+        percentage: 1.0,
+        display_target_percentage: 1.0,
+        display_target_blocks: 0,
+        is_syncing: false,
+        has_new_tx: false,
+        phase_completed_units: 0,
+        phase_total_units: 0,
+        phase: String::new(),
     }
 }
 
@@ -3851,7 +3887,7 @@ async fn run_sync_impl(
             display_target_percentage,
             display_target_blocks: batch_blocks,
             is_syncing: true,
-            is_complete: false,
+            kind: SyncEventKind::Progress,
             has_new_tx: false,
             phase_completed_units: 0,
             phase_total_units: 0,
@@ -4519,7 +4555,7 @@ async fn run_sync_impl(
             display_target_percentage,
             display_target_blocks: next_display_target_blocks,
             is_syncing: true,
-            is_complete: false,
+            kind: SyncEventKind::Progress,
             has_new_tx,
             phase_completed_units: 0,
             phase_total_units: 0,
@@ -4627,7 +4663,7 @@ async fn run_sync_impl(
         display_target_percentage: 1.0,
         display_target_blocks: 0,
         is_syncing: false,
-        is_complete: true,
+        kind: SyncEventKind::Completed,
         has_new_tx: false,
         phase_completed_units: 0,
         phase_total_units: 0,
@@ -4770,7 +4806,7 @@ async fn run_sync_impl(
                 display_target_percentage: 1.0,
                 display_target_blocks: 0,
                 is_syncing: false,
-                is_complete: true,
+                kind: SyncEventKind::Completed,
                 has_new_tx: true,
                 phase_completed_units: 0,
                 phase_total_units: 0,
@@ -4810,7 +4846,7 @@ async fn run_sync_impl(
                 display_target_percentage: 1.0,
                 display_target_blocks: 0,
                 is_syncing: false,
-                is_complete: true,
+                kind: SyncEventKind::Completed,
                 has_new_tx: true,
                 phase_completed_units: 0,
                 phase_total_units: 0,
@@ -4823,14 +4859,14 @@ async fn run_sync_impl(
 }
 
 /// Runs private transparent recovery once a sync has completed and reported
-/// completion at `completed` (scanned height, chain tip), then reports
-/// completion again, flagged with new transactions, so the UI re-reads the
-/// balances and shielding state the run may have restored.
+/// completion at `completed` (scanned height, chain tip), then reports a
+/// [`SyncEventKind::FollowupUpdated`] event so the UI re-reads the balances
+/// and shielding state the run may have restored.
 ///
 /// Recovery keeps its own progress in the library and never fails the sync:
 /// errors and outcomes are only logged. With private queries off, the policy
 /// captures `Public`, so the run returns before any read, and nothing is
-/// re-reported; nor is it when
+/// reported; nor is it when
 /// the run exited.
 ///
 /// A background preparation sync (`running_mode` 2) skips the run entirely:
@@ -4884,20 +4920,7 @@ async fn transparent_followup<S: transparent_ledger::RecoverySource>(
             error
         ),
     }
-    let (scanned_height, chain_tip_height) = completed;
-    progress_fn(SyncProgressEvent {
-        scanned_height,
-        chain_tip_height,
-        percentage: 1.0,
-        display_target_percentage: 1.0,
-        display_target_blocks: 0,
-        is_syncing: false,
-        is_complete: true,
-        has_new_tx: true,
-        phase_completed_units: 0,
-        phase_total_units: 0,
-        phase: String::new(),
-    });
+    progress_fn(followup_updated_event(completed));
 }
 
 /// Whether a sync running in `running_mode` runs private transparent

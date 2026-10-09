@@ -11773,19 +11773,25 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ApiSyncEventKind dco_decode_api_sync_event_kind(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return ApiSyncEventKind.values[raw as int];
+  }
+
+  @protected
   ApiSyncProgressEvent dco_decode_api_sync_progress_event(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
     if (arr.length != 11)
       throw Exception('unexpected arr length: expect 11 but see ${arr.length}');
     return ApiSyncProgressEvent(
-      scannedHeight: dco_decode_u_64(arr[0]),
-      chainTipHeight: dco_decode_u_64(arr[1]),
-      percentage: dco_decode_f_64(arr[2]),
-      displayTargetPercentage: dco_decode_f_64(arr[3]),
-      displayTargetBlocks: dco_decode_u_64(arr[4]),
-      isSyncing: dco_decode_bool(arr[5]),
-      isComplete: dco_decode_bool(arr[6]),
+      kind: dco_decode_api_sync_event_kind(arr[0]),
+      scannedHeight: dco_decode_u_64(arr[1]),
+      chainTipHeight: dco_decode_u_64(arr[2]),
+      percentage: dco_decode_f_64(arr[3]),
+      displayTargetPercentage: dco_decode_f_64(arr[4]),
+      displayTargetBlocks: dco_decode_u_64(arr[5]),
+      isSyncing: dco_decode_bool(arr[6]),
       hasNewTx: dco_decode_bool(arr[7]),
       phaseCompletedUnits: dco_decode_u_64(arr[8]),
       phaseTotalUnits: dco_decode_u_64(arr[9]),
@@ -15850,29 +15856,38 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ApiSyncEventKind sse_decode_api_sync_event_kind(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return ApiSyncEventKind.values[inner];
+  }
+
+  @protected
   ApiSyncProgressEvent sse_decode_api_sync_progress_event(
     SseDeserializer deserializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_kind = sse_decode_api_sync_event_kind(deserializer);
     var var_scannedHeight = sse_decode_u_64(deserializer);
     var var_chainTipHeight = sse_decode_u_64(deserializer);
     var var_percentage = sse_decode_f_64(deserializer);
     var var_displayTargetPercentage = sse_decode_f_64(deserializer);
     var var_displayTargetBlocks = sse_decode_u_64(deserializer);
     var var_isSyncing = sse_decode_bool(deserializer);
-    var var_isComplete = sse_decode_bool(deserializer);
     var var_hasNewTx = sse_decode_bool(deserializer);
     var var_phaseCompletedUnits = sse_decode_u_64(deserializer);
     var var_phaseTotalUnits = sse_decode_u_64(deserializer);
     var var_phase = sse_decode_String(deserializer);
     return ApiSyncProgressEvent(
+      kind: var_kind,
       scannedHeight: var_scannedHeight,
       chainTipHeight: var_chainTipHeight,
       percentage: var_percentage,
       displayTargetPercentage: var_displayTargetPercentage,
       displayTargetBlocks: var_displayTargetBlocks,
       isSyncing: var_isSyncing,
-      isComplete: var_isComplete,
       hasNewTx: var_hasNewTx,
       phaseCompletedUnits: var_phaseCompletedUnits,
       phaseTotalUnits: var_phaseTotalUnits,
@@ -21020,18 +21035,27 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_api_sync_event_kind(
+    ApiSyncEventKind self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
   void sse_encode_api_sync_progress_event(
     ApiSyncProgressEvent self,
     SseSerializer serializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_api_sync_event_kind(self.kind, serializer);
     sse_encode_u_64(self.scannedHeight, serializer);
     sse_encode_u_64(self.chainTipHeight, serializer);
     sse_encode_f_64(self.percentage, serializer);
     sse_encode_f_64(self.displayTargetPercentage, serializer);
     sse_encode_u_64(self.displayTargetBlocks, serializer);
     sse_encode_bool(self.isSyncing, serializer);
-    sse_encode_bool(self.isComplete, serializer);
     sse_encode_bool(self.hasNewTx, serializer);
     sse_encode_u_64(self.phaseCompletedUnits, serializer);
     sse_encode_u_64(self.phaseTotalUnits, serializer);

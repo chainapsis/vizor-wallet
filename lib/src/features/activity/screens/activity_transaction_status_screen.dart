@@ -1136,16 +1136,17 @@ class _ActivityTransactionStatusScreenState
     ref.listen<AsyncValue<SyncState>>(syncProvider, (previous, next) {
       final prevSig = _recentTxSignature(previous?.value);
       final nextSig = _recentTxSignature(next.value);
-      // Recovery and detail follow-ups complete again after scanning already
-      // completed, and can change rows outside the ten recent transactions.
+      // Enhancement can change older rows outside the ten recent transactions.
       final syncCompleted =
           next.value?.isSyncComplete == true &&
-          (previous?.value?.isSyncComplete != true ||
-              previous?.value?.lastSyncCompletedAt !=
-                  next.value?.lastSyncCompletedAt);
+          previous?.value?.isSyncComplete != true;
       if (prevSig != nextSig || syncCompleted) {
         unawaited(_loadTransaction());
       }
+    });
+    // So can recovery and detail follow-ups that finish after completion.
+    ref.listen<int>(syncFollowupProvider, (_, _) {
+      unawaited(_loadTransaction());
     });
 
     final tx = _transaction;

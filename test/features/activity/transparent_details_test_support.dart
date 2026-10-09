@@ -143,20 +143,15 @@ void transparentDetailsRefreshTests({
     await tester.pump();
   }
 
-  testWidgets('a follow-up completion refreshes an older receipt', (
-    tester,
-  ) async {
-    final completedAt = DateTime.utc(2026, 10, 9);
-    final sync = FakeSyncNotifier(
-      SyncState(
-        accountUuid: 'account-1',
-        hasAccountScopedData: true,
-        isSyncComplete: true,
-        lastSyncCompletedAt: completedAt,
-      ),
+  testWidgets('a follow-up update refreshes an older receipt', (tester) async {
+    final completed = SyncState(
+      accountUuid: 'account-1',
+      hasAccountScopedData: true,
+      isSyncComplete: true,
     );
+    final sync = FakeSyncNotifier(completed);
     // Not-covered details do not poll. The transaction is also absent from
-    // recentTransactions, so only a new completion can refresh this receipt.
+    // recentTransactions, so only a follow-up can refresh this receipt.
     final details = ScriptedDetails([
       transparentDetail(rust_sync.TransparentDetailsState.notCovered),
       available,
@@ -164,21 +159,15 @@ void transparentDetailsRefreshTests({
     await pump(tester, details, sync);
     expect(find.text(kTransparentDetailsNotCoveredText), findsOneWidget);
     final initialReads = details.calls;
-    final followup = SyncState(
-      accountUuid: 'account-1',
-      hasAccountScopedData: true,
-      isSyncComplete: true,
-      lastSyncCompletedAt: completedAt.add(const Duration(seconds: 1)),
-    );
-    sync.emit(followup);
+    // A completed snapshot repeated by an unrelated update is not a new run.
+    sync.emit(completed.copyWith(transparentBalance: BigInt.one));
+    await flush(tester);
+    expect(details.calls, initialReads);
+    sync.reportFollowupUpdated();
     await flush(tester);
     expect(details.calls, initialReads + 1);
     expect(transactionOutputShown, findsOneWidget);
     expect(find.text(kTransparentDetailsNotCoveredText), findsNothing);
-    // An unrelated balance update retaining that completion is not a new run.
-    sync.emit(followup.copyWith(transparentBalance: BigInt.one));
-    await flush(tester);
-    expect(details.calls, initialReads + 1);
     await tester.pumpWidget(const SizedBox());
   });
 

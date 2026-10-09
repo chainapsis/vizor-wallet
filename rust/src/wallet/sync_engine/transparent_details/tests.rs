@@ -46,7 +46,7 @@ use crate::wallet::sync_engine::enhancement::{
 };
 use crate::wallet::sync_engine::test_lwd::{transition_on_first_dispatch, CapturingLwd};
 use crate::wallet::sync_engine::transparent_recovery_tests::{downloaded, legacy_transaction};
-use crate::wallet::sync_engine::{store_transparent_outputs, watch_for_exit};
+use crate::wallet::sync_engine::{store_transparent_outputs, watch_for_exit, SyncEventKind};
 
 mod live;
 
@@ -1252,7 +1252,7 @@ async fn prioritized_transactions_are_served_first() {
 }
 
 #[tokio::test]
-async fn store_emits_has_new_tx() {
+async fn store_reports_a_followup_update() {
     let fixture = wallet();
     let tx = utxo_receipt(&fixture, 0xf2, TOP - 1);
     let other = utxo_receipt(&fixture, 0xf3, TOP - 2);
@@ -1268,7 +1268,7 @@ async fn store_emits_has_new_tx() {
     {
         let events = events.lock().unwrap();
         assert_eq!(events.len(), 1);
-        assert!(events[0].is_complete && events[0].has_new_tx);
+        assert_eq!(events[0].kind, SyncEventKind::FollowupUpdated);
         assert_eq!(
             (events[0].scanned_height, events[0].chain_tip_height),
             (7, 8)
