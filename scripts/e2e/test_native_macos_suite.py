@@ -33,6 +33,8 @@ class SuiteTests(unittest.TestCase):
         self.catalog = e2e_catalog.load_catalog()
         self.scenarios = (self.catalog.scenarios_by_id["flutter.macos.import-sync"],)
         self.helper = object()
+        self.macos_build_proof = {"app_build_count":1, "helper_build_count":1}
+        self.ios_build_proof = {"ios_app_build_count":1, "ios_helper_build_count":1}
         self.signer = SimpleNamespace(identity=lambda: {"cargo_build_count":1, "cache_hit":False, "cache_key":"a"*64})
         self.voting = object()
         self.barrier = threading.Barrier(2)
@@ -59,8 +61,8 @@ class SuiteTests(unittest.TestCase):
              patch.object(SUITE.subprocess,"run",side_effect=self.git), \
              patch.object(SUITE,"NativeCaseLifecycle",side_effect=lambda x:x), \
              patch.object(SUITE,"prepare_native_case_workspace",return_value=object()), \
-             patch.object(SUITE,"build_native_macos_cohort",return_value=(self.helper,{"app_build_count":1})) as build, \
-             patch.object(SUITE,"build_native_ios_cohort",return_value=(self.helper,{"ios_app_build_count":1})) as ios_build, \
+             patch.object(SUITE,"build_native_macos_cohort",return_value=(self.helper,self.macos_build_proof)) as build, \
+             patch.object(SUITE,"build_native_ios_cohort",return_value=(self.helper,self.ios_build_proof)) as ios_build, \
              patch.object(SUITE,"build_regtest_funder",return_value=self.signer) as signer, \
              patch.object(SUITE,"build_voting_artifacts",return_value=(self.voting,{"build_count":1})) as voting, \
              patch.object(SUITE,"derive_payment_addresses",return_value={"desktop_transparent":"tm-public-sdk-model",
@@ -108,6 +110,29 @@ class SuiteTests(unittest.TestCase):
         self.assertEqual(len(self.observed), 2)
         self.assertTrue(all(item[4] is self.signer for item in self.observed))
         self.assertTrue(signer.call_args.kwargs["cache_root"].is_relative_to(self.root/".regtest-logs/build-cache"))
+
+    def test_native_cache_hit_keeps_fresh_repetitions_and_reports_zero_app_helper_builds(self):
+        self.macos_build_proof = {"app_build_count":0, "helper_build_count":0, "cache_hit":True}
+        code,summary,build,_ = self.invoke()
+        self.assertEqual(code,0)
+        self.assertEqual(summary["builds"]["app_build_count"],0)
+        self.assertEqual(summary["builds"]["helper_build_count"],0)
+        self.assertTrue(summary["builds"]["cache_hit"])
+        self.assertEqual(len({item[1] for item in self.observed}),2)
+        self.assertTrue(build.call_args.kwargs["cache_root"].is_relative_to(self.root/".regtest-logs/build-cache"))
+
+    def test_ios_cache_hit_reports_zero_builds_and_keeps_new_cases(self):
+        self.scenarios = (self.catalog.scenarios_by_id["flutter.ios.import-sync"],)
+        self.args.ios_runtime,self.args.ios_device_type = "model-runtime","model-device"
+        self.ios_build_proof = {"ios_app_build_count":0, "ios_helper_build_count":0, "cache_hit":True}
+        code,summary,build,_ = self.invoke()
+        self.assertEqual(code,0)
+        build.assert_not_called()
+        self.assertEqual(summary["builds"]["ios"]["ios_app_build_count"],0)
+        self.assertEqual(summary["builds"]["ios"]["ios_helper_build_count"],0)
+        self.assertTrue(summary["builds"]["ios"]["cache_hit"])
+        self.assertEqual(len({item[1] for item in self.observed}),2)
+        self.assertTrue(self.ios_builder.call_args.kwargs["cache_root"].is_relative_to(self.root/".regtest-logs/build-cache"))
 
     def test_ios_repetitions_build_one_cohort_and_do_not_build_macos(self):
         self.scenarios = (self.catalog.scenarios_by_id["flutter.ios.import-sync"],)

@@ -145,9 +145,9 @@ same-final-source all-green21/64-case result or current-policy cache coverage.
 
 ## Isolated macOS import and endpoint execution
 
-The selected native cohort and cleanup helper are each built once per invocation.
-The offline signer and selected Rust test executables use the immutable cache
-described below; a miss compiles once, and a hit records zero Cargo builds.
+The selected native cohort/helper pair, offline signer and Rust test executables
+use immutable caches by default. A miss builds each selected artifact once;
+a hit records zero corresponding builds and creates fresh publication copies.
 Each case has fresh wallet/Keychain/preferences storage,
 ports and its own pinned Zakura/lightwalletd containers. The existing import
 test still requires shielded **1.25** and transparent **0.75**; a completed
@@ -205,9 +205,8 @@ Evidence stays in `.regtest-logs/native-suite-<id>/`. Each repetition's
 and uncertain cleanup remains failure. Cancellation stops owned children and
 new assignment without terminating ordinary wallet processes.
 
-Native app/helper sharing is still within one invocation, not a persistent
-app cache. Signer/Rust executable reuse does not establish a wallet PASS or
-measured speedup. Resource/performance comparison
+Build artifact reuse does not establish a wallet PASS or a general measured
+speedup. Resource/performance comparison
 and final-source all-green catalog are still pending. No CI behavior changes.
 
 ## Isolated macOS send, shielding and payment requests
@@ -1082,6 +1081,41 @@ Host checks use real Git/files/processes with only the compiler modeled:
 
 ```bash
 python3 -B -m unittest scripts/e2e/test_funder_build.py scripts/e2e/test_funder_cache.py scripts/e2e/test_funder_execution.py scripts/e2e/test_native_macos_suite.py
+```
+
+### Immutable native cohort/helper cache
+
+The suite enables `.regtest-logs/build-cache/macos-cohort-v1` and
+`ios-cohort-v1` by default. It preserves the existing cohort build flags and
+signing/capture checks, and caches both the app and its matching cleanup helper.
+The inputs bind checked wallet/test/native/Rust sources, helper and builder
+implementation, actual Dart package contents, semantic package configuration,
+locked Pod versions, Flutter/engine/Dart identity, Xcode/SDK, Cargokit compiler
+identity, Cargo configuration, environment and platform/architecture/TEX fixture.
+Pub generation timestamps and workspace-local Podspec checksums are not keys;
+the local package sources are checked instead. Remote Podspec checksums and
+all locked versions remain inputs. Compiler environment values are hashed.
+
+Only the original source-checking native builder with positively joined
+successful command groups can publish. The same bounded per-key lock and
+exclusive rename protect a sealed, complete app/helper pair. All bundle files
+are hashed, including resources and Frameworks; relative internal Framework
+aliases are preserved, while absolute/escaping links are rejected. Joined SDK
+resources can have group-writable modes, such as Flutter's stock font. They are
+copied without modifying the originals, then the cache directories/files are
+sealed as private read-only independent inodes. Published cache files must be
+single-link; a mutable or corrupt entry fails without replacement or pruning.
+
+On every hit, copies go into the new producer case's `native-publication/`.
+The normal actual signature, role, entitlement, team and architecture capture
+runs on those copies; inputs are checked again before joining the new owner.
+Reports retain real app/helper build counts, cache hit/key and joined process
+outcomes. `persistent_cache_attestation` describes this cooperative local
+publication, not portable hermetic provenance or a wallet/catalog PASS.
+Wallets, storage, devices, Keychain and chain state remain case-local.
+
+```bash
+python3 -B -m unittest scripts/e2e/test_native_build_cache.py scripts/e2e/test_native_ios_build.py scripts/e2e/test_native_macos_build.py scripts/e2e/test_native_macos_suite.py
 ```
 
 ### Owned offline signer execution

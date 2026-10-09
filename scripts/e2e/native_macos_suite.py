@@ -333,12 +333,12 @@ def run_native_suite(args, catalog, scenarios, selection, *, source_root):
         if any(s.engine == "flutter-macos" for s in scenarios):
             helper, build_proof = build_native_macos_cohort(build_case(0,"flutter.macos.native-build"),
                 source_root=root, flutter=args.flutter, cancel_event=cancel,
-                tex_address=payment_addresses.get("receiver_tex"))
+                tex_address=payment_addresses.get("receiver_tex"), cache_root=cache_parent/"macos-cohort-v1")
             report["builds"].update(build_proof)
         ios_helper = None
         if any(s.engine == "flutter-ios" for s in scenarios):
             ios_helper, ios_proof = build_native_ios_cohort(build_case(4,"flutter.ios.native-build","ios"),
-                source_root=root, flutter=args.flutter, cancel_event=cancel)
+                source_root=root, flutter=args.flutter, cancel_event=cancel, cache_root=cache_parent/"ios-cohort-v1")
             report["builds"]["ios"] = ios_proof
         voting_artifact = None
         if any(s.id in VOTING_SCENARIOS for s in scenarios):
