@@ -43,11 +43,15 @@ typedef TransparentPolicyReconciler =
 /// Reconciles the wallet database for `network`. A missing wallet is left
 /// alone.
 TransparentPolicyReconciler walletTransparentPolicyReconciler(String network) =>
-    (privateQueries) async => rust_sync.reconcileTransparentPolicy(
-      dbPath: await getWalletDbPath(),
-      network: network,
-      privateQueries: privateQueries,
-    );
+    (privateQueries) async {
+      final path = await getExistingWalletDbPath();
+      if (path == null) return false;
+      return rust_sync.reconcileTransparentPolicy(
+        dbPath: path,
+        network: network,
+        privateQueries: privateQueries,
+      );
+    };
 
 /// Overridable in tests; production reconciles the wallet database.
 final transparentPolicyReconcilerProvider =
