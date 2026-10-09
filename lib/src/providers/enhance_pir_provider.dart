@@ -83,7 +83,7 @@ class TransparentPolicyStartup {
     this.optOutPending = false,
   });
 
-  /// The policy startup applied, or `null` when it applied none.
+  /// The policy startup resolved, or `null` when no wallet was reconciled.
   final rust_sync.ApiAppliedTransparentPolicy? appliedPolicy;
 
   /// Whether an explicit opt-out is still unfinished after startup's retry.
