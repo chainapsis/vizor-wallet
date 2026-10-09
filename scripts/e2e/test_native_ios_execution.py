@@ -42,6 +42,9 @@ class ExecutionFixture(unittest.TestCase):
         if command[:3] == ["/usr/bin/xcrun", "simctl", "spawn"]:
             self.assertEqual(command[3], self.session.storage.simulator.udid)
             self.assertEqual(command[4:9], ["log", "stream", "--style", "ndjson", "--level"])
+            self.assertIn('processImagePath ENDSWITH "/Runner"', command[-1])
+            self.assertIn('eventMessage BEGINSWITH "flutter:"', command[-1])
+            self.assertEqual(kwargs["max_output_bytes"], 8*1024*1024)
             self.log_lines = kwargs["raw_lines"]
             self.log_reader = self.session.case._start_process(
                 [sys.executable, "-u", "-c", "import time; time.sleep(60)"], **kwargs)
@@ -66,6 +69,8 @@ class ExecutionFixture(unittest.TestCase):
             pid = self.model.native.model.writers[self.session.storage.simulator.udid].process.pid
             if self.mode == "log-console-pid":
                 pid = managed.process.pid
+            if self.mode == "flutter-logs":
+                self.log_lines.append(json.dumps({"eventMessage": "flutter: [E2E] ordinary diagnostic", "processID": pid}) + "\n")
             message = "The Dart VM service is listening on http://127.0.0.1:12345/model/"
             self.log_lines.append(json.dumps({"eventMessage": message, "processID": pid}) + "\n")
         return managed
@@ -80,6 +85,14 @@ class ExecutionFixture(unittest.TestCase):
 
 
 class ExecutionTests(ExecutionFixture):
+    def test_flutter_diagnostics_do_not_replace_the_original_vm_binding(self):
+        self.mode = "flutter-logs"
+        result = self.execute()
+        self.assertTrue(result["assertions_passed"])
+        self.assertIn("ordinary diagnostic", self.log_lines[0])
+        self.session.close(timeout=15)
+        self.worker.close()
+
     def test_original_native_pid_differs_from_console_and_cleanup_is_composed(self):
         result = self.execute()
         self.assertNotEqual(result["app_pid"], result["console_pid"])

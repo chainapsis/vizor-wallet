@@ -69,6 +69,59 @@ void main() {
     });
 
     test(
+      'returns exact signed bytes for the native outbox raw lookup',
+      () async {
+        final requests = <Object?>[];
+        const signedHex = '00aB01ff';
+        final result = await ownedRegtestRpc(
+          'getrawtransaction',
+          [first, 0],
+          post: (path, body) async {
+            requests.add([path, body]);
+            return {'txid': first, 'hex': signedHex, 'confirmations': 0};
+          },
+        );
+        expect(result, signedHex);
+        expect(requests, [
+          [
+            '/raw-transaction',
+            {'txid': first},
+          ],
+        ]);
+      },
+    );
+
+    test('rejects missing or malformed raw signed bytes', () async {
+      for (final result in <Map<String, Object?>>[
+        {'txid': first},
+        {'hex': null},
+        {'hex': true},
+        {'hex': ''},
+        {'hex': 'abc'},
+        {'hex': '00zz'},
+      ]) {
+        await expectLater(
+          ownedRegtestRpc('getrawtransaction', [
+            first,
+            0,
+          ], post: (_, _) async => result),
+          throwsStateError,
+        );
+      }
+    });
+
+    test('preserves the original raw lookup failure', () async {
+      final failure = StateError('original transaction not found');
+      await expectLater(
+        ownedRegtestRpc('getrawtransaction', [
+          first,
+          0,
+        ], post: (_, _) async => throw failure),
+        throwsA(same(failure)),
+      );
+    });
+
+    test(
       'rejects unsupported requests before any controller operation',
       () async {
         var requests = 0;
@@ -80,6 +133,8 @@ void main() {
           ('generate', [1, 2]),
           ('getblockcount', [1]),
           ('getrawtransaction', [first, true]),
+          ('getrawtransaction', [first, 2]),
+          ('getrawtransaction', [first, '0']),
           ('getrawtransaction', ['bad', 1]),
           ('sendrawtransaction', ['bytes']),
         ]) {

@@ -87,10 +87,12 @@ def execute_native_ios_case(session, *, dart, source_root, timeout=600.0, cancel
     # logging, not the simctl application's stdout. Start this original reader
     # before launch so the one startup event cannot be missed. The SDK UUID is
     # already owned; records are additionally bound to the actual UIKit PID.
+    # Keep Flutter assertion/exception output in this same bounded original
+    # reader; Driver may otherwise report only "Multiple exceptions".
     log_lines = []
     log_reader = session.case.start_process(["/usr/bin/xcrun", "simctl", "spawn",
         session.storage.simulator.udid, "log", "stream", "--style", "ndjson",
-        "--level", "debug", "--predicate", 'processImagePath ENDSWITH "/Runner" AND eventMessage CONTAINS "The Dart VM service is listening on"'],
+        "--level", "debug", "--predicate", 'processImagePath ENDSWITH "/Runner" AND (eventMessage BEGINSWITH "flutter:" OR eventMessage CONTAINS "The Dart VM service is listening on")'],
         env={"PATH":"/usr/bin:/bin", "LANG":"en_US.UTF-8"},
         raw_lines=log_lines, max_output_bytes=8*1024*1024)
     app_lines = []

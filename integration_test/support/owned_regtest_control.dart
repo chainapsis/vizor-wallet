@@ -101,8 +101,14 @@ Future<Object?> ownedRegtestRpc(
             params[0] is String &&
             RegExp(r'^[a-f0-9]{64}$').hasMatch(params[0]! as String) &&
             params[1] is int &&
-            params[1] == 1:
-      return post('/raw-transaction', {'txid': params[0]});
+            (params[1] == 0 || params[1] == 1):
+      final result = await post('/raw-transaction', {'txid': params[0]});
+      if (params[1] == 1) return result;
+      final hex = result['hex'];
+      if (hex is! String || !RegExp(r'^(?:[a-fA-F0-9]{2})+$').hasMatch(hex)) {
+        throw StateError('Owned raw transaction did not return signed bytes.');
+      }
+      return hex;
     default:
       throw ArgumentError(
         'Unsupported owned RPC method or parameters: $method',
