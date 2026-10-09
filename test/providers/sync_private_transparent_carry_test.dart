@@ -125,7 +125,8 @@ AppSyncSnapshot _publicSnapshot() => AppSyncSnapshot(
   recentTransactions: const [],
 );
 
-void _expectDemoted(SyncState state) {
+/// [shielded] is the total without the demoted transparent amount.
+void _expectDemoted(SyncState state, {required BigInt shielded}) {
   expect(
     state.transparentAuthority,
     rust_sync.TransparentBalanceAuthority.lastKnown,
@@ -134,6 +135,8 @@ void _expectDemoted(SyncState state) {
   expect(state.transparentBalance, BigInt.zero);
   expect(state.transparentPendingBalance, BigInt.zero);
   expect(state.canShieldTransparentBalance, isFalse);
+  expect(state.totalBalance, shielded);
+  expect(state.displayTotalBalance, shielded);
 }
 
 void _expectCurrent(SyncState state) {
@@ -146,11 +149,15 @@ void _expectCurrent(SyncState state) {
   expect(state.canShieldTransparentBalance, isTrue);
 }
 
+/// The shielded part of [_current]'s total.
+final _currentShielded = BigInt.from(10);
+
 SyncState _current({required bool private}) => SyncState(
   accountUuid: _accountUuid,
   hasAccountScopedData: true,
   transparentBalance: BigInt.from(5),
   transparentPendingBalance: BigInt.from(2),
+  totalBalance: _currentShielded + BigInt.from(7),
   transparentAuthority: rust_sync.TransparentBalanceAuthority.current,
   transparentPrivate: private,
   canShieldTransparentBalance: true,
@@ -200,6 +207,8 @@ void main() {
     expect(started.transparentPendingBalance, BigInt.zero);
     expect(started.canShieldTransparentBalance, isFalse);
     expect(started.transparentPrivate, isTrue);
+    expect(started.totalBalance, _currentShielded);
+    expect(started.displayTotalBalance, _currentShielded);
   });
 
   test('a sync start carries a public current balance unchanged', () async {
@@ -289,9 +298,10 @@ void main() {
               crossesTip: crossesTip,
             );
         if (demoted) {
-          _expectDemoted(carried);
+          _expectDemoted(carried, shielded: _currentShielded);
         } else {
           _expectCurrent(carried);
+          expect(carried.totalBalance, _currentShielded + BigInt.from(7));
         }
         expect(carried.transparentPrivate, private);
       }
@@ -344,7 +354,11 @@ void main() {
 
     test('a startup read before the policy raise is not current', () async {
       final container = containerFor(privateQueries: true);
-      _expectDemoted(await container.read(syncProvider.future));
+      // The snapshot's whole total is transparent.
+      _expectDemoted(
+        await container.read(syncProvider.future),
+        shielded: BigInt.zero,
+      );
     });
 
     test('a startup read stays current when nothing raises the policy', () async {
@@ -369,7 +383,7 @@ void main() {
 
       final restored = container.read(syncProvider).requireValue;
       expect(restored.accountUuid, _accountUuid);
-      _expectDemoted(restored);
+      _expectDemoted(restored, shielded: BigInt.zero);
     });
 
     test('switching back keeps a cached amount current when nothing '

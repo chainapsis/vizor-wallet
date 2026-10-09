@@ -612,8 +612,9 @@ class SyncState {
   }
 
   /// This state carried to a point where its transparent amount may be stale:
-  /// a `current` amount becomes `lastKnown`, with nothing spendable and no
-  /// Shield action, until a balance read reports Rust's authority again.
+  /// a `current` amount becomes `lastKnown`, with nothing spendable, no
+  /// Shield action, and no share of the totals, until a balance read reports
+  /// Rust's authority again.
   /// Every path that shows a state not read from Rust just now goes through
   /// this rule; a fresh read never does.
   ///
@@ -630,13 +631,19 @@ class SyncState {
         transparentAuthority == rust_sync.TransparentBalanceAuthority.current &&
         (transparentPrivate ? crossesTip : privatePolicyMayApply);
     if (!stale) return this;
+    // The totals drop the demoted amount too, as a read without transparent
+    // authority would report them.
+    final demoted = transparentBalance + transparentPendingBalance;
+    final remaining = totalBalance - demoted;
+    final total = remaining < BigInt.zero ? BigInt.zero : remaining;
     return copyWith(
       transparentBalance: BigInt.zero,
       transparentPendingBalance: BigInt.zero,
       transparentAuthority: rust_sync.TransparentBalanceAuthority.lastKnown,
-      transparentLastKnownBalance:
-          transparentBalance + transparentPendingBalance,
+      transparentLastKnownBalance: demoted,
       canShieldTransparentBalance: false,
+      totalBalance: total,
+      displayTotalBalance: total,
     );
   }
 
@@ -1409,10 +1416,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         displaySpendableFreshness: canPreserveCompletedSpendable
             ? SpendableBalanceFreshness.lastCompletedSync
             : SpendableBalanceFreshness.authoritative,
-        totalBalance: scopedPrev?.totalBalance,
+        totalBalance: carried?.totalBalance,
         displayTotalBalance: canPreserveCompletedSpendable
-            ? scopedPrev?.displayTotalBalance
-            : scopedPrev?.totalBalance,
+            ? carried?.displayTotalBalance
+            : carried?.totalBalance,
         displayShieldedBalance: canPreserveCompletedSpendable
             ? scopedPrev?.displayShieldedBalance
             : scopedPrev == null
