@@ -4138,7 +4138,7 @@ fn durable_private_transparent_policy_blocks_shielding_and_survives_startup() {
     // Nor does it record publicly discovered outputs under it.
     assert!(error.contains(DISCOVERY_FORBIDDEN), "{error}");
 
-    // Startup migration keeps the stricter policy. A fresh handle adopts it
+    // Startup migration keeps the stricter policy. A fresh handle honors it
     // instead of failing on the conflict, and shielding stays refused. This
     // build does not run private recovery, so the refusal says so instead of
     // promising a recovery that will not come.

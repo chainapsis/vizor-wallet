@@ -3812,7 +3812,7 @@ fn transparent_shielding_balances(
         .map_err(|e| format!("Failed to read transparent ledger: {e}"))?;
     if snapshot.authority != TransparentAuthority::Private {
         // A private handle here comes from this build's selection or from
-        // adopting the wallet's durable `PrivateRequired`.
+        // from the wallet's durable `PrivateRequired`, which reads honor.
         return Err(if selects_private_recovery(db_path, network) {
             TRANSPARENT_RECOVERY_INCOMPLETE
         } else {

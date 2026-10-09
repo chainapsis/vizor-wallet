@@ -10,8 +10,8 @@
 //! A raise needs a selection of `PrivateRequired`, which only a build with the
 //! development flag makes. Lowering needs an explicit toggle-off and works in
 //! every build, so a default build can always return a private wallet to
-//! public lookups. Nothing else weakens a wallet: handles adopt a durable
-//! `PrivateRequired` instead.
+//! public lookups. Nothing else weakens a wallet: reads honor a durable
+//! `PrivateRequired` whatever the handle selects.
 
 use std::path::Path;
 use std::time::Duration;

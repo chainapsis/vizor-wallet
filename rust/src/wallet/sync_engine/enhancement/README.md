@@ -297,7 +297,7 @@ lane cannot reach them any other way; the public status source is wrapped by
 `status::lightwalletd_source`. Fee enrichment and migration stop send no
 transaction identifiers, so they need no gate. The iOS FFI
 `zcash_lightwalletd_observe_transaction` takes the wallet's path and network:
-it opens the wallet read-only, adopts a durable `PrivateRequired`, and returns
+it opens the wallet read-only, honors a durable `PrivateRequired`, and returns
 `STATUS_RESULT_UNSUPPORTED` without sending anything when lookups are withheld
 or the transaction's status work is private. An unreadable wallet is
 `STATUS_RESULT_INCONCLUSIVE`. Otherwise its request goes through the gate.
@@ -365,13 +365,13 @@ runtime preference to private and attempts to restore the saved preference
 before resuming. A second storage failure leaves the wallet and native work
 private even if the saved opt-out remains. A crash between the
 preference save and lowering can leave a stricter wallet policy than the saved
-setting. Startup preserves that restriction; explicitly toggling Private
-queries on and then off retries the transition.
+setting. Startup keeps that restriction until it retries the persisted
+opt-out, which lowers the policy only once that transition succeeds.
 
-- Every handle opener selects a mode, then adopts a durable `PrivateRequired`,
-  so lookups on such a wallet are withheld in every build. A handle opened
-  before the transition cannot read it; the gate then returns an error, which
-  also sends nothing.
+- Every read resolves the handle's mode against the durable policy, so a
+  durable `PrivateRequired` withholds lookups in every build without being
+  written onto the handle. A handle opened before the transition reads it too:
+  the gate withholds the lookup and sends nothing.
 - A default build captures `Public`. With the
   `ZCASH_PRIVATE_TRANSPARENT_RECOVERY` development flag, private queries on
   mainnet capture `PrivateRequired`.

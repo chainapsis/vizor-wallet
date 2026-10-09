@@ -86,7 +86,7 @@ pub(crate) fn is_ready(
     if source.as_deref() != Some(keys::KEY_SOURCE_LEDGER) {
         return Ok(true);
     }
-    // A handle adopts a durable `PrivateRequired`, so it retains public
+    // Reads honor a durable `PrivateRequired`, so a handle retains public
     // authority only when neither the selection nor the wallet withholds it.
     let mode = wallet_db_on(&conn, db_path, network)
         .transparent_ledger_mode()
@@ -1213,7 +1213,7 @@ mod tests {
         )
         .await
         .unwrap();
-        // A handle opened after it adopts the durable policy, so discovery is
+        // A handle opened after it honors the durable policy, so discovery is
         // withheld: it succeeds without a query.
         let mut db = crate::wallet::db::open_wallet_db_with_timeout(
             &path,

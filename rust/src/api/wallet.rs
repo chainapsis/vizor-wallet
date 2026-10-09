@@ -2040,7 +2040,7 @@ mod tests {
                 is_first_wallet_account,
             )
         };
-        // The opener adopts the stricter durable policy, so the preview is
+        // Reads honor the stricter durable policy, so the preview is
         // withheld: unavailable, never a zero balance.
         assert_eq!(
             preview(false),

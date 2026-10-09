@@ -248,7 +248,7 @@ pub extern "C" fn zcash_lightwalletd_latest_block_height(
 ///
 /// The request discloses the txid, so it is authorized like every other public
 /// transparent lookup: against the wallet at `db_path`, opened read-only with
-/// a durable `PrivateRequired` adopted, then re-checked by
+/// its reads honoring a durable `PrivateRequired`, then re-checked by
 /// [`TransparentLookupGate`] as it is sent.
 ///
 /// Returns 0 with `output` set, 1 for invalid arguments or a failed lookup,
@@ -398,8 +398,8 @@ fn authorize_public_observation(
     policy: EnhancementPolicy,
     txid: TxId,
 ) -> Result<Option<(TransparentLookupGate, PublicTransactionStatusRequest)>, SyncError> {
-    // The opener adopts a durable `PrivateRequired`, and so does
-    // `configure_db` after selecting the captured mode.
+    // Reads honor a durable `PrivateRequired`, also after `configure_db`
+    // selects the captured mode.
     let mut db = open_wallet_db_readonly_with_timeout(db_path, network, READ_DB_BUSY_TIMEOUT)
         .map_err(SyncError::db)?;
     policy.configure_db(&mut db);
@@ -1052,7 +1052,7 @@ mod tests {
             let lwd = CapturingLwd::start(Vec::new()).await;
 
             // A durable `PrivateRequired` withholds lookups whatever this build
-            // selects: the handle adopts it.
+            // selects: every read honors it.
             let (_dir, path) = wallet(WalletNetwork::Regtest);
             apply(&path, TransparentLedgerMode::PrivateRequired);
             assert_eq!(

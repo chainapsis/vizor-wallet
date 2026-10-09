@@ -42,7 +42,7 @@ pub(crate) fn set_preference_confirmed(confirmed: bool) {
 ///
 /// `PrivateRequired` only on mainnet, with private queries on and the flag
 /// set, outside masquerade builds; otherwise `Public`. The selection never
-/// weakens a wallet: openers adopt a stricter durable policy, and only an
+/// weakens a wallet: reads honor a stricter durable policy, and only an
 /// explicit toggle-off lowers one.
 pub(crate) fn select_transparent_mode(
     network: WalletNetwork,
