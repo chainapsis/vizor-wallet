@@ -224,14 +224,6 @@ class AppSecureStore {
     return password;
   }
 
-  /// The stored wallet database name, or `null` when none is stored. Unlike
-  /// [ensureWalletDbName] it never mints one, so a reader that runs during or
-  /// after a reset cannot name a wallet into existence.
-  Future<String?> readWalletDbName() async {
-    final existing = await readPlain(kWalletDbNameKey);
-    return existing == null || existing.isEmpty ? null : existing;
-  }
-
   Future<String> ensureWalletDbName() async {
     final existing = await readPlain(kWalletDbNameKey);
     if (existing != null && existing.isNotEmpty) {

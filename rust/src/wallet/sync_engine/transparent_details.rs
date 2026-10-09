@@ -60,6 +60,7 @@ use zcash_client_backend::data_api::{
         TransparentLedgerMode, TransparentLedgerRead,
     },
     wallet::decrypt_and_store_transaction,
+    WalletRead,
 };
 use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 use zcash_client_sqlite::{error::SqliteClientError, AccountUuid};
@@ -687,9 +688,8 @@ pub(crate) async fn followup(
     )
 }
 
-/// Which wallet a public load was asked for, and under which transparent
-/// policy generation: a load stores nothing into a wallet that is not the one
-/// it started from, or whose policy changed meanwhile.
+/// The accounts and policy generation of the wallet a public load started
+/// from. Read together, and checked again in the storage transaction.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct PublicLoadIdentity {
     accounts: Vec<AccountUuid>,
@@ -698,10 +698,7 @@ struct PublicLoadIdentity {
 
 impl PublicLoadIdentity {
     fn of(
-        db: &impl zcash_client_backend::data_api::transparent_ledger::TransparentLedgerRead<
-            AccountId = AccountUuid,
-            Error = SqliteClientError,
-        >,
+        db: &impl TransparentLedgerRead<AccountId = AccountUuid, Error = SqliteClientError>,
     ) -> Result<Self, SqliteClientError> {
         let mut accounts = db.get_account_ids()?;
         accounts.sort();
@@ -720,13 +717,11 @@ impl PublicLoadIdentity {
 /// Errors carry no txid. Runs on the caller's thread, which must not be a
 /// runtime worker.
 ///
-/// The wallet must exist before anything is sent: it is opened without
-/// creating it, and its accounts and transparent policy generation are
-/// captured. After the lookup it is reopened without creating it, and the
-/// payload is stored only in the same transaction that finds the same
-/// accounts and generation; a wallet reset, a replaced wallet or a policy
-/// transition during the lookup discards the payload. Nothing here recreates
-/// a wallet database.
+/// Retains the original existing SQLite handle and physical file identity.
+/// The network wait holds no SQL transaction or wallet write lock. A reset,
+/// file replacement, account change or policy transition discards the result;
+/// validation and storage share one wallet transaction, including the final
+/// read that checks whether the wallet accepted the transaction.
 pub(crate) fn enhance_publicly(
     db_path: &str,
     network: WalletNetwork,
@@ -737,12 +732,21 @@ pub(crate) fn enhance_publicly(
         open_existing_wallet_db_with_timeout, with_wallet_db_write_lock, WALLET_DB_BUSY_TIMEOUT,
     };
     let txid = TxId::from_bytes(txid);
-    let started = {
-        let db = open_existing_wallet_db_with_timeout(db_path, network, WALLET_DB_BUSY_TIMEOUT)
-            .map_err(|error| format!("the wallet is unavailable ({error})"))?;
-        PublicLoadIdentity::of(&db)
-            .map_err(|error| format!("reading the wallet failed ({error})"))?
+    let file = same_file::Handle::from_path(db_path)
+        .map_err(|_| "the wallet is unavailable".to_owned())?;
+    let same_file = || {
+        same_file::Handle::from_path(db_path)
+            .map(|current| current == file)
+            .unwrap_or(false)
     };
+    let mut db = open_existing_wallet_db_with_timeout(db_path, network, WALLET_DB_BUSY_TIMEOUT)
+        .map_err(|error| format!("the wallet is unavailable ({error})"))?;
+    if !same_file() {
+        return Err("the wallet changed before the lookup; nothing was sent".to_owned());
+    }
+    let started = db
+        .transactionally(|tx| PublicLoadIdentity::of(tx))
+        .map_err(|error| format!("reading the wallet failed ({error})"))?;
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(1)
         .enable_all()
@@ -771,41 +775,31 @@ pub(crate) fn enhance_publicly(
     };
     let (transaction, mined_height) = super::enhancement::decode_enhancement_payload(&raw, txid)
         .map_err(|error| format!("lightwalletd answered with an invalid transaction ({error})"))?;
-    // A wallet reset may have deleted the wallet during the lookup; neither
-    // open below recreates it.
-    let mut db = open_existing_wallet_db_with_timeout(db_path, network, WALLET_DB_BUSY_TIMEOUT)
-        .map_err(|error| error.to_string())?;
     let stored =
         with_wallet_db_write_lock("sync_engine.transparent_details.enhance_publicly", || {
-            db.transactionally(|tx| {
-                if PublicLoadIdentity::of(tx)? != started {
-                    return Ok(false);
-                }
-                decrypt_and_store_transaction(&network, tx, &transaction, mined_height)?;
-                Ok::<_, SqliteClientError>(true)
-            })
-        })
-        .map_err(|error| format!("storing the transaction failed ({error})"))?;
-    if !stored {
-        return Err("the wallet changed during the lookup; nothing was stored".to_owned());
-    }
-    // The store skips a transaction it finds nothing of the wallet's in;
-    // reporting success then would leave the receipt offering the same load.
-    let stored: bool =
-        crate::wallet::db::open_readonly_conn_with_timeout(db_path, Some(WALLET_DB_BUSY_TIMEOUT))
-            .and_then(|conn| {
-                conn.query_row(
-            "SELECT EXISTS (SELECT 1 FROM transactions WHERE txid = ?1 AND raw IS NOT NULL)",
-            [txid.as_ref().as_slice()],
-            |row| row.get(0),
-        )
-        .map_err(|error| error.to_string())
-            })
-            .map_err(|error| format!("reading the stored transaction failed ({error})"))?;
-    if stored {
-        Ok(())
-    } else {
-        Err("the wallet found nothing of its own in the transaction".to_owned())
+            if !same_file() {
+                return Err("the wallet changed during the lookup; nothing was stored".to_owned());
+            }
+            let stored = db
+                .transactionally(|tx| {
+                    if PublicLoadIdentity::of(tx)? != started {
+                        return Ok(None);
+                    }
+                    decrypt_and_store_transaction(&network, tx, &transaction, mined_height)?;
+                    // Read through this transaction, not a second connection
+                    // that could be opened on replacement storage.
+                    Ok::<_, SqliteClientError>(Some(tx.get_transaction(txid)?.is_some()))
+                })
+                .map_err(|error| format!("storing the transaction failed ({error})"))?;
+            if !same_file() {
+                return Err("the wallet changed while storing the lookup".to_owned());
+            }
+            Ok(stored)
+        })?;
+    match stored {
+        Some(true) => Ok(()),
+        Some(false) => Err("the wallet found nothing of its own in the transaction".to_owned()),
+        None => Err("the wallet changed during the lookup; nothing was stored".to_owned()),
     }
 }
 

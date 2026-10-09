@@ -241,6 +241,40 @@ void main() {
     },
   );
 
+  test(
+    'other platforms retain wallet mutation ownership through awaits',
+    () async {
+      final local = LinuxKeyringCoordinator.testing(enabled: false);
+      addTearDown(local.dispose);
+      final release = Completer<void>();
+      final entered = Completer<void>();
+      var competingCalls = 0;
+      final reset = local.runMutation(() async {
+        expect(await local.runMutation(() async => 7), 7);
+        entered.complete();
+        await release.future;
+      });
+      await entered.future;
+      try {
+        expect(local.hasPendingMutation, isTrue);
+        await expectLater(
+          local.runMutation(() async => competingCalls++),
+          throwsA(isA<LinuxWalletMutationBusyException>()),
+        );
+        expect(
+          competingCalls,
+          0,
+          reason: 'a policy toggle must not overlap a reset',
+        );
+      } finally {
+        release.complete();
+        await reset;
+      }
+      expect(local.hasPendingMutation, isFalse);
+      expect(await local.runMutation(() async => 42), 42);
+    },
+  );
+
   test('other platforms propagate errors without Linux interception', () async {
     final disabled = LinuxKeyringCoordinator.testing(enabled: false);
     addTearDown(disabled.dispose);

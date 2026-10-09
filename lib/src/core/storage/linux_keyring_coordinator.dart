@@ -65,7 +65,8 @@ class LinuxWalletMutationBusyException extends WalletMutationBusyException {
 
 enum _RecoveryAction { retry, cancel, disposed }
 
-/// Serializes calls to the unmodified upstream Linux storage plugin.
+/// Owns wallet mutations on every platform and serializes calls to the
+/// unmodified upstream Linux storage plugin.
 ///
 /// Recovery starts only after a native call has returned an error. The plugin
 /// does not report prompt progress or support cancelling an in-flight call.
@@ -230,15 +231,15 @@ class LinuxKeyringCoordinator extends ChangeNotifier {
     recovery.complete(_RecoveryAction.cancel);
   }
 
-  /// Nested calls retain ownership. Separate UI/job requests are rejected
-  /// rather than queued with inputs captured before the current mutation.
+  /// Nested calls retain ownership on every platform. Separate UI/job requests
+  /// are rejected rather than queued with inputs captured before the current
+  /// mutation. [isEnabled] controls only Linux storage interception.
   Future<T> runMutation<T>(Future<T> Function() action) async {
-    if (!isEnabled) return action();
     if (_mutationOwner != null &&
         identical(Zone.current[_mutationZoneKey], _mutationOwner)) {
       return action();
     }
-    if (_hasPendingMutation || _state.isWaiting) {
+    if (_hasPendingMutation || (isEnabled && _state.isWaiting)) {
       throw const LinuxWalletMutationBusyException();
     }
     final owner = Object();

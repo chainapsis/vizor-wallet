@@ -14,6 +14,8 @@ import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
+import 'package:zcash_wallet/src/core/widgets/review_list_row.dart'
+    show kTxFeeHelpTooltip;
 import 'package:zcash_wallet/src/features/activity/activity_row_mapper.dart';
 import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
 import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_transaction_status_screen.dart';
@@ -913,7 +915,7 @@ void main() {
       detailsComplete: false,
       provisional: true,
     );
-    await tester.pumpWidget(_app(tx, detail: _detail(hasRecipient: false)));
+    await tester.pumpWidget(_app(tx, detail: _detail()));
     await tester.pumpAndSettle();
 
     expect(find.text('Transaction'), findsOneWidget);
@@ -1525,7 +1527,7 @@ void main() {
     await tester.pumpWidget(_app(_tx()));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('ZIP 317'), findsNothing);
+    expect(find.text(kTxFeeHelpTooltip), findsNothing);
 
     // The Tx fee help glyph renders in the muted icon tint the session added:
     // icon.regular @ 0.72 alpha, NOT the default accent color.
@@ -1544,7 +1546,7 @@ void main() {
     // fee-info bottom sheet.
     await tester.tap(find.text('0.00015 ZEC'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('ZIP 317'), findsOneWidget);
+    expect(find.text(kTxFeeHelpTooltip), findsOneWidget);
   });
 }
 

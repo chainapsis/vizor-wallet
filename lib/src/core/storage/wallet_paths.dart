@@ -40,19 +40,20 @@ Future<String> getWalletDbPath() async {
   return '${dir.path}${Platform.pathSeparator}$dbName';
 }
 
-/// The path of the existing wallet database, or `null` when no wallet
-/// database name is stored. Never generates a name; see
-/// [AppSecureStore.readWalletDbName].
+/// Resolves the recorded wallet path without assigning a new database name.
+/// A reset or fresh install with no recorded wallet returns null. Storage
+/// failures propagate so callers cannot mistake unknown state for no wallet.
 Future<String?> getExistingWalletDbPath({
-  Future<String?> Function()? readDbName,
+  AppSecureStore? secureStore,
   Future<Directory> Function() resolveSupportDirectory =
-      getWalletSupportDirectory,
+      getApplicationSupportDirectory,
 }) async {
-  final dbName =
-      await (readDbName ?? AppSecureStore.instance.readWalletDbName)();
-  if (dbName == null) return null;
-  final dir = await resolveSupportDirectory();
-  return '${dir.path}${Platform.pathSeparator}$dbName';
+  final name = await (secureStore ?? AppSecureStore.instance).readPlain(
+    kWalletDbNameKey,
+  );
+  if (name == null || name.isEmpty) return null;
+  final directory = await resolveSupportDirectory();
+  return '${directory.path}${Platform.pathSeparator}$name';
 }
 
 Future<String> getTorDataDirectoryPath() async {

@@ -994,21 +994,38 @@ there is no separate release gate.
 ## Library dependency
 
 The four patched library crates and the `zakura-pir-transparent` adapter share
-one wallet-libraries revision, `bdebaffcb5d52138c702fde6c78bd079293ebb3d`:
-merged `main` after #97–#103, which carry every library change this branch
-needs. It adds the trusted operation
-`qualify_and_apply_transparent_ledger_commit` (#98), removes the unused
-recovery-work query (#99), and gives the adapter caller transports and a
-narrowed API (#100), the wallet chain view, birthday floor, publication-lag
-clamp and mainnet check (#101), stable sources, published lineage, batch
-states, cache pruning and explicit reconciliation of resolved withdrawals
-(#102), and the end-to-end test against an in-process shard service (#103).
-Trusted qualification, rather than candidate observation,
-authorizes provisional revision replacement; the replacement regression runs a
-trusted fixture under `PrivateRequired`. The pin adds no wallet migration and
-no reader-version change. Reader version 6 state is not supported by version 5
-rollback readers; this pin is unreleased, and private activation stays behind
-the development flag.
+one pushed wallet-libraries revision, `1cbae34debd0b3326effea508d779f3aad109df3`,
+from [companion PR #130](https://github.com/zakura-core/wallet-libraries/pull/130).
+It retains the parent's private-recovery and compact txid-display changes and
+adds durable privacy-policy resolution at each sensitive read plus optional
+SQLite `apply_and_acknowledge`. Vizor supplies explicit trust, then the library
+commits wallet facts and quarantine before acknowledging the opaque batch.
+A failed or interrupted batch remains replayable; trusted qualification
+reconciles provisional revision replacement. Scheduling, network routing,
+promotion and spending authorization remain in Vizor. Every manifest reference
+and lockfile source uses that same revision; Cargo resolution is checked
+without local sibling overrides.
+
+The library also applies three unconditional migrations inherited from the
+parent's repin, including in builds without private transparent recovery:
+`ironwood_unsupported_memo_retry` (`3d1c7a52-8e0b-4f6d-9a47-5be2c0f19e84`),
+`ironwood_transparent_output_shape` (`8f4c3210-04e1-49eb-9de2-d713ee0a8426`),
+and `transparent_txid_enhancement` (`73d751a3-dbdc-461a-9154-e061903aae4f`).
+They persist memo, metadata and detail obligations without sending network
+requests; Vizor still authorizes dispatch. Upgrade probes check the migration
+IDs, new storage, repeated initialization, retained data and zero private-work
+backfills for never-private wallets. App probes cover the released mobile
+v0.0.50 baseline and the fork immediately preceding these migrations across
+single-derived, multi-seed, imported-only and hardware-first wallet shapes.
+
+Upgrading is one-way within the supported app contract. The pre-migration fork
+reader refuses the new migration IDs before changing the database. Published
+rc5/rc7 readers lack that unknown-migration guard and can open the upgraded
+database; the probes report that behavior without qualifying a writable
+downgrade. There is no supported downgrade preparation API. Existing private
+ledger writes also retain their reader-version barrier: version 6 state cannot
+be read by version 5 readers. Private activation remains behind the development
+flag.
 
 The adapter is a direct git dependency rather than a patched crates.io
 package: it depends on wallet-pir's transparent crates, which exist only in git
