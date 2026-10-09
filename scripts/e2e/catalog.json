@@ -1068,7 +1068,7 @@
         "gift-card",
         "onboarding"
       ],
-      "timeout_seconds": 1200,
+      "timeout_seconds": 2100,
       "supported": false,
       "pending_reason": "execution backend and lifecycle are not implemented"
     },

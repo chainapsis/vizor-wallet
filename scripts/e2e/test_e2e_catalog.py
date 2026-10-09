@@ -162,6 +162,18 @@ class E2eCatalogTest(unittest.TestCase):
                     self.catalog.scenarios_by_id[scenario_id].timeout_seconds,
                     phase_seconds + 300)
 
+    def test_ios_gift_onboarding_budget_covers_all_tests_and_driver_handoff(self):
+        source = (SCRIPT_DIR.parents[1] / "integration_test" /
+                  "regtest_mobile_gift_onboarding_test.dart").read_text()
+        minutes = re.findall(
+            r"timeout:\s*const Timeout\(Duration\(minutes:\s*(\d+)\)\)", source)
+        self.assertEqual(len(minutes), 3)
+        # All three sequential tests, app/VM startup and Driver/log joins use
+        # the same enclosing executor deadline; per-test limits stay intact.
+        self.assertGreaterEqual(
+            self.catalog.scenarios_by_id["flutter.ios.gift-onboarding"].timeout_seconds,
+            sum(int(value) * 60 for value in minutes) + 180)
+
     def test_exact_selection_deduplicates_in_catalog_order(self):
         selected = catalog_module.select_scenarios(
             self.catalog,
