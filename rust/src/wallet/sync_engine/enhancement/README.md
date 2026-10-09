@@ -333,17 +333,25 @@ lane never regains the generation it captured.
 
 Per-RPC checks narrow the check-to-dispatch window but cannot close it alone: a
 transition could commit between a check and its request, and a disclosure
-cannot be undone. The in-process **policy fence** closes it. Every dispatch
-holds a shared lease from its check until its request has been sent, and
+cannot be undone. The in-process **policy fence** closes it. Each wallet
+database has its own fence, so a transition on one wallet never waits for
+another's lookups. Every dispatch holds a shared lease from its check until its
+request has been handed to the transport, and
 `apply_transparent_policy_fenced_if`, the only way this build applies a
-transparent policy, takes the exclusive side. A waiting transition blocks new
-leases at once, waits up to its drain deadline for in-flight requests, and only
-then commits; if they do not drain in time it applies nothing and fails, and
-the caller retries. Lookups queued behind it resume under the new generation
+transparent policy, takes the exclusive side. A gate that knows its transport
+(the sync's registered transport for its lanes, or the one a one-off lookup
+opened) sends through `DispatchSignalService` and releases the lease once the
+request body has been handed to the connection, never waiting for a slow
+response; a gate without one holds it until the call returns. A waiting
+transition blocks new leases at once, waits up to its drain deadline for
+in-flight requests to be sent, and takes the wallet write lock only within the
+same deadline; if either does not come in time it applies nothing and fails,
+and the caller retries. A lookup that cannot get a lease within 45 s is
+withheld. Lookups queued behind a transition resume under the new generation
 and are withheld. No wallet-libraries hook is needed: the fence lives beside
 the only code that sends lookups. A transition made by another process is
 outside the fence, and the per-RPC check still bounds it to requests already in
-flight. The private queries setting and the coordinator's raise are the only
+flight. Generation checks at store time are unchanged. The private queries setting and the coordinator's raise are the only
 transitions (`transparent_ledger/policy.rs`). Both decide under the fence, so
 neither acts on a policy the other is about to change: a toggle-off that lands
 while a raise waits wins, and one that waits behind a raise lowers what it
@@ -383,34 +391,39 @@ until an account is promoted.
   deterministic `FixtureSource` is test-only; its revisions carry the
   `vizor-fixture` source id, and `trust()` makes it trusted. No source falls
   back to lightwalletd, and the coordinator takes no lightwalletd client.
-- **Batch states.** Only `Ready { commits, retired, next, behind_by }` carries
-  commits. `Pending { next }` (the publication is behind what the source
+- **Batch states.** Only `Ready { next, behind_by }` has commits, which the
+  source keeps, opaque, until it settles the batch. `Pending { next }` (the publication is behind what the source
   recorded) and `Withdrawn(cause)` (the publication contradicts it:
   `Regression`, `Equivocation`, `ChangedSealed` or `Retired`) apply nothing and
   are never acknowledged. A source fails with `Unavailable`, which stops the
   run, `Failed`, which skips the account, or `Cancelled`; none carries detail.
-- **Trusted qualification (D1).** A `Ready` batch's commits are applied in
-  order, each in its own library transaction under the wallet write lock; no
-  lock is held across a source call. Under `PrivateRequired`, on the handle
-  and durably, a trusted source's commits go through
-  `qualify_and_apply_transparent_ledger_commit`, which qualifies the exact
-  revision, supersedes its source's older provisional evidence, and applies
-  the facts in one transaction. This is the trusted-indexer decision: the
-  wallet does not verify the publication. A superseded revision's events
+- **Trusted qualification (D1).** The source settles a `Ready` batch
+  (`RecoverySource::apply`): the transparent PIR source hands it to the
+  adapter's `apply_and_acknowledge`, which applies the commits in order, each
+  in its own library transaction, under the wallet write lock; no lock is held
+  across a source call or any network request. Under `PrivateRequired`, on the
+  handle and durably, a trusted source's commits are applied with
+  `Trust::Trusted` (`qualify_and_apply_transparent_ledger_commit`), which
+  qualifies the exact revision, supersedes its source's older provisional
+  evidence, and applies the facts in one transaction. This is the
+  trusted-indexer decision: the wallet trusts the configured indexer and does
+  not verify the publication; nothing here is publication verification. A superseded revision's events
   survive only where another independent or sealed observation supports
   them, so a complete replacement can withdraw receives and spends. Shadow
   runs and untrusted sources only apply (`apply_transparent_ledger_commit`)
   and never qualify.
 - **Acknowledgment and withdrawals.** A batch is acknowledged only after every
-  commit applied; `acknowledge` is async, and the source runs it off the
-  runtime. `retired` says the batch resolves provisional revisions that an
-  earlier batch exported, each succeeded by one of its commits. Only the
-  trusted operation withdraws their evidence, so such a batch is acknowledged
-  as reconciled, and only when every commit went through it; a batch without
-  retirements is acknowledged as applied. Otherwise nothing is acknowledged,
-  the account is held, and the source reports the retirements again until a
-  trusted run reconciles them. A withdrawn publication holds the account too,
-  and both show as `Stopped(Withdrawn)`.
+  commit's wallet transaction committed; the companion and the wallet are
+  separate databases and are never treated as atomic. A batch can resolve
+  provisional revisions that an earlier batch exported, each succeeded by one
+  of its commits. Only trusted commits withdraw their evidence, so observed
+  settlement refuses such a batch before applying anything; nothing is
+  acknowledged, the account is held, and the source reports the retirements
+  again until a trusted run reconciles them. A stale commit, a policy change, a
+  failed write or acknowledgment, or a crash leaves the batch unacknowledged
+  with its committed prefix counted; the next pass replays it, and the replay
+  changes nothing already applied. A withdrawn publication holds the account
+  too, and both show as `Stopped(Withdrawn)`.
 - **Rejections.** A stale commit (reorg, deleted account, superseded revision,
   or a changed policy generation) is retried up to three times from a fresh
   watch set, without acknowledgment. An integrity rejection, which
@@ -646,10 +659,18 @@ trusted, since every commit comes from the configured origin.
   and a failure keeps the database name for a retry; startup and reset delete
   `.tpir` directories of no current wallet. On iOS a flag build excludes the
   directory from device backups.
-- **Locking.** One lock per companion path serializes passes,
-  acknowledgments and removals. A source parks each companion it opened, with
-  its lock, until it is dropped, so a pass and its acknowledgment see the same
-  companion and nothing removes it in between.
+- **Repair.** A companion is rebuilt only when SQLite confirms it is not a
+  database or is corrupt, or when it is in the earlier format the adapter asks
+  to recreate: once per companion per process, under its path lock, keeping
+  every catalog row the damaged file still yields. A busy, locked or
+  unreadable companion, one bound to another account, origin or schema, and a
+  publication change never delete or reset anything. A regular file where the
+  `.tpir` directory belongs is moved aside (`.tpir.displaced-<secs>`), never
+  deleted; if it cannot be, the run stops as unavailable.
+- **Locking.** One lock per companion path serializes passes, settlements and
+  removals. A source parks each companion it opened, with its lock, until it is
+  dropped, so a pass and its settlement see the same companion and nothing
+  removes it in between.
 - **Passes.** A pass runs on a blocking thread (`spawn_blocking`) over a
   read-only wallet handle, whose blocks answer the adapter's chain view up to
   the watch set's target. It stops at cancellation or the 90 s pass
@@ -658,17 +679,21 @@ trusted, since every commit comes from the configured origin.
   or handle outlives a cancelled pass, and a pass that raced cancellation is
   discarded; a dropped call stops its pass at the next request. A
   publication whose set identity changed is retried once on the same
-  companion, which the adapter has reset, keeping its catalog. The adapter's
-  `retired_revisions()` becomes the batch's `retired` flag, and
-  acknowledgment calls `acknowledge_reconciled` or `acknowledge_applied`
-  on a blocking thread under the parked lock.
+  companion, which the adapter has reset, keeping its catalog. A pass that
+  failed because the service could not be reached or was not serving (a
+  failed connection or route, a timeout, a 429 or 5xx on the map, a filter or
+  init, or any other 5xx) is `Unavailable` and ends the whole run instead of
+  failing each account in turn.
 - **Limits per pass.** 10,000 scripts, 1,024 shards, 500,000 events, 256
   private queries, 96 MiB of private bytes, and 8 MiB per response.
 - **Transport.** `enhancement/transport/transparent_pir.rs` gives the adapter
   its filter source and shard transport over one routed HTTPS client: HTTPS
   only, Tor when the wallet wants it and the direct-route lease otherwise, no
   User-Agent, a 60 s bound per request, and the sync's cancellation. Nothing
-  is retried and no filter is memoized. The adapter's dependency graph has no
+  is retried and no filter is memoized. A shard-bound 429, or 503 without
+  `Retry-After`, is still capacity: it is reported as `Overloaded`, so the
+  adapter's own bounded backoff (at most four attempts, two seconds at most
+  between them) and the run's 90 s wait cap apply. The adapter's dependency graph has no
   reqwest. Requests use only the service's six routes: the shard map, a
   shard's filter, init, a revision's manifest, setup segments, and posted
   queries.
@@ -757,7 +782,9 @@ captured policy ── PrivateRequired ──> txid display PIR  (PirSource)
   (several source scripts, more than two outputs, transparent inputs with
   net shielded funding). The wallet shows the omissions and offers a public
   lookup of the whole transaction only when the user asks for one. One client per origin lives for the whole
-  process, so the derived native profiles are built once. A client that
+  process, so the derived native profiles are built once. These are process
+  statics: a restart starts with a fresh client, no map and no map check
+  time. A client that
   found the service's display unsupported is replaced by a fresh one that
   keeps only those profiles, so the next lookup asks for the init document
   and map again: a service that comes to support the client is found once
@@ -821,7 +848,9 @@ captured policy ── PrivateRequired ──> txid display PIR  (PirSource)
   minute to five (shown pending), an absent record from an hour to a day,
   and an uncovered height, an unsupported service or a contradiction after
   at least a day, then parked until the display map changes (seven days at
-  most). An outage ends the run. A lookup the budget
+  most). An outage ends the run. A public `GetTransaction` that lightwalletd
+  answers "not found" is an absent record, not an outage, so the run's
+  remaining lookups proceed. A lookup the budget
   stopped is deferred as unavailable. A store refused for a moved policy
   generation ends the run without storing; facts that contradict the wallet
   are held, not stored. Failures are logged by kind, never by txid, a panic
@@ -870,13 +899,20 @@ builds (`ZCASH_PRIVATE_TRANSPARENT_RECOVERY`) add a button that runs one
 private lookup through `debug_lookup_transparent_details` and stores nothing.
 
 **Privacy.** The txid display service learns which shard, tier and bucket a
-lookup touches (its height range), the page count of an overflow record, and
-timing; with Tor off, the network origin. It never learns the txid. A public
+lookup touches, the page count of a display v2 overflow record, and timing;
+with Tor off, the network origin. The shard and tier give the height range.
+The bucket is a hash of the txid modulo the shard's bucket count, at most 64,
+so it reveals up to six bits of that hash, and repeated lookups of one
+transaction always touch the same bucket, which links them. It never learns
+the txid itself. A public
 lookup discloses the txid to lightwalletd, which is why `PrivateRequired`
 never makes one. The live test `txid_live` (ignored by default) looks up a
 known mainnet transaction, an absent txid, and an unplaced height through the
 real client and transport, and checks the routes and that no request carries
-the txid:
+the txid. It covers display facts only: it does not exercise raw bytes
+superseding them, the public lookup, or the per-lookup runtime limits above
+(the 30 s request bound, the 45 s run budget and the 2 s abandon grace), which
+the in-process tests cover:
 
 ```sh
 cargo test --manifest-path rust/Cargo.toml -- --ignored txid_live
