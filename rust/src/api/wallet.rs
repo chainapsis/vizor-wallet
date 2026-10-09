@@ -923,13 +923,15 @@ pub(crate) async fn discover_used_software_accounts(
         return SoftwareAccountDiscovery::stopped(Withheld, Vec::new());
     }
     let start_height = discovery_start_height(network, birthday_height);
-    let mut client = match crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await {
-        Ok(client) => client,
+    let transport = match crate::wallet::sync_engine::open_lwd_transport(lightwalletd_url).await {
+        Ok(transport) => transport,
         Err(e) => {
             log::warn!("software account discovery: could not open lightwalletd channel: {e}");
             return SoftwareAccountDiscovery::stopped(Unavailable, Vec::new());
         }
     };
+    let mut client = CompactTxStreamerClient::new(transport.clone());
+    let gate = gate.clone().with_transport(transport);
     let tip = match crate::wallet::sync_engine::get_latest_block_recorded(
         &mut client,
         lightwalletd_url,
@@ -956,7 +958,7 @@ pub(crate) async fn discover_used_software_accounts(
         for account_index in start..=end.min(SOFTWARE_ACCOUNT_DISCOVERY_MAX_INDEX) {
             match discover_software_account_at_index(
                 &mut client,
-                gate,
+                &gate,
                 network,
                 seed,
                 account_index,

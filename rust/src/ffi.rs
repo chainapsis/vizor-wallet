@@ -19,8 +19,7 @@ use crate::wallet::sync_engine::enhancement::{status, EnhancementPolicy};
 use crate::wallet::sync_engine::{SyncError, TransparentLookupGate};
 use crate::wallet::transaction_data::TransactionObservation;
 use zakura_transaction_status::{
-    lightwalletd::LightwalletdSource, DisabledSource, StatusError, StatusMode, StatusReader,
-    StatusRequest,
+    DisabledSource, StatusError, StatusMode, StatusReader, StatusRequest,
 };
 use zcash_client_backend::data_api::status::{
     PublicTransactionStatusRequest, TransactionStatusRead, TransactionStatusWork,
@@ -338,18 +337,16 @@ pub(crate) fn observe_public_transaction(
     let observed = runtime.block_on(await_lightwalletd_request_or_cancellation(
         cancellation,
         async {
-            let public_source = status::gated(
-                LightwalletdSource::new(
-                    || async {
-                        crate::wallet::sync_engine::open_background_direct_lwd_channel(
-                            lightwalletd_url,
-                        )
-                        .await
-                        .map_err(|_| StatusError::Unavailable)
-                    },
-                    &cancelled,
-                ),
-                gate.clone(),
+            let transport = crate::wallet::sync_engine::open_background_direct_lwd_transport(
+                lightwalletd_url,
+            )
+            .await
+            .map_err(|_| StatusError::Unavailable)?;
+            let client = zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient::new(transport.clone());
+            let public_source = status::lightwalletd_source(
+                client,
+                gate.clone().with_transport(transport),
+                &cancelled,
             );
             let mut reader = StatusReader::new(
                 StatusMode::PublicLightwalletd,

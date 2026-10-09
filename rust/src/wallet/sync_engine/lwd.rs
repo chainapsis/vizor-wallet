@@ -226,6 +226,16 @@ pub(crate) async fn open_isolated_lwd_transport(
 pub(crate) async fn open_background_direct_lwd_channel(
     lightwalletd_url: &str,
 ) -> Result<CompactTxStreamerClient<Channel>, SyncError> {
+    open_background_direct_lwd_transport(lightwalletd_url)
+        .await
+        .map(CompactTxStreamerClient::new)
+}
+
+/// The same background-only direct route, exposed so a transparent gate can
+/// release its dispatch lease at hand-off to this transport.
+pub(crate) async fn open_background_direct_lwd_transport(
+    lightwalletd_url: &str,
+) -> Result<Channel, SyncError> {
     static RUSTLS_INIT: std::sync::Once = std::sync::Once::new();
     RUSTLS_INIT.call_once(|| {
         let _ = rustls::crypto::ring::default_provider().install_default();
@@ -245,7 +255,7 @@ pub(crate) async fn open_background_direct_lwd_channel(
         .connect()
         .await
         .map_err(|e| SyncError::net(format!("gRPC connect failed: {e}")))?;
-    Ok(CompactTxStreamerClient::new(channel))
+    Ok(channel)
 }
 
 async fn open_lwd_channel_for_route(

@@ -998,7 +998,7 @@ there is no separate release gate.
 ## Library dependency
 
 The four patched library crates and the `zakura-pir-transparent` adapter share
-one pushed wallet-libraries revision, `d0ea9cb9dd7fd22c3449ab6d1a6bd9c8bef78a77`,
+one pushed wallet-libraries revision, `12f0ecad810dd652be82eb9464a15e6e1e1303a3`,
 from [companion PR #130](https://github.com/zakura-core/wallet-libraries/pull/130).
 It retains the parent's private-recovery and compact txid-display changes and
 adds durable privacy-policy resolution at each sensitive read plus optional
