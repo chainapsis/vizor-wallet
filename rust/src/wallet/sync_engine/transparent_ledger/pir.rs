@@ -118,10 +118,9 @@ const REMOVE_WAIT: Duration = Duration::from_secs(5);
 /// Sidecar suffixes SQLite may leave beside a companion file.
 const SIDECARS: [&str; 3] = ["-wal", "-shm", "-journal"];
 
-/// Files a companion rebuild keeps beside the companion: the replacement it
-/// builds, and the damaged original while the replacement takes its place.
-/// They belong to the companion, so listing and removal include them.
-const REBUILD_SUFFIXES: [&str; 2] = [".rebuild", ".damaged"];
+/// The file a companion rebuild builds its replacement in, beside the
+/// companion. It belongs to the companion, so listing and removal include it.
+const REBUILD_SUFFIXES: [&str; 1] = [".rebuild"];
 
 /// Every name suffix of a companion's files: the database, its sidecars, and
 /// a rebuild's files with theirs.
@@ -531,7 +530,6 @@ impl Pass {
             }
         }
         let config = recovery_config(self.account, &self.origin);
-        finish_interrupted_rebuild(path).map_err(|_| PassFailure::Companion)?;
         match ReferenceRecovery::open(path, config.clone()) {
             Ok(companion) => Ok(companion),
             Err(error) => {
@@ -817,11 +815,11 @@ type SalvagedCatalog = (Vec<String>, Vec<Vec<rusqlite::types::Value>>);
 
 /// Replaces the unusable companion at `path`, under its held path lock.
 ///
-/// The replacement is built beside it, at `{path}.rebuild`, and must take
-/// the damaged companion's place only once it is complete: its binding equals
-/// the damaged one's, every catalog row of a corrupt companion is restored
-/// into it, and the adapter opens it. Until then the damaged companion is
-/// untouched, and any doubt keeps it.
+/// The replacement is built beside it, at `{path}.rebuild`, and takes the
+/// damaged companion's place, by one atomic rename, only once it is complete:
+/// its binding equals the damaged one's, every catalog row of a corrupt
+/// companion is restored into it, and the adapter opens it. Until then the
+/// damaged companion is untouched, and any doubt keeps it.
 fn rebuild_companion(
     path: &Path,
     config: RecoveryConfig,
@@ -861,63 +859,22 @@ fn rebuild_companion(
 }
 
 /// Puts the validated replacement at `staging` in the place of the damaged
-/// companion at `path` without deleting the original first: the original and
-/// its sidecars move to `{path}.damaged`, the replacement moves to `path`, and
-/// only then is the original deleted. A failed move puts everything back. A
-/// crash in between leaves `{path}.damaged`, which
-/// [`finish_interrupted_rebuild`] restores or discards before the next open.
+/// companion at `path` with one atomic rename over it, so a crash leaves
+/// either the original or the replacement, never neither. Refused, keeping
+/// both, while either has SQLite sidecars: a write-ahead log or journal may
+/// hold the original's committed data, which a rename of the main file alone
+/// would separate from it.
 fn swap_in(
     path: &Path,
     staging: &Path,
     rename: impl Fn(&Path, &Path) -> io::Result<()>,
 ) -> Result<(), RebuildError> {
-    let damaged = sibling(path, ".damaged");
-    remove_database(&damaged).map_err(|_| RebuildError::Swap)?;
-    let files: Vec<&str> = std::iter::once("")
-        .chain(SIDECARS)
-        .filter(|suffix| sibling(path, suffix).exists())
-        .collect();
-    let mut moved = Vec::new();
-    let restore = |moved: &[&str]| {
-        for suffix in moved {
-            let _ = rename(&sibling(&damaged, suffix), &sibling(path, suffix));
-        }
-    };
-    for suffix in &files {
-        if rename(&sibling(path, suffix), &sibling(&damaged, suffix)).is_err() {
-            restore(&moved);
-            return Err(RebuildError::Swap);
-        }
-        moved.push(*suffix);
+    let has_sidecars = |base: &Path| SIDECARS.iter().any(|suffix| sibling(base, suffix).exists());
+    if has_sidecars(path) || has_sidecars(staging) {
+        let _ = remove_database(staging);
+        return Err(RebuildError::Unsalvageable);
     }
-    if rename(staging, path).is_err() {
-        restore(&moved);
-        return Err(RebuildError::Swap);
-    }
-    let _ = remove_database(staging);
-    let _ = remove_database(&damaged);
-    Ok(())
-}
-
-/// Completes or undoes a rebuild that a crash interrupted, before the
-/// companion at `path` is opened: a damaged original whose replacement never
-/// took its place is restored, and one already replaced is deleted, as is a
-/// replacement that was never finished.
-fn finish_interrupted_rebuild(path: &Path) -> io::Result<()> {
-    let damaged = sibling(path, ".damaged");
-    if damaged.exists() {
-        if path.exists() {
-            remove_database(&damaged)?;
-        } else {
-            for suffix in std::iter::once("").chain(SIDECARS) {
-                let from = sibling(&damaged, suffix);
-                if from.exists() {
-                    std::fs::rename(&from, sibling(path, suffix))?;
-                }
-            }
-        }
-    }
-    remove_database(&sibling(path, ".rebuild"))
+    rename(staging, path).map_err(|_| RebuildError::Swap)
 }
 
 /// `base` with `suffix` appended to its file name.
@@ -1171,73 +1128,60 @@ mod rebuild_tests {
         std::fs::write(path, bytes).unwrap();
     }
 
-    /// A swap whose final move fails puts the original and its sidecars back.
+    /// A failed rename leaves the original as it was; a successful one leaves
+    /// only the replacement.
     #[test]
-    fn a_failed_swap_restores_the_original_and_its_sidecars() {
+    fn the_replacement_takes_the_place_of_the_original_atomically() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("companion.sqlite");
         write(&path, b"original");
-        write(&sibling(&path, "-wal"), b"original wal");
         let staging = sibling(&path, ".rebuild");
         write(&staging, b"replacement");
-        let failing = |from: &Path, to: &Path| {
-            if from == staging {
-                Err(io::Error::other("injected"))
-            } else {
-                std::fs::rename(from, to)
-            }
-        };
         assert!(matches!(
-            swap_in(&path, &staging, failing),
+            swap_in(&path, &staging, |_, _| Err(io::Error::other("injected"))),
             Err(RebuildError::Swap)
         ));
         assert_eq!(std::fs::read(&path).unwrap(), b"original");
-        assert_eq!(
-            std::fs::read(sibling(&path, "-wal")).unwrap(),
-            b"original wal"
-        );
-        assert!(!sibling(&path, ".damaged").exists());
 
-        // A successful swap leaves only the replacement.
         swap_in(&path, &staging, |from, to| std::fs::rename(from, to)).unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), b"replacement");
-        assert!(!sibling(&path, "-wal").exists());
-        assert!(!sibling(&path, ".damaged").exists());
         assert!(!staging.exists());
     }
 
-    /// A crash between moving the original aside and moving the replacement in
-    /// is undone before the next open; one after it is completed.
+    /// While the original or the replacement has a write-ahead log or
+    /// journal, the swap is refused and the original kept with its sidecars.
     #[test]
-    fn an_interrupted_rebuild_is_finished_before_the_next_open() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("companion.sqlite");
-        let damaged = sibling(&path, ".damaged");
-        write(&damaged, b"original");
-        write(&sibling(&damaged, "-wal"), b"original wal");
-        write(&sibling(&path, ".rebuild"), b"unfinished");
-        finish_interrupted_rebuild(&path).unwrap();
-        assert_eq!(std::fs::read(&path).unwrap(), b"original");
-        assert_eq!(
-            std::fs::read(sibling(&path, "-wal")).unwrap(),
-            b"original wal"
-        );
-        assert!(!damaged.exists());
-        assert!(!sibling(&path, ".rebuild").exists());
-
-        write(&damaged, b"replaced original");
-        finish_interrupted_rebuild(&path).unwrap();
-        assert_eq!(std::fs::read(&path).unwrap(), b"original");
-        assert!(!damaged.exists());
+    fn a_companion_with_sidecars_is_never_swapped() {
+        for (owner, sidecar) in [
+            ("original", "-wal"),
+            ("original", "-journal"),
+            ("staging", "-wal"),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("companion.sqlite");
+            write(&path, b"original");
+            let staging = sibling(&path, ".rebuild");
+            write(&staging, b"replacement");
+            let base = if owner == "original" { &path } else { &staging };
+            write(&sibling(base, sidecar), b"log");
+            assert!(matches!(
+                swap_in(&path, &staging, |from, to| std::fs::rename(from, to)),
+                Err(RebuildError::Unsalvageable)
+            ));
+            assert_eq!(std::fs::read(&path).unwrap(), b"original");
+            if owner == "original" {
+                assert_eq!(std::fs::read(sibling(&path, sidecar)).unwrap(), b"log");
+            }
+        }
     }
 
-    /// A rebuild's files belong to their companion: listed with it, and
+    /// A rebuild's replacement belongs to its companion: listed with it, and
     /// removed with it.
     #[test]
     fn rebuild_files_share_their_companions_lifecycle() {
         let account = uuid::Uuid::new_v4();
         let base = format!("{account}-{}.sqlite", "0".repeat(16));
-        for suffix in [".rebuild", ".damaged", ".damaged-wal", ".rebuild-shm"] {
+        for suffix in [".rebuild", ".rebuild-wal", ".rebuild-shm"] {
             assert_eq!(
                 companion_name(&format!("{base}{suffix}")),
                 Some((account, base.as_str()))
@@ -1245,7 +1189,7 @@ mod rebuild_tests {
         }
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(&base);
-        for suffix in ["", "-wal", ".rebuild", ".damaged", ".damaged-shm"] {
+        for suffix in ["", "-wal", ".rebuild", ".rebuild-journal"] {
             write(&sibling(&path, suffix), b"x");
         }
         remove_files(&path).unwrap();
