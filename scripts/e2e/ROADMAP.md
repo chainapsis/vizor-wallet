@@ -144,13 +144,14 @@ and executes their teardown internally. Only completed original sessions permit
 anchored workspace removal; incomplete/failed cases stop assignment and retain
 state. Native support rejects links; mutable workspace links are only unlinked,
 never followed. Shared build artifacts must remain outside the removable tree.
-The composed executor wires five macOS import/endpoint cases and twenty-one
-Rust receive/import/send/multi-account/Gift cases to original per-case Zakura/native owners.
+The composed executor wires five macOS import/endpoint cases and all twenty-three
+catalog Rust cases to original per-case Zakura/native owners, including controlled
+activation-500 Orchard migration and Gift claim/reorg/OVK coverage.
 Compatible app/helper artifacts are built once when selected; selected Rust
 targets and the signer share one offline Cargo producer. Rust-only selections
 build no app/helper. Fresh repetitions have independent schema-2 reports and
 may overlap under one bounded worker count, including mixed Rust/macOS selections.
-The other 38 catalog scenarios, iOS execution, persistent build-cache publication/invalidation,
+The other 36 catalog scenarios, iOS execution, persistent build-cache publication/invalidation,
 resource scheduling and final-source catalog/performance validation remain
 pending. A native observation or process receipt alone never authorizes deletion.
 
@@ -183,6 +184,22 @@ observer and competing-claim assertions remain. Observer DBs now use owned
 storage; funding/losing-txid evidence assertions are strengthened. No production
 source or dependency changes. This is separate incremental domain evidence,
 not a combined final-source catalog or performance result.
+
+The Rust activation-500 group recorded two PASS / zero FAIL in actual two-worker
+batch `native-suite-e1ee84dba2` on committed source
+`9814055de5e89e763983f4f163bf60efe4559863`, with a clean worktree. Total136.143s
+includes one1m57s signer/two-target Cargo build; cases took15.177/15.308s.
+Original owners proved wallet/backend/port cleanup, with empty cleanup errors.
+Preactivation Orchard funding, height500 transition, scheduled denominations,
+planned change/fees and Gift two-confirmation/one-block-reorg/OVK assertions
+remain. The original pinned fixture replaced height508 from parent507 with two
+donor blocks, proved parity at509, preserved the captured claim and released
+the exact held raw transaction set before mining it. The normal selector/shared
+core private entrypoint ran before catalog activation, with old terminal-run
+compiler-cache bytes as input to a new original frozen-source producer. No
+old artifact adoption, persistent-cache attestation, production source/dependency
+changes, mixed-engine or comparative performance claim. Earlier domain results
+do not form a same-final-source all-green Rust catalog.
 
 | Slice | Scope | Prerequisites |
 | --- | --- | --- |

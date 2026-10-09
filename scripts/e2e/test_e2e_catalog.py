@@ -51,7 +51,7 @@ class E2eCatalogTest(unittest.TestCase):
         )
         self.assertEqual(64, len(self.catalog.fingerprint))
         self.assertEqual({item.id for item in self.catalog.profiles if item.supported},
-                         {"flutter-direct-height1", "zakura-direct-height1"})
+                         {"flutter-direct-height1", "zakura-direct-height1", "zakura-direct-activation500"})
         self.assertEqual({item.id for item in self.catalog.scenarios if item.supported},
                          {"flutter.macos.import-sync", "flutter.macos.fallback-endpoint",
                           "flutter.macos.custom-endpoint-no-fallback",
@@ -67,7 +67,8 @@ class E2eCatalogTest(unittest.TestCase):
                           "rust.multi-account.preserve-history", "rust.multi-account.isolated-balances",
                           "rust.multi-account.idempotent-sync", "rust.receive.direct-zakura",
                           "rust.import.direct-zakura", "rust.gift-card.tracking-multiple",
-                          "rust.gift-card.empty-db-reuse", "rust.gift-card.competition"})
+                          "rust.gift-card.empty-db-reuse", "rust.gift-card.competition",
+                          "rust.ironwood.migration", "rust.ironwood.gift-card-claim"})
         self.assertTrue(all(item.pending_reason for item in self.catalog.profiles if not item.supported))
         self.assertTrue(all(item.pending_reason for item in self.catalog.scenarios if not item.supported))
         self.assertEqual(
@@ -236,7 +237,7 @@ class E2eCatalogTest(unittest.TestCase):
         with self.assertRaisesRegex(catalog_module.CatalogError, "unreferenced"):
             catalog_module.load_catalog(self.write_catalog(raw))
         raw = self.raw_catalog()
-        raw["profiles"][1]["pending_reason"] = None
+        raw["profiles"][3]["pending_reason"] = None
         with self.assertRaisesRegex(catalog_module.CatalogError, "requires pending_reason"):
             catalog_module.load_catalog(self.write_catalog(raw))
         raw = self.raw_catalog()
