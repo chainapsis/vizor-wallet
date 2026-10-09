@@ -191,10 +191,12 @@ def prepare_native_case_workspace(
     _bounded_integer(worker_id, "worker_id", 1_000_000)
     _bounded_integer(case_index, "case_index", 1_000_000)
     _bounded_integer(activation_height, "activation_height", 4_294_967_295, minimum=1)
-    if platform not in ("macos", "ios") or not isinstance(scenario_id, str) or not re.fullmatch(
-        rf"flutter\.{platform}\.[a-z0-9]+(?:-[a-z0-9]+)*", scenario_id,
+    pattern = (r"rust\.[a-z0-9]+(?:[.-][a-z0-9]+)*" if platform == "rust"
+               else rf"flutter\.{platform}\.[a-z0-9]+(?:-[a-z0-9]+)*")
+    if platform not in ("macos", "ios", "rust") or not isinstance(scenario_id, str) or not re.fullmatch(
+        pattern, scenario_id,
     ):
-        raise NativeWorkspaceError("scenario_id must match the selected macos or ios platform")
+        raise NativeWorkspaceError("scenario_id must match the selected macos, ios or rust engine")
     if not isinstance(ports, Mapping) or set(ports) != _PORT_KEYS:
         raise NativeWorkspaceError("ports must contain exactly rpc, lwd and proxy")
     selected_ports = dict(ports)

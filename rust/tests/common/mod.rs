@@ -9,6 +9,33 @@ use rust_lib_zcash_wallet::api::{sync as sync_api, wallet as wallet_api};
 use tempfile::TempDir;
 use uuid::Uuid;
 
+mod isolated_control;
+
+static ISOLATED_CONTROL: LazyLock<Option<Mutex<isolated_control::IsolatedControl>>> =
+    LazyLock::new(|| isolated_control::IsolatedControl::from_environment().map(Mutex::new));
+
+fn isolated_control() -> Option<MutexGuard<'static, isolated_control::IsolatedControl>> {
+    ISOLATED_CONTROL
+        .as_ref()
+        .map(|control| control.lock().expect("isolated case control"))
+}
+
+pub fn lightwalletd_url() -> String {
+    isolated_control()
+        .map(|control| control.lightwalletd_url())
+        .unwrap_or_else(|| LIGHTWALLETD_URL.into())
+}
+
+fn wallet_tempdir() -> TempDir {
+    match isolated_control() {
+        Some(control) => tempfile::Builder::new()
+            .prefix("wallet-")
+            .tempdir_in(control.wallet_root())
+            .expect("case-owned wallet tempdir"),
+        None => tempfile::tempdir().expect("tempdir"),
+    }
+}
+
 pub const REGTEST_NETWORK: &str = "regtest";
 pub const LIGHTWALLETD_URL: &str = "http://127.0.0.1:9067";
 static REGTEST_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
@@ -37,6 +64,10 @@ pub fn regtest_script(name: &str) -> PathBuf {
 }
 
 pub fn run_script(name: &str, args: &[&str]) -> String {
+    assert!(
+        isolated_control().is_none(),
+        "isolated cases must not run the shared regtest script {name}"
+    );
     let output = Command::new(regtest_script(name))
         .args(args)
         .current_dir(repo_root())
@@ -53,7 +84,11 @@ pub fn run_script(name: &str, args: &[&str]) -> String {
 }
 
 pub fn ensure_regtest_up() {
-    if wallet_api::get_latest_block_height(LIGHTWALLETD_URL.into(), "regtest".into())
+    if let Some(control) = isolated_control() {
+        control.preflight();
+        return;
+    }
+    if wallet_api::get_latest_block_height(lightwalletd_url(), "regtest".into())
         .map(|height| height > 0)
         .unwrap_or(false)
     {
@@ -64,15 +99,22 @@ pub fn ensure_regtest_up() {
 }
 
 pub fn mine_blocks(blocks: u32) {
+    if let Some(control) = isolated_control() {
+        control.mine(blocks);
+        return;
+    }
     run_script("mine.sh", &[&blocks.to_string()]);
 }
 
 pub fn fund_wallet(unified_address: &str, amount_zec: &str) -> String {
+    if let Some(mut control) = isolated_control() {
+        return control.fund(unified_address, amount_zec);
+    }
     run_script("fund-wallet.sh", &[unified_address, amount_zec, "10"])
 }
 
 pub fn current_tip_height() -> u64 {
-    wallet_api::get_latest_block_height(LIGHTWALLETD_URL.into(), "regtest".into())
+    wallet_api::get_latest_block_height(lightwalletd_url(), "regtest".into())
         .expect("failed to fetch regtest chain tip")
 }
 
@@ -84,7 +126,7 @@ pub fn create_wallet_with_birthday(
     account_name: &str,
     birthday_height: Option<u64>,
 ) -> (TempDir, wallet_api::WalletCreationResult) {
-    let tempdir = tempfile::tempdir().expect("tempdir");
+    let tempdir = wallet_tempdir();
     let db_path = tempdir.path().join("zcash_wallet.db");
     let result = wallet_api::create_wallet(
         REGTEST_NETWORK.into(),
@@ -110,7 +152,7 @@ pub fn import_wallet_with_passphrase_and_birthday(
     account_name: &str,
     birthday_height: Option<u64>,
 ) -> (TempDir, wallet_api::WalletImportResult) {
-    let tempdir = tempfile::tempdir().expect("tempdir");
+    let tempdir = wallet_tempdir();
     let db_path = tempdir.path().join("zcash_wallet.db");
     let result = wallet_api::import_wallet(
         mnemonic.into(),
@@ -148,7 +190,7 @@ pub fn list_accounts(db_path: &Path) -> Vec<wallet_api::AccountInfo> {
 pub fn sync_wallet(db_path: &Path) {
     sync_api::run_full_sync_blocking(
         path_str(db_path),
-        LIGHTWALLETD_URL.into(),
+        lightwalletd_url(),
         REGTEST_NETWORK.into(),
         1,
     )
@@ -277,7 +319,7 @@ pub fn execute_send(
 
     sync_api::execute_proposal(
         path_str(db_path),
-        LIGHTWALLETD_URL.into(),
+        lightwalletd_url(),
         proposal.proposal_id,
         send_flow_id.into(),
         sender_mnemonic.as_bytes().to_vec(),

@@ -223,7 +223,7 @@ class PreviewTests(unittest.TestCase):
         from types import SimpleNamespace
         from unittest.mock import Mock
         execute = Mock(return_value=0)
-        with patch.dict(sys.modules, {"native_macos_suite":SimpleNamespace(run_native_macos_suite=execute)}):
+        with patch.dict(sys.modules, {"native_macos_suite":SimpleNamespace(run_native_suite=execute)}):
             code, output, error = self.invoke("--scenario", "flutter.macos.import-sync", "--run")
         self.assertEqual((code, output, error), (0, None, ""))
         args, catalog, scenarios, selection = execute.call_args.args
@@ -243,7 +243,7 @@ class PreviewTests(unittest.TestCase):
         self.assertTrue(plan["runnable"])
         self.assertEqual(plan["pending_blockers"], [])
         execute = Mock(return_value=0)
-        with patch.dict(sys.modules, {"native_macos_suite": SimpleNamespace(run_native_macos_suite=execute)}):
+        with patch.dict(sys.modules, {"native_macos_suite": SimpleNamespace(run_native_suite=execute)}):
             code, output, error = self.invoke(*arguments, "--run")
         self.assertEqual((code, output, error), (0, None, ""))
         self.assertEqual({s.id for s in execute.call_args.args[2]}, set(ids))

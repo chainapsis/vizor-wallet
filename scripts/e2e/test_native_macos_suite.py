@@ -55,7 +55,7 @@ class SuiteTests(unittest.TestCase):
              patch.object(SUITE,"build_regtest_funder",return_value=self.signer) as signer, \
              patch.object(SUITE,"execute_case",side_effect=self.execute), \
              contextlib.redirect_stdout(output), contextlib.redirect_stderr(io.StringIO()):
-            code = SUITE.run_native_macos_suite(self.args,self.catalog,self.scenarios,
+            code = SUITE.run_native_suite(self.args,self.catalog,self.scenarios,
                 {"kind":"scenario","values":[self.scenarios[0].id]},source_root=self.root)
         return code,json.loads(output.getvalue()),build,signer
 
@@ -85,11 +85,31 @@ class SuiteTests(unittest.TestCase):
     def test_options_refuse_pending_cases_and_missing_tools_before_writes(self):
         with patch.object(SUITE.sys,"platform","darwin"):
             with self.assertRaises(ValueError):
-                SUITE.validate_options(self.args,(self.catalog.scenarios[0],))
+                SUITE.validate_options(self.args,(self.catalog.scenarios_by_id["rust.ironwood.migration"],))
             self.args.flutter = None
             with self.assertRaises(ValueError):
                 SUITE.validate_options(self.args,self.scenarios)
         self.assertFalse((self.root/".regtest-logs").exists())
+
+    def test_rust_cases_build_selected_targets_once_without_an_app_or_helper(self):
+        self.scenarios = tuple(self.catalog.scenarios_by_id[name] for name in (
+            "rust.receive.sync", "rust.send.basic", "rust.import.bip39-passphrase"))
+        code, summary, app, signer = self.invoke()
+        self.assertEqual(code, 0)
+        app.assert_not_called()
+        signer.assert_called_once()
+        self.assertEqual(signer.call_args.kwargs["test_targets"],
+                         ("regtest_receive_sync", "regtest_send", "regtest_import"))
+        self.assertEqual(summary["builds"]["rust_build_count"], 1)
+        self.assertTrue(all(item[3] is None for item in self.observed))
+
+    def test_mixed_engine_selection_shares_the_signer_and_worker_budget(self):
+        self.scenarios += (self.catalog.scenarios_by_id["rust.receive.sync"],)
+        code, _, app, signer = self.invoke()
+        self.assertEqual(code, 0)
+        app.assert_called_once()
+        signer.assert_called_once()
+        self.assertEqual(signer.call_args.kwargs["test_targets"], ("regtest_receive_sync",))
 
     def test_build_failure_never_creates_a_passing_empty_batch(self):
         with patch.object(SUITE.sys,"platform","darwin"), \
@@ -98,7 +118,7 @@ class SuiteTests(unittest.TestCase):
              patch.object(SUITE,"prepare_native_case_workspace",return_value=object()), \
              patch.object(SUITE,"build_native_macos_cohort",side_effect=RuntimeError("compiler failed")), \
              contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            code = SUITE.run_native_macos_suite(self.args,self.catalog,self.scenarios,{},source_root=self.root)
+            code = SUITE.run_native_suite(self.args,self.catalog,self.scenarios,{},source_root=self.root)
         self.assertEqual(code,1)
         summary = json.loads(next((self.root/".regtest-logs").glob("native-suite-*/summary.json")).read_text())
         self.assertEqual(summary["error"],"compiler failed")

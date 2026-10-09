@@ -1,4 +1,4 @@
-"""Build once, then run selected macOS cases with independent original owners.
+"""Build once, then run selected Rust/macOS cases with independent original owners.
 
 Each repetition has its own schema-2 report, so failed-from selection stays
 unambiguous. Signed artifacts and the offline signer are shared read-only;
@@ -22,6 +22,7 @@ from funder_build import build_regtest_funder
 from native_case_lifecycle import NativeCaseLifecycle
 from native_macos_build import build_native_macos_cohort
 from native_macos_execution import execute_native_macos_case
+from native_rust_execution import RUST_CASES, execute_native_rust_case
 from native_worker_lifecycle import prepare_native_worker_lifecycle
 from native_workspace import prepare_native_case_workspace
 from zakura_funding import fund_zakura
@@ -33,7 +34,7 @@ SUPPORTED_SCENARIOS = frozenset({
     "flutter.macos.custom-endpoint-no-fallback",
     "flutter.macos.slow-height-fallback",
     "flutter.macos.sync-startup-stall-recovery",
-})
+}) | frozenset(RUST_CASES)
 _MINER = "tmLomwDqZSUb1Mvsfpjtmt4cLBA7c9tGssX"
 _IMPORT_UA = "uregtest1ykjd398elks624qyz0d0vffn6vpqkl6atp2wsr9795eql4kw47hwlffxyyfakv0l2twj635fpmxmeu3tzyrfhf5s9eg9ea8gsa0srdfwjudp3fs0qaaqxvkxr364a8vjy3y9vglm7lf8rs0vsev9p5mzky52rq4wkr5lhc842vuf5lhn"
 _IMPORT_TRANSPARENT = "tmPTcChwqcza88W1mydzwkZ25C9qQm3ugiM"
@@ -57,11 +58,18 @@ def validate_options(args, scenarios):
     if sys.platform != "darwin":
         raise ValueError("native macOS execution requires macOS")
     if not scenarios or any(s.id not in SUPPORTED_SCENARIOS for s in scenarios):
-        raise ValueError("this executor implements only the native import/endpoint scenarios")
-    for field in ("workers", "repeat", "build_jobs"):
+        raise ValueError("this executor implements only Rust receive/import/send and macOS import/endpoint scenarios")
+    for scenario in scenarios:
+        if scenario.id in RUST_CASES and (scenario.engine != "rust"
+            or scenario.profile != "zakura-direct-height1"
+            or (scenario.target, scenario.test) != RUST_CASES[scenario.id]):
+            raise ValueError("selected Rust identity/profile does not match its executor")
+    for field in ("workers", "repeat"):
         value = getattr(args, field)
         if type(value) is not int or not 1 <= value <= 16:
             raise ValueError(field + " must be an integer from 1 to 16")
+    if type(args.build_jobs) is not int or not 1 <= args.build_jobs <= 8:
+        raise ValueError("build_jobs must be an integer from 1 to 8")
     for field in ("flutter", "zakura_cache", "grpcurl", "proto_dir"):
         value = getattr(args, field)
         if value is None or not value.is_absolute():
@@ -91,8 +99,9 @@ def execute_case(root, run_id, worker_id, scenario, *, helper, artifact, source_
         if cancel.is_set():
             raise runtime.Cancelled()
         worker = prepare_native_worker_lifecycle(root, run_id=run_id, worker_id=worker_id)
-        session = worker.prepare_case(platform="macos", scenario_id=scenario.id,
-            case_index=1, activation_height=1, helper=helper, timeout=60, cancel_event=cancel)
+        is_rust = scenario.id in RUST_CASES
+        session = worker.prepare_case(platform="rust" if is_rust else "macos", scenario_id=scenario.id,
+            case_index=1, activation_height=1, helper=None if is_rust else helper, timeout=60, cancel_event=cancel)
         result["log"] = str(session.case.workspace.root)
         session.prepare_zakura_backend(tooling_root=args.zakura_cache,
             grpcurl=args.grpcurl.resolve(strict=True), proto_dir=args.proto_dir,
@@ -101,14 +110,18 @@ def execute_case(root, run_id, worker_id, scenario, *, helper, artifact, source_
             raise runtime.Cancelled()
         session.backend.mine(100)
         result["payments"] = []
-        for address, amount, pool, source in scenario_funding(scenario.id):
+        for address, amount, pool, source in (() if is_rust else scenario_funding(scenario.id)):
             result["payments"].append(fund_zakura(session.case, session.backend, artifact,
                 recipient_address=address, amount_zatoshi=amount, recipient_pool=pool,
                 source_height=source, confirmations=10, timeout=120, cancel_event=cancel))
         session.prepare_zakura_front(dart=dart, source_root=source_root, cancel_event=cancel)
         session.prepare_zakura_control(artifact=artifact)
-        result["observation"] = execute_native_macos_case(session, dart=dart,
-            source_root=source_root, timeout=scenario.timeout_seconds, cancel_event=cancel)
+        if is_rust:
+            result["observation"] = execute_native_rust_case(session, artifact=artifact,
+                scenario=scenario, cancel_event=cancel)
+        else:
+            result["observation"] = execute_native_macos_case(session, dart=dart,
+                source_root=source_root, timeout=scenario.timeout_seconds, cancel_event=cancel)
         # No external PASS/cleanup boolean is accepted. The original owners
         # must complete their internal native/backend/process/port finalization.
         session.close(timeout=60)
@@ -131,7 +144,7 @@ def execute_case(root, run_id, worker_id, scenario, *, helper, artifact, source_
     return result
 
 
-def run_native_macos_suite(args, catalog, scenarios, selection, *, source_root):
+def run_native_suite(args, catalog, scenarios, selection, *, source_root):
     validate_options(args, scenarios)
     root = Path(source_root).resolve(strict=True)
     commit = subprocess.run(["git","-C",str(root),"rev-parse","HEAD"],
@@ -162,8 +175,8 @@ def run_native_macos_suite(args, catalog, scenarios, selection, *, source_root):
         signal.signal(number, lambda *_:cancel.set())
     started = time.monotonic()
 
-    def build_case(index, scenario):
-        return NativeCaseLifecycle(prepare_native_case_workspace(builds, platform="macos",
+    def build_case(index, scenario, platform="macos"):
+        return NativeCaseLifecycle(prepare_native_case_workspace(builds, platform=platform,
             scenario_id=scenario, run_id=run_id, worker_id=0, case_index=index,
             ports={"rpc":28232,"lwd":29067,"proxy":29068},activation_height=1))
 
@@ -172,13 +185,20 @@ def run_native_macos_suite(args, catalog, scenarios, selection, *, source_root):
         "workers":args.workers,"repeat":args.repeat,"repetition_reports":[],
         "builds":{},"error":None}
     try:
-        print("Building one native cohort/helper and one offline signer; logs: "+str(evidence),file=sys.stderr,flush=True)
-        helper, build_proof = build_native_macos_cohort(build_case(0,"flutter.macos.native-build"),
-            source_root=root, flutter=args.flutter, cancel_event=cancel)
-        report["builds"].update(build_proof)
-        artifact = build_regtest_funder(build_case(1,"flutter.macos.signer-build"),
-            source_root=root, source_commit=commit, jobs=args.build_jobs, timeout=1200, cancel_event=cancel)
+        print("Building selected native artifacts once; logs: "+str(evidence),file=sys.stderr,flush=True)
+        helper = None
+        if any(s.engine == "flutter-macos" for s in scenarios):
+            helper, build_proof = build_native_macos_cohort(build_case(0,"flutter.macos.native-build"),
+                source_root=root, flutter=args.flutter, cancel_event=cancel)
+            report["builds"].update(build_proof)
+        targets = tuple(dict.fromkeys(s.target for s in scenarios if s.engine == "rust"))
+        producer = build_case(1, "rust.signer-build", "rust") if targets else build_case(1,"flutter.macos.signer-build")
+        artifact = build_regtest_funder(producer,
+            source_root=root, source_commit=commit, jobs=args.build_jobs, timeout=1200,
+            cancel_event=cancel, test_targets=targets)
         report["builds"]["signer_build_count"] = 1
+        if targets:
+            report["builds"].update(rust_build_count=1, rust_test_targets=list(targets))
         dart = (args.flutter.resolve(strict=True).parent/"cache/dart-sdk/bin/dart").resolve(strict=True)
         repetitions = []
         jobs = []

@@ -28,6 +28,7 @@ _MAX_SOURCE_BYTES = 128 * 1024 * 1024
 _MAX_SOURCE_FILES = 10_000
 _MAX_BINARY_BYTES = 512 * 1024 * 1024
 _REQUIRED = {"rust/Cargo.toml", "rust/Cargo.lock", "rust/examples/regtest_direct_funder.rs"}
+_TEST_TARGET = re.compile(r"regtest_[a-z0-9_]+\Z")
 
 
 class FunderBuildError(runtime.RunnerError):
@@ -68,7 +69,7 @@ def _file_record(path, *, executable=False, limit=_MAX_SOURCE_BYTES):
 class ProducedRegtestFunder:
     """Original successfully joined producer; never construct from a receipt."""
     def __init__(self, case, root, root_id, binary, binary_record, source_records,
-                 source_directories, binary_parents, provenance, token):
+                 source_directories, binary_parents, provenance, token, test_binaries=None):
         if token is not _TOKEN:
             raise FunderBuildError("use build_regtest_funder")
         self._case, self._root, self._root_id = case, root, root_id
@@ -78,11 +79,19 @@ class ProducedRegtestFunder:
         self._source_directories = source_directories
         self._binary_parents = binary_parents
         self._provenance = provenance
+        self._test_binaries = test_binaries or {}
         self._failed = False
 
     @property
     def binary(self):
         return self._binary
+
+    def test_binary(self, target):
+        """A test executable published by this original, joined Cargo producer."""
+        self.verify_unchanged()
+        if target not in self._test_binaries:
+            raise FunderBuildError("test target was not built by this original producer")
+        return self._test_binaries[target][0]
 
     def verify_unchanged(self):
         if self._failed:
@@ -104,6 +113,9 @@ class ProducedRegtestFunder:
                         raise FunderBuildError("original executable parent changed")
             if _file_record(self.binary, executable=True, limit=_MAX_BINARY_BYTES) != self._binary_record:
                 raise FunderBuildError("original funder executable changed")
+            for binary, record in self._test_binaries.values():
+                if _file_record(binary, executable=True, limit=_MAX_BINARY_BYTES) != record:
+                    raise FunderBuildError("original Rust test executable changed")
             _verify_source(self._root / "source", self._source_records, self._source_directories)
         except BaseException:
             self._failed = True
@@ -231,7 +243,7 @@ def _copy_cargo_executable(source, destination):
 
 def build_regtest_funder(case: NativeCaseLifecycle, *, source_root: Path,
                         source_commit: str, jobs: int = 4, timeout: float = 1200.0,
-                        cancel_event=None):
+                        cancel_event=None, test_targets=()):
     """One dedicated fresh producer case; close it before returning a handle.
 
     All failure evidence/source/target storage remains. Never adopt prior roots,
@@ -244,6 +256,10 @@ def build_regtest_funder(case: NativeCaseLifecycle, *, source_root: Path,
         raise FunderBuildError("source_commit must be one full immutable Git SHA")
     if type(jobs) is not int or not 1 <= jobs <= 8:
         raise FunderBuildError("Cargo build jobs must be 1 through 8")
+    if (not isinstance(test_targets, tuple) or len(test_targets) > 32
+        or any(not isinstance(name, str) or not _TEST_TARGET.fullmatch(name) for name in test_targets)
+        or len(set(test_targets)) != len(test_targets)):
+        raise FunderBuildError("test targets must be unique regtest target names")
     if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not math.isfinite(timeout) or timeout <= 0:
         raise FunderBuildError("build timeout must be positive and finite")
     source_root = Path(source_root).resolve(strict=True)
@@ -278,6 +294,8 @@ def build_regtest_funder(case: NativeCaseLifecycle, *, source_root: Path,
             expected[name] = (mode, blob)
         if not _REQUIRED <= expected.keys():
             raise FunderBuildError("source commit lacks the offline funding tool/locked package")
+        if any(f"rust/tests/{name}.rs" not in expected for name in test_targets):
+            raise FunderBuildError("source commit lacks a selected Rust test target")
         archive = root / "source.tar"
         command([*git, "archive", "--format=tar", f"--output={archive}", source_commit, "rust"])
         records = _snapshot(archive, root / "source", expected)
@@ -305,8 +323,10 @@ def build_regtest_funder(case: NativeCaseLifecycle, *, source_root: Path,
                      "RUSTC": str(compiler), "RUSTC_WRAPPER": "", "RUSTC_WORKSPACE_WRAPPER": ""}
         lines = command(["cargo", "build", "--offline", "--locked", "--manifest-path",
             str(root / "source/rust/Cargo.toml"), "--example", "regtest_direct_funder",
+            *(argument for name in test_targets for argument in ("--test", name)),
             "--target", host, "--message-format=json"], env=build_env)
         candidates, completed = [], False
+        test_candidates = {name: [] for name in test_targets}
         for line in lines:
             if not line.lstrip().startswith("{"):
                 continue  # Cargo stderr progress shares the owned capture with JSON stdout.
@@ -319,12 +339,21 @@ def build_regtest_funder(case: NativeCaseLifecycle, *, source_root: Path,
                 and message["target"].get("src_path") == str(root / "source/rust/examples/regtest_direct_funder.rs")
                 and message.get("profile", {}).get("test") is False):
                 candidates.append(Path(message["executable"]))
+            name = message.get("target", {}).get("name")
+            if (message.get("reason") == "compiler-artifact" and message.get("executable") is not None
+                and name in test_candidates and message["target"].get("kind") == ["test"]
+                and message["target"].get("src_path") == str(root / f"source/rust/tests/{name}.rs")
+                and message.get("profile", {}).get("test") is True):
+                test_candidates[name].append(Path(message["executable"]))
         if not completed or len(candidates) != 1:
             raise FunderBuildError("Cargo did not prove one completed funding executable")
+        if any(len(paths) != 1 for paths in test_candidates.values()):
+            raise FunderBuildError("Cargo did not prove every selected Rust test executable")
         cargo_binary = candidates[0]
-        if not cargo_binary.is_absolute() or cargo_binary.resolve(strict=True) != cargo_binary:
-            raise FunderBuildError("Cargo executable path is not canonical")
-        cargo_binary.relative_to(target)
+        for output in (cargo_binary, *(paths[0] for paths in test_candidates.values())):
+            if not output.is_absolute() or output.resolve(strict=True) != output:
+                raise FunderBuildError("Cargo executable path is not canonical")
+            output.relative_to(target)
         _verify_source(root / "source", records, source_directories)
         case.close()
         _verify_root(case, root, root_id)
@@ -332,6 +361,10 @@ def build_regtest_funder(case: NativeCaseLifecycle, *, source_root: Path,
         publication.mkdir(mode=0o700)
         binary = publication / "regtest_direct_funder"
         binary_record = _copy_cargo_executable(cargo_binary, binary)
+        test_binaries = {}
+        for name, paths in test_candidates.items():
+            published = publication / name
+            test_binaries[name] = (published, _copy_cargo_executable(paths[0], published))
         binary_parents = {}
         for parent in binary.parents:
             if parent == root:
@@ -345,8 +378,11 @@ def build_regtest_funder(case: NativeCaseLifecycle, *, source_root: Path,
             "binary": str(binary), "binary_sha256": binary_record[1],
             "rustc": list(rustc), "rustc_binary": str(compiler), "cargo": list(cargo), "offline": True,
             "host_target": host, "jobs": jobs, "producer_namespace": case.workspace.namespace}
+        if test_binaries:
+            provenance["test_binaries"] = {name: {"binary": str(path), "sha256": record[1]}
+                for name, (path, record) in test_binaries.items()}
         artifact = ProducedRegtestFunder(case, root, root_id, binary, binary_record, records,
-                                        source_directories, binary_parents, provenance, _TOKEN)
+                                        source_directories, binary_parents, provenance, _TOKEN, test_binaries)
         artifact.verify_unchanged()
         return artifact
     except BaseException as primary:

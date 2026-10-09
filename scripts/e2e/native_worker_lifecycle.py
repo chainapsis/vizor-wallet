@@ -21,6 +21,7 @@ import native_ios_cleanup as ios_native
 import native_ios_simulator as ios_simulator
 import native_mac_case_storage as mac_storage
 import native_mac_cleanup as mac_native
+from native_rust_case_storage import RustCaseStorage
 import native_owned_tree as tree
 import native_zakura_backend as zakura
 import native_zakura_front as zakura_front
@@ -270,7 +271,7 @@ class NativeWorkerLifecycle:
             raise NativeWorkerError(self._failure) from error
 
     def prepare_case(self, *, platform, scenario_id, case_index, activation_height,
-                     helper, runtime_identifier=None, device_type_identifier=None,
+                     helper=None, runtime_identifier=None, device_type_identifier=None,
                      timeout=120.0, cancel_event=None):
         """Allocate and claim native state before returning a usable case.
 
@@ -281,10 +282,12 @@ class NativeWorkerLifecycle:
         ios_simulator._deadline(timeout)
         if self._finished or self._failure is not None:
             raise NativeWorkerError("worker is sealed or failed; no new case assignment")
-        if platform not in {"ios", "macos"}:
-            raise NativeWorkerError("worker supports macOS and iOS Simulator only")
+        if platform not in {"ios", "macos", "rust"}:
+            raise NativeWorkerError("worker supports Rust, macOS and iOS Simulator only")
         expected = ios_native.CapturedIosCleanupHelper if platform == "ios" else mac_native.CapturedMacCleanupHelper
-        if not isinstance(helper, expected):
+        if platform == "rust" and any(value is not None for value in (helper, runtime_identifier, device_type_identifier)):
+            raise NativeWorkerError("Rust cases do not use native helpers or Simulator selection")
+        if platform != "rust" and not isinstance(helper, expected):
             raise NativeWorkerError("platform requires its actual captured helper/cohort")
         if platform == "ios" and (runtime_identifier is None or device_type_identifier is None):
             raise NativeWorkerError("iOS runtime and device type selection must be explicit")
@@ -314,9 +317,11 @@ class NativeWorkerLifecycle:
                     timeout=timeout, cancel_event=cancellation)
                 session.storage = ios_storage.prepare_ios_case_storage(session.simulator, helper,
                     timeout=timeout, cancel_event=cancellation)
-            else:
+            elif platform == "macos":
                 session.storage = mac_storage.prepare_mac_case_storage(case, helper,
                     timeout=timeout, cancel_event=cancellation)
+            else:
+                session.storage = RustCaseStorage(case)
             session.verify_owned()
             return session
         except BaseException as primary:
