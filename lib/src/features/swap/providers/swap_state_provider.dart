@@ -69,6 +69,7 @@ class SwapNotifier extends Notifier<SwapState> {
   var _accountScopeGeneration = 0;
   var _payEntryGeneration = 0;
   var _hasResolvedSupportedAssets = false;
+  Set<String> _deprecatedAssetIdentityKeys = const {};
   var _statusRefreshInFlight = false;
   SwapAsset? _payRetryAsset;
   String? _restoredPayAssetAccountUuid;
@@ -285,8 +286,11 @@ class SwapNotifier extends Notifier<SwapState> {
     }
     _clearReviewState();
     _payRetryAsset = null;
-    final SwapAsset rememberedAsset =
+    final SwapAsset preferredPayAsset =
         preferredAsset ?? ref.read(paySelectedAssetProvider);
+    final rememberedAsset = _isDeprecatedForSelection(preferredPayAsset)
+        ? PaySelectedAssetNotifier.defaultAsset
+        : preferredPayAsset;
     final supportedAssets = state.supportedExternalAssets;
     final payAsset =
         _supportedAssetFor(rememberedAsset, supportedAssets) ??
@@ -614,11 +618,38 @@ class SwapNotifier extends Notifier<SwapState> {
           : await provider.listSupportedExternalAssets();
       if (generation != _pricingLoadGeneration) return;
       _hasResolvedSupportedAssets = true;
+      _deprecatedAssetIdentityKeys = {
+        for (final asset in liveAssets)
+          if (asset.isDeprecated) asset.identityKey,
+      };
       final supported = [
         for (final asset in liveAssets)
-          if (asset != SwapAsset.zec) asset,
+          if (asset != SwapAsset.zec && !asset.isDeprecated) asset,
       ];
-      if (supported.isEmpty) return;
+      if (supported.isEmpty) {
+        state = state.copyWith(
+          supportedExternalAssets: supported,
+          externalAsset: _isDeprecatedForSelection(state.externalAsset)
+              ? SwapAsset.usdc
+              : state.externalAsset,
+          reviewVisible: false,
+          clearReview: true,
+          clearSupportedAssetsError: true,
+        );
+        return;
+      }
+      if (!state.payMode &&
+          _isDeprecatedForSelection(ref.read(paySelectedAssetProvider))) {
+        ref
+            .read(paySelectedAssetProvider.notifier)
+            .select(
+              _supportedAssetFor(
+                    PaySelectedAssetNotifier.defaultAsset,
+                    supported,
+                  ) ??
+                  supported.first,
+            );
+      }
       final retryAsset = state.payMode ? _payRetryAsset : null;
       final supportedRetryAsset = retryAsset == null
           ? null
@@ -1829,12 +1860,16 @@ class SwapNotifier extends Notifier<SwapState> {
               state.reviewVisible)) {
         return;
       }
+      final deprecated = _isDeprecatedForSelection(preferences.externalAsset);
+      final rememberedAsset = deprecated
+          ? SwapAsset.usdc
+          : preferences.externalAsset;
+      final supportedAssets = state.supportedExternalAssets;
       final externalAsset =
-          _supportedAssetFor(
-            preferences.externalAsset,
-            state.supportedExternalAssets,
-          ) ??
-          preferences.externalAsset;
+          _supportedAssetFor(rememberedAsset, supportedAssets) ??
+          (deprecated && supportedAssets.isNotEmpty
+              ? supportedAssets.first
+              : rememberedAsset);
       _quoteGeneration++;
       state = state.copyWith(
         direction: preferences.direction,
@@ -2021,7 +2056,9 @@ class SwapNotifier extends Notifier<SwapState> {
       final saved = await ref
           .read(paySelectedAssetStoreProvider)
           .loadSelectedAsset(accountUuid: accountUuid);
-      restoredAsset = saved ?? PaySelectedAssetNotifier.defaultAsset;
+      restoredAsset = saved == null || _isDeprecatedForSelection(saved)
+          ? PaySelectedAssetNotifier.defaultAsset
+          : saved;
       loadSucceeded = true;
     } catch (_) {}
     if (accountScopeGeneration != _accountScopeGeneration ||
@@ -2068,6 +2105,10 @@ class SwapNotifier extends Notifier<SwapState> {
       return restoredAsset;
     }
   }
+
+  bool _isDeprecatedForSelection(SwapAsset asset) =>
+      asset.isDeprecated ||
+      _deprecatedAssetIdentityKeys.contains(asset.identityKey);
 
   /// Slippage is shared with Pay, but Pay's direction/payout asset must not
   /// overwrite the saved swap composer selection — only the stored slippage
