@@ -339,6 +339,7 @@ def build_regtest_funder(case: NativeCaseLifecycle, *, source_root: Path,
         target.mkdir(mode=0o700)
         build_env = {**os.environ, "CARGO_TARGET_DIR": str(target), "CARGO_BUILD_JOBS": str(jobs),
                      "RUSTC": str(compiler), "RUSTC_WRAPPER": "", "RUSTC_WORKSPACE_WRAPPER": ""}
+        build_env.pop("_", None)  # Shell last-command bookkeeping is not a build input.
         cache_inputs = None
         cargo_executable = "cargo"
         input_records = {}

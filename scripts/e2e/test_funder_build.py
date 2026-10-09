@@ -96,6 +96,7 @@ class FunderBuildTests(unittest.TestCase):
             if arguments[0] not in {"cargo", str(self.cargo)} or arguments[1:2] != ["build"]:
                 return original(arguments, **options)
             self.selected_cargo = arguments[0]
+            self.last_build_env = options["env"]
             self.compile_calls += 1
             self.assertIn("--offline", arguments)
             self.assertIn("--locked", arguments)

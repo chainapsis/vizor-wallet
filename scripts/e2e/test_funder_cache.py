@@ -51,6 +51,16 @@ class FunderCacheTests(unittest.TestCase):
         self.assertNotEqual(first.identity()["source_commit"], second.identity()["source_commit"])
         self.assertEqual(second.identity()["jobs"], 8)
 
+    def test_shell_last_command_is_neither_a_build_input_nor_a_cache_miss(self):
+        with patch.dict(os.environ, {"_": "python3"}):
+            first = self.build()
+        with patch.dict(os.environ, {"_": "/usr/bin/time"}):
+            second = self.build()
+        self.assertEqual(self.model.compile_calls, 1)
+        self.assertEqual(first.identity()["cache_key"], second.identity()["cache_key"])
+        self.assertNotIn("_", self.model.last_build_env)
+        self.assertNotIn("_", second.identity()["cache_inputs"]["environment_sha256"])
+
     def test_locked_rust_source_change_invalidates_the_cache(self):
         first = self.build()
         (self.model.source / "rust/Cargo.lock").write_text("# changed locked inputs\n")
