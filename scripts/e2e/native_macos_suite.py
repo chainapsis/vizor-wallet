@@ -1,4 +1,4 @@
-"""Build once, then run selected Rust/macOS cases with independent original owners.
+"""Build once, then run selected Rust/macOS/iOS cases with independent owners.
 
 Each repetition has its own schema-2 report, so failed-from selection stays
 unambiguous. Signed artifacts and the offline signer are shared read-only;
@@ -9,6 +9,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 import json
 import os
+import platform
 from pathlib import Path
 import signal
 import subprocess
@@ -22,6 +23,8 @@ from funder_build import build_regtest_funder
 from native_case_lifecycle import NativeCaseLifecycle
 from native_macos_build import build_native_macos_cohort
 from native_macos_execution import execute_native_macos_case
+from native_ios_build import build_native_ios_cohort
+from native_ios_execution import IOS_SCENARIOS, execute_native_ios_case
 from native_voting_build import build_voting_artifacts
 from native_rust_execution import RUST_CASES, RUST_PROFILES, execute_native_rust_case
 from native_worker_lifecycle import prepare_native_worker_lifecycle
@@ -50,7 +53,7 @@ SUPPORTED_SCENARIOS = frozenset({
     "flutter.macos.payment-link-recovery",
     "flutter.macos.voting",
     "flutter.macos.voting-slow-helper",
-}) | frozenset(RUST_CASES)
+}) | frozenset(RUST_CASES) | IOS_SCENARIOS
 VOTING_SCENARIOS = frozenset({"flutter.macos.voting", "flutter.macos.voting-slow-helper"})
 _MINER = "tmLomwDqZSUb1Mvsfpjtmt4cLBA7c9tGssX"
 _IMPORT_UA = "uregtest1ykjd398elks624qyz0d0vffn6vpqkl6atp2wsr9795eql4kw47hwlffxyyfakv0l2twj635fpmxmeu3tzyrfhf5s9eg9ea8gsa0srdfwjudp3fs0qaaqxvkxr364a8vjy3y9vglm7lf8rs0vsev9p5mzky52rq4wkr5lhc842vuf5lhn"
@@ -64,6 +67,11 @@ def scenario_funding(scenario_id, *, desktop_transparent=None):
     """Prefund only the balances asserted by each unchanged wallet scenario."""
     if scenario_id in VOTING_SCENARIOS:
         return ((_DESKTOP_UA,13000000,"orchard",1),)
+    if scenario_id in IOS_SCENARIOS:
+        if scenario_id in {"flutter.ios.create-sync", "flutter.ios.account-management",
+                           "flutter.ios.gift-onboarding"}:
+            return ()
+        return ((_DESKTOP_UA,125000000,"ironwood",1),)
     if scenario_id == "flutter.macos.import-sync":
         return ((_IMPORT_UA,125000000,"ironwood",1),
                 (_IMPORT_TRANSPARENT,75000000,"transparent",2))
@@ -120,10 +128,13 @@ def derive_payment_addresses(case, artifact, *, cancel):
 def validate_options(args, scenarios):
     """Reject unsupported/invalid execution before creating any run resources."""
     if sys.platform != "darwin":
-        raise ValueError("native macOS execution requires macOS")
+        raise ValueError("native wallet execution requires macOS")
     if not scenarios or any(s.id not in SUPPORTED_SCENARIOS for s in scenarios):
-        raise ValueError("this executor implements only migrated Rust/macOS scenarios")
+        raise ValueError("this executor implements only migrated Rust/macOS/iOS scenarios")
     for scenario in scenarios:
+        if scenario.id in IOS_SCENARIOS and (scenario.engine != "flutter-ios"
+            or scenario.profile != "flutter-direct-height1"):
+            raise ValueError("selected iOS identity/profile does not match its executor")
         if scenario.id in VOTING_SCENARIOS and (scenario.engine != "flutter-macos"
             or scenario.profile != "flutter-direct-activation500"):
             raise ValueError("voting requires the original preactivation macOS profile")
@@ -145,6 +156,18 @@ def validate_options(args, scenarios):
     for field in ("flutter", "grpcurl"):
         if not os.access(getattr(args, field), os.X_OK):
             raise ValueError(field + " must be executable")
+    if any(s.id in IOS_SCENARIOS for s in scenarios):
+        runtime_id = getattr(args, "ios_runtime", None)
+        device_id = getattr(args, "ios_device_type", None)
+        if not isinstance(runtime_id, str) or not isinstance(device_id, str):
+            raise ValueError("iOS execution requires --ios-runtime and --ios-device-type identifiers")
+        inventory = subprocess.run(["/usr/bin/xcrun", "simctl", "list", "runtimes", "--json"],
+            check=True, capture_output=True, text=True, timeout=15)
+        matches = [item for item in json.loads(inventory.stdout)["runtimes"]
+                   if item.get("identifier") == runtime_id and item.get("isAvailable") is True]
+        if (len(matches) != 1 or platform.machine() not in matches[0].get("supportedArchitectures", [])
+            or not any(item.get("identifier") == device_id for item in matches[0].get("supportedDeviceTypes", []))):
+            raise ValueError("selected iOS runtime/device type/architecture is not available")
     if any(s.id in VOTING_SCENARIOS for s in scenarios):
         for field in ("voting_sdk_cache", "voting_pir_cache"):
             value = getattr(args, field, None)
@@ -160,7 +183,7 @@ def _write_report(path, report):
 
 
 def execute_case(root, run_id, worker_id, scenario, *, helper, artifact, source_root,
-                 dart, args, cancel, desktop_transparent=None, voting_artifact=None):
+                 dart, args, cancel, desktop_transparent=None, voting_artifact=None, ios_helper=None):
     """The worker thread creates, drives and finalizes its own mutable handles."""
     started = time.monotonic()
     result = {"scenario_id":scenario.id, "profile":scenario.profile,
@@ -173,10 +196,14 @@ def execute_case(root, run_id, worker_id, scenario, *, helper, artifact, source_
             raise runtime.Cancelled()
         worker = prepare_native_worker_lifecycle(root, run_id=run_id, worker_id=worker_id)
         is_rust = scenario.id in RUST_CASES
+        is_ios = scenario.id in IOS_SCENARIOS
         activation = 500 if (scenario.id in VOTING_SCENARIOS
             or is_rust and RUST_PROFILES[scenario.id] == "zakura-direct-activation500") else 1
-        session = worker.prepare_case(platform="rust" if is_rust else "macos", scenario_id=scenario.id,
-            case_index=1, activation_height=activation, helper=None if is_rust else helper, timeout=60, cancel_event=cancel)
+        session = worker.prepare_case(platform="rust" if is_rust else "ios" if is_ios else "macos", scenario_id=scenario.id,
+            case_index=1, activation_height=activation,
+            helper=None if is_rust else ios_helper if is_ios else helper,
+            **({"runtime_identifier":args.ios_runtime, "device_type_identifier":args.ios_device_type} if is_ios else {}),
+            timeout=120 if is_ios else 60, cancel_event=cancel)
         result["log"] = str(session.case.workspace.root)
         session.prepare_zakura_backend(tooling_root=args.zakura_cache,
             grpcurl=args.grpcurl.resolve(strict=True), proto_dir=args.proto_dir,
@@ -195,6 +222,9 @@ def execute_case(root, run_id, worker_id, scenario, *, helper, artifact, source_
         if is_rust:
             result["observation"] = execute_native_rust_case(session, artifact=artifact,
                 scenario=scenario, cancel_event=cancel)
+        elif is_ios:
+            result["observation"] = execute_native_ios_case(session, dart=dart,
+                source_root=source_root, timeout=scenario.timeout_seconds, cancel_event=cancel)
         else:
             result["observation"] = execute_native_macos_case(session, dart=dart,
                 source_root=source_root, timeout=scenario.timeout_seconds, cancel_event=cancel,
@@ -284,6 +314,11 @@ def run_native_suite(args, catalog, scenarios, selection, *, source_root):
                 source_root=root, flutter=args.flutter, cancel_event=cancel,
                 tex_address=payment_addresses.get("receiver_tex"))
             report["builds"].update(build_proof)
+        ios_helper = None
+        if any(s.engine == "flutter-ios" for s in scenarios):
+            ios_helper, ios_proof = build_native_ios_cohort(build_case(4,"flutter.ios.native-build","ios"),
+                source_root=root, flutter=args.flutter, cancel_event=cancel)
+            report["builds"]["ios"] = ios_proof
         voting_artifact = None
         if any(s.id in VOTING_SCENARIOS for s in scenarios):
             voting_artifact, voting_proof = build_voting_artifacts(
@@ -305,7 +340,7 @@ def run_native_suite(args, catalog, scenarios, selection, *, source_root):
             submitted = [(repetition,pool.submit(execute_case,*repetitions[repetition],index,scenario,
                 helper=helper,artifact=artifact,source_root=root,dart=dart,args=args,cancel=cancel,
                 desktop_transparent=payment_addresses.get("desktop_transparent"),
-                voting_artifact=voting_artifact))
+                voting_artifact=voting_artifact, ios_helper=ios_helper))
                 for repetition,index,scenario in jobs]
             for repetition, future in submitted:
                 results[repetition].append(future.result())

@@ -55,6 +55,37 @@ void main() {
     },
   );
 
+  test('iOS returns its native result without writing a host context', () async {
+    manifest['scenario_id'] = 'flutter.ios.import-sync';
+    manifest['context_path'] = 'app-support';
+    data['case_manifest'] = Map<String, dynamic>.of(manifest);
+    expect(await persist(), {'case_manifest': manifest, 'pid': 123});
+    expect(await directory.list().toList(), isEmpty);
+  });
+
+  test('iOS console PID cannot substitute for its native app PID', () async {
+    manifest['scenario_id'] = 'flutter.ios.import-sync';
+    manifest['context_path'] = 'app-support';
+    data['case_manifest'] = Map<String, dynamic>.of(manifest);
+    data['pid'] = 456;
+    await expectLater(persist(), throwsStateError);
+    expect(await directory.list().toList(), isEmpty);
+  });
+
+  test('iOS setup without completed assertions remains refused', () async {
+    manifest['scenario_id'] = 'flutter.ios.import-sync';
+    manifest['context_path'] = 'app-support';
+    data['case_manifest'] = Map<String, dynamic>.of(manifest);
+    data['assertions_completed'] = false;
+    await expectLater(persist(), throwsStateError);
+  });
+
+  test('macOS cannot use the Simulator app-support sentinel', () async {
+    manifest['context_path'] = 'app-support';
+    data['case_manifest'] = Map<String, dynamic>.of(manifest);
+    await expectLater(persist(), throwsStateError);
+  });
+
   test(
     'setup-only successful Driver response is not assertion completion',
     () async {

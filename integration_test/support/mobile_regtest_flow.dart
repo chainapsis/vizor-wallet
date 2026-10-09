@@ -11,8 +11,11 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:integration_test/integration_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:zcash_wallet/src/core/config/e2e_runtime_case_manifest.dart';
 import 'package:zcash_wallet/src/core/config/network_config.dart';
+import 'package:zcash_wallet/src/core/formatting/zec_amount.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
@@ -20,6 +23,8 @@ import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
+
+import 'owned_regtest_control.dart';
 
 const mobileE2ePasscode = '111111';
 const mobileIronwoodE2eMnemonic =
@@ -33,11 +38,15 @@ const mobileE2eNetwork = String.fromEnvironment(
   'ZCASH_E2E_NETWORK',
   defaultValue: 'regtest',
 );
-const mobileE2eLightwalletdUrl = String.fromEnvironment(
+String get mobileE2eLightwalletdUrl =>
+    installedE2eRuntimeCaseManifest?.lightwalletdUrl ?? _mobileE2eLightwalletdUrl;
+const _mobileE2eLightwalletdUrl = String.fromEnvironment(
   'ZCASH_E2E_LIGHTWALLETD_URL',
   defaultValue: 'http://127.0.0.1:9067',
 );
-const mobileE2eZcashdRpcUrl = String.fromEnvironment(
+String get mobileE2eZcashdRpcUrl =>
+    installedE2eRuntimeCaseManifest?.zcashdRpcUrl ?? _mobileE2eZcashdRpcUrl;
+const _mobileE2eZcashdRpcUrl = String.fromEnvironment(
   'ZCASH_E2E_ZCASHD_RPC_URL',
   defaultValue: 'http://127.0.0.1:18232',
 );
@@ -47,6 +56,12 @@ const _accountsKey = 'zcash_accounts';
 
 void logE2e(String message) {
   debugPrint('[mobile-$mobileE2eNetwork-e2e] $message');
+}
+
+/// Called only after the selected original test's financial/UI assertions.
+void markMobileE2eAssertionsCompleted() {
+  IntegrationTestWidgetsFlutterBinding.ensureInitialized()
+      .reportData?['assertions_completed'] = true;
 }
 
 /// Keeps cosmetic RenderFlex overflows (a few px on the 393pt frame
@@ -1019,6 +1034,10 @@ Future<void> waitForMempoolObserver() async {
 
 Future<void> mineRegtestBlocks(int blocks) async {
   logE2e('mining $blocks regtest blocks');
+  if (installedE2eRuntimeCaseManifest != null) {
+    await mineOwnedRegtestBlocks(blocks);
+    return;
+  }
 
   final before = await zcashdRpc<int>('getblockcount');
   await zcashdRpc<List<Object?>>('generate', [blocks]);
@@ -1091,6 +1110,9 @@ Future<Map<String, Object?>> postDriver(
   Duration timeout = const Duration(minutes: 2),
   String? baseUrl,
 }) async {
+  if (installedE2eRuntimeCaseManifest != null && baseUrl == null) {
+    return postOwnedRegtestControl(path, payload);
+  }
   final client = HttpClient();
   try {
     final request = await client
@@ -1120,6 +1142,9 @@ Future<Map<String, Object?>> getDriver(
   Duration timeout = const Duration(minutes: 2),
   String? baseUrl,
 }) async {
+  if (installedE2eRuntimeCaseManifest != null && baseUrl == null) {
+    return getOwnedRegtestControl(path);
+  }
   final client = HttpClient();
   try {
     final request = await client
@@ -1138,9 +1163,25 @@ Future<Map<String, Object?>> getDriver(
   }
 }
 
+int _ownedUnminedSource = 2; // The fixture's confirmed funding owns coinbase 1.
+
 /// Sends an external unmined funding tx to [address]; returns the txid.
 Future<String> fundUnmined(String address, String amount) async {
   logE2e('requesting external unmined funding of $amount to $address');
+  if (installedE2eRuntimeCaseManifest != null) {
+    final value = ZecAmount.tryParse(amount) ??
+        (throw StateError('Invalid owned unmined funding amount.'));
+    final proof = await postDriver('/fund-unmined', {
+      'address': address,
+      'amount_zatoshi': value.zatoshi.toInt(),
+      'source_height': _ownedUnminedSource++,
+    }, timeout: const Duration(minutes: 5));
+    final txid = proof['txid_hex'];
+    if (txid is! String || !RegExp(r'^[0-9a-f]{64}$').hasMatch(txid)) {
+      throw StateError('Owned unmined funding did not return its proved txid.');
+    }
+    return txid;
+  }
   final response = await postDriver('/fund-unmined', {
     'address': address,
     'amount': amount,

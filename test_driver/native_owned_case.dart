@@ -79,6 +79,13 @@ Future<Map<String, Object>> persistNativeOwnedCaseResult({
     throw StateError('The original app/case did not complete its assertions.');
   }
   final path = expected['context_path'];
+  if (path == 'app-support' &&
+      expected['scenario_id'] is String &&
+      (expected['scenario_id'] as String).startsWith('flutter.ios.')) {
+    // iOS already published its context inside its owned Simulator container.
+    // Never interpret app-support as a host path or overwrite native evidence.
+    return <String, Object>{'case_manifest': actual, 'pid': expectedPid};
+  }
   if (path is! String || !File(path).isAbsolute) {
     throw StateError('The original host context path must be absolute.');
   }

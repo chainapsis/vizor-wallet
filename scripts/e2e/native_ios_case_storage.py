@@ -330,7 +330,9 @@ class OwnedIosCaseStorage:
             raise IosCaseStorageError("app context does not match the owned Simulator/app/support scope")
 
     def start_app(self, arguments: Sequence[str] = (), *, timeout: float = 30.0,
-                  cancel_event: threading.Event | None = None) -> IosAppLaunch:
+                  cancel_event: threading.Event | None = None,
+                  raw_lines: list[str] | None = None,
+                  max_output_bytes: int | None = None) -> IosAppLaunch:
         deadline = simulator_api._deadline(timeout)
         cancellation = cancel_event if cancel_event is not None else threading.Event()
         if self._finished or self._active is not None or not self.case.accepting_launches:
@@ -350,6 +352,7 @@ class OwnedIosCaseStorage:
             console = self.case.start_process(
                 ["/usr/bin/xcrun", "simctl", "launch", "--console", self.simulator.udid, _BUNDLE, *arguments],
                 env=environment,
+                raw_lines=raw_lines, max_output_bytes=max_output_bytes,
             )
             self._pending_console = console
             while True:

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/config/e2e_runtime_case_manifest.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 
 import 'support/mobile_regtest_flow.dart';
@@ -13,7 +14,7 @@ const _mnemonic =
     'winter shiver fetch refuse absurd mail pistol eight market lounge manual '
     'roast miracle ethics found child scare curve congress renew salute pig '
     'better used';
-const _primaryProxyUrl = 'http://127.0.0.1:19068';
+String get _primaryProxyUrl => installedE2eRuntimeCaseManifest?.primaryProxyUrl ?? 'http://127.0.0.1:19068';
 const _fallbackToast =
     'Selected endpoint is unstable. Switched to fallback endpoint.';
 
@@ -91,6 +92,7 @@ void main() {
 
       await waitForShieldedBalance(tester, '1.25 $mobileE2eTicker');
       logE2e('shielded balance synced through fallback');
+      markMobileE2eAssertionsCompleted();
     },
     timeout: const Timeout(Duration(minutes: 6)),
   );

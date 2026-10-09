@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
+import 'package:zcash_wallet/src/core/config/e2e_runtime_case_manifest.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
@@ -169,6 +170,7 @@ void main() {
       logE2e(
         'Gift creation, real receipt, manual carousel, backup and education verified',
       );
+      markMobileE2eAssertionsCompleted();
     },
     timeout: const Timeout(Duration(minutes: 12)),
   );
@@ -208,6 +210,7 @@ void main() {
       );
       await _assertClaimReceived(tester, link, uuid);
       logE2e('Gift first-wallet import and automatic receipt verified');
+      markMobileE2eAssertionsCompleted();
     },
     timeout: const Timeout(Duration(minutes: 10)),
   );
@@ -269,6 +272,7 @@ void main() {
       logE2e(
         'Waiting Gift recipient deletion, Card deletion and temporary DB cleanup verified',
       );
+      markMobileE2eAssertionsCompleted();
     },
     timeout: const Timeout(Duration(minutes: 10)),
   );
@@ -313,10 +317,22 @@ Future<VizorPaymentLink> _newGift() async {
   );
 }
 
+int _ownedGiftFundingSource = 1;
+
 Future<void> _fundGift(
   VizorPaymentLink link, {
   required int confirmations,
 }) async {
+  if (installedE2eRuntimeCaseManifest != null) {
+    await postDriver('/fund-confirmed', {
+      'address': link.address,
+      'amount_zatoshi': 10_010_000,
+      'confirmations': confirmations,
+      'recipient_pool': 'ironwood',
+      'source_height': _ownedGiftFundingSource++,
+    }, timeout: const Duration(minutes: 5));
+    return;
+  }
   await postDriver('/fund-confirmed', {
     'address': link.address,
     // Recipient value plus the actual Orchard claim fee.

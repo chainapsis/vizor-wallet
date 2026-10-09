@@ -1,0 +1,79 @@
+@Tags(['mobile'])
+library;
+
+import 'dart:io';
+
+import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter_test/flutter_test.dart';
+import 'package:integration_test/integration_test.dart';
+import 'package:zcash_wallet/app.dart' show e2eRuntimeContext;
+import 'package:zcash_wallet/src/core/config/e2e_runtime_case_manifest.dart';
+import 'package:zcash_wallet/src/core/config/network_config.dart';
+import 'package:zcash_wallet/src/core/layout/app_form_factor.dart';
+import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart'
+    show kPaymentLinkRegtestEnabled;
+
+import 'regtest_mobile_create_sync_test.dart' as create;
+import 'regtest_mobile_import_sync_test.dart' as import_sync;
+import 'regtest_mobile_account_management_test.dart' as accounts;
+import 'regtest_mobile_multi_account_send_test.dart' as send;
+import 'regtest_mobile_mempool_receive_test.dart' as mempool;
+import 'regtest_mobile_fallback_endpoint_test.dart' as fallback;
+import 'regtest_mobile_slow_height_fallback_test.dart' as slow_height;
+import 'regtest_mobile_payment_link_round_trip_test.dart' as gift;
+import 'regtest_mobile_payment_uri_send_test.dart' as payment_uri;
+import 'regtest_mobile_gift_onboarding_test.dart' as gift_onboarding;
+
+/// One mobile binary; original scenarios retain all financial/UI assertions.
+void main() {
+  final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  final manifest =
+      installE2eRuntimeCaseManifest(
+        isDebug: kDebugMode,
+        isIos: Platform.isIOS,
+        isMacos: Platform.isMacOS,
+        defaultNetworkName: kZcashDefaultNetworkName,
+      ) ??
+      (throw StateError('The iOS E2E cohort profile is not enabled.'));
+  if (!Platform.isIOS ||
+      !kVizorE2eIosCohort ||
+      kAppFormFactor != AppFormFactor.mobile ||
+      !kPaymentLinkRegtestEnabled) {
+    throw StateError('The iOS cohort requires the mobile regtest/Gift build.');
+  }
+  binding.reportData = <String, Object?>{
+    'case_manifest': manifest.toJson(),
+    'pid': pid,
+    'assertions_completed': false,
+    'runtime_context': null,
+  };
+  tearDownAll(() {
+    binding.reportData!['runtime_context'] = e2eRuntimeContext;
+  });
+  switch (manifest.scenarioId) {
+    case 'flutter.ios.create-sync':
+      create.main();
+    case 'flutter.ios.import-sync':
+      import_sync.main();
+    case 'flutter.ios.account-management':
+      accounts.main();
+    case 'flutter.ios.multi-account-send':
+      send.main();
+    case 'flutter.ios.mempool-receive':
+      mempool.main();
+    case 'flutter.ios.fallback-endpoint':
+      fallback.main();
+    case 'flutter.ios.slow-height-fallback':
+      slow_height.main();
+    case 'flutter.ios.payment-link-round-trip':
+      gift.main();
+    case 'flutter.ios.payment-uri-send':
+      payment_uri.main();
+    case 'flutter.ios.gift-onboarding':
+      gift_onboarding.main();
+    default:
+      throw StateError(
+        'The mobile cohort does not implement ${manifest.scenarioId}.',
+      );
+  }
+}

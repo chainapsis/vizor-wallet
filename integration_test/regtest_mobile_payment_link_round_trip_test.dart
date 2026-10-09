@@ -305,6 +305,7 @@ void main() {
         '$expectedBalanceText $mobileE2eTicker',
       );
       logE2e('mobile payment-link round trip completed');
+      markMobileE2eAssertionsCompleted();
     },
     timeout: const Timeout(Duration(minutes: 15)),
   );
