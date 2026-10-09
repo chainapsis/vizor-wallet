@@ -338,12 +338,16 @@ void main() {
       await tapAppButton(tester, const ValueKey('mobile_send_memo_save'));
       await settle(tester, const Duration(milliseconds: 400));
       await shot('25_send_review_with_memo');
-      // Inline full-address toggle on the recipient row.
+      // Full-address verification sheet opened from the recipient row.
       await tapWidget(tester, const ValueKey('mobile_send_full_address'));
       await settle(tester, const Duration(milliseconds: 400));
       await shot('25b_send_full_address');
-      await tester.tap(find.text('Cancel').last);
-      await settle(tester, const Duration(milliseconds: 400));
+      await tapUntilVisible(
+        tester,
+        trigger: find.bySemanticsLabel('Close').hitTestable(),
+        outcome: find.byKey(const ValueKey('mobile_send_confirm')).hitTestable(),
+        description: 'send review after closing the full-address sheet',
+      );
       // Actually send so the in-flight and success states are captured.
       await tapAppButton(
         tester,
@@ -394,8 +398,14 @@ void main() {
       );
       await settle(tester, const Duration(milliseconds: 400));
       await shot('26c_tx_status_full_address');
-      await tester.tap(find.text('Cancel').last);
-      await settle(tester, const Duration(milliseconds: 400));
+      await tapUntilVisible(
+        tester,
+        trigger: find.bySemanticsLabel('Close').hitTestable(),
+        outcome: find.byKey(
+          const ValueKey('mobile_tx_status_message_toggle'),
+        ).hitTestable(),
+        description: 'transaction status after closing the full-address sheet',
+      );
       await tapWidget(
         tester,
         const ValueKey('mobile_tx_status_message_toggle'),
