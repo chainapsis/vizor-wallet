@@ -987,8 +987,8 @@ there is no separate release gate.
 ## Library dependency
 
 The seven patched library crates and the `zakura-pir-transparent` adapter share
-one pushed wallet-libraries revision, `fc775a358308f9d7de22fb71b0caba48dac83fbe`,
-from [companion PR #132](https://github.com/zakura-core/wallet-libraries/pull/132),
+one wallet-libraries main revision, `2495d1d2e64c3b57485e3ac85d7e0fc1ed466a5f`,
+the squash merge of [PR #132](https://github.com/zakura-core/wallet-libraries/pull/132),
 which removes the unused `PrivateShadow` ledger mode on top of
 [PR #130](https://github.com/zakura-core/wallet-libraries/pull/130).
 It retains the parent's private-recovery and compact txid-display changes and
