@@ -754,7 +754,8 @@ python3 -B -m unittest scripts/e2e/test_funder_execution.py
 published offline signer. `fund_zakura` takes an explicit coinbase source height,
 integer zatoshi amount, recipient pool/address and confirmation count. It does
 not guess a source, mine its maturity automatically or use faucet/node-wallet
-RPCs. The caller first mines the controlled chain until the source is mature.
+RPCs. The caller first mines until the source will be mature in the next block:
+the target inclusion height must be at least the source height plus 100.
 
 Before broadcasting, the adapter checks the fixed miner, actual coinbase block
 and unspent outpoint, unchanged tip, activation profile and exact integer

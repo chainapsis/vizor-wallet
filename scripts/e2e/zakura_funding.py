@@ -182,7 +182,7 @@ def fund_zakura(case, backend, artifact, *, recipient_address, amount_zatoshi,
     activation = json.loads(case.workspace.launch_environment()["VIZOR_E2E_CASE_MANIFEST"])["regtest_ironwood_activation_height"]
     tip = _integer(rpc("getblockcount"), "initial tip", minimum=1, maximum=0xFFFFFFFF-41)
     target = tip + 1
-    if tip < source_height + 100 or target + confirmations - 1 > 0xFFFFFFFF:
+    if target < source_height + 100 or target + confirmations - 1 > 0xFFFFFFFF:
         raise ZakuraFundingError("source is not mature or confirmations exceed chain bounds")
     if recipient_pool == "orchard" and (activation != 500 or target + confirmations - 1 >= 500):
         raise ZakuraFundingError("Orchard funding must finish before controlled activation")

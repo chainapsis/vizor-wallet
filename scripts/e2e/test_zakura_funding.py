@@ -55,7 +55,7 @@ class FundingFixture(fixtures.FixtureModel):
                 output = self.funding["recipient_output"]
                 tx["vout"] = [{"n":output["vout"],"valueZat":output["amount_zatoshi"],
                     "scriptPubKey":{"hex":output["script_hex"],"addresses":[output["address"]]}}]
-            return {"hash":params[0],"height":102,"tx":[tx]}
+            return {"hash":params[0],"height":self.funding["target_height"],"tx":[tx]}
         raise AssertionError(method)
 
     def mine(self, count):
@@ -68,7 +68,8 @@ class FundingFixture(fixtures.FixtureModel):
         self.operations.append(method)
         assert method == "GetBlock"
         field = "actions" if self.funding["pools"][-1] == "orchard" else "ironwoodActions"
-        return {"height":"102","hash":encoded(f"{102:064x}" if self.mode != "wrong-compact" else "ff"*32,True),
+        target = self.funding["target_height"]
+        return {"height":str(target),"hash":encoded(f"{target:064x}" if self.mode != "wrong-compact" else "ff"*32,True),
             "vtx":[] if self.mode == "missing-compact" else [{"txid":encoded(TXID,True),field:[{}]}]}
 
     def grpc_stream(self, method, payload=None, *, deadline=None):
@@ -77,10 +78,10 @@ class FundingFixture(fixtures.FixtureModel):
         if self.mode == "missing-stream":
             return []
         if method == "GetTaddressTxids":
-            return [{"height":"102","data":encoded("05")}]
+            return [{"height":str(self.funding["target_height"]),"data":encoded("05")}]
         assert method == "GetAddressUtxosStream"
         return [{"txid":encoded(TXID,True),"index":output["vout"],"address":output["address"],
-            "script":encoded(output["script_hex"]),"height":"102",
+            "script":encoded(output["script_hex"]),"height":str(self.funding["target_height"]),
             "valueZat":str(output["amount_zatoshi"] if self.mode != "wrong-utxo" else 1)}]
 
 
@@ -156,6 +157,26 @@ class ZakuraFundingTests(unittest.TestCase):
         self.assertEqual(proof["compact_action_count"],1)
         self.assertEqual(self.sign_calls,["identity","build-orchard"])
 
+    def test_exact_maturity_is_accepted_but_one_block_before_is_rejected(self):
+        self.backend._fixture.tip = 99
+        with self.assertRaisesRegex(FUNDING.ZakuraFundingError,"not mature"):
+            self.fund(confirmations=1)
+        self.assertNotIn("sendrawtransaction",self.backend._fixture.operations)
+        self.backend._fixture.tip = 100
+        proof = self.fund(confirmations=1)
+        self.assertEqual(proof["mined_height"],101)
+        self.assertEqual(proof["final_tip_height"],101)
+
+    def test_exact_orchard_maturity_at_last_preactivation_block_is_valid(self):
+        self.case = self.fixture.case(500)
+        self.backend = self.backend_for(self.case)
+        self.backend._fixture.source["height"] = 399
+        self.backend._fixture.tip = 498
+        proof = self.fund(source_height=399,recipient_pool="orchard",confirmations=1)
+        self.assertEqual(proof["mined_height"],499)
+        self.assertEqual(proof["final_tip_height"],499)
+        self.assertEqual(proof["compact_action_count"],1)
+
     def test_invalid_inputs_and_precancellation_never_sign_or_mutate_node(self):
         for updates in ({"amount_zatoshi":True},{"amount_zatoshi":0},{"amount_zatoshi":1.0},
                         {"confirmations":0},{"source_height":True},{"timeout":False}):
@@ -170,7 +191,7 @@ class ZakuraFundingTests(unittest.TestCase):
 
     def test_immature_spent_wrong_source_or_miner_never_broadcasts(self):
         model = self.backend._fixture
-        model.tip = 100
+        model.tip = 99
         with self.assertRaisesRegex(FUNDING.ZakuraFundingError,"not mature"):
             self.fund()
         model.tip, model.mode = 101,"spent"
