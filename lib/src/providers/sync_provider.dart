@@ -617,22 +617,24 @@ class SyncState {
   /// Every path that shows a state not read from Rust just now goes through
   /// this rule; a fresh read never does.
   ///
-  /// A privately read amount is never carried as current: it holds only
-  /// while the private ledger covers the tip, so every carry demotes it
-  /// until the next balance read.
-  /// A publicly read amount goes stale when [privatePolicyMayApply]: the
-  /// wallet may be private now, because Rust applied a private policy or
-  /// because private queries are on.
+  /// A privately read amount is current only while the private ledger covers
+  /// the tip, so it goes stale when [crossesTip]: the tip actually moved
+  /// since the read, at a sync start, during a sync, or for a cache. A
+  /// publicly read amount goes stale when [privatePolicyMayApply]: the wallet
+  /// may be private now, because Rust applied a private policy or because
+  /// private queries are on.
   ///
   /// Either goes stale when [policyChanged]: Rust applied a new policy
   /// generation since the read, so the authority it reported no longer holds.
   SyncState carryingTransparentAuthority({
     required bool privatePolicyMayApply,
+    required bool crossesTip,
     bool policyChanged = false,
   }) {
     final stale =
         transparentAuthority == rust_sync.TransparentBalanceAuthority.current &&
-        (transparentPrivate || policyChanged || privatePolicyMayApply);
+        (policyChanged ||
+            (transparentPrivate ? crossesTip : privatePolicyMayApply));
     if (!stale) return this;
     // The totals drop the demoted amount too, as a read without transparent
     // authority would report them.
@@ -924,6 +926,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   void _demoteCarriedTransparentAuthority() {
     SyncState demote(SyncState carried) => carried.carryingTransparentAuthority(
       privatePolicyMayApply: _privatePolicyMayApply,
+      crossesTip: false,
       policyChanged: true,
     );
     for (final entry in _lastKnownByAccount.entries.toList()) {
@@ -1270,8 +1273,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           : const [],
       phase: '',
     );
-    // Startup may raise or lower the policy after the snapshot was read. See
-    // [SyncState.carryingTransparentAuthority].
+    // Startup may raise or lower the policy after the snapshot was read; the
+    // tip has not moved since. See [SyncState.carryingTransparentAuthority].
     final startupApplied = ref
         .read(transparentPolicyStartupProvider)
         .appliedPolicy;
@@ -1279,6 +1282,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     return initialBelongsToActiveAccount
         ? initialState.carryingTransparentAuthority(
             privatePolicyMayApply: _privatePolicyMayApply,
+            crossesTip: false,
             // Bootstrap has no policy generation. Reconciliation may find a
             // generation another connection changed after the snapshot read,
             // even when it makes no change itself.
@@ -1322,12 +1326,13 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       // live sync fields so progress cannot regress, and flagged as a
       // snapshot rather than authoritative. The switch's own refresh
       // replaces them shortly.
-      // The cached amount is carried; see
-      // [SyncState.carryingTransparentAuthority].
+      // The cache predates any tip the other account's syncs moved, and any
+      // policy raised since; see [SyncState.carryingTransparentAuthority].
       state = AsyncData(
         restored
             .carryingTransparentAuthority(
               privatePolicyMayApply: _privatePolicyMayApply,
+              crossesTip: restored.chainTipHeight != prev.chainTipHeight,
             )
             .withGlobalSyncFieldsFrom(prev)
             .copyWith(
@@ -1482,9 +1487,12 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         : math.max(previousChainTipHeight, latestTipHeight);
     final canPreserveCompletedSpendable =
         SyncState.shouldPreserveCompletedSpendable(scopedPrev);
-    // See [SyncState.carryingTransparentAuthority].
+    // A privately read amount goes stale only when the known tip actually
+    // moved; a later move during the sync demotes it when its progress
+    // reports the new tip. See [SyncState.carryingTransparentAuthority].
     final carried = scopedPrev?.carryingTransparentAuthority(
       privatePolicyMayApply: _privatePolicyMayApply,
+      crossesTip: nextChainTipHeight != previousChainTipHeight,
     );
     state = AsyncData(
       SyncState(
@@ -2947,6 +2955,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         ? stateScopedPrev
         : stateScopedPrev.carryingTransparentAuthority(
             privatePolicyMayApply: _privatePolicyMayApply,
+            crossesTip: true,
           );
     final nextSpendableBalance = useFetchedBalance
         ? spendable ?? stateScopedPrev?.spendableBalance ?? BigInt.zero
