@@ -836,11 +836,13 @@ async fn an_activated_wallet_discloses_nothing_through_any_lane_including_the_pi
     })
     .await
     .unwrap();
+    let discovered = discovered.expect("a withheld discovery is a status, not an error");
     assert_eq!(
-        discovered.err(),
-        Some(crate::api::wallet::SOFTWARE_ACCOUNT_DISCOVERY_UNAVAILABLE.to_string()),
-        "a withheld discovery is not an empty one"
+        discovered.status,
+        crate::api::wallet::SoftwareAccountDiscoveryStatus::Withheld,
+        "a withheld discovery is not a completed empty one"
     );
+    assert!(discovered.accounts.is_empty());
     let preview = preview.expect_err("a withheld preview is not a balance");
     assert!(preview.contains("unavailable"), "{preview}");
 
@@ -1071,18 +1073,20 @@ async fn a_flag_build_discloses_nothing_before_it_raises_the_wallet() {
     for first_account in [false, true] {
         let gate = import_gate(MAIN, &path, first_account, flag).unwrap();
         assert!(!gate.is_allowed());
-        assert!(
-            discover_used_software_accounts(
-                MAIN,
-                &seed,
-                Some(u64::from(BIRTHDAY)),
-                &lwd.url,
-                &gate
-            )
-            .await
-            .is_err(),
-            "a withheld discovery is not an empty one"
+        let discovered = discover_used_software_accounts(
+            MAIN,
+            &seed,
+            Some(u64::from(BIRTHDAY)),
+            &lwd.url,
+            &gate,
+        )
+        .await;
+        assert_eq!(
+            discovered.status,
+            crate::api::wallet::SoftwareAccountDiscoveryStatus::Withheld,
+            "a withheld discovery is not a completed empty one"
         );
+        assert!(discovered.accounts.is_empty());
         let addresses = keys::software_account_transparent_addresses(MAIN, &seed, 0, 2).unwrap();
         assert!(
             preview_transparent_balance_for_addresses(&lwd.url, addresses, &gate)
