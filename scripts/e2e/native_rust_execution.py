@@ -13,6 +13,11 @@ from native_worker_lifecycle import NativeWorkerCase
 
 
 RUST_CASES = {
+    "rust.receive.direct-zakura": ("regtest_direct_zakura_receive", "empty_wallet_receives_exact_ironwood_funding_from_direct_zakura"),
+    "rust.import.direct-zakura": ("regtest_direct_zakura_import", "historical_bip39_passphrase_import_recovers_exact_ironwood_funding_from_direct_zakura"),
+    "rust.gift-card.tracking-multiple": ("regtest_gift_card_tracking", "observer_scans_multiple_view_only_accounts_and_retires_only_used_card"),
+    "rust.gift-card.empty-db-reuse": ("regtest_gift_card_tracking", "observer_reuses_empty_db_without_scanning_idle_gap"),
+    "rust.gift-card.competition": ("regtest_payment_link_competition", "one_card_two_claimants_preserve_and_resolve_losing_transaction"),
     "rust.receive.sync": ("regtest_receive_sync", "create_wallet_receives_funds_and_syncs_balance"),
     "rust.send.basic": ("regtest_send", "funded_wallet_can_send_to_second_wallet"),
     "rust.send.second-account": ("regtest_send", "imported_second_account_can_send_using_its_own_seed"),
