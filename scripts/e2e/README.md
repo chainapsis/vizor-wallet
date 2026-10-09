@@ -775,6 +775,32 @@ shutdown, failed-state retention and final original backend/native cleanup.
 python3 -B -m unittest scripts/e2e/test_zakura_funding.py
 ```
 
+### Owned direct-fixture genesis evidence
+
+`zakura_genesis.py` observes height zero through one accepting original
+case/backend pair. It requires matching raw block/tree hash, height and time,
+one version-one transparent coinbase, no shielded actions, empty trees and zero
+integer shielded-pool values. It never borrows a height-one frontier or treats a
+raw lightwalletd error as proof of an empty tree.
+
+The SDK legacy empty commitment-tree encoding is `000000` (two absent nodes
+and an empty parents vector). The module publishes the independently verified
+TreeState with the captured source/backend identity to an exclusive, bounded
+64-KiB file, mode `0400`, inside the original backend directory. Its original
+handle rechecks inode, permissions, bytes and backend attachment before yielding
+the path/SHA-256/run-ID/raw-port handoff. An existing or replaced file is never
+adopted or overwritten. Deadline/cancellation checks are between synchronous
+RPC calls, not an in-progress-call interruption guarantee.
+
+```sh
+python3 -B -m unittest scripts/e2e/test_zakura_genesis.py
+```
+
+This is only genesis evidence for the next native LWD shim slice. It does not
+start a shim/control server, decrypt wallet notes, enable a catalog executor or
+provide native app teardown authority. Callers still own original case joins,
+raw backend cleanup and evidence retention.
+
 ## Gift Cards
 
 Sender usage tracking and empty observer DB reuse:
