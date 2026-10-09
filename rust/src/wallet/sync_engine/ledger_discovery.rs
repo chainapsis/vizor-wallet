@@ -1200,19 +1200,19 @@ mod tests {
             hash: 1,
         };
         let tip = BlockHeight::from_u32(2_600_000);
-        // A Public handle opened before the transition cannot read the
-        // stricter wallet, so discovery fails closed on it.
-        assert!(run_with(
+        // A Public handle opened before the transition resolves under the
+        // stricter policy, so discovery is withheld on it too.
+        run_with(
             &mut rpc,
             &mut db,
             &path,
             WalletNetwork::Main,
             EnhancementPolicy::current(WalletNetwork::Main),
             tip,
-            &|| { false }
+            &|| false,
         )
         .await
-        .is_err());
+        .unwrap();
         // A handle opened after it adopts the durable policy, so discovery is
         // withheld: it succeeds without a query.
         let mut db = crate::wallet::db::open_wallet_db_with_timeout(
