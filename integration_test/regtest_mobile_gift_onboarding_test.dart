@@ -244,9 +244,10 @@ void main() {
         network: mobileE2eNetwork,
       );
       await openAddAccountFlow(tester);
+      // Additional accounts now expose the same Gift setup entry as Welcome.
       expect(
         find.byKey(const ValueKey('mobile_welcome_redeem_card')),
-        findsNothing,
+        findsOneWidget,
       );
       await importWalletViaPaste(
         tester,
