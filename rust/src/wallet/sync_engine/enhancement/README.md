@@ -667,11 +667,12 @@ trusted, since every commit comes from the configured origin.
   every catalog row the damaged file still yields. A busy, locked or
   unreadable companion, one bound to another account, origin or schema, and a
   publication change never delete or reset anything. A rebuild is staged
-  beside the damaged companion and replaces it only once complete; any doubt
-  keeps the damaged one. A regular file where the `.tpir` directory belongs is
-  moved into the new directory (`displaced-<secs>`), never deleted, so a reset
-  removes it with the directory; a symlink there is left alone, and the run
-  stops as unavailable.
+  beside the damaged companion (`.rebuild`) and replaces it only once complete;
+  the original moves to `.damaged` until the replacement is in place, and a
+  crash in between is undone or completed before the next open. These files
+  live in `.tpir` and are listed and removed with their companion. Any doubt
+  keeps the damaged one. A regular file or symlink where the `.tpir` directory
+  belongs is left alone, and the run stops as unavailable until it is removed.
 - **Locking.** One lock per companion path serializes passes, settlements and
   removals. A source parks each companion it opened, with its lock, until it is
   dropped, so a pass and its settlement see the same companion and nothing
