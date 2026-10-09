@@ -728,8 +728,9 @@ impl<S: RecoverySource> Run<'_, S> {
 }
 
 /// How a run continues after the library refused a commit, for a source that
-/// applies commits itself. Rejections are logged without their payloads,
+/// applies commits itself, as the test fixture does. Rejections are logged without their payloads,
 /// which name addresses and outpoints. Any other error is a wallet failure.
+#[cfg(test)]
 pub(crate) fn refusal(error: &SqliteClientError) -> Option<Refusal> {
     Some(match error {
         SqliteClientError::TransparentLedgerCommitRejected(rejection) => {

@@ -403,6 +403,7 @@ async fn release_at_hand_off<F: Future>(
 ) -> F::Output {
     let mut lease = Some(lease);
     let mut sent = Some(sent);
+    // `lease` is held only for its drop.
     tokio::pin!(call);
     loop {
         tokio::select! {
@@ -413,7 +414,7 @@ async fn release_at_hand_off<F: Future>(
             {
                 sent = None;
                 if handed_off.is_ok() {
-                    lease = None;
+                    drop(lease.take());
                 }
             }
         }
