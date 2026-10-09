@@ -149,4 +149,73 @@ void main() {
     data['payment_link_phase'] = 'prepare';
     await expectLater(persist(), throwsStateError);
   });
+
+  for (final scenario in [
+    'flutter.macos.voting',
+    'flutter.macos.voting-slow-helper',
+  ]) {
+    for (final phase in ['setup', 'vote']) {
+      test('$scenario $phase result is bound to the original phase', () async {
+        manifest['scenario_id'] = scenario;
+        data['case_manifest'] = Map<String, dynamic>.of(manifest);
+        data['voting_phase'] = phase;
+        expect(
+          await persistNativeOwnedCaseResult(
+            expected: manifest,
+            expectedPid: 123,
+            data: data,
+            expectedVotingPhase: phase,
+          ),
+          {'case_manifest': manifest, 'pid': 123, 'voting_phase': phase},
+        );
+      });
+    }
+  }
+
+  test('voting setup cannot satisfy vote assertions', () async {
+    manifest['scenario_id'] = 'flutter.macos.voting';
+    data['case_manifest'] = Map<String, dynamic>.of(manifest);
+    data['voting_phase'] = 'setup';
+    await expectLater(
+      persistNativeOwnedCaseResult(
+        expected: manifest,
+        expectedPid: 123,
+        data: data,
+        expectedVotingPhase: 'vote',
+      ),
+      throwsStateError,
+    );
+    expect(await File(manifest['context_path']).exists(), isFalse);
+  });
+
+  test('another scenario cannot supply a voting phase', () async {
+    data['voting_phase'] = 'vote';
+    await expectLater(
+      persistNativeOwnedCaseResult(
+        expected: manifest,
+        expectedPid: 123,
+        data: data,
+        expectedVotingPhase: 'vote',
+      ),
+      throwsStateError,
+    );
+  });
+
+  test('unsolicited voting phase and mixed phase kinds are rejected', () async {
+    data['voting_phase'] = 'setup';
+    await expectLater(persist(), throwsStateError);
+    manifest['scenario_id'] = 'flutter.macos.voting';
+    data['case_manifest'] = Map<String, dynamic>.of(manifest);
+    data['payment_link_phase'] = 'prepare';
+    await expectLater(
+      persistNativeOwnedCaseResult(
+        expected: manifest,
+        expectedPid: 123,
+        data: data,
+        expectedVotingPhase: 'setup',
+        expectedPaymentLinkPhase: 'prepare',
+      ),
+      throwsStateError,
+    );
+  });
 }

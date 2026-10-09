@@ -52,7 +52,8 @@ class E2eCatalogTest(unittest.TestCase):
         )
         self.assertEqual(64, len(self.catalog.fingerprint))
         self.assertEqual({item.id for item in self.catalog.profiles if item.supported},
-                         {"flutter-direct-height1", "zakura-direct-height1", "zakura-direct-activation500"})
+                         {"flutter-direct-height1", "flutter-direct-activation500",
+                          "zakura-direct-height1", "zakura-direct-activation500"})
         self.assertEqual({item.id for item in self.catalog.scenarios if item.supported},
                          {"flutter.macos.import-sync", "flutter.macos.fallback-endpoint",
                           "flutter.macos.custom-endpoint-no-fallback",
@@ -65,6 +66,7 @@ class E2eCatalogTest(unittest.TestCase):
                           "flutter.macos.mempool-receive-history", "flutter.macos.mempool-during-sync",
                           "flutter.macos.mempool-expiry", "flutter.macos.payment-link-round-trip",
                           "flutter.macos.payment-link-restart", "flutter.macos.payment-link-recovery",
+                          "flutter.macos.voting", "flutter.macos.voting-slow-helper",
                           "rust.receive.sync", "rust.send.basic", "rust.send.second-account",
                           "rust.import.bip39-passphrase", "rust.import.historical-birthday",
                           "rust.import.future-birthday", "rust.import.receive-after-sync",
@@ -95,13 +97,13 @@ class E2eCatalogTest(unittest.TestCase):
         self.assertTrue(preview.runnable)
         self.assertEqual((), preview.blockers)
         self.assertEqual(("flutter-direct-height1",), preview.required_profiles)
-        self.assertEqual(41, sum(item.supported for item in self.catalog.scenarios))
-        self.assertEqual(2, sum(not item.supported and item.engine == "flutter-macos"
+        self.assertEqual(43, sum(item.supported for item in self.catalog.scenarios))
+        self.assertEqual(0, sum(not item.supported and item.engine == "flutter-macos"
                                 for item in self.catalog.scenarios))
         self.assertEqual(21, sum(not item.supported and item.engine == "flutter-ios"
                                  for item in self.catalog.scenarios))
 
-    def test_mempool_and_gift_group_is_ready_without_enabling_voting_or_ios(self):
+    def test_mempool_and_gift_group_is_ready_while_ios_remains_pending(self):
         ids = ("flutter.macos.mempool-receive-history", "flutter.macos.mempool-during-sync",
                "flutter.macos.mempool-expiry", "flutter.macos.payment-link-round-trip",
                "flutter.macos.payment-link-restart", "flutter.macos.payment-link-recovery")
@@ -111,11 +113,29 @@ class E2eCatalogTest(unittest.TestCase):
         self.assertTrue(preview.runnable)
         self.assertEqual((), preview.blockers)
         self.assertEqual(("flutter-direct-height1",), preview.required_profiles)
-        self.assertEqual({"flutter.macos.voting", "flutter.macos.voting-slow-helper"},
+        self.assertEqual(set(),
                          {item.id for item in self.catalog.scenarios
                           if item.engine == "flutter-macos" and not item.supported})
         self.assertTrue(all(not item.supported for item in self.catalog.scenarios
                             if item.engine == "flutter-ios"))
+
+    def test_voting_is_ready_and_budget_covers_actual_phase_limits_and_services(self):
+        ids = ("flutter.macos.voting", "flutter.macos.voting-slow-helper")
+        preview = catalog_module.plan(
+            self.catalog, catalog_module.select_scenarios(self.catalog, scenario_ids=ids))
+        self.assertTrue(preview.runnable)
+        self.assertEqual(("flutter-direct-activation500",), preview.required_profiles)
+        self.assertEqual((), preview.blockers)
+        root = SCRIPT_DIR.parents[1]
+        seconds = 0
+        for name in ("regtest_voting_ironwood_setup_test.dart", "regtest_voting_test.dart"):
+            limits = re.findall(r"timeout:\s*const Timeout\(Duration\(minutes:\s*(\d+)\)\)",
+                               (root/"integration_test"/name).read_text())
+            self.assertEqual(len(limits), 1, name)
+            seconds += int(limits[0])*60
+        for scenario_id in ids:
+            self.assertGreaterEqual(self.catalog.scenarios_by_id[scenario_id].timeout_seconds,
+                                    seconds+900)
 
     def test_gift_restart_budgets_cover_both_declared_phase_limits_and_handoff(self):
         root = SCRIPT_DIR.parents[1]
@@ -303,6 +323,7 @@ class E2eCatalogTest(unittest.TestCase):
         with self.assertRaisesRegex(catalog_module.CatalogError, "unreferenced"):
             catalog_module.load_catalog(self.write_catalog(raw))
         raw = self.raw_catalog()
+        raw["profiles"][3]["supported"] = False
         raw["profiles"][3]["pending_reason"] = None
         with self.assertRaisesRegex(catalog_module.CatalogError, "requires pending_reason"):
             catalog_module.load_catalog(self.write_catalog(raw))

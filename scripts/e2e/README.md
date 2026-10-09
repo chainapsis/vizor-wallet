@@ -2,8 +2,8 @@
 
 For the planned isolated execution framework and direct Zakura migration, see
 the [E2E roadmap](ROADMAP.md). The roadmap tracks unmerged work. The isolated
-executor implements all catalog Rust cases and eighteen macOS import/endpoint,
-send, shielding, payment-request, mempool and Gift cases;
+executor implements all twenty-three Rust and twenty macOS cases, including
+voting, import/endpoint, send, shielding, payment-request, mempool and Gift;
 existing shell runners remain.
 
 The [native runtime contract](RUNTIME_CONTRACT.md) defines per-case launch
@@ -49,8 +49,8 @@ python3 -B -m unittest scripts/e2e/test_zakura_fixture_source.py
 ## Catalog previews
 
 `run-suite.py` provides a host-only inventory and selection preview. Of 64
-entries, all twenty-three Rust cases and eighteen macOS cases
-are wired to the isolated executor; the other 23 stay pending.
+entries, all twenty-three Rust cases and twenty macOS cases
+are wired to the isolated executor; the twenty-one iOS cases stay pending.
 A preview exit code of 0 means the preview succeeded,
 not that any test ran or passed. Execution requires explicit `--run`.
 
@@ -155,7 +155,7 @@ and uncertain cleanup remains failure. Cancellation stops owned children and
 new assignment without terminating ordinary wallet processes.
 
 This is in-process build reuse, not a persistent verified build cache. The
-other native scenarios, iOS execution, resource/performance comparison
+iOS execution, resource/performance comparison
 and final-source all-green catalog are still pending. No CI behavior changes.
 
 ## Isolated macOS send, shielding and payment requests
@@ -289,8 +289,8 @@ python3 -B scripts/e2e/run-suite.py \
 ```
 
 Use `--run`, the tooling paths above and `--workers 2` to execute both with one
-Cargo signer/two-target build and independent chains/DBs. All iOS execution,
-2 macOS voting cases and persistent cache/resource/performance gates remain pending.
+Cargo signer/two-target build and independent chains/DBs. All iOS execution
+and persistent cache/resource/performance gates remain pending.
 
 ## macOS mempool and Gift execution
 
@@ -325,6 +325,62 @@ only failed/timed-out cases without rewriting the earlier report.
 The roadmap records incremental three-plus-three actual passes on two source
 commits, not a final-source six-case pass or measured resource/speedup result.
 
+## Isolated macOS voting
+
+Both voting scenarios now use the same selected-case executor. Each first
+receives exactly 0.13 ZEC Orchard before activation at height 500, imports the
+real wallet and performs the existing immediate Orchard-to-Ironwood migration.
+After ten confirmations, the host joins the setup app/driver without deleting
+its wallet or backend. It exports that chain's real Ironwood nullifiers, starts
+case-owned PIR/vote/helper/gateway services, creates a real round and signs its
+configuration. A distinct app process opens the preserved wallet and completes
+the original discovery, eligibility, delegation, commitment and share proofs.
+The slow-helper variant also requires overlapping delayed share requests;
+both require a nonempty real commitment tree. No assertion result is mocked.
+
+Each invocation builds the SDK services, PIR tools and round-creation test once
+from these exact source commits, sharing only the joined executable publication
+and immutable SDK scripts. Every case retains separate vote home, keys, PIR
+dataset, chain, wallet and service-port locks. Locks remain through listener
+handoff and release only after original service groups/output capture join.
+Clients use loopback URLs; the pinned upstream `nf-server` itself listens on
+all interfaces because that revision exposes no bind-address option. This is
+mutable-state isolation, not a network sandbox. Cleanup uncertainty fails and
+retains original state/evidence. The 75-minute app-execution budget preserves
+the existing 15-minute migration and 45-minute voting limits, plus service setup
+and restart allowance. Build budgets are separate.
+
+Voting selections additionally require Git source caches for
+`vote-sdk` commit `36f5d828fc5be42d9a80baa38d1145c5541b229e` and
+`vote-nullifier-pir` commit `20356d14f61a825ef28726f38270c37d604cc268`,
+plus Go, Make and the pinned Cargo/Go dependencies. The runner reads exact Git
+archives offline; it does not fetch or execute the cache's checkout. To prepare
+fresh source-only caches explicitly:
+
+```bash
+git init --bare /path/to/vote-sdk-cache.git
+git -C /path/to/vote-sdk-cache.git fetch https://github.com/valargroup/vote-sdk.git 36f5d828fc5be42d9a80baa38d1145c5541b229e:refs/vizor-e2e/source/36f5d828fc5be42d9a80baa38d1145c5541b229e
+git init --bare /path/to/voting-pir-cache.git
+git -C /path/to/voting-pir-cache.git fetch https://github.com/valargroup/vote-nullifier-pir.git 20356d14f61a825ef28726f38270c37d604cc268:refs/vizor-e2e/source/20356d14f61a825ef28726f38270c37d604cc268
+
+python3 -B scripts/e2e/run-suite.py \
+  --scenario flutter.macos.voting --scenario flutter.macos.voting-slow-helper \
+  --run --workers 2 \
+  --flutter /path/to/flutter/bin/flutter --zakura-cache /path/to/zakura \
+  --grpcurl /path/to/grpcurl --proto-dir /path/to/protos \
+  --voting-sdk-cache /path/to/vote-sdk-cache.git \
+  --voting-pir-cache /path/to/voting-pir-cache.git
+```
+
+Use `--plan` without tool/cache paths for a side-effect-free preview. Ordinary
+manual shell runners retain their compile-time settings; owned voting supplies
+its per-case URLs and trust anchor through test-only runtime/provider seams.
+Production source, defaults and financial/proof assertions are unchanged.
+The actual two-worker run on clean `c39bd8b8e` passed both cases in
+65.619/67.664 seconds, with a build-inclusive 1103.291-second invocation and
+proved native/backend cleanup. It is not a serial speedup comparison, persistent
+artifact-cache attestation or final-source full-catalog result.
+
 ## Native port ownership primitive
 
 `native_ports.py` is the first host-only worker-lifecycle component for macOS
@@ -342,7 +398,7 @@ fixture, but must be canonical, owned and not writable by other users. The actua
 are checked, never changed to make acquisition succeed.
 
 This library does not start a backend or wire an execution mode into
-`run-suite.py` by itself. Only the thirty-five composed Rust/macOS cases above are
+`run-suite.py` by itself. Only the forty-three composed Rust/macOS cases above are
 runnable; other catalog cases remain pending. Process/workspace/simulator
 ownership and actual app-storage cleanup are separate follow-up work. Tests
 use private temporary directories, real ephemeral loopback sockets, and one

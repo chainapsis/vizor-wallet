@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
+import 'package:zcash_wallet/src/core/config/e2e_runtime_case_manifest.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
@@ -17,9 +18,9 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_session_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_submission_job_provider.dart';
-import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import 'support/desktop_onboarding_flow.dart';
+import 'support/desktop_regtest_flow.dart' show stopRustWorkForCleanup;
 import 'support/voting_discovery_regtest.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_home_entry_provider.dart';
 
@@ -33,13 +34,17 @@ const _finalTally = bool.fromEnvironment('ZCASH_E2E_FINAL_TALLY');
 const _ledgerSignerUrl = String.fromEnvironment(
   'VIZOR_LEDGER_REGTEST_SIGNER_URL',
 );
-const _roundId = String.fromEnvironment('ZCASH_E2E_VOTE_ROUND_ID');
-const _reuseMigratedWallet = bool.fromEnvironment(
-  'ZCASH_E2E_REUSE_MIGRATED_WALLET',
+String get _roundId => votingRegtestRuntimeValue(
+  'ZCASH_E2E_VOTE_ROUND_ID',
+  const String.fromEnvironment('ZCASH_E2E_VOTE_ROUND_ID'),
 );
+bool get _reuseMigratedWallet => votingRegtestRuntimeValue(
+  'ZCASH_E2E_REUSE_MIGRATED_WALLET',
+  const bool.fromEnvironment('ZCASH_E2E_REUSE_MIGRATED_WALLET').toString(),
+) == 'true';
 
 void main() {
-  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   setUpAll(initializeZcashWalletRuntime);
 
@@ -49,10 +54,16 @@ void main() {
       if (_roundId.length != 64) {
         fail('ZCASH_E2E_VOTE_ROUND_ID must be a 64-character round id.');
       }
-      addTearDown(_cleanupE2eWalletState);
+      addTearDown(() async {
+        if (installedE2eRuntimeCaseManifest == null ||
+            binding.reportData?['assertions_completed'] == true) {
+          await _cleanupE2eWalletState();
+        }
+      });
       if (!_reuseMigratedWallet || _ledger) {
         await _cleanupE2eWalletState();
       }
+      await prepareVotingRegtestConfigSource();
 
       var ledgerSignatures = 0;
       await tester.pumpWidget(
@@ -302,6 +313,7 @@ void main() {
       _log(
         'vote completed and confirmation receipt is actionable; ledgerSignatures=$ledgerSignatures',
       );
+      binding.reportData?['assertions_completed'] = true;
     },
     timeout: const Timeout(Duration(minutes: 45)),
   );
@@ -332,14 +344,7 @@ Future<void> _cleanupE2eWalletState() async {
   if (kZcashDefaultNetworkName != ZcashNetwork.regtest.name) {
     throw StateError('Refusing cleanup outside regtest.');
   }
-  rust_sync.setSyncMode(mode: 0);
-  rust_sync.cancelFullSync();
-  rust_sync.stopMempoolObserver();
-  final deadline = DateTime.now().add(const Duration(seconds: 30));
-  while ((rust_sync.isSyncRunning() || rust_sync.isMempoolObserverRunning()) &&
-      DateTime.now().isBefore(deadline)) {
-    await Future<void>.delayed(const Duration(milliseconds: 100));
-  }
+  await stopRustWorkForCleanup();
   final dbName = await getWalletDbName();
   await AppSecureStore.instance.deleteAll();
   final supportDir = await getWalletSupportDirectory();

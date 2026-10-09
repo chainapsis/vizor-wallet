@@ -16,6 +16,7 @@ import e2e_runtime as runtime
 from native_mac_case_storage import MacCaseStorage
 from native_worker_lifecycle import NativeWorkerCase
 from native_zakura_front import _capture
+from native_voting import NativeVotingServices, RUNTIME_KEYS
 
 
 class NativeMacosExecutionError(runtime.RunnerError):
@@ -23,7 +24,7 @@ class NativeMacosExecutionError(runtime.RunnerError):
 
 
 def _execute_native_macos_phase(session, *, dart, source_root, timeout, cancel_event,
-                                payment_link_phase=None):
+                                payment_link_phase=None, voting_phase=None, voting_services=None):
     """Direct app launch + original VM driver; caller finalizes or retains this case."""
     if (not isinstance(session, NativeWorkerCase) or not isinstance(session.storage, MacCaseStorage)
         or session._front is None or session._control is None or session._finished):
@@ -42,8 +43,15 @@ def _execute_native_macos_phase(session, *, dart, source_root, timeout, cancel_e
     environment = {**os.environ, **session.case.workspace.launch_environment()}
     manifest = json.loads(environment["VIZOR_E2E_CASE_MANIFEST"])
     environment.pop("VIZOR_E2E_PAYMENT_LINK_PHASE", None)
+    environment.pop("VIZOR_E2E_VOTING_PHASE", None)
+    for key in RUNTIME_KEYS:
+        environment.pop(key, None)
     if payment_link_phase is not None:
         environment["VIZOR_E2E_PAYMENT_LINK_PHASE"] = payment_link_phase
+    if voting_phase is not None:
+        environment["VIZOR_E2E_VOTING_PHASE"] = voting_phase
+    if voting_services is not None:
+        environment.update(voting_services.environment())
     if manifest["scenario_id"] == "flutter.macos.tex-send":
         environment["ZCASH_E2E_EPHEMERAL_CHECKS_DUE_NOW"] = "1"
     if manifest["scenario_id"] == "flutter.macos.mempool-during-sync":
@@ -66,6 +74,8 @@ def _execute_native_macos_phase(session, *, dart, source_root, timeout, cancel_e
             raise NativeMacosExecutionError("native integration deadline expired", 124)
         session.verify_owned()
         session._front.assert_running()
+        if voting_services is not None:
+            voting_services.environment()
         session.case._require_member(app)
         if app.process.poll() is not None:
             raise NativeMacosExecutionError("original native app exited before its integration result")
@@ -102,11 +112,14 @@ def _execute_native_macos_phase(session, *, dart, source_root, timeout, cancel_e
     if len(markers) != 1:
         raise NativeMacosExecutionError("original driver did not publish exactly one integration result")
     result = json.loads(markers[0])
-    fields = {"case_manifest", "pid"} | ({"payment_link_phase"} if payment_link_phase else set())
+    fields = ({"case_manifest", "pid"}
+              | ({"payment_link_phase"} if payment_link_phase else set())
+              | ({"voting_phase"} if voting_phase else set()))
     if (not isinstance(result, dict) or set(result) != fields
         or result["case_manifest"] != manifest or type(result["pid"]) is not int
         or result["pid"] != app.process.pid
-        or (payment_link_phase is not None and result["payment_link_phase"] != payment_link_phase)):
+        or (payment_link_phase is not None and result["payment_link_phase"] != payment_link_phase)
+        or (voting_phase is not None and result["voting_phase"] != voting_phase)):
         raise NativeMacosExecutionError("integration result is not bound to this original app/case")
     check()
     if {path:_capture(path) for path in source} != source:
@@ -118,10 +131,13 @@ def _execute_native_macos_phase(session, *, dart, source_root, timeout, cancel_e
             "driver_exit_code":code,"assertions_passed":True,"native_cleanup_pending":True}
     if payment_link_phase is not None:
         observation["payment_link_phase"] = payment_link_phase
+    if voting_phase is not None:
+        observation["voting_phase"] = voting_phase
     return observation, app
 
 
-def execute_native_macos_case(session, *, dart, source_root, timeout=600.0, cancel_event=None):
+def execute_native_macos_case(session, *, dart, source_root, timeout=600.0, cancel_event=None,
+                             voting_artifact=None, grpcurl=None):
     """One original case; Gift restart retains its wallet, chain and port owners."""
     if (not isinstance(session, NativeWorkerCase) or not isinstance(session.storage, MacCaseStorage)
         or session._front is None or session._control is None or session._finished):
@@ -131,6 +147,10 @@ def execute_native_macos_case(session, *, dart, source_root, timeout=600.0, canc
     cancel = cancel_event if cancel_event is not None else threading.Event()
     deadline = time.monotonic() + timeout
     manifest = json.loads(session.case.workspace.launch_environment()["VIZOR_E2E_CASE_MANIFEST"])
+    if manifest["scenario_id"] in {"flutter.macos.voting", "flutter.macos.voting-slow-helper"}:
+        return _execute_native_voting_case(session, dart=dart, source_root=source_root,
+            deadline=deadline, cancel=cancel, manifest=manifest,
+            artifact=voting_artifact, grpcurl=grpcurl)
     confirming_blocks = {"flutter.macos.payment-link-restart":6,
                          "flutter.macos.payment-link-recovery":5}.get(manifest["scenario_id"])
     if confirming_blocks is None:
@@ -171,3 +191,50 @@ def execute_native_macos_case(session, *, dart, source_root, timeout=600.0, canc
     return {"scenario_id":manifest["scenario_id"], "namespace":manifest["namespace"],
             "phases":[prepare,resume], "stopped_app_confirming_blocks":confirming_blocks,
             "assertions_passed":True, "native_cleanup_pending":True}
+
+
+def _execute_native_voting_case(session, *, dart, source_root, deadline, cancel,
+                                manifest, artifact, grpcurl):
+    """Real migration, original app restart, then real proofs on owned services."""
+    root = Path(source_root)
+    inputs = (root/"test_driver/native_owned_case.dart", root/".dart_tool/package_config.json",
+              Path(dart).resolve(strict=True))
+    captured = {path:_capture(path) for path in inputs}
+
+    def remaining():
+        if cancel.is_set():
+            raise runtime.Cancelled()
+        budget = deadline-time.monotonic()
+        if budget <= 0:
+            raise NativeMacosExecutionError("native voting deadline expired", 124)
+        session.verify_owned()
+        session._front.assert_running()
+        if {path:_capture(path) for path in inputs} != captured:
+            raise NativeMacosExecutionError("original voting driver inputs changed across restart")
+        return budget
+
+    services = NativeVotingServices(session, artifact, root, grpcurl, cancel)
+    try:
+        setup, app = _execute_native_macos_phase(session, dart=dart, source_root=root,
+            timeout=remaining(), cancel_event=cancel, voting_phase="setup")
+        session.storage.stop_app_for_restart(app, timeout=min(5.0, remaining()))
+        snapshot = session.backend.wait_synced(deadline=deadline)["height"]
+        services.start(snapshot, "http://127.0.0.1:"+str(manifest["lightwalletd_port"]),
+            time.monotonic_ns()+int(remaining()*1e9),
+            slow_helper=manifest["scenario_id"] == "flutter.macos.voting-slow-helper")
+        vote, _app = _execute_native_macos_phase(session, dart=dart, source_root=root,
+            timeout=remaining(), cancel_event=cancel, voting_phase="vote", voting_services=services)
+        if setup["app_pid"] == vote["app_pid"]:
+            raise NativeMacosExecutionError("voting did not restart its original migrated wallet app")
+        participation = services.verify()
+        remaining()
+        services.close()
+        return {"scenario_id":manifest["scenario_id"], "namespace":manifest["namespace"],
+                "phases":[setup,vote], "snapshot_height":snapshot,
+                "participation":participation,"assertions_passed":True,"native_cleanup_pending":True}
+    except BaseException as primary:
+        try:
+            services.close()
+        except BaseException as cleanup:
+            raise primary from cleanup
+        raise

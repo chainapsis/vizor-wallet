@@ -43,6 +43,10 @@ class ExecutionTests(unittest.TestCase):
             code = "import json,os; value={'case_manifest':json.loads(os.environ['VIZOR_E2E_CASE_MANIFEST']),'pid':int(os.environ['VIZOR_E2E_APP_PID'])}; "
             code += "phase=os.environ.get('VIZOR_E2E_PAYMENT_LINK_PHASE'); "
             code += "value.update({'payment_link_phase':phase} if phase is not None else {}); "
+            code += "voting=os.environ.get('VIZOR_E2E_VOTING_PHASE'); "
+            code += "value.update({'voting_phase':voting} if voting is not None else {}); "
+            if self.mode == "wrong-voting-phase":
+                code += "value['voting_phase']='setup'; "
             if self.mode == "wrong-phase":
                 code += "value['payment_link_phase']='other'; "
             if self.mode == "wrong-pid":
@@ -184,6 +188,75 @@ class GiftRestartExecutionTests(unittest.TestCase):
         with self.assertRaisesRegex(EXECUTE.NativeMacosExecutionError, "changed across restart"):
             self.execute(mine)
         self.assertEqual(len(self.session.storage._writers), 1)
+        self.session.retain(timeout=3)
+
+
+class VotingRestartExecutionTests(unittest.TestCase):
+    def setUp(self):
+        self.model = ExecutionTests()
+        self.model.scenario_id = "flutter.macos.voting-slow-helper"
+        self.model.setUp()
+        self.addCleanup(self.model.doCleanups)
+        self.session = self.model.session
+        self.started = self.closed = False
+        self.failure = False
+        test = self
+
+        class Services:
+            def __init__(self, session, artifact, root, grpcurl, cancel):
+                test.assertIs(session, test.session)
+
+            def start(self, snapshot, endpoint, deadline, *, slow_helper):
+                test.assertEqual(snapshot, 510)
+                test.assertTrue(slow_helper)
+                test.assertTrue(test.session.storage._writers[0].cleanup_completed)
+                test.assertFalse(Path(test.session.case.workspace.context_path).exists())
+                test.assertTrue((test.session.storage.path/"wallet.db").exists())
+                test.started = True
+                if test.failure:
+                    raise RuntimeError("original service startup failed")
+
+            def environment(self):
+                return {"ZCASH_E2E_VOTE_ROUND_ID":"a"*64}
+
+            def verify(self):
+                return {"modeled_transport":True}
+
+            def close(self):
+                test.closed = True
+
+        self.services = Services
+
+    def execute(self):
+        with patch.object(EXECUTE, "NativeVotingServices", self.services), \
+             patch.object(self.session.backend, "wait_synced", return_value={"height":510}):
+            return self.model.execute(voting_artifact=object(), grpcurl=Path(sys.executable))
+
+    def test_migration_and_vote_keep_original_wallet_backend_and_distinct_apps(self):
+        backend, lease = self.session.backend, self.session.lease
+        observed = self.execute()
+        self.assertEqual([p["voting_phase"] for p in observed["phases"]], ["setup", "vote"])
+        self.assertNotEqual(observed["phases"][0]["app_pid"], observed["phases"][1]["app_pid"])
+        self.assertIs(self.session.backend, backend)
+        self.assertIs(self.session.lease, lease)
+        self.assertTrue(self.started and self.closed)
+        self.session.close(timeout=3)
+        self.model.worker.close()
+
+    def test_service_failure_preserves_original_failure_and_never_launches_vote(self):
+        self.failure = True
+        with self.assertRaisesRegex(RuntimeError, "original service startup failed"):
+            self.execute()
+        self.assertTrue(self.closed)
+        self.assertEqual(len(self.session.storage._writers), 1)
+        self.session.retain(timeout=3)
+        self.assertTrue((self.session.storage.path/"wallet.db").exists())
+
+    def test_setup_result_cannot_satisfy_vote_phase(self):
+        self.model.mode = "wrong-voting-phase"
+        with self.assertRaisesRegex(EXECUTE.NativeMacosExecutionError, "original app/case"):
+            self.execute()
+        self.assertTrue(self.closed)
         self.session.retain(timeout=3)
 
 
