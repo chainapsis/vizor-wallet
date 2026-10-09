@@ -672,3 +672,186 @@ fn shared_funding_keeps_a_private_send_incomplete() {
         }
     }
 }
+
+/// One transaction spends transparent inputs of two accounts of the same
+/// wallet, both recovered privately: account A funds input 0 and receives the
+/// change, account B funds input 1. Each account's view is shared funding: it
+/// funded one of two inputs. Neither receipt names the payee or claims the
+/// whole payment, the whole fee stays the separate network fee, and each
+/// account's movement is its own share.
+#[test]
+fn inputs_of_two_accounts_keep_each_receipt_shared() {
+    const TAG: u8 = 0xa2;
+    const FEE: u64 = 10_000;
+    const PAYMENT: u64 = 1_000_000;
+    configure_regtest_nu6_3_activation_height(NU6_3).unwrap();
+    let mut st = TestBuilder::new()
+        .with_network(regtest())
+        .with_data_store_factory(TestDbFactory::default())
+        .with_block_cache(BlockCache::new())
+        .with_account_from_sapling_activation(BlockHash([0; 32]))
+        .build();
+    let a = st.test_account().unwrap().id();
+    // Every account is created before anything is scanned.
+    let (b, _) = st.create_account_from_test_seed("second");
+    scan_unrelated_blocks(&mut st, 10);
+    set_policy(&mut st, TransparentLedgerMode::PrivateShadow);
+
+    let target = watch(&st, a).target.unwrap().height;
+    let funder_a = external(&watch(&st, a));
+    let funder_b = external(&watch(&st, b));
+    let change_a = last_derived(&st, a, TransparentKeyScope::INTERNAL);
+    let metadata = transparent_only(FEE, 2);
+    let (input_a, input_b, change) = (600_000, 500_000, 90_000);
+    cover(
+        &mut st,
+        a,
+        vec![
+            output(
+                TAG - 1,
+                0,
+                funder_a,
+                input_a,
+                target - 6,
+                transparent_only(1_000, 1),
+            ),
+            output(TAG, 1, change_a, change, target - 4, metadata),
+        ],
+    );
+    cover(
+        &mut st,
+        b,
+        vec![output(
+            TAG - 2,
+            0,
+            funder_b,
+            input_b,
+            target - 6,
+            transparent_only(1_000, 1),
+        )],
+    );
+    st.wallet_mut()
+        .db_mut()
+        .qualify_transparent_revision(&revision())
+        .unwrap();
+    set_policy(&mut st, TransparentLedgerMode::PrivateRequired);
+    for account in [a, b] {
+        st.wallet_mut()
+            .db_mut()
+            .promote_transparent_account(account)
+            .unwrap();
+    }
+    for (account, input_index, prevout_tag, funder) in
+        [(a, 0, TAG - 1, funder_a), (b, 1, TAG - 2, funder_b)]
+    {
+        let mut spend = commit(&watch(&st, account));
+        spend.spends = vec![SpendEvent {
+            metadata,
+            spending_txid: TxId::from_bytes([TAG; 32]),
+            input_index,
+            prevout: OutPoint::new([prevout_tag; 32], 0),
+            prevout_address: funder,
+            mined_height: target - 4,
+        }];
+        st.wallet_mut()
+            .db_mut()
+            .apply_transparent_ledger_commit(spend)
+            .unwrap();
+    }
+
+    // The private display service's facts, as loop 4 stores them: two
+    // source scripts, a payment to someone else and A's change.
+    st.wallet()
+        .conn()
+        .execute(
+            "INSERT OR IGNORE INTO transparent_detail_work (transaction_id, reasons)
+             SELECT id_tx, 1 FROM transactions WHERE txid = ?1",
+            [[TAG; 32]],
+        )
+        .unwrap();
+    let facts = TransparentDisplayFacts {
+        txid: TxId::from_bytes([TAG; 32]),
+        coinbase: false,
+        fee: Zatoshis::const_from_u64(FEE),
+        input_count: 2,
+        output_count: 2,
+        shielded_components: false,
+        sender: TransparentDisplaySender::Address(funder_a),
+        outputs: vec![
+            TransparentDisplayOutput {
+                value: Zatoshis::const_from_u64(PAYMENT),
+                address: Some(foreign(0x33)),
+            },
+            TransparentDisplayOutput {
+                value: Zatoshis::const_from_u64(change),
+                address: Some(change_a),
+            },
+        ],
+        multiple_source_scripts: true,
+        shielded_and_transparent_funding: false,
+        provenance: TransparentDisplayProvenance {
+            shard_id: 3,
+            revision: 0,
+            map_sha256: [0xaa; 32],
+            looked_up_height: target - 4,
+        },
+    };
+    let generation = st
+        .wallet()
+        .db()
+        .applied_transparent_policy()
+        .unwrap()
+        .generation;
+    assert_eq!(
+        st.wallet_mut()
+            .db_mut()
+            .store_transparent_display(facts, generation, std::time::SystemTime::now())
+            .unwrap(),
+        TransparentDisplayStore::Stored
+    );
+
+    for (name, account, share) in [
+        ("A", a, -(input_a as i64) + change as i64),
+        ("B", b, -(input_b as i64)),
+    ] {
+        let rows = rows(&st, account, TAG);
+        let sent = rows
+            .iter()
+            .find(|row| row.tx_kind == "sent")
+            .unwrap_or_else(|| panic!("{name}: a debit row"));
+        assert!(
+            rows.iter().all(|row| row.display_amount != PAYMENT),
+            "{name}: no row claims the whole payment"
+        );
+        assert_eq!(sent.account_balance_delta, share, "{name}");
+        assert_eq!(sent.display_amount, share.unsigned_abs(), "{name}");
+        assert!(sent.amount_includes_fee, "{name}: a net change");
+        assert_eq!(
+            (sent.fee_state, sent.fee),
+            (TransactionFeeState::Unknown, 0),
+            "{name}: the whole fee is not the account's"
+        );
+        assert!(
+            !sent.details_complete && sent.provisional,
+            "{name}: shared attribution stays provisional"
+        );
+
+        let detail = detail(&st, account, TAG, "sent");
+        let Some(TransparentDetailsView::Available { omissions, .. }) = &detail.transparent_details
+        else {
+            panic!("{name}: the stored facts are available");
+        };
+        assert_eq!(omissions, &["shared_funding"], "{name}");
+        assert_eq!(detail.account_balance_delta, share, "{name}");
+        assert_eq!(detail.primary_address, None, "{name}: no recipient");
+        assert!(
+            !detail.details_complete && detail.provisional,
+            "{name}: shared attribution stays incomplete"
+        );
+        assert_eq!(
+            detail.network_fee,
+            Some(FEE),
+            "{name}: the whole fee, separately"
+        );
+    }
+}
