@@ -16,6 +16,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/onboarding/import/import_birthday_calendar_overlay.dart'
     show ImportBirthdayCalendarPanel;
+import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_account_discovery_incomplete_sheet.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_birthday_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -108,7 +109,18 @@ Widget _routerApp({
   );
 }
 
-Future<void> _enterHeightAndContinue(WidgetTester tester) async {
+/// Pumps through sheet and route transitions without waiting for the busy
+/// indicator, which animates while the discovery warning is open.
+Future<void> _pumpFrames(WidgetTester tester) async {
+  for (var i = 0; i < 10; i++) {
+    await tester.pump(const Duration(milliseconds: 100));
+  }
+}
+
+Future<void> _enterHeightAndContinue(
+  WidgetTester tester, {
+  bool settle = true,
+}) async {
   await tester.tap(
     find.byKey(const ValueKey('mobile_import_birthday_mode_height')),
   );
@@ -121,7 +133,11 @@ Future<void> _enterHeightAndContinue(WidgetTester tester) async {
   await tester.tap(
     find.byKey(const ValueKey('mobile_import_birthday_continue')),
   );
-  await tester.pumpAndSettle();
+  if (settle) {
+    await tester.pumpAndSettle();
+  } else {
+    await _pumpFrames(tester);
+  }
 }
 
 const _discoveredAccounts = [
@@ -401,6 +417,7 @@ void main() {
       discovery: const rust_wallet.SoftwareWalletImportDiscoveryResult(
         primaryAccountAlreadyExists: false,
         accounts: _discoveredAccounts,
+        status: rust_wallet.SoftwareAccountDiscoveryStatus.completed,
       ),
     );
 
@@ -435,6 +452,7 @@ void main() {
         discovery: const rust_wallet.SoftwareWalletImportDiscoveryResult(
           primaryAccountAlreadyExists: false,
           accounts: [],
+          status: rust_wallet.SoftwareAccountDiscoveryStatus.completed,
         ),
       );
 
@@ -474,6 +492,7 @@ void main() {
         discovery: const rust_wallet.SoftwareWalletImportDiscoveryResult(
           primaryAccountAlreadyExists: false,
           accounts: _discoveredAccounts,
+          status: rust_wallet.SoftwareAccountDiscoveryStatus.completed,
         ),
       );
 
@@ -514,6 +533,7 @@ void main() {
       discovery: const rust_wallet.SoftwareWalletImportDiscoveryResult(
         primaryAccountAlreadyExists: false,
         accounts: _discoveredAccounts,
+        status: rust_wallet.SoftwareAccountDiscoveryStatus.completed,
       ),
     );
 
@@ -539,12 +559,220 @@ void main() {
     );
     expect(accountNotifier.importedAdditionalAccountIndices, isNull);
   });
+
+  testWidgets(
+    'withheld discovery warns before continuing with the primary account',
+    (tester) async {
+      SetPasswordScreenArgs? passcodeArgs;
+      final accountNotifier = _RecordingAccountNotifier(
+        discovery: const rust_wallet.SoftwareWalletImportDiscoveryResult(
+          primaryAccountAlreadyExists: false,
+          accounts: [],
+          status: rust_wallet.SoftwareAccountDiscoveryStatus.withheld,
+        ),
+      );
+
+      await tester.pumpWidget(
+        _routerApp(
+          accountNotifier: accountNotifier,
+          appSecurityNotifier: _StaticAppSecurityNotifier(
+            isPasswordConfigured: false,
+          ),
+          onPasscodeArgs: (args) => passcodeArgs = args,
+        ),
+      );
+      await tester.pump();
+
+      await _enterHeightAndContinue(tester, settle: false);
+      expect(
+        find.byType(MobileImportAccountDiscoveryIncompleteSheet),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Private queries'), findsOneWidget);
+      expect(
+        find.textContaining("doesn't mean the other accounts are empty"),
+        findsOneWidget,
+      );
+      expect(find.text('passcode route'), findsNothing);
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey('mobile_import_account_discovery_incomplete_continue'),
+        ),
+      );
+      await _pumpFrames(tester);
+
+      expect(find.text('passcode route'), findsOneWidget);
+      expect(passcodeArgs?.selectedAdditionalAccountIndices, isEmpty);
+    },
+  );
+
+  testWidgets('partial discovery warns, then offers the found account', (
+    tester,
+  ) async {
+    CustomiseAccountArgs? customiseArgs;
+    final accountNotifier = _RecordingAccountNotifier(
+      discovery: rust_wallet.SoftwareWalletImportDiscoveryResult(
+        primaryAccountAlreadyExists: false,
+        accounts: [_discoveredAccounts.first],
+        status: rust_wallet.SoftwareAccountDiscoveryStatus.partial,
+      ),
+    );
+
+    await tester.pumpWidget(
+      _routerApp(
+        accountNotifier: accountNotifier,
+        appSecurityNotifier: _StaticAppSecurityNotifier(
+          isPasswordConfigured: true,
+        ),
+        onCustomiseArgs: (args) => customiseArgs = args,
+      ),
+    );
+    await tester.pump();
+
+    await _enterHeightAndContinue(tester, settle: false);
+    expect(
+      find.byType(MobileImportAccountDiscoveryIncompleteSheet),
+      findsOneWidget,
+    );
+    expect(find.text('Additional accounts found'), findsNothing);
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey('mobile_import_account_discovery_incomplete_continue'),
+      ),
+    );
+    await _pumpFrames(tester);
+
+    expect(
+      find.byType(MobileImportAccountDiscoveryIncompleteSheet),
+      findsNothing,
+    );
+    expect(find.text('Additional accounts found'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_import_account_discovery_row_1')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('mobile_import_account_discovery_row_2')),
+      findsNothing,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_import_account_discovery_confirm')),
+    );
+    await _pumpFrames(tester);
+
+    expect(find.text('customise route'), findsOneWidget);
+    expect(customiseArgs?.setupArgs.selectedAdditionalAccountIndices, [1]);
+  });
+
+  testWidgets('an open discovery warning blocks a second submit', (
+    tester,
+  ) async {
+    final accountNotifier = _RecordingAccountNotifier(
+      discovery: const rust_wallet.SoftwareWalletImportDiscoveryResult(
+        primaryAccountAlreadyExists: false,
+        accounts: [],
+        status: rust_wallet.SoftwareAccountDiscoveryStatus.withheld,
+      ),
+    );
+
+    await tester.pumpWidget(
+      _routerApp(
+        accountNotifier: accountNotifier,
+        appSecurityNotifier: _StaticAppSecurityNotifier(
+          isPasswordConfigured: true,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await _enterHeightAndContinue(tester, settle: false);
+    expect(
+      find.byType(MobileImportAccountDiscoveryIncompleteSheet),
+      findsOneWidget,
+    );
+
+    // The birthday actions stay disabled while the warning is open.
+    final continueButton = tester.widget<AppButton>(
+      find.byKey(const ValueKey('mobile_import_birthday_continue')),
+    );
+    expect(continueButton.onPressed, isNull);
+    continueButton.onPressed?.call();
+    await _pumpFrames(tester);
+
+    expect(accountNotifier.discoveryCalls, 1);
+    expect(
+      find.byType(MobileImportAccountDiscoveryIncompleteSheet),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey('mobile_import_account_discovery_incomplete_continue'),
+      ),
+    );
+    await _pumpFrames(tester);
+
+    expect(find.text('customise route'), findsOneWidget);
+  });
+
+  testWidgets('unavailable discovery back keeps the birthday screen', (
+    tester,
+  ) async {
+    SetPasswordScreenArgs? passcodeArgs;
+    final accountNotifier = _RecordingAccountNotifier(
+      discovery: const rust_wallet.SoftwareWalletImportDiscoveryResult(
+        primaryAccountAlreadyExists: false,
+        accounts: [],
+        status: rust_wallet.SoftwareAccountDiscoveryStatus.unavailable,
+      ),
+    );
+
+    await tester.pumpWidget(
+      _routerApp(
+        accountNotifier: accountNotifier,
+        appSecurityNotifier: _StaticAppSecurityNotifier(
+          isPasswordConfigured: false,
+        ),
+        onPasscodeArgs: (args) => passcodeArgs = args,
+      ),
+    );
+    await tester.pump();
+
+    await _enterHeightAndContinue(tester, settle: false);
+    expect(find.textContaining("couldn't be reached"), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey('mobile_import_account_discovery_incomplete_back'),
+      ),
+    );
+    await _pumpFrames(tester);
+
+    expect(
+      find.byType(MobileImportAccountDiscoveryIncompleteSheet),
+      findsNothing,
+    );
+    expect(find.text('passcode route'), findsNothing);
+    expect(passcodeArgs, isNull);
+    expect(
+      find.text('Around when did you create your wallet?'),
+      findsOneWidget,
+    );
+    final continueButton = tester.widget<AppButton>(
+      find.byKey(const ValueKey('mobile_import_birthday_continue')),
+    );
+    expect(continueButton.onPressed, isNotNull);
+  });
 }
 
 class _RecordingAccountNotifier extends AccountNotifier {
   _RecordingAccountNotifier({required this.discovery});
 
   final rust_wallet.SoftwareWalletImportDiscoveryResult discovery;
+  int discoveryCalls = 0;
   String? importedMnemonic;
   int? importedBirthdayHeight;
   List<int>? importedAdditionalAccountIndices;
@@ -559,6 +787,7 @@ class _RecordingAccountNotifier extends AccountNotifier {
     String bip39Passphrase = '',
     int? birthdayHeight,
   }) async {
+    discoveryCalls++;
     return discovery;
   }
 

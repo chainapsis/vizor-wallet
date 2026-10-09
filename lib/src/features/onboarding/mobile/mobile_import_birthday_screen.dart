@@ -21,6 +21,7 @@ import '../import/import_birthday_calendar_overlay.dart'
 import '../import/import_birthday_estimator.dart';
 import '../shared/onboarding_error_messages.dart';
 import '../shared/onboarding_flow_args.dart';
+import 'mobile_import_account_discovery_incomplete_sheet.dart';
 import 'mobile_import_account_discovery_sheet.dart';
 import 'mobile_import_birthday_unknown_height_sheet.dart';
 import 'mobile_onboarding_progress.dart';
@@ -398,6 +399,25 @@ class _MobileImportBirthdayScreenState
           birthdayHeight: birthdayHeight,
         );
     if (!mounted) return null;
+    if (discovery.status !=
+        rust_wallet.SoftwareAccountDiscoveryStatus.completed) {
+      // Not every account was checked. Warn before importing anything, and
+      // import only on an explicit continue. The submit phase stays busy
+      // while the sheet is open, so the birthday actions cannot start a
+      // second discovery underneath it.
+      final continueImport =
+          await showMobileImportAccountDiscoveryIncompleteSheet(
+            context: context,
+            status: discovery.status,
+          );
+      if (!mounted) return null;
+      if (!continueImport) {
+        setState(() {
+          _submitPhase = _MobileImportSubmitPhase.idle;
+        });
+        return null;
+      }
+    }
     final candidates = discovery.accounts;
     if (candidates.isEmpty) {
       setState(() {
