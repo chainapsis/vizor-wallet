@@ -44,7 +44,10 @@ MobileSendBroadcastRunner _runner(Future<SendBroadcastOutcome> outcome) {
   }) => outcome;
 }
 
-Widget _app({required MobileSendBroadcastRunner broadcastRunner}) {
+Widget _app({
+  required MobileSendBroadcastRunner broadcastRunner,
+  KeystoneBroadcastArgs? keystone,
+}) {
   return ProviderScope(
     overrides: [syncProvider.overrideWith(FakeSyncNotifier.new)],
     child: MaterialApp(
@@ -52,6 +55,7 @@ Widget _app({required MobileSendBroadcastRunner broadcastRunner}) {
         data: AppThemeData.light,
         child: MobileSendStatusScreen(
           args: _args,
+          keystone: keystone,
           broadcastRunner: broadcastRunner,
         ),
       ),
@@ -138,6 +142,78 @@ void main() {
       ..physicalSize = const Size(520, 1100)
       ..devicePixelRatio = 1.0;
   });
+
+  testWidgets(
+    'Keystone recovery keeps a retry action and reuses the signed payload',
+    (tester) async {
+      final payload = KeystoneBroadcastArgs(
+        reviewArgs: _args,
+        pcztWithProofs: const [
+          [3, 3, 3],
+        ],
+        pcztWithSignatures: const [
+          [9, 9],
+        ],
+      );
+      final gate = Completer<SendBroadcastOutcome>();
+      var calls = 0;
+      await tester.pumpWidget(
+        _app(
+          keystone: payload,
+          broadcastRunner:
+              ({
+                required ref,
+                required args,
+                keystone,
+                ledger,
+                required confirmSaplingParamsDownload,
+                shouldAbort,
+              }) async {
+                expect(keystone!.pcztWithProofs, same(payload.pcztWithProofs));
+                expect(
+                  keystone.pcztWithSignatures,
+                  same(payload.pcztWithSignatures),
+                );
+                expect(keystone.isRecoveryRetry, calls > 0);
+                calls++;
+                if (calls == 1) {
+                  return const SendBroadcastOutcome(
+                    phase: SendBroadcastPhase.failed,
+                    proposalConsumed: true,
+                    canRetryBroadcast: true,
+                    error:
+                        'Wait for wallet sync, then retry this signed transaction.',
+                  );
+                }
+                return gate.future;
+              },
+        ),
+      );
+      await tester.pump();
+      expect(find.text('Retry'), findsOneWidget);
+      expect(
+        find.text("Nothing was sent, your funds haven't moved. Try again."),
+        findsNothing,
+      );
+      expect(_sendStatusTerminal(tester), isFalse);
+      await tester.tap(find.text('Retry'));
+      await tester.pump();
+      expect(calls, 2);
+      expect(find.text('Sending...'), findsOneWidget);
+      expect(find.text('Retry'), findsNothing);
+      expect(_sendStatusTerminal(tester), isFalse);
+      gate.complete(
+        const SendBroadcastOutcome(
+          phase: SendBroadcastPhase.succeeded,
+          proposalConsumed: true,
+        ),
+      );
+      await tester.pump();
+      expect(find.text('Sent!'), findsOneWidget);
+      expect(_sendStatusTerminal(tester), isTrue);
+      expect(rustApi.discardCalls, isEmpty);
+    },
+  );
 
   testWidgets('sending phase shows the spinner state with no exit button', (
     tester,

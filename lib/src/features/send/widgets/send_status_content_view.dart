@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/primitives.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/receipt_loading_skeleton.dart';
 import '../../../core/widgets/review_list_row.dart';
 import '../../../core/widgets/review_wrap_card.dart';
@@ -20,8 +21,8 @@ enum SendStatusPhase { inProgress, completed, failed }
 /// * failed extras — strikethrough on the recipient headline and the wrap
 ///   card pinned to the dark `#1b1f1f` surface in BOTH themes.
 ///
-/// No in-content CTA exists on any phase per the specs — navigation is the
-/// page-toolbar back button only.
+/// Navigation uses the page-toolbar back button. A retained signed batch
+/// can supply a Retry action without changing ordinary terminal receipts.
 class SendStatusContentView extends StatelessWidget {
   const SendStatusContentView({
     required this.phase,
@@ -42,6 +43,7 @@ class SendStatusContentView extends StatelessWidget {
     this.onShowFullAddress,
     this.onExpandMemo,
     this.onOpenExplorer,
+    this.onRetry,
     this.onFeeHelp,
     super.key,
   }) : assert(recipient != null || recipientRow != null);
@@ -94,6 +96,9 @@ class SendStatusContentView extends StatelessWidget {
   final VoidCallback? onShowFullAddress;
   final VoidCallback? onExpandMemo;
   final VoidCallback? onOpenExplorer;
+
+  /// Reuses the signed transaction after Rust retained a retryable failure.
+  final VoidCallback? onRetry;
   final VoidCallback? onFeeHelp;
 
   bool get _failed => phase == SendStatusPhase.failed;
@@ -133,6 +138,10 @@ class SendStatusContentView extends StatelessWidget {
                 ),
               ),
             ),
+          ),
+        if (onRetry != null)
+          Center(
+            child: AppButton(onPressed: onRetry, child: const Text('Retry')),
           ),
       ],
     );

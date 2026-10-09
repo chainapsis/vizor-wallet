@@ -6,6 +6,7 @@ import '../../address_book/widgets/contact_name_inline.dart';
 import '../domain/near_intents_explorer.dart';
 import 'swap_address_book_helpers.dart';
 import 'swap_address_formatting.dart';
+import 'swap_deposit_broadcast_result.dart';
 import 'swap_detail_tooltips.dart';
 import 'swap_fiat_value_formatting.dart';
 import 'swap_models.dart';
@@ -234,7 +235,11 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
 
 bool _payIntentShowsPaidCopy(SwapIntent intent) {
   if (intent.hasProviderObservedDepositEvidence) return true;
-  if (intent.status == SwapIntentStatus.failed) return false;
+  // A partial batch may only have mined its parent, without funding the deposit.
+  if (intent.status == SwapIntentStatus.failed ||
+      intent.broadcastStatus == SwapDepositBroadcastStatus.partialBroadcast) {
+    return false;
+  }
   return intent.hasConfirmedDepositEvidence;
 }
 

@@ -343,27 +343,54 @@ pub(crate) fn acknowledge(
     operation_id: &str,
 ) -> Result<(), String> {
     validate_identifier("operation ID", operation_id)?;
-    let network = network_name(network);
-    with_wallet_db_write_lock("ledger.operations.acknowledge", || {
-        let conn = open_wallet_raw_conn_with_timeout(db_path, WALLET_DB_BUSY_TIMEOUT)?;
-        ensure_table(&conn)?;
-        let deleted = conn
-            .execute(
+    let release = with_wallet_db_write_lock("ledger.operations.acknowledge", || {
+        let mut connection = open_wallet_raw_conn_with_timeout(db_path, WALLET_DB_BUSY_TIMEOUT)?;
+        ensure_table(&connection)?;
+        proposal_locks::ensure_schema(&connection)?;
+        let conn = connection.transaction().map_err(|e| e.to_string())?;
+        let (status, message): (Option<String>, Option<String>) = conn
+            .query_row(
                 &format!(
                     "DELETE FROM {TABLE}
-                     WHERE network = ?1 AND operation_id = ?2 AND state = ?3"
+                     WHERE network = ?1 AND operation_id = ?2 AND state = ?3
+                     RETURNING status, message"
                 ),
-                params![network, operation_id, STATE_RESULT_PENDING_ACK],
+                params![
+                    network_name(network),
+                    operation_id,
+                    STATE_RESULT_PENDING_ACK
+                ],
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
-            .map_err(|e| format!("Acknowledge Ledger operation: {e}"))?;
-        if deleted == 1 {
-            Ok(())
-        } else {
-            Err(format!(
+            .optional()
+            .map_err(|e| format!("Acknowledge Ledger operation: {e}"))?
+            .ok_or_else(|| {
+                format!(
                 "Ledger operation {operation_id} has no broadcast result awaiting acknowledgment"
-            ))
+            )
+            })?;
+        // Partial results may still report failed wallet storage. Caller metadata
+        // alone cannot protect inputs while sync recovers an unrecorded spend.
+        // This diagnostic is emitted by store_and_broadcast_pczts_inner when
+        // both wallet-storage paths fail, regardless of the broadcast count.
+        let storage_failed = message
+            .as_deref()
+            .is_some_and(|message| message.contains("local storage failed"));
+        let release = status.as_deref() == Some("partial_broadcast") && !storage_failed;
+        if release {
+            proposal_locks::release_operation(&conn, operation_id)?;
         }
-    })
+        conn.commit()
+            .map_err(|e| format!("Commit Ledger acknowledgment: {e}"))?;
+        Ok::<_, String>(release)
+    })?;
+    if release {
+        // A durable release remains recoverable if wallet cleanup fails.
+        if let Err(error) = proposal_locks::recover_before_balance(db_path, network) {
+            log::warn!("Ledger reservation cleanup pending after acknowledgment: {error}");
+        }
+    }
+    Ok(())
 }
 
 fn load_for_broadcast(
@@ -791,6 +818,15 @@ mod tests {
 
     fn signed_pczt(target_height: u32) -> (Vec<u8>, Vec<u8>, u32) {
         let sk = secp256k1::SecretKey::from_slice(&[7; 32]).unwrap();
+        signed_pczt_with_input(target_height, sk, OutPoint::new([1; 32], 0), 1_000_000)
+    }
+
+    pub(super) fn signed_pczt_with_input(
+        target_height: u32,
+        sk: secp256k1::SecretKey,
+        prevout: OutPoint,
+        value: u64,
+    ) -> (Vec<u8>, Vec<u8>, u32) {
         let secp = secp256k1::Secp256k1::new();
         let pubkey = sk.public_key(&secp);
         let pubkey_bytes = pubkey.serialize();
@@ -810,12 +846,12 @@ mod tests {
         builder
             .add_transparent_p2pkh_input(
                 pubkey,
-                OutPoint::new([1; 32], 0),
-                TxOut::new(Zatoshis::const_from_u64(1_000_000), address.script().into()),
+                prevout,
+                TxOut::new(Zatoshis::from_u64(value).unwrap(), address.script().into()),
             )
             .unwrap();
         builder
-            .add_transparent_output(&address, Zatoshis::const_from_u64(990_000))
+            .add_transparent_output(&address, Zatoshis::from_u64(value - 10_000).unwrap())
             .unwrap();
         let PcztResult { pczt_parts, .. } = builder
             .build_for_pczt(OsRng, &zip317::FeeRule::standard())
@@ -1253,3 +1289,7 @@ mod tests {
         assert!(list(db_path, WalletNetwork::Main, None).unwrap().is_empty());
     }
 }
+
+#[cfg(test)]
+#[path = "operations/mined_recovery_tests.rs"]
+mod mined_recovery_tests;
