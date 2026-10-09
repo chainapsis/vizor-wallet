@@ -18,8 +18,8 @@
     },
     {
       "id": "flutter-direct-activation500",
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     }
   ],
   "scenarios": [
@@ -619,8 +619,8 @@
         "voting"
       ],
       "timeout_seconds": 4500,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "flutter.macos.voting-slow-helper",
@@ -636,8 +636,8 @@
         "slow-helper"
       ],
       "timeout_seconds": 4500,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "flutter.macos.payment-uri-send",

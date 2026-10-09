@@ -49,6 +49,7 @@ class PreviewTests(unittest.TestCase):
             "flutter.macos.mempool-receive-history", "flutter.macos.mempool-during-sync",
             "flutter.macos.mempool-expiry", "flutter.macos.payment-link-round-trip",
             "flutter.macos.payment-link-restart", "flutter.macos.payment-link-recovery",
+            "flutter.macos.voting", "flutter.macos.voting-slow-helper",
             "rust.receive.sync", "rust.send.basic",
             "rust.send.second-account", "rust.import.bip39-passphrase", "rust.import.historical-birthday",
             "rust.import.future-birthday", "rust.import.receive-after-sync", "rust.import.deterministic-reimport",
@@ -112,14 +113,14 @@ class PreviewTests(unittest.TestCase):
             [scenarios[1].id, scenarios[2].id],
         )
 
-    def test_unknown_changed_path_widens_even_when_everything_is_pending(self) -> None:
+    def test_unknown_changed_path_widens_and_preserves_pending_ios_gaps(self) -> None:
         code, output, _ = self.invoke("--changed-file", "unknown/runtime.file", "--plan")
         self.assertEqual(code, 0)
         self.assertEqual(len(output["selected_scenarios"]), 64)
         self.assertEqual(output["execution_mode"], "blocked")
         self.assertFalse(output["runnable"])
         self.assertEqual(output["selection"]["impact"]["fallback_files"], ["unknown/runtime.file"])
-        self.assertEqual(len(output["selection"]["impact"]["coverage_gaps"]), 23)
+        self.assertEqual(len(output["selection"]["impact"]["coverage_gaps"]), 21)
 
     def test_shared_test_helper_selects_its_e2e_consumer(self) -> None:
         code, output, errors = self.invoke(
@@ -302,6 +303,25 @@ class PreviewTests(unittest.TestCase):
             code, output, error = self.invoke(*arguments, "--run")
         self.assertEqual((code, output, error), (0, None, ""))
         self.assertEqual({s.id for s in execute.call_args.args[2]}, expected)
+
+    def test_voting_preview_needs_no_tools_and_run_passes_both_source_caches(self) -> None:
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        ids = ("flutter.macos.voting", "flutter.macos.voting-slow-helper")
+        arguments = tuple(value for name in ids for value in ("--scenario", name))
+        with patch.dict(sys.modules, {"native_macos_suite": None}):
+            code, plan, error = self.invoke(*arguments, "--plan")
+        self.assertEqual((code, error), (0, ""))
+        self.assertTrue(plan["runnable"])
+        self.assertEqual(plan["pending_blockers"], [])
+        execute = Mock(return_value=0)
+        with patch.dict(sys.modules, {"native_macos_suite": SimpleNamespace(run_native_suite=execute)}):
+            code, output, error = self.invoke(*arguments, "--run",
+                "--voting-sdk-cache", "/model/sdk.git", "--voting-pir-cache", "/model/pir.git")
+        self.assertEqual((code, output, error), (0, None, ""))
+        self.assertEqual([s.id for s in execute.call_args.args[2]], list(ids))
+        self.assertEqual(execute.call_args.args[0].voting_sdk_cache, Path("/model/sdk.git"))
+        self.assertEqual(execute.call_args.args[0].voting_pir_cache, Path("/model/pir.git"))
 
     def test_gift_and_direct_cases_are_ready_and_reach_the_exact_executor(self) -> None:
         from types import SimpleNamespace

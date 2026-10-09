@@ -1,10 +1,11 @@
 # Isolated Zakura E2E execution
 
 This roadmap tracks a local E2E execution improvement and the migration to
-direct Zakura fixtures. The initial umbrella PR contains documentation only;
-the implementation is an unmerged local prototype, not functionality available
-on `main`. Keep the umbrella draft until its required implementation and
-validation gates are complete.
+direct Zakura fixtures. Reviewed functional groups merge into the draft umbrella,
+not `main`. The composed executor now wires all twenty-three Rust and twenty
+macOS cases; twenty-one iOS Simulator cases remain pending. Keep the umbrella
+draft until its implementation, cache/performance and final-source validation
+gates are complete. Earlier prototype evidence is separate from this executor.
 
 ## Problem and intended workflow
 
@@ -144,14 +145,14 @@ and executes their teardown internally. Only completed original sessions permit
 anchored workspace removal; incomplete/failed cases stop assignment and retain
 state. Native support rejects links; mutable workspace links are only unlinked,
 never followed. Shared build artifacts must remain outside the removable tree.
-The composed executor wires eighteen macOS import/endpoint/send/payment/mempool/Gift cases and all twenty-three
+The composed executor wires twenty macOS import/endpoint/send/payment/mempool/Gift/voting cases and all twenty-three
 catalog Rust cases to original per-case Zakura/native owners, including controlled
 activation-500 Orchard migration and Gift claim/reorg/OVK coverage.
 Compatible app/helper artifacts are built once when selected; selected Rust
 targets and the signer share one offline Cargo producer. Rust-only selections
 build no app/helper. Fresh repetitions have independent schema-2 reports and
 may overlap under one bounded worker count, including mixed Rust/macOS selections.
-The other 23 catalog scenarios (two macOS voting and twenty-one iOS cases), persistent build-cache publication/invalidation,
+The twenty-one iOS catalog scenarios, persistent build-cache publication/invalidation,
 resource scheduling and final-source catalog/performance validation remain
 pending. A native observation or process receipt alone never authorizes deletion.
 
@@ -258,7 +259,27 @@ phase declarations; forty-one focused catalog/CLI checks passed. No phase
 limit or assertion changed, and financial E2Es were not repeated for this
 catalog-only deadline correction.
 This functional group changes test/harness files only, not production source,
-dependencies or CI. Voting and iOS execution remain pending.
+dependencies or CI. Voting and iOS were pending at that checkpoint.
+
+The following macOS voting group completed both cases on clean implementation
+`c39bd8b8e224da416189c18ebaa94acae92f62a9` in actual two-worker batch
+`native-suite-a557db86cc`: two PASS / zero FAIL, 1103.291 seconds including
+one signer/cohort/helper/voting-dependency build each. Case durations were
+65.619/67.664 seconds. The original 0.13 ZEC Orchard funding, activation500,
+immediate Ironwood migration and ten confirmations precede a real same-wallet
+app restart. Per-case PIR snapshots and vote services execute real signed
+discovery, eligibility and UI proofs; both commitment trees had `next_index=5`.
+The slow helper observed32 delayed requests with maximum32 in flight. Both
+cases proved native/backend cleanup with no cleanup errors. Exact SDK/PIR Git
+source pins and publication records remain in that run's evidence.
+
+The private preactivation entry point used the normal selector and suite core,
+not prototype binaries/receipts. The subsequent catalog/docs/check activation
+has78 passing focused checks and a ready public two-case preview; no financial
+rerun solely for support flags. This is not a final-source full-catalog pass,
+persistent artifact-cache attestation or measured serial speedup/CPU/RAM result.
+No production source/dependency or CI changes in this voting group. Twenty-one
+iOS cases and the cache/resource/final-source gates remain pending.
 
 | Slice | Scope | Prerequisites |
 | --- | --- | --- |
