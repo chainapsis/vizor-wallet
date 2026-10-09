@@ -144,14 +144,14 @@ and executes their teardown internally. Only completed original sessions permit
 anchored workspace removal; incomplete/failed cases stop assignment and retain
 state. Native support rejects links; mutable workspace links are only unlinked,
 never followed. Shared build artifacts must remain outside the removable tree.
-The composed executor wires twelve macOS import/endpoint/send/payment cases and all twenty-three
+The composed executor wires eighteen macOS import/endpoint/send/payment/mempool/Gift cases and all twenty-three
 catalog Rust cases to original per-case Zakura/native owners, including controlled
 activation-500 Orchard migration and Gift claim/reorg/OVK coverage.
 Compatible app/helper artifacts are built once when selected; selected Rust
 targets and the signer share one offline Cargo producer. Rust-only selections
 build no app/helper. Fresh repetitions have independent schema-2 reports and
 may overlap under one bounded worker count, including mixed Rust/macOS selections.
-The other 29 catalog scenarios, iOS execution, persistent build-cache publication/invalidation,
+The other 23 catalog scenarios (two macOS voting and twenty-one iOS cases), persistent build-cache publication/invalidation,
 resource scheduling and final-source catalog/performance validation remain
 pending. A native observation or process receipt alone never authorizes deletion.
 
@@ -224,6 +224,36 @@ writers join, with six focused Dart unit tests. This is incremental five-plus-
 two evidence across two commits, not one final-source seven-case pass, a full
 catalog run, CPU/RAM measurement or comparative speedup claim.
 
+The macOS mempool/Gift group was also executed with two workers. Batch
+`native-suite-d33ca1ca57` on clean source
+`c95d7a22850571667c31ed13d3ad9c6fe06aa41a` recorded three PASS / three FAIL in
+663.202 seconds, with one signer/cohort/helper build. All three mempool cases
+passed; Gift round trip/restart/recovery failed waiting for the copy action.
+The cohort builder had omitted the existing manual Gift regtest compile flag,
+so the payment-link model rejected regtest before funding. The E2E-only builder
+now passes that flag and the cohort fails fast if it is absent; production
+defaults and financial assertions were not changed.
+The normal failed-only selector reran exactly those three Gift cases in
+`native-suite-9f3ba4477f` on clean source
+`ed5c3ea6bbc616005565918b4588f19ac9531b34`: three PASS / zero FAIL in
+252.669 seconds, with one signer/cohort/helper build. Original wallet/backend
+state survived the two-phase restart; recovery replaced the five-block branch
+and preserved/released both captured claim transactions through the pinned
+fixture. Every successful case proved native/backend cleanup with empty cleanup
+errors. Earlier failures and retained state remain failed evidence.
+Both preactivation invocations used the normal selector/executor through a
+private pending-case entrypoint and ordinary compiler-cache inputs to a fresh
+original producer, not prior artifact adoption or verified persistent caching.
+Ninety-six focused host lifecycle/control/executor checks and thirteen Dart
+driver-result unit tests passed; the E2E builder-flag correction added four
+focused build checks. After activation, seventy-three catalog/CLI/impact/suite
+checks passed and the public six-case preview reported ready with no blockers.
+These are incremental checks, not financial E2E results.
+The actual three-plus-three passes belong to two commits, not one final-source
+six-case/full-catalog pass, CPU/RAM measurement or comparative speedup result.
+This functional group changes test/harness files only, not production source,
+dependencies or CI. Voting and iOS execution remain pending.
+
 | Slice | Scope | Prerequisites |
 | --- | --- | --- |
 | Catalog and reports | Stable scenario IDs, suite/exact-ID/tag selection, conservative changed-file selection, failed-case reruns, side-effect-free plans, report schema | None for schema/planning; execution requires an implemented engine |
@@ -232,7 +262,7 @@ catalog run, CPU/RAM measurement or comparative speedup claim.
 | Direct Zakura backend | Offline funding, readiness and inclusion proofs, Rust test support, native adapter | Zakura fixture contribution; native adapter also needs runtime and lifecycle |
 | Native build-once executor | One compatible app build per OS and shared helper build, with isolated case execution | Runtime contract, worker lifecycle, and native backend |
 | Basic scenario migrations | Import/sync and endpoint behavior | Catalog, backend, executor; SDK fix for affected account-history cases |
-| Payment scenario migrations | Send, payment links, Gift flows, and mempool behavior | Basic execution; Riverpod fix for the affected Gift scenario |
+| Payment scenario migrations | Send, payment links, Gift flows, and mempool behavior | Basic execution; case-specific app repair only for an observed regression |
 | Ironwood scenario migrations | Activation, account recovery, restart, and native outbox transport | Activation fixture, executor, separately reviewed case-specific app changes |
 | Voting scenario migrations | Owned voting/PIR services, configuration, and UI flow | Executor and voting-specific service lifecycle |
 | Immutable caches | Verified publication, identity, reuse, and invalidation for build artifacts | Correct build-once execution |

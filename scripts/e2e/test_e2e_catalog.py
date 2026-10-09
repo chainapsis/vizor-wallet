@@ -61,6 +61,9 @@ class E2eCatalogTest(unittest.TestCase):
                           "flutter.macos.multi-account-send", "flutter.macos.tex-send",
                           "flutter.macos.payment-uri-send", "flutter.macos.payment-uri-locked-send",
                           "flutter.macos.payment-request-round-trip",
+                          "flutter.macos.mempool-receive-history", "flutter.macos.mempool-during-sync",
+                          "flutter.macos.mempool-expiry", "flutter.macos.payment-link-round-trip",
+                          "flutter.macos.payment-link-restart", "flutter.macos.payment-link-recovery",
                           "rust.receive.sync", "rust.send.basic", "rust.send.second-account",
                           "rust.import.bip39-passphrase", "rust.import.historical-birthday",
                           "rust.import.future-birthday", "rust.import.receive-after-sync",
@@ -91,11 +94,27 @@ class E2eCatalogTest(unittest.TestCase):
         self.assertTrue(preview.runnable)
         self.assertEqual((), preview.blockers)
         self.assertEqual(("flutter-direct-height1",), preview.required_profiles)
-        self.assertEqual(35, sum(item.supported for item in self.catalog.scenarios))
-        self.assertEqual(8, sum(not item.supported and item.engine == "flutter-macos"
+        self.assertEqual(41, sum(item.supported for item in self.catalog.scenarios))
+        self.assertEqual(2, sum(not item.supported and item.engine == "flutter-macos"
                                 for item in self.catalog.scenarios))
         self.assertEqual(21, sum(not item.supported and item.engine == "flutter-ios"
                                  for item in self.catalog.scenarios))
+
+    def test_mempool_and_gift_group_is_ready_without_enabling_voting_or_ios(self):
+        ids = ("flutter.macos.mempool-receive-history", "flutter.macos.mempool-during-sync",
+               "flutter.macos.mempool-expiry", "flutter.macos.payment-link-round-trip",
+               "flutter.macos.payment-link-restart", "flutter.macos.payment-link-recovery")
+        preview = catalog_module.plan(
+            self.catalog, catalog_module.select_scenarios(self.catalog, scenario_ids=ids))
+        self.assertEqual(ids, tuple(item.id for item in preview.selected))
+        self.assertTrue(preview.runnable)
+        self.assertEqual((), preview.blockers)
+        self.assertEqual(("flutter-direct-height1",), preview.required_profiles)
+        self.assertEqual({"flutter.macos.voting", "flutter.macos.voting-slow-helper"},
+                         {item.id for item in self.catalog.scenarios
+                          if item.engine == "flutter-macos" and not item.supported})
+        self.assertTrue(all(not item.supported for item in self.catalog.scenarios
+                            if item.engine == "flutter-ios"))
 
     def test_exact_selection_deduplicates_in_catalog_order(self):
         selected = catalog_module.select_scenarios(
