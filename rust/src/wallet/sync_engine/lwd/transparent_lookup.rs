@@ -667,12 +667,21 @@ mod tests {
 
         let (_dir, path, gate) = wallet();
         let received = Arc::new(AtomicBool::new(false));
+        let (release, released) = std::sync::mpsc::channel::<()>();
+        let released = Arc::new(Mutex::new(released));
         let lwd = CapturingLwd::start_with(Vec::new(), 0, {
             let received = received.clone();
             move |request| {
                 if request.ends_with("/GetTransaction") {
                     received.store(true, Ordering::SeqCst);
-                    std::thread::sleep(Duration::from_millis(4000));
+                    // Hold the response until the transition has returned.
+                    // Scheduling delays in the parallel suite cannot turn an
+                    // unsignalled call into an already-completed one.
+                    released
+                        .lock()
+                        .unwrap()
+                        .recv_timeout(Duration::from_secs(30))
+                        .unwrap();
                 }
             }
         })
@@ -704,6 +713,7 @@ mod tests {
                 Duration::from_millis(2000),
             )
             .await;
+            release.send(()).unwrap();
             assert_eq!(transition.is_ok(), drains, "signalled: {signalled}");
             // The lookup itself completes either way, answered "not found".
             let answered = lookup.await.unwrap().unwrap();

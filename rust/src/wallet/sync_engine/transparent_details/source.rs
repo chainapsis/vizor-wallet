@@ -1,7 +1,7 @@
 //! The two sources loop 4 chooses between, once per run.
 //!
 //! - [`PirSource`] (`PrivateRequired`): txid display PIR at
-//!   [`DEFAULT_MAINNET_ORIGIN`]`/v1/txid/`, mainnet only, through wallet-pir's
+//!   [`DEFAULT_MAINNET_ORIGIN`](crate::wallet::sync_engine::transparent_ledger::pir::DEFAULT_MAINNET_ORIGIN)`/v1/txid/`, mainnet only, through wallet-pir's
 //!   client over [`TxidPirHttp`]. It holds no lightwalletd client, so it
 //!   cannot make a public request.
 //! - [`GateSource`] (every other policy): lightwalletd `GetTransaction`
@@ -34,6 +34,7 @@ use crate::wallet::sync_engine::enhancement::{decode_enhancement_payload, TxidPi
 use crate::wallet::sync_engine::transparent_ledger::pir::{origin_for, origin_override};
 use crate::wallet::sync_engine::{watch_for_exit, TransparentLookupGate};
 
+#[cfg(test)]
 pub(crate) use crate::wallet::sync_engine::transparent_ledger::pir::DEFAULT_MAINNET_ORIGIN;
 
 /// Abandons a lookup or map fetch that has not returned, without an exit.

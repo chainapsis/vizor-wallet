@@ -13,7 +13,7 @@ use zcash_client_backend::data_api::{
         ReceiveEvent, SpendEvent, TransactionMetadata, TransparentDetailWrite as _,
         TransparentDisplayFacts, TransparentDisplayOutput, TransparentDisplayProvenance,
         TransparentDisplaySender, TransparentDisplayStore, TransparentLedgerMode,
-        TransparentLedgerRead as _, TransparentLedgerWrite as _, WatchOrigin, WholeTransactionFee,
+        TransparentLedgerWrite as _, WatchOrigin, WholeTransactionFee,
     },
 };
 use zcash_client_sqlite::testing::{db::TestDbFactory, BlockCache};
