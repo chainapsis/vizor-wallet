@@ -1661,15 +1661,11 @@ fn transparent_details_view(
 ) -> Option<(TransparentDetailsView, DisplaySource)> {
     use zcash_client_backend::data_api::transparent_ledger::TransparentDisplayView;
     let txid = hex::decode(txid_hex).ok()?;
-    let view = crate::wallet::db::open_wallet_db_readonly_with_timeout(
-        db_path,
-        network,
-        crate::wallet::db::READ_DB_BUSY_TIMEOUT,
-    )
-    .map_err(|error| error.to_string())
-    .and_then(|db| {
-        crate::wallet::sync_engine::transparent_details::detail_view(&db, read_tx, account, &txid)
-    });
+    // Funding omissions and output ownership must share the snapshot that
+    // supplied the receipt's account movement, fee and settled effects.
+    let db = wallet_db_on(read_tx, db_path, network);
+    let view =
+        crate::wallet::sync_engine::transparent_details::detail_view(&db, read_tx, account, &txid);
     let view = match view {
         Ok(view) => view?,
         Err(_) => {

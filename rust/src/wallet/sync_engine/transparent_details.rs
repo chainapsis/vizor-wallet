@@ -805,9 +805,10 @@ pub(crate) fn enhance_publicly(
 
 /// The detail view of `txid` (protocol byte order) for `account`, from the
 /// wallet behind `db` and its connection `conn`; `None` when the transaction
-/// has no transparent part the account takes part in.
+/// has no transparent part the account takes part in. The caller must bind
+/// both to the same read snapshot, including any receipt reads this overlays.
 pub(crate) fn detail_view(
-    db: &WalletDatabase,
+    db: &impl TransparentDetailRead<AccountId = AccountUuid, Error = SqliteClientError>,
     conn: &rusqlite::Connection,
     account: AccountUuid,
     txid: &[u8],
