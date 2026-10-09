@@ -96,8 +96,13 @@ def build_native_macos_cohort(case, *, source_root, flutter, timeout=1200.0, can
             "--timestamp=none",str(helper)])
         captured = capture_mac_cleanup_helper(helper,cohort_app=app)
         observed = {path:_capture(path) for path in source}
+        project = root/"macos/Runner.xcodeproj/project.pbxproj"
+        # CocoaPods rewrites the project even when its bytes are unchanged.
+        # Still reject changed project contents; other inputs retain strict
+        # identity and byte continuity, including the executable Flutter tool.
         changed = [str(path.relative_to(root)) if path.is_relative_to(root) else str(path)
-                   for path in source if observed[path] != source[path]]
+                   for path in source if (observed[path][1] != source[path][1]
+                       if path == project else observed[path] != source[path])]
         if changed:
             raise NativeMacosBuildError("native source/tool changed while its build ran: " + ", ".join(changed[:8]))
         receipt = case.close()
