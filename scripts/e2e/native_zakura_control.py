@@ -129,6 +129,8 @@ class OwnedNativeZakuraControl:
             raise NativeZakuraControlError("use prepare_native_zakura_control")
         self._case, self._backend, self._front = case, backend, front
         self._artifact, self._port, self._activation = artifact, port, activation
+        self._scenario = json.loads(case.workspace.launch_environment()[
+            "VIZOR_E2E_CASE_MANIFEST"])["scenario_id"]
         self._owner = threading.get_ident()
         self._server = None
         self._closed = self._serving = False
@@ -265,7 +267,19 @@ class OwnedNativeZakuraControl:
         if method == "POST" and path == "/raw-transaction" and set(payload) == {"txid"}:
             txid = _txids([payload["txid"]])[0]
             return self._backend.rpc("getrawtransaction", [txid, 1], deadline=self._deadline)
-        if method == "POST" and path in {"/activate", "/reorg-hold-tip", "/release-held"}:
+        if method == "POST" and path == "/reorg-hold-fork" and set(payload) == {
+                "required_txids", "fork_height"}:
+            if self._scenario != "flutter.macos.payment-link-recovery" or self._activation != 1:
+                raise _BadRequest("fork replacement requires the owned Gift recovery case")
+            return self._backend.replace_fork_holding(_txids(payload["required_txids"]),
+                fork_height=_integer(payload["fork_height"], "fork height", 1, 0xFFFFFFFF),
+                deadline=self._deadline)
+        if method == "POST" and path == "/release-held" and set(payload) == {"txids"}:
+            if self._activation != 500 and self._scenario != "flutter.macos.payment-link-recovery":
+                raise _BadRequest("held release requires controlled activation or Gift recovery")
+            return self._backend.release_held_transactions(_txids(payload["txids"]),
+                deadline=self._deadline)
+        if method == "POST" and path in {"/activate", "/reorg-hold-tip"}:
             if self._activation != 500:
                 raise _BadRequest("controlled activation/reorg requires the activation500 profile")
             if path == "/activate" and payload == {}:
@@ -279,10 +293,6 @@ class OwnedNativeZakuraControl:
                 # The pinned original fixture owns the donor, raw block/tx checks,
                 # hold gate and cleanup. JSON is not a reconstructed fixture handle.
                 return self._backend.replace_tip_holding(_txids(payload["required_txids"]),
-                    deadline=self._deadline)
-            if path == "/release-held" and set(payload) == {"txids"}:
-                # The original fixture accepts only its complete captured held set.
-                return self._backend.release_held_transactions(_txids(payload["txids"]),
                     deadline=self._deadline)
         if method == "POST" and path in {"/fund-unmined", "/fund-unmined-expiring"} and set(payload) == {
                 "address", "amount_zatoshi", "source_height"}:

@@ -18,6 +18,8 @@ Future<void> main() async {
       final result = await persistNativeOwnedCaseResult(
         expected: expected,
         expectedPid: expectedPid,
+        expectedPaymentLinkPhase:
+            Platform.environment['VIZOR_E2E_PAYMENT_LINK_PHASE'],
         data: data,
       );
       stdout.writeln('VIZOR_E2E_RESULT=${jsonEncode(result)}');
@@ -31,12 +33,20 @@ Future<Map<String, Object>> persistNativeOwnedCaseResult({
   required Object? expected,
   required int expectedPid,
   required Map<String, dynamic>? data,
+  String? expectedPaymentLinkPhase,
 }) async {
   final actual = data?['case_manifest'];
   final context = data?['runtime_context'];
   if (expected is! Map<String, dynamic> ||
       actual is! Map<String, dynamic> ||
-      data!.length != 4 ||
+      data!.length != (expectedPaymentLinkPhase == null ? 4 : 5) ||
+      (expectedPaymentLinkPhase != null &&
+          (!const {'prepare', 'resume'}.contains(expectedPaymentLinkPhase) ||
+              !const {
+                'flutter.macos.payment-link-restart',
+                'flutter.macos.payment-link-recovery',
+              }.contains(expected['scenario_id']) ||
+              data['payment_link_phase'] != expectedPaymentLinkPhase)) ||
       data['pid'] is! int ||
       data['pid'] != expectedPid ||
       data['assertions_completed'] != true ||
@@ -66,5 +76,9 @@ Future<Map<String, Object>> persistNativeOwnedCaseResult({
   // Never truncate/adopt an existing case observation or create new parents.
   final file = await File(path).create(exclusive: true);
   await file.writeAsString(encoded, flush: true);
-  return <String, Object>{'case_manifest': actual, 'pid': expectedPid};
+  return <String, Object>{
+    'case_manifest': actual,
+    'pid': expectedPid,
+    'payment_link_phase': ?expectedPaymentLinkPhase,
+  };
 }

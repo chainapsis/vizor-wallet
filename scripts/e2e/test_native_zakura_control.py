@@ -36,6 +36,8 @@ class ControlFixture(unittest.TestCase):
         def with_ports(*args, **kwargs):
             kwargs["ports"] = self.lease.ports
             kwargs["activation_height"] = self.activation_height
+            if hasattr(self, "scenario_id"):
+                kwargs["scenario_id"] = self.scenario_id
             return prepare(*args, **kwargs)
         with patch.object(workspace_api, "prepare_native_case_workspace", side_effect=with_ports):
             self.model.setUp()
@@ -272,6 +274,44 @@ class ControlTests(ControlFixture):
                 ("/release-held", {"txids":["12"*32]})):
             self.assertEqual(self.request("POST", path, json.dumps(payload))[0], 400)
         self.assertEqual(self.calls, [])
+
+
+class GiftRecoveryControlTests(ControlFixture):
+    scenario_id = "flutter.macos.payment-link-recovery"
+
+    def test_exact_fork_and_release_delegate_to_original_fixture_on_owner_thread(self):
+        self.prepare()
+        txids = ["12"*32, "34"*32]
+        threads = []
+        def replace(required, *, fork_height, deadline):
+            threads.append(threading.get_ident())
+            self.assertEqual(required, txids)
+            self.assertEqual(fork_height, 121)
+            self.assertGreater(deadline, time.monotonic())
+            return {"held_txids":required, "fork_height":fork_height}
+        with patch.object(self.backend._fixture, "replace_fork_holding", side_effect=replace) as reorg:
+            for payload in ({"required_txids":txids, "fork_height":True},
+                            {"required_txids":txids, "fork_height":0},
+                            {"required_txids":["bad"], "fork_height":121},
+                            {"required_txids":txids, "fork_height":121, "reset":True}):
+                self.assertEqual(self.request("POST", "/reorg-hold-fork", json.dumps(payload))[0], 400)
+            reorg.assert_not_called()
+            status, _body = self.request("POST", "/reorg-hold-fork", json.dumps({
+                "required_txids":txids, "fork_height":121}))
+            self.assertEqual(status, 200)
+            reorg.assert_called_once()
+        self.assertEqual(threads, [threading.get_ident()])
+        status, body = self.request("POST", "/release-held", json.dumps({"txids":txids}))
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)["released_txids"], txids)
+
+    def test_another_height1_case_cannot_replace_a_fork(self):
+        self.prepare()
+        self.control._scenario = "flutter.macos.payment-link-round-trip"
+        with patch.object(self.backend._fixture, "replace_fork_holding") as reorg:
+            self.assertEqual(self.request("POST", "/reorg-hold-fork", json.dumps({
+                "required_txids":["12"*32], "fork_height":121}))[0], 400)
+            reorg.assert_not_called()
 
 
 class ActivationControlTests(ControlFixture):

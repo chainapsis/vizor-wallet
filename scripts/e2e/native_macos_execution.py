@@ -22,7 +22,8 @@ class NativeMacosExecutionError(runtime.RunnerError):
     """Original app/driver identity, assertion result or process completion failed."""
 
 
-def execute_native_macos_case(session, *, dart, source_root, timeout=600.0, cancel_event=None):
+def _execute_native_macos_phase(session, *, dart, source_root, timeout, cancel_event,
+                                payment_link_phase=None):
     """Direct app launch + original VM driver; caller finalizes or retains this case."""
     if (not isinstance(session, NativeWorkerCase) or not isinstance(session.storage, MacCaseStorage)
         or session._front is None or session._control is None or session._finished):
@@ -40,6 +41,9 @@ def execute_native_macos_case(session, *, dart, source_root, timeout=600.0, canc
     session.storage.helper.verify_unchanged()
     environment = {**os.environ, **session.case.workspace.launch_environment()}
     manifest = json.loads(environment["VIZOR_E2E_CASE_MANIFEST"])
+    environment.pop("VIZOR_E2E_PAYMENT_LINK_PHASE", None)
+    if payment_link_phase is not None:
+        environment["VIZOR_E2E_PAYMENT_LINK_PHASE"] = payment_link_phase
     if manifest["scenario_id"] == "flutter.macos.tex-send":
         environment["ZCASH_E2E_EPHEMERAL_CHECKS_DUE_NOW"] = "1"
     if manifest["scenario_id"] == "flutter.macos.mempool-during-sync":
@@ -98,14 +102,72 @@ def execute_native_macos_case(session, *, dart, source_root, timeout=600.0, canc
     if len(markers) != 1:
         raise NativeMacosExecutionError("original driver did not publish exactly one integration result")
     result = json.loads(markers[0])
-    if (not isinstance(result, dict) or set(result) != {"case_manifest","pid"}
+    fields = {"case_manifest", "pid"} | ({"payment_link_phase"} if payment_link_phase else set())
+    if (not isinstance(result, dict) or set(result) != fields
         or result["case_manifest"] != manifest or type(result["pid"]) is not int
-        or result["pid"] != app.process.pid):
+        or result["pid"] != app.process.pid
+        or (payment_link_phase is not None and result["payment_link_phase"] != payment_link_phase)):
         raise NativeMacosExecutionError("integration result is not bound to this original app/case")
     check()
     if {path:_capture(path) for path in source} != source:
         raise NativeMacosExecutionError("original integration driver source/tool changed")
     session.storage.helper.verify_unchanged()
-    return {"scenario_id":manifest["scenario_id"], "namespace":manifest["namespace"],
+    session.case.stop_process(driver_process, timeout=min(5.0, deadline-time.monotonic()))
+    observation = {"scenario_id":manifest["scenario_id"], "namespace":manifest["namespace"],
             "app_pid":app.process.pid,"driver_pid":driver_process.process.pid,
             "driver_exit_code":code,"assertions_passed":True,"native_cleanup_pending":True}
+    if payment_link_phase is not None:
+        observation["payment_link_phase"] = payment_link_phase
+    return observation, app
+
+
+def execute_native_macos_case(session, *, dart, source_root, timeout=600.0, cancel_event=None):
+    """One original case; Gift restart retains its wallet, chain and port owners."""
+    if (not isinstance(session, NativeWorkerCase) or not isinstance(session.storage, MacCaseStorage)
+        or session._front is None or session._control is None or session._finished):
+        raise NativeMacosExecutionError("expected this original prepared native macOS worker case")
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 0 < timeout < float("inf"):
+        raise NativeMacosExecutionError("execution timeout must be positive and finite")
+    cancel = cancel_event if cancel_event is not None else threading.Event()
+    deadline = time.monotonic() + timeout
+    manifest = json.loads(session.case.workspace.launch_environment()["VIZOR_E2E_CASE_MANIFEST"])
+    confirming_blocks = {"flutter.macos.payment-link-restart":6,
+                         "flutter.macos.payment-link-recovery":5}.get(manifest["scenario_id"])
+    if confirming_blocks is None:
+        return _execute_native_macos_phase(session, dart=dart, source_root=source_root,
+            timeout=timeout, cancel_event=cancel)[0]
+    root = Path(source_root)
+    inputs = (root/"test_driver/native_owned_case.dart", root/".dart_tool/package_config.json",
+              Path(dart).resolve(strict=True))
+    captured = {path:_capture(path) for path in inputs}
+
+    def remaining():
+        if cancel.is_set():
+            raise runtime.Cancelled()
+        budget = deadline-time.monotonic()
+        if budget <= 0:
+            raise NativeMacosExecutionError("native integration deadline expired", 124)
+        session.verify_owned()
+        session._front.assert_running()
+        if {path:_capture(path) for path in inputs} != captured:
+            raise NativeMacosExecutionError("original integration driver source/tool changed across restart")
+        return budget
+
+    prepare, app = _execute_native_macos_phase(session, dart=dart, source_root=source_root,
+        timeout=remaining(), cancel_event=cancel, payment_link_phase="prepare")
+    session.storage.stop_app_for_restart(app, timeout=min(5.0, remaining()))
+    remaining()
+    before = session.backend.wait_synced(deadline=deadline)["height"]
+    mined = session.backend.mine(confirming_blocks)
+    remaining()
+    if (type(before) is not int or type(mined["tip"]["height"]) is not int
+        or mined["tip"]["height"] != before + confirming_blocks):
+        raise NativeMacosExecutionError("stopped-app confirmation mining did not preserve its exact chain")
+    resume, _app = _execute_native_macos_phase(session, dart=dart, source_root=source_root,
+        timeout=remaining(), cancel_event=cancel, payment_link_phase="resume")
+    if prepare["app_pid"] == resume["app_pid"]:
+        raise NativeMacosExecutionError("Gift recovery did not run in a different app process")
+    remaining()
+    return {"scenario_id":manifest["scenario_id"], "namespace":manifest["namespace"],
+            "phases":[prepare,resume], "stopped_app_confirming_blocks":confirming_blocks,
+            "assertions_passed":True, "native_cleanup_pending":True}

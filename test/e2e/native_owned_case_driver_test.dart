@@ -95,4 +95,58 @@ void main() {
     await expectLater(persist(), throwsA(isA<FileSystemException>()));
     expect(await file.readAsString(), 'retained evidence');
   });
+
+  for (final phase in ['prepare', 'resume']) {
+    test(
+      'Gift $phase assertions are bound to the original phase and PID',
+      () async {
+        manifest['scenario_id'] = 'flutter.macos.payment-link-restart';
+        data['case_manifest'] = Map<String, dynamic>.of(manifest);
+        data['payment_link_phase'] = phase;
+        expect(
+          await persistNativeOwnedCaseResult(
+            expected: manifest,
+            expectedPid: 123,
+            data: data,
+            expectedPaymentLinkPhase: phase,
+          ),
+          {'case_manifest': manifest, 'pid': 123, 'payment_link_phase': phase},
+        );
+      },
+    );
+  }
+
+  test('Gift prepare result cannot satisfy resume', () async {
+    manifest['scenario_id'] = 'flutter.macos.payment-link-recovery';
+    data['case_manifest'] = Map<String, dynamic>.of(manifest);
+    data['payment_link_phase'] = 'prepare';
+    await expectLater(
+      persistNativeOwnedCaseResult(
+        expected: manifest,
+        expectedPid: 123,
+        data: data,
+        expectedPaymentLinkPhase: 'resume',
+      ),
+      throwsStateError,
+    );
+    expect(await File(manifest['context_path']).exists(), isFalse);
+  });
+
+  test('another scenario cannot supply a Gift phase', () async {
+    data['payment_link_phase'] = 'prepare';
+    await expectLater(
+      persistNativeOwnedCaseResult(
+        expected: manifest,
+        expectedPid: 123,
+        data: data,
+        expectedPaymentLinkPhase: 'prepare',
+      ),
+      throwsStateError,
+    );
+  });
+
+  test('unsolicited Gift phase is not an ordinary completed result', () async {
+    data['payment_link_phase'] = 'prepare';
+    await expectLater(persist(), throwsStateError);
+  });
 }

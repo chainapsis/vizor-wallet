@@ -20,6 +20,11 @@ import 'regtest_payment_uri_send_test.dart' as payment_uri;
 import 'regtest_payment_uri_locked_send_test.dart' as locked_uri;
 import 'regtest_payment_request_round_trip_test.dart' as payment_request;
 import 'regtest_mempool_receive_history_test.dart' as mempool;
+import 'regtest_payment_link_round_trip_test.dart' as payment_link;
+import 'regtest_payment_link_restart_prepare_test.dart' as restart_prepare;
+import 'regtest_payment_link_restart_resume_test.dart' as restart_resume;
+import 'regtest_payment_link_failure_prepare_test.dart' as recovery_prepare;
+import 'regtest_payment_link_failure_reorg_resume_test.dart' as recovery_resume;
 
 /// One binary, with case identity supplied only by the existing runtime contract.
 void main() {
@@ -82,6 +87,24 @@ void main() {
     case 'flutter.macos.mempool-during-sync':
     case 'flutter.macos.mempool-expiry':
       mempool.main();
+      return;
+    case 'flutter.macos.payment-link-round-trip':
+      payment_link.main();
+      return;
+    case 'flutter.macos.payment-link-restart':
+    case 'flutter.macos.payment-link-recovery':
+      final phase = Platform.environment['VIZOR_E2E_PAYMENT_LINK_PHASE'];
+      if (phase != 'prepare' && phase != 'resume') {
+        throw StateError(
+          'The original Gift restart phase is missing or invalid.',
+        );
+      }
+      binding.reportData!['payment_link_phase'] = phase;
+      if (manifest.scenarioId == 'flutter.macos.payment-link-restart') {
+        phase == 'prepare' ? restart_prepare.main() : restart_resume.main();
+      } else {
+        phase == 'prepare' ? recovery_prepare.main() : recovery_resume.main();
+      }
       return;
     default:
       throw StateError(

@@ -155,7 +155,7 @@ class MacCaseStorage:
         self._writers.append(managed)
         return managed
 
-    def _verify_context(self) -> None:
+    def _verify_context(self):
         context = Path(self.case.workspace.context_path)
         if not self._writers:
             if context.exists() or context.is_symlink():
@@ -163,7 +163,7 @@ class MacCaseStorage:
             return
         with contextlib.ExitStack() as stack:
             case_fd = _open_directory(stack, self.case.workspace.root, private=True)
-            data, _ = _read_file(case_fd, "native-context.json", 8193)
+            data, identity = _read_file(case_fd, "native-context.json", 8193)
         if len(data) > 8192:
             raise MacCaseStorageError("app context exceeds validation limit")
         value = native._require_fields(json.loads(data, object_pairs_hook=native._unique_object), {
@@ -182,6 +182,44 @@ class MacCaseStorage:
             or value["storage_cleanup_completed"] is not False
         ):
             raise MacCaseStorageError("app context does not match the owned app/support scope")
+        return data, identity
+
+    def stop_app_for_restart(self, managed, *, timeout):
+        """Stop this original app and archive its context; retain all wallet state.
+
+        Only one prepare/resume transition is supported. The archive is evidence,
+        not authority to adopt a case or delete native storage.
+        """
+        if self._finished or not self._writers or managed is not self._writers[-1]:
+            raise MacCaseStorageError("restart requires the last original native app")
+        self.verify_owned()
+        self.case.stop_process(managed, timeout=timeout)
+        if not managed.cleanup_completed:
+            raise MacCaseStorageError("restart app writer stop is unproven")
+        try:
+            self.verify_owned()
+            data, identity = self._verify_context()
+            with contextlib.ExitStack() as stack:
+                case_fd = _open_directory(stack, self.case.workspace.root, private=True)
+                self.case.workspace.verify_owned()
+                current, current_id = _read_file(case_fd, "native-context.json", 8193)
+                if current != data or current_id != identity:
+                    raise MacCaseStorageError("restart context changed after writer stop")
+                flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+                with os.fdopen(os.open("native-context-before-restart.json", flags, 0o600,
+                                      dir_fd=case_fd), "wb") as output:
+                    output.write(data)
+                    output.flush()
+                    os.fsync(output.fileno())
+                self.verify_owned()
+                if (_identity(os.fstat(case_fd)) != _identity(os.stat(self.case.workspace.root,
+                        follow_symlinks=False)) or _read_file(case_fd, "native-context.json", 8193)
+                        != (data, identity)):
+                    raise MacCaseStorageError("restart context attachment changed")
+                os.unlink("native-context.json", dir_fd=case_fd)
+        except BaseException:
+            self._failure = "restart context unproven; retain original state/evidence"
+            raise
 
     def retain(self) -> None:
         """Stop writers on a failed scenario; preserve secrets, support and evidence."""

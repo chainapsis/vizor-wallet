@@ -177,6 +177,18 @@ class SuiteTests(unittest.TestCase):
             self.assertFalse(scenario.supported)
         self.assertFalse(e2e_catalog.plan(self.catalog, scenarios).runnable)
 
+    def test_gift_internal_paths_keep_exact_funding_without_public_activation(self):
+        scenarios = tuple(self.catalog.scenarios_by_id[name] for name in (
+            "flutter.macos.payment-link-round-trip", "flutter.macos.payment-link-restart",
+            "flutter.macos.payment-link-recovery"))
+        with patch.object(SUITE.sys, "platform", "darwin"):
+            SUITE.validate_options(self.args, scenarios)
+        for scenario in scenarios:
+            self.assertEqual(SUITE.scenario_funding(scenario.id), (
+                (SUITE._DESKTOP_UA,125000000,"ironwood",1),))
+            self.assertFalse(scenario.supported)
+        self.assertFalse(e2e_catalog.plan(self.catalog, scenarios).runnable)
+
     def test_payment_group_keeps_exact_balances_and_independent_funding_sources(self):
         names = ("flutter.macos.shield-transparent", "flutter.macos.shield-transparent-retry",
             "flutter.macos.multi-account-send", "flutter.macos.tex-send", "flutter.macos.payment-uri-send",

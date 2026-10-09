@@ -46,6 +46,9 @@ class FixtureModel:
     def replace_tip_holding(self, required_txids, *, deadline=None):
         return {"required_txids": required_txids, "deadline": deadline}
 
+    def replace_fork_holding(self, required_txids, *, fork_height, deadline=None):
+        return {"required_txids": required_txids, "fork_height":fork_height, "deadline":deadline}
+
     def release_held_transactions(self, txids, *, deadline=None):
         return {"released_txids": txids, "deadline": deadline}
 

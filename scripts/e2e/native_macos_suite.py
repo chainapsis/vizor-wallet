@@ -44,6 +44,9 @@ SUPPORTED_SCENARIOS = frozenset({
     "flutter.macos.mempool-receive-history",
     "flutter.macos.mempool-during-sync",
     "flutter.macos.mempool-expiry",
+    "flutter.macos.payment-link-round-trip",
+    "flutter.macos.payment-link-restart",
+    "flutter.macos.payment-link-recovery",
 }) | frozenset(RUST_CASES)
 _MINER = "tmLomwDqZSUb1Mvsfpjtmt4cLBA7c9tGssX"
 _IMPORT_UA = "uregtest1ykjd398elks624qyz0d0vffn6vpqkl6atp2wsr9795eql4kw47hwlffxyyfakv0l2twj635fpmxmeu3tzyrfhf5s9eg9ea8gsa0srdfwjudp3fs0qaaqxvkxr364a8vjy3y9vglm7lf8rs0vsev9p5mzky52rq4wkr5lhc842vuf5lhn"
@@ -66,7 +69,9 @@ def scenario_funding(scenario_id, *, desktop_transparent=None):
         return ((_DESKTOP_UA,125000000,"ironwood",1),
                 (desktop_transparent,75000000,"transparent",2))
     if scenario_id in {"flutter.macos.tex-send", "flutter.macos.payment-uri-send",
-                       "flutter.macos.payment-uri-locked-send", "flutter.macos.payment-request-round-trip"}:
+                       "flutter.macos.payment-uri-locked-send", "flutter.macos.payment-request-round-trip",
+                       "flutter.macos.payment-link-round-trip", "flutter.macos.payment-link-restart",
+                       "flutter.macos.payment-link-recovery"}:
         return ((_DESKTOP_UA,125000000,"ironwood",1),)
     if scenario_id in {"flutter.macos.shield-transparent", "flutter.macos.shield-transparent-retry"}:
         return ()  # Each new random wallet receives external proved funding in its scenario.

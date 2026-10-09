@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
+import 'package:zcash_wallet/src/core/config/e2e_runtime_case_manifest.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_claim_coordinator_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
@@ -17,7 +18,7 @@ final _firstFundingAmount = BigInt.from(10_010_000);
 final _secondFundingAmount = BigInt.from(20_010_000);
 
 void main() {
-  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   setUpAll(initializeZcashWalletRuntime);
 
@@ -29,7 +30,13 @@ void main() {
       await proxy.start();
       addTearDown(proxy.stop);
       addTearDown(() async {
-        await Clipboard.setData(const ClipboardData(text: ''));
+        if (installedE2eRuntimeCaseManifest != null &&
+            binding.reportData?['assertions_completed'] != true) {
+          return;
+        }
+        if (installedE2eRuntimeCaseManifest == null) {
+          await Clipboard.setData(const ClipboardData(text: ''));
+        }
         if (preparedForRestart) return;
         await cleanupDesktopRegtestWallet();
         await cleanupRegtestPaymentLinkClaimWallets();
@@ -194,6 +201,7 @@ void main() {
       );
       await container.read(paymentLinkClaimCoordinatorProvider).refresh();
       preparedForRestart = true;
+      binding.reportData?['assertions_completed'] = true;
       e2eLog('uncertain and accepted Gift Card claims prepared for restart');
     },
     timeout: const Timeout(Duration(minutes: 15)),
