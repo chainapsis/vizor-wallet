@@ -29,6 +29,7 @@ class VotingBuildTests(unittest.TestCase):
         self.pin = self.model.git("rev-parse", "HEAD").strip()
         self.case = self.model.case()
         self.make_calls = 0
+        self.selected_compilers = []
         self.wrong_round = False
         self.cache = self.model.root / "voting-cache"
         self.tool_identity = "modeled tool identity"
@@ -64,9 +65,11 @@ class VotingBuildTests(unittest.TestCase):
                 outputs = [sdk/"svoted", sdk/"voting-config"]
             elif name == "cargo" and actual[1:2] == ["build"]:
                 self.assertIn("--locked", actual)
+                self.selected_compilers.append(kwargs["env"].get("RUSTC"))
                 outputs = [target/"release/pir-export", target/"release/nf-server"]
             elif name == "cargo" and actual[1:2] == ["test"]:
                 self.assertIn("--no-run", actual)
+                self.selected_compilers.append(kwargs["env"].get("RUSTC"))
                 sdk = Path(actual[actual.index("--manifest-path")+1]).parent.parent
                 output = target/"release/deps/create_round-modeled"
                 outputs = [output]
@@ -138,6 +141,11 @@ class VotingBuildTests(unittest.TestCase):
         self.assertEqual(self.make_calls, 1)
         self.assertEqual(first["cache_key"], second["cache_key"])
         self.assertNotIn("_", first["cache_inputs"]["environment_sha256"])
+
+    def test_absolute_cargo_receives_the_captured_original_rust_compiler(self):
+        _, proof = self.build()
+        expected = proof["cache_inputs"]["tools"]["outer"]["rustc"]["path"]
+        self.assertEqual(self.selected_compilers, [expected, expected])
 
     @unittest.skipUnless(sys.platform == "darwin", "the Apple Make proxy is macOS-only")
     def test_system_make_proxy_binds_the_actual_selected_sdk_implementation(self):

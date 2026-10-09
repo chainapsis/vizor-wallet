@@ -152,7 +152,7 @@ def build_voting_artifacts(case, *, sdk_cache, pir_cache, cache_root, jobs=4, ti
                        CGO_LDFLAGS="-L" + str(target / "release"),
                        GOFLAGS="-mod=readonly -buildvcs=false", GOMAXPROCS=str(jobs))
 
-    def command(arguments, *, cwd=None, git=False):
+    def command(arguments, *, cwd=None, git=False, rust_context=None):
         case.workspace.verify_owned()
         if cancel.is_set():
             raise runtime.Cancelled()
@@ -164,6 +164,10 @@ def build_voting_artifacts(case, *, sdk_cache, pir_cache, cache_root, jobs=4, ti
                 "import os,sys; os.chdir(sys.argv[1]); os.execvp(sys.argv[2],sys.argv[2:])",
                 str(cwd), *arguments]
         env = {**environment, **({"GIT_ALLOW_PROTOCOL": ""} if git else {})}
+        if rust_context is not None:
+            # Absolute Cargo bypasses rustup's exported toolchain selection.
+            # Its rustc proxy must not switch compiler in dependency directories.
+            env["RUSTC"] = str(tools[rust_context]["rustc"])
         result = case.run_command(arguments, env=env, timeout=remaining,
             cancel_event=cancel, max_output_bytes=16*1024*1024)
         if result.returncode:
@@ -257,11 +261,11 @@ def build_voting_artifacts(case, *, sdk_cache, pir_cache, cache_root, jobs=4, ti
                  "build-ffi", "build-voting-config"])
             print("Building pinned PIR services once", file=sys.stderr, flush=True)
             command([str(tools["outer"]["cargo"]), "build", "--release", "--locked", "--manifest-path", str(pir/"Cargo.toml"),
-                 "-p", "pir-export", "--features", "cli", "-p", "nf-server", "--features", "serve"])
+                 "-p", "pir-export", "--features", "cli", "-p", "nf-server", "--features", "serve"], rust_context="outer")
             print("Building pinned round creation test once", file=sys.stderr, flush=True)
             lines = command([str(tools["outer"]["cargo"]), "test", "--release", "--locked", "--no-run", "--message-format=json",
                          "--manifest-path", str(sdk/"e2e-tests/Cargo.toml"),
-                         "--test", "create_round_for_zashi"])
+                         "--test", "create_round_for_zashi"], rust_context="outer")
             rounds = []
             for line in lines:
                 try:
