@@ -10,7 +10,7 @@ import tempfile
 import threading
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import e2e_catalog
@@ -27,7 +27,7 @@ class SuiteTests(unittest.TestCase):
             tool = self.root/name
             tool.write_text("model-only")
             tool.chmod(0o700)
-        self.args = SimpleNamespace(workers=2,repeat=2,build_jobs=4,
+        self.args = SimpleNamespace(workers=2,repeat=2,build_jobs=4,order="short-first",timing_reports=[],
             flutter=self.root/"bin/flutter", grpcurl=self.root/"grpcurl",
             zakura_cache=self.root,proto_dir=self.root)
         self.catalog = e2e_catalog.load_catalog()
@@ -94,6 +94,53 @@ class SuiteTests(unittest.TestCase):
             self.assertEqual(report["results"][0]["status"],"passed")
             with self.assertRaisesRegex(e2e_catalog.CatalogError,"zero scenarios"):
                 e2e_catalog.select_scenarios(self.catalog,failed_from=Path(item["report"]))
+
+    def test_short_dispatch_keeps_catalog_result_order_and_separate_budgets(self):
+        self.args.workers, self.args.repeat = 1, 1
+        self.scenarios = tuple(self.catalog.scenarios_by_id[name] for name in (
+            "rust.receive.sync", "rust.send.basic", "flutter.macos.import-sync"))
+        report = self.root/"timings.json"
+        report.write_text(json.dumps({"schema_version":2,"catalog_sha256":self.catalog.fingerprint,
+            "source_commit":"b" * 40,"results":[{
+                "scenario_id":case.id,"profile":case.profile,"target":case.target,"test":case.test,
+                "status":"passed","duration_seconds":duration,
+            } for case,duration in zip(self.scenarios,(8,2,20))]}))
+        self.args.timing_reports = [report]
+        observed = []
+        def execute(root, run_id, worker_id, case, **kwargs):
+            observed.append((case.id,worker_id))
+            return {"scenario_id":case.id,"target":case.target,"test":case.test,
+                    "status":"passed","duration_seconds":1}
+        self.execute = execute
+        code,summary,_,_ = self.invoke()
+        self.assertEqual(code,0)
+        self.assertEqual(observed,[(self.scenarios[1].id,1),(self.scenarios[0].id,0),(self.scenarios[2].id,2)])
+        final = json.loads(Path(summary["repetition_reports"][0]["report"]).read_text())
+        self.assertEqual([case["scenario_id"] for case in final["results"]],[case.id for case in self.scenarios])
+        self.assertEqual(summary["schedule"],final["schedule"])
+        self.assertEqual(summary["resource_budget"],{
+            "artifact_producer_slots":1,"cargo_jobs":4,"case_slots":1})
+
+    def test_invalid_timing_input_is_rejected_before_resources_or_builds(self):
+        self.args.timing_reports = [self.root/"missing.json"]
+        with patch.object(SUITE.sys,"platform","darwin"):
+            with self.assertRaises(OSError):
+                SUITE.run_native_suite(self.args,self.catalog,self.scenarios,{},source_root=self.root)
+        self.assertFalse((self.root/".regtest-logs").exists())
+
+    def test_unproven_retention_cancels_following_case_before_allocation(self):
+        cancel = threading.Event()
+        worker = SimpleNamespace(prepare_case=Mock(side_effect=RuntimeError("case failed")),
+                                 retain=Mock(side_effect=RuntimeError("writer join unproven")))
+        with patch.object(SUITE,"prepare_native_worker_lifecycle",return_value=worker) as allocate:
+            first = SUITE.execute_case(self.root,"a" * 10,0,self.scenarios[0],helper=self.helper,
+                artifact=self.signer,source_root=self.root,dart=Path("/model/dart"),args=self.args,cancel=cancel)
+            second = SUITE.execute_case(self.root,"a" * 10,1,self.scenarios[0],helper=self.helper,
+                artifact=self.signer,source_root=self.root,dart=Path("/model/dart"),args=self.args,cancel=cancel)
+        self.assertEqual(first["status"],"failed")
+        self.assertEqual(first["cleanup_errors"],["writer join unproven"])
+        self.assertEqual(second["status"],"cancelled")
+        allocate.assert_called_once()
 
     def test_cache_hit_reports_zero_builds_without_changing_case_execution(self):
         self.signer = SimpleNamespace(identity=lambda: {

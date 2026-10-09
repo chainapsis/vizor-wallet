@@ -20,6 +20,7 @@ if str(SCRIPT_DIR) not in sys.path:
 import e2e_catalog
 import e2e_changes
 import e2e_impact
+import e2e_schedule
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -60,6 +61,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--repeat", type=int, default=1,
                         help="fresh isolated repetitions, each with its own rerunnable report")
     parser.add_argument("--build-jobs", type=int, default=4)
+    parser.add_argument("--order", choices=e2e_schedule.ORDERS, default="short-first",
+                        help="dispatch by measured successful case duration, or catalog order")
+    parser.add_argument("--timing-report", dest="timing_reports", type=Path, action="append", default=[],
+                        help="schema-2 case report for duration estimates; repeat for median samples")
     return parser.parse_args(argv)
 
 
@@ -142,6 +147,8 @@ def run(args: argparse.Namespace) -> int:
         )
     catalog = e2e_catalog.load_catalog()
     scenarios, selection = _select(args, catalog)
+    schedule = e2e_schedule.schedule_scenarios(catalog, scenarios,
+        order=args.order, timing_reports=args.timing_reports)
     if args.run:
         if not scenarios:
             print(json.dumps({"selection":selection,"execution_mode":"no-tests","results":[]}))
@@ -180,6 +187,7 @@ def run(args: argparse.Namespace) -> int:
             "execution_mode": ("ready" if plan.runnable else "blocked") if scenarios else "no-tests",
             "pending_blockers": list(plan.blockers) if plan else [],
         }
+    record["schedule"] = schedule.record
     print(json.dumps(record, indent=2, sort_keys=True, allow_nan=False))
     return 0
 

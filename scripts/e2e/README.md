@@ -143,6 +143,40 @@ one app/helper build. Both passed native/backend cleanup; older failed evidence
 and devices remain retained. These revision-specific runs do not establish a
 same-final-source all-green21/64-case result or current-policy cache coverage.
 
+### Timing-informed dispatch and resource budgets
+
+`--timing-report /path/to/run.json` reads an existing schema-2 case report with
+the current catalog fingerprint and matching profile/target/test identities.
+Repeat it for median successful case durations. Failures, timeouts, cancellations
+and unstarted cases do not supply completed-case estimates. Timings include
+case preparation and cleanup, not the shared build. Older source commits remain
+recorded provenance, never evidence that the current wallet passed.
+
+The default `--order short-first` dispatches measured short cases first for early
+feedback. `--order long-first` starts measured long cases first to reduce a late
+tail; neither guarantees a shorter whole run under contention. `--order catalog`
+uses inventory order. Cases without successful timings follow measured cases in
+catalog order; without timings, all modes use catalog order. `--plan` shows the
+dispatch order and report hashes without launching or writing anything.
+
+```bash
+python3 scripts/e2e/run-suite.py --suite rust-regtest-all --plan \
+  --order long-first --timing-report /path/to/prior/repetition-0/run.json
+```
+
+Shared artifact producers run one at a time before the case queue. `--build-jobs`
+controls the Cargo job budget; it is not a global Flutter/Xcode CPU limit.
+`--workers` bounds concurrent case owners across engines and fresh repetitions.
+The runner records these separate budgets and reports each completed case
+immediately, retaining selected catalog order in the final results. Independent
+wallet/backend/native state and existing assertions remain unchanged. Unproven
+worker retention cancels subsequent case allocation. No CPU/RAM-based automatic
+worker limit or measured general speedup is claimed by this dispatch policy.
+
+```bash
+python3 -B -m unittest scripts/e2e/test_e2e_schedule.py scripts/e2e/test_run_suite.py scripts/e2e/test_native_macos_suite.py
+```
+
 ## Isolated macOS import and endpoint execution
 
 The selected native cohort/helper pair, offline signer and Rust test executables

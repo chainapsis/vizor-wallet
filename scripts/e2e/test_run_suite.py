@@ -35,6 +35,28 @@ class PreviewTests(unittest.TestCase):
             code = CLI.main(arguments)
         return code, json.loads(output.getvalue()) if output.getvalue() else None, errors.getvalue()
 
+    def test_timing_plan_changes_dispatch_not_selected_identity_or_report_bytes(self):
+        cases = tuple(self.catalog.scenarios_by_id[name] for name in ("rust.receive.sync", "rust.send.basic"))
+        with tempfile.TemporaryDirectory() as directory:
+            report = Path(directory)/"run.json"
+            report.write_text(json.dumps({"schema_version":2,"catalog_sha256":self.catalog.fingerprint,
+                "source_commit":"a" * 40,"results":[{
+                    "scenario_id":case.id,"profile":case.profile,"target":case.target,"test":case.test,
+                    "status":"passed","duration_seconds":duration,
+                } for case,duration in zip(cases,(2,8))]}))
+            before = report.read_bytes()
+            with patch("subprocess.run",side_effect=AssertionError("spawned a process")), \
+                 patch.object(Path,"mkdir",side_effect=AssertionError("created artifacts")), \
+                 patch.object(Path,"write_text",side_effect=AssertionError("wrote a file")), \
+                 patch.object(Path,"write_bytes",side_effect=AssertionError("wrote a file")):
+                code,output,error = self.invoke("--scenario",cases[0].id,"--scenario",cases[1].id,
+                    "--plan","--order","short-first","--timing-report",str(report))
+            self.assertEqual((code,error),(0,""))
+            self.assertEqual([case["scenario_id"] for case in output["selected_scenarios"]],
+                [case.id for case in self.catalog.scenarios if case.id in {item.id for item in cases}])
+            self.assertEqual(output["schedule"]["dispatch_scenarios"],[case.id for case in cases])
+            self.assertEqual(report.read_bytes(),before)
+
     def test_list_inventory_marks_only_the_wired_scenarios_runnable(self) -> None:
         code, output, errors = self.invoke("--list")
         self.assertEqual((code, errors), (0, ""))
@@ -411,7 +433,7 @@ class PreviewTests(unittest.TestCase):
         original_import = builtins.__import__
 
         def guarded_import(name, *args, **kwargs):
-            if name.startswith(("native_", "e2e_schedule", "e2e_runtime", "direct_zakura", "ths_fixture")):
+            if name.startswith(("native_", "e2e_runtime", "direct_zakura", "ths_fixture")):
                 raise AssertionError(f"preview imported backend: {name}")
             return original_import(name, *args, **kwargs)
 
@@ -429,7 +451,7 @@ class PreviewTests(unittest.TestCase):
                     self.assertEqual((code, errors), (0, ""))
 
     def test_fresh_cli_invocations_do_not_create_checkout_artifacts(self) -> None:
-        files = ("run-suite.py", "catalog.json", "e2e_catalog.py", "e2e_changes.py", "e2e_impact.py")
+        files = ("run-suite.py", "catalog.json", "e2e_catalog.py", "e2e_changes.py", "e2e_impact.py", "e2e_schedule.py")
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for filename in files:
