@@ -10,10 +10,11 @@ use transparent::{address::TransparentAddress, bundle::OutPoint, keys::Transpare
 use zcash_client_backend::data_api::{
     testing::TestBuilder,
     transparent_ledger::{
-        ReceiveEvent, SpendEvent, TransactionMetadata, TransparentDetailWrite as _,
-        TransparentDisplayFacts, TransparentDisplayOutput, TransparentDisplayProvenance,
-        TransparentDisplaySender, TransparentDisplayStore, TransparentLedgerMode,
-        TransparentLedgerWrite as _, WatchOrigin, WholeTransactionFee,
+        ReceiveEvent, RecoveryRevision, SpendEvent, TransactionMetadata,
+        TransparentDetailRead as _, TransparentDetailWrite as _, TransparentDisplayFacts,
+        TransparentDisplayOmission, TransparentDisplayOutput, TransparentDisplayProvenance,
+        TransparentDisplaySender, TransparentDisplayStore, TransparentDisplayView,
+        TransparentLedgerMode, TransparentLedgerWrite as _, WatchOrigin, WholeTransactionFee,
     },
 };
 use zcash_client_sqlite::testing::{db::TestDbFactory, BlockCache};
@@ -356,13 +357,30 @@ fn private_send(
     outputs: &[Paid],
     fee: u64,
 ) -> (State, AccountUuid) {
+    private_send_in_revision(tag, funding, foreign_input, outputs, fee, revision(), false)
+}
+
+/// Also supports provisional recovery evidence and a shielded external payment.
+fn private_send_in_revision(
+    tag: u8,
+    funding: u64,
+    foreign_input: Option<u64>,
+    outputs: &[Paid],
+    fee: u64,
+    recovery_revision: RecoveryRevision,
+    shielded_components: bool,
+) -> (State, AccountUuid) {
     let (mut st, account) = private_wallet();
     let ws = watch(&st, account);
     let target = ws.target.unwrap().height;
     let funder = external(&ws);
     let change = last_derived(&st, account, TransparentKeyScope::INTERNAL);
     let inputs = 1 + u32::from(foreign_input.is_some());
-    let metadata = transparent_only(fee, inputs);
+    let metadata = Some(TransactionMetadata {
+        fee: WholeTransactionFee::Exact(Zatoshis::const_from_u64(fee)),
+        transparent_input_count: inputs,
+        has_shielded_components: shielded_components,
+    });
     let address = |paid: &Paid| match paid {
         Paid::Other(_) => foreign(0x33),
         Paid::Change(_) => change,
@@ -390,10 +408,33 @@ fn private_send(
             ));
         }
     }
-    cover(&mut st, account, receives);
-    promote(&mut st, account);
+    let mut receives = Some(receives);
+    loop {
+        let mut batch = commit(&watch(&st, account));
+        batch.revision = recovery_revision.clone();
+        batch.receives = receives.take().unwrap_or_default();
+        if !st
+            .wallet_mut()
+            .db_mut()
+            .apply_transparent_ledger_commit(batch)
+            .unwrap()
+            .window_grew
+        {
+            break;
+        }
+    }
+    st.wallet_mut()
+        .db_mut()
+        .qualify_transparent_revision(&recovery_revision)
+        .unwrap();
+    set_policy(&mut st, TransparentLedgerMode::PrivateRequired);
+    st.wallet_mut()
+        .db_mut()
+        .promote_transparent_account(account)
+        .unwrap();
 
     let mut spend = commit(&watch(&st, account));
+    spend.revision = recovery_revision;
     spend.spends = vec![SpendEvent {
         metadata,
         spending_txid: TxId::from_bytes([tag; 32]),
@@ -421,7 +462,7 @@ fn private_send(
         fee: Zatoshis::const_from_u64(fee),
         input_count: inputs,
         output_count: u32::try_from(outputs.len()).unwrap(),
-        shielded_components: false,
+        shielded_components,
         sender: TransparentDisplaySender::Address(funder),
         outputs: outputs
             .iter()
@@ -453,6 +494,99 @@ fn private_send(
         .unwrap();
     assert_eq!(stored, TransparentDisplayStore::Stored);
     (st, account)
+}
+
+/// A recovery revision can withdraw ownership while a receipt is being read.
+/// The old settled effects, fee and funding omissions must stay together;
+/// both an incomplete shared send and a complete sole-funded send retain
+/// their snapshot's completeness until the next receipt refresh.
+#[test]
+fn receipt_keeps_its_snapshot_when_recovery_withdraws_spends() {
+    for shared in [true, false] {
+        let tag = 0xa2;
+        let mut provisional = revision();
+        provisional.sealed = false;
+        // In the shared case the foreign 20,000 funds an external shielded
+        // payment. Only the transparent 490,000 is in the display facts.
+        let (st, account) = private_send_in_revision(
+            tag,
+            500_000,
+            shared.then_some(20_000),
+            &[Paid::Other(490_000)],
+            10_000,
+            provisional,
+            shared,
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db").to_str().unwrap().to_owned();
+        st.wallet()
+            .conn()
+            .execute("VACUUM INTO ?1", [&path])
+            .unwrap();
+        // WAL permits the writer to commit while this reader keeps its snapshot.
+        let mut writer = open_wallet_db(&path, NETWORK).unwrap();
+        let conn = open_readonly_conn(&path).unwrap();
+        let read_tx = conn.unchecked_transaction().unwrap();
+        let txid = hex::encode([tag; 32]);
+        let mut receipt =
+            read_transaction_detail(&read_tx, NETWORK, account, &txid, "sent", |base| {
+                attach_history_details(
+                    &read_tx,
+                    &path,
+                    NETWORK,
+                    account,
+                    std::slice::from_mut(base),
+                )
+            })
+            .unwrap();
+        assert_eq!(receipt.account_balance_delta, -500_000);
+        assert!(receipt.effects_settled);
+        assert_eq!(receipt.fee, Some(10_000));
+
+        let mut replacement = revision();
+        replacement.revision = b"r2".to_vec();
+        replacement.lineage = 2;
+        writer.qualify_transparent_revision(&replacement).unwrap();
+        // The real replacement path withdraws the spend, but retains display
+        // facts. A fresh view now has no owned inputs and cannot say shared.
+        let fresh = writer
+            .transparent_display_view(account, TxId::from_bytes([tag; 32]))
+            .unwrap();
+        let Some(TransparentDisplayView::Available(fresh)) = fresh else {
+            panic!("display facts survive recovery replacement");
+        };
+        assert_eq!(
+            fresh.omissions,
+            if shared {
+                vec![TransparentDisplayOmission::MultipleSourceScripts]
+            } else {
+                vec![]
+            }
+        );
+
+        let (view, source) =
+            transparent_details_view(&read_tx, &path, NETWORK, account, &txid).unwrap();
+        receipt.transparent_details = Some(view);
+        apply_display_source(&mut receipt, source);
+        apply_display_recipient(&mut receipt);
+        apply_display_receive_completion(&mut receipt);
+        assert_eq!(receipt.details_complete, !shared);
+        assert_eq!(receipt.provisional, shared);
+        assert_eq!(receipt.primary_address.is_some(), !shared);
+        let Some(TransparentDetailsView::Available { omissions, .. }) =
+            &receipt.transparent_details
+        else {
+            panic!("the snapshot still contains the display facts");
+        };
+        assert_eq!(
+            omissions,
+            &if shared {
+                vec!["shared_funding"]
+            } else {
+                vec![]
+            }
+        );
+    }
 }
 
 /// The receipt detail of `[tag; 32]` as `tx_kind`, read by Vizor's
