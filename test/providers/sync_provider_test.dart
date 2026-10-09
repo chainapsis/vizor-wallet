@@ -648,6 +648,64 @@ void main() {
     await expectLater(handling, completes);
   });
 
+  test(
+    'account-scoped state follows current pending work including unknown and empty',
+    () {
+      final cached = SyncState(
+        accountUuid: _accountUuid,
+        remainingScanBlocks: 2,
+        pendingScanStartHeight: 99,
+      );
+      final active = SyncState(
+        accountUuid: _otherAccountUuid,
+        remainingScanBlocks: 102,
+        pendingScanStartHeight: 1700,
+      );
+      final restored = cached.withGlobalSyncFieldsFrom(active);
+      expect(restored.remainingScanBlocks, 102);
+      expect(restored.pendingScanStartHeight, 1700);
+      final scoped = restored.withoutAccountScopedData(
+        accountUuid: _otherAccountUuid,
+      );
+      expect(scoped.remainingScanBlocks, 102);
+      expect(scoped.pendingScanStartHeight, 1700);
+      final unknown = restored.withGlobalSyncFieldsFrom(SyncState());
+      expect(unknown.remainingScanBlocks, isNull);
+      expect(unknown.pendingScanStartHeight, isNull);
+      final empty = restored.withGlobalSyncFieldsFrom(
+        SyncState(remainingScanBlocks: 0),
+      );
+      expect(empty.remainingScanBlocks, 0);
+      expect(empty.pendingScanStartHeight, isNull);
+    },
+  );
+
+  test('balance refresh preserves current pending scan work', () async {
+    final notifier = _BalanceRefreshTestSyncNotifier(
+      () async => 'wallet.db',
+      initialState: SyncState(
+        accountUuid: _accountUuid,
+        isSyncing: true,
+        remainingScanBlocks: 102,
+        pendingScanStartHeight: 1700,
+      ),
+    );
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+        accountProvider.overrideWith(_ExistingAccountNotifier.new),
+        syncProvider.overrideWith(() => notifier),
+      ],
+    );
+    addTearDown(container.dispose);
+    await container.read(accountProvider.future);
+    await container.read(syncProvider.future);
+    await notifier.refreshAfterSend();
+    final current = container.read(syncProvider).requireValue;
+    expect(current.remainingScanBlocks, 102);
+    expect(current.pendingScanStartHeight, 1700);
+  });
+
   test('batch progress publishes one authoritative state', () async {
     late _LifecycleTestSyncNotifier notifier;
     final container = ProviderContainer(
@@ -672,6 +730,8 @@ void main() {
         percentage: 0.1,
         displayTargetPercentage: 0.2,
         displayTargetBlocks: 100,
+        remainingScanBlocks: 90,
+        pendingScanStartHeight: 11,
         isSyncing: true,
         isComplete: false,
         hasNewTx: false,
@@ -681,7 +741,10 @@ void main() {
 
     await Future<void>.delayed(const Duration(milliseconds: 80));
     expect(updates, 1);
-    expect(container.read(syncProvider).requireValue.percentage, 0.1);
+    final progress = container.read(syncProvider).requireValue;
+    expect(progress.percentage, 0.1);
+    expect(progress.remainingScanBlocks, 90);
+    expect(progress.pendingScanStartHeight, 11);
   });
 
   test(
@@ -708,6 +771,8 @@ void main() {
           percentage: 0.5,
           displayTargetPercentage: 0.6,
           displayTargetBlocks: 100,
+          remainingScanBlocks: 2,
+          pendingScanStartHeight: 99,
           scannedHeight: 50,
           chainTipHeight: 100,
         ),
@@ -737,6 +802,27 @@ void main() {
       expect(current.chainTipHeight, 120);
       expect(current.phaseCompletedUnits, 2);
       expect(current.phaseTotalUnits, 4);
+      expect(current.remainingScanBlocks, isNull);
+      expect(current.pendingScanStartHeight, isNull);
+
+      await notifier.handleSyncProgressForTesting(
+        const SyncProgressEvent(
+          scannedHeight: 0,
+          chainTipHeight: 120,
+          percentage: 0,
+          displayTargetPercentage: 0,
+          displayTargetBlocks: 0,
+          isSyncing: true,
+          isComplete: false,
+          hasNewTx: false,
+          phase: kSyncPhaseChainPrepare,
+          remainingScanBlocks: 100,
+          pendingScanStartHeight: 21,
+        ),
+      );
+      final discovered = container.read(syncProvider).requireValue;
+      expect(discovered.remainingScanBlocks, 100);
+      expect(discovered.pendingScanStartHeight, 21);
     },
   );
 

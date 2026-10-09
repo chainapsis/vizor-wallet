@@ -45,6 +45,14 @@ class SyncProgressEvent {
   final double percentage;
   final double displayTargetPercentage;
   final int displayTargetBlocks;
+
+  /// Wallet-wide pending scan work. Null until Rust enumerates this attempt's
+  /// queue; zero means the queue is known to be empty.
+  final int? remainingScanBlocks;
+
+  /// Inclusive start of the earliest pending range, regardless of priority.
+  /// Null when the queue is unknown or empty.
+  final int? pendingScanStartHeight;
   final bool isSyncing;
   final bool isComplete;
   final bool hasNewTx;
@@ -60,6 +68,8 @@ class SyncProgressEvent {
     required this.percentage,
     required this.displayTargetPercentage,
     required this.displayTargetBlocks,
+    this.remainingScanBlocks,
+    this.pendingScanStartHeight,
     required this.isSyncing,
     required this.isComplete,
     required this.hasNewTx,
@@ -96,6 +106,14 @@ class SyncState {
   final double percentage;
   final double displayTargetPercentage;
   final int displayTargetBlocks;
+
+  /// Wallet-wide pending scan work. Null until Rust enumerates this attempt's
+  /// queue; zero means the queue is known to be empty.
+  final int? remainingScanBlocks;
+
+  /// Inclusive start of the earliest pending range, regardless of priority.
+  /// Null when the queue is unknown or empty.
+  final int? pendingScanStartHeight;
   final int phaseCompletedUnits;
   final int phaseTotalUnits;
   final int scannedHeight;
@@ -362,6 +380,8 @@ class SyncState {
     this.percentage = 0,
     double? displayTargetPercentage,
     this.displayTargetBlocks = 0,
+    this.remainingScanBlocks,
+    this.pendingScanStartHeight,
     this.phaseCompletedUnits = 0,
     this.phaseTotalUnits = 0,
     this.scannedHeight = 0,
@@ -448,6 +468,9 @@ class SyncState {
     double? percentage,
     double? displayTargetPercentage,
     int? displayTargetBlocks,
+    int? remainingScanBlocks,
+    int? pendingScanStartHeight,
+    bool clearPendingScanWork = false,
     int? phaseCompletedUnits,
     int? phaseTotalUnits,
     int? scannedHeight,
@@ -500,6 +523,12 @@ class SyncState {
       displayTargetPercentage:
           displayTargetPercentage ?? this.displayTargetPercentage,
       displayTargetBlocks: displayTargetBlocks ?? this.displayTargetBlocks,
+      remainingScanBlocks:
+          remainingScanBlocks ??
+          (clearPendingScanWork ? null : this.remainingScanBlocks),
+      pendingScanStartHeight:
+          pendingScanStartHeight ??
+          (clearPendingScanWork ? null : this.pendingScanStartHeight),
       phaseCompletedUnits: phaseCompletedUnits ?? this.phaseCompletedUnits,
       phaseTotalUnits: phaseTotalUnits ?? this.phaseTotalUnits,
       scannedHeight: scannedHeight ?? this.scannedHeight,
@@ -584,6 +613,9 @@ class SyncState {
       percentage: current.percentage,
       displayTargetPercentage: current.displayTargetPercentage,
       displayTargetBlocks: current.displayTargetBlocks,
+      remainingScanBlocks: current.remainingScanBlocks,
+      pendingScanStartHeight: current.pendingScanStartHeight,
+      clearPendingScanWork: true,
       phaseCompletedUnits: current.phaseCompletedUnits,
       phaseTotalUnits: current.phaseTotalUnits,
       scannedHeight: current.scannedHeight,
@@ -610,6 +642,8 @@ class SyncState {
       percentage: percentage,
       displayTargetPercentage: displayTargetPercentage,
       displayTargetBlocks: displayTargetBlocks,
+      remainingScanBlocks: remainingScanBlocks,
+      pendingScanStartHeight: pendingScanStartHeight,
       phaseCompletedUnits: phaseCompletedUnits,
       phaseTotalUnits: phaseTotalUnits,
       scannedHeight: scannedHeight,
@@ -1366,6 +1400,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
                 percentage: event.percentage,
                 displayTargetPercentage: event.displayTargetPercentage,
                 displayTargetBlocks: event.displayTargetBlocks.toInt(),
+                remainingScanBlocks: event.remainingScanBlocks?.toInt(),
+                pendingScanStartHeight: event.pendingScanStartHeight?.toInt(),
                 isSyncing: event.isSyncing,
                 isComplete: event.isComplete,
                 hasNewTx: event.hasNewTx,
@@ -2644,6 +2680,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         displayTargetBlocks: isPreparationEvent
             ? currentState?.displayTargetBlocks ?? 0
             : event.displayTargetBlocks,
+        // Preparation on a retry invalidates the previous queue snapshot.
+        remainingScanBlocks: event.remainingScanBlocks,
+        pendingScanStartHeight: event.pendingScanStartHeight,
         phaseCompletedUnits: event.phaseCompletedUnits,
         phaseTotalUnits: event.phaseTotalUnits,
         scannedHeight: nextScannedHeight,
@@ -3244,6 +3283,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         displayTargetPercentage:
             current?.displayTargetPercentage ?? current?.percentage ?? 0.0,
         displayTargetBlocks: current?.displayTargetBlocks ?? 0,
+        remainingScanBlocks: current?.remainingScanBlocks,
+        pendingScanStartHeight: current?.pendingScanStartHeight,
         phaseCompletedUnits: current?.phaseCompletedUnits ?? 0,
         phaseTotalUnits: current?.phaseTotalUnits ?? 0,
         scannedHeight: current?.scannedHeight ?? 0,

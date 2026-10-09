@@ -26,7 +26,7 @@ void main() {
     );
   });
 
-  test('near-tip catch-up requires known heights and a gap of two or less', () {
+  test('near-tip catch-up requires known pending work at the chain tip', () {
     expect(
       isNearTipCatchUp(_sync(scannedHeight: 100, chainTipHeight: 102)),
       isTrue,
@@ -40,6 +40,71 @@ void main() {
       isFalse,
     );
   });
+
+  test('pending work boundaries use inclusive range starts', () {
+    for (var remaining = 0; remaining <= 3; remaining++) {
+      final sync = _sync(
+        scannedHeight: 200,
+        chainTipHeight: 200,
+        remainingScanBlocks: remaining,
+        pendingScanStartHeight: remaining == 0 ? null : 201 - remaining,
+        lastSyncStartedAt: DateTime(2026, 7, 9, 12),
+      );
+      expect(isNearTipCatchUp(sync), remaining <= 2);
+      expect(isSyncKeepAwakeActiveSync(sync), remaining > 2);
+    }
+  });
+
+  test('tip batch and small next batch cannot hide historical work', () {
+    final sync = _sync(
+      scannedHeight: 2000,
+      chainTipHeight: 2000,
+      percentage: 0.7,
+      displayTargetBlocks: 2,
+      remainingScanBlocks: 102,
+      pendingScanStartHeight: 1700,
+      lastSyncStartedAt: DateTime(2026, 7, 9, 12),
+    );
+    expect(isNearTipCatchUp(sync), isFalse);
+    expect(isSyncKeepAwakeActiveSync(sync), isTrue);
+    expect(isSyncKeepAwakeEligibleSync(sync), isTrue);
+    expect(
+      shouldShowSyncKeepAwakePrompt(
+        sync: sync,
+        settings: const SyncKeepAwakeSettings(
+          enabled: false,
+          promptSeen: false,
+        ),
+        now: sync.lastSyncStartedAt!.add(const Duration(minutes: 5)),
+      ),
+      isTrue,
+    );
+    // Two historical blocks are not a near-tip catch-up either.
+    expect(isNearTipCatchUp(sync.copyWith(remainingScanBlocks: 2)), isFalse);
+  });
+
+  test(
+    'previous completed heights cannot suppress unknown preparation work',
+    () {
+      for (final phase in [
+        kSyncPhasePreflight,
+        kSyncPhaseSetup,
+        kSyncPhaseActiveUtxo,
+        kSyncPhaseChainPrepare,
+      ]) {
+        final sync = _sync(
+          scannedHeight: 2000,
+          chainTipHeight: 2000,
+          percentage: 0,
+          phase: phase,
+          scanWorkKnown: false,
+          lastSyncStartedAt: DateTime(2026, 7, 9, 12),
+        );
+        expect(isNearTipCatchUp(sync), isFalse);
+        expect(isSyncKeepAwakeActiveSync(sync), isTrue, reason: phase);
+      }
+    },
+  );
 
   test('screen keep-awake requires enabled settings and substantial work', () {
     final startedAt = DateTime(2026, 7, 9, 12);
@@ -97,7 +162,7 @@ void main() {
           lastSyncStartedAt: startedAt,
         ),
       ),
-      isFalse,
+      isTrue,
     );
     expect(
       shouldKeepScreenAwakeForSync(
@@ -618,6 +683,9 @@ SyncState _sync({
   int chainTipHeight = 200,
   DateTime? lastSyncStartedAt,
   String phase = '',
+  int? remainingScanBlocks,
+  int? pendingScanStartHeight,
+  bool scanWorkKnown = true,
 }) {
   return SyncState(
     isSyncing: isSyncing,
@@ -625,6 +693,13 @@ SyncState _sync({
     percentage: percentage,
     displayTargetPercentage: displayTargetPercentage,
     displayTargetBlocks: displayTargetBlocks,
+    remainingScanBlocks: scanWorkKnown && chainTipHeight > 0
+        ? remainingScanBlocks ??
+              (chainTipHeight - scannedHeight).clamp(0, chainTipHeight)
+        : null,
+    pendingScanStartHeight: scanWorkKnown && chainTipHeight > scannedHeight
+        ? pendingScanStartHeight ?? scannedHeight + 1
+        : pendingScanStartHeight,
     scannedHeight: scannedHeight,
     chainTipHeight: chainTipHeight,
     lastSyncStartedAt: lastSyncStartedAt,

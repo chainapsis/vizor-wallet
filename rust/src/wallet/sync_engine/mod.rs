@@ -86,6 +86,12 @@ pub struct SyncProgressEvent {
     pub percentage: f64,
     pub display_target_percentage: f64,
     pub display_target_blocks: u64,
+    /// All pending scan work, including lower-priority historical ranges.
+    /// None until this attempt has enumerated the scan queue; Some(0) is empty.
+    pub remaining_scan_blocks: Option<u64>,
+    /// Inclusive start of the earliest pending range, not the current batch.
+    /// None when the queue is unknown or empty (see remaining_scan_blocks).
+    pub pending_scan_start_height: Option<u64>,
     pub is_syncing: bool,
     pub is_complete: bool,
     pub has_new_tx: bool,
@@ -138,6 +144,8 @@ fn preparation_progress_event(
         percentage: 0.0,
         display_target_percentage: 0.0,
         display_target_blocks: 0,
+        remaining_scan_blocks: None,
+        pending_scan_start_height: None,
         is_syncing: true,
         is_complete: false,
         has_new_tx: false,
@@ -3280,6 +3288,11 @@ async fn run_sync_impl(
         .suggest_scan_ranges()
         .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
     let mut initial_total = pending_scan_blocks(&initial_ranges);
+    progress_fn(SyncProgressEvent {
+        remaining_scan_blocks: Some(initial_total),
+        pending_scan_start_height: earliest_pending_scan_start(&initial_ranges),
+        ..preparation_progress_event(current_tip_height, "chain_prepare", 0, 0)
+    });
     let initial_window_start_height =
         earliest_pending_scan_start(&initial_ranges).unwrap_or(current_tip_height);
     let mut queued_ranges = Some(initial_ranges);
@@ -3770,6 +3783,8 @@ async fn run_sync_impl(
             percentage: last_progress_percentage,
             display_target_percentage,
             display_target_blocks: batch_blocks,
+            remaining_scan_blocks: Some(pending_scan_blocks(&ranges)),
+            pending_scan_start_height: earliest_pending_scan_start(&ranges),
             is_syncing: true,
             is_complete: false,
             has_new_tx: false,
@@ -4371,14 +4386,7 @@ async fn run_sync_impl(
         let post_ranges = db
             .suggest_scan_ranges()
             .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
-        let remaining: u64 = post_ranges
-            .iter()
-            .filter(|r| is_pending_scan_range(r))
-            .map(|r| {
-                u32::from(r.block_range().end).saturating_sub(u32::from(r.block_range().start))
-                    as u64
-            })
-            .sum();
+        let remaining = pending_scan_blocks(&post_ranges);
         // Adjust initial_total if new ranges appeared (e.g. new account added mid-sync).
         // Use scanned + remaining as the true total, so progress never goes backward.
         let scanned_so_far = initial_total.saturating_sub(prev_remaining);
@@ -4438,6 +4446,8 @@ async fn run_sync_impl(
             percentage: pct.clamp(0.0, 1.0),
             display_target_percentage,
             display_target_blocks: next_display_target_blocks,
+            remaining_scan_blocks: Some(remaining),
+            pending_scan_start_height: earliest_pending_scan_start(&post_ranges),
             is_syncing: true,
             is_complete: false,
             has_new_tx,
@@ -4546,6 +4556,8 @@ async fn run_sync_impl(
         percentage: 1.0,
         display_target_percentage: 1.0,
         display_target_blocks: 0,
+        remaining_scan_blocks: Some(0),
+        pending_scan_start_height: None,
         is_syncing: false,
         is_complete: true,
         has_new_tx: false,
@@ -4650,6 +4662,8 @@ async fn run_sync_impl(
                 percentage: 1.0,
                 display_target_percentage: 1.0,
                 display_target_blocks: 0,
+                remaining_scan_blocks: Some(0),
+                pending_scan_start_height: None,
                 is_syncing: false,
                 is_complete: true,
                 has_new_tx: true,
@@ -4687,6 +4701,8 @@ async fn run_sync_impl(
                 percentage: 1.0,
                 display_target_percentage: 1.0,
                 display_target_blocks: 0,
+                remaining_scan_blocks: Some(0),
+                pending_scan_start_height: None,
                 is_syncing: false,
                 is_complete: true,
                 has_new_tx: true,
@@ -5631,6 +5647,35 @@ mod tests {
     }
 
     #[test]
+    fn preparation_progress_does_not_claim_an_empty_scan_queue() {
+        let event = preparation_progress_event(2_000, "chain_prepare", 0, 0);
+        assert_eq!(event.remaining_scan_blocks, None);
+        assert_eq!(event.pending_scan_start_height, None);
+    }
+
+    #[test]
+    fn pending_scan_work_includes_ranges_beyond_a_two_block_batch() {
+        let ranges = vec![
+            ScanRange::from_parts(
+                block_height(1_999)..block_height(2_001),
+                ScanPriority::Verify,
+            ),
+            ScanRange::from_parts(
+                block_height(1_700)..block_height(1_800),
+                ScanPriority::Historic,
+            ),
+            ScanRange::from_parts(
+                block_height(1_800)..block_height(1_900),
+                ScanPriority::Scanned,
+            ),
+        ];
+        assert_eq!(pending_scan_blocks(&ranges), 102);
+        assert_eq!(earliest_pending_scan_start(&ranges), Some(1_700));
+        assert_eq!(pending_scan_blocks(&[]), 0);
+        assert_eq!(earliest_pending_scan_start(&[]), None);
+    }
+
+    #[test]
     fn chain_window_progress_waits_for_earliest_pending_range() {
         let mode = ProgressDisplayMode::ChainWindow {
             window_start_height: 1_000,
@@ -5645,6 +5690,8 @@ mod tests {
             ),
         ];
 
+        assert_eq!(pending_scan_blocks(&ranges), 200);
+        assert_eq!(earliest_pending_scan_start(&ranges), Some(1_700));
         let display_height = mode.batch_start_height(&ranges, high_range_start);
         assert_eq!(display_height, 1_700);
         assert_pct(mode.percentage(0, 0, display_height, 2_000), 0.7);
@@ -5657,6 +5704,8 @@ mod tests {
             BlockHeight::from_u32(1_700)..BlockHeight::from_u32(1_800),
             ScanPriority::Verify,
         )];
+        assert_eq!(pending_scan_blocks(&post_ranges), 100);
+        assert_eq!(earliest_pending_scan_start(&post_ranges), Some(1_700));
         let display_height_after = mode.batch_end_height(&post_ranges, high_range_end, 2_000);
         assert_eq!(display_height_after, 1_700);
         assert_pct(mode.percentage(0, 0, display_height_after, 2_000), 0.7);

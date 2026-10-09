@@ -10399,6 +10399,8 @@ impl SseDecode for crate::api::sync::ApiSyncProgressEvent {
         let mut var_percentage = <f64>::sse_decode(deserializer);
         let mut var_displayTargetPercentage = <f64>::sse_decode(deserializer);
         let mut var_displayTargetBlocks = <u64>::sse_decode(deserializer);
+        let mut var_remainingScanBlocks = <Option<u64>>::sse_decode(deserializer);
+        let mut var_pendingScanStartHeight = <Option<u64>>::sse_decode(deserializer);
         let mut var_isSyncing = <bool>::sse_decode(deserializer);
         let mut var_isComplete = <bool>::sse_decode(deserializer);
         let mut var_hasNewTx = <bool>::sse_decode(deserializer);
@@ -10411,6 +10413,8 @@ impl SseDecode for crate::api::sync::ApiSyncProgressEvent {
             percentage: var_percentage,
             display_target_percentage: var_displayTargetPercentage,
             display_target_blocks: var_displayTargetBlocks,
+            remaining_scan_blocks: var_remainingScanBlocks,
+            pending_scan_start_height: var_pendingScanStartHeight,
             is_syncing: var_isSyncing,
             is_complete: var_isComplete,
             has_new_tx: var_hasNewTx,
@@ -15574,6 +15578,8 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::ApiSyncProgressEvent {
             self.percentage.into_into_dart().into_dart(),
             self.display_target_percentage.into_into_dart().into_dart(),
             self.display_target_blocks.into_into_dart().into_dart(),
+            self.remaining_scan_blocks.into_into_dart().into_dart(),
+            self.pending_scan_start_height.into_into_dart().into_dart(),
             self.is_syncing.into_into_dart().into_dart(),
             self.is_complete.into_into_dart().into_dart(),
             self.has_new_tx.into_into_dart().into_dart(),
@@ -19731,6 +19737,8 @@ impl SseEncode for crate::api::sync::ApiSyncProgressEvent {
         <f64>::sse_encode(self.percentage, serializer);
         <f64>::sse_encode(self.display_target_percentage, serializer);
         <u64>::sse_encode(self.display_target_blocks, serializer);
+        <Option<u64>>::sse_encode(self.remaining_scan_blocks, serializer);
+        <Option<u64>>::sse_encode(self.pending_scan_start_height, serializer);
         <bool>::sse_encode(self.is_syncing, serializer);
         <bool>::sse_encode(self.is_complete, serializer);
         <bool>::sse_encode(self.has_new_tx, serializer);

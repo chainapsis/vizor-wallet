@@ -27,6 +27,75 @@ void main() {
     ]);
   });
 
+  testWidgets('tip batch keeps native awake while historical work remains', (
+    tester,
+  ) async {
+    final calls = _recordScreenAwakeCalls();
+    final startedAt = DateTime(2026, 7, 9, 12);
+    final syncNotifier = FakeSyncNotifier(_sync(lastSyncStartedAt: startedAt));
+    await tester.pumpWidget(_app(syncNotifier: syncNotifier));
+    await _drainNativeQueue(tester);
+    expect(_enabledArgs(calls), [true]);
+
+    syncNotifier.emit(
+      _sync(
+        scannedHeight: 2000,
+        chainTipHeight: 2000,
+        percentage: 0.7,
+        displayTargetBlocks: 2,
+        remainingScanBlocks: 102,
+        pendingScanStartHeight: 1700,
+        lastSyncStartedAt: startedAt,
+      ),
+    );
+    await _drainNativeQueue(tester);
+    expect(_enabledArgs(calls), [true]);
+
+    syncNotifier.emit(
+      _sync(
+        scannedHeight: 1998,
+        chainTipHeight: 2000,
+        remainingScanBlocks: 2,
+        pendingScanStartHeight: 1999,
+        lastSyncStartedAt: startedAt,
+      ),
+    );
+    await _drainNativeQueue(tester);
+    expect(_enabledArgs(calls), [true, false]);
+  });
+
+  testWidgets(
+    'settings enable applies during preparation with old tip heights',
+    (tester) async {
+      FlutterSecureStorage.setMockInitialValues({});
+      final calls = _recordScreenAwakeCalls();
+      final syncNotifier = FakeSyncNotifier(
+        _sync(
+          scannedHeight: 2000,
+          chainTipHeight: 2000,
+          percentage: 0,
+          scanWorkKnown: false,
+          lastSyncStartedAt: DateTime(2026, 7, 9, 12),
+          phase: kSyncPhasePreflight,
+        ),
+      );
+      await tester.pumpWidget(
+        _app(syncNotifier: syncNotifier, syncKeepAwakeEnabled: false),
+      );
+      await _drainNativeQueue(tester);
+      expect(calls, isEmpty);
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(SyncKeepAwakeNativeHost)),
+      );
+      await container.read(syncKeepAwakeProvider.notifier).setEnabled(true);
+      await _drainNativeQueue(tester);
+      expect(_enabledArgs(calls), [true]);
+      await container.read(syncKeepAwakeProvider.notifier).setEnabled(false);
+      await _drainNativeQueue(tester);
+      expect(_enabledArgs(calls), [true, false]);
+    },
+  );
+
   testWidgets('does not call native API for near-tip catch-up', (tester) async {
     final calls = _recordScreenAwakeCalls();
     final syncNotifier = FakeSyncNotifier(
@@ -142,11 +211,9 @@ void main() {
           ),
         );
         await _drainNativeQueue(tester);
-        expect(
-          _enabledArgs(calls),
-          [true],
-          reason: '$phase must not disable keep-awake during preparation',
-        );
+        expect(_enabledArgs(calls), [
+          true,
+        ], reason: '$phase must not disable keep-awake during preparation');
       }
 
       syncNotifier.emit(
@@ -592,12 +659,22 @@ SyncState _sync({
   int chainTipHeight = 200,
   DateTime? lastSyncStartedAt,
   String phase = '',
+  int? remainingScanBlocks,
+  int? pendingScanStartHeight,
+  bool scanWorkKnown = true,
 }) {
   return SyncState(
     isSyncing: isSyncing,
     isBackgroundMode: isBackgroundMode,
     percentage: percentage,
     displayTargetBlocks: displayTargetBlocks,
+    remainingScanBlocks: scanWorkKnown && chainTipHeight > 0
+        ? remainingScanBlocks ??
+              (chainTipHeight - scannedHeight).clamp(0, chainTipHeight)
+        : null,
+    pendingScanStartHeight: scanWorkKnown && chainTipHeight > scannedHeight
+        ? pendingScanStartHeight ?? scannedHeight + 1
+        : pendingScanStartHeight,
     scannedHeight: scannedHeight,
     chainTipHeight: chainTipHeight,
     lastSyncStartedAt: lastSyncStartedAt,
