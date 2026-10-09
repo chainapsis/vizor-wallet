@@ -126,6 +126,23 @@ void main() {
         amountZatoshi: _sendAmount,
       );
 
+      // A long sync can leave its keep-awake prompt open after sync finishes.
+      // Take the normal UI choice before sending; do not bypass the modal.
+      final keepAwakePrompt = find.byKey(
+        const ValueKey('mobile_sync_keep_awake_prompt_sheet'),
+      );
+      if (tester.any(keepAwakePrompt)) {
+        await tapAppButton(
+          tester,
+          const ValueKey('mobile_sync_keep_awake_prompt_later'),
+        );
+        await pumpUntil(
+          tester,
+          () => !tester.any(keepAwakePrompt),
+          description: 'sync keep-awake prompt dismissal before sending',
+        );
+      }
+
       await sendViaWizard(
         tester,
         address: _recipientAddress,
