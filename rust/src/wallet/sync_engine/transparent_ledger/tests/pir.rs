@@ -1337,6 +1337,194 @@ async fn passes_and_acknowledgments_on_one_companion_are_serialized() {
     );
 }
 
+/// The route of the one shard's activity filter.
+const FILTER: &str = "/v1/filters/shards/0/filter";
+
+/// A range filter with no element: no script matches it.
+const EMPTY_FILTER: [u8; 1] = [0];
+
+/// [`shard_map`] at `revision`, its shard filtered by [`EMPTY_FILTER`]: a pass
+/// covers every watched script through the shard without a private query.
+fn empty_filter_map(start: u32, revision: u32) -> Vec<u8> {
+    let mut map: serde_json::Value = serde_json::from_slice(&shard_map(start)).unwrap();
+    // The double SHA-256 of the filter, in display order.
+    let mut filter_hash: [u8; 32] = Sha256::digest(Sha256::digest(EMPTY_FILTER)).into();
+    filter_hash.reverse();
+    let shard = &mut map["shards"][0];
+    shard["filter_hash"] = hex::encode(filter_hash).into();
+    shard["revision"] = revision.into();
+    shard["manifest_digest"] = format!("{:064x}", u64::from(revision) + 1).into();
+    serde_json::to_vec(&map).unwrap()
+}
+
+/// A service that publishes `map`, the adapter's schema and the shard's empty
+/// filter, and answers every other request, a private query among them, with
+/// a bare 503.
+fn empty_filter_service(map: Arc<Mutex<Vec<u8>>>) -> RequestObserver {
+    RequestObserver::answering(move |request| match request.path.as_str() {
+        MAP => reply(200, map.lock().unwrap().clone()),
+        INIT => reply(
+            200,
+            serde_json::to_vec(&serde_json::json!({"schema": SCHEMA, "geometries": []})).unwrap(),
+        ),
+        FILTER => reply(200, EMPTY_FILTER.to_vec()),
+        _ => reply(503, vec![]),
+    })
+}
+
+/// Moves the wallet's policy generation on, as a transition by another
+/// connection would, without changing its mode.
+fn bump_policy_generation(path: &str) {
+    rusqlite::Connection::open(path)
+        .unwrap()
+        .execute(
+            "UPDATE tpir_meta SET policy_generation = policy_generation + 1",
+            [],
+        )
+        .unwrap();
+}
+
+/// A real pass with commits, settled through [`TransparentPirSource::apply`]
+/// and the adapter: a policy change since the pass is refused as stale before
+/// anything applies; the replay settles trusted, so its coverage reaches the
+/// wallet with its revision qualified, and is acknowledged. Settling again,
+/// or replaying the acknowledged publication, changes nothing. A newer
+/// revision of the shard retires the acknowledged one: only a trusted
+/// settlement reconciles it, and once that is acknowledged, no later batch
+/// lists it again.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_covering_pass_settles_trusted_and_is_acknowledged() {
+    let wallet = main_wallet(1);
+    let account = wallet.accounts[0].1;
+    let path = wallet.path.clone();
+    let _mode = test_mode::set(&path, TransparentLedgerMode::PrivateRequired);
+    let mut db = open_wallet_db_with_timeout(&path, MAIN, SYNC_DB_BUSY_TIMEOUT).unwrap();
+    db.apply_transparent_policy(TransparentLedgerMode::PrivateRequired)
+        .unwrap();
+    let map = Arc::new(Mutex::new(empty_filter_map(BIRTHDAY - 100, 0)));
+    let seam = test_transport::set(&path, empty_filter_service(map.clone()));
+    let source = TransparentPirSource::new(&path, MAIN);
+    let covered = |db: &WalletDatabase| {
+        db.transparent_candidate_recovery(account)
+            .unwrap()
+            .covered_through
+    };
+    let qualified = || count(&path, "SELECT COUNT(*) FROM tpir_qualified_revisions");
+    let refused = |settlement: Settlement| match settlement {
+        Settlement::Refused { stats, refusal } => (stats.applied, refusal),
+        other => panic!("refused, not {other:?}"),
+    };
+    let acknowledged = |settlement: Settlement| match settlement {
+        Settlement::Acknowledged(stats) => stats,
+        other => panic!("acknowledged, not {other:?}"),
+    };
+
+    // The policy changes after the pass read its watch set: the first commit
+    // is refused, and nothing reaches the wallet.
+    let watch = watched_by(&wallet, account);
+    assert_eq!(
+        source.recover(request(account, &watch, &|| false)).await,
+        Ok(COMPLETE)
+    );
+    bump_policy_generation(&path);
+    assert_eq!(
+        refused(source.apply(account, &mut db, Trust::Trusted).await),
+        (0, Refusal::Stale)
+    );
+    assert_eq!((covered(&db), qualified()), (None, 0));
+
+    // The next pass, from a fresh watch set, replays the batch. Every commit
+    // applies qualified, and the batch is acknowledged.
+    let watch = watched_by(&wallet, account);
+    assert_eq!(
+        source.recover(request(account, &watch, &|| false)).await,
+        Ok(COMPLETE)
+    );
+    let stats = acknowledged(source.apply(account, &mut db, Trust::Trusted).await);
+    assert!(stats.applied > 0, "the pass committed coverage");
+    assert_eq!(stats.qualified, stats.applied);
+    assert_eq!(covered(&db), Some(BlockHeight::from_u32(TOP)));
+    assert!(db
+        .transparent_candidate_recovery(account)
+        .unwrap()
+        .receives
+        .is_empty());
+    assert_eq!(qualified(), 1);
+    // The acknowledged batch is spent.
+    assert_eq!(
+        source.apply(account, &mut db, Trust::Trusted).await,
+        NOTHING
+    );
+
+    // Replaying the acknowledged publication settles nothing new.
+    let settled = (
+        db.transparent_candidate_recovery(account).unwrap(),
+        count(&path, "SELECT COUNT(*) FROM tpir_coverage"),
+        qualified(),
+    );
+    let watch = watched_by(&wallet, account);
+    assert_eq!(
+        source.recover(request(account, &watch, &|| false)).await,
+        Ok(COMPLETE)
+    );
+    assert!(!acknowledged(source.apply(account, &mut db, Trust::Trusted).await).window_grew);
+    assert_eq!(
+        (
+            db.transparent_candidate_recovery(account).unwrap(),
+            count(&path, "SELECT COUNT(*) FROM tpir_coverage"),
+            qualified(),
+        ),
+        settled
+    );
+
+    // A newer revision of the shard retires the acknowledged one, which only
+    // trusted commits reconcile: an observed settlement applies nothing.
+    *map.lock().unwrap() = empty_filter_map(BIRTHDAY - 100, 1);
+    let watch = watched_by(&wallet, account);
+    assert_eq!(
+        source.recover(request(account, &watch, &|| false)).await,
+        Ok(COMPLETE)
+    );
+    assert_eq!(
+        refused(source.apply(account, &mut db, Trust::Observed).await),
+        (0, Refusal::Unreconciled)
+    );
+    let watch = watched_by(&wallet, account);
+    assert_eq!(
+        source.recover(request(account, &watch, &|| false)).await,
+        Ok(COMPLETE)
+    );
+    let stats = acknowledged(source.apply(account, &mut db, Trust::Trusted).await);
+    assert_eq!(stats.qualified, stats.applied);
+    assert_eq!(covered(&db), Some(BlockHeight::from_u32(TOP)));
+    assert_eq!(qualified(), 2);
+    // The acknowledgment forgot the retirement: the next batch does not list
+    // it again, so even an observed settlement goes through.
+    let watch = watched_by(&wallet, account);
+    assert_eq!(
+        source.recover(request(account, &watch, &|| false)).await,
+        Ok(COMPLETE)
+    );
+    acknowledged(source.apply(account, &mut db, Trust::Observed).await);
+
+    // Covering needed only the publication and each revision's filter.
+    let requests = seam.seam.observer.requests();
+    assert!(
+        paths(&requests)
+            .iter()
+            .all(|path| [MAP, INIT, FILTER].contains(path)),
+        "no private query was sent"
+    );
+    assert_eq!(
+        paths(&requests)
+            .iter()
+            .filter(|path| **path == FILTER)
+            .count(),
+        2,
+        "each revision's filter was downloaded once"
+    );
+}
+
 #[test]
 fn routes_are_the_union_of_both_services() {
     let all = regex::Regex::new(ROUTES).unwrap();
