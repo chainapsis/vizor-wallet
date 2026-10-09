@@ -112,6 +112,15 @@ def _integer(value, label, minimum, maximum):
     return value
 
 
+def _txids(value):
+    if (not isinstance(value, list) or not 1 <= len(value) <= 8
+        or any(not isinstance(txid, str) or len(txid) != 64
+               or any(c not in "0123456789abcdef" for c in txid) for txid in value)
+        or len(set(value)) != len(value)):
+        raise _BadRequest("transaction IDs must be one to eight distinct lowercase hashes")
+    return sorted(value)
+
+
 class OwnedNativeZakuraControl:
     def __init__(self, case, backend, front, artifact, port, activation, token):
         if token is not _TOKEN:
@@ -236,6 +245,25 @@ class OwnedNativeZakuraControl:
         if method == "POST" and path == "/mine" and set(payload) == {"blocks"}:
             count = _integer(payload["blocks"], "blocks", 1, 1000)
             return self._backend.mine(count)
+        if method == "POST" and path in {"/activate", "/reorg-hold-tip", "/release-held"}:
+            if self._activation != 500:
+                raise _BadRequest("controlled activation/reorg requires the activation500 profile")
+            if path == "/activate" and payload == {}:
+                before = self._backend.wait_synced(deadline=self._deadline)
+                height = _integer(before["height"], "pre-activation height", 1, 499)
+                result = self._backend.mine(500 - height)
+                if result["tip"]["height"] != 500 or result["tip"]["consensus_branch_id"] != "37a5165b":
+                    raise NativeZakuraControlError("controlled activation did not reach NU6.3")
+                return result
+            if path == "/reorg-hold-tip" and set(payload) == {"required_txids"}:
+                # The pinned original fixture owns the donor, raw block/tx checks,
+                # hold gate and cleanup. JSON is not a reconstructed fixture handle.
+                return self._backend.replace_tip_holding(_txids(payload["required_txids"]),
+                    deadline=self._deadline)
+            if path == "/release-held" and set(payload) == {"txids"}:
+                # The original fixture accepts only its complete captured held set.
+                return self._backend.release_held_transactions(_txids(payload["txids"]),
+                    deadline=self._deadline)
         if method == "POST" and path == "/fund-confirmed" and set(payload) == {
                 "address", "amount_zatoshi", "source_height", "recipient_pool", "confirmations"}:
             if self._artifact is None:

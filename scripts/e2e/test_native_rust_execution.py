@@ -26,7 +26,7 @@ class RustExecutionTests(unittest.TestCase):
         for name, target in EXECUTION.RUST_CASES.items():
             scenario = catalog.scenarios_by_id[name]
             self.assertEqual((scenario.target, scenario.test), target)
-            self.assertEqual(scenario.profile, "zakura-direct-height1")
+            self.assertEqual(scenario.profile, EXECUTION.RUST_PROFILES[name])
         with self.assertRaises(EXECUTION.runtime.RunnerError):
             EXECUTION.verify_test_output(self.output("selected_extra"), "selected")
 

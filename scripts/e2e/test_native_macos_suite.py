@@ -1,5 +1,6 @@
 """Coordinator models; native signing, wallet assertions and Docker are not real."""
 import contextlib
+from dataclasses import replace
 import io
 import json
 from pathlib import Path
@@ -85,7 +86,7 @@ class SuiteTests(unittest.TestCase):
     def test_options_refuse_pending_cases_and_missing_tools_before_writes(self):
         with patch.object(SUITE.sys,"platform","darwin"):
             with self.assertRaises(ValueError):
-                SUITE.validate_options(self.args,(self.catalog.scenarios_by_id["rust.ironwood.migration"],))
+                SUITE.validate_options(self.args,(self.catalog.scenarios_by_id["flutter.ios.import-sync"],))
             self.args.flutter = None
             with self.assertRaises(ValueError):
                 SUITE.validate_options(self.args,self.scenarios)
@@ -102,6 +103,19 @@ class SuiteTests(unittest.TestCase):
                          ("regtest_receive_sync", "regtest_send", "regtest_import"))
         self.assertEqual(summary["builds"]["rust_build_count"], 1)
         self.assertTrue(all(item[3] is None for item in self.observed))
+
+    def test_ironwood_group_builds_two_exact_targets_and_rejects_wrong_profile(self):
+        self.scenarios = tuple(self.catalog.scenarios_by_id[name] for name in (
+            "rust.ironwood.migration", "rust.ironwood.gift-card-claim"))
+        code, summary, app, signer = self.invoke()
+        self.assertEqual(code, 0)
+        app.assert_not_called()
+        self.assertEqual(signer.call_args.kwargs["test_targets"],
+                         ("ironwood_regtest_migration", "ironwood_regtest_gift_card_claim"))
+        self.assertEqual(summary["builds"]["rust_build_count"], 1)
+        with patch.object(SUITE.sys, "platform", "darwin"):
+            with self.assertRaises(ValueError):
+                SUITE.validate_options(self.args, (replace(self.scenarios[0], profile="zakura-direct-height1"),))
 
     def test_multi_account_selection_builds_its_one_target_and_signer_without_native_builds(self):
         self.scenarios = tuple(s for s in self.catalog.scenarios if s.target == "regtest_multi_account")

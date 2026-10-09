@@ -131,6 +131,38 @@ pub fn fund_isolated_wallet(address: &str, zatoshi: u64, confirmations: u32) -> 
         .fund_confirmed(address, zatoshi, confirmations)
 }
 
+pub fn isolated_activation_height() -> Option<u32> {
+    isolated_control().map(|control| control.activation_height())
+}
+
+pub fn fund_isolated_orchard_wallet(
+    address: &str,
+    zatoshi: u64,
+    confirmations: u32,
+) -> serde_json::Value {
+    isolated_control()
+        .expect("original activation500 case control")
+        .fund_orchard(address, zatoshi, confirmations)
+}
+
+pub fn activate_isolated_ironwood() {
+    isolated_control()
+        .expect("original activation500 case control")
+        .activate();
+}
+
+pub fn reorg_isolated_tip(required: &[String]) -> serde_json::Value {
+    isolated_control()
+        .expect("original activation500 case control")
+        .reorg_tip(required)
+}
+
+pub fn release_isolated_reorg(txids: &[String]) {
+    isolated_control()
+        .expect("original activation500 case control")
+        .release_held(txids);
+}
+
 pub fn current_tip_height() -> u64 {
     wallet_api::get_latest_block_height(lightwalletd_url(), "regtest".into())
         .expect("failed to fetch regtest chain tip")

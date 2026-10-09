@@ -22,7 +22,7 @@ from funder_build import build_regtest_funder
 from native_case_lifecycle import NativeCaseLifecycle
 from native_macos_build import build_native_macos_cohort
 from native_macos_execution import execute_native_macos_case
-from native_rust_execution import RUST_CASES, execute_native_rust_case
+from native_rust_execution import RUST_CASES, RUST_PROFILES, execute_native_rust_case
 from native_worker_lifecycle import prepare_native_worker_lifecycle
 from native_workspace import prepare_native_case_workspace
 from zakura_funding import fund_zakura
@@ -61,7 +61,7 @@ def validate_options(args, scenarios):
         raise ValueError("this executor implements only migrated Rust/macOS scenarios")
     for scenario in scenarios:
         if scenario.id in RUST_CASES and (scenario.engine != "rust"
-            or scenario.profile != "zakura-direct-height1"
+            or scenario.profile != RUST_PROFILES[scenario.id]
             or (scenario.target, scenario.test) != RUST_CASES[scenario.id]):
             raise ValueError("selected Rust identity/profile does not match its executor")
     for field in ("workers", "repeat"):
@@ -100,8 +100,9 @@ def execute_case(root, run_id, worker_id, scenario, *, helper, artifact, source_
             raise runtime.Cancelled()
         worker = prepare_native_worker_lifecycle(root, run_id=run_id, worker_id=worker_id)
         is_rust = scenario.id in RUST_CASES
+        activation = 500 if is_rust and RUST_PROFILES[scenario.id] == "zakura-direct-activation500" else 1
         session = worker.prepare_case(platform="rust" if is_rust else "macos", scenario_id=scenario.id,
-            case_index=1, activation_height=1, helper=None if is_rust else helper, timeout=60, cancel_event=cancel)
+            case_index=1, activation_height=activation, helper=None if is_rust else helper, timeout=60, cancel_event=cancel)
         result["log"] = str(session.case.workspace.root)
         session.prepare_zakura_backend(tooling_root=args.zakura_cache,
             grpcurl=args.grpcurl.resolve(strict=True), proto_dir=args.proto_dir,

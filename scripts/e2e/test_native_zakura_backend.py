@@ -43,6 +43,12 @@ class FixtureModel:
     def wait_synced(self, *, deadline=None):
         return {"synced": True, "deadline": deadline}
 
+    def replace_tip_holding(self, required_txids, *, deadline=None):
+        return {"required_txids": required_txids, "deadline": deadline}
+
+    def release_held_transactions(self, txids, *, deadline=None):
+        return {"released_txids": txids, "deadline": deadline}
+
     def close(self):
         self.close_calls += 1
         self._closed = True
@@ -124,6 +130,21 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(owner.wait_synced(deadline=43), {"synced": True, "deadline": 43})
         with self.assertRaises(BACKEND.NativeZakuraError):
             owner.start()
+
+    def test_reorg_operations_require_original_running_unsealed_case(self):
+        owner = self.backend()
+        for method in (owner.replace_tip_holding, owner.release_held_transactions):
+            with self.assertRaises(BACKEND.NativeZakuraError):
+                method(["12"*32])
+        owner.start()
+        self.assertEqual(owner.replace_tip_holding(["12"*32], deadline=42),
+                         {"required_txids":["12"*32],"deadline":42})
+        self.assertEqual(owner.release_held_transactions(["12"*32], deadline=43),
+                         {"released_txids":["12"*32],"deadline":43})
+        owner._case.close()
+        for method in (owner.replace_tip_holding, owner.release_held_transactions):
+            with self.assertRaises(BACKEND.NativeZakuraError):
+                method(["12"*32])
 
     def test_no_adoption_or_source_import_for_invalid_case_or_timeout(self):
         for timeout in (False, 0, -1, float("inf"), float("nan"), "60"):

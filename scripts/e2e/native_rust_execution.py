@@ -13,6 +13,8 @@ from native_worker_lifecycle import NativeWorkerCase
 
 
 RUST_CASES = {
+    "rust.ironwood.migration": ("ironwood_regtest_migration", "orchard_funds_migrate_after_controlled_nu6_3_activation"),
+    "rust.ironwood.gift-card-claim": ("ironwood_regtest_gift_card_claim", "gift_card_claims_at_two_confirmations_and_discards_the_card_ovk"),
     "rust.receive.direct-zakura": ("regtest_direct_zakura_receive", "empty_wallet_receives_exact_ironwood_funding_from_direct_zakura"),
     "rust.import.direct-zakura": ("regtest_direct_zakura_import", "historical_bip39_passphrase_import_recovers_exact_ironwood_funding_from_direct_zakura"),
     "rust.gift-card.tracking-multiple": ("regtest_gift_card_tracking", "observer_scans_multiple_view_only_accounts_and_retires_only_used_card"),
@@ -36,6 +38,9 @@ RUST_CASES = {
     "rust.multi-account.idempotent-sync": ("regtest_multi_account", "repeated_sync_is_idempotent_for_multi_account_wallet"),
 }
 
+RUST_PROFILES = {name: "zakura-direct-activation500" if name.startswith("rust.ironwood.")
+                 else "zakura-direct-height1" for name in RUST_CASES}
+
 
 def verify_test_output(lines, test):
     """Exit 0 with zero tests, an ignored test or a different test is not PASS."""
@@ -52,7 +57,7 @@ def execute_native_rust_case(session, *, artifact, scenario, cancel_event=None):
         or not isinstance(artifact, ProducedRegtestFunder) or session._finished
         or session._front is None or session._control is None
         or RUST_CASES.get(scenario.id) != (scenario.target, scenario.test)
-        or scenario.profile != "zakura-direct-height1"):
+        or scenario.profile != RUST_PROFILES.get(scenario.id)):
         raise runtime.RunnerError("expected an original prepared Rust case and built exact test")
     session.verify_owned()
     session.storage.verify_owned()

@@ -20,7 +20,9 @@ finally:
     sys.path.pop(0)
 
 
-class ControlTests(unittest.TestCase):
+class ControlFixture(unittest.TestCase):
+    activation_height = 1
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="vizor-control-owner-")
         self.addCleanup(temporary.cleanup)
@@ -32,6 +34,7 @@ class ControlTests(unittest.TestCase):
         prepare = workspace_api.prepare_native_case_workspace
         def with_ports(*args, **kwargs):
             kwargs["ports"] = self.lease.ports
+            kwargs["activation_height"] = self.activation_height
             return prepare(*args, **kwargs)
         with patch.object(workspace_api, "prepare_native_case_workspace", side_effect=with_ports):
             self.model.setUp()
@@ -86,6 +89,9 @@ class ControlTests(unittest.TestCase):
     def mine(self, count):
         self.calls.append((count, threading.get_ident()))
         return {"hashes":["34"*32]*count, "tip":{"height":1+count}}
+
+
+class ControlTests(ControlFixture):
 
     def test_loopback_request_runs_mutation_only_on_original_owner(self):
         self.backend.mine = self.mine
@@ -189,6 +195,62 @@ class ControlTests(unittest.TestCase):
         with self.assertRaises(CONTROL.runtime.Cancelled):
             self.control.pump(deadline=time.monotonic()+1, cancel_event=self.cancel)
         self.assertEqual(self.control._requests, 0)
+
+    def test_height1_cannot_activate_or_reorganize_its_chain(self):
+        self.backend.mine = self.mine
+        for path, payload in (("/activate", {}),
+                ("/reorg-hold-tip", {"required_txids":["12"*32]}),
+                ("/release-held", {"txids":["12"*32]})):
+            self.assertEqual(self.request("POST", path, json.dumps(payload))[0], 400)
+        self.assertEqual(self.calls, [])
+
+
+class ActivationControlTests(ControlFixture):
+    activation_height = 500
+
+    def test_activation_mines_only_to_fixed_height_and_proves_branch(self):
+        self.backend.wait_synced = lambda **_kwargs: {"height":111}
+        def activate(count):
+            self.calls.append((count, threading.get_ident()))
+            return {"tip":{"height":500,"consensus_branch_id":"37a5165b"}}
+        self.backend.mine = activate
+        status, body = self.request("POST", "/activate", "{}")
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)["tip"]["height"], 500)
+        self.assertEqual(self.calls, [(389, threading.get_ident())])
+        self.backend.wait_synced = lambda **_kwargs: {"height":500}
+        self.assertEqual(self.request("POST", "/activate", "{}")[0], 400)
+        self.assertEqual(len(self.calls), 1)
+
+    def test_reorg_and_release_forward_only_to_original_owner(self):
+        def mutate(txids, *, deadline=None):
+            self.calls.append((txids, threading.get_ident(), deadline))
+            return {"modeled": True}
+        self.backend.replace_tip_holding = mutate
+        self.backend.release_held_transactions = mutate
+        for path, key in (("/reorg-hold-tip", "required_txids"), ("/release-held", "txids")):
+            self.assertEqual(self.request("POST", path, json.dumps({key:["34"*32,"12"*32]}))[0], 200)
+        self.assertEqual(len(self.calls), 2)
+        self.assertTrue(all(call[0] == ["12"*32,"34"*32]
+                            and call[1] == threading.get_ident() and call[2] > 0 for call in self.calls))
+
+    def test_malformed_reorg_sets_and_unknown_fields_never_mutate(self):
+        with patch.object(self.backend, "replace_tip_holding") as reorg, \
+             patch.object(self.backend, "release_held_transactions") as release:
+            for path, key in (("/reorg-hold-tip", "required_txids"), ("/release-held", "txids")):
+                for value in ([], ["12"*32]*2, ["ab"*32]*9, ["AB"*32], [1], "12"*32, ["12"]):
+                    self.assertEqual(self.request("POST", path, json.dumps({key:value}))[0], 400)
+                self.assertEqual(self.request("POST", path, json.dumps({key:["12"*32],"extra":True}))[0], 400)
+            reorg.assert_not_called()
+            release.assert_not_called()
+
+    def test_failed_original_release_stays_failed_and_retains_evidence(self):
+        primary = ValueError("release differs from original captured held set")
+        with patch.object(self.backend, "release_held_transactions", side_effect=primary):
+            with self.assertRaises(ValueError) as caught:
+                self.request("POST", "/release-held", json.dumps({"txids":["12"*32]}))
+        self.assertIs(caught.exception, primary)
+        self.assertIs(self.control._failure, primary)
 
 
 if __name__ == "__main__":

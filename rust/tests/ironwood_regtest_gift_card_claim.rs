@@ -1,5 +1,5 @@
-//! Gift Card claims on the Dockerized Ironwood regtest stack
-//! (`scripts/ironwood-regtest`). Each test resets the chain.
+//! Gift Card claims on an owned direct Zakura fixture, or the manual
+//! Dockerized Ironwood stack (`scripts/ironwood-regtest`).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -7,6 +7,8 @@ use std::sync::Mutex;
 
 use rust_lib_zcash_wallet::api::{simple as simple_api, sync as sync_api, wallet as wallet_api};
 use tempfile::TempDir;
+
+mod common;
 
 const NETWORK: &str = "regtest";
 const FUNDER_MNEMONIC: &str = "winter shiver fetch refuse absurd mail pistol eight market lounge manual roast miracle ethics found child scare curve congress renew salute pig better used";
@@ -40,8 +42,18 @@ fn gift_card_claims_at_two_confirmations_and_discards_the_card_ovk() {
     let funder = import("Funder", FUNDER_MNEMONIC, 1);
     let second_funder = import("Second funder", &second_funder_mnemonic, 1);
     let destinations = serde_json::json!([funder.address, second_funder.address]).to_string();
-    run_harness("fund-orchard.sh", &[&destinations, "2.0", "10", "1", "2"]);
-    run_harness("activate-ironwood.sh", &[]);
+    if common::isolated_activation_height().is_some() {
+        let first = common::fund_isolated_orchard_wallet(&funder.address, 200_000_000, 10);
+        let second = common::fund_isolated_orchard_wallet(&second_funder.address, 200_000_000, 10);
+        assert_ne!(
+            first["txid_hex"], second["txid_hex"],
+            "independent Orchard funding"
+        );
+        common::activate_isolated_ironwood();
+    } else {
+        run_harness("fund-orchard.sh", &[&destinations, "2.0", "10", "1", "2"]);
+        run_harness("activate-ironwood.sh", &[]);
+    }
     mine(ORDINARY_UNTRUSTED_CONFIRMATIONS);
     sync(&funder.db);
     sync(&second_funder.db);
@@ -105,8 +117,21 @@ fn gift_card_claims_at_two_confirmations_and_discards_the_card_ovk() {
     // Replace the tip block. The claim's anchor is one block below the old tip,
     // so the reorg cannot invalidate it.
     let tip = latest_height();
-    let reorg = run_harness("reorg.sh", &[&(tip - 1).to_string()]);
-    let held = held_txids(&reorg);
+    let (held, reorg) = if common::isolated_activation_height().is_some() {
+        let required: Vec<String> = claim_result.txids.split(',').map(str::to_string).collect();
+        let result = common::reorg_isolated_tip(&required);
+        assert_eq!(result["old_tip_height"].as_u64(), Some(tip));
+        let held = result["held_txids"]
+            .as_array()
+            .expect("held transaction set")
+            .iter()
+            .map(|value| value.as_str().expect("held txid").to_string())
+            .collect::<Vec<_>>();
+        (held, result.to_string())
+    } else {
+        let result = run_harness("reorg.sh", &[&(tip - 1).to_string()]);
+        (held_txids(&result), result)
+    };
     assert!(
         held.iter()
             .any(|txid| claim_result.txids.split(',').any(|id| id == txid)),
@@ -114,7 +139,11 @@ fn gift_card_claims_at_two_confirmations_and_discards_the_card_ovk() {
     );
     let mut release_args: Vec<&str> = held.iter().map(String::as_str).collect();
     release_args.sort_unstable();
-    run_harness("release-reorg-transactions.sh", &release_args);
+    if common::isolated_activation_height().is_some() {
+        common::release_isolated_reorg(&held);
+    } else {
+        run_harness("release-reorg-transactions.sh", &release_args);
+    }
     mine(1);
 
     sync(&recipient.db);
@@ -237,12 +266,20 @@ fn link_holder_view_of_spend(mnemonic: &str, birthday: u64) -> LinkHolderView {
 fn start_post_activation_chain() {
     simple_api::configure_regtest_ironwood_activation_height(activation_height())
         .expect("configure wallet NU6.3 activation");
-    run_harness("reset.sh", &[]);
-    run_harness("up.sh", &[]);
+    if common::isolated_activation_height().is_some() {
+        common::require_isolated_regtest();
+        assert!(
+            latest_height() < u64::from(activation_height()),
+            "Orchard funding must precede activation"
+        );
+    } else {
+        run_harness("reset.sh", &[]);
+        run_harness("up.sh", &[]);
+    }
 }
 
 fn import(name: &str, mnemonic: &str, birthday: u64) -> Wallet {
-    let dir = tempfile::tempdir().expect("wallet tempdir");
+    let dir = common::wallet_tempdir();
     let db = path_string(&dir.path().join("zcash_wallet.db"));
     let wallet = wallet_api::import_wallet(
         mnemonic.to_string(),
@@ -338,7 +375,11 @@ fn sync(db: &str) {
 }
 
 fn mine(blocks: u32) {
-    run_harness("mine.sh", &[&blocks.to_string()]);
+    if common::isolated_activation_height().is_some() {
+        common::mine_blocks(blocks);
+    } else {
+        run_harness("mine.sh", &[&blocks.to_string()]);
+    }
 }
 
 fn held_txids(reorg_json: &str) -> Vec<String> {
@@ -359,6 +400,9 @@ fn latest_height() -> u64 {
 }
 
 fn activation_height() -> u32 {
+    if let Some(height) = common::isolated_activation_height() {
+        return height;
+    }
     std::env::var("IRONWOOD_ACTIVATION_HEIGHT")
         .unwrap_or_else(|_| "500".to_string())
         .parse()
@@ -366,11 +410,18 @@ fn activation_height() -> u32 {
 }
 
 fn lightwalletd_url() -> String {
+    if common::isolated_activation_height().is_some() {
+        return common::lightwalletd_url();
+    }
     let port = std::env::var("IRONWOOD_LIGHTWALLETD_PORT").unwrap_or_else(|_| "19067".to_string());
     format!("http://127.0.0.1:{port}")
 }
 
 fn run_harness(script: &str, args: &[&str]) -> String {
+    assert!(
+        common::isolated_activation_height().is_none(),
+        "isolated cases cannot run shared scripts"
+    );
     let path = repo_root()
         .join("scripts")
         .join("ironwood-regtest")

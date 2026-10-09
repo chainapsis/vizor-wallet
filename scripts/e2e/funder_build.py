@@ -28,7 +28,7 @@ _MAX_SOURCE_BYTES = 128 * 1024 * 1024
 _MAX_SOURCE_FILES = 10_000
 _MAX_BINARY_BYTES = 512 * 1024 * 1024
 _REQUIRED = {"rust/Cargo.toml", "rust/Cargo.lock", "rust/examples/regtest_direct_funder.rs"}
-_TEST_TARGET = re.compile(r"regtest_[a-z0-9_]+\Z")
+_TEST_TARGET = re.compile(r"(?:regtest|ironwood_regtest)_[a-z0-9_]+\Z")
 
 
 class FunderBuildError(runtime.RunnerError):
