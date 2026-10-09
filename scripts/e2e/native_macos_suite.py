@@ -41,6 +41,9 @@ SUPPORTED_SCENARIOS = frozenset({
     "flutter.macos.payment-uri-send",
     "flutter.macos.payment-uri-locked-send",
     "flutter.macos.payment-request-round-trip",
+    "flutter.macos.mempool-receive-history",
+    "flutter.macos.mempool-during-sync",
+    "flutter.macos.mempool-expiry",
 }) | frozenset(RUST_CASES)
 _MINER = "tmLomwDqZSUb1Mvsfpjtmt4cLBA7c9tGssX"
 _IMPORT_UA = "uregtest1ykjd398elks624qyz0d0vffn6vpqkl6atp2wsr9795eql4kw47hwlffxyyfakv0l2twj635fpmxmeu3tzyrfhf5s9eg9ea8gsa0srdfwjudp3fs0qaaqxvkxr364a8vjy3y9vglm7lf8rs0vsev9p5mzky52rq4wkr5lhc842vuf5lhn"
@@ -69,6 +72,9 @@ def scenario_funding(scenario_id, *, desktop_transparent=None):
         return ()  # Each new random wallet receives external proved funding in its scenario.
     if scenario_id in {"flutter.macos.custom-endpoint-no-fallback", "flutter.macos.sync-startup-stall-recovery"}:
         return ()
+    if scenario_id in {"flutter.macos.mempool-receive-history", "flutter.macos.mempool-during-sync",
+                       "flutter.macos.mempool-expiry"}:
+        return ()  # External funding must remain unmined until the app observes it.
     raise ValueError("unsupported native funding scenario")
 
 
@@ -156,7 +162,7 @@ def execute_case(root, run_id, worker_id, scenario, *, helper, artifact, source_
             miner_address=_MINER, timeout=120)
         if cancel.is_set():
             raise runtime.Cancelled()
-        session.backend.mine(100)
+        session.backend.mine(750 if scenario.id == "flutter.macos.mempool-during-sync" else 100)
         result["payments"] = []
         for address, amount, pool, source in (() if is_rust else scenario_funding(
                 scenario.id, desktop_transparent=desktop_transparent)):

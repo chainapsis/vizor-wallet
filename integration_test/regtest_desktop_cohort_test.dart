@@ -19,6 +19,7 @@ import 'regtest_tex_send_test.dart' as tex;
 import 'regtest_payment_uri_send_test.dart' as payment_uri;
 import 'regtest_payment_uri_locked_send_test.dart' as locked_uri;
 import 'regtest_payment_request_round_trip_test.dart' as payment_request;
+import 'regtest_mempool_receive_history_test.dart' as mempool;
 
 /// One binary, with case identity supplied only by the existing runtime contract.
 void main() {
@@ -76,6 +77,11 @@ void main() {
       return;
     case 'flutter.macos.payment-request-round-trip':
       payment_request.main();
+      return;
+    case 'flutter.macos.mempool-receive-history':
+    case 'flutter.macos.mempool-during-sync':
+    case 'flutter.macos.mempool-expiry':
+      mempool.main();
       return;
     default:
       throw StateError(

@@ -42,6 +42,11 @@ def execute_native_macos_case(session, *, dart, source_root, timeout=600.0, canc
     manifest = json.loads(environment["VIZOR_E2E_CASE_MANIFEST"])
     if manifest["scenario_id"] == "flutter.macos.tex-send":
         environment["ZCASH_E2E_EPHEMERAL_CHECKS_DUE_NOW"] = "1"
+    if manifest["scenario_id"] == "flutter.macos.mempool-during-sync":
+        # Match the existing shell test: prove pending discovery during real sync,
+        # without throttling sibling cases or the parent process.
+        environment["ZCASH_E2E_SYNC_BATCH_SIZE"] = "50"
+        environment["ZCASH_E2E_SYNC_BATCH_DELAY_MS"] = "750"
     cancel = cancel_event if cancel_event is not None else threading.Event()
     deadline = time.monotonic() + timeout
     if cancel.is_set():

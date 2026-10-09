@@ -135,6 +135,11 @@ class OwnedNativeZakuraBackend:
         self._running()
         return self._fixture.release_held_transactions(txids, deadline=deadline)
 
+    def hold_pending_transactions(self, txids, *, expiry_height, deadline=None):
+        self._running()
+        return self._fixture.hold_pending_transactions(txids,
+            expiry_height=expiry_height, deadline=deadline)
+
     def close(self):
         """Caller must stop SDK-native apps and seal/join original case writers."""
         if self._control is not None and not self._control.closed:

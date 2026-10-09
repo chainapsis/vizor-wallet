@@ -97,6 +97,42 @@ class ControlFixture(unittest.TestCase):
 
 class ControlTests(ControlFixture):
 
+    def test_unmined_controls_bind_original_owner_and_reject_legacy_payloads(self):
+        self.prepare()
+        artifact = object()  # Signer transport modeled; not real artifact production.
+        self.control._artifact = artifact
+        self.backend.rpc = lambda method, **kwargs: 101
+        with patch.object(CONTROL, "fund_zakura_unmined", return_value={"txid_hex":"ab"*32}) as fund:
+            for payload in ({"address":"public", "amount":"0.25"},
+                            {"address":"public", "amount_zatoshi":True, "source_height":1},
+                            {"address":"public", "amount_zatoshi":25000000, "source_height":0}):
+                self.assertEqual(self.request("POST", "/fund-unmined", json.dumps(payload))[0], 400)
+            fund.assert_not_called()
+            for path, expiry in (("/fund-unmined", None), ("/fund-unmined-expiring", 121)):
+                status, _body = self.request("POST", path, json.dumps({
+                    "address":"public", "amount_zatoshi":25000000, "source_height":1}))
+                self.assertEqual(status, 200)
+                self.assertEqual(fund.call_args.args, (self.case, self.backend, artifact))
+                self.assertEqual(fund.call_args.kwargs["amount_zatoshi"], 25000000)
+                self.assertEqual(fund.call_args.kwargs["expiry_height"], expiry)
+                self.assertIs(fund.call_args.kwargs["cancel_event"], self.cancel)
+
+    def test_expiry_control_preserves_exact_hash_integer_and_original_owner(self):
+        self.prepare()
+        with patch.object(CONTROL, "expire_zakura_unmined", return_value={"final_tip_height":121}) as expire:
+            for payload in ({"txid":"bad", "expiry_height":121},
+                            {"txid":"ab"*32, "expiry_height":True},
+                            {"txid":"ab"*32, "expiryHeight":121}):
+                self.assertEqual(self.request("POST", "/mine-to-expiry", json.dumps(payload))[0], 400)
+            expire.assert_not_called()
+            status, _body = self.request("POST", "/mine-to-expiry", json.dumps({
+                "txid":"ab"*32, "expiry_height":121}))
+            self.assertEqual(status, 200)
+            self.assertEqual(expire.call_args.args, (self.case, self.backend))
+            self.assertEqual(expire.call_args.kwargs["txid"], "ab"*32)
+            self.assertEqual(expire.call_args.kwargs["expiry_height"], 121)
+            self.assertIs(expire.call_args.kwargs["cancel_event"], self.cancel)
+
     def test_clipboard_close_retains_lease_until_original_writers_join(self):
         self.assertEqual(self.request("POST", "/host-resource/clipboard/acquire", "{}")[0], 200)
         self.assertEqual(self.request("POST", "/host-resource/clipboard/acquire", "{}")[0], 400)

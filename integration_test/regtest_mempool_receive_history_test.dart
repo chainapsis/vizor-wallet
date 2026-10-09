@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
+import 'package:zcash_wallet/src/core/config/e2e_runtime_case_manifest.dart';
 import 'package:zcash_wallet/src/core/config/network_config.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
@@ -15,16 +16,24 @@ import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 import 'support/desktop_activity_flow.dart';
 import 'support/desktop_onboarding_flow.dart';
+import 'support/owned_regtest_control.dart';
 
 final _network = kZcashDefaultNetworkName;
-const _driverUrl = String.fromEnvironment(
-  'ZCASH_E2E_DRIVER_URL',
-  defaultValue: 'http://127.0.0.1:39067',
-);
-const _testMode = String.fromEnvironment(
-  'ZCASH_E2E_MEMPOOL_TEST_MODE',
-  defaultValue: 'steady',
-);
+String get _driverUrl =>
+    installedE2eRuntimeCaseManifest?.zcashdRpcUrl ??
+    const String.fromEnvironment(
+      'ZCASH_E2E_DRIVER_URL',
+      defaultValue: 'http://127.0.0.1:39067',
+    );
+String get _testMode => switch (installedE2eRuntimeCaseManifest?.scenarioId) {
+  'flutter.macos.mempool-receive-history' => 'steady',
+  'flutter.macos.mempool-during-sync' => 'during-sync',
+  'flutter.macos.mempool-expiry' => 'expiry',
+  _ => const String.fromEnvironment(
+    'ZCASH_E2E_MEMPOOL_TEST_MODE',
+    defaultValue: 'steady',
+  ),
+};
 const _firstMnemonic =
     'winter shiver fetch refuse absurd mail pistol eight market lounge manual '
     'roast miracle ethics found child scare curve congress renew salute pig '
@@ -51,7 +60,7 @@ class _ShieldedBalanceSnapshot {
 }
 
 void main() {
-  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   setUpAll(() async {
     await initializeZcashWalletRuntime();
@@ -129,6 +138,7 @@ void main() {
           amount: '+0.25 $_currencyTicker',
           status: 'In progress',
         );
+        binding.reportData?['assertions_completed'] = true;
       },
       timeout: const Timeout(Duration(minutes: 10)),
     );
@@ -202,6 +212,7 @@ void main() {
           amount: '+0.25 $_currencyTicker',
           status: 'In progress',
         );
+        binding.reportData?['assertions_completed'] = true;
       },
       timeout: const Timeout(Duration(minutes: 12)),
     );
@@ -304,6 +315,7 @@ void main() {
           amount: '+0.25 $_currencyTicker',
           status: 'In progress',
         );
+        binding.reportData?['assertions_completed'] = true;
       },
       timeout: const Timeout(Duration(minutes: 12)),
     );
@@ -359,16 +371,18 @@ Future<String> _copyActiveShieldedAddress(WidgetTester tester) async {
     ),
     description: 'shielded receive copy button',
   );
-  await _tapWidget(
-    tester,
-    const ValueKey('receive_copy_shielded_address_button'),
-  );
-  final data = await Clipboard.getData('text/plain');
-  final address = data?.text?.trim() ?? '';
-  if (address.isEmpty) {
-    fail('Shielded address was not copied to the clipboard.');
-  }
-  return address;
+  return withNativeClipboard(() async {
+    await _tapWidget(
+      tester,
+      const ValueKey('receive_copy_shielded_address_button'),
+    );
+    final data = await Clipboard.getData('text/plain');
+    final address = data?.text?.trim() ?? '';
+    if (address.isEmpty) {
+      fail('Shielded address was not copied to the clipboard.');
+    }
+    return address;
+  });
 }
 
 Future<String> _unifiedAddressForAccount(String accountUuid) async {
@@ -384,6 +398,19 @@ Future<String> _fundPreparedUnmined(String address, String amount) async {
   _log(
     'requesting prepared external unmined funding of $amount $_currencyTicker to $address',
   );
+  if (installedE2eRuntimeCaseManifest != null) {
+    if (amount != '0.25') throw StateError('Unexpected mempool test amount.');
+    final proof = await postOwnedRegtestControl('/fund-unmined', {
+      'address': address,
+      'amount_zatoshi': 25_000_000,
+      'source_height': 1,
+    });
+    final txid = proof['txid_hex'];
+    if (txid is! String || !RegExp(r'^[a-f0-9]{64}$').hasMatch(txid)) {
+      fail('Owned external unmined funding did not prove its transaction ID.');
+    }
+    return txid;
+  }
   final response = await _postDriver('/fund-unmined-prepared', {
     'address': address,
     'amount': amount,
@@ -400,6 +427,23 @@ Future<_ExpiringFunding> _fundExpiringUnmined(
   _log(
     'requesting expiring external unmined funding of $amount $_currencyTicker to $address',
   );
+  if (installedE2eRuntimeCaseManifest != null) {
+    if (amount != '0.25') throw StateError('Unexpected mempool test amount.');
+    final proof = await postOwnedRegtestControl('/fund-unmined-expiring', {
+      'address': address,
+      'amount_zatoshi': 25_000_000,
+      'source_height': 1,
+    });
+    final txid = proof['txid_hex'];
+    final expiry = proof['expiry_height'];
+    if (txid is! String ||
+        !RegExp(r'^[a-f0-9]{64}$').hasMatch(txid) ||
+        expiry is! int ||
+        expiry <= 0) {
+      fail('Owned external expiry funding did not prove its ID and expiry.');
+    }
+    return _ExpiringFunding(txid: txid, expiryHeight: expiry);
+  }
   final response = await _postDriver('/fund-unmined-expiring', {
     'address': address,
     'amount': amount,
@@ -418,6 +462,13 @@ Future<void> _mineRegtestBlocks(int blocks) async {
 
 Future<void> _mineToExpiry(String txid, int expiryHeight) async {
   _log('requesting external mining to expiry height $expiryHeight for $txid');
+  if (installedE2eRuntimeCaseManifest != null) {
+    await postOwnedRegtestControl('/mine-to-expiry', {
+      'txid': txid,
+      'expiry_height': expiryHeight,
+    });
+    return;
+  }
   await _postDriver('/mine-to-expiry', {
     'txid': txid,
     'expiryHeight': expiryHeight,
@@ -699,8 +750,9 @@ Future<_ShieldedBalanceSnapshot> _shieldedBalance(String accountUuid) async {
     accountUuid: accountUuid,
   );
   return _ShieldedBalanceSnapshot(
-    pending: balance.saplingPending + balance.orchardPending,
-    spendable: balance.sapling + balance.orchard,
+    pending:
+        balance.saplingPending + balance.orchardPending + balance.ironwoodPending,
+    spendable: balance.sapling + balance.orchard + balance.ironwood,
   );
 }
 
@@ -876,8 +928,8 @@ Future<void> _stopRustWorkForCleanup() async {
   }
 
   if (rust_sync.isSyncRunning() || rust_sync.isMempoolObserverRunning()) {
-    _log(
-      'timed out waiting for Rust work to stop; continuing E2E storage cleanup',
+    throw StateError(
+      'Rust work did not stop; retain the owned wallet instead of deleting it.',
     );
   }
 }

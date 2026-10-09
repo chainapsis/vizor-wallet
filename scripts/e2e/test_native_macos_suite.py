@@ -166,6 +166,17 @@ class SuiteTests(unittest.TestCase):
             (SUITE._IMPORT_TRANSPARENT, 75000000, "transparent", 2),
         ))
 
+    def test_mempool_internal_paths_do_not_enable_public_pending_cases(self):
+        scenarios = tuple(self.catalog.scenarios_by_id[name] for name in (
+            "flutter.macos.mempool-receive-history", "flutter.macos.mempool-during-sync",
+            "flutter.macos.mempool-expiry"))
+        with patch.object(SUITE.sys, "platform", "darwin"):
+            SUITE.validate_options(self.args, scenarios)
+        for scenario in scenarios:
+            self.assertEqual(SUITE.scenario_funding(scenario.id), ())
+            self.assertFalse(scenario.supported)
+        self.assertFalse(e2e_catalog.plan(self.catalog, scenarios).runnable)
+
     def test_payment_group_keeps_exact_balances_and_independent_funding_sources(self):
         names = ("flutter.macos.shield-transparent", "flutter.macos.shield-transparent-retry",
             "flutter.macos.multi-account-send", "flutter.macos.tex-send", "flutter.macos.payment-uri-send",
