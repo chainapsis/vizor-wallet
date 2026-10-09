@@ -63,6 +63,43 @@ void main() {
     expect(transactionDetailsIncomplete(tx), isTrue);
   });
 
+  test('an unsettled receive whose details balance stays incomplete', () {
+    // Rust keeps the detail of an unsettled receive provisional even when
+    // its transparent outputs account for the balance; only a settled one
+    // is complete and clears the entry's notice.
+    final tx = _transaction(
+      'aa',
+      'received',
+      feeState: rust_sync.TransactionFeeState.notApplicable,
+      detailsComplete: false,
+      provisional: true,
+      accountBalanceDelta: 1000000,
+    );
+    rust_sync.TransactionDetail detail({required bool settled}) =>
+        rust_sync.TransactionDetail(
+          txidHex: 'aa',
+          txKind: 'received',
+          sourcePool: 'shielded',
+          outputs: const [],
+          detailsComplete: settled,
+          provisional: !settled,
+          transparentDetailsState: rust_sync.TransparentDetailsState.available,
+          transparentRecipients: [
+            rust_sync.TransparentRecipient(
+              outputIndex: 0,
+              address: 't1self',
+              amountZatoshi: BigInt.from(1000000),
+              isOwn: true,
+            ),
+          ],
+          transparentOutputCount: 1,
+          transparentOmissions: const [],
+        );
+    expect(transactionDetailsIncomplete(tx), isTrue);
+    expect(receiptDetailsComplete(detail(settled: false)), isFalse);
+    expect(receiptDetailsComplete(detail(settled: true)), isTrue);
+  });
+
   test('conservative receipts label balance movements as net changes', () {
     expect(kNetChangeText, 'Net change');
   });
