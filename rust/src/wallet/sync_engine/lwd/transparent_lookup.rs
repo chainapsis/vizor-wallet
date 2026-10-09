@@ -43,7 +43,8 @@ use zcash_protocol::consensus::BlockHeight;
 use super::dispatch_signal::{DispatchSignalService, Dispatched};
 use crate::wallet::{
     db::{
-        open_wallet_db_readonly_with_timeout, with_wallet_db_write_lock_until, SYNC_DB_BUSY_TIMEOUT,
+        open_wallet_db_readonly_with_timeout, with_wallet_db_write_lock_unless,
+        SYNC_DB_BUSY_TIMEOUT,
     },
     network::WalletNetwork,
 };
@@ -131,10 +132,15 @@ pub(crate) async fn apply_transparent_policy_fenced_if(
     if !still(db)? {
         return Ok(None);
     }
-    with_wallet_db_write_lock_until("sync_engine.transparent_policy.apply", deadline, || {
-        db.apply_transparent_policy(mode)
-    })
-    .map_err(|error| SyncError::db(format!("transparent policy: {error}")))?
+    // The wait yields to the runtime rather than blocking its worker.
+    let past_deadline = || Instant::now() >= deadline;
+    with_wallet_db_write_lock_unless(
+        "sync_engine.transparent_policy.apply",
+        &past_deadline,
+        || db.apply_transparent_policy(mode),
+    )
+    .await
+    .ok_or_else(|| SyncError::db("transparent policy: the wallet write lock was not free in time"))?
     .map(Some)
     .map_err(|error| SyncError::db(format!("apply_transparent_policy: {error}")))
 }
@@ -855,6 +861,52 @@ mod tests {
         let withheld = TransparentLookupGate::pre_db(PublicTransparentLookups::Withheld);
         assert_eq!(withheld.dispatch(rpc(&sent)).await.unwrap(), None);
         assert_eq!(sent.load(Ordering::SeqCst), 1);
+    }
+
+    /// A transition that cannot take the wallet write lock within its drain
+    /// budget applies nothing and says why. Its wait yields to the runtime:
+    /// another task on the same single-threaded runtime keeps running.
+    #[tokio::test]
+    async fn a_transition_waiting_for_the_write_lock_yields_then_gives_up() {
+        if isolated_fence_test("a_transition_waiting_for_the_write_lock_yields_then_gives_up") {
+            return;
+        }
+        let (_dir, path, gate) = wallet();
+        let mut db =
+            open_wallet_db_with_timeout(&path, WalletNetwork::Regtest, SYNC_DB_BUSY_TIMEOUT)
+                .unwrap();
+        let ticks = Arc::new(AtomicUsize::new(0));
+        let ticker = tokio::spawn({
+            let ticks = ticks.clone();
+            async move {
+                loop {
+                    ticks.fetch_add(1, Ordering::SeqCst);
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                }
+            }
+        });
+        let writer = crate::wallet::db::hold_wallet_db_write_lock(Duration::from_secs(10));
+        let refused = apply_transparent_policy_fenced(
+            &mut db,
+            &path,
+            TransparentLedgerMode::PrivateShadow,
+            Duration::from_millis(200),
+        )
+        .await;
+        drop(writer);
+        ticker.abort();
+        let error = refused.expect_err("the writer held the lock past the budget");
+        assert!(
+            error
+                .to_string()
+                .contains("wallet write lock was not free in time"),
+            "{error}"
+        );
+        assert!(
+            ticks.load(Ordering::SeqCst) > 1,
+            "the wait yielded to the runtime"
+        );
+        assert!(gate.permits().unwrap(), "nothing was applied");
     }
 }
 
