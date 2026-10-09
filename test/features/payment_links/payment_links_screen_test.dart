@@ -17,6 +17,7 @@ import 'package:zcash_wallet/src/features/keystone/widgets/keystone_signing_moda
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_cards_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_intake_provider.dart';
+import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_claim_coordinator_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_entry_policy.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_hardware_signing_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
@@ -41,6 +42,37 @@ import '../../support/leading_decimal_input.dart';
 import '../../support/payment_links_screen_support.dart';
 
 void main() {
+  testWidgets(
+    'leaving a desktop preview prevents its interrupted check reopening',
+    (tester) async {
+      final gate = Completer<void>();
+      final operations = _InterruptedPreviewOperations(gate);
+      await pumpPaymentLinksScreen(
+        tester,
+        operations: operations,
+        clipboard: FakePaymentLinkClipboard(
+          text: incomingLink.toUri().toString(),
+        ),
+      );
+      await tester.tap(find.text('Redeem a card'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Paste card link'));
+      await tester.pump();
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(MaterialApp).first),
+      );
+      final coordinator = container.read(paymentLinkClaimCoordinatorProvider);
+      coordinator.pauseForLifecycle();
+      await tester.tap(find.text('My Cards'));
+      await tester.pumpAndSettle();
+      coordinator.resumeForLifecycle();
+      gate.complete();
+      await tester.pumpAndSettle();
+      expect(operations.allowLongSyncCalls, hasLength(1));
+      expect(find.text('Redeem a card'), findsOneWidget);
+      expect(find.text('You’ve received\na gift card!'), findsNothing);
+    },
+  );
   registerGiftCardPrivacyChecks(mobile: false);
   registerGiftCardClaimCheckingChecks(mobile: false);
   testWidgets(
@@ -4059,6 +4091,28 @@ void main() {
       findsOneWidget,
     );
   });
+}
+
+class _InterruptedPreviewOperations extends FakePaymentLinkOperations {
+  _InterruptedPreviewOperations(Completer<void> gate)
+    : super(prepareClaimGates: {1: gate});
+
+  @override
+  Future<PaymentLinkClaimSession> prepareClaim(
+    VizorPaymentLink link, {
+    bool allowLongSync = false,
+  }) async {
+    final session = await super.prepareClaim(
+      link,
+      allowLongSync: allowLongSync,
+    );
+    if (allowLongSyncCalls.length == 1) {
+      throw GiftCardPreparationInterrupted(
+        GiftCardPreparationPauseReason.lifecycle,
+      );
+    }
+    return session;
+  }
 }
 
 Future<void> _reviewTwoCards(WidgetTester tester) async {

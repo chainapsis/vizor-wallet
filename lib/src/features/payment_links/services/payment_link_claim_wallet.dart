@@ -85,7 +85,9 @@ class PaymentLinkClaimWallet {
                     .read(paymentLinkClaimCoordinatorProvider)
                     .acceptsPreparation ||
                 _ref.read(appSecurityProvider).requiresUnlock) {
-              throw StateError('Gift Card preparation is paused.');
+              throw GiftCardPreparationInterrupted(
+                GiftCardPreparationPauseReason.lifecycle,
+              );
             }
             if (endpoint.networkName != link.network) {
               throw StateError('Gift Card network changed.');
@@ -137,7 +139,9 @@ class PaymentLinkClaimWallet {
               }
               coordinator.requirePreparation(generation);
               if (paused || epoch != _checkCancellationEpoch) {
-                throw StateError('Gift Card preparation is paused.');
+                throw GiftCardPreparationInterrupted(
+                  GiftCardPreparationPauseReason.lifecycle,
+                );
               }
               if (last == null || !last.complete) {
                 throw StateError('Gift Card check did not complete.');

@@ -145,6 +145,12 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
   final FocusNode _messageFocusNode = FocusNode();
   late final PaymentLinkOperations _paymentLinkOperations;
   late final PaymentLinkIntakeNotifier _paymentLinkIntake;
+  PaymentLinkPreviewReservation? _intakePreview;
+  bool _restorePreviewAfterUnlock = false;
+  late final PaymentLinkClaimCoordinator _claimCoordinator;
+  ({VizorPaymentLink link, bool allowLongSync, int epoch})?
+  _deferredPreparation;
+  bool _preparationResumeScheduled = false;
   @override
   Timer? _fundingQuoteDebounce;
   Timer? _fundingProgressTimer;
@@ -186,6 +192,11 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
   VizorPaymentLink? _lastDeferredPendingLink;
   VizorPaymentLink? _longSyncLink;
   VizorPaymentLink? _retryLink;
+  bool _preparationInterrupted = false;
+
+  String get _preparationFailureMessage => _preparationInterrupted
+      ? kPaymentLinkInterruptedCheckMessage
+      : 'Card balance could not be checked. Try again.';
   @override
   PaymentLinkFundingResult? _pendingFundingMetadata;
   _PaymentLinkHardwareFundingRequest? _hardwareFundingRequest;
@@ -229,6 +240,10 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     _paymentLinkOperations = ref.read(paymentLinkOperationsProvider);
     _batchOperations = ref.read(paymentLinkBatchOperationsProvider);
     _paymentLinkIntake = ref.read(paymentLinkIntakeProvider.notifier);
+    _claimCoordinator = ref.read(paymentLinkClaimCoordinatorProvider);
+    _claimCoordinator.preparationChanges.addListener(
+      _schedulePreparationResume,
+    );
     // Both form factors open on the Gift Card home (the cards list once any
     // exist, the create/redeem landing otherwise). Only a link that is
     // already waiting jumps mobile straight to the redeem page, so the landing
@@ -277,6 +292,28 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
 
   @override
   void dispose() {
+    _claimCoordinator.preparationChanges.removeListener(
+      _schedulePreparationResume,
+    );
+    // Unlock replaces this route. Return an unprepared card to intake so the
+    // unlock handoff can open it in the new screen without losing the link.
+    final link = _receivedLink;
+    final restorePreview =
+        (_restorePreviewAfterUnlock || _claimCoordinator.requiresUnlock) &&
+        _claimStageActive &&
+        _receivedClaimSession == null &&
+        link != null;
+    final reservation = _intakePreview;
+    _intakePreview = null;
+    if (reservation != null) {
+      if (restorePreview) {
+        reservation.restoreAfterRouteDisposal();
+      } else {
+        reservation.release();
+      }
+    } else if (restorePreview) {
+      _paymentLinkIntake.restoreInterruptedPreview(link);
+    }
     _fundingQuoteDebounce?.cancel();
     _disposeBatchCreation();
     _fundingProgressTimer?.cancel();
@@ -330,6 +367,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       _leaveBatchCreation();
     }
     if (page != _page) {
+      _clearDeferredPreparation();
       _mobileNavigationEpoch++;
       if (kAppFormFactor == AppFormFactor.desktop &&
           page == PaymentLinksLocalPage.redeem) {
@@ -384,6 +422,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
 
   void _startCreate() {
     if (_operationInProgress || _pendingFundingMetadata != null) return;
+    _clearDeferredPreparation();
     _mobileNavigationEpoch++;
     _fundingQuoteDebounce?.cancel();
     _fundingQuoteGeneration++;
@@ -419,7 +458,11 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
   void _hideHelpOverlay() => setState(() => _showHelp = false);
 
   void _schedulePendingPaymentLink() {
-    if (!_initialCardsLoaded || _pendingIntakeScheduled) return;
+    if (!_initialCardsLoaded ||
+        _pendingIntakeScheduled ||
+        !_claimCoordinator.canStartPreparation) {
+      return;
+    }
     _pendingIntakeScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _pendingIntakeScheduled = false;
@@ -428,7 +471,14 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
   }
 
   Future<void> _consumePendingPaymentLink() async {
-    if (!_initialCardsLoaded || _operationInProgress) return;
+    if (!_initialCardsLoaded ||
+        _operationInProgress ||
+        _intakePreview != null ||
+        _deferredPreparation != null ||
+        ModalRoute.of(context)?.isCurrent != true ||
+        !_claimCoordinator.canStartPreparation) {
+      return;
+    }
     final pendingLink = ref.read(paymentLinkIntakeProvider).pendingLink;
     if (pendingLink == null) return;
     if (_page != PaymentLinksLocalPage.home &&
@@ -440,9 +490,105 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       return;
     }
     _lastDeferredPendingLink = null;
-    final link = ref.read(paymentLinkIntakeProvider.notifier).takePending();
-    if (link == null || !mounted) return;
-    await _checkPaymentLink(link);
+    final preview = _paymentLinkIntake.takePendingForPreview();
+    if (preview == null) return;
+    _intakePreview = preview;
+    await _checkPaymentLink(preview.link);
+  }
+
+  void _schedulePreparationResume() {
+    if (_claimCoordinator.requiresUnlock &&
+        _claimStageActive &&
+        _receivedClaimSession == null &&
+        _receivedLink != null) {
+      _restorePreviewAfterUnlock = true;
+    }
+    if (!mounted || _preparationResumeScheduled) return;
+    _preparationResumeScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _preparationResumeScheduled = false;
+      if (!mounted) return;
+      if (ModalRoute.of(context)?.isCurrent != true) {
+        if (_restorePreviewAfterUnlock) return;
+        _clearDeferredPreparation();
+        return;
+      }
+      final request = _deferredPreparation;
+      if (request != null &&
+          (request.epoch != _mobileNavigationEpoch ||
+              !identical(_receivedLink, request.link))) {
+        _clearDeferredPreparation();
+      }
+      if (!_claimCoordinator.canStartPreparation || _operationInProgress) {
+        return;
+      }
+      final deferred = _deferredPreparation;
+      if (deferred == null) {
+        _schedulePendingPaymentLink();
+        return;
+      }
+      _deferredPreparation = null;
+      unawaited(_resumePreparation(deferred));
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  Future<void> _resumePreparation(
+    ({VizorPaymentLink link, bool allowLongSync, int epoch}) request,
+  ) async {
+    setState(() => _operationInProgress = true);
+    try {
+      await _prepareDecodedPaymentLink(
+        request.link,
+        allowLongSync: request.allowLongSync,
+      );
+    } finally {
+      _releaseFinishedIntakePreview();
+      if (mounted) {
+        setState(() => _operationInProgress = false);
+        if (_deferredPreparation != null) _schedulePreparationResume();
+      }
+    }
+  }
+
+  void _deferPreparation(
+    VizorPaymentLink link, {
+    required bool allowLongSync,
+    required int epoch,
+  }) {
+    _deferredPreparation = (
+      link: link,
+      allowLongSync: allowLongSync,
+      epoch: epoch,
+    );
+    setState(() {
+      _receivedLink = link;
+      _page = PaymentLinksLocalPage.redeem;
+      _redeemState = PaymentLinkRedeemVisualState.loading;
+      _retryLink = null;
+    });
+    _schedulePreparationResume();
+  }
+
+  void _releaseIntakePreview() {
+    _intakePreview?.release();
+    _intakePreview = null;
+  }
+
+  void _releaseFinishedIntakePreview() {
+    if (_deferredPreparation == null &&
+        _retryLink == null &&
+        !_claimCoordinator.requiresUnlock &&
+        (!_restorePreviewAfterUnlock || _receivedClaimSession != null)) {
+      _releaseIntakePreview();
+      _restorePreviewAfterUnlock = false;
+    }
+  }
+
+  void _clearDeferredPreparation() {
+    _deferredPreparation = null;
+    _restorePreviewAfterUnlock = false;
+    _releaseIntakePreview();
   }
 
   void _showDeferredPendingLinkMessage() {
@@ -1778,7 +1924,11 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     try {
       await _prepareDecodedPaymentLink(link);
     } finally {
-      if (mounted) setState(() => _operationInProgress = false);
+      _releaseFinishedIntakePreview();
+      if (mounted) {
+        setState(() => _operationInProgress = false);
+        if (_deferredPreparation != null) _schedulePreparationResume();
+      }
     }
   }
 
@@ -1789,6 +1939,11 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     final epoch = _mobileNavigationEpoch;
     _receivedLink = link;
     _claimStageActive = true;
+    if (!_claimCoordinator.canStartPreparation) {
+      _deferPreparation(link, allowLongSync: allowLongSync, epoch: epoch);
+      return;
+    }
+    _deferredPreparation = null;
     final previousSession = _receivedClaimSession;
     if (previousSession != null &&
         paymentLinkClaimWalletDirectoryName(previousSession.link) !=
@@ -1918,19 +2073,38 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
           _redeemState = PaymentLinkRedeemVisualState.invalid;
         });
       }
+    } on GiftCardPreparationInterrupted catch (error) {
+      log(
+        'PaymentLinkClaim: preparation interrupted reason=${error.reason.name}',
+      );
+      if (!mounted || epoch != _mobileNavigationEpoch) return;
+      if (ModalRoute.of(context)?.isCurrent != true) return;
+      if (error.canResume) {
+        _deferPreparation(link, allowLongSync: allowLongSync, epoch: epoch);
+      } else {
+        _showPreparationFailure(link, interrupted: true);
+      }
     } catch (error) {
       log('PaymentLinkClaim: preparation failed type=${error.runtimeType}');
       if (mounted && _isCurrentNavigation(epoch)) {
-        setState(() {
-          _page = PaymentLinksLocalPage.redeem;
-          _longSyncLink = null;
-          _retryLink = link;
-          _redeemState = PaymentLinkRedeemVisualState.paste;
-        });
-        if (kAppFormFactor == AppFormFactor.mobile) {
-          _showError('Card balance could not be checked. Try again.');
-        }
+        _showPreparationFailure(link);
       }
+    }
+  }
+
+  void _showPreparationFailure(
+    VizorPaymentLink link, {
+    bool interrupted = false,
+  }) {
+    setState(() {
+      _page = PaymentLinksLocalPage.redeem;
+      _longSyncLink = null;
+      _retryLink = link;
+      _preparationInterrupted = interrupted;
+      _redeemState = PaymentLinkRedeemVisualState.paste;
+    });
+    if (kAppFormFactor == AppFormFactor.mobile) {
+      _showError(_preparationFailureMessage);
     }
   }
 
@@ -2005,6 +2179,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
   /// Redeem, and would hold the temporary claim wallet until route dispose.
   void _abandonReceivedPreview({bool goHome = false}) {
     if (_mobileNavigationLocked) return;
+    _clearDeferredPreparation();
     _mobileNavigationEpoch++;
     final session = _receivedClaimSession;
     setState(() {
@@ -3627,7 +3802,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       children: [
         if (_retryLink != null)
           Text(
-            'Card balance could not be checked. Try again.',
+            _preparationFailureMessage,
             textAlign: TextAlign.center,
             style: AppTypography.bodyMedium.copyWith(
               color: context.colors.text.secondary,

@@ -45,6 +45,8 @@ const kPaymentLinkClaimWaitingDescription =
 const kPaymentLinkWaitingDescription = 'This may take a little while.';
 const kPaymentLinkPasteLabel = 'Paste card link';
 const kPaymentLinkCheckingLabel = 'Checking…';
+const kPaymentLinkInterruptedCheckMessage =
+    'Card check was interrupted. Try again.';
 const kPaymentLinkClaimCheckingHeading = 'Checking your\ngift card';
 const kPaymentLinkClaimCheckingDescription =
     'Checking whether this gift card\nhas already been claimed.';

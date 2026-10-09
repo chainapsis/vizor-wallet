@@ -200,6 +200,39 @@ void main() {
   );
 
   test(
+    'later lifecycle changes never revive a generation from before reset',
+    () async {
+      final container = ProviderContainer(
+        overrides: [
+          appSecurityProvider.overrideWith(_UnlockedSecurityNotifier.new),
+          paymentLinkClaimRecoveryRunnerProvider.overrideWithValue(
+            () async => const [],
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final coordinator = container.read(paymentLinkClaimCoordinatorProvider);
+      final generation = coordinator.beginPreparation();
+      await coordinator.quiesceAndDrain();
+      coordinator.pauseForLifecycle();
+      coordinator.resumeAfterReset();
+      coordinator.resumeForLifecycle();
+      expect(
+        () => coordinator.requirePreparation(generation),
+        throwsA(
+          isA<GiftCardPreparationInterrupted>().having(
+            (error) => error.reason,
+            'reason',
+            GiftCardPreparationPauseReason.walletChange,
+          ),
+        ),
+      );
+      expect(coordinator.canStartPreparation, isTrue);
+      coordinator.requirePreparation(coordinator.beginPreparation());
+    },
+  );
+
+  test(
     'different claims submit concurrently while duplicate claims join',
     () async {
       final first = Completer<PaymentLinkClaimResult>();

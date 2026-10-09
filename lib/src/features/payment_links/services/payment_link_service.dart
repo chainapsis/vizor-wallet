@@ -2703,9 +2703,11 @@ class PaymentLinkService
   }
 
   void _requireWalletUnlocked() {
-    requireUnlockedPaymentLinkWallet(
-      requiresUnlock: _ref.read(appSecurityProvider).requiresUnlock,
-    );
+    if (_ref.read(appSecurityProvider).requiresUnlock) {
+      throw GiftCardPreparationInterrupted(
+        GiftCardPreparationPauseReason.locked,
+      );
+    }
   }
 
   String _newSendFlowId() {
