@@ -857,9 +857,11 @@ fn verify_old_reader(scenario: &str, db_path: &str, require_refusal: bool) {
     let schema = read_schema(db_path);
     match wallet::list_accounts(db_path.to_string(), NETWORK.to_string()) {
         Err(error) => {
+            let cause = compat::try_initialize(db_path)
+                .expect_err("the older library must also refuse the database");
             assert!(
-                error.contains("unknown migrations"),
-                "older reader failed for an unrelated reason: {error}"
+                cause.contains("UnknownMigrations("),
+                "older reader failed for an unrelated reason: app={error}; library={cause}"
             );
             println!("refused older reader scenario={scenario}");
         }
