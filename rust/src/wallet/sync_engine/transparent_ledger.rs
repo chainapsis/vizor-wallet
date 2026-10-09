@@ -411,10 +411,10 @@ pub(crate) async fn run<S: RecoverySource>(
     if durable == TransparentLedgerMode::Public {
         return Ok(RunOutcome::NotEnabled);
     }
-    // The handle has adopted a durable `PrivateRequired` even under a weaker
-    // captured mode.
-    let required =
-        db.transparent_ledger_mode().map_err(db_error)? == TransparentLedgerMode::PrivateRequired;
+    // The configured mode, not the handle's effective one: a durable
+    // `PrivateRequired` governs every read, but qualification and promotion
+    // need the handle configured `PrivateRequired` as well.
+    let required = policy.transparent_mode() == TransparentLedgerMode::PrivateRequired;
     let deadline = clock() + RUN_BUDGET;
     let accounts = visiting_order(db_path, db.get_account_ids().map_err(db_error)?, first);
     let mut run = Run {
@@ -479,8 +479,9 @@ struct Run<'a, S> {
     db: &'a mut WalletDatabase,
     db_path: &'a str,
     source: &'a S,
-    /// The handle is `PrivateRequired`: Ledger and quarantined accounts are
-    /// skipped, and recovered candidates are offered for promotion.
+    /// The handle is configured `PrivateRequired`: Ledger and quarantined
+    /// accounts are skipped, and recovered candidates are offered for
+    /// promotion.
     required: bool,
     /// Commits are qualified as they are applied.
     qualify: bool,

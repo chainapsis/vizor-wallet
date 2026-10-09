@@ -512,3 +512,43 @@ async fn a_default_build_with_the_setting_on_writes_nothing_and_sends_nothing() 
         }
     );
 }
+
+/// Trust follows the mode the handle is configured with, not its effective
+/// one. A weaker selection over a durably private wallet reads under the
+/// durable `PrivateRequired`, but the wallet qualifies a revision only for a
+/// handle configured `PrivateRequired`: such a run observes even a trusted
+/// source's commits, rather than sending them trusted to be refused.
+#[tokio::test]
+async fn a_weaker_selection_over_a_private_wallet_only_observes() {
+    let qualified = |path: &str| count(path, "SELECT COUNT(*) FROM tpir_qualified_revisions");
+    let mut wallet = wallet();
+    let _mode = activate(&mut wallet).await;
+    let source = funded_source(&wallet);
+    let mut configured =
+        open_wallet_db_with_timeout(&wallet.path, NETWORK, SYNC_DB_BUSY_TIMEOUT).unwrap();
+    shadow().configure_db(&mut configured);
+    assert_eq!(
+        configured.transparent_ledger_mode().unwrap(),
+        TransparentLedgerMode::PrivateRequired,
+        "the durable policy governs the shadow handle's reads"
+    );
+
+    let RunOutcome::Finished(stats) = recover(&mut wallet, &source).await else {
+        panic!("a shadow selection observes instead of being refused");
+    };
+    assert!(stats.commits > 0);
+    assert_eq!((stats.qualified, stats.promoted), (0, 0));
+    assert_eq!(qualified(&wallet.path), 0);
+    assert_eq!(
+        lifecycle(&wallet, wallet.account),
+        AccountLifecycle::Candidate
+    );
+
+    // Configured `PrivateRequired`, the same source's commits qualify.
+    let RunOutcome::Finished(stats) = run_required(&mut wallet, &source).await else {
+        panic!("recovery finishes");
+    };
+    assert!(stats.commits > 0);
+    assert_eq!((stats.qualified, stats.promoted), (stats.commits, 1));
+    assert_eq!(qualified(&wallet.path), 1);
+}
