@@ -248,7 +248,9 @@ impl Wallet {
     /// signed inputs, as it does for a wallet's own hardware-signed spends.
     fn funded(batch: bool) -> Self {
         use secrecy::ExposeSecret as _;
-        use transparent::{address::TransparentAddress, bundle::TxOut, keys::NonHardenedChildIndex};
+        use transparent::{
+            address::TransparentAddress, bundle::TxOut, keys::NonHardenedChildIndex,
+        };
         use zcash_client_backend::{
             data_api::{InputSource as _, WalletWrite},
             wallet::WalletTransparentOutput,

@@ -234,12 +234,11 @@ impl CapturingLwd {
                                     let grpc = hyper::Response::builder()
                                         .header("content-type", "application/grpc");
                                     let response = match found {
-                                        Some((data, height)) => grpc
-                                            .header("grpc-status", "0")
-                                            .body(Full::new(grpc_frame(&RawTransaction {
-                                                data,
-                                                height,
-                                            }))),
+                                        Some((data, height)) => {
+                                            grpc.header("grpc-status", "0").body(Full::new(
+                                                grpc_frame(&RawTransaction { data, height }),
+                                            ))
+                                        }
                                         None => grpc
                                             .header("grpc-status", "5")
                                             .header("grpc-message", "not found")

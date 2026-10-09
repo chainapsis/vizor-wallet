@@ -1175,6 +1175,48 @@ mod rebuild_tests {
         }
     }
 
+    /// Even a dangling sidecar name must prevent replacement: absence of its
+    /// target is not proof that the sidecar can be ignored.
+    #[cfg(unix)]
+    #[test]
+    fn a_dangling_sidecar_is_never_ignored() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("companion.sqlite");
+        write(&path, b"original");
+        let staging = sibling(&path, ".rebuild");
+        write(&staging, b"replacement");
+        let sidecar = sibling(&path, "-wal");
+        std::os::unix::fs::symlink(dir.path().join("missing"), &sidecar).unwrap();
+        assert!(matches!(
+            swap_in(&path, &staging, |from, to| std::fs::rename(from, to)),
+            Err(RebuildError::Unsalvageable)
+        ));
+        assert_eq!(std::fs::read(&path).unwrap(), b"original");
+        assert!(std::fs::symlink_metadata(sidecar)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+    }
+
+    /// A failed metadata lookup must stop before rename. Here a regular file
+    /// in a parent component makes the lookup fail rather than report absence.
+    #[test]
+    fn uncertain_sidecar_metadata_stops_before_rename() {
+        let dir = tempfile::tempdir().unwrap();
+        let parent = dir.path().join("not-a-directory");
+        write(&parent, b"kept");
+        let path = parent.join("companion.sqlite");
+        let staging = dir.path().join("replacement.sqlite");
+        write(&staging, b"replacement");
+        assert!(matches!(
+            swap_in(&path, &staging, |_, _| panic!(
+                "metadata failure reached rename"
+            )),
+            Err(RebuildError::Unsalvageable)
+        ));
+        assert_eq!(std::fs::read(&parent).unwrap(), b"kept");
+    }
+
     /// A rebuild's replacement belongs to its companion: listed with it, and
     /// removed with it.
     #[test]

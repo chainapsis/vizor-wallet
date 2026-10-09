@@ -27,10 +27,7 @@ use zcash_protocol::consensus::BlockHeight;
 use crate::wallet::{
     db::{open_wallet_raw_conn_with_timeout, READ_DB_BUSY_TIMEOUT},
     network::WalletNetwork,
-    sync_engine::{
-        enhancement::transparent_ledger_mode_for,
-        Dispatched,
-    },
+    sync_engine::{enhancement::transparent_ledger_mode_for, Dispatched},
 };
 
 /// Reservations held at least this long are logged, as evidence for whether
