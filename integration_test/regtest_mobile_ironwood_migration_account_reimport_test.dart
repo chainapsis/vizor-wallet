@@ -130,10 +130,15 @@ void main() {
         network: mobileE2eNetwork,
         accountUuid: originalAccountUuid,
       );
+      // Reserved inputs are still owned: deleting the account removes their
+      // local reservations, not their unspent value on chain.
       final expectedRecoveredIronwood =
-          balanceBeforeRemoval.ironwood + balanceBeforeRemoval.ironwoodPending;
+          balanceBeforeRemoval.ironwood +
+          balanceBeforeRemoval.ironwoodLocked +
+          balanceBeforeRemoval.ironwoodPending;
       final expectedRemainingOrchard =
           balanceBeforeRemoval.orchard +
+          balanceBeforeRemoval.orchardLocked +
           balanceBeforeRemoval.orchardPending +
           balanceBeforeRemoval.uneconomicValue;
       expect(expectedRecoveredIronwood, greaterThan(BigInt.zero));
@@ -141,6 +146,8 @@ void main() {
       logE2e(
         'account removal snapshot: run=$originalRunId '
         'ironwood=$expectedRecoveredIronwood orchard=$expectedRemainingOrchard '
+        'orchardLocked=${balanceBeforeRemoval.orchardLocked} '
+        'ironwoodLocked=${balanceBeforeRemoval.ironwoodLocked} '
         'confirmed=${partiallyConfirmed.confirmedTxCount} '
         'broadcasted=${partiallyConfirmed.broadcastedTxCount} '
         'total=${partiallyConfirmed.totalCount}',
@@ -231,6 +238,11 @@ void main() {
       expect(
         recoveredBalance.orchard + recoveredBalance.uneconomicValue,
         expectedRemainingOrchard,
+      );
+      expect(
+        recoveredBalance.total + recoveredBalance.uneconomicValue,
+        balanceBeforeRemoval.total + balanceBeforeRemoval.uneconomicValue,
+        reason: 're-import must recover reserved value without losing funds',
       );
 
       final recoveredStatus = await mobileRegtestMigrationStatus(
@@ -332,8 +344,10 @@ Future<rust_sync.WalletBalance> _waitForRecoveredBalance(
           'reimport balance: expected ironwood=$expectedIronwood '
           'orchard=$expectedOrchard; actual ironwood=${lastBalance.ironwood} '
           'ironwoodPending=${lastBalance.ironwoodPending} '
+          'ironwoodLocked=${lastBalance.ironwoodLocked} '
           'orchard=${lastBalance.orchard} '
           'orchardPending=${lastBalance.orchardPending} '
+          'orchardLocked=${lastBalance.orchardLocked} '
           'uneconomic=${lastBalance.uneconomicValue}',
         );
         nextLog = DateTime.now().add(const Duration(seconds: 30));
@@ -349,7 +363,9 @@ Future<rust_sync.WalletBalance> _waitForRecoveredBalance(
     'Expected ironwood=$expectedIronwood orchard=$expectedOrchard. '
     'Actual ironwood=${lastBalance?.ironwood} '
     'ironwoodPending=${lastBalance?.ironwoodPending} '
+    'ironwoodLocked=${lastBalance?.ironwoodLocked} '
     'orchard=${lastBalance?.orchard} orchardPending=${lastBalance?.orchardPending} '
+    'orchardLocked=${lastBalance?.orchardLocked} '
     'uneconomic=${lastBalance?.uneconomicValue}. Last error: $lastError',
   );
 }
