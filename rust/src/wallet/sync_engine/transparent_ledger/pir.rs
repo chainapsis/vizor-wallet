@@ -43,6 +43,7 @@
 //! Logs carry variant and cause names and lag in blocks, never identifiers,
 //! digests, scripts or adapter error text.
 
+use std::cell::Cell;
 use std::collections::{BTreeSet, HashMap};
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -431,20 +432,30 @@ impl Pass {
         &self,
         db: &impl WalletRead<AccountId = AccountUuid>,
     ) -> Result<Companion, PassFailure> {
-        let accounts: BTreeSet<_> = db
-            .get_account_ids()
-            .map_err(|_| PassFailure::Wallet)?
-            .into_iter()
-            .map(|account| account.expose_uuid().to_string())
-            .collect();
+        // The library reads the accounts only after listing the companions,
+        // so one created for an account added meanwhile is never an orphan.
+        let unreadable = Cell::new(false);
+        let accounts = || match db.get_account_ids() {
+            Ok(accounts) => Ok(accounts
+                .into_iter()
+                .map(|account| account.expose_uuid().to_string())
+                .collect::<BTreeSet<_>>()),
+            Err(_) => {
+                unreadable.set(true);
+                Err(io::Error::other("wallet accounts unreadable"))
+            }
+        };
         companion_dir(&self.db_path)
             .open(
                 &self.account.expose_uuid().to_string(),
                 recovery_config(self.account, &self.origin),
-                &accounts,
+                accounts,
                 &|| !self.exit(),
             )
             .map_err(|error| {
+                if unreadable.get() {
+                    return PassFailure::Wallet;
+                }
                 let name = match &error {
                     // The pass stopped while another handle held it.
                     OpenError::Busy if self.exit() => return PassFailure::Companion,
