@@ -748,6 +748,33 @@ make catalog entries runnable or establish a wallet/scenario PASS.
 python3 -B -m unittest scripts/e2e/test_funder_execution.py
 ```
 
+### Owned direct-fixture funding
+
+`zakura_funding.py` combines one accepting original case/backend with an original
+published offline signer. `fund_zakura` takes an explicit coinbase source height,
+integer zatoshi amount, recipient pool/address and confirmation count. It does
+not guess a source, mine its maturity automatically or use faucet/node-wallet
+RPCs. The caller first mines until the source will be mature in the next block:
+the target inclusion height must be at least the source height plus 100.
+
+Before broadcasting, the adapter checks the fixed miner, actual coinbase block
+and unspent outpoint, unchanged tip, activation profile and exact integer
+input/amount/fee/change conservation. It then checks the submitted transaction
+ID, exact signed bytes in the expected raw block and the corresponding compact
+block identity. Transparent funding additionally requires the exact raw output,
+lightwalletd raw transaction stream and UTXO; shielded funding requires the
+correct compact pool/action presence. Successful evidence is written under the
+original backend directory, not accepted from an external receipt.
+
+These oracles prove a fixture payment, not recipient note decryption, wallet
+balance, recovery or catalog PASS. Cancellation is checked between synchronous
+backend calls, not inside Docker/RPC transport. The caller still owns process
+shutdown, failed-state retention and final original backend/native cleanup.
+
+```bash
+python3 -B -m unittest scripts/e2e/test_zakura_funding.py
+```
+
 ## Gift Cards
 
 Sender usage tracking and empty observer DB reuse:
