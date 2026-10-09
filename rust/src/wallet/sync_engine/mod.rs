@@ -2629,6 +2629,15 @@ pub async fn run_sync_inner(
                     elapsed()
                 );
             }
+            // A public wallet keeps no private ledger facts. This finishes a
+            // forget that failed when the policy was lowered, or one a build
+            // without it never did; with nothing to forget it only reads.
+            if let Err(error) = transparent_ledger::forget_private_ledger(db_data_path, network) {
+                log::warn!(
+                    "[{}] sync: could not forget private ledger facts: {error}",
+                    elapsed()
+                );
+            }
         }
         if attempt > 0 {
             let delay_secs = 1u64 << attempt; // 2, 4, 8

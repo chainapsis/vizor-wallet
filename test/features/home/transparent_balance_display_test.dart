@@ -76,15 +76,40 @@ void main() {
       );
       expect(
         display.hint,
-        'Private transparent recovery is not selected. Turn '
-        'off Private queries to restore public lookups. If it is already off, '
-        'turn it on and then off.',
+        'Private transparent recovery is not selected. Turn off Private '
+        'queries to look up transparent funds publicly. If it is already '
+        'off, choose Finish turning off in Settings.',
       );
       expect(display.hint, isNot(contains('until private recovery')));
       expect(
         display.hint,
-        contains('If it is already off, turn it on and then off.'),
+        contains(
+          'If it is already off, choose Finish turning off in Settings.',
+        ),
       );
+    });
+
+    test('conflicting records say turning off discards them', () {
+      for (final reason in [
+        rust_sync.TransparentStopReason.quarantined,
+        rust_sync.TransparentStopReason.legacyDiscrepancy,
+      ]) {
+        final hint = TransparentBalanceDisplay.of(
+          SyncState(
+            transparentAuthority: rust_sync.TransparentBalanceAuthority.stopped,
+            transparentStop: reason,
+          ),
+        ).hint;
+        expect(
+          hint,
+          contains(
+            'Turning off Private queries discards privately recovered '
+            'records and looks up transparent funds publicly.',
+          ),
+          reason: '$reason',
+        );
+        expect(hint, isNot(contains('restore public lookups')));
+      }
     });
 
     test('a stopped recovery never reads as a spendable amount', () {
@@ -221,7 +246,12 @@ void main() {
       final copy = friendlyShieldBalanceError(Exception(notSelectedRefusal));
       expect(copy, transparentRecoveryNotSelectedMessage);
       expect(copy, contains('Turn off Private queries'));
-      expect(copy, contains('If it is already off, turn it on and then off.'));
+      expect(
+        copy,
+        contains(
+          'If it is already off, choose Finish turning off in Settings.',
+        ),
+      );
       expect(copy, isNot(contains('until private recovery completes')));
     });
   });

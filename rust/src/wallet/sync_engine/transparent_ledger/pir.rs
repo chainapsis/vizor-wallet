@@ -111,7 +111,7 @@ const OVERLOADED_RETRY: Duration = Duration::from_secs(30);
 pub(crate) const CANCEL_GRACE: Duration = Duration::from_secs(2);
 
 /// How long account deletion waits for a companion another pass holds.
-const REMOVE_WAIT: Duration = Duration::from_secs(5);
+pub(crate) const REMOVE_WAIT: Duration = Duration::from_secs(5);
 
 /// Sidecar suffixes SQLite may leave beside a companion file.
 const SIDECARS: [&str; 3] = ["-wal", "-shm", "-journal"];
@@ -770,6 +770,33 @@ pub(crate) fn remove_orphan_companions(db_path: &str) -> Result<(), String> {
         }
     }
     first_error.map_or(Ok(()), Err)
+}
+
+/// Deletes every companion of the wallet at `db_path`, with its sidecars,
+/// waiting at most `wait` for each one's lock.
+///
+/// Forgetting private ledger facts calls this first and forgets nothing
+/// unless it succeeds: a companion records which revisions the wallet holds,
+/// and one that outlived the facts would make a later private run skip them.
+/// A companion still locked, as by an abandoned pass, fails the call and is
+/// left for the next attempt.
+pub(crate) fn remove_all_companions(db_path: &str, wait: Duration) -> Result<(), String> {
+    let found = match companions(&companion_dir(db_path)) {
+        Ok(found) => found,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => {
+            return Err(format!(
+                "Failed to list transparent PIR companions: {error}"
+            ))
+        }
+    };
+    for (_, base) in found {
+        let _lock = lock_within(&companion_lock(&base), wait)
+            .ok_or_else(|| "A transparent PIR companion is in use".to_owned())?;
+        remove_files(&base)
+            .map_err(|error| format!("Failed to remove a transparent PIR companion: {error}"))?;
+    }
+    Ok(())
 }
 
 /// [`remove_companions`], waiting at most `wait` for each companion's lock.

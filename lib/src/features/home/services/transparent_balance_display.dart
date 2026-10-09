@@ -67,14 +67,16 @@ class TransparentBalanceDisplay {
   String? get hint => switch (stop) {
     null => null,
     rust_sync.TransparentStopReason.quarantined =>
-      'Private recovery found conflicting records for this account. Turn off '
-          'Private queries to restore public lookups.',
+      'Private recovery found conflicting records for this account. Turning '
+          'off Private queries discards privately recovered records and looks '
+          'up transparent funds publicly.',
     rust_sync.TransparentStopReason.ledger =>
-      'Ledger transparent funds are not recovered privately. Turn off Private '
-          'queries to restore public lookups.',
+      'Ledger transparent funds are not recovered privately. Turning off '
+          'Private queries looks up transparent funds publicly.',
     rust_sync.TransparentStopReason.legacyDiscrepancy =>
-      "Earlier public records don't match private recovery. Turn off Private "
-          'queries to restore public lookups.',
+      "Earlier public records don't match private recovery. Turning off "
+          'Private queries discards privately recovered records and looks up '
+          'transparent funds publicly.',
     rust_sync.TransparentStopReason.withdrawn =>
       'The private recovery service withdrew data for this account. Vizor '
           'will try again later.',
@@ -82,8 +84,8 @@ class TransparentBalanceDisplay {
       "Private recovery can't make progress for this account. Vizor will try "
           'again later.',
     rust_sync.TransparentStopReason.notSelected =>
-      'Private transparent recovery is not selected. Turn off '
-          'Private queries to restore public lookups. If it is already off, '
-          'turn it on and then off.',
+      'Private transparent recovery is not selected. Turn off Private '
+          'queries to look up transparent funds publicly. If it is already '
+          'off, choose Finish turning off in Settings.',
   };
 }

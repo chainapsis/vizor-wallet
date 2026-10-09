@@ -525,3 +525,176 @@ async fn a_public_selection_over_a_private_wallet_does_not_recover() {
     assert_eq!((stats.qualified, stats.promoted), (stats.commits, 1));
     assert_eq!(qualified(&wallet.path), 1);
 }
+
+/// Writes a stand-in companion for `wallet`'s account, as a private pass
+/// would leave behind, and returns its path.
+fn companion_file(wallet: &Wallet) -> std::path::PathBuf {
+    let path = super::super::pir::companion_path(
+        &wallet.path,
+        wallet.account,
+        "https://companion.invalid",
+    );
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, b"companion").unwrap();
+    path
+}
+
+/// Records `received` as public discovery would.
+fn discover_publicly(wallet: &Wallet, received: &ReceiveEvent) {
+    let output = zcash_client_backend::wallet::WalletTransparentOutput::from_parts(
+        received.outpoint.clone(),
+        transparent::bundle::TxOut::new(received.value, received.address.script().into()),
+        Some(received.mined_height),
+        Some(wallet.account),
+        Some(TransparentKeyScope::EXTERNAL),
+        None,
+    )
+    .unwrap();
+    open_wallet_db_with_timeout(&wallet.path, NETWORK, SYNC_DB_BUSY_TIMEOUT)
+        .unwrap()
+        .put_received_transparent_utxo(&output)
+        .unwrap();
+}
+
+/// A wallet whose account private recovery activated with one receive only
+/// the publication reported, and a companion for it.
+async fn recovered_wallet() -> (Wallet, ReceiveEvent, std::path::PathBuf) {
+    let mut wallet = wallet();
+    let mode = activate(&mut wallet).await;
+    let source = funded_source(&wallet);
+    run_required(&mut wallet, &source).await;
+    assert_eq!(balance(&wallet, &wallet.uuid).transparent, VALUE);
+    let companion = companion_file(&wallet);
+    // The preference is off from here on, as after a toggle-off.
+    drop(mode);
+    let received = receive(1, external(&wallet, 0), VALUE, 150);
+    (wallet, received, companion)
+}
+
+/// Turning private queries off forgets what private recovery alone told the
+/// wallet, so a publication's receive no longer counts as public funds, and
+/// deletes the companion that recorded it as held. Public discovery then
+/// rebuilds whatever is real.
+#[tokio::test]
+async fn lowering_forgets_private_ledger_facts_and_their_companions() {
+    let (wallet, received, companion) = recovered_wallet().await;
+    let ledger_facts = "SELECT
+        (SELECT COUNT(*) FROM tpir_receive_events)
+      + (SELECT COUNT(*) FROM tpir_coverage)
+      + (SELECT COUNT(*) FROM tpir_output_origins WHERE origin = 2)";
+    assert!(count(&wallet.path, ledger_facts) > 0);
+
+    let lowered = set_transparent_policy(&wallet.path, NETWORK, false)
+        .await
+        .unwrap();
+    assert_eq!(lowered.unwrap().mode, TransparentLedgerMode::Public);
+
+    assert!(!companion.exists());
+    assert_eq!(count(&wallet.path, ledger_facts), 0);
+    assert_eq!(
+        count(
+            &wallet.path,
+            "SELECT COUNT(*) FROM transparent_received_outputs"
+        ),
+        0
+    );
+    let public = balance(&wallet, &wallet.uuid);
+    assert_eq!(public.transparent, 0);
+    assert_eq!(
+        public.transparent_authority,
+        TransparentBalanceAuthority::Current
+    );
+
+    // Public discovery finds what is real again.
+    discover_publicly(&wallet, &received);
+    assert_eq!(balance(&wallet, &wallet.uuid).transparent, VALUE);
+    // A second forget, as at the next sync start, removes none of it.
+    let again = forget_private_ledger(&wallet.path, NETWORK)
+        .unwrap()
+        .unwrap();
+    assert!(again.removed_nothing(), "{again:?}");
+    assert_eq!(balance(&wallet, &wallet.uuid).transparent, VALUE);
+}
+
+/// Nothing is forgotten while a companion survives, because a companion that
+/// outlived the facts would make a later private run skip them. The policy
+/// is public all the same, and the next attempt, as at sync start, finishes.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_companion_that_cannot_be_deleted_defers_forgetting() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let (wallet, _, companion) = recovered_wallet().await;
+    let dir = companion.parent().unwrap().to_owned();
+    /// Makes the directory writable again, also when the test fails.
+    struct Restore(std::path::PathBuf);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let _ = std::fs::set_permissions(&self.0, std::fs::Permissions::from_mode(0o700));
+        }
+    }
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o500)).unwrap();
+    let restore = Restore(dir.clone());
+
+    set_transparent_policy(&wallet.path, NETWORK, false)
+        .await
+        .unwrap();
+    assert_eq!(
+        applied(&wallet.path, NETWORK).mode,
+        TransparentLedgerMode::Public
+    );
+    assert!(companion.exists());
+    assert!(count(&wallet.path, "SELECT COUNT(*) FROM tpir_receive_events") > 0);
+    assert!(forget_private_ledger(&wallet.path, NETWORK).is_err());
+    assert!(count(&wallet.path, "SELECT COUNT(*) FROM tpir_receive_events") > 0);
+
+    drop(restore);
+    let forgotten = forget_private_ledger(&wallet.path, NETWORK)
+        .unwrap()
+        .unwrap();
+    assert!(!forgotten.removed_nothing(), "{forgotten:?}");
+    assert!(!companion.exists());
+    assert_eq!(
+        count(&wallet.path, "SELECT COUNT(*) FROM tpir_receive_events"),
+        0
+    );
+    assert_eq!(balance(&wallet, &wallet.uuid).transparent, 0);
+}
+
+/// A wallet still private keeps its facts and companions: only a public
+/// policy is forgotten.
+#[tokio::test]
+async fn a_private_wallet_is_not_forgotten() {
+    let mut wallet = wallet();
+    let _mode = activate(&mut wallet).await;
+    let source = funded_source(&wallet);
+    run_required(&mut wallet, &source).await;
+    let companion = companion_file(&wallet);
+    let events = count(&wallet.path, "SELECT COUNT(*) FROM tpir_receive_events");
+    assert!(events > 0);
+
+    assert_eq!(forget_private_ledger(&wallet.path, NETWORK).unwrap(), None);
+    assert!(companion.exists());
+    assert_eq!(
+        count(&wallet.path, "SELECT COUNT(*) FROM tpir_receive_events"),
+        events
+    );
+    assert_eq!(balance(&wallet, &wallet.uuid).transparent, VALUE);
+}
+
+/// A wallet that never recovered privately, as in every default build, is
+/// only read, and no companion directory is made.
+#[tokio::test]
+async fn a_wallet_that_never_recovered_privately_has_nothing_to_forget() {
+    let wallet = wallet();
+    let forgotten = forget_private_ledger(&wallet.path, NETWORK)
+        .unwrap()
+        .unwrap();
+    assert!(forgotten.removed_nothing(), "{forgotten:?}");
+    assert!(!super::super::pir::companion_dir(&wallet.path).exists());
+    // A missing wallet stays missing.
+    let dir = tempfile::tempdir().unwrap();
+    let missing = dir.path().join("wallet.db").to_str().unwrap().to_owned();
+    assert_eq!(forget_private_ledger(&missing, NETWORK).unwrap(), None);
+    assert!(!std::path::Path::new(&missing).exists());
+}
