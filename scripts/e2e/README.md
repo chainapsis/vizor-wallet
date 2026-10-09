@@ -801,6 +801,33 @@ start a shim/control server, decrypt wallet notes, enable a catalog executor or
 provide native app teardown authority. Callers still own original case joins,
 raw backend cleanup and evidence retention.
 
+### Verified direct Zakura LWD shim
+
+`zakura_lwd_shim.dart` consumes the original host's genesis proof with explicit
+path/SHA-256/fixture-run-ID/raw-port arguments. Its Dart reader checks the bounded
+canonical read-only file, digest and independently verified empty-genesis schema;
+raw RPC error diagnostics are not evidence of emptiness. The host must obtain
+these arguments from the original proof handle, not an adopted external receipt.
+
+The adapter serves only the verified height-zero, empty-hash `GetTreeState`
+request locally. Nonzero/hash requests and other RPCs are forwarded upstream;
+`GetLightdInfo` changes only a known `test`/`regtest` chainName to `regtest`, never
+an unexpected network. Existing proxy fault-mode availability checks still
+apply to the local genesis response. SIGINT/SIGTERM close the server/channel
+before normal process exit; the host remains responsible for original group
+and output joins before raw backend/port cleanup.
+
+```sh
+fvm dart run scripts/e2e/zakura_lwd_shim.dart \
+  --listen-port "$FRONT_PORT" --upstream-port "$RAW_PORT" \
+  --genesis-proof "$PROOF_PATH" --genesis-proof-sha256 "$PROOF_SHA256" \
+  --fixture-run-id "$FIXTURE_RUN_ID"
+```
+
+This test-only server does not adopt a fixture, enable a catalog executor or
+prove wallet synchronization/decryption. No production app or dependency edits
+are required. Native front/control orchestration remains a separate boundary.
+
 ## Gift Cards
 
 Sender usage tracking and empty observer DB reuse:
