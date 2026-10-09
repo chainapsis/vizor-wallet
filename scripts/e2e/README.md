@@ -48,8 +48,8 @@ python3 -B -m unittest scripts/e2e/test_zakura_fixture_source.py
 ## Catalog previews
 
 `run-suite.py` provides a host-only inventory and selection preview. Of 64
-entries, sixteen Rust receive/import/send/multi-account and five macOS
-import/endpoint cases are wired to the isolated executor; the other 43 stay pending.
+entries, twenty-one Rust receive/import/send/multi-account/Gift and five macOS
+import/endpoint cases are wired to the isolated executor; the other 38 stay pending.
 A preview exit code of 0 means the preview succeeded,
 not that any test ran or passed. Execution requires explicit `--run`.
 
@@ -157,13 +157,12 @@ This is in-process build reuse, not a persistent verified build cache. The
 other native/Rust scenarios, iOS execution, resource/performance comparison
 and final-source all-green catalog are still pending. No CI behavior changes.
 
-## Isolated Rust receive, import, send and multi-account execution
+## Isolated Rust receive, import, send, multi-account and Gift execution
 
 The same coordinator runs `rust.receive.sync`, `rust.send.basic`,
 `rust.send.second-account` and the five `rust.import.*` cases for
 `bip39-passphrase`, `historical-birthday`, `future-birthday`, `receive-after-sync`
-and `deterministic-reimport`. The separate `rust.import.direct-zakura` entry
-remains pending. Use the same absolute tooling paths shown above:
+and `deterministic-reimport`. Use the same absolute tooling paths shown above:
 
 ```bash
 python3 -B scripts/e2e/run-suite.py \
@@ -210,6 +209,30 @@ scan-queue state because regtest cannot naturally reproduce a mainnet partial
 scan. These scenarios use the narrowly scoped rc7 SQLite
 [backport](../../rust/vendor/README.md), which also affects production builds.
 No SDK package versions or database schemas change.
+
+The same executor also runs `rust.receive.direct-zakura`,
+`rust.import.direct-zakura` and `rust.gift-card.tracking-multiple`,
+`rust.gift-card.empty-db-reuse`, `rust.gift-card.competition`. Direct receive/import
+require exactly 100,000,000 Ironwood zatoshis, six confirmations, complete sync,
+matching history/txid and no other balances. The BIP39 import independently
+derives the public vector and verifies a wrong-passphrase wallet stays empty.
+Direct cases require the original isolated manifest/controller; there is no
+shared-service fallback or filesystem funding handoff.
+
+Gift observer databases use the owned wallet root as well. Existing observer
+retirement, empty-gap recovery and competing-claim financial assertions remain;
+the rejected claimant must retain complete transaction IDs, and independent
+funding transactions must differ. Example side-effect-free selection:
+
+```bash
+python3 -B scripts/e2e/run-suite.py \
+  --scenario rust.receive.direct-zakura --scenario rust.import.direct-zakura \
+  --scenario rust.gift-card.tracking-multiple \
+  --scenario rust.gift-card.empty-db-reuse --scenario rust.gift-card.competition --plan
+```
+
+Add the documented tooling paths and change to `--run` for execution. The two
+Rust activation-500 Ironwood cases and all iOS execution remain pending.
 
 ## Native port ownership primitive
 

@@ -65,7 +65,9 @@ class E2eCatalogTest(unittest.TestCase):
                           "rust.multi-account.late-add-history-future",
                           "rust.multi-account.tip-birthday-history", "rust.multi-account.two-before-sync",
                           "rust.multi-account.preserve-history", "rust.multi-account.isolated-balances",
-                          "rust.multi-account.idempotent-sync"})
+                          "rust.multi-account.idempotent-sync", "rust.receive.direct-zakura",
+                          "rust.import.direct-zakura", "rust.gift-card.tracking-multiple",
+                          "rust.gift-card.empty-db-reuse", "rust.gift-card.competition"})
         self.assertTrue(all(item.pending_reason for item in self.catalog.profiles if not item.supported))
         self.assertTrue(all(item.pending_reason for item in self.catalog.scenarios if not item.supported))
         self.assertEqual(

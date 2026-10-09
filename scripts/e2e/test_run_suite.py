@@ -47,7 +47,9 @@ class PreviewTests(unittest.TestCase):
             "rust.multi-account.orphaned-range", "rust.multi-account.deleted-range",
             "rust.multi-account.late-add-history-future", "rust.multi-account.tip-birthday-history",
             "rust.multi-account.two-before-sync", "rust.multi-account.preserve-history",
-            "rust.multi-account.isolated-balances", "rust.multi-account.idempotent-sync"}
+            "rust.multi-account.isolated-balances", "rust.multi-account.idempotent-sync",
+            "rust.receive.direct-zakura", "rust.import.direct-zakura", "rust.gift-card.tracking-multiple",
+            "rust.gift-card.empty-db-reuse", "rust.gift-card.competition"}
         for record in output["scenarios"]:
             wired = record["scenario_id"] in wired_ids
             self.assertEqual(record["supported"], wired)
@@ -108,7 +110,7 @@ class PreviewTests(unittest.TestCase):
         self.assertEqual(output["execution_mode"], "blocked")
         self.assertFalse(output["runnable"])
         self.assertEqual(output["selection"]["impact"]["fallback_files"], ["unknown/runtime.file"])
-        self.assertEqual(len(output["selection"]["impact"]["coverage_gaps"]), 43)
+        self.assertEqual(len(output["selection"]["impact"]["coverage_gaps"]), 38)
 
     def test_shared_test_helper_selects_its_e2e_consumer(self) -> None:
         code, output, errors = self.invoke(
@@ -272,6 +274,24 @@ class PreviewTests(unittest.TestCase):
             code, output, error = self.invoke(*arguments, "--run")
         self.assertEqual((code, output, error), (0, None, ""))
         self.assertEqual({s.id for s in execute.call_args.args[2]}, expected)
+
+    def test_gift_and_direct_cases_are_ready_and_reach_the_exact_executor(self) -> None:
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        ids = {"rust.receive.direct-zakura", "rust.import.direct-zakura",
+            "rust.gift-card.tracking-multiple", "rust.gift-card.empty-db-reuse", "rust.gift-card.competition"}
+        arguments = tuple(value for name in sorted(ids) for value in ("--scenario", name))
+        with patch.dict(sys.modules, {"native_macos_suite": None}):
+            code, plan, error = self.invoke(*arguments, "--plan")
+        self.assertEqual((code, error), (0, ""))
+        self.assertTrue(plan["runnable"])
+        self.assertEqual(plan["pending_blockers"], [])
+        self.assertEqual({s["scenario_id"] for s in plan["selected_scenarios"]}, ids)
+        execute = Mock(return_value=0)
+        with patch.dict(sys.modules, {"native_macos_suite": SimpleNamespace(run_native_suite=execute)}):
+            code, output, error = self.invoke(*arguments, "--run")
+        self.assertEqual((code, output, error), (0, None, ""))
+        self.assertEqual({s.id for s in execute.call_args.args[2]}, ids)
 
     def test_previews_never_load_backends_start_processes_or_write_artifacts(self) -> None:
         original_import = builtins.__import__
