@@ -30,11 +30,16 @@
 //! batch, unopened, to the adapter's `apply_and_acknowledge`, which applies
 //! its commits and acknowledges it only once every one committed.
 //!
-//! A pass runs on a blocking thread, over a read-only wallet handle for the
-//! chain view, and stops at cancellation or [`PASS_DEADLINE`], counted from
-//! the call. On cancellation the async side waits for it, so no companion or
-//! wallet handle outlives a cancelled pass; a call dropped before the pass
-//! returns, as at the coordinator's backstop, stops it at its next request.
+//! A pass runs on a thread and runtime of its own, never the sync's runtime
+//! or its blocking pool: a runtime's shutdown waits for every blocking-pool
+//! task, so a pass that ignored its cancellation would hold the sync, and
+//! every start queued behind it, until the app restarted. It reads the wallet
+//! through a read-only handle for the chain view and stops at cancellation or
+//! [`PASS_DEADLINE`], counted from the call. On cancellation the pass gets
+//! [`CANCEL_GRACE`] to return; one that does not is abandoned, still holding
+//! its read-only handle and its companion's lock until it returns, and
+//! nothing it returns is read. A call dropped before the pass returns, as at
+//! the coordinator's backstop, likewise stops it at its next request.
 //! Logs carry variant and cause names and lag in blocks, never identifiers,
 //! digests, scripts or adapter error text.
 
@@ -101,6 +106,9 @@ const MAX_RESPONSE_BYTES: usize = 8 << 20;
 const BEHIND_RETRY: Duration = Duration::from_secs(10);
 /// Wait before asking again a service that refused for capacity.
 const OVERLOADED_RETRY: Duration = Duration::from_secs(30);
+
+/// How long a cancelled pass may take to return before it is abandoned.
+pub(crate) const CANCEL_GRACE: Duration = Duration::from_secs(2);
 
 /// How long account deletion waits for a companion another pass holds.
 const REMOVE_WAIT: Duration = Duration::from_secs(5);
@@ -223,8 +231,9 @@ impl RecoverySource for TransparentPirSource {
     /// retried once on the same companion. Only a `Ready` batch has commits;
     /// it stays parked for [`apply`](Self::apply), and a later pass on the
     /// account supersedes an unsettled one.
-    /// Cancellation waits for the blocking work and returns
-    /// [`SourceError::Cancelled`], discarding whatever it retrieved.
+    /// Cancellation waits up to [`CANCEL_GRACE`] for the pass, abandoning it
+    /// after that, and returns [`SourceError::Cancelled`], discarding
+    /// whatever it retrieved.
     async fn recover(&self, request: SourceRequest<'_>) -> Result<SourceBatch, SourceError> {
         let SourceRequest {
             account,
@@ -275,14 +284,44 @@ impl RecoverySource for TransparentPirSource {
             #[cfg(test)]
             transport,
         };
-        let mut task = tokio::task::spawn_blocking(move || pass.run(slot));
+        let (done, mut answer) = tokio::sync::oneshot::channel();
+        let spawned = std::thread::Builder::new()
+            .name("transparent-pir".to_owned())
+            .spawn(move || {
+                // The pass's I/O, DNS lookups on a blocking pool among it, runs
+                // on this runtime, so an abandoned pass never holds the sync's.
+                let Ok(io) = tokio::runtime::Builder::new_multi_thread()
+                    .worker_threads(1)
+                    .thread_name("transparent-pir-io")
+                    .enable_all()
+                    .build()
+                else {
+                    return;
+                };
+                let mut pass = pass;
+                pass.handle = io.handle().clone();
+                // A send to an abandoning caller drops the companion here,
+                // releasing its lock.
+                let _ = done.send(pass.run(slot));
+                io.shutdown_background();
+            });
+        if spawned.is_err() {
+            log::error!("transparent PIR: could not start a pass");
+            return Err(SourceError::Failed);
+        }
         let joined = tokio::select! {
             biased;
             _ = watch_for_exit(&should_exit) => {
                 cancel.store(true, Ordering::SeqCst);
-                (&mut task).await
+                match tokio::time::timeout(CANCEL_GRACE, &mut answer).await {
+                    Ok(joined) => joined,
+                    Err(_) => {
+                        log::warn!("transparent PIR: abandoned a pass that ignored cancellation");
+                        return Err(SourceError::Cancelled);
+                    }
+                }
             }
-            joined = &mut task => joined,
+            joined = &mut answer => joined,
         };
         let Ok((held, result)) = joined else {
             log::error!("transparent PIR: pass panicked");

@@ -475,9 +475,33 @@ async fn deleting_an_account_removes_its_companion_and_sidecars() {
     pir::remove_companions(&wallet.path, &a_uuid).unwrap();
 }
 
+/// Starts a sync that is cancelled before it reaches the network, which runs
+/// only the start-of-sync housekeeping.
+async fn start_cancelled_sync(path: &str) {
+    // A cancelled sync to an unreachable server stops after its first attempt.
+    let _ = crate::wallet::sync_engine::run_sync_inner(
+        path,
+        "http://127.0.0.1:1",
+        MAIN,
+        Arc::new(AtomicBool::new(true)),
+        1,
+        &std::sync::atomic::AtomicU8::new(0),
+        None,
+        false,
+        |_| {},
+    )
+    .await;
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_sync_start_deletes_a_companion_its_account_deletion_left_behind() {
     let wallet = main_wallet(2);
+    // Private, so the start of sync keeps live companions; a public wallet
+    // forgets them all with its ledger facts.
+    open_wallet_db_with_timeout(&wallet.path, MAIN, SYNC_DB_BUSY_TIMEOUT)
+        .unwrap()
+        .apply_transparent_policy(TransparentLedgerMode::PrivateRequired)
+        .unwrap();
     let (a_uuid, _) = wallet.accounts[0].clone();
     let (b_uuid, _) = wallet.accounts[1].clone();
     keys::delete_account(&wallet.path, MAIN, &a_uuid).unwrap();
@@ -491,24 +515,27 @@ async fn a_sync_start_deletes_a_companion_its_account_deletion_left_behind() {
     let live = companion(&wallet.path, &b_uuid);
     touch(&live);
 
-    // A cancelled sync to an unreachable server stops after its first attempt.
-    let _ = crate::wallet::sync_engine::run_sync_inner(
-        &wallet.path,
-        "http://127.0.0.1:1",
-        MAIN,
-        Arc::new(AtomicBool::new(true)),
-        1,
-        &std::sync::atomic::AtomicU8::new(0),
-        None,
-        false,
-        |_| {},
-    )
-    .await;
+    start_cancelled_sync(&wallet.path).await;
 
     for path in &left_files {
         assert!(!path.exists(), "{path:?} survived");
     }
     assert!(live.exists(), "a live account's companion was deleted");
+}
+
+/// A public wallet keeps no private ledger facts, so the start of every sync
+/// forgets any left behind, deleting every companion first.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_public_sync_start_forgets_private_ledger_state() {
+    let wallet = main_wallet(1);
+    let (uuid, _) = wallet.accounts[0].clone();
+    std::fs::create_dir_all(pir::companion_dir(&wallet.path)).unwrap();
+    let live = companion(&wallet.path, &uuid);
+    touch(&live);
+
+    start_cancelled_sync(&wallet.path).await;
+
+    assert!(!live.exists(), "a public wallet kept a companion");
 }
 
 #[test]
@@ -778,6 +805,68 @@ async fn a_dropped_pass_stops_at_its_next_request() {
     tokio::time::sleep(Duration::from_millis(300)).await;
     // The detached pass sent nothing after the first answer.
     assert_eq!(paths(&seam.seam.observer.requests()), [MAP]);
+}
+
+/// A pass that ignores its cancellation, here a request that never returns,
+/// is abandoned after [`pir::CANCEL_GRACE`] rather than holding the call, and
+/// the runtime that ran the call shuts down without waiting for it: the pass
+/// runs on a thread of its own, never on that runtime's blocking pool, whose
+/// shutdown would wait forever. Once it returns, its companion is free again.
+#[test]
+fn a_stuck_pass_holds_neither_the_call_nor_its_runtime() {
+    let wallet = main_wallet(1);
+    let account = wallet.accounts[0].1;
+    let watch = watched_by(&wallet, account);
+    let started = Arc::new(AtomicBool::new(false));
+    let (release, released) = std::sync::mpsc::channel::<()>();
+    let released = Mutex::new(released);
+    let _seam = test_transport::set(&wallet.path, {
+        let started = started.clone();
+        RequestObserver::answering(move |_| {
+            started.store(true, Ordering::SeqCst);
+            // Deaf to the exit flag, as a stuck read would be.
+            let _ = released
+                .lock()
+                .unwrap()
+                .recv_timeout(Duration::from_secs(60));
+            reply(200, shard_map(BIRTHDAY - 100))
+        })
+    });
+
+    let exit = AtomicBool::new(false);
+    let begun = Instant::now();
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let answer = runtime.block_on(async {
+        let source = TransparentPirSource::new(&wallet.path, MAIN);
+        let should_exit = || exit.load(Ordering::SeqCst);
+        let call = source.recover(request(account, &watch, &should_exit));
+        let stuck = async {
+            while !started.load(Ordering::SeqCst) {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+            exit.store(true, Ordering::SeqCst);
+        };
+        let (answer, ()) = tokio::join!(call, stuck);
+        answer
+    });
+    drop(runtime);
+    let took = begun.elapsed();
+    assert_eq!(answer, Err(SourceError::Cancelled));
+    assert!(
+        took < pir::CANCEL_GRACE + Duration::from_secs(10),
+        "the call or its runtime waited for the stuck pass: {took:?}"
+    );
+
+    // Released, the abandoned pass returns its companion, and the next pass
+    // runs on it.
+    drop(release);
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let next = runtime.block_on(async {
+        TransparentPirSource::new(&wallet.path, MAIN)
+            .recover(request(account, &bare(account), &|| false))
+            .await
+    });
+    assert_eq!(next, Ok(COMPLETE));
 }
 
 #[tokio::test(flavor = "multi_thread")]
