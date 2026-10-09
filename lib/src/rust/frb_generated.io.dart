@@ -1225,11 +1225,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  SoftwareAccountDiscoveryStatus dco_decode_software_account_discovery_status(
-    dynamic raw,
-  );
-
-  @protected
   SoftwareWalletDiscoveredAccount dco_decode_software_wallet_discovered_account(
     dynamic raw,
   );
@@ -2884,11 +2879,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SignedDelegationPayloadView sse_decode_signed_delegation_payload_view(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  SoftwareAccountDiscoveryStatus sse_decode_software_account_discovery_status(
     SseDeserializer deserializer,
   );
 
@@ -4889,12 +4879,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_signed_delegation_payload_view(
     SignedDelegationPayloadView self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_software_account_discovery_status(
-    SoftwareAccountDiscoveryStatus self,
     SseSerializer serializer,
   );
 

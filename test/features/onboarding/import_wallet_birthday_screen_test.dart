@@ -7,8 +7,6 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
-import 'package:zcash_wallet/src/core/widgets/app_button.dart';
-import 'package:zcash_wallet/src/features/onboarding/import/import_account_discovery_incomplete_modal.dart';
 import 'package:zcash_wallet/src/features/onboarding/import/import_account_discovery_modal.dart';
 import 'package:zcash_wallet/src/features/onboarding/import/import_birthday_calendar_overlay.dart';
 import 'package:zcash_wallet/src/features/onboarding/import/import_birthday_estimator.dart';
@@ -130,178 +128,6 @@ void main() {
     await tester.pump();
 
     expect(find.text('Customise route'), findsOneWidget);
-  });
-
-  testWidgets('completed discovery without candidates continues directly', (
-    tester,
-  ) async {
-    CustomiseAccountArgs? customiseArgs;
-    await _submitWithDiscovery(
-      tester,
-      _discovery(rust_wallet.SoftwareAccountDiscoveryStatus.completed),
-      onCustomiseArgs: (args) => customiseArgs = args,
-    );
-
-    expect(find.byType(ImportAccountDiscoveryIncompleteModal), findsNothing);
-    expect(find.text('Customise route'), findsOneWidget);
-    expect(customiseArgs?.setupArgs.selectedAdditionalAccountIndices, isEmpty);
-  });
-
-  testWidgets(
-    'withheld discovery warns before continuing with the primary account',
-    (tester) async {
-      CustomiseAccountArgs? customiseArgs;
-      await _submitWithDiscovery(
-        tester,
-        _discovery(rust_wallet.SoftwareAccountDiscoveryStatus.withheld),
-        onCustomiseArgs: (args) => customiseArgs = args,
-      );
-
-      expect(
-        find.byType(ImportAccountDiscoveryIncompleteModal),
-        findsOneWidget,
-      );
-      expect(find.textContaining('Private queries'), findsOneWidget);
-      expect(
-        find.textContaining("doesn't mean the other accounts are empty"),
-        findsOneWidget,
-      );
-      expect(find.text('Customise route'), findsNothing);
-
-      await tester.tap(
-        find.byKey(
-          const ValueKey('import_account_discovery_incomplete_continue'),
-        ),
-      );
-      await tester.pump();
-      await tester.pump();
-
-      expect(find.text('Customise route'), findsOneWidget);
-      expect(
-        customiseArgs?.setupArgs.selectedAdditionalAccountIndices,
-        isEmpty,
-      );
-    },
-  );
-
-  testWidgets('partial discovery warns, then offers the found accounts', (
-    tester,
-  ) async {
-    CustomiseAccountArgs? customiseArgs;
-    await _submitWithDiscovery(
-      tester,
-      _discovery(
-        rust_wallet.SoftwareAccountDiscoveryStatus.partial,
-        accounts: const [
-          rust_wallet.SoftwareWalletDiscoveredAccount(
-            zip32AccountIndex: 1,
-            firstTransparentAddress: 't1VzLrfU8ZRs3xEGzR84xHWL2QK7C9Tt6yV',
-          ),
-        ],
-      ),
-      onCustomiseArgs: (args) => customiseArgs = args,
-    );
-
-    expect(find.byType(ImportAccountDiscoveryIncompleteModal), findsOneWidget);
-    expect(find.byType(ImportAccountDiscoveryModal), findsNothing);
-
-    await tester.tap(
-      find.byKey(
-        const ValueKey('import_account_discovery_incomplete_continue'),
-      ),
-    );
-    await tester.pump();
-
-    expect(find.byType(ImportAccountDiscoveryIncompleteModal), findsNothing);
-    expect(find.byType(ImportAccountDiscoveryModal), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('import_account_discovery_row_1')),
-      findsOneWidget,
-    );
-
-    await tester.tap(
-      find.byKey(const ValueKey('import_account_discovery_confirm_button')),
-    );
-    await tester.pump();
-    await tester.pump();
-
-    expect(find.text('Customise route'), findsOneWidget);
-    expect(customiseArgs?.setupArgs.selectedAdditionalAccountIndices, [1]);
-  });
-
-  testWidgets('an open discovery warning blocks a second submit', (
-    tester,
-  ) async {
-    CustomiseAccountArgs? customiseArgs;
-    final accountNotifier = _FailingImportAccountNotifier(
-      discovery: _discovery(
-        rust_wallet.SoftwareAccountDiscoveryStatus.withheld,
-      ),
-    );
-    await _submitWithDiscovery(
-      tester,
-      accountNotifier.discovery,
-      accountNotifier: accountNotifier,
-      onCustomiseArgs: (args) => customiseArgs = args,
-    );
-    expect(find.byType(ImportAccountDiscoveryIncompleteModal), findsOneWidget);
-
-    // The overlay does not trap keyboard focus, so the submit action itself
-    // must stay disabled while the warning is open.
-    final submit = tester.widget<AppButton>(
-      find.byKey(const ValueKey('import_birthday_submit_button')),
-    );
-    expect(submit.onPressed, isNull);
-    submit.onPressed?.call();
-    await tester.pump();
-    await tester.pump();
-
-    expect(accountNotifier.discoveryCalls, 1);
-    expect(find.byType(ImportAccountDiscoveryIncompleteModal), findsOneWidget);
-
-    await tester.tap(
-      find.byKey(
-        const ValueKey('import_account_discovery_incomplete_continue'),
-      ),
-    );
-    await tester.pump();
-    await tester.pump();
-
-    expect(find.text('Customise route'), findsOneWidget);
-    expect(customiseArgs?.setupArgs.selectedAdditionalAccountIndices, isEmpty);
-  });
-
-  testWidgets('unavailable discovery back keeps the birthday screen', (
-    tester,
-  ) async {
-    CustomiseAccountArgs? customiseArgs;
-    await _submitWithDiscovery(
-      tester,
-      _discovery(rust_wallet.SoftwareAccountDiscoveryStatus.unavailable),
-      onCustomiseArgs: (args) => customiseArgs = args,
-    );
-
-    expect(find.textContaining("couldn't be reached"), findsOneWidget);
-
-    await tester.tap(
-      find.byKey(const ValueKey('import_account_discovery_incomplete_back')),
-    );
-    await tester.pump();
-    await tester.pump();
-
-    expect(find.byType(ImportAccountDiscoveryIncompleteModal), findsNothing);
-    expect(find.text('Customise route'), findsNothing);
-    expect(customiseArgs, isNull);
-    expect(find.byType(ImportWalletBirthdayScreen), findsOneWidget);
-    expect(find.text('Continue'), findsOneWidget);
-    expect(
-      tester
-          .widget<AppButton>(
-            find.byKey(const ValueKey('import_birthday_submit_button')),
-          )
-          .onPressed,
-      isNotNull,
-    );
   });
 
   testWidgets('account discovery modal imports all candidates by default', (
@@ -467,49 +293,7 @@ Widget _birthdayHarness({
   );
 }
 
-rust_wallet.SoftwareWalletImportDiscoveryResult _discovery(
-  rust_wallet.SoftwareAccountDiscoveryStatus status, {
-  List<rust_wallet.SoftwareWalletDiscoveredAccount> accounts = const [],
-}) {
-  return rust_wallet.SoftwareWalletImportDiscoveryResult(
-    primaryAccountAlreadyExists: false,
-    accounts: accounts,
-    status: status,
-  );
-}
-
-Future<void> _submitWithDiscovery(
-  WidgetTester tester,
-  rust_wallet.SoftwareWalletImportDiscoveryResult discovery, {
-  required ValueChanged<CustomiseAccountArgs> onCustomiseArgs,
-  _FailingImportAccountNotifier? accountNotifier,
-}) async {
-  await _setDesktopSurface(tester);
-  await tester.pumpWidget(
-    _birthdayRouterHarness(
-      args: const ImportBirthdayArgs(
-        mnemonic: 'test mnemonic',
-        initialBirthdayHeight: 1000000,
-      ),
-      accountNotifier:
-          accountNotifier ??
-          _FailingImportAccountNotifier(discovery: discovery),
-      onCustomiseArgs: onCustomiseArgs,
-    ),
-  );
-  await tester.pump();
-  await tester.pump();
-
-  await tester.tap(find.byKey(const ValueKey('import_birthday_submit_button')));
-  await tester.pump();
-  await tester.pump();
-}
-
-Widget _birthdayRouterHarness({
-  required ImportBirthdayArgs args,
-  _FailingImportAccountNotifier? accountNotifier,
-  ValueChanged<CustomiseAccountArgs>? onCustomiseArgs,
-}) {
+Widget _birthdayRouterHarness({required ImportBirthdayArgs args}) {
   final router = GoRouter(
     initialLocation: '/import/birthday',
     routes: [
@@ -528,7 +312,6 @@ Widget _birthdayRouterHarness({
           final args = state.extra as CustomiseAccountArgs;
           expect(args.flow, SetPasswordFlow.importWallet);
           expect(args.setupArgs.importBirthdayHeight, 1000000);
-          onCustomiseArgs?.call(args);
           return const Text('Customise route');
         },
       ),
@@ -540,15 +323,7 @@ Widget _birthdayRouterHarness({
     overrides: [
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
       appSecurityProvider.overrideWith(_ConfiguredAppSecurityNotifier.new),
-      accountProvider.overrideWith(
-        () =>
-            accountNotifier ??
-            _FailingImportAccountNotifier(
-              discovery: _discovery(
-                rust_wallet.SoftwareAccountDiscoveryStatus.completed,
-              ),
-            ),
-      ),
+      accountProvider.overrideWith(_FailingImportAccountNotifier.new),
       syncProvider.overrideWith(_NoopSyncNotifier.new),
       rpcEndpointFailoverProvider.overrideWith(
         _FakeRpcEndpointFailoverNotifier.new,
@@ -696,11 +471,6 @@ class _ConfiguredAppSecurityNotifier extends AppSecurityNotifier {
 }
 
 class _FailingImportAccountNotifier extends AccountNotifier {
-  _FailingImportAccountNotifier({required this.discovery});
-
-  final rust_wallet.SoftwareWalletImportDiscoveryResult discovery;
-  int discoveryCalls = 0;
-
   @override
   FutureOr<AccountState> build() {
     return const AccountState();
@@ -713,17 +483,10 @@ class _FailingImportAccountNotifier extends AccountNotifier {
     String bip39Passphrase = '',
     int? birthdayHeight,
   }) async {
-    discoveryCalls++;
-    return discovery;
-  }
-
-  @override
-  Future<BigInt> previewSoftwareAccountTransparentBalance({
-    required String mnemonic,
-    required int accountIndex,
-    String bip39Passphrase = '',
-  }) async {
-    return BigInt.zero;
+    return const rust_wallet.SoftwareWalletImportDiscoveryResult(
+      primaryAccountAlreadyExists: false,
+      accounts: [],
+    );
   }
 
   @override

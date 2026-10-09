@@ -14716,14 +14716,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  SoftwareAccountDiscoveryStatus dco_decode_software_account_discovery_status(
-    dynamic raw,
-  ) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return SoftwareAccountDiscoveryStatus.values[raw as int];
-  }
-
-  @protected
   SoftwareWalletDiscoveredAccount dco_decode_software_wallet_discovered_account(
     dynamic raw,
   ) {
@@ -14759,12 +14751,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   dco_decode_software_wallet_import_discovery_result(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
     return SoftwareWalletImportDiscoveryResult(
       primaryAccountAlreadyExists: dco_decode_bool(arr[0]),
       accounts: dco_decode_list_software_wallet_discovered_account(arr[1]),
-      status: dco_decode_software_account_discovery_status(arr[2]),
     );
   }
 
@@ -19840,15 +19831,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  SoftwareAccountDiscoveryStatus sse_decode_software_account_discovery_status(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    var inner = sse_decode_i_32(deserializer);
-    return SoftwareAccountDiscoveryStatus.values[inner];
-  }
-
-  @protected
   SoftwareWalletDiscoveredAccount sse_decode_software_wallet_discovered_account(
     SseDeserializer deserializer,
   ) {
@@ -19890,11 +19872,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_accounts = sse_decode_list_software_wallet_discovered_account(
       deserializer,
     );
-    var var_status = sse_decode_software_account_discovery_status(deserializer);
     return SoftwareWalletImportDiscoveryResult(
       primaryAccountAlreadyExists: var_primaryAccountAlreadyExists,
       accounts: var_accounts,
-      status: var_status,
     );
   }
 
@@ -24358,15 +24338,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void sse_encode_software_account_discovery_status(
-    SoftwareAccountDiscoveryStatus self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_i_32(self.index, serializer);
-  }
-
-  @protected
   void sse_encode_software_wallet_discovered_account(
     SoftwareWalletDiscoveredAccount self,
     SseSerializer serializer,
@@ -24400,7 +24371,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       self.accounts,
       serializer,
     );
-    sse_encode_software_account_discovery_status(self.status, serializer);
   }
 
   @protected

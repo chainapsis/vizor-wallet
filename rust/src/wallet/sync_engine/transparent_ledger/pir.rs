@@ -12,23 +12,12 @@
 //! adapter's shard schema. A companion holds the adapter's retrieval cache and
 //! revision catalog, never wallet balances. Revision identities are derived
 //! from the publication, but the catalog also records what was exported and
-//! lets the adapter detect a contradictory publication. Repair preserves those
-//! records or refuses to replace the companion. Companions are created
+//! lets the adapter detect a contradictory publication. Companions are created
 //! on an account's first pass; opening one deletes the account's companions for
 //! other origins or schemas and those of deleted accounts, and deleting an
 //! account removes its companion with [`remove_companions`]. Every sync start
 //! deletes those of deleted accounts with [`remove_orphan_companions`], so a
 //! removal that failed converges.
-//!
-//! A companion is rebuilt only when it is confirmed unusable and
-//! reconstructible: SQLite reports it is not a database or is corrupt, or it
-//! is in the earlier format the adapter asks to recreate. The rebuild runs
-//! under the companion's path lock, at most once per companion per process,
-//! and keeps every catalog row the damaged file still yields, so the
-//! catalog's reconciliation records survive. A busy, locked or unreadable
-//! companion, one bound to another identity, a publication change or any
-//! other refusal is never deleted or reset. A regular file or symlink where the
-//! companion directory belongs is never touched: the run is unavailable.
 //!
 //! A pass that fails because the service cannot be reached or is not serving
 //! is [`SourceError::Unavailable`], which ends the whole run, rather than a
@@ -119,22 +108,6 @@ const REMOVE_WAIT: Duration = Duration::from_secs(5);
 /// Sidecar suffixes SQLite may leave beside a companion file.
 const SIDECARS: [&str; 3] = ["-wal", "-shm", "-journal"];
 
-/// The file a companion rebuild builds its replacement in, beside the
-/// companion. It belongs to the companion, so listing and removal include it.
-const REBUILD_SUFFIXES: [&str; 1] = [".rebuild"];
-
-/// Every name suffix of a companion's files: the database, its sidecars, and
-/// a rebuild's files with theirs.
-fn companion_suffixes() -> impl Iterator<Item = String> {
-    std::iter::once("")
-        .chain(REBUILD_SUFFIXES)
-        .flat_map(|stem| {
-            std::iter::once("")
-                .chain(SIDECARS)
-                .map(move |sidecar| format!("{stem}{sidecar}"))
-        })
-}
-
 /// One lock per companion path. Entries nobody holds or awaits are dropped as
 /// others are added.
 static COMPANION_LOCKS: LazyLock<Mutex<HashMap<PathBuf, Arc<tokio::sync::Mutex<()>>>>> =
@@ -180,8 +153,6 @@ enum Slot {
 enum PassFailure {
     Wallet,
     Companion,
-    /// The companion directory cannot be created or used, for every account.
-    CompanionDirectory,
     Transport,
     Invalid,
     Failure,
@@ -195,7 +166,6 @@ impl PassFailure {
         match self {
             PassFailure::Wallet => "wallet unreadable",
             PassFailure::Companion => "companion unusable",
-            PassFailure::CompanionDirectory => "companion directory unusable",
             PassFailure::Transport => "transport refused the origin",
             PassFailure::Invalid => "invalid",
             PassFailure::Failure => "failure",
@@ -437,14 +407,14 @@ impl Drop for CancelOnDrop {
     }
 }
 
-/// Logs a failed pass by variant and reports it: an outage of the service or
-/// of the companion directory, which no other account's pass would avoid, as
-/// unavailable, anything else as failed.
+/// Logs a failed pass by variant and reports it: an outage of the service,
+/// which no other account's pass would avoid, as unavailable, anything else
+/// as failed.
 fn fail(failure: Option<PassFailure>) -> SourceError {
     let name = failure.map_or("unknown", PassFailure::name);
     log::warn!("transparent PIR: pass failed ({name})");
     match failure {
-        Some(PassFailure::Outage | PassFailure::CompanionDirectory) => SourceError::Unavailable,
+        Some(PassFailure::Outage) => SourceError::Unavailable,
         _ => SourceError::Failed,
     }
 }
@@ -521,7 +491,7 @@ impl Pass {
             .map(|account| account.expose_uuid())
             .collect();
         let dir = companion_dir(&self.db_path);
-        prepare_companion_dir(&dir)?;
+        std::fs::create_dir_all(&dir).map_err(|_| PassFailure::Companion)?;
         let owner = self.account.expose_uuid();
         for (account, base) in companions(&dir).map_err(|_| PassFailure::Companion)? {
             if base != path && (account == owner || !accounts.contains(&account)) {
@@ -532,39 +502,15 @@ impl Pass {
                 }
             }
         }
-        let config = recovery_config(self.account, &self.origin);
-        match ReferenceRecovery::open(path, config.clone()) {
-            Ok(companion) => Ok(companion),
-            Err(error) => {
+        ReferenceRecovery::open(path, recovery_config(self.account, &self.origin)).map_err(
+            |error| {
                 log::warn!(
                     "transparent PIR: companion refused ({})",
                     PassFailure::from(&error).name()
                 );
-                // Only a storage failure SQLite confirms as corruption, or the
-                // earlier format the adapter asks to recreate, is rebuilt:
-                // never an identity, format or publication refusal.
-                let rebuild = match &error {
-                    RecoveryError::Failure(_)
-                        if companion_health(path) == CompanionHealth::Corrupt =>
-                    {
-                        Rebuild::Corrupt
-                    }
-                    RecoveryError::Invalid(message) if message == LEGACY_FORMAT => Rebuild::Legacy,
-                    _ => return Err(PassFailure::Companion),
-                };
-                if !first_rebuild(path) {
-                    return Err(PassFailure::Companion);
-                }
-                log::warn!("transparent PIR: rebuilding an unusable companion once");
-                rebuild_companion(path, config, rebuild).map_err(|error| {
-                    log::warn!(
-                        "transparent PIR: companion rebuild failed ({})",
-                        error.name()
-                    );
-                    PassFailure::Companion
-                })
-            }
-        }
+                PassFailure::Companion
+            },
+        )
     }
 
     /// One adapter pass, retried once on the same companion if the
@@ -696,7 +642,7 @@ fn companion_name(name: &str) -> Option<(uuid::Uuid, &str)> {
     const EXTENSION: &str = ".sqlite";
     let base = UUID + 1 + TAG + EXTENSION.len();
     let (file, suffix) = (name.get(..base)?, name.get(base..)?);
-    if !companion_suffixes().any(|known| known == suffix) {
+    if !(suffix.is_empty() || SIDECARS.contains(&suffix)) {
         return None;
     }
     let account = uuid::Uuid::try_parse(file.get(..UUID)?).ok()?;
@@ -718,355 +664,18 @@ fn companion_lock(path: &Path) -> Arc<tokio::sync::Mutex<()>> {
     locks.entry(path.to_owned()).or_default().clone()
 }
 
-/// The adapter's refusal of a companion in the earlier format, which it asks
-/// to recreate.
-const LEGACY_FORMAT: &str = "companion format v1; recreate";
-
-/// What a companion file is before it is opened.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum CompanionHealth {
-    /// No file yet, or one SQLite reads.
-    Usable,
-    /// SQLite reports the file is not a database, or its integrity check fails.
-    Corrupt,
-    /// Busy, locked, unreadable or otherwise not classified: never rebuilt.
-    Unknown,
-}
-
-/// Classifies the companion file at `path` from a query-only connection, so a
-/// busy or unreadable one is never mistaken for corruption.
-fn companion_health(path: &Path) -> CompanionHealth {
-    use rusqlite::ErrorCode;
-    if !path.exists() {
-        return CompanionHealth::Usable;
-    }
-    if require_no_sidecars(path).is_err() {
-        return CompanionHealth::Unknown;
-    }
-    let corrupt = |error: &rusqlite::Error| {
-        matches!(
-            error.sqlite_error_code(),
-            Some(ErrorCode::NotADatabase | ErrorCode::DatabaseCorrupt)
-        )
-    };
-    let conn = match inspection_conn(path) {
-        Ok(conn) => conn,
-        Err(error) if corrupt(&error) => return CompanionHealth::Corrupt,
-        Err(_) => return CompanionHealth::Unknown,
-    };
-    match conn.query_row("PRAGMA quick_check", [], |row| row.get::<_, String>(0)) {
-        Ok(result) if result == "ok" => CompanionHealth::Usable,
-        Ok(_) => CompanionHealth::Corrupt,
-        Err(error) if corrupt(&error) => CompanionHealth::Corrupt,
-        Err(_) => CompanionHealth::Unknown,
-    }
-}
-
-/// Companions this process has rebuilt; each is rebuilt at most once.
-static REBUILT: LazyLock<Mutex<BTreeSet<PathBuf>>> = LazyLock::new(Default::default);
-
-/// Whether `path` has not been rebuilt by this process yet, recording that it
-/// is now.
-fn first_rebuild(path: &Path) -> bool {
-    REBUILT
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .insert(path.to_owned())
-}
-
-/// Which unusable companion is rebuilt.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Rebuild {
-    /// SQLite confirms corruption. Its binding and whole catalog must still
-    /// be readable, so its identity is checked and its reconciliation
-    /// records carried over.
-    Corrupt,
-    /// The adapter's earlier-format refusal. A compatible catalog can still
-    /// exist and must be preserved with a verified binding.
-    Legacy,
-}
-
-/// Why rebuilding a companion failed. In each case the damaged companion is
-/// kept as it was.
-#[derive(Debug)]
-enum RebuildError {
-    /// The replacement could not be built or validated.
-    Replacement,
-    /// The damaged companion's binding or catalog could not be read whole,
-    /// or its catalog does not fit the replacement: reconstruction cannot be
-    /// shown safe.
-    Unsalvageable,
-    /// The damaged companion is bound to another account, origin or schema.
-    Foreign,
-    /// The validated replacement could not take the damaged one's place.
-    Swap,
-}
-
-impl RebuildError {
-    fn name(&self) -> &'static str {
-        match self {
-            RebuildError::Replacement => "the replacement could not be built",
-            RebuildError::Unsalvageable => "its binding or catalog cannot be carried over",
-            RebuildError::Foreign => "it is bound to another identity",
-            RebuildError::Swap => "the replacement could not take its place",
-        }
-    }
-}
-
-/// A damaged companion's catalog rows, with their column names.
-type SalvagedCatalog = (Vec<String>, Vec<Vec<rusqlite::types::Value>>);
-
-/// Replaces the unusable companion at `path`, under its held path lock.
-///
-/// The replacement is built beside it, at `{path}.rebuild`, and takes the
-/// damaged companion's place, by one atomic rename, only once it is complete:
-/// its binding equals the damaged one's, every compatible catalog row is
-/// restored into it, and the adapter opens it. Until then the
-/// damaged companion is untouched, and any doubt keeps it.
-fn rebuild_companion(
-    path: &Path,
-    config: RecoveryConfig,
-    rebuild: Rebuild,
-) -> Result<ReferenceRecovery, RebuildError> {
-    // Do not let inspection checkpoint or clean up somebody else's WAL.
-    require_no_sidecars(path)?;
-    let staging = sibling(path, ".rebuild");
-    remove_database(&staging).map_err(|_| RebuildError::Replacement)?;
-    let built = (|| {
-        drop(
-            ReferenceRecovery::open(&staging, config.clone())
-                .map_err(|_| RebuildError::Replacement)?,
-        );
-        let expected = read_binding(&staging)
-            .map_err(|_| RebuildError::Replacement)?
-            .ok_or(RebuildError::Replacement)?;
-        let has_catalog = has_catalog(path)?;
-        match (read_binding(path)?, rebuild) {
-            (Some(binding), _) if binding == expected => {}
-            (Some(_), _) => return Err(RebuildError::Foreign),
-            // A genuinely earlier store may predate both binding and catalog.
-            (None, Rebuild::Legacy) if !has_catalog => {}
-            (None, _) => return Err(RebuildError::Unsalvageable),
-        }
-        if has_catalog {
-            let (columns, rows) = salvage_catalog(path).ok_or(RebuildError::Unsalvageable)?;
-            restore_catalog(&staging, &columns, &rows)?;
-        } else if rebuild == Rebuild::Corrupt {
-            return Err(RebuildError::Unsalvageable);
-        }
-        drop(
-            ReferenceRecovery::open(&staging, config.clone())
-                .map_err(|_| RebuildError::Replacement)?,
-        );
-        Ok(())
-    })();
-    if let Err(error) = built {
-        let _ = remove_database(&staging);
-        return Err(error);
-    }
-    swap_in(path, &staging, |from, to| std::fs::rename(from, to))?;
-    ReferenceRecovery::open(path, config).map_err(|_| RebuildError::Swap)
-}
-
-/// Puts the validated replacement at `staging` in the place of the damaged
-/// companion at `path` with one atomic rename over it, so a crash leaves
-/// either the original or the replacement, never neither. Refused, keeping
-/// both, while either has SQLite sidecars or their metadata cannot be read:
-/// a write-ahead log or journal may
-/// hold the original's committed data, which a rename of the main file alone
-/// would separate from it.
-fn swap_in(
-    path: &Path,
-    staging: &Path,
-    rename: impl Fn(&Path, &Path) -> io::Result<()>,
-) -> Result<(), RebuildError> {
-    require_no_sidecars(path)?;
-    require_no_sidecars(staging)?;
-    rename(staging, path).map_err(|_| RebuildError::Swap)
-}
-
-fn require_no_sidecars(path: &Path) -> Result<(), RebuildError> {
-    for suffix in SIDECARS {
-        match std::fs::symlink_metadata(sibling(path, suffix)) {
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            // A dangling symlink is still an entry; other metadata errors
-            // cannot establish absence. Keep the original in either case.
-            _ => return Err(RebuildError::Unsalvageable),
-        }
-    }
-    Ok(())
-}
-
-/// `base` with `suffix` appended to its file name.
-fn sibling(base: &Path, suffix: &str) -> PathBuf {
-    let mut path = base.as_os_str().to_owned();
-    path.push(suffix);
-    path.into()
-}
-
-/// An existing-file connection that rejects SQL writes. Read-only WAL
-/// connections can create empty sidecars and leave them behind; a query-only
-/// connection opened read/write lets SQLite remove its own empty sidecars on
-/// close. The repair checks for pre-existing sidecars before using it.
-fn inspection_conn(path: &Path) -> rusqlite::Result<rusqlite::Connection> {
-    use rusqlite::OpenFlags;
-    let conn = rusqlite::Connection::open_with_flags(
-        path,
-        OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-    )?;
-    conn.pragma_update(None, "query_only", true)?;
-    Ok(conn)
-}
-
-/// The account, origin and schema binding, or a confirmed absent binding.
-/// Failure to read it is never interpreted as absence.
-fn read_binding(path: &Path) -> Result<Option<Vec<u8>>, RebuildError> {
-    use rusqlite::OptionalExtension as _;
-    let conn = inspection_conn(path).map_err(|_| RebuildError::Unsalvageable)?;
-    if !has_schema_entry(&conn, "pir_bridge_binding")? {
-        return Ok(None);
-    }
-    conn.query_row(
-        "SELECT value FROM pir_bridge_binding WHERE key = 'account-source'",
-        [],
-        |row| row.get(0),
-    )
-    .optional()
-    .map_err(|_| RebuildError::Unsalvageable)
-}
-
-/// Whether a catalog exists, distinguishing a confirmed absence from an
-/// unreadable schema. A legacy refusal alone cannot establish absence.
-fn has_catalog(path: &Path) -> Result<bool, RebuildError> {
-    let conn = inspection_conn(path).map_err(|_| RebuildError::Unsalvageable)?;
-    has_schema_entry(&conn, "pir_bridge_catalog")
-}
-
-fn has_schema_entry(conn: &rusqlite::Connection, name: &str) -> Result<bool, RebuildError> {
-    conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name = ?1)",
-        [name],
-        |row| row.get(0),
-    )
-    .map_err(|_| RebuildError::Unsalvageable)
-}
-
-/// Every catalog row of the companion at `path`, with the column names, when
-/// the whole catalog can be read. Nothing otherwise.
-fn salvage_catalog(path: &Path) -> Option<SalvagedCatalog> {
-    let conn = inspection_conn(path).ok()?;
-    let mut statement = conn.prepare("SELECT * FROM pir_bridge_catalog").ok()?;
-    let columns: Vec<String> = statement
-        .column_names()
-        .into_iter()
-        .map(str::to_owned)
-        .collect();
-    let rows = statement
-        .query_map([], |row| {
-            (0..columns.len())
-                .map(|index| row.get::<_, rusqlite::types::Value>(index))
-                .collect::<Result<Vec<_>, _>>()
-        })
-        .ok()?
-        .collect::<Result<Vec<_>, _>>()
-        .ok()?;
-    Some((columns, rows))
-}
-
-/// Restores salvaged catalog rows into the new companion at `path`, in one
-/// transaction, and checks that every row arrived. A catalog whose columns
-/// differ from the new companion's cannot be carried over.
-fn restore_catalog(
-    path: &Path,
-    columns: &[String],
-    rows: &[Vec<rusqlite::types::Value>],
-) -> Result<(), RebuildError> {
-    let restore = || -> rusqlite::Result<Result<(), RebuildError>> {
-        let mut conn = rusqlite::Connection::open(path)?;
-        let current: Vec<String> = conn
-            .prepare("SELECT * FROM pir_bridge_catalog")?
-            .column_names()
-            .into_iter()
-            .map(str::to_owned)
-            .collect();
-        if current != columns {
-            return Ok(Err(RebuildError::Unsalvageable));
-        }
-        let tx = conn.transaction()?;
-        {
-            let placeholders = vec!["?"; columns.len()].join(", ");
-            let mut insert = tx.prepare(&format!(
-                "INSERT INTO pir_bridge_catalog VALUES ({placeholders})"
-            ))?;
-            for row in rows {
-                insert.execute(rusqlite::params_from_iter(row))?;
-            }
-        }
-        let restored: i64 = tx.query_row("SELECT COUNT(*) FROM pir_bridge_catalog", [], |row| {
-            row.get(0)
-        })?;
-        if usize::try_from(restored).ok() != Some(rows.len()) {
-            return Ok(Err(RebuildError::Unsalvageable));
-        }
-        tx.commit()?;
-        Ok(Ok(()))
-    };
-    restore().unwrap_or(Err(RebuildError::Unsalvageable))
-}
-
-/// Makes `dir` a directory for companions. Anything else already at that
-/// path, such as a regular file, is left exactly as it is, outside every
-/// lifecycle this module owns, and the directory is unusable for every
-/// account: the run stops as unavailable until it is removed. Nothing inside
-/// an existing directory is touched here.
-fn prepare_companion_dir(dir: &Path) -> Result<(), PassFailure> {
-    match std::fs::symlink_metadata(dir) {
-        Ok(meta) if meta.is_dir() => Ok(()),
-        Ok(_) => {
-            log::warn!(
-                "transparent PIR: something other than a directory holds the companion path"
-            );
-            Err(PassFailure::CompanionDirectory)
-        }
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            std::fs::create_dir_all(dir).map_err(|_| PassFailure::CompanionDirectory)
-        }
-        Err(_) => Err(PassFailure::CompanionDirectory),
-    }
-}
-
-/// Whether listing the companion directory failed only because there is no
-/// directory: nothing to sweep or remove.
-fn no_companions(error: &io::Error) -> bool {
-    matches!(
-        error.kind(),
-        io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
-    )
-}
-
 /// Deletes the companion file at `base` and its sidecars. Missing files are
 /// not an error.
 fn remove_files(base: &Path) -> io::Result<()> {
-    for suffix in companion_suffixes() {
-        remove_file(&sibling(base, &suffix))?;
-    }
-    Ok(())
-}
-
-/// Deletes the SQLite file at `path` and its sidecars only.
-fn remove_database(path: &Path) -> io::Result<()> {
     for suffix in std::iter::once("").chain(SIDECARS) {
-        remove_file(&sibling(path, suffix))?;
+        let mut path = base.as_os_str().to_owned();
+        path.push(suffix);
+        match std::fs::remove_file(&path) {
+            Err(error) if error.kind() != io::ErrorKind::NotFound => return Err(error),
+            _ => {}
+        }
     }
     Ok(())
-}
-
-/// Deletes `path`; a missing file is not an error.
-fn remove_file(path: &Path) -> io::Result<()> {
-    match std::fs::remove_file(path) {
-        Err(error) if error.kind() != io::ErrorKind::NotFound => Err(error),
-        _ => Ok(()),
-    }
 }
 
 /// Deletes every companion of the account `account_uuid` in the wallet at
@@ -1092,8 +701,7 @@ pub(crate) fn remove_companions(db_path: &str, account_uuid: &str) -> Result<(),
 pub(crate) fn remove_orphan_companions(db_path: &str) -> Result<(), String> {
     let found = match companions(&companion_dir(db_path)) {
         Ok(found) => found,
-        // Nothing to sweep; the next pass moves a file in its place aside.
-        Err(error) if no_companions(&error) => return Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
         Err(error) => {
             return Err(format!(
                 "Failed to list transparent PIR companions: {error}"
@@ -1135,7 +743,7 @@ pub(super) fn remove_account_companions(
         .map_err(|error| format!("Invalid account UUID: {error}"))?;
     let found = match companions(&companion_dir(db_path)) {
         Ok(found) => found,
-        Err(error) if no_companions(&error) => return Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
         Err(error) => {
             return Err(format!(
                 "Failed to list transparent PIR companions: {error}"
@@ -1162,153 +770,6 @@ fn lock_within(lock: &Arc<tokio::sync::Mutex<()>>, wait: Duration) -> Option<Own
             return None;
         }
         std::thread::sleep(Duration::from_millis(10));
-    }
-}
-
-#[cfg(test)]
-mod rebuild_tests {
-    use super::*;
-
-    fn write(path: &Path, bytes: &[u8]) {
-        std::fs::write(path, bytes).unwrap();
-    }
-
-    /// Inspecting a WAL database neither changes its bytes nor leaves empty
-    /// sidecars that would prevent a safe replacement. SQL writes are refused.
-    #[test]
-    fn inspection_keeps_wallet_bytes_and_cleans_its_empty_sidecars() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("companion.sqlite");
-        {
-            let conn = rusqlite::Connection::open(&path).unwrap();
-            conn.execute_batch(
-                "PRAGMA journal_mode=WAL; CREATE TABLE a(x); INSERT INTO a VALUES (1)",
-            )
-            .unwrap();
-        }
-        let before = std::fs::read(&path).unwrap();
-        require_no_sidecars(&path).unwrap();
-        {
-            let conn = inspection_conn(&path).unwrap();
-            assert_eq!(
-                conn.query_row("SELECT x FROM a", [], |row| row.get::<_, i64>(0))
-                    .unwrap(),
-                1
-            );
-            assert!(conn.execute("INSERT INTO a VALUES (2)", []).is_err());
-        }
-        assert_eq!(std::fs::read(&path).unwrap(), before);
-        require_no_sidecars(&path).unwrap();
-    }
-
-    /// A failed rename leaves the original as it was; a successful one leaves
-    /// only the replacement.
-    #[test]
-    fn the_replacement_takes_the_place_of_the_original_atomically() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("companion.sqlite");
-        write(&path, b"original");
-        let staging = sibling(&path, ".rebuild");
-        write(&staging, b"replacement");
-        assert!(matches!(
-            swap_in(&path, &staging, |_, _| Err(io::Error::other("injected"))),
-            Err(RebuildError::Swap)
-        ));
-        assert_eq!(std::fs::read(&path).unwrap(), b"original");
-
-        swap_in(&path, &staging, |from, to| std::fs::rename(from, to)).unwrap();
-        assert_eq!(std::fs::read(&path).unwrap(), b"replacement");
-        assert!(!staging.exists());
-    }
-
-    /// While the original or the replacement has a write-ahead log or
-    /// journal, the swap is refused and the original kept with its sidecars.
-    #[test]
-    fn a_companion_with_sidecars_is_never_swapped() {
-        for (owner, sidecar) in [
-            ("original", "-wal"),
-            ("original", "-journal"),
-            ("staging", "-wal"),
-        ] {
-            let dir = tempfile::tempdir().unwrap();
-            let path = dir.path().join("companion.sqlite");
-            write(&path, b"original");
-            let staging = sibling(&path, ".rebuild");
-            write(&staging, b"replacement");
-            let base = if owner == "original" { &path } else { &staging };
-            write(&sibling(base, sidecar), b"log");
-            assert!(matches!(
-                swap_in(&path, &staging, |from, to| std::fs::rename(from, to)),
-                Err(RebuildError::Unsalvageable)
-            ));
-            assert_eq!(std::fs::read(&path).unwrap(), b"original");
-            if owner == "original" {
-                assert_eq!(std::fs::read(sibling(&path, sidecar)).unwrap(), b"log");
-            }
-        }
-    }
-
-    /// Even a dangling sidecar name must prevent replacement: absence of its
-    /// target is not proof that the sidecar can be ignored.
-    #[cfg(unix)]
-    #[test]
-    fn a_dangling_sidecar_is_never_ignored() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("companion.sqlite");
-        write(&path, b"original");
-        let staging = sibling(&path, ".rebuild");
-        write(&staging, b"replacement");
-        let sidecar = sibling(&path, "-wal");
-        std::os::unix::fs::symlink(dir.path().join("missing"), &sidecar).unwrap();
-        assert!(matches!(
-            swap_in(&path, &staging, |from, to| std::fs::rename(from, to)),
-            Err(RebuildError::Unsalvageable)
-        ));
-        assert_eq!(std::fs::read(&path).unwrap(), b"original");
-        assert!(std::fs::symlink_metadata(sidecar)
-            .unwrap()
-            .file_type()
-            .is_symlink());
-    }
-
-    /// A failed metadata lookup must stop before rename. Here a regular file
-    /// in a parent component makes the lookup fail rather than report absence.
-    #[test]
-    fn uncertain_sidecar_metadata_stops_before_rename() {
-        let dir = tempfile::tempdir().unwrap();
-        let parent = dir.path().join("not-a-directory");
-        write(&parent, b"kept");
-        let path = parent.join("companion.sqlite");
-        let staging = dir.path().join("replacement.sqlite");
-        write(&staging, b"replacement");
-        assert!(matches!(
-            swap_in(&path, &staging, |_, _| panic!(
-                "metadata failure reached rename"
-            )),
-            Err(RebuildError::Unsalvageable)
-        ));
-        assert_eq!(std::fs::read(&parent).unwrap(), b"kept");
-    }
-
-    /// A rebuild's replacement belongs to its companion: listed with it, and
-    /// removed with it.
-    #[test]
-    fn rebuild_files_share_their_companions_lifecycle() {
-        let account = uuid::Uuid::new_v4();
-        let base = format!("{account}-{}.sqlite", "0".repeat(16));
-        for suffix in [".rebuild", ".rebuild-wal", ".rebuild-shm"] {
-            assert_eq!(
-                companion_name(&format!("{base}{suffix}")),
-                Some((account, base.as_str()))
-            );
-        }
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join(&base);
-        for suffix in ["", "-wal", ".rebuild", ".rebuild-journal"] {
-            write(&sibling(&path, suffix), b"x");
-        }
-        remove_files(&path).unwrap();
-        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
     }
 }
 

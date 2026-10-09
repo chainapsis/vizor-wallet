@@ -11,6 +11,12 @@ use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxS
 const TRANSPARENT_PREVIEW_UNAVAILABLE: &str =
     "Transparent balance preview is unavailable under the private transparent policy";
 
+/// Returned when the transparent policy withholds an account discovery probe:
+/// a withheld probe proves nothing about higher accounts, so import stops
+/// rather than silently importing only the primary account.
+pub(crate) const SOFTWARE_ACCOUNT_DISCOVERY_UNAVAILABLE: &str =
+    "Vizor can't check this recovery phrase for additional accounts while \
+     Private queries is on. Turn off Private queries to import it.";
 use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
 
 const SOFTWARE_ACCOUNT_DISCOVERY_MAX_INDEX: u32 = 20;
@@ -54,28 +60,10 @@ pub struct SoftwareWalletDiscoveredAccount {
     pub first_transparent_address: String,
 }
 
-/// How far software account discovery got. Anything but `Completed` means
-/// some accounts were not checked: a withheld or failed probe is not evidence
-/// that an account is unused.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SoftwareAccountDiscoveryStatus {
-    /// Probing reached its normal end, or there was nothing to probe.
-    Completed,
-    /// The transparent policy withheld lookups before any account was found.
-    Withheld,
-    /// Lightwalletd, or a local derivation, failed before any account was
-    /// found.
-    Unavailable,
-    /// Probing stopped early, withheld or failed, after finding at least one
-    /// used account; the accounts found so far are returned.
-    Partial,
-}
-
 /// Software account discovery result for an import attempt.
 pub struct SoftwareWalletImportDiscoveryResult {
     pub primary_account_already_exists: bool,
     pub accounts: Vec<SoftwareWalletDiscoveredAccount>,
-    pub status: SoftwareAccountDiscoveryStatus,
 }
 
 /// A software account created by mnemonic import.
@@ -487,16 +475,15 @@ pub fn discover_software_wallet_import_accounts(
         )?;
 
         let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
-        let discovered = rt.block_on(discover_used_software_accounts(
+        let discovered_accounts = rt.block_on(discover_used_software_accounts(
             network,
             &seed,
             birthday_height,
             &lightwalletd_url,
             &gate,
-        ));
+        ))?;
 
-        let accounts = discovered
-            .accounts
+        let accounts = discovered_accounts
             .into_iter()
             .filter(|account| {
                 !existing_seed_accounts
@@ -505,12 +492,9 @@ pub fn discover_software_wallet_import_accounts(
             })
             .collect();
 
-        // The status reflects how far probing got, so a partial run stays
-        // partial even when every account it found is already in the wallet.
         Ok(SoftwareWalletImportDiscoveryResult {
             primary_account_already_exists,
             accounts,
-            status: discovered.status,
         })
     })
 }
@@ -875,59 +859,27 @@ pub(crate) fn import_gate(
     TransparentLookupGate::for_wallet(lookups, db_path, network).map_err(|e| e.to_string())
 }
 
-/// Accounts found by [`discover_used_software_accounts`] and how far it got.
-pub(crate) struct SoftwareAccountDiscovery {
-    pub(crate) status: SoftwareAccountDiscoveryStatus,
-    pub(crate) accounts: Vec<SoftwareWalletDiscoveredAccount>,
-}
-
-impl SoftwareAccountDiscovery {
-    /// Discovery stopped before its normal end because of `reason`
-    /// (`Withheld` or `Unavailable`); `Partial` if accounts were found.
-    fn stopped(
-        reason: SoftwareAccountDiscoveryStatus,
-        accounts: Vec<SoftwareWalletDiscoveredAccount>,
-    ) -> Self {
-        let status = if accounts.is_empty() {
-            reason
-        } else {
-            SoftwareAccountDiscoveryStatus::Partial
-        };
-        Self { status, accounts }
-    }
-
-    fn completed(accounts: Vec<SoftwareWalletDiscoveredAccount>) -> Self {
-        Self {
-            status: SoftwareAccountDiscoveryStatus::Completed,
-            accounts,
-        }
-    }
-}
-
 /// Probes ZIP 32 account indices for transparent history. Each probe sends an
 /// account's first transparent address to lightwalletd, so `gate` authorizes
-/// every probe. Only an empty history marks an account unused: a withheld
-/// probe, a lightwalletd failure, or a derivation failure stops discovery and
-/// is reported in the status, never as a shorter `Completed` list. Nothing is
-/// sent once a probe is withheld.
+/// every probe; a withheld one ends discovery with
+/// [`SOFTWARE_ACCOUNT_DISCOVERY_UNAVAILABLE`], never a shorter account list.
 pub(crate) async fn discover_used_software_accounts(
     network: WalletNetwork,
     seed: &secrecy::SecretVec<u8>,
     birthday_height: Option<u64>,
     lightwalletd_url: &str,
     gate: &TransparentLookupGate,
-) -> SoftwareAccountDiscovery {
-    use SoftwareAccountDiscoveryStatus::{Unavailable, Withheld};
+) -> Result<Vec<SoftwareWalletDiscoveredAccount>, String> {
     if !gate.is_allowed() {
         log::info!("software account discovery: withheld by the transparent policy");
-        return SoftwareAccountDiscovery::stopped(Withheld, Vec::new());
+        return Err(SOFTWARE_ACCOUNT_DISCOVERY_UNAVAILABLE.to_string());
     }
     let start_height = discovery_start_height(network, birthday_height);
     let transport = match crate::wallet::sync_engine::open_lwd_transport(lightwalletd_url).await {
         Ok(transport) => transport,
         Err(e) => {
             log::warn!("software account discovery: could not open lightwalletd channel: {e}");
-            return SoftwareAccountDiscovery::stopped(Unavailable, Vec::new());
+            return Ok(Vec::new());
         }
     };
     let mut client = CompactTxStreamerClient::new(transport.clone());
@@ -942,14 +894,14 @@ pub(crate) async fn discover_used_software_accounts(
         Ok(tip) => tip.height,
         Err(e) => {
             log::warn!("software account discovery: could not get chain tip: {e}");
-            return SoftwareAccountDiscovery::stopped(Unavailable, Vec::new());
+            return Ok(Vec::new());
         }
     };
     if tip < start_height {
         log::warn!(
             "software account discovery: birthday height {start_height} is above chain tip {tip}"
         );
-        return SoftwareAccountDiscovery::completed(Vec::new());
+        return Ok(Vec::new());
     }
 
     let mut discovered = Vec::new();
@@ -974,11 +926,7 @@ pub(crate) async fn discover_used_software_accounts(
                 Probe::Unused => {}
                 Probe::Withheld => {
                     log::info!("software account discovery: transparent policy changed; stopping");
-                    return SoftwareAccountDiscovery::stopped(Withheld, discovered);
-                }
-                Probe::Unavailable => {
-                    log::info!("software account discovery: probe failed; stopping");
-                    return SoftwareAccountDiscovery::stopped(Unavailable, discovered);
+                    return Err(SOFTWARE_ACCOUNT_DISCOVERY_UNAVAILABLE.to_string());
                 }
             }
         }
@@ -987,19 +935,15 @@ pub(crate) async fn discover_used_software_accounts(
         }
     }
 
-    SoftwareAccountDiscovery::completed(discovered)
+    Ok(discovered)
 }
 
 /// The outcome of probing one account index.
 enum Probe {
     Used(SoftwareWalletDiscoveredAccount),
-    /// Lightwalletd answered with an empty history.
     Unused,
     /// The gate withheld the request; nothing was sent.
     Withheld,
-    /// The probe failed, locally or at lightwalletd, so nothing is known
-    /// about the account.
-    Unavailable,
 }
 
 async fn discover_software_account_at_index(
@@ -1019,9 +963,9 @@ async fn discover_software_account_at_index(
         Ok(address) => address,
         Err(e) => {
             log::warn!(
-                "software account discovery: could not derive account {account_index} transparent address: {e}"
-            );
-            return Probe::Unavailable;
+                    "software account discovery: could not derive account {account_index} transparent address: {e}"
+                );
+            return Probe::Unused;
         }
     };
 
@@ -1033,9 +977,9 @@ async fn discover_software_account_at_index(
         Ok(None) => return Probe::Withheld,
         Err(e) => {
             log::warn!(
-                "software account discovery: failed to query account {account_index} from {start_height} to {tip_height}: {e}"
+                "software account discovery: failed to query account {account_index} address {address} from {start_height} to {tip_height}: {e}"
             );
-            return Probe::Unavailable;
+            return Probe::Unused;
         }
     };
 
@@ -1057,9 +1001,9 @@ async fn discover_software_account_at_index(
         Ok(None) => Probe::Unused,
         Err(e) => {
             log::warn!(
-                "software account discovery: failed while reading account {account_index} from {start_height} to {tip_height}: {e}"
+                "software account discovery: failed while reading account {account_index} address {address} from {start_height} to {tip_height}: {e}"
             );
-            Probe::Unavailable
+            Probe::Unused
         }
     }
 }
@@ -1986,13 +1930,13 @@ mod tests {
         let seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
         let addresses = keys::software_account_transparent_addresses(network, &seed, 0, 2).unwrap();
 
-        let discovered = discover_used_software_accounts(network, &seed, None, &url, &gate).await;
         assert_eq!(
-            discovered.status,
-            SoftwareAccountDiscoveryStatus::Withheld,
-            "a withheld discovery is not a completed empty one"
+            discover_used_software_accounts(network, &seed, None, &url, &gate)
+                .await
+                .err(),
+            Some(SOFTWARE_ACCOUNT_DISCOVERY_UNAVAILABLE.to_string()),
+            "a withheld discovery is not an empty one"
         );
-        assert!(discovered.accounts.is_empty());
         assert_eq!(
             preview_transparent_balance_for_addresses(&url, addresses, &gate).await,
             Err(TRANSPARENT_PREVIEW_UNAVAILABLE.to_string()),
@@ -2119,12 +2063,13 @@ mod tests {
         let discovered =
             discover_used_software_accounts(network, &seed, Some(2_000_000), &lwd.url, &gate).await;
 
-        // Nothing is sent once a probe is withheld.
         assert_eq!(lwd.count("/GetTaddressTxids"), 1);
-        // Account 1 was found before the transition; the withheld probes say
-        // nothing about higher accounts, so the run is partial, not complete.
-        assert_eq!(discovered.status, SoftwareAccountDiscoveryStatus::Partial);
-        assert_eq!(found_indices(&discovered), vec![1]);
+        // Account 1 was found before the transition, but the withheld probes
+        // say nothing about higher accounts, so no partial list is returned.
+        assert_eq!(
+            discovered.err(),
+            Some(SOFTWARE_ACCOUNT_DISCOVERY_UNAVAILABLE.to_string())
+        );
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -2158,153 +2103,9 @@ mod tests {
         assert!(transition.is_ok(), "{transition:?}");
         let discovered = discovery.await.unwrap();
         assert_eq!(lwd.count("/GetTaddressTxids"), 1);
-        assert_eq!(discovered.status, SoftwareAccountDiscoveryStatus::Partial);
-        assert_eq!(found_indices(&discovered), vec![1]);
-    }
-
-    fn found_indices(discovered: &SoftwareAccountDiscovery) -> Vec<u32> {
-        discovered
-            .accounts
-            .iter()
-            .map(|account| account.zip32_account_index)
-            .collect()
-    }
-
-    /// Discovers against `lwd` with public lookups allowed.
-    async fn discover_allowed(url: &str) -> SoftwareAccountDiscovery {
-        let network = WalletNetwork::Main;
-        let gate = TransparentLookupGate::pre_db(
-            crate::wallet::sync_engine::enhancement::PublicTransparentLookups::Allowed {
-                generation: None,
-            },
-        );
-        let seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
-        discover_used_software_accounts(network, &seed, Some(2_000_000), url, &gate).await
-    }
-
-    /// Answers the `n`th (1-based) `rpc` request with `fault`.
-    fn fault_on_nth(
-        rpc: &'static str,
-        n: usize,
-        fault: crate::wallet::sync_engine::test_lwd::Fault,
-    ) -> impl Fn(&str) -> Option<crate::wallet::sync_engine::test_lwd::Fault> + Send + Sync {
-        let seen = std::sync::atomic::AtomicUsize::new(0);
-        move |path| {
-            (path.ends_with(rpc) && seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1 == n)
-                .then_some(fault)
-        }
-    }
-
-    #[tokio::test]
-    async fn software_discovery_with_empty_histories_completes() {
-        use crate::wallet::sync_engine::test_lwd::CapturingLwd;
-        let _route = crate::network_privacy::test_route_policy::lock_route_policy();
-        let lwd = CapturingLwd::start_with(Vec::new(), 3_000_000, |_| {}).await;
-
-        let discovered = discover_allowed(&lwd.url).await;
-
-        // Only an empty history marks an account unused: the first batch is
-        // empty, so probing ends normally there.
-        assert_eq!(discovered.status, SoftwareAccountDiscoveryStatus::Completed);
-        assert!(discovered.accounts.is_empty());
-        assert_eq!(lwd.count("/GetTaddressTxids"), 4);
-    }
-
-    #[tokio::test]
-    async fn software_discovery_with_unreachable_lightwalletd_is_unavailable() {
-        let _route = crate::network_privacy::test_route_policy::lock_route_policy();
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let url = format!("http://{}", listener.local_addr().unwrap());
-        drop(listener);
-
-        let discovered = discover_allowed(&url).await;
-
         assert_eq!(
-            discovered.status,
-            SoftwareAccountDiscoveryStatus::Unavailable,
-            "an unreachable service is not an empty discovery"
+            discovered.err(),
+            Some(SOFTWARE_ACCOUNT_DISCOVERY_UNAVAILABLE.to_string())
         );
-        assert!(discovered.accounts.is_empty());
-    }
-
-    #[tokio::test]
-    async fn software_discovery_tip_failure_is_unavailable() {
-        use crate::wallet::sync_engine::test_lwd::{CapturingLwd, Fault};
-        let _route = crate::network_privacy::test_route_policy::lock_route_policy();
-        let lwd = CapturingLwd::start_faulty(vec![0], 3_000_000, |path| {
-            path.ends_with("/GetLatestBlock").then_some(Fault::Status)
-        })
-        .await;
-
-        let discovered = discover_allowed(&lwd.url).await;
-
-        assert_eq!(
-            discovered.status,
-            SoftwareAccountDiscoveryStatus::Unavailable
-        );
-        assert!(discovered.accounts.is_empty());
-        assert_eq!(lwd.count("/GetTaddressTxids"), 0);
-    }
-
-    #[tokio::test]
-    async fn software_discovery_rpc_failure_is_unavailable_not_unused() {
-        use crate::wallet::sync_engine::test_lwd::{CapturingLwd, Fault};
-        let _route = crate::network_privacy::test_route_policy::lock_route_policy();
-        let lwd = CapturingLwd::start_faulty(
-            Vec::new(),
-            3_000_000,
-            fault_on_nth("/GetTaddressTxids", 1, Fault::Status),
-        )
-        .await;
-
-        let discovered = discover_allowed(&lwd.url).await;
-
-        assert_eq!(
-            discovered.status,
-            SoftwareAccountDiscoveryStatus::Unavailable
-        );
-        assert!(discovered.accounts.is_empty());
-        // Probing stops at the first failure.
-        assert_eq!(lwd.count("/GetTaddressTxids"), 1);
-    }
-
-    #[tokio::test]
-    async fn software_discovery_stream_failure_is_unavailable_not_unused() {
-        use crate::wallet::sync_engine::test_lwd::{CapturingLwd, Fault};
-        let _route = crate::network_privacy::test_route_policy::lock_route_policy();
-        let lwd = CapturingLwd::start_faulty(
-            Vec::new(),
-            3_000_000,
-            fault_on_nth("/GetTaddressTxids", 1, Fault::BrokenStream),
-        )
-        .await;
-
-        let discovered = discover_allowed(&lwd.url).await;
-
-        assert_eq!(
-            discovered.status,
-            SoftwareAccountDiscoveryStatus::Unavailable
-        );
-        assert!(discovered.accounts.is_empty());
-        assert_eq!(lwd.count("/GetTaddressTxids"), 1);
-    }
-
-    #[tokio::test]
-    async fn software_discovery_failure_after_a_found_account_is_partial() {
-        use crate::wallet::sync_engine::test_lwd::{CapturingLwd, Fault};
-        let _route = crate::network_privacy::test_route_policy::lock_route_policy();
-        // Account 1 has history; the probe of account 2 fails.
-        let lwd = CapturingLwd::start_faulty(
-            vec![0],
-            3_000_000,
-            fault_on_nth("/GetTaddressTxids", 2, Fault::Status),
-        )
-        .await;
-
-        let discovered = discover_allowed(&lwd.url).await;
-
-        assert_eq!(discovered.status, SoftwareAccountDiscoveryStatus::Partial);
-        assert_eq!(found_indices(&discovered), vec![1]);
-        assert_eq!(lwd.count("/GetTaddressTxids"), 2);
     }
 }

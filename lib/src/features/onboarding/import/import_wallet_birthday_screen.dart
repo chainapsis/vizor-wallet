@@ -19,7 +19,6 @@ import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../ledger/ledger_connect_screen.dart';
 import '../shared/onboarding_error_messages.dart';
 import '../shared/onboarding_flow_args.dart';
-import 'import_account_discovery_incomplete_modal.dart';
 import 'import_account_discovery_modal.dart';
 import 'import_birthday_estimator.dart';
 import 'import_birthday_calendar_overlay.dart';
@@ -85,8 +84,6 @@ class _ImportWalletBirthdayScreenState
   _accountDiscoveryCandidates;
   Completer<List<int>?>? _accountDiscoveryCompleter;
   bool _accountDiscoveryAllowsEmptySelection = true;
-  rust_wallet.SoftwareAccountDiscoveryStatus? _incompleteDiscoveryStatus;
-  Completer<bool>? _incompleteDiscoveryCompleter;
   String? _metadataError;
   String? _submitError;
   DateTime? _calendarInitialDate;
@@ -110,7 +107,6 @@ class _ImportWalletBirthdayScreenState
 
   @override
   void dispose() {
-    _completeIncompleteDiscoveryWarning(false);
     _completeAccountDiscovery(null);
     _manualHeightFocusNode
       ..removeListener(_handleFocusChanged)
@@ -266,27 +262,6 @@ class _ImportWalletBirthdayScreenState
     });
   }
 
-  void _completeIncompleteDiscoveryWarning(
-    bool continueImport, {
-    bool updateState = false,
-  }) {
-    final completer = _incompleteDiscoveryCompleter;
-    void clearWarningState() {
-      _incompleteDiscoveryStatus = null;
-      _incompleteDiscoveryCompleter = null;
-    }
-
-    if (updateState && mounted) {
-      setState(clearWarningState);
-    } else {
-      clearWarningState();
-    }
-
-    if (completer != null && !completer.isCompleted) {
-      completer.complete(continueImport);
-    }
-  }
-
   void _completeAccountDiscovery(
     List<int>? accountIndices, {
     bool updateState = false,
@@ -431,24 +406,6 @@ class _ImportWalletBirthdayScreenState
           birthdayHeight: birthdayHeight,
         );
     if (!mounted) return null;
-    if (discovery.status !=
-        rust_wallet.SoftwareAccountDiscoveryStatus.completed) {
-      // Not every account was checked. Warn before importing anything, and
-      // import only on an explicit continue. The submit phase stays busy
-      // while the warning is open: the overlay does not trap focus, so an
-      // idle Continue could start a second discovery underneath it.
-      final warning = Completer<bool>();
-      setState(() {
-        _incompleteDiscoveryStatus = discovery.status;
-        _incompleteDiscoveryCompleter = warning;
-      });
-      final continueImport = await warning.future;
-      if (!mounted) return null;
-      if (!continueImport) {
-        setState(() => _submitPhase = _ImportWalletSubmitPhase.idle);
-        return null;
-      }
-    }
     final candidates = discovery.accounts;
     if (candidates.isEmpty) return const [];
 
@@ -560,15 +517,7 @@ class _ImportWalletBirthdayScreenState
     };
 
     return _buildPresentation(
-      overlay: _incompleteDiscoveryStatus != null
-          ? ImportAccountDiscoveryIncompleteModal(
-              status: _incompleteDiscoveryStatus!,
-              onContinue: () =>
-                  _completeIncompleteDiscoveryWarning(true, updateState: true),
-              onCancel: () =>
-                  _completeIncompleteDiscoveryWarning(false, updateState: true),
-            )
-          : _accountDiscoveryCandidates != null
+      overlay: _accountDiscoveryCandidates != null
           ? ImportAccountDiscoveryModal(
               accounts: _accountDiscoveryCandidates!,
               allowEmptySelection: _accountDiscoveryAllowsEmptySelection,

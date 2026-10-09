@@ -14218,23 +14218,6 @@ impl SseDecode for zcash_voting::wire::SignedDelegationPayloadView {
     }
 }
 
-impl SseDecode for crate::api::wallet::SoftwareAccountDiscoveryStatus {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut inner = <i32>::sse_decode(deserializer);
-        return match inner {
-            0 => crate::api::wallet::SoftwareAccountDiscoveryStatus::Completed,
-            1 => crate::api::wallet::SoftwareAccountDiscoveryStatus::Withheld,
-            2 => crate::api::wallet::SoftwareAccountDiscoveryStatus::Unavailable,
-            3 => crate::api::wallet::SoftwareAccountDiscoveryStatus::Partial,
-            _ => unreachable!(
-                "Invalid variant for SoftwareAccountDiscoveryStatus: {}",
-                inner
-            ),
-        };
-    }
-}
-
 impl SseDecode for crate::api::wallet::SoftwareWalletDiscoveredAccount {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -14271,12 +14254,9 @@ impl SseDecode for crate::api::wallet::SoftwareWalletImportDiscoveryResult {
         let mut var_primaryAccountAlreadyExists = <bool>::sse_decode(deserializer);
         let mut var_accounts =
             <Vec<crate::api::wallet::SoftwareWalletDiscoveredAccount>>::sse_decode(deserializer);
-        let mut var_status =
-            <crate::api::wallet::SoftwareAccountDiscoveryStatus>::sse_decode(deserializer);
         return crate::api::wallet::SoftwareWalletImportDiscoveryResult {
             primary_account_already_exists: var_primaryAccountAlreadyExists,
             accounts: var_accounts,
-            status: var_status,
         };
     }
 }
@@ -18972,29 +18952,6 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<zcash_voting::wire::SignedDele
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::wallet::SoftwareAccountDiscoveryStatus {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        match self {
-            Self::Completed => 0.into_dart(),
-            Self::Withheld => 1.into_dart(),
-            Self::Unavailable => 2.into_dart(),
-            Self::Partial => 3.into_dart(),
-            _ => unreachable!(),
-        }
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::api::wallet::SoftwareAccountDiscoveryStatus
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<crate::api::wallet::SoftwareAccountDiscoveryStatus>
-    for crate::api::wallet::SoftwareAccountDiscoveryStatus
-{
-    fn into_into_dart(self) -> crate::api::wallet::SoftwareAccountDiscoveryStatus {
-        self
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::wallet::SoftwareWalletDiscoveredAccount {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -19047,7 +19004,6 @@ impl flutter_rust_bridge::IntoDart for crate::api::wallet::SoftwareWalletImportD
                 .into_into_dart()
                 .into_dart(),
             self.accounts.into_into_dart().into_dart(),
-            self.status.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -23113,24 +23069,6 @@ impl SseEncode for zcash_voting::wire::SignedDelegationPayloadView {
     }
 }
 
-impl SseEncode for crate::api::wallet::SoftwareAccountDiscoveryStatus {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <i32>::sse_encode(
-            match self {
-                crate::api::wallet::SoftwareAccountDiscoveryStatus::Completed => 0,
-                crate::api::wallet::SoftwareAccountDiscoveryStatus::Withheld => 1,
-                crate::api::wallet::SoftwareAccountDiscoveryStatus::Unavailable => 2,
-                crate::api::wallet::SoftwareAccountDiscoveryStatus::Partial => 3,
-                _ => {
-                    unimplemented!("");
-                }
-            },
-            serializer,
-        );
-    }
-}
-
 impl SseEncode for crate::api::wallet::SoftwareWalletDiscoveredAccount {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -23158,7 +23096,6 @@ impl SseEncode for crate::api::wallet::SoftwareWalletImportDiscoveryResult {
             self.accounts,
             serializer,
         );
-        <crate::api::wallet::SoftwareAccountDiscoveryStatus>::sse_encode(self.status, serializer);
     }
 }
 
