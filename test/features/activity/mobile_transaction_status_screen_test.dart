@@ -245,6 +245,9 @@ void main() {
       expect(find.text(kUnknownFeeText), findsNothing);
       expect(tx.feeState, rust_sync.TransactionFeeState.unknown);
       expect(tx.fee, BigInt.zero);
+      await tester.tap(find.text('0.00015 ZEC'));
+      await tester.pumpAndSettle();
+      expect(find.text(kUnattributedNetworkFeeHelpText), findsOneWidget);
     },
   );
 
