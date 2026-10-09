@@ -24,6 +24,17 @@ use super::SYNC_DB_BUSY_TIMEOUT;
 
 type OnRequest = Arc<dyn Fn(&str) + Send + Sync>;
 
+/// A failure [`CapturingLwd::start_faulty`] answers a request with.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Fault {
+    /// The call fails with gRPC status `UNAVAILABLE`.
+    Status,
+    /// The call succeeds, but reading its response stream fails.
+    BrokenStream,
+}
+
+type FaultHook = Arc<dyn Fn(&str) -> Option<Fault> + Send + Sync>;
+
 /// Transactions `GetTransaction` answers, by txid: raw bytes and height.
 type Served = Arc<std::collections::HashMap<[u8; 32], (Vec<u8>, u64)>>;
 
@@ -61,6 +72,25 @@ impl CapturingLwd {
             false,
             None,
             Served::default(),
+        )
+        .await
+    }
+
+    /// Like [`Self::start_with`], but answers a request with the fault
+    /// `fault` returns for its path, if any, instead of the normal response.
+    pub(crate) async fn start_faulty(
+        history_tx: Vec<u8>,
+        tip_height: u64,
+        fault: impl Fn(&str) -> Option<Fault> + Send + Sync + 'static,
+    ) -> Self {
+        Self::start_inner_with_faults(
+            history_tx,
+            tip_height,
+            |_| {},
+            false,
+            None,
+            Served::default(),
+            Arc::new(fault),
         )
         .await
     }
@@ -127,6 +157,27 @@ impl CapturingLwd {
         send_gate: Option<Arc<tokio::sync::Notify>>,
         served: Served,
     ) -> Self {
+        Self::start_inner_with_faults(
+            history_tx,
+            tip_height,
+            on_request,
+            accept_broadcast,
+            send_gate,
+            served,
+            Arc::new(|_| None),
+        )
+        .await
+    }
+
+    async fn start_inner_with_faults(
+        history_tx: Vec<u8>,
+        tip_height: u64,
+        on_request: impl Fn(&str) + Send + Sync + 'static,
+        accept_broadcast: bool,
+        send_gate: Option<Arc<tokio::sync::Notify>>,
+        served: Served,
+        fault: FaultHook,
+    ) -> Self {
         let requests = Arc::new(Mutex::new(Vec::new()));
         let recorded = requests.clone();
         let on_request: OnRequest = Arc::new(on_request);
@@ -140,16 +191,35 @@ impl CapturingLwd {
                 let history_tx = history_tx.clone();
                 let send_gate = send_gate.clone();
                 let served = served.clone();
+                let fault = fault.clone();
                 tokio::spawn(async move {
                     let service =
                         service_fn(move |request: hyper::Request<hyper::body::Incoming>| {
                             let path = request.uri().path().to_owned();
                             recorded.lock().unwrap().push(path.clone());
                             on_request(&path);
+                            let fault = fault(&path);
                             let history_tx = history_tx.clone();
                             let send_gate = send_gate.clone();
                             let served = served.clone();
                             async move {
+                                if let Some(fault) = fault {
+                                    let grpc = hyper::Response::builder()
+                                        .header("content-type", "application/grpc");
+                                    let response = match fault {
+                                        Fault::Status => grpc
+                                            .header("grpc-status", "14")
+                                            .header("grpc-message", "unavailable")
+                                            .body(Full::new(Bytes::new())),
+                                        // A frame flagged compressed without
+                                        // a grpc-encoding: an undecodable
+                                        // message.
+                                        Fault::BrokenStream => grpc
+                                            .header("grpc-status", "0")
+                                            .body(Full::new(Bytes::from_static(&[1, 0, 0, 0, 0]))),
+                                    };
+                                    return Ok::<_, std::convert::Infallible>(response.unwrap());
+                                }
                                 if path.ends_with("/GetTransaction") && !served.is_empty() {
                                     let body = request.into_body().collect().await;
                                     let filter = body.ok().and_then(|body| {

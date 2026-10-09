@@ -7,8 +7,9 @@ import '../frb_generated.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `block_height_from_u64`, `catch`, `discover_software_account_at_index`, `discover_used_software_accounts`, `discovery_start_height`, `import_discovered_software_wallet_accounts`, `import_gate`, `is_ironwood_active_at_height`, `network_name`, `nu6_3_activation_height`, `parse_network_and_migrate`, `preview_transparent_balance_for_addresses`, `restored_birthday`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Probe`
+// These functions are ignored because they are not marked as `pub`: `block_height_from_u64`, `catch`, `completed`, `discover_software_account_at_index`, `discover_used_software_accounts`, `discovery_start_height`, `import_discovered_software_wallet_accounts`, `import_gate`, `is_ironwood_active_at_height`, `network_name`, `nu6_3_activation_height`, `parse_network_and_migrate`, `preview_transparent_balance_for_addresses`, `restored_birthday`, `stopped`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Probe`, `SoftwareAccountDiscovery`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `clone`, `eq`, `fmt`
 
 /// Get the latest block height from lightwalletd.
 Future<BigInt> getLatestBlockHeight({
@@ -674,6 +675,25 @@ class LegacyHardwareAccount {
           hardwareSignerKind == other.hardwareSignerKind;
 }
 
+/// How far software account discovery got. Anything but `Completed` means
+/// some accounts were not checked: a withheld or failed probe is not evidence
+/// that an account is unused.
+enum SoftwareAccountDiscoveryStatus {
+  /// Probing reached its normal end, or there was nothing to probe.
+  completed,
+
+  /// The transparent policy withheld lookups before any account was found.
+  withheld,
+
+  /// Lightwalletd, or a local derivation, failed before any account was
+  /// found.
+  unavailable,
+
+  /// Probing stopped early, withheld or failed, after finding at least one
+  /// used account; the accounts found so far are returned.
+  partial,
+}
+
 /// A higher ZIP32 software account that can be imported by user choice.
 class SoftwareWalletDiscoveredAccount {
   final int zip32AccountIndex;
@@ -737,14 +757,19 @@ class SoftwareWalletImportAccount {
 class SoftwareWalletImportDiscoveryResult {
   final bool primaryAccountAlreadyExists;
   final List<SoftwareWalletDiscoveredAccount> accounts;
+  final SoftwareAccountDiscoveryStatus status;
 
   const SoftwareWalletImportDiscoveryResult({
     required this.primaryAccountAlreadyExists,
     required this.accounts,
+    required this.status,
   });
 
   @override
-  int get hashCode => primaryAccountAlreadyExists.hashCode ^ accounts.hashCode;
+  int get hashCode =>
+      primaryAccountAlreadyExists.hashCode ^
+      accounts.hashCode ^
+      status.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -752,7 +777,8 @@ class SoftwareWalletImportDiscoveryResult {
       other is SoftwareWalletImportDiscoveryResult &&
           runtimeType == other.runtimeType &&
           primaryAccountAlreadyExists == other.primaryAccountAlreadyExists &&
-          accounts == other.accounts;
+          accounts == other.accounts &&
+          status == other.status;
 }
 
 /// Result of software mnemonic import with ZIP32 account discovery.
