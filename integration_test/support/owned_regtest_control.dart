@@ -65,31 +65,38 @@ Future<String> fundOwnedRegtestTransparent(
 }
 
 /// Preserve real copy/read semantics, locking only this short shared operation.
-Future<T> withNativeClipboard<T>(Future<T> Function() action) async {
-  if (installedE2eRuntimeCaseManifest == null) return action();
-  await postOwnedRegtestControl('/host-resource/clipboard/acquire', const {});
-  var actionFailed = false;
+Future<T> withNativeClipboard<T>(
+  Future<T> Function() action, {
+  Future<void> Function()? acquireLease,
+  Future<void> Function()? releaseLease,
+}) async {
+  if ((acquireLease == null) != (releaseLease == null)) {
+    throw ArgumentError('Clipboard test callbacks must be supplied together.');
+  }
+  if (acquireLease == null) {
+    if (installedE2eRuntimeCaseManifest == null) return action();
+    acquireLease = () async {
+      await postOwnedRegtestControl(
+        '/host-resource/clipboard/acquire',
+        const {},
+      );
+    };
+    releaseLease = () async {
+      await postOwnedRegtestControl(
+        '/host-resource/clipboard/release',
+        const {},
+      );
+    };
+  }
+  await acquireLease();
+  var completed = false;
   try {
-    return await action();
-  } catch (error, stack) {
-    actionFailed = true;
-    try {
-      await postOwnedRegtestControl(
-        '/host-resource/clipboard/release',
-        const {},
-      );
-    } catch (cleanup) {
-      stderr.writeln(
-        'Clipboard release also failed; host must stop writers: $cleanup',
-      );
-    }
-    Error.throwWithStackTrace(error, stack);
+    final value = await action();
+    completed = true;
+    return value;
   } finally {
-    if (!actionFailed) {
-      await postOwnedRegtestControl(
-        '/host-resource/clipboard/release',
-        const {},
-      );
-    }
+    // A failed copy/read may leave a writer in flight. Only the host's original
+    // joined-app/driver teardown can release that abandoned lease.
+    if (completed) await releaseLease!();
   }
 }

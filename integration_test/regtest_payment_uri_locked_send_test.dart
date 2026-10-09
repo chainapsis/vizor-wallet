@@ -197,7 +197,7 @@ Future<void> _sendViaLockedPaymentUri(
   );
   await _pumpUntil(
     tester,
-    () => tester.any(find.text('Review payment request')),
+    () => tester.any(find.text('Review Payment')),
     description: 'the payment-request review screen',
     timeout: const Duration(minutes: 1),
   );
