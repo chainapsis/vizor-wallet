@@ -1079,15 +1079,18 @@ async fn a_flag_build_discloses_nothing_before_it_raises_the_wallet() {
     for first_account in [false, true] {
         let gate = import_gate(MAIN, &path, first_account, flag).unwrap();
         assert!(!gate.is_allowed());
-        assert!(discover_used_software_accounts(
-            MAIN,
-            &seed,
-            Some(u64::from(BIRTHDAY)),
-            &lwd.url,
-            &gate
-        )
-        .await
-        .is_empty());
+        assert!(
+            discover_used_software_accounts(
+                MAIN,
+                &seed,
+                Some(u64::from(BIRTHDAY)),
+                &lwd.url,
+                &gate
+            )
+            .await
+            .is_err(),
+            "a withheld discovery is not an empty one"
+        );
         let addresses = keys::software_account_transparent_addresses(MAIN, &seed, 0, 2).unwrap();
         assert!(
             preview_transparent_balance_for_addresses(&lwd.url, addresses, &gate)

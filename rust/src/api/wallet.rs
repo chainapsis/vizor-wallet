@@ -10,6 +10,13 @@ use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxS
 /// UTXO lookups; an unavailable preview is not a zero balance.
 const TRANSPARENT_PREVIEW_UNAVAILABLE: &str =
     "Transparent balance preview is unavailable under the private transparent policy";
+
+/// Returned when the transparent policy withholds an account discovery probe:
+/// a withheld probe proves nothing about higher accounts, so import stops
+/// rather than silently importing only the primary account.
+pub(crate) const SOFTWARE_ACCOUNT_DISCOVERY_UNAVAILABLE: &str =
+    "Vizor can't check this recovery phrase for additional accounts while \
+     Private queries is on. Turn off Private queries to import it.";
 use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
 
 const SOFTWARE_ACCOUNT_DISCOVERY_MAX_INDEX: u32 = 20;
@@ -474,7 +481,7 @@ pub fn discover_software_wallet_import_accounts(
             birthday_height,
             &lightwalletd_url,
             &gate,
-        ));
+        ))?;
 
         let accounts = discovered_accounts
             .into_iter()
@@ -851,25 +858,25 @@ pub(crate) fn import_gate(
 
 /// Probes ZIP 32 account indices for transparent history. Each probe sends an
 /// account's first transparent address to lightwalletd, so `gate` authorizes
-/// every probe and the first withheld one ends discovery with the accounts
-/// found so far.
+/// every probe; a withheld one ends discovery with
+/// [`SOFTWARE_ACCOUNT_DISCOVERY_UNAVAILABLE`], never a shorter account list.
 pub(crate) async fn discover_used_software_accounts(
     network: WalletNetwork,
     seed: &secrecy::SecretVec<u8>,
     birthday_height: Option<u64>,
     lightwalletd_url: &str,
     gate: &TransparentLookupGate,
-) -> Vec<SoftwareWalletDiscoveredAccount> {
+) -> Result<Vec<SoftwareWalletDiscoveredAccount>, String> {
     if !gate.is_allowed() {
         log::info!("software account discovery: withheld by the transparent policy");
-        return Vec::new();
+        return Err(SOFTWARE_ACCOUNT_DISCOVERY_UNAVAILABLE.to_string());
     }
     let start_height = discovery_start_height(network, birthday_height);
     let mut client = match crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await {
         Ok(client) => client,
         Err(e) => {
             log::warn!("software account discovery: could not open lightwalletd channel: {e}");
-            return Vec::new();
+            return Ok(Vec::new());
         }
     };
     let tip = match crate::wallet::sync_engine::get_latest_block_recorded(
@@ -882,14 +889,14 @@ pub(crate) async fn discover_used_software_accounts(
         Ok(tip) => tip.height,
         Err(e) => {
             log::warn!("software account discovery: could not get chain tip: {e}");
-            return Vec::new();
+            return Ok(Vec::new());
         }
     };
     if tip < start_height {
         log::warn!(
             "software account discovery: birthday height {start_height} is above chain tip {tip}"
         );
-        return Vec::new();
+        return Ok(Vec::new());
     }
 
     let mut discovered = Vec::new();
@@ -914,7 +921,7 @@ pub(crate) async fn discover_used_software_accounts(
                 Probe::Unused => {}
                 Probe::Withheld => {
                     log::info!("software account discovery: transparent policy changed; stopping");
-                    return discovered;
+                    return Err(SOFTWARE_ACCOUNT_DISCOVERY_UNAVAILABLE.to_string());
                 }
             }
         }
@@ -923,7 +930,7 @@ pub(crate) async fn discover_used_software_accounts(
         }
     }
 
-    discovered
+    Ok(discovered)
 }
 
 /// The outcome of probing one account index.
@@ -1915,10 +1922,12 @@ mod tests {
         let seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
         let addresses = keys::software_account_transparent_addresses(network, &seed, 0, 2).unwrap();
 
-        assert!(
+        assert_eq!(
             discover_used_software_accounts(network, &seed, None, &url, &gate)
                 .await
-                .is_empty()
+                .err(),
+            Some(SOFTWARE_ACCOUNT_DISCOVERY_UNAVAILABLE.to_string()),
+            "a withheld discovery is not an empty one"
         );
         assert_eq!(
             preview_transparent_balance_for_addresses(&url, addresses, &gate).await,
@@ -2051,13 +2060,11 @@ mod tests {
             discover_used_software_accounts(network, &seed, Some(2_000_000), &lwd.url, &gate).await;
 
         assert_eq!(lwd.count("/GetTaddressTxids"), 1);
+        // Account 1 was found before the transition, but the withheld probes
+        // say nothing about higher accounts, so no partial list is returned.
         assert_eq!(
-            discovered
-                .iter()
-                .map(|account| account.zip32_account_index)
-                .collect::<Vec<_>>(),
-            vec![1],
-            "accounts found before the transition are kept"
+            discovered.err(),
+            Some(SOFTWARE_ACCOUNT_DISCOVERY_UNAVAILABLE.to_string())
         );
     }
 }
