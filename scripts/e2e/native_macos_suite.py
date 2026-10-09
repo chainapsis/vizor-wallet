@@ -58,7 +58,7 @@ def validate_options(args, scenarios):
     if sys.platform != "darwin":
         raise ValueError("native macOS execution requires macOS")
     if not scenarios or any(s.id not in SUPPORTED_SCENARIOS for s in scenarios):
-        raise ValueError("this executor implements only Rust receive/import/send and macOS import/endpoint scenarios")
+        raise ValueError("this executor implements only migrated Rust/macOS scenarios")
     for scenario in scenarios:
         if scenario.id in RUST_CASES and (scenario.engine != "rust"
             or scenario.profile != "zakura-direct-height1"
