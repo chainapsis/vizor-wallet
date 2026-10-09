@@ -33,7 +33,7 @@ use zcash_client_backend::{
         transparent_ledger::TransparentLedgerRead, TransactionDataRequest,
         TransactionsInvolvingAddress, WalletRead, WalletWrite,
     },
-    proto::service::RawTransaction,
+    proto::service::{compact_tx_streamer_client::CompactTxStreamerClient, RawTransaction},
 };
 use zcash_client_sqlite::error::SqliteClientError;
 use zcash_keys::encoding::{encode_transparent_address_p, AddressCodec as _};
@@ -125,8 +125,11 @@ async fn open_history(
     start: u64,
     end: u64,
 ) -> Result<Option<History>, SyncError> {
-    let mut client = lwd::open_isolated_lwd_channel(lightwalletd_url).await?;
+    let transport = lwd::open_isolated_lwd_transport(lightwalletd_url).await?;
+    let mut client = CompactTxStreamerClient::new(transport.clone());
     let Some(stream) = gate
+        .clone()
+        .with_transport(transport)
         .taddress_txids(&mut client, address, start, end)
         .await?
     else {

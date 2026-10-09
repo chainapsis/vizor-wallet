@@ -4,9 +4,11 @@
 //! with one `Ready` commit per pass. Its revisions use [`FIXTURE_SOURCE`] as
 //! their source id. It is untrusted unless [`FixtureSource::trust`] makes it
 //! trusted, as the transparent PIR source is, so the coordinator qualifies its
-//! revisions only when a test asks for it. Its acknowledgments follow the
-//! adapter's: a batch that resolves retired revisions is settled only as
-//! reconciled.
+//! revisions only when a test asks for it. Its settlement follows the
+//! adapter's `apply_and_acknowledge`: commits apply in order, each in its own
+//! wallet transaction, the first refusal stops the batch unacknowledged, and
+//! a batch that resolves retired revisions is refused under observed trust
+//! before anything applies.
 
 use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::future::Future;
@@ -22,7 +24,13 @@ use zcash_client_sqlite::AccountUuid;
 use zcash_primitives::block::BlockHash;
 use zcash_protocol::consensus::BlockHeight;
 
-use super::{Continuation, RecoverySource, SourceBatch, SourceError, SourceRequest};
+use zcash_client_backend::data_api::transparent_ledger::TransparentLedgerWrite as _;
+
+use super::{
+    refusal, ApplyStats, Continuation, RecoverySource, Refusal, Settlement, SourceBatch,
+    SourceError, SourceRequest, Trust,
+};
+use crate::wallet::db::{with_wallet_db_write_lock, WalletDatabase};
 
 pub(crate) const FIXTURE_SOURCE: &[u8] = b"vizor-fixture";
 const PAGE: &[u8] = b"fixture-page";
@@ -68,9 +76,9 @@ struct State {
     revision: Option<RecoveryRevision>,
     /// The account of each call, in order.
     calls: Vec<AccountUuid>,
-    /// Accounts whose last answer was a `Ready` batch not yet acknowledged,
-    /// with whether that batch resolves retired revisions.
-    unacknowledged: HashMap<AccountUuid, bool>,
+    /// Accounts whose last answer was a `Ready` batch not yet settled, with
+    /// its commits and whether it resolves retired revisions.
+    unacknowledged: HashMap<AccountUuid, (Vec<TransparentLedgerCommit<AccountUuid>>, bool)>,
     acknowledged: usize,
     reconciled: usize,
 }
@@ -263,6 +271,33 @@ impl FixtureSource {
     }
 }
 
+/// A [`FixtureSource`] reported untrusted, whatever [`FixtureSource::trust`]
+/// says: the coordinator observes its commits without qualifying them, as it
+/// would for an origin the wallet does not trust.
+pub(crate) struct Observed<'a>(pub(crate) &'a FixtureSource);
+
+impl RecoverySource for Observed<'_> {
+    fn trusted(&self) -> bool {
+        false
+    }
+
+    fn recover(
+        &self,
+        request: SourceRequest<'_>,
+    ) -> impl Future<Output = Result<SourceBatch, SourceError>> + Send {
+        self.0.recover(request)
+    }
+
+    fn apply(
+        &self,
+        account: AccountUuid,
+        db: &mut WalletDatabase,
+        trust: Trust,
+    ) -> impl Future<Output = Settlement> + Send {
+        self.0.apply(account, db, trust)
+    }
+}
+
 impl RecoverySource for FixtureSource {
     fn trusted(&self) -> bool {
         self.state.lock().unwrap().trusted
@@ -283,32 +318,63 @@ impl RecoverySource for FixtureSource {
         std::future::ready(self.state.lock().unwrap().answer(&request))
     }
 
-    fn acknowledge(
+    fn apply(
         &self,
         account: AccountUuid,
-        reconciled: bool,
-    ) -> impl Future<Output = Result<(), SourceError>> + Send {
+        db: &mut WalletDatabase,
+        trust: Trust,
+    ) -> impl Future<Output = Settlement> + Send {
+        let parked = self.state.lock().unwrap().unacknowledged.remove(&account);
+        let mut stats = ApplyStats::default();
+        let Some((commits, retired)) = parked else {
+            return std::future::ready(Settlement::Refused {
+                stats,
+                refusal: Refusal::Skip,
+            });
+        };
+        if retired && trust == Trust::Observed {
+            return std::future::ready(Settlement::Refused {
+                stats,
+                refusal: Refusal::Unreconciled,
+            });
+        }
+        for commit in commits {
+            let applied = with_wallet_db_write_lock(
+                "sync_engine.transparent_ledger.commit",
+                || match trust {
+                    Trust::Trusted => db.qualify_and_apply_transparent_ledger_commit(commit),
+                    Trust::Observed => db.apply_transparent_ledger_commit(commit),
+                },
+            );
+            match applied {
+                Ok(outcome) => {
+                    stats.applied += 1;
+                    stats.qualified += usize::from(trust == Trust::Trusted);
+                    stats.window_grew |= outcome.window_grew;
+                }
+                Err(error) => {
+                    return std::future::ready(match refusal(&error) {
+                        Some(refusal) => Settlement::Refused { stats, refusal },
+                        None => Settlement::Failed {
+                            stats,
+                            error: error.to_string(),
+                        },
+                    });
+                }
+            }
+        }
         let hook = self.state.lock().unwrap().on_acknowledge.clone();
         if let Some(hook) = hook {
             hook();
         }
         let mut state = self.state.lock().unwrap();
-        std::future::ready(match state.unacknowledged.get(&account).copied() {
-            // As the adapter's `acknowledge_applied`, refuse a batch with
-            // retired revisions and keep it for a reconciled acknowledgment.
-            Some(true) if !reconciled => Err(SourceError::Failed),
-            Some(retired) => {
-                state.unacknowledged.remove(&account);
-                state.acknowledged += 1;
-                state.reconciled += usize::from(reconciled);
-                // Reconciliation resolved the retirements.
-                if retired {
-                    state.retiring = false;
-                }
-                Ok(())
-            }
-            None => Err(SourceError::Failed),
-        })
+        state.acknowledged += 1;
+        state.reconciled += usize::from(retired);
+        // Trusted commits resolved the retirements.
+        if retired {
+            state.retiring = false;
+        }
+        std::future::ready(Settlement::Acknowledged(stats))
     }
 }
 
@@ -375,10 +441,9 @@ impl State {
                     .min(anchor.height),
                 through: anchor.height,
             });
-            self.unacknowledged.insert(request.account, self.retiring);
+            self.unacknowledged
+                .insert(request.account, (vec![commit], self.retiring));
             return Ok(SourceBatch::Ready {
-                commits: vec![commit],
-                retired: self.retiring,
                 next: self.next.unwrap_or(Continuation::More),
                 behind_by,
             });
@@ -424,13 +489,9 @@ impl State {
         if let Some(fixed) = self.next {
             next = fixed;
         }
-        self.unacknowledged.insert(request.account, self.retiring);
-        Ok(SourceBatch::Ready {
-            commits,
-            retired: self.retiring,
-            next,
-            behind_by,
-        })
+        self.unacknowledged
+            .insert(request.account, (commits, self.retiring));
+        Ok(SourceBatch::Ready { next, behind_by })
     }
 
     /// One provisional revision per publication; a new publication replaces

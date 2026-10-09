@@ -2,23 +2,24 @@
 //!
 //! After each completed sync, [`run`] asks a [`RecoverySource`] about each
 //! account in passes, with no database lock held across a source call. A pass
-//! answers with a [`SourceBatch`]: a `Ready` batch's commits are applied in
-//! order, each in its own library transaction under the wallet write lock,
-//! and acknowledged to the source only once every one applied; a `Pending` or
-//! `Withdrawn` batch applies nothing and is never acknowledged.
+//! answers with a [`SourceBatch`]. The source then settles a `Ready` batch
+//! itself ([`RecoverySource::apply`]): its commits are applied in order, each
+//! in its own library transaction, and the batch is acknowledged only once
+//! every one committed. The transparent PIR source holds the wallet write
+//! lock across the whole settlement, so a foreground wallet write waits for
+//! the batch. A `Pending` or `Withdrawn` batch applies nothing and is never
+//! acknowledged.
 //!
 //! Under `PrivateRequired`, a trusted source's commits are qualified as they
-//! are applied (`qualify_and_apply_transparent_ledger_commit`): the
-//! trusted-indexer decision, which is what lets a recovered account be
-//! promoted. Commits of an untrusted source, or under `PrivateShadow`, are
-//! only applied, and never qualify an account for promotion.
+//! are applied ([`Trust::Trusted`]): the trusted-indexer decision, which is
+//! what lets a recovered account be promoted. Commits of an untrusted source
+//! are only observed, and never qualify an account for promotion.
 //!
 //! A `Ready` batch can resolve retired revisions, provisional revisions an
-//! earlier batch exported that its commits succeed. Only the trusted operation
-//! withdraws their evidence, so such a batch is acknowledged as reconciled
-//! only when every commit went through it. Otherwise the run acknowledges
-//! nothing and holds the account, and the source reports the retirements
-//! again until a trusted run reconciles them.
+//! earlier batch exported that its commits succeed. Only trusted commits
+//! withdraw their evidence, so an observed settlement refuses such a batch
+//! before applying anything, the run holds the account, and the source
+//! reports the retirements again until a trusted run reconciles them.
 //!
 //! A candidate account's state lives only in the library's `tpir_*` tables.
 //! It never changes balances, input selection, locks, address allocation, or
@@ -49,10 +50,11 @@ use std::sync::{LazyLock, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use zakura_pir_transparent::WithdrawnCause;
+pub(crate) use zakura_pir_transparent::{ApplyStats, Trust};
 use zcash_client_backend::data_api::{
     transparent_ledger::{
-        AccountLifecycle, CommitRejection, RecoveryBlocker, TransparentLedgerCommit,
-        TransparentLedgerMode, TransparentLedgerRead, TransparentLedgerWrite, TransparentWatchSet,
+        AccountLifecycle, CommitRejection, RecoveryBlocker, TransparentLedgerMode,
+        TransparentLedgerRead, TransparentLedgerWrite, TransparentWatchSet,
     },
     Account as _, WalletRead,
 };
@@ -73,7 +75,7 @@ pub(crate) mod tests;
 
 pub(crate) use pir::TransparentPirSource;
 use policy::raise_to_required;
-pub(crate) use policy::set_transparent_policy;
+pub(crate) use policy::{current_transparent_policy, set_transparent_policy};
 
 /// Answered passes per account in one run. Each pass after the first needs
 /// new work: a grown window, a changed watch set, or a continuation that asks
@@ -127,18 +129,11 @@ pub(crate) enum Continuation {
 
 /// One pass of a batch source over one account.
 ///
-/// Only `Ready` carries commits. They are applied in order, each through the
-/// trusted operation when the source is trusted, and acknowledged only after
-/// every one applied.
+/// Only a `Ready` batch has commits. The source keeps them, opaque, until
+/// [`RecoverySource::apply`] settles the batch.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum SourceBatch {
     Ready {
-        commits: Vec<TransparentLedgerCommit<AccountUuid>>,
-        /// The batch resolves retired revisions: provisional revisions an
-        /// earlier batch exported, each succeeded by one of `commits` for the
-        /// same source. It is acknowledged only as reconciled, after every
-        /// commit went through the trusted operation.
-        retired: bool,
         next: Continuation,
         /// Blocks between the watch set's target and the height the pass
         /// covered through.
@@ -167,7 +162,7 @@ pub(crate) enum SourceError {
 /// Implementations must not fall back to a public source. They must honor
 /// [`SourceRequest::should_exit`] and return only once any work they started
 /// has stopped: the coordinator never abandons a call on cancellation. A
-/// `Ready` batch stays acknowledgeable until the account's next pass.
+/// `Ready` batch stays settleable until the account's next pass.
 pub(crate) trait RecoverySource {
     /// Whether every commit comes from an origin the wallet trusts, so that
     /// under `PrivateRequired` the coordinator qualifies its revisions.
@@ -179,17 +174,57 @@ pub(crate) trait RecoverySource {
         request: SourceRequest<'_>,
     ) -> impl Future<Output = Result<SourceBatch, SourceError>> + Send;
 
-    /// Settles `account`'s last `Ready` batch once every commit in it applied.
-    ///
-    /// `reconciled` confirms that every commit went through the trusted
-    /// operation, which resolves the batch's retired revisions. A batch with
-    /// retired revisions is settled only as reconciled; one without may be
-    /// settled either way.
-    fn acknowledge(
+    /// Settles `account`'s last `Ready` batch: applies its commits to `db` in
+    /// order with `trust`, each in its own wallet transaction under the
+    /// wallet write lock, stopping at the first the wallet refuses, then
+    /// acknowledges the batch once every one committed. The transparent PIR
+    /// source holds the lock across the whole batch and its acknowledgment,
+    /// so other wallet writes wait for the batch. Under
+    /// [`Trust::Observed`] a batch resolving retired revisions is refused
+    /// before anything applies. No network request is made.
+    fn apply(
         &self,
         account: AccountUuid,
-        reconciled: bool,
-    ) -> impl Future<Output = Result<(), SourceError>> + Send;
+        db: &mut WalletDatabase,
+        trust: Trust,
+    ) -> impl Future<Output = Settlement> + Send;
+}
+
+/// How a source settled a `Ready` batch.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Settlement {
+    /// Every commit applied and the batch was acknowledged.
+    Acknowledged(ApplyStats),
+    /// The batch was not acknowledged. `stats` is the committed prefix, which
+    /// stays applied; the next pass replays the batch.
+    Refused { stats: ApplyStats, refusal: Refusal },
+    /// The wallet failed. The message names no address or outpoint.
+    Failed { stats: ApplyStats, error: String },
+}
+
+/// Why a source refused to settle a batch, as the coordinator acts on it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Refusal {
+    /// A commit was stale or the policy changed: retry from a fresh watch set.
+    Stale,
+    /// The batch resolves retired revisions and the commits were only
+    /// observed: hold the account until a trusted run reconciles them.
+    Unreconciled,
+    /// The account cannot progress in this run: an integrity, malformed or
+    /// refused commit, a failed acknowledgment, or no batch to settle.
+    Skip,
+    /// The handle or the durable policy does not permit private recovery.
+    NotEnabled,
+}
+
+impl Settlement {
+    fn stats(&self) -> ApplyStats {
+        match self {
+            Settlement::Acknowledged(stats)
+            | Settlement::Refused { stats, .. }
+            | Settlement::Failed { stats, .. } => *stats,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -344,30 +379,17 @@ enum AccountOutcome {
     Stop(RunOutcome),
 }
 
-/// What applying a `Ready` batch's commits came to.
-enum Applied {
-    /// Every commit applied.
-    All {
-        window_grew: bool,
-    },
-    /// A commit was stale; retry from a fresh watch set.
-    Stale,
-    /// The account cannot progress in this run.
-    Skip,
-    Stop(RunOutcome),
-}
-
-/// Runs private recovery for every account under `policy`, then, under
-/// `PrivateRequired`, offers each recovered candidate account for promotion.
+/// Runs private recovery for every account under `policy`, then offers each
+/// recovered candidate account for promotion.
 ///
-/// Runs only when both the captured mode and the wallet's durable policy
-/// permit private recovery (`PrivateShadow` or `PrivateRequired`). Under a
-/// captured `PrivateRequired`, a weaker durable policy is first raised behind
-/// the policy fence, but only while [`may_raise`] holds for the wallet at
+/// Runs only when the captured mode is `PrivateRequired`. A `Public` durable
+/// policy is first raised behind the policy fence, but only while [`may_raise`] holds for the wallet at
 /// `db_path`: an unconfirmed preference or a concurrent toggle-off raises
 /// nothing. `first`, the active account, is visited first. `clock` measures
-/// the budgets and holds. Holds the wallet write lock only for each commit or
-/// promotion, never across a source call or a wait.
+/// the budgets and holds. Holds the wallet write lock for each batch's whole
+/// settlement, its commits and acknowledgment together, and for each
+/// promotion, never across a source call or a wait. A foreground wallet
+/// write, such as a send, waits for the batch being settled.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn run<S: RecoverySource>(
     db: &mut WalletDatabase,
@@ -384,7 +406,7 @@ pub(crate) async fn run<S: RecoverySource>(
     }
     policy.configure_db(db);
     if policy.transparent_mode() == TransparentLedgerMode::PrivateRequired
-        && raise_to_required(db, || may_raise(db_path, network)).await?
+        && raise_to_required(db, db_path, || may_raise(db_path, network)).await?
     {
         log::info!("transparent policy: applied PrivateRequired");
     }
@@ -392,19 +414,14 @@ pub(crate) async fn run<S: RecoverySource>(
     if durable == TransparentLedgerMode::Public {
         return Ok(RunOutcome::NotEnabled);
     }
-    // The handle has adopted a durable `PrivateRequired` even under a weaker
-    // captured mode.
-    let required =
-        db.transparent_ledger_mode().map_err(db_error)? == TransparentLedgerMode::PrivateRequired;
     let deadline = clock() + RUN_BUDGET;
     let accounts = visiting_order(db_path, db.get_account_ids().map_err(db_error)?, first);
     let mut run = Run {
         db,
         db_path,
         source,
-        required,
         // Qualification needs `PrivateRequired` durably as well.
-        qualify: source.trusted() && required && durable == TransparentLedgerMode::PrivateRequired,
+        qualify: source.trusted() && durable == TransparentLedgerMode::PrivateRequired,
         clock,
         should_exit,
         stats: RunStats::default(),
@@ -438,7 +455,7 @@ pub(crate) async fn run<S: RecoverySource>(
                     Some(Continuation::Complete) => clear_stalls(db_path, account),
                     _ => {}
                 }
-                if required && run.promote(account)? {
+                if run.promote(account)? {
                     run.stats.promoted += 1;
                 }
             }
@@ -460,9 +477,6 @@ struct Run<'a, S> {
     db: &'a mut WalletDatabase,
     db_path: &'a str,
     source: &'a S,
-    /// The handle is `PrivateRequired`: Ledger and quarantined accounts are
-    /// skipped, and recovered candidates are offered for promotion.
-    required: bool,
     /// Commits are qualified as they are applied.
     qualify: bool,
     clock: fn() -> Instant,
@@ -476,7 +490,7 @@ impl<S: RecoverySource> Run<'_, S> {
     fn skip(&mut self, account: AccountUuid, now: Instant) -> Result<bool, SyncError> {
         // Recovery from the birthday would miss a Ledger account's earlier
         // history, and its public discovery is withheld.
-        if self.required && is_ledger(self.db, account)? {
+        if is_ledger(self.db, account)? {
             self.stats.paused_ledger += 1;
             return Ok(true);
         }
@@ -487,7 +501,7 @@ impl<S: RecoverySource> Run<'_, S> {
         }
         // A quarantined account accepts no commit, so a pass would only cost
         // traffic. Only a private snapshot reports quarantine.
-        if self.required && quarantined(self.db, account)? {
+        if quarantined(self.db, account)? {
             self.stats.quarantined += 1;
             return Ok(true);
         }
@@ -555,15 +569,13 @@ impl<S: RecoverySource> Run<'_, S> {
                     log::info!("transparent ledger: source batch pending ({next:?})");
                     (next, false)
                 }
-                SourceBatch::Ready {
-                    commits,
-                    retired,
-                    next,
-                    behind_by,
-                } => {
-                    let window_grew = match self.apply(commits)? {
-                        Applied::All { window_grew } => window_grew,
-                        Applied::Stale => {
+                SourceBatch::Ready { next, behind_by } => {
+                    let window_grew = match self.apply(account).await? {
+                        Settlement::Acknowledged(stats) => stats.window_grew,
+                        Settlement::Refused {
+                            refusal: Refusal::Stale,
+                            ..
+                        } => {
                             self.stats.stale_retries += 1;
                             stale += 1;
                             if stale > MAX_STALE_RETRIES {
@@ -581,25 +593,32 @@ impl<S: RecoverySource> Run<'_, S> {
                             watch = fresh;
                             continue;
                         }
-                        Applied::Skip => return Ok(AccountOutcome::Skipped),
-                        Applied::Stop(outcome) => return Ok(AccountOutcome::Stop(outcome)),
+                        // Only trusted commits withdraw the retired
+                        // revisions' evidence, so nothing was applied or
+                        // acknowledged, and the source reports them again.
+                        Settlement::Refused {
+                            refusal: Refusal::Unreconciled,
+                            ..
+                        } => {
+                            log::warn!(
+                                "transparent ledger: retired revisions need trusted \
+                                 reconciliation; holding the account"
+                            );
+                            set_hold(self.db_path, account, HoldCause::Unreconciled, clock());
+                            return Ok(AccountOutcome::Skipped);
+                        }
+                        Settlement::Refused {
+                            refusal: Refusal::Skip,
+                            ..
+                        } => return Ok(AccountOutcome::Skipped),
+                        Settlement::Refused {
+                            refusal: Refusal::NotEnabled,
+                            ..
+                        } => return Ok(AccountOutcome::Stop(RunOutcome::NotEnabled)),
+                        Settlement::Failed { error, .. } => {
+                            return Err(SyncError::db(format!("transparent ledger: {error}")))
+                        }
                     };
-                    // Every commit of the run goes through the trusted
-                    // operation exactly when it qualifies. Without it nothing
-                    // withdrew the retired revisions' evidence, so nothing is
-                    // acknowledged, and the source reports them again.
-                    if retired && !self.qualify {
-                        log::warn!(
-                            "transparent ledger: retired revisions need trusted reconciliation; \
-                             holding the account"
-                        );
-                        set_hold(self.db_path, account, HoldCause::Unreconciled, clock());
-                        return Ok(AccountOutcome::Skipped);
-                    }
-                    if self.source.acknowledge(account, retired).await.is_err() {
-                        log::warn!("transparent ledger: source refused an acknowledgment");
-                        return Ok(AccountOutcome::Skipped);
-                    }
                     if behind_by > 0 {
                         log::info!("transparent ledger: publication {behind_by} blocks behind");
                     }
@@ -630,34 +649,20 @@ impl<S: RecoverySource> Run<'_, S> {
         }
     }
 
-    /// Applies a `Ready` batch's commits in order, each in its own
-    /// transaction, stopping at the first the library refuses. Commits before
-    /// it stay applied; replaying them later changes nothing.
-    fn apply(
-        &mut self,
-        commits: Vec<TransparentLedgerCommit<AccountUuid>>,
-    ) -> Result<Applied, SyncError> {
-        let mut window_grew = false;
-        for commit in commits {
-            let (db, qualify) = (&mut *self.db, self.qualify);
-            let applied =
-                with_wallet_db_write_lock("sync_engine.transparent_ledger.commit", || {
-                    if qualify {
-                        db.qualify_and_apply_transparent_ledger_commit(commit)
-                    } else {
-                        db.apply_transparent_ledger_commit(commit)
-                    }
-                });
-            match applied {
-                Ok(outcome) => {
-                    self.stats.commits += 1;
-                    self.stats.qualified += usize::from(qualify);
-                    window_grew |= outcome.window_grew;
-                }
-                Err(error) => return rejected(error),
-            }
-        }
-        Ok(Applied::All { window_grew })
+    /// Has the source settle `account`'s `Ready` batch, trusted exactly when
+    /// the run qualifies, and counts the commits that applied, the committed
+    /// prefix of a refused batch included.
+    async fn apply(&mut self, account: AccountUuid) -> Result<Settlement, SyncError> {
+        let trust = if self.qualify {
+            Trust::Trusted
+        } else {
+            Trust::Observed
+        };
+        let settled = self.source.apply(account, self.db, trust).await;
+        let stats = settled.stats();
+        self.stats.commits += stats.applied;
+        self.stats.qualified += stats.qualified;
+        Ok(settled)
     }
 
     /// Waits `wait` before the account's next pass, if the run's wait cap and
@@ -717,31 +722,42 @@ impl<S: RecoverySource> Run<'_, S> {
     }
 }
 
-/// How a run continues after the library refused a commit. Rejections are
-/// logged without their payloads, which name addresses and outpoints.
-fn rejected(error: SqliteClientError) -> Result<Applied, SyncError> {
-    Ok(match error {
-        SqliteClientError::TransparentLedgerCommitRejected(CommitRejection::Stale(_))
-        | SqliteClientError::StaleTransparentPolicy { .. } => Applied::Stale,
-        SqliteClientError::TransparentLedgerCommitRejected(CommitRejection::Integrity(_)) => {
+/// How a run continues after the library refused a commit, for a source that
+/// applies commits itself, as the test fixture does. Rejections are logged without their payloads,
+/// which name addresses and outpoints. Any other error is a wallet failure.
+#[cfg(test)]
+pub(crate) fn refusal(error: &SqliteClientError) -> Option<Refusal> {
+    Some(match error {
+        SqliteClientError::TransparentLedgerCommitRejected(rejection) => {
+            return Some(commit_refusal(rejection))
+        }
+        SqliteClientError::StaleTransparentPolicy { .. } => Refusal::Stale,
+        SqliteClientError::TransparentRecoveryNotEnabled => Refusal::NotEnabled,
+        _ => return None,
+    })
+}
+
+/// How a run continues after the library rejected a commit.
+pub(crate) fn commit_refusal(rejection: &CommitRejection) -> Refusal {
+    match rejection {
+        CommitRejection::Stale(_) => Refusal::Stale,
+        CommitRejection::Integrity(_) => {
             log::warn!(
                 "transparent ledger: source contradicted stored evidence; skipping the account"
             );
-            Applied::Skip
+            Refusal::Skip
         }
-        SqliteClientError::TransparentLedgerCommitRejected(CommitRejection::Invalid(_)) => {
+        CommitRejection::Invalid(_) => {
             log::error!(
                 "transparent ledger: source produced a malformed commit; skipping the account"
             );
-            Applied::Skip
+            Refusal::Skip
         }
-        SqliteClientError::TransparentLedgerCommitRejected(CommitRejection::Refused(refused)) => {
+        CommitRejection::Refused(refused) => {
             log::warn!("transparent ledger: commit refused ({refused:?}); skipping the account");
-            Applied::Skip
+            Refusal::Skip
         }
-        SqliteClientError::TransparentRecoveryNotEnabled => Applied::Stop(RunOutcome::NotEnabled),
-        error => return Err(db_error(error)),
-    })
+    }
 }
 
 /// Whether the wallet's durable policy permits private recovery. The handle's

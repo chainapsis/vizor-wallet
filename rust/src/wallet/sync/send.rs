@@ -2296,9 +2296,10 @@ pub(crate) async fn retire_unbroadcast_orchard_migration(
         network,
         expected_run_id,
     )?;
-    let mut client = sync_engine::open_lwd_channel(lightwalletd_url)
+    let transport = sync_engine::open_lwd_transport(lightwalletd_url)
         .await
         .map_err(|e| format!("Open migration recovery endpoint: {e}"))?;
+    let mut client = zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient::new(transport.clone());
     let chain_tip = sync_engine::get_latest_block_recorded(&mut client, lightwalletd_url, network)
         .await
         .map_err(|e| format!("Read migration recovery chain tip: {e}"))?;
@@ -2316,7 +2317,8 @@ pub(crate) async fn retire_unbroadcast_orchard_migration(
         db_path,
         network,
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|e| e.to_string())?
+    .with_transport(transport);
     let never_exit = || false;
     let public_source =
         sync_engine::enhancement::status::lightwalletd_source(client, gate.clone(), &never_exit);
@@ -3812,7 +3814,7 @@ fn transparent_shielding_balances(
         .map_err(|e| format!("Failed to read transparent ledger: {e}"))?;
     if snapshot.authority != TransparentAuthority::Private {
         // A private handle here comes from this build's selection or from
-        // adopting the wallet's durable `PrivateRequired`.
+        // from the wallet's durable `PrivateRequired`, which reads honor.
         return Err(if selects_private_recovery(db_path, network) {
             TRANSPARENT_RECOVERY_INCOMPLETE
         } else {

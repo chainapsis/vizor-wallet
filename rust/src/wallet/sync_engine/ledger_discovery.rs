@@ -86,7 +86,7 @@ pub(crate) fn is_ready(
     if source.as_deref() != Some(keys::KEY_SOURCE_LEDGER) {
         return Ok(true);
     }
-    // A handle adopts a durable `PrivateRequired`, so it retains public
+    // Reads honor a durable `PrivateRequired`, so a handle retains public
     // authority only when neither the selection nor the wallet withholds it.
     let mode = wallet_db_on(&conn, db_path, network)
         .transparent_ledger_mode()
@@ -317,11 +317,8 @@ async fn run_with<R: DiscoveryRpc>(
     // Candidate addresses are sent to public lightwalletd; the gate authorizes
     // each history request, and every checkpoint that marks candidates checked
     // re-checks it, so nothing is queried or completed without authority.
-    let gate = TransparentLookupGate::for_wallet(
-        policy.public_transparent_lookups(db)?,
-        db_path,
-        network,
-    )?;
+    let gate =
+        TransparentLookupGate::for_sync(policy.public_transparent_lookups(db)?, db_path, network)?;
     if !gate.is_allowed() {
         log::info!("sync: transparent policy withholds Ledger address-history discovery");
         return Ok(());
@@ -1203,20 +1200,20 @@ mod tests {
             hash: 1,
         };
         let tip = BlockHeight::from_u32(2_600_000);
-        // A Public handle opened before the transition cannot read the
-        // stricter wallet, so discovery fails closed on it.
-        assert!(run_with(
+        // A Public handle opened before the transition resolves under the
+        // stricter policy, so discovery is withheld on it too.
+        run_with(
             &mut rpc,
             &mut db,
             &path,
             WalletNetwork::Main,
             EnhancementPolicy::current(WalletNetwork::Main),
             tip,
-            &|| { false }
+            &|| false,
         )
         .await
-        .is_err());
-        // A handle opened after it adopts the durable policy, so discovery is
+        .unwrap();
+        // A handle opened after it honors the durable policy, so discovery is
         // withheld: it succeeds without a query.
         let mut db = crate::wallet::db::open_wallet_db_with_timeout(
             &path,
@@ -1272,7 +1269,6 @@ mod tests {
         let _transition = crate::wallet::sync_engine::test_lwd::transition_on_first_dispatch(
             &path,
             WalletNetwork::Main,
-            TransparentLedgerMode::PrivateShadow,
         );
         run_with(
             &mut rpc,

@@ -26,6 +26,7 @@ import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_c
 import 'package:zcash_wallet/src/features/settings/screens/mobile/mobile_settings_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
+import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_keep_awake_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -160,6 +161,8 @@ Widget _app({
   GoRouter? router,
   String network = 'main',
   bool enhancePirEnabled = false,
+  EnhancePirNotifier Function()? enhancePir,
+  bool walletTransparentPrivate = false,
 }) {
   Widget themedBuilder(BuildContext context, Widget? child) => AppTheme(
     data: themeData ?? AppThemeData.dark,
@@ -208,6 +211,9 @@ Widget _app({
           ),
         ),
       syncProvider.overrideWith(() => FakeSyncNotifier(SyncState())),
+      if (enhancePir != null) enhancePirProvider.overrideWith(enhancePir),
+      if (walletTransparentPrivate)
+        walletTransparentPrivateProvider.overrideWith(_PrivateWallet.new),
       themeModeProvider.overrideWith(_FakeThemeModeNotifier.new),
       syncKeepAwakeProvider.overrideWith(
         () => syncKeepAwakeNotifier ?? _FakeSyncKeepAwakeNotifier(),
@@ -628,6 +634,50 @@ void main() {
     expect(find.text('Private queries'), findsNothing);
     expect(
       find.byKey(const ValueKey('mobile_settings_enhance_pir_toggle')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('off mainnet a durably private wallet can still be returned to '
+      'public lookups', (tester) async {
+    final enhancePir = _RecordingEnhancePir();
+    await tester.pumpWidget(
+      _app(
+        network: 'regtest',
+        enhancePir: () => enhancePir,
+        walletTransparentPrivate: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('mobile_settings_enhance_pir_toggle')),
+      findsNothing,
+    );
+    final button = find.byKey(
+      const ValueKey('mobile_settings_transparent_opt_out_button'),
+    );
+    await tester.scrollUntilVisible(button, 200);
+    expect(button, findsOneWidget);
+    await tester.ensureVisible(button);
+    await tester.pumpAndSettle();
+    await tester.tap(button);
+    await tester.pump();
+    expect(enhancePir.finishes, 1);
+  });
+
+  testWidgets('off mainnet nothing to finish shows no opt-out action', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app(network: 'regtest'));
+    await tester.pumpAndSettle();
+    // The privacy card is built; only the action is absent.
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('mobile_settings_tor_description')),
+      200,
+    );
+    expect(
+      find.byKey(const ValueKey('mobile_settings_transparent_opt_out_button')),
       findsNothing,
     );
   });
@@ -1570,4 +1620,19 @@ double _leadingIconOpacityIn(WidgetTester tester, ValueKey<String> rowKey) {
         find.descendant(of: find.byKey(rowKey), matching: find.byType(Opacity)),
       )
       .opacity;
+}
+
+class _RecordingEnhancePir extends EnhancePirNotifier {
+  int finishes = 0;
+
+  @override
+  bool build() => false;
+
+  @override
+  Future<void> finishTransparentOptOut() async => finishes++;
+}
+
+class _PrivateWallet extends WalletTransparentPrivateNotifier {
+  @override
+  bool build() => true;
 }

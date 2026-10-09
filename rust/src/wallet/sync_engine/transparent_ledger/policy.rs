@@ -10,8 +10,8 @@
 //! A raise needs a selection of `PrivateRequired`, which only a build with the
 //! development flag makes. Lowering needs an explicit toggle-off and works in
 //! every build, so a default build can always return a private wallet to
-//! public lookups. Nothing else weakens a wallet: handles adopt a durable
-//! `PrivateRequired` instead.
+//! public lookups. Nothing else weakens a wallet: reads honor a durable
+//! `PrivateRequired` whatever the handle selects.
 
 use std::path::Path;
 use std::time::Duration;
@@ -23,7 +23,7 @@ use zcash_client_backend::data_api::transparent_ledger::{
 use super::super::enhancement::select_transparent_mode;
 use super::super::lwd::transparent_lookup::apply_transparent_policy_fenced_if;
 use super::super::{SyncError, WalletDatabase};
-use crate::wallet::db::{open_wallet_db_with_timeout, WALLET_DB_BUSY_TIMEOUT};
+use crate::wallet::db::{open_existing_wallet_db_with_timeout, WALLET_DB_BUSY_TIMEOUT};
 use crate::wallet::network::WalletNetwork;
 
 /// How long a transition waits for public lookups in flight before failing
@@ -62,22 +62,54 @@ pub(crate) async fn set_transparent_policy(
     } else {
         return Ok(None);
     };
-    if !Path::new(db_path).exists() {
+    let Some(mut db) = open_policy_wallet(db_path, network)? else {
         return Ok(None);
-    }
-    let mut db = open_wallet_db_with_timeout(db_path, network, WALLET_DB_BUSY_TIMEOUT)
-        .map_err(SyncError::db)?;
+    };
     // This handle only reads and applies the policy. The strictest mode reads
     // any durable policy, including one a raise commits after this open.
     db.set_transparent_ledger_mode(TransparentLedgerMode::PrivateRequired);
-    let applied = apply_transparent_policy_fenced_if(&mut db, target, POLICY_DRAIN, |db| {
-        Ok(applied_policy(db)?.mode != target)
-    })
-    .await?;
+    let applied =
+        apply_transparent_policy_fenced_if(&mut db, db_path, target, POLICY_DRAIN, |db| {
+            Ok(applied_policy(db)?.mode != target)
+        })
+        .await?;
     if let Some(applied) = applied {
         log::info!("transparent policy: applied {:?}", applied.mode);
     }
     Ok(applied)
+}
+
+/// The durable policy of the wallet at `db_path`, read without creating or
+/// changing anything; `None` when there is no wallet.
+pub(crate) fn current_transparent_policy(
+    db_path: &str,
+    network: WalletNetwork,
+) -> Result<Option<AppliedTransparentPolicy>, SyncError> {
+    let Some(mut db) = open_policy_wallet(db_path, network)? else {
+        return Ok(None);
+    };
+    // Any configured mode reads the stored policy as it is.
+    db.set_transparent_ledger_mode(TransparentLedgerMode::PrivateRequired);
+    applied_policy(&db).map(Some)
+}
+
+/// Opens the wallet at `db_path` for a policy transition without ever
+/// creating one: a wallet reset may delete the file between any check and the
+/// open, and a transition must not leave an empty database in its place.
+/// Returns `None` when there is no wallet at `db_path`.
+pub(crate) fn open_policy_wallet(
+    db_path: &str,
+    network: WalletNetwork,
+) -> Result<Option<WalletDatabase>, SyncError> {
+    if !Path::new(db_path).exists() {
+        return Ok(None);
+    }
+    match open_existing_wallet_db_with_timeout(db_path, network, WALLET_DB_BUSY_TIMEOUT) {
+        Ok(db) => Ok(Some(db)),
+        // Deleted after the check: still no wallet, and nothing was created.
+        Err(_) if !Path::new(db_path).exists() => Ok(None),
+        Err(error) => Err(SyncError::db(error)),
+    }
 }
 
 /// Raises the wallet behind `db` to `PrivateRequired` when its durable policy
@@ -86,11 +118,13 @@ pub(crate) async fn set_transparent_policy(
 /// lands while the raise waits for the fence wins.
 ///
 /// Checking first keeps a raise that would apply nothing from taking the
-/// fence, which blocks every public lookup in the process while it waits.
+/// fence of the wallet at `db_path`, which blocks its public lookups while it
+/// waits.
 ///
 /// Returns whether this call applied `PrivateRequired`.
 pub(super) async fn raise_to_required(
     db: &mut WalletDatabase,
+    db_path: &str,
     may_raise: impl Fn() -> bool,
 ) -> Result<bool, SyncError> {
     let weaker = |db: &WalletDatabase| -> Result<bool, SyncError> {
@@ -101,6 +135,7 @@ pub(super) async fn raise_to_required(
     }
     let raised = apply_transparent_policy_fenced_if(
         db,
+        db_path,
         TransparentLedgerMode::PrivateRequired,
         POLICY_DRAIN,
         |db| Ok(may_raise() && weaker(db)?),

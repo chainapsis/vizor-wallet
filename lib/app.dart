@@ -141,6 +141,7 @@ import 'src/features/voting/screens/voting_submission_confirmation_screen.dart';
 import 'src/providers/theme_mode_provider.dart';
 import 'src/providers/app_security_provider.dart';
 import 'src/providers/enhance_pir_provider.dart';
+import 'src/core/storage/enhance_pir_preference_store.dart';
 import 'src/providers/linux_update_provider.dart';
 import 'src/providers/network_privacy_provider.dart';
 import 'src/providers/rpc_endpoint_failover_provider.dart';
@@ -258,21 +259,27 @@ Future<Widget> buildBootstrappedZcashWalletApp({
 ///
 /// An unreadable setting applies as private for this launch, but is not
 /// confirmed, so it never raises the wallet's transparent policy. A saved
-/// `true` raises it before native work is applied. Startup never lowers it:
-/// only an explicit toggle-off does. A failed raise leaves both sides private
-/// and the next sync retries it.
+/// `true` raises it before native work is applied. Startup lowers it only to
+/// finish an explicit opt-out the app did not live to finish: a saved `false`
+/// with a persisted opt-out marker. An unreadable marker or setting never
+/// lowers. A failed raise or lowering leaves the wallet private; the next
+/// sync retries a raise, the next launch a lowering.
 ///
-/// Last, it prepares private transparent recovery's companion storage; see
-/// [prepareTransparentRecoveryCompanions].
+/// What it applied is recorded in [TransparentPolicyStartup.current] for the
+/// providers. Last, it prepares private transparent recovery's companion
+/// storage; see [prepareTransparentRecoveryCompanions].
 @visibleForTesting
 Future<void> applyEnhancePirPolicy(
   AppBootstrapState bootstrap, {
   void Function(bool enabled)? setRustEnabled,
   void Function(bool confirmed)? setPreferenceConfirmed,
   TransparentPolicyReconciler? reconcileTransparentPolicy,
+  TransparentOptOutStore optOutStore =
+      const SharedPreferencesTransparentOptOutStore(),
   Future<void> Function(bool enabled)? setNativePrivateRecovery,
   Future<void> Function()? prepareCompanions,
 }) async {
+  TransparentPolicyStartup.current = const TransparentPolicyStartup();
   if (bootstrap.hasBlockingFailure) {
     log('bootstrap: blocked; leaving private recovery policy unchanged');
     return;
@@ -280,20 +287,57 @@ Future<void> applyEnhancePirPolicy(
   final saved = bootstrap.enhancePirEnabled;
   final enabled =
       (saved ?? true) && isEnhancePirAvailableForNetwork(bootstrap.network);
-  (setRustEnabled ??
-      (enabled) => rust_sync.setEnhancePirEnabled(enabled: enabled))(enabled);
-  (setPreferenceConfirmed ??
-      (confirmed) => rust_sync.setEnhancePirPreferenceConfirmed(
-        confirmed: confirmed,
-      ))(saved != null);
-  if (enabled && saved == true) {
+  void applyRuntimeSetting() {
+    (setRustEnabled ??
+        (enabled) => rust_sync.setEnhancePirEnabled(enabled: enabled))(enabled);
+    (setPreferenceConfirmed ??
+        (confirmed) => rust_sync.setEnhancePirPreferenceConfirmed(
+          confirmed: confirmed,
+        ))(saved != null);
+  }
+
+  final reconcile =
+      reconcileTransparentPolicy ??
+      walletTransparentPolicyReconciler(bootstrap.network);
+  bool? optOutPending;
+  try {
+    optOutPending = await optOutStore.readPending();
+  } catch (error) {
+    // Unknown: never lower on uncertainty. The wallet stays as it is.
+    log('bootstrap: could not read the private queries opt-out: $error');
+  }
+  rust_sync.ApiAppliedTransparentPolicy? applied;
+  var optOutUnfinished = false;
+  if (saved == false && optOutPending == true) {
+    // Finish the opt-out before the runtime switches to the public setting.
+    // Should it fail, the durable private policy keeps governing every lookup.
     try {
-      await (reconcileTransparentPolicy ??
-          walletTransparentPolicyReconciler(bootstrap.network))(true);
+      applied = await reconcile(false);
+      try {
+        await optOutStore.writePending(false);
+      } catch (error) {
+        // Retried next launch, where lowering a public wallet changes nothing.
+        log('bootstrap: could not clear the private queries opt-out: $error');
+      }
+    } catch (error) {
+      optOutUnfinished = true;
+      log('bootstrap: could not finish the private queries opt-out: $error');
+    }
+    applyRuntimeSetting();
+  } else if (enabled && saved == true) {
+    applyRuntimeSetting();
+    try {
+      applied = await reconcile(true);
     } catch (error) {
       log('bootstrap: could not apply private transparent policy: $error');
     }
+  } else {
+    applyRuntimeSetting();
   }
+  TransparentPolicyStartup.current = TransparentPolicyStartup(
+    appliedPolicy: applied,
+    optOutPending: optOutUnfinished,
+  );
   try {
     await (setNativePrivateRecovery ??
         IronwoodMigrationBackgroundLifecycle.instance.setPrivateRecovery)(

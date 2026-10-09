@@ -1,11 +1,11 @@
 //! Qualification: the coordinator through the Rust API that FRB exposes,
-//! across the lifecycle a wallet moves through (public, shadow, private
-//! activation, promotion, restart), with request capture on every lane that
+//! across the lifecycle a wallet moves through (public, private activation,
+//! promotion, restart), with request capture on every lane that
 //! could disclose a transparent address, script, outpoint, or txid.
 //!
 //! Recovery runs against the trusted fixture source: under `PrivateRequired`
 //! the coordinator qualifies its revisions as it applies them, as it does the
-//! transparent PIR source's, and a shadow run only observes. The last test
+//! transparent PIR source's, and an observed run only applies. The last test
 //! also drives the real transparent PIR source, with the transport's request
 //! observer standing in for the service. Nothing here reaches the live
 //! service or qualifies production private authority.
@@ -174,29 +174,18 @@ fn after_the_hold() -> Instant {
     now() + HOLD
 }
 
-/// Public discovery, then shadow recovery, then activation and promotion:
-/// the balance stays public and exact until activation, is last-known until
-/// the account is promoted, and is the same amount once it is.
+/// Public discovery, then activation, recovery and promotion: the balance is
+/// public and exact before activation, last-known until the account is
+/// promoted, and the same amount once it is.
 #[tokio::test]
-async fn public_to_shadow_to_private_keeps_the_same_funds_and_history() {
+async fn public_to_private_keeps_the_same_funds_and_history() {
     let (mut wallet, tx) = legacy_wallet();
     assert_current(&wallet, VALUE);
     let public_history = history_rows(&wallet, &tx);
     assert_eq!(public_history.len(), 1);
 
-    // Shadow recovery reports the same receipt without touching production,
-    // and only observes: even a trusted source's revisions stay unqualified.
-    apply_policy(&wallet.path, TransparentLedgerMode::PrivateShadow);
     let source = FixtureSource::new(main_hash);
     source.receive(reported(&wallet, &tx)).trust();
-    let before = production_dump(&wallet.path);
-    let RunOutcome::Finished(shadow_stats) = recover(&mut wallet, &source).await else {
-        panic!("shadow recovery finishes");
-    };
-    assert_eq!(shadow_stats.qualified, 0);
-    assert_complete(&wallet, &source);
-    assert_eq!(production_dump(&wallet.path), before);
-    assert_current(&wallet, VALUE);
 
     // Activation stops public authority at once; the prior amount is shown
     // as last-known until the account is promoted.
@@ -298,19 +287,18 @@ async fn an_unreported_legacy_utxo_blocks_promotion() {
     assert_current(&wallet, VALUE);
 }
 
-/// Shadow evidence survives activation, but only promotion's own recheck
+/// Evidence from an observed run is reused, but only promotion's own recheck
 /// makes it authoritative: once the chain has advanced, promotion refuses
 /// until a trusted pass covers the new tip.
 #[tokio::test]
-async fn shadow_state_is_reused_only_after_revalidation() {
+async fn observed_state_is_reused_only_after_revalidation() {
     let (mut wallet, tx) = legacy_wallet();
-    apply_policy(&wallet.path, TransparentLedgerMode::PrivateShadow);
+    let _mode = activate(&mut wallet).await;
     let source = FixtureSource::new(main_hash);
     source.receive(reported(&wallet, &tx)).trust();
     recover(&mut wallet, &source).await;
-    let _mode = activate(&mut wallet).await;
 
-    // The chain advanced after the shadow run: its coverage no longer
+    // The chain advanced after the observed run: its coverage no longer
     // reaches the tip, so promotion refuses.
     scan(&wallet.path, wallet.birthday, TIP + 1, TIP + 1, 0);
     let blocked = with_wallet_db_write_lock("test.transparent_ledger.promote", || {
@@ -333,19 +321,18 @@ async fn shadow_state_is_reused_only_after_revalidation() {
     assert_current(&wallet, VALUE);
 }
 
-/// Shadow coverage at the current tip is reused, but a shadow run only
-/// observes, so its revision is unqualified and promotion refuses. One
-/// trusted pass at the same tip replays that revision, which qualifies it,
-/// and the account is promoted.
+/// Observed coverage at the current tip is reused, but an observed run only
+/// applies, so its revision is unqualified and promotion refuses. One trusted
+/// pass at the same tip replays that revision, which qualifies it, and the
+/// account is promoted.
 #[tokio::test]
-async fn shadow_coverage_at_the_current_tip_promotes_after_one_trusted_pass() {
+async fn observed_coverage_at_the_current_tip_promotes_after_one_trusted_pass() {
     let (mut wallet, tx) = legacy_wallet();
-    apply_policy(&wallet.path, TransparentLedgerMode::PrivateShadow);
+    let _mode = activate(&mut wallet).await;
     let source = FixtureSource::new(main_hash);
     source.receive(reported(&wallet, &tx)).trust();
     recover(&mut wallet, &source).await;
     let revisions = count(&wallet.path, "SELECT COUNT(*) FROM tpir_revisions");
-    let _mode = activate(&mut wallet).await;
 
     let blocked = with_wallet_db_write_lock("test.transparent_ledger.promote", || {
         wallet.db.promote_transparent_account(wallet.account)
@@ -369,7 +356,7 @@ async fn shadow_coverage_at_the_current_tip_promotes_after_one_trusted_pass() {
     assert_eq!(
         count(&wallet.path, "SELECT COUNT(*) FROM tpir_revisions"),
         revisions,
-        "the shadow revision was qualified, not replaced"
+        "the observed revision was qualified, not replaced"
     );
     assert_current(&wallet, VALUE);
 }
@@ -849,7 +836,11 @@ async fn an_activated_wallet_discloses_nothing_through_any_lane_including_the_pi
     })
     .await
     .unwrap();
-    assert!(discovered.unwrap().accounts.is_empty());
+    assert_eq!(
+        discovered.err(),
+        Some(crate::api::wallet::SOFTWARE_ACCOUNT_DISCOVERY_UNAVAILABLE.to_string()),
+        "a withheld discovery is not an empty one"
+    );
     let preview = preview.expect_err("a withheld preview is not a balance");
     assert!(preview.contains("unavailable"), "{preview}");
 
@@ -865,6 +856,7 @@ async fn an_activated_wallet_discloses_nothing_through_any_lane_including_the_pi
     let source = TransparentPirSource::new(&path, MAIN);
     let mut followup_db = open_wallet_db_with_timeout(&path, MAIN, SYNC_DB_BUSY_TIMEOUT).unwrap();
     transparent_followup(
+        1,
         &mut followup_db,
         &path,
         MAIN,
@@ -1110,6 +1102,7 @@ async fn a_flag_build_discloses_nothing_before_it_raises_the_wallet() {
     let progress = |event: SyncProgressEvent| events.lock().unwrap().push(event);
     let source = TransparentPirSource::new(&path, MAIN);
     transparent_followup(
+        1,
         &mut db,
         &path,
         MAIN,

@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
+import 'package:zcash_wallet/src/core/storage/linux_keyring_coordinator.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_toast.dart';
 import 'package:zcash_wallet/src/features/accounts/widgets/mobile/mobile_accounts_sheet.dart';
@@ -73,10 +74,14 @@ AppBootstrapState _bootstrap([AccountState accountState = _accounts]) =>
     );
 
 class _FakeAccountNotifier extends AccountNotifier {
+  _FakeAccountNotifier({this.switchError});
+
+  final Object? switchError;
   final switched = <String>[];
 
   @override
   Future<void> switchAccount(String uuid) async {
+    if (switchError case final error?) throw error;
     switched.add(uuid);
   }
 }
@@ -142,6 +147,31 @@ Future<void> _openSheet(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('busy wallet keeps the account switcher open for retry', (
+    tester,
+  ) async {
+    final notifier = _FakeAccountNotifier(
+      switchError: const WalletMutationBusyException(),
+    );
+    await tester.pumpWidget(
+      _app(
+        accountNotifier: notifier,
+        addressService: _FakeReceiveAddressService('u1other'),
+      ),
+    );
+    await _openSheet(tester);
+    await tester.tap(find.byKey(const ValueKey('account_row_account-2')));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(notifier.switched, isEmpty);
+    expect(find.byType(MobileAccountsSheet), findsOneWidget);
+    expect(
+      find.text('Finish the current wallet operation before starting another.'),
+      findsOneWidget,
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('voting eligibility dialog opens the existing account switcher', (
     tester,
   ) async {

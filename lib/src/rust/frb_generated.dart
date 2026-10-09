@@ -1205,7 +1205,7 @@ abstract class RustLibApi extends BaseApi {
     Uint8List? acceptedRawTransaction,
   });
 
-  Future<bool> crateApiSyncReconcileTransparentPolicy({
+  Future<ApiAppliedTransparentPolicy?> crateApiSyncReconcileTransparentPolicy({
     required String dbPath,
     required String network,
     required bool privateQueries,
@@ -9003,7 +9003,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Future<bool> crateApiSyncReconcileTransparentPolicy({
+  Future<ApiAppliedTransparentPolicy?> crateApiSyncReconcileTransparentPolicy({
     required String dbPath,
     required String network,
     required bool privateQueries,
@@ -9023,7 +9023,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           );
         },
         codec: SseCodec(
-          decodeSuccessData: sse_decode_bool,
+          decodeSuccessData:
+              sse_decode_opt_box_autoadd_api_applied_transparent_policy,
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiSyncReconcileTransparentPolicyConstMeta,
@@ -11451,6 +11452,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ApiAppliedTransparentPolicy dco_decode_api_applied_transparent_policy(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return ApiAppliedTransparentPolicy(
+      mode: dco_decode_api_transparent_ledger_mode(arr[0]),
+      generation: dco_decode_u_64(arr[1]),
+    );
+  }
+
+  @protected
   ApiBallotIntent dco_decode_api_ballot_intent(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -11817,6 +11832,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ApiTransparentLedgerMode dco_decode_api_transparent_ledger_mode(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return ApiTransparentLedgerMode.values[raw as int];
+  }
+
+  @protected
   ApiVotingEligibility dco_decode_api_voting_eligibility(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -11898,6 +11919,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   bool dco_decode_bool(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as bool;
+  }
+
+  @protected
+  ApiAppliedTransparentPolicy
+  dco_decode_box_autoadd_api_applied_transparent_policy(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_api_applied_transparent_policy(raw);
   }
 
   @protected
@@ -13683,6 +13711,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ApiAppliedTransparentPolicy?
+  dco_decode_opt_box_autoadd_api_applied_transparent_policy(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null
+        ? null
+        : dco_decode_box_autoadd_api_applied_transparent_policy(raw);
+  }
+
+  @protected
   ApiDelegationSignerInput?
   dco_decode_opt_box_autoadd_api_delegation_signer_input(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
@@ -15408,6 +15445,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ApiAppliedTransparentPolicy sse_decode_api_applied_transparent_policy(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_mode = sse_decode_api_transparent_ledger_mode(deserializer);
+    var var_generation = sse_decode_u_64(deserializer);
+    return ApiAppliedTransparentPolicy(
+      mode: var_mode,
+      generation: var_generation,
+    );
+  }
+
+  @protected
   ApiBallotIntent sse_decode_api_ballot_intent(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_proposalId = sse_decode_u_32(deserializer);
@@ -15869,6 +15919,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ApiTransparentLedgerMode sse_decode_api_transparent_ledger_mode(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return ApiTransparentLedgerMode.values[inner];
+  }
+
+  @protected
   ApiVotingEligibility sse_decode_api_voting_eligibility(
     SseDeserializer deserializer,
   ) {
@@ -15970,6 +16029,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   bool sse_decode_bool(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return deserializer.buffer.getUint8() != 0;
+  }
+
+  @protected
+  ApiAppliedTransparentPolicy
+  sse_decode_box_autoadd_api_applied_transparent_policy(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_api_applied_transparent_policy(deserializer));
   }
 
   @protected
@@ -18350,6 +18418,22 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ApiAppliedTransparentPolicy?
+  sse_decode_opt_box_autoadd_api_applied_transparent_policy(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_api_applied_transparent_policy(
+        deserializer,
+      ));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   ApiDelegationSignerInput?
   sse_decode_opt_box_autoadd_api_delegation_signer_input(
     SseDeserializer deserializer,
@@ -20660,6 +20744,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_api_applied_transparent_policy(
+    ApiAppliedTransparentPolicy self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_api_transparent_ledger_mode(self.mode, serializer);
+    sse_encode_u_64(self.generation, serializer);
+  }
+
+  @protected
   void sse_encode_api_ballot_intent(
     ApiBallotIntent self,
     SseSerializer serializer,
@@ -20983,6 +21077,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_api_transparent_ledger_mode(
+    ApiTransparentLedgerMode self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
   void sse_encode_api_voting_eligibility(
     ApiVotingEligibility self,
     SseSerializer serializer,
@@ -21054,6 +21157,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_bool(bool self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     serializer.buffer.putUint8(self ? 1 : 0);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_api_applied_transparent_policy(
+    ApiAppliedTransparentPolicy self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_api_applied_transparent_policy(self, serializer);
   }
 
   @protected
@@ -23061,6 +23173,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self != null, serializer);
     if (self != null) {
       sse_encode_String(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_api_applied_transparent_policy(
+    ApiAppliedTransparentPolicy? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_api_applied_transparent_policy(self, serializer);
     }
   }
 

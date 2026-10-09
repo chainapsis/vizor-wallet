@@ -1362,10 +1362,16 @@ void main() {
           detailsComplete: false,
           provisional: true,
         ),
-        initialDetail: _detail(txKind: 'sent'),
+        initialDetail: _detail(
+          txKind: 'sent',
+          primaryAddress: _recipientAddress,
+        ),
       ),
     );
 
+    expect(find.text('Transaction'), findsOneWidget);
+    expect(find.text('Sent successfully'), findsNothing);
+    expect(find.byType(SendStatusContentView), findsNothing);
     expect(find.text(kNetChangeText), findsOneWidget);
     expect(find.text('Amount'), findsNothing);
     // Nothing is subtracted, and the fee keeps its own line.

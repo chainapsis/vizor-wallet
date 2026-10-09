@@ -14,13 +14,24 @@
 //!
 //! Nothing is retried and no filter is memoized. wallet-pir's sync decides what
 //! a refusal is worth, and a republished tail reuses its shard id with a new
-//! filter. Logs name the route template, never a shard id, digest or body.
+//! filter. A shard-bound 429, or 503 without `retry-after`, is still the
+//! service refusing for capacity: it is reported as wallet-pir's
+//! [`Overloaded`], whose retries and backoff stay within the sync's caps. A
+//! failure that says the service cannot be reached or is not serving (a
+//! failed route or connection, a timeout, a public-route 429 or 5xx, or any
+//! other 5xx) is recorded as an outage, so the caller stops instead of trying
+//! every account. Logs name the route template, never a shard id, digest or
+//! body.
 
 use bytes::Bytes;
 use http::{header::RETRY_AFTER, Method, StatusCode};
 use http_body_util::BodyExt;
 use hyper::body::Body;
-use std::{fmt, time::Duration};
+use std::{
+    fmt,
+    sync::atomic::{AtomicBool, Ordering},
+    time::Duration,
+};
 use tokio::runtime::Handle;
 use zakura_pir_transparent::{
     refusal, BoxError, FilterSource, Overloaded, ShardRequest, ShardTransport, Table,
@@ -48,6 +59,9 @@ pub(crate) struct TransparentPirHttp<'a, F> {
     origin: String,
     handle: Handle,
     response_limit: usize,
+    /// Set once any request failed in a way that says the service is down or
+    /// not serving.
+    outage: AtomicBool,
     #[cfg(test)]
     observer: Option<RequestObserver>,
 }
@@ -83,9 +97,16 @@ impl<'a, F: Fn() -> bool> TransparentPirHttp<'a, F> {
             origin: origin.trim_end_matches('/').to_owned(),
             handle,
             response_limit,
+            outage: AtomicBool::new(false),
             #[cfg(test)]
             observer: None,
         })
+    }
+
+    /// Whether a request failed because the service could not be reached or
+    /// was not serving: the pass's failure is an outage, not this account's.
+    pub(crate) fn outage(&self) -> bool {
+        self.outage.load(Ordering::SeqCst)
     }
 
     /// The filter source and shard transport one pass hands the adapter.
@@ -120,6 +141,9 @@ impl<'a, F: Fn() -> bool> TransparentPirHttp<'a, F> {
                 reply.body.len()
             ),
             Err(error) => log::debug!("transparent PIR {method} {template}: {}", error.name()),
+        }
+        if outage(route, &received) {
+            self.outage.store(true, Ordering::SeqCst);
         }
         let bytes = classify(route, received?, self.response_limit)?;
         let cost = bytes.len() as u64;
@@ -373,6 +397,24 @@ where
     Ok((bytes, true))
 }
 
+/// Whether `received` says the service is unreachable or not serving, rather
+/// than refusing this request: a failed route or connection, a timeout, a 429
+/// or 5xx on a public route (the sync does not retry those), or a 5xx on a
+/// shard-bound one that is not a capacity refusal.
+fn outage(route: Route<'_>, received: &Result<Received, PirHttpError>) -> bool {
+    match received {
+        Err(PirHttpError::Route(_) | PirHttpError::Timeout) => true,
+        Err(_) => false,
+        Ok(reply) => {
+            let status = reply.status.as_u16();
+            match route.binding() {
+                None => status == 429 || reply.status.is_server_error(),
+                Some(_) => reply.status.is_server_error() && !matches!(status, 502..=504),
+            }
+        }
+    }
+}
+
 /// What a reply means to the sync: its bytes, a refusal it acts on, or a
 /// failure it reports.
 fn classify(
@@ -391,8 +433,18 @@ fn classify(
     let retry_after = received.retry_after.as_deref();
     let refused = match route.binding() {
         // A stale revision (409), or capacity (503 with a delay, or the edge's 502/504).
+        // A 429, or a 503 without a delay, is capacity too; the sync's own backoff bounds it.
         Some((shard_id, revision)) => {
-            refusal(status, retry_after, &received.body, shard_id, revision)
+            refusal(status, retry_after, &received.body, shard_id, revision).or_else(|| {
+                matches!(status, 429 | 503).then(|| {
+                    Overloaded {
+                        retry_after: retry_after
+                            .and_then(|value| value.trim().parse().ok())
+                            .map(Duration::from_secs),
+                    }
+                    .boxed()
+                })
+            })
         }
         // The map, filters and init name no revision, so only capacity applies.
         None => Overloaded::from_http(status, retry_after).map(Overloaded::boxed),
@@ -715,14 +767,30 @@ mod tests {
     }
 
     #[test]
-    fn a_503_needs_retry_after_to_be_overload() {
+    fn capacity_refusals_without_retry_after_stay_capacity_on_shard_routes() {
         let runtime = runtime();
         let exit = || false;
-        let (mut bare, _) = answered(&runtime, &exit, |_| reply(503, None, b"not ready"));
-        for (_, result) in every_route(&mut bare) {
-            let error = result.unwrap_err();
-            assert!(Overloaded::found_in(&error).is_none());
-            assert!(matches!(failure(&error), PirHttpError::Status(503)));
+        // A shard-bound 429 or bare 503 is capacity, without a delay: the sync's
+        // own bounded backoff applies. On the map, filters and init the sync
+        // does not retry, so they are an outage of the whole service.
+        for status in [429, 503] {
+            let (mut bare, _) = answered(&runtime, &exit, move |_| reply(status, None, b""));
+            for (kind, result) in every_route(&mut bare) {
+                let error = result.unwrap_err();
+                match kind {
+                    Kind::ShardBound => {
+                        let overloaded = error
+                            .downcast_ref::<Overloaded>()
+                            .unwrap_or_else(|| panic!("HTTP {status} is not capacity: {error}"));
+                        assert_eq!(overloaded.retry_after, None);
+                    }
+                    Kind::Public => {
+                        assert!(Overloaded::found_in(&error).is_none());
+                        assert!(matches!(failure(&error), PirHttpError::Status(s) if *s == status));
+                    }
+                }
+            }
+            assert!(bare.outage(), "HTTP {status} on public routes is an outage");
         }
 
         let (mut delayed, _) = answered(&runtime, &exit, |_| reply(503, Some("7"), b""));
@@ -733,6 +801,53 @@ mod tests {
                 .unwrap_or_else(|| panic!("not overloaded: {error}"));
             assert_eq!(overloaded.retry_after, Some(Duration::from_secs(7)));
         }
+        let (mut limited, _) = answered(&runtime, &exit, |_| reply(429, Some("4"), b""));
+        let (_, result) = every_route(&mut limited).pop().unwrap();
+        let error = result.unwrap_err();
+        assert_eq!(
+            error.downcast_ref::<Overloaded>().unwrap().retry_after,
+            Some(Duration::from_secs(4))
+        );
+    }
+
+    #[test]
+    fn only_unreachable_or_failing_services_are_outages() {
+        let runtime = runtime();
+        let exit = || false;
+        // Shard-bound capacity refusals and ordinary failures are not outages.
+        for (status, retry_after) in [
+            (429, None),
+            (503, None),
+            (503, Some("7")),
+            (502, None),
+            (404, None),
+            (409, None),
+        ] {
+            let (mut http, _) = answered(&runtime, &exit, move |request| {
+                if request.path.contains("/revisions/") {
+                    reply(status, retry_after, b"")
+                } else {
+                    reply(200, None, b"ok")
+                }
+            });
+            let _ = every_route(&mut http);
+            assert!(!http.outage(), "HTTP {status} on a shard route");
+        }
+        // A public 404 is a refusal, not an outage.
+        let (mut missing, _) = answered(&runtime, &exit, |_| reply(404, None, b""));
+        let (mut filters, _) = missing.split();
+        assert!(filters.shard_map().is_err());
+        assert!(!missing.outage());
+        // A failing shard route is.
+        let (mut failing, _) = answered(&runtime, &exit, |request| {
+            if request.path.contains("/revisions/") {
+                reply(500, None, b"")
+            } else {
+                reply(200, None, b"ok")
+            }
+        });
+        let _ = every_route(&mut failing);
+        assert!(failing.outage());
     }
 
     #[test]
@@ -752,7 +867,8 @@ mod tests {
                 assert_eq!(overloaded.retry_after, Some(Overloaded::EDGE_RETRY_AFTER));
             }
         }
-        // Any other failure is reported once and not retried either.
+        // Any other failure is reported once and not retried either, and is an
+        // outage of the service.
         let (mut http, observer) = answered(&runtime, &exit, |_| reply(500, None, b""));
         for (_, result) in every_route(&mut http) {
             assert!(matches!(
@@ -761,6 +877,7 @@ mod tests {
             ));
         }
         assert_eq!(observer.requests().len(), 8);
+        assert!(http.outage());
     }
 
     #[test]

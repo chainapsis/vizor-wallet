@@ -5,8 +5,10 @@ const transparentLedgerNeedsNewerBuildMessage =
 /// Whether [raw] is the wallet library's refusal to operate on transparent
 /// funds under a stricter or newer policy than this build supports.
 ///
-/// Matches the phrase the library's `TransparentLedgerPolicyConflict` and
-/// `TransparentLedgerIncompatible` errors share; the Rust guard test pins it.
+/// Matches the phrase of the library's `TransparentLedgerIncompatible` error;
+/// the Rust guard test pins it. (A weaker handle on a wallet that durably
+/// requires private recovery no longer fails: the library resolves it under
+/// that policy, so it reports [isTransparentRecoveryNotSelectedError].)
 bool isTransparentLedgerNeedsNewerBuildError(String raw) => raw
     .toLowerCase()
     .contains("this build cannot operate on this wallet's transparent funds");

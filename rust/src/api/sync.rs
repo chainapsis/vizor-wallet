@@ -59,18 +59,56 @@ pub fn set_enhance_pir_preference_confirmed(confirmed: bool) {
     sync_engine::enhancement::set_preference_confirmed(confirmed);
 }
 
+/// A wallet's durable transparent ledger mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ApiTransparentLedgerMode {
+    /// Public transparent lookups are authoritative.
+    Public,
+    /// Public transparent lookups are forbidden.
+    PrivateRequired,
+}
+
+/// The durable transparent policy a reconciliation applied.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ApiAppliedTransparentPolicy {
+    pub mode: ApiTransparentLedgerMode,
+    /// Advances on every mode transition. Anything read under an earlier
+    /// generation was authorized by a policy that no longer holds.
+    pub generation: u64,
+}
+
+impl From<zcash_client_backend::data_api::transparent_ledger::AppliedTransparentPolicy>
+    for ApiAppliedTransparentPolicy
+{
+    fn from(
+        applied: zcash_client_backend::data_api::transparent_ledger::AppliedTransparentPolicy,
+    ) -> Self {
+        use zcash_client_backend::data_api::transparent_ledger::TransparentLedgerMode;
+        Self {
+            mode: match applied.mode {
+                TransparentLedgerMode::Public => ApiTransparentLedgerMode::Public,
+                TransparentLedgerMode::PrivateRequired => ApiTransparentLedgerMode::PrivateRequired,
+            },
+            generation: applied.generation,
+        }
+    }
+}
+
 /// Reconcile the wallet's durable transparent policy with the private queries
 /// setting. `true` raises it to private recovery when this build selects that
-/// mode; `false` lowers it to public in every build. Returns whether the
-/// policy changed, so a rollback restores only what it changed. Waits up to
-/// 30 s for public lookups already in flight, and changes nothing on failure.
-/// A missing wallet is left alone. It never confirms the setting: callers do
-/// that only for a value read from storage.
+/// mode; `false` lowers it to public in every build. Returns the wallet's
+/// resulting durable policy, mode and generation, whether this call changed it
+/// or found it already so (another connection may have changed it meanwhile),
+/// so the caller always adopts what holds now; `None` only when there is no
+/// wallet. Waits up to 30 s for public lookups already in flight, and changes
+/// nothing on failure. A missing wallet is left alone and never created. It
+/// never confirms the setting: callers do that only for a value read from
+/// storage.
 pub fn reconcile_transparent_policy(
     db_path: String,
     network: String,
     private_queries: bool,
-) -> Result<bool, String> {
+) -> Result<Option<ApiAppliedTransparentPolicy>, String> {
     catch(|| {
         let network = keys::parse_network(&network)?;
         let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
@@ -82,7 +120,12 @@ pub fn reconcile_transparent_policy(
                 sync_engine::enhancement::private_transparent_recovery(),
             ))
             .map_err(|e| e.to_string())?;
-        Ok(applied.is_some())
+        let resulting = match applied {
+            Some(applied) => Some(applied),
+            None => sync_engine::transparent_ledger::current_transparent_policy(&db_path, network)
+                .map_err(|e| e.to_string())?,
+        };
+        Ok(resulting.map(ApiAppliedTransparentPolicy::from))
     })
 }
 
@@ -3113,7 +3156,9 @@ pub fn enhance_transaction_publicly(
     txid_hex: String,
 ) -> Result<(), String> {
     catch(|| {
-        let network = parse_network_and_migrate(&db_path, &network)?;
+        // Migration may create a database a reset just deleted. This explicit
+        // load opens only existing storage, before any network request.
+        let network = keys::parse_network(&network)?;
         let txid: [u8; 32] = hex::decode(&txid_hex)
             .map_err(|e| format!("Invalid txid: {e}"))?
             .try_into()

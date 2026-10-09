@@ -10,6 +10,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../providers/enhance_pir_provider.dart';
+import '../transparent_opt_out_action.dart';
 import 'mobile_tor_control.dart';
 export 'mobile_tor_control.dart' show MobilePrivacyToggle;
 
@@ -36,7 +37,7 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
     final enhancePirEnabled = ref.watch(enhancePirProvider);
     final enhancePirAvailable = ref.watch(enhancePirAvailableProvider);
     final recoveryTransition = ref.watch(enhancePirTransitionProvider);
-    final changingRecovery = recoveryTransition == 'Changing setting…';
+    final changingRecovery = recoveryTransition == kEnhancePirChangingMessage;
     return MobileSurfaceCard(
       cornerRadius: AppRadii.large,
       padding: const EdgeInsets.fromLTRB(
@@ -165,6 +166,11 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
                 color: colors.text.secondary,
               ),
             ),
+          // Not gated on availability: see [TransparentOptOutAction].
+          TransparentOptOutAction(
+            keyPrefix: 'mobile_settings',
+            showTransition: !enhancePirAvailable,
+          ),
         ],
       ),
     );

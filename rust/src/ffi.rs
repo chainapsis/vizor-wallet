@@ -19,8 +19,7 @@ use crate::wallet::sync_engine::enhancement::{status, EnhancementPolicy};
 use crate::wallet::sync_engine::{SyncError, TransparentLookupGate};
 use crate::wallet::transaction_data::TransactionObservation;
 use zakura_transaction_status::{
-    lightwalletd::LightwalletdSource, DisabledSource, StatusError, StatusMode, StatusReader,
-    StatusRequest,
+    DisabledSource, StatusError, StatusMode, StatusReader, StatusRequest,
 };
 use zcash_client_backend::data_api::status::{
     PublicTransactionStatusRequest, TransactionStatusRead, TransactionStatusWork,
@@ -248,7 +247,7 @@ pub extern "C" fn zcash_lightwalletd_latest_block_height(
 ///
 /// The request discloses the txid, so it is authorized like every other public
 /// transparent lookup: against the wallet at `db_path`, opened read-only with
-/// a durable `PrivateRequired` adopted, then re-checked by
+/// its reads honoring a durable `PrivateRequired`, then re-checked by
 /// [`TransparentLookupGate`] as it is sent.
 ///
 /// Returns 0 with `output` set, 1 for invalid arguments or a failed lookup,
@@ -338,18 +337,16 @@ pub(crate) fn observe_public_transaction(
     let observed = runtime.block_on(await_lightwalletd_request_or_cancellation(
         cancellation,
         async {
-            let public_source = status::gated(
-                LightwalletdSource::new(
-                    || async {
-                        crate::wallet::sync_engine::open_background_direct_lwd_channel(
-                            lightwalletd_url,
-                        )
-                        .await
-                        .map_err(|_| StatusError::Unavailable)
-                    },
-                    &cancelled,
-                ),
-                gate.clone(),
+            let transport = crate::wallet::sync_engine::open_background_direct_lwd_transport(
+                lightwalletd_url,
+            )
+            .await
+            .map_err(|_| StatusError::Unavailable)?;
+            let client = zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient::new(transport.clone());
+            let public_source = status::lightwalletd_source(
+                client,
+                gate.clone().with_transport(transport),
+                &cancelled,
             );
             let mut reader = StatusReader::new(
                 StatusMode::PublicLightwalletd,
@@ -398,8 +395,8 @@ fn authorize_public_observation(
     policy: EnhancementPolicy,
     txid: TxId,
 ) -> Result<Option<(TransparentLookupGate, PublicTransactionStatusRequest)>, SyncError> {
-    // The opener adopts a durable `PrivateRequired`, and so does
-    // `configure_db` after selecting the captured mode.
+    // Reads honor a durable `PrivateRequired`, also after `configure_db`
+    // selects the captured mode.
     let mut db = open_wallet_db_readonly_with_timeout(db_path, network, READ_DB_BUSY_TIMEOUT)
         .map_err(SyncError::db)?;
     policy.configure_db(&mut db);
@@ -1052,7 +1049,7 @@ mod tests {
             let lwd = CapturingLwd::start(Vec::new()).await;
 
             // A durable `PrivateRequired` withholds lookups whatever this build
-            // selects: the handle adopts it.
+            // selects: every read honors it.
             let (_dir, path) = wallet(WalletNetwork::Regtest);
             apply(&path, TransparentLedgerMode::PrivateRequired);
             assert_eq!(
@@ -1104,13 +1101,15 @@ mod tests {
             assert_eq!(lwd.count("/GetTransaction"), 1);
 
             // A transition that lands after authorization, as a toggle racing
-            // the call would, is caught as the request is dispatched. Even one
-            // that keeps public authority revokes the captured generation.
+            // the call would, is caught as the request is dispatched. Even a
+            // toggle on and off, which ends with public authority, revokes the
+            // captured generation.
             let (url, wallet_path) = (lwd.url.clone(), path.clone());
             let raced = tokio::task::spawn_blocking(move || {
                 let transition_path = wallet_path.clone();
                 test_hooks::after_authorization(move || {
-                    apply(&transition_path, TransparentLedgerMode::PrivateShadow)
+                    apply(&transition_path, TransparentLedgerMode::PrivateRequired);
+                    apply(&transition_path, TransparentLedgerMode::Public);
                 });
                 observe_c(&url, Some(&wallet_path), Some("regtest"))
             })
@@ -1125,6 +1124,40 @@ mod tests {
                 served
             );
             assert_eq!(lwd.count("/GetTransaction"), 2);
+        }
+
+        #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+        async fn slow_public_response_does_not_hold_background_observation_transition() {
+            let lwd = CapturingLwd::start(Vec::new()).await;
+            let (_dir, path) = wallet(WalletNetwork::Regtest);
+            let release = lwd.hold_responses("/GetTransaction");
+            let url = lwd.url.clone();
+            let lookup_path = path.clone();
+            let observation =
+                tokio::spawn(
+                    async move { observe(&url, Some(&lookup_path), Some("regtest")).await },
+                );
+            tokio::time::timeout(Duration::from_secs(10), async {
+                while lwd.count("/GetTransaction") == 0 {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            })
+            .await
+            .unwrap();
+            let transition = crate::wallet::sync_engine::test_lwd::apply_fenced(
+                &path,
+                WalletNetwork::Regtest,
+                TransparentLedgerMode::PrivateRequired,
+            )
+            .await;
+            release.notify_one();
+            let observed = observation.await.unwrap();
+            assert!(transition.is_ok(), "{transition:?}");
+            assert_eq!(
+                observed,
+                (0, CLightwalletdTransactionObservation::not_found())
+            );
+            assert_eq!(lwd.count("/GetTransaction"), 1);
         }
 
         #[tokio::test]

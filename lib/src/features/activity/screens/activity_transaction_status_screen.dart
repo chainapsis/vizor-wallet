@@ -1179,6 +1179,7 @@ class _ActivityTransactionStatusScreenState
       );
     } else if (tx != null &&
         tx.txKind == 'sent' &&
+        transactionFeePresentation(tx) == TransactionFeePresentation.separate &&
         (_detailsLoading ||
             sentRecipientAddress != null ||
             receiptHasUnknownRecipient(tx, detail))) {

@@ -845,8 +845,11 @@ pub(crate) fn import_gate(
     policy: EnhancementPolicy,
 ) -> Result<TransparentLookupGate, String> {
     if is_first_wallet_account {
-        return Ok(TransparentLookupGate::pre_db(
+        // Fenced as the wallet it is about to create, so a transition on
+        // another wallet never waits for it.
+        return Ok(TransparentLookupGate::pre_database(
             policy.pre_db_public_transparent_lookups(),
+            db_path,
         ));
     }
     let db = crate::wallet::sync::open_wallet_db_for_read(db_path, network)?;
@@ -872,13 +875,15 @@ pub(crate) async fn discover_used_software_accounts(
         return Err(SOFTWARE_ACCOUNT_DISCOVERY_UNAVAILABLE.to_string());
     }
     let start_height = discovery_start_height(network, birthday_height);
-    let mut client = match crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await {
-        Ok(client) => client,
+    let transport = match crate::wallet::sync_engine::open_lwd_transport(lightwalletd_url).await {
+        Ok(transport) => transport,
         Err(e) => {
             log::warn!("software account discovery: could not open lightwalletd channel: {e}");
             return Ok(Vec::new());
         }
     };
+    let mut client = CompactTxStreamerClient::new(transport.clone());
+    let gate = gate.clone().with_transport(transport);
     let tip = match crate::wallet::sync_engine::get_latest_block_recorded(
         &mut client,
         lightwalletd_url,
@@ -905,7 +910,7 @@ pub(crate) async fn discover_used_software_accounts(
         for account_index in start..=end.min(SOFTWARE_ACCOUNT_DISCOVERY_MAX_INDEX) {
             match discover_software_account_at_index(
                 &mut client,
-                gate,
+                &gate,
                 network,
                 seed,
                 account_index,
@@ -1036,10 +1041,13 @@ pub(crate) async fn preview_transparent_balance_for_addresses(
         return Ok(0);
     }
 
-    let mut client = crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url)
+    let transport = crate::wallet::sync_engine::open_lwd_transport(lightwalletd_url)
         .await
         .map_err(|e| e.to_string())?;
+    let mut client = CompactTxStreamerClient::new(transport.clone());
     let Some(mut stream) = gate
+        .clone()
+        .with_transport(transport)
         .address_utxos(&mut client, addresses, BlockHeight::from_u32(0))
         .await
         .map_err(|e| e.to_string())?
@@ -1978,7 +1986,7 @@ mod tests {
                 is_first_wallet_account,
             )
         };
-        // The opener adopts the stricter durable policy, so the preview is
+        // Reads honor the stricter durable policy, so the preview is
         // withheld: unavailable, never a zero balance.
         assert_eq!(
             preview(false),
@@ -2016,7 +2024,7 @@ mod tests {
             crate::wallet::db::SYNC_DB_BUSY_TIMEOUT,
         )
         .unwrap()
-        .apply_transparent_policy(TransparentLedgerMode::PrivateShadow)
+        .apply_transparent_policy(TransparentLedgerMode::PrivateRequired)
         .unwrap();
         let lwd = CapturingLwd::start(Vec::new()).await;
 
@@ -2043,16 +2051,12 @@ mod tests {
             .unwrap();
         let gate = import_gate(network, path, false, EnhancementPolicy::current(network)).unwrap();
         // Every probe finds history, so an unrevoked run probes every index.
-        // PrivateShadow keeps public authority; only the generation revokes.
+        // The toggle ends Public, keeping public authority; only the
+        // generation revokes.
         let lwd = CapturingLwd::start_with(
             vec![0],
             3_000_000,
-            transition_on_first(
-                "/GetTaddressTxids",
-                path,
-                network,
-                TransparentLedgerMode::PrivateShadow,
-            ),
+            transition_on_first("/GetTaddressTxids", path, network),
         )
         .await;
 
@@ -2062,6 +2066,43 @@ mod tests {
         assert_eq!(lwd.count("/GetTaddressTxids"), 1);
         // Account 1 was found before the transition, but the withheld probes
         // say nothing about higher accounts, so no partial list is returned.
+        assert_eq!(
+            discovered.err(),
+            Some(SOFTWARE_ACCOUNT_DISCOVERY_UNAVAILABLE.to_string())
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn slow_public_response_does_not_hold_discovery_transition() {
+        use crate::wallet::sync_engine::test_lwd::{apply_fenced, CapturingLwd};
+        use std::time::Duration;
+        use zcash_client_backend::data_api::transparent_ledger::TransparentLedgerMode;
+        let _route = crate::network_privacy::test_route_policy::lock_route_policy();
+        let network = WalletNetwork::Main;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db").to_str().unwrap().to_owned();
+        let seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
+        keys::init_db_and_create_account(&path, network, &seed, Some(2_000_000), "existing")
+            .unwrap();
+        let gate = import_gate(network, &path, false, EnhancementPolicy::current(network)).unwrap();
+        let lwd = CapturingLwd::start_with(vec![0], 3_000_000, |_| {}).await;
+        let release = lwd.hold_responses("/GetTaddressTxids");
+        let url = lwd.url.clone();
+        let discovery = tokio::spawn(async move {
+            discover_used_software_accounts(network, &seed, Some(2_000_000), &url, &gate).await
+        });
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while lwd.count("/GetTaddressTxids") == 0 {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap();
+        let transition = apply_fenced(&path, network, TransparentLedgerMode::PrivateRequired).await;
+        release.notify_one();
+        assert!(transition.is_ok(), "{transition:?}");
+        let discovered = discovery.await.unwrap();
+        assert_eq!(lwd.count("/GetTaddressTxids"), 1);
         assert_eq!(
             discovered.err(),
             Some(SOFTWARE_ACCOUNT_DISCOVERY_UNAVAILABLE.to_string())

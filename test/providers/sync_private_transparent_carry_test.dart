@@ -42,14 +42,55 @@ class _Account extends AccountNotifier {
 /// Starts from [initial] and never resolves the wallet path, so a sync start
 /// publishes its starting state and goes no further.
 class _CarrySync extends SyncNotifier {
-  _CarrySync(this.initial, {required super.privateTransparentRecovery})
-    : super(walletDbPathResolver: () => Completer<String>().future);
+  _CarrySync(
+    this.initial, {
+    required super.privateTransparentRecovery,
+    Future<String> Function()? walletDbPathResolver,
+  }) : super(
+         walletDbPathResolver:
+             walletDbPathResolver ?? () => Completer<String>().future,
+       );
 
   final SyncState initial;
+  int starts = 0;
+
+  void replaceStateForTesting(SyncState next) => state = AsyncData(next);
 
   @override
   Future<SyncState> build() async => initial;
+
+  /// Counts restarts after the first start, which tests make themselves.
+  bool countStarts = false;
+
+  @override
+  void startSync({int? latestTipHeight}) {
+    if (countStarts) {
+      starts++;
+      return;
+    }
+    super.startSync(latestTipHeight: latestTipHeight);
+  }
 }
+
+/// A progress event during the scan, which reads nothing from Rust.
+SyncProgressEvent _scanning({required int tip}) => SyncProgressEvent(
+  scannedHeight: 5,
+  chainTipHeight: tip,
+  percentage: 0.5,
+  displayTargetPercentage: 0.5,
+  displayTargetBlocks: 0,
+  isSyncing: true,
+  isComplete: false,
+  hasNewTx: false,
+);
+
+rust_sync.ApiAppliedTransparentPolicy _policy(
+  rust_sync.ApiTransparentLedgerMode mode,
+  int generation,
+) => rust_sync.ApiAppliedTransparentPolicy(
+  mode: mode,
+  generation: BigInt.from(generation),
+);
 
 class _EnhancePir extends EnhancePirNotifier {
   _EnhancePir(this.enabled);
@@ -102,7 +143,8 @@ AppBootstrapState _bootstrapWith(AppSyncSnapshot snapshot) => AppBootstrapState(
 );
 
 /// A public, current startup read of `account-1`.
-AppSyncSnapshot _publicSnapshot() => AppSyncSnapshot(
+AppSyncSnapshot _publicSnapshot({bool private = false}) => AppSyncSnapshot(
+  transparentPrivate: private,
   accountUuid: _accountUuid,
   hasAccountScopedData: true,
   scannedHeight: 10,
@@ -172,6 +214,7 @@ void main() {
     SyncState initial, {
     bool privateTransparentRecovery = false,
     bool privateQueries = false,
+    int? latestTipHeight,
   }) async {
     final container = ProviderContainer(
       overrides: [
@@ -189,14 +232,22 @@ void main() {
     addTearDown(container.dispose);
     container.listen(syncProvider, (_, _) {});
     await container.read(syncProvider.future);
-    container.read(syncProvider.notifier).startSync();
+    container
+        .read(syncProvider.notifier)
+        .startSync(latestTipHeight: latestTipHeight);
     final started = container.read(syncProvider).requireValue;
     expect(started.isSyncing, isTrue);
     return started;
   }
 
-  test('a sync start demotes a carried private current balance', () async {
-    final started = await startFrom(_current(private: true));
+  test('a sync start that moves the known tip demotes a carried private '
+      'current balance', () async {
+    // `_current` was read at tip 0; the polled tip is 12.
+    final started = await startFrom(
+      _current(private: true),
+      latestTipHeight: 12,
+    );
+    expect(started.chainTipHeight, 12);
 
     expect(
       started.transparentAuthority,
@@ -209,6 +260,139 @@ void main() {
     expect(started.transparentPrivate, isTrue);
     expect(started.totalBalance, _currentShielded);
     expect(started.displayTotalBalance, _currentShielded);
+  });
+
+  // A sync start used to count as a tip crossing even when the tip had not
+  // moved. Only a real move makes a privately read amount stale.
+  test(
+    'a sync start at an unchanged tip keeps a private current balance',
+    () async {
+      for (final tip in [null, 0]) {
+        final started = await startFrom(
+          _current(private: true),
+          latestTipHeight: tip,
+        );
+        _expectCurrent(started);
+        expect(started.totalBalance, _currentShielded + BigInt.from(7));
+      }
+    },
+  );
+
+  test('a tip move reported during the sync demotes a private current '
+      'balance', () async {
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+        accountProvider.overrideWith(_Account.new),
+        enhancePirProvider.overrideWith(() => _EnhancePir(false)),
+        syncProvider.overrideWith(
+          () => _CarrySync(
+            _current(private: true),
+            privateTransparentRecovery: false,
+            walletDbPathResolver: () async => 'wallet.db',
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    container.listen(syncProvider, (_, _) {});
+    await container.read(syncProvider.future);
+    final notifier = container.read(syncProvider.notifier);
+
+    // No move: the carried amount stays current.
+    await notifier.handleSyncProgressForTesting(_scanning(tip: 0));
+    _expectCurrent(container.read(syncProvider).requireValue);
+
+    // The scan discovers a newer tip without reading a balance.
+    await notifier.handleSyncProgressForTesting(_scanning(tip: 13));
+    final moved = container.read(syncProvider).requireValue;
+    expect(moved.chainTipHeight, 13);
+    _expectDemoted(moved, shielded: _currentShielded);
+  });
+
+  group('an applied policy', () {
+    Future<(ProviderContainer, _CarrySync)> mounted(SyncState initial) async {
+      final sync = _CarrySync(initial, privateTransparentRecovery: false)
+        ..countStarts = true;
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+          accountProvider.overrideWith(_Accounts.new),
+          enhancePirProvider.overrideWith(() => _EnhancePir(false)),
+          syncProvider.overrideWith(() => sync),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.listen(syncProvider, (_, _) {});
+      await container.read(syncProvider.future);
+      return (container, sync);
+    }
+
+    test('that makes the wallet private demotes a public amount right away '
+        'and restarts sync', () async {
+      final (container, sync) = await mounted(_current(private: false));
+      _expectCurrent(container.read(syncProvider).requireValue);
+
+      sync.adoptAppliedTransparentPolicy(
+        _policy(rust_sync.ApiTransparentLedgerMode.privateRequired, 2),
+      );
+
+      _expectDemoted(
+        container.read(syncProvider).requireValue,
+        shielded: _currentShielded,
+      );
+      expect(sync.starts, 1);
+      // While the wallet is private, a public read carried to a sync start
+      // is stale even though the Dart setting is off.
+      sync.replaceStateForTesting(_current(private: false));
+      sync.countStarts = false;
+      sync.startSync();
+      _expectDemoted(
+        container.read(syncProvider).requireValue,
+        shielded: _currentShielded,
+      );
+    });
+
+    test(
+      'with a new generation demotes a private amount, and the cache',
+      () async {
+        final (container, sync) = await mounted(_current(private: true));
+        // Cache account-1, then come back to it after the policy changed.
+        final accounts = container.read(accountProvider.notifier) as _Accounts;
+        accounts.activate(_otherAccountUuid);
+
+        sync.adoptAppliedTransparentPolicy(
+          _policy(rust_sync.ApiTransparentLedgerMode.public, 5),
+        );
+        accounts.activate(_accountUuid);
+
+        _expectDemoted(
+          container.read(syncProvider).requireValue,
+          shielded: _currentShielded,
+        );
+      },
+    );
+
+    test(
+      'nothing applied, or the same generation again, changes nothing',
+      () async {
+        final (container, sync) = await mounted(_current(private: true));
+        sync.adoptAppliedTransparentPolicy(null);
+        _expectCurrent(container.read(syncProvider).requireValue);
+
+        sync.adoptAppliedTransparentPolicy(
+          _policy(rust_sync.ApiTransparentLedgerMode.privateRequired, 2),
+        );
+        expect(sync.starts, 1);
+        // Fresh reads replace the demoted state.
+        sync.replaceStateForTesting(_current(private: true));
+        sync.adoptAppliedTransparentPolicy(
+          _policy(rust_sync.ApiTransparentLedgerMode.privateRequired, 2),
+        );
+        _expectCurrent(container.read(syncProvider).requireValue);
+        expect(sync.starts, 1);
+      },
+    );
   });
 
   test('a sync start carries a public current balance unchanged', () async {
@@ -292,11 +476,10 @@ void main() {
         (false, true, true, true),
         (false, false, true, false),
       ]) {
-        final carried = _current(private: private)
-            .carryingTransparentAuthority(
-              privatePolicyMayApply: mayApply,
-              crossesTip: crossesTip,
-            );
+        final carried = _current(private: private).carryingTransparentAuthority(
+          privatePolicyMayApply: mayApply,
+          crossesTip: crossesTip,
+        );
         if (demoted) {
           _expectDemoted(carried, shielded: _currentShielded);
         } else {
@@ -352,6 +535,99 @@ void main() {
       return container;
     }
 
+    test(
+      'a startup read before startup lowered the policy is not current',
+      () async {
+        final container = ProviderContainer(
+          overrides: [
+            appBootstrapProvider.overrideWithValue(
+              _bootstrapWith(_publicSnapshot()),
+            ),
+            accountProvider.overrideWith(_Accounts.new),
+            enhancePirProvider.overrideWith(() => _EnhancePir(false)),
+            transparentPolicyStartupProvider.overrideWithValue(
+              TransparentPolicyStartup(
+                appliedPolicy: _policy(
+                  rust_sync.ApiTransparentLedgerMode.public,
+                  7,
+                ),
+              ),
+            ),
+            syncProvider.overrideWith(
+              () => _LiveSync(privateTransparentRecovery: false),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+        addTearDown(pumpEventQueue);
+        container.listen(syncProvider, (_, _) {});
+        _expectDemoted(
+          await container.read(syncProvider.future),
+          shielded: BigInt.zero,
+        );
+      },
+    );
+
+    test(
+      'a no-op startup reconciliation demotes a snapshot without its generation',
+      () async {
+        for (final mode in rust_sync.ApiTransparentLedgerMode.values) {
+          final container = ProviderContainer(
+            overrides: [
+              appBootstrapProvider.overrideWithValue(
+                _bootstrapWith(_publicSnapshot(private: true)),
+              ),
+              accountProvider.overrideWith(_Accounts.new),
+              enhancePirProvider.overrideWith(() => _EnhancePir(false)),
+              transparentPolicyStartupProvider.overrideWithValue(
+                TransparentPolicyStartup(
+                  appliedPolicy: rust_sync.ApiAppliedTransparentPolicy(
+                    mode: mode,
+                    generation: BigInt.from(9),
+                  ),
+                ),
+              ),
+              syncProvider.overrideWith(
+                () => _LiveSync(privateTransparentRecovery: false),
+              ),
+            ],
+          );
+          addTearDown(container.dispose);
+          addTearDown(pumpEventQueue);
+          container.listen(syncProvider, (_, _) {});
+          _expectDemoted(
+            await container.read(syncProvider.future),
+            shielded: BigInt.zero,
+          );
+        }
+      },
+    );
+
+    test('publishes whether the wallet reads transparent privately', () async {
+      for (final private in [false, true]) {
+        final container = ProviderContainer(
+          overrides: [
+            appBootstrapProvider.overrideWithValue(
+              _bootstrapWith(_publicSnapshot(private: private)),
+            ),
+            accountProvider.overrideWith(_Accounts.new),
+            enhancePirProvider.overrideWith(() => _EnhancePir(false)),
+            syncProvider.overrideWith(
+              () => _LiveSync(privateTransparentRecovery: false),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+        addTearDown(pumpEventQueue);
+        container.listen(syncProvider, (_, _) {});
+        await container.read(syncProvider.future);
+        await pumpEventQueue();
+        expect(container.read(walletTransparentPrivateProvider), private);
+        // Settings offers to lower a private wallet with private queries off.
+        expect(container.read(transparentOptOutActionProvider), private);
+      }
+    });
+
     test('a startup read before the policy raise is not current', () async {
       final container = containerFor(privateQueries: true);
       // The snapshot's whole total is transparent.
@@ -361,15 +637,18 @@ void main() {
       );
     });
 
-    test('a startup read stays current when nothing raises the policy', () async {
-      for (final (flag, queries) in [(false, true), (true, false)]) {
-        final container = containerFor(
-          privateQueries: queries,
-          privateTransparentRecovery: flag,
-        );
-        _expectCurrent(await container.read(syncProvider.future));
-      }
-    });
+    test(
+      'a startup read stays current when nothing raises the policy',
+      () async {
+        for (final (flag, queries) in [(false, true), (true, false)]) {
+          final container = containerFor(
+            privateQueries: queries,
+            privateTransparentRecovery: flag,
+          );
+          _expectCurrent(await container.read(syncProvider.future));
+        }
+      },
+    );
 
     test('switching back after a policy raise on another account demotes '
         'the cached amount', () async {

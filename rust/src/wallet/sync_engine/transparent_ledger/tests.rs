@@ -16,7 +16,7 @@ use zcash_keys::encoding::AddressCodec as _;
 use zcash_primitives::{block::BlockHash, transaction::TxId};
 use zcash_protocol::{consensus::BlockHeight, value::Zatoshis};
 
-use super::fixture::{FixtureSource, FIXTURE_SOURCE};
+use super::fixture::{FixtureSource, Observed, FIXTURE_SOURCE};
 use super::*;
 use crate::wallet::sync::{get_wallet_balance, TransparentBalanceAuthority};
 use crate::wallet::sync_engine::enhancement::test_mode;
@@ -115,10 +115,6 @@ fn policy(mode: TransparentLedgerMode) -> EnhancementPolicy {
     EnhancementPolicy::for_preference(NETWORK, false).with_transparent_mode(mode)
 }
 
-fn shadow() -> EnhancementPolicy {
-    policy(TransparentLedgerMode::PrivateShadow)
-}
-
 fn apply_policy(path: &str, mode: TransparentLedgerMode) {
     let mut db = open_wallet_db_with_timeout(path, NETWORK, SYNC_DB_BUSY_TIMEOUT).unwrap();
     with_wallet_db_write_lock("test.transparent_ledger.policy", || {
@@ -146,10 +142,11 @@ fn main_wallet() -> (tempfile::TempDir, String, WalletDatabase) {
     (dir, path, db)
 }
 
-/// A wallet whose durable policy permits private recovery.
-fn shadow_wallet() -> Wallet {
+/// A wallet under a durable `PrivateRequired` policy, which permits private
+/// recovery.
+fn private_wallet() -> Wallet {
     let wallet = wallet();
-    apply_policy(&wallet.path, TransparentLedgerMode::PrivateShadow);
+    apply_policy(&wallet.path, TransparentLedgerMode::PrivateRequired);
     wallet
 }
 
@@ -171,13 +168,15 @@ fn unavailable() -> FixtureSource {
     source
 }
 
+/// Runs recovery under `PrivateRequired` with `source` untrusted: its commits
+/// are observed, and qualify nothing, even from a trusted source.
 async fn recover(wallet: &mut Wallet, source: &FixtureSource) -> RunOutcome {
     run(
         &mut wallet.db,
         &wallet.path,
         NETWORK,
-        shadow(),
-        source,
+        required(),
+        &Observed(source),
         None,
         now,
         &|| false,
@@ -195,10 +194,10 @@ fn required() -> EnhancementPolicy {
 /// mode until the guard drops.
 async fn activate(wallet: &mut Wallet) -> test_mode::ModeOverride {
     let mut db = open_wallet_db_with_timeout(&wallet.path, NETWORK, SYNC_DB_BUSY_TIMEOUT).unwrap();
-    // The policy fence is process-wide, so parallel tests' transitions and
-    // lookups queue on it: wait as long as production does.
+    // Wait for the wallet's lookups as long as production does.
     apply_transparent_policy_fenced(
         &mut db,
+        &wallet.path,
         TransparentLedgerMode::PrivateRequired,
         super::policy::POLICY_DRAIN,
     )
@@ -388,13 +387,13 @@ async fn public_policy_and_an_unavailable_source_send_nothing() {
     assert_eq!(recover(&mut wallet, &source).await, RunOutcome::NotEnabled);
     assert_eq!(source.calls(), 0);
 
-    apply_policy(&wallet.path, TransparentLedgerMode::PrivateShadow);
+    apply_policy(&wallet.path, TransparentLedgerMode::PrivateRequired);
     let unavailable = unavailable();
     let outcome = run(
         &mut wallet.db,
         &wallet.path,
         NETWORK,
-        shadow(),
+        required(),
         &unavailable,
         None,
         now,
@@ -412,7 +411,7 @@ async fn public_policy_and_an_unavailable_source_send_nothing() {
 
 #[tokio::test]
 async fn fixture_recovery_converges_to_the_exact_set() {
-    let mut wallet = shadow_wallet();
+    let mut wallet = private_wallet();
     let first = derived(&wallet, TransparentKeyScope::EXTERNAL, 0);
     let change = derived(&wallet, TransparentKeyScope::INTERNAL, 0);
     let funding = receive(1, first, 50_000, 150);
@@ -502,7 +501,7 @@ async fn replacement_revisions_retract_withdrawn_events() {
 
 #[tokio::test]
 async fn empty_ranges_complete_recovery() {
-    let mut wallet = shadow_wallet();
+    let mut wallet = private_wallet();
     let source = FixtureSource::new(main_hash);
     assert!(matches!(
         recover(&mut wallet, &source).await,
@@ -513,7 +512,7 @@ async fn empty_ranges_complete_recovery() {
 
 #[tokio::test]
 async fn partial_pages_resume_in_the_same_run_and_across_runs() {
-    let mut wallet = shadow_wallet();
+    let mut wallet = private_wallet();
     let address = derived(&wallet, TransparentKeyScope::EXTERNAL, 0);
     let source = FixtureSource::new(main_hash);
     source
@@ -528,7 +527,7 @@ async fn partial_pages_resume_in_the_same_run_and_across_runs() {
     assert_complete(&wallet, &source);
 
     // The source fails after opening the page: it stays open for a later run.
-    let mut wallet = shadow_wallet();
+    let mut wallet = private_wallet();
     let address = derived(&wallet, TransparentKeyScope::EXTERNAL, 0);
     let source = Arc::new(FixtureSource::new(main_hash));
     source
@@ -559,7 +558,7 @@ async fn partial_pages_resume_in_the_same_run_and_across_runs() {
 
 #[tokio::test]
 async fn cancellation_keeps_committed_passes() {
-    let mut wallet = shadow_wallet();
+    let mut wallet = private_wallet();
     let address = derived(&wallet, TransparentKeyScope::EXTERNAL, 0);
     let source = FixtureSource::new(main_hash);
     source
@@ -575,8 +574,8 @@ async fn cancellation_keeps_committed_passes() {
         &mut wallet.db,
         &wallet.path,
         NETWORK,
-        shadow(),
-        &source,
+        required(),
+        &Observed(&source),
         None,
         now,
         &should_exit,
@@ -604,7 +603,7 @@ async fn cancellation_keeps_committed_passes() {
 
 #[tokio::test]
 async fn window_growth_repeats_at_the_same_target() {
-    let mut wallet = shadow_wallet();
+    let mut wallet = private_wallet();
     let before = production_dump(&wallet.path);
     let last = last_derived_external(&wallet);
     let source = FixtureSource::new(main_hash);
@@ -628,7 +627,7 @@ async fn window_growth_repeats_at_the_same_target() {
 
 #[tokio::test]
 async fn restart_converges_to_the_same_state() {
-    let mut wallet = shadow_wallet();
+    let mut wallet = private_wallet();
     let address = derived(&wallet, TransparentKeyScope::EXTERNAL, 1);
     let source = FixtureSource::new(main_hash);
     let funding = receive(1, address, 10_000, 120);
@@ -659,7 +658,7 @@ async fn restart_converges_to_the_same_state() {
 
 #[tokio::test]
 async fn reorg_during_a_source_call_is_retried_at_the_new_target() {
-    let mut wallet = shadow_wallet();
+    let mut wallet = private_wallet();
     let address = derived(&wallet, TransparentKeyScope::EXTERNAL, 0);
     let source = FixtureSource::new(main_hash);
     source.receive(receive(1, address, 10_000, 120));
@@ -690,7 +689,7 @@ async fn reorg_during_a_source_call_is_retried_at_the_new_target() {
 
 #[tokio::test]
 async fn account_deleted_during_a_source_call_is_skipped() {
-    let mut wallet = shadow_wallet();
+    let mut wallet = private_wallet();
     let address = derived(&wallet, TransparentKeyScope::EXTERNAL, 0);
     let source = FixtureSource::new(main_hash);
     source.receive(receive(1, address, 10_000, 120));
@@ -710,7 +709,7 @@ async fn account_deleted_during_a_source_call_is_skipped() {
 
 #[tokio::test]
 async fn policy_transition_during_a_source_call_stops_the_run() {
-    let mut wallet = shadow_wallet();
+    let mut wallet = private_wallet();
     let source = FixtureSource::new(main_hash);
     let path = wallet.path.clone();
     source.on_call(move || apply_policy(&path, TransparentLedgerMode::Public));
@@ -720,7 +719,7 @@ async fn policy_transition_during_a_source_call_stops_the_run() {
 
 #[tokio::test]
 async fn contradicting_the_stored_evidence_quarantines_and_skips_the_account() {
-    let mut wallet = shadow_wallet();
+    let mut wallet = private_wallet();
     let address = derived(&wallet, TransparentKeyScope::EXTERNAL, 0);
     let honest = FixtureSource::new(main_hash);
     honest.receive(receive(1, address, 10_000, 120));
@@ -747,7 +746,7 @@ async fn contradicting_the_stored_evidence_quarantines_and_skips_the_account() {
 /// lets the run spend its waits at once.
 #[tokio::test(start_paused = true)]
 async fn a_lagging_source_anchors_below_the_target() {
-    let mut wallet = shadow_wallet();
+    let mut wallet = private_wallet();
     let address = derived(&wallet, TransparentKeyScope::EXTERNAL, 0);
     let source = FixtureSource::new(main_hash);
     source
@@ -774,7 +773,7 @@ async fn a_lagging_source_anchors_below_the_target() {
 
 #[tokio::test]
 async fn unsupported_ranges_block_completeness() {
-    let mut wallet = shadow_wallet();
+    let mut wallet = private_wallet();
     let address = derived(&wallet, TransparentKeyScope::EXTERNAL, 0);
     let source = FixtureSource::new(main_hash);
     source.unsupported(address);
@@ -789,8 +788,8 @@ async fn unsupported_ranges_block_completeness() {
 }
 
 #[tokio::test]
-async fn shadow_recovery_leaves_production_state_untouched() {
-    let mut wallet = shadow_wallet();
+async fn candidate_recovery_leaves_production_state_untouched() {
+    let mut wallet = private_wallet();
     let first = derived(&wallet, TransparentKeyScope::EXTERNAL, 0);
     let last = last_derived_external(&wallet);
     let source = FixtureSource::new(main_hash);
@@ -855,23 +854,27 @@ impl RecoverySource for Silent {
         std::future::pending()
     }
 
-    fn acknowledge(
+    fn apply(
         &self,
         _account: AccountUuid,
-        _reconciled: bool,
-    ) -> impl Future<Output = Result<(), SourceError>> + Send {
-        std::future::ready(Err(SourceError::Failed))
+        _db: &mut WalletDatabase,
+        _trust: Trust,
+    ) -> impl Future<Output = Settlement> + Send {
+        std::future::ready(Settlement::Refused {
+            stats: ApplyStats::default(),
+            refusal: Refusal::Skip,
+        })
     }
 }
 
 #[tokio::test(start_paused = true)]
 async fn a_source_past_its_time_bound_commits_nothing() {
-    let mut wallet = shadow_wallet();
+    let mut wallet = private_wallet();
     let outcome = run(
         &mut wallet.db,
         &wallet.path,
         NETWORK,
-        shadow(),
+        required(),
         &Silent,
         None,
         now,
@@ -1046,7 +1049,7 @@ async fn a_toggle_off_behind_a_raise_lowers_what_it_applied() {
                 .enable_all()
                 .build()
                 .unwrap()
-                .block_on(raise_to_required(&mut db, may_raise))
+                .block_on(raise_to_required(&mut db, &path, may_raise))
                 .unwrap()
         }
     });
@@ -1169,16 +1172,6 @@ fn import_ledger(wallet: &Wallet) -> AccountUuid {
 #[tokio::test]
 async fn a_trusted_source_qualifies_each_revision_before_applying_it() {
     let qualified = |path: &str| count(path, "SELECT COUNT(*) FROM tpir_qualified_revisions");
-
-    // Under `PrivateShadow` nothing is qualified, even from a trusted source.
-    let mut shadowed = shadow_wallet();
-    let source = funded_source(&shadowed);
-    let RunOutcome::Finished(stats) = recover(&mut shadowed, &source).await else {
-        panic!("recovery finishes");
-    };
-    assert!(stats.commits > 0);
-    assert_eq!(stats.qualified, 0);
-    assert_eq!(qualified(&shadowed.path), 0);
 
     // An untrusted source's commits apply, qualify nothing, and leave the
     // account a candidate.
@@ -1303,7 +1296,7 @@ async fn a_withdrawn_batch_holds_only_that_account() {
         &wallet.path,
         NETWORK,
         required(),
-        &source,
+        &Observed(&source),
         None,
         after_the_hold,
         &|| false,
@@ -1319,7 +1312,7 @@ async fn a_withdrawn_batch_holds_only_that_account() {
 
 #[tokio::test]
 async fn a_batch_is_acknowledged_only_after_every_commit_applies() {
-    let mut wallet = shadow_wallet();
+    let mut wallet = private_wallet();
     let path = wallet.path.clone();
     let addresses = watched(&wallet).len() as i64;
     assert!(addresses >= 2, "the batch splits its addresses");
@@ -1431,31 +1424,33 @@ async fn retired_revisions_are_acknowledged_after_trusted_reconciliation() {
 }
 
 /// Without the trusted operation, a batch that resolves retired revisions is
-/// applied but never acknowledged, and its account is held.
+/// refused before any commit applies, never acknowledged, and its account is
+/// held.
 #[tokio::test]
 async fn unreconciled_retirements_acknowledge_nothing_and_hold_the_account() {
-    // The trusted origin under `PrivateShadow`, which qualifies nothing.
-    let mut shadowed = shadow_wallet();
-    let source = funded_source(&shadowed);
-    recover(&mut shadowed, &source).await;
+    // The trusted origin, observed, which qualifies nothing.
+    let mut observed = private_wallet();
+    let source = funded_source(&observed);
+    recover(&mut observed, &source).await;
     let acknowledged = source.acknowledged();
     assert_eq!(acknowledged, source.calls());
     source.replace_events(vec![], vec![]).retire();
-    let RunOutcome::Finished(stats) = recover(&mut shadowed, &source).await else {
+    let before = production_dump(&observed.path);
+    let RunOutcome::Finished(stats) = recover(&mut observed, &source).await else {
         panic!("recovery finishes");
     };
-    assert!(stats.commits > 0);
-    assert_eq!(stats.qualified, 0);
+    assert_eq!((stats.commits, stats.qualified), (0, 0));
+    assert_eq!(production_dump(&observed.path), before);
     assert_eq!(source.acknowledged(), acknowledged);
     // Only reconciliation withdraws the retired revision's evidence.
-    assert!(count(&shadowed.path, RETIRED_COVERAGE) > 0);
+    assert!(count(&observed.path, RETIRED_COVERAGE) > 0);
     assert_eq!(
-        recovery_hold(&shadowed.path, shadowed.account),
+        recovery_hold(&observed.path, observed.account),
         Some(HoldCause::Unreconciled)
     );
     // The held account is skipped without asking the source.
     let calls = source.calls();
-    let RunOutcome::Finished(stats) = recover(&mut shadowed, &source).await else {
+    let RunOutcome::Finished(stats) = recover(&mut observed, &source).await else {
         panic!("recovery finishes");
     };
     assert_eq!(stats.held, 1);
@@ -1472,8 +1467,7 @@ async fn unreconciled_retirements_acknowledge_nothing_and_hold_the_account() {
     let RunOutcome::Finished(stats) = run_required(&mut wallet, &untrusted).await else {
         panic!("recovery finishes");
     };
-    assert!(stats.commits > 0);
-    assert_eq!((stats.qualified, stats.promoted), (0, 0));
+    assert_eq!((stats.commits, stats.qualified, stats.promoted), (0, 0, 0));
     assert_eq!(untrusted.acknowledged(), 0);
     assert_eq!(
         recovery_hold(&wallet.path, wallet.account),
@@ -1515,7 +1509,7 @@ async fn a_lagging_source_that_catches_up_within_the_cap_restores_authority() {
 
 #[tokio::test(start_paused = true)]
 async fn publication_waits_stop_at_the_cap() {
-    let mut wallet = shadow_wallet();
+    let mut wallet = private_wallet();
     let (_, other) = add_account(&wallet);
     let source = FixtureSource::new(main_hash);
     source.next(Some(Continuation::RetryAfter(Duration::from_secs(30))));
@@ -1524,8 +1518,8 @@ async fn publication_waits_stop_at_the_cap() {
         &mut wallet.db,
         &wallet.path,
         NETWORK,
-        shadow(),
-        &source,
+        required(),
+        &Observed(&source),
         Some(wallet.account),
         now,
         &|| false,
@@ -1551,7 +1545,7 @@ async fn publication_waits_stop_at_the_cap() {
 
 #[tokio::test]
 async fn the_active_account_runs_first_and_others_rotate() {
-    let mut wallet = shadow_wallet();
+    let mut wallet = private_wallet();
     let (_, b) = add_account(&wallet);
     let (_, c) = add_account(&wallet);
     let source = FixtureSource::new(main_hash);
@@ -1560,7 +1554,7 @@ async fn the_active_account_runs_first_and_others_rotate() {
             &mut wallet.db,
             &wallet.path,
             NETWORK,
-            shadow(),
+            required(),
             &source,
             Some(c),
             now,
@@ -1617,7 +1611,7 @@ async fn a_quarantined_or_held_account_is_skipped_without_a_source_call() {
 
 #[tokio::test]
 async fn three_stalled_runs_hold_the_account() {
-    let mut wallet = shadow_wallet();
+    let mut wallet = private_wallet();
     let source = FixtureSource::new(main_hash);
     source.next(Some(Continuation::Stalled));
     for _ in 0..STALL_RUNS_BEFORE_HOLD {
@@ -1636,7 +1630,7 @@ async fn three_stalled_runs_hold_the_account() {
     assert_eq!(source.calls(), STALL_RUNS_BEFORE_HOLD);
 
     // A completed run restarts the count.
-    let mut other = shadow_wallet();
+    let mut other = private_wallet();
     let source = FixtureSource::new(main_hash);
     for next in [
         Continuation::Stalled,
@@ -1652,7 +1646,7 @@ async fn three_stalled_runs_hold_the_account() {
 
     // A run that ends waiting for a lagging publication does not: the stall
     // it interrupts is still held.
-    let mut lagging = shadow_wallet();
+    let mut lagging = private_wallet();
     let source = FixtureSource::new(main_hash);
     let past_the_wait_cap = Continuation::RetryAfter(PUBLICATION_WAIT_CAP * 2);
     for next in [
@@ -1721,7 +1715,7 @@ async fn a_legacy_discrepancy_holds_the_account() {
 
 #[tokio::test]
 async fn cancellation_during_a_pass_applies_nothing_from_it() {
-    let mut wallet = shadow_wallet();
+    let mut wallet = private_wallet();
     let source = FixtureSource::new(main_hash);
     source.receive(receive(1, external(&wallet, 0), 10_000, 150));
     let exit = Arc::new(AtomicBool::new(false));
@@ -1734,7 +1728,7 @@ async fn cancellation_during_a_pass_applies_nothing_from_it() {
         &mut wallet.db,
         &wallet.path,
         NETWORK,
-        shadow(),
+        required(),
         &source,
         None,
         now,
@@ -1790,6 +1784,7 @@ async fn the_followup_reemits_completion_after_recovery() {
     let completed = (u64::from(TIP), u64::from(TIP) + 1);
 
     transparent_followup(
+        1,
         &mut wallet.db,
         &wallet.path,
         NETWORK,
@@ -1821,6 +1816,7 @@ async fn the_followup_reemits_completion_after_recovery() {
         (required(), true),
     ] {
         transparent_followup(
+            1,
             &mut wallet.db,
             &wallet.path,
             NETWORK,
@@ -1835,6 +1831,62 @@ async fn the_followup_reemits_completion_after_recovery() {
     }
     assert_eq!(events.lock().unwrap().len(), 1);
     assert_eq!(source.calls(), calls);
+}
+
+#[tokio::test]
+async fn a_background_sync_skips_the_recovery_followup() {
+    use crate::wallet::sync_engine::{runs_transparent_followup, transparent_followup};
+
+    assert!(runs_transparent_followup(1));
+    assert!(!runs_transparent_followup(2));
+
+    let mut wallet = wallet();
+    let _mode = activate(&mut wallet).await;
+    let source = funded_source(&wallet);
+    let events = std::sync::Mutex::new(Vec::<SyncProgressEvent>::new());
+    let progress = |event: SyncProgressEvent| events.lock().unwrap().push(event);
+    let completed = (u64::from(TIP), u64::from(TIP) + 1);
+    let before = balance(&wallet, &wallet.uuid).transparent_authority;
+
+    // Background preparation (mode 2): no source call, no re-report, and the
+    // ledger is left for the next foreground sync.
+    transparent_followup(
+        2,
+        &mut wallet.db,
+        &wallet.path,
+        NETWORK,
+        required(),
+        &source,
+        Some(wallet.account),
+        &|| false,
+        &progress,
+        completed,
+    )
+    .await;
+    assert_eq!(source.calls(), 0);
+    assert!(events.lock().unwrap().is_empty());
+    assert_eq!(balance(&wallet, &wallet.uuid).transparent_authority, before);
+
+    // The same wallet recovers in the foreground.
+    transparent_followup(
+        1,
+        &mut wallet.db,
+        &wallet.path,
+        NETWORK,
+        required(),
+        &source,
+        Some(wallet.account),
+        &|| false,
+        &progress,
+        completed,
+    )
+    .await;
+    assert!(source.calls() > 0);
+    assert_eq!(events.lock().unwrap().len(), 1);
+    assert_eq!(
+        balance(&wallet, &wallet.uuid).transparent_authority,
+        TransparentBalanceAuthority::Current
+    );
 }
 
 mod activation;

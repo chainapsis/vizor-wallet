@@ -11,15 +11,18 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/private_transparent_recovery_config.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/storage/linux_keyring_coordinator.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/features/accounts/widgets/account_edit_modal.dart';
 import 'package:zcash_wallet/src/features/settings/screens/settings_screen.dart';
 import 'package:zcash_wallet/src/features/settings/settings_platform.dart';
 import 'package:zcash_wallet/src/features/settings/widgets/enhance_pir_privacy_control.dart';
 import 'package:zcash_wallet/src/features/settings/widgets/network_privacy_control.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_cards_provider.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
+import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/windows_update_provider.dart';
@@ -303,6 +306,45 @@ void main() {
 
     expect(find.text('System (Auto)'), findsOneWidget);
     expect(find.textContaining('payment links route'), findsNothing);
+  });
+
+  testWidgets('busy wallet keeps the rename modal open for retry', (
+    tester,
+  ) async {
+    final coordinator = LinuxKeyringCoordinator.testing(enabled: false);
+    addTearDown(coordinator.dispose);
+    // The private queries toggle holds the wallet while it drains.
+    final release = Completer<void>();
+    final toggle = coordinator.runMutation(() => release.future);
+    await tester.binding.setSurfaceSize(const Size(1512, 1600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      _settingsHarness(
+        extraOverrides: [
+          linuxKeyringCoordinatorProvider.overrideWithValue(coordinator),
+        ],
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('Account name'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Savings');
+    await tester.pump();
+    await tester.tap(find.text('Update'));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(AccountEditModal), findsOneWidget);
+    expect(find.text('Savings'), findsOneWidget);
+    expect(
+      find.text('Finish the current wallet operation before starting another.'),
+      findsOneWidget,
+    );
+    expect(find.text("Couldn't update account."), findsNothing);
+    release.complete();
+    await toggle;
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   testWidgets('settings sections are grouped Personal to Danger zone', (
@@ -692,6 +734,64 @@ void main() {
     );
   });
 
+  group('off mainnet, where private queries are unavailable', () {
+    testWidgets('nothing to finish shows no opt-out action', (tester) async {
+      await tester.pumpWidget(_settingsHarness(network: 'test'));
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey('settings_transparent_opt_out_button')),
+        findsNothing,
+      );
+    });
+
+    for (final (reason, overrides) in <(String, List<Override>)>[
+      (
+        'an unfinished opt-out',
+        <Override>[
+          transparentPolicyStartupProvider.overrideWithValue(
+            const TransparentPolicyStartup(optOutPending: true),
+          ),
+        ],
+      ),
+      (
+        'a durably private wallet',
+        <Override>[
+          walletTransparentPrivateProvider.overrideWith(_PrivateWallet.new),
+        ],
+      ),
+    ]) {
+      testWidgets('$reason can still be finished', (tester) async {
+        final enhancePir = _RecordingEnhancePir();
+        await tester.binding.setSurfaceSize(const Size(1512, 1600));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await tester.pumpWidget(
+          _settingsHarness(
+            network: 'test',
+            extraOverrides: [
+              enhancePirProvider.overrideWith(() => enhancePir),
+              ...overrides,
+            ],
+          ),
+        );
+        await tester.pump();
+
+        // The toggle stays hidden; the way to lower the wallet does not.
+        expect(
+          find.byKey(const ValueKey('settings_enhance_pir_toggle')),
+          findsNothing,
+        );
+        final button = find.byKey(
+          const ValueKey('settings_transparent_opt_out_button'),
+        );
+        expect(button, findsOneWidget);
+        await tester.ensureVisible(button);
+        await tester.tap(button);
+        await tester.pump();
+        expect(enhancePir.finishes, 1);
+      });
+    }
+  });
+
   testWidgets('Tor stays effective while switching to direct', (tester) async {
     await tester.pumpWidget(
       _settingsHarness(
@@ -1000,4 +1100,19 @@ bool _hasFocusRing(WidgetTester tester) {
         border.top.width == 2;
   });
   return focusRing.evaluate().isNotEmpty;
+}
+
+class _RecordingEnhancePir extends EnhancePirNotifier {
+  int finishes = 0;
+
+  @override
+  bool build() => false;
+
+  @override
+  Future<void> finishTransparentOptOut() async => finishes++;
+}
+
+class _PrivateWallet extends WalletTransparentPrivateNotifier {
+  @override
+  bool build() => true;
 }

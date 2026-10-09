@@ -1106,13 +1106,12 @@ mod tests {
             WalletNetwork::Regtest,
         )
         .unwrap();
-        // Another connection applies a new policy generation as the first
-        // public request is dispatched. PrivateShadow keeps public authority,
-        // so only the generation change revokes the captured lookups.
+        // Another connection toggles private queries on and off as the first
+        // public request is dispatched. The wallet ends Public, so only the
+        // generation change revokes the captured lookups.
         let _transition = crate::wallet::sync_engine::test_lwd::transition_on_first_dispatch(
             &path,
             WalletNetwork::Regtest,
-            TransparentLedgerMode::PrivateShadow,
         );
         let public = status_source(Ok(StatusObservation::NotFound));
         let public_requests = public.requests.clone();

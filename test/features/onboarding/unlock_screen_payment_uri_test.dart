@@ -89,7 +89,7 @@ class _FakeUnlockSyncNotifier extends FakeSyncNotifier {
   Future<void> refreshAfterUnlock() async {}
 
   @override
-  Future<void> startSyncAnyway() async {}
+  Future<void> startSyncAnyway({int? latestTipHeight}) async {}
 }
 
 /// Ends the card's pre-check without touching Rust: the claim is what these

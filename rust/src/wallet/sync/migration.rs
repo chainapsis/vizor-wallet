@@ -2095,14 +2095,11 @@ fn record_creation_evidence(
         .try_into()
         .map_err(|_| "Invalid migration txid length")?;
     bytes.reverse();
-    use crate::wallet::sync_engine::enhancement::{
-        adopt_durable_private, selected_transparent_mode,
-    };
+    use crate::wallet::sync_engine::enhancement::selected_transparent_mode;
     // No wallet path reaches this transaction, so no per-wallet test selection
-    // applies; the durable policy still governs.
+    // applies; the library resolves it under the durable policy.
     let mut db = zcash_client_sqlite::WalletDb::from_connection(&**tx, network, (), ())
         .with_transparent_ledger_mode(selected_transparent_mode(network));
-    adopt_durable_private(&mut db);
     db.record_transaction_created(
         zcash_primitives::transaction::TxId::from_bytes(bytes),
         BlockHeight::from_u32(target_height),

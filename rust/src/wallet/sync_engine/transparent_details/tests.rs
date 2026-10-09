@@ -227,6 +227,32 @@ fn count(path: &str, sql: &str) -> i64 {
 /// from [`paused_wallet`]), and every other fixture holds a shared guard.
 static SERIAL: std::sync::RwLock<()> = std::sync::RwLock::new(());
 
+/// Paused time must not race writers in other test modules. Even a brief real
+/// lock hold lets Tokio advance an idle runtime through the whole run budget.
+/// Run these cases alone in a child test process, retaining their real budget
+/// and cancellation assertions (including deliberately blocked writers).
+fn isolated_paused_test(test: &str) -> bool {
+    let module = module_path!().split_once("::").unwrap().1;
+    let name = format!("{module}::{test}");
+    const MARKER: &str = "VIZOR_TEST_PROCESS";
+    if std::env::var(MARKER).as_deref() == Ok(name.as_str()) {
+        return false;
+    }
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", name.as_str(), "--test-threads=1"])
+        .env(MARKER, &name)
+        .output()
+        .expect("start isolated paused-clock test");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success() && stdout.contains("1 passed; 0 failed; 0 ignored"),
+        "isolated {name} failed or selected no test:\n{}\n{}",
+        stdout,
+        String::from_utf8_lossy(&output.stderr),
+    );
+    true
+}
+
 fn paused_writer() -> std::sync::RwLockWriteGuard<'static, ()> {
     SERIAL
         .write()
@@ -764,6 +790,128 @@ async fn public_enhance_does_not_recreate_a_reset_wallet() {
     }
 }
 
+/// An already missing wallet is rejected by the public API before it can
+/// initialize storage or reveal a transaction to the server.
+#[tokio::test(flavor = "multi_thread")]
+async fn public_enhance_api_rejects_missing_storage_before_dispatch() {
+    let _serial = Shared::take();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("missing.db");
+    let lwd = CapturingLwd::start_with(Vec::new(), u64::from(TOP), |_| {}).await;
+    let (db_path, url) = (path.to_str().unwrap().to_owned(), lwd.url.clone());
+    let result = tokio::task::spawn_blocking(move || {
+        crate::api::sync::enhance_transaction_publicly(
+            db_path,
+            "main".to_owned(),
+            url,
+            hex::encode([0xab; 32]),
+        )
+    })
+    .await
+    .unwrap();
+    assert!(result.is_err(), "{result:?}");
+    assert!(!path.exists(), "the API recreated missing storage");
+    assert_eq!(lwd.count("/GetTransaction"), 0);
+}
+
+/// A second connection can change policy during the network wait; its new
+/// generation invalidates the response without waiting for a held SQL lock.
+#[tokio::test(flavor = "multi_thread")]
+async fn public_enhance_rejects_a_second_connection_policy_change() {
+    let fixture = wallet();
+    let tx = utxo_receipt(&fixture, 0xac, TOP - 1);
+    let mut bytes = Vec::new();
+    tx.write(&mut bytes).unwrap();
+    let _mode = require_private(&fixture.path);
+    let path = fixture.path.clone();
+    let changed = Arc::new(AtomicBool::new(false));
+    let observed = changed.clone();
+    let lwd = CapturingLwd::start_serving(
+        vec![(*tx.txid().as_ref(), bytes, u64::from(TOP - 1))],
+        u64::from(TOP),
+        move |request| {
+            if request.ends_with("/GetTransaction") {
+                let mut db =
+                    open_wallet_db_with_timeout(&path, MAIN, SYNC_DB_BUSY_TIMEOUT).unwrap();
+                db.set_transparent_ledger_mode(TransparentLedgerMode::Public);
+                db.apply_transparent_policy(TransparentLedgerMode::Public)
+                    .unwrap();
+                observed.store(true, Ordering::SeqCst);
+            }
+        },
+    )
+    .await;
+    let (path, url, txid) = (fixture.path.clone(), lwd.url.clone(), *tx.txid().as_ref());
+    let result =
+        tokio::task::spawn_blocking(move || super::enhance_publicly(&path, MAIN, &url, txid))
+            .await
+            .unwrap();
+    assert!(changed.load(Ordering::SeqCst), "policy did not change");
+    assert!(result.is_err(), "a stale-generation load succeeded");
+    assert_eq!(lwd.count("/GetTransaction"), 1);
+    assert_eq!(
+        count(
+            &fixture.path,
+            "SELECT COUNT(*) FROM transactions WHERE raw IS NOT NULL"
+        ),
+        0
+    );
+}
+
+/// A file replacement invalidates the original consent even when the copied
+/// wallet retains the same account UUIDs and policy generation.
+#[tokio::test(flavor = "multi_thread")]
+async fn public_enhance_does_not_store_into_a_replacement_with_the_same_accounts() {
+    let fixture = wallet();
+    let tx = utxo_receipt(&fixture, 0xab, TOP - 1);
+    let mut bytes = Vec::new();
+    tx.write(&mut bytes).unwrap();
+    let _mode = require_private(&fixture.path);
+    let replacement = fixture._dir.path().join("replacement.db");
+    // VACUUM INTO makes a consistent copy including committed WAL content.
+    rusqlite::Connection::open(&fixture.path)
+        .unwrap()
+        .execute("VACUUM INTO ?1", [replacement.to_str().unwrap()])
+        .unwrap();
+    let original = fixture.path.clone();
+    let replaced = Arc::new(AtomicBool::new(false));
+    let observed = replaced.clone();
+    let lwd = CapturingLwd::start_serving(
+        vec![(*tx.txid().as_ref(), bytes, u64::from(TOP - 1))],
+        u64::from(TOP),
+        move |path| {
+            if path.ends_with("/GetTransaction") {
+                for suffix in ["", "-wal", "-shm"] {
+                    match std::fs::remove_file(format!("{original}{suffix}")) {
+                        Ok(()) => {}
+                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                        Err(error) => panic!("replacement could not remove wallet: {error}"),
+                    }
+                }
+                std::fs::rename(&replacement, &original).unwrap();
+                observed.store(true, Ordering::SeqCst);
+            }
+        },
+    )
+    .await;
+    let (path, url, txid) = (fixture.path.clone(), lwd.url.clone(), *tx.txid().as_ref());
+    let result =
+        tokio::task::spawn_blocking(move || super::enhance_publicly(&path, MAIN, &url, txid))
+            .await
+            .unwrap();
+    assert!(replaced.load(Ordering::SeqCst), "replacement did not occur");
+    assert_eq!(lwd.count("/GetTransaction"), 1);
+    assert!(result.is_err(), "a load of the replaced wallet succeeded");
+    assert_eq!(
+        count(
+            &fixture.path,
+            "SELECT COUNT(*) FROM transactions WHERE raw IS NOT NULL"
+        ),
+        0,
+        "the response was stored into the replacement"
+    );
+}
+
 /// Without `PrivateRequired`, the residual transaction is fetched through the
 /// gate, once per authorized dispatch, and the private service sees nothing.
 #[tokio::test]
@@ -809,6 +957,39 @@ async fn public_residual_only_via_gate() {
     assert_eq!(lwd.count("/GetTransaction"), 1);
 }
 
+/// A transaction lightwalletd does not have is absent, not an outage: the run
+/// goes on to its remaining lookups instead of ending.
+#[tokio::test]
+async fn public_not_found_is_absent_and_the_run_continues() {
+    let fixture = wallet();
+    let missing = utxo_receipt(&fixture, 0xa3, TOP - 2);
+    let served = utxo_receipt(&fixture, 0xa4, TOP - 1);
+    let mut bytes = Vec::new();
+    served.write(&mut bytes).unwrap();
+    let service = refusing(503);
+    let _seam = test_seam::set(&fixture.path, service.clone());
+    let lwd = CapturingLwd::start_serving(
+        vec![(*served.txid().as_ref(), bytes, u64::from(TOP - 1))],
+        0,
+        |_| {},
+    )
+    .await;
+
+    let outcome = followup_with(&fixture, public(), &lwd).await;
+    assert!(
+        matches!(outcome, Some(RunOutcome::Finished(stats)) if stats.stored == 1 && stats.lookups == 2),
+        "{outcome:?}"
+    );
+    assert_eq!(lwd.count("/GetTransaction"), 2);
+    assert!(service.requests().is_empty(), "no private request");
+    // The missing transaction waits for a later retry; nothing else is due.
+    assert!(work_row(&fixture.path, &missing.txid()).is_some());
+    assert!(work_row(&fixture.path, &served.txid()).is_none());
+    let outcome = followup_with(&fixture, public(), &lwd).await;
+    assert_eq!(outcome, Some(RunOutcome::Finished(RunStats::default())));
+    assert_eq!(lwd.count("/GetTransaction"), 2);
+}
+
 /// A policy transition that lands after the first lookup was authorized lets
 /// that request finish but stores nothing from it, and withholds the rest.
 #[tokio::test]
@@ -827,8 +1008,7 @@ async fn fenced_transition_midrun_withholds() {
     let lwd = CapturingLwd::start_serving(served, 0, |_| {}).await;
     let raw = "SELECT COUNT(*) FROM transactions WHERE raw IS NOT NULL";
     let raw_before = count(&fixture.path, raw);
-    let _transition =
-        transition_on_first_dispatch(&fixture.path, MAIN, TransparentLedgerMode::PrivateShadow);
+    let _transition = transition_on_first_dispatch(&fixture.path, MAIN);
 
     let outcome = followup_with(&fixture, public(), &lwd).await;
     assert!(
@@ -882,6 +1062,9 @@ async fn stage_failure_503_sync_ok_balances_unchanged() {
 // The serial guard is held for the whole test on purpose; see `SERIAL`.
 #[allow(clippy::await_holding_lock)]
 async fn stage_failure_timeout_sync_ok_balances_unchanged() {
+    if isolated_paused_test("stage_failure_timeout_sync_ok_balances_unchanged") {
+        return;
+    }
     let _serial = paused_writer();
     let fixture = paused_wallet();
     let tx = utxo_receipt(&fixture, 0xb2, TOP - 1);
@@ -991,6 +1174,9 @@ async fn stage_failure_panic_sync_ok_balances_unchanged() {
 // The serial guard is held for the whole test on purpose; see `SERIAL`.
 #[allow(clippy::await_holding_lock)]
 async fn stage_honors_should_exit_and_budget() {
+    if isolated_paused_test("stage_honors_should_exit_and_budget") {
+        return;
+    }
     let _serial = paused_writer();
     let fixture = paused_wallet();
     for tag in 0..10u8 {
@@ -2529,6 +2715,9 @@ async fn a_held_client_delays_no_run_past_its_exit() {
 // The serial guard is held for the whole test on purpose; see `SERIAL`.
 #[allow(clippy::await_holding_lock)]
 async fn a_held_write_lock_delays_no_run_past_its_budget() {
+    if isolated_paused_test("a_held_write_lock_delays_no_run_past_its_budget") {
+        return;
+    }
     let _serial = paused_writer();
     let fixture = paused_wallet();
     let txid = utxo_receipt(&fixture, 0x49, TOP - 1).txid();

@@ -282,24 +282,12 @@ pub(crate) fn read_wallet_balances(
     network: WalletNetwork,
     target_ids: &[AccountUuid],
 ) -> Result<Vec<WalletBalance>, String> {
-    // Read durable policy, summary, and authority from one snapshot. A
-    // policy applied by another connection since `db` was opened must not
-    // label a private-policy summary's suppressed zero as current funds, so
-    // the handle adopts it here. Configuring this read handle does not change
-    // policy.
+    // Read durable policy, summary, and authority from one snapshot. The
+    // library resolves this handle under a policy another connection applied
+    // since `db` was opened, so a private-policy summary's suppressed zero is
+    // never labeled as current funds.
     db.transactionally(|db| {
-        let durable = match db.applied_transparent_policy() {
-            Err(
-                zcash_client_sqlite::error::SqliteClientError::TransparentLedgerPolicyConflict {
-                    applied: TransparentLedgerMode::PrivateRequired,
-                    ..
-                },
-            ) => {
-                db.set_transparent_ledger_mode(TransparentLedgerMode::PrivateRequired);
-                TransparentLedgerMode::PrivateRequired
-            }
-            result => result?.mode,
-        };
+        let durable = db.applied_transparent_policy()?.mode;
         let private = durable == TransparentLedgerMode::PrivateRequired;
         // No run recovers a private wallet in a build that does not select
         // private recovery.
@@ -636,6 +624,13 @@ pub(crate) struct TransactionDetail {
     /// Whether the transaction's payment classification or owned effects remain
     /// provisional. An established Activity row can still have incomplete receipt details.
     pub provisional: bool,
+    /// Whether the account's side of the transaction is settled, as an Activity
+    /// row's is ([`classify_history_tx`]): every owned effect is settled, the
+    /// transaction is mined, and no owned transparent output has an unknown key
+    /// scope. Transparent details that account for the balance complete a
+    /// receipt only when it is: before then an effect the wallet has not found
+    /// can still change the balance they match.
+    pub effects_settled: bool,
     /// Transparent txid enhancement's view of the transaction: `None` when
     /// it has no transparent part the account recorded.
     pub transparent_details: Option<TransparentDetailsView>,
@@ -1503,9 +1498,13 @@ fn apply_display_source(detail: &mut TransactionDetail, source: DisplaySource) {
 /// wallet cannot see (a shielded one) exists. One such output is the
 /// recipient. None means the account paid itself, and its one transparent
 /// address among the outputs is the destination. Two payees leave the
-/// recipient unestablished. An established recipient completes and settles
-/// the receipt: its payees are transparent outputs, which carry no memo, and
-/// an owned effect the wallet had not found would have broken the balance.
+/// recipient unestablished. An established recipient completes the receipt
+/// once the transaction's effects are settled
+/// ([`TransactionDetail::effects_settled`]): its payees are transparent
+/// outputs, which carry no memo. The balance alone does not settle it: until
+/// then an owned effect the wallet has not found can still change what the
+/// outputs account for, so the receipt names the recipient and stays
+/// provisional.
 fn apply_display_recipient(detail: &mut TransactionDetail) {
     if detail.tx_kind != "sent" || detail.primary_address.is_some() || detail.fee.is_none() {
         return;
@@ -1528,7 +1527,7 @@ fn apply_display_recipient(detail: &mut TransactionDetail) {
         }
         _ => None,
     };
-    if recipient.is_some() {
+    if recipient.is_some() && detail.effects_settled {
         detail.details_complete = true;
         detail.provisional = false;
     }
@@ -1576,14 +1575,18 @@ fn display_accounted_rows(detail: &TransactionDetail) -> Option<&[TransparentRec
     (i128::from(detail.account_balance_delta) == expected).then_some(rows.as_slice())
 }
 
-/// Completes and settles a receive whose transparent details establish it:
-/// its source is known (the shielded pool or an address), everything it shows
-/// is a transparent output, which carries no memo, and the rows account for
-/// its whole effect on the account ([`display_accounted_rows`]).
+/// Completes a settled receive whose transparent details establish it: its
+/// effects are settled ([`TransactionDetail::effects_settled`]), its source is
+/// known (the shielded pool or an address), everything it shows is a
+/// transparent output, which carries no memo, and the rows account for its
+/// whole effect on the account ([`display_accounted_rows`]). The balance
+/// identity is necessary, not sufficient: an unsettled receive stays
+/// provisional however its rows balance.
 fn apply_display_receive_completion(detail: &mut TransactionDetail) {
     let source_known =
         detail.source_pool.as_deref() == Some("shielded") || detail.source_address.is_some();
     if detail.tx_kind == "received"
+        && detail.effects_settled
         && source_known
         && !detail.outputs.is_empty()
         && detail
@@ -1751,6 +1754,11 @@ fn read_transaction_detail(
     });
 
     let pays_others = pays_others(&outputs, uuid_bytes.as_slice());
+    let effects_settled = base.history.effects_settled
+        && base.mined_height.is_some()
+        && !outputs
+            .iter()
+            .any(|output| has_unknown_transparent_scope(output, uuid_bytes.as_slice()));
     let visible_outputs = outputs
         .iter()
         .filter(|output| {
@@ -1803,6 +1811,7 @@ fn read_transaction_detail(
         outputs,
         details_complete: base.history.details_complete,
         provisional: base.history.provisional,
+        effects_settled,
         transparent_details: None,
         account_balance_delta: base.account_balance_delta,
         network_fee: base.history.whole_fee,
@@ -2246,6 +2255,14 @@ fn read_outputs_for_tx(
         .map_err(|e| format!("Row error: {e}"))
 }
 
+/// Whether `output` is an owned transparent output whose key scope the wallet
+/// does not know, so whether it is change or a receipt is unresolved.
+fn has_unknown_transparent_scope(output: &TxOutput, account_uuid: &[u8]) -> bool {
+    output.output_pool == TRANSPARENT_POOL
+        && output.to_account_uuid.as_deref() == Some(account_uuid)
+        && !matches!(output.to_key_scope, Some(-1..=2))
+}
+
 fn summarize_activity_outputs(
     base: &TxBase,
     outputs: &[TxOutput],
@@ -2264,10 +2281,7 @@ fn summarize_activity_outputs(
         let recovered_from_own = output.from_account_uuid.is_none()
             && (base.history.inferred_outgoing.is_some() || recovered_self_transfer);
 
-        if output.output_pool == TRANSPARENT_POOL
-            && to_own
-            && !matches!(output.to_key_scope, Some(-1..=2))
-        {
+        if has_unknown_transparent_scope(output, account_uuid) {
             summary.unknown_transparent_scope = true;
         }
 
@@ -8279,6 +8293,8 @@ mod tests {
                     },
                     details_complete: false,
                     provisional: true,
+                    // Settled, so only the funding omission keeps it open.
+                    effects_settled: true,
                     transparent_details: Some(TransparentDetailsView::Available {
                         rows: vec![TransparentRecipientRow {
                             output_index: 0,
@@ -8329,6 +8345,7 @@ mod tests {
                 outputs: Vec::new(),
                 details_complete: false,
                 provisional: true,
+                effects_settled: true,
                 transparent_details: Some(TransparentDetailsView::Available {
                     rows,
                     output_count: count,
@@ -8440,6 +8457,20 @@ mod tests {
         );
         recorded.primary_address = Some("u-recorded".to_owned());
         assert_eq!(to(recorded).as_deref(), Some("u-recorded"));
+        // The only payee of an unsettled send is named, but the receipt
+        // stays provisional and incomplete: the balance can still change.
+        let mut unsettled = detail(
+            "sent",
+            vec![row(0, "t1payee", 50_000, false)],
+            1,
+            -60_000,
+            Some(10_000),
+        );
+        unsettled.effects_settled = false;
+        apply_display_recipient(&mut unsettled);
+        assert_eq!(unsettled.primary_address.as_deref(), Some("t1payee"));
+        assert!(!unsettled.details_complete);
+        assert!(unsettled.provisional);
         assert_eq!(
             to(detail(
                 "received",
@@ -8482,6 +8513,7 @@ mod tests {
             }],
             details_complete: false,
             provisional: true,
+            effects_settled: true,
             transparent_details: Some(TransparentDetailsView::Available {
                 rows: vec![own(1_000_000)],
                 output_count: 1,
@@ -8490,13 +8522,23 @@ mod tests {
             account_balance_delta: delta,
             fee,
         };
-        let settled = |mut d: TransactionDetail| {
+        // The balance identity is necessary, not sufficient: each receive is
+        // read unsettled and settled, and only a settled one completes.
+        let settled = |make: &dyn Fn() -> TransactionDetail| {
+            let mut unsettled = make();
+            unsettled.effects_settled = false;
+            apply_display_receive_completion(&mut unsettled);
+            assert!(
+                !unsettled.details_complete && unsettled.provisional,
+                "an unsettled receive stays provisional"
+            );
+            let mut d = make();
             apply_display_receive_completion(&mut d);
             assert_eq!(d.details_complete, !d.provisional);
             d.details_complete
         };
         // The receive leg of an unshielding to the account's own address.
-        assert!(settled(receive(
+        assert!(settled(&|| receive(
             Some("shielded"),
             None,
             "transparent",
@@ -8504,7 +8546,7 @@ mod tests {
             Some(15_000)
         )));
         // A receive from another wallet's address, the account paying nothing.
-        assert!(settled(receive(
+        assert!(settled(&|| receive(
             Some("transparent"),
             Some("t1funder"),
             "transparent",
@@ -8513,21 +8555,21 @@ mod tests {
         )));
         // An owned effect the rows do not show, an unknown source, a shielded
         // output (its memo is unknown privately).
-        assert!(!settled(receive(
+        assert!(!settled(&|| receive(
             Some("transparent"),
             Some("t1funder"),
             "transparent",
             1_500_000,
             None
         )));
-        assert!(!settled(receive(
+        assert!(!settled(&|| receive(
             Some("unknown"),
             None,
             "transparent",
             1_000_000,
             None
         )));
-        assert!(!settled(receive(
+        assert!(!settled(&|| receive(
             Some("shielded"),
             None,
             "orchard",
@@ -8550,6 +8592,7 @@ mod tests {
             outputs: Vec::new(),
             details_complete: false,
             provisional: false,
+            effects_settled: false,
             transparent_details: None,
             account_balance_delta: 0,
             fee: None,
