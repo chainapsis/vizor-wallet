@@ -3,8 +3,8 @@
   "profiles": [
     {
       "id": "zakura-direct-height1",
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "zakura-direct-activation500",
@@ -36,8 +36,8 @@
         "smoke"
       ],
       "timeout_seconds": 600,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "rust.send.second-account",
@@ -52,8 +52,8 @@
         "multi-account"
       ],
       "timeout_seconds": 600,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "rust.receive.sync",
@@ -68,8 +68,8 @@
         "smoke"
       ],
       "timeout_seconds": 600,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "rust.receive.direct-zakura",
@@ -120,8 +120,8 @@
         "smoke"
       ],
       "timeout_seconds": 600,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "rust.import.historical-birthday",
@@ -136,8 +136,8 @@
         "birthday"
       ],
       "timeout_seconds": 600,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "rust.import.future-birthday",
@@ -152,8 +152,8 @@
         "birthday"
       ],
       "timeout_seconds": 600,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "rust.import.receive-after-sync",
@@ -168,8 +168,8 @@
         "receive"
       ],
       "timeout_seconds": 600,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "rust.import.deterministic-reimport",
@@ -184,8 +184,8 @@
         "recovery"
       ],
       "timeout_seconds": 600,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "rust.multi-account.orphaned-range",

@@ -56,6 +56,7 @@ class FunderBuildTests(unittest.TestCase):
         self.compiler_entry = self.compiler
         self.rustup = None
         self.hard_link_output = False
+        self.test_candidate_mode = "original"
 
     def git(self, *args):
         return subprocess.run(["git", "-C", str(self.source), *args], check=True,
@@ -112,6 +113,20 @@ class FunderBuildTests(unittest.TestCase):
             if self.mutate_source:
                 script += f"s=Path({str(source_file)!r}); s.chmod(0o600); s.write_text('changed'); "
             finished = {"reason": "build-finished", "success": self.completed}
+            for index, argument in enumerate(arguments):
+                if argument != "--test":
+                    continue
+                name = arguments[index + 1]
+                test_binary = target / ("debug/deps/" + name + "-modeled")
+                test_message = {"reason": "compiler-artifact", "executable": str(test_binary),
+                    "target": {"name": name, "kind": ["test"], "src_path": str(manifest.parent / f"tests/{name}.rs")},
+                    "profile": {"test": self.test_candidate_mode != "wrong-profile"}}
+                if self.test_candidate_mode == "wrong-source":
+                    test_message["target"]["src_path"] = str(self.source / f"rust/tests/{name}.rs")
+                script += (f"t=Path({str(test_binary)!r}); t.parent.mkdir(mode=0o700,parents=True,exist_ok=True); "
+                    "t.write_text('modeled-test-output'); t.chmod(0o700); ")
+                if self.test_candidate_mode != "missing":
+                    script += f"print(json.dumps({test_message!r})); "
             script += ("print('Compiling modeled transport', file=sys.stderr); "
                 f"print(json.dumps({message!r})); "
                 f"print(json.dumps({finished!r})); "
@@ -141,6 +156,42 @@ class FunderBuildTests(unittest.TestCase):
         evidence = artifact.identity()
         evidence["rust_blobs"].clear()
         self.assertEqual(len(artifact.identity()["rust_blobs"]), 3)
+
+    def add_test_sources(self):
+        for name in ("regtest_receive_sync", "regtest_send"):
+            path = self.source / f"rust/tests/{name}.rs"
+            path.parent.mkdir(mode=0o700, exist_ok=True)
+            path.write_text("#[test] fn model() {}\n")
+        self.git("add", "rust")
+        self.git("commit", "-qm", "modeled tests")
+        self.commit = self.git("rev-parse", "HEAD").strip()
+
+    def test_selected_test_binaries_share_one_joined_producer_and_detect_mutation(self):
+        self.add_test_sources()
+        artifact = self.build(test_targets=("regtest_receive_sync", "regtest_send"))
+        self.assertEqual(self.compile_calls, 1)
+        self.assertEqual(set(artifact.identity()["test_binaries"]), {"regtest_receive_sync", "regtest_send"})
+        test = artifact.test_binary("regtest_send")
+        self.assertEqual(test.stat().st_mode & 0o777, 0o500)
+        with self.assertRaises(BUILD.FunderBuildError):
+            artifact.test_binary("regtest_missing")
+        test.chmod(0o700)
+        test.write_text("changed")
+        with self.assertRaises(BUILD.FunderBuildError):
+            artifact.verify_unchanged()
+
+    def test_missing_wrong_profile_or_wrong_source_test_output_never_publishes(self):
+        self.add_test_sources()
+        for mode in ("missing", "wrong-profile", "wrong-source"):
+            self.test_candidate_mode = mode
+            with self.subTest(mode=mode), self.assertRaises(BUILD.FunderBuildError):
+                self.build(test_targets=("regtest_send",))
+
+    def test_invalid_or_uncommitted_test_targets_fail_before_cargo(self):
+        for targets in (["regtest_send"], ("../outside",), ("regtest_send", "regtest_send"), ("regtest_missing",)):
+            with self.subTest(targets=targets), self.assertRaises(BUILD.FunderBuildError):
+                self.build(test_targets=targets)
+        self.assertEqual(self.compile_calls, 0)
 
     def test_invalid_timeout_jobs_commit_or_nonfresh_case_never_launches_compiler(self):
         for update in ({"jobs": True}, {"jobs": 0}, {"jobs": 9}):

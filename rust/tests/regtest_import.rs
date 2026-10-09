@@ -6,13 +6,60 @@ use common::{
     import_wallet_with_passphrase_and_birthday, list_accounts, mine_blocks, positive_history_count,
     sync_wallet,
 };
+use zcash_keys::keys::{ReceiverRequirement, UnifiedAddressRequest, UnifiedSpendingKey};
+use zcash_protocol::consensus::{BlockHeight, NetworkType, NetworkUpgrade, Parameters};
 
 const BIP39_VECTOR_MNEMONIC: &str =
     "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 const BIP39_VECTOR_PASSPHRASE: &str = "TREZOR";
 const BIP39_VECTOR_REGTEST_UA: &str =
     "uregtest1ykjd398elks624qyz0d0vffn6vpqkl6atp2wsr9795eql4kw47hwlffxyyfakv0l2twj635fpmxmeu3tzyrfhf5s9eg9ea8gsa0srdfwjudp3fs0qaaqxvkxr364a8vjy3y9vglm7lf8rs0vsev9p5mzky52rq4wkr5lhc842vuf5lhn";
+const BIP39_VECTOR_REGTEST_ORCHARD_UA: &str =
+    "uregtest1fvrf9h4dlxpa0yfthy844kut60f06uh7u4kmf0flmh62g4zkqxcaahpjzdq76gjj4tkxsg3j4uqq7un3qpla26ev2rlrlt5r4ua6zfd3";
 const BIP39_VECTOR_REGTEST_TADDR: &str = "tmPTcChwqcza88W1mydzwkZ25C9qQm3ugiM";
+
+#[derive(Clone, Copy)]
+struct HeightOneRegtest;
+
+impl Parameters for HeightOneRegtest {
+    fn network_type(&self) -> NetworkType {
+        NetworkType::Regtest
+    }
+
+    fn activation_height(&self, upgrade: NetworkUpgrade) -> Option<BlockHeight> {
+        (upgrade != NetworkUpgrade::Nu7).then(|| BlockHeight::from_u32(1))
+    }
+}
+
+#[test]
+fn public_bip39_vector_derives_current_and_legacy_address_goldens() {
+    let network = HeightOneRegtest;
+    let mnemonic =
+        bip0039::Mnemonic::<bip0039::English>::from_phrase(BIP39_VECTOR_MNEMONIC).unwrap();
+    let ufvk = UnifiedSpendingKey::from_seed(
+        &network,
+        &mnemonic.to_seed(BIP39_VECTOR_PASSPHRASE),
+        zip32::AccountId::ZERO,
+    )
+    .unwrap()
+    .to_unified_full_viewing_key();
+    for (sapling, expected) in [
+        (ReceiverRequirement::Omit, BIP39_VECTOR_REGTEST_ORCHARD_UA),
+        (ReceiverRequirement::Require, BIP39_VECTOR_REGTEST_UA),
+    ] {
+        let request = UnifiedAddressRequest::custom(
+            ReceiverRequirement::Require,
+            sapling,
+            ReceiverRequirement::Omit,
+        )
+        .unwrap();
+        let (address, _) = ufvk.default_address(request).unwrap();
+        assert_eq!(address.encode(&network), expected);
+    }
+    // Requiring Sapling may select a different diversifier. Derive both from
+    // the public SDK UFVK rather than assuming identical receiver bytes or
+    // using the production import function as its own address oracle.
+}
 
 #[test]
 #[ignore = "requires Dockerized zcashd/lightwalletd regtest services"]
@@ -35,7 +82,10 @@ fn bip39_passphrase_import_recovers_funds_sent_to_independently_derived_address(
     );
     let imported_db = imported_dir.path().join("zcash_wallet.db");
 
-    assert_eq!(imported_wallet.unified_address, BIP39_VECTOR_REGTEST_UA);
+    assert_eq!(
+        imported_wallet.unified_address,
+        BIP39_VECTOR_REGTEST_ORCHARD_UA
+    );
     let transparent_address = rust_lib_zcash_wallet::api::wallet::get_transparent_receive_address(
         imported_db.to_str().unwrap().to_string(),
         "regtest".to_string(),

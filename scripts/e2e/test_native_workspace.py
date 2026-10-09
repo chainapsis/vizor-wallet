@@ -68,6 +68,20 @@ class NativeWorkspaceTests(unittest.TestCase):
             self.assertEqual(stat.S_IMODE(file.stat().st_mode), 0o600)
         workspace.verify_owned()
 
+    def test_rust_cases_use_the_same_sealed_manifest_without_app_storage(self):
+        workspace = self.make(platform="rust", scenario_id="rust.multi-account.idempotent-sync")
+        manifest = json.loads(workspace.launch_environment()["VIZOR_E2E_CASE_MANIFEST"])
+        self.assertEqual(manifest["scenario_id"], "rust.multi-account.idempotent-sync")
+        self.assertEqual(manifest["context_path"], str(workspace.root / "native-context.json"))
+        self.assertFalse(Path(manifest["context_path"]).exists())
+        workspace.verify_owned()
+
+    def test_rust_engine_rejects_flutter_or_traversal_scenarios_before_writes(self):
+        for name in ("flutter.macos.contract-probe", "rust..receive", "rust.a/../b"):
+            with self.subTest(scenario=name), self.assertRaises(WORKSPACE.NativeWorkspaceError):
+                self.make(platform="rust", scenario_id=name)
+        self.assertFalse((self.run_root / "e2e").exists())
+
     def test_ios_uses_app_support_context_without_inventing_a_host_receipt(self):
         workspace = self.make(platform="ios", scenario_id="flutter.ios.contract-probe")
         manifest = json.loads(workspace.launch_environment()["VIZOR_E2E_CASE_MANIFEST"])

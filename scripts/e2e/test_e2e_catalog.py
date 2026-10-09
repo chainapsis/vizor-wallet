@@ -51,12 +51,16 @@ class E2eCatalogTest(unittest.TestCase):
         )
         self.assertEqual(64, len(self.catalog.fingerprint))
         self.assertEqual({item.id for item in self.catalog.profiles if item.supported},
-                         {"flutter-direct-height1"})
+                         {"flutter-direct-height1", "zakura-direct-height1"})
         self.assertEqual({item.id for item in self.catalog.scenarios if item.supported},
                          {"flutter.macos.import-sync", "flutter.macos.fallback-endpoint",
                           "flutter.macos.custom-endpoint-no-fallback",
                           "flutter.macos.slow-height-fallback",
-                          "flutter.macos.sync-startup-stall-recovery"})
+                          "flutter.macos.sync-startup-stall-recovery",
+                          "rust.receive.sync", "rust.send.basic", "rust.send.second-account",
+                          "rust.import.bip39-passphrase", "rust.import.historical-birthday",
+                          "rust.import.future-birthday", "rust.import.receive-after-sync",
+                          "rust.import.deterministic-reimport"})
         self.assertTrue(all(item.pending_reason for item in self.catalog.profiles if not item.supported))
         self.assertTrue(all(item.pending_reason for item in self.catalog.scenarios if not item.supported))
         self.assertEqual(
@@ -107,7 +111,7 @@ class E2eCatalogTest(unittest.TestCase):
         preview = catalog_module.plan(self.catalog, (second, first, second))
         self.assertEqual((first.id, second.id), tuple(item.id for item in preview.selected))
         self.assertFalse(preview.runnable)
-        self.assertEqual(2, len(preview.blockers))
+        self.assertEqual(1, len(preview.blockers))
         self.assertEqual(
             tuple(dict.fromkeys(item.profile for item in preview.selected)),
             preview.required_profiles,
@@ -225,12 +229,14 @@ class E2eCatalogTest(unittest.TestCase):
         with self.assertRaisesRegex(catalog_module.CatalogError, "unreferenced"):
             catalog_module.load_catalog(self.write_catalog(raw))
         raw = self.raw_catalog()
-        raw["profiles"][0]["pending_reason"] = None
+        raw["profiles"][1]["pending_reason"] = None
         with self.assertRaisesRegex(catalog_module.CatalogError, "requires pending_reason"):
             catalog_module.load_catalog(self.write_catalog(raw))
         raw = self.raw_catalog()
         raw["scenarios"][0]["supported"] = True
         raw["scenarios"][0]["pending_reason"] = None
+        raw["profiles"][0]["supported"] = False
+        raw["profiles"][0]["pending_reason"] = "missing backend"
         with self.assertRaisesRegex(catalog_module.CatalogError, "unsupported"):
             catalog_module.load_catalog(self.write_catalog(raw))
 

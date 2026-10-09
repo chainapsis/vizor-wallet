@@ -144,8 +144,8 @@ def run(args: argparse.Namespace) -> int:
         if not plan.runnable:
             raise e2e_catalog.CatalogError("selected execution is pending: " + "; ".join(plan.blockers))
         # Keep all backend/platform imports out of side-effect-free previews.
-        from native_macos_suite import run_native_macos_suite
-        return run_native_macos_suite(args,catalog,scenarios,selection,source_root=REPO_ROOT)
+        from native_macos_suite import run_native_suite
+        return run_native_suite(args,catalog,scenarios,selection,source_root=REPO_ROOT)
     if args.list:
         record = {
             "catalog_sha256": catalog.fingerprint,
