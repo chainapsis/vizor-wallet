@@ -6,11 +6,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/sync_keep_awake_native_host.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
+import 'package:zcash_wallet/src/providers/sync_keep_awake_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/services/native_screen_awake.dart';
 
@@ -196,6 +198,111 @@ void main() {
     await _drainNativeQueue(tester);
 
     expect(calls, isEmpty);
+  });
+
+  for (final initialLifecycle in [
+    AppLifecycleState.resumed,
+    AppLifecycleState.inactive,
+  ]) {
+    testWidgets('observes setting toggles after mounting $initialLifecycle', (
+      tester,
+    ) async {
+      FlutterSecureStorage.setMockInitialValues({});
+      final calls = _recordScreenAwakeCalls();
+      final syncNotifier = FakeSyncNotifier(
+        _sync(lastSyncStartedAt: DateTime(2026, 7, 9, 12)),
+      );
+      tester.binding.handleAppLifecycleStateChanged(initialLifecycle);
+      await tester.pumpWidget(
+        _app(syncNotifier: syncNotifier, syncKeepAwakeEnabled: false),
+      );
+      await _drainNativeQueue(tester);
+      expect(calls, isEmpty);
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await _drainNativeQueue(tester);
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(SyncKeepAwakeNativeHost)),
+      );
+
+      await container.read(syncKeepAwakeProvider.notifier).setEnabled(true);
+      await _drainNativeQueue(tester);
+      expect(container.read(syncKeepAwakeProvider).enabled, isTrue);
+      expect(container.read(syncKeepAwakeActiveProvider), isTrue);
+      expect(_enabledArgs(calls), [true]);
+
+      await container.read(syncKeepAwakeProvider.notifier).setEnabled(false);
+      await _drainNativeQueue(tester);
+      expect(_enabledArgs(calls), [true, false]);
+    });
+  }
+
+  testWidgets('observes sync restarts after an inactive rebuild', (
+    tester,
+  ) async {
+    final calls = _recordScreenAwakeCalls();
+    final startedAt = DateTime(2026, 7, 9, 12);
+    final syncNotifier = FakeSyncNotifier(_sync(lastSyncStartedAt: startedAt));
+    await tester.pumpWidget(_app(syncNotifier: syncNotifier));
+    await _drainNativeQueue(tester);
+    expect(_enabledArgs(calls), [true]);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await _drainNativeQueue(tester);
+    expect(_enabledArgs(calls), [true, false]);
+
+    // Changing eligibility forces the host to rebuild while not foreground.
+    syncNotifier.emit(_sync(isSyncing: false, lastSyncStartedAt: startedAt));
+    await _drainNativeQueue(tester);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await _drainNativeQueue(tester);
+    expect(_enabledArgs(calls), [true, false]);
+
+    syncNotifier.emit(
+      _sync(lastSyncStartedAt: startedAt.add(const Duration(minutes: 1))),
+    );
+    await _drainNativeQueue(tester);
+    expect(_enabledArgs(calls), [true, false, true]);
+
+    syncNotifier.emit(_sync(isSyncing: false, lastSyncStartedAt: startedAt));
+    await _drainNativeQueue(tester);
+    expect(_enabledArgs(calls), [true, false, true, false]);
+  });
+
+  testWidgets('enabling the setting in background waits for resume', (
+    tester,
+  ) async {
+    FlutterSecureStorage.setMockInitialValues({});
+    final calls = _recordScreenAwakeCalls();
+    final syncNotifier = FakeSyncNotifier(
+      _sync(lastSyncStartedAt: DateTime(2026, 7, 9, 12)),
+    );
+    await tester.pumpWidget(
+      _app(syncNotifier: syncNotifier, syncKeepAwakeEnabled: false),
+    );
+    await _drainNativeQueue(tester);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SyncKeepAwakeNativeHost)),
+    );
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    await _drainNativeQueue(tester);
+
+    await container.read(syncKeepAwakeProvider.notifier).setEnabled(true);
+    await _drainNativeQueue(tester);
+    expect(container.read(syncKeepAwakeActiveProvider), isTrue);
+    expect(calls, isEmpty);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await _drainNativeQueue(tester);
+    expect(_enabledArgs(calls), [true]);
+
+    await container.read(syncKeepAwakeProvider.notifier).setEnabled(false);
+    await _drainNativeQueue(tester);
+    expect(_enabledArgs(calls), [true, false]);
   });
 
   testWidgets('disables native keep-awake when the host is disposed', (
