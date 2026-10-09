@@ -865,6 +865,7 @@ async fn an_activated_wallet_discloses_nothing_through_any_lane_including_the_pi
     let source = TransparentPirSource::new(&path, MAIN);
     let mut followup_db = open_wallet_db_with_timeout(&path, MAIN, SYNC_DB_BUSY_TIMEOUT).unwrap();
     transparent_followup(
+        1,
         &mut followup_db,
         &path,
         MAIN,
@@ -1110,6 +1111,7 @@ async fn a_flag_build_discloses_nothing_before_it_raises_the_wallet() {
     let progress = |event: SyncProgressEvent| events.lock().unwrap().push(event);
     let source = TransparentPirSource::new(&path, MAIN);
     transparent_followup(
+        1,
         &mut db,
         &path,
         MAIN,

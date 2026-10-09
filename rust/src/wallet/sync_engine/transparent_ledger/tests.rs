@@ -1795,6 +1795,7 @@ async fn the_followup_reemits_completion_after_recovery() {
     let completed = (u64::from(TIP), u64::from(TIP) + 1);
 
     transparent_followup(
+        1,
         &mut wallet.db,
         &wallet.path,
         NETWORK,
@@ -1826,6 +1827,7 @@ async fn the_followup_reemits_completion_after_recovery() {
         (required(), true),
     ] {
         transparent_followup(
+            1,
             &mut wallet.db,
             &wallet.path,
             NETWORK,
@@ -1840,6 +1842,62 @@ async fn the_followup_reemits_completion_after_recovery() {
     }
     assert_eq!(events.lock().unwrap().len(), 1);
     assert_eq!(source.calls(), calls);
+}
+
+#[tokio::test]
+async fn a_background_sync_skips_the_recovery_followup() {
+    use crate::wallet::sync_engine::{runs_transparent_followup, transparent_followup};
+
+    assert!(runs_transparent_followup(1));
+    assert!(!runs_transparent_followup(2));
+
+    let mut wallet = wallet();
+    let _mode = activate(&mut wallet).await;
+    let source = funded_source(&wallet);
+    let events = std::sync::Mutex::new(Vec::<SyncProgressEvent>::new());
+    let progress = |event: SyncProgressEvent| events.lock().unwrap().push(event);
+    let completed = (u64::from(TIP), u64::from(TIP) + 1);
+    let before = balance(&wallet, &wallet.uuid).transparent_authority;
+
+    // Background preparation (mode 2): no source call, no re-report, and the
+    // ledger is left for the next foreground sync.
+    transparent_followup(
+        2,
+        &mut wallet.db,
+        &wallet.path,
+        NETWORK,
+        required(),
+        &source,
+        Some(wallet.account),
+        &|| false,
+        &progress,
+        completed,
+    )
+    .await;
+    assert_eq!(source.calls(), 0);
+    assert!(events.lock().unwrap().is_empty());
+    assert_eq!(balance(&wallet, &wallet.uuid).transparent_authority, before);
+
+    // The same wallet recovers in the foreground.
+    transparent_followup(
+        1,
+        &mut wallet.db,
+        &wallet.path,
+        NETWORK,
+        required(),
+        &source,
+        Some(wallet.account),
+        &|| false,
+        &progress,
+        completed,
+    )
+    .await;
+    assert!(source.calls() > 0);
+    assert_eq!(events.lock().unwrap().len(), 1);
+    assert_eq!(
+        balance(&wallet, &wallet.uuid).transparent_authority,
+        TransparentBalanceAuthority::Current
+    );
 }
 
 mod activation;

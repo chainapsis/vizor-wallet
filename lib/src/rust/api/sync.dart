@@ -9,6 +9,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `api_proposal_result`, `catch`, `enhance_pir_enabled`, `fetch_block_time`, `migration_status_from_balance`, `parse_network_and_migrate`, `payment_link_batch_pairs`, `run_full_sync_internal`, `to_wallet_action_sigs`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `MempoolObserverState`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `eq`, `eq`, `fmt`, `fmt`, `from`
 
 /// Set the desired sync mode. 0=none, 1=foreground, 2=background.
 /// The running sync loop checks this each batch and exits if mismatched.
@@ -38,12 +39,12 @@ void setEnhancePirPreferenceConfirmed({required bool confirmed}) => RustLib
 
 /// Reconcile the wallet's durable transparent policy with the private queries
 /// setting. `true` raises it to private recovery when this build selects that
-/// mode; `false` lowers it to public in every build. Returns whether the
-/// policy changed, so a rollback restores only what it changed. Waits up to
-/// 30 s for public lookups already in flight, and changes nothing on failure.
-/// A missing wallet is left alone. It never confirms the setting: callers do
-/// that only for a value read from storage.
-Future<bool> reconcileTransparentPolicy({
+/// mode; `false` lowers it to public in every build. Returns the policy this
+/// call applied, mode and generation, or `None` when nothing needed to change.
+/// Waits up to 30 s for public lookups already in flight, and changes nothing
+/// on failure. A missing wallet is left alone and never created. It never
+/// confirms the setting: callers do that only for a value read from storage.
+Future<ApiAppliedTransparentPolicy?> reconcileTransparentPolicy({
   required String dbPath,
   required String network,
   required bool privateQueries,
@@ -1348,6 +1349,31 @@ class AddressValidationResult {
           wrongNetwork == other.wrongNetwork;
 }
 
+/// The durable transparent policy a reconciliation applied.
+class ApiAppliedTransparentPolicy {
+  final ApiTransparentLedgerMode mode;
+
+  /// Advances on every mode transition. Anything read under an earlier
+  /// generation was authorized by a policy that no longer holds.
+  final BigInt generation;
+
+  const ApiAppliedTransparentPolicy({
+    required this.mode,
+    required this.generation,
+  });
+
+  @override
+  int get hashCode => mode.hashCode ^ generation.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiAppliedTransparentPolicy &&
+          runtimeType == other.runtimeType &&
+          mode == other.mode &&
+          generation == other.generation;
+}
+
 /// Independent single-funding Gift Card preparation / post-submit observation.
 class ApiGiftCardCheckProgress {
   final String phase;
@@ -1503,6 +1529,18 @@ class ApiSyncProgressEvent {
           phaseCompletedUnits == other.phaseCompletedUnits &&
           phaseTotalUnits == other.phaseTotalUnits &&
           phase == other.phase;
+}
+
+/// A wallet's durable transparent ledger mode.
+enum ApiTransparentLedgerMode {
+  /// Public transparent lookups are authoritative.
+  public,
+
+  /// Public lookups stay authoritative while private recovery qualifies.
+  privateShadow,
+
+  /// Public transparent lookups are forbidden.
+  privateRequired,
 }
 
 class BlockMetaInfo {

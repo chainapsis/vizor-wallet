@@ -10172,6 +10172,18 @@ impl SseDecode for crate::api::sync::AddressValidationResult {
     }
 }
 
+impl SseDecode for crate::api::sync::ApiAppliedTransparentPolicy {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_mode = <crate::api::sync::ApiTransparentLedgerMode>::sse_decode(deserializer);
+        let mut var_generation = <u64>::sse_decode(deserializer);
+        return crate::api::sync::ApiAppliedTransparentPolicy {
+            mode: var_mode,
+            generation: var_generation,
+        };
+    }
+}
+
 impl SseDecode for crate::api::voting_session::ApiBallotIntent {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -10602,6 +10614,19 @@ impl SseDecode for crate::api::sync::ApiSyncProgressEvent {
             phase_completed_units: var_phaseCompletedUnits,
             phase_total_units: var_phaseTotalUnits,
             phase: var_phase,
+        };
+    }
+}
+
+impl SseDecode for crate::api::sync::ApiTransparentLedgerMode {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::sync::ApiTransparentLedgerMode::Public,
+            1 => crate::api::sync::ApiTransparentLedgerMode::PrivateShadow,
+            2 => crate::api::sync::ApiTransparentLedgerMode::PrivateRequired,
+            _ => unreachable!("Invalid variant for ApiTransparentLedgerMode: {}", inner),
         };
     }
 }
@@ -12766,6 +12791,19 @@ impl SseDecode for Option<String> {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         if (<bool>::sse_decode(deserializer)) {
             return Some(<String>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<crate::api::sync::ApiAppliedTransparentPolicy> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::sync::ApiAppliedTransparentPolicy>::sse_decode(
+                deserializer,
+            ));
         } else {
             return None;
         }
@@ -15359,6 +15397,27 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::sync::AddressValidationResult
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::sync::ApiAppliedTransparentPolicy {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.mode.into_into_dart().into_dart(),
+            self.generation.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::sync::ApiAppliedTransparentPolicy
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::sync::ApiAppliedTransparentPolicy>
+    for crate::api::sync::ApiAppliedTransparentPolicy
+{
+    fn into_into_dart(self) -> crate::api::sync::ApiAppliedTransparentPolicy {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::voting_session::ApiBallotIntent {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -15951,6 +16010,28 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::sync::ApiSyncProgressEvent>
     for crate::api::sync::ApiSyncProgressEvent
 {
     fn into_into_dart(self) -> crate::api::sync::ApiSyncProgressEvent {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::sync::ApiTransparentLedgerMode {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Public => 0.into_dart(),
+            Self::PrivateShadow => 1.into_dart(),
+            Self::PrivateRequired => 2.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::sync::ApiTransparentLedgerMode
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::sync::ApiTransparentLedgerMode>
+    for crate::api::sync::ApiTransparentLedgerMode
+{
+    fn into_into_dart(self) -> crate::api::sync::ApiTransparentLedgerMode {
         self
     }
 }
@@ -19961,6 +20042,14 @@ impl SseEncode for crate::api::sync::AddressValidationResult {
     }
 }
 
+impl SseEncode for crate::api::sync::ApiAppliedTransparentPolicy {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::api::sync::ApiTransparentLedgerMode>::sse_encode(self.mode, serializer);
+        <u64>::sse_encode(self.generation, serializer);
+    }
+}
+
 impl SseEncode for crate::api::voting_session::ApiBallotIntent {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -20247,6 +20336,23 @@ impl SseEncode for crate::api::sync::ApiSyncProgressEvent {
         <u64>::sse_encode(self.phase_completed_units, serializer);
         <u64>::sse_encode(self.phase_total_units, serializer);
         <String>::sse_encode(self.phase, serializer);
+    }
+}
+
+impl SseEncode for crate::api::sync::ApiTransparentLedgerMode {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::sync::ApiTransparentLedgerMode::Public => 0,
+                crate::api::sync::ApiTransparentLedgerMode::PrivateShadow => 1,
+                crate::api::sync::ApiTransparentLedgerMode::PrivateRequired => 2,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
     }
 }
 
@@ -21853,6 +21959,16 @@ impl SseEncode for Option<String> {
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <String>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<crate::api::sync::ApiAppliedTransparentPolicy> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::sync::ApiAppliedTransparentPolicy>::sse_encode(value, serializer);
         }
     }
 }

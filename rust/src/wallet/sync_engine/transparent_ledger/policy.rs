@@ -23,7 +23,7 @@ use zcash_client_backend::data_api::transparent_ledger::{
 use super::super::enhancement::select_transparent_mode;
 use super::super::lwd::transparent_lookup::apply_transparent_policy_fenced_if;
 use super::super::{SyncError, WalletDatabase};
-use crate::wallet::db::{open_wallet_db_with_timeout, WALLET_DB_BUSY_TIMEOUT};
+use crate::wallet::db::{open_existing_wallet_db_with_timeout, WALLET_DB_BUSY_TIMEOUT};
 use crate::wallet::network::WalletNetwork;
 
 /// How long a transition waits for public lookups in flight before failing
@@ -62,11 +62,9 @@ pub(crate) async fn set_transparent_policy(
     } else {
         return Ok(None);
     };
-    if !Path::new(db_path).exists() {
+    let Some(mut db) = open_policy_wallet(db_path, network)? else {
         return Ok(None);
-    }
-    let mut db = open_wallet_db_with_timeout(db_path, network, WALLET_DB_BUSY_TIMEOUT)
-        .map_err(SyncError::db)?;
+    };
     // This handle only reads and applies the policy. The strictest mode reads
     // any durable policy, including one a raise commits after this open.
     db.set_transparent_ledger_mode(TransparentLedgerMode::PrivateRequired);
@@ -79,6 +77,25 @@ pub(crate) async fn set_transparent_policy(
         log::info!("transparent policy: applied {:?}", applied.mode);
     }
     Ok(applied)
+}
+
+/// Opens the wallet at `db_path` for a policy transition without ever
+/// creating one: a wallet reset may delete the file between any check and the
+/// open, and a transition must not leave an empty database in its place.
+/// Returns `None` when there is no wallet at `db_path`.
+pub(crate) fn open_policy_wallet(
+    db_path: &str,
+    network: WalletNetwork,
+) -> Result<Option<WalletDatabase>, SyncError> {
+    if !Path::new(db_path).exists() {
+        return Ok(None);
+    }
+    match open_existing_wallet_db_with_timeout(db_path, network, WALLET_DB_BUSY_TIMEOUT) {
+        Ok(db) => Ok(Some(db)),
+        // Deleted after the check: still no wallet, and nothing was created.
+        Err(_) if !Path::new(db_path).exists() => Ok(None),
+        Err(error) => Err(SyncError::db(error)),
+    }
 }
 
 /// Raises the wallet behind `db` to `PrivateRequired` when its durable policy

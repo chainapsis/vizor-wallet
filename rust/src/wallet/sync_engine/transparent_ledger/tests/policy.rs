@@ -329,14 +329,61 @@ fn reconcile_without_a_wallet_creates_nothing() {
     // The bridge entry point reports no change. With `true` it selects from
     // the process-wide flag, which no test sets.
     for private_queries in [true, false] {
-        assert!(!crate::api::sync::reconcile_transparent_policy(
-            path.clone(),
-            "main".into(),
-            private_queries
-        )
-        .unwrap());
+        assert_eq!(
+            crate::api::sync::reconcile_transparent_policy(
+                path.clone(),
+                "main".into(),
+                private_queries
+            )
+            .unwrap(),
+            None
+        );
     }
     assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+}
+
+#[test]
+fn the_policy_opener_never_creates_a_wallet() {
+    use super::super::policy::open_policy_wallet;
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("wallet.db").to_str().unwrap().to_owned();
+    assert!(open_policy_wallet(&path, MAIN).unwrap().is_none());
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+    // An existing wallet opens.
+    let (_wallet_dir, wallet_path, _db) = main_wallet();
+    assert!(open_policy_wallet(&wallet_path, MAIN).unwrap().is_some());
+}
+
+#[tokio::test]
+async fn the_bridge_reports_the_applied_policy_and_generation() {
+    use crate::api::sync::{ApiAppliedTransparentPolicy, ApiTransparentLedgerMode};
+
+    let (_dir, path, _db) = main_wallet();
+    apply_on(&path, MAIN, TransparentLedgerMode::PrivateRequired);
+    let before = applied(&path, MAIN);
+    let lowered = tokio::task::spawn_blocking({
+        let path = path.clone();
+        move || crate::api::sync::reconcile_transparent_policy(path, "main".into(), false)
+    })
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        lowered,
+        Some(ApiAppliedTransparentPolicy {
+            mode: ApiTransparentLedgerMode::Public,
+            generation: before.generation + 1,
+        })
+    );
+    // Already public: nothing applied.
+    let again = tokio::task::spawn_blocking(move || {
+        crate::api::sync::reconcile_transparent_policy(path, "main".into(), false)
+    })
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(again, None);
 }
 
 /// The fence itself, including giving up after the drain bound, is covered
@@ -415,6 +462,7 @@ async fn a_default_build_with_the_setting_on_writes_nothing_and_sends_nothing() 
     let events = std::sync::Mutex::new(Vec::<SyncProgressEvent>::new());
     let progress = |event: SyncProgressEvent| events.lock().unwrap().push(event);
     transparent_followup(
+        1,
         &mut db,
         &path,
         MAIN,

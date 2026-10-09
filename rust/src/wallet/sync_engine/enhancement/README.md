@@ -455,11 +455,13 @@ until an account is promoted.
   read from storage, rechecked under the fence. An unreadable preference or a
   concurrent toggle-off raises nothing, and a private handle on a durably
   `Public` wallet that it may not raise does not start.
-- **Scheduling.** `transparent_followup` runs once per completed sync, after
-  `mark_sync_completed` and the final progress event and before the deferred
-  inactive-account UTXO refresh, so waiting for a publication never delays the
-  sync's result. Unless the run exited or was not enabled, it reports
-  completion again, flagged with new transactions, so the UI re-reads balances
+- **Scheduling.** `transparent_followup` runs once per completed foreground
+  sync, after `mark_sync_completed` and the final progress event and before
+  the deferred inactive-account UTXO refresh, so waiting for a publication
+  never delays the sync's result. Background preparation syncs (mode 2) skip
+  it: they hold the global sync guard, and a foreground sync requested
+  meanwhile waits behind them. Unless the run exited or was not enabled, it
+  reports completion again, flagged with new transactions, so the UI re-reads balances
   and shielding state. Its errors are logged and never fail the sync. It does
   not touch UTXO refresh, the `.receive.redb` cache, or the shielded
   checkpoints. While public lookups are withheld, Ledger discovery counts as

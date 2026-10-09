@@ -4627,10 +4627,12 @@ async fn run_sync_impl(
 
     // Private transparent recovery runs once completion is reported, so
     // waiting for a lagging publication never delays the sync's own result.
+    // Background preparation syncs skip it; see [`transparent_followup`].
     if !should_exit() {
         let first = current_active_sync_account(active_account_target)
             .and_then(|uuid| keys::parse_account_uuid(&uuid).ok());
         transparent_followup(
+            running_mode,
             &mut db,
             db_data_path,
             network,
@@ -4819,8 +4821,13 @@ async fn run_sync_impl(
 /// errors and outcomes are only logged. A default build captures `Public`, so
 /// the run returns before any read, and nothing is re-reported; nor is it when
 /// the run exited.
+///
+/// A background preparation sync (`running_mode` 2) skips the run entirely:
+/// it holds the global sync guard, so a foreground sync requested meanwhile
+/// waits behind it, and recovery runs on the next foreground sync instead.
 #[allow(clippy::too_many_arguments)]
 async fn transparent_followup<S: transparent_ledger::RecoverySource>(
+    running_mode: u8,
     db: &mut WalletDatabase,
     db_data_path: &str,
     network: WalletNetwork,
@@ -4831,6 +4838,9 @@ async fn transparent_followup<S: transparent_ledger::RecoverySource>(
     progress_fn: &(impl Fn(SyncProgressEvent) + Send + Sync),
     completed: (u64, u64),
 ) {
+    if !runs_transparent_followup(running_mode) {
+        return;
+    }
     match transparent_ledger::run(
         db,
         db_data_path,
@@ -4877,6 +4887,13 @@ async fn transparent_followup<S: transparent_ledger::RecoverySource>(
         phase_total_units: 0,
         phase: String::new(),
     });
+}
+
+/// Whether a sync running in `running_mode` runs private transparent
+/// recovery after completing: foreground syncs do, background preparation
+/// syncs (mode 2) never do.
+pub(crate) fn runs_transparent_followup(running_mode: u8) -> bool {
+    running_mode != 2
 }
 
 // ==================== Helpers ====================
