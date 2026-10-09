@@ -14,6 +14,7 @@ import tempfile
 
 _RUN_ID_RE = re.compile(r"[a-f0-9]{10}\Z")
 _PORT_NAMES = ("rpc", "lwd", "proxy")
+_PORT_ROLE_RE = re.compile(r"[a-z][a-z0-9_]{0,31}\Z")
 
 
 class NativePortError(RuntimeError):
@@ -125,12 +126,17 @@ def lease_native_ports(
     run_id: str,
     *,
     lock_root: Path | None = None,
+    port_names: tuple[str, ...] = _PORT_NAMES,
 ) -> NativePortLease:
-    """Reserve rpc/lwd/proxy sockets plus per-UID locks across cooperating runs."""
+    """Reserve named service sockets and retain per-UID cooperative locks."""
     if type(worker_id) is not int or not 0 <= worker_id <= 1_000_000:
         raise NativePortError("worker_id must be an integer from 0 through 1,000,000")
     if not isinstance(run_id, str) or not _RUN_ID_RE.fullmatch(run_id):
         raise NativePortError("run_id must contain exactly ten lowercase hexadecimal characters")
+    if (not isinstance(port_names, tuple) or not 1 <= len(port_names) <= 16
+        or any(not isinstance(name, str) or not _PORT_ROLE_RE.fullmatch(name) for name in port_names)
+        or len(set(port_names)) != len(port_names)):
+        raise NativePortError("port_names must contain one to sixteen unique service roles")
     if lock_root is None:
         parent = _safe_lock_directory(
             Path(tempfile.gettempdir()).resolve()
@@ -141,7 +147,7 @@ def lease_native_ports(
     safe_lock_root = _safe_lock_directory(lock_root)
     lease = NativePortLease(worker_id, {}, [], [])
     try:
-        for name in _PORT_NAMES:
+        for name in port_names:
             port, reserved, descriptor = _reserve_port(safe_lock_root, run_id)
             lease.ports[name] = port
             lease.sockets.append(reserved)

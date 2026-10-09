@@ -27,6 +27,8 @@ import 'regtest_payment_link_restart_prepare_test.dart' as restart_prepare;
 import 'regtest_payment_link_restart_resume_test.dart' as restart_resume;
 import 'regtest_payment_link_failure_prepare_test.dart' as recovery_prepare;
 import 'regtest_payment_link_failure_reorg_resume_test.dart' as recovery_resume;
+import 'regtest_voting_ironwood_setup_test.dart' as voting_setup;
+import 'regtest_voting_test.dart' as voting;
 
 /// One binary, with case identity supplied only by the existing runtime contract.
 void main() {
@@ -111,6 +113,15 @@ void main() {
       } else {
         phase == 'prepare' ? recovery_prepare.main() : recovery_resume.main();
       }
+      return;
+    case 'flutter.macos.voting':
+    case 'flutter.macos.voting-slow-helper':
+      final phase = Platform.environment['VIZOR_E2E_VOTING_PHASE'];
+      if (phase != 'setup' && phase != 'vote') {
+        throw StateError('The original voting phase is missing or invalid.');
+      }
+      binding.reportData!['voting_phase'] = phase;
+      phase == 'setup' ? voting_setup.main() : voting.main();
       return;
     default:
       throw StateError(

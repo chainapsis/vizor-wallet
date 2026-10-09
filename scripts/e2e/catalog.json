@@ -618,7 +618,7 @@
         "macos",
         "voting"
       ],
-      "timeout_seconds": 3600,
+      "timeout_seconds": 4500,
       "supported": false,
       "pending_reason": "execution backend and lifecycle are not implemented"
     },
@@ -635,7 +635,7 @@
         "voting",
         "slow-helper"
       ],
-      "timeout_seconds": 3600,
+      "timeout_seconds": 4500,
       "supported": false,
       "pending_reason": "execution backend and lifecycle are not implemented"
     },

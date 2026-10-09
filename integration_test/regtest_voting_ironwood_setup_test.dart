@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
+import 'package:zcash_wallet/src/core/config/e2e_runtime_case_manifest.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -12,17 +13,19 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import 'support/desktop_regtest_flow.dart';
 
-const _driverUrl = String.fromEnvironment(
+String get _driverUrl =>
+    installedE2eRuntimeCaseManifest?.zcashdRpcUrl ?? const String.fromEnvironment(
   'ZCASH_E2E_DRIVER_URL',
   defaultValue: 'http://127.0.0.1:39078',
 );
-const _lightwalletdUrl = String.fromEnvironment(
+String get _lightwalletdUrl =>
+    installedE2eRuntimeCaseManifest?.lightwalletdUrl ?? const String.fromEnvironment(
   'ZCASH_E2E_LIGHTWALLETD_URL',
   defaultValue: 'http://127.0.0.1:19067',
 );
 
 void main() {
-  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(initializeZcashWalletRuntime);
 
   testWidgets(
@@ -112,6 +115,7 @@ void main() {
         greaterThan(BigInt.zero),
         reason: 'immediate migration must create confirmed voting power',
       );
+      binding.reportData?['assertions_completed'] = true;
     },
     timeout: const Timeout(Duration(minutes: 15)),
   );

@@ -33,6 +33,7 @@ class SuiteTests(unittest.TestCase):
         self.catalog = e2e_catalog.load_catalog()
         self.scenarios = (self.catalog.scenarios_by_id["flutter.macos.import-sync"],)
         self.helper, self.signer = object(), object()
+        self.voting = object()
         self.barrier = threading.Barrier(2)
         self.observed = []
         self.fail = False
@@ -41,7 +42,7 @@ class SuiteTests(unittest.TestCase):
         return subprocess.CompletedProcess(command,0,"a"*40+"\n" if "rev-parse" in command else "","")
 
     def execute(self, root, run_id, worker_id, scenario, **kwargs):
-        self.observed.append((root,run_id,worker_id,kwargs["helper"],kwargs["artifact"]))
+        self.observed.append((root,run_id,worker_id,kwargs["helper"],kwargs["artifact"],kwargs["voting_artifact"]))
         self.barrier.wait(timeout=2)
         return {"scenario_id":scenario.id,"target":scenario.target,"test":scenario.test,
                 "status":"failed" if self.fail and root.name == "repetition-0" else "passed"}
@@ -54,12 +55,14 @@ class SuiteTests(unittest.TestCase):
              patch.object(SUITE,"prepare_native_case_workspace",return_value=object()), \
              patch.object(SUITE,"build_native_macos_cohort",return_value=(self.helper,{"app_build_count":1})) as build, \
              patch.object(SUITE,"build_regtest_funder",return_value=self.signer) as signer, \
+             patch.object(SUITE,"build_voting_artifacts",return_value=(self.voting,{"build_count":1})) as voting, \
              patch.object(SUITE,"derive_payment_addresses",return_value={"desktop_transparent":"tm-public-sdk-model",
                  "receiver_tex":"texregtest1publicsdkmodel"}), \
              patch.object(SUITE,"execute_case",side_effect=self.execute), \
              contextlib.redirect_stdout(output), contextlib.redirect_stderr(io.StringIO()):
             code = SUITE.run_native_suite(self.args,self.catalog,self.scenarios,
                 {"kind":"scenario","values":[self.scenarios[0].id]},source_root=self.root)
+        self.voting_builder = voting
         return code,json.loads(output.getvalue()),build,signer
 
     def test_two_concurrent_repetitions_share_only_one_build_and_signer(self):
@@ -67,6 +70,7 @@ class SuiteTests(unittest.TestCase):
         self.assertEqual(code,0)
         build.assert_called_once()
         signer.assert_called_once()
+        self.voting_builder.assert_not_called()
         self.assertEqual(len({item[0] for item in self.observed}),2)
         self.assertEqual(len({item[1] for item in self.observed}),2)
         self.assertTrue(all(item[3] is self.helper and item[4] is self.signer for item in self.observed))
@@ -188,6 +192,36 @@ class SuiteTests(unittest.TestCase):
                 (SUITE._DESKTOP_UA,125000000,"ironwood",1),))
             self.assertTrue(scenario.supported)
         self.assertTrue(e2e_catalog.plan(self.catalog, scenarios).runnable)
+
+    def test_voting_repetitions_share_one_producer_and_exact_preactivation_funding(self):
+        self.scenarios = tuple(self.catalog.scenarios_by_id[name] for name in sorted(SUITE.VOTING_SCENARIOS))
+        self.args.voting_sdk_cache = self.args.voting_pir_cache = self.root
+        code, summary, app, signer = self.invoke()
+        self.assertEqual(code, 0)
+        self.voting_builder.assert_called_once()
+        app.assert_called_once()
+        signer.assert_called_once()
+        self.assertEqual(summary["builds"]["voting_build_count"], 1)
+        self.assertTrue(all(item[5] is self.voting for item in self.observed))
+        for scenario in self.scenarios:
+            self.assertEqual(SUITE.scenario_funding(scenario.id), (
+                (SUITE._DESKTOP_UA,13000000,"orchard",1),))
+            # Existing phase deadlines remain 15+45 minutes; service/restart
+            # allowance is additional, not a shorter whole-case override.
+            self.assertGreaterEqual(scenario.timeout_seconds, 15*60+45*60+15*60)
+
+    def test_voting_requires_both_source_caches_and_activation500_before_writes(self):
+        scenario = self.catalog.scenarios_by_id["flutter.macos.voting"]
+        with patch.object(SUITE.sys, "platform", "darwin"):
+            with self.assertRaisesRegex(ValueError, "voting-sdk-cache"):
+                SUITE.validate_options(self.args, (scenario,))
+            self.args.voting_sdk_cache = self.root
+            with self.assertRaisesRegex(ValueError, "voting-pir-cache"):
+                SUITE.validate_options(self.args, (scenario,))
+            self.args.voting_pir_cache = self.root
+            with self.assertRaisesRegex(ValueError, "preactivation"):
+                SUITE.validate_options(self.args, (replace(scenario, profile="flutter-direct-height1"),))
+        self.assertFalse((self.root/".regtest-logs").exists())
 
     def test_payment_group_keeps_exact_balances_and_independent_funding_sources(self):
         names = ("flutter.macos.shield-transparent", "flutter.macos.shield-transparent-retry",

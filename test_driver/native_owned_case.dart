@@ -20,6 +20,7 @@ Future<void> main() async {
         expectedPid: expectedPid,
         expectedPaymentLinkPhase:
             Platform.environment['VIZOR_E2E_PAYMENT_LINK_PHASE'],
+        expectedVotingPhase: Platform.environment['VIZOR_E2E_VOTING_PHASE'],
         data: data,
       );
       stdout.writeln('VIZOR_E2E_RESULT=${jsonEncode(result)}');
@@ -34,12 +35,17 @@ Future<Map<String, Object>> persistNativeOwnedCaseResult({
   required int expectedPid,
   required Map<String, dynamic>? data,
   String? expectedPaymentLinkPhase,
+  String? expectedVotingPhase,
 }) async {
   final actual = data?['case_manifest'];
   final context = data?['runtime_context'];
   if (expected is! Map<String, dynamic> ||
       actual is! Map<String, dynamic> ||
-      data!.length != (expectedPaymentLinkPhase == null ? 4 : 5) ||
+      (expectedPaymentLinkPhase != null && expectedVotingPhase != null) ||
+      data!.length !=
+          (expectedPaymentLinkPhase == null && expectedVotingPhase == null
+              ? 4
+              : 5) ||
       (expectedPaymentLinkPhase != null &&
           (!const {'prepare', 'resume'}.contains(expectedPaymentLinkPhase) ||
               !const {
@@ -47,6 +53,13 @@ Future<Map<String, Object>> persistNativeOwnedCaseResult({
                 'flutter.macos.payment-link-recovery',
               }.contains(expected['scenario_id']) ||
               data['payment_link_phase'] != expectedPaymentLinkPhase)) ||
+      (expectedVotingPhase != null &&
+          (!const {'setup', 'vote'}.contains(expectedVotingPhase) ||
+              !const {
+                'flutter.macos.voting',
+                'flutter.macos.voting-slow-helper',
+              }.contains(expected['scenario_id']) ||
+              data['voting_phase'] != expectedVotingPhase)) ||
       data['pid'] is! int ||
       data['pid'] != expectedPid ||
       data['assertions_completed'] != true ||
@@ -80,5 +93,6 @@ Future<Map<String, Object>> persistNativeOwnedCaseResult({
     'case_manifest': actual,
     'pid': expectedPid,
     'payment_link_phase': ?expectedPaymentLinkPhase,
+    'voting_phase': ?expectedVotingPhase,
   };
 }

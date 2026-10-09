@@ -47,6 +47,35 @@ class NativePortsTests(unittest.TestCase):
                 with self.assertRaises(OSError):
                     probe.bind(("127.0.0.1", port))
 
+    def test_seven_voting_services_and_chain_keep_distinct_ports_and_locks(self):
+        names = ("pir", "api", "rpc", "gateway", "p2p", "grpc", "pprof")
+        chain = self.acquire()
+        voting = PORTS.lease_native_ports(0, "a1b2c3d4e5", lock_root=self.locks, port_names=names)
+        self.addCleanup(voting.close)
+        self.assertEqual(tuple(voting.ports), names)
+        self.assertEqual(len(set(chain.ports.values()) | set(voting.ports.values())), 10)
+        voting.release_sockets()
+        for port in voting.ports.values():
+            with socket.socket() as service:
+                service.bind(("127.0.0.1", port))
+            descriptor = os.open(self.locks / f"{port}.lock", os.O_RDWR)
+            try:
+                with self.assertRaises(BlockingIOError):
+                    fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            finally:
+                os.close(descriptor)
+        voting.close()
+        for port in chain.ports.values():
+            with socket.socket() as probe:
+                with self.assertRaises(OSError):
+                    probe.bind(("127.0.0.1", port))
+
+    def test_invalid_service_roles_fail_before_creating_lock_storage(self):
+        for names in ((), [], ("rpc", "rpc"), ("../escape",), (True,), tuple(str(n) for n in range(17))):
+            with self.subTest(names=names), self.assertRaises(PORTS.NativePortError):
+                PORTS.lease_native_ports(0, "a1b2c3d4e5", lock_root=self.locks, port_names=names)
+            self.assertFalse(self.locks.exists())
+
     def test_service_handoff_keeps_lock_until_lease_closes(self):
         lease = self.acquire()
         port = lease.ports["rpc"]

@@ -50,6 +50,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--zakura-cache", type=Path)
     parser.add_argument("--grpcurl", type=Path)
     parser.add_argument("--proto-dir", type=Path)
+    parser.add_argument("--voting-sdk-cache", type=Path,
+                        help="Git source cache containing the pinned vote-sdk commit (voting only)")
+    parser.add_argument("--voting-pir-cache", type=Path,
+                        help="Git source cache containing the pinned PIR commit (voting only)")
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--repeat", type=int, default=1,
                         help="fresh isolated repetitions, each with its own rerunnable report")
