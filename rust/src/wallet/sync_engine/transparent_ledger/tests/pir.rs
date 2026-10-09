@@ -1,4 +1,4 @@
-//! The transparent PIR source: origin, companions, passes and acknowledgment.
+//! The transparent PIR source: origin, companions, passes and settlement.
 //!
 //! The service is the transport's request observer, which answers in place of
 //! the network; no test reaches the live service.
@@ -257,10 +257,24 @@ fn request<'a>(
 
 /// The `Ready` answer of a pass that needed no retrieval.
 const COMPLETE: SourceBatch = SourceBatch::Ready {
-    commits: vec![],
-    retired: false,
     next: Continuation::Complete,
     behind_by: 0,
+};
+
+/// Settles `account`'s parked batch on the wallet at `path`, observed.
+async fn settle(source: &TransparentPirSource, path: &str, account: AccountUuid) -> Settlement {
+    let mut db = open_wallet_db_with_timeout(path, MAIN, SYNC_DB_BUSY_TIMEOUT).unwrap();
+    source.apply(account, &mut db, Trust::Observed).await
+}
+
+/// What settling with nothing parked answers.
+const NOTHING: Settlement = Settlement::Refused {
+    stats: ApplyStats {
+        applied: 0,
+        qualified: 0,
+        window_grew: false,
+    },
+    refusal: Refusal::Skip,
 };
 
 #[tokio::test(flavor = "multi_thread")]
@@ -625,8 +639,8 @@ async fn a_failed_pass_reports_failed_and_sends_nothing_public() {
     );
     // A failed pass leaves nothing to acknowledge.
     assert_eq!(
-        source.acknowledge(account, false).await,
-        Err(SourceError::Failed)
+        settle(&source, &wallet.path, account).await,
+        NOTHING
     );
 }
 
@@ -662,8 +676,8 @@ async fn cancelling_a_pass_waits_for_the_blocking_task() {
     // A cancelled pass leaves nothing to acknowledge, and its companion is
     // parked again for the next pass.
     assert_eq!(
-        source.acknowledge(account, false).await,
-        Err(SourceError::Failed)
+        settle(&source, &wallet.path, account).await,
+        NOTHING
     );
     assert_eq!(
         source
@@ -745,8 +759,8 @@ async fn a_pass_past_its_deadline_fails_without_committing() {
     // Nothing is requested after the deadline, and nothing can be applied.
     assert_eq!(paths(&seam.seam.observer.requests()), [MAP]);
     assert_eq!(
-        source.acknowledge(account, false).await,
-        Err(SourceError::Failed)
+        settle(&source, &wallet.path, account).await,
+        NOTHING
     );
 }
 
@@ -815,18 +829,22 @@ async fn passes_and_acknowledgments_on_one_companion_are_serialized() {
     );
     assert!(companion(&wallet.path, &uuid).exists());
 
-    // The holder acknowledges under its own lock, once.
-    assert_eq!(first.acknowledge(account, false).await, Ok(()));
+    // The holder settles under its own lock, once.
     assert_eq!(
-        first.acknowledge(account, false).await,
-        Err(SourceError::Failed)
+        settle(&first, &wallet.path, account).await,
+        Settlement::Acknowledged(ApplyStats::default())
     );
+    assert_eq!(settle(&first, &wallet.path, account).await, NOTHING);
 
     // Dropping it releases the companion to the waiting pass.
     drop(first);
     assert_eq!(waiting.await.unwrap(), Ok(COMPLETE));
-    // A batch without retired revisions may also be settled as reconciled.
-    assert_eq!(second.acknowledge(account, true).await, Ok(()));
+    // A batch without retired revisions may also be settled as trusted.
+    let mut db = open_wallet_db_with_timeout(&wallet.path, MAIN, SYNC_DB_BUSY_TIMEOUT).unwrap();
+    assert_eq!(
+        second.apply(account, &mut db, Trust::Trusted).await,
+        Settlement::Acknowledged(ApplyStats::default())
+    );
 }
 
 #[test]

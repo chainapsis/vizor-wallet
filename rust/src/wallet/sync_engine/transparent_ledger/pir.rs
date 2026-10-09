@@ -19,10 +19,12 @@
 //! deletes those of deleted accounts with [`remove_orphan_companions`], so a
 //! removal that failed converges.
 //!
-//! One lock per companion path serializes every pass, acknowledgment and
-//! removal on it across sources. A source parks each companion it opened with
-//! that lock until the source is dropped, so a pass and its acknowledgment see
-//! the same companion and nothing removes it in between.
+//! One lock per companion path serializes every pass, settlement and removal
+//! on it across sources. A source parks each companion it opened with that
+//! lock until the source is dropped, so a pass and its settlement see the same
+//! companion and nothing removes it in between. Settlement hands the parked
+//! batch, unopened, to the adapter's `apply_and_acknowledge`, which applies
+//! its commits and acknowledges it only once every one committed.
 //!
 //! A pass runs on a blocking thread, over a read-only wallet handle for the
 //! chain view, and stops at cancellation or [`PASS_DEADLINE`], counted from
@@ -43,14 +45,20 @@ use sha2::{Digest, Sha256};
 use tokio::runtime::Handle;
 use tokio::sync::OwnedMutexGuard;
 use zakura_pir_transparent::{
-    BatchState, Outcome, Progress, RecoveryBatch, RecoveryConfig, RecoveryError, ReferenceRecovery,
-    WalletChain, SCHEMA,
+    ApplyError, ApplyFailure, ApplyStats, BatchState, Outcome, Progress, RecoveryBatch,
+    RecoveryConfig, RecoveryError, ReferenceRecovery, Trust, WalletChain, SCHEMA,
 };
 use zcash_client_backend::data_api::{transparent_ledger::TransparentWatchSet, WalletRead};
 use zcash_client_sqlite::AccountUuid;
 
-use super::{Continuation, RecoverySource, SourceBatch, SourceError, SourceRequest};
-use crate::wallet::db::{open_wallet_db_readonly_with_timeout, READ_DB_BUSY_TIMEOUT};
+use super::{
+    commit_refusal, Continuation, RecoverySource, Refusal, Settlement, SourceBatch, SourceError,
+    SourceRequest,
+};
+use crate::wallet::db::{
+    open_wallet_db_readonly_with_timeout, with_wallet_db_write_lock, WalletDatabase,
+    READ_DB_BUSY_TIMEOUT,
+};
 use crate::wallet::network::WalletNetwork;
 use crate::wallet::sync_engine::enhancement::TransparentPirHttp;
 use crate::wallet::sync_engine::watch_for_exit;
@@ -120,8 +128,8 @@ pub(crate) struct TransparentPirSource {
 /// A companion this source opened, kept with its path lock between passes.
 struct Parked {
     companion: ReferenceRecovery,
-    /// The last pass's `Ready` batch until it is acknowledged. Its commits
-    /// went to the coordinator; the adapter acknowledges from what it recorded.
+    /// The last pass's `Ready` batch until it is settled. Nothing outside the
+    /// adapter reads or changes its commits.
     batch: Option<RecoveryBatch<AccountUuid>>,
     _lock: OwnedMutexGuard<()>,
 }
@@ -205,9 +213,9 @@ impl RecoverySource for TransparentPirSource {
     /// Opens the account's companion on its first pass, then retrieves on a
     /// blocking thread until the adapter returns, `should_exit` holds, or
     /// [`PASS_DEADLINE`] passes. A publication whose set identity changed is
-    /// retried once on the same companion. Commits come back only in a `Ready`
-    /// batch, which [`acknowledge`](Self::acknowledge) settles once they are
-    /// applied; a later pass on the account supersedes an unacknowledged one.
+    /// retried once on the same companion. Only a `Ready` batch has commits;
+    /// it stays parked for [`apply`](Self::apply), and a later pass on the
+    /// account supersedes an unsettled one.
     /// Cancellation waits for the blocking work and returns
     /// [`SourceError::Cancelled`], discarding whatever it retrieved.
     async fn recover(&self, request: SourceRequest<'_>) -> Result<SourceBatch, SourceError> {
@@ -287,23 +295,20 @@ impl RecoverySource for TransparentPirSource {
             Err(SourceError::Cancelled)
         } else {
             match result {
-                Ok(mut batch) => {
+                Ok(batch) => {
                     let target = watch.target.map_or(0, |target| u32::from(target.height));
-                    let next = continuation(batch.progress.outcome);
-                    let behind = behind_by(target, batch.progress);
+                    let progress = batch.progress();
+                    let next = continuation(progress.outcome);
+                    let behind = behind_by(target, progress);
                     log::info!(
                         "transparent PIR: pass {:?}, {:?}, {behind} blocks behind",
-                        batch.state,
-                        batch.progress.outcome
+                        batch.state(),
+                        progress.outcome
                     );
-                    Ok(match batch.state {
+                    Ok(match batch.state() {
                         BatchState::Ready => {
-                            let commits = std::mem::take(&mut batch.commits);
-                            let retired = !batch.retired_revisions().is_empty();
                             held.batch = Some(batch);
                             SourceBatch::Ready {
-                                commits,
-                                retired,
                                 next,
                                 behind_by: behind,
                             }
@@ -319,47 +324,69 @@ impl RecoverySource for TransparentPirSource {
         answer
     }
 
-    /// Settles `account`'s last `Ready` batch after every commit applied:
-    /// as reconciled when every commit went through the trusted operation,
-    /// otherwise as applied, which the adapter refuses for a batch with
-    /// retired revisions.
+    /// Settles `account`'s last `Ready` batch through the adapter, under the
+    /// companion's parked lock and the wallet write lock, which cover only
+    /// local SQLite work.
     ///
-    /// Runs on a blocking thread under the companion's parked lock. Fails when
-    /// no unacknowledged `Ready` batch is parked for the account, or when the
-    /// adapter refuses it.
-    async fn acknowledge(&self, account: AccountUuid, reconciled: bool) -> Result<(), SourceError> {
+    /// Refuses, as [`Refusal::Skip`], when no unsettled `Ready` batch is
+    /// parked for the account. The batch is consumed either way: a refused
+    /// batch is replayed by the account's next pass.
+    async fn apply(
+        &self,
+        account: AccountUuid,
+        db: &mut WalletDatabase,
+        trust: Trust,
+    ) -> Settlement {
+        let nothing = || {
+            log::warn!("transparent PIR: nothing to settle");
+            Settlement::Refused {
+                stats: ApplyStats::default(),
+                refusal: Refusal::Skip,
+            }
+        };
         let mut parked = self.parked.lock().await;
-        let Some(mut held) = parked.remove(&account) else {
-            log::warn!("transparent PIR: nothing to acknowledge");
-            return Err(SourceError::Failed);
+        let Some(held) = parked.get_mut(&account) else {
+            return nothing();
         };
         let Some(batch) = held.batch.take() else {
-            parked.insert(account, held);
-            log::warn!("transparent PIR: nothing to acknowledge");
-            return Err(SourceError::Failed);
+            return nothing();
         };
-        let joined = tokio::task::spawn_blocking(move || {
-            let acknowledged = if reconciled {
-                held.companion.acknowledge_reconciled(&batch)
-            } else {
-                held.companion.acknowledge_applied(&batch)
-            };
-            (held, acknowledged)
-        })
-        .await;
-        let Ok((held, acknowledged)) = joined else {
-            log::error!("transparent PIR: acknowledgment panicked");
-            return Err(SourceError::Failed);
-        };
-        parked.insert(account, held);
-        acknowledged.map_err(|error| {
-            log::warn!(
-                "transparent PIR: acknowledgment refused ({})",
-                PassFailure::from(&error).name()
-            );
-            SourceError::Failed
-        })
+        let companion = &mut held.companion;
+        let settled = with_wallet_db_write_lock("sync_engine.transparent_ledger.apply", || {
+            companion.apply_and_acknowledge(batch, db, trust)
+        });
+        match settled {
+            Ok(applied) => Settlement::Acknowledged(applied.stats),
+            Err(failure) => settlement(failure),
+        }
     }
+}
+
+/// How the coordinator acts on a batch the adapter did not acknowledge.
+/// Logs carry the variant only: nested errors can quote wallet history.
+fn settlement(failure: ApplyFailure) -> Settlement {
+    let ApplyFailure { error, stats, .. } = failure;
+    let refusal = match error {
+        ApplyError::Rejected { rejection, .. } => commit_refusal(&rejection),
+        ApplyError::PolicyChanged => Refusal::Stale,
+        ApplyError::NotEnabled => Refusal::NotEnabled,
+        ApplyError::Unreconciled => Refusal::Unreconciled,
+        ApplyError::Acknowledge(_) => {
+            log::warn!("transparent PIR: acknowledgment failed after every commit applied");
+            Refusal::Skip
+        }
+        ApplyError::NotReady(_) | ApplyError::StaleReceipt => {
+            log::warn!("transparent PIR: the parked batch is not settleable");
+            Refusal::Skip
+        }
+        error @ (ApplyError::OuterTransaction | ApplyError::Wallet(_)) => {
+            return Settlement::Failed {
+                stats,
+                error: error.to_string(),
+            };
+        }
+    };
+    Settlement::Refused { stats, refusal }
 }
 
 /// Sets a pass's cancellation flag when dropped.

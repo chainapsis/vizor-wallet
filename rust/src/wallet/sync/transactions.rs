@@ -282,24 +282,12 @@ pub(crate) fn read_wallet_balances(
     network: WalletNetwork,
     target_ids: &[AccountUuid],
 ) -> Result<Vec<WalletBalance>, String> {
-    // Read durable policy, summary, and authority from one snapshot. A
-    // policy applied by another connection since `db` was opened must not
-    // label a private-policy summary's suppressed zero as current funds, so
-    // the handle adopts it here. Configuring this read handle does not change
-    // policy.
+    // Read durable policy, summary, and authority from one snapshot. The
+    // library resolves this handle under a policy another connection applied
+    // since `db` was opened, so a private-policy summary's suppressed zero is
+    // never labeled as current funds.
     db.transactionally(|db| {
-        let durable = match db.applied_transparent_policy() {
-            Err(
-                zcash_client_sqlite::error::SqliteClientError::TransparentLedgerPolicyConflict {
-                    applied: TransparentLedgerMode::PrivateRequired,
-                    ..
-                },
-            ) => {
-                db.set_transparent_ledger_mode(TransparentLedgerMode::PrivateRequired);
-                TransparentLedgerMode::PrivateRequired
-            }
-            result => result?.mode,
-        };
+        let durable = db.applied_transparent_policy()?.mode;
         let private = durable == TransparentLedgerMode::PrivateRequired;
         // No run recovers a private wallet in a build that does not select
         // private recovery.

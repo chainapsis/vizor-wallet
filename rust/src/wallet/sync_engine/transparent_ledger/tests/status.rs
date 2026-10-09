@@ -171,7 +171,7 @@ async fn held_accounts_report_their_stop_reason() {
 }
 
 #[tokio::test]
-async fn the_balance_read_adopts_inside_its_transaction() {
+async fn the_balance_read_resolves_a_policy_raised_after_the_handle_opened() {
     let wallet = wallet();
     // A read handle opened while the wallet is public.
     let mut db =
@@ -187,17 +187,16 @@ async fn the_balance_read_adopts_inside_its_transaction() {
     assert_eq!(public.transparent_stop, None);
 
     // Another connection, such as a newer build, requires private recovery.
+    // The handle keeps its configured mode, and the library resolves it under
+    // the stricter durable policy without any caller adoption.
     apply_policy(&wallet.path, TransparentLedgerMode::PrivateRequired);
-    assert!(
-        matches!(
-            db.transparent_ledger_mode(),
-            Err(SqliteClientError::TransparentLedgerPolicyConflict { .. })
-        ),
-        "the handle itself is now weaker than the wallet"
+    assert_eq!(
+        db.transparent_ledger_mode().unwrap(),
+        TransparentLedgerMode::PrivateRequired
     );
 
-    // The read adopts the stricter policy in the transaction it reads in,
-    // instead of failing or reporting suppressed funds as current.
+    // The read is private, in the transaction it reads in, instead of failing
+    // or reporting suppressed funds as current.
     let private = read(&mut db);
     assert!(private.transparent_private);
     assert_eq!(

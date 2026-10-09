@@ -1,6 +1,5 @@
 //! One immutable source-selection decision for a transaction-data operation.
 
-use std::borrow::Borrow;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use zcash_client_backend::data_api::status::TransactionStatusMode;
@@ -9,8 +8,6 @@ use zcash_client_backend::data_api::enhance_pir::EnhancementMode;
 use zcash_client_backend::data_api::transparent_ledger::{
     AppliedTransparentPolicy, TransparentLedgerMode, TransparentLedgerRead,
 };
-use zcash_client_sqlite::{error::SqliteClientError, WalletDb};
-use zcash_protocol::consensus;
 
 use crate::wallet::network::WalletNetwork;
 use crate::wallet::sync_engine::{SyncError, WalletDatabase};
@@ -108,25 +105,6 @@ pub(crate) fn may_raise(db_path: &str, network: WalletNetwork) -> bool {
     let _ = db_path;
     selected_transparent_mode(network) == TransparentLedgerMode::PrivateRequired
         && PREFERENCE_CONFIRMED.load(Ordering::SeqCst)
-}
-
-/// Raises `db` to `PrivateRequired` when the wallet durably requires it, so
-/// a handle is never weaker than its wallet, whatever this build selects.
-///
-/// Reacts only to that conflict. Any other error leaves the handle as
-/// configured, for its first ledger read to report.
-pub(crate) fn adopt_durable_private<C, P, CL, R>(db: &mut WalletDb<C, P, CL, R>)
-where
-    C: Borrow<rusqlite::Connection>,
-    P: consensus::Parameters,
-{
-    if let Err(SqliteClientError::TransparentLedgerPolicyConflict {
-        applied: TransparentLedgerMode::PrivateRequired,
-        ..
-    }) = db.transparent_ledger_mode()
-    {
-        db.set_transparent_ledger_mode(TransparentLedgerMode::PrivateRequired);
-    }
 }
 
 /// Test seam: a per-wallet-file selection, standing in for the live
@@ -258,12 +236,12 @@ impl EnhancementPolicy {
         }
     }
 
-    /// Configures `db` for this operation. The handle then adopts a durable
-    /// `PrivateRequired`, so a weaker captured mode pauses transparent work on
-    /// a private wallet instead of failing every read against it.
+    /// Configures `db` for this operation. The library resolves the handle
+    /// under a durable `PrivateRequired`, so a weaker captured mode pauses
+    /// transparent work on a private wallet instead of failing every read
+    /// against it.
     pub(crate) fn configure_db(self, db: &mut WalletDatabase) {
         db.set_transparent_ledger_mode(self.transparent);
-        adopt_durable_private(db);
         db.set_enhancement_mode(self.payload_mode());
         db.set_status_mode(self.status_mode());
     }
