@@ -730,8 +730,9 @@ trusted, since every commit comes from the configured origin.
   what each status means: a 409 is a stale revision, and capacity is
   wallet-pir's own `Overloaded::from_http` (a 503 naming a delay, or the
   edge's 502 or 504), so the adapter's bounded backoff (at most four attempts,
-  two seconds at most between them) and the run's 90 s wait cap apply. No
-  filter is memoized. The adapter's dependency graph has no reqwest. Requests
+  two seconds at most between them) and the run's 90 s wait cap apply. A 429
+  is never capacity: the service sends none, so one from an edge in front of
+  it is an outage that ends the run. No filter is memoized. The adapter's dependency graph has no reqwest. Requests
   use only the service's six routes: the shard map, a shard's filter, init, a
   revision's manifest, setup segments, and posted queries.
 - **Logs.** One debug line per request, with the method, the route template
@@ -858,11 +859,12 @@ captured policy ── PrivateRequired ──> txid display PIR  (PirSource)
   again once the lock is taken: what was stored stays, and an unrecorded
   transaction stays due. A run therefore ends within 47 s, plus at most one
   SQLite write already under way.
-- **Transport.** `enhancement/transport/txid_pir.rs`: the shared routed HTTPS
-  core (HTTPS only, Tor when desired, direct-route lease otherwise), a 30 s
-  bound per request, bodies bounded per route, error bodies never read,
-  cancellation before dispatch, during the request and after it. One debug
-  line per request with the route template only.
+- **Transport.** `enhancement/transport/pir_http.rs`, the routed exchange the
+  transparent PIR source also uses: HTTPS only, Tor when desired, the
+  direct-route lease otherwise, a 30 s bound per request, and cancellation
+  before dispatch, during the request and after it. The library's `TxidHttp`
+  bounds bodies per route and reads no error body. One debug line per request
+  with the route template only.
 - **Work and bounds.** The wallet owns the work (`transparent_detail_work`):
   private recovery and Enhance PIR's mixed transactions queue it; public
   discovery never does, since its payloads go through `tx_retrieval_queue`.
@@ -1102,13 +1104,17 @@ restack of the library stacks, and to `main` once they merge.
 
 ### History refresh and batch receipt totals
 
-Activity lists and open receipts reload when sync completes, even when the ten
-recent transactions are unchanged. Recovery and detail follow-ups finish after
+Activity lists reload when sync first completes and whenever the ten recent
+transactions change. Open receipts also reload on every later completion,
+which the deferred account refresh and ephemeral address checks report, and
+on each follow-up update. Recovery and detail follow-ups finish after
 completion is reported and report their own event kind, `FollowupUpdated`,
 rather than a second completion: Dart re-reads balances and recent history
-and bumps `syncFollowupProvider`, which open receipts listen to. This exposes
-newly enhanced older entries without reopening the screen. Repeated completed
-snapshots do not trigger a reload by themselves.
+and bumps `syncFollowupProvider`, which open receipts listen to. An open
+receipt therefore shows a newly enhanced older entry without being reopened;
+an activity list shows it once it is among the ten recent transactions or the
+screen reloads. Repeated completed snapshots do not trigger a reload by
+themselves.
 
 In Private queries mode, a batch gift-card receipt with an unknown network fee
 shows an unknown total and an unknown network-fee breakdown. It does not add

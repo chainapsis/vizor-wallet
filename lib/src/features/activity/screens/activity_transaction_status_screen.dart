@@ -1136,10 +1136,14 @@ class _ActivityTransactionStatusScreenState
     ref.listen<AsyncValue<SyncState>>(syncProvider, (previous, next) {
       final prevSig = _recentTxSignature(previous?.value);
       final nextSig = _recentTxSignature(next.value);
-      // Enhancement can change older rows outside the ten recent transactions.
+      // Enhancement can change older rows outside the ten recent transactions,
+      // and the deferred account refresh and ephemeral address checks report
+      // completion again after scanning already completed.
       final syncCompleted =
           next.value?.isSyncComplete == true &&
-          previous?.value?.isSyncComplete != true;
+          (previous?.value?.isSyncComplete != true ||
+              previous?.value?.lastSyncCompletedAt !=
+                  next.value?.lastSyncCompletedAt);
       if (prevSig != nextSig || syncCompleted) {
         unawaited(_loadTransaction());
       }

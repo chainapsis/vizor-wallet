@@ -446,8 +446,10 @@ impl Pass {
             )
             .map_err(|error| {
                 let name = match &error {
-                    OpenError::Recovery(error) => PassFailure::from(error).name(),
+                    // The pass stopped while another handle held it.
+                    OpenError::Busy if self.exit() => return PassFailure::Companion,
                     OpenError::Busy => "in use",
+                    OpenError::Recovery(error) => PassFailure::from(error).name(),
                     OpenError::Account | OpenError::Io(_) => "unusable",
                 };
                 log::warn!("transparent PIR: companion refused ({name})");

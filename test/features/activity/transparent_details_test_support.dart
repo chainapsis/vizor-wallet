@@ -143,6 +143,39 @@ void transparentDetailsRefreshTests({
     await tester.pump();
   }
 
+  testWidgets('a later completion refreshes an older receipt', (tester) async {
+    final completedAt = DateTime.utc(2026, 10, 9);
+    final completed = SyncState(
+      accountUuid: 'account-1',
+      hasAccountScopedData: true,
+      isSyncComplete: true,
+      lastSyncCompletedAt: completedAt,
+    );
+    final sync = FakeSyncNotifier(completed);
+    // The transaction is absent from recentTransactions, so only a new
+    // completion can refresh this receipt.
+    final details = ScriptedDetails([
+      transparentDetail(rust_sync.TransparentDetailsState.notCovered),
+      available,
+    ]);
+    await pump(tester, details, sync);
+    final initialReads = details.calls;
+    // The deferred account refresh or an ephemeral address check reports
+    // completion again.
+    final again = completed.copyWith(
+      lastSyncCompletedAt: completedAt.add(const Duration(seconds: 1)),
+    );
+    sync.emit(again);
+    await flush(tester);
+    expect(details.calls, initialReads + 1);
+    expect(transactionOutputShown, findsOneWidget);
+    // An unrelated update retaining that completion is not a new run.
+    sync.emit(again.copyWith(transparentBalance: BigInt.one));
+    await flush(tester);
+    expect(details.calls, initialReads + 1);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('a follow-up update refreshes an older receipt', (tester) async {
     final completed = SyncState(
       accountUuid: 'account-1',
