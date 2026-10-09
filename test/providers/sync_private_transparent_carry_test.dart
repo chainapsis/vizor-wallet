@@ -90,6 +90,7 @@ rust_sync.ApiAppliedTransparentPolicy _policy(
 ) => rust_sync.ApiAppliedTransparentPolicy(
   mode: mode,
   generation: BigInt.from(generation),
+  changed: true,
 );
 
 class _EnhancePir extends EnhancePirNotifier {

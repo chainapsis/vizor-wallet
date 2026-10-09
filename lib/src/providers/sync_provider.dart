@@ -913,6 +913,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     if (applied == null) return;
     final previous = _appliedTransparentPolicy;
     _appliedTransparentPolicy = applied;
+    // Settings learns at once that lookups are no longer private.
+    if (applied.mode == rust_sync.ApiTransparentLedgerMode.public) {
+      ref.read(walletTransparentPrivateProvider.notifier).update(false);
+    }
     if (previous != null && previous.generation == applied.generation) return;
     _demoteCarriedTransparentAuthority();
     if (_requiresUnlock || !_isInForeground) return;
@@ -963,11 +967,17 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     );
   }
 
-  /// Starts the request queued behind the sync whose stream just ended.
+  /// Starts the request queued behind the sync whose stream just ended. A
+  /// request the app can no longer run, as after it moved to the background,
+  /// is dropped: a foreground start must not run there.
   void _startQueuedSync() {
     final queued = _queuedSyncStart;
     _queuedSyncStart = null;
     if (queued == null || !ref.mounted) return;
+    if (!canRunAppProcessWork(isInForeground: _isInForeground)) {
+      log('Sync: dropping the queued start; the app is in the background');
+      return;
+    }
     log('Sync: starting the queued ${queued.forced ? 'forced ' : ''}sync');
     if (queued.forced) {
       // The highest tip any coalesced request observed carries over.
@@ -1277,7 +1287,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         ? initialState.carryingTransparentAuthority(
             privatePolicyMayApply: _privatePolicyMayApply,
             crossesTip: false,
-            policyChanged: startupApplied != null,
+            // Only a policy startup actually changed invalidates the snapshot;
+            // one it found unchanged is the policy the snapshot was read under.
+            policyChanged: startupApplied?.changed ?? false,
           )
         : initialState;
   }
@@ -1645,7 +1657,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
                 return;
               }
               log('Sync: stream ended');
-              _syncSub = null;
+              // `_syncSub` stays set until cleanup is done below, so a start
+              // requested meanwhile is still queued behind this stream rather
+              // than dropped as "already running".
               // Normal completion (isComplete=true) is handled inside
               // _onSyncProgress, which clears _isSyncing and starts
               // polling. But the stream can also end WITHOUT an
@@ -1681,6 +1695,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
                   }
                 }
               }
+              _syncSub = null;
               // Rust released its guard before closing the stream.
               _startQueuedSync();
             },
@@ -2428,6 +2443,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     ++_foregroundEpoch;
     if (!canRunAppProcessWork(isInForeground: _isInForeground)) {
       _stopPolling();
+      _queuedSyncStart = null;
     }
   }
 
