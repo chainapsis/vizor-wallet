@@ -11,9 +11,7 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import 'support/mobile_regtest_flow.dart';
 
-const _recipientAddress = String.fromEnvironment(
-  'ZCASH_E2E_SEND_RECIPIENT_ADDRESS',
-);
+String get _recipientAddress => mobileE2eSendRecipient;
 final _fundedAmount = BigInt.from(1_095_000);
 final _sendAmount = BigInt.from(100_000);
 
@@ -88,9 +86,7 @@ void main() {
       await pumpUntil(
         tester,
         () => tester.any(
-          find.byKey(
-            const ValueKey('mobile_home_ironwood_migration_required_pill'),
-          ),
+          find.byKey(const ValueKey('mobile_home_ironwood_migration_banner')),
         ),
         description: 'mobile Ironwood migration CTA',
       );
@@ -163,14 +159,13 @@ void main() {
         timeout: const Duration(minutes: 3),
       );
       expect(
-        find.byKey(
-          const ValueKey('mobile_home_ironwood_migration_required_pill'),
-        ),
+        find.byKey(const ValueKey('mobile_home_ironwood_migration_banner')),
         findsNothing,
       );
       logE2e(
         'iOS pre-migration Orchard send confirmed; migration is not needed',
       );
+      markMobileE2eAssertionsCompleted();
     },
     timeout: const Timeout(Duration(minutes: 15)),
   );

@@ -21,6 +21,7 @@ Future<void> main() async {
         expectedPaymentLinkPhase:
             Platform.environment['VIZOR_E2E_PAYMENT_LINK_PHASE'],
         expectedVotingPhase: Platform.environment['VIZOR_E2E_VOTING_PHASE'],
+        expectedIosPhase: Platform.environment['VIZOR_E2E_IOS_PHASE'],
         data: data,
       );
       stdout.writeln('VIZOR_E2E_RESULT=${jsonEncode(result)}');
@@ -36,16 +37,19 @@ Future<Map<String, Object>> persistNativeOwnedCaseResult({
   required Map<String, dynamic>? data,
   String? expectedPaymentLinkPhase,
   String? expectedVotingPhase,
+  String? expectedIosPhase,
 }) async {
   final actual = data?['case_manifest'];
   final context = data?['runtime_context'];
+  final phaseCount = [
+    expectedPaymentLinkPhase,
+    expectedVotingPhase,
+    expectedIosPhase,
+  ].whereType<String>().length;
   if (expected is! Map<String, dynamic> ||
       actual is! Map<String, dynamic> ||
-      (expectedPaymentLinkPhase != null && expectedVotingPhase != null) ||
-      data!.length !=
-          (expectedPaymentLinkPhase == null && expectedVotingPhase == null
-              ? 4
-              : 5) ||
+      phaseCount > 1 ||
+      data!.length != 4 + phaseCount ||
       (expectedPaymentLinkPhase != null &&
           (!const {'prepare', 'resume'}.contains(expectedPaymentLinkPhase) ||
               !const {
@@ -60,6 +64,13 @@ Future<Map<String, Object>> persistNativeOwnedCaseResult({
                 'flutter.macos.voting-slow-helper',
               }.contains(expected['scenario_id']) ||
               data['voting_phase'] != expectedVotingPhase)) ||
+      (expectedIosPhase != null &&
+          (!const {'prepare', 'resume'}.contains(expectedIosPhase) ||
+              !const {
+                'flutter.ios.ironwood-migration-restart',
+                'flutter.ios.ironwood-background-restart',
+              }.contains(expected['scenario_id']) ||
+              data['ios_phase'] != expectedIosPhase)) ||
       data['pid'] is! int ||
       data['pid'] != expectedPid ||
       data['assertions_completed'] != true ||
@@ -84,7 +95,11 @@ Future<Map<String, Object>> persistNativeOwnedCaseResult({
       (expected['scenario_id'] as String).startsWith('flutter.ios.')) {
     // iOS already published its context inside its owned Simulator container.
     // Never interpret app-support as a host path or overwrite native evidence.
-    return <String, Object>{'case_manifest': actual, 'pid': expectedPid};
+    return <String, Object>{
+      'case_manifest': actual,
+      'pid': expectedPid,
+      'ios_phase': ?expectedIosPhase,
+    };
   }
   if (path is! String || !File(path).isAbsolute) {
     throw StateError('The original host context path must be absolute.');

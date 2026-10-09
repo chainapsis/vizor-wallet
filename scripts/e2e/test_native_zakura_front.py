@@ -76,8 +76,19 @@ class FrontTests(unittest.TestCase):
     def launch(self, command, **kwargs):
         self.commands.append(command)
         process = self.original_start([sys.executable, "-u", "-c",
-            "import signal,sys,time; signal.signal(signal.SIGTERM,lambda *args:sys.exit(0)); "
-            "print('modeled-front-ready',flush=True); time.sleep(30)"], **kwargs)
+            "import json,os,signal,sys,time\n"
+            "sequence=0\n"
+            "def availability(sig,frame):\n"
+            " global sequence\n"
+            " sequence+=1\n"
+            " print(json.dumps({'event':'zakura-lwd-shim-availability',"
+            "'fixture_run_id':sys.argv[1],'pid':os.getpid(),"
+            "'available':sig==signal.SIGUSR2,'sequence':sequence}),flush=True)\n"
+            "signal.signal(signal.SIGTERM,lambda *args:sys.exit(0))\n"
+            "signal.signal(signal.SIGUSR1,availability)\n"
+            "signal.signal(signal.SIGUSR2,availability)\n"
+            "print('modeled-front-ready',flush=True)\n"
+            "time.sleep(30)\n", command[-1]], **kwargs)
         deadline = time.monotonic() + 2
         while "modeled-front-ready" not in process.log_path.read_text():
             if time.monotonic() >= deadline:
@@ -129,6 +140,71 @@ class FrontTests(unittest.TestCase):
             with self.assertRaises(FRONT.NativeZakuraFrontError):
                 self.prepare(timeout=timeout)
         self.assertEqual(self.case.launched_process_count, 0)
+
+    def start_owner(self):
+        owner = self.prepare()
+        first, second = self.patches()
+        with first, second:
+            owner.start()
+        return owner
+
+    def test_outage_acknowledges_original_pid_and_preserves_sibling_and_backend(self):
+        owner = self.start_owner()
+        sibling = self.case.start_process([sys.executable, "-c", "import time; time.sleep(30)"], env=os.environ)
+        original_pid = owner.process.process.pid
+        self.assertEqual(owner.set_available(False)["sequence"], 1)
+        with patch.object(FRONT.runtime, "_signal_group") as send:
+            self.assertEqual(owner.set_available(False)["sequence"], 1)
+            send.assert_not_called()
+        self.assertEqual(owner.set_available(True)["sequence"], 2)
+        self.assertEqual(owner.process.process.pid, original_pid)
+        self.assertIsNone(sibling.process.poll())
+        self.assertFalse(self.backend.closed)
+        owner.assert_running()
+
+    def test_unready_invalid_or_cancelled_outage_sends_no_signal(self):
+        owner = self.prepare()
+        with patch.object(FRONT.runtime, "_signal_group") as send:
+            with self.assertRaises(FRONT.NativeZakuraFrontError):
+                owner.set_available(False)
+            send.assert_not_called()
+        first, second = self.patches()
+        with first, second:
+            owner.start()
+        cancel = threading.Event()
+        cancel.set()
+        with patch.object(FRONT.runtime, "_signal_group") as send:
+            with self.assertRaises(FRONT.runtime.Cancelled):
+                owner.set_available(False, cancel_event=cancel)
+            for value in (None, 0, 1, "false"):
+                with self.assertRaises(FRONT.NativeZakuraFrontError):
+                    owner.set_available(value)
+            send.assert_not_called()
+
+    def test_foreign_or_replayed_outage_acknowledgement_cannot_credit_availability(self):
+        owner = self.start_owner()
+        original = {"event":"zakura-lwd-shim-availability", "fixture_run_id":owner._ready["fixture_run_id"],
+            "pid":owner.process.process.pid, "available":False, "sequence":1}
+        for field, value in (("pid", 1), ("fixture_run_id", "foreign"), ("available", 0),
+                             ("available", True), ("sequence", 0), ("sequence", True), ("extra", True)):
+            forged = dict(original, **{field:value})
+            with patch.object(FRONT.runtime, "_signal_group",
+                    side_effect=lambda *_args, **_kwargs: owner._lines.append(json.dumps(forged))):
+                with self.assertRaisesRegex(FRONT.NativeZakuraFrontError, "acknowledgement differs"):
+                    owner.set_available(False)
+            self.assertIs(owner._available, True)
+
+    def test_missing_outage_ack_times_out_and_exited_original_cannot_be_signalled(self):
+        owner = self.start_owner()
+        with patch.object(FRONT.runtime, "_signal_group") as send:
+            with self.assertRaisesRegex(FRONT.NativeZakuraFrontError, "timed out"):
+                owner.set_available(False, timeout=0.03)
+            send.assert_called_once()
+        owner.stop()
+        with patch.object(FRONT.runtime, "_signal_group") as send:
+            with self.assertRaises(FRONT.NativeZakuraFrontError):
+                owner.set_available(False)
+            send.assert_not_called()
 
     def test_package_binding_cannot_escape_source_root(self):
         (self.source / ".dart_tool/package_config.json").write_text(json.dumps({

@@ -91,7 +91,7 @@ void main() {
       expect(originalRunId, isNotNull);
 
       await postDriver('/mine', const {'blocks': 10});
-      final scheduled = await waitForMobileRegtestMigrationStatus(
+      final scheduled = await prepareMobilePrivateMigrationSchedule(
         tester,
         originalAccountUuid,
         (status) =>
@@ -139,10 +139,7 @@ void main() {
       expect(expectedRecoveredIronwood, greaterThan(BigInt.zero));
       expect(expectedRemainingOrchard, greaterThan(BigInt.zero));
 
-      await tapAppButton(
-        tester,
-        const ValueKey('mobile_ironwood_status_back_home_button'),
-      );
+      await leaveMobilePrivateMigrationStatusForHome(tester);
       await waitForHome(tester);
       await _removeAccountThroughMobileUi(tester, originalAccountUuid);
 
@@ -262,6 +259,7 @@ void main() {
         freshPlan.totalMigratableZatoshi,
         lessThan(originalPlan.totalMigratableZatoshi),
       );
+      markMobileE2eAssertionsCompleted();
     },
     timeout: const Timeout(Duration(minutes: 35)),
   );

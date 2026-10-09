@@ -230,6 +230,14 @@ class OwnedNativeZakuraControl:
         self._server.server_activate()
 
     def _dispatch(self, method, path, payload):
+        if method == "POST" and path in {"/lightwalletd/stop", "/lightwalletd/start"}:
+            if (payload != {} or self._activation != 500 or self._scenario not in {
+                    "flutter.ios.ironwood-migration-network-recovery",
+                    "flutter.ios.ironwood-background-migration"}):
+                raise _BadRequest("front outages require the exact owned mobile recovery case and empty payload")
+            observed = self._front.set_available(path.endswith("/start"),
+                timeout=min(10.0, _remaining(self._deadline, self._cancel)), cancel_event=self._cancel)
+            return {"ok": True, "scope": "owned-lightwalletd-front", **observed}
         if method == "POST" and path in {
                 "/host-resource/clipboard/acquire", "/host-resource/clipboard/release"}:
             if payload != {}:
@@ -269,8 +277,10 @@ class OwnedNativeZakuraControl:
             return self._backend.rpc("getrawtransaction", [txid, 1], deadline=self._deadline)
         if method == "POST" and path == "/reorg-hold-fork" and set(payload) == {
                 "required_txids", "fork_height"}:
-            if self._scenario != "flutter.macos.payment-link-recovery" or self._activation != 1:
-                raise _BadRequest("fork replacement requires the owned Gift recovery case")
+            gift = self._scenario == "flutter.macos.payment-link-recovery" and self._activation == 1
+            mobile = self._scenario == "flutter.ios.ironwood-migration-reorg" and self._activation == 500
+            if not (gift or mobile) or (mobile and payload["fork_height"] != 500):
+                raise _BadRequest("fork replacement requires the owned Gift/mobile recovery case")
             return self._backend.replace_fork_holding(_txids(payload["required_txids"]),
                 fork_height=_integer(payload["fork_height"], "fork height", 1, 0xFFFFFFFF),
                 deadline=self._deadline)

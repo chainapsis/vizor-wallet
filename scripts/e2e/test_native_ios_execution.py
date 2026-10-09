@@ -11,14 +11,16 @@ import native_ios_execution as EXECUTE
 import test_native_worker_lifecycle as FIXTURES
 
 
-class ExecutionTests(unittest.TestCase):
+class ExecutionFixture(unittest.TestCase):
+    scenario_id = "flutter.ios.import-sync"
+    activation_height = 1
     def setUp(self):
         self.model = FIXTURES.IosWorkerTests()
         self.model.setUp()
         self.addCleanup(self.model.doCleanups)
         self.worker = self.model.worker
-        self.session = self.worker.prepare_case(platform="ios", scenario_id="flutter.ios.import-sync",
-            case_index=0, activation_height=1, helper=self.model.native.helper,
+        self.session = self.worker.prepare_case(platform="ios", scenario_id=self.scenario_id,
+            case_index=0, activation_height=self.activation_height, helper=self.model.native.helper,
             runtime_identifier=FIXTURES.IOS_FIXTURES.RUNTIME_ID,
             device_type_identifier=FIXTURES.IOS_FIXTURES.DEVICE_ID, timeout=15)
         front, query = FIXTURES.MacWorkerTests.front_model(self.model, self.session)
@@ -46,6 +48,10 @@ class ExecutionTests(unittest.TestCase):
             return self.log_reader
         if str(self.driver) in command:
             code = "import json,os; value={'case_manifest':json.loads(os.environ['VIZOR_E2E_CASE_MANIFEST']),'pid':int(os.environ['VIZOR_E2E_APP_PID'])}; "
+            if "VIZOR_E2E_IOS_PHASE" in kwargs["env"]:
+                code += "value['ios_phase']=os.environ['VIZOR_E2E_IOS_PHASE']; "
+            if self.mode == "wrong-phase":
+                code += "value['ios_phase']='resume'; "
             if self.mode == "console-pid":
                 code += "value['pid']="+str(self.session.storage._active.console.process.pid)+"; "
             if self.mode == "failure":
@@ -72,6 +78,8 @@ class ExecutionTests(unittest.TestCase):
             return EXECUTE.execute_native_ios_case(self.session,dart=Path(sys.executable).resolve(),
                 source_root=self.source,timeout=15,**kwargs)
 
+
+class ExecutionTests(ExecutionFixture):
     def test_original_native_pid_differs_from_console_and_cleanup_is_composed(self):
         result = self.execute()
         self.assertNotEqual(result["app_pid"], result["console_pid"])
@@ -110,6 +118,38 @@ class ExecutionTests(unittest.TestCase):
         with self.assertRaises(EXECUTE.runtime.Cancelled):
             self.execute(cancel_event=cancel)
         self.assertEqual(self.session.case.launched_process_count,count)
+
+
+class RestartExecutionTests(ExecutionFixture):
+    scenario_id = "flutter.ios.ironwood-migration-restart"
+    activation_height = 500
+
+    def test_two_phases_keep_original_container_and_case_but_change_native_pid(self):
+        with patch.object(self.session.backend, "mine", wraps=self.session.backend.mine) as mine:
+            result = self.execute()
+        before, after = result["prepare"], result["resume"]
+        self.assertEqual(before["ios_phase"], "prepare")
+        self.assertEqual(after["ios_phase"], "resume")
+        self.assertEqual(before["simulator_udid"], after["simulator_udid"])
+        self.assertEqual(before["namespace"], after["namespace"])
+        self.assertNotEqual(before["app_pid"], after["app_pid"])
+        mine.assert_called_once_with(50)
+        self.session.close(timeout=15)
+        self.worker.close()
+
+    def test_wrong_prepare_phase_cannot_advance_chain_or_credit_restart(self):
+        self.mode = "wrong-phase"
+        with patch.object(self.session.backend, "mine") as mine:
+            with self.assertRaisesRegex(EXECUTE.NativeIosExecutionError, "restart phase"):
+                self.execute()
+            mine.assert_not_called()
+        self.session.retain(timeout=15)
+
+    def test_invalid_restart_phase_launches_nothing(self):
+        count = self.session.case.launched_process_count
+        with self.assertRaisesRegex(EXECUTE.NativeIosExecutionError, "restart phase"):
+            self.execute(_phase="vote")
+        self.assertEqual(self.session.case.launched_process_count, count)
 
 
 if __name__ == "__main__":

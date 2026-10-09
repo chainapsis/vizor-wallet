@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
+import 'package:zcash_wallet/src/core/config/e2e_runtime_case_manifest.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';
@@ -75,8 +76,10 @@ void main() {
       expect(runId, isNotNull);
 
       await waitForMobileRegtestMempoolSize(tester, 1);
+      final denominationTxids = _txids(await getDriver('/mempool'), 'txids');
+      expect(denominationTxids, hasLength(1));
       await postDriver('/mine', const {'blocks': 10});
-      final scheduled = await waitForMobileRegtestMigrationStatus(
+      final scheduled = await prepareMobilePrivateMigrationSchedule(
         tester,
         accountUuid,
         (status) =>
@@ -99,12 +102,37 @@ void main() {
       );
 
       logE2e('reorging the mobile denomination split');
-      final reorg = await postDriver('/reorg', const {'forkHeight': 500});
+      late final Map<String, Object?> reorg;
+      if (installedE2eRuntimeCaseManifest == null) {
+        reorg = await postDriver('/reorg', const {'forkHeight': 500});
+      } else {
+        final children = firstChild.scheduledBroadcasts
+            .where(
+              (entry) =>
+                  entry.status == 'broadcasted' || entry.status == 'confirmed',
+            )
+            .map((entry) => entry.txidHex)
+            .toList();
+        expect(children, isNotEmpty);
+        final proof = await postDriver('/reorg-hold-fork', {
+          'fork_height': 500,
+          'required_txids': [...denominationTxids, ...children],
+        });
+        reorg = {
+          'oldTip': proof['old_tip_height'],
+          'newTip': proof['new_tip_height'],
+          'oldTipHash': proof['old_tip_hash'],
+          'newTipHash': proof['new_tip_hash'],
+          'heldTxids': proof['held_txids'],
+          'reintroducedTxids': proof['reintroduced_txids'],
+        };
+      }
       expect(reorg['newTip'], (reorg['oldTip'] as int) + 1);
       expect(reorg['newTipHash'], isNot(reorg['oldTipHash']));
       final heldTransactions = _txids(reorg, 'heldTxids');
       final reintroducedDenominations = _txids(reorg, 'reintroducedTxids');
       expect(reintroducedDenominations, isNotEmpty);
+      expect(reintroducedDenominations, containsAll(denominationTxids));
 
       final rolledBack = await waitForMobileRegtestMigrationStatus(
         tester,
@@ -121,7 +149,7 @@ void main() {
 
       await _releaseTransactions(reintroducedDenominations);
       await postDriver('/mine', const {'blocks': 10});
-      final rebuilt = await waitForMobileRegtestMigrationStatus(
+      final rebuilt = await prepareMobilePrivateMigrationSchedule(
         tester,
         accountUuid,
         (status) =>
@@ -169,6 +197,7 @@ void main() {
         _fundedAmount - balance.ironwood - orchardResidual,
         approvedPlan.estimatedTotalFeeZatoshi,
       );
+      markMobileE2eAssertionsCompleted();
     },
     timeout: const Timeout(Duration(minutes: 30)),
   );
@@ -217,5 +246,10 @@ List<String> _txids(Map<String, Object?> payload, String key) {
 
 Future<void> _releaseTransactions(List<String> txids) async {
   if (txids.isEmpty) return;
-  await postDriver('/reorg/release', {'txids': txids});
+  await postDriver(
+    installedE2eRuntimeCaseManifest == null
+        ? '/reorg/release'
+        : '/release-held',
+    {'txids': txids},
+  );
 }

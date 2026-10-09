@@ -22,159 +22,154 @@ void main() {
 
   setUpAll(initializeZcashWalletRuntime);
 
-  testWidgets(
-    'keeps a mobile migration isolated to its funded account',
-    (tester) async {
-      tolerateRenderOverflows();
-      addTearDown(cleanupE2eWalletState);
-      await cleanupE2eWalletState();
+  testWidgets('keeps a mobile migration isolated to its funded account', (
+    tester,
+  ) async {
+    tolerateRenderOverflows();
+    addTearDown(cleanupE2eWalletState);
+    await cleanupE2eWalletState();
 
-      final initialChain = await getDriver('/status');
-      expect(initialChain['ironwoodActive'], isFalse);
+    final initialChain = await getDriver('/status');
+    expect(initialChain['ironwoodActive'], isFalse);
 
-      await tester.pumpWidget(await buildBootstrappedZcashWalletApp());
-      await importWalletViaPaste(
-        tester,
-        mnemonic: mobileIronwoodE2eMnemonic,
-        birthdayHeight: 1,
-        isFirstWallet: true,
-      );
-      await waitForShieldedBalance(tester, '0.011 $mobileE2eTicker');
-      final firstAccountUuid = await accountUuidAtOrder(0);
+    await tester.pumpWidget(await buildBootstrappedZcashWalletApp());
+    await importWalletViaPaste(
+      tester,
+      mnemonic: mobileIronwoodE2eMnemonic,
+      birthdayHeight: 1,
+      isFirstWallet: true,
+    );
+    await waitForShieldedBalance(tester, '0.011 $mobileE2eTicker');
+    final firstAccountUuid = await accountUuidAtOrder(0);
 
-      await openAddAccountFlow(tester);
-      await importWalletViaPaste(
-        tester,
-        mnemonic: _secondMnemonic,
-        birthdayHeight: 1,
-        isFirstWallet: false,
-      );
-      final secondAccountUuid = await accountUuidAtOrder(1);
-      expect(secondAccountUuid, isNot(firstAccountUuid));
+    await openAddAccountFlow(tester);
+    await importWalletViaPaste(
+      tester,
+      mnemonic: _secondMnemonic,
+      birthdayHeight: 1,
+      isFirstWallet: false,
+    );
+    final secondAccountUuid = await accountUuidAtOrder(1);
+    expect(secondAccountUuid, isNot(firstAccountUuid));
 
-      await switchAccountTo(tester, firstAccountUuid);
-      await waitForShieldedBalance(tester, '0.011 $mobileE2eTicker');
-      final container = ProviderScope.containerOf(
-        tester.element(
-          find.byKey(const ValueKey('mobile_home_shielded_balance')),
-        ),
-      );
-      await _waitForIdleSync(
-        tester,
-        container,
-        (initialChain['zcashdHeight'] as num).toInt(),
-      );
+    await switchAccountTo(tester, firstAccountUuid);
+    await waitForShieldedBalance(tester, '0.011 $mobileE2eTicker');
+    final container = ProviderScope.containerOf(
+      tester.element(
+        find.byKey(const ValueKey('mobile_home_shielded_balance')),
+      ),
+    );
+    await _waitForIdleSync(
+      tester,
+      container,
+      (initialChain['zcashdHeight'] as num).toInt(),
+    );
 
-      await postDriver('/activate', const {});
-      await _waitForIronwoodSync(tester, container);
-      await openMobilePrivateMigrationOptions(tester);
-      final plan = await rust_sync.getOrchardMigrationPrivatePlan(
-        dbPath: await getWalletDbPath(),
-        network: mobileE2eNetwork,
-        accountUuid: firstAccountUuid,
-        spacePreparationBroadcasts: false,
-      );
-      expect(plan, isNotNull);
+    await postDriver('/activate', const {});
+    await _waitForIronwoodSync(tester, container);
+    await openMobilePrivateMigrationOptions(tester);
+    final plan = await rust_sync.getOrchardMigrationPrivatePlan(
+      dbPath: await getWalletDbPath(),
+      network: mobileE2eNetwork,
+      accountUuid: firstAccountUuid,
+      spacePreparationBroadcasts: false,
+    );
+    expect(plan, isNotNull);
 
-      await startMobilePrivateMigration(tester);
-      final started = await waitForMobileRegtestMigrationStatus(
-        tester,
-        firstAccountUuid,
-        (status) =>
-            status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase &&
-            status.pendingSplitStageCount > 0,
-        description: 'funded-account mobile migration run',
-      );
-      final runId = started.activeRunId;
-      expect(runId, isNotNull);
+    await startMobilePrivateMigration(tester);
+    final started = await waitForMobileRegtestMigrationStatus(
+      tester,
+      firstAccountUuid,
+      (status) =>
+          status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase &&
+          status.pendingSplitStageCount > 0,
+      description: 'funded-account mobile migration run',
+    );
+    final runId = started.activeRunId;
+    expect(runId, isNotNull);
 
-      await tapAppButton(
-        tester,
-        const ValueKey('mobile_ironwood_status_back_home_button'),
-      );
-      await waitForHome(tester);
-      await switchAccountTo(tester, secondAccountUuid);
-      await pumpUntil(
-        tester,
-        () => !tester.any(
-          find.byKey(
-            const ValueKey('mobile_home_ironwood_migration_required_pill'),
+    await leaveMobilePrivateMigrationStatusForHome(tester);
+    await waitForHome(tester);
+    await switchAccountTo(tester, secondAccountUuid);
+    await pumpUntil(
+      tester,
+      () => !tester.any(
+        find.byKey(const ValueKey('mobile_home_ironwood_migration_banner')),
+      ),
+      description: 'no migration CTA for unfunded mobile account',
+    );
+    final secondStatus = await mobileRegtestMigrationStatus(secondAccountUuid);
+    expect(secondStatus.activeRunId, isNull);
+    expect(secondStatus.phase, kIronwoodMigrationNoOrchardFundsPhase);
+    expect(
+      (await mobileRegtestMigrationStatus(firstAccountUuid)).activeRunId,
+      runId,
+    );
+
+    await switchAccountTo(tester, firstAccountUuid);
+    await tapWidget(
+      tester,
+      const ValueKey('mobile_home_ironwood_migration_banner'),
+      timeout: const Duration(minutes: 2),
+    );
+    await pumpUntil(
+      tester,
+      () => tester.any(
+        find.descendant(
+          of: find.byKey(
+            const ValueKey('mobile_ironwood_migration_back_scope'),
           ),
+          matching: find.text('Preparing your migration'),
         ),
-        description: 'no migration CTA for unfunded mobile account',
-      );
-      final secondStatus = await mobileRegtestMigrationStatus(
-        secondAccountUuid,
-      );
-      expect(secondStatus.activeRunId, isNull);
-      expect(secondStatus.phase, kIronwoodMigrationNoOrchardFundsPhase);
-      expect(
-        (await mobileRegtestMigrationStatus(firstAccountUuid)).activeRunId,
-        runId,
-      );
+      ),
+      description: 'funded-account migration restored after account switch',
+    );
 
-      await switchAccountTo(tester, firstAccountUuid);
-      await tapWidget(
-        tester,
-        const ValueKey('mobile_home_ironwood_migration_required_pill'),
-        timeout: const Duration(minutes: 2),
-      );
-      await pumpUntil(
-        tester,
-        () => tester.any(
-          find.byKey(
-            const ValueKey('mobile_ironwood_migration_status_preparing'),
-          ),
-        ),
-        description: 'funded-account migration restored after account switch',
-      );
+    await waitForMobileRegtestMempoolSize(tester, 1);
+    await postDriver('/mine', const {'blocks': 10});
+    await prepareMobilePrivateMigrationSchedule(
+      tester,
+      firstAccountUuid,
+      (status) => status.scheduledBroadcasts.isNotEmpty,
+      description: 'funded-account persisted migration schedule',
+      timeout: const Duration(minutes: 10),
+    );
+    await advanceMobileRegtestMigrationSchedule(tester, firstAccountUuid);
+    await postDriver('/mine', const {'blocks': 10});
+    final complete = await waitForMobileRegtestMigrationStatus(
+      tester,
+      firstAccountUuid,
+      (status) =>
+          status.phase == kIronwoodMigrationCompletePhase &&
+          status.activeRunId == null,
+      description: 'funded-account migration completion',
+    );
+    expect(complete.activeRunId, isNull);
 
-      await waitForMobileRegtestMempoolSize(tester, 1);
-      await postDriver('/mine', const {'blocks': 10});
-      await waitForMobileRegtestMigrationStatus(
-        tester,
-        firstAccountUuid,
-        (status) => status.scheduledBroadcasts.isNotEmpty,
-        description: 'funded-account persisted migration schedule',
-        timeout: const Duration(minutes: 10),
-      );
-      await advanceMobileRegtestMigrationSchedule(tester, firstAccountUuid);
-      await postDriver('/mine', const {'blocks': 10});
-      final complete = await waitForMobileRegtestMigrationStatus(
-        tester,
-        firstAccountUuid,
-        (status) =>
-            status.phase == kIronwoodMigrationCompletePhase &&
-            status.activeRunId == null,
-        description: 'funded-account migration completion',
-      );
-      expect(complete.activeRunId, isNull);
+    final dbPath = await getWalletDbPath();
+    final firstBalance = await rust_sync.getBalance(
+      dbPath: dbPath,
+      network: mobileE2eNetwork,
+      accountUuid: firstAccountUuid,
+    );
+    final firstOrchardResidual =
+        firstBalance.orchard + firstBalance.uneconomicValue;
+    expect(firstBalance.ironwood, plan!.totalMigratableZatoshi);
+    expect(firstOrchardResidual, plan.orchardChangeZatoshi ?? BigInt.zero);
+    expect(
+      _fundedAmount - firstBalance.ironwood - firstOrchardResidual,
+      plan.estimatedTotalFeeZatoshi,
+    );
 
-      final dbPath = await getWalletDbPath();
-      final firstBalance = await rust_sync.getBalance(
-        dbPath: dbPath,
-        network: mobileE2eNetwork,
-        accountUuid: firstAccountUuid,
-      );
-      final firstOrchardResidual =
-          firstBalance.orchard + firstBalance.uneconomicValue;
-      expect(firstBalance.ironwood, plan!.totalMigratableZatoshi);
-      expect(firstOrchardResidual, plan.orchardChangeZatoshi ?? BigInt.zero);
-      expect(
-        _fundedAmount - firstBalance.ironwood - firstOrchardResidual,
-        plan.estimatedTotalFeeZatoshi,
-      );
-
-      final secondBalance = await rust_sync.getBalance(
-        dbPath: dbPath,
-        network: mobileE2eNetwork,
-        accountUuid: secondAccountUuid,
-      );
-      expect(secondBalance.orchard, BigInt.zero);
-      expect(secondBalance.ironwood, BigInt.zero);
-    },
-    timeout: const Timeout(Duration(minutes: 25)),
-  );
+    final secondBalance = await rust_sync.getBalance(
+      dbPath: dbPath,
+      network: mobileE2eNetwork,
+      accountUuid: secondAccountUuid,
+    );
+    expect(secondBalance.orchard, BigInt.zero);
+    expect(secondBalance.ironwood, BigInt.zero);
+    markMobileE2eAssertionsCompleted();
+  }, timeout: const Timeout(Duration(minutes: 25)));
 }
 
 Future<void> _waitForIdleSync(

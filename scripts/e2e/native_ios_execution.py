@@ -12,6 +12,7 @@ import e2e_runtime as runtime
 from native_ios_case_storage import OwnedIosCaseStorage
 from native_worker_lifecycle import NativeWorkerCase
 from native_zakura_front import _capture
+from native_ios_migration import IOS_MIGRATION_SCENARIOS
 
 
 IOS_SCENARIOS = frozenset({
@@ -20,6 +21,9 @@ IOS_SCENARIOS = frozenset({
     "flutter.ios.fallback-endpoint", "flutter.ios.slow-height-fallback",
     "flutter.ios.payment-link-round-trip", "flutter.ios.payment-uri-send",
     "flutter.ios.gift-onboarding",
+}) | IOS_MIGRATION_SCENARIOS
+IOS_RESTART_SCENARIOS = frozenset({
+    "flutter.ios.ironwood-migration-restart", "flutter.ios.ironwood-background-restart",
 })
 
 
@@ -27,7 +31,8 @@ class NativeIosExecutionError(runtime.RunnerError):
     """Real app/case/Driver binding or assertion completion failed."""
 
 
-def execute_native_ios_case(session, *, dart, source_root, timeout=600.0, cancel_event=None):
+def execute_native_ios_case(session, *, dart, source_root, timeout=600.0, cancel_event=None,
+                            send_recipient=None, _phase=None):
     if (not isinstance(session, NativeWorkerCase) or not isinstance(session.storage, OwnedIosCaseStorage)
         or session._front is None or session._control is None or session._finished):
         raise NativeIosExecutionError("expected this original prepared iOS worker case")
@@ -40,8 +45,36 @@ def execute_native_ios_case(session, *, dart, source_root, timeout=600.0, cancel
     manifest = json.loads(environment["VIZOR_E2E_CASE_MANIFEST"])
     if manifest["scenario_id"] not in IOS_SCENARIOS:
         raise NativeIosExecutionError("this mobile cohort does not implement the selected case")
-    for key in ("VIZOR_E2E_PAYMENT_LINK_PHASE", "VIZOR_E2E_VOTING_PHASE"):
+    is_restart = manifest["scenario_id"] in IOS_RESTART_SCENARIOS
+    if is_restart and _phase is None:
+        # Both phases use the same originally installed app/container. No
+        # reinstallation, snapshot restore or replacement wallet is involved.
+        started = time.monotonic()
+        prepare = execute_native_ios_case(session, dart=dart, source_root=root,
+            timeout=timeout, cancel_event=cancel_event, _phase="prepare")
+        def remaining():
+            if cancel_event is not None and cancel_event.is_set():
+                raise runtime.Cancelled()
+            budget = timeout-(time.monotonic()-started)
+            if budget <= 0:
+                raise NativeIosExecutionError("mobile restart exhausted its whole-case deadline", 124)
+            return budget
+        session.storage.stop_app(session.storage._active, timeout=min(30, remaining()))
+        remaining()
+        session.backend.mine(50)
+        resume = execute_native_ios_case(session, dart=dart, source_root=root,
+            timeout=remaining(), cancel_event=cancel_event, _phase="resume")
+        if prepare["app_pid"] == resume["app_pid"] or prepare["simulator_udid"] != resume["simulator_udid"]:
+            raise NativeIosExecutionError("mobile restart did not preserve its original Simulator with a new app PID")
+        return {"scenario_id":manifest["scenario_id"], "namespace":manifest["namespace"],
+            "prepare":prepare, "resume":resume, "assertions_passed":True,
+            "native_cleanup_pending":True}
+    if _phase is not None and (not is_restart or _phase not in {"prepare", "resume"}):
+        raise NativeIosExecutionError("invalid original mobile restart phase")
+    for key in ("VIZOR_E2E_PAYMENT_LINK_PHASE", "VIZOR_E2E_VOTING_PHASE", "VIZOR_E2E_IOS_PHASE"):
         environment.pop(key, None)
+    if _phase is not None:
+        environment["VIZOR_E2E_IOS_PHASE"] = _phase
     driver = root/"test_driver/native_owned_case.dart"
     source = {path:_capture(path) for path in
               (driver, root/".dart_tool/package_config.json", executable)}
@@ -57,12 +90,13 @@ def execute_native_ios_case(session, *, dart, source_root, timeout=600.0, cancel
     log_lines = []
     log_reader = session.case.start_process(["/usr/bin/xcrun", "simctl", "spawn",
         session.storage.simulator.udid, "log", "stream", "--style", "ndjson",
-        "--level", "debug", "--predicate", 'processImagePath ENDSWITH "/Runner"'],
+        "--level", "debug", "--predicate", 'processImagePath ENDSWITH "/Runner" AND eventMessage CONTAINS "The Dart VM service is listening on"'],
         env={"PATH":"/usr/bin:/bin", "LANG":"en_US.UTF-8"},
         raw_lines=log_lines, max_output_bytes=8*1024*1024)
     app_lines = []
     app = session.storage.start_app(timeout=min(30.0, timeout), cancel_event=cancel,
-        raw_lines=app_lines, max_output_bytes=8*1024*1024)
+        raw_lines=app_lines, max_output_bytes=8*1024*1024, phase=_phase,
+        send_recipient=send_recipient)
     startup_deadline = min(deadline, time.monotonic() + 30.0)
 
     def check():
@@ -124,9 +158,11 @@ def execute_native_ios_case(session, *, dart, source_root, timeout=600.0, cancel
     if len(markers) != 1:
         raise NativeIosExecutionError("original iOS Driver did not publish exactly one result")
     result = json.loads(markers[0])
-    if (not isinstance(result, dict) or set(result) != {"case_manifest", "pid"}
+    if (not isinstance(result, dict) or set(result) != ({"case_manifest", "pid", "ios_phase"} if _phase else {"case_manifest", "pid"})
         or result["case_manifest"] != manifest or type(result["pid"]) is not int or result["pid"] != app.pid):
         raise NativeIosExecutionError("iOS result is not bound to the original native app/case")
+    if _phase and result["ios_phase"] != _phase:
+        raise NativeIosExecutionError("iOS result does not match its original restart phase")
     check()
     session.storage._verify_context(app.pid)
     if {path:_capture(path) for path in source} != source:
@@ -138,4 +174,5 @@ def execute_native_ios_case(session, *, dart, source_root, timeout=600.0, cancel
         "simulator_udid":app.udid, "app_pid":app.pid, "console_pid":app.console.process.pid,
         "driver_pid":process.process.pid, "driver_exit_code":code,
         "unified_log_pid":log_reader.process.pid,
+        **({"ios_phase":_phase} if _phase else {}),
         "assertions_passed":True, "native_cleanup_pending":True}

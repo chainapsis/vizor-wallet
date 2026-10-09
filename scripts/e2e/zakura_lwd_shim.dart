@@ -68,6 +68,24 @@ Future<void> main(List<String> args) async {
   );
   final stopped = Completer<void>();
   final signals = <StreamSubscription<ProcessSignal>>[];
+  var availabilitySequence = 0;
+  void setAvailable(bool available) {
+    if (available) {
+      shim.setHealthy();
+    } else {
+      shim.setDown();
+    }
+    stdout.writeln(
+      jsonEncode({
+        'event': 'zakura-lwd-shim-availability',
+        'fixture_run_id': genesis.fixtureRunId,
+        'pid': pid,
+        'available': available,
+        'sequence': ++availabilitySequence,
+      }),
+    );
+  }
+
   void stop(ProcessSignal _) {
     if (!stopped.isCompleted) stopped.complete();
   }
@@ -76,6 +94,12 @@ Future<void> main(List<String> args) async {
     signals.add(ProcessSignal.sigint.watch().listen(stop));
     if (!Platform.isWindows) {
       signals.add(ProcessSignal.sigterm.watch().listen(stop));
+      signals.add(
+        ProcessSignal.sigusr1.watch().listen((_) => setAvailable(false)),
+      );
+      signals.add(
+        ProcessSignal.sigusr2.watch().listen((_) => setAvailable(true)),
+      );
     }
     await shim.start();
     if (!stopped.isCompleted) {

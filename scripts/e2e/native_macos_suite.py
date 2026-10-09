@@ -25,6 +25,7 @@ from native_macos_build import build_native_macos_cohort
 from native_macos_execution import execute_native_macos_case
 from native_ios_build import build_native_ios_cohort
 from native_ios_execution import IOS_SCENARIOS, execute_native_ios_case
+from native_ios_migration import IOS_MIGRATION_SCENARIOS, derive_ios_migration_addresses, fund_ios_migration
 from native_voting_build import build_voting_artifacts
 from native_rust_execution import RUST_CASES, RUST_PROFILES, execute_native_rust_case
 from native_worker_lifecycle import prepare_native_worker_lifecycle
@@ -68,6 +69,8 @@ def scenario_funding(scenario_id, *, desktop_transparent=None):
     if scenario_id in VOTING_SCENARIOS:
         return ((_DESKTOP_UA,13000000,"orchard",1),)
     if scenario_id in IOS_SCENARIOS:
+        if scenario_id in IOS_MIGRATION_SCENARIOS:
+            return ()  # Original diversified Orchard notes are funded separately.
         if scenario_id in {"flutter.ios.create-sync", "flutter.ios.account-management",
                            "flutter.ios.gift-onboarding"}:
             return ()
@@ -132,8 +135,9 @@ def validate_options(args, scenarios):
     if not scenarios or any(s.id not in SUPPORTED_SCENARIOS for s in scenarios):
         raise ValueError("this executor implements only migrated Rust/macOS/iOS scenarios")
     for scenario in scenarios:
+        ios_profile = "flutter-direct-activation500" if scenario.id in IOS_MIGRATION_SCENARIOS else "flutter-direct-height1"
         if scenario.id in IOS_SCENARIOS and (scenario.engine != "flutter-ios"
-            or scenario.profile != "flutter-direct-height1"):
+            or scenario.profile != ios_profile):
             raise ValueError("selected iOS identity/profile does not match its executor")
         if scenario.id in VOTING_SCENARIOS and (scenario.engine != "flutter-macos"
             or scenario.profile != "flutter-direct-activation500"):
@@ -183,7 +187,8 @@ def _write_report(path, report):
 
 
 def execute_case(root, run_id, worker_id, scenario, *, helper, artifact, source_root,
-                 dart, args, cancel, desktop_transparent=None, voting_artifact=None, ios_helper=None):
+                 dart, args, cancel, desktop_transparent=None, voting_artifact=None, ios_helper=None,
+                 ios_addresses=None):
     """The worker thread creates, drives and finalizes its own mutable handles."""
     started = time.monotonic()
     result = {"scenario_id":scenario.id, "profile":scenario.profile,
@@ -197,7 +202,7 @@ def execute_case(root, run_id, worker_id, scenario, *, helper, artifact, source_
         worker = prepare_native_worker_lifecycle(root, run_id=run_id, worker_id=worker_id)
         is_rust = scenario.id in RUST_CASES
         is_ios = scenario.id in IOS_SCENARIOS
-        activation = 500 if (scenario.id in VOTING_SCENARIOS
+        activation = 500 if (scenario.id in VOTING_SCENARIOS or scenario.id in IOS_MIGRATION_SCENARIOS
             or is_rust and RUST_PROFILES[scenario.id] == "zakura-direct-activation500") else 1
         session = worker.prepare_case(platform="rust" if is_rust else "ios" if is_ios else "macos", scenario_id=scenario.id,
             case_index=1, activation_height=activation,
@@ -212,6 +217,8 @@ def execute_case(root, run_id, worker_id, scenario, *, helper, artifact, source_
             raise runtime.Cancelled()
         session.backend.mine(750 if scenario.id == "flutter.macos.mempool-during-sync" else 100)
         result["payments"] = []
+        if scenario.id in IOS_MIGRATION_SCENARIOS:
+            result["payments"] = fund_ios_migration(session, artifact, ios_addresses, cancel=cancel)
         for address, amount, pool, source in (() if is_rust else scenario_funding(
                 scenario.id, desktop_transparent=desktop_transparent)):
             result["payments"].append(fund_zakura(session.case, session.backend, artifact,
@@ -224,7 +231,9 @@ def execute_case(root, run_id, worker_id, scenario, *, helper, artifact, source_
                 scenario=scenario, cancel_event=cancel)
         elif is_ios:
             result["observation"] = execute_native_ios_case(session, dart=dart,
-                source_root=source_root, timeout=scenario.timeout_seconds, cancel_event=cancel)
+                source_root=source_root, timeout=scenario.timeout_seconds, cancel_event=cancel,
+                send_recipient=(ios_addresses["send_recipient"]
+                    if scenario.id == "flutter.ios.ironwood-pre-migration-send" else None))
         else:
             result["observation"] = execute_native_macos_case(session, dart=dart,
                 source_root=source_root, timeout=scenario.timeout_seconds, cancel_event=cancel,
@@ -296,14 +305,20 @@ def run_native_suite(args, catalog, scenarios, selection, *, source_root):
         targets = tuple(dict.fromkeys(s.target for s in scenarios if s.engine == "rust"))
         needs_addresses = any(s.id in {"flutter.macos.multi-account-send", "flutter.macos.tex-send"}
                               for s in scenarios)
+        needs_ios_addresses = any(s.id in IOS_MIGRATION_SCENARIOS for s in scenarios)
         producer = build_case(1, "rust.signer-build", "rust") if targets else build_case(1,"flutter.macos.signer-build")
         artifact = build_regtest_funder(producer,
             source_root=root, source_commit=commit, jobs=args.build_jobs, timeout=1200,
-            cancel_event=cancel, test_targets=targets, wallet_addresses=needs_addresses)
+            cancel_event=cancel, test_targets=targets, wallet_addresses=needs_addresses or needs_ios_addresses)
         report["builds"]["signer_build_count"] = 1
         if targets:
             report["builds"].update(rust_build_count=1, rust_test_targets=list(targets))
         payment_addresses = {}
+        ios_addresses = None
+        if needs_ios_addresses:
+            ios_addresses = derive_ios_migration_addresses(build_case(5, "rust.ios-wallet-addresses", "rust"),
+                artifact, scenarios, cancel=cancel)
+            report["builds"]["ios_note_address_count"] = len(ios_addresses["note_addresses"])
         if needs_addresses:
             payment_addresses = derive_payment_addresses(build_case(2,"rust.wallet-addresses", "rust"),
                 artifact, cancel=cancel)
@@ -340,7 +355,7 @@ def run_native_suite(args, catalog, scenarios, selection, *, source_root):
             submitted = [(repetition,pool.submit(execute_case,*repetitions[repetition],index,scenario,
                 helper=helper,artifact=artifact,source_root=root,dart=dart,args=args,cancel=cancel,
                 desktop_transparent=payment_addresses.get("desktop_transparent"),
-                voting_artifact=voting_artifact, ios_helper=ios_helper))
+                voting_artifact=voting_artifact, ios_helper=ios_helper, ios_addresses=ios_addresses))
                 for repetition,index,scenario in jobs]
             for repetition, future in submitted:
                 results[repetition].append(future.result())

@@ -61,7 +61,7 @@ void main() {
       expect(started.activeRunId, isNotNull);
 
       await postDriver('/mine', const {'blocks': 10});
-      final scheduled = await waitForMobileRegtestMigrationStatus(
+      final scheduled = await prepareMobilePrivateMigrationSchedule(
         tester,
         accountUuid,
         (status) => status.scheduledBroadcasts.length >= 3,
@@ -103,6 +103,7 @@ void main() {
         '${started.activeRunId}',
       );
       await snapshotWalletDbToDriver();
+      markMobileE2eAssertionsCompleted();
     },
     timeout: const Timeout(Duration(minutes: 25)),
   );
