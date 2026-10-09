@@ -10,8 +10,10 @@ use transparent::{address::TransparentAddress, bundle::OutPoint, keys::Transpare
 use zcash_client_backend::data_api::{
     testing::TestBuilder,
     transparent_ledger::{
-        ReceiveEvent, TransactionMetadata, TransparentLedgerMode, TransparentLedgerWrite as _,
-        WatchOrigin, WholeTransactionFee,
+        ReceiveEvent, SpendEvent, TransactionMetadata, TransparentDetailWrite as _,
+        TransparentDisplayFacts, TransparentDisplayOutput, TransparentDisplayProvenance,
+        TransparentDisplaySender, TransparentDisplayStore, TransparentLedgerMode,
+        TransparentLedgerRead as _, TransparentLedgerWrite as _, WatchOrigin, WholeTransactionFee,
     },
 };
 use zcash_client_sqlite::testing::{db::TestDbFactory, BlockCache};
@@ -322,5 +324,351 @@ fn settled_mixed_activity_does_not_inherit_incomplete_payment_details() {
                 .window_grew
         );
         assert!(rows(&st, account, 0x71).iter().all(|row| row.provisional));
+    }
+}
+
+/// An address no account of the wallet owns.
+fn foreign(byte: u8) -> TransparentAddress {
+    TransparentAddress::PublicKeyHash([byte; 20])
+}
+
+/// One output of a privately recovered send.
+#[derive(Clone, Copy)]
+enum Paid {
+    /// To someone else.
+    Other(u64),
+    /// Change to the account's internal address.
+    Change(u64),
+}
+
+/// A transparent-only send `[tag; 32]`, built by private recovery alone.
+///
+/// The account's external receive `[tag - 1; 32]:0` of `funding` is input 0;
+/// `foreign_input` is a second input from another wallet, which recovery
+/// never sees (shared funding). Private recovery publishes the spend with its
+/// whole-transaction metadata and the account's own outputs, and the private
+/// display service's facts for the transaction are validated and stored as
+/// loop 4 stores them. The wallet never holds the transaction itself.
+fn private_send(
+    tag: u8,
+    funding: u64,
+    foreign_input: Option<u64>,
+    outputs: &[Paid],
+    fee: u64,
+) -> (State, AccountUuid) {
+    let (mut st, account) = private_wallet();
+    let ws = watch(&st, account);
+    let target = ws.target.unwrap().height;
+    let funder = external(&ws);
+    let change = last_derived(&st, account, TransparentKeyScope::INTERNAL);
+    let inputs = 1 + u32::from(foreign_input.is_some());
+    let metadata = transparent_only(fee, inputs);
+    let address = |paid: &Paid| match paid {
+        Paid::Other(_) => foreign(0x33),
+        Paid::Change(_) => change,
+    };
+    let value = |paid: &Paid| match *paid {
+        Paid::Other(v) | Paid::Change(v) => v,
+    };
+    let mut receives = vec![output(
+        tag - 1,
+        0,
+        funder,
+        funding,
+        target - 6,
+        transparent_only(1_000, 1),
+    )];
+    for (index, paid) in (0u32..).zip(outputs) {
+        if !matches!(paid, Paid::Other(_)) {
+            receives.push(output(
+                tag,
+                index,
+                address(paid),
+                value(paid),
+                target - 4,
+                metadata,
+            ));
+        }
+    }
+    cover(&mut st, account, receives);
+    promote(&mut st, account);
+
+    let mut spend = commit(&watch(&st, account));
+    spend.spends = vec![SpendEvent {
+        metadata,
+        spending_txid: TxId::from_bytes([tag; 32]),
+        input_index: 0,
+        prevout: OutPoint::new([tag - 1; 32], 0),
+        prevout_address: funder,
+        mined_height: target - 4,
+    }];
+    st.wallet_mut()
+        .db_mut()
+        .apply_transparent_ledger_commit(spend)
+        .unwrap();
+
+    // The private display service's facts, as loop 4 stores them.
+    let conn = st.wallet().conn();
+    conn.execute(
+        "INSERT OR IGNORE INTO transparent_detail_work (transaction_id, reasons)
+         SELECT id_tx, 1 FROM transactions WHERE txid = ?1",
+        [[tag; 32]],
+    )
+    .unwrap();
+    let facts = TransparentDisplayFacts {
+        txid: TxId::from_bytes([tag; 32]),
+        coinbase: false,
+        fee: Zatoshis::const_from_u64(fee),
+        input_count: inputs,
+        output_count: u32::try_from(outputs.len()).unwrap(),
+        shielded_components: false,
+        sender: TransparentDisplaySender::Address(funder),
+        outputs: outputs
+            .iter()
+            .take(2)
+            .map(|paid| TransparentDisplayOutput {
+                value: Zatoshis::const_from_u64(value(paid)),
+                address: Some(address(paid)),
+            })
+            .collect(),
+        multiple_source_scripts: foreign_input.is_some(),
+        shielded_and_transparent_funding: false,
+        provenance: TransparentDisplayProvenance {
+            shard_id: 3,
+            revision: 0,
+            map_sha256: [0xaa; 32],
+            looked_up_height: target - 4,
+        },
+    };
+    let generation = st
+        .wallet()
+        .db()
+        .applied_transparent_policy()
+        .unwrap()
+        .generation;
+    let stored = st
+        .wallet_mut()
+        .db_mut()
+        .store_transparent_display(facts, generation, std::time::SystemTime::now())
+        .unwrap();
+    assert_eq!(stored, TransparentDisplayStore::Stored);
+    (st, account)
+}
+
+/// The receipt detail of `[tag; 32]` as `tx_kind`, read by Vizor's
+/// production detail read over a copy of the wallet.
+fn detail(st: &State, account: AccountUuid, tag: u8, tx_kind: &str) -> TransactionDetail {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("wallet.db").to_str().unwrap().to_owned();
+    st.wallet()
+        .conn()
+        .execute("VACUUM INTO ?1", [&path])
+        .unwrap();
+    get_transaction_detail(
+        &path,
+        NETWORK,
+        &account.expose_uuid().to_string(),
+        &hex::encode([tag; 32]),
+        tx_kind,
+    )
+    .unwrap()
+}
+
+/// Withdraws the account's settled coverage, as a later recovery run that
+/// grows the address window and stops before covering the new addresses does.
+fn unsettle(st: &mut State, account: AccountUuid) {
+    let ws = watch(st, account);
+    let target = ws.target.unwrap().height;
+    let mut grow = commit(&ws);
+    grow.receives = vec![output(
+        0x0f,
+        0,
+        last_derived(st, account, TransparentKeyScope::EXTERNAL),
+        30_000,
+        target - 2,
+        transparent_only(10_000, 1),
+    )];
+    assert!(
+        st.wallet_mut()
+            .db_mut()
+            .apply_transparent_ledger_commit(grow)
+            .unwrap()
+            .window_grew
+    );
+}
+
+/// What a receipt shows of a row and its detail: the row's kind, amount,
+/// amount kind (`amount_includes_fee`), fee, and completeness, and the
+/// detail's recipient and completeness.
+#[derive(Debug, PartialEq, Eq)]
+struct Shown {
+    kind: String,
+    amount: u64,
+    includes_fee: bool,
+    fee: (TransactionFeeState, u64),
+    row: (bool, bool),
+    recipient: Option<String>,
+    detail: (bool, bool),
+}
+
+fn shown(row: &TransactionInfo, detail: &TransactionDetail) -> Shown {
+    Shown {
+        kind: row.tx_kind.clone(),
+        amount: row.display_amount,
+        includes_fee: row.amount_includes_fee,
+        fee: (row.fee_state, row.fee),
+        row: (row.details_complete, row.provisional),
+        recipient: detail.primary_address.clone(),
+        detail: (detail.details_complete, detail.provisional),
+    }
+}
+
+/// The only payee the transparent details name, and the account's own
+/// output, as the detail lists them.
+fn listed(detail: &TransactionDetail) -> (Option<String>, Option<String>) {
+    let Some(TransparentDetailsView::Available { rows, .. }) = &detail.transparent_details else {
+        panic!("the stored facts are available");
+    };
+    let address = |own: bool| {
+        rows.iter()
+            .find(|row| row.is_own == own)
+            .and_then(|row| row.address.clone())
+    };
+    (address(false), address(true))
+}
+
+/// Private sends whose display facts account for the account's balance: one
+/// with change, one without, and one that pays nobody else. Each names its
+/// recipient, but only a settled one is complete: when the recovered coverage
+/// stops settling the transaction, its receipt and row are provisional again,
+/// whatever the balance identity says.
+#[test]
+fn private_sends_complete_only_once_their_effects_settle() {
+    for (case, tag, outputs, payment) in [
+        (
+            "change",
+            0x82,
+            vec![Paid::Other(600_000), Paid::Change(390_000)],
+            600_000,
+        ),
+        ("no change", 0x84, vec![Paid::Other(990_000)], 990_000),
+        // Zero external payment: everything but the fee returns as change, so
+        // the account's balance moved by the fee only, which is the whole
+        // amount. (A return to a visible external address is a self-payment
+        // shown as a send and a receive instead.)
+        ("fee only", 0x86, vec![Paid::Change(990_000)], 10_000),
+    ] {
+        let (mut st, account) = private_send(tag, 1_000_000, None, &outputs, 10_000);
+        let row = rows(&st, account, tag);
+        assert_eq!(
+            row.iter().map(|r| r.tx_kind.as_str()).collect::<Vec<_>>(),
+            ["sent"],
+            "{case}: one Activity row"
+        );
+        let settled = detail(&st, account, tag, "sent");
+        let (payee, own) = listed(&settled);
+        let recipient = if case == "fee only" { own } else { payee };
+        assert!(recipient.is_some(), "{case}");
+        assert!(settled.effects_settled, "{case}");
+        assert_eq!(
+            shown(&row[0], &settled),
+            Shown {
+                kind: "sent".to_owned(),
+                amount: payment,
+                includes_fee: case == "fee only",
+                fee: (TransactionFeeState::Known, 10_000),
+                row: (false, false),
+                recipient: recipient.clone(),
+                detail: (true, false),
+            },
+            "{case}: settled"
+        );
+
+        unsettle(&mut st, account);
+        let row = rows(&st, account, tag);
+        let unsettled = detail(&st, account, tag, "sent");
+        assert!(!unsettled.effects_settled, "{case}");
+        assert_eq!(
+            unsettled.account_balance_delta,
+            -(i64::try_from(payment).unwrap() + if case == "fee only" { 0 } else { 10_000 }),
+            "{case}"
+        );
+        // Unsettled, the library no longer reconstructs the payment: the row
+        // is the account's whole debit, a net change that keeps the fee whose
+        // share is unknown.
+        assert_eq!(
+            shown(&row[0], &unsettled),
+            Shown {
+                kind: "sent".to_owned(),
+                amount: unsettled.account_balance_delta.unsigned_abs(),
+                includes_fee: true,
+                fee: (TransactionFeeState::Unknown, 0),
+                row: (false, true),
+                // The facts still name the payee; nothing settles it.
+                recipient,
+                detail: (false, true),
+            },
+            "{case}: unsettled"
+        );
+    }
+}
+
+/// A send another wallet helped fund: the account's balance identity can
+/// hold while the other funder pays an output the account cannot see, so
+/// neither its row nor its receipt is ever complete, settled or not, and
+/// its amount is a balance change that keeps the unattributed fee. The
+/// second shape moves the account's balance by exactly zero.
+#[test]
+fn shared_funding_keeps_a_private_send_incomplete() {
+    for (case, tag, foreign_input, outputs, delta) in [
+        (
+            "payment",
+            0x92,
+            600_000,
+            vec![Paid::Other(1_000_000), Paid::Change(90_000)],
+            -410_000,
+        ),
+        (
+            "zero net movement",
+            0x94,
+            20_000,
+            vec![Paid::Change(500_000), Paid::Other(10_000)],
+            0,
+        ),
+    ] {
+        let (mut st, account) = private_send(tag, 500_000, Some(foreign_input), &outputs, 10_000);
+        for settled in [true, false] {
+            if !settled {
+                unsettle(&mut st, account);
+            }
+            let rows = rows(&st, account, tag);
+            let sent = rows.iter().find(|row| row.tx_kind == "sent");
+            let detail = detail(&st, account, tag, "sent");
+            let Some(TransparentDetailsView::Available { omissions, .. }) =
+                &detail.transparent_details
+            else {
+                panic!("{case}: the stored facts are available");
+            };
+            assert_eq!(omissions, &["shared_funding"], "{case}");
+            assert_eq!(detail.account_balance_delta, delta, "{case}");
+            assert_eq!(detail.primary_address, None, "{case}, settled={settled}");
+            assert!(
+                !detail.details_complete && detail.provisional,
+                "{case}, settled={settled}"
+            );
+            assert_eq!(detail.network_fee, Some(10_000), "{case}: the whole fee");
+            match sent {
+                Some(row) => {
+                    assert!(row.amount_includes_fee, "{case}: a net change");
+                    assert_eq!(row.fee_state, TransactionFeeState::Unknown, "{case}");
+                    assert!(
+                        !row.details_complete && row.provisional,
+                        "{case}, settled={settled}"
+                    );
+                    assert_eq!(row.display_amount, delta.unsigned_abs(), "{case}");
+                }
+                None => assert_eq!(delta, 0, "{case}: only a zero movement has no debit"),
+            }
+        }
     }
 }
