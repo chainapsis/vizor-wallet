@@ -390,6 +390,44 @@ impl TransparentLookupGate {
         )
         .await
     }
+
+    /// Public status through the same request-submission boundary. The library
+    /// retains cancellation, payload validation and status classification.
+    pub(crate) async fn observe_status(
+        &self,
+        client: &mut CompactTxStreamerClient<Channel>,
+        request: zakura_transaction_status::StatusRequest,
+        cancelled: &(impl Fn() -> bool + Sync),
+    ) -> Result<
+        Option<
+            Result<
+                zakura_transaction_status::StatusObservation,
+                zakura_transaction_status::StatusError,
+            >,
+        >,
+        SyncError,
+    > {
+        let txid = request.txid;
+        self.dispatch_signalled(
+            client,
+            |client| {
+                zakura_transaction_status::lightwalletd::observe_response(
+                    txid,
+                    super::get_transaction_payload(client, txid),
+                    cancelled,
+                )
+            },
+            |mut client| async move {
+                zakura_transaction_status::lightwalletd::observe_response(
+                    txid,
+                    super::get_transaction_payload(&mut client, txid),
+                    cancelled,
+                )
+                .await
+            },
+        )
+        .await
+    }
 }
 
 /// Awaits `call`, holding `lease` until `sent` fires: when the request has

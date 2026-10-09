@@ -997,8 +997,8 @@ there is no separate release gate.
 
 ## Library dependency
 
-The four patched library crates and the `zakura-pir-transparent` adapter share
-one pushed wallet-libraries revision, `12f0ecad810dd652be82eb9464a15e6e1e1303a3`,
+The five patched library crates and the `zakura-pir-transparent` adapter share
+one pushed wallet-libraries revision, `29986ce459037e7c37c8ca4600ad7afbf7832ab4`,
 from [companion PR #130](https://github.com/zakura-core/wallet-libraries/pull/130).
 It retains the parent's private-recovery and compact txid-display changes and
 adds durable privacy-policy resolution at each sensitive read plus optional
@@ -1072,3 +1072,5 @@ shows an unknown total and an unknown network-fee breakdown. It does not add
 zero to the card amount and redemption reserves to manufacture an exact total.
 Known fees, including zero, retain exact totals. Public-mode presentation is
 unchanged.
+
+Public status observations pass their authorized, signalled RPC response through the library's `lightwalletd::observe_response`, retaining its cancellation, timeout, payload/txid validation and classification. This keeps the wallet dispatch lease through submission rather than a slow response, without duplicating protocol rules in Vizor.
