@@ -13,7 +13,7 @@ not add an execution backend or make pending catalog entries runnable.
 ## Pinned Zakura fixture source
 
 `zakura_fixture_source.py` reads the fixture's Git blob from one published,
-immutable [contributor-fork commit](https://github.com/piatoss3612/zakura/commit/b22c91ac0770fa1953ced10fdbeed596276875ee).
+immutable [contributor-fork commit](https://github.com/piatoss3612/zakura/commit/5ecafcfdb43cf42f34c8046f09c6d874b567daa4).
 This is proposed tooling, not an official Zakura release. The helper's exact
 commit, path, byte count, SHA-256 and node/lightwalletd image digests are pinned
 in the module. Updates require a reviewed pin change; there is no latest-tag
@@ -32,12 +32,19 @@ missing tree/blob objects is rejected without downloading them. To populate
 a complete local cache explicitly:
 
 ```bash
-git -C /path/to/zakura fetch https://github.com/piatoss3612/zakura.git b22c91ac0770fa1953ced10fdbeed596276875ee:refs/vizor-e2e/zakura-fixture/b22c91ac0770fa1953ced10fdbeed596276875ee
+git -C /path/to/zakura fetch https://github.com/piatoss3612/zakura.git 5ecafcfdb43cf42f34c8046f09c6d874b567daa4:refs/vizor-e2e/zakura-fixture/5ecafcfdb43cf42f34c8046f09c6d874b567daa4
 ```
 
 The commit-specific destination ref keeps the cached commit reachable during
 Git garbage collection, without changing HEAD or an existing branch/tag. The
 loader still uses the fixed commit ID, never the mutable ref as source authority.
+
+Each backend requests an explicit RFC1918 `/28` subnet derived from its fresh
+fixture UUID. This avoids exhausting Docker's larger default address pools when
+failed fixtures are retained. Only immutable builds are shared, never networks.
+Docker rejects overlapping subnets; a collision stays a startup failure, without
+pruning, adopting, or retrying another fixture's resources. The start proof records
+the requested subnet. Existing retained networks, containers, and volumes remain.
 
 This source-loading boundary starts no Docker resource, wallet or test, and
 does not enable catalog execution. Offline checks use disposable Git commits:

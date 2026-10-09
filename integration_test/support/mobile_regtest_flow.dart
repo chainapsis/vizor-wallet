@@ -9,6 +9,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/cupertino.dart' show CupertinoPage;
+import 'package:flutter/gestures.dart' show HitTestResult;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/mobile_top_nav.dart';
@@ -97,6 +98,7 @@ Future<void> pumpUntil(
   bool Function() condition, {
   required String description,
   Duration timeout = const Duration(seconds: 20),
+  String Function()? timeoutDiagnostics,
 }) async {
   final end = DateTime.now().add(timeout);
   Object? lastError;
@@ -116,7 +118,15 @@ Future<void> pumpUntil(
   }
 
   final error = lastError == null ? '' : ' Last error: $lastError';
-  fail('Timed out waiting for $description.$error');
+  var diagnostics = '';
+  if (timeoutDiagnostics != null) {
+    try {
+      diagnostics = ' Diagnostics: ${timeoutDiagnostics()}';
+    } catch (diagnosticError) {
+      diagnostics = ' Diagnostics unavailable: ${diagnosticError.runtimeType}';
+    }
+  }
+  fail('Timed out waiting for $description.$error$diagnostics');
 }
 
 Future<void> tapAppButton(
@@ -148,6 +158,29 @@ Future<void> tapAppButton(
         tester.widget<AppButton>(finder).onPressed != null,
     description: '$key button to be tappable',
     timeout: timeout,
+    timeoutDiagnostics: () {
+      final center = tester.getCenter(finder);
+      final hits = HitTestResult();
+      tester.binding.hitTestInView(hits, center, tester.view.viewId);
+      return jsonEncode({
+        'center': center.toString(),
+        'bounds': tester.getRect(finder).toString(),
+        'route_is_current': ModalRoute.of(tester.element(finder))?.isCurrent,
+        'modal_barriers': find.byType(ModalBarrier).evaluate().length,
+        'visible_prompt_keys': [
+          for (final value in [
+            'mobile_sync_keep_awake_prompt_sheet',
+            'mobile_ironwood_announcement_sheet',
+            'mobile_home_migration_attention_host',
+          ])
+            if (tester.any(find.byKey(ValueKey(value)))) value,
+        ],
+        'hit_path': [
+          for (final hit in hits.path.take(12))
+            hit.target.runtimeType.toString(),
+        ],
+      });
+    },
   );
   await tester.tap(hitTestable);
   await tester.pump(const Duration(milliseconds: 250));

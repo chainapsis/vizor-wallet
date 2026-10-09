@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import ipaddress
 import os
 from pathlib import Path
 import sys
@@ -20,10 +21,11 @@ finally:
 
 class FixtureModel:
     """Constructed by the adapter, not adopted from an external fixture/receipt."""
-    def __init__(self, artifacts, grpcurl, proto_dir, *, timeout, run_id, miner_address, profile):
+    def __init__(self, artifacts, grpcurl, proto_dir, *, timeout, run_id, miner_address, profile, network_subnet):
         self.artifacts = artifacts
         self.run_id = run_id.hex
         self.timeout, self.miner_address, self.profile = timeout, miner_address, profile
+        self.network_subnet = network_subnet
         self._closed = self._retained = False
         self.started = self.close_calls = self.retain_calls = 0
 
@@ -116,6 +118,11 @@ class BackendTests(unittest.TestCase):
                 self.assertEqual(owner._fixture.started, 0)
                 self.assertEqual(owner._fixture.profile, profile)
                 self.assertEqual(owner._fixture.miner_address, "explicit-regtest-miner-model")
+                subnet = ipaddress.IPv4Network(owner._fixture.network_subnet, strict=True)
+                self.assertEqual(subnet.prefixlen, 28)
+                self.assertTrue(subnet.subnet_of(ipaddress.IPv4Network("10.0.0.0/8")))
+                run_bytes = bytes.fromhex(owner._fixture.run_id)
+                self.assertEqual(str(subnet), f"10.{run_bytes[0]}.{run_bytes[1]}.{run_bytes[2] & 0xf0}/28")
                 self.assertEqual(owner.root.stat().st_mode & 0o777, 0o700)
                 source_file = owner.root / "source-identity.json"
                 self.assertEqual(source_file.stat().st_mode & 0o777, 0o600)
