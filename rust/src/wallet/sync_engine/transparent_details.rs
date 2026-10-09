@@ -727,7 +727,9 @@ pub(crate) fn enhance_publicly(
     };
     let (transaction, mined_height) = super::enhancement::decode_enhancement_payload(&raw, txid)
         .map_err(|error| format!("lightwalletd answered with an invalid transaction ({error})"))?;
-    let mut db = crate::wallet::db::open_wallet_db_with_timeout(
+    // A wallet reset may have deleted the wallet during the lookup; neither
+    // open below recreates it.
+    let mut db = crate::wallet::db::open_existing_wallet_db_with_timeout(
         db_path,
         network,
         crate::wallet::db::WALLET_DB_BUSY_TIMEOUT,
@@ -744,15 +746,19 @@ pub(crate) fn enhance_publicly(
     .map_err(|error: SqliteClientError| format!("storing the transaction failed ({error})"))?;
     // The store skips a transaction it finds nothing of the wallet's in;
     // reporting success then would leave the receipt offering the same load.
-    let stored: bool = rusqlite::Connection::open(db_path)
-        .and_then(|conn| {
-            conn.query_row(
-                "SELECT EXISTS (SELECT 1 FROM transactions WHERE txid = ?1 AND raw IS NOT NULL)",
-                [txid.as_ref().as_slice()],
-                |row| row.get(0),
-            )
-        })
-        .map_err(|error| format!("reading the stored transaction failed ({error})"))?;
+    let stored: bool = crate::wallet::db::open_readonly_conn_with_timeout(
+        db_path,
+        Some(crate::wallet::db::WALLET_DB_BUSY_TIMEOUT),
+    )
+    .and_then(|conn| {
+        conn.query_row(
+            "SELECT EXISTS (SELECT 1 FROM transactions WHERE txid = ?1 AND raw IS NOT NULL)",
+            [txid.as_ref().as_slice()],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())
+    })
+    .map_err(|error| format!("reading the stored transaction failed ({error})"))?;
     if stored {
         Ok(())
     } else {

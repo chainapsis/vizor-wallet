@@ -729,6 +729,41 @@ async fn private_required_public_enhance_only_on_consent() {
     assert_eq!(lwd.count("/GetTransaction"), 1);
 }
 
+/// A wallet reset that deletes the wallet while a public load waits on
+/// lightwalletd fails the load and leaves no database behind.
+#[tokio::test(flavor = "multi_thread")]
+async fn public_enhance_does_not_recreate_a_reset_wallet() {
+    let fixture = wallet();
+    let tx = utxo_receipt(&fixture, 0xaa, TOP - 1);
+    let mut bytes = Vec::new();
+    tx.write(&mut bytes).unwrap();
+    let wallet_files = ["", "-wal", "-shm"].map(|suffix| format!("{}{suffix}", fixture.path));
+    let reset = wallet_files.clone();
+    let lwd = CapturingLwd::start_serving(
+        vec![(*tx.txid().as_ref(), bytes, u64::from(TOP - 1))],
+        u64::from(TOP),
+        move |path| {
+            if path.ends_with("/GetTransaction") {
+                for file in &reset {
+                    let _ = std::fs::remove_file(file);
+                }
+            }
+        },
+    )
+    .await;
+
+    let (path, url, txid) = (fixture.path.clone(), lwd.url.clone(), *tx.txid().as_ref());
+    let result =
+        tokio::task::spawn_blocking(move || super::enhance_publicly(&path, MAIN, &url, txid))
+            .await
+            .unwrap();
+    assert_eq!(lwd.count("/GetTransaction"), 1);
+    assert!(result.is_err(), "{result:?}");
+    for file in &wallet_files {
+        assert!(!std::path::Path::new(file).exists(), "{file} was recreated");
+    }
+}
+
 /// Without `PrivateRequired`, the residual transaction is fetched through the
 /// gate, once per authorized dispatch, and the private service sees nothing.
 #[tokio::test]

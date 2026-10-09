@@ -56,6 +56,25 @@ pub(crate) fn open_wallet_db_with_timeout(
     Ok(wallet_db(conn, db_path, network))
 }
 
+/// Like [`open_wallet_db_with_timeout`], but fails instead of creating a file
+/// at `db_path`. For a write that follows a network wait, during which a
+/// wallet reset may have deleted the wallet: reopening must not leave an
+/// orphan database behind.
+pub(crate) fn open_existing_wallet_db_with_timeout(
+    db_path: &str,
+    network: WalletNetwork,
+    timeout: Duration,
+) -> Result<WalletDatabase, String> {
+    let conn = rusqlite::Connection::open_with_flags(
+        db_path,
+        rusqlite::OpenFlags::default().difference(rusqlite::OpenFlags::SQLITE_OPEN_CREATE),
+    )
+    .map_err(|e| format!("Failed to open wallet DB: {e}"))?;
+    configure_wallet_connection(&conn, timeout, true)?;
+    ensure_mined_transaction_history(&conn)?;
+    Ok(wallet_db(conn, db_path, network))
+}
+
 /// Preserve mined evidence before backend rewinds clear it, including sends
 /// without change. Spend links alone also exist for never-mined transactions.
 /// Install on writable open before any scan or rewind; an uninitialized DB has
