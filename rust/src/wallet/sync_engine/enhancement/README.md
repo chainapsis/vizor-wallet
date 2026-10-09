@@ -908,13 +908,14 @@ lookup touches, the page count of a display v2 overflow record, and timing;
 with Tor off, the network origin. The shard and tier give the height range.
 The bucket is a hash of the txid modulo the shard's bucket count, at most 64,
 so it reveals up to six bits of that hash, and repeated lookups of one
-transaction always touch the same bucket, which links them. It never learns
-the txid itself. A public
-lookup discloses the txid to lightwalletd, which is why `PrivateRequired`
-never makes one. The live test `txid_live` (ignored by default) looks up a
+transaction always touch the same bucket, which links them. Requests carry no
+raw txid; the bucket, height range and timing can still support correlation or
+inference about the transaction. A public lookup discloses the txid to
+lightwalletd, which is why `PrivateRequired` never makes one automatically. The live test `txid_live` (ignored by default) looks up a
 known mainnet transaction, an absent txid, and an unplaced height through the
 real client and transport, and checks the routes and that no request carries
-the txid. It covers display facts only: it does not exercise raw bytes
+the txid. This does not establish anonymity against bucket or timing
+inference. It covers display facts only: it does not exercise raw bytes
 superseding them, the public lookup, or the per-lookup runtime limits above
 (the 30 s request bound, the 45 s run budget and the 2 s abandon grace), which
 the in-process tests cover:
