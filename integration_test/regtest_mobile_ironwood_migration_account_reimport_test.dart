@@ -138,6 +138,13 @@ void main() {
           balanceBeforeRemoval.uneconomicValue;
       expect(expectedRecoveredIronwood, greaterThan(BigInt.zero));
       expect(expectedRemainingOrchard, greaterThan(BigInt.zero));
+      logE2e(
+        'account removal snapshot: run=$originalRunId '
+        'ironwood=$expectedRecoveredIronwood orchard=$expectedRemainingOrchard '
+        'confirmed=${partiallyConfirmed.confirmedTxCount} '
+        'broadcasted=${partiallyConfirmed.broadcastedTxCount} '
+        'total=${partiallyConfirmed.totalCount}',
+      );
 
       await leaveMobilePrivateMigrationStatusForHome(tester);
       await waitForHome(tester);
@@ -306,6 +313,7 @@ Future<rust_sync.WalletBalance> _waitForRecoveredBalance(
   final deadline = DateTime.now().add(const Duration(minutes: 8));
   rust_sync.WalletBalance? lastBalance;
   Object? lastError;
+  var nextLog = DateTime.now();
   while (DateTime.now().isBefore(deadline)) {
     try {
       lastBalance = await rust_sync.getBalance(
@@ -319,6 +327,17 @@ Future<rust_sync.WalletBalance> _waitForRecoveredBalance(
           orchard == expectedOrchard) {
         return lastBalance;
       }
+      if (!DateTime.now().isBefore(nextLog)) {
+        logE2e(
+          'reimport balance: expected ironwood=$expectedIronwood '
+          'orchard=$expectedOrchard; actual ironwood=${lastBalance.ironwood} '
+          'ironwoodPending=${lastBalance.ironwoodPending} '
+          'orchard=${lastBalance.orchard} '
+          'orchardPending=${lastBalance.orchardPending} '
+          'uneconomic=${lastBalance.uneconomicValue}',
+        );
+        nextLog = DateTime.now().add(const Duration(seconds: 30));
+      }
     } catch (error) {
       lastError = error;
     }
@@ -327,7 +346,11 @@ Future<rust_sync.WalletBalance> _waitForRecoveredBalance(
   }
   fail(
     'Timed out recovering the re-imported account balance. '
-    'Last balance: $lastBalance. Last error: $lastError',
+    'Expected ironwood=$expectedIronwood orchard=$expectedOrchard. '
+    'Actual ironwood=${lastBalance?.ironwood} '
+    'ironwoodPending=${lastBalance?.ironwoodPending} '
+    'orchard=${lastBalance?.orchard} orchardPending=${lastBalance?.orchardPending} '
+    'uneconomic=${lastBalance?.uneconomicValue}. Last error: $lastError',
   );
 }
 

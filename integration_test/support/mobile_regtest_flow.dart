@@ -483,9 +483,12 @@ Future<void> importPassphraseViaPaste(
 }) async {
   logE2e('importing wallet (first=$isFirstWallet)');
   await tapWidget(tester, const ValueKey('mobile_import_passphrase'));
-  await Clipboard.setData(ClipboardData(text: mnemonic));
-  await tapAppButton(tester, const ValueKey('mobile_import_paste'));
-  await tapAppButton(tester, const ValueKey('mobile_import_review_continue'));
+  await withNativeClipboard(() async {
+    await Clipboard.setData(ClipboardData(text: mnemonic));
+    await tapAppButton(tester, const ValueKey('mobile_import_paste'));
+    await tapAppButton(tester, const ValueKey('mobile_import_review_continue'));
+    await Clipboard.setData(const ClipboardData(text: ''));
+  });
   // Block height is a real text field on the system keyboard.
   await tapWidget(tester, const ValueKey('mobile_import_birthday_mode_height'));
   await tester.enterText(
@@ -750,23 +753,25 @@ Future<void> switchAccountTo(WidgetTester tester, String accountUuid) async {
 /// Home → receive screen → copy → back. Returns the copied address.
 Future<String> copyShieldedAddress(WidgetTester tester) async {
   await tapWidget(tester, const ValueKey('mobile_home_receive'));
-  await tapWidget(
-    tester,
-    const ValueKey('mobile_receive_copy'),
-    timeout: const Duration(minutes: 1),
-  );
-  // The copy button only enables once the address loads; the tap above
-  // is plain, so wait for the toast as the copy signal.
-  await pumpUntil(
-    tester,
-    () => tester.any(find.text('Address copied')),
-    description: 'address copied toast',
-  );
-  final data = await Clipboard.getData('text/plain');
-  final address = data?.text?.trim() ?? '';
-  if (address.isEmpty) {
-    fail('Shielded address was not copied to the clipboard.');
-  }
+  final address = await withNativeClipboard(() async {
+    await tapWidget(
+      tester,
+      const ValueKey('mobile_receive_copy'),
+      timeout: const Duration(minutes: 1),
+    );
+    await pumpUntil(
+      tester,
+      () => tester.any(find.text('Address copied')),
+      description: 'address copied toast',
+    );
+    final data = await Clipboard.getData('text/plain');
+    final copied = data?.text?.trim() ?? '';
+    if (copied.isEmpty) {
+      fail('Shielded address was not copied to the clipboard.');
+    }
+    await Clipboard.setData(const ClipboardData(text: ''));
+    return copied;
+  });
   await tapBack(tester);
   await waitForHome(tester);
   return address;
@@ -789,7 +794,7 @@ Future<void> sendViaWizard(
   required String amountDigits,
 }) async {
   logE2e('sending $amountDigits via wizard');
-  await tapWidget(tester, const ValueKey('mobile_home_send'));
+  await tapAppButton(tester, const ValueKey('mobile_home_send'));
   await enterText(tester, const ValueKey('mobile_send_address_field'), address);
   await tapAppButton(
     tester,
@@ -1706,6 +1711,9 @@ Future<void> mineRegtestBlocks(int blocks) async {
 }
 
 Future<T> zcashdRpc<T>(String method, [List<Object?> params = const []]) async {
+  if (installedE2eRuntimeCaseManifest != null) {
+    return await ownedRegtestRpc(method, params) as T;
+  }
   final client = HttpClient();
   try {
     final request = await client.postUrl(Uri.parse(mobileE2eZcashdRpcUrl));

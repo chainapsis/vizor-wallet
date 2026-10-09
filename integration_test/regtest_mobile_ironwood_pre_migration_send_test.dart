@@ -85,6 +85,13 @@ void main() {
       );
       await pumpUntil(
         tester,
+        () => !tester.any(
+          find.byKey(const ValueKey('mobile_ironwood_announcement_sheet')),
+        ),
+        description: 'migration announcement dismissal before sending',
+      );
+      await pumpUntil(
+        tester,
         () => tester.any(
           find.byKey(const ValueKey('mobile_home_ironwood_migration_banner')),
         ),

@@ -114,10 +114,23 @@ void main() {
             .map((entry) => entry.txidHex)
             .toList();
         expect(children, isNotEmpty);
+        expect(
+          _txids(await getDriver('/mempool'), 'txids'),
+          containsAll(children),
+        );
+        // The child was accepted against the mined denomination's Orchard
+        // anchor. Invalidating that parent removes the anchor, so only restore
+        // the denomination bytes; requiring the child in the fork-parent
+        // mempool would demand a consensus-invalid transaction.
         final proof = await postDriver('/reorg-hold-fork', {
           'fork_height': 500,
-          'required_txids': [...denominationTxids, ...children],
+          'required_txids': denominationTxids,
         });
+        final restoration = proof['reintroduction'] as Map<String, Object?>;
+        expect(
+          _txids(restoration, 'invalidated_pending_txids'),
+          containsAll(children),
+        );
         reorg = {
           'oldTip': proof['old_tip_height'],
           'newTip': proof['new_tip_height'],

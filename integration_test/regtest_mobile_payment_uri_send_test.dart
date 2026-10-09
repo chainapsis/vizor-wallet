@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
+import 'package:zcash_wallet/src/core/config/e2e_runtime_case_manifest.dart';
 
 import 'support/mobile_regtest_flow.dart';
 
@@ -37,7 +38,9 @@ void main() {
       addTearDown(() async {
         // The pasteboard outlives the app container, and this scenario
         // leaves a mnemonic and an address on it.
-        await Clipboard.setData(const ClipboardData(text: ''));
+        if (installedE2eRuntimeCaseManifest == null) {
+          await Clipboard.setData(const ClipboardData(text: ''));
+        }
         await cleanupE2eWalletState();
       });
       await cleanupE2eWalletState();
@@ -158,7 +161,13 @@ Future<void> _sendViaPaymentUri(
   );
   await pumpUntil(
     tester,
-    () => tester.any(find.text('Review payment request')),
+    () =>
+        tester.any(find.text('Review Payment')) &&
+        keyedTextEquals(
+          tester,
+          const ValueKey('mobile_send_review_amount'),
+          '$amount ${mobileE2eTicker.toUpperCase()}',
+        ),
     description: 'the mobile payment-request review step',
     timeout: const Duration(minutes: 1),
   );
