@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-COMPOSE_FILE="$ROOT_DIR/docker-compose.zcash-ironwood-regtest.yml"
+COMPOSE_FILE="${IRONWOOD_COMPOSE_FILE:-$ROOT_DIR/docker-compose.zcash-ironwood-regtest.yml}"
 STATE_DIR="$ROOT_DIR/.ironwood-regtest"
 SNAPSHOT_DIR="$ROOT_DIR/.ironwood-regtest-snapshots"
 ACTIVATION_FILE="$STATE_DIR/activation-height"
