@@ -103,11 +103,16 @@ const LOCAL_ORIGIN: i64 = 1;
 /// Matched as a prefix of `table:<name>`, `view:<name>`, `index:<name>`,
 /// `column:<table or view>.<column>`, or `unique:<table>(<sorted columns>)`.
 /// A removed table's indexes and unique keys go with it.
-const REMOVED_FOR_ALL_BUILDS: [&str; 1] = [
+const REMOVED_FOR_ALL_BUILDS: [&str; 2] = [
     // The ZIP 318 pool-migration engine. Published builds reference these
     // tables only through `ON DELETE CASCADE` from `accounts`, which is inert
     // once the tables are gone.
     "table:orchard_ironwood_migration",
+    // Status observation and payload enhancement now have independent intents.
+    // The current writer targets (txid, query_type); retaining UNIQUE(txid)
+    // would prevent those two obligations from coexisting. Older writers that
+    // target txid alone are not compatible with the upgraded queue.
+    "unique:tx_retrieval_queue(txid)",
 ];
 #[derive(Debug, Deserialize, Serialize)]
 struct Manifest {
@@ -603,8 +608,8 @@ fn strip_locks(
 }
 
 /// Every migration the base applied survives, and the current build's own
-/// migrations are applied: the library bump's always newly, the ledger's
-/// newly unless the base already kept a transparent ledger.
+/// migrations are applied. Some bases already kept a transparent ledger or
+/// applied part of the library bump.
 fn assert_migrations(base: &LegacyState, actual: &LegacyState) {
     assert!(
         base.migration_ids.is_subset(&actual.migration_ids),
@@ -1405,6 +1410,15 @@ fn assert_current_schema(db_path: &str) {
     // The current library retains the published classification schema in place.
     assert!(column_exists(&conn, "transactions", "zip318_kind"));
     assert!(column_exists(&conn, "v_transactions", "zip318_kind"));
+    let retrieval_keys = unique_keys(&conn, "tx_retrieval_queue");
+    assert!(
+        retrieval_keys.contains(&vec!["query_type".to_string(), "txid".to_string()]),
+        "transaction retrieval intents are not independently keyed"
+    );
+    assert!(
+        !retrieval_keys.contains(&vec!["txid".to_string()]),
+        "the legacy key still prevents separate enhancement and status intents"
+    );
     assert!(
         object_exists(
             &conn,
