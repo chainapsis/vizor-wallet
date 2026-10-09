@@ -78,6 +78,9 @@ void main() {
       expect(originalPlan, isNotNull);
       expect(originalPlan!.plannedBatchCount, greaterThanOrEqualTo(3));
 
+      final initialPreparationDeadline = DateTime.now().add(
+        const Duration(minutes: 5),
+      );
       await startMobilePrivateMigration(tester);
       final started = await waitForMobileRegtestMigrationStatus(
         tester,
@@ -86,11 +89,24 @@ void main() {
             status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase &&
             status.pendingSplitStageCount > 0,
         description: 'account-removal denomination run',
+        timeout: initialPreparationDeadline.difference(DateTime.now()),
       );
       final originalRunId = started.activeRunId;
       expect(originalRunId, isNotNull);
 
-      await postDriver('/mine', const {'blocks': 10});
+      // WaitingDenomConfirmations can precede node acceptance. Mine only after
+      // the original run's broadcast has an exact receipt, then prove inclusion.
+      final preparationReceipt = await waitForMobileInitialPreparationReceipt(
+        tester,
+        originalAccountUuid,
+        originalRunId!,
+        deadline: initialPreparationDeadline,
+      );
+      await mineMobileInitialPreparationReceipt(
+        preparationReceipt,
+        blocks: 10,
+        deadline: initialPreparationDeadline,
+      );
       final scheduled = await prepareMobilePrivateMigrationSchedule(
         tester,
         originalAccountUuid,
