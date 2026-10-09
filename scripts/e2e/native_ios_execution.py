@@ -50,6 +50,16 @@ def execute_native_ios_case(session, *, dart, source_root, timeout=600.0, cancel
     if cancel.is_set():
         raise runtime.Cancelled()
     session.verify_owned()
+    # Flutter's Simulator engine publishes its VM endpoint through unified
+    # logging, not the simctl application's stdout. Start this original reader
+    # before launch so the one startup event cannot be missed. The SDK UUID is
+    # already owned; records are additionally bound to the actual UIKit PID.
+    log_lines = []
+    log_reader = session.case.start_process(["/usr/bin/xcrun", "simctl", "spawn",
+        session.storage.simulator.udid, "log", "stream", "--style", "ndjson",
+        "--level", "debug", "--predicate", 'processImagePath ENDSWITH "/Runner"'],
+        env={"PATH":"/usr/bin:/bin", "LANG":"en_US.UTF-8"},
+        raw_lines=log_lines, max_output_bytes=8*1024*1024)
     app_lines = []
     app = session.storage.start_app(timeout=min(30.0, timeout), cancel_event=cancel,
         raw_lines=app_lines, max_output_bytes=8*1024*1024)
@@ -70,11 +80,27 @@ def execute_native_ios_case(session, *, dart, source_root, timeout=600.0, cancel
             raise NativeIosExecutionError("original iOS app job is no longer running")
         if app.console.process.poll() is not None or app.console._capture.errors or app.console._capture.output_limit_error:
             raise NativeIosExecutionError("original iOS console/output completed before its assertions")
+        session.case._require_member(log_reader)
+        if (log_reader.process.poll() is not None or log_reader._capture.errors
+            or log_reader._capture.output_limit_error is not None):
+            raise NativeIosExecutionError("original iOS unified-log reader/output failed")
 
+    seen_lines, urls = 0, []
     while True:
         check()
-        urls = re.findall(r"The Dart VM service is listening on (http://(?:127\.0\.0\.1|localhost):[1-9][0-9]{0,4}/[^\s]*)",
-                          "".join(app_lines))
+        for line in log_lines[seen_lines:]:
+            seen_lines += 1
+            if not line.lstrip().startswith("{"):
+                continue  # The SDK's filtering banner is transport metadata.
+            record = json.loads(line)
+            if not isinstance(record, dict) or not isinstance(record.get("eventMessage"), str):
+                raise NativeIosExecutionError("original iOS unified-log record is invalid")
+            endpoints = re.findall(r"The Dart VM service is listening on (http://(?:127\.0\.0\.1|localhost):[1-9][0-9]{0,4}/[^\s]*)",
+                                   record["eventMessage"])
+            if endpoints:
+                if type(record.get("processID")) is not int or record["processID"] != app.pid:
+                    raise NativeIosExecutionError("iOS VM endpoint is not from the original native app PID")
+                urls.extend(endpoints)
         if urls:
             if len(set(urls)) != 1:
                 raise NativeIosExecutionError("original iOS VM endpoint is ambiguous")
@@ -107,7 +133,9 @@ def execute_native_ios_case(session, *, dart, source_root, timeout=600.0, cancel
         raise NativeIosExecutionError("original iOS Driver source/tool changed")
     session.storage.helper.verify_unchanged()
     session.case.stop_process(process, timeout=min(5.0, deadline-time.monotonic()))
+    session.case.stop_process(log_reader, timeout=min(5.0, deadline-time.monotonic()))
     return {"scenario_id":manifest["scenario_id"], "namespace":manifest["namespace"],
         "simulator_udid":app.udid, "app_pid":app.pid, "console_pid":app.console.process.pid,
         "driver_pid":process.process.pid, "driver_exit_code":code,
+        "unified_log_pid":log_reader.process.pid,
         "assertions_passed":True, "native_cleanup_pending":True}

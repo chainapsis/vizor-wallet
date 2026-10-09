@@ -33,8 +33,17 @@ class ExecutionTests(unittest.TestCase):
         self.session.prepare_zakura_control()
         self.original_start = self.session.case.start_process
         self.mode = "success"
+        self.log_lines = None
+        self.log_reader = None
 
     def launch(self, command, **kwargs):
+        if command[:3] == ["/usr/bin/xcrun", "simctl", "spawn"]:
+            self.assertEqual(command[3], self.session.storage.simulator.udid)
+            self.assertEqual(command[4:9], ["log", "stream", "--style", "ndjson", "--level"])
+            self.log_lines = kwargs["raw_lines"]
+            self.log_reader = self.session.case._start_process(
+                [sys.executable, "-u", "-c", "import time; time.sleep(60)"], **kwargs)
+            return self.log_reader
         if str(self.driver) in command:
             code = "import json,os; value={'case_manifest':json.loads(os.environ['VIZOR_E2E_CASE_MANIFEST']),'pid':int(os.environ['VIZOR_E2E_APP_PID'])}; "
             if self.mode == "console-pid":
@@ -45,9 +54,14 @@ class ExecutionTests(unittest.TestCase):
                 code += "print('VIZOR_E2E_RESULT='+json.dumps(value),flush=True)"
             return self.session.case._start_process([sys.executable,"-u","-c",code], **kwargs)
         managed = self.original_start(command, **kwargs)
-        # Only the app console gets the model VM endpoint; helper receipts stay exact.
+        # The endpoint is an SDK unified-log event, not app-console stdout.
+        # Keep the modeled native app distinct from the original console job.
         if "--mode" not in command:
-            kwargs["raw_lines"].append("The Dart VM service is listening on http://127.0.0.1:12345/model/\n")
+            pid = self.model.native.model.writers[self.session.storage.simulator.udid].process.pid
+            if self.mode == "log-console-pid":
+                pid = managed.process.pid
+            message = "The Dart VM service is listening on http://127.0.0.1:12345/model/"
+            self.log_lines.append(json.dumps({"eventMessage": message, "processID": pid}) + "\n")
         return managed
 
     def execute(self, **kwargs):
@@ -62,10 +76,19 @@ class ExecutionTests(unittest.TestCase):
         result = self.execute()
         self.assertNotEqual(result["app_pid"], result["console_pid"])
         self.assertNotEqual(result["app_pid"], result["driver_pid"])
+        self.assertEqual(result["unified_log_pid"], self.log_reader.process.pid)
+        self.assertIsNotNone(self.log_reader.process.poll())
         self.session.close(timeout=15)
         self.assertTrue(self.session.backend.closed)
         self.assertNotIn(result["simulator_udid"],self.model.native.model.devices)
         self.worker.close()
+
+    def test_vm_endpoint_from_console_pid_is_rejected(self):
+        self.mode = "log-console-pid"
+        with self.assertRaisesRegex(EXECUTE.NativeIosExecutionError, "VM endpoint.*original native app PID"):
+            self.execute()
+        self.session.retain(timeout=15)
+        self.assertIsNotNone(self.log_reader.process.poll())
 
     def test_console_pid_cannot_satisfy_native_app_result(self):
         self.mode = "console-pid"
