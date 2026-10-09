@@ -825,6 +825,9 @@ async fn legacy_refusal_preserves_a_compatible_bound_catalog() {
         );
         {
             let conn = rusqlite::Connection::open(&path).unwrap();
+            // Put all catalog evidence in the main file. A WAL companion is
+            // deliberately refused by the repair's atomic-swap check.
+            conn.pragma_update(None, "journal_mode", "DELETE").unwrap();
             catalog_row(&conn, 1);
             catalog_row(&conn, 2);
             conn.execute_batch(damage).unwrap();
@@ -867,6 +870,7 @@ async fn legacy_refusal_with_an_unbound_catalog_keeps_the_original() {
         );
         {
             let conn = rusqlite::Connection::open(&path).unwrap();
+            conn.pragma_update(None, "journal_mode", "DELETE").unwrap();
             catalog_row(&conn, 1);
             conn.execute_batch(damage).unwrap();
         }
@@ -902,6 +906,7 @@ async fn legacy_refusal_without_a_catalog_can_be_rebuilt() {
         );
         {
             let conn = rusqlite::Connection::open(&path).unwrap();
+            conn.pragma_update(None, "journal_mode", "DELETE").unwrap();
             conn.execute_batch(
                 "DROP TABLE pir_bridge_catalog;
                  CREATE TABLE pir_bridge_revisions (source BLOB NOT NULL);
