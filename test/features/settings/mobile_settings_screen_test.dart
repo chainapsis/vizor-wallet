@@ -18,6 +18,7 @@ import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_tab_bar.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/features/settings/widgets/private_queries_turn_off.dart';
 import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/mobile_list_row.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/mobile_surface_card.dart';
@@ -660,9 +661,92 @@ void main() {
     expect(button, findsOneWidget);
     await tester.ensureVisible(button);
     await tester.pumpAndSettle();
+    // Finishing sends transparent lookups to the server, so it asks.
     await tester.tap(button);
-    await tester.pump();
+    await tester.pumpAndSettle();
+    expect(_turnOffSheet, findsOneWidget);
+    await tester.tap(
+      find.byKey(const ValueKey('private_queries_turn_off_confirm')),
+    );
+    await tester.pumpAndSettle();
     expect(enhancePir.finishes, 1);
+  });
+
+  group('turning private queries off on mobile', () {
+    Future<_RecordingToggle> tapToggle(
+      WidgetTester tester, {
+      required bool enabled,
+      required bool walletPrivate,
+    }) async {
+      final enhancePir = _RecordingToggle(enabled);
+      await tester.pumpWidget(
+        _app(
+          enhancePirEnabled: enabled,
+          enhancePir: () => enhancePir,
+          walletTransparentPrivate: walletPrivate,
+        ),
+      );
+      await tester.pumpAndSettle();
+      final row = find.byKey(const ValueKey('mobile_settings_enhance_pir_row'));
+      await tester.scrollUntilVisible(row, 200);
+      await tester.ensureVisible(row);
+      await tester.pumpAndSettle();
+      await tester.tap(row);
+      await tester.pumpAndSettle();
+      return enhancePir;
+    }
+
+    testWidgets('a private wallet asks in a sheet that names what is sent', (
+      tester,
+    ) async {
+      final enhancePir = await tapToggle(
+        tester,
+        enabled: true,
+        walletPrivate: true,
+      );
+      expect(_turnOffSheet, findsOneWidget);
+      expect(find.text(kPrivateQueriesTurnOffTitle), findsOneWidget);
+      expect(find.text(kPrivateQueriesTurnOffBody), findsOneWidget);
+      expect(find.text(kPrivateQueriesTurnOffDisclosure), findsOneWidget);
+
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(_turnOffSheet, findsNothing);
+      expect(enhancePir.toggles, 0);
+
+      final row = find.byKey(const ValueKey('mobile_settings_enhance_pir_row'));
+      await tester.ensureVisible(row);
+      await tester.pumpAndSettle();
+      await tester.tap(row);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('private_queries_turn_off_confirm')),
+      );
+      await tester.pumpAndSettle();
+      expect(enhancePir.toggles, 1);
+    });
+
+    testWidgets('an existing wallet asks before its first private read', (
+      tester,
+    ) async {
+      final enhancePir = await tapToggle(
+        tester,
+        enabled: true,
+        walletPrivate: false,
+      );
+      expect(_turnOffSheet, findsOneWidget);
+      expect(enhancePir.toggles, 0);
+    });
+
+    testWidgets('turning on never asks', (tester) async {
+      final enhancePir = await tapToggle(
+        tester,
+        enabled: false,
+        walletPrivate: true,
+      );
+      expect(_turnOffSheet, findsNothing);
+      expect(enhancePir.toggles, 1);
+    });
   });
 
   testWidgets('off mainnet nothing to finish shows no opt-out action', (
@@ -1629,6 +1713,26 @@ class _RecordingEnhancePir extends EnhancePirNotifier {
 
   @override
   Future<void> finishTransparentOptOut() async => finishes++;
+}
+
+final _turnOffSheet = find.byKey(
+  const ValueKey('private_queries_turn_off_sheet'),
+);
+
+class _RecordingToggle extends EnhancePirNotifier {
+  _RecordingToggle(this.enabled);
+
+  final bool enabled;
+  int toggles = 0;
+
+  @override
+  bool build() => enabled;
+
+  @override
+  Future<void> toggle() async {
+    toggles++;
+    state = !state;
+  }
 }
 
 class _PrivateWallet extends WalletTransparentPrivateNotifier {

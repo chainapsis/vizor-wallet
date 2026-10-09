@@ -10,6 +10,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../providers/enhance_pir_provider.dart';
+import '../private_queries_turn_off.dart';
 import '../transparent_opt_out_action.dart';
 import 'mobile_tor_control.dart';
 export 'mobile_tor_control.dart' show MobilePrivacyToggle;
@@ -64,18 +65,14 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
               label: 'Private queries',
               onTap: changingRecovery
                   ? null
-                  : () => unawaited(
-                      ref.read(enhancePirProvider.notifier).toggle(),
-                    ),
+                  : () => unawaited(togglePrivateQueries(context, ref)),
               excludeSemantics: true,
               child: GestureDetector(
                 key: const ValueKey('mobile_settings_enhance_pir_row'),
                 behavior: HitTestBehavior.opaque,
                 onTap: changingRecovery
                     ? null
-                    : () => unawaited(
-                        ref.read(enhancePirProvider.notifier).toggle(),
-                      ),
+                    : () => unawaited(togglePrivateQueries(context, ref)),
                 child: SizedBox(
                   height: _rowHeight,
                   child: Padding(

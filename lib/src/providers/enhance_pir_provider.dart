@@ -10,6 +10,7 @@ import '../core/storage/linux_keyring_coordinator.dart';
 import '../core/storage/wallet_paths.dart';
 import '../features/migration/services/ironwood_migration_background_credential_store.dart';
 import '../rust/api/sync.dart' as rust_sync;
+import 'account_provider.dart';
 import 'sync_provider.dart';
 
 /// Whether the configured chain has a matching private enhancement service.
@@ -139,6 +140,20 @@ final walletTransparentPrivateProvider =
     NotifierProvider<WalletTransparentPrivateNotifier, bool>(
       WalletTransparentPrivateNotifier.new,
     );
+
+/// Whether turning private queries off, or finishing an opt-out, would send
+/// the wallet's transparent lookups to the server: its transparent policy is
+/// still private, an opt-out is unfinished, or private queries are on for an
+/// existing wallet, which then recovers its transparent funds privately.
+final privateQueriesTurnOffDisclosesProvider = Provider<bool>((ref) {
+  if (ref.watch(walletTransparentPrivateProvider) ||
+      ref.watch(transparentOptOutPendingProvider)) {
+    return true;
+  }
+  final hasAccounts =
+      ref.watch(accountProvider).value?.accounts.isNotEmpty ?? false;
+  return hasAccounts && ref.watch(enhancePirProvider);
+});
 
 /// Transition feedback while the setting changes.
 const kEnhancePirChangingMessage = 'Changing setting…';

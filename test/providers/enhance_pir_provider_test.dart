@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_background_credential_store.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
@@ -264,8 +265,10 @@ void main() {
     _Reconciler? reconciler,
     _OptOut? optOut,
     LinuxKeyringCoordinator? coordinator,
+    List<Override> extra = const [],
   }) => ProviderContainer(
     overrides: [
+      ...extra,
       transparentOptOutStoreProvider.overrideWithValue(optOut ?? _OptOut()),
       if (coordinator != null)
         linuxKeyringCoordinatorProvider.overrideWithValue(coordinator),
@@ -618,6 +621,54 @@ void main() {
       sync.appliedTransparentPolicy?.mode,
       ApiTransparentLedgerMode.public,
     );
+  });
+  group('turning private queries off discloses transparent lookups', () {
+    Future<bool> discloses({
+      bool enabled = true,
+      bool hasAccount = true,
+      bool walletPrivate = false,
+      bool optOutPending = false,
+    }) async {
+      final container = setup(
+        _Store()..value = enabled,
+        _Sync()..gate.complete(),
+        initialEnabled: enabled,
+        hasAccount: hasAccount,
+        extra: [
+          transparentPolicyStartupProvider.overrideWithValue(
+            TransparentPolicyStartup(optOutPending: optOutPending),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      if (walletPrivate) {
+        container.read(walletTransparentPrivateProvider.notifier).update(true);
+      }
+      return container.read(privateQueriesTurnOffDisclosesProvider);
+    }
+
+    test('when the wallet still reads transparent funds privately', () async {
+      expect(await discloses(walletPrivate: true), isTrue);
+      // Private queries already off, with the wallet still private.
+      expect(await discloses(walletPrivate: true, enabled: false), isTrue);
+    });
+
+    test('when an opt-out is unfinished', () async {
+      expect(await discloses(optOutPending: true, enabled: false), isTrue);
+    });
+
+    test('when private queries are on for an existing wallet', () async {
+      // Even before its first balance read reports the private policy.
+      expect(await discloses(), isTrue);
+    });
+
+    test('not without a wallet to look up', () async {
+      expect(await discloses(hasAccount: false), isFalse);
+    });
+
+    test('not when private queries are off and the wallet is public', () async {
+      expect(await discloses(enabled: false), isFalse);
+    });
   });
   test('a failed opt-out marker write changes nothing', () async {
     final events = <String>[];
