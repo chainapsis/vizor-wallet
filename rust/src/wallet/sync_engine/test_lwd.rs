@@ -354,6 +354,30 @@ impl CapturingLwd {
     }
 }
 
+/// Applies through the production dispatch fence from tests outside its module.
+pub(crate) async fn apply_fenced(
+    path: &str,
+    network: WalletNetwork,
+    mode: TransparentLedgerMode,
+) -> Result<
+    zcash_client_backend::data_api::transparent_ledger::AppliedTransparentPolicy,
+    super::SyncError,
+> {
+    let mut db = crate::wallet::db::open_wallet_db_with_timeout(
+        path,
+        network,
+        crate::wallet::db::SYNC_DB_BUSY_TIMEOUT,
+    )
+    .map_err(super::SyncError::db)?;
+    super::lwd::transparent_lookup::apply_transparent_policy_fenced(
+        &mut db,
+        path,
+        mode,
+        std::time::Duration::from_secs(2),
+    )
+    .await
+}
+
 impl Drop for CapturingLwd {
     fn drop(&mut self) {
         self.server.abort();

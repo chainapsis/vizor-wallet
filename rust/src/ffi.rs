@@ -1127,6 +1127,40 @@ mod tests {
             assert_eq!(lwd.count("/GetTransaction"), 2);
         }
 
+        #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+        async fn slow_public_response_does_not_hold_background_observation_transition() {
+            let lwd = CapturingLwd::start(Vec::new()).await;
+            let (_dir, path) = wallet(WalletNetwork::Regtest);
+            let release = lwd.hold_responses("/GetTransaction");
+            let url = lwd.url.clone();
+            let lookup_path = path.clone();
+            let observation =
+                tokio::spawn(
+                    async move { observe(&url, Some(&lookup_path), Some("regtest")).await },
+                );
+            tokio::time::timeout(Duration::from_secs(10), async {
+                while lwd.count("/GetTransaction") == 0 {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            })
+            .await
+            .unwrap();
+            let transition = crate::wallet::sync_engine::test_lwd::apply_fenced(
+                &path,
+                WalletNetwork::Regtest,
+                TransparentLedgerMode::PrivateShadow,
+            )
+            .await;
+            release.notify_one();
+            let observed = observation.await.unwrap();
+            assert!(transition.is_ok(), "{transition:?}");
+            assert_eq!(
+                observed,
+                (0, CLightwalletdTransactionObservation::not_found())
+            );
+            assert_eq!(lwd.count("/GetTransaction"), 1);
+        }
+
         #[tokio::test]
         async fn public_observe_needs_wallet_context() {
             let lwd = CapturingLwd::start(Vec::new()).await;

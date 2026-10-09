@@ -2129,6 +2129,41 @@ mod tests {
         assert_eq!(found_indices(&discovered), vec![1]);
     }
 
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn slow_public_response_does_not_hold_discovery_transition() {
+        use crate::wallet::sync_engine::test_lwd::{apply_fenced, CapturingLwd};
+        use std::time::Duration;
+        use zcash_client_backend::data_api::transparent_ledger::TransparentLedgerMode;
+        let _route = crate::network_privacy::test_route_policy::lock_route_policy();
+        let network = WalletNetwork::Main;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db").to_str().unwrap().to_owned();
+        let seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
+        keys::init_db_and_create_account(&path, network, &seed, Some(2_000_000), "existing")
+            .unwrap();
+        let gate = import_gate(network, &path, false, EnhancementPolicy::current(network)).unwrap();
+        let lwd = CapturingLwd::start_with(vec![0], 3_000_000, |_| {}).await;
+        let release = lwd.hold_responses("/GetTaddressTxids");
+        let url = lwd.url.clone();
+        let discovery = tokio::spawn(async move {
+            discover_used_software_accounts(network, &seed, Some(2_000_000), &url, &gate).await
+        });
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while lwd.count("/GetTaddressTxids") == 0 {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap();
+        let transition = apply_fenced(&path, network, TransparentLedgerMode::PrivateShadow).await;
+        release.notify_one();
+        let discovered = discovery.await.unwrap();
+        assert!(transition.is_ok(), "{transition:?}");
+        assert_eq!(lwd.count("/GetTaddressTxids"), 1);
+        assert_eq!(discovered.status, SoftwareAccountDiscoveryStatus::Partial);
+        assert_eq!(found_indices(&discovered), vec![1]);
+    }
+
     fn found_indices(discovered: &SoftwareAccountDiscovery) -> Vec<u32> {
         discovered
             .accounts
