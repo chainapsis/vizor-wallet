@@ -54,6 +54,19 @@ class ScheduleTests(unittest.TestCase):
             self.cases[0].id:6, self.cases[1].id:26, self.cases[2].id:59.5})
         self.assertEqual(schedule.record["estimate_samples"], {case.id:2 for case in self.cases})
 
+    def test_finite_samples_with_overflowing_median_are_rejected(self):
+        reports = [self.history("one.json", (1e308, 2, 20)),
+                   self.history("two.json", (1e308, 3, 20))]
+        with self.assertRaisesRegex(e2e_catalog.CatalogError,
+                                    "non-finite median.*rust.receive.sync"):
+            schedule_scenarios(self.catalog, self.cases, timing_reports=reports)
+
+    def test_large_finite_median_remains_serializable(self):
+        report = self.history(durations=(1e308, 2, 20))
+        schedule = schedule_scenarios(self.catalog, self.cases, timing_reports=[report])
+        self.assertEqual(schedule.record["estimated_seconds"][self.cases[0].id], 1e308)
+        json.dumps(schedule.record, allow_nan=False)
+
     def test_unknown_timings_follow_measured_cases_without_using_timeouts(self):
         report = self.history(statuses=("failed", "passed", "timed_out"))
         schedule = schedule_scenarios(self.catalog, self.cases, timing_reports=[report])

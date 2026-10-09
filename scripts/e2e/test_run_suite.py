@@ -57,6 +57,36 @@ class PreviewTests(unittest.TestCase):
             self.assertEqual(output["schedule"]["dispatch_scenarios"],[case.id for case in cases])
             self.assertEqual(report.read_bytes(),before)
 
+    def test_overflowing_timing_median_is_rejected_before_execution_or_plan_output(self):
+        from types import SimpleNamespace
+        def execute(*args, **kwargs):
+            raise AssertionError("started execution")
+        case = self.catalog.scenarios_by_id["rust.receive.sync"]
+        with tempfile.TemporaryDirectory() as directory:
+            reports = []
+            for index in range(2):
+                report = Path(directory)/("run-" + str(index) + ".json")
+                report.write_text(json.dumps({"schema_version":2,
+                    "catalog_sha256":self.catalog.fingerprint,
+                    "source_commit":("a" if index == 0 else "b") * 40,
+                    "results":[{"scenario_id":case.id,"profile":case.profile,
+                        "target":case.target,"test":case.test,"status":"passed",
+                        "duration_seconds":1e308}]}))
+                reports.append(report)
+            for mode in ("--plan", "--run"):
+                with self.subTest(mode=mode), \
+                     patch.dict(sys.modules, {"native_macos_suite":SimpleNamespace(run_native_suite=execute)}), \
+                     patch("subprocess.run",side_effect=AssertionError("spawned a process")), \
+                     patch.object(Path,"mkdir",side_effect=AssertionError("created artifacts")), \
+                     patch.object(Path,"write_text",side_effect=AssertionError("wrote a file")), \
+                     patch.object(Path,"write_bytes",side_effect=AssertionError("wrote a file")):
+                    code,output,error = self.invoke("--scenario",case.id,mode,
+                        "--timing-report",str(reports[0]),"--timing-report",str(reports[1]))
+                    self.assertEqual(code,2)
+                    self.assertIsNone(output)
+                    self.assertIn("non-finite median",error)
+                    self.assertIn(case.id,error)
+
     def test_list_inventory_marks_only_the_wired_scenarios_runnable(self) -> None:
         code, output, errors = self.invoke("--list")
         self.assertEqual((code, errors), (0, ""))

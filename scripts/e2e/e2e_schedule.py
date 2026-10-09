@@ -74,6 +74,9 @@ def schedule_scenarios(catalog, scenarios, *, order="short-first", timing_report
         history.append({"path":str(path), "sha256":digest, "source_commit":raw["source_commit"]})
     estimates = {case.id:float(statistics.median(samples[case.id]))
                  for case in selected if case.id in samples}
+    for case_id, estimate in estimates.items():
+        if not math.isfinite(estimate):
+            raise CatalogError("non-finite median timing estimate for case: " + case_id)
     catalog_index = {case.id:index for index, case in enumerate(catalog.scenarios)}
     indices = list(range(len(selected)))
     def priority(index):
