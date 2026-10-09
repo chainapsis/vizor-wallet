@@ -1,7 +1,7 @@
 """Produce a reusable offline signer from one exact, frozen Git Rust subtree.
 
-This is a cooperative original producer, not cache lookup, native app publication,
-network containment, external artifact adoption or a wallet/scenario PASS.
+Original owners may reuse a validated immutable publication, never loose prior
+outputs or external receipts. This is not a native app cache or wallet PASS.
 """
 from __future__ import annotations
 
@@ -67,7 +67,7 @@ def _file_record(path, *, executable=False, limit=_MAX_SOURCE_BYTES):
 
 
 class ProducedRegtestFunder:
-    """Original successfully joined producer; never construct from a receipt."""
+    """Original joined publication owner; never construct from a receipt."""
     def __init__(self, case, root, root_id, binary, binary_record, source_records,
                  source_directories, binary_parents, provenance, token, test_binaries=None,
                  wallet_addresses_binary=None):
@@ -129,7 +129,7 @@ class ProducedRegtestFunder:
 
     def identity(self):
         self.verify_unchanged()
-        # Identity describes this producer, not a portable cache attestation.
+        # This describes the current publication owner, including honest hits.
         return json.loads(json.dumps(self._provenance))
 
     def wallet_addresses_binary(self):
@@ -255,7 +255,8 @@ def _copy_cargo_executable(source, destination):
 
 def build_regtest_funder(case: NativeCaseLifecycle, *, source_root: Path,
                         source_commit: str, jobs: int = 4, timeout: float = 1200.0,
-                        cancel_event=None, test_targets=(), wallet_addresses=False):
+                        cancel_event=None, test_targets=(), wallet_addresses=False,
+                        cache_root=None):
     """One dedicated fresh producer case; close it before returning a handle.
 
     All failure evidence/source/target storage remains. Never adopt prior roots,
@@ -283,6 +284,7 @@ def build_regtest_funder(case: NativeCaseLifecycle, *, source_root: Path,
     root.mkdir(mode=0o700)
     root_id = tree.identity(root.stat())
     environment = {**os.environ, "GIT_ALLOW_PROTOCOL": ""}
+    lease = None
     def command(arguments, *, env=environment):
         _verify_root(case, root, root_id)
         if cancellation.is_set():
@@ -337,14 +339,69 @@ def build_regtest_funder(case: NativeCaseLifecycle, *, source_root: Path,
         target.mkdir(mode=0o700)
         build_env = {**os.environ, "CARGO_TARGET_DIR": str(target), "CARGO_BUILD_JOBS": str(jobs),
                      "RUSTC": str(compiler), "RUSTC_WRAPPER": "", "RUSTC_WORKSPACE_WRAPPER": ""}
-        lines = command(["cargo", "build", "--offline", "--locked", "--manifest-path",
+        cache_inputs = None
+        cargo_executable = "cargo"
+        input_records = {}
+        configuration_paths = set()
+        def verify_cache_inputs():
+            if cache_inputs is None:
+                return
+            current_configurations = {str(path): _file_record(path, limit=1024*1024)[1]
+                for path in configuration_paths if path.exists() or path.is_symlink()}
+            if current_configurations != cache_inputs["configuration_sha256"]:
+                raise FunderBuildError("Cargo configuration changed during publication")
+            if any(_file_record(path) != record for path, record in input_records.items()):
+                raise FunderBuildError("cache compiler/configuration/producer input changed")
+        if cache_root is not None:
+            from funder_cache import FunderCacheLease
+            cargo_entry = shutil.which("cargo", path=build_env.get("PATH"))
+            if cargo_entry is None:
+                raise FunderBuildError("selected Cargo executable is unavailable")
+            cargo_tool = Path(cargo_entry).resolve(strict=True)
+            if cargo_tool.name == "rustup":
+                paths = command([str(cargo_tool), "which", "cargo"], env=build_env)
+                if len(paths) != 1 or not Path(paths[0]).is_absolute():
+                    raise FunderBuildError("rustup did not identify one absolute Cargo executable")
+                cargo_tool = Path(paths[0]).resolve(strict=True)
+            if not cargo_tool.is_file() or not os.access(cargo_tool, os.X_OK):
+                raise FunderBuildError("selected Cargo executable is unavailable")
+            if command([str(cargo_tool), "-V"], env=build_env) != cargo:
+                raise FunderBuildError("resolved Cargo differs from the probed toolchain")
+            cargo_executable = str(cargo_tool)
+            configurations = {}
+            cargo_home = Path(build_env.get("CARGO_HOME", str(Path.home() / ".cargo")))
+            configuration_paths = {cargo_home / name for name in ("config", "config.toml")}
+            configuration_paths.update(parent / ".cargo" / name for parent in (case.workspace.root, *case.workspace.root.parents)
+                         for name in ("config", "config.toml"))
+            for path in sorted(configuration_paths):
+                if path.exists() or path.is_symlink():
+                    input_records[path] = _file_record(path, limit=1024*1024)
+                    configurations[str(path)] = input_records[path][1]
+            for path in (compiler, cargo_tool, Path(__file__).resolve(strict=True)):
+                input_records[path] = _file_record(path)
+            cache_inputs = {"schema": 1, "rust_blobs": {name: list(value) for name, value in sorted(expected.items())},
+                "rustc": list(rustc), "rustc_sha256": _file_record(compiler)[1], "cargo": list(cargo),
+                "cargo_sha256": _file_record(cargo_tool)[1],
+                "host_target": host, "test_targets": sorted(test_targets), "wallet_addresses": wallet_addresses,
+                "producer_sha256": _file_record(Path(__file__).resolve(strict=True))[1],
+                "configuration_sha256": configurations,
+                "environment_sha256": {name: hashlib.sha256(value.encode()).hexdigest()
+                    for name, value in sorted(build_env.items()) if name not in {"CARGO_TARGET_DIR", "CARGO_BUILD_JOBS"}}}
+            names = ("regtest_direct_funder", *test_targets,
+                     *(("regtest_wallet_addresses",) if wallet_addresses else ()))
+            lease = FunderCacheLease(cache_root, cache_inputs, names, timeout=timeout, cancel_event=cancellation)
+            lease.__enter__()
+            verify_cache_inputs()
+        cached = lease.load() if lease is not None else None
+        lines = () if cached is not None else command([cargo_executable, "build", "--offline", "--locked", "--manifest-path",
             str(root / "source/rust/Cargo.toml"), "--example", "regtest_direct_funder",
             *(["--example", "regtest_wallet_addresses"] if wallet_addresses else []),
             *(argument for name in test_targets for argument in ("--test", name)),
             "--target", host, "--message-format=json"], env=build_env)
-        candidates, completed = [], False
-        test_candidates = {name: [] for name in test_targets}
-        address_candidates = []
+        candidates = [cached["regtest_direct_funder"]] if cached is not None else []
+        completed = cached is not None
+        test_candidates = {name: [cached[name]] if cached is not None else [] for name in test_targets}
+        address_candidates = [cached["regtest_wallet_addresses"]] if cached is not None and wallet_addresses else []
         for line in lines:
             if not line.lstrip().startswith("{"):
                 continue  # Cargo stderr progress shares the owned capture with JSON stdout.
@@ -379,8 +436,9 @@ def build_regtest_funder(case: NativeCaseLifecycle, *, source_root: Path,
         for output in (cargo_binary, *(paths[0] for paths in test_candidates.values()), *address_candidates):
             if not output.is_absolute() or output.resolve(strict=True) != output:
                 raise FunderBuildError("Cargo executable path is not canonical")
-            output.relative_to(target)
+            output.relative_to(lease.entry if cached is not None else target)
         _verify_source(root / "source", records, source_directories)
+        verify_cache_inputs()
         case.close()
         _verify_root(case, root, root_id)
         publication = root / "publication"
@@ -407,7 +465,10 @@ def build_regtest_funder(case: NativeCaseLifecycle, *, source_root: Path,
                            for name, record in sorted(records.items())},
             "binary": str(binary), "binary_sha256": binary_record[1],
             "rustc": list(rustc), "rustc_binary": str(compiler), "cargo": list(cargo), "offline": True,
-            "host_target": host, "jobs": jobs, "producer_namespace": case.workspace.namespace}
+            "host_target": host, "jobs": jobs, "producer_namespace": case.workspace.namespace,
+            "cargo_build_count": int(cached is None), "cache_hit": cached is not None}
+        if cache_inputs is not None:
+            provenance.update(cache_inputs=cache_inputs, cache_key=lease.key)
         if test_binaries:
             provenance["test_binaries"] = {name: {"binary": str(path), "sha256": record[1]}
                 for name, (path, record) in test_binaries.items()}
@@ -418,6 +479,12 @@ def build_regtest_funder(case: NativeCaseLifecycle, *, source_root: Path,
                                         source_directories, binary_parents, provenance, _TOKEN, test_binaries,
                                         address_binary)
         artifact.verify_unchanged()
+        verify_cache_inputs()
+        if lease is not None:
+            if cached is None:
+                lease.publish(artifact)
+            else:
+                lease.load()
         return artifact
     except BaseException as primary:
         try:
@@ -425,3 +492,6 @@ def build_regtest_funder(case: NativeCaseLifecycle, *, source_root: Path,
         except BaseException as cleanup:
             raise primary from cleanup
         raise
+    finally:
+        if lease is not None:
+            lease.__exit__()

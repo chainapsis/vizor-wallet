@@ -307,12 +307,18 @@ def run_native_suite(args, catalog, scenarios, selection, *, source_root):
                               for s in scenarios)
         needs_ios_addresses = any(s.id in IOS_MIGRATION_SCENARIOS for s in scenarios)
         producer = build_case(1, "rust.signer-build", "rust") if targets else build_case(1,"flutter.macos.signer-build")
+        cache_parent = logs / "build-cache"
+        cache_parent.mkdir(mode=0o700, exist_ok=True)
         artifact = build_regtest_funder(producer,
             source_root=root, source_commit=commit, jobs=args.build_jobs, timeout=1200,
-            cancel_event=cancel, test_targets=targets, wallet_addresses=needs_addresses or needs_ios_addresses)
-        report["builds"]["signer_build_count"] = 1
+            cancel_event=cancel, test_targets=targets, wallet_addresses=needs_addresses or needs_ios_addresses,
+            cache_root=cache_parent / "funder-v1")
+        identity = artifact.identity()
+        report["builds"]["signer_build_count"] = identity["cargo_build_count"]
+        report["builds"]["signer_cache_hit"] = identity["cache_hit"]
+        report["builds"]["signer_cache_key"] = identity.get("cache_key")
         if targets:
-            report["builds"].update(rust_build_count=1, rust_test_targets=list(targets))
+            report["builds"].update(rust_build_count=identity["cargo_build_count"], rust_test_targets=list(targets))
         payment_addresses = {}
         ios_addresses = None
         if needs_ios_addresses:

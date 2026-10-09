@@ -145,8 +145,10 @@ same-final-source all-green21/64-case result or current-policy cache coverage.
 
 ## Isolated macOS import and endpoint execution
 
-The selected native cohort, cleanup helper and offline signer are each built
-once per invocation. Each case has fresh wallet/Keychain/preferences storage,
+The selected native cohort and cleanup helper are each built once per invocation.
+The offline signer and selected Rust test executables use the immutable cache
+described below; a miss compiles once, and a hit records zero Cargo builds.
+Each case has fresh wallet/Keychain/preferences storage,
 ports and its own pinned Zakura/lightwalletd containers. The existing import
 test still requires shielded **1.25** and transparent **0.75**; a completed
 Driver connection or empty successful test response is not assertion completion.
@@ -203,9 +205,10 @@ Evidence stays in `.regtest-logs/native-suite-<id>/`. Each repetition's
 and uncertain cleanup remains failure. Cancellation stops owned children and
 new assignment without terminating ordinary wallet processes.
 
-This is in-process build reuse; persistent verified caching is a separate
-implementation group. Resource/performance comparison and the final-source
-all-green catalog remain pending. No CI behavior changes.
+Native app/helper sharing is still within one invocation, not a persistent
+app cache. Signer/Rust executable reuse does not establish a wallet PASS or
+measured speedup. Resource/performance comparison
+and final-source all-green catalog are still pending. No CI behavior changes.
 
 ## Isolated macOS send, shielding and payment requests
 
@@ -1025,7 +1028,7 @@ fix, host funding adapter or catalog execution is added by this tool.
 
 ### Original offline signer build producer
 
-`funder_build.py` builds the signer once for later case reuse. Pass a fresh,
+`funder_build.py` publishes the signer once for later case reuse. Pass a fresh,
 dedicated `NativeCaseLifecycle`, a local Vizor Git object cache and one full
 commit SHA to `build_regtest_funder`. It never builds the dirty checkout or
 downloads missing Git/dependency objects. Git replacement objects are disabled.
@@ -1034,8 +1037,8 @@ Git blobs are copied into new private directories, with read-only source files.
 Archive links, omitted/export-transformed blobs and unexpected files fail.
 
 The original case owns all Git/toolchain/Cargo processes and output capture.
-Cargo uses a fresh target directory, `--offline --locked`, an explicit rustc
-host target and 1–8 jobs (default four). Publication requires successful Cargo
+On a cache miss, Cargo uses a fresh target directory, `--offline --locked`, an
+explicit rustc host target and 1–8 jobs (default four). Cold publication requires successful Cargo
 JSON for this exact example/source, not a test harness, and positive completion
 of every original process group/output writer. Cargo's output may be hard-linked;
 only after joining writers is it copied into a new private single-link read-only
@@ -1044,7 +1047,7 @@ An explicit `RUSTC` or the PATH compiler is resolved to the executable actually
 probed (including rustup proxy resolution), then passed as Cargo's `RUSTC`.
 Compiler wrappers are disabled so Cargo cannot silently substitute a compiler.
 
-The returned `ProducedRegtestFunder` is an in-memory original-producer handle,
+The returned `ProducedRegtestFunder` is an in-memory original-publication handle,
 not a path/JSON receipt that can be adopted. Call `verify_unchanged()` before
 and after an owning case runs it. `identity()` records the exact commit, Rust
 Git/blob hashes, toolchain, host target and executable SHA-256. Changed source,
@@ -1052,14 +1055,33 @@ executable or original parent attachments invalidate that handle permanently;
 all failure evidence is retained. Two cases can consume the same publication
 without starting another Cargo build, but each owns its own process/output.
 
-This is not persistent cache lookup, a portable hermetic/environment attestation,
-native app build publication, funding/inclusion validation or catalog execution.
+The suite enables `.regtest-logs/build-cache/funder-v1` by default. Keys bind the
+complete Rust Git/blob inventory, compiler/Cargo identity and executable bytes,
+host target, exact selected tests/address tool, producer implementation, Cargo
+configuration contents and hashed build environment. The invocation ID, Git
+commit outside the Rust subtree, target directory and build job count are not
+compilation inputs in this key. No environment values or configuration contents
+are written to the manifest. A hit still inventories the exact current source,
+joins its original owner and copies binaries into a fresh private publication;
+it never accepts a loose old executable or adopts an old case. Reports record
+`signer_cache_hit`, `signer_cache_key` and actual signer/Rust build counts.
+
+Only an original successfully joined producer may create an entry. A bounded,
+cancel-aware per-key lock serializes publication; staging is sealed and renamed
+without replacing an existing entry. Every hit verifies exact inventory and
+read-only single-link executable hashes. Corrupt or writable entries fail rather
+than being silently rebuilt or overwritten. Partial staging and failed cases
+remain evidence; this runner does not prune caches or developer resources.
+Wallet storage, chain state, devices and process owners are never cached.
+
+This is not a portable hermetic/environment attestation, native app build
+publication, funding/inclusion validation or catalog execution.
 The source cache and compiler remain trusted cooperative inputs, not a sandbox.
 Missing offline dependencies remain errors rather than triggering downloads.
 Host checks use real Git/files/processes with only the compiler modeled:
 
 ```bash
-python3 -B -m unittest scripts/e2e/test_funder_build.py
+python3 -B -m unittest scripts/e2e/test_funder_build.py scripts/e2e/test_funder_cache.py scripts/e2e/test_funder_execution.py scripts/e2e/test_native_macos_suite.py
 ```
 
 ### Owned offline signer execution

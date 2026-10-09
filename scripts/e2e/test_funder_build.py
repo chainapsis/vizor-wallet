@@ -54,6 +54,11 @@ class FunderBuildTests(unittest.TestCase):
         self.compiler.write_text("modeled compiler\n")
         self.compiler.chmod(0o700)
         self.compiler_entry = self.compiler
+        self.cargo = self.root / "selected-cargo"
+        self.cargo.write_text("modeled Cargo\n")
+        self.cargo.chmod(0o700)
+        self.cargo_entry = self.cargo
+        self.selected_cargo = None
         self.rustup = None
         self.hard_link_output = False
         self.test_candidate_mode = "original"
@@ -82,12 +87,15 @@ class FunderBuildTests(unittest.TestCase):
         def command(arguments, **options):
             if self.rustup is not None and arguments == [str(self.rustup), "which", "rustc"]:
                 return original([sys.executable, "-B", "-c", f"print({str(self.compiler)!r})"], **options)
+            if self.rustup is not None and arguments == [str(self.rustup), "which", "cargo"]:
+                return original([sys.executable, "-B", "-c", f"print({str(self.cargo)!r})"], **options)
             if arguments == [str(self.compiler), "-vV"]:
                 return original([sys.executable, "-B", "-c", f"print({self.rustc_identity!r})"], **options)
-            if arguments[:2] == ["cargo", "-V"]:
+            if arguments[0] in {"cargo", str(self.cargo)} and arguments[1:2] == ["-V"]:
                 return original([sys.executable, "-B", "-c", "print('cargo modeled')"], **options)
-            if arguments[:2] != ["cargo", "build"]:
+            if arguments[0] not in {"cargo", str(self.cargo)} or arguments[1:2] != ["build"]:
                 return original(arguments, **options)
+            self.selected_cargo = arguments[0]
             self.compile_calls += 1
             self.assertIn("--offline", arguments)
             self.assertIn("--locked", arguments)
@@ -146,10 +154,11 @@ class FunderBuildTests(unittest.TestCase):
                 f"raise SystemExit({self.compiler_exit})")
             return original([sys.executable, "-B", "-c", script], **options)
         with patch.object(case, "run_command", side_effect=command), patch.object(
-                BUILD.shutil, "which", return_value=str(self.compiler_entry)) as chosen:
+                BUILD.shutil, "which", side_effect=lambda name, **_: str(
+                    self.cargo_entry if name == "cargo" else self.compiler_entry)) as chosen:
             artifact = BUILD.build_regtest_funder(case, source_root=self.source, source_commit=self.commit,
                                                 timeout=5, **updates)
-            self.selected_compiler_request = chosen.call_args.args[0]
+            self.selected_compiler_request = chosen.call_args_list[0].args[0]
             return artifact
 
     def test_original_git_bytes_not_dirty_checkout_and_published_only_after_join(self):
