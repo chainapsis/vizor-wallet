@@ -75,7 +75,9 @@ pub(crate) mod tests;
 
 pub(crate) use pir::TransparentPirSource;
 use policy::raise_to_required;
-pub(crate) use policy::{current_transparent_policy, set_transparent_policy};
+pub(crate) use policy::{
+    current_transparent_policy, forget_private_ledger, set_transparent_policy,
+};
 
 /// Answered passes per account in one run. Each pass after the first needs
 /// new work: a grown window, a changed watch set, or a continuation that asks

@@ -369,6 +369,28 @@ preference save and lowering can leave a stricter wallet policy than the saved
 setting. Startup keeps that restriction until it retries the persisted
 opt-out, which lowers the policy only once that transition succeeds.
 
+Lowering also forgets what private recovery alone contributed
+(`forget_private_ledger`, over the library's `forget_transparent_ledger`).
+Leaving `PrivateRequired` only revokes private authority: a ledger-only
+receive would keep counting as public funds, and a ledger-only spend would keep
+hiding a real output in both modes. The forget removes every output, spend and
+transaction only a publication reported, with the recovery state that would
+project them again, and public discovery rebuilds the transparent view. Every
+`.tpir` companion is deleted first, and nothing is forgotten unless that
+succeeded, so a companion never outlives the facts it records as held. A forget
+that cannot finish (a companion still in use, an unwritable directory) leaves
+the policy public and is retried at every sync start while the wallet is
+public; a wallet without ledger facts is only read.
+
+Turning private queries off, or finishing an opt-out, asks first whenever it
+would send transparent lookups to the server: the wallet still reads its
+transparent funds privately, an opt-out is unfinished, or private queries are
+on for an existing wallet, which recovers its transparent funds privately on
+mainnet. The dialog (a sheet on mobile) names what the
+server then receives: every transparent address of every account and the IDs
+of transactions private recovery found, linkable to one another and, without
+Tor, to the device's IP address. Cancelling changes nothing.
+
 - Every read resolves the handle's mode against the durable policy, so a
   durable `PrivateRequired` withholds lookups in every build without being
   written onto the handle. A handle opened before the transition reads it too:
@@ -506,8 +528,18 @@ without granting funds. Tests use the trusted fixture, not the library's
 - **Operations.** Shielding and software proposals use library selectors and
   store authorization. Every hardware submission path (Ledger outbox, Keystone
   full/compact batches, and legacy PCZT) additionally checks transparent inputs
-  through `WalletDb::check_transparent_transaction_inputs` at the current network
-  target before dispatch. An exact stored transaction may retry its own recorded
+  through `WalletDb::check_transparent_transaction_inputs` before dispatch:
+  under `Public` at lightwalletd's tip + 1, under `PrivateRequired` at the
+  wallet's own tip + 1, the only target private authority covers. A block that
+  lands while a device signs therefore does not refuse the signature; the unseen
+  blocks can only have spent an input elsewhere or removed its receive, which
+  the node rejects. Until private recovery covers a block the wallet has
+  scanned, the refusal is `CatchingUp` (every owning account active, unheld and
+  blocked only by coverage or a scan behind the tip): the broadcast waits up to
+  30 s without holding a reservation, then fails with the
+  `hardware_recovery_retryable:` marker, which keeps the signed batch, its input
+  lock and, for Keystone shielding, the signature for a retry. Every other
+  refusal is final. An exact stored transaction may retry its own recorded
   spend; the exception requires full serialized-byte equality and never permits
   a competing live or mined spender.
   A SQLite `BEGIN IMMEDIATE` reservation prevents policy, evidence, and rewind
@@ -666,13 +698,18 @@ trusted, since every commit comes from the configured origin.
   removals. A source parks each companion it opened, with its lock, until it is
   dropped, so a pass and its settlement see the same companion and nothing
   removes it in between.
-- **Passes.** A pass runs on a blocking thread (`spawn_blocking`) over a
-  read-only wallet handle, whose blocks answer the adapter's chain view up to
-  the watch set's target. It stops at cancellation or the 90 s pass
-  deadline, counted from the call, so it ends before the coordinator's
-  backstop. On cancellation the async side joins the thread, so no companion
-  or handle outlives a cancelled pass, and a pass that raced cancellation is
-  discarded; a dropped call stops its pass at the next request. A
+- **Passes.** A pass runs on a thread and runtime of its own, never the
+  sync's blocking pool, over a read-only wallet handle, whose blocks answer the
+  adapter's chain view up to the watch set's target. It stops at cancellation
+  or the 90 s pass deadline, counted from the call, so it ends before the
+  coordinator's backstop. On cancellation the pass gets 2 s to return; one that
+  ignores it (the adapter takes no cancellation between requests) is abandoned,
+  still holding its read-only handle and its companion's lock until it returns,
+  and nothing it returns is read. A pass that raced cancellation is discarded;
+  a dropped call stops its pass at the next request. The sync and mempool
+  runtimes also shut down with a 2 s grace, and `SYNC_RUNNING` is cleared by a
+  guard, so no blocking work can keep the sync, its progress stream and every
+  start queued behind it open until restart. A
   publication whose set identity changed is retried once on the same
   companion, which the adapter has reset, keeping its catalog. A pass that
   failed because the service could not be reached or was not serving (a
@@ -703,13 +740,19 @@ trusted, since every commit comes from the configured origin.
   Broadcasting a shield or spend still publishes its transparent outpoints
   through `SendTransaction`. Turning Private queries off lowers the wallet to
   `Public` in every build and queues the transactions routed to lightwalletd
-  for public retrieval, so txids learned privately are disclosed at once.
-- **Limitations.** Spends and shields can be refused between a new block and
-  the next pass, or while a publication lags past a run's 90 s wait; the
-  store-time recheck refuses them, so funds are never at risk. Ledger accounts
-  are `Stopped(Ledger)`, and a restore under private mode does not find
-  transparent-only accounts. Nothing clears a quarantine; deleting and
-  re-importing the account, or turning Private queries off, recovers. The
+  for public retrieval, so txids learned privately are disclosed at once, and
+  the next sync looks up every transparent address of every account over the
+  sync's shared connection. The toggle asks before it does this.
+- **Limitations.** A hardware spend or shield waits up to 30 s for a pass to
+  cover a newly scanned block, then stays retryable with its signature; one
+  can still be refused while a publication lags past a run's 90 s wait. A
+  hardware transaction stored after a block landed loses its PCZT recipient and
+  memo details to the fallback store. Software proposals are built and stored
+  under one write lock, which the tip update also takes, so they have no such
+  window. Ledger accounts are `Stopped(Ledger)`, and a restore under private
+  mode does not find transparent-only accounts. Nothing clears a quarantine;
+  deleting and re-importing the account, or turning Private queries off, which
+  forgets the ledger's facts and looks transparent funds up publicly, recovers. The
   library's `docs/transparent-pir-private-recovery.md`, at the pinned
   revision, lists the accepted limitations and outstanding release gates.
 - **Live test.** `a_fresh_mainnet_account_recovers_and_promotes_against_the_live_service`
@@ -987,9 +1030,11 @@ there is no separate release gate.
 ## Library dependency
 
 The seven patched library crates and the `zakura-pir-transparent` adapter share
-one pushed wallet-libraries revision, `fc775a358308f9d7de22fb71b0caba48dac83fbe`,
-from [companion PR #132](https://github.com/zakura-core/wallet-libraries/pull/132),
-which removes the unused `PrivateShadow` ledger mode on top of
+one wallet-libraries revision, `31886a020052a54028544ade92c29c2ed2442251`,
+the head of [PR #134](https://github.com/zakura-core/wallet-libraries/pull/134)
+(forget transparent ledger facts under `Public`; repin to its squash merge once
+it lands), on top of main's squash merge of
+[PR #132](https://github.com/zakura-core/wallet-libraries/pull/132), which removes the unused `PrivateShadow` ledger mode on top of
 [PR #130](https://github.com/zakura-core/wallet-libraries/pull/130).
 It retains the parent's private-recovery and compact txid-display changes and
 adds durable privacy-policy resolution at each sensitive read plus optional

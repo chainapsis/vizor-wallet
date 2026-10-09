@@ -17,6 +17,7 @@ import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import 'network_privacy_control.dart';
 import 'enhance_pir_privacy_control.dart';
+import 'private_queries_turn_off.dart';
 import 'transparent_opt_out_action.dart';
 
 class CustomEndpointSettingsPanel extends ConsumerStatefulWidget {
@@ -169,9 +170,7 @@ class _CustomEndpointSettingsPanelState
                           onToggle: changingRecovery || _isSubmitting
                               ? null
                               : () => unawaited(
-                                  ref
-                                      .read(enhancePirProvider.notifier)
-                                      .toggle(),
+                                  togglePrivateQueries(context, ref),
                                 ),
                         ),
                       ],

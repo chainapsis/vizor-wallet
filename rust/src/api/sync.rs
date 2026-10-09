@@ -161,20 +161,15 @@ fn run_full_sync_internal<F>(
 where
     F: Fn(&sync_engine::SyncProgressEvent) + Send + Sync,
 {
-    if SYNC_RUNNING
-        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-        .is_err()
-    {
-        return Err("Sync already running".into());
-    }
-
-    DESIRED_SYNC_MODE.store(mode, Ordering::SeqCst);
-    let result = catch(panic::AssertUnwindSafe(|| {
+    // The runtime's shutdown waits at most a short grace for blocking work,
+    // so `SYNC_RUNNING` clears and the progress stream closes even when a
+    // step ignored its cancellation.
+    crate::wallet::bounded_runtime::run_exclusive(&SYNC_RUNNING, "Sync already running", |rt| {
+        DESIRED_SYNC_MODE.store(mode, Ordering::SeqCst);
         let network = parse_network_and_migrate(&db_path, &network)?;
         let cancel = SYNC_CANCEL.clone();
         cancel.store(false, Ordering::Relaxed);
 
-        let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
         rt.block_on(async {
             sync_engine::run_sync_inner(
                 &db_path,
@@ -189,10 +184,7 @@ where
             )
             .await
         })
-    }));
-
-    SYNC_RUNNING.store(false, Ordering::SeqCst);
-    result
+    })
 }
 
 /// Start a full sync. Streams progress events to Dart via StreamSink.
@@ -546,7 +538,7 @@ pub fn start_mempool_observer(
 
     let result = catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
-        let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
+        let rt = crate::wallet::bounded_runtime::BoundedRuntime::new()?;
         rt.block_on(async {
             crate::wallet::sync_engine::mempool::run_mempool_observer(
                 db_path,

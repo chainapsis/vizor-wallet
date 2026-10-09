@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../providers/enhance_pir_provider.dart';
+import 'private_queries_turn_off.dart';
 
 /// Offers to finish turning private queries off when the wallet's
 /// transparent lookups are still private: an opt-out did not finish, or a
@@ -70,11 +71,7 @@ class TransparentOptOutAction extends ConsumerWidget {
               size: AppButtonSize.small,
               onPressed: changing
                   ? null
-                  : () => unawaited(
-                      ref
-                          .read(enhancePirProvider.notifier)
-                          .finishTransparentOptOut(),
-                    ),
+                  : () => unawaited(finishPrivateQueriesTurnOff(context, ref)),
               child: const Text('Finish turning off'),
             ),
           ),

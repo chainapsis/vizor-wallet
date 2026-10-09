@@ -10,18 +10,29 @@
 //! A raise needs private queries on supported mainnet. Lowering needs an
 //! explicit toggle-off, which returns a private wallet to public lookups. Nothing else weakens a wallet: reads honor a durable
 //! `PrivateRequired` whatever the handle selects.
+//!
+//! Lowering also forgets what private recovery alone contributed
+//! ([`forget_private_ledger`]). Leaving `PrivateRequired` only revokes private
+//! authority; without forgetting, a publication's facts would keep counting in
+//! public mode, and a false spend would hide a real output in both modes. A
+//! forget that cannot finish is retried at every sync start while the wallet
+//! is public.
 
 use std::path::Path;
 use std::time::Duration;
 
 use zcash_client_backend::data_api::transparent_ledger::{
-    AppliedTransparentPolicy, TransparentLedgerMode, TransparentLedgerRead,
+    AppliedTransparentPolicy, ForgottenTransparentLedger, TransparentLedgerMode,
+    TransparentLedgerRead, TransparentLedgerWrite,
 };
 
 use super::super::enhancement::select_transparent_mode;
 use super::super::lwd::transparent_lookup::apply_transparent_policy_fenced_if;
 use super::super::{SyncError, WalletDatabase};
-use crate::wallet::db::{open_existing_wallet_db_with_timeout, WALLET_DB_BUSY_TIMEOUT};
+use super::pir;
+use crate::wallet::db::{
+    open_existing_wallet_db_with_timeout, with_wallet_db_write_lock, WALLET_DB_BUSY_TIMEOUT,
+};
 use crate::wallet::network::WalletNetwork;
 
 /// How long a transition waits for public lookups in flight before failing
@@ -71,7 +82,57 @@ pub(crate) async fn set_transparent_policy(
     if let Some(applied) = applied {
         log::info!("transparent policy: applied {:?}", applied.mode);
     }
+    if target == TransparentLedgerMode::Public {
+        // The policy is public now, whatever happens here; a forget that
+        // fails is retried at the next sync start.
+        if let Err(error) = forget_private_ledger(db_path, network) {
+            log::warn!("transparent policy: could not forget private ledger facts: {error}");
+        }
+    }
     Ok(applied)
+}
+
+/// Removes what private recovery alone contributed to the wallet at
+/// `db_path` once its durable policy is `Public`: outputs, spends and
+/// transactions only a publication reported, and the recovery state that
+/// would project them again. Public discovery then rebuilds the transparent
+/// view from its own observations, so a fabricated receive or a false spend
+/// of a real output does not outlive the policy that admitted it.
+///
+/// Every companion is deleted first, and nothing is forgotten unless that
+/// succeeded: see [`pir::remove_all_companions`]. A wallet still
+/// `PrivateRequired` is left as it is, and a missing one is left missing.
+/// Returns what was removed, or `None` when nothing was attempted.
+pub(crate) fn forget_private_ledger(
+    db_path: &str,
+    network: WalletNetwork,
+) -> Result<Option<ForgottenTransparentLedger>, SyncError> {
+    let Some(mut db) = open_policy_wallet(db_path, network)? else {
+        return Ok(None);
+    };
+    // Any configured mode reads the stored policy as it is.
+    db.set_transparent_ledger_mode(TransparentLedgerMode::PrivateRequired);
+    if applied_policy(&db)?.mode != TransparentLedgerMode::Public {
+        return Ok(None);
+    }
+    pir::remove_all_companions(db_path, pir::REMOVE_WAIT).map_err(SyncError::db)?;
+    // The library forgets only through a public handle over a public policy.
+    db.set_transparent_ledger_mode(TransparentLedgerMode::Public);
+    let forgotten = with_wallet_db_write_lock("transparent_policy.forget", || {
+        db.forget_transparent_ledger()
+    })
+    .map_err(|error| SyncError::db(format!("forget_transparent_ledger: {error}")))?;
+    if !forgotten.removed_nothing() {
+        log::info!(
+            "transparent policy: forgot private ledger facts ({} spends, {} outputs, {} transactions, {} events; {} outputs retained)",
+            forgotten.spends,
+            forgotten.outputs,
+            forgotten.transactions,
+            forgotten.events,
+            forgotten.retained_outputs,
+        );
+    }
+    Ok(Some(forgotten))
 }
 
 /// The durable policy of the wallet at `db_path`, read without creating or

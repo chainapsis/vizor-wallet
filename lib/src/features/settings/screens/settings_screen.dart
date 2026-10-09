@@ -34,6 +34,7 @@ import '../../donation/donation_config.dart';
 import '../settings_platform.dart';
 import '../widgets/network_privacy_control.dart';
 import '../widgets/enhance_pir_privacy_control.dart';
+import '../widgets/private_queries_turn_off.dart';
 import '../widgets/settings_new_badge.dart';
 import '../widgets/transparent_opt_out_action.dart';
 import '../widgets/windows_update_download_flow.dart';
@@ -625,9 +626,7 @@ class _SettingsList extends ConsumerWidget {
                 transition: recoveryTransition,
                 onToggle: changingRecovery
                     ? null
-                    : () => unawaited(
-                        ref.read(enhancePirProvider.notifier).toggle(),
-                      ),
+                    : () => unawaited(togglePrivateQueries(context, ref)),
               ),
             ],
             // Not gated on availability: see [TransparentOptOutAction].

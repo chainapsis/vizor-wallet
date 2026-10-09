@@ -1058,7 +1058,7 @@ mod tests {
             );
 
             // A private preference on mainnet routes the status work privately,
-            // and the public ABI refuses it while lookups are still allowed.
+            // and the public ABI refuses it.
             #[cfg(not(ironwood_masquerade))]
             {
                 let (_main_dir, main_path) = wallet(WalletNetwork::Main);
@@ -1069,7 +1069,7 @@ mod tests {
                         &url,
                         &main_path,
                         WalletNetwork::Main,
-                        EnhancementPolicy::for_preference(WalletNetwork::Main, false),
+                        EnhancementPolicy::for_preference(WalletNetwork::Main, true),
                         TxId::from_bytes(TXID),
                         &mut output,
                         None,
