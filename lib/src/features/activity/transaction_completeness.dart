@@ -20,6 +20,25 @@ const kNetChangeText = 'Net change';
 bool transactionFeeIsUnknown(rust_sync.TransactionInfo tx) =>
     tx.feeState == rust_sync.TransactionFeeState.unknown;
 
+/// A known total fee does not establish how much this account paid.
+const kUnattributedNetworkFeeHelpText =
+    "Total fee for this transaction. Your account's share of this fee is unknown.";
+
+/// Display-only fee evidence for this receipt. Never promotes account attribution
+/// or accepts a late detail response for another transaction or activity role.
+BigInt? unattributedReceiptNetworkFee(
+  rust_sync.TransactionInfo tx,
+  rust_sync.TransactionDetail? detail,
+) {
+  if (tx.feeState != rust_sync.TransactionFeeState.unknown ||
+      detail == null ||
+      detail.txidHex.toLowerCase() != tx.txidHex.toLowerCase() ||
+      detail.txKind != tx.txKind) {
+    return null;
+  }
+  return detail.networkFee;
+}
+
 /// How an entry shows its amount and network fee, so the fee appears once.
 enum TransactionFeePresentation {
   /// The amount excludes the fee, which keeps its own line.
