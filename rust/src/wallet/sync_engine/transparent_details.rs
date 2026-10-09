@@ -665,7 +665,7 @@ pub(crate) async fn followup(
             return None;
         }
     };
-    let gate = match TransparentLookupGate::for_wallet(lookups, db_data_path, network) {
+    let gate = match TransparentLookupGate::for_sync(lookups, db_data_path, network) {
         Ok(gate) => gate,
         Err(_) => {
             log::warn!("transparent details: gate unavailable; retrying on a later sync");
@@ -687,6 +687,31 @@ pub(crate) async fn followup(
     )
 }
 
+/// Which wallet a public load was asked for, and under which transparent
+/// policy generation: a load stores nothing into a wallet that is not the one
+/// it started from, or whose policy changed meanwhile.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PublicLoadIdentity {
+    accounts: Vec<AccountUuid>,
+    generation: u64,
+}
+
+impl PublicLoadIdentity {
+    fn of(
+        db: &impl zcash_client_backend::data_api::transparent_ledger::TransparentLedgerRead<
+            AccountId = AccountUuid,
+            Error = SqliteClientError,
+        >,
+    ) -> Result<Self, SqliteClientError> {
+        let mut accounts = db.get_account_ids()?;
+        accounts.sort();
+        Ok(Self {
+            accounts,
+            generation: db.applied_transparent_policy()?.generation,
+        })
+    }
+}
+
 /// Fetches `txid` (protocol byte order) from lightwalletd and stores it,
 /// because the user asked to load this one transaction's full details
 /// publicly. The request reveals the txid to lightwalletd, over an isolated
@@ -694,23 +719,42 @@ pub(crate) async fn followup(
 /// transparent policy; loop 4 and every automatic path keep to the policy.
 /// Errors carry no txid. Runs on the caller's thread, which must not be a
 /// runtime worker.
+///
+/// The wallet must exist before anything is sent: it is opened without
+/// creating it, and its accounts and transparent policy generation are
+/// captured. After the lookup it is reopened without creating it, and the
+/// payload is stored only in the same transaction that finds the same
+/// accounts and generation; a wallet reset, a replaced wallet or a policy
+/// transition during the lookup discards the payload. Nothing here recreates
+/// a wallet database.
 pub(crate) fn enhance_publicly(
     db_path: &str,
     network: WalletNetwork,
     lightwalletd_url: &str,
     txid: [u8; 32],
 ) -> Result<(), String> {
+    use crate::wallet::db::{
+        open_existing_wallet_db_with_timeout, with_wallet_db_write_lock, WALLET_DB_BUSY_TIMEOUT,
+    };
     let txid = TxId::from_bytes(txid);
+    let started = {
+        let db = open_existing_wallet_db_with_timeout(db_path, network, WALLET_DB_BUSY_TIMEOUT)
+            .map_err(|error| format!("the wallet is unavailable ({error})"))?;
+        PublicLoadIdentity::of(&db)
+            .map_err(|error| format!("reading the wallet failed ({error})"))?
+    };
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(1)
         .enable_all()
         .build()
         .map_err(|error| format!("tokio: {error}"))?;
     let raw = runtime.block_on(async {
-        let mut client = super::lwd::open_isolated_lwd_channel(lightwalletd_url)
+        let transport = super::lwd::open_isolated_lwd_transport(lightwalletd_url)
             .await
             .map_err(|error| format!("lightwalletd unavailable ({error})"))?;
-        TransparentLookupGate::user_requested()
+        let mut client = CompactTxStreamerClient::new(transport.clone());
+        TransparentLookupGate::user_requested(db_path)
+            .with_transport(transport)
             .transaction(&mut client, txid)
             .await
             .map_err(|error| format!("lightwalletd lookup failed ({error})"))
@@ -729,36 +773,35 @@ pub(crate) fn enhance_publicly(
         .map_err(|error| format!("lightwalletd answered with an invalid transaction ({error})"))?;
     // A wallet reset may have deleted the wallet during the lookup; neither
     // open below recreates it.
-    let mut db = crate::wallet::db::open_existing_wallet_db_with_timeout(
-        db_path,
-        network,
-        crate::wallet::db::WALLET_DB_BUSY_TIMEOUT,
-    )
-    .map_err(|error| error.to_string())?;
-    crate::wallet::db::with_wallet_db_write_lock(
-        "sync_engine.transparent_details.enhance_publicly",
-        || {
+    let mut db = open_existing_wallet_db_with_timeout(db_path, network, WALLET_DB_BUSY_TIMEOUT)
+        .map_err(|error| error.to_string())?;
+    let stored =
+        with_wallet_db_write_lock("sync_engine.transparent_details.enhance_publicly", || {
             db.transactionally(|tx| {
-                decrypt_and_store_transaction(&network, tx, &transaction, mined_height)
+                if PublicLoadIdentity::of(tx)? != started {
+                    return Ok(false);
+                }
+                decrypt_and_store_transaction(&network, tx, &transaction, mined_height)?;
+                Ok::<_, SqliteClientError>(true)
             })
-        },
-    )
-    .map_err(|error: SqliteClientError| format!("storing the transaction failed ({error})"))?;
+        })
+        .map_err(|error| format!("storing the transaction failed ({error})"))?;
+    if !stored {
+        return Err("the wallet changed during the lookup; nothing was stored".to_owned());
+    }
     // The store skips a transaction it finds nothing of the wallet's in;
     // reporting success then would leave the receipt offering the same load.
-    let stored: bool = crate::wallet::db::open_readonly_conn_with_timeout(
-        db_path,
-        Some(crate::wallet::db::WALLET_DB_BUSY_TIMEOUT),
-    )
-    .and_then(|conn| {
-        conn.query_row(
+    let stored: bool =
+        crate::wallet::db::open_readonly_conn_with_timeout(db_path, Some(WALLET_DB_BUSY_TIMEOUT))
+            .and_then(|conn| {
+                conn.query_row(
             "SELECT EXISTS (SELECT 1 FROM transactions WHERE txid = ?1 AND raw IS NOT NULL)",
             [txid.as_ref().as_slice()],
             |row| row.get(0),
         )
         .map_err(|error| error.to_string())
-    })
-    .map_err(|error| format!("reading the stored transaction failed ({error})"))?;
+            })
+            .map_err(|error| format!("reading the stored transaction failed ({error})"))?;
     if stored {
         Ok(())
     } else {

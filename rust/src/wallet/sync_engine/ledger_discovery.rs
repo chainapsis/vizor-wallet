@@ -317,11 +317,8 @@ async fn run_with<R: DiscoveryRpc>(
     // Candidate addresses are sent to public lightwalletd; the gate authorizes
     // each history request, and every checkpoint that marks candidates checked
     // re-checks it, so nothing is queried or completed without authority.
-    let gate = TransparentLookupGate::for_wallet(
-        policy.public_transparent_lookups(db)?,
-        db_path,
-        network,
-    )?;
+    let gate =
+        TransparentLookupGate::for_sync(policy.public_transparent_lookups(db)?, db_path, network)?;
     if !gate.is_allowed() {
         log::info!("sync: transparent policy withholds Ledger address-history discovery");
         return Ok(());

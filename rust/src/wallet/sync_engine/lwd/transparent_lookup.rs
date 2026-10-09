@@ -7,20 +7,29 @@
 //!
 //! A per-RPC check alone cannot close the window between the check and the
 //! request: a transition could commit in between. The in-process policy fence
-//! closes it. Every dispatch holds a shared lease from its check until its
-//! request has been sent, and [`apply_transparent_policy_fenced_if`], the
-//! only way this build applies a transparent policy, takes the exclusive
-//! side. A waiting transition blocks new leases, waits for in-flight requests
-//! to drain, and only then commits, so no request authorized under the old
-//! policy is sent after the new one applies. A transition made by another
-//! process is outside the fence; the per-RPC check still bounds it to the
-//! requests already in flight.
+//! closes it. Each wallet database has its own fence, so a transition on one
+//! wallet never waits for another's lookups. Every dispatch holds a shared
+//! lease from its check until its request has been handed to the transport,
+//! and [`apply_transparent_policy_fenced_if`], the only way this build applies
+//! a transparent policy, takes the exclusive side. A waiting transition blocks
+//! new leases, waits for in-flight requests to be sent, and only then commits,
+//! so no request authorized under the old policy is sent after the new one
+//! applies. A gate given its transport ([`TransparentLookupGate::with_transport`],
+//! or the sync's registered one) observes the hand-off with
+//! [`DispatchSignalService`] and releases its lease there, never waiting for a
+//! slow response; without one, the lease lasts until the call returns. Waits
+//! are bounded on both sides: a lookup that cannot get its lease in
+//! [`LEASE_WAIT`] is withheld, and a transition gives up, applying nothing,
+//! when lookups do not drain or the wallet write lock is not free within its
+//! drain budget. A transition made by another process is outside the fence;
+//! the per-RPC check still bounds it to the requests already in flight.
 
+use std::collections::HashMap;
 use std::future::Future;
-use std::sync::{Arc, Mutex, PoisonError};
-use std::time::Duration;
+use std::sync::{Arc, LazyLock, Mutex, PoisonError};
+use std::time::{Duration, Instant};
 
-use tokio::sync::RwLock;
+use tokio::sync::{OwnedRwLockReadGuard, RwLock};
 use tonic::{transport::Channel, Status};
 use zcash_client_backend::data_api::transparent_ledger::{
     AppliedTransparentPolicy, TransparentLedgerMode, TransparentLedgerWrite,
@@ -31,15 +40,64 @@ use zcash_client_backend::proto::service::{
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
 
+use super::dispatch_signal::{DispatchSignalService, Dispatched};
 use crate::wallet::{
-    db::{open_wallet_db_readonly_with_timeout, with_wallet_db_write_lock, SYNC_DB_BUSY_TIMEOUT},
+    db::{
+        open_wallet_db_readonly_with_timeout, with_wallet_db_write_lock_until, SYNC_DB_BUSY_TIMEOUT,
+    },
     network::WalletNetwork,
 };
 
-/// Shared by every public transparent lookup in flight; held exclusively by a
-/// policy transition. Tokio's lock is fair: once a transition waits, new
-/// leases queue behind it.
-static POLICY_FENCE: RwLock<()> = RwLock::const_new(());
+/// How long a lookup waits for its lease. A transition drains for at most its
+/// own budget, then commits at once, so a lookup queued behind it gets its
+/// lease well within this; one that does not is withheld.
+pub(crate) const LEASE_WAIT: Duration = Duration::from_secs(45);
+
+/// The fence key of lookups made before any wallet database exists, which no
+/// transition takes: their authority is only the captured mode.
+const PRE_DB: &str = "";
+
+/// One fence per wallet database path, shared by every public transparent
+/// lookup on that wallet and held exclusively by its policy transition.
+/// Tokio's lock is fair: once a transition waits, new leases queue behind it.
+/// Entries nobody holds are dropped as others are added.
+static POLICY_FENCES: LazyLock<Mutex<HashMap<String, Arc<RwLock<()>>>>> =
+    LazyLock::new(Default::default);
+
+/// The fence of the wallet at `db_path`, or of pre-database lookups.
+fn fence(key: &str) -> Arc<RwLock<()>> {
+    let mut fences = POLICY_FENCES.lock().unwrap_or_else(PoisonError::into_inner);
+    fences.retain(|_, fence| Arc::strong_count(fence) > 1);
+    fences.entry(key.to_owned()).or_default().clone()
+}
+
+/// The transport the running sync's lookups on each wallet go over, so their
+/// gates can release their leases at hand-off. Registered for the sync's
+/// lifetime by [`register_sync_transport`].
+static SYNC_TRANSPORTS: LazyLock<Mutex<HashMap<String, Channel>>> = LazyLock::new(Default::default);
+
+/// Keeps a sync transport registered until dropped.
+pub(crate) struct SyncTransport(String);
+
+impl Drop for SyncTransport {
+    fn drop(&mut self) {
+        SYNC_TRANSPORTS
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(&self.0);
+    }
+}
+
+/// Registers `transport`, the one the sync built its lightwalletd client on,
+/// for the gates of the sync's lanes on the wallet at `db_path`
+/// ([`TransparentLookupGate::for_sync`]).
+pub(crate) fn register_sync_transport(db_path: &str, transport: Channel) -> SyncTransport {
+    SYNC_TRANSPORTS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .insert(db_path.to_owned(), transport);
+    SyncTransport(db_path.to_owned())
+}
 
 /// Durably applies `mode` as the wallet's transparent policy behind the fence,
 /// if `still` holds for `db` when it is checked there.
@@ -55,21 +113,32 @@ static POLICY_FENCE: RwLock<()> = RwLock::const_new(());
 ///
 /// Returns `None`, having applied nothing, when `still` does not hold. An
 /// error from `still` also applies nothing.
+///
+/// `db` is a handle on the wallet at `db_path`, whose fence the transition
+/// takes. Lookups made before any wallet exists answer to no wallet's policy,
+/// so no transition waits for them. The wallet write lock is taken with
+/// whatever remains of `drain`, never waited on without bound while the fence
+/// holds lookups back.
 pub(crate) async fn apply_transparent_policy_fenced_if(
     db: &mut WalletDatabase,
+    db_path: &str,
     mode: TransparentLedgerMode,
     drain: Duration,
     still: impl FnOnce(&WalletDatabase) -> Result<bool, SyncError>,
 ) -> Result<Option<AppliedTransparentPolicy>, SyncError> {
-    let _fence = tokio::time::timeout(drain, POLICY_FENCE.write())
+    let deadline = Instant::now() + drain;
+    let drained = || SyncError::db("transparent policy: public lookups did not drain in time");
+    let wallet = fence(db_path);
+    let _wallet = tokio::time::timeout_at(deadline.into(), wallet.write())
         .await
-        .map_err(|_| SyncError::db("transparent policy: public lookups did not drain in time"))?;
+        .map_err(|_| drained())?;
     if !still(db)? {
         return Ok(None);
     }
-    with_wallet_db_write_lock("sync_engine.transparent_policy.apply", || {
+    with_wallet_db_write_lock_until("sync_engine.transparent_policy.apply", deadline, || {
         db.apply_transparent_policy(mode)
     })
+    .map_err(|error| SyncError::db(format!("transparent policy: {error}")))?
     .map(Some)
     .map_err(|error| SyncError::db(format!("apply_transparent_policy: {error}")))
 }
@@ -78,10 +147,11 @@ pub(crate) async fn apply_transparent_policy_fenced_if(
 #[cfg(test)]
 pub(crate) async fn apply_transparent_policy_fenced(
     db: &mut WalletDatabase,
+    db_path: &str,
     mode: TransparentLedgerMode,
     drain: Duration,
 ) -> Result<AppliedTransparentPolicy, SyncError> {
-    match apply_transparent_policy_fenced_if(db, mode, drain, |_| Ok(true)).await? {
+    match apply_transparent_policy_fenced_if(db, db_path, mode, drain, |_| Ok(true)).await? {
         Some(applied) => Ok(applied),
         None => unreachable!("an unconditional transition always applies"),
     }
@@ -98,6 +168,12 @@ use super::super::{enhancement::PublicTransparentLookups, SyncError, WalletDatab
 pub(crate) struct TransparentLookupGate {
     lookups: PublicTransparentLookups,
     policy: Option<Arc<Mutex<WalletDatabase>>>,
+    /// The fence of the wallet these lookups are about.
+    fence: Arc<RwLock<()>>,
+    /// The transport the caller's client was built on, when known: lookups
+    /// then go over it with a dispatch signal and release their lease at
+    /// hand-off.
+    transport: Option<Channel>,
 }
 
 impl TransparentLookupGate {
@@ -118,17 +194,51 @@ impl TransparentLookupGate {
             ))),
             _ => None,
         };
-        Ok(Self { lookups, policy })
+        Ok(Self {
+            lookups,
+            policy,
+            fence: fence(db_path),
+            transport: None,
+        })
+    }
+
+    /// [`Self::for_wallet`] for a lane of the running sync: its lookups go
+    /// over the transport the sync registered for the wallet, if any.
+    pub(crate) fn for_sync(
+        lookups: PublicTransparentLookups,
+        db_path: &str,
+        network: WalletNetwork,
+    ) -> Result<Self, SyncError> {
+        let gate = Self::for_wallet(lookups, db_path, network)?;
+        let transport = SYNC_TRANSPORTS
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(db_path)
+            .cloned();
+        Ok(match transport {
+            Some(transport) => gate.with_transport(transport),
+            None => gate,
+        })
+    }
+
+    /// Sends this gate's lookups over `transport`, the one the caller's
+    /// client was built on, releasing each lease once its request is handed
+    /// to it.
+    pub(crate) fn with_transport(mut self, transport: Channel) -> Self {
+        self.transport = Some(transport);
+        self
     }
 
     /// One public lookup the user asked for, on one transaction, whatever the
     /// wallet's transparent policy: the request itself is the consent. Only
     /// [`crate::wallet::sync_engine::transparent_details::enhance_publicly`]
     /// constructs it; no automatic path may.
-    pub(crate) fn user_requested() -> Self {
+    pub(crate) fn user_requested(db_path: &str) -> Self {
         Self {
             lookups: PublicTransparentLookups::Allowed { generation: None },
             policy: None,
+            fence: fence(db_path),
+            transport: None,
         }
     }
 
@@ -138,6 +248,8 @@ impl TransparentLookupGate {
         Self {
             lookups,
             policy: None,
+            fence: fence(PRE_DB),
+            transport: None,
         }
     }
 
@@ -165,19 +277,60 @@ impl TransparentLookupGate {
         self.lookups.permits(applied)
     }
 
+    /// A lease on this gate's fence, if lookups are still authorized once it
+    /// is held; `None` means withheld, including when no lease is free within
+    /// [`LEASE_WAIT`].
+    async fn lease(&self) -> Result<Option<OwnedRwLockReadGuard<()>>, SyncError> {
+        let Ok(lease) = tokio::time::timeout(LEASE_WAIT, self.fence.clone().read_owned()).await
+        else {
+            log::info!("transparent lookup: a policy transition held the fence; withheld");
+            return Ok(None);
+        };
+        if !self.permits()? {
+            return Ok(None);
+        }
+        #[cfg(test)]
+        test_hooks::dispatched();
+        Ok(Some(lease))
+    }
+
     /// Runs `rpc` only if lookups are still authorized. `rpc` is lazy, so the
     /// check precedes the request on the wire; `None` means withheld.
     ///
     /// Holds a policy-fence lease from the check until `rpc` completes, so a
     /// fenced transition cannot commit between the two.
     pub(crate) async fn dispatch<F: Future>(&self, rpc: F) -> Result<Option<F::Output>, SyncError> {
-        let _lease = POLICY_FENCE.read().await;
-        if !self.permits()? {
+        let Some(_lease) = self.lease().await? else {
             return Ok(None);
-        }
-        #[cfg(test)]
-        test_hooks::dispatched();
+        };
         Ok(Some(rpc.await))
+    }
+
+    /// Runs the call `rpc` builds over this gate's transport with a dispatch
+    /// signal, releasing the lease once the request has been handed to the
+    /// transport, or when the call ends first. Without a transport, the call
+    /// runs on `client` under [`Self::dispatch`].
+    async fn dispatch_signalled<'c, T, Plain, Signalled>(
+        &self,
+        client: &'c mut CompactTxStreamerClient<Channel>,
+        plain: impl FnOnce(&'c mut CompactTxStreamerClient<Channel>) -> Plain,
+        signalled: impl FnOnce(CompactTxStreamerClient<DispatchSignalService<Channel>>) -> Signalled,
+    ) -> Result<Option<T>, SyncError>
+    where
+        Plain: Future<Output = T>,
+        Signalled: Future<Output = T>,
+    {
+        let Some(transport) = self.transport.clone() else {
+            return self.dispatch(plain(client)).await;
+        };
+        let Some(lease) = self.lease().await? else {
+            return Ok(None);
+        };
+        let (dispatched, sent) = Dispatched::new();
+        let call = signalled(CompactTxStreamerClient::new(DispatchSignalService::new(
+            transport, dispatched,
+        )));
+        Ok(Some(release_at_hand_off(lease, sent, call).await))
     }
 
     /// `GetAddressUtxosStream` for `addresses` from `start_height`.
@@ -187,11 +340,14 @@ impl TransparentLookupGate {
         addresses: Vec<String>,
         start_height: BlockHeight,
     ) -> Result<Option<tonic::Streaming<GetAddressUtxosReply>>, SyncError> {
-        self.dispatch(super::get_address_utxos_stream(
+        let request = addresses.clone();
+        self.dispatch_signalled(
             client,
-            addresses,
-            start_height,
-        ))
+            |client| super::get_address_utxos_stream(client, addresses, start_height),
+            |mut client| async move {
+                super::get_address_utxos_stream(&mut client, request, start_height).await
+            },
+        )
         .await?
         .transpose()
     }
@@ -204,12 +360,14 @@ impl TransparentLookupGate {
         start_height: u64,
         end_height: u64,
     ) -> Result<Option<tonic::Streaming<RawTransaction>>, SyncError> {
-        self.dispatch(super::get_taddress_txids(
+        let request = address.clone();
+        self.dispatch_signalled(
             client,
-            address,
-            start_height,
-            end_height,
-        ))
+            |client| super::get_taddress_txids(client, address, start_height, end_height),
+            |mut client| async move {
+                super::get_taddress_txids(&mut client, request, start_height, end_height).await
+            },
+        )
         .await?
         .transpose()
     }
@@ -221,8 +379,32 @@ impl TransparentLookupGate {
         client: &mut CompactTxStreamerClient<Channel>,
         txid: TxId,
     ) -> Result<Option<Result<RawTransaction, Status>>, SyncError> {
-        self.dispatch(super::get_transaction_payload(client, txid))
-            .await
+        self.dispatch_signalled(
+            client,
+            |client| super::get_transaction_payload(client, txid),
+            |mut client| async move { super::get_transaction_payload(&mut client, txid).await },
+        )
+        .await
+    }
+}
+
+/// Awaits `call`, holding `lease` only until `sent` resolves: when the
+/// request has been handed to the transport, or its signal was dropped
+/// because the request never left.
+async fn release_at_hand_off<F: Future>(
+    lease: OwnedRwLockReadGuard<()>,
+    sent: tokio::sync::oneshot::Receiver<()>,
+    call: F,
+) -> F::Output {
+    let mut lease = Some(lease);
+    let mut sent = sent;
+    tokio::pin!(call);
+    loop {
+        tokio::select! {
+            biased;
+            output = &mut call => return output,
+            _ = &mut sent, if lease.is_some() => lease = None,
+        }
     }
 }
 
@@ -287,12 +469,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_stricter_durable_policy_fails_closed() {
+    async fn a_stricter_durable_policy_withholds() {
         let (_dir, path, gate) = wallet();
         apply(&path, TransparentLedgerMode::PrivateRequired);
         let sent = AtomicUsize::new(0);
-        // This build's Public read handle cannot read the stricter policy.
-        assert!(gate.dispatch(rpc(&sent)).await.is_err());
+        // The Public read handle resolves under the stricter policy, which
+        // withholds the lookup.
+        assert_eq!(gate.dispatch(rpc(&sent)).await.unwrap(), None);
         assert_eq!(sent.load(Ordering::SeqCst), 0);
     }
 
@@ -315,6 +498,7 @@ mod tests {
                 .unwrap();
         let blocked = apply_transparent_policy_fenced(
             &mut db,
+            &path,
             TransparentLedgerMode::PrivateShadow,
             Duration::from_millis(100),
         )
@@ -329,6 +513,7 @@ mod tests {
         assert_eq!(in_flight.await.unwrap().unwrap(), Some(()));
         apply_transparent_policy_fenced(
             &mut db,
+            &path,
             TransparentLedgerMode::PrivateShadow,
             Duration::from_secs(5),
         )
@@ -357,6 +542,7 @@ mod tests {
                     .unwrap();
             apply_transparent_policy_fenced(
                 &mut db,
+                &path,
                 TransparentLedgerMode::PrivateShadow,
                 Duration::from_secs(5),
             )
@@ -386,6 +572,98 @@ mod tests {
             0,
             "withheld under the new policy"
         );
+    }
+
+    /// A transition on one wallet never waits for another wallet's lookups.
+    #[tokio::test]
+    async fn fences_are_per_wallet() {
+        let (_dir, path, _) = wallet();
+        let (_other_dir, _other_path, other) = wallet();
+        let (release, released) = tokio::sync::oneshot::channel::<()>();
+        let in_flight = tokio::spawn({
+            let other = other.clone();
+            async move { other.dispatch(async { released.await.unwrap() }).await }
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        let mut db =
+            open_wallet_db_with_timeout(&path, WalletNetwork::Regtest, SYNC_DB_BUSY_TIMEOUT)
+                .unwrap();
+        apply_transparent_policy_fenced(
+            &mut db,
+            &path,
+            TransparentLedgerMode::PrivateShadow,
+            Duration::from_secs(2),
+        )
+        .await
+        .expect("the other wallet's lookup does not hold this wallet's fence");
+        release.send(()).unwrap();
+        assert_eq!(in_flight.await.unwrap().unwrap(), Some(()));
+    }
+
+    /// A lookup over its transport releases its lease once the request is
+    /// sent: a transition commits while the response is still slow to come.
+    /// Without the transport the same transition cannot drain.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn a_lease_ends_at_hand_off_not_at_a_slow_response() {
+        use crate::wallet::sync_engine::test_lwd::CapturingLwd;
+        use std::sync::atomic::AtomicBool;
+
+        let (_dir, path, gate) = wallet();
+        let received = Arc::new(AtomicBool::new(false));
+        let lwd = CapturingLwd::start_with(Vec::new(), 0, {
+            let received = received.clone();
+            move |request| {
+                if request.ends_with("/GetTransaction") {
+                    received.store(true, Ordering::SeqCst);
+                    std::thread::sleep(Duration::from_millis(4000));
+                }
+            }
+        })
+        .await;
+        let txid = TxId::from_bytes([0x5c; 32]);
+        // Unsignalled first: its transition applies nothing, so the gate's
+        // captured authority still holds for the signalled lookup.
+        for (signalled, drains) in [(false, false), (true, true)] {
+            received.store(false, Ordering::SeqCst);
+            let gate = if signalled {
+                gate.clone().with_transport(lwd.channel.clone())
+            } else {
+                gate.clone()
+            };
+            // Opened first, so the transition starts as soon as the request
+            // arrives, well inside the slow response.
+            let mut db =
+                open_wallet_db_with_timeout(&path, WalletNetwork::Regtest, SYNC_DB_BUSY_TIMEOUT)
+                    .unwrap();
+            let mut client = lwd.client.clone();
+            let lookup = tokio::spawn(async move { gate.transaction(&mut client, txid).await });
+            while !received.load(Ordering::SeqCst) {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+            let transition = apply_transparent_policy_fenced(
+                &mut db,
+                &path,
+                TransparentLedgerMode::PrivateShadow,
+                Duration::from_millis(2000),
+            )
+            .await;
+            assert_eq!(transition.is_ok(), drains, "signalled: {signalled}");
+            // The lookup itself completes either way, answered "not found".
+            let answered = lookup.await.unwrap().unwrap();
+            assert!(matches!(answered, Some(Err(_))), "{answered:?}");
+        }
+    }
+
+    /// A lookup that cannot get its lease within the bound is withheld,
+    /// never sent.
+    #[tokio::test(start_paused = true)]
+    async fn a_lookup_behind_a_held_fence_is_withheld_after_its_bound() {
+        let (_dir, path, gate) = wallet();
+        let held = fence(&path);
+        let _transition = held.write().await;
+        let sent = AtomicUsize::new(0);
+        assert_eq!(gate.dispatch(rpc(&sent)).await.unwrap(), None);
+        assert_eq!(sent.load(Ordering::SeqCst), 0);
     }
 
     #[tokio::test]

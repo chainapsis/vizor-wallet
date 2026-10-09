@@ -809,6 +809,39 @@ async fn public_residual_only_via_gate() {
     assert_eq!(lwd.count("/GetTransaction"), 1);
 }
 
+/// A transaction lightwalletd does not have is absent, not an outage: the run
+/// goes on to its remaining lookups instead of ending.
+#[tokio::test]
+async fn public_not_found_is_absent_and_the_run_continues() {
+    let fixture = wallet();
+    let missing = utxo_receipt(&fixture, 0xa3, TOP - 2);
+    let served = utxo_receipt(&fixture, 0xa4, TOP - 1);
+    let mut bytes = Vec::new();
+    served.write(&mut bytes).unwrap();
+    let service = refusing(503);
+    let _seam = test_seam::set(&fixture.path, service.clone());
+    let lwd = CapturingLwd::start_serving(
+        vec![(*served.txid().as_ref(), bytes, u64::from(TOP - 1))],
+        0,
+        |_| {},
+    )
+    .await;
+
+    let outcome = followup_with(&fixture, public(), &lwd).await;
+    assert!(
+        matches!(outcome, Some(RunOutcome::Finished(stats)) if stats.stored == 1 && stats.lookups == 2),
+        "{outcome:?}"
+    );
+    assert_eq!(lwd.count("/GetTransaction"), 2);
+    assert!(service.requests().is_empty(), "no private request");
+    // The missing transaction waits for a later retry; nothing else is due.
+    assert!(work_row(&fixture.path, &missing.txid()).is_some());
+    assert!(work_row(&fixture.path, &served.txid()).is_none());
+    let outcome = followup_with(&fixture, public(), &lwd).await;
+    assert_eq!(outcome, Some(RunOutcome::Finished(RunStats::default())));
+    assert_eq!(lwd.count("/GetTransaction"), 2);
+}
+
 /// A policy transition that lands after the first lookup was authorized lets
 /// that request finish but stores nothing from it, and withholds the rest.
 #[tokio::test]

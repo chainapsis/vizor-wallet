@@ -90,6 +90,34 @@ where
     }
 }
 
+/// A gRPC service the lookup helpers can call through: the lightwalletd
+/// channel, or the channel under a [`dispatch_signal::DispatchSignalService`].
+pub(crate) trait LwdService:
+    tonic::client::GrpcService<
+        tonic::body::Body,
+        Error: Into<tonic::codegen::StdError>,
+        ResponseBody: http_body::Body<
+            Data = bytes::Bytes,
+            Error: Into<tonic::codegen::StdError> + Send,
+        > + Send
+                          + 'static,
+    > + Send
+{
+}
+
+impl<T> LwdService for T where
+    T: tonic::client::GrpcService<
+            tonic::body::Body,
+            Error: Into<tonic::codegen::StdError>,
+            ResponseBody: http_body::Body<
+                Data = bytes::Bytes,
+                Error: Into<tonic::codegen::StdError> + Send,
+            > + Send
+                              + 'static,
+        > + Send
+{
+}
+
 async fn await_tonic_stream<T, F>(
     label: &str,
     timeout: Duration,
@@ -147,6 +175,20 @@ pub(crate) async fn open_lwd_channel_with_cancel(
     cancelled: impl Fn() -> bool,
 ) -> Result<CompactTxStreamerClient<Channel>, SyncError> {
     open_lwd_channel_for_route(lightwalletd_url, false, cancelled).await
+}
+
+/// The transport [`open_lwd_channel`] wraps, for lookups that layer a
+/// dispatch signal over it.
+pub(crate) async fn open_lwd_transport(lightwalletd_url: &str) -> Result<Channel, SyncError> {
+    open_lwd_transport_for_route(lightwalletd_url, false, || false).await
+}
+
+/// The transport [`open_lwd_channel_with_cancel`] wraps.
+pub(crate) async fn open_lwd_transport_with_cancel(
+    lightwalletd_url: &str,
+    cancelled: impl Fn() -> bool,
+) -> Result<Channel, SyncError> {
+    open_lwd_transport_for_route(lightwalletd_url, false, cancelled).await
 }
 
 /// Opens an isolated Tor circuit when Tor is enabled. Direct mode retains its
@@ -479,8 +521,8 @@ pub(crate) async fn send_transaction(
 ///
 /// It discloses `address`; lanes reach it only through
 /// [`transparent_lookup::TransparentLookupGate`].
-async fn get_taddress_txids(
-    client: &mut CompactTxStreamerClient<Channel>,
+async fn get_taddress_txids<T: LwdService>(
+    client: &mut CompactTxStreamerClient<T>,
     address: String,
     start_height: u64,
     end_height: u64,
@@ -513,8 +555,8 @@ async fn get_taddress_txids(
 ///
 /// It discloses `addresses`; lanes reach it only through
 /// [`transparent_lookup::TransparentLookupGate`].
-async fn get_address_utxos_stream(
-    client: &mut CompactTxStreamerClient<Channel>,
+async fn get_address_utxos_stream<T: LwdService>(
+    client: &mut CompactTxStreamerClient<T>,
     addresses: Vec<String>,
     start_height: BlockHeight,
 ) -> Result<AddressUtxoStream, SyncError> {
@@ -531,8 +573,8 @@ async fn get_address_utxos_stream(
 
 /// Public, txid-disclosing `GetTransaction`. Lanes reach it only through
 /// [`transparent_lookup::TransparentLookupGate`].
-async fn get_transaction_payload(
-    client: &mut CompactTxStreamerClient<Channel>,
+async fn get_transaction_payload<T: LwdService>(
+    client: &mut CompactTxStreamerClient<T>,
     txid: TxId,
 ) -> Result<RawTransaction, Status> {
     const TIMEOUT: Duration = Duration::from_secs(20);

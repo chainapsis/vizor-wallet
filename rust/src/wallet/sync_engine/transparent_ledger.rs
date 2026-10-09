@@ -48,8 +48,8 @@ use std::future::Future;
 use std::sync::{LazyLock, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
-pub(crate) use zakura_pir_transparent::{ApplyStats, Trust};
 use zakura_pir_transparent::WithdrawnCause;
+pub(crate) use zakura_pir_transparent::{ApplyStats, Trust};
 use zcash_client_backend::data_api::{
     transparent_ledger::{
         AccountLifecycle, CommitRejection, RecoveryBlocker, TransparentLedgerMode,
@@ -376,7 +376,6 @@ enum AccountOutcome {
     Stop(RunOutcome),
 }
 
-
 /// Runs private recovery for every account under `policy`, then, under
 /// `PrivateRequired`, offers each recovered candidate account for promotion.
 ///
@@ -404,7 +403,7 @@ pub(crate) async fn run<S: RecoverySource>(
     }
     policy.configure_db(db);
     if policy.transparent_mode() == TransparentLedgerMode::PrivateRequired
-        && raise_to_required(db, || may_raise(db_path, network)).await?
+        && raise_to_required(db, db_path, || may_raise(db_path, network)).await?
     {
         log::info!("transparent policy: applied PrivateRequired");
     }

@@ -1036,10 +1036,13 @@ pub(crate) async fn preview_transparent_balance_for_addresses(
         return Ok(0);
     }
 
-    let mut client = crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url)
+    let transport = crate::wallet::sync_engine::open_lwd_transport(lightwalletd_url)
         .await
         .map_err(|e| e.to_string())?;
+    let mut client = CompactTxStreamerClient::new(transport.clone());
     let Some(mut stream) = gate
+        .clone()
+        .with_transport(transport)
         .address_utxos(&mut client, addresses, BlockHeight::from_u32(0))
         .await
         .map_err(|e| e.to_string())?

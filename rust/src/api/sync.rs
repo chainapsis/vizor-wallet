@@ -3113,7 +3113,9 @@ pub fn enhance_transaction_publicly(
     txid_hex: String,
 ) -> Result<(), String> {
     catch(|| {
-        let network = parse_network_and_migrate(&db_path, &network)?;
+        // No migration here: its open would create a database a reset just
+        // deleted. The load opens only an existing wallet.
+        let network = keys::parse_network(&network)?;
         let txid: [u8; 32] = hex::decode(&txid_hex)
             .map_err(|e| format!("Invalid txid: {e}"))?
             .try_into()

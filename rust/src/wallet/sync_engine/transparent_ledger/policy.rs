@@ -70,10 +70,11 @@ pub(crate) async fn set_transparent_policy(
     // This handle only reads and applies the policy. The strictest mode reads
     // any durable policy, including one a raise commits after this open.
     db.set_transparent_ledger_mode(TransparentLedgerMode::PrivateRequired);
-    let applied = apply_transparent_policy_fenced_if(&mut db, target, POLICY_DRAIN, |db| {
-        Ok(applied_policy(db)?.mode != target)
-    })
-    .await?;
+    let applied =
+        apply_transparent_policy_fenced_if(&mut db, db_path, target, POLICY_DRAIN, |db| {
+            Ok(applied_policy(db)?.mode != target)
+        })
+        .await?;
     if let Some(applied) = applied {
         log::info!("transparent policy: applied {:?}", applied.mode);
     }
@@ -86,11 +87,13 @@ pub(crate) async fn set_transparent_policy(
 /// lands while the raise waits for the fence wins.
 ///
 /// Checking first keeps a raise that would apply nothing from taking the
-/// fence, which blocks every public lookup in the process while it waits.
+/// fence of the wallet at `db_path`, which blocks its public lookups while it
+/// waits.
 ///
 /// Returns whether this call applied `PrivateRequired`.
 pub(super) async fn raise_to_required(
     db: &mut WalletDatabase,
+    db_path: &str,
     may_raise: impl Fn() -> bool,
 ) -> Result<bool, SyncError> {
     let weaker = |db: &WalletDatabase| -> Result<bool, SyncError> {
@@ -101,6 +104,7 @@ pub(super) async fn raise_to_required(
     }
     let raised = apply_transparent_policy_fenced_if(
         db,
+        db_path,
         TransparentLedgerMode::PrivateRequired,
         POLICY_DRAIN,
         |db| Ok(may_raise() && weaker(db)?),

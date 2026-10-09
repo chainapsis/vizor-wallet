@@ -71,7 +71,8 @@ use error::{RecoveryStrategy, MAX_REWINDS_PER_RUN};
 pub(crate) use lwd::{
     dispatch_signal::Dispatched, get_compact_block_hash, get_latest_block, next_stream_message,
     open_background_direct_lwd_channel, open_isolated_lwd_channel, open_isolated_lwd_transport,
-    open_lwd_channel, open_lwd_channel_with_cancel, send_transaction, send_transaction_signalling,
+    open_lwd_channel, open_lwd_channel_with_cancel, open_lwd_transport,
+    open_lwd_transport_with_cancel, send_transaction, send_transaction_signalling,
     send_transaction_with_status, transparent_lookup::TransparentLookupGate,
 };
 use lwd::{download_blocks, download_subtree_roots, get_tree_state, get_tree_state_for_block};
@@ -1467,7 +1468,7 @@ async fn refresh_utxos(
     // GetAddressUtxos discloses every refreshed address, so it is authorized
     // under the policy the sync captured. When withheld, no query height
     // advances, so a later authorized refresh still covers the gap.
-    let gate = TransparentLookupGate::for_wallet(
+    let gate = TransparentLookupGate::for_sync(
         policy.public_transparent_lookups(db)?,
         db_data_path,
         network,
@@ -3036,8 +3037,13 @@ async fn run_sync_impl(
             || desired_mode.load(Ordering::SeqCst) != running_mode
     };
 
-    // 1. Connect gRPC (plain TLS via tonic + webpki roots).
-    let mut client = open_lwd_channel_with_cancel(lightwalletd_url, should_exit).await?;
+    // 1. Connect gRPC (plain TLS via tonic + webpki roots). The lanes' public
+    // transparent lookups go over the same transport with a dispatch signal,
+    // so a policy transition waits only for them to be sent.
+    let transport = open_lwd_transport_with_cancel(lightwalletd_url, should_exit).await?;
+    let mut client = CompactTxStreamerClient::new(transport.clone());
+    let _lookup_transport =
+        lwd::transparent_lookup::register_sync_transport(db_data_path, transport);
 
     // Open DB once — reused for the entire sync
     let mut db =

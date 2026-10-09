@@ -514,6 +514,14 @@ impl DetailSource for GateSource {
         match response {
             Err(_) => unavailable,
             Ok(None) => Err(DetailFailure::Withheld),
+            // Lightwalletd does not have this transaction: an answer about it,
+            // not an outage, so the run's remaining lookups proceed.
+            Ok(Some(Err(status))) if status.code() == tonic::Code::NotFound => {
+                Err(DetailFailure::Deferred {
+                    outcome: TransparentDetailOutcome::Absent,
+                    map_sha256: None,
+                })
+            }
             Ok(Some(Err(_))) => unavailable,
             Ok(Some(Ok(raw))) => match decode_enhancement_payload(&raw, txid) {
                 Ok((transaction, mined_height)) => Ok(DetailAnswer::Raw {

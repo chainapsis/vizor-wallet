@@ -195,10 +195,10 @@ fn required() -> EnhancementPolicy {
 /// mode until the guard drops.
 async fn activate(wallet: &mut Wallet) -> test_mode::ModeOverride {
     let mut db = open_wallet_db_with_timeout(&wallet.path, NETWORK, SYNC_DB_BUSY_TIMEOUT).unwrap();
-    // The policy fence is process-wide, so parallel tests' transitions and
-    // lookups queue on it: wait as long as production does.
+    // Wait for the wallet's lookups as long as production does.
     apply_transparent_policy_fenced(
         &mut db,
+        &wallet.path,
         TransparentLedgerMode::PrivateRequired,
         super::policy::POLICY_DRAIN,
     )
@@ -1050,7 +1050,7 @@ async fn a_toggle_off_behind_a_raise_lowers_what_it_applied() {
                 .enable_all()
                 .build()
                 .unwrap()
-                .block_on(raise_to_required(&mut db, may_raise))
+                .block_on(raise_to_required(&mut db, &path, may_raise))
                 .unwrap()
         }
     });
