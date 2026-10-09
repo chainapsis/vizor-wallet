@@ -103,6 +103,17 @@ class SuiteTests(unittest.TestCase):
         self.assertEqual(summary["builds"]["rust_build_count"], 1)
         self.assertTrue(all(item[3] is None for item in self.observed))
 
+    def test_multi_account_selection_builds_its_one_target_and_signer_without_native_builds(self):
+        self.scenarios = tuple(s for s in self.catalog.scenarios if s.target == "regtest_multi_account")
+        self.assertEqual(len(self.scenarios), 8)
+        code, summary, app, signer = self.invoke()
+        self.assertEqual(code, 0)
+        app.assert_not_called()
+        signer.assert_called_once()
+        self.assertEqual(signer.call_args.kwargs["test_targets"], ("regtest_multi_account",))
+        self.assertEqual(summary["builds"]["rust_build_count"], 1)
+        self.assertTrue(all(item[3] is None for item in self.observed))
+
     def test_mixed_engine_selection_shares_the_signer_and_worker_budget(self):
         self.scenarios += (self.catalog.scenarios_by_id["rust.receive.sync"],)
         code, _, app, signer = self.invoke()

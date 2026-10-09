@@ -21,6 +21,14 @@ RUST_CASES = {
     "rust.import.future-birthday": ("regtest_import", "import_wallet_with_future_birthday_does_not_rescan_old_receive"),
     "rust.import.receive-after-sync": ("regtest_import", "import_wallet_then_receive_new_funds_after_sync_updates_correctly"),
     "rust.import.deterministic-reimport": ("regtest_import", "same_mnemonic_imported_into_fresh_db_matches_original_ua_and_balance"),
+    "rust.multi-account.orphaned-range": ("regtest_multi_account", "sync_start_rescues_wallet_stuck_by_orphaned_historical_scan_range"),
+    "rust.multi-account.deleted-range": ("regtest_multi_account", "sync_completes_when_deleted_account_left_scanned_range_below_birthday"),
+    "rust.multi-account.late-add-history-future": ("regtest_multi_account", "adding_second_account_after_tip_sync_recovers_historical_and_future_funds"),
+    "rust.multi-account.tip-birthday-history": ("regtest_multi_account", "late_added_account_with_tip_birthday_still_recovers_historical_funds"),
+    "rust.multi-account.two-before-sync": ("regtest_multi_account", "two_new_accounts_added_before_single_sync_are_both_recovered"),
+    "rust.multi-account.preserve-history": ("regtest_multi_account", "existing_account_history_is_unchanged_when_new_account_is_added"),
+    "rust.multi-account.isolated-balances": ("regtest_multi_account", "multi_account_sync_keeps_balances_isolated_per_account"),
+    "rust.multi-account.idempotent-sync": ("regtest_multi_account", "repeated_sync_is_idempotent_for_multi_account_wallet"),
 }
 
 

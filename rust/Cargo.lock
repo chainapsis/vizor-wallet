@@ -8104,8 +8104,6 @@ dependencies = [
 [[package]]
 name = "zakura-client-sqlite"
 version = "0.1.0-rc7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e70bc4e3cf36b8b933af0926369b2b9b27cb3fc67eda14ac6f091df524885f47"
 dependencies = [
  "bip32",
  "bitflags 2.13.2",
