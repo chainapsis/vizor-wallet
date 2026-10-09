@@ -10,9 +10,10 @@
 //! Each account has its own companion database,
 //! `{db}.tpir/{uuid}-{tag}.sqlite`, where the tag binds the origin and the
 //! adapter's shard schema. A companion holds the adapter's retrieval cache and
-//! revision catalog, never wallet state, so losing one costs a re-download:
-//! revision identities are derived from the publication, and a recreated
-//! companion derives the ones the wallet already holds. Companions are created
+//! revision catalog, never wallet balances. Revision identities are derived
+//! from the publication, but the catalog also records what was exported and
+//! lets the adapter detect a contradictory publication. Repair preserves those
+//! records or refuses to replace the companion. Companions are created
 //! on an account's first pass; opening one deletes the account's companions for
 //! other origins or schemas and those of deleted accounts, and deleting an
 //! account removes its companion with [`remove_companions`]. Every sync start
@@ -778,8 +779,8 @@ enum Rebuild {
     /// be readable, so its identity is checked and its reconciliation
     /// records carried over.
     Corrupt,
-    /// The earlier format, which the adapter refuses and asks to recreate.
-    /// Its catalog has no records this format can use.
+    /// The adapter's earlier-format refusal. A compatible catalog can still
+    /// exist and must be preserved with a verified binding.
     Legacy,
 }
 
@@ -817,8 +818,8 @@ type SalvagedCatalog = (Vec<String>, Vec<Vec<rusqlite::types::Value>>);
 ///
 /// The replacement is built beside it, at `{path}.rebuild`, and takes the
 /// damaged companion's place, by one atomic rename, only once it is complete:
-/// its binding equals the damaged one's, every catalog row of a corrupt
-/// companion is restored into it, and the adapter opens it. Until then the
+/// its binding equals the damaged one's, every compatible catalog row is
+/// restored into it, and the adapter opens it. Until then the
 /// damaged companion is untouched, and any doubt keeps it.
 fn rebuild_companion(
     path: &Path,
@@ -832,17 +833,22 @@ fn rebuild_companion(
             ReferenceRecovery::open(&staging, config.clone())
                 .map_err(|_| RebuildError::Replacement)?,
         );
-        let expected = read_binding(&staging).ok_or(RebuildError::Replacement)?;
-        match (read_binding(path), rebuild) {
+        let expected = read_binding(&staging)
+            .map_err(|_| RebuildError::Replacement)?
+            .ok_or(RebuildError::Replacement)?;
+        let has_catalog = has_catalog(path)?;
+        match (read_binding(path)?, rebuild) {
             (Some(binding), _) if binding == expected => {}
             (Some(_), _) => return Err(RebuildError::Foreign),
-            // The earlier format may predate the binding row.
-            (None, Rebuild::Legacy) => {}
-            (None, Rebuild::Corrupt) => return Err(RebuildError::Unsalvageable),
+            // A genuinely earlier store may predate both binding and catalog.
+            (None, Rebuild::Legacy) if !has_catalog => {}
+            (None, _) => return Err(RebuildError::Unsalvageable),
         }
-        if rebuild == Rebuild::Corrupt {
+        if has_catalog {
             let (columns, rows) = salvage_catalog(path).ok_or(RebuildError::Unsalvageable)?;
             restore_catalog(&staging, &columns, &rows)?;
+        } else if rebuild == Rebuild::Corrupt {
+            return Err(RebuildError::Unsalvageable);
         }
         drop(
             ReferenceRecovery::open(&staging, config.clone())
@@ -861,7 +867,8 @@ fn rebuild_companion(
 /// Puts the validated replacement at `staging` in the place of the damaged
 /// companion at `path` with one atomic rename over it, so a crash leaves
 /// either the original or the replacement, never neither. Refused, keeping
-/// both, while either has SQLite sidecars: a write-ahead log or journal may
+/// both, while either has SQLite sidecars or their metadata cannot be read:
+/// a write-ahead log or journal may
 /// hold the original's committed data, which a rename of the main file alone
 /// would separate from it.
 fn swap_in(
@@ -869,10 +876,15 @@ fn swap_in(
     staging: &Path,
     rename: impl Fn(&Path, &Path) -> io::Result<()>,
 ) -> Result<(), RebuildError> {
-    let has_sidecars = |base: &Path| SIDECARS.iter().any(|suffix| sibling(base, suffix).exists());
-    if has_sidecars(path) || has_sidecars(staging) {
-        let _ = remove_database(staging);
-        return Err(RebuildError::Unsalvageable);
+    for base in [path, staging] {
+        for suffix in SIDECARS {
+            match std::fs::symlink_metadata(sibling(base, suffix)) {
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                // A dangling symlink is still an entry; other metadata errors
+                // cannot establish absence. Keep both files in either case.
+                _ => return Err(RebuildError::Unsalvageable),
+            }
+        }
     }
     rename(staging, path).map_err(|_| RebuildError::Swap)
 }
@@ -894,16 +906,37 @@ fn read_only(path: &Path) -> Option<rusqlite::Connection> {
     .ok()
 }
 
-/// The account, origin and schema binding the companion at `path` records,
-/// when it can be read.
-fn read_binding(path: &Path) -> Option<Vec<u8>> {
-    read_only(path)?
-        .query_row(
-            "SELECT value FROM pir_bridge_binding WHERE key = 'account-source'",
-            [],
-            |row| row.get(0),
-        )
-        .ok()
+/// The account, origin and schema binding, or a confirmed absent binding.
+/// Failure to read it is never interpreted as absence.
+fn read_binding(path: &Path) -> Result<Option<Vec<u8>>, RebuildError> {
+    use rusqlite::OptionalExtension as _;
+    let conn = read_only(path).ok_or(RebuildError::Unsalvageable)?;
+    if !has_schema_entry(&conn, "pir_bridge_binding")? {
+        return Ok(None);
+    }
+    conn.query_row(
+        "SELECT value FROM pir_bridge_binding WHERE key = 'account-source'",
+        [],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(|_| RebuildError::Unsalvageable)
+}
+
+/// Whether a catalog exists, distinguishing a confirmed absence from an
+/// unreadable schema. A legacy refusal alone cannot establish absence.
+fn has_catalog(path: &Path) -> Result<bool, RebuildError> {
+    let conn = read_only(path).ok_or(RebuildError::Unsalvageable)?;
+    has_schema_entry(&conn, "pir_bridge_catalog")
+}
+
+fn has_schema_entry(conn: &rusqlite::Connection, name: &str) -> Result<bool, RebuildError> {
+    conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name = ?1)",
+        [name],
+        |row| row.get(0),
+    )
+    .map_err(|_| RebuildError::Unsalvageable)
 }
 
 /// Every catalog row of the companion at `path`, with the column names, when
