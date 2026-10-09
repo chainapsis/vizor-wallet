@@ -400,7 +400,9 @@ until an account is promoted.
 - **Trusted qualification (D1).** The source settles a `Ready` batch
   (`RecoverySource::apply`): the transparent PIR source hands it to the
   adapter's `apply_and_acknowledge`, which applies the commits in order, each
-  in its own library transaction, under the wallet write lock; no lock is held
+  in its own library transaction, then acknowledges the batch. The wallet
+  write lock is held across that whole call, as the adapter asks, so a
+  foreground wallet write waits for the batch being settled; no lock is held
   across a source call or any network request. Under `PrivateRequired`, on the
   handle and durably, a trusted source's commits are applied with
   `Trust::Trusted` (`qualify_and_apply_transparent_ledger_commit`), which

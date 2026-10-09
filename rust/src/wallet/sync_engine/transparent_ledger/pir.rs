@@ -363,7 +363,9 @@ impl RecoverySource for TransparentPirSource {
 
     /// Settles `account`'s last `Ready` batch through the adapter, under the
     /// companion's parked lock and the wallet write lock, which cover only
-    /// local SQLite work.
+    /// local SQLite work. The write lock spans the whole batch, as the adapter
+    /// asks: other wallet writes wait until every commit and the
+    /// acknowledgment are done.
     ///
     /// Refuses, as [`Refusal::Skip`], when no unsettled `Ready` batch is
     /// parked for the account. The batch is consumed either way: a refused

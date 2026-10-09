@@ -4,9 +4,11 @@
 //! account in passes, with no database lock held across a source call. A pass
 //! answers with a [`SourceBatch`]. The source then settles a `Ready` batch
 //! itself ([`RecoverySource::apply`]): its commits are applied in order, each
-//! in its own library transaction, under the wallet write lock, and the batch
-//! is acknowledged only once every one committed. A `Pending` or `Withdrawn`
-//! batch applies nothing and is never acknowledged.
+//! in its own library transaction, and the batch is acknowledged only once
+//! every one committed. The transparent PIR source holds the wallet write
+//! lock across the whole settlement, so a foreground wallet write waits for
+//! the batch. A `Pending` or `Withdrawn` batch applies nothing and is never
+//! acknowledged.
 //!
 //! Under `PrivateRequired`, a trusted source's commits are qualified as they
 //! are applied ([`Trust::Trusted`]): the trusted-indexer decision, which is
@@ -176,7 +178,9 @@ pub(crate) trait RecoverySource {
     /// Settles `account`'s last `Ready` batch: applies its commits to `db` in
     /// order with `trust`, each in its own wallet transaction under the
     /// wallet write lock, stopping at the first the wallet refuses, then
-    /// acknowledges the batch once every one committed. Under
+    /// acknowledges the batch once every one committed. The transparent PIR
+    /// source holds the lock across the whole batch and its acknowledgment,
+    /// so other wallet writes wait for the batch. Under
     /// [`Trust::Observed`] a batch resolving retired revisions is refused
     /// before anything applies. No network request is made.
     fn apply(
@@ -385,8 +389,10 @@ enum AccountOutcome {
 /// the policy fence, but only while [`may_raise`] holds for the wallet at
 /// `db_path`: an unconfirmed preference or a concurrent toggle-off raises
 /// nothing. `first`, the active account, is visited first. `clock` measures
-/// the budgets and holds. Holds the wallet write lock only for each commit or
-/// promotion, never across a source call or a wait.
+/// the budgets and holds. Holds the wallet write lock for each batch's whole
+/// settlement, its commits and acknowledgment together, and for each
+/// promotion, never across a source call or a wait. A foreground wallet
+/// write, such as a send, waits for the batch being settled.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn run<S: RecoverySource>(
     db: &mut WalletDatabase,
