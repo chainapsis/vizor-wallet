@@ -22,7 +22,9 @@ evidence remain outstanding.
 
 ## Local cache and dispatch checkpoint
 
-The local implementation is not yet published or integrated into the umbrella.
+The cache/dispatch functional group remains separate from the integrated
+umbrella. Its review can proceed against the iOS prerequisite branch; integration
+into the umbrella follows that prerequisite, never into `main` directly.
 Original signed native-cache probes on `5553030ee` verified iOS220.269-to-4.984s
 and macOS235.689-to-5.196s separate-invocation reuse, with zero app/helper builds
 on hits. Real signature/access-right capture passed on new private copies.
@@ -41,8 +43,17 @@ same measured short-first dispatch history and isolated fresh case namespaces.
 That single two-case comparison is not final-source64-case coverage, a guarantee
 of18-percent general speedup, Docker VM CPU accounting, concurrent aggregate
 peak-memory measurement or evidence that the remaining iOS failures are fixed.
-Voting dependency reuse, broader resource/performance evidence, iOS completion
-and final-source/final-review gates remain open. No CI or SDK-floor change.
+Original pinned voting producers on clean `cf256da33` additionally verified a
+138.338s executable-cache miss and a1.390s hit, with build counts1/0 and all
+22/19 original command groups joined successfully. All five binary hashes
+matched, while SDK scripts and writable runtime copies had fresh private roots
+and independent inodes. Rust/Go dependency caches were already populated; this
+is not an empty-machine baseline or a voting-wallet/catalog PASS.
+
+Broader resource/performance evidence, iOS completion and final-source validation
+remain open. Once those gates are satisfied, ask the user before starting the
+umbrella's final review. Keep it draft and do not merge it to `main` without
+explicit confirmation. No CI or SDK-floor change.
 
 ## Problem and intended workflow
 
