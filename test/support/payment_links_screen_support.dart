@@ -30,6 +30,7 @@ import 'package:zcash_wallet/src/features/payment_links/services/payment_link_re
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_scanner_provider.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
@@ -66,6 +67,7 @@ Future<void> pumpPaymentLinksScreen(
   PaymentLinkScanner? scanner,
   GiftClaimImportStore? giftImportStore,
   AccountNotifier? accountNotifier,
+  AppSecurityNotifier? securityNotifier,
   AppBootstrapState? bootstrap,
   BigInt? spendableBalance,
   FakeSyncNotifier? syncNotifier,
@@ -108,6 +110,8 @@ Future<void> pumpPaymentLinksScreen(
           swapFeatureEnabledProvider.overrideWithValue(pricingEnabled),
         if (accountNotifier != null)
           accountProvider.overrideWith(() => accountNotifier),
+        if (securityNotifier != null)
+          appSecurityProvider.overrideWith(() => securityNotifier),
         paymentLinkOperationsProvider.overrideWithValue(paymentLinkOperations),
         if (recoveryStore != null)
           paymentLinkRecoveryStoreProvider.overrideWithValue(recoveryStore),

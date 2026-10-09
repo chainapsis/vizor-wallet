@@ -154,6 +154,31 @@ void main() {
     }
 
     test(
+      'fast resume waits for interrupted native work and wallet cleanup',
+      () async {
+        api.checkGate = Completer<void>();
+        final checking = service.inspectClaim(_link());
+        final failure = expectLater(
+          checking,
+          throwsA(isA<GiftCardPreparationInterrupted>()),
+        );
+        await api.checkStarted.future;
+        final coordinator = container.read(paymentLinkClaimCoordinatorProvider);
+        coordinator.pauseForLifecycle();
+        coordinator.resumeForLifecycle();
+        expect(coordinator.canStartPreparation, isFalse);
+        await expectLater(service.inspectClaim(_link()), throwsStateError);
+        api.checkGate!.complete();
+        await failure;
+        await pumpEventQueue();
+        expect(coordinator.canStartPreparation, isTrue);
+        final inspection = await service.inspectClaim(_link());
+        expect(inspection.claimableZatoshi, _link().amountZatoshi);
+        expect(api.cancelCalls, greaterThan(0));
+      },
+    );
+
+    test(
       'background admission stays closed after account recovery wakeups',
       () async {
         final coordinator = container.read(paymentLinkClaimCoordinatorProvider);

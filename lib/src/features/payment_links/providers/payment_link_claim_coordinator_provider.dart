@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/storage/app_secure_store.dart';
+import '../../../core/layout/app_form_factor.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../models/vizor_payment_link.dart';
@@ -97,6 +98,29 @@ final paymentLinkSetupJournalPendingProvider =
 
 enum _SetupClaimFailurePhase { preparation, submission }
 
+enum GiftCardPreparationPauseReason {
+  lifecycle,
+  locked,
+  walletChange,
+  disposed,
+}
+
+/// A preview was interrupted, rather than proving that the card is unavailable.
+class GiftCardPreparationInterrupted extends StateError {
+  GiftCardPreparationInterrupted(this.reason)
+    : super(
+        reason == GiftCardPreparationPauseReason.locked
+            ? 'Wallet is locked.'
+            : 'Gift Card preparation is paused.',
+      );
+
+  final GiftCardPreparationPauseReason reason;
+
+  bool get canResume =>
+      reason == GiftCardPreparationPauseReason.lifecycle ||
+      reason == GiftCardPreparationPauseReason.locked;
+}
+
 /// Owns claim work whose lifetime must not depend on a Gift Card screen.
 ///
 /// Different addresses submit independently. Repeated submission of the same
@@ -123,8 +147,47 @@ class PaymentLinkClaimCoordinator {
   bool _enabled = false;
   bool _lifecyclePaused;
   int _preparationGeneration = 0;
+  int _walletChangeGeneration = 0;
   bool _resetQuiesced = false;
   bool _disposed = false;
+  GiftCardPreparationPauseReason _pauseReason =
+      GiftCardPreparationPauseReason.lifecycle;
+  Future<void>? _preparationDrain;
+
+  /// Notifications carry no bearer material. Consumers schedule work outside
+  /// provider/build callbacks and recheck admission when they actually start.
+  final _preparationChanges = ValueNotifier<int>(0);
+  Listenable get preparationChanges => _preparationChanges;
+
+  bool get requiresUnlock =>
+      !_disposed && _ref.read(appSecurityProvider).requiresUnlock;
+
+  bool get canStartPreparation =>
+      acceptsPreparation &&
+      _preparationDrain == null &&
+      _isPreparationLifecycleReady;
+
+  bool get _isPreparationLifecycleReady =>
+      kAppFormFactor != AppFormFactor.mobile ||
+      WidgetsBinding.instance.lifecycleState == null ||
+      WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+
+  void _notifyPreparationChanged() {
+    if (!_disposed) _preparationChanges.value++;
+  }
+
+  GiftCardPreparationInterrupted _interrupted() =>
+      GiftCardPreparationInterrupted(
+        _disposed
+            ? GiftCardPreparationPauseReason.disposed
+            : _resetQuiesced
+            ? GiftCardPreparationPauseReason.walletChange
+            : requiresUnlock
+            ? GiftCardPreparationPauseReason.locked
+            : !_isPreparationLifecycleReady
+            ? GiftCardPreparationPauseReason.lifecycle
+            : _pauseReason,
+      );
 
   @visibleForTesting
   int get activeSubmissionCount => _submissions.length;
@@ -145,24 +208,32 @@ class PaymentLinkClaimCoordinator {
   // Account-free previews are allowed before recovery is enabled. Only the
   // app lifecycle, reset, and disposal gate their admission.
   bool get acceptsPreparation =>
-      !_lifecyclePaused && !_resetQuiesced && !_disposed;
+      !_lifecyclePaused && !_resetQuiesced && !_disposed && !requiresUnlock;
 
   int beginPreparation() {
     final generation = _preparationGeneration;
     requirePreparation(generation);
+    if (!canStartPreparation) throw _interrupted();
     return generation;
   }
 
   void requirePreparation(int generation) {
+    // A later lifecycle/lock transition cannot make work from before a wallet
+    // change resumable against the new wallet.
+    if (generation < _walletChangeGeneration) {
+      throw GiftCardPreparationInterrupted(
+        GiftCardPreparationPauseReason.walletChange,
+      );
+    }
     if (!acceptsPreparation || generation != _preparationGeneration) {
-      throw StateError('Gift Card preparation is paused.');
+      throw _interrupted();
     }
   }
 
   /// Register before invoking work, including inspections with no receiving account.
   Future<T> trackPreparation<T>(Future<T> Function() action) {
-    if (!acceptsPreparation) {
-      return Future.error(StateError('Gift Card preparation is paused.'));
+    if (!canStartPreparation) {
+      return Future.error(_interrupted());
     }
     final completer = Completer<T>();
     late final Future<T> tracked;
@@ -470,24 +541,58 @@ class PaymentLinkClaimCoordinator {
   }
 
   void resume() {
+    _notifyPreparationChanged();
     if (_disposed || _resetQuiesced || _lifecyclePaused) return;
     _enabled = true;
+    if (_preparationDrain != null) return;
     _refreshInBackground();
   }
 
-  void pause() {
+  void pause({
+    GiftCardPreparationPauseReason reason =
+        GiftCardPreparationPauseReason.locked,
+  }) {
+    _pauseReason = reason;
     _preparationGeneration++;
+    if (reason == GiftCardPreparationPauseReason.walletChange) {
+      _walletChangeGeneration = _preparationGeneration;
+    }
     _enabled = false;
-    if (!_disposed) {
-      unawaited(_cancelChecks());
+    final previousDrain = _preparationDrain;
+    final preparations = _preparations.toList();
+    if (previousDrain != null ||
+        preparations.isNotEmpty ||
+        _checkCancellations.isNotEmpty) {
+      // Only accepted work belongs to this barrier. Waiting links are owned by
+      // intake/the preview and must never block a destructive-operation drain.
+      final cancellations = _cancelChecks();
+      late final Future<void> drain;
+      drain =
+          Future.wait([
+            if (previousDrain != null) _ignoreOutcome(previousDrain),
+            _ignoreOutcome(cancellations),
+            ...preparations.map(_ignoreOutcome),
+          ]).then((_) {
+            if (!identical(_preparationDrain, drain)) return;
+            _preparationDrain = null;
+            _notifyPreparationChanged();
+            if (_enabled &&
+                !_disposed &&
+                !_resetQuiesced &&
+                !_lifecyclePaused) {
+              _refreshInBackground();
+            }
+          });
+      _preparationDrain = drain;
     }
     _retryTimer?.cancel();
     _retryTimer = null;
+    _notifyPreparationChanged();
   }
 
   void pauseForLifecycle() {
     _lifecyclePaused = true;
-    pause();
+    pause(reason: GiftCardPreparationPauseReason.lifecycle);
   }
 
   void resumeForLifecycle() {
@@ -498,13 +603,15 @@ class PaymentLinkClaimCoordinator {
   void dispose() {
     _disposed = true;
     _resetQuiesced = true;
-    pause();
+    pause(reason: GiftCardPreparationPauseReason.disposed);
+    _preparationChanges.dispose();
   }
 
   Future<void> quiesceAndDrain() async {
     _resetQuiesced = true;
-    pause();
+    pause(reason: GiftCardPreparationPauseReason.walletChange);
     await _cancelChecks();
+    await _preparationDrain;
     while (_preparations.isNotEmpty ||
         _submissions.isNotEmpty ||
         _setupPreparations.isNotEmpty ||
@@ -529,6 +636,7 @@ class PaymentLinkClaimCoordinator {
     _ref.read(giftClaimImportStoreProvider).resetMemory();
     final security = _ref.read(appSecurityProvider);
     if (security.isPasswordConfigured && security.isUnlocked) resume();
+    _notifyPreparationChanged();
   }
 
   Future<void> _ignoreOutcome(Future<Object?> operation) async {
@@ -644,11 +752,7 @@ class PaymentLinkClaimCoordinator {
   }
 
   bool get _canRunRecovery {
-    if (_disposed ||
-        !_ref.mounted ||
-        !_enabled ||
-        _lifecyclePaused ||
-        _resetQuiesced) {
+    if (_disposed || !_ref.mounted || !_enabled || !canStartPreparation) {
       return false;
     }
     final security = _ref.read(appSecurityProvider);
@@ -764,6 +868,7 @@ final paymentLinkClaimCoordinatorProvider = Provider((ref) {
   });
 
   final lifecycleListener = AppLifecycleListener(
+    onInactive: coordinator._notifyPreparationChanged,
     onHide: coordinator.pauseForLifecycle,
     onPause: coordinator.pauseForLifecycle,
     onResume: coordinator.resumeForLifecycle,

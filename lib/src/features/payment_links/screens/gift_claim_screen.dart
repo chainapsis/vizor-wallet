@@ -929,6 +929,11 @@ class _GiftClaimStatus extends StatelessWidget {
         );
       case GiftClaimPhase.failed:
         return switch (flow.failure) {
+          GiftClaimFailure.interrupted => (
+            kPaymentLinkInterruptedCheckMessage,
+            null,
+            _Tone.problem,
+          ),
           GiftClaimFailure.otherNetwork => (
             'This gift card is for a different network.',
             null,
@@ -1029,7 +1034,8 @@ class _GiftClaimActions extends ConsumerWidget {
               ]
             : [],
       GiftClaimPhase.failed =>
-        flow.failure == GiftClaimFailure.network
+        flow.failure == GiftClaimFailure.network ||
+                flow.failure == GiftClaimFailure.interrupted
             ? [_primary('Try again', notifier.recheck)]
             : [_secondary('Go back', onClose)],
       GiftClaimPhase.inspected when canClaimLater => [
