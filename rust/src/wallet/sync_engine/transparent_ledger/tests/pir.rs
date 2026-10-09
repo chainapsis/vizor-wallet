@@ -926,10 +926,11 @@ async fn a_foreign_unreadable_or_busy_companion_is_never_deleted() {
     assert_eq!(catalog_rows(&path), 1);
 }
 
-/// A regular file where the companion directory belongs is moved aside, never
-/// deleted, and recovery proceeds.
+/// A regular file where the companion directory belongs is moved into the
+/// new directory, never deleted, so it shares the directory's lifecycle: a
+/// wallet reset that deletes the directory removes it too. Recovery proceeds.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_file_in_place_of_the_companion_directory_is_moved_aside() {
+async fn a_file_in_place_of_the_companion_directory_is_moved_into_it() {
     let wallet = main_wallet(1);
     let account = wallet.accounts[0].1;
     let _seam = test_transport::set(&wallet.path, refusing());
@@ -945,18 +946,53 @@ async fn a_file_in_place_of_the_companion_directory_is_moved_aside() {
             .await,
         Ok(COMPLETE)
     );
+    drop(source);
     assert!(dir.is_dir());
-    let displaced: Vec<_> = std::fs::read_dir(dir.parent().unwrap())
+    let displaced: Vec<_> = std::fs::read_dir(&dir)
         .unwrap()
         .map(|entry| entry.unwrap().path())
         .filter(|path| {
             path.file_name()
                 .and_then(|name| name.to_str())
-                .is_some_and(|name| name.contains(".tpir.displaced-"))
+                .is_some_and(|name| name.starts_with("displaced-"))
         })
         .collect();
     assert_eq!(displaced.len(), 1);
     assert_eq!(std::fs::read(&displaced[0]).unwrap(), b"not a directory");
+    // Nothing was left beside the directory, and the orphan sweep keeps it.
+    let parent = dir.parent().unwrap();
+    assert!(std::fs::read_dir(parent).unwrap().all(|entry| {
+        let name = entry.unwrap().file_name();
+        !name.to_string_lossy().contains(".tpir.")
+    }));
+    pir::remove_orphan_companions(&wallet.path).unwrap();
+    assert!(displaced[0].exists());
+    // A reset deletes the directory, and the displaced file with it.
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert!(!displaced[0].exists());
+}
+
+/// A symlink where the companion directory belongs is left alone, and the
+/// pass is unavailable for every account.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_symlink_in_place_of_the_companion_directory_is_left_alone() {
+    let wallet = main_wallet(1);
+    let account = wallet.accounts[0].1;
+    let _seam = test_transport::set(&wallet.path, refusing());
+    let dir = pir::companion_dir(&wallet.path);
+    let target = tempfile::tempdir().unwrap();
+    std::os::unix::fs::symlink(target.path(), &dir).unwrap();
+    let source = TransparentPirSource::new(&wallet.path, MAIN);
+    assert_eq!(
+        source
+            .recover(request(account, &bare(account), &|| false))
+            .await,
+        Err(SourceError::Unavailable)
+    );
+    assert!(std::fs::symlink_metadata(&dir)
+        .unwrap()
+        .file_type()
+        .is_symlink());
 }
 
 #[tokio::test(flavor = "multi_thread")]

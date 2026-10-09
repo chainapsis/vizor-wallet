@@ -392,22 +392,30 @@ impl TransparentLookupGate {
     }
 }
 
-/// Awaits `call`, holding `lease` only until `sent` resolves: when the
-/// request has been handed to the transport, or its signal was dropped
-/// because the request never left.
+/// Awaits `call`, holding `lease` until `sent` fires: when the request has
+/// been handed to the transport. A signal dropped without firing proves no
+/// hand-off, so the lease is then kept until the call returns, as without a
+/// transport.
 async fn release_at_hand_off<F: Future>(
     lease: OwnedRwLockReadGuard<()>,
     sent: tokio::sync::oneshot::Receiver<()>,
     call: F,
 ) -> F::Output {
     let mut lease = Some(lease);
-    let mut sent = sent;
+    let mut sent = Some(sent);
     tokio::pin!(call);
     loop {
         tokio::select! {
             biased;
             output = &mut call => return output,
-            _ = &mut sent, if lease.is_some() => lease = None,
+            handed_off = async { sent.as_mut().expect("polled only while armed").await },
+                if sent.is_some() =>
+            {
+                sent = None;
+                if handed_off.is_ok() {
+                    lease = None;
+                }
+            }
         }
     }
 }
@@ -700,6 +708,38 @@ mod tests {
             let answered = lookup.await.unwrap().unwrap();
             assert!(matches!(answered, Some(Err(_))), "{answered:?}");
         }
+    }
+
+    /// A dispatch signal dropped without firing is no hand-off: the lease is
+    /// kept until the call returns.
+    #[tokio::test]
+    async fn a_dropped_signal_keeps_the_lease_until_the_call_returns() {
+        let held = Arc::new(RwLock::new(()));
+        let lease = held.clone().read_owned().await;
+        let (dispatched, sent) = Dispatched::new();
+        drop(dispatched);
+        let (finish, finished) = tokio::sync::oneshot::channel::<()>();
+        let call = tokio::spawn(release_at_hand_off(lease, sent, async {
+            finished.await.unwrap()
+        }));
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(held.try_write().is_err(), "the lease is still held");
+        finish.send(()).unwrap();
+        call.await.unwrap();
+        assert!(held.try_write().is_ok());
+
+        // A fired signal releases it while the call still runs.
+        let lease = held.clone().read_owned().await;
+        let (dispatched, sent) = Dispatched::new();
+        let (finish, finished) = tokio::sync::oneshot::channel::<()>();
+        let call = tokio::spawn(release_at_hand_off(lease, sent, async {
+            finished.await.unwrap()
+        }));
+        dispatched.fire();
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(held.try_write().is_ok(), "released at hand-off");
+        finish.send(()).unwrap();
+        call.await.unwrap();
     }
 
     /// A lookup that cannot get its lease within the bound is withheld,

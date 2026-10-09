@@ -27,7 +27,7 @@
 //! catalog's reconciliation records survive. A busy, locked or unreadable
 //! companion, one bound to another identity, a publication change or any
 //! other refusal is never deleted or reset. A regular file where the
-//! companion directory belongs is moved aside, never deleted.
+//! companion directory belongs is moved into it, never deleted.
 //!
 //! A pass that fails because the service cannot be reached or is not serving
 //! is [`SourceError::Unavailable`], which ends the whole run, rather than a
@@ -940,34 +940,49 @@ fn restore_catalog(
 /// two passes never both act on it.
 static COMPANION_DIR_REPAIR: Mutex<()> = Mutex::new(());
 
-/// Makes `dir` a directory for companions. A regular file or other entry in
-/// its place, which no companion can live beside, is moved aside under
-/// [`COMPANION_DIR_REPAIR`], never deleted; if that fails, the directory is
-/// unusable for every account. Nothing inside an existing directory is
-/// touched here.
+/// Makes `dir` a directory for companions. A regular file in its place,
+/// which no companion can live beside, is moved into the new directory as
+/// `displaced-<secs>`, never deleted, under [`COMPANION_DIR_REPAIR`]: it then
+/// shares the directory's lifecycle, removed with it by a wallet reset and
+/// covered by its backup exclusion. A step that fails puts the file back. A
+/// symlink or any other entry is left alone, and the directory is unusable
+/// for every account. Nothing inside an existing directory is touched here.
 fn prepare_companion_dir(dir: &Path) -> Result<(), PassFailure> {
     let _repair = COMPANION_DIR_REPAIR
         .lock()
         .unwrap_or_else(PoisonError::into_inner);
+    let unusable = PassFailure::CompanionDirectory;
     match std::fs::symlink_metadata(dir) {
-        Ok(meta) if meta.is_dir() => return Ok(()),
-        Ok(_) => {
-            let mut aside = dir.as_os_str().to_owned();
-            aside.push(format!(
-                ".displaced-{}",
+        Ok(meta) if meta.is_dir() => Ok(()),
+        Ok(meta) if meta.file_type().is_file() => {
+            log::warn!(
+                "transparent PIR: moving a file where the companion directory belongs into it"
+            );
+            let staging = sibling(dir, ".displacing");
+            std::fs::rename(dir, &staging).map_err(|_| unusable)?;
+            if std::fs::create_dir(dir).is_err() {
+                let _ = std::fs::rename(&staging, dir);
+                return Err(unusable);
+            }
+            let displaced = dir.join(format!(
+                "displaced-{}",
                 std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .map_or(0, |elapsed| elapsed.as_secs())
             ));
-            log::warn!(
-                "transparent PIR: moving aside a file where the companion directory belongs"
-            );
-            std::fs::rename(dir, &aside).map_err(|_| PassFailure::CompanionDirectory)?;
+            if std::fs::rename(&staging, &displaced).is_err() {
+                let _ = std::fs::remove_dir(dir);
+                let _ = std::fs::rename(&staging, dir);
+                return Err(unusable);
+            }
+            Ok(())
         }
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-        Err(_) => return Err(PassFailure::CompanionDirectory),
+        Ok(_) => Err(unusable),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            std::fs::create_dir_all(dir).map_err(|_| unusable)
+        }
+        Err(_) => Err(unusable),
     }
-    std::fs::create_dir_all(dir).map_err(|_| PassFailure::CompanionDirectory)
 }
 
 /// Whether listing the companion directory failed only because there is no

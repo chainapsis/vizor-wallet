@@ -213,9 +213,11 @@ impl CapturingLwd {
                                             .body(Full::new(Bytes::new())),
                                         // A frame flagged compressed without
                                         // a grpc-encoding: an undecodable
-                                        // message.
+                                        // message. No grpc-status in the
+                                        // headers, which would make this a
+                                        // trailers-only reply whose body is
+                                        // never read.
                                         Fault::BrokenStream => grpc
-                                            .header("grpc-status", "0")
                                             .body(Full::new(Bytes::from_static(&[1, 0, 0, 0, 0]))),
                                     };
                                     return Ok::<_, std::convert::Infallible>(response.unwrap());
