@@ -171,6 +171,57 @@ void main() {
     expect(container.read(syncDisplayPercentageProvider), beforeRetry);
   });
 
+  test(
+    'advances when a retry reports progress over the remaining work',
+    () async {
+      final initial = SyncState(
+        isSyncing: true,
+        phase: 'scan',
+        percentage: 0.44,
+        displayTargetPercentage: 0.44,
+        lastSyncStartedAt: DateTime.utc(2026, 10, 9),
+      );
+      late FakeSyncNotifier syncNotifier;
+      final container = ProviderContainer(
+        overrides: [
+          syncProvider.overrideWith(
+            () => syncNotifier = FakeSyncNotifier(initial),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final subscription = container.listen(
+        syncDisplayPercentageProvider,
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+      await container.read(syncProvider.future);
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        container.read(syncDisplayPercentageProvider),
+        closeTo(0.4636, 1e-9),
+      );
+
+      syncNotifier.emit(initial.copyWith(phase: kSyncPhaseChainPrepare));
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        container.read(syncDisplayPercentageProvider),
+        closeTo(0.4636, 1e-9),
+      );
+
+      // Rust retains 44% completed and reports 1% of the remaining 56%.
+      syncNotifier.emit(
+        initial.copyWith(percentage: 0.4456, displayTargetPercentage: 0.4456),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        container.read(syncDisplayPercentageProvider),
+        closeTo(0.468864, 1e-9),
+      );
+    },
+  );
+
   test('resets estimated progress when a new sync session starts', () async {
     final firstStartedAt = DateTime.utc(2026, 8, 18);
     final initial = SyncState(

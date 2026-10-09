@@ -57,6 +57,7 @@ pub(crate) mod gift_card_claim;
 pub(crate) mod ledger_discovery;
 mod lwd;
 pub(crate) mod mempool;
+mod retry_progress;
 mod tip_cache;
 #[cfg(test)]
 mod transparent_recovery_tests;
@@ -2547,6 +2548,7 @@ where
 
 /// Run the full sync loop with automatic retry on failure.
 /// Retries up to 3 times with exponential backoff (2s, 4s, 8s).
+/// Progress includes work completed by earlier attempts in this call.
 /// This is the unified entry point called by both Dart (FRB) and Swift (C FFI).
 pub async fn run_sync_inner(
     db_data_path: &str,
@@ -2561,6 +2563,7 @@ pub async fn run_sync_inner(
 ) -> Result<(), String> {
     const MAX_RETRIES: u32 = 3;
     let mut last_err = String::new();
+    let progress = std::sync::Mutex::new(retry_progress::RetryProgress::default());
     *SYNC_START.lock().unwrap() = Some(std::time::Instant::now());
 
     for attempt in 0..=MAX_RETRIES {
@@ -2594,6 +2597,12 @@ pub async fn run_sync_inner(
             }
         }
 
+        progress.lock().unwrap().start_attempt();
+        let report_progress = |event| {
+            let event = progress.lock().unwrap().report(event);
+            progress_fn(event);
+        };
+
         match run_sync_impl(
             db_data_path,
             lightwalletd_url,
@@ -2603,7 +2612,7 @@ pub async fn run_sync_inner(
             desired_mode,
             active_account_target.as_ref(),
             allow_resubmit,
-            &progress_fn,
+            &report_progress,
         )
         .await
         {
