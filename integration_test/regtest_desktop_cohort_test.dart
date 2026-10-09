@@ -6,6 +6,8 @@ import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart' show e2eRuntimeContext;
 import 'package:zcash_wallet/src/core/config/e2e_runtime_case_manifest.dart';
 import 'package:zcash_wallet/src/core/config/network_config.dart';
+import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart'
+    show kPaymentLinkRegtestEnabled;
 
 import 'regtest_import_sync_test.dart' as import_sync;
 import 'regtest_fallback_endpoint_test.dart' as fallback_endpoint;
@@ -46,6 +48,10 @@ void main() {
   tearDownAll(() {
     binding.reportData!['runtime_context'] = e2eRuntimeContext;
   });
+  if (manifest.scenarioId.startsWith('flutter.macos.payment-link-') &&
+      !kPaymentLinkRegtestEnabled) {
+    throw StateError('The Gift E2E build must enable regtest payment links.');
+  }
   switch (manifest.scenarioId) {
     case 'flutter.macos.import-sync':
       import_sync.main();
