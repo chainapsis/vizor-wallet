@@ -172,7 +172,7 @@ features = ["wallet"]
 # crates.io package; see the `[patch.crates-io]` comment below.
 [dependencies.zakura-pir-transparent]
 git = "https://github.com/zakura-core/wallet-libraries"
-rev = "8857d443baef0b22df6ba07ff750b0586ba77005"
+rev = "f7becfdd61a9e7da9f0d18e4d5a646bfb860b4df"
 default-features = false
 # `sqlite` applies a batch to the wallet and acknowledges it in one call.
 features = ["sqlite"]
@@ -222,7 +222,7 @@ features = ["test-fixtures"]
 # display publication the loop-4 tests serve. Same rev as the dependency above.
 [dev-dependencies.zakura-pir-transparent]
 git = "https://github.com/zakura-core/wallet-libraries"
-rev = "8857d443baef0b22df6ba07ff750b0586ba77005"
+rev = "f7becfdd61a9e7da9f0d18e4d5a646bfb860b4df"
 default-features = false
 features = ["sqlite", "testing"]
 
@@ -264,21 +264,24 @@ assertions_on_constants = "allow"
 # equal to these so its path dependencies on the backend and SQLite crates
 # resolve to the patched sources.
 #
-# Pinned to wallet-libraries `claude/tpir-simplify-with-forget-ledger`, which
-# merges PR #135 (the raw HTTP exchange, companion directory, settlement
-# actions, txid display service and `testing` feature this wallet builds on)
-# with PR #134 (forget transparent ledger facts under `Public`), both on main
-# after PR #129. Repin to main once both land. The status response hook also
+# Pinned to wallet-libraries `claude/dithered-queries-with-forget-ledger`,
+# which merges PR #133 (dithered 44-bit native queries for Transparent, Enhance
+# and Status) with PR #134 (forget transparent ledger facts under `Public`),
+# both on main after PR #135 (the raw HTTP exchange, companion directory,
+# settlement actions, txid display service and `testing` feature this wallet
+# builds on). `zakura-pir-enhance` is patched too so its client uploads the
+# dithered query. Repin to main once both land. The status response hook also
 # needs its status/native path dependencies here so their public types stay
 # unified. Keep every wallet-libraries dependency at this exact revision.
 [patch.crates-io]
-zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries", rev = "8857d443baef0b22df6ba07ff750b0586ba77005" }
-zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries", rev = "8857d443baef0b22df6ba07ff750b0586ba77005" }
-zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries", rev = "8857d443baef0b22df6ba07ff750b0586ba77005" }
-zakura-pir-enhance-types = { git = "https://github.com/zakura-core/wallet-libraries", rev = "8857d443baef0b22df6ba07ff750b0586ba77005" }
-zakura-transaction-status = { git = "https://github.com/zakura-core/wallet-libraries", rev = "8857d443baef0b22df6ba07ff750b0586ba77005" }
-zakura-pir-status = { git = "https://github.com/zakura-core/wallet-libraries", rev = "8857d443baef0b22df6ba07ff750b0586ba77005" }
-zakura-pir-native = { git = "https://github.com/zakura-core/wallet-libraries", rev = "8857d443baef0b22df6ba07ff750b0586ba77005" }
+zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries", rev = "f7becfdd61a9e7da9f0d18e4d5a646bfb860b4df" }
+zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries", rev = "f7becfdd61a9e7da9f0d18e4d5a646bfb860b4df" }
+zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries", rev = "f7becfdd61a9e7da9f0d18e4d5a646bfb860b4df" }
+zakura-pir-enhance-types = { git = "https://github.com/zakura-core/wallet-libraries", rev = "f7becfdd61a9e7da9f0d18e4d5a646bfb860b4df" }
+zakura-transaction-status = { git = "https://github.com/zakura-core/wallet-libraries", rev = "f7becfdd61a9e7da9f0d18e4d5a646bfb860b4df" }
+zakura-pir-status = { git = "https://github.com/zakura-core/wallet-libraries", rev = "f7becfdd61a9e7da9f0d18e4d5a646bfb860b4df" }
+zakura-pir-native = { git = "https://github.com/zakura-core/wallet-libraries", rev = "f7becfdd61a9e7da9f0d18e4d5a646bfb860b4df" }
+zakura-pir-enhance = { git = "https://github.com/zakura-core/wallet-libraries", rev = "f7becfdd61a9e7da9f0d18e4d5a646bfb860b4df" }
 
 # Flutter debug builds use Cargokit + Cargo's dev profile (`cargo build`
 # without `--release`). Rust crypto and voting flows are slow under the default
