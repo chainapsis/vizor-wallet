@@ -1,4 +1,4 @@
-//! Transparent mode selection, handle adoption, and durable transitions.
+//! Transparent mode selection, durable policy resolution, and durable transitions.
 //!
 //! Every test selects through its arguments or the per-wallet seam; none
 //! changes the process-wide preference, development flag, or confirmation.
@@ -96,6 +96,76 @@ async fn openers_never_run_weaker_than_the_durable_policy() {
 
     // Opening never writes the policy.
     assert_eq!(applied(&path, NETWORK), before);
+}
+
+/// Handles opened while the wallet is public follow a `PrivateRequired`
+/// policy another connection applies afterwards, at their next read, with no
+/// caller adoption: balances read private, public lookups are withheld, and
+/// status work is never public. Nothing they read writes the policy, and an
+/// explicit lowering by another connection is followed back.
+#[tokio::test]
+async fn handles_opened_before_another_connection_raises_follow_it() {
+    use zcash_client_backend::data_api::status::{TransactionStatusRead, TransactionStatusWork};
+
+    let mut wallet = wallet();
+    let path = wallet.path.clone();
+    let public = policy(TransparentLedgerMode::Public);
+    public.configure_db(&mut wallet.db);
+    let mut reader =
+        open_wallet_db_for_read_with_timeout(&path, NETWORK, SYNC_DB_BUSY_TIMEOUT).unwrap();
+    let mut readonly =
+        open_wallet_db_readonly_with_timeout(&path, NETWORK, SYNC_DB_BUSY_TIMEOUT).unwrap();
+    public.configure_db(&mut reader);
+    public.configure_db(&mut readonly);
+    let captured = public.public_transparent_lookups(&wallet.db).unwrap();
+    assert!(matches!(
+        captured,
+        PublicTransparentLookups::Allowed {
+            generation: Some(_)
+        }
+    ));
+
+    apply_on(&path, NETWORK, TransparentLedgerMode::PrivateRequired);
+    let raised = applied(&path, NETWORK);
+    for db in [&wallet.db, &reader, &readonly] {
+        assert_eq!(
+            db.transparent_ledger_mode().unwrap(),
+            TransparentLedgerMode::PrivateRequired
+        );
+        assert_eq!(
+            public.public_transparent_lookups(db).unwrap(),
+            PublicTransparentLookups::Withheld
+        );
+        assert!(!captured.still_allowed(db).unwrap());
+        assert!(!db
+            .transaction_status_work()
+            .unwrap()
+            .iter()
+            .any(|work| matches!(work, TransactionStatusWork::Public(_))));
+    }
+    let balance = crate::wallet::sync::read_wallet_balances(
+        &mut wallet.db,
+        &path,
+        NETWORK,
+        &[wallet.account],
+    )
+    .unwrap()
+    .pop()
+    .unwrap();
+    assert!(balance.transparent_private);
+    // Reading never wrote the policy.
+    assert_eq!(applied(&path, NETWORK), raised);
+
+    // Only an explicit transition lowers it; the handles follow it back, and
+    // authority captured before the raise stays revoked.
+    apply_on(&path, NETWORK, TransparentLedgerMode::Public);
+    for db in [&wallet.db, &reader, &readonly] {
+        assert_eq!(
+            db.transparent_ledger_mode().unwrap(),
+            TransparentLedgerMode::Public
+        );
+        assert!(!captured.still_allowed(db).unwrap());
+    }
 }
 
 #[tokio::test]

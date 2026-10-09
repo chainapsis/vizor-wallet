@@ -1067,9 +1067,7 @@ fn delete_account_rows(
     // The library owns wallet deletion and its compatibility/lifecycle checks. Borrow
     // our transaction so all Vizor cleanup either commits with it or rolls back with it.
     {
-        use crate::wallet::sync_engine::enhancement::{
-            adopt_durable_private, transparent_ledger_mode_for,
-        };
+        use crate::wallet::sync_engine::enhancement::transparent_ledger_mode_for;
         let mut db = zcash_client_sqlite::WalletDb::from_connection(
             zcash_client_sqlite::SqlTransaction::new(&tx),
             network,
@@ -1077,7 +1075,6 @@ fn delete_account_rows(
             voting_crypto_deps::rand::rngs::OsRng,
         )
         .with_transparent_ledger_mode(transparent_ledger_mode_for(db_path, network));
-        adopt_durable_private(&mut db);
         use zcash_client_backend::data_api::WalletWrite;
         db.delete_account(account_id)
             .map_err(|e| format!("Failed to delete account: {e}"))?;

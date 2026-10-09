@@ -855,12 +855,16 @@ impl RecoverySource for Silent {
         std::future::pending()
     }
 
-    fn acknowledge(
+    fn apply(
         &self,
         _account: AccountUuid,
-        _reconciled: bool,
-    ) -> impl Future<Output = Result<(), SourceError>> + Send {
-        std::future::ready(Err(SourceError::Failed))
+        _db: &mut WalletDatabase,
+        _trust: Trust,
+    ) -> impl Future<Output = Settlement> + Send {
+        std::future::ready(Settlement::Refused {
+            stats: ApplyStats::default(),
+            refusal: Refusal::Skip,
+        })
     }
 }
 
@@ -1431,7 +1435,8 @@ async fn retired_revisions_are_acknowledged_after_trusted_reconciliation() {
 }
 
 /// Without the trusted operation, a batch that resolves retired revisions is
-/// applied but never acknowledged, and its account is held.
+/// refused before any commit applies, never acknowledged, and its account is
+/// held.
 #[tokio::test]
 async fn unreconciled_retirements_acknowledge_nothing_and_hold_the_account() {
     // The trusted origin under `PrivateShadow`, which qualifies nothing.
@@ -1441,11 +1446,12 @@ async fn unreconciled_retirements_acknowledge_nothing_and_hold_the_account() {
     let acknowledged = source.acknowledged();
     assert_eq!(acknowledged, source.calls());
     source.replace_events(vec![], vec![]).retire();
+    let before = production_dump(&shadowed.path);
     let RunOutcome::Finished(stats) = recover(&mut shadowed, &source).await else {
         panic!("recovery finishes");
     };
-    assert!(stats.commits > 0);
-    assert_eq!(stats.qualified, 0);
+    assert_eq!((stats.commits, stats.qualified), (0, 0));
+    assert_eq!(production_dump(&shadowed.path), before);
     assert_eq!(source.acknowledged(), acknowledged);
     // Only reconciliation withdraws the retired revision's evidence.
     assert!(count(&shadowed.path, RETIRED_COVERAGE) > 0);
@@ -1472,8 +1478,7 @@ async fn unreconciled_retirements_acknowledge_nothing_and_hold_the_account() {
     let RunOutcome::Finished(stats) = run_required(&mut wallet, &untrusted).await else {
         panic!("recovery finishes");
     };
-    assert!(stats.commits > 0);
-    assert_eq!((stats.qualified, stats.promoted), (0, 0));
+    assert_eq!((stats.commits, stats.qualified, stats.promoted), (0, 0, 0));
     assert_eq!(untrusted.acknowledged(), 0);
     assert_eq!(
         recovery_hold(&wallet.path, wallet.account),
