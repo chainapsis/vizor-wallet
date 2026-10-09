@@ -104,6 +104,33 @@ class SuiteTests(unittest.TestCase):
         self.assertEqual(summary["error"],"compiler failed")
         self.assertEqual(summary["repetition_reports"],[])
 
+    def test_endpoint_cases_are_supported_without_enabling_other_domains(self):
+        scenarios = tuple(self.catalog.scenarios_by_id[name] for name in (
+            "flutter.macos.fallback-endpoint", "flutter.macos.custom-endpoint-no-fallback",
+            "flutter.macos.slow-height-fallback", "flutter.macos.sync-startup-stall-recovery"))
+        with patch.object(SUITE.sys, "platform", "darwin"):
+            SUITE.validate_options(self.args, scenarios)
+        self.assertNotIn("flutter.macos.send", SUITE.SUPPORTED_SCENARIOS)
+
+    def test_import_keeps_both_exact_balances_and_independent_sources(self):
+        self.assertEqual(SUITE.scenario_funding("flutter.macos.import-sync"), (
+            (SUITE._IMPORT_UA, 125000000, "ironwood", 1),
+            (SUITE._IMPORT_TRANSPARENT, 75000000, "transparent", 2),
+        ))
+
+    def test_fallback_cases_fund_the_existing_desktop_fixture_only(self):
+        for name in ("flutter.macos.fallback-endpoint", "flutter.macos.slow-height-fallback"):
+            with self.subTest(scenario=name):
+                self.assertEqual(SUITE.scenario_funding(name), (
+                    (SUITE._DESKTOP_UA, 125000000, "ironwood", 1),
+                ))
+
+    def test_unreachable_endpoint_and_startup_recovery_need_no_payment(self):
+        for name in ("flutter.macos.custom-endpoint-no-fallback", "flutter.macos.sync-startup-stall-recovery"):
+            self.assertEqual(SUITE.scenario_funding(name), ())
+        with self.assertRaises(ValueError):
+            SUITE.scenario_funding("flutter.macos.send")
+
 
 if __name__ == "__main__":
     unittest.main()

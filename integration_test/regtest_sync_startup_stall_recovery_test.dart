@@ -20,7 +20,7 @@ const _endpointFailure =
 const _genericFailure = 'Sync failed. Retry sync to continue.';
 
 void main() {
-  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   setUpAll(() async {
     await initializeZcashWalletRuntime();
@@ -134,6 +134,7 @@ void main() {
       expect(find.text(_genericFailure), findsNothing);
       expect(find.text(_fallbackToast), findsNothing);
       e2eLog('stalled UTXO stream recovered on the healthy retry');
+      binding.reportData?['assertions_completed'] = true;
     },
     timeout: const Timeout(Duration(minutes: 3)),
   );

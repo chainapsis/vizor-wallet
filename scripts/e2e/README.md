@@ -47,8 +47,8 @@ python3 -B -m unittest scripts/e2e/test_zakura_fixture_source.py
 ## Catalog previews
 
 `run-suite.py` provides a host-only inventory and selection preview. Of 64
-entries, only `flutter.macos.import-sync` is wired to the isolated executor;
-the other 63 stay pending. A preview exit code of 0 means the preview succeeded,
+entries, five macOS import/endpoint cases are wired to the isolated executor;
+the other 59 stay pending. A preview exit code of 0 means the preview succeeded,
 not that any test ran or passed. Execution requires explicit `--run`.
 
 Previews require Python 3.9 or newer and use only the standard library. Git is
@@ -91,7 +91,7 @@ Host-only checks for this slice:
 python3 -B -m unittest scripts/e2e/test_e2e_catalog.py scripts/e2e/test_e2e_report.py scripts/e2e/test_e2e_changes.py scripts/e2e/test_e2e_impact.py scripts/e2e/test_run_suite.py
 ```
 
-## Isolated macOS import/sync execution
+## Isolated macOS import and endpoint execution
 
 The selected native cohort, cleanup helper and offline signer are each built
 once per invocation. Each case has fresh wallet/Keychain/preferences storage,
@@ -121,7 +121,30 @@ python3 -B scripts/e2e/run-suite.py \
 
 `--repeat 2` creates two independent executions, not a retry that erases the
 first result. `--workers 2` permits both to overlap after one shared build;
-without repetitions, this one supported scenario only uses one worker.
+selecting one scenario without repetitions only uses one worker.
+
+The same cohort also runs `flutter.macos.fallback-endpoint`,
+`flutter.macos.custom-endpoint-no-fallback`, `flutter.macos.slow-height-fallback`
+and `flutter.macos.sync-startup-stall-recovery`. Repeat `--scenario` to combine
+only the cases needed, using the same explicit tooling arguments above:
+
+```bash
+python3 -B scripts/e2e/run-suite.py \
+  --scenario flutter.macos.fallback-endpoint \
+  --scenario flutter.macos.custom-endpoint-no-fallback \
+  --scenario flutter.macos.slow-height-fallback \
+  --scenario flutter.macos.sync-startup-stall-recovery --plan
+```
+
+Replace `--plan` with `--run` and add the tooling paths and `--workers 2` to
+execute that selection. Each proxy uses its case's leased ports, not shared
+19068/9067. The custom-endpoint case uses its own unserved port and keeps the
+no-fallback privacy assertions. Fallback still requires the original 1.25
+balance; slow-height recovery still checks 1.25, 1.75, 2.00 and 2.25 through
+fallback, recovered primary and primary-down transitions. Its later payments
+use integer zatoshis, independently signed transactions, the direct inclusion
+oracle and the original three confirmation blocks. Startup recovery retains
+the actual first-stream stall, healthy retry and persisted completed status.
 Evidence stays in `.regtest-logs/native-suite-<id>/`. Each repetition's
 `run.json` is a schema-2 report accepted by the existing `--failed-from` selector;
 `summary.json` records the batch/build counts. Failed cases keep state/logs,
@@ -149,7 +172,7 @@ fixture, but must be canonical, owned and not writable by other users. The actua
 are checked, never changed to make acquisition succeed.
 
 This library does not start a backend or wire an execution mode into
-`run-suite.py` by itself. Only the composed macOS import/sync executor above is
+`run-suite.py` by itself. Only the five composed macOS cases above are
 runnable; other catalog cases remain pending. Process/workspace/simulator
 ownership and actual app-storage cleanup are separate follow-up work. Tests
 use private temporary directories, real ephemeral loopback sockets, and one

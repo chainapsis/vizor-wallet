@@ -5,6 +5,8 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
+import 'package:zcash_wallet/src/core/config/e2e_runtime_case_manifest.dart';
+import 'package:zcash_wallet/src/core/config/e2e_runtime_endpoints.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
@@ -14,6 +16,7 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 import 'support/desktop_onboarding_flow.dart';
+import 'support/desktop_regtest_flow.dart' show desktopRegtestUnifiedAddress;
 import 'support/regtest_lightwalletd_proxy.dart';
 
 const _mnemonic =
@@ -21,18 +24,26 @@ const _mnemonic =
     'roast miracle ethics found child scare curve congress renew salute pig '
     'better used';
 const _password = 'Vizor123!';
-const _primaryProxyUrl = 'http://127.0.0.1:19068';
-const _realLightwalletdUrl = 'http://127.0.0.1:9067';
-const _driverUrl = String.fromEnvironment('ZCASH_E2E_DRIVER_URL');
-const _unifiedAddress = String.fromEnvironment('ZCASH_E2E_UNIFIED_ADDRESS');
+String get _primaryProxyUrl => resolveE2eRuntimePrimaryProxyUrl(
+  defaultPort: 19068, manifest: installedE2eRuntimeCaseManifest,
+);
+String get _realLightwalletdUrl => resolveE2eRuntimeLightwalletdUrl(
+  defaultPort: 9067, manifest: installedE2eRuntimeCaseManifest,
+);
+String get _driverUrl => installedE2eRuntimeCaseManifest?.zcashdRpcUrl ??
+    const String.fromEnvironment('ZCASH_E2E_DRIVER_URL');
+String get _unifiedAddress => installedE2eRuntimeCaseManifest == null
+    ? const String.fromEnvironment('ZCASH_E2E_UNIFIED_ADDRESS')
+    : desktopRegtestUnifiedAddress;
 const _faucetZaddr = String.fromEnvironment('ZCASH_E2E_FAUCET_ZADDR');
 const _fallbackToast =
     'Selected endpoint is unstable. Switched to fallback endpoint.';
 const _primaryToast = 'Selected endpoint recovered. Switched back.';
 final _currencyTicker = kZcashDefaultCurrencyTicker;
+var _nextNativeFundingSource = 2; // Source1 contains the initial1.25 fixture.
 
 void main() {
-  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   setUpAll(() async {
     await initializeZcashWalletRuntime();
@@ -41,7 +52,8 @@ void main() {
   testWidgets(
     'falls back on slow height, returns to primary, then falls back when down',
     (tester) async {
-      if (_unifiedAddress.isEmpty || _faucetZaddr.isEmpty) {
+      if (_unifiedAddress.isEmpty ||
+          (installedE2eRuntimeCaseManifest == null && _faucetZaddr.isEmpty)) {
         fail(
           'ZCASH_E2E_UNIFIED_ADDRESS and ZCASH_E2E_FAUCET_ZADDR are required.',
         );
@@ -125,6 +137,7 @@ void main() {
       await _waitForBalance(tester, {
         '2.25',
       }, 'sync through fallback after primary down');
+      binding.reportData?['assertions_completed'] = true;
     },
     timeout: const Timeout(Duration(minutes: 12)),
   );
@@ -179,6 +192,23 @@ Future<void> _configureSlowPresetPrimary() async {
 
 Future<void> _fundWallet(String amountZec) async {
   _log('funding $_unifiedAddress with $amountZec $_currencyTicker');
+  if (installedE2eRuntimeCaseManifest != null) {
+    final zatoshi = switch (amountZec) {
+      '0.50' => 50000000,
+      '0.25' => 25000000,
+      _ => throw ArgumentError.value(amountZec, 'amountZec'),
+    };
+    // This scenario asserts confirmed balances, not intermediate mempool state.
+    // Preserve its three mined blocks and require the direct inclusion oracle.
+    await _postDriver('/fund-confirmed', {
+      'address': _unifiedAddress,
+      'amount_zatoshi': zatoshi,
+      'source_height': _nextNativeFundingSource++,
+      'recipient_pool': 'ironwood',
+      'confirmations': 3,
+    });
+    return;
+  }
   await _postDriver('/fund-unmined-prepared', {
     'address': _unifiedAddress,
     'amount': amountZec,

@@ -27,10 +27,29 @@ from native_workspace import prepare_native_case_workspace
 from zakura_funding import fund_zakura
 
 
-SUPPORTED_SCENARIOS = frozenset({"flutter.macos.import-sync"})
+SUPPORTED_SCENARIOS = frozenset({
+    "flutter.macos.import-sync",
+    "flutter.macos.fallback-endpoint",
+    "flutter.macos.custom-endpoint-no-fallback",
+    "flutter.macos.slow-height-fallback",
+    "flutter.macos.sync-startup-stall-recovery",
+})
 _MINER = "tmLomwDqZSUb1Mvsfpjtmt4cLBA7c9tGssX"
 _IMPORT_UA = "uregtest1ykjd398elks624qyz0d0vffn6vpqkl6atp2wsr9795eql4kw47hwlffxyyfakv0l2twj635fpmxmeu3tzyrfhf5s9eg9ea8gsa0srdfwjudp3fs0qaaqxvkxr364a8vjy3y9vglm7lf8rs0vsev9p5mzky52rq4wkr5lhc842vuf5lhn"
 _IMPORT_TRANSPARENT = "tmPTcChwqcza88W1mydzwkZ25C9qQm3ugiM"
+_DESKTOP_UA = "uregtest1nu0qx0nca0ncpshm5x47ldc90835m2fy3gjuh3empp5js9qanzjwxppsw7x07a2ec3z52ute7d7f0z68ez90qlagx5ankjm4eyd6l90p"
+
+
+def scenario_funding(scenario_id):
+    """Prefund only the balances asserted by each unchanged wallet scenario."""
+    if scenario_id == "flutter.macos.import-sync":
+        return ((_IMPORT_UA,125000000,"ironwood",1),
+                (_IMPORT_TRANSPARENT,75000000,"transparent",2))
+    if scenario_id in {"flutter.macos.fallback-endpoint", "flutter.macos.slow-height-fallback"}:
+        return ((_DESKTOP_UA,125000000,"ironwood",1),)
+    if scenario_id in {"flutter.macos.custom-endpoint-no-fallback", "flutter.macos.sync-startup-stall-recovery"}:
+        return ()
+    raise ValueError("unsupported native funding scenario")
 
 
 def validate_options(args, scenarios):
@@ -38,7 +57,7 @@ def validate_options(args, scenarios):
     if sys.platform != "darwin":
         raise ValueError("native macOS execution requires macOS")
     if not scenarios or any(s.id not in SUPPORTED_SCENARIOS for s in scenarios):
-        raise ValueError("this executor currently implements only flutter.macos.import-sync")
+        raise ValueError("this executor implements only the native import/endpoint scenarios")
     for field in ("workers", "repeat", "build_jobs"):
         value = getattr(args, field)
         if type(value) is not int or not 1 <= value <= 16:
@@ -82,8 +101,7 @@ def execute_case(root, run_id, worker_id, scenario, *, helper, artifact, source_
             raise runtime.Cancelled()
         session.backend.mine(100)
         result["payments"] = []
-        for address, amount, pool, source in ((_IMPORT_UA,125000000,"ironwood",1),
-                (_IMPORT_TRANSPARENT,75000000,"transparent",2)):
+        for address, amount, pool, source in scenario_funding(scenario.id):
             result["payments"].append(fund_zakura(session.case, session.backend, artifact,
                 recipient_address=address, amount_zatoshi=amount, recipient_pool=pool,
                 source_height=source, confirmations=10, timeout=120, cancel_event=cancel))

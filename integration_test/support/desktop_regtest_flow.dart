@@ -25,6 +25,10 @@ const secondDesktopRegtestMnemonic =
     'range neck proof gauge east rifle swim tray twin venue fossil will '
     'version';
 const desktopRegtestPassword = 'Vizor123!';
+// Public deterministic fixture: regtest_wallet_addresses, the mnemonic above,
+// empty BIP39 passphrase, account zero and the default receive address.
+const desktopRegtestUnifiedAddress =
+    'uregtest1nu0qx0nca0ncpshm5x47ldc90835m2fy3gjuh3empp5js9qanzjwxppsw7x07a2ec3z52ute7d7f0z68ez90qlagx5ankjm4eyd6l90p';
 var _nextE2ePointer = 1000;
 
 int _takeE2ePointer() => _nextE2ePointer++;

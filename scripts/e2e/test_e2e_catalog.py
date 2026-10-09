@@ -53,7 +53,10 @@ class E2eCatalogTest(unittest.TestCase):
         self.assertEqual({item.id for item in self.catalog.profiles if item.supported},
                          {"flutter-direct-height1"})
         self.assertEqual({item.id for item in self.catalog.scenarios if item.supported},
-                         {"flutter.macos.import-sync"})
+                         {"flutter.macos.import-sync", "flutter.macos.fallback-endpoint",
+                          "flutter.macos.custom-endpoint-no-fallback",
+                          "flutter.macos.slow-height-fallback",
+                          "flutter.macos.sync-startup-stall-recovery"})
         self.assertTrue(all(item.pending_reason for item in self.catalog.profiles if not item.supported))
         self.assertTrue(all(item.pending_reason for item in self.catalog.scenarios if not item.supported))
         self.assertEqual(
