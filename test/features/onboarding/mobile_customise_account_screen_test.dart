@@ -6,6 +6,7 @@ import 'dart:math';
 
 import 'package:flutter/cupertino.dart' show CupertinoPage;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
@@ -96,6 +97,67 @@ void main() {
       ..physicalSize = const Size(393, 852)
       ..devicePixelRatio = 1.0;
   });
+
+  for (final (width, height, textScale) in [
+    (320.0, 640.0, 1.0),
+    (393.0, 640.0, 1.0),
+    (320.0, 568.0, 1.5),
+  ]) {
+    testWidgets('shows the full block-height error and permits retry on a '
+        '${width}x$height Android screen at ${textScale}x text', (
+      tester,
+    ) async {
+      tester.view.physicalSize = Size(width, height);
+      addTearDown(tester.view.resetPhysicalSize);
+      tester.platformDispatcher.textScaleFactorTestValue = textScale;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      var attempts = 0;
+
+      await tester.pumpWidget(
+        _harness(
+          MobileCustomiseAccountScreen(
+            args: const CustomiseAccountArgs(
+              setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
+            ),
+            onFinish: (_, _) async {
+              attempts++;
+              if (attempts == 1) {
+                throw const WalletCreationCurrentBlockHeightException(
+                  'Network unavailable',
+                );
+              }
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final submit = find.byKey(
+        const ValueKey('mobile_customise_account_continue'),
+      );
+
+      await tester.tap(submit);
+      await tester.pumpAndSettle();
+
+      final error = find.text(kWalletCreationCurrentBlockHeightErrorMessage);
+      expect(error, findsOneWidget);
+      await tester.ensureVisible(error);
+      await tester.pumpAndSettle();
+      final paragraph = tester.renderObject<RenderParagraph>(error);
+      expect(paragraph.didExceedMaxLines, isFalse);
+      final errorBounds = tester.getRect(error);
+      final scrollBounds = tester.getRect(find.byType(Scrollable).first);
+      expect(errorBounds.top, greaterThanOrEqualTo(scrollBounds.top));
+      expect(errorBounds.bottom, lessThanOrEqualTo(scrollBounds.bottom));
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(submit);
+      await tester.pumpAndSettle();
+
+      expect(attempts, 2);
+      expect(error, findsNothing);
+      expect(tester.takeException(), isNull);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+  }
 
   for (final setupArgs in _setupArgsByFlow) {
     testWidgets('autofocuses the account name and opens text input for '

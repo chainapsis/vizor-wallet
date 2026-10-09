@@ -481,8 +481,6 @@ class _AccountProfileCard extends StatelessWidget {
           Text(
             message!,
             textAlign: TextAlign.center,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
             style: AppTypography.bodyMediumStrong.copyWith(
               color: colors.text.destructive,
             ),
