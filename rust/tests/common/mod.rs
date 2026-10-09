@@ -26,7 +26,7 @@ pub fn lightwalletd_url() -> String {
         .unwrap_or_else(|| LIGHTWALLETD_URL.into())
 }
 
-fn wallet_tempdir() -> TempDir {
+pub fn wallet_tempdir() -> TempDir {
     match isolated_control() {
         Some(control) => owned_wallet_tempdir(control.wallet_root()),
         None => tempfile::tempdir().expect("tempdir"),
@@ -117,6 +117,18 @@ pub fn fund_wallet(unified_address: &str, amount_zec: &str) -> String {
         return control.fund(unified_address, amount_zec);
     }
     run_script("fund-wallet.sh", &[unified_address, amount_zec, "10"])
+}
+
+pub fn require_isolated_regtest() {
+    isolated_control()
+        .expect("direct Zakura scenarios require the original case manifest/control")
+        .preflight();
+}
+
+pub fn fund_isolated_wallet(address: &str, zatoshi: u64, confirmations: u32) -> serde_json::Value {
+    isolated_control()
+        .expect("direct funding requires the original case manifest/control")
+        .fund_confirmed(address, zatoshi, confirmations)
 }
 
 pub fn current_tip_height() -> u64 {

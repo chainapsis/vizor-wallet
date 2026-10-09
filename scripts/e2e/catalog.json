@@ -85,8 +85,8 @@
         "smoke"
       ],
       "timeout_seconds": 180,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "rust.import.direct-zakura",
@@ -104,8 +104,8 @@
         "smoke"
       ],
       "timeout_seconds": 180,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "rust.import.bip39-passphrase",
@@ -328,8 +328,8 @@
         "observer"
       ],
       "timeout_seconds": 600,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "rust.gift-card.empty-db-reuse",
@@ -344,8 +344,8 @@
         "observer"
       ],
       "timeout_seconds": 600,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "rust.gift-card.competition",
@@ -360,8 +360,8 @@
         "competition"
       ],
       "timeout_seconds": 600,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "rust.ironwood.migration",

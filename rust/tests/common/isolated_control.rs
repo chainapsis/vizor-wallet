@@ -129,6 +129,15 @@ impl IsolatedControl {
 
     pub fn fund(&mut self, address: &str, amount: &str) -> String {
         let zatoshi = parse_zatoshi(amount).expect("exact positive funding amount");
+        self.fund_confirmed(address, zatoshi, 10)["txid_hex"]
+            .as_str()
+            .expect("validated direct inclusion transaction id")
+            .to_string()
+    }
+
+    pub fn fund_confirmed(&mut self, address: &str, zatoshi: u64, confirmations: u32) -> Value {
+        assert!((1..=2_100_000_000_000_000).contains(&zatoshi));
+        assert!((1..=1000).contains(&confirmations));
         let source = self.next_source;
         self.next_source = source.checked_add(1).expect("funding source height");
         let result = self.request(
@@ -136,18 +145,24 @@ impl IsolatedControl {
             "/fund-confirmed",
             Some(json!({
                 "address": address, "amount_zatoshi": zatoshi, "source_height": source,
-                "recipient_pool": "ironwood", "confirmations": 10,
+                "recipient_pool": "ironwood", "confirmations": confirmations,
             })),
         );
         assert_eq!(result["amount_zatoshi"].as_u64(), Some(zatoshi));
         assert_eq!(result["pool"].as_str(), Some("ironwood"));
         assert_eq!(result["source_height"].as_u64(), Some(u64::from(source)));
-        assert_eq!(result["confirmations"].as_u64(), Some(10));
+        assert_eq!(result["schema_version"].as_u64(), Some(1));
+        assert_eq!(
+            result["confirmations"].as_u64(),
+            Some(u64::from(confirmations))
+        );
+        assert_eq!(result["raw_transaction_exact"].as_bool(), Some(true));
+        assert_eq!(result["raw_compact_block_exact"].as_bool(), Some(true));
         result["txid_hex"]
             .as_str()
             .filter(|txid| txid.len() == 64 && txid.bytes().all(|b| b.is_ascii_hexdigit()))
-            .expect("direct inclusion oracle transaction id")
-            .to_string()
+            .expect("direct inclusion oracle transaction id");
+        result
     }
 
     fn request(&self, method: &str, path: &str, payload: Option<Value>) -> Value {

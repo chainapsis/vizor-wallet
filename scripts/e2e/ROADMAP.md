@@ -144,17 +144,18 @@ and executes their teardown internally. Only completed original sessions permit
 anchored workspace removal; incomplete/failed cases stop assignment and retain
 state. Native support rejects links; mutable workspace links are only unlinked,
 never followed. Shared build artifacts must remain outside the removable tree.
-The composed executor wires five macOS import/endpoint cases and sixteen existing
-Rust receive/import/send/multi-account cases to original per-case Zakura/native owners.
+The composed executor wires five macOS import/endpoint cases and twenty-one
+Rust receive/import/send/multi-account/Gift cases to original per-case Zakura/native owners.
 Compatible app/helper artifacts are built once when selected; selected Rust
 targets and the signer share one offline Cargo producer. Rust-only selections
 build no app/helper. Fresh repetitions have independent schema-2 reports and
 may overlap under one bounded worker count, including mixed Rust/macOS selections.
-The other 43 catalog scenarios, iOS execution, persistent build-cache publication/invalidation,
+The other 38 catalog scenarios, iOS execution, persistent build-cache publication/invalidation,
 resource scheduling and final-source catalog/performance validation remain
 pending. A native observation or process receipt alone never authorizes deletion.
 
-The multi-account group includes the minimum rc7 SQLite backport from upstream
+The [multi-account group (#926)](https://github.com/chainapsis/vizor-wallet/pull/926)
+includes the minimum rc7 SQLite backport from upstream
 [wallet-libraries #87](https://github.com/zakura-core/wallet-libraries/pull/87).
 This changes the production SDK's sparse-checkpoint rewind fallback without
 upgrading SDK versions or changing schemas. Provenance and removal conditions
@@ -170,6 +171,18 @@ or a verified persistent cache. Existing financial assertions were unchanged.
 The orphaned/deleted range cases inject historical scan-queue state explicitly.
 This is one domain's behavior evidence, not a full-catalog, local upstream SDK
 unit-test, mixed-engine, comparative speedup or CPU/RAM result.
+
+The Gift/direct-receive/import group recorded five PASS / zero FAIL in actual
+two-worker batch `native-suite-604f4815c6`, on committed source
+`d6da2e51b773315f5eeab290f80bc86cb2a2f9a0`. Total147.656s includes one2m01s
+Cargo build of signer/four targets. Every original owner proved wallet/backend/
+port cleanup, with empty cleanup errors. It used the same normal-selector/shared
+core pending-case entrypoint and ordinary compiler-cache input before activating
+the five catalog flags. Exact1ZEC/six-confirmation, history/txid, wrong-passphrase,
+observer and competing-claim assertions remain. Observer DBs now use owned
+storage; funding/losing-txid evidence assertions are strengthened. No production
+source or dependency changes. This is separate incremental domain evidence,
+not a combined final-source catalog or performance result.
 
 | Slice | Scope | Prerequisites |
 | --- | --- | --- |
