@@ -266,9 +266,9 @@ assertions_on_constants = "allow"
 # equal to these so its path dependencies on the backend and SQLite crates
 # resolve to the patched sources.
 #
-# Pinned to wallet-libraries main after PR #128: compact txid display v2, durable detail
-# work and the validated detail view, including current qualified spend ownership
-# and raw input binding. Keep every wallet-libraries dependency at this exact rev.
+# Pinned to the pushed companion PR #130: durable policy resolution and SQLite
+# apply-and-acknowledge, retaining PR #128's compact txid display v2 and validated
+# detail view. Keep every wallet-libraries dependency at this exact revision.
 [patch.crates-io]
 zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries", rev = "1cbae34debd0b3326effea508d779f3aad109df3" }
 zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries", rev = "1cbae34debd0b3326effea508d779f3aad109df3" }
