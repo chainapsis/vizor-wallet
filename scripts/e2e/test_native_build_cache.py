@@ -93,6 +93,23 @@ class CacheTests(unittest.TestCase):
             self.assertNotEqual(cached.stat().st_ino,resource.stat().st_ino)
             self.assertEqual(resource.stat().st_mode & 0o777,0o664)
 
+    def test_fresh_publications_allow_sdk_staging_without_unsealing_cache(self):
+        with self.lease() as lease:
+            self.publish(lease)
+            paths = lease.load()
+            copies = lease.materialize(self.case(close=False),paths)
+            for role,app in self.apps.items():
+                self.assertEqual(copies[role].stat().st_mode & 0o777,0o700)
+                self.assertEqual((copies[role]/app.executable.name).stat().st_mode & 0o777,0o700)
+                self.assertEqual((copies[role]/"Info.plist").stat().st_mode & 0o777,0o600)
+                self.assertEqual((copies[role]/"Frameworks/Foo.framework/Versions/A").stat().st_mode & 0o777,0o700)
+                self.assertEqual(paths[role].stat().st_mode & 0o777,0o500)
+                self.assertEqual((paths[role]/app.executable.name).stat().st_mode & 0o777,0o500)
+                self.assertEqual((paths[role]/"Info.plist").stat().st_mode & 0o777,0o400)
+                self.assertEqual(CACHE._bundle(copies[role]),CACHE._bundle(paths[role],immutable=True))
+            (copies["helper"]/"sdk-staging-model").write_text("independent SDK copy")
+            self.assertEqual(lease.load(),paths)
+
     def test_one_run_copy_cannot_mutate_cached_or_sibling_bytes(self):
         with self.lease() as lease:
             self.publish(lease)

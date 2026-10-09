@@ -1141,6 +1141,10 @@ sealed as private read-only independent inodes. Published cache files must be
 single-link; a mutable or corrupt entry fails without replacement or pruning.
 
 On every hit, copies go into the new producer case's `native-publication/`.
+Those independent SDK staging copies use owner-writable private directories
+and files (0700/0600), preserving executable bits and signed bytes. Simulator
+installation cannot populate a staged read-only app directory. Cache entries
+remain sealed; neither the originals nor sibling publications are unsealed.
 The normal actual signature, role, entitlement, team and architecture capture
 runs on those copies; inputs are checked again before joining the new owner.
 Reports retain real app/helper build counts, cache hit/key and joined process

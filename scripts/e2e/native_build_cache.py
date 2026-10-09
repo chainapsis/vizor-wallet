@@ -105,15 +105,22 @@ def _copy_bundle(source, destination, *, seal=False):
     shutil.copytree(source, destination, symlinks=True, copy_function=shutil.copy2)
     if _bundle(source) != before or _bundle(destination) != before:
         raise NativeBuildCacheError("native bundle changed during copy")
-    if seal:
-        for directory, children, files in os.walk(destination, topdown=False, followlinks=False):
-            for name in files:
-                path = Path(directory)/name
-                if not path.is_symlink():
-                    path.chmod(0o500 if path.stat().st_mode & stat.S_IXUSR else 0o400)
+    # Preserve sealed cache entries, not their modes in SDK staging copies.
+    # CoreSimulator's copyfile staging cannot populate a copied read-only app
+    # directory. Normalize only fresh independent inodes; never the source.
+    for directory, children, files in os.walk(destination, topdown=not seal, followlinks=False):
+        if not seal:
+            Path(directory).chmod(0o700)
+        for name in files:
+            path = Path(directory)/name
+            if not path.is_symlink():
+                executable = bool(path.stat().st_mode & stat.S_IXUSR)
+                path.chmod((0o500 if executable else 0o400) if seal
+                           else (0o700 if executable else 0o600))
+        if seal:
             Path(directory).chmod(0o500)
-        if _bundle(destination, immutable=True) != before:
-            raise NativeBuildCacheError("sealed native bundle differs from original bytes")
+    if _bundle(destination, immutable=seal) != before:
+        raise NativeBuildCacheError("native publication differs from original bytes")
     return before
 
 
