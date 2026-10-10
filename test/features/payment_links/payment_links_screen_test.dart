@@ -786,7 +786,7 @@ void main() {
       final source = _PendingCardPrice();
       await pumpPaymentLinksScreen(tester, marketDataSource: source);
       await tester.tap(find.text('Create new card'));
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 400));
       final editor = find.byKey(const ValueKey('payment_link_amount_editor'));
       final loading = find.byKey(
         const ValueKey('payment_link_fiat_loading_placeholder'),
@@ -800,9 +800,9 @@ void main() {
       await tester.pump();
       source.result.complete(const ZecMarketData(usdPrice: 100));
       await tester.pumpAndSettle();
-      final fiat = find.text(r'$200.00');
+      final fiat = find.text(r'≈ $200.00');
       expect(fiat, findsOneWidget);
-      expect(find.text(r'$445.00'), findsNothing);
+      expect(find.text(r'≈ $445.00'), findsNothing);
       expect(loading, findsNothing);
       expect(
         tester.getBottomLeft(fiat).dy,
@@ -811,23 +811,23 @@ void main() {
 
       await tester.enterText(editor, '3');
       await tester.pumpAndSettle();
-      expect(find.text(r'$300.00'), findsOneWidget);
+      expect(find.text(r'≈ $300.00'), findsOneWidget);
       expect(fiat, findsNothing);
 
       await tester.enterText(editor, '');
       await tester.pumpAndSettle();
-      expect(find.text(r'$300.00'), findsNothing);
+      expect(find.text(r'≈ $300.00'), findsNothing);
       expect(find.text('Fiat unavailable'), findsNothing);
       expect(loading, findsNothing);
 
       await tester.enterText(editor, '0');
       await tester.pumpAndSettle();
-      expect(find.text(r'$0.00'), findsOneWidget);
+      expect(find.text(r'≈ $0.00'), findsOneWidget);
       for (final amount in ['2', '', '2', '0', '2']) {
         await tester.enterText(editor, amount);
         await tester.pump();
         expect(loading, findsNothing);
-        if (amount == '2') expect(find.text(r'$200.00'), findsOneWidget);
+        if (amount == '2') expect(find.text(r'≈ $200.00'), findsOneWidget);
         expect(source.fetchCount, 1);
       }
     },
@@ -839,7 +839,7 @@ void main() {
     final source = _RefreshingCardPrice();
     await pumpPaymentLinksScreen(tester, marketDataSource: source);
     await tester.tap(find.text('Create new card'));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 400));
     await tester.enterText(
       find.byKey(const ValueKey('payment_link_amount_editor')),
       '2',
@@ -899,7 +899,7 @@ void main() {
     final source = _PendingCardPrice();
     await pumpPaymentLinksScreen(tester, marketDataSource: source);
     await tester.tap(find.text('Create new card'));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 400));
     await tester.enterText(
       find.byKey(const ValueKey('payment_link_amount_editor')),
       '2',
@@ -907,7 +907,7 @@ void main() {
     await tester.pump();
     source.result.complete(null);
     await tester.pumpAndSettle();
-    expect(find.text('Fiat unavailable'), findsOneWidget);
+    expect(find.text('Fiat unavailable'), findsNothing);
     expect(
       find.byKey(const ValueKey('payment_link_fiat_loading_placeholder')),
       findsNothing,
@@ -928,7 +928,7 @@ void main() {
     final source = _RefreshingCardPrice();
     await pumpPaymentLinksScreen(tester, marketDataSource: source);
     await tester.tap(find.text('Create new card'));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 400));
     final editor = find.byKey(const ValueKey('payment_link_amount_editor'));
     final loading = find.byKey(
       const ValueKey('payment_link_fiat_loading_placeholder'),
@@ -937,20 +937,20 @@ void main() {
     await tester.pump();
     source.requests.single.complete(const ZecMarketData(usdPrice: 100));
     await tester.pumpAndSettle();
-    expect(find.text(r'$200.00'), findsOneWidget);
+    expect(find.text(r'≈ $200.00'), findsOneWidget);
     expect(loading, findsNothing);
 
     await tester.pump(zecMarketDataRefreshInterval);
     await tester.pump();
     expect(source.requests, hasLength(2));
     expect(loading, findsOneWidget);
-    expect(find.text(r'$200.00'), findsNothing);
+    expect(find.text(r'≈ $200.00'), findsNothing);
     await tester.enterText(editor, '3');
     await tester.pump();
     expect(source.requests, hasLength(2));
     source.requests.last.complete(const ZecMarketData(usdPrice: 120));
     await tester.pumpAndSettle();
-    expect(find.text(r'$360.00'), findsOneWidget);
+    expect(find.text(r'≈ $360.00'), findsOneWidget);
     expect(loading, findsNothing);
 
     await tester.pump(zecMarketDataRefreshInterval);
@@ -959,7 +959,7 @@ void main() {
     expect(loading, findsOneWidget);
     source.requests.last.complete(null);
     await tester.pumpAndSettle();
-    expect(find.text(r'$360.00'), findsOneWidget);
+    expect(find.text(r'≈ $360.00'), findsOneWidget);
     expect(loading, findsNothing);
   });
 

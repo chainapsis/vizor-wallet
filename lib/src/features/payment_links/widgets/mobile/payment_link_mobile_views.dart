@@ -210,83 +210,89 @@ class PaymentLinksHomeMobileView extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: AppSpacing.base),
                 child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SizedBox(
-                        width: 340,
-                        height: 220,
-                        child: Center(
-                          child: SizedBox(
-                            key: const ValueKey(
-                              'payment_links_mobile_empty_illustration',
-                            ),
-                            width: 300,
-                            height: 200,
-                            child: illustration,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.base),
-                      Text(
-                        title,
-                        key: const ValueKey('payment_links_mobile_empty_title'),
-                        textAlign: TextAlign.center,
-                        style: AppTypography.headlineLarge.copyWith(
-                          color: context.colors.text.accent,
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.s),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Flexible(
-                            child: Text(
-                              helpLabel,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(
+                          width: 340,
+                          height: 220,
+                          child: Center(
+                            child: SizedBox(
                               key: const ValueKey(
-                                'payment_links_mobile_help_label',
+                                'payment_links_mobile_empty_illustration',
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: AppTypography.bodyMedium.copyWith(
-                                color: context.colors.text.secondary,
-                              ),
+                              width: 300,
+                              height: 200,
+                              child: illustration,
                             ),
                           ),
-                          const SizedBox(width: AppSpacing.xxs),
-                          SizedBox(
-                            width: 20,
-                            height: 36,
-                            child: PaymentLinkAction(
-                              key: const ValueKey(
-                                'payment_links_mobile_help_action',
+                        ),
+                        const SizedBox(height: AppSpacing.base),
+                        Text(
+                          title,
+                          key: const ValueKey(
+                            'payment_links_mobile_empty_title',
+                          ),
+                          textAlign: TextAlign.center,
+                          style: AppTypography.headlineLarge.copyWith(
+                            color: context.colors.text.accent,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.s),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                helpLabel,
+                                key: const ValueKey(
+                                  'payment_links_mobile_help_label',
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppTypography.bodyMedium.copyWith(
+                                  color: context.colors.text.secondary,
+                                ),
                               ),
-                              onPressed: onShowHelp,
-                              semanticLabel: 'Show how gift cards work',
-                              builder: (context, _, focused) => Center(
-                                child: DecoratedBox(
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    border: focused
-                                        ? Border.all(
-                                            color:
-                                                context.colors.state.focusRing,
-                                            width: 2,
-                                          )
-                                        : null,
-                                  ),
-                                  child: AppIcon(
-                                    AppIcons.help,
-                                    size: 16,
-                                    color: context.colors.icon.regular,
+                            ),
+                            const SizedBox(width: AppSpacing.xxs),
+                            SizedBox(
+                              width: 20,
+                              height: 36,
+                              child: PaymentLinkAction(
+                                key: const ValueKey(
+                                  'payment_links_mobile_help_action',
+                                ),
+                                onPressed: onShowHelp,
+                                semanticLabel: 'Show how gift cards work',
+                                builder: (context, _, focused) => Center(
+                                  child: DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      border: focused
+                                          ? Border.all(
+                                              color: context
+                                                  .colors
+                                                  .state
+                                                  .focusRing,
+                                              width: 2,
+                                            )
+                                          : null,
+                                    ),
+                                    child: AppIcon(
+                                      AppIcons.help,
+                                      size: 16,
+                                      color: context.colors.icon.regular,
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
-                          ),
-                        ],
-                      ),
-                    ],
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),

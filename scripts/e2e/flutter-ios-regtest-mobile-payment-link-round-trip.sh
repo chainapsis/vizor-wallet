@@ -45,4 +45,5 @@ run_mobile_e2e \
   integration_test/regtest_mobile_payment_link_round_trip_test.dart \
   "$UDID" \
   --dart-define=VIZOR_PAYMENT_LINK_REGTEST_ENABLED=true \
-  --dart-define=VIZOR_DEEPLINK_BASE_URL="$DEEPLINK_BASE_URL"
+  --dart-define=VIZOR_DEEPLINK_BASE_URL="$DEEPLINK_BASE_URL" \
+  "$@"

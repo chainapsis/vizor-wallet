@@ -19,14 +19,12 @@ import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 import '../test/support/legacy_payment_link.dart';
 
 import 'support/desktop_regtest_flow.dart';
+import 'support/gift_card_amount_regtest.dart';
 import 'support/owned_regtest_control.dart';
 import 'support/payment_link_regtest_flow.dart' as payment_link_flow;
 
 const _network = 'regtest';
-const _giftAmountText = '0.1';
 const _walletSpendableConfirmationTarget = 6;
-final _giftAmountZatoshi = BigInt.from(10_000_000);
-final _fundingAmountZatoshi = BigInt.from(10_010_000);
 const _giftMessage = 'Congrats from the payment link E2E!';
 
 void main() {
@@ -55,7 +53,7 @@ void main() {
       await cleanupRegtestPaymentLinkClaimWallets();
 
       e2eLog('pumping app for payment-link round trip');
-      await tester.pumpWidget(await buildBootstrappedZcashWalletApp());
+      await tester.pumpWidget(await buildGiftCardAmountRegtestApp());
 
       await importDesktopRegtestWallet(tester);
       final senderAccountUuid = await firstDesktopRegtestAccountUuid();
@@ -76,11 +74,14 @@ void main() {
         tester,
         const ValueKey('payment_link_create_card_button'),
       );
-      await enterAppText(
+      final giftAmountZatoshi = await enterGiftCardRegtestAmount(
         tester,
-        const ValueKey('payment_link_amount_editor'),
-        _giftAmountText,
+        sourceAccountUuid: senderAccountUuid,
+        tap: (key) => tapAppWidget(tester, key),
+        enter: (key, value) => enterAppText(tester, key, value),
       );
+      final fundingAmountZatoshi = giftAmountZatoshi + BigInt.from(10000);
+      final giftAmountText = formatZecAmount(giftAmountZatoshi);
       await payment_link_flow.selectPaymentLinkArtworkForRegtest(
         tester,
         'coin',
@@ -134,7 +135,7 @@ void main() {
       expect(Uri.parse(rawLink).fragment, startsWith('v3='));
       expect(link.mnemonic.split(' ').length, 12);
       expect(link.network, _network);
-      expect(link.amountZatoshi, _giftAmountZatoshi);
+      expect(link.amountZatoshi, giftAmountZatoshi);
       expect(link.presentation?.artworkId, 'coin');
       expect(link.presentation?.message, _giftMessage);
 
@@ -142,7 +143,7 @@ void main() {
         tester,
         accountUuid: senderAccountUuid,
         txKind: 'sent',
-        amount: _fundingAmountZatoshi,
+        amount: fundingAmountZatoshi,
         pending: true,
       );
       await _mineRegtestBlocks(kPaymentLinkShareConfirmationTarget);
@@ -150,7 +151,7 @@ void main() {
         tester,
         accountUuid: senderAccountUuid,
         txKind: 'sent',
-        amount: _fundingAmountZatoshi,
+        amount: fundingAmountZatoshi,
         pending: false,
         txid: pendingFunding.txidHex,
       );
@@ -215,7 +216,7 @@ void main() {
         find.byKey(const ValueKey('payment_link_claim_button')),
         findsNothing,
       );
-      expect(find.text(_giftAmountText), findsOneWidget);
+      expect(find.text(giftAmountText), findsOneWidget);
       expect(
         tester
             .widget<PaymentLinkGiftCard>(find.byType(PaymentLinkGiftCard))
@@ -251,7 +252,7 @@ void main() {
         tester,
         accountUuid: receiverAccountUuid,
         txKind: 'receiving',
-        amount: _giftAmountZatoshi,
+        amount: giftAmountZatoshi,
         pending: true,
       );
       expect(pendingClaim.txidHex, isNot(minedFunding.txidHex));
@@ -270,7 +271,7 @@ void main() {
         tester,
         accountUuid: receiverAccountUuid,
         txKind: 'received',
-        amount: _giftAmountZatoshi,
+        amount: giftAmountZatoshi,
         pending: false,
         txid: pendingClaim.txidHex,
       );
@@ -293,7 +294,7 @@ void main() {
       await _waitForAccountBalance(
         tester,
         accountUuid: receiverAccountUuid,
-        total: receiverStartingBalance.total + _giftAmountZatoshi,
+        total: receiverStartingBalance.total + giftAmountZatoshi,
       );
 
       // Receipt display is already complete; spendability and recovery cleanup
@@ -307,14 +308,14 @@ void main() {
       await _waitForAccountBalance(
         tester,
         accountUuid: receiverAccountUuid,
-        total: receiverStartingBalance.total + _giftAmountZatoshi,
-        spendable: receiverStartingBalance.spendable + _giftAmountZatoshi,
+        total: receiverStartingBalance.total + giftAmountZatoshi,
+        spendable: receiverStartingBalance.spendable + giftAmountZatoshi,
       );
       await tapAppWidget(tester, const ValueKey('sidebar_home_button'));
       await _waitForHomeBalance(
         tester,
         ZecAmount.fromZatoshi(
-          receiverStartingBalance.total + _giftAmountZatoshi,
+          receiverStartingBalance.total + giftAmountZatoshi,
         ).balance.amountText,
       );
       e2eLog('payment-link round trip completed with two distinct txids');

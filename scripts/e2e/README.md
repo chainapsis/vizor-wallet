@@ -1493,6 +1493,22 @@ capture recovery words or bearer links, and skips native biometric enrollment.
 Both Gift runners reset the disposable regtest chain by default; run them
 serially. `E2E_DRIVER_PORT` selects the onboarding driver's port.
 
+The desktop and simulator round-trip runners also accept
+`--dart-define=GIFT_CARD_E2E_AMOUNT_MODE=usd` or `usd-max` (the default is
+`zec`). These modes fix only the USD price at $125.50 per ZEC, check both
+currency switches, and use real regtest funding and claims. The `usd-max`
+case checks that rounding the visible dollar amount preserves the exact
+ZEC Max quote through the copied card link and recipient balance:
+
+```bash
+scripts/e2e/flutter-macos-regtest-payment-link-round-trip.sh \
+  --dart-define=GIFT_CARD_E2E_AMOUNT_MODE=usd-max
+
+SIMULATOR_UDID=<simulator-udid> \
+  scripts/e2e/flutter-ios-regtest-mobile-payment-link-round-trip.sh \
+  --dart-define=GIFT_CARD_E2E_AMOUNT_MODE=usd
+```
+
 Both the desktop and simulator Gift Card runs drive the app's **Redeem a
 card → Paste card link** path rather than opening a universal link. macOS
 does not register the mobile universal-link handler at all, and the

@@ -723,10 +723,10 @@ void main() {
       );
 
       await tester.tap(
-        find.byKey(const ValueKey('payment_link_interactive_amount_editor')),
+        find.byKey(const ValueKey('payment_link_amount_editor')),
       );
       await tester.enterText(
-        find.byKey(const ValueKey('payment_link_interactive_amount_editor')),
+        find.byKey(const ValueKey('payment_link_amount_editor')),
         '2.5',
       );
       await tester.pump();
@@ -734,9 +734,7 @@ void main() {
       expect(
         tester
             .widget<EditableText>(
-              find.byKey(
-                const ValueKey('payment_link_interactive_amount_editor'),
-              ),
+              find.byKey(const ValueKey('payment_link_amount_editor')),
             )
             .controller
             .text,
@@ -766,10 +764,10 @@ void main() {
       await tester.pump(kPaymentLinkPreviewFiatDelay);
       await tester.pump();
 
-      expect(find.text(r'$680.00'), findsOneWidget);
+      expect(find.text(r'≈ $625.00'), findsOneWidget);
       for (final amount in ['3', '0', '2.5', '', '2.5']) {
         await tester.enterText(
-          find.byKey(const ValueKey('payment_link_interactive_amount_editor')),
+          find.byKey(const ValueKey('payment_link_amount_editor')),
           amount,
         );
         await tester.pump();
@@ -777,7 +775,7 @@ void main() {
           find.byKey(const ValueKey('payment_link_fiat_loading_placeholder')),
           findsNothing,
         );
-        if (amount == '2.5') expect(find.text(r'$680.00'), findsOneWidget);
+        if (amount == '2.5') expect(find.text(r'≈ $625.00'), findsOneWidget);
       }
       expect(
         find.byKey(const ValueKey('payment_link_fiat_loading_placeholder')),
@@ -790,8 +788,23 @@ void main() {
         isNotNull,
       );
 
+      await tester.tap(
+        find.byKey(const ValueKey('payment_link_amount_currency_usd')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<EditableText>(
+              find.byKey(const ValueKey('payment_link_amount_editor')),
+            )
+            .controller
+            .text,
+        '625.00',
+      );
+      expect(find.text('≈ 2.5 ZEC'), findsOneWidget);
+
       await tester.enterText(
-        find.byKey(const ValueKey('payment_link_interactive_amount_editor')),
+        find.byKey(const ValueKey('payment_link_amount_editor')),
         '',
       );
       await tester.pump();
@@ -818,12 +831,17 @@ void main() {
       disableAnimations: false,
     );
 
-    final editor = find.byKey(
-      const ValueKey('payment_link_interactive_amount_editor'),
-    );
+    final editor = find.byKey(const ValueKey('payment_link_amount_editor'));
     expect(tester.widget<EditableText>(editor).controller.text, '1');
     expect(tester.widget<EditableText>(editor).focusNode.hasFocus, isTrue);
-    expect(find.text('ZEC'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('payment_link_amount_currency_zec')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('payment_link_amount_currency_usd')),
+      findsOneWidget,
+    );
   });
 
   for (final reducedMotion in [false, true]) {
@@ -1689,6 +1707,54 @@ void main() {
 
     expect(find.text('July 2026'), findsNothing);
   });
+
+  for (final isLedger in [false, true]) {
+    for (final width in [800.0, 1000.0]) {
+      testWidgets(
+        '${isLedger ? 'Ledger' : 'Software'} list entry leaves card actions reachable at ${width}px',
+        (tester) async {
+          await tester.binding.setSurfaceSize(Size(width, 720));
+          addTearDown(() => tester.binding.setSurfaceSize(null));
+          var qrOpened = false;
+          await _pump(
+            tester,
+            PaymentLinkCardsDesktopView(
+              isLedger: isLedger,
+              sections: [
+                PaymentLinkCardsSection(
+                  label: 'Unused',
+                  cards: [
+                    PaymentLinkCardListRow(
+                      thumbnail: const SizedBox(),
+                      amountText: '0.1 ZEC',
+                      dateText: 'October 7',
+                      showLinkActions: true,
+                      onCopyLink: () {},
+                      onShowQr: () => qrOpened = true,
+                    ),
+                  ],
+                ),
+              ],
+              onBack: () {},
+              onCreate: () {},
+              onRedeem: () {},
+              onCreateMultiple: () {},
+            ),
+          );
+          final entry = find.byKey(
+            const ValueKey('payment_link_create_batch_button'),
+          );
+          final row = find.byType(PaymentLinkCardListRow);
+          expect(tester.getRect(entry).overlaps(tester.getRect(row)), isFalse);
+          await tester.tap(
+            find.byKey(const ValueKey('payment_link_card_qr_action')),
+          );
+          expect(qrOpened, isTrue);
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
 
   testWidgets('cards navigation exposes tab roles and selected state', (
     tester,

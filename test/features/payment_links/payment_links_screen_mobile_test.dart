@@ -703,7 +703,7 @@ void main() {
       await tester.tap(
         find.byKey(const ValueKey('payment_links_mobile_create_button')),
       );
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 400));
       final max = find.byKey(const ValueKey('payment_link_max_button'));
       final editor = find.byKey(const ValueKey('payment_link_amount_editor'));
       final loading = find.byKey(
@@ -722,8 +722,8 @@ void main() {
       await tester.pump();
       source.result.complete(const ZecMarketData(usdPrice: 100));
       await tester.pumpAndSettle();
-      expect(find.text(r'$200.00'), findsOneWidget);
-      expect(find.text(r'$445.00'), findsNothing);
+      expect(find.text(r'≈ $200.00'), findsOneWidget);
+      expect(find.text(r'≈ $445.00'), findsNothing);
       expect(loading, findsNothing);
       expect(max, findsOneWidget);
 
@@ -731,14 +731,14 @@ void main() {
         await tester.enterText(editor, amount);
         await tester.pump();
         expect(loading, findsNothing);
-        if (amount == '2') expect(find.text(r'$200.00'), findsOneWidget);
+        if (amount == '2') expect(find.text(r'≈ $200.00'), findsOneWidget);
         expect(source.fetchCount, 1);
       }
 
       await tester.enterText(editor, '');
       await tester.pumpAndSettle();
       expect(find.textContaining('Use max:'), findsOneWidget);
-      expect(find.text(r'$200.00'), findsNothing);
+      expect(find.text(r'≈ $200.00'), findsNothing);
       expect(max, findsNothing);
 
       await tester.tap(find.textContaining('Use max:'));
@@ -747,8 +747,8 @@ void main() {
       final fiat = fiatTextForZatoshi(
         parseZecAmount(entered)!,
         zecUsdUnitPrice: 100,
-      );
-      expect(find.text(fiat!), findsOneWidget);
+      )!;
+      expect(find.text('≈ $fiat'), findsOneWidget);
       await tester.tap(
         find.byKey(
           const ValueKey('payment_link_mobile_amount_continue_button'),
@@ -778,7 +778,7 @@ void main() {
       await tester.tap(
         find.byKey(const ValueKey('payment_links_mobile_create_button')),
       );
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 400));
       await tester.enterText(
         find.byKey(const ValueKey('payment_link_amount_editor')),
         '2',
@@ -786,7 +786,7 @@ void main() {
       await tester.pump();
       source.result.complete(null);
       await tester.pumpAndSettle();
-      expect(find.text('Fiat unavailable'), findsOneWidget);
+      expect(find.text('Fiat unavailable'), findsNothing);
       expect(
         find.byKey(const ValueKey('payment_link_fiat_loading_placeholder')),
         findsNothing,

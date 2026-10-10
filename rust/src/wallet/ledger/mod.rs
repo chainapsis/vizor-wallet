@@ -1,10 +1,12 @@
-//! Desktop USB transport for the Ledger Zcash Ironwood app.
+//! Ledger Zcash signing and desktop USB transport.
 //!
-//! Every operation opens a fresh HID session. The current unsigned device app
-//! can leave a session in a stale state after UFVK approval, so reusing that
-//! handle for PCZT signing is intentionally avoided in this PoC.
+//! Device limits are in `limits`; see `docs/ledger/limitations.md` before
+//! changing a product flow. Action capacity and recipient review slots are
+//! separate budgets. Every USB operation opens a fresh HID session.
 
 pub(crate) mod apdu;
+pub(crate) mod device_account;
+pub(crate) mod limits;
 mod operations;
 mod parse;
 mod serializer;
@@ -19,11 +21,6 @@ pub(crate) use operations::{
 
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 mod transport;
-
-// Ledger Zcash app 3.9.3 limits. Shielded action limits apply per pool.
-pub(crate) const MAX_TRANSPARENT_INPUTS: usize = 32;
-pub(crate) const MAX_TRANSPARENT_OUTPUTS: usize = 10;
-pub(crate) const MAX_SHIELDED_ACTIONS: usize = 32;
 
 use std::{
     sync::{
@@ -77,6 +74,17 @@ pub(crate) struct ExpectedAccount {
     pub account_index: u32,
     pub coin_type: u32,
     pub seed_fingerprint: [u8; 32],
+    pub device_public_key: [u8; 33],
+}
+
+impl ExpectedAccount {
+    pub(crate) fn device_key(self) -> device_account::DeviceAccountKey {
+        device_account::DeviceAccountKey {
+            account_index: self.account_index,
+            coin_type: self.coin_type,
+            public_key: self.device_public_key,
+        }
+    }
 }
 
 struct OperationState {
@@ -315,7 +323,7 @@ pub(crate) fn build_pczt_full_signing_plan(
     build_signing_plan(pczt_bytes, true, memo_hash_supported).map(|(commands, _)| commands)
 }
 
-/// Blocks the known Ledger Zcash app 3.9.2 Orchard-to-Ironwood signing defect
+/// Blocks the unverified Orchard-to-Ironwood path in supported Ledger apps
 /// without weakening or changing the transaction that Vizor prepared.
 ///
 /// Keep the transport signer independent from this release gate so the opt-in
@@ -693,6 +701,54 @@ pub fn sign_pczt_with_progress(
     memo_hash_supported: bool,
     expected_app_version: Option<&str>,
 ) -> Result<Vec<SpendAuthSignature>, String> {
+    // Raw developer/canary entry point, without a wallet account context.
+    sign_pczt_inner(
+        pczt_bytes,
+        progress,
+        memo_hash_supported,
+        expected_app_version,
+        None,
+    )
+}
+
+/// Product signing checks the wallet account on this same transport before
+/// streaming any PCZT fields. Raw canaries remain separate from this boundary.
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+pub(crate) fn sign_pczt_for_account_with_progress(
+    pczt_bytes: &[u8],
+    progress: &dyn Fn(&str, Option<&str>),
+    memo_hash_supported: bool,
+    expected_app_version: Option<&str>,
+    account_key: &device_account::DeviceAccountKey,
+) -> Result<Vec<SpendAuthSignature>, String> {
+    sign_pczt_inner(
+        pczt_bytes,
+        progress,
+        memo_hash_supported,
+        expected_app_version,
+        Some(account_key),
+    )
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+pub(crate) fn sign_pczt_for_account_with_progress(
+    _pczt_bytes: &[u8],
+    _progress: &dyn Fn(&str, Option<&str>),
+    _memo_hash_supported: bool,
+    _expected_app_version: Option<&str>,
+    _account_key: &device_account::DeviceAccountKey,
+) -> Result<Vec<SpendAuthSignature>, String> {
+    Err(unsupported_platform())
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+fn sign_pczt_inner(
+    pczt_bytes: &[u8],
+    progress: &dyn Fn(&str, Option<&str>),
+    memo_hash_supported: bool,
+    expected_app_version: Option<&str>,
+    account_key: Option<&device_account::DeviceAccountKey>,
+) -> Result<Vec<SpendAuthSignature>, String> {
     let parsed = parse_pczt(pczt_bytes)?;
     if !parsed.transparent_inputs.is_empty() {
         return Err(
@@ -732,6 +788,9 @@ pub fn sign_pczt_with_progress(
     let transport = transport::LedgerTransport::connect_signing(operation.context())?;
     if let Some(version) = expected_app_version {
         require_readiness_app(&transport.current_app()?, version)?;
+    }
+    if let Some(account_key) = account_key {
+        transport.verify_account(account_key)?;
     }
     transport.send_pczt_with_progress(&commands, progress)?;
     progress("finishing", transport.device_model());
@@ -792,6 +851,54 @@ pub fn sign_pczt_full_with_progress(
     memo_hash_supported: bool,
     expected_app_version: Option<&str>,
 ) -> Result<Vec<u8>, String> {
+    // Raw developer/canary entry point, without a wallet account context.
+    sign_pczt_full_inner(
+        pczt_bytes,
+        progress,
+        memo_hash_supported,
+        expected_app_version,
+        None,
+    )
+}
+
+/// Product signing checks the wallet account on this same transport before
+/// streaming any PCZT fields. Raw canaries remain separate from this boundary.
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+pub(crate) fn sign_pczt_full_for_account_with_progress(
+    pczt_bytes: &[u8],
+    progress: &dyn Fn(&str, Option<&str>),
+    memo_hash_supported: bool,
+    expected_app_version: Option<&str>,
+    account_key: &device_account::DeviceAccountKey,
+) -> Result<Vec<u8>, String> {
+    sign_pczt_full_inner(
+        pczt_bytes,
+        progress,
+        memo_hash_supported,
+        expected_app_version,
+        Some(account_key),
+    )
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+pub(crate) fn sign_pczt_full_for_account_with_progress(
+    _pczt_bytes: &[u8],
+    _progress: &dyn Fn(&str, Option<&str>),
+    _memo_hash_supported: bool,
+    _expected_app_version: Option<&str>,
+    _account_key: &device_account::DeviceAccountKey,
+) -> Result<Vec<u8>, String> {
+    Err(unsupported_platform())
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+fn sign_pczt_full_inner(
+    pczt_bytes: &[u8],
+    progress: &dyn Fn(&str, Option<&str>),
+    memo_hash_supported: bool,
+    expected_app_version: Option<&str>,
+    account_key: Option<&device_account::DeviceAccountKey>,
+) -> Result<Vec<u8>, String> {
     let parsed = parse_pczt(pczt_bytes)?;
     let commands = serialize_pczt(&parsed, memo_hash_supported)?;
 
@@ -829,6 +936,9 @@ pub fn sign_pczt_full_with_progress(
     let transport = transport::LedgerTransport::connect_signing(operation.context())?;
     if let Some(version) = expected_app_version {
         require_readiness_app(&transport.current_app()?, version)?;
+    }
+    if let Some(account_key) = account_key {
+        transport.verify_account(account_key)?;
     }
     transport.send_pczt_with_progress(&commands, progress)?;
     progress("finishing", transport.device_model());
@@ -1365,6 +1475,7 @@ mod tests {
             account_index: 0,
             coin_type: 1,
             seed_fingerprint: [0x22; 32],
+            device_public_key: [0; 33],
         };
         validate_pczt_account(&pczt_bytes, expected).unwrap();
 
@@ -1391,6 +1502,7 @@ mod tests {
             account_index: 0,
             coin_type: 1,
             seed_fingerprint: [0x22; 32],
+            device_public_key: [0; 33],
         };
         let derivation = parse::Bip32Derivation {
             pubkey: [0x02; 33],

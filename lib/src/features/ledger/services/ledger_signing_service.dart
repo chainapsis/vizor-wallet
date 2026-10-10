@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -12,6 +11,7 @@ import 'ledger_connection_service.dart';
 import 'ledger_device_request.dart';
 import 'ledger_mobile_ble_service.dart';
 import 'ledger_signing_progress.dart';
+import 'ledger_signing_exchange.dart';
 import 'ledger_signing_status_gate.dart';
 
 export 'ledger_signing_status_gate.dart';
@@ -149,10 +149,11 @@ final ledgerPcztTransportSignerProvider = Provider<LedgerPcztSigner>((ref) {
                       ),
                     );
                 check();
-                final responses = await _exchangeWithProgress(
-                  mobile,
-                  plan.commands,
-                  progress,
+                final responses = await exchangeLedgerSigningPlan(
+                  mobile: mobile,
+                  plan: plan,
+                  check: check,
+                  progress: progress,
                 );
                 check();
                 return rust_ledger.ledgerFinalizeMobilePcztFullSigning(
@@ -272,10 +273,11 @@ Future<List<rust_ledger.LedgerActionSig>> _signMobileVotingPczt({
     memoHashSupported: memoHashSupported,
   );
   check();
-  final responses = await _exchangeWithProgress(
-    mobile,
-    plan.commands,
-    progress,
+  final responses = await exchangeLedgerSigningPlan(
+    mobile: mobile,
+    plan: plan,
+    check: check,
+    progress: progress,
   );
   check();
   return rust_ledger.ledgerFinalizeMobilePcztSigning(
@@ -285,24 +287,6 @@ Future<List<rust_ledger.LedgerActionSig>> _signMobileVotingPczt({
     network: networkName,
     responses: responses,
   );
-}
-
-Future<List<Uint8List>> _exchangeWithProgress(
-  LedgerMobileBleService mobile,
-  List<rust_ledger.LedgerApduCommand> commands,
-  void Function(String) progress,
-) async {
-  if (mobile is LedgerProgressBleService) {
-    return (mobile as LedgerProgressBleService).exchangeApdusWithProgress(
-      commands,
-      progress,
-    );
-  }
-  // Custom/test transports without native events cannot claim review is visible.
-  progress('sending');
-  final responses = await mobile.exchangeApdus(commands);
-  progress('finishing');
-  return responses;
 }
 
 Future<rust_ledger.LedgerSigningEvent> _signUsbWithProgress({

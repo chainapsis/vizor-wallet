@@ -5,11 +5,145 @@ import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_led
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
+import 'package:zcash_wallet/src/providers/account_models.dart';
+import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import '../../fakes/fake_sync_notifier.dart';
 import '../../support/ledger_gift_card_support.dart';
 import '../../support/payment_links_screen_support.dart';
 
 void main() {
   setUpAll(loadPaymentLinksTestFonts);
+
+  testWidgets(
+    'Ledger shows its limit before entry and uses the stepper for two to four cards',
+    (tester) async {
+      final h = LedgerGiftHarness();
+      final batch = _LedgerBatchOperations();
+      await pumpPaymentLinksScreen(
+        tester,
+        bootstrap: ledgerGiftBootstrap,
+        batchOperations: batch,
+        ledgerFunding: h.service,
+        ledgerOperations: h.operations,
+        recoveryStore: h.recovery,
+      );
+      expect(find.text('Multiple cards'), findsOneWidget);
+      expect(find.text('Up to 4 with Ledger'), findsOneWidget);
+      expect(find.text('For a group'), findsNothing);
+      await tester.tap(
+        find.byKey(const ValueKey('payment_link_create_batch_button')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Create multiple cards'), findsOneWidget);
+      expect(
+        find.text('Create up to 4 cards at once with Ledger.'),
+        findsOneWidget,
+      );
+      final countField = find.byKey(const ValueKey('payment_link_bulk_count'));
+      final increase = find.byKey(const ValueKey('payment_link_bulk_increase'));
+      expect(countField, findsOneWidget);
+      expect(find.text('Review 2 cards'), findsOneWidget);
+      for (var count = 3; count <= 4; count++) {
+        await tester.tap(increase);
+        await tester.pumpAndSettle();
+        expect(find.text('Review $count cards'), findsOneWidget);
+      }
+      await tester.tap(increase);
+      await tester.pumpAndSettle();
+      expect(find.text('Review 4 cards'), findsOneWidget);
+      for (final count in [2, 3, 4, 5, 20]) {
+        expect(
+          find.byKey(ValueKey('payment_link_bulk_preset_$count')),
+          findsNothing,
+        );
+      }
+      await tester.enterText(countField, '5');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(countField).controller!.text, '4');
+      await tester.enterText(
+        find.byKey(const ValueKey('payment_link_bulk_amount')),
+        '0.1',
+      );
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.pumpAndSettle();
+      expect(batch.preparedCounts, [4]);
+      expect(find.text('Review 4 cards'), findsOneWidget);
+    },
+  );
+
+  testWidgets('switching a 20-card draft to Ledger requotes four cards', (
+    tester,
+  ) async {
+    final accounts = SwitchablePaymentLinkAccountNotifier(
+      twoAccountState.copyWith(
+        accounts: [
+          twoAccountState.accounts.first,
+          const AccountInfo(
+            uuid: 'account-2',
+            name: 'Ledger',
+            order: 1,
+            isHardware: true,
+            hardwareSignerKind: HardwareSignerKind.ledger,
+          ),
+        ],
+      ),
+    );
+    SyncState synced(String uuid) => SyncState(
+      accountUuid: uuid,
+      hasAccountScopedData: true,
+      isSyncComplete: true,
+      spendableBalance: BigInt.from(1000000000),
+    );
+    final sync = FakeSyncNotifier(synced('account-1'));
+    final batch = _LedgerBatchOperations();
+    await pumpPaymentLinksScreen(
+      tester,
+      bootstrap: twoAccountBootstrap,
+      accountNotifier: accounts,
+      syncNotifier: sync,
+      batchOperations: batch,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('payment_link_create_batch_button')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('payment_link_bulk_preset_20')));
+    await tester.enterText(
+      find.byKey(const ValueKey('payment_link_bulk_amount')),
+      '0.1',
+    );
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+    expect(batch.preparedCounts.last, 20);
+    expect(find.text('Review 20 cards'), findsOneWidget);
+
+    accounts.setActiveAccount('account-2');
+    sync.emit(synced('account-2'));
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Create up to 4 cards at once with Ledger.'),
+      findsOneWidget,
+    );
+    expect(find.text('Review 4 cards'), findsOneWidget);
+    expect(batch.preparedCounts.last, 4);
+    expect(batch.preparedAccounts.last, 'account-2');
+    expect(
+      find.byKey(const ValueKey('payment_link_bulk_preset_20')),
+      findsNothing,
+    );
+    expect(
+      tester
+          .widget<TextField>(
+            find.byKey(const ValueKey('payment_link_bulk_count')),
+          )
+          .controller!
+          .text,
+      '4',
+    );
+    expect(batch.fundCalls, 0);
+  });
 
   testWidgets(
     'desktop Ledger creates a two-card batch with one signing request',
@@ -23,6 +157,7 @@ void main() {
         operations: _StoreBackedOperations(h.recovery),
         batchOperations: batch,
         ledgerFunding: h.service,
+        ledgerOperations: h.operations,
         recoveryStore: h.recovery,
         ledgerSigner: (_, _) => signature.future,
       );
@@ -63,6 +198,7 @@ void main() {
       bootstrap: ledgerGiftBootstrap,
       batchOperations: batch,
       ledgerFunding: h.service,
+      ledgerOperations: h.operations,
       recoveryStore: h.recovery,
       ledgerSigner: (_, _) => signature.future,
     );
@@ -176,6 +312,8 @@ void main() {
 class _LedgerBatchOperations implements PaymentLinkBatchOperations {
   int fundCalls = 0;
   int prepareCalls = 0;
+  final preparedCounts = <int>[];
+  final preparedAccounts = <String>[];
 
   @override
   Future<PaymentLinkBatchDraft> prepareBatch({
@@ -186,29 +324,23 @@ class _LedgerBatchOperations implements PaymentLinkBatchOperations {
     List<String>? artworkIds,
   }) async {
     prepareCalls++;
-    final second = VizorPaymentLink(
-      label: ledgerGiftLink.label,
-      network: ledgerGiftLink.network,
-      address: 'u1giftsecond',
-      amountZatoshi: amountZatoshi,
-      mnemonic: ledgerGiftLink.mnemonic,
-      birthdayHeight: ledgerGiftLink.birthdayHeight,
-      createdAt: ledgerGiftLink.createdAt,
-      presentation: presentation,
-    );
-    final first = VizorPaymentLink(
-      label: ledgerGiftLink.label,
-      network: ledgerGiftLink.network,
-      address: ledgerGiftLink.address,
-      amountZatoshi: amountZatoshi,
-      mnemonic: ledgerGiftLink.mnemonic,
-      birthdayHeight: ledgerGiftLink.birthdayHeight,
-      createdAt: ledgerGiftLink.createdAt,
-      presentation: presentation,
-    );
+    preparedCounts.add(count);
+    preparedAccounts.add(sourceAccountUuid);
     return PaymentLinkBatchDraft(
       id: 'ledger-screen-batch',
-      links: [first, second],
+      links: [
+        for (var index = 0; index < count; index++)
+          VizorPaymentLink(
+            label: ledgerGiftLink.label,
+            network: ledgerGiftLink.network,
+            address: index == 0 ? ledgerGiftLink.address : 'u1gift$index',
+            amountZatoshi: amountZatoshi,
+            mnemonic: ledgerGiftLink.mnemonic,
+            birthdayHeight: ledgerGiftLink.birthdayHeight,
+            createdAt: ledgerGiftLink.createdAt,
+            presentation: presentation,
+          ),
+      ],
       quote: PaymentLinkBatchQuote(
         sourceAccountUuid: sourceAccountUuid,
         count: count,
@@ -245,6 +377,7 @@ Future<void> _openLedgerSigning(
     tester,
     bootstrap: ledgerGiftBootstrap,
     ledgerFunding: h.service,
+    ledgerOperations: h.operations,
     ledgerSigner: (_, _) => signature.future,
   );
   await tester.tap(find.text('Create new card'));

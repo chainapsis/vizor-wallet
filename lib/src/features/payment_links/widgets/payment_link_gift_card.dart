@@ -113,6 +113,7 @@ class PaymentLinkGiftCard extends StatefulWidget {
     this.onUseMax,
     this.showMaxButton = false,
     this.supportingText,
+    this.supportingTextBuilder,
     this.supportingLoading = false,
     this.currencySymbol = 'ZEC',
     this.emptyAmountLabel = 'Enter amount',
@@ -174,6 +175,9 @@ class PaymentLinkGiftCard extends StatefulWidget {
   final VoidCallback? onUseMax;
   final bool showMaxButton;
   final String? supportingText;
+
+  /// Wraps the styled supporting value independently of the amount editor.
+  final TransitionBuilder? supportingTextBuilder;
   final bool supportingLoading;
   final String currencySymbol;
   final String emptyAmountLabel;
@@ -402,6 +406,7 @@ class _PaymentLinkGiftCardState extends State<PaymentLinkGiftCard> {
                 onUseMax: widget.onUseMax,
                 showInlineMax: !showMaxButton,
                 supportingText: widget.supportingText,
+                supportingTextBuilder: widget.supportingTextBuilder,
                 supportingLoading: widget.supportingLoading,
                 currencySymbol: widget.currencySymbol,
                 emptyAmountLabel: widget.emptyAmountLabel,
@@ -571,6 +576,7 @@ class _PaymentLinkGiftCardFrontContent extends StatelessWidget {
     required this.onUseMax,
     required this.showInlineMax,
     required this.supportingText,
+    required this.supportingTextBuilder,
     required this.supportingLoading,
     required this.currencySymbol,
     required this.emptyAmountLabel,
@@ -590,6 +596,7 @@ class _PaymentLinkGiftCardFrontContent extends StatelessWidget {
   final VoidCallback? onUseMax;
   final bool showInlineMax;
   final String? supportingText;
+  final TransitionBuilder? supportingTextBuilder;
   final bool supportingLoading;
   final String currencySymbol;
   final String emptyAmountLabel;
@@ -649,15 +656,7 @@ class _PaymentLinkGiftCardFrontContent extends StatelessWidget {
               ),
               const SizedBox(height: AppSpacing.xs),
             ] else if (visibleSupportingText case final supporting?) ...[
-              Text(
-                supporting,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: AppTypography.labelLarge.copyWith(
-                  color: cardTextColor,
-                  shadows: _supportingValueShadows,
-                ),
-              ),
+              _buildSupportingText(context, supporting, cardTextColor),
               const SizedBox(height: AppSpacing.xs),
             ] else if (showInlineMax && maxAmount != null) ...[
               if (onUseMax == null)
@@ -723,6 +722,19 @@ class _PaymentLinkGiftCardFrontContent extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Widget _buildSupportingText(BuildContext context, String value, Color color) {
+    final text = Text(
+      value,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: AppTypography.labelLarge.copyWith(
+        color: color,
+        shadows: _supportingValueShadows,
+      ),
+    );
+    return supportingTextBuilder?.call(context, text) ?? text;
   }
 }
 

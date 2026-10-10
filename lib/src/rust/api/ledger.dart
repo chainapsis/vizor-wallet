@@ -104,6 +104,17 @@ Future<LedgerPcztApduPlan> ledgerBuildPcztFullSigningApduPlan({
   memoHashSupported: memoHashSupported,
 );
 
+/// Refuse a different seed/account before the mobile transport sends PCZT bytes.
+/// `expected_public_key` comes from the signing plan's stored-account UFVK.
+/// This is an account-key check, not hardware attestation.
+Future<void> ledgerValidateDeviceAccountResponse({
+  required List<int> expectedPublicKey,
+  required List<int> response,
+}) => RustLib.instance.api.crateApiLedgerLedgerValidateDeviceAccountResponse(
+  expectedPublicKey: expectedPublicKey,
+  response: response,
+);
+
 /// Validate raw compact-signing responses and return shielded signatures.
 Future<List<LedgerActionSig>> ledgerFinalizeMobilePcztSigning({
   required String dbPath,
@@ -377,18 +388,30 @@ class LedgerDeviceApp {
 
 /// Complete ordered APDU exchange for one PCZT signing operation.
 class LedgerPcztApduPlan {
+  /// Exchange and verify this probe before sending any command below.
+  final LedgerApduCommand deviceAccountKeyRequest;
+  final Uint8List expectedDevicePublicKey;
   final List<LedgerApduCommand> commands;
 
-  const LedgerPcztApduPlan({required this.commands});
+  const LedgerPcztApduPlan({
+    required this.deviceAccountKeyRequest,
+    required this.expectedDevicePublicKey,
+    required this.commands,
+  });
 
   @override
-  int get hashCode => commands.hashCode;
+  int get hashCode =>
+      deviceAccountKeyRequest.hashCode ^
+      expectedDevicePublicKey.hashCode ^
+      commands.hashCode;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is LedgerPcztApduPlan &&
           runtimeType == other.runtimeType &&
+          deviceAccountKeyRequest == other.deviceAccountKeyRequest &&
+          expectedDevicePublicKey == other.expectedDevicePublicKey &&
           commands == other.commands;
 }
 

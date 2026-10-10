@@ -726,6 +726,8 @@ pub struct AccountExportMetadata {
 pub(crate) struct LedgerAccountSigningMetadata {
     pub account_index: u32,
     pub seed_fingerprint: [u8; 32],
+    /// First external BIP-44 public key, used to check the device before signing.
+    pub device_public_key: [u8; 33],
 }
 
 pub struct SoftwareSeedAccountState {
@@ -972,9 +974,20 @@ pub(crate) fn get_ledger_account_signing_metadata(
         .key_derivation()
         .ok_or("Ledger account derivation metadata is unavailable")?;
 
+    let device_public_key = account
+        .ufvk()
+        .and_then(|ufvk| ufvk.transparent())
+        .ok_or("Ledger account has no transparent viewing key")?
+        .derive_address_pubkey(
+            transparent::keys::TransparentKeyScope::EXTERNAL,
+            NonHardenedChildIndex::ZERO,
+        )
+        .map_err(|e| format!("Derive Ledger account public key: {e}"))?
+        .serialize();
     Ok(LedgerAccountSigningMetadata {
         account_index: u32::from(derivation.account_index()),
         seed_fingerprint: derivation.seed_fingerprint().to_bytes(),
+        device_public_key,
     })
 }
 
@@ -2284,6 +2297,18 @@ mod tests {
             get_ledger_account_signing_metadata(db_path_str, WalletNetwork::Main, &uuid).unwrap();
         assert_eq!(signing.account_index, 7);
         assert_eq!(signing.seed_fingerprint, seed_fingerprint);
+        assert_eq!(
+            signing.device_public_key,
+            usk.to_unified_full_viewing_key()
+                .transparent()
+                .unwrap()
+                .derive_address_pubkey(
+                    transparent::keys::TransparentKeyScope::EXTERNAL,
+                    transparent::keys::NonHardenedChildIndex::ZERO,
+                )
+                .unwrap()
+                .serialize()
+        );
     }
 
     #[test]

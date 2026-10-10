@@ -19,6 +19,9 @@ class WalletPathReadBlocker extends PathProviderPlatform
 
   final _path = Completer<String?>();
 
+  /// Releases wallet-path reads into an isolated test directory.
+  void complete(String path) => _path.complete(path);
+
   @override
   Future<String?> getApplicationSupportPath() {
     return _path.future;

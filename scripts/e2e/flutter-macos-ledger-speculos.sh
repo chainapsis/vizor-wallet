@@ -33,6 +33,11 @@ FIXTURE_DIR="$(mktemp -d /tmp/vizor-ledger-desktop-e2e.XXXXXX)"
 FIXTURE_DB="$FIXTURE_DIR/wallet.db"
 FIXTURE_PCZT="$FIXTURE_DIR/unsigned.pczt"
 FIXTURE_JSON="$FIXTURE_DIR/fixture.json"
+FIXTURE_GIFT_DB="$FIXTURE_DIR/gift-wallet.db"
+gift_fixture_args=()
+if [[ -z "$SCENARIO_FILTER" || "$SCENARIO_FILTER" == 'creates four gift cards with Ledger through Speculos' ]]; then
+  gift_fixture_args=(--gift-card-db "$FIXTURE_GIFT_DB")
+fi
 
 cd "$ROOT_DIR"
 
@@ -43,7 +48,7 @@ cargo run --manifest-path rust/Cargo.toml --quiet \
   --api-url "$UFVK_API_URL" \
   --db-path "$FIXTURE_DB" \
   --pczt "$FIXTURE_PCZT" \
-  --metadata "$FIXTURE_JSON"
+  --metadata "$FIXTURE_JSON" ${gift_fixture_args[@]+"${gift_fixture_args[@]}"}
 
 FIXTURE_UFVK="$(jq -r '.ufvk' "$FIXTURE_JSON")"
 FIXTURE_SEED_FINGERPRINT="$(jq -r '.seedFingerprint' "$FIXTURE_JSON")"
@@ -64,6 +69,11 @@ FIXTURE_VOTING_BUNDLE_1_PCZT_BASE64="$(base64 -i "$FIXTURE_VOTING_BUNDLE_1_PCZT"
 FIXTURE_VOTING_BUNDLE_2_PCZT_BASE64="$(base64 -i "$FIXTURE_VOTING_BUNDLE_2_PCZT" | tr -d '\n')"
 FIXTURE_ORCHARD_TO_IRONWOOD_V6_PCZT_BASE64="$(base64 -i "$FIXTURE_ORCHARD_TO_IRONWOOD_V6_PCZT" | tr -d '\n')"
 FIXTURE_DB_GZIP_BASE64="$(gzip -c "$FIXTURE_DB" | base64 | tr -d '\n')"
+FIXTURE_GIFT_DB_GZIP_BASE64=""
+if [[ -f "$FIXTURE_GIFT_DB" ]]; then
+  FIXTURE_GIFT_DB_GZIP_BASE64="$(gzip -c "$FIXTURE_GIFT_DB" | base64 | tr -d '\n')"
+fi
+FIXTURE_GIFT_ACCOUNT_UUID="$(jq -r '.giftCardAccountUuid // ""' "$FIXTURE_JSON")"
 
 run_flutter_scenario() {
   local test_name="$1"
@@ -89,6 +99,8 @@ run_flutter_scenario() {
     --dart-define=VIZOR_LEDGER_E2E_VOTING_BUNDLE_1_ACTION_INDEX="$FIXTURE_VOTING_BUNDLE_1_ACTION_INDEX" \
     --dart-define=VIZOR_LEDGER_E2E_VOTING_BUNDLE_2_ACTION_INDEX="$FIXTURE_VOTING_BUNDLE_2_ACTION_INDEX" \
     --dart-define=VIZOR_LEDGER_E2E_DB_GZIP_BASE64="$FIXTURE_DB_GZIP_BASE64" \
+    --dart-define=VIZOR_LEDGER_E2E_GIFT_DB_GZIP_BASE64="$FIXTURE_GIFT_DB_GZIP_BASE64" \
+    --dart-define=VIZOR_LEDGER_E2E_GIFT_ACCOUNT_UUID="$FIXTURE_GIFT_ACCOUNT_UUID" \
     --dart-define=VIZOR_E2E_HIDDEN_WINDOW="${VIZOR_E2E_HIDDEN_WINDOW:-true}"
 }
 

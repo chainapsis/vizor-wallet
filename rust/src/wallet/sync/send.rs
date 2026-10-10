@@ -1239,7 +1239,7 @@ fn ledger_shielding_progress(
         .map_err(|e| e.to_string())?;
     let mut progress = LedgerShieldingProgress {
         input_count: 0,
-        input_limit: crate::wallet::ledger::MAX_TRANSPARENT_INPUTS as u32,
+        input_limit: crate::wallet::ledger::limits::MAX_TRANSPARENT_INPUTS as u32,
         below_threshold: false,
     };
     if !balances
@@ -1257,7 +1257,7 @@ fn ledger_shielding_progress(
     }
     let round_value = outputs
         .iter()
-        .take(crate::wallet::ledger::MAX_TRANSPARENT_INPUTS)
+        .take(crate::wallet::ledger::limits::MAX_TRANSPARENT_INPUTS)
         .try_fold(Zatoshis::ZERO, |sum, output| sum + output.txout().value())
         .ok_or("Ledger shielding value overflow")?;
     progress.below_threshold = round_value < shielding_threshold()?;
@@ -3815,7 +3815,7 @@ fn build_ledger_shielding_round(
         .map_err(|e| e.to_string())?
         .ok_or("Wallet must sync before shielding")?;
     let mut outputs = ledger_shielding_outputs(db, addresses)?;
-    outputs.truncate(crate::wallet::ledger::MAX_TRANSPARENT_INPUTS);
+    outputs.truncate(crate::wallet::ledger::limits::MAX_TRANSPARENT_INPUTS);
     let selected = outputs
         .iter()
         .try_fold(Zatoshis::ZERO, |sum, o| sum + o.txout().value())
@@ -3953,6 +3953,19 @@ fn validate_payment_link_batch_proposal<NoteRef>(
             }
         }
         HardwareSignerKind::Ledger => {
+            // Review slots are shared across shielded pools, independent of
+            // the per-pool action budget. Internal change does not use a slot.
+            if crate::wallet::ledger::limits::validate_external_shielded_outputs(
+                step.output_count_in_pool(PoolType::ORCHARD),
+                step.output_count_in_pool(PoolType::IRONWOOD),
+            )
+            .is_err()
+            {
+                let max = crate::wallet::ledger::limits::MAX_EXTERNAL_SHIELDED_OUTPUTS;
+                return Err(payment_link_batch_rejection(format_args!(
+                    "has more shielded recipients than your Ledger can display (maximum {max}). {PAYMENT_LINK_BATCH_ADVICE}"
+                )));
+            }
             if step.input_count_in_pool(PoolType::SAPLING) > 0 {
                 return Err(payment_link_batch_rejection(format_args!(
                     "would spend older Sapling funds, which your Ledger can’t sign. {PAYMENT_LINK_BATCH_ADVICE}"
@@ -3973,7 +3986,7 @@ fn validate_payment_link_batch_proposal<NoteRef>(
                 }
                 let actions =
                     payment_link_ledger_action_count(branch, value_pool, spends, outputs)?;
-                let max = crate::wallet::ledger::MAX_SHIELDED_ACTIONS;
+                let max = crate::wallet::ledger::limits::MAX_SHIELDED_ACTIONS_PER_POOL;
                 if actions > max {
                     return Err(payment_link_batch_rejection(format_args!(
                         "is too large for your Ledger to sign. {PAYMENT_LINK_BATCH_ADVICE}"

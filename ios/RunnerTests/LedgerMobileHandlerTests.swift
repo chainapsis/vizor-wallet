@@ -8,7 +8,11 @@ import XCTest
   import Flutter
 #endif
 
-@testable import Runner
+#if canImport(Runner)
+  @testable import Runner
+#else
+  @testable import Vizor
+#endif
 
 final class LedgerMobileHandlerTests: XCTestCase {
   @MainActor
@@ -313,6 +317,34 @@ final class LedgerMobileHandlerTests: XCTestCase {
     transport.deferConnectCompletion = false
     connect(handler)
     XCTAssertEqual(transport.connects, 2)
+    handler.close()
+  }
+
+  @MainActor
+  func testSilentAccountProbeDoesNotDelayFollowingSigningCommands() async {
+    let transport = PendingLedgerTransport()
+    transport.responses = ["9000", "9000"]
+    let handler = LedgerMobileHandler(transport: transport)
+    connect(handler)
+    let probe: [String: Any] = ["cla": 0xe0, "ins": 0x40, "p1": 0, "p2": 0, "data": []]
+    let probed = expectation(description: "silent account probe completed")
+    handler.handle(FlutterMethodCall(methodName: "exchangeApdus", arguments: ["commands": [probe]])) {
+      XCTAssertNil($0 as? FlutterError)
+      probed.fulfill()
+    }
+    await fulfillment(of: [probed], timeout: 1)
+
+    let header: [String: Any] = ["cla": 0xe0, "ins": 0x52, "p1": 0, "p2": 0, "data": []]
+    let signed = expectation(description: "PCZT exchange needs no probe cooldown")
+    handler.handle(FlutterMethodCall(methodName: "exchangeApdus", arguments: ["commands": [header]])) {
+      XCTAssertNil($0 as? FlutterError)
+      signed.fulfill()
+    }
+    await fulfillment(of: [signed], timeout: 1)
+    XCTAssertEqual(transport.commands.map { $0[1] }, [0x40, 0x52])
+    let readyAt = Mirror(reflecting: handler).children
+      .first { $0.label == "signingReadyAt" }?.value as? Date
+    XCTAssertGreaterThan(readyAt?.timeIntervalSinceNow ?? 0, 0)
     handler.close()
   }
 

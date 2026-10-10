@@ -53,6 +53,15 @@ import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
+import 'package:zcash_wallet/src/features/payment_links/screens/payment_links_screen.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
+import '../test/support/wallet_path_read_blocker.dart';
+
 import 'support/speculos_review.dart';
 
 void main() {
@@ -214,7 +223,8 @@ void main() {
         storedFirstAccounts.single.zip32AccountIndex,
         fixture.accountIndex,
       );
-      expect(storedFirstAccounts.single.birthdayHeight, 2500000);
+      // Mainnet imports start scanning after the preceding compiled checkpoint.
+      expect(storedFirstAccounts.single.birthdayHeight, 2490001);
 
       final lightwalletd = _AcceptingLightwalletd();
       await lightwalletd.start();
@@ -373,6 +383,12 @@ void main() {
   );
 
   testWidgets(
+    'creates four gift cards with Ledger through Speculos',
+    _runLedgerGiftCardScenario,
+    timeout: const Timeout(Duration(minutes: 6)),
+  );
+
+  testWidgets(
     'signs sequential voting bundles with Ledger through Speculos',
     _runLedgerVotingSigningScenario,
     timeout: const Timeout(Duration(minutes: 4)),
@@ -427,6 +443,213 @@ void main() {
     },
     timeout: const Timeout(Duration(minutes: 4)),
   );
+}
+
+Future<void> _runLedgerGiftCardScenario(WidgetTester tester) async {
+  await tester.binding.setSurfaceSize(const Size(1280, 900));
+  addTearDown(() => tester.binding.setSurfaceSize(null));
+  final fixture = _Fixture.load();
+  const dbBase64 = String.fromEnvironment(
+    'VIZOR_LEDGER_E2E_GIFT_DB_GZIP_BASE64',
+  );
+  const accountUuid = String.fromEnvironment(
+    'VIZOR_LEDGER_E2E_GIFT_ACCOUNT_UUID',
+  );
+  expect(dbBase64, isNotEmpty);
+  expect(accountUuid, isNotEmpty);
+  final sandbox = await Directory.systemTemp.createTemp(
+    'vizor-ledger-gift-e2e.',
+  );
+  final dbPath = '${sandbox.path}/wallet.db';
+  await File(
+    dbPath,
+  ).writeAsBytes(gzip.decode(base64Decode(dbBase64)), flush: true);
+  WalletPathReadBlocker().complete(sandbox.path);
+  FlutterSecureStorage.setMockInitialValues({kWalletDbNameKey: 'wallet.db'});
+  AppSecureStore.instance.setSessionPassword('LedgerE2e1!');
+  addTearDown(() {
+    AppSecureStore.instance.clearSessionPassword();
+    FlutterSecureStorage.setMockInitialValues({});
+  });
+  final status = await rust_sync.getSyncStatus(dbPath: dbPath, network: 'main');
+  final balance = await rust_sync.getBalance(
+    dbPath: dbPath,
+    network: 'main',
+    accountUuid: accountUuid,
+  );
+  expect(balance.spendable, BigInt.from(5000000));
+  final lightwalletd = _AcceptingLightwalletd(
+    chainHeight: status.chainTipHeight.toInt(),
+  );
+  await lightwalletd.start();
+  addTearDown(lightwalletd.stop);
+  final operations = _TrackingLedgerSignedOperationService(
+    RustLedgerSignedOperationService(
+      network: 'main',
+      lightwalletdUrl: lightwalletd.url,
+      loadWalletDbPath: () async => dbPath,
+    ),
+  );
+  final router = GoRouter(
+    initialLocation: '/gift-cards',
+    routes: [
+      GoRoute(
+        path: '/gift-cards',
+        builder: (_, _) => const PaymentLinksScreen(),
+      ),
+    ],
+  );
+  addTearDown(router.dispose);
+  // Stop screen timers and dispose its providers before restoring wallet paths.
+  addTearDown(() => tester.pumpWidget(const SizedBox.shrink()));
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(
+          _ledgerBootstrap(
+            fixture,
+            lightwalletd.url,
+            initialLocation: '/gift-cards',
+            accountUuid: accountUuid,
+          ),
+        ),
+        syncProvider.overrideWith(
+          () => _GiftCardSyncNotifier(
+            accountUuid,
+            balance,
+            status.chainTipHeight,
+          ),
+        ),
+        networkPrivacyProvider.overrideWith(_DirectNetworkPrivacyNotifier.new),
+        zecMarketDataSourceProvider.overrideWithValue(
+          const _EmptyMarketDataSource(),
+        ),
+        zecMarketDataCacheProvider.overrideWithValue(_MemoryMarketDataCache()),
+        ledgerTargetPlatformProvider.overrideWithValue(defaultTargetPlatform),
+        ledgerWalletDbPathProvider.overrideWithValue(() async => dbPath),
+        ledgerSignedOperationServiceProvider.overrideWithValue(operations),
+      ],
+      child: MaterialApp.router(
+        routerConfig: router,
+        builder: (_, child) =>
+            AppTheme(data: AppThemeData.light, child: child!),
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+  final container = ProviderScope.containerOf(
+    tester.element(find.byType(PaymentLinksScreen)),
+  );
+  final service = container.read(paymentLinkServiceProvider);
+  final recovery = container.read(paymentLinkRecoveryStoreProvider);
+  final amount = BigInt.from(100000);
+
+  // Both the Dart service and the real Rust proposal reject the fifth card
+  // before opening device review or saving any recovery secrets.
+  await expectLater(
+    service.prepareBatch(
+      count: 5,
+      amountZatoshi: amount,
+      sourceAccountUuid: accountUuid,
+      presentation: const PaymentLinkPresentation(artworkId: 'vizor'),
+    ),
+    throwsArgumentError,
+  );
+  final overLimitAddresses = <String>[];
+  for (var index = 0; index < 5; index++) {
+    final card = await rust_wallet.generateSoftwareAccount(network: 'main');
+    overLimitAddresses.add(card.unifiedAddress);
+  }
+  await expectLater(
+    rust_sync.proposePaymentLinkBatch(
+      dbPath: dbPath,
+      network: 'main',
+      accountUuid: accountUuid,
+      sendFlowId: 'ledger-speculos-gift-over-limit',
+      addresses: overLimitAddresses,
+      amountZatoshi: paymentLinkFundingAmountZatoshi(amount),
+    ),
+    throwsA(
+      predicate((Object error) => error.toString().contains('maximum 4')),
+    ),
+  );
+  expect(await recovery.load(), isEmpty);
+  expect(await operations.list(), isEmpty);
+  expect(lightwalletd.sendTransactionCount, 0);
+
+  expect(find.text('Up to 4 with Ledger'), findsOneWidget);
+  await tester.tap(
+    find.byKey(const ValueKey('payment_link_create_batch_button')),
+  );
+  await tester.pumpAndSettle();
+  final countField = find.byKey(const ValueKey('payment_link_bulk_count'));
+  await tester.enterText(countField, '5');
+  await tester.testTextInput.receiveAction(TextInputAction.done);
+  await tester.pumpAndSettle();
+  expect(tester.widget<TextField>(countField).controller!.text, '4');
+  await tester.tap(find.byKey(const ValueKey('payment_link_bulk_increase')));
+  await tester.pumpAndSettle();
+  expect(tester.widget<TextField>(countField).controller!.text, '4');
+  await tester.enterText(
+    find.byKey(const ValueKey('payment_link_bulk_amount')),
+    '0.001',
+  );
+  await _pumpUntil(
+    tester,
+    () {
+      final review = find.widgetWithText(AppButton, 'Review 4 cards');
+      return tester.any(review) &&
+          tester.widget<AppButton>(review).onPressed != null;
+    },
+    description: 'four-card Gift Card quote',
+    timeout: const Duration(minutes: 2),
+  );
+  final drafts = await recovery.load();
+  expect(drafts, hasLength(4));
+  expect(drafts.map((record) => record.link.address).toSet(), hasLength(4));
+  expect(
+    drafts.every((record) => record.state == PaymentLinkRecoveryState.draft),
+    isTrue,
+  );
+  await tester.tap(find.text('Review 4 cards'));
+  await tester.pumpAndSettle();
+  await tester.pump(const Duration(milliseconds: 500));
+  final approval = approveNextSpeculosReview(fixture.signingApiUrl);
+  await tester.tap(find.text('Create 4 cards'));
+  await tester.pump();
+  await _pumpUntil(
+    tester,
+    () => tester.any(find.text('Save all links as CSV')),
+    description: 'four funded Gift Cards saved after Ledger approval',
+    timeout: const Duration(minutes: 3),
+  );
+  expect(await approval, isTrue);
+  final funded = await recovery.load();
+  expect(funded, hasLength(4));
+  expect(
+    funded.map((record) => record.link.address).toSet(),
+    drafts.map((record) => record.link.address).toSet(),
+  );
+  expect(
+    funded.every((record) => record.state == PaymentLinkRecoveryState.funded),
+    isTrue,
+  );
+  expect(
+    funded.every(
+      (record) => record.batchCount == 4 && record.link.amountZatoshi == amount,
+    ),
+    isTrue,
+  );
+  expect(funded.map((record) => record.batchIndex).toSet(), {1, 2, 3, 4});
+  expect(funded.map((record) => record.batchId).toSet(), hasLength(1));
+  expect(funded.map((record) => record.fundingTxids).toSet(), hasLength(1));
+  expect(funded.first.fundingTxids, isNotEmpty);
+  expect(operations.checkpointCount, 1);
+  expect(operations.broadcastCount, 1);
+  expect(operations.acknowledgeCount, 1);
+  expect(lightwalletd.sendTransactionCount, 1);
+  expect(lightwalletd.lastRawTransaction, isNotEmpty);
+  expect(await operations.list(), isEmpty);
 }
 
 Future<void> _runPostIronwoodOrchardSigningScenario(WidgetTester tester) async {
@@ -1639,13 +1862,14 @@ AppBootstrapState _ledgerBootstrap(
   _Fixture fixture,
   String lightwalletdUrl, {
   required String initialLocation,
+  String? accountUuid,
 }) {
   return AppBootstrapState(
     initialLocation: initialLocation,
     initialAccountState: AccountState(
       accounts: [
         AccountInfo(
-          uuid: fixture.accountUuid,
+          uuid: accountUuid ?? fixture.accountUuid,
           name: 'Speculos Ledger',
           order: 0,
           isHardware: true,
@@ -1656,7 +1880,7 @@ AppBootstrapState _ledgerBootstrap(
           ledgerDeviceModel: 'Nano S Plus',
         ),
       ],
-      activeAccountUuid: fixture.accountUuid,
+      activeAccountUuid: accountUuid ?? fixture.accountUuid,
       activeAddress: fixture.transparentAddress,
     ),
     initialSyncSnapshot: AppSyncSnapshot.empty,
@@ -1762,6 +1986,9 @@ class _TrackingLedgerSignedOperationService
 }
 
 class _AcceptingLightwalletd extends service_grpc.CompactTxStreamerServiceBase {
+  _AcceptingLightwalletd({this.chainHeight = 1});
+
+  final int chainHeight;
   grpc.Server? _server;
   int sendTransactionCount = 0;
   List<int> lastRawTransaction = const [];
@@ -1787,7 +2014,7 @@ class _AcceptingLightwalletd extends service_grpc.CompactTxStreamerServiceBase {
     grpc.ServiceCall call,
     service.ChainSpec request,
   ) async {
-    return service.BlockID(height: Int64(1));
+    return service.BlockID(height: Int64(chainHeight));
   }
 
   @override
@@ -1886,6 +2113,30 @@ class _FakeSyncNotifier extends SyncNotifier {
     displaySpendableBalance: BigInt.from(100000000),
     totalBalance: BigInt.from(100000000),
   );
+}
+
+class _GiftCardSyncNotifier extends SyncNotifier {
+  _GiftCardSyncNotifier(this.accountUuid, this.balance, this.height);
+
+  final String accountUuid;
+  final rust_sync.WalletBalance balance;
+  final BigInt height;
+
+  @override
+  Future<SyncState> build() async => SyncState(
+    accountUuid: accountUuid,
+    hasAccountScopedData: true,
+    isSyncComplete: true,
+    scannedHeight: height.toInt(),
+    chainTipHeight: height.toInt(),
+    spendableBalance: balance.spendable,
+    displaySpendableBalance: balance.spendable,
+    totalBalance: balance.total,
+  );
+
+  // The fixture chain never advances; funding itself uses the real Rust DB.
+  @override
+  Future<void> refreshAfterSend() async {}
 }
 
 // Headless canaries have no modal to answer the macOS transport request.

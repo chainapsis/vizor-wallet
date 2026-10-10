@@ -8,11 +8,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../src/core/formatting/zec_amount.dart';
 import '../src/core/layout/mobile/app_mobile_sheet.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/core/widgets/app_icon.dart';
-import '../src/core/widgets/comma_to_dot_input_formatter.dart';
-import '../src/core/widgets/decimal_amount_input_formatter.dart';
 import '../src/features/address_scan/widgets/address_qr_scan_modal.dart';
 import '../src/features/address_scan/widgets/mobile_address_scan_card.dart';
 import '../src/features/payment_links/models/gift_card_usage.dart';
@@ -22,13 +21,15 @@ import '../src/features/payment_links/widgets/gift_card_usage_status.dart';
 import '../src/features/payment_links/widgets/mobile/payment_link_mobile_views.dart';
 import '../src/features/payment_links/widgets/mobile/payment_link_claim_account_sheet.dart';
 import '../src/features/payment_links/widgets/mobile/payment_link_share_sheet.dart';
+import '../src/features/payment_links/widgets/payment_link_amount_card.dart';
 import '../src/features/payment_links/widgets/payment_link_card_flip.dart';
-import '../src/features/payment_links/widgets/payment_link_card_selector_rail.dart';
 import '../src/features/payment_links/widgets/payment_link_confetti.dart';
 import '../src/features/payment_links/widgets/payment_link_copy.dart';
 import '../src/features/payment_links/widgets/payment_link_gift_card.dart';
 import '../src/features/payment_links/widgets/payment_link_long_sync_warning.dart';
+import '../src/features/send/services/send_amount_conversion.dart';
 import '../src/providers/account_provider.dart';
+import 'payment_link_amount_preview.dart';
 
 const _mobilePreviewSize = Size(393, 773);
 const _mobileDeviceSize = Size(393, 852);
@@ -41,11 +42,6 @@ const _fixtureTotal = '4.49 ZEC';
 const _fixtureMessage = 'Hey there! Welcome to the Shielded World ;)';
 const _fixtureArtwork = PaymentLinkCardArtwork.chestLava;
 const kMobilePaymentLinkPreviewFiatDelay = Duration(milliseconds: 1200);
-
-const _amountFormatters = [
-  CommaToDotInputFormatter(),
-  DecimalAmountInputFormatter(maxFractionDigits: 8),
-];
 
 Widget buildMobilePaymentLinkHomeEmptyUseCase(BuildContext context) {
   return const _MobilePaymentLinkFrame(child: _PaymentLinkHomeFixture());
@@ -128,44 +124,34 @@ Widget _shareSheet(
   );
 }
 
-Widget buildMobilePaymentLinkAmountEmptyUseCase(BuildContext context) {
-  return _MobilePaymentLinkFrame(
-    child: PaymentLinkAmountMobileView(
-      card: const PaymentLinkGiftCard(
-        artwork: _fixtureArtwork,
-        cardWidth: _cardWidth,
-        cardHeight: _cardHeight,
+Widget buildMobilePaymentLinkAmountEmptyUseCase(BuildContext context) =>
+    const _MobilePaymentLinkFrame(
+      child: PaymentLinkAmountPreview(
+        initialAmount: '',
+        initialArtwork: _fixtureArtwork,
       ),
-      cardSelector: _artworkSelector(_fixtureArtwork),
-      onBack: _noop,
-    ),
-  );
-}
+    );
 
-Widget buildMobilePaymentLinkAmountFilledUseCase(BuildContext context) {
-  return _MobilePaymentLinkFrame(
-    child: PaymentLinkAmountMobileView(
-      card: PaymentLinkGiftCard(
-        artwork: _fixtureArtwork,
-        cardWidth: _cardWidth,
-        cardHeight: _cardHeight,
-        amountText: _fixtureAmount,
-        maxAmountText: '142.23',
-        onUseMax: _noop,
-        showMaxButton: true,
-        showCaret: false,
-        supportingLoading: true,
+Widget buildMobilePaymentLinkAmountFilledUseCase(BuildContext context) =>
+    const _MobilePaymentLinkFrame(
+      child: PaymentLinkAmountPreview(
+        initialAmount: _fixtureAmount,
+        initialArtwork: _fixtureArtwork,
+        priceAvailable: false,
+        priceLoading: true,
       ),
-      cardSelector: _artworkSelector(_fixtureArtwork),
-      onBack: _noop,
-      onContinue: _noop,
-    ),
-  );
-}
+    );
 
-Widget buildMobilePaymentLinkAmountFocusedUseCase(BuildContext context) {
-  return const _MobilePaymentLinkFrame(child: _FocusedAmountFixture());
-}
+Widget buildMobilePaymentLinkAmountFocusedUseCase(BuildContext context) =>
+    const _MobilePaymentLinkFrame(
+      child: PaymentLinkAmountPreview(
+        initialAmount: _fixtureAmount,
+        initialArtwork: _fixtureArtwork,
+        focusAmount: true,
+        priceAvailable: false,
+        priceLoading: true,
+      ),
+    );
 
 Widget buildMobilePaymentLinkMessageEmptyUseCase(BuildContext context) {
   return const _MobilePaymentLinkFrame(
@@ -438,23 +424,6 @@ Widget buildMobilePaymentLinkReceivedWaitingUseCase(BuildContext context) {
 Widget buildMobilePaymentLinkInteractiveUseCase(BuildContext context) {
   return const _MobilePaymentLinkFrame(
     child: _MobilePaymentLinkInteractivePreview(),
-  );
-}
-
-Widget _artworkSelector(PaymentLinkCardArtwork selected) {
-  return PaymentLinkCardSelectorRail(
-    loop: true,
-    artworks: PaymentLinkCardArtwork.values,
-    selected: selected,
-    width: _mobilePreviewSize.width,
-    itemWidth: 80,
-    itemHeight: 60,
-    artworkWidth: 76,
-    artworkHeight: 56,
-    edgeMaskInset: AppSpacing.sm,
-    edgeFadeFraction: 0.3,
-    inactiveOpacity: 1,
-    onSelected: _ignoreArtwork,
   );
 }
 
@@ -765,72 +734,6 @@ class _MobileReceivedFixtureState extends State<_MobileReceivedFixture> {
   }
 }
 
-class _FocusedAmountFixture extends StatefulWidget {
-  const _FocusedAmountFixture();
-
-  @override
-  State<_FocusedAmountFixture> createState() => _FocusedAmountFixtureState();
-}
-
-class _FocusedAmountFixtureState extends State<_FocusedAmountFixture> {
-  final _controller = TextEditingController(text: _fixtureAmount);
-  final _focusNode = FocusNode(debugLabel: 'MobilePaymentLinkAmountFixture');
-  var _renderVisualFocusFallback = false;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      if (_focusNode.canRequestFocus) {
-        _focusNode.requestFocus();
-      } else {
-        setState(() => _renderVisualFocusFallback = true);
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    _focusNode.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return PaymentLinkAmountMobileView(
-      card: _renderVisualFocusFallback
-          ? const PaymentLinkGiftCard(
-              key: ValueKey('mobile_payment_link_amount_focus_fallback'),
-              artwork: _fixtureArtwork,
-              cardWidth: _cardWidth,
-              cardHeight: _cardHeight,
-              amountText: _fixtureAmount,
-              maxAmountText: '142.23',
-              onUseMax: _noop,
-              showMaxButton: true,
-              supportingLoading: true,
-            )
-          : PaymentLinkGiftCard(
-              artwork: _fixtureArtwork,
-              cardWidth: _cardWidth,
-              cardHeight: _cardHeight,
-              amountController: _controller,
-              amountFocusNode: _focusNode,
-              amountEditorKey: const ValueKey(
-                'mobile_payment_link_focused_amount_editor',
-              ),
-              amountInputFormatters: _amountFormatters,
-              supportingLoading: true,
-              semanticLabel: 'Gift card amount input',
-            ),
-      cardSelector: _artworkSelector(_fixtureArtwork),
-      onBack: _noop,
-    );
-  }
-}
-
 class _FocusedMessageFixture extends StatefulWidget {
   const _FocusedMessageFixture();
 
@@ -893,6 +796,9 @@ class _FocusedMessageFixtureState extends State<_FocusedMessageFixture> {
   }
 }
 
+Widget buildMobilePaymentLinkPreviewFrame(Widget child) =>
+    _MobilePaymentLinkFrame(child: child);
+
 class _MobilePaymentLinkFrame extends StatelessWidget {
   const _MobilePaymentLinkFrame({required this.child});
 
@@ -954,10 +860,8 @@ class _MobilePaymentLinkInteractivePreview extends StatefulWidget {
 
 class _MobilePaymentLinkInteractivePreviewState
     extends State<_MobilePaymentLinkInteractivePreview> {
-  static const _usdPerZec = 272.0;
-
-  final _amountController = TextEditingController();
-  final _amountFocusNode = FocusNode();
+  BigInt? _amountZatoshi;
+  var _amountCurrency = PaymentLinkAmountCurrency.zec;
   final _messageController = TextEditingController();
   final _messageFocusNode = FocusNode();
   Timer? _priceTimer;
@@ -965,11 +869,11 @@ class _MobilePaymentLinkInteractivePreviewState
   var _step = _MobilePaymentLinkStep.amount;
   var _artwork = _fixtureArtwork;
 
-  bool get _hasPositiveAmount {
-    final raw = _amountController.text;
-    final value = double.tryParse(raw.startsWith('.') ? '0$raw' : raw);
-    return value != null && value > 0;
-  }
+  bool get _hasPositiveAmount =>
+      _amountZatoshi != null && _amountZatoshi! > BigInt.zero;
+
+  String get _amountText =>
+      _amountZatoshi == null ? '' : formatZecAmount(_amountZatoshi!);
 
   bool get _messageFitsPayload =>
       PaymentLinkPresentation.isMessageWithinUtf8ByteLimit(
@@ -987,8 +891,6 @@ class _MobilePaymentLinkInteractivePreviewState
   @override
   void dispose() {
     _priceTimer?.cancel();
-    _amountController.dispose();
-    _amountFocusNode.dispose();
     _messageController.dispose();
     _messageFocusNode.dispose();
     super.dispose();
@@ -1011,61 +913,23 @@ class _MobilePaymentLinkInteractivePreviewState
     setState(() {});
   }
 
-  String? get _fiatText {
-    final value = _amountController.text;
-    final amount = double.tryParse(value.startsWith('.') ? '0$value' : value);
-    if (amount == null || amount < 0) return null;
-    if (amount == 0) return r'$0.00';
-    return _priceLoading ? null : _formatUsd(amount * _usdPerZec);
-  }
-
-  void _handleAmountChanged(String _) {
-    setState(() {});
-  }
+  String? get _fiatText => _priceLoading || _amountZatoshi == null
+      ? null
+      : '\$${sendUsdDisplayTextForZatoshi(_amountZatoshi!, kPaymentLinkPreviewUsdPrice)}';
 
   @override
   Widget build(BuildContext context) {
     return switch (_step) {
-      _MobilePaymentLinkStep.amount => PaymentLinkAmountMobileView(
-        card: PaymentLinkGiftCard(
-          artwork: _artwork,
-          cardWidth: _cardWidth,
-          cardHeight: _cardHeight,
-          amountController: _amountController,
-          amountFocusNode: _amountFocusNode,
-          amountEditorKey: const ValueKey(
-            'mobile_payment_link_interactive_amount_editor',
-          ),
-          amountInputFormatters: _amountFormatters,
-          onAmountChanged: _handleAmountChanged,
-          supportingText: _fiatText,
-          supportingLoading: _hasPositiveAmount && _priceLoading,
-          maxAmountText: '142.23',
-          onUseMax: () {
-            _amountController.text = _fixtureAmount;
-            _handleAmountChanged(_fixtureAmount);
-          },
-          showMaxButton: true,
-          semanticLabel: 'Gift card amount input',
-        ),
-        cardSelector: PaymentLinkCardSelectorRail(
-          loop: true,
-          artworks: PaymentLinkCardArtwork.values,
-          selected: _artwork,
-          width: _mobilePreviewSize.width,
-          itemWidth: 80,
-          itemHeight: 60,
-          artworkWidth: 76,
-          artworkHeight: 56,
-          edgeMaskInset: AppSpacing.sm,
-          edgeFadeFraction: 0.3,
-          inactiveOpacity: 1,
-          onSelected: (artwork) => setState(() => _artwork = artwork),
-        ),
-        onBack: _noop,
-        onContinue: _hasPositiveAmount
-            ? () => _showStep(_MobilePaymentLinkStep.message)
-            : null,
+      _MobilePaymentLinkStep.amount => PaymentLinkAmountPreview(
+        initialAmount: _amountText,
+        initialCurrency: _amountCurrency,
+        initialArtwork: _artwork,
+        priceLoading: _priceLoading,
+        priceAvailable: !_priceLoading,
+        onAmountChanged: (amount) => _amountZatoshi = amount,
+        onCurrencyChanged: (currency) => _amountCurrency = currency,
+        onArtworkChanged: (artwork) => _artwork = artwork,
+        onContinue: () => _showStep(_MobilePaymentLinkStep.message),
       ),
       _MobilePaymentLinkStep.message => PaymentLinkMessageMobileView(
         card: PaymentLinkGiftCard(
@@ -1103,34 +967,20 @@ class _MobilePaymentLinkInteractivePreviewState
           artwork: _artwork,
           cardWidth: _cardWidth,
           cardHeight: _cardHeight,
-          amountText: _amountController.text,
+          amountText: _amountText,
           supportingText: _fiatText,
           supportingLoading: _hasPositiveAmount && _priceLoading,
           showCaret: false,
         ),
         onBack: () => _showStep(_MobilePaymentLinkStep.message),
-        cardAmountText: '${_amountController.text} ZEC',
+        cardAmountText: '$_amountText ZEC',
         cardFeeText: _fixtureFee,
-        totalAmountText: '${(_parsedAmount + 0.04).toStringAsFixed(2)} ZEC',
+        totalAmountText:
+            '${formatZecAmount((_amountZatoshi ?? BigInt.zero) + BigInt.from(4000000))} ZEC',
         onFeeHelp: _noop,
       ),
     };
   }
-
-  double get _parsedAmount {
-    final raw = _amountController.text;
-    return double.tryParse(raw.startsWith('.') ? '0$raw' : raw) ?? 0;
-  }
-
-  static String _formatUsd(double value) {
-    final parts = value.toStringAsFixed(2).split('.');
-    final whole = parts.first.replaceAllMapped(
-      RegExp(r'(\d)(?=(\d{3})+$)'),
-      (match) => '${match[1]},',
-    );
-    return '\$$whole.${parts.last}';
-  }
 }
 
 void _noop() {}
-void _ignoreArtwork(PaymentLinkCardArtwork _) {}

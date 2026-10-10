@@ -5,6 +5,8 @@ import '../../providers/rpc_endpoint_provider.dart';
 import '../../core/config/network_config.dart';
 
 /// What Vizor may ask a connected Ledger Zcash app to do, by app version.
+/// Transaction budgets are enforced by Rust `ledger/limits.rs`;
+/// see `docs/ledger/limitations.md` for the full support/enforcement map.
 ///
 /// | Version  | New account | Signing | Memo shown as a hash |
 /// |----------|-------------|---------|----------------------|
@@ -33,6 +35,13 @@ const ledgerMemoHashUnsupportedError =
 /// Accounts connected from now on start without the 3.9.3 memo limit; those
 /// connected earlier keep signing from [kMinimumLedgerZcashAppVersion].
 const kMinimumLedgerZcashAppVersionForNewAccounts = kLedgerMemoHashAppVersion;
+
+/// Ledger's device-review budget, shared by the supported 3.9.3/3.9.4 apps.
+/// This is independent of the 32-action budget per shielded pool: internal
+/// change is excluded, external Orchard and Ironwood outputs are combined.
+/// Rust enforces it when preparing a Gift Card batch. See
+/// `docs/ledger/limitations.md` for all constraints.
+const kLedgerMaxExternalShieldedOutputs = 4;
 
 bool ledgerAppVersionAllowsNewAccounts(String appVersion) =>
     _atLeast(appVersion, kMinimumLedgerZcashAppVersionForNewAccounts);

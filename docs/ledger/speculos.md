@@ -3,6 +3,8 @@
 Run from the repository root with Docker running. The runner builds a Zcash Nano
 S+ ELF and creates one fresh, headless Speculos instance per scenario.
 
+Read [device-app limits](limitations.md) before changing a Ledger product flow.
+
 ## Requirements
 
 - Bash, Docker, Git, curl, jq.
@@ -24,6 +26,10 @@ scripts/e2e/ledger-speculos-docker.sh desktop
 
 # One scenario.
 VIZOR_LEDGER_E2E_SCENARIO='shields transparent balance with Ledger through Speculos' \
+  scripts/e2e/ledger-speculos-docker.sh desktop
+
+# Gift Card UI, four-recipient signing, and fifth-card rejection.
+VIZOR_LEDGER_E2E_SCENARIO='creates four gift cards with Ledger through Speculos' \
   scripts/e2e/ledger-speculos-docker.sh desktop
 
 # Mobile; the runner supplies the mobile design-token define.
@@ -57,11 +63,23 @@ VIZOR_LEDGER_SPECULOS_ELF='/absolute/path/zcash-nanosplus.elf' \
 
 ## Test boundaries
 
+- Signing smoke checks the account public key before any PCZT APDU, rejects a
+  mismatched expected key, and then signs/finalizes through the production API.
+- Its pre-Ironwood fixture activates NU6.2 and leaves NU6.3/NU7 inactive, so a
+  newly added SDK upgrade cannot silently turn this V5 smoke into an unsupported
+  future-branch transaction.
 - UFVK export needs a four-second status-screen wait in the Rust harness and
   Flutter import/send scenario. This adds no delay to production UFVK handling.
 - The synthetic DB includes a transparent UTXO and completed external/change
   discovery checkpoints (`complete=2`). Preparation checks the production
   shielding-progress API for one shieldable input; it does not run live discovery.
+- The desktop Gift Card scenario uses a separate DB with a synthetic Ironwood
+  note scanned through the SDK. The real Dart service and Rust proposal reject
+  five cards before saving secrets or signing. The UI clamps the count to four,
+  then uses production fee estimation, PCZT creation, proof generation, Ledger
+  approval, signed-outbox broadcast, and recovery storage to create four cards
+  with one transaction. Wallet-path resolution and secure storage are isolated;
+  a loopback lightwalletd stub accepts the transaction without chain mining.
 - `VIZOR_LEDGER_RUN_ORCHARD_TO_IRONWOOD_CANARY=true` adds the compatibility canary.
   Zcash 3.9.4 has not been run against it; retain the production compatibility guard.
 - Voting builds two real SDK `PreparedDelegationBundle::keystone_request`

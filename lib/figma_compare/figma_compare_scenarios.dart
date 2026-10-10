@@ -32,6 +32,7 @@ import '../widgetbook/mobile_pay_use_cases.dart';
 import '../widgetbook/mobile_gift_onboarding_use_cases.dart';
 import '../widgetbook/pay_use_cases.dart';
 import '../widgetbook/payment_link_mobile_use_cases.dart';
+import '../widgetbook/payment_link_amount_currency_use_cases.dart';
 import '../widgetbook/payment_link_use_cases.dart';
 import '../widgetbook/payment_request_use_cases.dart';
 import '../widgetbook/receive_use_cases.dart';
@@ -363,6 +364,36 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     description: 'Walletless Gift Card with funding found and 50% progress',
     builder: buildMobileGiftOnboardingFundingFound,
     desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'gift-card-amount-zec',
+    description: 'Gift card amount in ZEC with its USD estimate',
+    builder: buildGiftCardZecAmountUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'gift-card-amount-usd',
+    description: 'Gift card amount in USD with its canonical ZEC value',
+    builder: buildGiftCardUsdAmountUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'gift-card-amount-empty',
+    description: 'Gift card input unit selector before entering an amount',
+    builder: buildGiftCardEmptyAmountUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'gift-card-amount-price-loading',
+    description: 'ZEC entry with a pending USD price and disabled USD selector',
+    builder: buildGiftCardAmountPriceLoadingUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'gift-card-amount-price-unavailable',
+    description: 'ZEC entry remains available without a live USD price',
+    builder: buildGiftCardAmountPriceUnavailableUseCase,
     mobile: true,
   ),
   FigmaCompareScenario(
@@ -1531,6 +1562,31 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'payment-link-batch-amount',
     description: 'Desktop Gift Card bulk configuration and cost summary',
     builder: buildPaymentLinkBatchAmountUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-ledger-entry',
+    description: 'Ledger Gift Cards entry with its four-card limit',
+    builder: buildPaymentLinkLedgerEntryUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-ledger-batch',
+    description: 'Ledger four-card configuration with the shared count stepper',
+    builder: buildPaymentLinkLedgerBatchUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-ledger-batch-empty',
+    description: 'Ledger batch before entering an amount',
+    builder: buildPaymentLinkLedgerBatchEmptyUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-ledger-batch-preparing',
+    description: 'Ledger batch while its fee is being calculated',
+    builder: buildPaymentLinkLedgerBatchPreparingUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-ledger-batch-error',
+    description: 'Ledger batch with a recoverable fee error',
+    builder: buildPaymentLinkLedgerBatchErrorUseCase,
   ),
   FigmaCompareScenario(
     id: 'payment-link-batch-empty',

@@ -1,6 +1,8 @@
 //! Developer harness for exercising Vizor's production Ledger PCZT serializer
 //! and finalizer against a Zcash app running in Speculos.
 
+#[path = "ledger_zcash_speculos_poc/gift_card.rs"]
+mod gift_card;
 #[path = "ledger_zcash_speculos_poc/regtest.rs"]
 mod regtest;
 #[path = "ledger_zcash_speculos_poc/voting.rs"]
@@ -23,7 +25,8 @@ use std::{
 use rust_lib_zcash_wallet::api::ledger::{
     ledger_build_pczt_full_signing_apdu_plan, ledger_build_ufvk_apdu_plan, ledger_device_app,
     ledger_export_account, ledger_finalize_mobile_pczt_full_signing,
-    ledger_parse_mobile_ufvk_responses, ledger_sign_pczt_full, LedgerApduCommand,
+    ledger_parse_mobile_ufvk_responses, ledger_sign_pczt_full,
+    ledger_validate_device_account_response, LedgerApduCommand,
 };
 use rust_lib_zcash_wallet::{api::wallet::import_hardware_account, wallet::network::WalletNetwork};
 use serde_json::{json, Value};
@@ -141,6 +144,14 @@ fn run_desktop_smoke(config: Config) -> Result<(), String> {
         "ledger".into(),
     )?;
     let pczt = transparent_smoke_pczt(&export.ufvk, &export.seed_fingerprint)?;
+    let plan = ledger_build_pczt_full_signing_apdu_plan(
+        db_path.clone(),
+        account.account_uuid.clone(),
+        pczt.bytes.clone(),
+        config.network.clone(),
+        CANARY_MEMO_HASH_SUPPORTED,
+    )?;
+    verify_smoke_account_preflight(&signing_client, &plan)?;
     let approval = config
         .auto_approve
         .then(|| ApprovalWorker::start(signing_client));
@@ -291,6 +302,11 @@ fn run_prepare_fixture(config: Config) -> Result<(), String> {
     let orchard_to_ironwood_path = pczt_path.with_extension("orchard-to-ironwood-v6.pczt");
     fs::write(&orchard_to_ironwood_path, &orchard_spend)
         .map_err(|error| format!("Write {}: {error}", orchard_to_ironwood_path.display()))?;
+    let gift_card_account = config
+        .gift_card_db_path
+        .as_deref()
+        .map(|path| gift_card::prepare_wallet(path, &export.ufvk, &export.seed_fingerprint))
+        .transpose()?;
     let metadata = json!({
         "accountUuid": account.account_uuid,
         "ufvk": export.ufvk,
@@ -307,6 +323,7 @@ fn run_prepare_fixture(config: Config) -> Result<(), String> {
         "votingBundle1ActionIndex": voting_bundle_1.action_index,
         "votingBundle2ActionIndex": voting_bundle_2.action_index,
         "orchardToIronwoodV6PcztPath": orchard_to_ironwood_path,
+        "giftCardAccountUuid": gift_card_account,
     });
     fs::write(&metadata_path, metadata.to_string())
         .map_err(|error| format!("Write {}: {error}", metadata_path.display()))?;
@@ -338,6 +355,8 @@ fn run_file(config: Config) -> Result<(), String> {
     }
 
     let client = SpeculosClient::new(&config.api_url)?;
+    let key_response = client.exchange_apdu(&plan.device_account_key_request)?;
+    ledger_validate_device_account_response(plan.expected_device_public_key, key_response)?;
     let (responses, automated_review) =
         exchange_signing_plan(&client, &plan.commands, config.auto_approve)?;
 
@@ -392,6 +411,7 @@ fn run_smoke(config: Config) -> Result<(), String> {
         config.network.clone(),
         CANARY_MEMO_HASH_SUPPORTED,
     )?;
+    verify_smoke_account_preflight(&signing_client, &plan)?;
     let (responses, automated_signing_review) =
         exchange_signing_plan(&signing_client, &plan.commands, config.auto_approve)?;
     let signed = ledger_finalize_mobile_pczt_full_signing(
@@ -412,6 +432,25 @@ fn run_smoke(config: Config) -> Result<(), String> {
     println!("automated_ufvk_review={automated_ufvk_review}");
     println!("automated_signing_review={automated_signing_review}");
     println!("speculos_smoke=passed");
+    Ok(())
+}
+
+fn verify_smoke_account_preflight(
+    client: &SpeculosClient,
+    plan: &rust_lib_zcash_wallet::api::ledger::LedgerPcztApduPlan,
+) -> Result<(), String> {
+    let key_response = client.exchange_apdu(&plan.device_account_key_request)?;
+    let mut wrong_key = plan.expected_device_public_key.clone();
+    wrong_key[1] ^= 1;
+    let mismatch = ledger_validate_device_account_response(wrong_key, key_response.clone())
+        .expect_err("a different account key must fail before PCZT exchange");
+    if !mismatch.starts_with("ledger_signature_mismatch:") {
+        return Err(format!(
+            "Unexpected account-key mismatch result: {mismatch}"
+        ));
+    }
+    ledger_validate_device_account_response(plan.expected_device_public_key.clone(), key_response)?;
+    println!("device_account_preflight=passed");
     Ok(())
 }
 
@@ -540,7 +579,7 @@ impl Parameters for PreIronwoodMainNetwork {
 
     fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
         match nu {
-            NetworkUpgrade::Nu6_3 => None,
+            NetworkUpgrade::Nu6_3 | NetworkUpgrade::Nu7 => None,
             _ => Some(BlockHeight::from_u32(1)),
         }
     }
@@ -904,6 +943,7 @@ fn tex_smoke_pczts(ufvk: &str, seed_fingerprint: &[u8]) -> Result<TexSmokePczts,
 struct Config {
     desktop_smoke: bool,
     prepare_fixture: bool,
+    gift_card_db_path: Option<String>,
     smoke: bool,
     db_path: Option<String>,
     account_uuid: Option<String>,
@@ -930,6 +970,7 @@ impl Config {
         let mut smoke = false;
         let mut desktop_smoke = false;
         let mut prepare_fixture = false;
+        let mut gift_card_db_path = None;
         let mut args = args.into_iter();
 
         while let Some(arg) = args.next() {
@@ -943,6 +984,7 @@ impl Config {
                 "--pczt" => pczt_path = Some(PathBuf::from(value(&mut args)?)),
                 "--output" => output_path = Some(PathBuf::from(value(&mut args)?)),
                 "--metadata" => metadata_path = Some(PathBuf::from(value(&mut args)?)),
+                "--gift-card-db" => gift_card_db_path = Some(value(&mut args)?),
                 "--network" => network = value(&mut args)?,
                 "--api-url" => api_url = value(&mut args)?,
                 "--signing-api-url" => signing_api_url = Some(value(&mut args)?),
@@ -967,6 +1009,7 @@ impl Config {
         Ok(Self {
             desktop_smoke,
             prepare_fixture,
+            gift_card_db_path,
             smoke,
             db_path,
             account_uuid,
@@ -982,7 +1025,7 @@ impl Config {
 }
 
 fn usage() -> String {
-    let prepare = "Usage:\n  ledger_zcash_speculos_poc desktop-smoke --api-url <ufvk-speculos-api> --signing-api-url <signing-speculos-api> [--output <signed-pczt>] [--manual-review]\n\n  ledger_zcash_speculos_poc prepare-fixture --db-path <wallet-db> --pczt <unsigned-pczt> --metadata <fixture-json> [--api-url http://127.0.0.1:5000] [--manual-review]\n\nDesktop-smoke exercises the production macOS Ledger transport selected by the VIZOR_LEDGER_SPECULOS_* environment variables. Prepare-fixture exports account 0, writes a persistent test database plus unsigned transparent PCZT, and records their paths and account metadata as JSON. Both modes require Ledger Zcash 3.9.3 or newer.";
+    let prepare = "Usage:\n  ledger_zcash_speculos_poc desktop-smoke --api-url <ufvk-speculos-api> --signing-api-url <signing-speculos-api> [--output <signed-pczt>] [--manual-review]\n\n  ledger_zcash_speculos_poc prepare-fixture --db-path <wallet-db> --pczt <unsigned-pczt> --metadata <fixture-json> [--api-url http://127.0.0.1:5000] [--gift-card-db <isolated-gift-wallet-db>] [--manual-review]\n\nDesktop-smoke exercises the production macOS Ledger transport selected by the VIZOR_LEDGER_SPECULOS_* environment variables. Prepare-fixture exports account 0, writes a persistent test database plus unsigned transparent PCZT, and records their paths and account metadata as JSON. Both modes require Ledger Zcash 3.9.3 or newer.";
     format!("{prepare}\n\n{}", format!(
         "Usage:\n  ledger_zcash_speculos_poc smoke --signing-api-url <speculos-api> [--api-url {DEFAULT_API_URL}] [--output <signed-pczt>] [--manual-review]\n\n  ledger_zcash_speculos_poc \\\n  --db-path <wallet-db> --account-uuid <ledger-account-uuid> --pczt <unsigned-pczt> \\\n  [--output <signed-pczt>] [--network main] [--api-url {DEFAULT_API_URL}] [--manual-review]\n\n\
 Smoke mode exports account 0 from Speculos, imports it into a temporary mainnet DB,\n\
@@ -1511,5 +1554,16 @@ mod tests {
         assert!(config.desktop_smoke);
         assert_eq!(config.account_uuid, None);
         assert_eq!(config.pczt_path, None);
+    }
+
+    #[test]
+    fn pre_ironwood_fixture_stays_on_the_supported_v5_consensus_branch() {
+        assert_eq!(
+            zcash_protocol::consensus::BranchId::for_height(
+                &PreIronwoodMainNetwork,
+                BlockHeight::from_u32(100),
+            ),
+            zcash_protocol::consensus::BranchId::Nu6_2,
+        );
     }
 }

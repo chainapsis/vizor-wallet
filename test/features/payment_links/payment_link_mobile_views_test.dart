@@ -103,6 +103,46 @@ void main() {
     },
   );
 
+  testWidgets('Gift Cards landing stays usable at keyboard height', (
+    tester,
+  ) async {
+    const size = Size(393, 450);
+    await tester.binding.setSurfaceSize(size);
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    var helpCalls = 0;
+    var createCalls = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        builder: (_, navigator) =>
+            AppTheme(data: AppThemeData.light, child: navigator!),
+        home: PaymentLinksHomeMobileView(
+          illustration: const SizedBox(),
+          onBack: _noop,
+          onShowHelp: () => helpCalls++,
+          onCreate: () => createCalls++,
+          onRedeem: _noop,
+        ),
+      ),
+    );
+    expect(tester.takeException(), isNull);
+
+    final create = find.byKey(
+      const ValueKey('payment_links_mobile_create_button'),
+    );
+    expect(create.hitTestable(), findsOneWidget);
+    await tester.tap(create);
+    await tester.pump();
+    expect(createCalls, 1);
+
+    final help = find.byKey(const ValueKey('payment_links_mobile_help_action'));
+    await tester.ensureVisible(help);
+    await tester.pumpAndSettle();
+    await tester.tap(help);
+    await tester.pump();
+    expect(helpCalls, 1);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('review defaults describe review and card creation', (
     tester,
   ) async {

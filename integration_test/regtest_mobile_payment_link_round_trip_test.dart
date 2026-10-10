@@ -17,6 +17,7 @@ import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_claim_coordinator_provider.dart';
 
 import 'support/mobile_regtest_flow.dart';
+import 'support/gift_card_amount_regtest.dart';
 import 'support/owned_regtest_control.dart';
 
 /// Mobile regtest E2E: the mobile twin of
@@ -37,12 +38,9 @@ const _receiverMnemonic =
     'return try reason flat civil wolf dwarf announce toddler uphold equip '
     'range neck proof gauge east rifle swim tray twin venue fossil will '
     'version';
-const _giftAmountText = '0.1';
 const _giftArtworkId = 'coin';
 const _giftMessage = 'Congrats from the mobile payment link E2E!';
 const _walletSpendableConfirmationTarget = 6;
-final _giftAmountZatoshi = BigInt.from(10_000_000);
-final _fundingAmountZatoshi = BigInt.from(10_010_000);
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -54,7 +52,6 @@ void main() {
   testWidgets(
     'creates, opens, and claims a Gift Card between two mobile accounts',
     (tester) async {
-      tolerateRenderOverflows();
       addTearDown(() async {
         if (installedE2eRuntimeCaseManifest == null) {
           await Clipboard.setData(const ClipboardData(text: ''));
@@ -66,7 +63,7 @@ void main() {
       await cleanupMobileE2ePaymentLinkClaimWallets();
 
       logE2e('pumping app for the mobile payment-link round trip');
-      await tester.pumpWidget(await buildBootstrappedZcashWalletApp());
+      await tester.pumpWidget(await buildGiftCardAmountRegtestApp());
 
       await importWalletViaPaste(
         tester,
@@ -85,9 +82,13 @@ void main() {
       );
 
       await _openGiftCardsFromSettings(tester);
-      final link = await _createGiftCard(tester);
+      final (link, giftAmountZatoshi) = await _createGiftCard(
+        tester,
+        sourceAccountUuid: senderUuid,
+      );
+      final fundingAmountZatoshi = giftAmountZatoshi + BigInt.from(10000);
       expect(link.network, mobileE2eNetwork);
-      expect(link.amountZatoshi, _giftAmountZatoshi);
+      expect(link.amountZatoshi, giftAmountZatoshi);
       expect(link.presentation?.artworkId, _giftArtworkId);
       expect(link.presentation?.message, _giftMessage);
 
@@ -95,7 +96,7 @@ void main() {
         tester,
         accountUuid: senderUuid,
         txKind: 'sent',
-        amount: _fundingAmountZatoshi,
+        amount: fundingAmountZatoshi,
         pending: true,
       );
       await mineRegtestBlocks(kPaymentLinkShareConfirmationTarget);
@@ -103,7 +104,7 @@ void main() {
         tester,
         accountUuid: senderUuid,
         txKind: 'sent',
-        amount: _fundingAmountZatoshi,
+        amount: fundingAmountZatoshi,
         pending: false,
         txid: pendingFunding.txidHex,
       );
@@ -207,7 +208,7 @@ void main() {
         tester,
         accountUuid: receiverUuid,
         txKind: 'receiving',
-        amount: _giftAmountZatoshi,
+        amount: giftAmountZatoshi,
         pending: true,
       );
       expect(pendingClaim.txidHex, isNot(minedFunding.txidHex));
@@ -219,7 +220,7 @@ void main() {
         tester,
         accountUuid: receiverUuid,
         txKind: 'received',
-        amount: _giftAmountZatoshi,
+        amount: giftAmountZatoshi,
         pending: false,
         txid: pendingClaim.txidHex,
       );
@@ -265,7 +266,7 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
       await stopRustWorkForCleanup();
-      await tester.pumpWidget(await buildBootstrappedZcashWalletApp());
+      await tester.pumpWidget(await buildGiftCardAmountRegtestApp());
       await enterPasscode(tester, mobileE2ePasscode);
       await waitForHome(tester);
       operations = _paymentLinkOperations(tester);
@@ -305,12 +306,12 @@ void main() {
         description: 'claim recovery cleanup after six confirmations',
       );
 
-      final expectedTotal = receiverStartingBalance.total + _giftAmountZatoshi;
+      final expectedTotal = receiverStartingBalance.total + giftAmountZatoshi;
       await _waitForAccountBalance(
         tester,
         accountUuid: receiverUuid,
         total: expectedTotal,
-        spendable: receiverStartingBalance.spendable + _giftAmountZatoshi,
+        spendable: receiverStartingBalance.spendable + giftAmountZatoshi,
       );
       await openHomeTab(tester);
       final expectedBalanceText = ZecAmount.fromZatoshi(
@@ -359,15 +360,19 @@ Future<void> _leaveGiftCards(WidgetTester tester) async {
 
 /// Create → amount + design → message → review → funded card, returning the
 /// link the ready page copies to the clipboard.
-Future<VizorPaymentLink> _createGiftCard(WidgetTester tester) async {
+Future<(VizorPaymentLink, BigInt)> _createGiftCard(
+  WidgetTester tester, {
+  required String sourceAccountUuid,
+}) async {
   await tapAppButton(
     tester,
     const ValueKey('payment_links_mobile_create_button'),
   );
-  await enterText(
+  final amount = await enterGiftCardRegtestAmount(
     tester,
-    const ValueKey('payment_link_amount_editor'),
-    _giftAmountText,
+    sourceAccountUuid: sourceAccountUuid,
+    tap: (key) => tapWidget(tester, key),
+    enter: (key, value) => enterText(tester, key, value),
   );
   await _selectCardArtwork(tester, _giftArtworkId);
   await tapAppButton(
@@ -410,12 +415,15 @@ Future<VizorPaymentLink> _createGiftCard(WidgetTester tester) async {
   // Bind those values to the actual persisted creator record, as desktop does.
   final recovery =
       (await _paymentLinkOperations(tester).loadCreatedLinkRecoveries())
-          .singleWhere((record) => link.hasSameCanonicalPayload(record.link));
-  expect(recovery.sourceAccountUuid, await accountUuidAtOrder(0));
+          .singleWhere((record) => record.link.hasSameCanonicalPayload(link));
+  expect(recovery.sourceAccountUuid, sourceAccountUuid);
   logE2e('copied the funded Gift Card link');
-  return link.withResolvedMetadata(
-    address: recovery.link.address,
-    createdAt: recovery.link.createdAt,
+  return (
+    link.withResolvedMetadata(
+      address: recovery.link.address,
+      createdAt: recovery.link.createdAt,
+    ),
+    amount,
   );
 }
 

@@ -49,6 +49,10 @@ enum PaymentLinkRedeemVisualState { paste, loading, invalid }
 /// The pane width from which the **For a group** tile sits beside the
 /// content instead of below it, on the empty home and the card list alike.
 const _kGroupTileBesideMinWidth = 740.0;
+// Keep a gap between the centered 390px list and the wider Ledger entry.
+const _kLedgerListTileBesideMinWidth =
+    390 +
+    2 * (PaymentLinkGroupEntry.ledgerWidth + AppSpacing.base + AppSpacing.sm);
 
 class PaymentLinksHomeDesktopView extends StatelessWidget {
   const PaymentLinksHomeDesktopView({
@@ -58,6 +62,7 @@ class PaymentLinksHomeDesktopView extends StatelessWidget {
     required this.onCreate,
     required this.onRedeem,
     this.onCreateMultiple,
+    this.isLedger = false,
     this.backLabel = 'Home',
     this.title = kPaymentLinkEmptyTitle,
     this.helpLabel = 'How gift cards work',
@@ -72,6 +77,7 @@ class PaymentLinksHomeDesktopView extends StatelessWidget {
   final VoidCallback onCreate;
   final VoidCallback onRedeem;
   final VoidCallback? onCreateMultiple;
+  final bool isLedger;
   final String backLabel;
   final String title;
   final String helpLabel;
@@ -164,6 +170,7 @@ class PaymentLinksHomeDesktopView extends StatelessWidget {
                   child: PaymentLinkGroupEntry(
                     fullWidth: true,
                     onPressed: onCreateGroup,
+                    isLedger: isLedger,
                   ),
                 ),
               ],
@@ -177,7 +184,10 @@ class PaymentLinksHomeDesktopView extends StatelessWidget {
                 Positioned(
                   top: 208,
                   right: AppSpacing.base,
-                  child: PaymentLinkGroupEntry(onPressed: onCreateGroup),
+                  child: PaymentLinkGroupEntry(
+                    onPressed: onCreateGroup,
+                    isLedger: isLedger,
+                  ),
                 ),
               ],
             ),
@@ -1286,6 +1296,7 @@ class PaymentLinkCardsDesktopView extends StatefulWidget {
     required this.onCreate,
     required this.onRedeem,
     this.onCreateMultiple,
+    this.isLedger = false,
     this.activeTab = PaymentLinkCardsTab.created,
     this.onTabSelected,
     this.backLabel = 'Home',
@@ -1298,6 +1309,7 @@ class PaymentLinkCardsDesktopView extends StatefulWidget {
   final VoidCallback onCreate;
   final VoidCallback onRedeem;
   final VoidCallback? onCreateMultiple;
+  final bool isLedger;
   final PaymentLinkCardsTab activeTab;
   final ValueChanged<PaymentLinkCardsTab>? onTabSelected;
   final String backLabel;
@@ -1410,7 +1422,10 @@ class _PaymentLinkCardsDesktopViewState
             ),
             const SizedBox(height: AppSpacing.base),
             if (widget.onCreateMultiple case final onCreateGroup?
-                when constraints.maxWidth >= _kGroupTileBesideMinWidth &&
+                when constraints.maxWidth >=
+                        (widget.isLedger
+                            ? _kLedgerListTileBesideMinWidth
+                            : _kGroupTileBesideMinWidth) &&
                     !paymentLinkUsesLargeText(context))
               Stack(
                 children: [
@@ -1422,7 +1437,10 @@ class _PaymentLinkCardsDesktopViewState
                     alignment: Alignment.topRight,
                     child: Padding(
                       padding: const EdgeInsets.only(right: AppSpacing.base),
-                      child: PaymentLinkGroupEntry(onPressed: onCreateGroup),
+                      child: PaymentLinkGroupEntry(
+                        onPressed: onCreateGroup,
+                        isLedger: widget.isLedger,
+                      ),
                     ),
                   ),
                 ],
@@ -1436,6 +1454,7 @@ class _PaymentLinkCardsDesktopViewState
                     child: PaymentLinkGroupEntry(
                       fullWidth: true,
                       onPressed: onCreateGroup,
+                      isLedger: widget.isLedger,
                     ),
                   ),
                 ),

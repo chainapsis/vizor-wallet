@@ -1,5 +1,6 @@
 //! Byte-exact serializer for the Ledger Zcash app's compact PCZT APDU subset.
 
+use super::limits::ensure_count;
 use super::parse::{
     Bip32Derivation, Global, IronwoodBundle, ParsedPczt, ShieldedAction, ShieldedBundle,
     TransparentInput, TransparentOutput, LEDGER_MEMO_HASH_UNSUPPORTED,
@@ -60,7 +61,7 @@ fn serialize_transparent_inputs(inputs: &[TransparentInput]) -> Result<Vec<Vec<u
     ensure_count(
         "transparent inputs",
         inputs.len(),
-        super::MAX_TRANSPARENT_INPUTS,
+        super::limits::MAX_TRANSPARENT_INPUTS,
     )?;
     let mut packets = vec![compact_size(inputs.len())?];
 
@@ -107,7 +108,7 @@ fn serialize_transparent_outputs(outputs: &[TransparentOutput]) -> Result<Vec<Ve
     ensure_count(
         "transparent outputs",
         outputs.len(),
-        super::MAX_TRANSPARENT_OUTPUTS,
+        super::limits::MAX_TRANSPARENT_OUTPUTS,
     )?;
     let mut packets = vec![compact_size(outputs.len())?];
 
@@ -162,7 +163,7 @@ fn serialize_shielded_bundle(
     ensure_count(
         "shielded actions",
         actions.len(),
-        super::MAX_SHIELDED_ACTIONS,
+        super::limits::MAX_SHIELDED_ACTIONS_PER_POOL,
     )?;
     let mut packets = vec![compact_size(actions.len())?];
     if actions.is_empty() {
@@ -201,7 +202,8 @@ fn serialize_shielded_action(
     packets.push(spend);
 
     let mut derivation = Vec::with_capacity(33 + action.signing_path.len() * 4);
-    derivation.extend_from_slice(&action.seed_fingerprint);
+    // Keep account metadata local; firmware derives keys from the path.
+    derivation.extend_from_slice(&[0; 32]);
     derivation.extend_from_slice(&pack_derivation_path(&action.signing_path)?);
     packets.push(derivation);
 
@@ -232,7 +234,8 @@ fn serialize_bip32_derivation(derivation: Option<&Bip32Derivation>) -> Result<Ve
 
     let mut bytes = vec![1];
     bytes.extend_from_slice(&derivation.pubkey);
-    bytes.extend_from_slice(&derivation.seed_fingerprint);
+    // The wire fingerprint is not used by the device for key validation.
+    bytes.extend_from_slice(&[0; 32]);
     bytes.extend_from_slice(&pack_derivation_path(&derivation.signing_path)?);
     ensure_packet_size(&bytes)?;
     Ok(bytes)
@@ -276,16 +279,6 @@ fn compact_size(value: usize) -> Result<Vec<u8>, String> {
     let mut bytes = vec![255];
     bytes.extend_from_slice(&value.to_le_bytes());
     Ok(bytes)
-}
-
-fn ensure_count(label: &str, count: usize, maximum: usize) -> Result<(), String> {
-    if count > maximum {
-        Err(format!(
-            "ledger_capacity: Ledger supports at most {maximum} {label}; found {count}"
-        ))
-    } else {
-        Ok(())
-    }
 }
 
 fn ensure_packet_size(packet: &[u8]) -> Result<(), String> {
@@ -421,20 +414,20 @@ mod tests {
     fn category_limits_match_ledger_zcash_3_9_3() {
         assert_eq!(
             (
-                super::super::MAX_TRANSPARENT_INPUTS,
-                super::super::MAX_TRANSPARENT_OUTPUTS,
-                super::super::MAX_SHIELDED_ACTIONS,
+                super::super::limits::MAX_TRANSPARENT_INPUTS,
+                super::super::limits::MAX_TRANSPARENT_OUTPUTS,
+                super::super::limits::MAX_SHIELDED_ACTIONS_PER_POOL,
             ),
             (32, 10, 32),
         );
         assert_boundary(
             |count| serialize_transparent_inputs(&vec![transparent_input(); count]),
-            super::super::MAX_TRANSPARENT_INPUTS,
+            super::super::limits::MAX_TRANSPARENT_INPUTS,
             "transparent inputs",
         );
         assert_boundary(
             |count| serialize_transparent_outputs(&vec![transparent_output(); count]),
-            super::super::MAX_TRANSPARENT_OUTPUTS,
+            super::super::limits::MAX_TRANSPARENT_OUTPUTS,
             "transparent outputs",
         );
         assert_boundary(
@@ -446,7 +439,7 @@ mod tests {
                     anchor: [0; 32],
                 }))
             },
-            super::super::MAX_SHIELDED_ACTIONS,
+            super::super::limits::MAX_SHIELDED_ACTIONS_PER_POOL,
             "shielded actions",
         );
         assert_boundary(
@@ -464,7 +457,7 @@ mod tests {
                     anchor: [0; 32],
                 }))
             },
-            super::super::MAX_SHIELDED_ACTIONS,
+            super::super::limits::MAX_SHIELDED_ACTIONS_PER_POOL,
             "shielded actions",
         );
 
@@ -586,7 +579,8 @@ mod tests {
         assert_eq!(packets[3][0], 1);
         assert_eq!(packets[3][1], 1);
         assert_eq!(&packets[3][2..35], &transparent_input().derivation.pubkey);
-        assert_eq!(&packets[3][35..67], &[0x11; 32]);
+        assert_eq!(&packets[3][35..67], &[0; 32]);
+        assert_eq!(transparent_input().derivation.seed_fingerprint, [0x11; 32]);
         assert_eq!(packets[3][67], 5);
         assert_eq!(
             hex::encode(&packets[3][68..]),
@@ -600,10 +594,27 @@ mod tests {
     }
 
     #[test]
+    fn shielded_wire_fingerprint_is_zero_without_mutating_local_metadata() {
+        let mut action = shielded_action();
+        action.seed_fingerprint = [0x22; 32];
+        action.signing_path = vec![0x8000_0020, 0x8000_0085, 0x8000_0007];
+        let mut packets = Vec::new();
+        serialize_shielded_action(&action, None, &mut packets).unwrap();
+        assert_eq!(&packets[1][..32], &[0; 32]);
+        assert_eq!(
+            &packets[1][32..],
+            pack_derivation_path(&action.signing_path)
+                .unwrap()
+                .as_slice()
+        );
+        assert_eq!(action.seed_fingerprint, [0x22; 32]);
+    }
+
+    #[test]
     fn transparent_input_packets_accept_the_ledger_limit() {
         assert!(serialize_transparent_inputs(&vec![
             transparent_input();
-            super::super::MAX_TRANSPARENT_INPUTS
+            super::super::limits::MAX_TRANSPARENT_INPUTS
         ])
         .is_ok());
     }

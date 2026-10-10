@@ -746,6 +746,15 @@ while an executed denomination preparation waits for confirmations.
 - Post-send: `refreshAfterSend()` for immediate pending TX display
 - Friendly error messages via `_friendlyError()` pattern matching
 
+### Ledger Device-App Limits
+
+Before changing a Ledger send, Gift Card, shielding, swap, or voting flow, read
+`docs/ledger/limitations.md`. **32 actions per pool does not mean 32 recipients:**
+the device can review only **4 external shielded outputs across both pools**;
+internal change is excluded. Numeric limits live in `rust/src/wallet/ledger/limits.rs`.
+Keep account-key verification before PCZT transmission and retain the
+Orchard-to-Ironwood gate until the actual supported app passes its canary.
+
 ### Signing Cancellation
 
 Keep desktop and mobile consistent when cancelling signing, not merely closing the QR scanner:
