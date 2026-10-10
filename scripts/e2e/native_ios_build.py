@@ -87,6 +87,8 @@ def build_native_ios_cohort(case, *, source_root, flutter, timeout=1800.0,
             command(configure, in_source=True)
             if not (root/"ios/Pods").is_dir():
                 raise NativeIosBuildError("prepared iOS Pod sandbox is missing")
+            cache.prepare_native_rust_targets(root, platform="ios", architecture=architecture,
+                environment=environment, command=command)
             changed = cache.native_source_changes(root, source, "ios")
             if changed:
                 raise NativeIosBuildError("iOS preparation changed source/tool: " + ", ".join(changed[:8]))

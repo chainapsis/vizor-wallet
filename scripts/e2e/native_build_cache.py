@@ -334,6 +334,43 @@ def _native_apple_inputs(command, platform, cancel):
             for path in sorted(roots)}}
 
 
+def _native_rust_toolchains(root, environment, architecture, command):
+    override = environment.get("VIZOR_RUST_TOOLCHAIN")
+    if override:
+        if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", override):
+            raise NativeBuildCacheError("Cargokit override must be an exact Rust version")
+        return (override,)
+    if (root/"rust/cargokit.yaml").exists():
+        # Keep the existing conservative inventory of Cargokit's channels.
+        host = {"arm64":"aarch64-apple-darwin", "x86_64":"x86_64-apple-darwin"}[architecture]
+        installed = {line.split()[0] for line in command(["rustup","toolchain","list"], in_source=True) if line.strip()}
+        return tuple(name for name in ("stable","beta","nightly") if name+"-"+host in installed)
+    return ("stable",)  # Cargokit's actual default, not rustup's active toolchain.
+
+
+def _native_rust_target(platform, architecture):
+    return ({"arm64":"aarch64-apple-ios-sim", "x86_64":"x86_64-apple-ios"}[architecture]
+        if platform == "ios" else
+        {"arm64":"aarch64-apple-darwin", "x86_64":"x86_64-apple-darwin"}[architecture])
+
+
+def prepare_native_rust_targets(root, *, platform, architecture, environment, command):
+    """Perform Cargokit's missing-target preparation before read-only identity.
+
+    Never reinstall/update an existing target or relax post-build continuity.
+    Preparation commands belong to the original build owner and its deadline.
+    """
+    target = _native_rust_target(platform, architecture)
+    for name in _native_rust_toolchains(root, environment, architecture, command):
+        def installed():
+            return {line.strip() for line in command(
+                ["rustup", "target", "list", "--installed", "--toolchain", name], in_source=True) if line.strip()}
+        if target not in installed():
+            command(["rustup", "target", "add", "--toolchain", name, target], in_source=True)
+            if target not in installed():
+                raise NativeBuildCacheError("Cargokit Rust target preparation did not install the selected target")
+
+
 def collect_native_cache_inputs(root, source, tool, *, platform, architecture,
                                 command, environment, cancel, tex_address=None):
     configuration = root/".dart_tool/package_config.json"
@@ -370,19 +407,7 @@ def collect_native_cache_inputs(root, source, tool, *, platform, architecture,
     if (not isinstance(flutter, dict) or any(not isinstance(flutter.get(name), str) or not flutter[name]
         for name in ("frameworkRevision", "engineRevision", "dartSdkVersion"))):
         raise NativeBuildCacheError("Flutter machine identity is incomplete")
-    override = environment.get("VIZOR_RUST_TOOLCHAIN")
-    if override:
-        if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", override):
-            raise NativeBuildCacheError("Cargokit override must be an exact Rust version")
-        toolchains = (override,)
-    elif (root/"rust/cargokit.yaml").exists():
-        # Cargokit's published enum permits these three channels. Bind installed
-        # candidates rather than parsing its YAML with a second implementation.
-        host = {"arm64":"aarch64-apple-darwin", "x86_64":"x86_64-apple-darwin"}[architecture]
-        installed = {line.split()[0] for line in command(["rustup","toolchain","list"], in_source=True) if line.strip()}
-        toolchains = tuple(name for name in ("stable","beta","nightly") if name+"-"+host in installed)
-    else:
-        toolchains = ("stable",)  # The actual Cargokit default, not rustup's active toolchain.
+    toolchains = _native_rust_toolchains(root, environment, architecture, command)
     rust = {}
     for name in toolchains:
         records = {}
@@ -397,9 +422,7 @@ def collect_native_cache_inputs(root, source, tool, *, platform, architecture,
             records[program+"_sha256"] = _tool_input_record(executable, executable=True)[1]
         records["sysroot"] = toolchain_inputs.rust_toolchain_inputs(
             lambda args:command(args, in_source=True), Path(records["rustc_binary"]), cancel)
-        target = ({"arm64":"aarch64-apple-ios-sim", "x86_64":"x86_64-apple-ios"}[architecture]
-            if platform == "ios" else
-            {"arm64":"aarch64-apple-darwin", "x86_64":"x86_64-apple-darwin"}[architecture])
+        target = _native_rust_target(platform, architecture)
         records["cargo_dependencies"] = toolchain_inputs.cargo_dependency_inputs(
             lambda args:command(args, in_source=True), Path(records["cargo_binary"]), root/"rust/Cargo.toml", cancel,
             flags=("--filter-platform", target), excluded_packages=(root/"rust",),

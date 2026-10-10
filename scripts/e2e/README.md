@@ -1155,7 +1155,10 @@ recheck its inputs before publication, including after the original owner seals.
 Only the original source-checking native builder with positively joined
 successful command groups can publish.
 Before lookup, `flutter build --config-only --no-pub` prepares the selected
-platform's configuration/Pod sandbox without app compilation. Installed Pod
+platform's configuration/Pod sandbox without app compilation. Missing Rust
+targets in the captured Cargokit toolchain inventory are prepared before
+sysroot identity is collected; installed targets are not reinstalled or updated.
+Installed Pod
 contents bind the key alongside normalized lock metadata and package sources;
 preparation and build still reject changed project/wallet/tool inputs.
 The same bounded per-key lock and

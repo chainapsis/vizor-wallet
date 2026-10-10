@@ -34,9 +34,15 @@ class BuildTests(unittest.TestCase):
             worker_id=0,case_index=0,ports={"rpc":28232,"lwd":29067,"proxy":29068},activation_height=1))
         self.mode = "same-project-bytes"
         self.native_arguments = None
+        self.installed_targets = {"aarch64-apple-darwin", "x86_64-apple-darwin"}
 
     def command(self, arguments, **kwargs):
         self.commands.append(arguments)
+        actual = arguments[4:] if arguments[0] == sys.executable else arguments
+        if actual[:3] == ["rustup", "target", "list"]:
+            return runtime.CommandResult(0,tuple(name+"\n" for name in sorted(self.installed_targets)))
+        if actual[:3] == ["rustup", "target", "add"]:
+            self.installed_targets.add(actual[-1])
         if "ls-files" in arguments:
             return runtime.CommandResult(0,("lib/app.dart\0macos/Runner.xcodeproj/project.pbxproj\0",))
         if "--target" in arguments:
@@ -73,7 +79,8 @@ class BuildTests(unittest.TestCase):
     def test_pods_are_prepared_without_app_compilation_before_cache_lookup(self):
         def inputs(*args, **kwargs):
             self.assertTrue((self.source/"macos/Pods").is_dir())
-            self.assertIn("--config-only", self.commands[-1])
+            self.assertTrue(any("--config-only" in args for args in self.commands))
+            self.assertFalse(any("add" in args for args in self.commands))
             self.assertFalse(any("swift" in args for args in self.commands))
             raise RuntimeError("cache lookup boundary")
         with patch.object(BUILD.cache, "collect_native_cache_inputs", side_effect=inputs):
