@@ -1171,6 +1171,8 @@ sysroot identity is collected; installed targets are not reinstalled or updated.
 Installed Pod
 contents bind the key alongside normalized lock metadata and package sources;
 preparation and build still reject changed project/wallet/tool inputs.
+The Flutter SDK inventory includes material-font artifact bytes copied into
+these Material-enabled debug apps, not just compiler and engine artifacts.
 The same bounded per-key lock and
 exclusive rename protect a sealed, complete app/helper pair. All bundle files
 are hashed, including resources and Frameworks; relative internal Framework
@@ -1238,6 +1240,12 @@ Both Go contexts query effective CC/CXX/FC/PKG_CONFIG/GOCACHEPROG settings and
 bind the referenced executable bytes, including programs selected through
 GOENV rather than inherited environment variables. Setting values are hashed,
 not recorded. External Cargo dependency source trees also bind voting keys.
+The SDK Go producer queries the effective module-cache location and the source
+trees selected by `go list -deps` for svoted's Halo2/RedPallas tags and
+voting-config. Actual replacement source directories are included; unrelated
+module-cache entries are not. Sources are rechecked before reuse/publication,
+including byte-only validation after the original owner has joined. The same
+readonly module mode as the producer prevents module-file edits.
 Voting Cargo producers already permit dependency downloads; their locked
 metadata preparation may also fetch unbuilt workspace/dev dependencies before
 lookup. This does not compile them or change either pinned revision.

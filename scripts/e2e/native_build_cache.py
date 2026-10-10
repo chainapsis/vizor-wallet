@@ -212,6 +212,7 @@ def _flutter_sdk_inputs(tool, platform, cancel):
         "bin/cache/dart-sdk/bin/snapshots/dartdev_aot.dart.snapshot",
     )
     trees = ("packages/flutter_tools", "bin/internal", "bin/cache/dart-sdk/lib",
+        "bin/cache/artifacts/material_fonts",
         "bin/cache/artifacts/engine/common/flutter_patched_sdk",
         "bin/cache/artifacts/engine/"+("ios" if platform == "ios" else "darwin-x64"))
     def artifact_record(path):

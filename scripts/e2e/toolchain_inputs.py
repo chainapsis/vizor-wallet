@@ -324,6 +324,54 @@ def cargo_dependencies_unchanged(inputs, cancel):
         for path,digest in inputs["source_trees_sha256"].items())
 
 
+def go_dependency_inputs(command, go, cancel, *, queries, excluded_roots=()):
+    """Bind source trees selected by the same Go packages/tags as the producer.
+
+    go list prepares missing modules without compiling an executable. Module.Dir
+    already identifies a replacement's effective source, not the replaced cache.
+    The voting producer uses -mod=readonly, so vendoring is not selected.
+    """
+    locations = tuple(line.rstrip("\r\n") for line in command([str(go), "env", "GOMODCACHE"]))
+    if len(locations) != 1 or not Path(locations[0]).is_absolute():
+        raise ToolInputError("Go module cache must resolve to one absolute path")
+    roots, count = set(), 0
+    decoder = json.JSONDecoder()
+    for query in queries:
+        previous_count = count
+        output = "\n".join(command([str(go), "list", "-deps", "-json=Standard,Module,Error", *query])).lstrip()
+        while output:
+            # Original process capture merges stdout and stderr. Downloads are
+            # diagnostics, never a substitute for package/module JSON records.
+            if output.startswith("go: "):
+                _, separator, output = output.partition("\n")
+                if not separator:
+                    output = ""
+                output = output.lstrip()
+                continue
+            try:
+                package, end = decoder.raw_decode(output)
+                count += 1
+                if not isinstance(package, dict) or package.get("Error") or count > 16384:
+                    raise ValueError()
+                if not package.get("Standard", False):
+                    module = package["Module"]
+                    path = Path(module["Dir"])
+                    if module.get("Error") or not path.is_absolute():
+                        raise ValueError()
+                    root = path.resolve(strict=True)
+                    if root not in excluded_roots:
+                        roots.add(root)
+            except (ValueError, TypeError, KeyError) as error:
+                raise ToolInputError("Go dependency metadata is incomplete or invalid") from error
+            output = output[end:].lstrip()
+        if count == previous_count:
+            raise ToolInputError("Go dependency metadata contains no packages")
+    roots = {root for root in roots if not any(parent in roots for parent in root.parents)}
+    return {"module_cache":str(Path(locations[0]).resolve(strict=True)),
+            "source_trees_sha256":{str(root):tree_digest(root, cancel,
+                ignore_generated=False, ignored_root_names=frozenset({".git"})) for root in sorted(roots)}}
+
+
 def apple_linker_inputs(command, cancel):
     if sys.platform != "darwin":
         return None

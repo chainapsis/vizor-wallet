@@ -50,6 +50,11 @@ class VotingBuildTests(unittest.TestCase):
             (path/"artifact").write_text("modeled Go compiler/library")
         (self.go_root/"bin/go").write_text("modeled selected Go driver")
         (self.go_root/"bin/go").chmod(0o700)
+        self.go_module_cache = self.model.root/"go-modules"
+        self.go_dependency = self.go_module_cache/"example.org/dependency@v1.0.0"
+        self.go_dependency.mkdir(parents=True)
+        (self.go_dependency/"dependency.go").write_text("original Go dependency source")
+        self.go_dependency_metadata = None
 
     def build(self, **options):
         if not self.case.accepting_launches:
@@ -79,6 +84,17 @@ class VotingBuildTests(unittest.TestCase):
                 self.assertEqual(actual[3:], ["GOROOT", "GOTOOLDIR", *self.go_programs])
                 data = json.dumps({"GOROOT":str(self.go_root), "GOTOOLDIR":str(self.go_root/"pkg/tool"),
                                    **self.go_programs})
+                return original([sys.executable, "-c", f"print({data!r})"], **kwargs)
+            if name == "go" and actual[1:] == ["env", "GOMODCACHE"]:
+                return original([sys.executable, "-c", f"print({str(self.go_module_cache)!r})"], **kwargs)
+            if name == "go" and actual[1:4] == ["list", "-deps", "-json=Standard,Module,Error"]:
+                self.assertIn(actual[4:], (["-tags=halo2,redpallas", "./cmd/svoted"], ["./cmd/voting-config"]))
+                sdk = Path(arguments[3])
+                data = self.go_dependency_metadata if self.go_dependency_metadata is not None else "\n".join(
+                    json.dumps(package, indent=2) for package in (
+                        {"Standard":True, "Dir":str(self.go_root/"src")},
+                        {"Module":{"Dir":str(sdk), "Main":True}},
+                        {"Module":{"Dir":str(self.go_dependency)}}))
                 return original([sys.executable, "-c", f"print({data!r})"], **kwargs)
             if actual[:1] == ["/usr/bin/which"] and actual[1] in {"cc", "ar"}:
                 tool_name = "path_ar" if actual[1] == "ar" else "cc"
@@ -252,6 +268,52 @@ class VotingBuildTests(unittest.TestCase):
             self.assertEqual(first["cache_inputs"][field], second["cache_inputs"][field])
         self.assertNotEqual(first["cache_key"], second["cache_key"])
         self.assertEqual(self.make_calls, 2)
+
+    def test_go_dependency_bytes_invalidate_without_lock_config_or_environment_changes(self):
+        _, first = self.build()
+        (self.go_dependency/"dependency.go").write_text("patched Go dependency source")
+        _, second = self.build()
+        for field in ("configuration_sha256", "environment_sha256", "archives_sha256", "tool_versions"):
+            self.assertEqual(first["cache_inputs"][field], second["cache_inputs"][field])
+        self.assertNotEqual(first["cache_key"], second["cache_key"])
+        self.assertEqual(self.make_calls, 2)
+
+    def test_go_dependency_mutation_while_sealing_rejects_without_launch(self):
+        close = self.case.close
+        def seal():
+            receipt = close()
+            (self.go_dependency/"dependency.go").write_text("changed Go source after join")
+            return receipt
+        with patch.object(self.case,"close",side_effect=seal), self.assertRaisesRegex(
+                BUILD.VotingBuildError,"Go dependency sources changed"):
+            self.build()
+        self.assertFalse(self.case.accepting_launches)
+
+    def test_go_dependency_inventory_binds_effective_replacement_and_nested_sources(self):
+        metadata = "go: downloading example.org/dependency v1.0.0\n"+json.dumps({"Module":{
+            "Dir":str(self.go_dependency), "Replace":{"Dir":str(self.go_dependency)}}})
+        def command(args):
+            if args[1:] == ["env", "GOMODCACHE"]:
+                return (str(self.go_module_cache),)
+            return (metadata,)
+        def inputs():
+            return BUILD.toolchain_inputs.go_dependency_inputs(command, self.tools["go"], threading.Event(),
+                queries=(("-tags=halo2,redpallas", "./cmd/svoted"),))
+        first = inputs()
+        self.assertEqual(set(first["source_trees_sha256"]), {str(self.go_dependency)})
+        nested = self.go_dependency/"build/generated.go"
+        nested.parent.mkdir()
+        nested.write_text("compiled source even under generated-looking directory")
+        self.assertNotEqual(first, inputs())
+
+    def test_invalid_go_dependency_metadata_cannot_authorize_cache_lookup(self):
+        for payload in ("", "not metadata", json.dumps({"Module":{"Dir":"relative"}}),
+                        json.dumps({"Error":{"Err":"unresolved package"}})):
+            with self.subTest(payload=payload):
+                self.go_dependency_metadata = payload
+                with self.assertRaises(BUILD.toolchain_inputs.ToolInputError):
+                    self.build()
+                self.assertEqual(self.make_calls, 0)
 
     @unittest.skipUnless(sys.platform == "darwin", "default Apple archiver inputs are macOS-only")
     def test_default_archiver_bytes_invalidate_without_compiler_or_environment_changes(self):

@@ -273,6 +273,7 @@ class InputTests(unittest.TestCase):
                 path.chmod(0o700)
         self.sdk_trees = (
             "packages/flutter_tools", "bin/internal", "bin/cache/dart-sdk/lib",
+            "bin/cache/artifacts/material_fonts",
             "bin/cache/artifacts/engine/common/flutter_patched_sdk",
             "bin/cache/artifacts/engine/ios", "bin/cache/artifacts/engine/darwin-x64",
         )
@@ -735,6 +736,18 @@ class InputTests(unittest.TestCase):
                 first = self.inputs(platform=platform)
                 (self.sdk/"bin/cache/artifacts/engine"/other/"artifact").write_text("other engine patched")
                 self.assertEqual(first, self.inputs(platform=platform))
+
+    def test_material_font_bytes_invalidate_both_native_keys_with_unchanged_sdk_versions(self):
+        font = self.sdk/"bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf"
+        font.write_bytes(b"original material font")
+        for platform in ("ios", "macos"):
+            with self.subTest(platform=platform):
+                first = self.inputs(platform=platform)
+                font.write_bytes(platform.encode()+b" repaired material font")
+                second = self.inputs(platform=platform)
+                self.assertEqual(first["flutter"], second["flutter"])
+                self.assertEqual(first["flutter_sdk"]["files_sha256"], second["flutter_sdk"]["files_sha256"])
+                self.assertNotEqual(first, second)
 
     def test_sdk_artifact_tree_does_not_ignore_generated_directory_names(self):
         for name in ("build", "target", ".git", ".dart_tool", ".regtest-logs", "__pycache__"):

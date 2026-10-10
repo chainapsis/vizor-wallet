@@ -268,6 +268,11 @@ def build_voting_artifacts(case, *, sdk_cache, pir_cache, cache_root, jobs=4, ti
                     ("round",sdk/"e2e-tests/Cargo.toml",()),
                     ("pir",pir/"Cargo.toml",("--features","pir-export/cli,nf-server/serve")))}
         compiler = compiler_inputs()
+        def go_dependencies():
+            return toolchain_inputs.go_dependency_inputs(
+                lambda args:command(args, cwd=sdk), tools["sdk"]["go"], cancel,
+                queries=(("-tags=halo2,redpallas", "./cmd/svoted"), ("./cmd/voting-config",)),
+                excluded_roots=(sdk,))
         def configured_inputs():
             return {context:toolchain_inputs.configured_tool_inputs(environment, cargo_configuration_paths, cwd,
                 tool_directories={Path(item["path"]).parent for item in
@@ -283,12 +288,17 @@ def build_voting_artifacts(case, *, sdk_cache, pir_cache, cache_root, jobs=4, ti
             "producer_sha256": tool_records[producer][1], "platform": sys.platform,
             "collector_sha256":tool_records[collector][1], "compiler_inputs":compiler,
             "cargo_dependencies":dependency_inputs(),
+            "go_dependencies":go_dependencies(),
             "configured_tools":configured_inputs(),
             "configuration_sha256": configuration_hashes(),
             "environment_sha256": {name: hashlib.sha256(value.encode()).hexdigest()
                 for name, value in sorted(environment.items())
                 if name not in {"CARGO_TARGET_DIR", "CARGO_BUILD_JOBS", "CGO_LDFLAGS", "GOMAXPROCS"}}}
         def verify_inputs():
+            unchanged = (go_dependencies() == cache_inputs["go_dependencies"] if case.accepting_launches
+                else toolchain_inputs.cargo_dependencies_unchanged(cache_inputs["go_dependencies"], cancel))
+            if not unchanged:
+                raise VotingBuildError("Go dependency sources changed during publication")
             unchanged = (dependency_inputs() == cache_inputs["cargo_dependencies"] if case.accepting_launches
                 else all(toolchain_inputs.cargo_dependencies_unchanged(inputs, cancel)
                          for inputs in cache_inputs["cargo_dependencies"].values()))
