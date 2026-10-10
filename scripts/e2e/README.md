@@ -118,7 +118,8 @@ The builder always passes `--dart-define=VIZOR_E2E_IOS_COHORT=true`, and the
 builder's own source is a cache-key input. Capture does not statically check
 that define in the built app. A wrongly built app is therefore not refused at
 capture: it fails at runtime when the cohort test rejects its case manifest,
-which can take until the case deadline.
+which can take until the case deadline. The engine publishes the VM URL before
+the test's `main()` runs, so the launch deadline does not catch it.
 
 Use the common macOS tooling requirements below plus an installed, available
 iOS Simulator runtime and a device type that it supports. Flutter dependencies
@@ -175,14 +176,29 @@ python3 scripts/e2e/run-suite.py --suite rust-direct --plan \
 Shared artifact producers run one at a time before the case queue. `--build-jobs`
 controls the Cargo job budget; it is not a global Flutter/Xcode CPU limit.
 `--workers` bounds concurrent case owners across engines and fresh repetitions.
-Fresh iOS device preparation (device creation, boot and the one cohort install)
-has a separate maximum of two simultaneous operations within that worker
-budget. Waiting happens before device allocation and does not consume the
-unchanged120-second preparation timeout. The slot is released before backend
-and wallet execution, so already prepared cases still use the global worker
-limit. Failed preparation retains/joins its original owner before releasing
-the slot; unproven retention cancels queued admissions. Reports include
-`ios_preparation_slots` (zero when no iOS scenarios are selected).
+Fresh iOS device work has a separate maximum of two simultaneous operations
+within that worker budget, and each iOS case is admitted to these slots twice.
+The first admission covers device creation, boot and the one cohort install,
+under the unchanged 120-second preparation timeouts. It ends before backend
+start, funding and control setup, which use only the global worker limit. The
+second covers the first app launch until its Dart VM URL appears and ends
+before the Driver starts; a restart's resume launch takes no slot. Waiting for
+either admission happens outside every deadline (phases `ios_admission_wait`
+and `ios_launch_admission_wait`). A case waiting for its second admission keeps
+its backend, front, control and ports, and admission is not first-come,
+first-served.
+
+Every iOS launch, including a restart's resume, must publish its VM URL within
+`--ios-launch-timeout` seconds (default 120, at least 30; the case deadline
+still applies), or the case ends `timed_out` with `failed_phase: execute`.
+Control requests and simctl job observations during that wait keep the case
+deadline, so a stalled simctl call is bounded only by it. Before the helper
+removal, launch to VM URL took 11.6 to 20.7 seconds in run
+`native-suite-7c8b9fc8d7`; recalibrate from `ios_marks_seconds` (`vm_url_ready`
+minus `app_launch_started`). A failed case retains/joins its original owner
+before releasing a held slot; unproven retention cancels queued admissions.
+Reports include `ios_preparation_slots` (zero when no iOS scenarios are
+selected) and, when iOS is selected, `ios_launch_timeout_seconds`.
 The runner records these separate budgets and reports each completed case
 immediately, retaining selected catalog order in the final results. Independent
 wallet/backend/native state and existing assertions remain unchanged. Unproven
@@ -190,7 +206,7 @@ worker retention cancels subsequent case allocation. No CPU/RAM-based automatic
 worker limit or measured general speedup is claimed by this dispatch policy.
 
 ```bash
-python3.11 -B -m unittest scripts/e2e/test_e2e_schedule.py scripts/e2e/test_run_suite.py scripts/e2e/test_native_macos_suite.py
+python3.11 -B -m unittest scripts/e2e/test_e2e_schedule.py scripts/e2e/test_run_suite.py scripts/e2e/test_native_macos_suite.py scripts/e2e/test_native_ios_execution.py
 ```
 
 ## Isolated macOS import and endpoint execution

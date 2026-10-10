@@ -52,6 +52,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--proto-dir", type=Path)
     parser.add_argument("--ios-runtime", help="available CoreSimulator runtime identifier (iOS only)")
     parser.add_argument("--ios-device-type", help="device type supported by that runtime (iOS only)")
+    parser.add_argument("--ios-launch-timeout", type=float, default=None,
+                        help="seconds from each iOS app launch to its Dart VM URL, "
+                             "30 to 3600 (default 120; iOS only)")
     parser.add_argument("--voting-sdk-cache", type=Path,
                         help="Git source cache containing the pinned vote-sdk commit (voting only)")
     parser.add_argument("--voting-pir-cache", type=Path,

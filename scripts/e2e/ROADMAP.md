@@ -225,7 +225,10 @@ and observing inventory and device-directory absence. The helper app and its
 receipts, the in-container support marker, the app's runtime context file and
 the `Info.plist` build stamp are gone. Capture runs one signature verification;
 later continuity checks compare file identities only. Failed cases still retain
-their shut-down device. The iOS catalog has not yet been rerun on this change.
+their shut-down device. The first app launch now takes one of the two
+preparation slots until its VM URL appears, and every launch must publish that
+URL within a 120-second launch deadline. The iOS catalog has not yet been rerun
+on this change.
 
 The [multi-account group (#926)](https://github.com/chainapsis/vizor-wallet/pull/926)
 originally carried a minimum rc7 SQLite backport of upstream

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
+import math
 import os
 import platform
 from pathlib import Path
@@ -25,7 +26,7 @@ from native_case_lifecycle import NativeCaseLifecycle
 from native_macos_build import build_native_macos_cohort
 from native_macos_execution import execute_native_macos_case
 from native_ios_build import build_native_ios_cohort
-from native_ios_execution import IOS_SCENARIOS, execute_native_ios_case
+from native_ios_execution import IOS_LAUNCH_TIMEOUT_SECONDS, IOS_SCENARIOS, execute_native_ios_case
 from native_ios_migration import IOS_MIGRATION_SCENARIOS, derive_ios_migration_addresses, fund_ios_migration
 from native_voting_build import build_voting_artifacts
 from native_rust_execution import RUST_CASES, RUST_PROFILES, execute_native_rust_case
@@ -166,6 +167,12 @@ def validate_options(args, scenarios):
         device_id = getattr(args, "ios_device_type", None)
         if not isinstance(runtime_id, str) or not isinstance(device_id, str):
             raise ValueError("iOS execution requires --ios-runtime and --ios-device-type identifiers")
+        # Each simctl call reserves a five-second cleanup allowance and a launch
+        # makes several before the app starts, so shorter values cannot pass.
+        launch = getattr(args, "ios_launch_timeout", None)
+        if launch is not None and (isinstance(launch, bool) or not isinstance(launch, (int, float))
+                                   or not math.isfinite(launch) or not 30 <= launch <= 3600):
+            raise ValueError("--ios-launch-timeout must be between 30 and 3600 seconds")
         inventory = subprocess.run(["/usr/bin/xcrun", "simctl", "list", "runtimes", "--json"],
             check=True, capture_output=True, text=True, timeout=15)
         matches = [item for item in json.loads(inventory.stdout)["runtimes"]
@@ -187,8 +194,13 @@ def _write_report(path, report):
         output.write("\n")
 
 
+def _ios_launch_timeout(args):
+    value = getattr(args, "ios_launch_timeout", None)
+    return IOS_LAUNCH_TIMEOUT_SECONDS if value is None else value
+
+
 def _acquire_ios_preparation_slot(slots, cancel):
-    """Queue before allocating a device; preparation's120s starts after admission."""
+    """Queue before device preparation or a first launch; deadlines start after admission."""
     while True:
         if cancel.is_set():
             raise runtime.Cancelled()
@@ -239,8 +251,9 @@ def execute_case(root, run_id, worker_id, scenario, *, helper, artifact, source_
             **({"runtime_identifier":args.ios_runtime, "device_type_identifier":args.ios_device_type} if is_ios else {}),
             timeout=120 if is_ios else 60, cancel_event=cancel)
         if preparation_held:
-            # Only fresh device create/boot/cohort install share this budget.
-            # Already prepared cases can execute up to the global worker limit.
+            # Fresh device create/boot/cohort install share this budget; the
+            # first launch takes the second admission below. Backend, funding
+            # and control setup run under the global worker limit only.
             ios_preparation_slots.release()
             preparation_held = False
         result["log"] = str(session.case.workspace.root)
@@ -264,14 +277,27 @@ def execute_case(root, run_id, worker_id, scenario, *, helper, artifact, source_
         begin("front_control")
         session.prepare_zakura_front(dart=dart, source_root=source_root, cancel_event=cancel)
         session.prepare_zakura_control(artifact=artifact)
+        if is_ios and ios_preparation_slots is not None:
+            # Second fresh-device admission: the first launch until its VM URL.
+            # Waiting consumes neither the launch nor the case deadline.
+            begin("ios_launch_admission_wait")
+            _acquire_ios_preparation_slot(ios_preparation_slots, cancel)
+            preparation_held = True
         begin("execute")
         if is_rust:
             result["observation"] = execute_native_rust_case(session, artifact=artifact,
                 scenario=scenario, cancel_event=cancel)
         elif is_ios:
+            def launch_ready():
+                # Idempotent. Failures before the VM URL release in finally,
+                # after the case is retained.
+                nonlocal preparation_held
+                if preparation_held:
+                    ios_preparation_slots.release()
+                    preparation_held = False
             result["observation"] = execute_native_ios_case(session, dart=dart,
                 source_root=source_root, timeout=scenario.timeout_seconds, cancel_event=cancel,
-                timings=ios_marks,
+                timings=ios_marks, launch_timeout=_ios_launch_timeout(args), on_launch_ready=launch_ready,
                 send_recipient=(ios_addresses["send_recipient"]
                     if scenario.id == "flutter.ios.ironwood-pre-migration-send" else None))
         else:
@@ -359,6 +385,8 @@ def run_native_suite(args, catalog, scenarios, selection, *, source_root):
                            "case_slots":min(args.workers, args.repeat * len(scenarios)),
                            "ios_preparation_slots":min(2, args.workers,
                                args.repeat * sum(s.id in IOS_SCENARIOS for s in scenarios))}}
+    if report["resource_budget"]["ios_preparation_slots"]:
+        report["resource_budget"]["ios_launch_timeout_seconds"] = _ios_launch_timeout(args)
     ios_preparation_slots = (threading.BoundedSemaphore(report["resource_budget"]["ios_preparation_slots"])
         if report["resource_budget"]["ios_preparation_slots"] else None)
     try:

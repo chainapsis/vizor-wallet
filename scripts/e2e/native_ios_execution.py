@@ -25,6 +25,10 @@ IOS_SCENARIOS = frozenset({
 IOS_RESTART_SCENARIOS = frozenset({
     "flutter.ios.ironwood-migration-restart", "flutter.ios.ironwood-background-restart",
 })
+# Each app launch must publish its Dart VM URL within this many seconds; the
+# case deadline still applies. Launch-to-VM-URL measured 11.6-20.7 s before
+# the helper removal (run native-suite-7c8b9fc8d7).
+IOS_LAUNCH_TIMEOUT_SECONDS = 120.0
 
 
 class NativeIosExecutionError(runtime.RunnerError):
@@ -38,11 +42,21 @@ def _mark(timings, name):
 
 
 def execute_native_ios_case(session, *, dart, source_root, timeout=600.0, cancel_event=None,
-                            send_recipient=None, timings=None, _phase=None):
+                            send_recipient=None, timings=None,
+                            launch_timeout=IOS_LAUNCH_TIMEOUT_SECONDS, on_launch_ready=None,
+                            _phase=None):
+    """Run one case; on_launch_ready() runs once its first VM URL is seen.
+
+    The callback runs before the Driver starts and never after a failure that
+    precedes the VM URL. A restart calls it for the prepare launch only.
+    """
     if (not isinstance(session, NativeWorkerCase) or not isinstance(session.storage, OwnedIosCaseStorage)
         or session._front is None or session._control is None or session._finished):
         raise NativeIosExecutionError("expected this original prepared iOS worker case")
     runtime._positive_timeout(timeout)
+    runtime._positive_timeout(launch_timeout)
+    if on_launch_ready is not None and not callable(on_launch_ready):
+        raise NativeIosExecutionError("launch readiness callback must be callable")
     root = Path(source_root)
     executable = Path(dart).resolve(strict=True)
     if not root.is_absolute() or root.resolve(strict=True) != root or not os.access(executable, os.X_OK):
@@ -57,7 +71,8 @@ def execute_native_ios_case(session, *, dart, source_root, timeout=600.0, cancel
         # reinstallation, snapshot restore or replacement wallet is involved.
         started = time.monotonic()
         prepare = execute_native_ios_case(session, dart=dart, source_root=root,
-            timeout=timeout, cancel_event=cancel_event, timings=timings, _phase="prepare")
+            timeout=timeout, cancel_event=cancel_event, timings=timings,
+            launch_timeout=launch_timeout, on_launch_ready=on_launch_ready, _phase="prepare")
         def remaining():
             if cancel_event is not None and cancel_event.is_set():
                 raise runtime.Cancelled()
@@ -68,8 +83,10 @@ def execute_native_ios_case(session, *, dart, source_root, timeout=600.0, cancel
         session.storage.stop_app(session.storage._active, timeout=min(30, remaining()))
         remaining()
         session.backend.mine(50)
+        # The resume launch keeps its own launch deadline but no readiness callback.
         resume = execute_native_ios_case(session, dart=dart, source_root=root,
-            timeout=remaining(), cancel_event=cancel_event, timings=timings, _phase="resume")
+            timeout=remaining(), cancel_event=cancel_event, timings=timings,
+            launch_timeout=launch_timeout, _phase="resume")
         if prepare["app_pid"] == resume["app_pid"] or prepare["simulator_udid"] != resume["simulator_udid"]:
             raise NativeIosExecutionError("mobile restart did not preserve its original Simulator with a new app PID")
         return {"scenario_id":manifest["scenario_id"], "namespace":manifest["namespace"],
@@ -102,13 +119,16 @@ def execute_native_ios_case(session, *, dart, source_root, timeout=600.0, cancel
         env={"PATH":"/usr/bin:/bin", "LANG":"en_US.UTF-8"},
         raw_lines=log_lines, max_output_bytes=8*1024*1024)
     app_lines = []
-    remaining = deadline - time.monotonic()
-    if remaining <= 0:
+    if time.monotonic() >= deadline:
         raise NativeIosExecutionError("native iOS integration deadline expired", 124)
     mark_prefix = _phase + "_" if _phase else ""
+    launch_started = time.monotonic()
     _mark(timings, mark_prefix + "app_launch_started")
-    app = session.storage.start_app(timeout=remaining, cancel_event=cancel,
-        raw_lines=app_lines, max_output_bytes=8*1024*1024, phase=_phase,
+    # Starts with the diagnostic mark, so the measured launch-to-VM-URL
+    # interval and this deadline cover the same span.
+    launch_deadline = min(deadline, launch_started + launch_timeout)
+    app = session.storage.start_app(timeout=max(0.001, launch_deadline - time.monotonic()),
+        cancel_event=cancel, raw_lines=app_lines, max_output_bytes=8*1024*1024, phase=_phase,
         send_recipient=send_recipient)
 
     def check():
@@ -153,7 +173,14 @@ def execute_native_ios_case(session, *, dart, source_root, timeout=600.0, cancel
             vm_url = urls[0]
             _mark(timings, mark_prefix + "vm_url_ready")
             break
+        # Checked after parsing, so a URL logged during the last pump counts.
+        if time.monotonic() >= launch_deadline:
+            raise NativeIosExecutionError("iOS app did not publish its VM URL within the launch deadline", 124)
+        # Control requests keep the whole-case budget; only VM-URL readiness
+        # is bounded by the launch deadline.
         session._control.pump(deadline=deadline, cancel_event=cancel)
+    if on_launch_ready is not None:
+        on_launch_ready()
     driver_lines = []
     process = session.case.start_process([str(executable),
         "--packages="+str(root/".dart_tool/package_config.json"), str(driver)],

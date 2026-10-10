@@ -376,6 +376,16 @@ class PreviewTests(unittest.TestCase):
         self.assertEqual(args.ios_device_type, "modeled-device")
         self.assertEqual(selection["values"], ["flutter-ios-full"])
 
+    def test_ios_launch_timeout_is_an_optional_executor_argument(self) -> None:
+        arguments = ("--suite", "flutter-ios-full", "--plan")
+        self.assertIsNone(CLI.parse_args(arguments).ios_launch_timeout)
+        self.assertEqual(CLI.parse_args((*arguments, "--ios-launch-timeout", "90")).ios_launch_timeout, 90.0)
+        # The preview still imports no executor to resolve the default.
+        with patch.dict(sys.modules, {"native_macos_suite":None}):
+            code, preview, error = self.invoke(*arguments, "--ios-launch-timeout", "90")
+        self.assertEqual((code, error), (0, ""))
+        self.assertTrue(preview["runnable"])
+
     def test_explicit_run_passes_the_existing_selection_to_the_executor(self) -> None:
         from types import SimpleNamespace
         from unittest.mock import Mock

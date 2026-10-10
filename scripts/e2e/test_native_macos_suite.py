@@ -214,6 +214,146 @@ class SuiteTests(unittest.TestCase):
         self.assertTrue(slots.acquire(blocking=False))
         slots.release()
 
+    def run_case(self, scenario_id, *, slots=None, cancel=None, retain=None, execute=None):
+        """Drive one modeled case through execute_case; its executor is the given model."""
+        self.args.ios_runtime, self.args.ios_device_type = "model-runtime", "model-device"
+        session = SimpleNamespace(case=SimpleNamespace(workspace=SimpleNamespace(root=self.root)),
+            backend=SimpleNamespace(mine=Mock(), closed=True), close=Mock(),
+            prepare_zakura_backend=Mock(), prepare_zakura_front=Mock(), prepare_zakura_control=Mock())
+        worker = SimpleNamespace(prepare_case=Mock(return_value=session), close=Mock(),
+                                 retain=Mock(side_effect=retain))
+        executor = Mock(side_effect=execute, return_value={"assertions_passed":True})
+        target = "execute_native_ios_case" if scenario_id.startswith("flutter.ios.") else "execute_native_macos_case"
+        with patch.object(SUITE, "prepare_native_worker_lifecycle", return_value=worker), \
+             patch.object(SUITE, target, executor):
+            result = SUITE.execute_case(self.root, "a"*10, 0, self.catalog.scenarios_by_id[scenario_id],
+                helper=self.helper, artifact=self.signer, source_root=self.root, dart=Path("/model/dart"),
+                args=self.args, cancel=cancel or threading.Event(), ios_preparation_slots=slots)
+        return result, executor, worker
+
+    def test_first_ios_launch_holds_a_preparation_slot_until_its_vm_url(self):
+        slots = threading.BoundedSemaphore(1)
+        held = []
+        def execute(session, **kwargs):
+            held.append(not slots.acquire(blocking=False))  # Held by this case.
+            kwargs["on_launch_ready"]()
+            held.append(not slots.acquire(blocking=False))  # Free before the Driver.
+            slots.release()
+            kwargs["on_launch_ready"]()  # A repeated report is a no-op.
+            return {"assertions_passed":True}
+        result, executor, _ = self.run_case("flutter.ios.create-sync", slots=slots, execute=execute)
+        self.assertEqual(result["status"], "passed")
+        self.assertEqual(held, [True, False])
+        self.assertEqual(executor.call_args.kwargs["launch_timeout"], SUITE.IOS_LAUNCH_TIMEOUT_SECONDS)
+        self.assertEqual(list(result["phase_seconds"]), ["ios_admission_wait", "prepare_case", "backend_start",
+            "mine", "funding", "front_control", "ios_launch_admission_wait", "execute", "close"])
+        self.assertTrue(slots.acquire(blocking=False))
+        self.assertFalse(slots.acquire(blocking=False))
+        slots.release()
+
+    def test_configured_launch_timeout_reaches_the_ios_executor(self):
+        self.args.ios_launch_timeout = 45.0
+        result, executor, _ = self.run_case("flutter.ios.create-sync", slots=threading.BoundedSemaphore(1))
+        self.assertEqual(result["status"], "passed")
+        self.assertEqual(executor.call_args.kwargs["launch_timeout"], 45.0)
+
+    def test_launch_deadline_expiry_times_out_execute_and_frees_the_slot_after_retention(self):
+        slots = threading.BoundedSemaphore(1)
+        def retain(**kwargs):
+            self.assertFalse(slots.acquire(blocking=False))  # Still held while retaining.
+        def execute(session, **kwargs):
+            raise SUITE.runtime.RunnerError("iOS app did not publish its VM URL within the launch deadline", 124)
+        result, _, worker = self.run_case("flutter.ios.create-sync", slots=slots, retain=retain, execute=execute)
+        self.assertEqual((result["status"], result["failure_kind"], result["returncode"]), ("timed_out", "timeout", 124))
+        self.assertEqual(result["failed_phase"], "execute")
+        self.assertFalse(result["native_cleanup_proved"])
+        worker.retain.assert_called_once_with(timeout=60)
+        self.assertTrue(slots.acquire(blocking=False))
+        slots.release()
+
+    def test_unproven_launch_retention_holds_the_slot_then_cancels_queued_admissions(self):
+        slots = threading.BoundedSemaphore(1)
+        cancel = threading.Event()
+        def retain(**kwargs):
+            self.assertFalse(slots.acquire(blocking=False))
+            raise RuntimeError("launch writer join unproven")
+        def execute(session, **kwargs):
+            raise SUITE.runtime.RunnerError("case app exited before its owned job was observed")
+        result, _, _ = self.run_case("flutter.ios.create-sync", slots=slots, cancel=cancel,
+                                     retain=retain, execute=execute)
+        self.assertEqual(result["cleanup_errors"], ["launch writer join unproven"])
+        self.assertTrue(cancel.is_set())
+        self.assertTrue(slots.acquire(blocking=False))
+        slots.release()
+
+    def test_driver_failure_after_the_vm_url_does_not_release_the_slot_twice(self):
+        slots = threading.BoundedSemaphore(1)
+        def execute(session, **kwargs):
+            kwargs["on_launch_ready"]()
+            raise SUITE.runtime.RunnerError("original iOS Driver reported failing assertions")
+        result, _, worker = self.run_case("flutter.ios.create-sync", slots=slots, execute=execute)
+        self.assertEqual((result["status"], result["failed_phase"]), ("failed", "execute"))
+        worker.retain.assert_called_once()
+        # A second release would raise from the bounded semaphore in finally.
+        self.assertTrue(slots.acquire(blocking=False))
+        self.assertFalse(slots.acquire(blocking=False))
+        slots.release()
+
+    def test_cancelled_launch_admission_wait_releases_only_the_slot_it_acquired(self):
+        cancel = threading.Event()
+        slots = Mock()
+        attempts = []
+        def acquire(**kwargs):
+            attempts.append(kwargs)
+            if len(attempts) == 1:
+                return True  # Preparation admission.
+            cancel.set()
+            return False  # Still queued for the first launch.
+        slots.acquire.side_effect = acquire
+        result, executor, worker = self.run_case("flutter.ios.create-sync", slots=slots, cancel=cancel)
+        self.assertEqual((result["status"], result["failed_phase"]), ("cancelled", "ios_launch_admission_wait"))
+        executor.assert_not_called()
+        slots.release.assert_called_once_with()
+        worker.retain.assert_called_once()
+
+    def test_macos_case_phases_are_unchanged_by_ios_launch_admission(self):
+        slots = Mock()
+        result, executor, _ = self.run_case("flutter.macos.custom-endpoint-no-fallback", slots=slots)
+        self.assertEqual(result["status"], "passed")
+        self.assertEqual(list(result["phase_seconds"]), ["prepare_case", "backend_start", "mine",
+            "funding", "front_control", "execute", "close"])
+        self.assertNotIn("launch_timeout", executor.call_args.kwargs)
+        slots.acquire.assert_not_called()
+        slots.release.assert_not_called()
+
+    def test_ios_launch_timeout_is_validated_only_when_ios_is_selected(self):
+        ios = (self.catalog.scenarios_by_id["flutter.ios.import-sync"],)
+        self.args.ios_runtime, self.args.ios_device_type = "model-runtime", "model-device"
+        with patch.object(SUITE.sys,"platform","darwin"), \
+             patch.object(SUITE.subprocess,"run",side_effect=self.git):
+            for value in (0, -1.0, 5, 29.9, float("nan"), float("inf"), 3601, True, "60"):
+                self.args.ios_launch_timeout = value
+                with self.subTest(value=value):
+                    with self.assertRaisesRegex(ValueError, "ios-launch-timeout"):
+                        SUITE.validate_options(self.args, ios)
+                    SUITE.validate_options(self.args, self.scenarios)
+            for value in (None, 30, 120, 3600):
+                self.args.ios_launch_timeout = value
+                SUITE.validate_options(self.args, ios)
+        self.assertFalse((self.root/".regtest-logs").exists())
+
+    def test_ios_summary_reports_its_launch_timeout(self):
+        self.args.workers, self.args.repeat = 2, 1
+        self.args.ios_runtime, self.args.ios_device_type = "model-runtime", "model-device"
+        self.scenarios = (self.catalog.scenarios_by_id["flutter.ios.import-sync"],)
+        self.execute = lambda root, run_id, index, case, **kwargs: {"scenario_id":case.id,"status":"passed"}
+        _, summary, _, _ = self.invoke()
+        self.assertEqual(summary["resource_budget"]["ios_launch_timeout_seconds"], SUITE.IOS_LAUNCH_TIMEOUT_SECONDS)
+        self.args.ios_launch_timeout = 90.0
+        _, summary, _, _ = self.invoke()
+        self.assertEqual(summary["resource_budget"], {"artifact_producer_slots":1, "cargo_jobs":4,
+            "case_slots":1, "ios_preparation_slots":1, "ios_launch_timeout_seconds":90.0})
+
     def test_invalid_timing_input_is_rejected_before_resources_or_builds(self):
         self.args.timing_reports = [self.root/"missing.json"]
         with patch.object(SUITE.sys,"platform","darwin"):
