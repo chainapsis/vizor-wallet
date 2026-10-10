@@ -932,6 +932,87 @@ fn bump_policy_generation(path: &str) {
 /// revision of the shard retires the acknowledged one: only a trusted
 /// settlement reconciles it, and once that is acknowledged, no later batch
 /// lists it again.
+/// A quarantine stays with the account whose evidence it covers. Every
+/// source id hashes the account's companion binding, so an account added
+/// after another account's sources were quarantined recovers from sources of
+/// its own: its batch settles, and nothing reports it quarantined.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_quarantine_never_reaches_an_account_added_later() {
+    let wallet = main_wallet(1);
+    let first = wallet.accounts[0].1;
+    let path = wallet.path.clone();
+    let _mode = test_mode::set(&path, TransparentLedgerMode::PrivateRequired);
+    let mut db = open_wallet_db_with_timeout(&path, MAIN, SYNC_DB_BUSY_TIMEOUT).unwrap();
+    db.apply_transparent_policy(TransparentLedgerMode::PrivateRequired)
+        .unwrap();
+    let map = Arc::new(Mutex::new(empty_filter_map(BIRTHDAY - 100, 0)));
+    let _seam = test_transport::set(&path, empty_filter_service(map.clone()));
+    let source = TransparentPirSource::new(&path, MAIN);
+    let settle_trusted = |account| {
+        let watch = watched_by(&wallet, account);
+        let source = &source;
+        let path = path.clone();
+        async move {
+            assert_eq!(
+                source.recover(request(account, &watch, &|| false)).await,
+                Ok(COMPLETE)
+            );
+            let mut db = open_wallet_db_with_timeout(&path, MAIN, SYNC_DB_BUSY_TIMEOUT).unwrap();
+            settled(
+                source
+                    .apply(account, &mut db, Trust::Trusted, &|| false)
+                    .await,
+            )
+        }
+    };
+    let quarantined = |db: &WalletDatabase, account| {
+        db.transparent_ledger_snapshot(account, crate::wallet::confirmations_policy())
+            .unwrap()
+            .blockers
+            .contains(&RecoveryBlocker::Quarantined)
+    };
+    assert!(matches!(
+        settle_trusted(first).await,
+        Settled::Acknowledged(_)
+    ));
+
+    // An integrity rejection quarantines every source the first account's
+    // evidence came from, and the account.
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    conn.execute_batch(&format!(
+        "INSERT INTO tpir_quarantined_sources (source)
+             SELECT DISTINCT source FROM tpir_revisions;
+         INSERT INTO tpir_quarantined_accounts (account_id)
+             SELECT id FROM accounts WHERE uuid = X'{}';",
+        hex::encode(first.expose_uuid().as_bytes())
+    ))
+    .unwrap();
+    assert!(quarantined(&db, first));
+
+    // An account added afterwards.
+    let seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
+    let (later, _) =
+        keys::add_account(&path, MAIN, "later", &seed, Some(u64::from(BIRTHDAY))).unwrap();
+    scan(&path, BIRTHDAY, BIRTHDAY, TOP, 0);
+    let later = keys::parse_account_uuid(&later).unwrap();
+    db.apply_transparent_policy(TransparentLedgerMode::PrivateRequired)
+        .unwrap();
+
+    let Settled::Acknowledged(stats) = settle_trusted(later).await else {
+        panic!("the later account's batch settles");
+    };
+    assert!(stats.applied > 0);
+    assert!(!quarantined(&db, later));
+    // The first account stays refused.
+    assert_eq!(
+        settle_trusted(first).await,
+        Settled::Refused {
+            applied: 0,
+            action: ApplyAction::Skip,
+        }
+    );
+}
+
 /// Cancellation stops a settlement between its wallet writes: what applied
 /// stays, nothing is acknowledged, and the next pass replays the batch and
 /// settles it.
