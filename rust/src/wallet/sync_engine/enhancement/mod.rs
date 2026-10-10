@@ -39,13 +39,20 @@ mod transport;
 pub(super) const DEFAULT_MAINNET_ENDPOINT: &str = "https://enhance-pir.valargroup.dev";
 
 pub(super) use auxiliary::transparent_history::store_address_transaction;
+pub(super) use payload::public::decode_enhancement_payload;
 pub(super) use payload::{phase, queue_stored_transactions};
 #[cfg(test)]
 pub(crate) use policy::test_mode;
 pub(crate) use policy::{
-    transparent_ledger_mode, transparent_ledger_mode_for, EnhancementPolicy,
+    may_raise, select_transparent_mode, selected_transparent_mode, selects_private_recovery,
+    set_preference_confirmed, transparent_ledger_mode_for, EnhancementPolicy,
     PublicTransparentLookups,
 };
+#[cfg(test)]
+pub(crate) use transport::test_log;
+pub(super) use transport::RoutedExchange;
+#[cfg(test)]
+pub(super) use transport::{response, ObservedRequest, RequestObserver, RoutePolicy};
 
 use std::collections::HashSet;
 use tonic::transport::Channel;
@@ -114,7 +121,7 @@ impl EnhancementSession {
         self.policy.configure_db(db);
         // Captured once per checkpoint; the gate re-checks the durable
         // generation before every public request and completing commit.
-        let gate = TransparentLookupGate::for_wallet(
+        let gate = TransparentLookupGate::for_sync(
             self.policy.public_transparent_lookups(db)?,
             &self.db_path,
             self.network,
@@ -184,7 +191,7 @@ impl EnhancementSession {
         should_exit: &impl Fn() -> bool,
     ) -> Result<bool, SyncError> {
         self.policy.configure_db(db);
-        let gate = TransparentLookupGate::for_wallet(
+        let gate = TransparentLookupGate::for_sync(
             self.policy.public_transparent_lookups(db)?,
             &self.db_path,
             self.network,

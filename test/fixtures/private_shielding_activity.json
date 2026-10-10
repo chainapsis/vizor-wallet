@@ -1,0 +1,56 @@
+[
+  {
+    "transaction": {
+      "txKind": "shielded",
+      "displayAmount": 180000,
+      "displayPool": "shielded",
+      "accountBalanceDelta": -20000,
+      "fee": 0,
+      "feeState": "Unknown",
+      "detailsComplete": true,
+      "provisional": false,
+      "isTransparent": false,
+      "expiredUnmined": false,
+      "amountIncludesFee": false
+    },
+    "detail": {
+      "txKind": "shielded",
+      "memo": null,
+      "detailsComplete": true,
+      "provisional": false,
+      "outputs": [
+        {
+          "amountZatoshi": 180000,
+          "pool": "ironwood"
+        }
+      ]
+    }
+  },
+  {
+    "transaction": {
+      "txKind": "shielded",
+      "displayAmount": 400000,
+      "displayPool": "shielded",
+      "accountBalanceDelta": -20000,
+      "fee": 0,
+      "feeState": "Unknown",
+      "detailsComplete": true,
+      "provisional": false,
+      "isTransparent": false,
+      "expiredUnmined": false,
+      "amountIncludesFee": false
+    },
+    "detail": {
+      "txKind": "shielded",
+      "memo": null,
+      "detailsComplete": true,
+      "provisional": false,
+      "outputs": [
+        {
+          "amountZatoshi": 400000,
+          "pool": "ironwood"
+        }
+      ]
+    }
+  }
+]

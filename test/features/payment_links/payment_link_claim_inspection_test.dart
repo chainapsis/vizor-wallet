@@ -714,6 +714,7 @@ rust_sync.TransactionInfo _transaction({
     displayAmount: BigInt.one,
     displayPool: 'shielded',
     createdTime: BigInt.zero,
+    amountIncludesFee: false,
   );
 }
 
@@ -907,6 +908,7 @@ class _InspectRustApi implements RustLibApi {
   }) async => rust_sync.WalletBalance(
     transparentAuthority: rust_sync.TransparentBalanceAuthority.current,
     availability: rust_sync.WalletBalanceAvailability.available,
+    transparentPrivate: false,
     transparent: BigInt.zero,
     sapling: BigInt.zero,
     orchard: BigInt.zero,

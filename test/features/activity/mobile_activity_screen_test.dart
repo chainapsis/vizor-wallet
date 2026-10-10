@@ -62,18 +62,26 @@ rust_sync.TransactionInfo _tx({
   bool expiredUnmined = false,
   BigInt? displayAmount,
   String displayPool = 'shielded',
+  BigInt? fee,
+  bool amountIncludesFee = false,
+  int accountBalanceDelta = 0,
+  bool isTransparent = false,
+  bool? provisional,
 }) {
   return rust_sync.TransactionInfo(
-    detailsComplete: true,
-    feeState: rust_sync.TransactionFeeState.known,
-    provisional: false,
     txidHex: txidHex,
     minedHeight: minedHeight ?? BigInt.one,
     expiredUnmined: expiredUnmined,
-    accountBalanceDelta: 0,
-    fee: BigInt.zero,
+    accountBalanceDelta: accountBalanceDelta,
+    fee: fee ?? BigInt.zero,
+    feeState: fee == null
+        ? rust_sync.TransactionFeeState.notApplicable
+        : rust_sync.TransactionFeeState.known,
+    detailsComplete: !amountIncludesFee,
+    provisional: provisional ?? amountIncludesFee,
+    amountIncludesFee: amountIncludesFee,
     blockTime: blockTime,
-    isTransparent: false,
+    isTransparent: isTransparent,
     txKind: kind,
     displayAmount: displayAmount ?? BigInt.from(100000000),
     displayPool: displayPool,
@@ -483,6 +491,47 @@ void main() {
     expect(find.text('Sending...'), findsNothing);
     expect(find.text('Sent'), findsNothing);
     expect(find.text('Transparent'), findsNothing);
+  });
+
+  testWidgets('a fee-only entry reads as its network fee', (tester) async {
+    final blockTime = BigInt.from(
+      DateTime.now().millisecondsSinceEpoch ~/ 1000 - 60,
+    );
+    await tester.pumpWidget(
+      _app(
+        (_) async => [
+          // An established transparent self-transfer: the whole change is its fee.
+          _tx(
+            txidHex: 'aa',
+            blockTime: blockTime,
+            kind: 'sent',
+            displayPool: 'transparent',
+            isTransparent: true,
+            provisional: false,
+            accountBalanceDelta: -65000,
+            displayAmount: BigInt.from(65000),
+            fee: BigInt.from(65000),
+            amountIncludesFee: true,
+          ),
+          // A net change that includes the fee keeps its sent row.
+          _tx(
+            txidHex: 'bb',
+            blockTime: blockTime,
+            kind: 'sent',
+            displayPool: 'unknown',
+            displayAmount: BigInt.from(70000000),
+            fee: BigInt.from(10000),
+            amountIncludesFee: true,
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Net change'), findsNWidgets(2));
+    expect(find.text('-0.00065 ZEC'), findsOneWidget);
+    expect(find.text('Sent'), findsNothing);
+    expect(find.text('-0.7 ZEC'), findsOneWidget);
   });
 
   testWidgets('shows the empty state when history is empty', (tester) async {

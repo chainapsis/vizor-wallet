@@ -17,6 +17,8 @@ import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import 'network_privacy_control.dart';
 import 'enhance_pir_privacy_control.dart';
+import 'private_queries_turn_off.dart';
+import 'transparent_opt_out_action.dart';
 
 class CustomEndpointSettingsPanel extends ConsumerStatefulWidget {
   const CustomEndpointSettingsPanel({
@@ -59,7 +61,7 @@ class _CustomEndpointSettingsPanelState
 
   bool _canUpdate(RpcEndpointConfig current) {
     if (_isSubmitting ||
-        ref.read(enhancePirTransitionProvider) == 'Changing setting…') {
+        ref.read(enhancePirTransitionProvider) == kEnhancePirChangingMessage) {
       return false;
     }
     try {
@@ -131,7 +133,7 @@ class _CustomEndpointSettingsPanelState
     final available = ref.watch(enhancePirAvailableProvider);
     final enabled = ref.watch(enhancePirProvider);
     final transition = ref.watch(enhancePirTransitionProvider);
-    final changingRecovery = transition == 'Changing setting…';
+    final changingRecovery = transition == kEnhancePirChangingMessage;
 
     return DecoratedBox(
       key: const ValueKey('network_settings_panel_surface'),
@@ -168,12 +170,16 @@ class _CustomEndpointSettingsPanelState
                           onToggle: changingRecovery || _isSubmitting
                               ? null
                               : () => unawaited(
-                                  ref
-                                      .read(enhancePirProvider.notifier)
-                                      .toggle(),
+                                  togglePrivateQueries(context, ref),
                                 ),
                         ),
                       ],
+                      // Not gated on availability: see
+                      // [TransparentOptOutAction].
+                      TransparentOptOutAction(
+                        keyPrefix: 'network_settings',
+                        showTransition: !available,
+                      ),
                       const SizedBox(height: AppSpacing.md),
                       CurrentEndpointText(
                         current: current,

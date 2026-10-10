@@ -295,11 +295,14 @@ migration recovery runs before retiring a run. The raw `GetAddressUtxos`,
 `GetTaddressTxids`, and `GetTransaction` helpers are private to `lwd`, so a
 lane cannot reach them any other way; the public status source is wrapped by
 `status::lightwalletd_source`. Fee enrichment and migration stop send no
-transaction identifiers, so they need no gate. The iOS FFI
-`zcash_lightwalletd_observe_transaction` has no wallet context and stays out of
-scope: gating it needs wallet context across the C ABI and Swift. Production
-keeps `Public` authority throughout preparation, so it cannot disclose under a
-private policy yet, but it is a blocker for production private activation.
+transaction identifiers, so they need no gate. When the gate withholds
+software account discovery, discovery asks the transparent PIR service instead
+(see "Import account discovery" below) and sends lightwalletd nothing. The iOS FFI
+`zcash_lightwalletd_observe_transaction` takes the wallet's path and network:
+it opens the wallet read-only, honors a durable `PrivateRequired`, and returns
+`STATUS_RESULT_UNSUPPORTED` without sending anything when lookups are withheld
+or the transaction's status work is private. An unreadable wallet is
+`STATUS_RESULT_INCONCLUSIVE`. Otherwise its request goes through the gate.
 
 A lane captures `EnhancementPolicy::public_transparent_lookups` once: the
 stricter of the captured mode and the policy durably applied to the wallet,
@@ -332,68 +335,181 @@ lane never regains the generation it captured.
 
 Per-RPC checks narrow the check-to-dispatch window but cannot close it alone: a
 transition could commit between a check and its request, and a disclosure
-cannot be undone. The in-process **policy fence** closes it. Every dispatch
-holds a shared lease from its check until its request has been sent, and
-`apply_transparent_policy_fenced`, the only way this build applies a
-transparent policy, takes the exclusive side. A waiting transition blocks new
-leases at once, waits up to its drain deadline for in-flight requests, and only
-then commits; if they do not drain in time it applies nothing and fails, and
-the caller retries. Lookups queued behind it resume under the new generation
+cannot be undone. The in-process **policy fence** closes it. Each wallet
+database has its own fence, so a transition on one wallet never waits for
+another's lookups. A fence is keyed by the database's file name under its
+canonical directory, so every spelling of one wallet's path shares it. Every
+dispatch holds a shared lease from its check until its request has been handed
+to the transport, and `apply_transparent_policy_fenced_if`, the only way this build applies a
+transparent policy, takes the exclusive side. A gate that knows its transport
+(the sync's registered transport for its lanes, or the one a one-off lookup
+opened) sends through `DispatchSignalService` and releases the lease once the
+request body has been handed to the connection, never waiting for a slow
+response; a gate without one holds it until the call returns. A waiting
+transition blocks new leases at once, waits up to its drain deadline for
+in-flight requests to be sent, and takes the wallet write lock only within the
+same deadline; if either does not come in time it applies nothing and fails,
+and the caller retries. A lookup that cannot get a lease within 45 s is
+withheld. Lookups queued behind a transition resume under the new generation
 and are withheld. No wallet-libraries hook is needed: the fence lives beside
 the only code that sends lookups. A transition made by another process is
 outside the fence, and the per-RPC check still bounds it to requests already in
-flight. Production never applies a transition yet; fixture activation does.
+flight. Generation checks at store time are unchanged. The private queries setting and the coordinator's raise are the only
+transitions (`transparent_ledger/policy.rs`). Both decide under the fence, so
+neither acts on a policy the other is about to change: a toggle-off that lands
+while a raise waits wins, and one that waits behind a raise lowers what it
+applied. A raise that cannot apply checks first and never takes the fence.
 
-- This build's Public handle cannot read a wallet whose durable policy is
-  `PrivateRequired`; the gate then returns an error, which also sends nothing.
-- Production always captures `Public`. `PrivateRequired` is reachable only in
-  tests (`EnhancementPolicy::with_transparent_mode`) until private transparent
-  recovery exists.
+The setting transition pauses recovery and saves an explicit opt-out before
+lowering the durable policy. A failed preference save leaves the wallet's
+private policy untouched.
+If lowering fails, it changes no durable policy, and the saved setting stays
+off: it is never rolled back. The durable private policy still governs every
+transparent lookup, so none goes out publicly. Native work is told the
+setting is off, but the iOS status observation, like every other public
+lookup, reads the durable policy and withholds the request. The persisted
+opt-out retries the lowering at the next launch, and Settings offers to finish
+it now. A crash between the preference save and lowering leaves the same
+state: a stricter wallet policy than the saved setting, kept until the retried
+opt-out lowers it.
+
+Lowering also forgets what private recovery alone contributed
+(`forget_private_ledger`, over the library's `forget_transparent_ledger`).
+Leaving `PrivateRequired` only revokes private authority: a ledger-only
+receive would keep counting as public funds, and a ledger-only spend would keep
+hiding a real output in both modes. The forget removes every output, spend and
+transaction only a publication reported, with the recovery state that would
+project them again, and public discovery rebuilds the transparent view. Every
+`.tpir` companion is deleted first, and nothing is forgotten unless that
+succeeded, so a companion never outlives the facts it records as held. A forget
+that cannot finish (a companion still in use, an unwritable directory) leaves
+the policy public and is retried at every sync start while the wallet is
+public; a wallet without ledger facts is only read. A forget also drops the
+wallet's in-memory holds and stall counts, which name facts or companions it
+removed, so turning private queries back on retries every account at once.
+
+Turning private queries off, or finishing an opt-out, asks first whenever it
+would send transparent lookups to the server: the wallet still reads its
+transparent funds privately, an opt-out is unfinished, or private queries are
+on for an existing wallet, which recovers its transparent funds privately on
+mainnet. The dialog (a sheet on mobile) names what the
+server then receives: every transparent address of every account and the IDs
+of transactions private recovery found, linkable to one another and, without
+Tor, to the device's IP address. Cancelling changes nothing.
+
+- Every read resolves the handle's mode against the durable policy, so a
+  durable `PrivateRequired` withholds lookups in every build without being
+  written onto the handle. A handle opened before the transition reads it too:
+  the gate withholds the lookup and sends nothing.
+- Private queries on supported mainnet captures `PrivateRequired` in every
+  build. Private queries off or an unsupported network captures `Public`.
 
 ## Private transparent recovery and activation
 
-Phase 3 adds a candidate-recovery coordinator beside this module,
-`sync_engine/transparent_ledger.rs`. It is a separate discovery loop from
-enhancement: it shares only the captured `EnhancementPolicy` and the sync
-lifetime. Candidate state lives in wallet-libraries' `tpir_*` tables, and
-balances, input selection, locks, address allocation and history ignore it.
+The recovery coordinator, `sync_engine/transparent_ledger.rs`, is a discovery
+loop beside this module: it shares only the captured `EnhancementPolicy` and
+the sync lifetime. Candidate state lives in wallet-libraries' `tpir_*` tables,
+and balances, input selection, locks, address allocation and history ignore it
+until an account is promoted.
 
-- **Source boundary.** `RecoverySource::recover` takes one account's watched
-  addresses, open pages and target, plus `SourceBounds` (queries, bytes, pages
-  and time). It returns a normalized `SourceResult`: a revision, an anchor,
-  receives, spends, checked and unsupported ranges, and opened and completed
-  pages. `DisabledSource` always answers `Unavailable`. The deterministic
-  `FixtureSource` is test-only, and its revisions carry the `vizor-fixture`
-  source id. No source falls back to lightwalletd, and the coordinator takes no
-  lightwalletd client.
-- **Passes.** For each account the coordinator reads `transparent_watch_set`,
-  calls the source with no database lock held, and applies the answer through
-  `apply_transparent_ledger_commit` under the wallet write lock. It repeats at
-  the same target while the window grows, the watch set changes, or open pages
-  make progress. The cap is 8 passes per account.
-  - A stale commit (reorg, deleted account, superseded revision, or a changed
-    policy generation) is retried up to three times from a fresh watch set.
-  - A newer provisional revision retracts the older revision's observations.
-    Events survive only when another independent or sealed observation supports
-    them; a complete replacement can therefore withdraw receives and spends.
-  - An integrity rejection stops the run: the source's session is no longer
-    trusted.
-  - A malformed commit is logged and skips the account.
-  - A timeout or source failure leaves the account for a later run.
-  - Cancellation and mode changes stop between passes. Applied commits and
-    open pages stay durable for the next run.
-- **Scheduling.** `run_sync_impl` calls the coordinator once per completed
-  sync, at the fully scanned height, before locks are reconciled. Its errors are
-  logged and never fail the sync. It has its own progress, retries and
-  completion, and it does not touch UTXO refresh, the `.receive.redb` cache, or
-  the shielded checkpoints; neither of those becomes private evidence.
-- **Production is unchanged.** Production captures `Public` and passes
-  `DisabledSource`, so the coordinator returns `NotEnabled` before any read. A
-  private handle on a durably `Public` wallet does not start either.
-- **Diagnostics.** Logs carry only outcome counts. Rejection payloads, which
-  name addresses and outpoints, are never logged. Candidate amounts from
-  `transparent_candidate_recovery` are unverified: they can be above or below
-  the real balance.
+- **Source boundary.** A `RecoverySource` answers one pass over one account
+  (`SourceRequest`: the account, its watch set and an exit signal) with a
+  `SourceBatch`, and says whether its commits come from a `trusted()` origin.
+  The transparent PIR source is the only production source (see below). The
+  deterministic `FixtureSource` is test-only; its revisions carry the
+  `vizor-fixture` source id, and `trust()` makes it trusted. No source falls
+  back to lightwalletd, and the coordinator takes no lightwalletd client.
+- **Batch states.** Only `Ready { next, behind_by }` has commits, which the
+  source keeps, opaque, until it settles the batch. `Pending { next }` (the publication is behind what the source
+  recorded) and `Withdrawn(cause)` (the publication contradicts it:
+  `Regression`, `Equivocation`, `ChangedSealed` or `Retired`) apply nothing and
+  are never acknowledged. A source fails with `Unavailable`, which stops the
+  run, `Failed`, which skips the account, or `Cancelled`; none carries detail.
+- **Trusted qualification (D1).** The source settles a `Ready` batch
+  (`RecoverySource::apply`): the transparent PIR source hands it to the
+  adapter's `apply_and_acknowledge`, which applies the commits in order, each
+  in its own library transaction, then acknowledges the batch. The wallet
+  write lock is held across that whole call, as the adapter asks, so a
+  foreground wallet write waits for the batch being settled; no lock is held
+  across a source call or any network request. Under `PrivateRequired`, on the
+  handle and durably, a trusted source's commits are applied with
+  `Trust::Trusted` (`qualify_and_apply_transparent_ledger_commit`), which
+  qualifies the exact revision, supersedes its source's older provisional
+  evidence, and applies the facts in one transaction. This is the
+  trusted-indexer decision: the wallet trusts the configured indexer and does
+  not verify the publication; nothing here is publication verification. A superseded revision's events
+  survive only where another independent or sealed observation supports
+  them, so a complete replacement can withdraw receives and spends.
+  Untrusted sources only apply (`apply_transparent_ledger_commit`) and never
+  qualify.
+- **Acknowledgment and withdrawals.** A batch is acknowledged only after every
+  commit's wallet transaction committed; the companion and the wallet are
+  separate databases and are never treated as atomic. A batch can resolve
+  provisional revisions that an earlier batch exported, each succeeded by one
+  of its commits. Only trusted commits withdraw their evidence, so observed
+  settlement refuses such a batch before applying anything; nothing is
+  acknowledged, the account is held, and the source reports the retirements
+  again until a trusted run reconciles them. A stale commit, a policy change, a
+  failed write or acknowledgment, or a crash leaves the batch unacknowledged
+  with its committed prefix counted; the next pass replays it, and the replay
+  changes nothing already applied. A withdrawn publication holds the account
+  too, and both show as `Stopped(Withdrawn)`.
+- **Rejections.** A stale commit (reorg, deleted account, superseded revision,
+  or a changed policy generation) is retried up to three times from a fresh
+  watch set, without acknowledgment. An integrity rejection, which
+  quarantines in the same transaction, a refusal (quarantined source or
+  account, or an unqualified revision for an active account), or a malformed
+  commit skips the account. `TransparentRecoveryNotEnabled` stops the run.
+  Commits applied before a rejection stay durable, and replaying them changes
+  nothing. Cancellation stops between passes and discards an answer that
+  raced it, and stops a settlement between its commits; applied commits and
+  open pages stay durable for the next run.
+- **Settlement and the write lock.** A settlement takes the wallet write lock
+  for one commit at a time, then for the acknowledgment, through the
+  library's gated settlement. Between commits it steps aside, for at most a
+  quarter second, while another writer waits for the lock, so a send or a
+  hardware broadcast reservation waits about one commit, not the batch. A settlement the run's budget or
+  cancellation stops between commits is not acknowledged, and the next pass
+  replays it.
+- **Continuations and waits.** `next` comes from the adapter's outcome:
+  `Complete`, `More` (pass again at once), `RetryAfter` (10 s behind a lagging
+  publication, 30 s after an overload) and `Stalled`. A further pass also
+  needs a grown window or a changed watch set. One run waits at most 90 s in
+  all; the lag is logged in blocks and the wait in seconds.
+- **Bounds and order.** The active account goes first and the rest follow
+  from a per-wallet rotating cursor. Each account gets at most 8 passes and
+  120 s, and the run 180 s. A source call that ignores its exit signal is
+  abandoned 30 s after the pass deadline.
+- **Holds.** A withdrawal, unreconciled retirements, legacy evidence the
+  complete ledger cannot explain (`LegacyDiscrepancy`), or three stalled runs
+  since the last complete one hold the account for an hour. Holds live in
+  memory, so a restart retries once, and turning private queries off drops
+  them with the facts they were held over. Held and quarantined accounts, and under
+  `PrivateRequired` Ledger accounts, are skipped without a source call. The
+  balance read reports why as the account's stop reason.
+- **Raise and confirmation.** Private queries off captures `Public`, so `run`
+  returns `NotEnabled` before any read. Under a captured `PrivateRequired` it
+  first raises a weaker durable policy behind the policy fence, only while
+  `may_raise` holds: the selection is `PrivateRequired` and the preference was
+  read from storage, rechecked under the fence. An unreadable preference or a
+  concurrent toggle-off raises nothing, and a private handle on a durably
+  `Public` wallet that it may not raise does not start.
+- **Scheduling.** `transparent_followup` runs once per completed foreground
+  sync, after `mark_sync_completed` and the final progress event and before
+  the deferred inactive-account UTXO refresh, so waiting for a publication
+  never delays the sync's result. Background preparation syncs (mode 2) skip
+  it: they hold the global sync guard, and a foreground sync requested
+  meanwhile waits behind them. Unless the run exited or was not enabled, it
+  reports a `FollowupUpdated` event, so the UI re-reads balances and
+  shielding state without counting a second completion. Its errors are
+  logged and never fail the sync. It does not touch UTXO refresh, the
+  `.receive.redb` cache, or the shielded checkpoints. While public lookups
+  are withheld, Ledger discovery counts as ready, so a paused Ledger account
+  never holds back a sync.
+- **Diagnostics.** Logs carry variant, cause and blocker names, counts and
+  lag. Rejection payloads, which name addresses and outpoints, are never
+  logged. Candidate amounts from `transparent_candidate_recovery` are
+  unverified: they can be above or below the real balance.
 
 ### Activation (Phase 4)
 
@@ -402,29 +518,44 @@ finished to `promote_transparent_account`, one account at a time. The library
 rechecks everything in one transaction: the account is complete through a
 target equal to the chain tip, not quarantined, every contributing revision is
 qualified, and legacy public evidence agrees. A blocked promotion changes
-nothing, logs only its blocker count, and is retried after a later run; one
-account's blockers never hold back another. Nothing in this build can qualify
-a revision. Production has no enabled recovery source; empty required intervals
-can promote without granting funds, while nonempty intervals need qualification. Tests qualify fixture revisions
-through the library's `test-dependencies` hook
-(`FixtureSource::qualified_in`).
+nothing, logs only its blocker kinds, and is retried after a later run,
+except that `LegacyDiscrepancy` holds the account for an hour; one account's
+blockers never hold back another. Revisions are qualified only by the trusted
+operation as their commits apply, so only a trusted source under
+`PrivateRequired` can promote an account; empty required intervals can promote
+without granting funds. Tests use the trusted fixture, not the library's
+`test-dependencies` hook.
 
 - **Active accounts.** Their later commits project into the wallet's outputs
-  and spends in the same transaction. A commit refused because the source is
-  quarantined stops the run; one refused because the account is quarantined,
-  or because an active account's revision is unqualified, skips that account.
+  and spends in the same transaction, and need a qualified revision. A refused
+  commit skips the account.
 - **Balances.** `get_wallet_balances` reads the durable policy, wallet summary,
   and each account's `transparent_ledger_snapshot` in one SQLite transaction.
   A reopened Public handle on a durable PrivateRequired wallet is configured
   privately for this read only; it never changes durable policy or spending
-  configuration. `WalletBalance` reports `Current`, `LastKnown`, or `Unavailable`.
-  Last-known amounts are informational and the spendable fields stay zero.
+  configuration. `WalletBalance` reports `Current`, `LastKnown`, `Unavailable`,
+  or `Stopped`. Last-known amounts are informational and the spendable fields
+  stay zero. An account that recovery will not restore on its own is
+  `Stopped`, with `transparent_stop` saying why: `Quarantined`, `Ledger`, `LegacyDiscrepancy`,
+  `Withdrawn`, `Stalled`, or `NotSelected` for a durably private wallet in a
+  build that does not select private recovery. `transparent_private` reports a
+  durable `PrivateRequired`.
   This composite read bypasses the summary-only cache to prevent mixing generations.
 - **Operations.** Shielding and software proposals use library selectors and
   store authorization. Every hardware submission path (Ledger outbox, Keystone
   full/compact batches, and legacy PCZT) additionally checks transparent inputs
-  through `WalletDb::check_transparent_transaction_inputs` at the current network
-  target before dispatch. An exact stored transaction may retry its own recorded
+  through `WalletDb::check_transparent_transaction_inputs` before dispatch:
+  under `Public` at lightwalletd's tip + 1, under `PrivateRequired` at the
+  wallet's own tip + 1, the only target private authority covers. A block that
+  lands while a device signs therefore does not refuse the signature; the unseen
+  blocks can only have spent an input elsewhere or removed its receive, which
+  the node rejects. Until private recovery covers a block the wallet has
+  scanned, the refusal is `CatchingUp` (every owning account active, unheld and
+  blocked only by coverage or a scan behind the tip): the broadcast waits up to
+  30 s without holding a reservation, then fails with the
+  `hardware_recovery_retryable:` marker, which keeps the signed batch, its input
+  lock and, for Keystone shielding, the signature for a retry. Every other
+  refusal is final. An exact stored transaction may retry its own recorded
   spend; the exception requires full serialized-byte equality and never permits
   a competing live or mined spender.
   A SQLite `BEGIN IMMEDIATE` reservation prevents policy, evidence, and rewind
@@ -469,13 +600,26 @@ history rows, so both describe one database state. Each entry carries:
 - `fee_state`: `Known`, `Unknown`, or `NotApplicable`. The raw fee is no
   longer coalesced to 0, and `fee` is 0 unless the state is `Known`. Receipts
   in Private queries mode show an unknown fee as "Unknown", and a receive
-  shows no fee.
+  shows no fee. An exact whole-transaction fee remains reconstruction
+  evidence: it does not replace an unknown account fee in the receipt, since
+  other funders may have shared it.
+- `amount_includes_fee`: whether the amount is a balance movement retaining
+  the account's fee share rather than an established payment. Activity and
+  receipts label it "Net change". A proven fee-only self-transfer also stays
+  neutral and shows its amount once. An unknown account fee stays "Unknown";
+  no whole fee is subtracted from the amount. The richer whole-fee display
+  and "Network fee" presentation are maintained in a child PR.
 - `details_complete`: whether the recipients, payment amounts, and memos are
   known. A missing recipient row does not mean there was no payment.
 - `provisional`: whether later discovery or enhancement can still change the
-  entry. It is true for provisional classifications or any unsettled pool
-  effect. Local construction can know every payment detail before scanning
-  discovers a receipt to the account's own external shielded address.
+  Activity entry. Unsettled pool effects keep it true. A mined mixed transaction
+  with a library-provided outgoing residual can establish its existing Sent/Received
+  rows while payment classification stays provisional: owned effects must be
+  settled, owned transparent scopes known, and the visible residual must cover
+  owned receipts after excluding internal funding. The receipt retains the
+  transaction-wide provisional classification and incomplete payment details.
+  Local construction can know every payment detail before scanning discovers
+  a receipt to the account's own external shielded address.
 
 Classification follows the facts it has:
 
@@ -491,30 +635,392 @@ Classification follows the facts it has:
   `shielded`. A receipt follows a changed role only when that transaction has
   a single row, so separate self-send legs are not conflated.
 
-While Private queries is enabled, Activity rows mark an incomplete entry
-"Details incomplete", and receipts show a "Details: Incomplete" row and an
+While Private queries is enabled, Activity rows mark an uncertain summary
+"Details incomplete"; established summaries keep their dates even when the
+payment details are missing. Receipts show a "Details: Incomplete" row and an
 "Unknown" fee when necessary. This is temporary integration feedback while
 private history approaches public-history completeness. With Private queries
 disabled, the existing presentation is preserved: no completeness notice and
 the previous placeholder or omitted fee row for an unrecorded fee. History
-refreshes on the sync events that already
-refresh it (`hasNewTx` or `isComplete`); recovery runs before a pass completes,
-so its commits are visible on the next refresh. No history gap starts any
-public lookup.
+refreshes on the sync events that already refresh it (`hasNewTx`,
+completion, or a follow-up update). Private recovery runs after completion is
+reported and then reports a `FollowupUpdated` event, so its commits refresh
+history on that event. No history gap starts any public lookup.
 
-Under `Public` handles, which is all of production, transparent effects count
-as settled, so an entry is provisional only while a shielded pool is not yet
-scanned through its height, or while the account spent in it and its payment
-details are missing.
+Under `Public` handles, with private queries off, transparent effects
+count as settled, so an entry is provisional only while a shielded pool is not
+yet scanned through its height, or while the account spent in it and its
+payment details are missing.
+
+### Qualification
+
+`transparent_ledger/tests/qualification.rs` runs the coordinator through the
+Rust entry points FRB exposes (`get_wallet_balance`,
+`get_shield_transparent_status`, `get_transaction_history`, `propose_send`)
+and the sync lanes, across the whole lifecycle, on regtest wallets scanned by
+writing `blocks` and `scan_queue` rows directly. Recovery uses the trusted
+fixture. Legacy receipts are synthetic v1 transparent transactions stored the
+way public discovery stores them (UTXO refresh plus payload retrieval).
+
+| Scenario | Result |
+| --- | --- |
+| Public → private | Activation shows the public amount as last-known; the first trusted run qualifies, promotes, and restores the same amount, shielding, and one history row. |
+| Unreported legacy UTXO | Promotion stays blocked (`LegacyDiscrepancy`), and the account is held and shows `Stopped(LegacyDiscrepancy)` with its last-known amount. Once the source reports it, the run after the hold promotes. |
+| Observed reuse | Evidence from an untrusted run is reused but unqualified, so promotion refuses. At the same tip, one trusted pass qualifies the same revision and promotes; after the chain advances, a pass covering the new tip does. |
+| Interrupted activation | A run cancelled mid-source-call keeps the account a candidate; after a restart, lookups stay withheld and a later run promotes. |
+| Restart | Private authority survives new handles; a replayed pass changes no production row. |
+| Discovery order and payload replay | Ledger-first and payload-first reach the same balance, history, and rows (one transaction, one output); a second replay changes nothing. |
+| Account add and delete | A rescan pauses the active account until the next pass; the new account is promoted on its own; deleting it leaves the active one current. |
+| Shielded-funded send while incomplete | It is refused only for lack of shielded funds, never as transparent recovery unavailable. |
+| Every lane, before the raise | On a mainnet wallet with public work queued and a Ledger account, with Private queries on but unread, so the durable policy stays `Public` and only each lane's captured policy withholds: under the private policy, Ledger discovery, the UTXO refresh and the deferred refresh, ephemeral checks, the import preview and import discovery (into the wallet and as a first account; discovery goes to the transparent PIR service, which this lane does not reach, and fails), the recovery follow-up with the real source, and the iOS observe ABI; under its transparent mode with public routes, which the live private services would otherwise answer, payload recovery and the status and history checkpoint. None sends lightwalletd a `GetAddressUtxos*`, `GetTaddress*`, or `GetTransaction` request. The follow-up does not raise the wallet, sends the source's service nothing, creates no companion, and reports no follow-up update; the queued work stays durable. |
+| Every lane, after the raise, including the transparent PIR source | On the same wallet, once startup reconcile has raised it: Ledger discovery, the UTXO refresh and the deferred refresh, payload recovery, the status and history checkpoint, and ephemeral checks, each under both a public captured policy and the private transparent mode; import discovery and the import preview; the recovery follow-up with the real source; and the iOS observe ABI. None sends lightwalletd a disclosing request, the queued work stays durable, and the follow-up reports an update. Import discovery asks the transparent PIR service for the map, its schema and the birthday's filter, with no candidate in any path or body, and fails when the filter is refused. The source sends only service routes, on the wallet's route, with no watched script or txid in any path or body. Turning Private queries off then sends `GetAddressUtxos*`: the positive control. |
+
+The upgrade probe (`examples/db_upgrade.rs`, run by
+`scripts/test-db-upgrade.sh`) requires the recovery and activation migrations
+and checks that their thirteen tables are empty after an upgrade.
+`transparent_ledger/tests/live.rs` holds the opt-in live test (below).
+
+## Transparent PIR source
+
+`transparent_ledger/pir.rs` is the production `RecoverySource`: the reference
+adapter `zakura_pir_transparent` over the wallet's routed transport. It is
+trusted, since every commit comes from the configured origin.
+
+- **Enablement.** Every supported mainnet build with Private queries on and
+  the preference read from storage raises a wallet to
+  `PrivateRequired` and runs the source. Off mainnet the source has no origin,
+  and every pass is `Unavailable` without a request.
+- **Endpoint.** `https://transparent-pir.valargroup.dev`. Debug builds honor
+  `VIZOR_TRANSPARENT_PIR_URL`; release builds ignore it, and Dart cannot set
+  it. Each companion binds the source `vizor/transparent-pir/v1`, the
+  account's UUID and the origin, so another origin derives other revision
+  sources.
+- **Companions.** One per account in the library's `CompanionDir` at
+  `{db}.tpir`, which names it `{uuid}-{tag}.sqlite`, where the tag is 16 hex
+  digits of `sha256(origin || 0 || SCHEMA)`. A companion holds the adapter's
+  retrieval cache and revision catalog, never wallet state. It is created on
+  the account's first pass, and losing one costs a re-download: revision
+  identities come from the publication, so a recreated companion derives the
+  ones the wallet holds. Opening one deletes the account's companions for
+  other origins or schemas and those of deleted accounts.
+  Deleting an account removes its companion and SQLite sidecars once the
+  deletion commits; one that removal leaves behind is deleted at the next sync
+  start, in every build, with the companions of any other deleted account.
+  A reset deletes the `.tpir` directory with the database,
+  and a failure keeps the database name for a retry; startup and reset delete
+  `.tpir` directories of no current wallet. On iOS every build excludes the
+  directory from device backups.
+- **Locking.** An open companion holds an operating system lock on its
+  `{uuid}-{tag}.lock` file, so passes, settlements and removals on it are
+  serialized in this process and against any other. A source parks each
+  companion it opened, with its lock, until it is dropped, so a pass and its
+  settlement see the same companion and nothing removes it in between.
+- **Passes.** A pass runs on a thread and runtime of its own, never the
+  sync's blocking pool, over a read-only wallet handle, whose blocks answer the
+  adapter's chain view up to the watch set's target. It stops at cancellation
+  or the 90 s pass deadline, counted from the call, so it ends before the
+  coordinator's backstop. On cancellation the pass gets 2 s to return; one that
+  ignores it (the adapter takes no cancellation between requests) is abandoned,
+  still holding its read-only handle and its companion's lock until it returns,
+  and nothing it returns is read. A pass that raced cancellation is discarded;
+  a dropped call stops its pass at the next request. The sync and mempool
+  runtimes also shut down with a 2 s grace, and `SYNC_RUNNING` is cleared by a
+  guard, so no blocking work can keep the sync, its progress stream and every
+  start queued behind it open until restart. A
+  publication whose set identity changed is retried once on the same
+  companion, which the adapter has reset, keeping its catalog. A pass that
+  failed because the service could not be reached or was not serving (the
+  library's outage: a failed connection or route, a timeout, a 429 or 5xx on
+  the map, a filter or init, or a 429 or non-capacity 5xx on a shard route) is
+  `Unavailable` and ends the whole run instead of failing each account in
+  turn.
+- **Limits per pass.** 10,000 scripts, 1,024 shards, 500,000 events, 256
+  private queries, 96 MiB of private bytes, and 8 MiB per response.
+- **Transport.** `enhancement/transport/pir_http.rs` is the one raw HTTP
+  exchange (`HttpExchange`) both PIR services send through: HTTPS only, Tor
+  when the wallet wants it and the direct-route lease otherwise, no
+  User-Agent, a bound per request (60 s here) and the caller's cancellation.
+  It reads at most the body limits the request names and never retries. The
+  library's `TransparentPirHttp` owns the routes, their log templates and
+  what each status means: a 409 is a stale revision, and capacity is
+  wallet-pir's own `Overloaded::from_http` (a 503 naming a delay, or the
+  edge's 502 or 504), so the adapter's bounded backoff (at most four attempts,
+  two seconds at most between them) and the run's 90 s wait cap apply. A 429
+  is never capacity: the service sends none, so one from an edge in front of
+  it is an outage that ends the run. No filter is memoized. The adapter's dependency graph has no reqwest. Requests
+  use only the service's six routes: the shard map, a shard's filter, init, a
+  revision's manifest, setup segments, and posted queries.
+- **Logs.** One debug line per request, with the method, the route template
+  (for example `POST /v1/shards/{id}/revisions/{rev}/query/pages`), the status
+  and the body length. Pass lines carry the batch state, the outcome and the
+  lag in blocks, and failures a variant name. No log carries an id, digest,
+  address, script, txid, outpoint or body.
+- **Accepted leaks.** The service sees shard ids, which reveal activity
+  ranges; the filter range from the account's birthday to the tip; request
+  counts, sizes and timing; and the network origin when Tor is off.
+  Broadcasting a shield or spend still publishes its transparent outpoints
+  through `SendTransaction`. Turning Private queries off lowers the wallet to
+  `Public` in every build and queues the transactions routed to lightwalletd
+  for public retrieval, so txids learned privately are disclosed at once, and
+  the next sync looks up every transparent address of every account over the
+  sync's shared connection. The toggle asks before it does this.
+- **Limitations.** A hardware spend or shield waits up to 30 s for a pass to
+  cover a newly scanned block, or for a busy wallet database to free its write
+  lock, then stays retryable with its signature; one can still be refused
+  while a publication lags past a run's 90 s wait. A
+  hardware transaction stored after a block landed loses its PCZT recipient and
+  memo details to the fallback store. Software proposals are built and stored
+  under one write lock, which the tip update also takes, so they have no such
+  window. Ledger accounts are `Stopped(Ledger)`. Nothing clears a quarantine,
+  and it covers only the account whose evidence it involves: every source id
+  hashes the account's companion binding, so no other account, including one
+  added later, shares a quarantined source. Turning Private queries off makes
+  the account's transparent funds available again through public lookups, but
+  the quarantine survives the forget, so turning them back on reports
+  `Stopped(Quarantined)` again. Deleting and re-importing the account clears
+  it, because the re-imported account has new sources. The
+  library's `docs/transparent-pir-private-recovery.md`, at the pinned
+  revision, lists the accepted limitations and outstanding release gates.
+- **Import account discovery.** A recovery-phrase import checks the first
+  transparent address of accounts 1 to 20 for history from the rounded
+  birthday. When the transparent policy withholds that lookup, at the start or
+  mid-run, `PrivateAccountDiscovery`
+  (`transparent_ledger/import_discovery.rs`) asks this service about every
+  candidate through the library's `discover_active_addresses`, keeping any
+  account the public probes already found. It downloads every filter from the birthday's shard to the
+  publication's end and confirms each filter match by private retrieval, so a
+  filter false positive never offers an empty account; it stores nothing and
+  opens no companion or wallet. The answer keeps the public batch rule (stop
+  after a batch of accounts with no history). Only a complete answer counts. A
+  pass its query or byte budget stopped keeps what it confirmed, and another
+  pass asks about the rest, so one heavily used address cannot exhaust the
+  check; an outage, a lagging publication, the 300 s deadline or anything else
+  fails the import with a retry message, never a shorter list. Into an
+  existing wallet the message also names the Settings toggle; a first wallet
+  has no Settings yet. The
+  service learns the birthday's shard and which shards matched any candidate,
+  and the recovery of the imported accounts follows at once and can be linked
+  to it. The publication is its own chain view for discovery, which grants no
+  authority: imported accounts recover against the wallet's chain. Off
+  mainnet a withheld discovery still fails as unavailable. The balance preview
+  in the account picker stays unavailable under private queries. A
+  qualification test serves a real publication from wallet-pir's shard server
+  in process and finds used accounts through it.
+- **Live test.** `a_fresh_mainnet_account_recovers_and_promotes_against_the_live_service`
+  is ignored by default because it needs the network. It reads the live map,
+  gives a fresh mainnet account a birthday at the start of the last sealed
+  shard, and records synthetic blocks through the end of the map whose hashes
+  at the shard boundaries are the map's own. Through the real source and
+  transport, with the request observer only recording, it expects promotion
+  with a current balance of zero, service routes only, no watched script in a
+  path or body, and filter requests only for shards overlapping the birthday
+  through the target, at most one each. Set
+  `VIZOR_TRANSPARENT_PIR_LIVE_TOR=1` to run it through Tor:
+
+  ```sh
+  cargo test --manifest-path rust/Cargo.toml -- --ignored a_fresh_mainnet_account
+  ```
+
+## Transparent txid enhancement
+
+A sync runs four loops. The first three keep their code and scheduling; the
+fourth fills in detail views. Its private path stores display facts only; its
+public path stores the raw transaction through `decrypt_and_store_transaction`,
+as payload enhancement does, which can update balances and history.
+
+| Loop | What it does | Where |
+|---|---|---|
+| 1. Compact scan | Trial-decrypts compact blocks; decides shielded balances | `sync_engine/mod.rs` |
+| 2. Ironwood enhancement | Payload coordinator: private Enhance PIR or public lightwalletd, as the database routes each obligation | `enhancement/payload/` |
+| 3. Transparent discovery | Public lightwalletd lanes (UTXO refresh, address history), or under `PrivateRequired` the private recovery follow-up | `sync_engine/mod.rs`, `transparent_ledger.rs` |
+| 4. Transparent txid enhancement | For each mined transparent or mixed transaction of the wallet with no raw bytes, fetches its details by txid | `transparent_details.rs` |
+
+Loop 4 runs after the private recovery follow-up in `run_sync_impl`, once
+completion has been reported, under the same sync stream: its lock and reset
+cancellation and the global running guard own its lifetime. Background
+preparation syncs skip it.
+
+```text
+captured policy ── PrivateRequired ──> txid display PIR  (PirSource)
+               └── otherwise ────────> GetTransaction via TransparentLookupGate (GateSource)
+                                       only while the durable policy authorizes it
+```
+
+- **Source.** Chosen once per run from the policy the sync captured.
+  `PrivateRequired` builds only the private source:
+  `https://transparent-pir.valargroup.dev/v1/txid/`, mainnet only, with the
+  transparent PIR origin's debug override (`VIZOR_TRANSPARENT_PIR_URL`). It
+  holds no lightwalletd client, so a failure can never become a public
+  lookup. Any other capture builds only the gate source, which re-checks the
+  durable policy generation before each `GetTransaction` and again, in the
+  same SQLite transaction, before storing the payload with
+  `decrypt_and_store_transaction`. A capture of `Public` over a wallet whose
+  durable policy withholds public lookups runs nothing.
+- **Private lookups.** wallet-pir's `transparent-txid-client`, re-exported by
+  `zakura-pir-transparent` with `display_facts` and `deferral`, follows the
+  tiered display publication: the init document, the recent map and, for an
+  archive, its index chunk (cached and refreshed by the client), the shard's
+  manifest and setup (cached per revision), then exactly two queries of the
+  bucket's one table, for a found and an absent txid alike. Placement comes
+  from the wallet's own mined height. Requests name the tier, shard,
+  revision, table and segment, never the txid or a selected row. The result
+  is one fixed-size display v2 entry: the coinbase and shielded flags, the
+  exact fee, input and output counts, the first address-shaped source, the
+  first two outputs (value and address) and flags naming what it omits
+  (several source scripts, more than two outputs, transparent inputs with
+  net shielded funding). The wallet shows the omissions and offers a public
+  lookup of the whole transaction only when the user asks for one. One
+  library `TxidDisplayService` per origin lives for the whole process, so the
+  derived native profiles are built once. These are process statics: a
+  restart starts with a fresh service, no map and no map check time. After a
+  lookup finds the service's display unsupported, the service keeps only
+  those profiles, so the next lookup asks for the init document and map
+  again: a service that comes to support the client is found once the wallet
+  retries the transaction.
+- **Display metadata.** Work a lookup held for a map (not covered,
+  unsupported, contradicted) waits for that map to change, and no lookup may
+  be due to fetch a newer one. So when nothing is due and the wallet reports
+  work parked for want of a map change (`transparent_detail_parked`), the
+  private source waits for the reported refresh time, then fetches the map alone (`refresh_map`: one
+  `GET /v1/txid/map`, no txid, validated as a lookup validates it) and the
+  run lists again under its hash. The check is due six hours after the later
+  of the newest parked attempt and the last attempted map check. The process
+  keeps that check time by origin across sync runs, including failed checks.
+  A restart starts without a map or check time and fetches when the parked
+  work permits it. A failed or cancelled fetch leaves the map the
+  client held, and the work held under it; it is logged by kind and never
+  becomes a public lookup. Parking is private only: under public authority
+  the gate source has no map, and held work is due at its ordinary retry.
+- **Locks and budget.** No runtime worker waits for the shared client: the
+  run reads the map digest with `try_lock`, falling back to the digest its
+  source last saw, and lookups and map fetches take the client on a thread
+  of their own, polling their cancellation. Once the sync exits or the 45 s
+  lookup budget is spent, a lookup gets 2 s to return; one that does not is
+  abandoned and its result never read, so it stores nothing. It runs on its
+  own thread, not the runtime's blocking pool, so it cannot hold the sync's
+  runtime shutdown, and later requests wait for the client it may still hold
+  only while they are wanted. Stores and deferrals wait for the wallet write
+  lock by yielding, and give up 2 s past the budget or at the exit, checked
+  again once the lock is taken: what was stored stays, and an unrecorded
+  transaction stays due. A run therefore ends within 47 s, plus at most one
+  SQLite write already under way.
+- **Transport.** `enhancement/transport/pir_http.rs`, the routed exchange the
+  transparent PIR source also uses: HTTPS only, Tor when desired, the
+  direct-route lease otherwise, a 30 s bound per request, and cancellation
+  before dispatch, during the request and after it. The library's `TxidHttp`
+  bounds bodies per route and reads no error body. One debug line per request
+  with the route template only.
+- **Work and bounds.** The wallet owns the work (`transparent_detail_work`):
+  private recovery and Enhance PIR's mixed transactions queue it; public
+  discovery never does, since its payloads go through `tx_retrieval_queue`.
+  A run reads the due work once, with the mode and policy generation the
+  listing read in the same snapshot: a generation that moved since the sync
+  captured its source ends the run, the gate source runs only while that
+  mode retains public authority, and stores are checked against that
+  generation. When nothing is due but lookups are parked on the display map
+  they last saw (`transparent_detail_parked`), the private source refreshes
+  its map once (`refresh_map`) when the six-hour check interval permits it,
+  then lists again under the new hash. The run
+  puts transactions a detail view asked for
+  (`prioritize_transparent_details`, an in-memory interest set) first within
+  the 64 due rows selected in the wallet's priority order. An older opened receipt outside that
+  window waits to enter it and can stay behind a sustained newer backlog. The run
+  makes at most 8 lookups in 45 s, one at a time. Lookups run on a thread
+  of their own with no database lock held; each store or deferral takes the wallet
+  write lock for one short transaction, within the budget above.
+- **Failures.** Every failure is deferred to the wallet
+  (`defer_transparent_detail`) with the original requested mined height, so
+  a failure after a remine or rewind cannot postpone replacement work.
+  The wallet schedules the retry: unavailable,
+  stale, transport or protocol failures from 30 s doubling to an hour (at
+  least the service's `Retry-After`), a height above the newest shard from a
+  minute to five (shown pending), an absent record from an hour to a day,
+  and an uncovered height, an unsupported service or a contradiction after
+  at least a day, then parked until the display map changes (seven days at
+  most). An outage ends the run. A public `GetTransaction` that lightwalletd
+  answers "not found" is an absent record, not an outage, so the run's
+  remaining lookups proceed. A lookup the budget
+  stopped is deferred as unavailable. A store refused for a moved policy
+  generation ends the run without storing; facts that contradict the wallet
+  are held, not stored. Failures are logged by kind, never by txid, a panic
+  is caught, and nothing returns an error to the sync. Balances,
+  spendability, sends and history never read the display facts the private
+  path stores; the public path's raw transaction is ordinary wallet data.
+- **Storage.** `store_transparent_display` validates the facts against what
+  the wallet knows (owned outputs, coinbase flag, recovered metadata and fee)
+  and stores them; raw bytes arriving later supersede them. A run that stored
+  anything reports a `FollowupUpdated` event.
+
+Detail-view states (`TransactionDetail.transparent_details_state`):
+
+| State | Meaning | Receipt shows |
+|---|---|---|
+| `available` | Every transparent output: from the raw transaction, or from validated display facts | With no recorded recipient, eligible receipts list only unowned outputs as "Transaction outputs", with "Recipient not confirmed"; no output is promoted to a payment recipient |
+| `pending` | Eligible work has not answered yet | With no recorded recipient, eligible receipts show "Details unavailable — will update when the service is reachable" |
+| `unavailable` | The details are unavailable; eligible work may retry in a later sync | the same notice where eligible |
+| `notCovered` | Private mode cannot look it up | Where eligible, "Not available in private mode" |
+| absent | No transparent part the account takes part in | nothing |
+
+Receives, shieldings and migrations add neither this output list nor its notice;
+their shared receipt shows the account's recorded outputs. A recorded payment
+recipient also makes the addition unnecessary. Other receipts keep the recovered
+transaction outputs explicitly unattributed, in transaction order, without the
+account's own outputs.
+
+The view belongs to the account. It shows when the account has a transparent
+output or spend in the transaction, or a shielded part (a received, spent or
+sent note, a payment to a transparent recipient among them) in a transaction
+the wallet durably records as mixed: by detail work, stored display facts or
+the route-2 marker. Storing display facts deletes the work but keeps the
+facts and the marker, so the view stays. Storing raw bytes deletes the work
+and the facts; for an account whose part is shielded, the raw transaction
+then decides, and a view shows only when it has a transparent input or
+output. Another account's mixed transaction, and a fully shielded one, have
+no view.
+
+While the state is `pending` or `unavailable`, a receipt asks for the
+transaction to be prioritized within that work window (once per open) and re-reads its detail every
+five seconds, stopping when it is available or not covered. Re-reads are
+serialized: a poll does not start while another read, or a full receipt
+load, is in flight, and a read that a newer load or an account switch has
+superseded is discarded rather than shown. Debug
+builds add a button that runs one
+private lookup through `debug_lookup_transparent_details` and stores nothing.
+
+**Privacy.** The txid display service learns which shard, tier and bucket a
+lookup touches, the page count of a display v2 overflow record, and timing;
+with Tor off, the network origin. The shard and tier give the height range.
+The bucket is a hash of the txid modulo the shard's bucket count, at most 64,
+so it reveals up to six bits of that hash, and repeated lookups of one
+transaction always touch the same bucket, which links them. Requests carry no
+raw txid; the bucket, height range and timing can still support correlation or
+inference about the transaction. A public lookup discloses the txid to
+lightwalletd, which is why `PrivateRequired` never makes one automatically. The live test `txid_live` (ignored by default) looks up a
+known mainnet transaction, an absent txid, and an unplaced height through the
+real client and transport, and checks the routes and that no request carries
+the txid. This does not establish anonymity against bucket or timing
+inference. It covers display facts only: it does not exercise raw bytes
+superseding them, the public lookup, or the per-lookup runtime limits above
+(the 30 s request bound, the 45 s run budget and the 2 s abandon grace), which
+the in-process tests cover:
+
+```sh
+cargo test --manifest-path rust/Cargo.toml -- --ignored txid_live
+VIZOR_TRANSPARENT_PIR_LIVE_TOR=1 cargo test --manifest-path rust/Cargo.toml -- --ignored txid_live
+```
 
 ## Transport and cancellation
 
 ```text
 protocol adapter
     |
-    +-- Enhance PIR: 120-second whole-request deadline
+    +-- Enhance PIR:     120-second whole-request deadline
     |
-    `-- Status PIR:   20-second deadline
+    +-- Status PIR:       20-second deadline
+    |
+    +-- Transparent PIR:  60-second request bound, 90-second pass deadline
+    |
+    `-- Txid display PIR: 30-second request bound, 45-second run budget
               |
               v
 privacy-routed HTTPS core
@@ -541,6 +1047,13 @@ private status failure        keep status inconclusive; skip private status for
                               the rest of the session; no public fallback
 public status failure         fail the sync attempt (retried by the sync loop)
 address-history failure       keep range unacknowledged
+transparent PIR unavailable   stop the recovery run; no public fallback
+transparent PIR pass failure  skip the account until a later run
+transparent PIR pending       apply and acknowledge nothing; retry later
+transparent PIR withdrawn     hold the account for an hour (Stopped)
+txid details failure          defer the transaction with backoff; the view
+                              shows details unavailable; no public fallback
+                              under PrivateRequired; never fails the sync
 cancellation                  stop before the next network dispatch
 ```
 
@@ -568,18 +1081,68 @@ there is no separate release gate.
 
 ## Library dependency
 
-The four patched library crates use wallet-libraries main revision
-`6c7dbb0d8d0ee0d8a1c21c915e4a011d0845e242` (main after #86). Trusted qualification, rather than candidate observation, authorizes
-provisional revision replacement. The replacement regression explicitly
-qualifies fixture revisions at that boundary. Reader version 6 state is not
-supported by version 5 rollback readers; this pin remains preparatory work,
-with production private activation and real-source verification deferred.
+The eight patched library crates (now including `zakura-pir-enhance`) and the
+`zakura-pir-transparent` adapter share one wallet-libraries revision,
+`1fc05ed7fc04ce867dd7da01b5a34bc3b50c7477` on main
+([PR #139](https://github.com/zakura-core/wallet-libraries/pull/139), import-time
+account discovery, after
+[PR #138](https://github.com/zakura-core/wallet-libraries/pull/138), gated
+settlement). Main also carries
+[PR #133](https://github.com/zakura-core/wallet-libraries/pull/133), which
+switches the Transparent, Enhance and Status clients to dithered 44-bit native
+queries, [PR #134](https://github.com/zakura-core/wallet-libraries/pull/134)
+(forget transparent ledger facts under `Public`),
+[PR #135](https://github.com/zakura-core/wallet-libraries/pull/135),
+[PR #129](https://github.com/zakura-core/wallet-libraries/pull/129) (declared re-cuts)
+and [PR #132](https://github.com/zakura-core/wallet-libraries/pull/132),
+which removes the unused `PrivateShadow` ledger mode on top of
+[PR #130](https://github.com/zakura-core/wallet-libraries/pull/130).
+Enhance and Status uploads need servers at wallet-pir `06a972db` or later, which
+accept both the 49-bit and the 44-bit query.
+It retains the parent's private-recovery and compact txid-display changes and
+adds durable privacy-policy resolution at each sensitive read plus optional
+SQLite `apply_and_acknowledge`. Vizor supplies explicit trust, then the library
+commits wallet facts and quarantine before acknowledging the opaque batch.
+A failed or interrupted batch remains replayable; trusted qualification
+reconciles provisional revision replacement. Scheduling, network routing,
+promotion and spending authorization remain in Vizor. Every manifest reference
+and lockfile source uses that same revision; Cargo resolution is checked
+without local sibling overrides.
+
+The library also applies three unconditional migrations inherited from the
+parent's repin, whether or not private queries is enabled:
+`ironwood_unsupported_memo_retry` (`3d1c7a52-8e0b-4f6d-9a47-5be2c0f19e84`),
+`ironwood_transparent_output_shape` (`8f4c3210-04e1-49eb-9de2-d713ee0a8426`),
+and `transparent_txid_enhancement` (`73d751a3-dbdc-461a-9154-e061903aae4f`).
+They persist memo, metadata and detail obligations without sending network
+requests; Vizor still authorizes dispatch. Upgrade probes check the migration
+IDs, new storage, repeated initialization, retained data and zero private-work
+backfills for never-private wallets. App probes cover the released mobile
+v0.0.50 baseline and the fork immediately preceding these migrations across
+single-derived, multi-seed, imported-only and hardware-first wallet shapes.
+
+Upgrading is one-way within the supported app contract. The pre-migration fork
+reader refuses the new migration IDs before changing the database. Published
+rc5/rc7 readers lack that unknown-migration guard and can open the upgraded
+database; the probes report that behavior without qualifying a writable
+downgrade. There is no supported downgrade preparation API. Existing private
+ledger writes also retain their reader-version barrier: version 6 state cannot
+be read by version 5 readers. Private activation follows the mainnet Private queries setting.
+
+The adapter is a direct git dependency rather than a patched crates.io
+package: it depends on wallet-pir's transparent crates, which exist only in git
+(`pir-native` has `publish = false`). #783 requires a published release
+before merge, which the adapter cannot meet while those crates are git-only;
+that is recorded as a release gate, not worked around. Vizor repins after any
+restack of the library stacks, and to `main` once they merge.
 
 - **#77** adds source-bound transparent transaction metadata and the
   `transaction_metadata`, `aggregate_payment`, and `account_movement` fields of
-  `TransactionHistoryDetails`. Activity does not read them yet: Public handles
-  have no recovery source that supplies them, and the account fee keeps its
-  `fee_state`. Two migrations add empty tables
+  `TransactionHistoryDetails`. Public handles have no recovery source that
+  supplies them. Under private recovery, Activity shows a reconstructed exact
+  payment. Whole-fee evidence supports reconstruction but does not replace
+  an unknown account fee in the receipt; the account fee keeps its
+  `fee_state` for every amount. Two migrations add empty tables
   (`tpir_transaction_metadata`, `tpir_shared_derivations`); writing either
   raises the reader version, and neither changes policy, balances, or
   authority.
@@ -597,13 +1160,22 @@ with production private activation and real-source verification deferred.
 
 ### History refresh and batch receipt totals
 
-Activity lists and open receipts reload when sync completes, even when the ten
-recent transactions are unchanged. This exposes newly enhanced older entries
-without reopening the screen. Repeated completed snapshots do not trigger a
-reload by themselves.
+Activity lists reload when sync first completes and whenever the ten recent
+transactions change. Open receipts also reload on every later completion,
+which the deferred account refresh and ephemeral address checks report, and
+on each follow-up update. Recovery and detail follow-ups finish after
+completion is reported and report their own event kind, `FollowupUpdated`,
+rather than a second completion: Dart re-reads balances and recent history
+and bumps `syncFollowupProvider`, which open receipts listen to. An open
+receipt therefore shows a newly enhanced older entry without being reopened;
+an activity list shows it once it is among the ten recent transactions or the
+screen reloads. Repeated completed snapshots do not trigger a reload by
+themselves.
 
 In Private queries mode, a batch gift-card receipt with an unknown network fee
 shows an unknown total and an unknown network-fee breakdown. It does not add
 zero to the card amount and redemption reserves to manufacture an exact total.
 Known fees, including zero, retain exact totals. Public-mode presentation is
 unchanged.
+
+Public status observations pass their authorized, signalled RPC response through the library's `lightwalletd::observe_response`, retaining its cancellation, timeout, payload/txid validation and classification. This keeps the wallet dispatch lease through submission rather than a slow response, without duplicating protocol rules in Vizor.

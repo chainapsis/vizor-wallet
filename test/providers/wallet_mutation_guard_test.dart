@@ -56,6 +56,63 @@ void main() {
     expect(events, ['pause', 'action', 'resume']);
   });
 
+  testWidgets('other platforms also reject an overlapping wallet mutation', (
+    tester,
+  ) async {
+    // Off Linux, `runMutation` runs its action directly; the wallet DB lane
+    // still serializes a reset or deletion against the toggle.
+    final coordinator = LinuxKeyringCoordinator.testing(enabled: false);
+    addTearDown(coordinator.dispose);
+    final events = <String>[];
+    late WidgetRef capturedRef;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          linuxKeyringCoordinatorProvider.overrideWithValue(coordinator),
+          accountProvider.overrideWith(_EmptyAccountNotifier.new),
+          syncProvider.overrideWith(() => _StaleSyncNotifier(events)),
+        ],
+        child: Consumer(
+          builder: (_, ref, _) {
+            capturedRef = ref;
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
+    );
+    await tester.pump();
+    final release = Completer<void>();
+    // The private queries toggle holds the lane.
+    final toggle = coordinator.runMutation(() => release.future);
+    expect(coordinator.hasPendingMutation, isTrue);
+    try {
+      await expectLater(
+        runWithSyncPausedForWalletReset(capturedRef, () async {
+          events.add('unexpected reset');
+        }),
+        throwsA(isA<WalletMutationBusyException>()),
+      );
+      await expectLater(
+        runWithSyncPausedForAccountMutation(capturedRef, () async {
+          events.add('unexpected deletion');
+        }),
+        throwsA(isA<WalletMutationBusyException>()),
+      );
+      expect(events, isEmpty, reason: 'nothing paused or mutated');
+    } finally {
+      release.complete();
+      await toggle;
+    }
+    expect(coordinator.hasPendingMutation, isFalse);
+    // Nested inside the lane's owner, a mutation keeps its ownership.
+    await coordinator.runMutation(
+      () => runWithSyncPausedForAccountMutation(capturedRef, () async {
+        events.add('action');
+      }),
+    );
+    expect(events, ['pause', 'action', 'resume']);
+  });
+
   testWidgets('pauses stale sync work even when there are no accounts', (
     tester,
   ) async {

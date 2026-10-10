@@ -82,7 +82,9 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
   }
 
   void _dismissEndpointSettings() {
-    if (ref.read(enhancePirTransitionProvider) == 'Changing setting…') return;
+    if (ref.read(enhancePirTransitionProvider) == kEnhancePirChangingMessage) {
+      return;
+    }
     setState(() => _showEndpointSettings = false);
     _networkSettings.setPresented(false);
   }

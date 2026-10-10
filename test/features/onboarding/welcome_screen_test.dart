@@ -387,6 +387,9 @@ Widget _welcomeScreen({
         privacyStore ?? _PrivacyStore(),
       ),
       enhancePirBackgroundSinkProvider.overrideWithValue((_) async {}),
+      transparentOptOutStoreProvider.overrideWithValue(_NoOptOutStore()),
+      // No wallet exists before onboarding; nothing to reconcile.
+      transparentPolicyReconcilerProvider.overrideWithValue((_) async => null),
       syncProvider.overrideWith(_OnboardingSync.new),
       networkPrivacyProvider.overrideWith(
         () => _FakeNetworkPrivacyNotifier(networkPrivacyCalls ?? <bool>[]),
@@ -436,6 +439,10 @@ class _PrivacyApi extends RustLibApi {
   void crateApiSyncSetEnhancePirEnabled({required bool enabled}) =>
       this.enabled.add(enabled);
   @override
+  void crateApiSyncSetEnhancePirPreferenceConfirmed({
+    required bool confirmed,
+  }) {}
+  @override
   bool crateApiSyncIsSyncRunning() => false;
   @override
   bool crateApiSyncIsMempoolObserverRunning() => false;
@@ -462,4 +469,14 @@ class _OnboardingSync extends SyncNotifier {
   Future<SyncState> build() async => SyncState();
   @override
   void startSync({int? latestTipHeight}) => fail('No wallet exists to sync');
+}
+
+class _NoOptOutStore implements TransparentOptOutStore {
+  bool pending = false;
+
+  @override
+  Future<bool> readPending() async => pending;
+
+  @override
+  Future<void> writePending(bool value) async => pending = value;
 }

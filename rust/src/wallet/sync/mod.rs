@@ -70,6 +70,7 @@ pub use pczt::{
 pub(crate) use pczt::{
     expiry_height_from_io_finalized_pczt, extract_compact_sigs_from_pczt,
     store_and_broadcast_signed_pczts, txid_from_io_finalized_pczt, validate_signed_pczts,
+    HARDWARE_AUTHORITY_REFUSED_PREFIX,
 };
 pub(crate) use proposal_locks::recover_previous_process as recover_orphaned_send_locks;
 pub(crate) use send::estimate_send_max;
@@ -121,6 +122,8 @@ pub(crate) use send::ShieldTransparentStatus;
 pub(crate) use send::{resubmit_pending_transactions, resubmit_transactions};
 #[allow(unused_imports)] // names reachable via `crate::wallet::sync::*`; pre-refactor surface
 pub(crate) use send::{KeystoneMigrationMessage, KeystoneMigrationSigningRequest};
+#[cfg(test)]
+pub(crate) use transactions::read_wallet_balances;
 pub use transactions::{
     decrypt_and_store_transaction, get_previous_transaction_count_for_address,
     set_transaction_status,
@@ -131,8 +134,8 @@ pub(crate) use transactions::{
     get_transaction_data_requests, get_transaction_detail, get_transaction_history,
     get_unmined_txids_with_mined_output_evidence, get_wallet_balance, get_wallet_balances,
     ExportBirthdayAnchor, TransactionDetail, TransactionDetailOutput, TransactionFeeState,
-    TransactionInfo, TransparentBalanceAuthority, TxDataRequest, WalletBalance,
-    WalletBalanceAvailability,
+    TransactionInfo, TransparentBalanceAuthority, TransparentDetailsView, TransparentRecipientRow,
+    TransparentStopReason, TxDataRequest, WalletBalance, WalletBalanceAvailability,
 };
 
 pub(super) fn open_wallet_db(

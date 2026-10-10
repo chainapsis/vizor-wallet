@@ -72,7 +72,7 @@ class _FakeUnlockSyncNotifier extends FakeSyncNotifier {
   Future<void> refreshAfterUnlock() async {}
 
   @override
-  Future<void> startSyncAnyway() async {}
+  Future<void> startSyncAnyway({int? latestTipHeight}) async {}
 }
 
 /// No biometric affordance: the passcode path is the one under test, and the

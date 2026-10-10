@@ -9,15 +9,21 @@ import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/core/config/private_transparent_recovery_config.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/storage/linux_keyring_coordinator.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/features/accounts/widgets/account_edit_modal.dart';
 import 'package:zcash_wallet/src/features/settings/screens/settings_screen.dart';
 import 'package:zcash_wallet/src/features/settings/settings_platform.dart';
+import 'package:zcash_wallet/src/features/settings/widgets/enhance_pir_privacy_control.dart';
 import 'package:zcash_wallet/src/features/settings/widgets/network_privacy_control.dart';
+import 'package:zcash_wallet/src/features/settings/widgets/private_queries_turn_off.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_cards_provider.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
+import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/windows_update_provider.dart';
@@ -34,6 +40,34 @@ void main() {
       find.textContaining('Experimental.', findRichText: true),
       findsOneWidget,
     );
+  });
+
+  testWidgets('private queries always describes private transparent recovery', (
+    tester,
+  ) async {
+    Future<String> description() async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AppTheme(
+            data: AppThemeData.dark,
+            child: EnhancePirPrivacyControl(
+              enabled: true,
+              onToggle: () {},
+              transition: null,
+            ),
+          ),
+        ),
+      );
+      return tester
+          .widget<Text>(
+            find.byKey(const ValueKey('settings_enhance_pir_description')),
+          )
+          .data!;
+    }
+
+    final defaultCopy = await description();
+    expect(defaultCopy, startsWith('Experimental.'));
+    expect(defaultCopy, contains(kPrivateTransparentRecoverySettingsCopy));
   });
 
   test('uninstall setting is supported only on macOS and Linux', () {
@@ -258,6 +292,45 @@ void main() {
 
     expect(find.text('System (Auto)'), findsOneWidget);
     expect(find.textContaining('payment links route'), findsNothing);
+  });
+
+  testWidgets('busy wallet keeps the rename modal open for retry', (
+    tester,
+  ) async {
+    final coordinator = LinuxKeyringCoordinator.testing(enabled: false);
+    addTearDown(coordinator.dispose);
+    // The private queries toggle holds the wallet while it drains.
+    final release = Completer<void>();
+    final toggle = coordinator.runMutation(() => release.future);
+    await tester.binding.setSurfaceSize(const Size(1512, 1600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      _settingsHarness(
+        extraOverrides: [
+          linuxKeyringCoordinatorProvider.overrideWithValue(coordinator),
+        ],
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('Account name'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Savings');
+    await tester.pump();
+    await tester.tap(find.text('Update'));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(AccountEditModal), findsOneWidget);
+    expect(find.text('Savings'), findsOneWidget);
+    expect(
+      find.text('Finish the current wallet operation before starting another.'),
+      findsOneWidget,
+    );
+    expect(find.text("Couldn't update account."), findsNothing);
+    release.complete();
+    await toggle;
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   testWidgets('settings sections are grouped Personal to Danger zone', (
@@ -647,6 +720,177 @@ void main() {
     );
   });
 
+  group('off mainnet, where private queries are unavailable', () {
+    testWidgets('nothing to finish shows no opt-out action', (tester) async {
+      await tester.pumpWidget(_settingsHarness(network: 'test'));
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey('settings_transparent_opt_out_button')),
+        findsNothing,
+      );
+    });
+
+    for (final (reason, overrides) in <(String, List<Override>)>[
+      (
+        'an unfinished opt-out',
+        <Override>[
+          transparentPolicyStartupProvider.overrideWithValue(
+            const TransparentPolicyStartup(optOutPending: true),
+          ),
+        ],
+      ),
+      (
+        'a durably private wallet',
+        <Override>[
+          walletTransparentPrivateProvider.overrideWith(_PrivateWallet.new),
+        ],
+      ),
+    ]) {
+      testWidgets('$reason can still be finished', (tester) async {
+        final enhancePir = _RecordingEnhancePir();
+        await tester.binding.setSurfaceSize(const Size(1512, 1600));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await tester.pumpWidget(
+          _settingsHarness(
+            network: 'test',
+            extraOverrides: [
+              enhancePirProvider.overrideWith(() => enhancePir),
+              ...overrides,
+            ],
+          ),
+        );
+        await tester.pump();
+
+        // The toggle stays hidden; the way to lower the wallet does not.
+        expect(
+          find.byKey(const ValueKey('settings_enhance_pir_toggle')),
+          findsNothing,
+        );
+        final button = find.byKey(
+          const ValueKey('settings_transparent_opt_out_button'),
+        );
+        expect(button, findsOneWidget);
+        await tester.ensureVisible(button);
+
+        // Finishing sends transparent lookups to the server, so it asks.
+        await tester.tap(button);
+        await tester.pumpAndSettle();
+        expect(_turnOffDialog, findsOneWidget);
+        await tester.tap(
+          find.byKey(const ValueKey('private_queries_turn_off_cancel')),
+        );
+        await tester.pumpAndSettle();
+        expect(_turnOffDialog, findsNothing);
+        expect(enhancePir.finishes, 0);
+
+        await tester.tap(button);
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('private_queries_turn_off_confirm')),
+        );
+        await tester.pumpAndSettle();
+        expect(enhancePir.finishes, 1);
+      });
+    }
+  });
+
+  group('turning private queries off', () {
+    Future<_RecordingToggle> pumpToggle(
+      WidgetTester tester, {
+      required bool enabled,
+      bool walletPrivate = false,
+    }) async {
+      final enhancePir = _RecordingToggle(enabled);
+      await tester.binding.setSurfaceSize(const Size(1512, 1600));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        _settingsHarness(
+          enhancePirEnabled: enabled,
+          extraOverrides: [
+            enhancePirProvider.overrideWith(() => enhancePir),
+            if (walletPrivate)
+              walletTransparentPrivateProvider.overrideWith(_PrivateWallet.new),
+          ],
+        ),
+      );
+      await tester.pump();
+      final toggle = find.byKey(const ValueKey('settings_enhance_pir_toggle'));
+      await tester.ensureVisible(toggle);
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      return enhancePir;
+    }
+
+    testWidgets('a private wallet asks first and names what is sent', (
+      tester,
+    ) async {
+      final enhancePir = await pumpToggle(
+        tester,
+        enabled: true,
+        walletPrivate: true,
+      );
+      expect(_turnOffDialog, findsOneWidget);
+      expect(find.text(kPrivateQueriesTurnOffTitle), findsOneWidget);
+      expect(find.text(kPrivateQueriesTurnOffBody), findsOneWidget);
+      expect(find.text(kPrivateQueriesTurnOffDisclosure), findsOneWidget);
+      expect(
+        kPrivateQueriesTurnOffDisclosure,
+        allOf(
+          contains('every transparent address of every account'),
+          contains('IDs of transactions private recovery found'),
+          contains('without Tor, to your IP address'),
+        ),
+      );
+      expect(kPrivateQueriesTurnOffBody, contains('discard'));
+
+      await tester.tap(
+        find.byKey(const ValueKey('private_queries_turn_off_cancel')),
+      );
+      await tester.pumpAndSettle();
+      expect(_turnOffDialog, findsNothing);
+      expect(enhancePir.toggles, 0);
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const ValueKey('settings_enhance_pir_status')),
+            )
+            .data,
+        'On',
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey('settings_enhance_pir_toggle')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('private_queries_turn_off_confirm')),
+      );
+      await tester.pumpAndSettle();
+      expect(enhancePir.toggles, 1);
+    });
+
+    testWidgets(
+      'an existing wallet asks before its first private balance read',
+      (tester) async {
+        // Private queries on mainnet recover transparent funds privately, so
+        // turning them off discloses even before the policy is reported.
+        final enhancePir = await pumpToggle(tester, enabled: true);
+        expect(_turnOffDialog, findsOneWidget);
+        expect(enhancePir.toggles, 0);
+      },
+    );
+
+    testWidgets('turning private queries on never asks', (tester) async {
+      final enhancePir = await pumpToggle(
+        tester,
+        enabled: false,
+        walletPrivate: true,
+      );
+      expect(_turnOffDialog, findsNothing);
+      expect(enhancePir.toggles, 1);
+    });
+  });
+
   testWidgets('Tor stays effective while switching to direct', (tester) async {
     await tester.pumpWidget(
       _settingsHarness(
@@ -955,4 +1199,39 @@ bool _hasFocusRing(WidgetTester tester) {
         border.top.width == 2;
   });
   return focusRing.evaluate().isNotEmpty;
+}
+
+class _RecordingEnhancePir extends EnhancePirNotifier {
+  int finishes = 0;
+
+  @override
+  bool build() => false;
+
+  @override
+  Future<void> finishTransparentOptOut() async => finishes++;
+}
+
+final _turnOffDialog = find.byKey(
+  const ValueKey('private_queries_turn_off_dialog'),
+);
+
+class _RecordingToggle extends EnhancePirNotifier {
+  _RecordingToggle(this.enabled);
+
+  final bool enabled;
+  int toggles = 0;
+
+  @override
+  bool build() => enabled;
+
+  @override
+  Future<void> toggle() async {
+    toggles++;
+    state = !state;
+  }
+}
+
+class _PrivateWallet extends WalletTransparentPrivateNotifier {
+  @override
+  bool build() => true;
 }

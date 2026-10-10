@@ -60,6 +60,7 @@ pub(crate) mod mempool;
 #[cfg(test)]
 pub(crate) mod test_lwd;
 mod tip_cache;
+pub(crate) mod transparent_details;
 pub(crate) mod transparent_ledger;
 #[cfg(test)]
 mod transparent_recovery_tests;
@@ -69,9 +70,11 @@ pub(crate) use error::SyncError;
 use error::{RecoveryStrategy, MAX_REWINDS_PER_RUN};
 pub(crate) use lwd::{
     dispatch_signal::Dispatched, get_compact_block_hash, get_latest_block, next_stream_message,
-    open_background_direct_lwd_channel, open_isolated_lwd_channel, open_isolated_lwd_transport,
-    open_lwd_channel, open_lwd_channel_with_cancel, send_transaction, send_transaction_signalling,
-    send_transaction_with_status, transparent_lookup::TransparentLookupGate,
+    open_background_direct_lwd_channel, open_background_direct_lwd_transport,
+    open_isolated_lwd_channel, open_isolated_lwd_transport, open_lwd_channel,
+    open_lwd_channel_with_cancel, open_lwd_transport, open_lwd_transport_with_cancel,
+    send_transaction, send_transaction_signalling, send_transaction_with_status,
+    transparent_lookup::TransparentLookupGate,
 };
 use lwd::{download_blocks, download_subtree_roots, get_tree_state, get_tree_state_for_block};
 pub(crate) use tip_cache::{
@@ -79,16 +82,33 @@ pub(crate) use tip_cache::{
     latest_block_for_transaction_with_client,
 };
 
+/// What a [`SyncProgressEvent`] reports.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SyncEventKind {
+    /// The sync is still running: preparation, download, or scan progress.
+    Progress,
+    /// The sync completed. The deferred inactive-account refresh and the
+    /// ephemeral address checks report it again when they change wallet data.
+    Completed,
+    /// A post-sync follow-up (private transparent recovery, transparent
+    /// details) changed wallet data after completion was reported. The sync
+    /// stays complete; its stream, and the running guard, end only once
+    /// every follow-up has.
+    FollowupUpdated,
+}
+
 /// Progress event sent to caller (Dart or Swift).
 #[derive(Clone, Debug)]
 pub struct SyncProgressEvent {
+    pub kind: SyncEventKind,
     pub scanned_height: u64,
     pub chain_tip_height: u64,
     pub percentage: f64,
     pub display_target_percentage: f64,
     pub display_target_blocks: u64,
     pub is_syncing: bool,
-    pub is_complete: bool,
+    /// A scanned batch found wallet notes, or a re-reported completion stored
+    /// transactions. A `FollowupUpdated` event implies a refresh on its own.
     pub has_new_tx: bool,
     /// Completed and total work units for preparation phases. A zero total
     /// means the phase has no measurable work and should be time-interpolated
@@ -134,17 +154,36 @@ fn preparation_progress_event(
     phase_total_units: u64,
 ) -> SyncProgressEvent {
     SyncProgressEvent {
+        kind: SyncEventKind::Progress,
         scanned_height: 0,
         chain_tip_height,
         percentage: 0.0,
         display_target_percentage: 0.0,
         display_target_blocks: 0,
         is_syncing: true,
-        is_complete: false,
         has_new_tx: false,
         phase_completed_units,
         phase_total_units,
         phase: phase.into(),
+    }
+}
+
+/// Reports that a post-sync follow-up changed wallet data after the sync
+/// reported completion at `completed` (scanned height, chain tip).
+pub(crate) fn followup_updated_event(completed: (u64, u64)) -> SyncProgressEvent {
+    let (scanned_height, chain_tip_height) = completed;
+    SyncProgressEvent {
+        kind: SyncEventKind::FollowupUpdated,
+        scanned_height,
+        chain_tip_height,
+        percentage: 1.0,
+        display_target_percentage: 1.0,
+        display_target_blocks: 0,
+        is_syncing: false,
+        has_new_tx: false,
+        phase_completed_units: 0,
+        phase_total_units: 0,
+        phase: String::new(),
     }
 }
 
@@ -1453,6 +1492,7 @@ async fn refresh_utxos(
     db_data_path: &str,
     db: &mut WalletDatabase,
     network: WalletNetwork,
+    policy: EnhancementPolicy,
     tip_height: BlockHeight,
     account_selection: TransparentAccountSelection<'_>,
     priority_account_target: Option<&ActiveSyncAccountTarget>,
@@ -1462,10 +1502,11 @@ async fn refresh_utxos(
 ) -> Result<TransparentRefreshSummary, SyncError> {
     let mut refreshes = Vec::new();
     let mut summary = TransparentRefreshSummary::default();
-    // GetAddressUtxos discloses every refreshed address. When withheld, no query
-    // height advances, so a later authorized refresh still covers the gap.
-    let gate = TransparentLookupGate::for_wallet(
-        EnhancementPolicy::current(network).public_transparent_lookups(db)?,
+    // GetAddressUtxos discloses every refreshed address, so it is authorized
+    // under the policy the sync captured. When withheld, no query height
+    // advances, so a later authorized refresh still covers the gap.
+    let gate = TransparentLookupGate::for_sync(
+        policy.public_transparent_lookups(db)?,
         db_data_path,
         network,
     )?;
@@ -2615,6 +2656,25 @@ pub async fn run_sync_inner(
         if crate::wallet::sync::proposal_locks::is_shutting_down() {
             return Ok(());
         }
+        // Account deletion removes its companions best-effort; one it left
+        // behind is deleted here, in every build, so none outlives its account.
+        if attempt == 0 {
+            if let Err(error) = transparent_ledger::pir::remove_orphan_companions(db_data_path) {
+                log::warn!(
+                    "[{}] sync: could not delete orphan transparent PIR companions: {error}",
+                    elapsed()
+                );
+            }
+            // A public wallet keeps no private ledger facts. This finishes a
+            // forget that failed when the policy was lowered, or one a build
+            // without it never did; with nothing to forget it only reads.
+            if let Err(error) = transparent_ledger::forget_private_ledger(db_data_path, network) {
+                log::warn!(
+                    "[{}] sync: could not forget private ledger facts: {error}",
+                    elapsed()
+                );
+            }
+        }
         if attempt > 0 {
             let delay_secs = 1u64 << attempt; // 2, 4, 8
             log::warn!(
@@ -3023,8 +3083,13 @@ async fn run_sync_impl(
             || desired_mode.load(Ordering::SeqCst) != running_mode
     };
 
-    // 1. Connect gRPC (plain TLS via tonic + webpki roots).
-    let mut client = open_lwd_channel_with_cancel(lightwalletd_url, should_exit).await?;
+    // 1. Connect gRPC (plain TLS via tonic + webpki roots). The lanes' public
+    // transparent lookups go over the same transport with a dispatch signal,
+    // so a policy transition waits only for them to be sent.
+    let transport = open_lwd_transport_with_cancel(lightwalletd_url, should_exit).await?;
+    let mut client = CompactTxStreamerClient::new(transport.clone());
+    let _lookup_transport =
+        lwd::transparent_lookup::register_sync_transport(db_data_path, transport);
 
     // Open DB once — reused for the entire sync
     let mut db =
@@ -3136,6 +3201,7 @@ async fn run_sync_impl(
         &mut db,
         db_data_path,
         network,
+        enhancement.policy(),
         tip_height,
         &should_exit,
     )
@@ -3166,6 +3232,7 @@ async fn run_sync_impl(
             db_data_path,
             &mut db,
             network,
+            enhancement.policy(),
             tip_height,
             TransparentAccountSelection::Only(active_account_uuid),
             None,
@@ -3185,6 +3252,7 @@ async fn run_sync_impl(
                 db_data_path,
                 &mut db,
                 network,
+                enhancement.policy(),
                 tip_height,
                 TransparentAccountSelection::All,
                 None,
@@ -3204,6 +3272,7 @@ async fn run_sync_impl(
             db_data_path,
             &mut db,
             network,
+            enhancement.policy(),
             tip_height,
             TransparentAccountSelection::All,
             None,
@@ -3818,7 +3887,7 @@ async fn run_sync_impl(
             display_target_percentage,
             display_target_blocks: batch_blocks,
             is_syncing: true,
-            is_complete: false,
+            kind: SyncEventKind::Progress,
             has_new_tx: false,
             phase_completed_units: 0,
             phase_total_units: 0,
@@ -4486,7 +4555,7 @@ async fn run_sync_impl(
             display_target_percentage,
             display_target_blocks: next_display_target_blocks,
             is_syncing: true,
-            is_complete: false,
+            kind: SyncEventKind::Progress,
             has_new_tx,
             phase_completed_units: 0,
             phase_total_units: 0,
@@ -4530,42 +4599,11 @@ async fn run_sync_impl(
         .get_account_ids()
         .map_err(|e| SyncError::db(e.to_string()))?
     {
-        if !ledger_discovery::is_ready(db_data_path, id).map_err(SyncError::db)? {
+        if !ledger_discovery::is_ready(db_data_path, network, id).map_err(SyncError::db)? {
             return Err(SyncError::other(
                 "Ledger recovery was invalidated during sync; retrying",
             ));
         }
-    }
-    // Candidate transparent recovery runs at the fully scanned height, after
-    // the shielded scan settles. It keeps its own progress in the library and
-    // never fails the sync. Production captures `Public`, so it returns before
-    // any read.
-    match transparent_ledger::run(
-        &mut db,
-        enhancement.policy(),
-        &transparent_ledger::DisabledSource,
-        &should_exit,
-    )
-    .await
-    {
-        Ok(transparent_ledger::RunOutcome::Exited) => {
-            log::info!(
-                "[{}] sync: exiting during candidate transparent recovery",
-                elapsed()
-            );
-            return Ok(());
-        }
-        Ok(transparent_ledger::RunOutcome::NotEnabled) => {}
-        Ok(outcome) => log::info!(
-            "[{}] sync: candidate transparent recovery: {:?}",
-            elapsed(),
-            outcome
-        ),
-        Err(error) => log::warn!(
-            "[{}] sync: candidate transparent recovery failed: {}",
-            elapsed(),
-            error
-        ),
     }
     // Reconcile migration chain state only after the scan queue is fully
     // drained, then update generic wallet locks for denomination outputs that
@@ -4625,13 +4663,51 @@ async fn run_sync_impl(
         display_target_percentage: 1.0,
         display_target_blocks: 0,
         is_syncing: false,
-        is_complete: true,
+        kind: SyncEventKind::Completed,
         has_new_tx: false,
         phase_completed_units: 0,
         phase_total_units: 0,
         phase: String::new(),
     };
     progress_fn(final_progress);
+
+    // Private transparent recovery runs once completion is reported, so
+    // waiting for a lagging publication never delays the sync's own result.
+    // Background preparation syncs skip it; see [`transparent_followup`].
+    if !should_exit() {
+        let first = current_active_sync_account(active_account_target)
+            .and_then(|uuid| keys::parse_account_uuid(&uuid).ok());
+        transparent_followup(
+            running_mode,
+            &mut db,
+            db_data_path,
+            network,
+            enhancement.policy(),
+            &transparent_ledger::TransparentPirSource::new(db_data_path, network),
+            first,
+            &should_exit,
+            progress_fn,
+            (final_scanned_height, final_tip_height),
+        )
+        .await;
+    }
+
+    // Loop 4, transparent txid enhancement, only fills in detail views. It
+    // runs once completion is reported, under the same cancellation, and
+    // never fails the sync. Background preparation syncs skip it.
+    if !should_exit() && running_mode != 2 {
+        transparent_details::transparent_details_followup(
+            &mut db,
+            db_data_path,
+            network,
+            enhancement.policy(),
+            &client,
+            &should_exit,
+            progress_fn,
+            (final_scanned_height, final_tip_height),
+        )
+        .await;
+    }
 
     // Transparent receivers belonging to inactive accounts do not affect the
     // account-scoped balance shown for this completed foreground sync. Keep
@@ -4655,6 +4731,7 @@ async fn run_sync_impl(
                 db_data_path,
                 &mut db,
                 network,
+                enhancement.policy(),
                 BlockHeight::from_u32(final_tip_height as u32),
                 TransparentAccountSelection::Except(active_account_uuid),
                 active_account_target,
@@ -4729,7 +4806,7 @@ async fn run_sync_impl(
                 display_target_percentage: 1.0,
                 display_target_blocks: 0,
                 is_syncing: false,
-                is_complete: true,
+                kind: SyncEventKind::Completed,
                 has_new_tx: true,
                 phase_completed_units: 0,
                 phase_total_units: 0,
@@ -4769,7 +4846,7 @@ async fn run_sync_impl(
                 display_target_percentage: 1.0,
                 display_target_blocks: 0,
                 is_syncing: false,
-                is_complete: true,
+                kind: SyncEventKind::Completed,
                 has_new_tx: true,
                 phase_completed_units: 0,
                 phase_total_units: 0,
@@ -4779,6 +4856,78 @@ async fn run_sync_impl(
     }
 
     Ok(())
+}
+
+/// Runs private transparent recovery once a sync has completed and reported
+/// completion at `completed` (scanned height, chain tip), then reports a
+/// [`SyncEventKind::FollowupUpdated`] event so the UI re-reads the balances
+/// and shielding state the run may have restored.
+///
+/// Recovery keeps its own progress in the library and never fails the sync:
+/// errors and outcomes are only logged. With private queries off, the policy
+/// captures `Public`, so the run returns before any read, and nothing is
+/// reported; nor is it when
+/// the run exited.
+///
+/// A background preparation sync (`running_mode` 2) skips the run entirely:
+/// it holds the global sync guard, so a foreground sync requested meanwhile
+/// waits behind it, and recovery runs on the next foreground sync instead.
+#[allow(clippy::too_many_arguments)]
+async fn transparent_followup<S: transparent_ledger::RecoverySource>(
+    running_mode: u8,
+    db: &mut WalletDatabase,
+    db_data_path: &str,
+    network: WalletNetwork,
+    policy: EnhancementPolicy,
+    source: &S,
+    first: Option<AccountUuid>,
+    should_exit: &(dyn Fn() -> bool + Sync),
+    progress_fn: &(impl Fn(SyncProgressEvent) + Send + Sync),
+    completed: (u64, u64),
+) {
+    if !runs_transparent_followup(running_mode) {
+        return;
+    }
+    match transparent_ledger::run(
+        db,
+        db_data_path,
+        network,
+        policy,
+        source,
+        first,
+        std::time::Instant::now,
+        should_exit,
+    )
+    .await
+    {
+        Ok(transparent_ledger::RunOutcome::NotEnabled) => return,
+        Ok(transparent_ledger::RunOutcome::Exited) => {
+            log::info!(
+                "[{}] sync: exiting during private transparent recovery",
+                elapsed()
+            );
+            return;
+        }
+        Ok(outcome) => log::info!(
+            "[{}] sync: private transparent recovery: {:?}",
+            elapsed(),
+            outcome
+        ),
+        // Commits applied before the failure stay durable.
+        Err(error) => log::warn!(
+            "[{}] sync: private transparent recovery failed: {}",
+            elapsed(),
+            error
+        ),
+    }
+    progress_fn(followup_updated_event(completed));
+}
+
+/// Whether a sync running in `running_mode` runs private transparent
+/// recovery after completing: foreground syncs do, background preparation
+/// syncs (mode 2) never do.
+pub(crate) fn runs_transparent_followup(running_mode: u8) -> bool {
+    running_mode != 2
 }
 
 // ==================== Helpers ====================

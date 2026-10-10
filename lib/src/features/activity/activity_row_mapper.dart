@@ -58,12 +58,21 @@ ActivityRowData buildTransactionActivityRow({
       ? transactionActivityPool(transaction)
       : giftCardDisplayPool ?? transactionActivityPool(transaction);
   final signedAmount = isSent ? -amount : amount;
+  // A balance movement is shown neutrally, without claiming a payment or
+  // a destination pool, even when its exact fee is known.
+  final isNetChange =
+      giftCardKind == null &&
+      giftCardAmountZatoshi == null &&
+      transactionFeePresentation(transaction) !=
+          TransactionFeePresentation.separate;
   final replacesPool =
       showPendingEstimate && isPending && (isInbound || isSent);
   final subtitle = replacesPool
       ? pendingLabel ?? 'Checking status'
       : isMigration
       ? 'Orchard → Ironwood'
+      : isNetChange
+      ? null
       : isInbound || isSent
       ? _poolLabel(normalizeActivityPool(displayPool), ordinary: isPayment)
       : null;
@@ -96,6 +105,8 @@ ActivityRowData buildTransactionActivityRow({
                 ? 'Sending'
                 : 'Receiving',
           )
+        : isNetChange
+        ? kNetChangeText
         : _txTitle(kind),
     leadingIconName: giftCardKind != null && !isInFlight
         ? AppIcons.giftCard
@@ -109,6 +120,8 @@ ActivityRowData buildTransactionActivityRow({
                   subtitle == 'Taking longer'
               ? AppIcons.time
               : null)
+        : isNetChange
+        ? null
         : _poolIcon(normalizeActivityPool(displayPool), ordinary: isPayment),
     amountText: activityAmountTextForFormFactor(
       _transactionAmountText(
@@ -131,7 +144,8 @@ ActivityRowData buildTransactionActivityRow({
         : outgoingAmountColor(colors),
     amountSubtitle: isFailed && amount != BigInt.zero
         ? 'Refunded'
-        : privateQueriesEnabled && transactionDetailsIncomplete(transaction)
+        : privateQueriesEnabled &&
+              transactionActivitySummaryIncomplete(transaction)
         ? kIncompleteDetailsText
         : null,
     statusText: isFailed

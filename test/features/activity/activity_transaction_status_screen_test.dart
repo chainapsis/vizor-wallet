@@ -30,6 +30,7 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../fixtures/private_shielding_activity.dart';
 import '../../fakes/fake_enhance_pir_notifier.dart';
 import '../../figma_compare/figma_compare_font_loader.dart';
 
@@ -1071,6 +1072,41 @@ void main() {
     expect(find.text('0.00203209 ZEC'), findsOneWidget);
   });
 
+  testWidgets(
+    'a privately recovered shielding keeps its receipt and unknown account fee',
+    (tester) async {
+      final cases = loadPrivateShieldingCases(
+        txidHex: _txidHex,
+        minedHeight: BigInt.from(3498120),
+        blockTime: _blockTime,
+      );
+      final expected = ['0.0018 ZEC', '0.004 ZEC'];
+      expect(cases, hasLength(expected.length));
+      for (final (index, shielding) in cases.indexed) {
+        await _pumpScreen(
+          tester,
+          privateQueriesEnabled: true,
+          args: ActivityTransactionStatusArgs(
+            txidHex: _txidHex,
+            txKind: 'shielded',
+            initialTransaction: shielding.transaction,
+            initialDetail: shielding.detail,
+          ),
+          historyLoader: (_) async => [shielding.transaction],
+          detailLoader: (_, _) async => shielding.detail,
+        );
+
+        expect(find.byType(ShieldedReceiptView), findsOneWidget);
+        expect(find.byType(SendStatusContentView), findsNothing);
+        expect(find.text('Shielded successfully'), findsOneWidget);
+        expect(find.text(expected[index]), findsOneWidget);
+        expect(find.text('Tx fee'), findsOneWidget);
+        expect(find.text('0.0002 ZEC'), findsNothing);
+        expect(find.text(kUnknownFeeText), findsOneWidget);
+      }
+    },
+  );
+
   testWidgets('renders the Orchard to Ironwood migration receipt', (
     tester,
   ) async {
@@ -1145,10 +1181,8 @@ void main() {
   });
 
   testWidgets(
-    'falls back to the minimal receipt for a sent tx with no recipient',
+    'keeps the send receipt with an unknown recipient when none is recorded',
     (tester) async {
-      // A sent tx whose detail carries no resolvable recipient address skips
-      // the SendStatusContentView branch and routes to _fallbackContent.
       await _pumpScreen(
         tester,
         args: ActivityTransactionStatusArgs(
@@ -1158,27 +1192,65 @@ void main() {
             txKind: 'sent',
             fee: BigInt.from(10000),
           ),
-          // primaryAddress omitted (null) -> no recipient to resolve.
+          // primaryAddress omitted (null) -> no recorded recipient.
           initialDetail: _detail(txKind: 'sent'),
         ),
       );
 
-      // No dedicated redesigned receipt rendered.
-      expect(find.byType(SendStatusContentView), findsNothing);
+      // The send shell, with a To row that names no one and offers nothing
+      // to verify.
+      expect(find.byType(SendStatusContentView), findsOneWidget);
       expect(find.byType(ReceivedReceiptView), findsNothing);
       expect(find.byType(ShieldedReceiptView), findsNothing);
-
-      // Neutral fallback: title, amount, status card.
-      expect(find.text('Transaction'), findsOneWidget);
+      expect(find.text('Sent successfully'), findsOneWidget);
+      expect(find.text('Transaction'), findsNothing);
       expect(find.text('Amount'), findsOneWidget);
       expect(find.text('120.00 ZEC'), findsOneWidget);
       expect(find.text('Completed'), findsOneWidget);
-      // Non-zero fee renders the fallback "Tx fee" row.
       expect(find.text('Tx fee'), findsOneWidget);
       expect(find.text('0.0001 ZEC'), findsOneWidget);
-      // The fallback has no counterparty row, so no To/From label is forced.
-      expect(find.text('To'), findsNothing);
+      expect(find.text('To'), findsOneWidget);
+      expect(find.text(kUnknownRecipientText), findsOneWidget);
+      expect(find.text('Show full address'), findsNothing);
       expect(find.text('From'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'recovered receipt shows a known network fee without attribution',
+    (tester) async {
+      final tx = _transaction(
+        txKind: 'sent',
+        fee: BigInt.zero,
+        feeState: rust_sync.TransactionFeeState.unknown,
+        displayAmount: BigInt.from(1000000),
+      );
+      await _pumpScreen(
+        tester,
+        privateQueriesEnabled: true,
+        args: ActivityTransactionStatusArgs(
+          txidHex: _txidHex,
+          txKind: 'sent',
+          initialTransaction: tx,
+          initialDetail: _detail(
+            txKind: 'sent',
+            primaryAddress: _recipientAddress,
+            networkFee: BigInt.from(15000),
+          ),
+        ),
+      );
+      expect(find.text('Network fee'), findsOneWidget);
+      expect(find.text('0.00015 ZEC'), findsOneWidget);
+      expect(find.text(kUnknownFeeText), findsNothing);
+      expect(find.text('0.01 ZEC'), findsOneWidget);
+      expect(tx.feeState, rust_sync.TransactionFeeState.unknown);
+      expect(tx.fee, BigInt.zero);
+      expect(
+        tester
+            .widget<SendStatusContentView>(find.byType(SendStatusContentView))
+            .feeHelpText,
+        kUnattributedNetworkFeeHelpText,
+      );
     },
   );
 
@@ -1208,6 +1280,106 @@ void main() {
       expect(find.text('Incomplete'), findsOneWidget);
     },
   );
+
+  testWidgets('a fee-only entry remains one neutral net change line', (
+    tester,
+  ) async {
+    // Reconstructed zero external payment; recipient details can be missing.
+    await _pumpScreen(
+      tester,
+      privateQueriesEnabled: true,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'sent',
+        initialTransaction: _transaction(
+          txKind: 'sent',
+          fee: BigInt.from(65000),
+          displayAmount: BigInt.from(65000),
+          amountIncludesFee: true,
+          detailsComplete: false,
+          accountBalanceDelta: -65000,
+          displayPool: 'transparent',
+        ),
+        initialDetail: _detail(txKind: 'sent'),
+      ),
+    );
+
+    expect(find.text('Transaction'), findsOneWidget);
+    expect(find.text(kNetChangeText), findsOneWidget);
+    expect(find.text('0.00065 ZEC'), findsOneWidget);
+    expect(find.text('Amount'), findsNothing);
+    expect(find.text('Tx fee'), findsNothing);
+    expect(find.text('Incomplete'), findsOneWidget);
+  });
+
+  testWidgets(
+    'a provisional fee-sized movement keeps its net change and fee explanation',
+    (tester) async {
+      // A mixed-pool balance decrease does not establish a fee-only activity.
+      await _pumpScreen(
+        tester,
+        privateQueriesEnabled: true,
+        args: ActivityTransactionStatusArgs(
+          txidHex: _txidHex,
+          txKind: 'sent',
+          initialTransaction: _transaction(
+            txKind: 'sent',
+            fee: BigInt.from(20000),
+            displayAmount: BigInt.from(20000),
+            amountIncludesFee: true,
+            detailsComplete: false,
+            provisional: true,
+            displayPool: 'unknown',
+            accountBalanceDelta: -20000,
+          ),
+          initialDetail: _detail(txKind: 'sent'),
+        ),
+      );
+
+      expect(find.text('Transaction'), findsOneWidget);
+      expect(find.text('Network fee'), findsNothing);
+      expect(find.text(kNetChangeText), findsOneWidget);
+      expect(find.text('0.0002 ZEC'), findsNWidgets(2));
+      expect(find.text('Amount'), findsNothing);
+      expect(find.text('Tx fee'), findsOneWidget);
+      expect(find.text('Incomplete'), findsOneWidget);
+    },
+  );
+
+  testWidgets('an amount that includes the fee is labelled a net change', (
+    tester,
+  ) async {
+    await _pumpScreen(
+      tester,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'sent',
+        initialTransaction: _transaction(
+          txKind: 'sent',
+          fee: BigInt.from(10000),
+          displayAmount: BigInt.from(70000000),
+          amountIncludesFee: true,
+          detailsComplete: false,
+          provisional: true,
+        ),
+        initialDetail: _detail(
+          txKind: 'sent',
+          primaryAddress: _recipientAddress,
+        ),
+      ),
+    );
+
+    expect(find.text('Transaction'), findsOneWidget);
+    expect(find.text('Sent successfully'), findsNothing);
+    expect(find.byType(SendStatusContentView), findsNothing);
+    expect(find.text(kNetChangeText), findsOneWidget);
+    expect(find.text('Amount'), findsNothing);
+    // Nothing is subtracted, and the fee keeps its own line.
+    expect(find.text('0.70 ZEC'), findsOneWidget);
+    expect(find.text('Tx fee'), findsOneWidget);
+    expect(find.text('0.0001 ZEC'), findsOneWidget);
+    expect(find.text('Network fee'), findsNothing);
+  });
 
   for (final kind in ['sent', 'received', 'shielded', 'migration']) {
     for (final privateQueriesEnabled in [false, true]) {
@@ -1318,6 +1490,33 @@ void main() {
 
     expect(find.text('Details'), findsOneWidget);
     expect(find.text('Incomplete'), findsOneWidget);
+  });
+
+  testWidgets('an exact recovered send still marks missing recipient details', (
+    tester,
+  ) async {
+    await _pumpScreen(
+      tester,
+      privateQueriesEnabled: true,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'sent',
+        initialTransaction: _transaction(
+          txKind: 'sent',
+          displayPool: 'transparent',
+          detailsComplete: false,
+          displayAmount: BigInt.from(10000),
+          fee: BigInt.from(10000),
+          feeState: rust_sync.TransactionFeeState.known,
+          accountBalanceDelta: -20000,
+        ),
+        initialDetail: _detail(txKind: 'sent'),
+      ),
+    );
+
+    expect(find.text('Details'), findsOneWidget);
+    expect(find.text('Incomplete'), findsOneWidget);
+    expect(find.text('Tx fee'), findsOneWidget);
   });
 
   testWidgets('a complete receipt has no incomplete-details row', (
@@ -1437,22 +1636,26 @@ rust_sync.TransactionInfo _transaction({
   rust_sync.TransactionFeeState feeState = rust_sync.TransactionFeeState.known,
   bool detailsComplete = true,
   bool provisional = false,
+  bool amountIncludesFee = false,
   BigInt? displayAmount,
+  int accountBalanceDelta = 0,
+  String displayPool = 'shielded',
 }) {
   return rust_sync.TransactionInfo(
     txidHex: txidHex,
     minedHeight: minedHeight ?? BigInt.from(2500000),
     expiredUnmined: expiredUnmined,
-    accountBalanceDelta: 0,
+    accountBalanceDelta: accountBalanceDelta,
     fee: fee ?? BigInt.zero,
     feeState: feeState,
     detailsComplete: detailsComplete,
     provisional: provisional,
+    amountIncludesFee: amountIncludesFee,
     blockTime: _blockTime,
-    isTransparent: false,
+    isTransparent: displayPool == 'transparent',
     txKind: txKind,
     displayAmount: displayAmount ?? BigInt.from(12000000000),
-    displayPool: 'shielded',
+    displayPool: displayPool,
     createdTime: _blockTime,
   );
 }
@@ -1464,9 +1667,11 @@ rust_sync.TransactionDetail _detail({
   String? sourcePool,
   String? memo,
   List<rust_sync.TransactionDetailOutput> outputs = const [],
+  BigInt? networkFee,
 }) {
   return rust_sync.TransactionDetail(
     txidHex: _txidHex,
+    networkFee: networkFee,
     detailsComplete: true,
     provisional: false,
     txKind: txKind,
@@ -1475,6 +1680,8 @@ rust_sync.TransactionDetail _detail({
     sourcePool: sourcePool,
     memo: memo,
     outputs: outputs,
+    transparentRecipients: const [],
+    transparentOmissions: const [],
   );
 }
 

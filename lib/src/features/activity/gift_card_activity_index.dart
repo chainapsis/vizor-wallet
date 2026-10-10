@@ -190,6 +190,7 @@ class GiftCardActivityIndex {
           feeState: rust_sync.TransactionFeeState.notApplicable,
           detailsComplete: true,
           provisional: false,
+          amountIncludesFee: false,
           blockTime: BigInt.zero,
           isTransparent: false,
           txKind: 'receiving',

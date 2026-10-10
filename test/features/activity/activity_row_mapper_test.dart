@@ -10,6 +10,8 @@ import 'package:zcash_wallet/src/features/activity/models/activity_row_data.dart
 import 'package:zcash_wallet/src/features/activity/transaction_completeness.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
+import '../../fixtures/private_shielding_activity.dart';
+
 void main() {
   Future<ActivityRowData> mapRow(
     WidgetTester tester,
@@ -229,6 +231,24 @@ void main() {
     expect(ironwood.subtitle, 'Shielded');
     final legacy = await mapRow(tester, _transaction(txKind: 'received'));
     expect(legacy.subtitle, 'Shielded');
+  });
+
+  testWidgets('private Enhance shape keeps an incomplete debit neutral', (
+    tester,
+  ) async {
+    final transaction = loadPrivateTransparentActivity();
+    final row = await mapRow(tester, transaction, privateQueriesEnabled: true);
+    expect(row.title, kNetChangeText);
+    expect(row.subtitle, isNull);
+    expect(row.subtitleIconName, isNull);
+    expect(row.amountText, '-0.00215 ZEC');
+    expect(row.statusText, 'Completed');
+    expect(row.amountSubtitle, kIncompleteDetailsText);
+    expect(transaction.displayPool, 'unknown');
+    expect(transaction.provisional, isTrue);
+    expect(transaction.detailsComplete, isFalse);
+    expect(transaction.feeState, rust_sync.TransactionFeeState.unknown);
+    expect(transaction.fee, BigInt.zero);
   });
 
   testWidgets(
@@ -487,7 +507,7 @@ void main() {
     expect(row.amountText, activityAmountTextForFormFactor('-12345.6789 ZEC'));
   });
 
-  testWidgets('an incomplete entry is marked, a complete one is not', (
+  testWidgets('only uncertain activity summaries are marked incomplete', (
     tester,
   ) async {
     final complete = await mapRow(tester, _transaction(txKind: 'sent'));
@@ -518,7 +538,7 @@ void main() {
       _transaction(txKind: 'received', detailsComplete: false),
       privateQueriesEnabled: true,
     );
-    expect(missingDetails.amountSubtitle, kIncompleteDetailsText);
+    expect(missingDetails.amountSubtitle, isNull);
 
     final publicIncomplete = await mapRow(
       tester,
@@ -526,6 +546,192 @@ void main() {
     );
     expect(publicIncomplete.amountSubtitle, isNull);
   });
+
+  testWidgets('a recovered exact send keeps the public activity summary', (
+    tester,
+  ) async {
+    final transaction = _transaction(
+      txKind: 'sent',
+      displayPool: 'transparent',
+      detailsComplete: false,
+      displayAmount: BigInt.from(10000),
+      fee: BigInt.from(10000),
+      accountBalanceDelta: -20000,
+    );
+    final privateRow = await mapRow(
+      tester,
+      transaction,
+      privateQueriesEnabled: true,
+    );
+    final publicRow = await mapRow(tester, transaction);
+
+    expect(privateRow.title, 'Sent');
+    expect(privateRow.subtitle, 'Transparent');
+    expect(
+      privateRow.amountText,
+      activityAmountTextForFormFactor('-0.0001 ZEC'),
+    );
+    expect(privateRow.amountSubtitle, isNull);
+    expect(privateRow.timestampText, publicRow.timestampText);
+    expect(privateRow.timestampText, isNotEmpty);
+    expect(
+      transactionDetailsIncomplete(transaction),
+      isTrue,
+      reason: 'the expanded receipt still lacks recipient details',
+    );
+  });
+
+  testWidgets(
+    'settled mixed recovery rows keep dates and incomplete receipts',
+    (tester) async {
+      for (final example in [
+        ('sent', 250000, '-0.0025 ZEC'),
+        ('received', 250000, '+0.0025 ZEC'),
+        ('sent', 200000, '-0.002 ZEC'),
+      ]) {
+        final transaction = _transaction(
+          txKind: example.$1,
+          displayPool: 'transparent',
+          activityPool: 'transparent',
+          displayAmount: BigInt.from(example.$2),
+          detailsComplete: false,
+          provisional: false,
+        );
+        final row = await mapRow(
+          tester,
+          transaction,
+          privateQueriesEnabled: true,
+        );
+        expect(row.amountText, activityAmountTextForFormFactor(example.$3));
+        expect(row.amountSubtitle, isNull);
+        expect(
+          row.timestampText,
+          (await mapRow(tester, transaction)).timestampText,
+        );
+        expect(row.timestampText, isNotEmpty);
+        expect(transactionDetailsIncomplete(transaction), isTrue);
+      }
+    },
+  );
+
+  testWidgets('a settled movement with an unknown role or pool stays marked', (
+    tester,
+  ) async {
+    for (final transaction in [
+      _transaction(txKind: 'unknown', detailsComplete: false),
+      _transaction(
+        txKind: 'sent',
+        displayPool: 'unknown',
+        activityPool: 'transparent',
+        detailsComplete: false,
+        amountIncludesFee: true,
+      ),
+    ]) {
+      final row = await mapRow(
+        tester,
+        transaction,
+        privateQueriesEnabled: true,
+      );
+      expect(row.amountSubtitle, kIncompleteDetailsText);
+    }
+  });
+
+  testWidgets('fee-sized net changes keep their incomplete sent row', (
+    tester,
+  ) async {
+    rust_sync.TransactionInfo recovered({
+      required int displayAmount,
+      required int fee,
+      bool amountIncludesFee = true,
+    }) => _transaction(
+      txKind: 'sent',
+      displayPool: 'unknown',
+      detailsComplete: false,
+      provisional: true,
+      displayAmount: BigInt.from(displayAmount),
+      fee: BigInt.from(fee),
+      amountIncludesFee: amountIncludesFee,
+      accountBalanceDelta: -displayAmount,
+    );
+
+    // A provisional mixed-pool debit cannot establish a fee-only activity.
+    final movement = await mapRow(
+      tester,
+      recovered(displayAmount: 20000, fee: 20000),
+      privateQueriesEnabled: true,
+    );
+    expect(movement.title, kNetChangeText);
+    expect(movement.amountText, activityAmountTextForFormFactor('-0.0002 ZEC'));
+    expect(movement.amountSubtitle, kIncompleteDetailsText);
+
+    // A net change keeps its sent row and its whole amount: a row has no fee
+    // line to repeat the fee in.
+    final netChange = await mapRow(
+      tester,
+      recovered(displayAmount: 70000000, fee: 10000),
+    );
+    expect(netChange.title, kNetChangeText);
+    expect(netChange.amountText, activityAmountTextForFormFactor('-0.7 ZEC'));
+
+    final payment = await mapRow(
+      tester,
+      recovered(displayAmount: 65000, fee: 65000, amountIncludesFee: false),
+    );
+    expect(payment.title, 'Sent', reason: 'a payment equal to its fee');
+  });
+
+  testWidgets('established self-transfer reads as its network fee', (
+    tester,
+  ) async {
+    // A recovered self-transfer keeps its transparent pool in the entry, but
+    // a fee shows no pool.
+    final selfTransfer = await mapRow(
+      tester,
+      _transaction(
+        txKind: 'sent',
+        displayPool: 'transparent',
+        accountBalanceDelta: -10000,
+        detailsComplete: false,
+        displayAmount: BigInt.from(10000),
+        fee: BigInt.from(10000),
+        amountIncludesFee: true,
+      ),
+    );
+    expect(selfTransfer.title, kNetChangeText);
+    expect(
+      selfTransfer.amountText,
+      activityAmountTextForFormFactor('-0.0001 ZEC'),
+    );
+    expect(selfTransfer.subtitle, isNull);
+    expect(selfTransfer.subtitleIconName, isNull);
+  });
+
+  testWidgets(
+    'a privately recovered shielding is a complete Shielded row, not a Sent',
+    (tester) async {
+      final cases = loadPrivateShieldingCases(
+        txidHex: 'ab12cd34',
+        minedHeight: BigInt.from(3498120),
+        blockTime: BigInt.from(1790520240),
+      );
+      final expected = ['0.0018 ZEC', '0.004 ZEC'];
+      expect(cases, hasLength(expected.length));
+      for (final (index, shielding) in cases.indexed) {
+        final row = await mapRow(
+          tester,
+          shielding.transaction,
+          privateQueriesEnabled: true,
+        );
+        expect(row.title, 'Shielded');
+        expect(row.leadingIconName, AppIcons.shieldKeyholeOutline);
+        expect(
+          row.amountText,
+          activityAmountTextForFormFactor(expected[index]),
+        );
+        expect(row.amountSubtitle, isNull, reason: 'details are complete');
+      }
+    },
+  );
 
   testWidgets('a failed entry keeps its refund note', (tester) async {
     final row = await mapRow(
@@ -550,18 +756,24 @@ rust_sync.TransactionInfo _transaction({
   bool detailsComplete = true,
   bool provisional = false,
   String? activityPool,
+  BigInt? fee,
+  bool amountIncludesFee = false,
+  int accountBalanceDelta = 0,
 }) {
   return rust_sync.TransactionInfo(
     txidHex: 'ab12cd34',
     minedHeight: minedHeight ?? BigInt.from(2500000),
     expiredUnmined: expiredUnmined,
-    accountBalanceDelta: 0,
-    fee: BigInt.zero,
-    feeState: rust_sync.TransactionFeeState.notApplicable,
+    accountBalanceDelta: accountBalanceDelta,
+    fee: fee ?? BigInt.zero,
+    feeState: fee == null
+        ? rust_sync.TransactionFeeState.notApplicable
+        : rust_sync.TransactionFeeState.known,
     detailsComplete: detailsComplete,
     provisional: provisional,
+    amountIncludesFee: amountIncludesFee,
     blockTime: BigInt.from(1750000000),
-    isTransparent: false,
+    isTransparent: displayPool == 'transparent',
     txKind: txKind,
     displayAmount: displayAmount ?? BigInt.from(12000000000),
     displayPool: displayPool,

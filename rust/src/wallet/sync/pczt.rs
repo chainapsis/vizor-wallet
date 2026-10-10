@@ -88,6 +88,7 @@ use zcash_protocol::consensus::{NetworkConstants, Parameters};
 use crate::wallet::db::with_wallet_db_write_lock;
 use crate::wallet::network::WalletNetwork;
 
+use super::hardware_authority::DispatchRefusal;
 use super::{
     consume_stored_proposal, discard_stored_proposal, finish_stored_proposal, open_wallet_db,
     retain_stored_proposal_lock_until_expiry, stored_proposal_lock, StoredOvkPolicy,
@@ -1283,6 +1284,35 @@ pub(crate) fn extract_transaction_from_pczt(
 // validated signed batch and its proposal remain available for retry.
 const HARDWARE_RECOVERY_RETRYABLE_PREFIX: &str = "hardware_recovery_retryable:";
 
+/// Starts the error for a broadcast that transparent broadcast authority
+/// refused for good before anything was sent: quarantine, a hold, a policy
+/// that no longer selects the inputs, or unknown, spent or immature inputs.
+/// The Ledger outbox, which keeps no proposal here, discards such an
+/// operation and releases its inputs instead of retrying it until expiry.
+pub(crate) const HARDWARE_AUTHORITY_REFUSED_PREFIX: &str = "hardware_authority_refused:";
+
+/// The error for a final refusal before anything was sent. A proposal's own
+/// release already ends it; without one, as for the Ledger outbox, the
+/// marker tells the outbox to.
+fn final_refusal(proposal: Option<(u64, &str)>, refusal: DispatchRefusal) -> String {
+    match proposal {
+        Some(_) => refusal.into(),
+        None => format!("{HARDWARE_AUTHORITY_REFUSED_PREFIX} {refusal}"),
+    }
+}
+
+/// The error for a refused broadcast that carries no retained batch: marked
+/// retryable while private recovery catches up or the wallet is too busy to
+/// reserve, so the caller keeps its signed payload and offers to send it
+/// again.
+fn retryable_refusal(refusal: DispatchRefusal) -> String {
+    if refusal.is_retryable() {
+        format!("{HARDWARE_RECOVERY_RETRYABLE_PREFIX} {refusal}")
+    } else {
+        refusal.into()
+    }
+}
+
 struct PreparedSignedPczt {
     combined: pczt::Pczt,
     extracted: ExtractedPcztTransaction,
@@ -1872,15 +1902,41 @@ async fn store_and_broadcast_pczts_inner(
                     }
                 }
             };
+            let earlier = prepared[..index]
+                .iter()
+                .map(|p| &p.extracted.tx)
+                .collect::<Vec<_>>();
+            if newly_broadcasted == 0 && mined_count == 0 {
+                // A block that lands while the device signs leaves private
+                // recovery behind the wallet's tip for a moment. Wait for it
+                // before anything is retained, and keep the signed batch for a
+                // retry if it does not catch up in time.
+                match super::hardware_authority::await_authority(
+                    db_path,
+                    network,
+                    &item.extracted.tx,
+                    &earlier,
+                    latest.height,
+                )
+                .await
+                {
+                    Ok(()) => {}
+                    Err(refusal) if refusal.is_retryable() => {
+                        return Err(retryable_refusal(refusal));
+                    }
+                    Err(refusal) => {
+                        return release_signed_pczt_operation_after_failure(
+                            proposal,
+                            final_refusal(proposal, refusal),
+                        );
+                    }
+                }
+            }
             if newly_broadcasted == 0 {
                 if let Some((proposal_id, send_flow_id)) = proposal {
                     super::mark_proposal_broadcast_started(proposal_id, send_flow_id)?;
                 }
             }
-            let earlier = prepared[..index]
-                .iter()
-                .map(|p| &p.extracted.tx)
-                .collect::<Vec<_>>();
             let attempt = match super::hardware_authority::dispatch(
                 db_path,
                 network,
@@ -1904,7 +1960,19 @@ async fn store_and_broadcast_pczts_inner(
                     }
                 }
                 Ok(Err(error)) => PcztBroadcastAttempt::TransportUnknown(error.to_string()),
-                Err(error) => PcztBroadcastAttempt::RouteUnavailable(error),
+                // A block landed between the wait and the reservation, or the
+                // wallet stayed too busy to reserve. Nothing was sent, and the
+                // retained batch stays retryable.
+                Err(refusal)
+                    if refusal.is_retryable() && newly_broadcasted == 0 && mined_count == 0 =>
+                {
+                    return Err(retryable_refusal(refusal));
+                }
+                // Refused for good with nothing sent: the batch fails whole.
+                Err(refusal) if index == 0 && mined_count == 0 => {
+                    PcztBroadcastAttempt::RouteUnavailable(final_refusal(proposal, refusal))
+                }
+                Err(error) => PcztBroadcastAttempt::RouteUnavailable(error.to_string()),
             };
             if matches!(attempt, PcztBroadcastAttempt::Accepted) {
                 newly_broadcasted += 1;
@@ -2435,6 +2503,13 @@ pub async fn extract_and_broadcast_pczt(
     {
         return Err(error);
     }
+    // Nothing is retained before submission here; a refusal while private
+    // recovery catches up keeps only the caller's signed payload for a retry.
+    if let Err(refusal) =
+        super::hardware_authority::await_authority(db_path, network, &tx, &[], latest.height).await
+    {
+        return Err(retryable_refusal(refusal));
+    }
 
     let resp = match super::hardware_authority::dispatch(
         db_path,
@@ -2448,7 +2523,8 @@ pub async fn extract_and_broadcast_pczt(
             )
         },
     )
-    .await?
+    .await
+    .map_err(retryable_refusal)?
     {
         Ok(resp) => resp,
         // Once SendTransaction has started, a gRPC status is not proof that
@@ -2736,6 +2812,34 @@ mod tests {
                 .user_address()
                 .as_deref(),
             Some(tex_address.as_str())
+        );
+    }
+
+    #[test]
+    fn only_a_refusal_that_can_clear_keeps_the_signature() {
+        let catching_up = retryable_refusal(DispatchRefusal::CatchingUp(
+            "Transparent broadcast authority unavailable".into(),
+        ));
+        assert!(
+            catching_up.starts_with(HARDWARE_RECOVERY_RETRYABLE_PREFIX),
+            "{catching_up}"
+        );
+        // A wallet too busy to reserve decided nothing about the transaction.
+        let busy = retryable_refusal(DispatchRefusal::Unavailable(
+            "Reserve transparent broadcast authority: database is locked".into(),
+        ));
+        assert!(
+            busy.starts_with(HARDWARE_RECOVERY_RETRYABLE_PREFIX),
+            "{busy}"
+        );
+        // Dart offers to retry the same signature only behind this marker.
+        assert!(catching_up.contains("hardware_recovery_retryable:"));
+        let refused = retryable_refusal(DispatchRefusal::Refused(
+            "Transparent broadcast authority unavailable".into(),
+        ));
+        assert!(
+            !refused.contains(HARDWARE_RECOVERY_RETRYABLE_PREFIX),
+            "{refused}"
         );
     }
 

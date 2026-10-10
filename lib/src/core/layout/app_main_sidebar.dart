@@ -30,6 +30,7 @@ import '../formatting/number_format.dart';
 import '../formatting/zec_amount.dart';
 import '../privacy/privacy_mask.dart';
 import '../profile_pictures.dart';
+import '../storage/linux_keyring_coordinator.dart';
 import '../formatting/sync_status_label.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_copy_feedback.dart';
@@ -308,7 +309,14 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
     final accountNotifier = ref.read(accountProvider.notifier);
     final syncNotifier = ref.read(syncProvider.notifier);
     await _trackPendingNavigation(() async {
-      await accountNotifier.switchAccount(uuid);
+      try {
+        await accountNotifier.switchAccount(uuid);
+      } on WalletMutationBusyException catch (error) {
+        // Another wallet mutation, such as the private queries toggle, holds
+        // the wallet: stay on this screen and say why nothing happened.
+        if (mounted) showAppToast(context, error.toString());
+        return;
+      }
       if (mounted) {
         context.go('/home');
       }

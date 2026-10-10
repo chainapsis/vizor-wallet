@@ -91,19 +91,22 @@ rust_sync.TransactionInfo _tx({
   rust_sync.TransactionFeeState feeState = rust_sync.TransactionFeeState.known,
   bool detailsComplete = true,
   bool provisional = false,
+  bool amountIncludesFee = false,
   BigInt? displayAmount,
+  int accountBalanceDelta = 0,
 }) {
   return rust_sync.TransactionInfo(
     txidHex: txid,
     minedHeight: minedHeight ?? BigInt.from(2500000),
     expiredUnmined: expired,
-    accountBalanceDelta: 0,
+    accountBalanceDelta: accountBalanceDelta,
     fee: fee ?? BigInt.from(15000),
     feeState: feeState,
     detailsComplete: detailsComplete,
     provisional: provisional,
+    amountIncludesFee: amountIncludesFee,
     blockTime: blockTime ?? BigInt.from(1750000000),
-    isTransparent: false,
+    isTransparent: displayPool == 'transparent',
     txKind: kind,
     displayAmount: displayAmount ?? BigInt.from(12312000000),
     displayPool: displayPool,
@@ -120,17 +123,22 @@ rust_sync.TransactionDetail _detail({
   String? sourcePool,
   String? memo,
   List<rust_sync.TransactionDetailOutput> outputs = const [],
+  bool hasRecipient = true,
+  BigInt? networkFee,
 }) {
   return rust_sync.TransactionDetail(
     txidHex: txid,
+    networkFee: networkFee,
     detailsComplete: true,
     provisional: false,
     txKind: kind,
-    primaryAddress: primaryAddress ?? _address,
+    primaryAddress: hasRecipient ? primaryAddress ?? _address : null,
     sourceAddress: sourceAddress,
     sourcePool: sourcePool,
     memo: memo,
     outputs: outputs,
+    transparentRecipients: const [],
+    transparentOmissions: const [],
   );
 }
 
@@ -215,6 +223,34 @@ Widget _app(
 }
 
 void main() {
+  testWidgets(
+    'recovered mobile receipt shows known network fee without attribution',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(393, 1200));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final tx = _tx(
+        fee: BigInt.zero,
+        feeState: rust_sync.TransactionFeeState.unknown,
+      );
+      await tester.pumpWidget(
+        _app(
+          tx,
+          privateQueriesEnabled: true,
+          detail: _detail(networkFee: BigInt.from(15000)),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Network fee'), findsOneWidget);
+      expect(find.text('0.00015 ZEC'), findsOneWidget);
+      expect(find.text(kUnknownFeeText), findsNothing);
+      expect(tx.feeState, rust_sync.TransactionFeeState.unknown);
+      expect(tx.fee, BigInt.zero);
+      await tester.tap(find.text('0.00015 ZEC'));
+      await tester.pumpAndSettle();
+      expect(find.text(kUnattributedNetworkFeeHelpText), findsOneWidget);
+    },
+  );
+
   testWidgets(
     'older mobile receipt refreshes on sync completion without recent changes',
     (tester) async {
@@ -798,6 +834,102 @@ void main() {
     },
   );
 
+  testWidgets('a fee-only entry remains one neutral net change line', (
+    tester,
+  ) async {
+    // Reconstructed zero external payment; recipient details can be missing.
+    final tx = _tx(
+      fee: BigInt.from(65000),
+      displayAmount: BigInt.from(65000),
+      displayPool: 'transparent',
+      amountIncludesFee: true,
+      detailsComplete: false,
+      accountBalanceDelta: -65000,
+    );
+    await tester.pumpWidget(
+      _app(
+        tx,
+        detail: _detail(hasRecipient: false),
+        privateQueriesEnabled: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Transaction'), findsOneWidget);
+    expect(find.text('Sent successfully'), findsNothing);
+    expect(find.text(kNetChangeText), findsOneWidget);
+    expect(find.text('0.00065 ZEC'), findsOneWidget);
+    expect(find.text('Amount'), findsNothing);
+    expect(find.text('Tx fee'), findsNothing);
+    expect(find.text('To'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('mobile_tx_status_details_incomplete')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets(
+    'a provisional fee-sized movement keeps its net change and fee explanation',
+    (tester) async {
+      // A mixed-pool balance decrease does not establish a fee-only activity.
+      final tx = _tx(
+        fee: BigInt.from(20000),
+        displayAmount: BigInt.from(20000),
+        displayPool: 'unknown',
+        amountIncludesFee: true,
+        detailsComplete: false,
+        provisional: true,
+        accountBalanceDelta: -20000,
+      );
+      await tester.pumpWidget(
+        _app(
+          tx,
+          detail: _detail(hasRecipient: false),
+          privateQueriesEnabled: true,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Transaction'), findsOneWidget);
+      expect(find.text('Sent successfully'), findsNothing);
+      expect(find.text('Network fee'), findsNothing);
+      expect(find.text(kNetChangeText), findsOneWidget);
+      expect(find.text('0.0002 ZEC'), findsNWidgets(2));
+      expect(find.text('Amount'), findsNothing);
+      expect(find.text('Tx fee'), findsOneWidget);
+      expect(find.text('To'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('mobile_tx_status_details_incomplete')),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets('an amount that includes the fee is labelled a net change', (
+    tester,
+  ) async {
+    final tx = _tx(
+      fee: BigInt.from(10000),
+      displayAmount: BigInt.from(70000000),
+      displayPool: 'unknown',
+      amountIncludesFee: true,
+      detailsComplete: false,
+      provisional: true,
+    );
+    await tester.pumpWidget(_app(tx, detail: _detail()));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Transaction'), findsOneWidget);
+    expect(find.text('Sent successfully'), findsNothing);
+    expect(find.text(kNetChangeText), findsOneWidget);
+    expect(find.text('Amount'), findsNothing);
+    // Nothing is subtracted, and the fee keeps its own line.
+    expect(find.text('0.70 ZEC'), findsOneWidget);
+    expect(find.text('Tx fee'), findsOneWidget);
+    expect(find.text('0.0001 ZEC'), findsOneWidget);
+    expect(find.text('Network fee'), findsNothing);
+  });
+
   for (final kind in ['sent', 'received', 'shielded', 'migration']) {
     for (final privateQueriesEnabled in [false, true]) {
       testWidgets(
@@ -996,9 +1128,7 @@ void main() {
     expect(find.text('Transparent'), findsNothing);
   });
 
-  testWidgets('gift card receipt keeps pool details hidden', (
-    tester,
-  ) async {
+  testWidgets('gift card receipt keeps pool details hidden', (tester) async {
     for (final pool in ['ironwood', 'shielded', 'orchard', 'sapling']) {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpWidget(
@@ -1287,6 +1417,8 @@ void main() {
             outputs: const [],
             detailsComplete: true,
             provisional: false,
+            transparentRecipients: const [],
+            transparentOmissions: const [],
           ),
         ),
       );

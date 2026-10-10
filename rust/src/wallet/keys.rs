@@ -395,6 +395,20 @@ pub fn software_account_first_external_transparent_address(
     seed: &SecretVec<u8>,
     account_index: u32,
 ) -> Result<String, String> {
+    let taddr = software_account_first_external_transparent_receiver(network, seed, account_index)?;
+    Ok(encode_transparent_address(
+        &network.b58_pubkey_address_prefix(),
+        &network.b58_script_address_prefix(),
+        &taddr,
+    ))
+}
+
+/// The transparent receiver at `m/44'/coin_type'/account'/0/0`, unencoded.
+pub(crate) fn software_account_first_external_transparent_receiver(
+    network: WalletNetwork,
+    seed: &SecretVec<u8>,
+    account_index: u32,
+) -> Result<transparent::address::TransparentAddress, String> {
     let ufvk = software_account_ufvk(network, seed, account_index)?;
     let transparent_key = ufvk
         .transparent()
@@ -402,15 +416,9 @@ pub fn software_account_first_external_transparent_address(
     let external_ivk = transparent_key
         .derive_external_ivk()
         .map_err(|e| format!("Failed to derive transparent external IVK: {e}"))?;
-    let taddr = external_ivk
+    external_ivk
         .derive_address(NonHardenedChildIndex::ZERO)
-        .map_err(|e| format!("Failed to derive transparent address index 0: {e}"))?;
-
-    Ok(encode_transparent_address(
-        &network.b58_pubkey_address_prefix(),
-        &network.b58_script_address_prefix(),
-        &taddr,
-    ))
+        .map_err(|e| format!("Failed to derive transparent address index 0: {e}"))
 }
 
 /// Return the standard transparent receivers for `account'` across the first
@@ -1003,6 +1011,12 @@ pub fn list_account_uuids_from_db(db_path: &str) -> Result<Vec<String>, String> 
 /// rows. Vizor cleanup shares the caller-owned transaction; any refusal or cleanup
 /// failure rolls back both. Cache eviction and process-local cleanup follow commit.
 /// The UI handles deleting the last account as a full wallet reset.
+///
+/// The account's transparent PIR companions are deleted after the wallet write
+/// lock is released: a recovery source holding one may be waiting for that lock
+/// to apply its commits. A companion left behind is deleted at the next sync
+/// start (`remove_orphan_companions`) or when another account's companion is
+/// next opened.
 pub fn delete_account(
     db_path: &str,
     network: WalletNetwork,
@@ -1026,8 +1040,15 @@ pub fn delete_account(
                 "Failed to discard Keystone migration requests after deleting account: {error}"
             );
         }
-        Ok(())
-    })
+        Ok::<_, String>(())
+    })?;
+    if let Err(error) = crate::wallet::sync_engine::transparent_ledger::pir::remove_companions(
+        db_path,
+        account_uuid,
+    ) {
+        log::warn!("Failed to delete transparent PIR companions after deleting account: {error}");
+    }
+    Ok(())
 }
 
 fn delete_account_rows(
@@ -1054,15 +1075,14 @@ fn delete_account_rows(
     // The library owns wallet deletion and its compatibility/lifecycle checks. Borrow
     // our transaction so all Vizor cleanup either commits with it or rolls back with it.
     {
+        use crate::wallet::sync_engine::enhancement::transparent_ledger_mode_for;
         let mut db = zcash_client_sqlite::WalletDb::from_connection(
             zcash_client_sqlite::SqlTransaction::new(&tx),
             network,
             zcash_client_sqlite::util::SystemClock,
             voting_crypto_deps::rand::rngs::OsRng,
         )
-        .with_transparent_ledger_mode(
-            crate::wallet::sync_engine::enhancement::transparent_ledger_mode_for(db_path),
-        );
+        .with_transparent_ledger_mode(transparent_ledger_mode_for(db_path, network));
         use zcash_client_backend::data_api::WalletWrite;
         db.delete_account(account_id)
             .map_err(|e| format!("Failed to delete account: {e}"))?;

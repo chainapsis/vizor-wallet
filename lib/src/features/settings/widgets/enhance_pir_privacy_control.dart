@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../core/config/private_transparent_recovery_config.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import 'network_privacy_control.dart';
@@ -20,6 +21,8 @@ class EnhancePirPrivacyControl extends StatelessWidget {
   /// can never complete (dummy actions, outputs the wallet cannot open), so
   /// they read as failures the user is expected to act on.
   final String? transition;
+
+  /// Whether this build's private queries also recover transparent funds.
 
   @override
   Widget build(BuildContext context) {
@@ -99,7 +102,10 @@ class EnhancePirPrivacyControl extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
           child: Text(
-            'Experimental. Looks up supported transactions without revealing their IDs to servers. Transaction details may take longer to appear.',
+            privateQueriesDescription(
+              'Experimental. Looks up supported transactions without revealing their IDs to servers. Transaction details may take longer to appear.',
+            ),
+            key: const ValueKey('settings_enhance_pir_description'),
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
             ),

@@ -142,7 +142,7 @@ class _UnlockSyncNotifier extends SyncNotifier {
   Future<void> refreshAfterUnlock() async {}
 
   @override
-  Future<void> startSyncAnyway() async {}
+  Future<void> startSyncAnyway({int? latestTipHeight}) async {}
 }
 
 AppBootstrapState _bootstrap({required bool biometricEnabled}) =>

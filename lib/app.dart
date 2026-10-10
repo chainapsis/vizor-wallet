@@ -140,6 +140,7 @@ import 'src/features/voting/screens/voting_submission_confirmation_screen.dart';
 import 'src/providers/theme_mode_provider.dart';
 import 'src/providers/app_security_provider.dart';
 import 'src/providers/enhance_pir_provider.dart';
+import 'src/core/storage/enhance_pir_preference_store.dart';
 import 'src/providers/linux_update_provider.dart';
 import 'src/providers/network_privacy_provider.dart';
 import 'src/providers/rpc_endpoint_failover_provider.dart';
@@ -151,6 +152,7 @@ import 'src/providers/voting/voting_share_tracking_restorer_provider.dart';
 import 'src/providers/wallet_provider.dart';
 import 'src/providers/windows_update_provider.dart';
 import 'src/core/storage/secure_storage_diagnostics.dart';
+import 'src/core/storage/wallet_paths.dart';
 import 'src/core/widgets/linux_keyring_gate.dart';
 import 'src/core/storage/linux_keyring_coordinator.dart';
 import 'src/features/payment_links/services/gift_claim_setup_coordinator.dart';
@@ -250,21 +252,88 @@ Future<Widget> buildBootstrappedZcashWalletApp({
 /// private to public while the app cannot run. Native keeps its last value, or
 /// private when it never received one, and Rust stays public with no sync
 /// running until a retried bootstrap succeeds.
+///
+/// An unreadable setting applies as private for this launch, but is not
+/// confirmed, so it never raises the wallet's transparent policy. A saved
+/// `true` raises it before native work is applied. Startup lowers it only to
+/// finish an explicit opt-out the app did not live to finish: a saved `false`
+/// with a persisted opt-out marker. An unreadable marker or setting never
+/// lowers. A failed raise or lowering leaves the wallet private; the next
+/// sync retries a raise, the next launch a lowering.
+///
+/// What it applied is recorded in [TransparentPolicyStartup.current] for the
+/// providers. Last, it prepares private transparent recovery's companion
+/// storage; see [prepareTransparentRecoveryCompanions].
 @visibleForTesting
 Future<void> applyEnhancePirPolicy(
   AppBootstrapState bootstrap, {
   void Function(bool enabled)? setRustEnabled,
+  void Function(bool confirmed)? setPreferenceConfirmed,
+  TransparentPolicyReconciler? reconcileTransparentPolicy,
+  TransparentOptOutStore optOutStore =
+      const SharedPreferencesTransparentOptOutStore(),
   Future<void> Function(bool enabled)? setNativePrivateRecovery,
+  Future<void> Function()? prepareCompanions,
 }) async {
+  TransparentPolicyStartup.current = const TransparentPolicyStartup();
   if (bootstrap.hasBlockingFailure) {
     log('bootstrap: blocked; leaving private recovery policy unchanged');
     return;
   }
+  final saved = bootstrap.enhancePirEnabled;
   final enabled =
-      bootstrap.enhancePirEnabled &&
-      isEnhancePirAvailableForNetwork(bootstrap.network);
-  (setRustEnabled ??
-      (enabled) => rust_sync.setEnhancePirEnabled(enabled: enabled))(enabled);
+      (saved ?? true) && isEnhancePirAvailableForNetwork(bootstrap.network);
+  void applyRuntimeSetting() {
+    (setRustEnabled ??
+        (enabled) => rust_sync.setEnhancePirEnabled(enabled: enabled))(enabled);
+    (setPreferenceConfirmed ??
+        (confirmed) => rust_sync.setEnhancePirPreferenceConfirmed(
+          confirmed: confirmed,
+        ))(saved != null);
+  }
+
+  final reconcile =
+      reconcileTransparentPolicy ??
+      walletTransparentPolicyReconciler(bootstrap.network);
+  bool? optOutPending;
+  try {
+    optOutPending = await optOutStore.readPending();
+  } catch (error) {
+    // Unknown: never lower on uncertainty. The wallet stays as it is.
+    log('bootstrap: could not read the private queries opt-out: $error');
+  }
+  rust_sync.ApiAppliedTransparentPolicy? applied;
+  var optOutUnfinished = false;
+  if (saved == false && optOutPending == true) {
+    // Finish the opt-out before the runtime switches to the public setting.
+    // Should it fail, the durable private policy keeps governing every lookup.
+    try {
+      applied = await reconcile(false);
+      try {
+        await optOutStore.writePending(false);
+      } catch (error) {
+        // Retried next launch, where lowering a public wallet changes nothing.
+        log('bootstrap: could not clear the private queries opt-out: $error');
+      }
+    } catch (error) {
+      optOutUnfinished = true;
+      log('bootstrap: could not finish the private queries opt-out: $error');
+    }
+    applyRuntimeSetting();
+  } else if (enabled && saved == true) {
+    applyRuntimeSetting();
+    try {
+      applied = await reconcile(true);
+    } catch (error) {
+      log('bootstrap: could not apply private transparent policy: $error');
+    }
+  } else {
+    applyRuntimeSetting();
+  }
+  TransparentPolicyStartup.current = TransparentPolicyStartup(
+    appliedPolicy: applied,
+    optOutPending: optOutUnfinished,
+  );
   try {
     await (setNativePrivateRecovery ??
         IronwoodMigrationBackgroundLifecycle.instance.setPrivateRecovery)(
@@ -275,6 +344,41 @@ Future<void> applyEnhancePirPolicy(
     log(
       'bootstrap: could not apply private recovery to background work: $error',
     );
+  }
+  await (prepareCompanions ?? prepareTransparentRecoveryCompanions)();
+}
+
+/// Deletes companion directories that belong to no current wallet and, in a
+/// build with the private transparent recovery flag, keeps the current
+/// wallet's out of device backups before Rust writes into it.
+///
+/// Best effort: a failure is logged and startup continues. A leftover
+/// directory is swept on a later launch, and the backup mark is set again at
+/// every sync start.
+@visibleForTesting
+Future<void> prepareTransparentRecoveryCompanions({
+  Future<String> Function() resolveDbPath = getWalletDbPath,
+  Future<void> Function(String? currentDbPath) sweep =
+      deleteOrphanCompanionDirectories,
+  Future<void> Function(String dbPath) excludeFromBackup =
+      excludeTransparentRecoveryCompanionsFromBackup,
+}) async {
+  final String dbPath;
+  try {
+    dbPath = await resolveDbPath();
+  } catch (error) {
+    log('bootstrap: could not resolve the wallet for its companions: $error');
+    return;
+  }
+  try {
+    await sweep(dbPath);
+  } catch (error) {
+    log('bootstrap: could not delete orphan recovery companions: $error');
+  }
+  try {
+    await excludeFromBackup(dbPath);
+  } catch (error) {
+    log('bootstrap: could not keep recovery companions out of backups: $error');
   }
 }
 

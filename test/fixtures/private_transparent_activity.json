@@ -1,0 +1,23 @@
+{
+  "transaction": {
+    "txKind": "sent",
+    "displayAmount": 215000,
+    "displayPool": "unknown",
+    "activityPool": "transparent",
+    "accountBalanceDelta": -215000,
+    "fee": 0,
+    "feeState": "Unknown",
+    "detailsComplete": false,
+    "provisional": true,
+    "amountIncludesFee": true,
+    "isTransparent": false,
+    "expiredUnmined": false
+  },
+  "detail": {
+    "txKind": "sent",
+    "memo": null,
+    "detailsComplete": false,
+    "provisional": true,
+    "outputs": []
+  }
+}

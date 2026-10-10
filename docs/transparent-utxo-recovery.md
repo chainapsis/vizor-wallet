@@ -133,7 +133,8 @@ This searches addresses already generated within the wallet's supported gap
 windows. Newly generated children are eligible on a following sync. It does not
 reconstruct the use of fully spent historical addresses to cross arbitrary gaps.
 Software additional-account discovery still uses its existing birthday-bounded
-first-address history check. Returned funds to ephemeral addresses used by
+first-address history check, through the transparent PIR service under private
+queries. Returned funds to ephemeral addresses used by
 another wallet sharing the seed, arbitrary derivation paths, Sprout shielded
 funds, and Keystone device signing are outside this change.
 

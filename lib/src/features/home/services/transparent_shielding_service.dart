@@ -32,6 +32,9 @@ String friendlyShieldBalanceError(Object error) {
   if (isTransparentLedgerNeedsNewerBuildError(message)) {
     return transparentLedgerNeedsNewerBuildMessage;
   }
+  if (isTransparentRecoveryNotSelectedError(message)) {
+    return transparentRecoveryNotSelectedMessage;
+  }
   if (isTransparentRecoveryIncompleteError(message)) {
     return transparentRecoveryIncompleteMessage;
   }
@@ -193,6 +196,19 @@ String shieldPcztBroadcastStatusMessage(
   return result.message ??
       'The shield transaction status is uncertain. Check activity before trying again.';
 }
+
+/// Whether a hardware broadcast failed only because private recovery has not
+/// yet covered the wallet's latest block, so the same signature can be sent
+/// again once it has. Keep identical to Rust's
+/// `HARDWARE_RECOVERY_RETRYABLE_PREFIX`; only Rust marks such a failure.
+bool isHardwareBroadcastRetryable(Object error) =>
+    error.toString().contains('hardware_recovery_retryable:');
+
+/// Shown when a Keystone shield waits for private recovery, with the signature
+/// kept for another try.
+const kShieldWaitingForPrivateRecoveryMessage =
+    'Private recovery is catching up with the latest block. Try again in a '
+    'moment; your Keystone signature is kept.';
 
 String? postBroadcastShieldErrorMessage(Object error) {
   final raw = error.toString();

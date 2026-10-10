@@ -34,6 +34,8 @@ class SendStatusContentView extends StatelessWidget {
     this.isShieldedRecipient = true,
     this.recipientAddressType,
     this.fiatText,
+    this.feeLabel = 'Tx fee',
+    this.feeHelpText = kTxFeeHelpTooltip,
     this.memoText,
     this.memoExpanded = false,
     this.memoLoading = false,
@@ -75,6 +77,8 @@ class SendStatusContentView extends StatelessWidget {
   final String? fiatText;
 
   /// Optional memo; the Message row is omitted when null.
+  final String feeLabel;
+  final String feeHelpText;
   final String? memoText;
 
   /// Whether the Message row shows the full memo (see [ReviewMemoRows]).
@@ -204,11 +208,11 @@ class SendStatusContentView extends StatelessWidget {
             ),
             const ReviewWrapDivider(),
             ReviewListRow(
-              label: 'Tx fee',
+              label: feeLabel,
               value: feeText,
               trailingIconName: AppIcons.help,
               trailingIconColor: colors.text.secondary,
-              trailingIconTooltip: kTxFeeHelpTooltip,
+              trailingIconTooltip: feeHelpText,
               onPressed: onFeeHelp,
             ),
           ],

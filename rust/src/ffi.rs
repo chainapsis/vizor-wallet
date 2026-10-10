@@ -12,10 +12,17 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use crate::migration_preparation::{self, MigrationPreparationProgress};
+use crate::wallet::db::{open_wallet_db_readonly_with_timeout, READ_DB_BUSY_TIMEOUT};
 use crate::wallet::keys;
+use crate::wallet::network::WalletNetwork;
+use crate::wallet::sync_engine::enhancement::{status, EnhancementPolicy};
+use crate::wallet::sync_engine::{SyncError, TransparentLookupGate};
 use crate::wallet::transaction_data::TransactionObservation;
 use zakura_transaction_status::{
-    lightwalletd::LightwalletdSource, DisabledSource, StatusMode, StatusReader, StatusRequest,
+    DisabledSource, StatusError, StatusMode, StatusReader, StatusRequest,
+};
+use zcash_client_backend::data_api::status::{
+    PublicTransactionStatusRequest, TransactionStatusRead, TransactionStatusWork,
 };
 use zcash_primitives::transaction::TxId;
 
@@ -112,6 +119,10 @@ fn lightwalletd_runtime() -> Result<tokio::runtime::Runtime, String> {
 }
 
 const LIGHTWALLETD_RESULT_CANCELLED: i32 = 3;
+/// No observation was made and none was sent; a later attempt may conclude.
+const STATUS_RESULT_INCONCLUSIVE: i32 = 4;
+/// The lookup is not authorized through this ABI. Nothing was sent.
+pub(crate) const STATUS_RESULT_UNSUPPORTED: i32 = 5;
 const LIGHTWALLETD_CANCELLATION_POLL_INTERVAL: Duration = Duration::from_millis(25);
 
 #[repr(C)]
@@ -231,10 +242,25 @@ pub extern "C" fn zcash_lightwalletd_latest_block_height(
     }
 }
 
-/// Observe one transaction through tonic and return only status across the C ABI.
+/// Observe one transaction through public lightwalletd and return only status
+/// across the C ABI.
+///
+/// The request discloses the txid, so it is authorized like every other public
+/// transparent lookup: against the wallet at `db_path`, opened read-only with
+/// its reads honoring a durable `PrivateRequired`, then re-checked by
+/// [`TransparentLookupGate`] as it is sent.
+///
+/// Returns 0 with `output` set, 1 for invalid arguments or a failed lookup,
+/// 2 after a panic, and 3 when cancelled. Otherwise it sends no request and
+/// leaves `output` untouched:
+/// - [`STATUS_RESULT_INCONCLUSIVE`] when the wallet cannot be read; retry later.
+/// - [`STATUS_RESULT_UNSUPPORTED`] when the wallet withholds public lookups or
+///   routes this transaction's status privately.
 #[no_mangle]
 pub extern "C" fn zcash_lightwalletd_observe_transaction(
     lightwalletd_url: *const c_char,
+    db_path: *const c_char,
+    network: *const c_char,
     transaction_id: *const u8,
     transaction_id_len: usize,
     output: *mut CLightwalletdTransactionObservation,
@@ -242,6 +268,13 @@ pub extern "C" fn zcash_lightwalletd_observe_transaction(
 ) -> i32 {
     let result = std::panic::catch_unwind(|| {
         let Some(lightwalletd_url) = (unsafe { c_str_to_str(lightwalletd_url) }) else {
+            return 1;
+        };
+        let Some(db_path) = (unsafe { c_str_to_str(db_path) }) else {
+            return 1;
+        };
+        let Some(network) = (unsafe { c_str_to_str(network) }).and_then(WalletNetwork::from_str)
+        else {
             return 1;
         };
         if transaction_id.is_null() || transaction_id_len != 32 {
@@ -255,56 +288,15 @@ pub extern "C" fn zcash_lightwalletd_observe_transaction(
                 .try_into()
                 .expect("validated txid length"),
         );
-        let runtime = match lightwalletd_runtime() {
-            Ok(runtime) => runtime,
-            Err(error) => {
-                log::error!("ffi: {error}");
-                return 1;
-            }
-        };
-        let cancellation = unsafe { cancellation.as_ref() };
-        match runtime.block_on(await_lightwalletd_request_or_cancellation(
-            cancellation,
-            async {
-                let cancelled =
-                    || cancellation.is_some_and(|token| token.cancelled.load(Ordering::Acquire));
-                let public_source = LightwalletdSource::new(
-                    || async {
-                        crate::wallet::sync_engine::open_background_direct_lwd_channel(
-                            lightwalletd_url,
-                        )
-                        .await
-                        .map_err(|_| zakura_transaction_status::StatusError::Unavailable)
-                    },
-                    &cancelled,
-                );
-                let mut reader = StatusReader::new(
-                    StatusMode::PublicLightwalletd,
-                    public_source,
-                    DisabledSource,
-                );
-                reader
-                    .observe(StatusRequest {
-                        txid: transaction_id,
-                        coverage: zakura_pir_status::LocalCoverageContext::default(),
-                    })
-                    .await
-                    .map(TransactionObservation::from)
-            },
-        )) {
-            Err(()) => LIGHTWALLETD_RESULT_CANCELLED,
-            Ok(Ok(transaction)) => {
-                *output = transaction.into();
-                0
-            }
-            Ok(Err(zakura_transaction_status::StatusError::Cancelled)) => {
-                LIGHTWALLETD_RESULT_CANCELLED
-            }
-            Ok(Err(error)) => {
-                log::error!("ffi: observe lightwalletd transaction: {error}");
-                1
-            }
-        }
+        observe_public_transaction(
+            lightwalletd_url,
+            db_path,
+            network,
+            EnhancementPolicy::current(network),
+            transaction_id,
+            output,
+            unsafe { cancellation.as_ref() },
+        )
     });
 
     match result {
@@ -312,6 +304,135 @@ pub extern "C" fn zcash_lightwalletd_observe_transaction(
         Err(panic) => {
             log_panic("lightwalletd transaction observation", panic);
             2
+        }
+    }
+}
+
+/// [`zcash_lightwalletd_observe_transaction`] under an explicit `policy`, so
+/// tests select one without the process-wide preference.
+pub(crate) fn observe_public_transaction(
+    lightwalletd_url: &str,
+    db_path: &str,
+    network: WalletNetwork,
+    policy: EnhancementPolicy,
+    txid: TxId,
+    output: &mut CLightwalletdTransactionObservation,
+    cancellation: Option<&CLightwalletdCancellation>,
+) -> i32 {
+    let (gate, request) = match authorize_public_observation(db_path, network, policy, txid) {
+        Ok(Some(authorized)) => authorized,
+        Ok(None) => return STATUS_RESULT_UNSUPPORTED,
+        Err(_) => return STATUS_RESULT_INCONCLUSIVE,
+    };
+    #[cfg(test)]
+    test_hooks::authorized();
+    let runtime = match lightwalletd_runtime() {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            log::error!("ffi: {error}");
+            return 1;
+        }
+    };
+    let cancelled = || cancellation.is_some_and(|token| token.cancelled.load(Ordering::Acquire));
+    let observed = runtime.block_on(await_lightwalletd_request_or_cancellation(
+        cancellation,
+        async {
+            let transport = crate::wallet::sync_engine::open_background_direct_lwd_transport(
+                lightwalletd_url,
+            )
+            .await
+            .map_err(|_| StatusError::Unavailable)?;
+            let client = zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient::new(transport.clone());
+            let public_source = status::lightwalletd_source(
+                client,
+                gate.clone().with_transport(transport),
+                &cancelled,
+            );
+            let mut reader = StatusReader::new(
+                StatusMode::PublicLightwalletd,
+                public_source,
+                DisabledSource,
+            );
+            reader
+                .observe(StatusRequest {
+                    txid: request.txid(),
+                    coverage: zakura_pir_status::LocalCoverageContext::default(),
+                })
+                .await
+                .map(TransactionObservation::from)
+        },
+    ));
+    match observed {
+        Err(()) => LIGHTWALLETD_RESULT_CANCELLED,
+        Ok(Ok(transaction)) => {
+            *output = transaction.into();
+            0
+        }
+        // The gated source reports a withheld request as `Cancelled`: a
+        // policy transition landed after authorization.
+        Ok(Err(StatusError::Cancelled)) if !cancelled() && !gate.permits().unwrap_or(false) => {
+            STATUS_RESULT_UNSUPPORTED
+        }
+        Ok(Err(StatusError::Cancelled)) => LIGHTWALLETD_RESULT_CANCELLED,
+        // The gate could not read the policy, so it withheld the request.
+        Ok(Err(StatusError::LocalStorage)) => STATUS_RESULT_INCONCLUSIVE,
+        Ok(Err(error)) => {
+            log::error!("ffi: observe lightwalletd transaction: {error}");
+            1
+        }
+    }
+}
+
+/// Authorizes one public status lookup of `txid` for the wallet at `db_path`
+/// under `policy`, returning the gate that re-checks it at dispatch.
+///
+/// `None` refuses it: the wallet withholds public lookups, or routes this
+/// transaction's status privately. An error means the wallet could not be
+/// read. Neither sends anything.
+fn authorize_public_observation(
+    db_path: &str,
+    network: WalletNetwork,
+    policy: EnhancementPolicy,
+    txid: TxId,
+) -> Result<Option<(TransparentLookupGate, PublicTransactionStatusRequest)>, SyncError> {
+    // Reads honor a durable `PrivateRequired`, also after `configure_db`
+    // selects the captured mode.
+    let mut db = open_wallet_db_readonly_with_timeout(db_path, network, READ_DB_BUSY_TIMEOUT)
+        .map_err(SyncError::db)?;
+    policy.configure_db(&mut db);
+    let lookups = policy.public_transparent_lookups(&db)?;
+    if !lookups.is_allowed() {
+        return Ok(None);
+    }
+    let TransactionStatusWork::Public(request) = db
+        .transaction_status_work_for(txid)
+        .map_err(|error| SyncError::db(format!("transaction_status_work_for: {error}")))?
+    else {
+        return Ok(None);
+    };
+    let gate = TransparentLookupGate::for_wallet(lookups, db_path, network)?;
+    Ok(Some((gate, request)))
+}
+
+/// Test seam: runs a hook on the calling thread after a public observation is
+/// authorized and before it is dispatched, so a test can land a policy
+/// transition between the two.
+#[cfg(test)]
+mod test_hooks {
+    use std::cell::RefCell;
+
+    thread_local! {
+        static AFTER_AUTHORIZATION: RefCell<Option<Box<dyn FnOnce()>>> = RefCell::new(None);
+    }
+
+    /// Runs `hook` after the next authorization on this thread.
+    pub(super) fn after_authorization(hook: impl FnOnce() + 'static) {
+        AFTER_AUTHORIZATION.with(|slot| *slot.borrow_mut() = Some(Box::new(hook)));
+    }
+
+    pub(super) fn authorized() {
+        if let Some(hook) = AFTER_AUTHORIZATION.with(|slot| slot.borrow_mut().take()) {
+            hook();
         }
     }
 }
@@ -346,9 +467,6 @@ pub extern "C" fn zcash_status_pir_observe_transaction(
 ) -> i32 {
     STATUS_RESULT_UNSUPPORTED
 }
-
-const STATUS_RESULT_UNSUPPORTED: i32 = 5;
-const STATUS_RESULT_INCONCLUSIVE: i32 = 4;
 
 /// Private status ABI with explicit policy and decision horizon. Inclusion evidence is read
 /// from the wallet. Unsupported/inconclusive results leave `output` untouched.
@@ -845,5 +963,253 @@ mod tests {
         assert!(unsafe { &*cancellation }.cancelled.load(Ordering::Acquire));
 
         zcash_lightwalletd_cancellation_destroy(cancellation);
+    }
+
+    mod public_observe {
+        use std::ffi::CString;
+
+        use zcash_client_backend::data_api::transparent_ledger::{
+            TransparentLedgerMode, TransparentLedgerWrite,
+        };
+
+        use super::*;
+        use crate::wallet::db::{open_wallet_db_with_timeout, SYNC_DB_BUSY_TIMEOUT};
+        use crate::wallet::sync_engine::test_lwd::CapturingLwd;
+
+        const TXID: [u8; 32] = [7; 32];
+        const UNTOUCHED: CLightwalletdTransactionObservation =
+            CLightwalletdTransactionObservation {
+                state: 99,
+                mined_height: 99,
+            };
+
+        fn wallet(network: WalletNetwork) -> (tempfile::TempDir, String) {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("wallet.db").to_str().unwrap().to_owned();
+            let seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
+            let birthday = (network == WalletNetwork::Regtest).then_some(100);
+            keys::init_db_and_create_account(&path, network, &seed, birthday, "ffi").unwrap();
+            (dir, path)
+        }
+
+        /// Applies `mode` through another connection, as startup or a
+        /// settings transition would.
+        fn apply(path: &str, mode: TransparentLedgerMode) {
+            open_wallet_db_with_timeout(path, WalletNetwork::Regtest, SYNC_DB_BUSY_TIMEOUT)
+                .unwrap()
+                .apply_transparent_policy(mode)
+                .unwrap();
+        }
+
+        /// Calls the C entry point as Swift does; `None` passes a null pointer.
+        fn observe_c(
+            url: &str,
+            db_path: Option<&str>,
+            network: Option<&str>,
+        ) -> (i32, CLightwalletdTransactionObservation) {
+            let url = CString::new(url).unwrap();
+            let db_path = db_path.map(|path| CString::new(path).unwrap());
+            let network = network.map(|network| CString::new(network).unwrap());
+            let mut output = UNTOUCHED;
+            let code = zcash_lightwalletd_observe_transaction(
+                url.as_ptr(),
+                db_path
+                    .as_ref()
+                    .map_or(std::ptr::null(), |path| path.as_ptr()),
+                network
+                    .as_ref()
+                    .map_or(std::ptr::null(), |network| network.as_ptr()),
+                TXID.as_ptr(),
+                TXID.len(),
+                &mut output,
+                std::ptr::null(),
+            );
+            (code, output)
+        }
+
+        /// [`observe_c`] on a blocking thread: the ABI runs its own runtime,
+        /// and the test runtime keeps serving the capturing lightwalletd.
+        async fn observe(
+            url: &str,
+            db_path: Option<&str>,
+            network: Option<&str>,
+        ) -> (i32, CLightwalletdTransactionObservation) {
+            let url = url.to_owned();
+            let db_path = db_path.map(str::to_owned);
+            let network = network.map(str::to_owned);
+            tokio::task::spawn_blocking(move || {
+                observe_c(&url, db_path.as_deref(), network.as_deref())
+            })
+            .await
+            .unwrap()
+        }
+
+        #[tokio::test]
+        async fn public_observe_refuses_wallets_under_private_policy() {
+            let lwd = CapturingLwd::start(Vec::new()).await;
+
+            // A durable `PrivateRequired` withholds lookups whatever this build
+            // selects: every read honors it.
+            let (_dir, path) = wallet(WalletNetwork::Regtest);
+            apply(&path, TransparentLedgerMode::PrivateRequired);
+            assert_eq!(
+                observe(&lwd.url, Some(&path), Some("regtest")).await,
+                (STATUS_RESULT_UNSUPPORTED, UNTOUCHED)
+            );
+
+            // A private preference on mainnet routes the status work privately,
+            // and the public ABI refuses it.
+            #[cfg(not(ironwood_masquerade))]
+            {
+                let (_main_dir, main_path) = wallet(WalletNetwork::Main);
+                let url = lwd.url.clone();
+                let refused = tokio::task::spawn_blocking(move || {
+                    let mut output = UNTOUCHED;
+                    let code = observe_public_transaction(
+                        &url,
+                        &main_path,
+                        WalletNetwork::Main,
+                        EnhancementPolicy::for_preference(WalletNetwork::Main, true),
+                        TxId::from_bytes(TXID),
+                        &mut output,
+                        None,
+                    );
+                    (code, output)
+                })
+                .await
+                .unwrap();
+                assert_eq!(refused, (STATUS_RESULT_UNSUPPORTED, UNTOUCHED));
+            }
+
+            assert!(
+                lwd.requests().is_empty(),
+                "a refusal sends nothing: {:?}",
+                lwd.requests()
+            );
+        }
+
+        #[tokio::test]
+        async fn public_observe_serves_public_wallets_through_the_gate() {
+            let lwd = CapturingLwd::start(Vec::new()).await;
+            let (_dir, path) = wallet(WalletNetwork::Regtest);
+            // The capturing lightwalletd answers every lookup "not found".
+            let served = (0, CLightwalletdTransactionObservation::not_found());
+            assert_eq!(
+                observe(&lwd.url, Some(&path), Some("regtest")).await,
+                served
+            );
+            assert_eq!(lwd.count("/GetTransaction"), 1);
+
+            // A transition that lands after authorization, as a toggle racing
+            // the call would, is caught as the request is dispatched. Even a
+            // toggle on and off, which ends with public authority, revokes the
+            // captured generation.
+            let (url, wallet_path) = (lwd.url.clone(), path.clone());
+            let raced = tokio::task::spawn_blocking(move || {
+                let transition_path = wallet_path.clone();
+                test_hooks::after_authorization(move || {
+                    apply(&transition_path, TransparentLedgerMode::PrivateRequired);
+                    apply(&transition_path, TransparentLedgerMode::Public);
+                });
+                observe_c(&url, Some(&wallet_path), Some("regtest"))
+            })
+            .await
+            .unwrap();
+            assert_eq!(raced, (STATUS_RESULT_UNSUPPORTED, UNTOUCHED));
+            assert_eq!(lwd.requests().len(), 1, "a withheld request is not sent");
+
+            // A fresh call is authorized under the new generation.
+            assert_eq!(
+                observe(&lwd.url, Some(&path), Some("regtest")).await,
+                served
+            );
+            assert_eq!(lwd.count("/GetTransaction"), 2);
+        }
+
+        /// Runs alone: the transition's budget must measure only this case's
+        /// lookups and writers, not other tests holding the wallet write lock.
+        #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+        async fn slow_public_response_does_not_hold_background_observation_transition() {
+            if crate::wallet::db::isolated_test(
+                module_path!(),
+                "slow_public_response_does_not_hold_background_observation_transition",
+            ) {
+                return;
+            }
+            let lwd = CapturingLwd::start(Vec::new()).await;
+            let (_dir, path) = wallet(WalletNetwork::Regtest);
+            let release = lwd.hold_responses("/GetTransaction");
+            let url = lwd.url.clone();
+            let lookup_path = path.clone();
+            let observation =
+                tokio::spawn(
+                    async move { observe(&url, Some(&lookup_path), Some("regtest")).await },
+                );
+            tokio::time::timeout(Duration::from_secs(10), async {
+                while lwd.count("/GetTransaction") == 0 {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            })
+            .await
+            .unwrap();
+            let transition = crate::wallet::sync_engine::test_lwd::apply_fenced(
+                &path,
+                WalletNetwork::Regtest,
+                TransparentLedgerMode::PrivateRequired,
+            )
+            .await;
+            release.notify_one();
+            let observed = observation.await.unwrap();
+            assert!(transition.is_ok(), "{transition:?}");
+            assert_eq!(
+                observed,
+                (0, CLightwalletdTransactionObservation::not_found())
+            );
+            assert_eq!(lwd.count("/GetTransaction"), 1);
+        }
+
+        #[tokio::test]
+        async fn public_observe_needs_wallet_context() {
+            let lwd = CapturingLwd::start(Vec::new()).await;
+            let (_dir, path) = wallet(WalletNetwork::Regtest);
+            for (db_path, network) in [
+                (None, Some("regtest")),
+                (Some(""), Some("regtest")),
+                (Some(path.as_str()), None),
+                (Some(path.as_str()), Some("")),
+                (Some(path.as_str()), Some("mainnet")),
+            ] {
+                assert_eq!(
+                    observe(&lwd.url, db_path, network).await,
+                    (1, UNTOUCHED),
+                    "db_path {db_path:?}, network {network:?}"
+                );
+            }
+            assert!(lwd.requests().is_empty());
+        }
+
+        #[tokio::test]
+        async fn an_unopenable_wallet_is_inconclusive() {
+            let lwd = CapturingLwd::start(Vec::new()).await;
+            let dir = tempfile::tempdir().unwrap();
+            let missing = dir.path().join("missing.db");
+            // A database without wallet tables fails its policy read.
+            let not_a_wallet = dir.path().join("other.db");
+            rusqlite::Connection::open(&not_a_wallet)
+                .unwrap()
+                .execute_batch("CREATE TABLE unrelated (id INTEGER)")
+                .unwrap();
+
+            for path in [&missing, &not_a_wallet] {
+                assert_eq!(
+                    observe(&lwd.url, path.to_str(), Some("regtest")).await,
+                    (STATUS_RESULT_INCONCLUSIVE, UNTOUCHED),
+                    "{}",
+                    path.display()
+                );
+            }
+            assert!(!missing.exists(), "a read-only open creates nothing");
+            assert!(lwd.requests().is_empty());
+        }
     }
 }

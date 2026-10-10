@@ -18,6 +18,7 @@ import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_tab_bar.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/features/settings/widgets/private_queries_turn_off.dart';
 import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/mobile_list_row.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/mobile_surface_card.dart';
@@ -26,6 +27,7 @@ import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_c
 import 'package:zcash_wallet/src/features/settings/screens/mobile/mobile_settings_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
+import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_keep_awake_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -160,6 +162,8 @@ Widget _app({
   GoRouter? router,
   String network = 'main',
   bool enhancePirEnabled = false,
+  EnhancePirNotifier Function()? enhancePir,
+  bool walletTransparentPrivate = false,
 }) {
   Widget themedBuilder(BuildContext context, Widget? child) => AppTheme(
     data: themeData ?? AppThemeData.dark,
@@ -208,6 +212,9 @@ Widget _app({
           ),
         ),
       syncProvider.overrideWith(() => FakeSyncNotifier(SyncState())),
+      if (enhancePir != null) enhancePirProvider.overrideWith(enhancePir),
+      if (walletTransparentPrivate)
+        walletTransparentPrivateProvider.overrideWith(_PrivateWallet.new),
       themeModeProvider.overrideWith(_FakeThemeModeNotifier.new),
       syncKeepAwakeProvider.overrideWith(
         () => syncKeepAwakeNotifier ?? _FakeSyncKeepAwakeNotifier(),
@@ -316,6 +323,8 @@ void main() {
     await tester.scrollUntilVisible(note, 200);
     expect(note, findsOneWidget);
     expect(find.textContaining('suspended'), findsNothing);
+    expect(find.textContaining('transparent funds'), findsOneWidget);
+    expect(find.textContaining('Ledger transparent funds'), findsOneWidget);
   });
 
   for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
@@ -625,6 +634,133 @@ void main() {
     expect(find.text('Private queries'), findsNothing);
     expect(
       find.byKey(const ValueKey('mobile_settings_enhance_pir_toggle')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('off mainnet a durably private wallet can still be returned to '
+      'public lookups', (tester) async {
+    final enhancePir = _RecordingEnhancePir();
+    await tester.pumpWidget(
+      _app(
+        network: 'regtest',
+        enhancePir: () => enhancePir,
+        walletTransparentPrivate: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('mobile_settings_enhance_pir_toggle')),
+      findsNothing,
+    );
+    final button = find.byKey(
+      const ValueKey('mobile_settings_transparent_opt_out_button'),
+    );
+    await tester.scrollUntilVisible(button, 200);
+    expect(button, findsOneWidget);
+    await tester.ensureVisible(button);
+    await tester.pumpAndSettle();
+    // Finishing sends transparent lookups to the server, so it asks.
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    expect(_turnOffSheet, findsOneWidget);
+    await tester.tap(
+      find.byKey(const ValueKey('private_queries_turn_off_confirm')),
+    );
+    await tester.pumpAndSettle();
+    expect(enhancePir.finishes, 1);
+  });
+
+  group('turning private queries off on mobile', () {
+    Future<_RecordingToggle> tapToggle(
+      WidgetTester tester, {
+      required bool enabled,
+      required bool walletPrivate,
+    }) async {
+      final enhancePir = _RecordingToggle(enabled);
+      await tester.pumpWidget(
+        _app(
+          enhancePirEnabled: enabled,
+          enhancePir: () => enhancePir,
+          walletTransparentPrivate: walletPrivate,
+        ),
+      );
+      await tester.pumpAndSettle();
+      final row = find.byKey(const ValueKey('mobile_settings_enhance_pir_row'));
+      await tester.scrollUntilVisible(row, 200);
+      await tester.ensureVisible(row);
+      await tester.pumpAndSettle();
+      await tester.tap(row);
+      await tester.pumpAndSettle();
+      return enhancePir;
+    }
+
+    testWidgets('a private wallet asks in a sheet that names what is sent', (
+      tester,
+    ) async {
+      final enhancePir = await tapToggle(
+        tester,
+        enabled: true,
+        walletPrivate: true,
+      );
+      expect(_turnOffSheet, findsOneWidget);
+      expect(find.text(kPrivateQueriesTurnOffTitle), findsOneWidget);
+      expect(find.text(kPrivateQueriesTurnOffBody), findsOneWidget);
+      expect(find.text(kPrivateQueriesTurnOffDisclosure), findsOneWidget);
+
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(_turnOffSheet, findsNothing);
+      expect(enhancePir.toggles, 0);
+
+      final row = find.byKey(const ValueKey('mobile_settings_enhance_pir_row'));
+      await tester.ensureVisible(row);
+      await tester.pumpAndSettle();
+      await tester.tap(row);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('private_queries_turn_off_confirm')),
+      );
+      await tester.pumpAndSettle();
+      expect(enhancePir.toggles, 1);
+    });
+
+    testWidgets('an existing wallet asks before its first private read', (
+      tester,
+    ) async {
+      final enhancePir = await tapToggle(
+        tester,
+        enabled: true,
+        walletPrivate: false,
+      );
+      expect(_turnOffSheet, findsOneWidget);
+      expect(enhancePir.toggles, 0);
+    });
+
+    testWidgets('turning on never asks', (tester) async {
+      final enhancePir = await tapToggle(
+        tester,
+        enabled: false,
+        walletPrivate: true,
+      );
+      expect(_turnOffSheet, findsNothing);
+      expect(enhancePir.toggles, 1);
+    });
+  });
+
+  testWidgets('off mainnet nothing to finish shows no opt-out action', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app(network: 'regtest'));
+    await tester.pumpAndSettle();
+    // The privacy card is built; only the action is absent.
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('mobile_settings_tor_description')),
+      200,
+    );
+    expect(
+      find.byKey(const ValueKey('mobile_settings_transparent_opt_out_button')),
       findsNothing,
     );
   });
@@ -1567,4 +1703,39 @@ double _leadingIconOpacityIn(WidgetTester tester, ValueKey<String> rowKey) {
         find.descendant(of: find.byKey(rowKey), matching: find.byType(Opacity)),
       )
       .opacity;
+}
+
+class _RecordingEnhancePir extends EnhancePirNotifier {
+  int finishes = 0;
+
+  @override
+  bool build() => false;
+
+  @override
+  Future<void> finishTransparentOptOut() async => finishes++;
+}
+
+final _turnOffSheet = find.byKey(
+  const ValueKey('private_queries_turn_off_sheet'),
+);
+
+class _RecordingToggle extends EnhancePirNotifier {
+  _RecordingToggle(this.enabled);
+
+  final bool enabled;
+  int toggles = 0;
+
+  @override
+  bool build() => enabled;
+
+  @override
+  Future<void> toggle() async {
+    toggles++;
+    state = !state;
+  }
+}
+
+class _PrivateWallet extends WalletTransparentPrivateNotifier {
+  @override
+  bool build() => true;
 }

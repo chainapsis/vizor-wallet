@@ -5,8 +5,10 @@ const transparentLedgerNeedsNewerBuildMessage =
 /// Whether [raw] is the wallet library's refusal to operate on transparent
 /// funds under a stricter or newer policy than this build supports.
 ///
-/// Matches the phrase the library's `TransparentLedgerPolicyConflict` and
-/// `TransparentLedgerIncompatible` errors share; the Rust guard test pins it.
+/// Matches the phrase of the library's `TransparentLedgerIncompatible` error;
+/// the Rust guard test pins it. (A weaker handle on a wallet that durably
+/// requires private recovery no longer fails: the library resolves it under
+/// that policy, so it reports [isTransparentRecoveryNotSelectedError].)
 bool isTransparentLedgerNeedsNewerBuildError(String raw) => raw
     .toLowerCase()
     .contains("this build cannot operate on this wallet's transparent funds");
@@ -22,3 +24,18 @@ const transparentRecoveryIncompleteMessage =
 /// and Vizor's shielding refusal share; the Rust guard test pins it.
 bool isTransparentRecoveryIncompleteError(String raw) =>
     raw.toLowerCase().contains('transparent funds are unavailable');
+
+/// User copy for a wallet that durably requires private transparent recovery
+/// while the current setting or network does not select it.
+const transparentRecoveryNotSelectedMessage =
+    'Private transparent recovery is not selected. Turn off '
+    'Private queries to use transparent funds. If it is already off, '
+    'choose Finish turning off in Settings.';
+
+/// Whether [raw] is a refusal to use transparent funds because the wallet
+/// requires private recovery and the current selection does not run it, so no recovery
+/// will complete. Check it before [isTransparentRecoveryIncompleteError].
+///
+/// Matches Vizor's shielding refusal; the Rust status test pins the phrase.
+bool isTransparentRecoveryNotSelectedError(String raw) =>
+    raw.toLowerCase().contains('turn off private queries');

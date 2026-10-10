@@ -50,10 +50,113 @@ pub(crate) fn enhance_pir_enabled() -> bool {
     ENHANCE_PIR_ENABLED.load(Ordering::SeqCst)
 }
 
+/// Record whether the private queries setting in effect was read from
+/// storage. An unreadable setting is private for the launch but unconfirmed:
+/// it withholds public transparent lookups and never raises a wallet's
+/// transparent policy.
+#[frb(sync)]
+pub fn set_enhance_pir_preference_confirmed(confirmed: bool) {
+    sync_engine::enhancement::set_preference_confirmed(confirmed);
+}
+
+/// A wallet's durable transparent ledger mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ApiTransparentLedgerMode {
+    /// Public transparent lookups are authoritative.
+    Public,
+    /// Public transparent lookups are forbidden.
+    PrivateRequired,
+}
+
+/// The durable transparent policy a reconciliation applied.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ApiAppliedTransparentPolicy {
+    pub mode: ApiTransparentLedgerMode,
+    /// Advances on every mode transition. Anything read under an earlier
+    /// generation was authorized by a policy that no longer holds.
+    pub generation: u64,
+}
+
+impl From<zcash_client_backend::data_api::transparent_ledger::AppliedTransparentPolicy>
+    for ApiAppliedTransparentPolicy
+{
+    fn from(
+        applied: zcash_client_backend::data_api::transparent_ledger::AppliedTransparentPolicy,
+    ) -> Self {
+        use zcash_client_backend::data_api::transparent_ledger::TransparentLedgerMode;
+        Self {
+            mode: match applied.mode {
+                TransparentLedgerMode::Public => ApiTransparentLedgerMode::Public,
+                TransparentLedgerMode::PrivateRequired => ApiTransparentLedgerMode::PrivateRequired,
+            },
+            generation: applied.generation,
+        }
+    }
+}
+
+/// Reconcile the wallet's durable transparent policy with the private queries
+/// setting. `true` raises it to private recovery when this build selects that
+/// mode; `false` lowers it to public in every build. Returns the wallet's
+/// resulting durable policy, mode and generation, whether this call changed it
+/// or found it already so (another connection may have changed it meanwhile),
+/// so the caller always adopts what holds now; `None` only when there is no
+/// wallet. Waits up to 30 s for public lookups already in flight, and changes
+/// nothing on failure. A missing wallet is left alone and never created. It
+/// never confirms the setting: callers do that only for a value read from
+/// storage.
+pub fn reconcile_transparent_policy(
+    db_path: String,
+    network: String,
+    private_queries: bool,
+) -> Result<Option<ApiAppliedTransparentPolicy>, String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
+        let applied = rt
+            .block_on(sync_engine::transparent_ledger::set_transparent_policy(
+                &db_path,
+                network,
+                private_queries,
+            ))
+            .map_err(|e| e.to_string())?;
+        let resulting = match applied {
+            Some(applied) => Some(applied),
+            None => sync_engine::transparent_ledger::current_transparent_policy(&db_path, network)
+                .map_err(|e| e.to_string())?,
+        };
+        Ok(resulting.map(ApiAppliedTransparentPolicy::from))
+    })
+}
+
 // ======================== Full Sync ========================
+
+/// What an [`ApiSyncProgressEvent`] reports.
+pub enum ApiSyncEventKind {
+    /// The sync is still running.
+    Progress,
+    /// The sync completed. Also re-reported after the deferred
+    /// inactive-account refresh or the ephemeral address checks change
+    /// wallet data.
+    Completed,
+    /// A post-sync follow-up changed wallet data after completion: re-read
+    /// balances, history, and open receipts. The sync stays complete, and
+    /// its stream stays open until every follow-up ends.
+    FollowupUpdated,
+}
+
+impl From<sync_engine::SyncEventKind> for ApiSyncEventKind {
+    fn from(kind: sync_engine::SyncEventKind) -> Self {
+        match kind {
+            sync_engine::SyncEventKind::Progress => Self::Progress,
+            sync_engine::SyncEventKind::Completed => Self::Completed,
+            sync_engine::SyncEventKind::FollowupUpdated => Self::FollowupUpdated,
+        }
+    }
+}
 
 /// Progress event streamed to Dart during sync.
 pub struct ApiSyncProgressEvent {
+    pub kind: ApiSyncEventKind,
     pub scanned_height: u64,
     pub chain_tip_height: u64,
     pub percentage: f64,
@@ -62,7 +165,6 @@ pub struct ApiSyncProgressEvent {
     pub display_target_percentage: f64,
     pub display_target_blocks: u64,
     pub is_syncing: bool,
-    pub is_complete: bool,
     pub has_new_tx: bool,
     /// Completed and total work units for measurable preparation phases.
     pub phase_completed_units: u64,
@@ -83,20 +185,15 @@ fn run_full_sync_internal<F>(
 where
     F: Fn(&sync_engine::SyncProgressEvent) + Send + Sync,
 {
-    if SYNC_RUNNING
-        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-        .is_err()
-    {
-        return Err("Sync already running".into());
-    }
-
-    DESIRED_SYNC_MODE.store(mode, Ordering::SeqCst);
-    let result = catch(panic::AssertUnwindSafe(|| {
+    // The runtime's shutdown waits at most a short grace for blocking work,
+    // so `SYNC_RUNNING` clears and the progress stream closes even when a
+    // step ignored its cancellation.
+    crate::wallet::bounded_runtime::run_exclusive(&SYNC_RUNNING, "Sync already running", |rt| {
+        DESIRED_SYNC_MODE.store(mode, Ordering::SeqCst);
         let network = parse_network_and_migrate(&db_path, &network)?;
         let cancel = SYNC_CANCEL.clone();
         cancel.store(false, Ordering::Relaxed);
 
-        let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
         rt.block_on(async {
             sync_engine::run_sync_inner(
                 &db_path,
@@ -111,10 +208,7 @@ where
             )
             .await
         })
-    }));
-
-    SYNC_RUNNING.store(false, Ordering::SeqCst);
-    result
+    })
 }
 
 /// Start a full sync. Streams progress events to Dart via StreamSink.
@@ -136,13 +230,13 @@ pub fn start_full_sync(
         |progress| {
             if sink
                 .add(ApiSyncProgressEvent {
+                    kind: progress.kind.into(),
                     scanned_height: progress.scanned_height,
                     chain_tip_height: progress.chain_tip_height,
                     percentage: progress.percentage,
                     display_target_percentage: progress.display_target_percentage,
                     display_target_blocks: progress.display_target_blocks,
                     is_syncing: progress.is_syncing,
-                    is_complete: progress.is_complete,
                     has_new_tx: progress.has_new_tx,
                     phase_completed_units: progress.phase_completed_units,
                     phase_total_units: progress.phase_total_units,
@@ -468,7 +562,7 @@ pub fn start_mempool_observer(
 
     let result = catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
-        let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
+        let rt = crate::wallet::bounded_runtime::BoundedRuntime::new()?;
         rt.block_on(async {
             crate::wallet::sync_engine::mempool::run_mempool_observer(
                 db_path,
@@ -562,14 +656,43 @@ pub enum TransparentBalanceAuthority {
     LastKnown,
     /// No current authority and no prior amount. Show as unavailable, never 0.
     Unavailable,
+    /// No current authority, and private recovery will not restore it on its
+    /// own: `transparent_stop` says why. The transparent fields are zero, and
+    /// `transparent_last_known` holds the prior amount, if any.
+    Stopped,
+}
+
+/// Why private transparent recovery cannot restore an account's authority.
+pub enum TransparentStopReason {
+    /// An integrity failure quarantined the account's evidence.
+    Quarantined,
+    /// A Ledger account, which private recovery does not cover.
+    Ledger,
+    /// Legacy public evidence the private ledger cannot explain.
+    LegacyDiscrepancy,
+    /// The service withdrew a publication the account was recovered from.
+    Withdrawn,
+    /// Recovery stalled repeatedly.
+    Stalled,
+    /// The wallet requires private recovery, which this build does not run.
+    /// Turning off private queries restores public lookups.
+    NotSelected,
 }
 
 pub struct WalletBalance {
     pub availability: WalletBalanceAvailability,
     pub transparent_authority: TransparentBalanceAuthority,
     /// Informational prior transparent total, present only with
-    /// `TransparentBalanceAuthority::LastKnown`. It never authorizes a spend.
+    /// `TransparentBalanceAuthority::LastKnown` or `Stopped`. It never
+    /// authorizes a spend.
     pub transparent_last_known: Option<u64>,
+    /// Why recovery is stopped, present only with
+    /// `TransparentBalanceAuthority::Stopped`.
+    pub transparent_stop: Option<TransparentStopReason>,
+    /// The wallet durably requires private transparent authority, so a
+    /// current amount lasts only until the chain moves past the private
+    /// ledger's coverage.
+    pub transparent_private: bool,
     pub transparent: u64,
     pub sapling: u64,
     pub orchard: u64,
@@ -835,7 +958,20 @@ pub fn get_balance(
             wallet_sync::TransparentBalanceAuthority::Unavailable => {
                 TransparentBalanceAuthority::Unavailable
             }
+            wallet_sync::TransparentBalanceAuthority::Stopped => {
+                TransparentBalanceAuthority::Stopped
+            }
         };
+        let transparent_stop = b.transparent_stop.map(|reason| match reason {
+            wallet_sync::TransparentStopReason::Quarantined => TransparentStopReason::Quarantined,
+            wallet_sync::TransparentStopReason::Ledger => TransparentStopReason::Ledger,
+            wallet_sync::TransparentStopReason::LegacyDiscrepancy => {
+                TransparentStopReason::LegacyDiscrepancy
+            }
+            wallet_sync::TransparentStopReason::Withdrawn => TransparentStopReason::Withdrawn,
+            wallet_sync::TransparentStopReason::Stalled => TransparentStopReason::Stalled,
+            wallet_sync::TransparentStopReason::NotSelected => TransparentStopReason::NotSelected,
+        });
         let spendable = b.sapling + b.orchard + b.ironwood;
         let total_spendable = b.transparent + b.sapling + b.orchard + b.ironwood;
         let locked = b.transparent_locked + b.sapling_locked + b.orchard_locked + b.ironwood_locked;
@@ -845,6 +981,8 @@ pub fn get_balance(
             availability,
             transparent_authority,
             transparent_last_known: b.transparent_last_known,
+            transparent_stop,
+            transparent_private: b.transparent_private,
             transparent: b.transparent,
             sapling: b.sapling,
             orchard: b.orchard,
@@ -2694,7 +2832,9 @@ pub struct TransactionInfo {
     pub mined_height: u64,
     pub expired_unmined: bool,
     pub account_balance_delta: i64,
-    /// The recorded fee. Zero unless `fee_state` is `Known`.
+    /// The network fee shown for the transaction. Zero unless `fee_state` is
+    /// `Known`. Display only: it is never subtracted from `display_amount`
+    /// or `account_balance_delta`.
     pub fee: u64,
     pub fee_state: TransactionFeeState,
     pub block_time: u64,
@@ -2716,13 +2856,17 @@ pub struct TransactionInfo {
     /// Whether later discovery or enhancement can still change this entry.
     /// A provisional debit is a net amount, not a payment amount.
     pub provisional: bool,
+    /// Whether `display_amount` is a balance movement that retains its fee,
+    /// rather than an established payment. Show it as a net change, including
+    /// when the account's fee share is unknown.
+    pub amount_includes_fee: bool,
 }
 
-/// The fee of a transaction as it concerns the account.
+/// The network fee shown for a transaction.
 pub enum TransactionFeeState {
-    /// The account paid the recorded `fee`.
+    /// The account's attributed fee is known.
     Known,
-    /// The account spent funds, or may have, but the fee is not recorded.
+    /// The account spent funds, or may have, but its fee share is unknown.
     /// Show it as unknown, never as zero.
     Unknown,
     /// The account spent nothing, so it paid no fee.
@@ -2732,15 +2876,73 @@ pub enum TransactionFeeState {
 pub struct TransactionDetail {
     pub txid_hex: String,
     pub tx_kind: String,
+    /// Exact whole-transaction network fee. Display only; does not identify the payer
+    /// or the account's share, and does not establish payment completeness.
+    pub network_fee: Option<u64>,
     pub primary_address: Option<String>,
     pub source_address: Option<String>,
     pub source_pool: Option<String>,
+    /// For a receive: the wallet account recorded as having sent every
+    /// received output shown. An account, never an address.
+    pub source_account_uuid: Option<String>,
     pub memo: Option<String>,
     pub outputs: Vec<TransactionDetailOutput>,
     /// Whether `outputs` holds every recipient and memo.
     pub details_complete: bool,
     /// See [`TransactionInfo::provisional`].
     pub provisional: bool,
+    /// What transparent txid enhancement knows about the transaction's
+    /// transparent outputs; `None` when it has no transparent part the
+    /// account recorded.
+    pub transparent_details_state: Option<TransparentDetailsState>,
+    /// The shown transparent outputs, in order, when the state is
+    /// `Available`: every output, or the first two of private details.
+    pub transparent_recipients: Vec<TransparentRecipient>,
+    /// Every transparent output when the state is `Available`, including any
+    /// `transparent_recipients` leaves out.
+    pub transparent_output_count: Option<u32>,
+    /// What the private details leave out, by name: `non_standard_sender`,
+    /// `multiple_source_scripts`, `shared_funding`,
+    /// `shielded_and_transparent_funding`, `non_standard_output`,
+    /// `more_than_two_outputs`. Empty when nothing is left out or the details
+    /// came from the raw transaction; non-empty is when a receipt may offer
+    /// [`enhance_transaction_publicly`].
+    pub transparent_omissions: Vec<String>,
+}
+
+/// Whether a transparent or mixed transaction's outputs are known.
+pub enum TransparentDetailsState {
+    /// `transparent_recipients` holds every transparent output.
+    Available,
+    /// No lookup has answered yet; a later sync fills them in.
+    Pending,
+    /// The last lookup failed; a later sync retries when the service is
+    /// reachable.
+    Unavailable,
+    /// Private mode cannot look the transaction up: the private publication
+    /// does not cover it.
+    NotCovered,
+}
+
+/// One transparent output of a transaction.
+pub struct TransparentRecipient {
+    pub output_index: u32,
+    /// The P2PKH or P2SH address it pays; `None` for other scripts.
+    pub address: Option<String>,
+    pub amount_zatoshi: u64,
+    /// Whether the account recorded this output as its own.
+    pub is_own: bool,
+}
+
+/// What a development lookup found. Nothing is stored.
+pub struct TransparentDetailsLookup {
+    /// `found`, `absent`, `placementUnknown` or `unsupported`.
+    pub outcome: String,
+    pub recipients: Vec<TransparentRecipient>,
+    /// The whole transaction's exact fee, when the publication knows it.
+    pub fee_zatoshi: Option<u64>,
+    pub transparent_input_count: u32,
+    pub coinbase: bool,
 }
 
 pub struct TransactionDetailOutput {
@@ -2788,6 +2990,7 @@ pub fn get_transaction_history(
                 created_time: t.created_time,
                 details_complete: t.details_complete,
                 provisional: t.provisional,
+                amount_includes_fee: t.amount_includes_fee,
             })
             .collect())
     })
@@ -2884,9 +3087,11 @@ pub fn get_transaction_detail(
         Ok(TransactionDetail {
             txid_hex: detail.txid_hex,
             tx_kind: detail.tx_kind,
+            network_fee: detail.network_fee,
             primary_address: detail.primary_address,
             source_address: detail.source_address,
             source_pool: detail.source_pool,
+            source_account_uuid: detail.source_account_uuid,
             memo: detail.memo,
             outputs: detail
                 .outputs
@@ -2901,6 +3106,126 @@ pub fn get_transaction_detail(
                 .collect(),
             details_complete: detail.details_complete,
             provisional: detail.provisional,
+            transparent_details_state: detail.transparent_details.as_ref().map(|view| match view {
+                wallet_sync::TransparentDetailsView::Available { .. } => {
+                    TransparentDetailsState::Available
+                }
+                wallet_sync::TransparentDetailsView::Pending => TransparentDetailsState::Pending,
+                wallet_sync::TransparentDetailsView::Unavailable => {
+                    TransparentDetailsState::Unavailable
+                }
+                wallet_sync::TransparentDetailsView::NotCovered => {
+                    TransparentDetailsState::NotCovered
+                }
+            }),
+            transparent_output_count: match &detail.transparent_details {
+                Some(wallet_sync::TransparentDetailsView::Available { output_count, .. }) => {
+                    Some(*output_count)
+                }
+                _ => None,
+            },
+            transparent_omissions: match &detail.transparent_details {
+                Some(wallet_sync::TransparentDetailsView::Available { omissions, .. }) => {
+                    omissions.clone()
+                }
+                _ => Vec::new(),
+            },
+            transparent_recipients: match detail.transparent_details {
+                Some(wallet_sync::TransparentDetailsView::Available { rows, .. }) => rows
+                    .into_iter()
+                    .map(|row| TransparentRecipient {
+                        output_index: row.output_index,
+                        address: row.address,
+                        amount_zatoshi: row.amount_zatoshi,
+                        is_own: row.is_own,
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            },
+        })
+    })
+}
+
+/// Serves `txid_hex` (as [`TransactionInfo::txid_hex`]) first in the next
+/// transparent txid enhancement run for the wallet at `db_path`. A detail
+/// view calls it on open while the details are pending or unavailable.
+#[flutter_rust_bridge::frb(sync)]
+pub fn prioritize_transparent_details(db_path: String, txid_hex: String) -> Result<(), String> {
+    let txid: [u8; 32] = hex::decode(&txid_hex)
+        .map_err(|e| format!("Invalid txid: {e}"))?
+        .try_into()
+        .map_err(|_| "Invalid txid length".to_string())?;
+    sync_engine::transparent_details::prioritize(&db_path, txid);
+    Ok(())
+}
+
+/// Loads one transaction's full details from lightwalletd because the user
+/// asked to, then stores them as any enhancement payload. This reveals the
+/// transaction (`txid_hex`, as [`TransactionInfo::txid_hex`]) to the server,
+/// so the app calls it only from an explicit, disclosed user action, never
+/// automatically, and it runs whatever the transparent policy is.
+pub fn enhance_transaction_publicly(
+    db_path: String,
+    network: String,
+    lightwalletd_url: String,
+    txid_hex: String,
+) -> Result<(), String> {
+    catch(|| {
+        // Migration may create a database a reset just deleted. This explicit
+        // load opens only existing storage, before any network request.
+        let network = keys::parse_network(&network)?;
+        let txid: [u8; 32] = hex::decode(&txid_hex)
+            .map_err(|e| format!("Invalid txid: {e}"))?
+            .try_into()
+            .map_err(|_| "Invalid txid length".to_string())?;
+        sync_engine::transparent_details::enhance_publicly(
+            &db_path,
+            network,
+            &lightwalletd_url,
+            txid,
+        )
+    })
+}
+
+/// Cancels every [`enhance_transaction_publicly`] in flight: one still
+/// connecting sends nothing, and none stores what it receives. The app calls
+/// it on lock and before deleting an account or the wallet.
+#[frb(sync)]
+pub fn cancel_public_transaction_loads() {
+    sync_engine::transparent_details::cancel_public_loads();
+}
+
+/// Debug builds only: one
+/// private txid display lookup of `txid_hex` (as [`TransactionInfo::txid_hex`])
+/// mined at `mined_height`, on mainnet, persisting nothing.
+pub fn debug_lookup_transparent_details(
+    network: String,
+    txid_hex: String,
+    mined_height: u64,
+) -> Result<TransparentDetailsLookup, String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        let txid: [u8; 32] = hex::decode(&txid_hex)
+            .map_err(|e| format!("Invalid txid: {e}"))?
+            .try_into()
+            .map_err(|_| "Invalid txid length".to_string())?;
+        let found = sync_engine::transparent_details::debug_lookup(network, txid, mined_height)?;
+        Ok(TransparentDetailsLookup {
+            outcome: found.outcome.to_owned(),
+            recipients: found
+                .outputs
+                .into_iter()
+                .enumerate()
+                .map(|(index, (amount_zatoshi, address))| TransparentRecipient {
+                    output_index: index as u32,
+                    address,
+                    amount_zatoshi,
+                    is_own: false,
+                })
+                .collect(),
+            fee_zatoshi: found.fee,
+            transparent_input_count: found.transparent_input_count,
+            coinbase: found.coinbase,
         })
     })
 }

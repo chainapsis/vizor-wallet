@@ -179,11 +179,12 @@ class RustNetworkPrivacyRuntime implements NetworkPrivacyRuntime {
 const _deviceBackupChannel = MethodChannel('com.zcash.wallet/network_privacy');
 
 Future<void> _excludeFromDeviceBackup(String directory) async {
-  // Android has no runtime equivalent. `android:allowBackup="false"` in the
-  // manifest keeps app files out of cloud backup, but from targetSdk 31 that
-  // attribute no longer covers device-to-device transfer; excluding the
-  // directory from a phone-to-phone migration takes `<device-transfer>`
-  // data-extraction rules in the manifest, which the app does not carry.
+  // Android has no runtime equivalent. `android:allowBackup="false"` keeps app
+  // files out of cloud backup, and device-to-device transfer is governed by
+  // `data_extraction_rules.xml`, whose paths are fixed at build time. A
+  // companion directory is named after the generated wallet database, so it
+  // cannot be listed there; it transfers with that database, which already
+  // records the same transparent activity.
   if (!Platform.isIOS) return;
   try {
     await _deviceBackupChannel.invokeMethod<void>('excludeFromBackup', {
@@ -192,6 +193,22 @@ Future<void> _excludeFromDeviceBackup(String directory) async {
   } on MissingPluginException {
     // Test hosts and older builds have no native side to ask.
   }
+}
+
+/// Keeps the private transparent recovery companions of the wallet at
+/// [dbPath] out of device backups in every build.
+///
+/// Companions record which of the wallet's transparent addresses had activity,
+/// and Rust rebuilds them, so a restore needs none. The iOS side creates the
+/// directory when it does not exist yet, so the mark is set before Rust writes
+/// the first companion. Startup marks the current wallet's, and every sync
+/// start marks its wallet's again: deleting a wallet deletes the marked
+/// directory, and a reset names a new one.
+Future<void> excludeTransparentRecoveryCompanionsFromBackup(
+  String dbPath, {
+  Future<void> Function(String directory) exclude = _excludeFromDeviceBackup,
+}) async {
+  await exclude(transparentRecoveryCompanionDirectory(dbPath));
 }
 
 abstract interface class NetworkPrivacyNativeUpdateCoordinator {

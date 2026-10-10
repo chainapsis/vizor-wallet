@@ -1,6 +1,6 @@
 use std::{
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicU64, AtomicUsize, Ordering},
         Mutex, MutexGuard, OnceLock, TryLockError,
     },
     time::{Duration, Instant},
@@ -44,6 +44,35 @@ pub(crate) fn wallet_db_write_epoch() -> u64 {
     WALLET_DB_WRITE_EPOCH.load(Ordering::Acquire)
 }
 
+/// Writers waiting to take [`WALLET_DB_WRITE_LOCK`], or to reserve the
+/// wallet's SQLite write lock directly.
+static WALLET_DB_WRITERS_WAITING: AtomicUsize = AtomicUsize::new(0);
+
+/// Counts a writer as waiting for the wallet's write lock while it lives.
+/// Hold one only while acquiring, never while writing: a long background
+/// write ([`writers_waiting`]) steps aside between its transactions for as
+/// long as any writer is counted.
+pub(crate) struct WaitingWriter(());
+
+impl WaitingWriter {
+    pub(crate) fn new() -> Self {
+        WALLET_DB_WRITERS_WAITING.fetch_add(1, Ordering::AcqRel);
+        Self(())
+    }
+}
+
+impl Drop for WaitingWriter {
+    fn drop(&mut self) {
+        WALLET_DB_WRITERS_WAITING.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+/// Whether another writer is waiting for the wallet's write lock: a write
+/// made of many transactions lets it go first between them.
+pub(crate) fn writers_waiting() -> bool {
+    WALLET_DB_WRITERS_WAITING.load(Ordering::Acquire) > 0
+}
+
 pub(crate) fn open_wallet_db_with_timeout(
     db_path: &str,
     network: WalletNetwork,
@@ -51,6 +80,25 @@ pub(crate) fn open_wallet_db_with_timeout(
 ) -> Result<WalletDatabase, String> {
     let conn = rusqlite::Connection::open(db_path)
         .map_err(|e| format!("Failed to open wallet DB: {e}"))?;
+    configure_wallet_connection(&conn, timeout, true)?;
+    ensure_mined_transaction_history(&conn)?;
+    Ok(wallet_db(conn, db_path, network))
+}
+
+/// Like [`open_wallet_db_with_timeout`], but fails instead of creating a file
+/// at `db_path`. For a write that follows a network wait, during which a
+/// wallet reset may have deleted the wallet: reopening must not leave an
+/// orphan database behind.
+pub(crate) fn open_existing_wallet_db_with_timeout(
+    db_path: &str,
+    network: WalletNetwork,
+    timeout: Duration,
+) -> Result<WalletDatabase, String> {
+    let conn = rusqlite::Connection::open_with_flags(
+        db_path,
+        rusqlite::OpenFlags::default().difference(rusqlite::OpenFlags::SQLITE_OPEN_CREATE),
+    )
+    .map_err(|e| format!("Failed to open wallet DB: {e}"))?;
     configure_wallet_connection(&conn, timeout, true)?;
     ensure_mined_transaction_history(&conn)?;
     Ok(wallet_db(conn, db_path, network))
@@ -117,10 +165,13 @@ pub(crate) fn open_wallet_db_readonly_with_timeout(
 
 /// Every wallet handle selects its transparent ledger mode explicitly; the
 /// library rejects transparent selection, stores, and history on an
-/// unconfigured handle.
+/// unconfigured handle. A wallet that durably requires private recovery keeps
+/// it even when this build selects a weaker mode: the library resolves every
+/// read under the durable policy, including one applied after the handle
+/// opened.
 fn wallet_db(conn: rusqlite::Connection, db_path: &str, network: WalletNetwork) -> WalletDatabase {
     WalletDb::from_connection(conn, network, SystemClock, OsRng)
-        .with_transparent_ledger_mode(transparent_ledger_mode_for(db_path))
+        .with_transparent_ledger_mode(transparent_ledger_mode_for(db_path, network))
 }
 
 /// A configured wallet handle over a connection the caller already holds, so
@@ -131,7 +182,7 @@ pub(crate) fn wallet_db_on<'c>(
     network: WalletNetwork,
 ) -> WalletDb<&'c rusqlite::Connection, WalletNetwork, SystemClock, OsRng> {
     WalletDb::from_connection(conn, network, SystemClock, OsRng)
-        .with_transparent_ledger_mode(transparent_ledger_mode_for(db_path))
+        .with_transparent_ledger_mode(transparent_ledger_mode_for(db_path, network))
 }
 
 pub(crate) fn open_wallet_raw_conn_with_timeout(
@@ -180,6 +231,7 @@ pub(crate) fn with_wallet_db_write_lock<T>(
     // correctness over precision.
     let lock = WALLET_DB_WRITE_LOCK.get_or_init(|| Mutex::new(()));
     let wait_start = Instant::now();
+    let waiting = WaitingWriter::new();
     let guard = match lock.lock() {
         Ok(guard) => guard,
         Err(poisoned) => {
@@ -187,6 +239,7 @@ pub(crate) fn with_wallet_db_write_lock<T>(
             poisoned.into_inner()
         }
     };
+    drop(waiting);
 
     let waited = wait_start.elapsed();
     if waited >= Duration::from_millis(50) {
@@ -207,7 +260,9 @@ pub(crate) fn with_wallet_db_write_lock_until<T>(
     write: impl FnOnce() -> T,
 ) -> Result<T, String> {
     let lock = WALLET_DB_WRITE_LOCK.get_or_init(|| Mutex::new(()));
+    let waiting = WaitingWriter::new();
     let guard = lock_until(lock, operation, deadline)?;
+    drop(waiting);
     Ok(run_wallet_db_write(operation, guard, write))
 }
 
@@ -234,6 +289,102 @@ fn lock_until<'a>(
         };
         return Ok(guard);
     }
+}
+
+/// [`with_wallet_db_write_lock`] for an async caller with a budget: the wait
+/// yields to the runtime instead of blocking its worker, and is given up,
+/// returning `None` without writing, once `give_up` holds.
+pub(crate) async fn with_wallet_db_write_lock_unless<T>(
+    operation: &'static str,
+    give_up: &(dyn Fn() -> bool + Sync),
+    write: impl FnOnce() -> T,
+) -> Option<T> {
+    let lock = WALLET_DB_WRITE_LOCK.get_or_init(|| Mutex::new(()));
+    let wait_start = Instant::now();
+    let waiting = WaitingWriter::new();
+    loop {
+        if give_up() {
+            log::info!("wallet DB write lock wait given up for {operation}");
+            return None;
+        }
+        // No guard may live across the await below.
+        {
+            let guard = match lock.try_lock() {
+                Ok(guard) => Some(guard),
+                Err(TryLockError::Poisoned(poisoned)) => {
+                    log::error!(
+                        "wallet DB write lock poisoned while entering {operation}; continuing"
+                    );
+                    Some(poisoned.into_inner())
+                }
+                Err(TryLockError::WouldBlock) => None,
+            };
+            if let Some(guard) = guard {
+                // The budget or exit may have come while the lock was taken.
+                if give_up() {
+                    drop(guard);
+                    log::info!("wallet DB write lock wait given up for {operation}");
+                    return None;
+                }
+                drop(waiting);
+                let waited = wait_start.elapsed();
+                if waited >= Duration::from_millis(50) {
+                    log::info!(
+                        "wallet DB write lock waited {:.3}s for {operation}",
+                        waited.as_secs_f64()
+                    );
+                }
+                return Some(run_wallet_db_write(operation, guard, write));
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+}
+
+/// Holds the wallet write lock from a thread of its own until the returned
+/// sender is dropped, or for `at_most`: contention for tests.
+#[cfg(test)]
+pub(crate) fn hold_wallet_db_write_lock(at_most: Duration) -> std::sync::mpsc::Sender<()> {
+    let (release, released) = std::sync::mpsc::channel::<()>();
+    let (held, holding) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        with_wallet_db_write_lock("test.hold", || {
+            held.send(()).unwrap();
+            let _ = released.recv_timeout(at_most);
+        })
+    });
+    holding.recv().unwrap();
+    release
+}
+
+/// Runs `test` of `module` (the caller's `module_path!()`) alone in a child
+/// test process and returns true once it passed there. Inside that child it
+/// returns false, and the caller runs the test body.
+///
+/// For a test whose deadlines must measure only its own requests and wallet
+/// writers: unrelated tests in this process can hold the process-wide wallet
+/// write lock beyond them.
+#[cfg(test)]
+pub(crate) fn isolated_test(module: &str, test: &str) -> bool {
+    let module = module.split_once("::").unwrap().1;
+    let name = format!("{module}::{test}");
+    const MARKER: &str = "VIZOR_TEST_PROCESS";
+    if std::env::var(MARKER).as_deref() == Ok(name.as_str()) {
+        return false;
+    }
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", name.as_str(), "--test-threads=1"])
+        .env(MARKER, &name)
+        .output()
+        .expect("start isolated test process");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success() && stdout.contains("1 passed; 0 failed; 0 ignored"),
+        "isolated {name} failed or selected no test:\n{}\n{}",
+        stdout,
+        String::from_utf8_lossy(&output.stderr),
+    );
+    true
 }
 
 fn run_wallet_db_write<T>(

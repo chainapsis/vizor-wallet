@@ -25,7 +25,7 @@ use super::enhancement::EnhancementPolicy;
 use super::{next_stream_message, watch_for_exit, SyncError, TransparentLookupGate};
 use crate::wallet::{
     db::{
-        open_readonly_conn_with_timeout, open_wallet_raw_conn_with_timeout,
+        open_readonly_conn_with_timeout, open_wallet_raw_conn_with_timeout, wallet_db_on,
         with_wallet_db_write_lock, WalletDatabase, SYNC_DB_BUSY_TIMEOUT,
     },
     keys::{self, HardwareSignerKind},
@@ -65,7 +65,16 @@ fn table_exists(conn: &rusqlite::Connection) -> Result<bool, String> {
 }
 
 /// Read-only gate: a missing checkpoint means a Ledger import still needs recovery.
-pub(crate) fn is_ready(db_path: &str, account_id: AccountUuid) -> Result<bool, String> {
+///
+/// Ready while public transparent lookups are withheld from the wallet: its
+/// discovery cannot run then, and private recovery pauses the account, so
+/// waiting for it would block every sync. Its transparent funds stay
+/// unavailable, so its shielding gates still refuse.
+pub(crate) fn is_ready(
+    db_path: &str,
+    network: WalletNetwork,
+    account_id: AccountUuid,
+) -> Result<bool, String> {
     let conn = open_readonly_conn_with_timeout(db_path, Some(SYNC_DB_BUSY_TIMEOUT))?;
     let source: Option<String> = conn
         .query_row(
@@ -75,6 +84,14 @@ pub(crate) fn is_ready(db_path: &str, account_id: AccountUuid) -> Result<bool, S
         )
         .map_err(|e| e.to_string())?;
     if source.as_deref() != Some(keys::KEY_SOURCE_LEDGER) {
+        return Ok(true);
+    }
+    // Reads honor a durable `PrivateRequired`, so a handle retains public
+    // authority only when neither the selection nor the wallet withholds it.
+    let mode = wallet_db_on(&conn, db_path, network)
+        .transparent_ledger_mode()
+        .map_err(|e| e.to_string())?;
+    if !mode.retains_public_authority() {
         return Ok(true);
     }
     if !table_exists(&conn)? {
@@ -274,16 +291,18 @@ impl DiscoveryRpc for CompactTxStreamerClient<Channel> {
     }
 }
 
-/// Called by sync before its normal UTXO refresh; shares sync's cancellation lifetime.
+/// Called by sync before its normal UTXO refresh; shares sync's cancellation
+/// lifetime and the transparent policy it captured.
 pub(super) async fn run(
     client: &mut CompactTxStreamerClient<Channel>,
     db: &mut WalletDatabase,
     db_path: &str,
     network: WalletNetwork,
+    policy: EnhancementPolicy,
     tip: BlockHeight,
     should_exit: &impl Fn() -> bool,
 ) -> Result<(), SyncError> {
-    run_with(client, db, db_path, network, tip, should_exit).await
+    run_with(client, db, db_path, network, policy, tip, should_exit).await
 }
 
 async fn run_with<R: DiscoveryRpc>(
@@ -291,17 +310,15 @@ async fn run_with<R: DiscoveryRpc>(
     db: &mut WalletDatabase,
     db_path: &str,
     network: WalletNetwork,
+    policy: EnhancementPolicy,
     tip: BlockHeight,
     should_exit: &impl Fn() -> bool,
 ) -> Result<(), SyncError> {
     // Candidate addresses are sent to public lightwalletd; the gate authorizes
     // each history request, and every checkpoint that marks candidates checked
     // re-checks it, so nothing is queried or completed without authority.
-    let gate = TransparentLookupGate::for_wallet(
-        EnhancementPolicy::current(network).public_transparent_lookups(db)?,
-        db_path,
-        network,
-    )?;
+    let gate =
+        TransparentLookupGate::for_sync(policy.public_transparent_lookups(db)?, db_path, network)?;
     if !gate.is_allowed() {
         log::info!("sync: transparent policy withholds Ledger address-history discovery");
         return Ok(());
@@ -329,7 +346,7 @@ async fn run_with<R: DiscoveryRpc>(
     }
     ensure_table(db_path)?;
     for id in accounts {
-        if is_ready(db_path, id).map_err(SyncError::db)? {
+        if is_ready(db_path, network, id).map_err(SyncError::db)? {
             continue;
         }
         for (scope_code, scope, gap) in [
@@ -926,18 +943,19 @@ mod tests {
             fail_address: None,
             hash: 1,
         };
-        assert!(!is_ready(&path, id).unwrap());
+        assert!(!is_ready(&path, WalletNetwork::Main, id).unwrap());
         run_with(
             &mut rpc,
             &mut db,
             &path,
             WalletNetwork::Main,
+            EnhancementPolicy::current(WalletNetwork::Main),
             BlockHeight::from_u32(2_600_000),
             &|| false,
         )
         .await
         .unwrap();
-        assert!(is_ready(&path, id).unwrap());
+        assert!(is_ready(&path, WalletNetwork::Main, id).unwrap());
         assert_eq!(
             load(&path, id, 0).unwrap().unwrap().0,
             Progress {
@@ -958,6 +976,7 @@ mod tests {
             &mut db,
             &path,
             WalletNetwork::Main,
+            EnhancementPolicy::current(WalletNetwork::Main),
             BlockHeight::from_u32(2_600_001),
             &|| false,
         )
@@ -997,6 +1016,7 @@ mod tests {
             &mut db,
             &path,
             WalletNetwork::Main,
+            EnhancementPolicy::current(WalletNetwork::Main),
             BlockHeight::from_u32(2_600_000),
             &|| false
         )
@@ -1009,7 +1029,7 @@ mod tests {
                 unused: 3
             }
         );
-        assert!(!is_ready(&path, id).unwrap());
+        assert!(!is_ready(&path, WalletNetwork::Main, id).unwrap());
         drop(db);
         let mut db = crate::wallet::db::open_wallet_db_with_timeout(
             &path,
@@ -1024,13 +1044,14 @@ mod tests {
             &mut db,
             &path,
             WalletNetwork::Main,
+            EnhancementPolicy::current(WalletNetwork::Main),
             BlockHeight::from_u32(2_600_010),
             &|| false,
         )
         .await
         .unwrap();
         assert_eq!(rpc.queries.lock().unwrap().len(), 12);
-        assert!(is_ready(&path, id).unwrap());
+        assert!(is_ready(&path, WalletNetwork::Main, id).unwrap());
     }
     #[tokio::test]
     async fn cancelled_discovery_does_not_create_checkpoints() {
@@ -1046,12 +1067,13 @@ mod tests {
             &mut db,
             &path,
             WalletNetwork::Main,
+            EnhancementPolicy::current(WalletNetwork::Main),
             BlockHeight::from_u32(2_600_000),
             &|| true,
         )
         .await
         .unwrap();
-        assert!(!is_ready(&path, id).unwrap());
+        assert!(!is_ready(&path, WalletNetwork::Main, id).unwrap());
         assert!(rpc.queries.lock().unwrap().is_empty());
     }
 
@@ -1078,6 +1100,7 @@ mod tests {
             &mut db,
             &path,
             WalletNetwork::Main,
+            EnhancementPolicy::current(WalletNetwork::Main),
             BlockHeight::from_u32(2_600_000),
             &|| false
         )
@@ -1091,16 +1114,17 @@ mod tests {
             &mut db,
             &path,
             WalletNetwork::Main,
+            EnhancementPolicy::current(WalletNetwork::Main),
             BlockHeight::from_u32(2_600_001),
             &|| false,
         )
         .await
         .unwrap();
         assert_eq!(rpc.queries.lock().unwrap().len(), 15);
-        assert!(is_ready(&path, id).unwrap());
+        assert!(is_ready(&path, WalletNetwork::Main, id).unwrap());
         // Invalidation precedes the truncate, including when the wallet cannot rewind.
         let _ = truncate(&path, &mut db, BlockHeight::from_u32(2_599_999));
-        assert!(!is_ready(&path, id).unwrap());
+        assert!(!is_ready(&path, WalletNetwork::Main, id).unwrap());
         let conn = rusqlite::Connection::open(&path).unwrap();
         delete_account(&conn, id.expose_uuid().as_bytes()).unwrap();
         assert!(load(&path, id, 0).unwrap().is_none());
@@ -1129,13 +1153,14 @@ mod tests {
             &mut db,
             &path,
             WalletNetwork::Main,
+            EnhancementPolicy::current(WalletNetwork::Main),
             BlockHeight::from_u32(2_600_000),
             &|| false
         )
         .await
         .is_err());
         assert!(load(&path, id, 0).unwrap().unwrap().3);
-        assert!(!is_ready(&path, id).unwrap());
+        assert!(!is_ready(&path, WalletNetwork::Main, id).unwrap());
         rpc.hash = 2;
         rpc.fail_address = None;
         rpc.queries.lock().unwrap().clear();
@@ -1144,13 +1169,14 @@ mod tests {
             &mut db,
             &path,
             WalletNetwork::Main,
+            EnhancementPolicy::current(WalletNetwork::Main),
             BlockHeight::from_u32(2_600_001),
             &|| false,
         )
         .await
         .unwrap();
         assert_eq!(rpc.queries.lock().unwrap().len(), 15);
-        assert!(is_ready(&path, id).unwrap());
+        assert!(is_ready(&path, WalletNetwork::Main, id).unwrap());
     }
 
     #[tokio::test]
@@ -1174,27 +1200,58 @@ mod tests {
             hash: 1,
         };
         let tip = BlockHeight::from_u32(2_600_000);
-        // This build's Public handle fails closed on the stricter wallet.
-        assert!(
-            run_with(&mut rpc, &mut db, &path, WalletNetwork::Main, tip, &|| {
-                false
-            })
-            .await
-            .is_err()
-        );
-        // A handle configured for the durable policy skips discovery.
-        db.set_transparent_ledger_mode(TransparentLedgerMode::PrivateRequired);
-        run_with(&mut rpc, &mut db, &path, WalletNetwork::Main, tip, &|| {
-            false
-        })
+        // A Public handle opened before the transition resolves under the
+        // stricter policy, so discovery is withheld on it too.
+        run_with(
+            &mut rpc,
+            &mut db,
+            &path,
+            WalletNetwork::Main,
+            EnhancementPolicy::current(WalletNetwork::Main),
+            tip,
+            &|| false,
+        )
+        .await
+        .unwrap();
+        // A handle opened after it honors the durable policy, so discovery is
+        // withheld: it succeeds without a query.
+        let mut db = crate::wallet::db::open_wallet_db_with_timeout(
+            &path,
+            WalletNetwork::Main,
+            SYNC_DB_BUSY_TIMEOUT,
+        )
+        .unwrap();
+        run_with(
+            &mut rpc,
+            &mut db,
+            &path,
+            WalletNetwork::Main,
+            EnhancementPolicy::current(WalletNetwork::Main),
+            tip,
+            &|| false,
+        )
         .await
         .unwrap();
 
         assert!(rpc.queries.lock().unwrap().is_empty());
+        // Withheld discovery records no checkpoint, so it stays owed.
+        let conn = open_readonly_conn_with_timeout(&path, Some(SYNC_DB_BUSY_TIMEOUT)).unwrap();
         assert!(
-            !is_ready(&path, id).unwrap(),
+            !table_exists(&conn).unwrap(),
             "withheld scopes stay incomplete"
         );
+        // While lookups are withheld, the account does not hold back a sync.
+        assert!(is_ready(&path, WalletNetwork::Main, id).unwrap());
+        // Once they are public again, its discovery is owed.
+        crate::wallet::db::open_wallet_db_with_timeout(
+            &path,
+            WalletNetwork::Main,
+            SYNC_DB_BUSY_TIMEOUT,
+        )
+        .unwrap()
+        .apply_transparent_policy(TransparentLedgerMode::Public)
+        .unwrap();
+        assert!(!is_ready(&path, WalletNetwork::Main, id).unwrap());
     }
 
     #[tokio::test]
@@ -1212,13 +1269,13 @@ mod tests {
         let _transition = crate::wallet::sync_engine::test_lwd::transition_on_first_dispatch(
             &path,
             WalletNetwork::Main,
-            TransparentLedgerMode::PrivateShadow,
         );
         run_with(
             &mut rpc,
             &mut db,
             &path,
             WalletNetwork::Main,
+            EnhancementPolicy::current(WalletNetwork::Main),
             BlockHeight::from_u32(2_600_000),
             &|| false,
         )
@@ -1235,6 +1292,6 @@ mod tests {
             Progress::default(),
             "answers after the transition are not checkpointed"
         );
-        assert!(!is_ready(&path, id).unwrap());
+        assert!(!is_ready(&path, WalletNetwork::Main, id).unwrap());
     }
 }

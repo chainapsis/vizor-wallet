@@ -13,11 +13,13 @@ import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/layout/app_main_sidebar.dart';
 import 'package:zcash_wallet/src/core/layout/app_pane_scroll_scaffold.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
+import 'package:zcash_wallet/src/core/storage/linux_keyring_coordinator.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_back_link.dart';
 import 'package:zcash_wallet/src/core/widgets/app_context_menu.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_pane_modal_overlay.dart';
+import 'package:zcash_wallet/src/core/widgets/app_toast.dart';
 import 'package:zcash_wallet/src/features/accounts/screens/accounts_screen.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_reconciler.dart';
@@ -32,6 +34,32 @@ const _validDeletePassword = 'Correct123!';
 const _invalidDeletePassword = 'Wrong123!';
 
 void main() {
+  testWidgets('busy wallet keeps the accounts screen available for retry', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final notifier = _FakeAccountNotifier(
+      _bootstrap.initialAccountState,
+      switchError: const WalletMutationBusyException(),
+    );
+    await tester.pumpWidget(
+      _accountsHarness(accountNotifier: () => notifier),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Shielded Savings'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(notifier.switchedUuid, isNull);
+    expect(find.byType(AccountsScreen), findsOneWidget);
+    expect(find.text('home route'), findsNothing);
+    expect(
+      find.text('Finish the current wallet operation before starting another.'),
+      findsOneWidget,
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   setUpAll(() async {
     final geist = FontLoader('Geist')
       ..addFont(rootBundle.load('assets/fonts/Geist-Regular.ttf'))
@@ -1719,7 +1747,10 @@ Widget _accountsHarness({
     ],
     child: MaterialApp.router(
       routerConfig: router,
-      builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
+      builder: (_, child) => AppTheme(
+        data: AppThemeData.light,
+        child: AppToastHost(child: child!),
+      ),
     ),
   );
 }
@@ -1825,12 +1856,14 @@ class _FakeAccountNotifier extends AccountNotifier {
     this.events,
     this.removeCompleter,
     this.resetError,
+    this.switchError,
   });
 
   final AccountState initialState;
   final List<String>? events;
   final Completer<void>? removeCompleter;
   final Object? resetError;
+  final Object? switchError;
 
   /// Runs before a removal; throwing aborts it.
   void Function(int? confirmedUnsharedGiftCardCount)? beforeRemove;
@@ -1848,6 +1881,7 @@ class _FakeAccountNotifier extends AccountNotifier {
 
   @override
   Future<void> switchAccount(String uuid) async {
+    if (switchError case final error?) throw error;
     switchedUuid = uuid;
     final prev = state.value ?? initialState;
     state = AsyncData(prev.copyWith(activeAccountUuid: uuid));

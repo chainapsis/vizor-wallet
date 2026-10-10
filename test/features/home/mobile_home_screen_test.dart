@@ -45,6 +45,7 @@ import 'package:zcash_wallet/src/providers/sync_keep_awake_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/features/activity/activity_eta_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
+import 'package:zcash_wallet/src/core/widgets/app_tooltip.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import '../../fakes/fake_sync_notifier.dart';
@@ -563,6 +564,7 @@ rust_sync.TransactionInfo _tx(int index) {
     feeState: rust_sync.TransactionFeeState.notApplicable,
     detailsComplete: true,
     provisional: false,
+    amountIncludesFee: false,
     blockTime: seconds,
     isTransparent: false,
     txKind: 'received',
@@ -582,6 +584,7 @@ rust_sync.TransactionInfo _sentZecTx({required String txidHex}) {
     feeState: rust_sync.TransactionFeeState.known,
     detailsComplete: true,
     provisional: false,
+    amountIncludesFee: false,
     blockTime: BigInt.from(1800000000),
     isTransparent: false,
     txKind: 'sent',
@@ -629,6 +632,7 @@ rust_sync.TransactionInfo _receivedZecTx({
     feeState: rust_sync.TransactionFeeState.notApplicable,
     detailsComplete: true,
     provisional: false,
+    amountIncludesFee: false,
     blockTime: BigInt.from(1800000000),
     isTransparent: false,
     txKind: 'received',
@@ -682,6 +686,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(393, 1000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final pending = rust_sync.TransactionInfo(
+      amountIncludesFee: false,
       detailsComplete: true,
       feeState: rust_sync.TransactionFeeState.known,
       provisional: false,
@@ -2504,6 +2509,41 @@ void main() {
     expect(find.text('Shield'), findsOneWidget);
   });
 
+  testWidgets('shows a stopped recovery with its reason on tap', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          percentage: 1.0,
+          orchardBalance: BigInt.from(14312000000),
+          transparentAuthority: rust_sync.TransparentBalanceAuthority.stopped,
+          transparentLastKnownBalance: BigInt.from(242000000),
+          transparentStop: rust_sync.TransparentStopReason.ledger,
+          transparentPrivate: true,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+      find.text('Transparent: 2.42 (last known, recovery stopped) ZEC'),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('mobile_home_shield_balance_button')),
+      findsNothing,
+    );
+    final hint = tester.widget<AppTooltip>(
+      find.byKey(const ValueKey('mobile_home_transparent_balance_hint')),
+    );
+    expect(hint.message, contains('Ledger transparent funds'));
+    expect(hint.tapToShow, isTrue);
+  });
+
   testWidgets('Ledger shielding opens the dedicated mobile Ledger route', (
     tester,
   ) async {
@@ -2879,6 +2919,7 @@ void main() {
           feeState: rust_sync.TransactionFeeState.notApplicable,
           detailsComplete: true,
           provisional: false,
+          amountIncludesFee: false,
           blockTime: height == BigInt.zero
               ? BigInt.zero
               : BigInt.from(1800000100),
