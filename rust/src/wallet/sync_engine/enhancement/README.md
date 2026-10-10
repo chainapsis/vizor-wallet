@@ -295,7 +295,9 @@ migration recovery runs before retiring a run. The raw `GetAddressUtxos`,
 `GetTaddressTxids`, and `GetTransaction` helpers are private to `lwd`, so a
 lane cannot reach them any other way; the public status source is wrapped by
 `status::lightwalletd_source`. Fee enrichment and migration stop send no
-transaction identifiers, so they need no gate. The iOS FFI
+transaction identifiers, so they need no gate. When the gate withholds
+software account discovery, discovery asks the transparent PIR service instead
+(see "Import account discovery" below) and sends lightwalletd nothing. The iOS FFI
 `zcash_lightwalletd_observe_transaction` takes the wallet's path and network:
 it opens the wallet read-only, honors a durable `PrivateRequired`, and returns
 `STATUS_RESULT_UNSUPPORTED` without sending anything when lookups are withheld
@@ -670,8 +672,8 @@ way public discovery stores them (UTXO refresh plus payload retrieval).
 | Discovery order and payload replay | Ledger-first and payload-first reach the same balance, history, and rows (one transaction, one output); a second replay changes nothing. |
 | Account add and delete | A rescan pauses the active account until the next pass; the new account is promoted on its own; deleting it leaves the active one current. |
 | Shielded-funded send while incomplete | It is refused only for lack of shielded funds, never as transparent recovery unavailable. |
-| Every lane, before the raise | On a mainnet wallet with public work queued and a Ledger account, with Private queries on but unread, so the durable policy stays `Public` and only each lane's captured policy withholds: under the private policy, Ledger discovery, the UTXO refresh and the deferred refresh, ephemeral checks, import discovery and the import preview (into the wallet and as a first account), the recovery follow-up with the real source, and the iOS observe ABI; under its transparent mode with public routes, which the live private services would otherwise answer, payload recovery and the status and history checkpoint. None sends lightwalletd a `GetAddressUtxos*`, `GetTaddress*`, or `GetTransaction` request. The follow-up does not raise the wallet, sends the source's service nothing, creates no companion, and reports no follow-up update; the queued work stays durable. |
-| Every lane, after the raise, including the transparent PIR source | On the same wallet, once startup reconcile has raised it: Ledger discovery, the UTXO refresh and the deferred refresh, payload recovery, the status and history checkpoint, and ephemeral checks, each under both a public captured policy and the private transparent mode; import discovery and the import preview; the recovery follow-up with the real source; and the iOS observe ABI. None sends lightwalletd a disclosing request, the queued work stays durable, and the follow-up reports an update. The source sends only service routes, on the wallet's route, with no watched script or txid in any path or body. Turning Private queries off then sends `GetAddressUtxos*`: the positive control. |
+| Every lane, before the raise | On a mainnet wallet with public work queued and a Ledger account, with Private queries on but unread, so the durable policy stays `Public` and only each lane's captured policy withholds: under the private policy, Ledger discovery, the UTXO refresh and the deferred refresh, ephemeral checks, the import preview and import discovery (into the wallet and as a first account; discovery goes to the transparent PIR service, which this lane does not reach, and fails), the recovery follow-up with the real source, and the iOS observe ABI; under its transparent mode with public routes, which the live private services would otherwise answer, payload recovery and the status and history checkpoint. None sends lightwalletd a `GetAddressUtxos*`, `GetTaddress*`, or `GetTransaction` request. The follow-up does not raise the wallet, sends the source's service nothing, creates no companion, and reports no follow-up update; the queued work stays durable. |
+| Every lane, after the raise, including the transparent PIR source | On the same wallet, once startup reconcile has raised it: Ledger discovery, the UTXO refresh and the deferred refresh, payload recovery, the status and history checkpoint, and ephemeral checks, each under both a public captured policy and the private transparent mode; import discovery and the import preview; the recovery follow-up with the real source; and the iOS observe ABI. None sends lightwalletd a disclosing request, the queued work stays durable, and the follow-up reports an update. Import discovery asks the transparent PIR service for the map, its schema and the birthday's filter, with no candidate in any path or body, and fails when the filter is refused. The source sends only service routes, on the wallet's route, with no watched script or txid in any path or body. Turning Private queries off then sends `GetAddressUtxos*`: the positive control. |
 
 The upgrade probe (`examples/db_upgrade.rs`, run by
 `scripts/test-db-upgrade.sh`) requires the recovery and activation migrations
@@ -769,8 +771,7 @@ trusted, since every commit comes from the configured origin.
   hardware transaction stored after a block landed loses its PCZT recipient and
   memo details to the fallback store. Software proposals are built and stored
   under one write lock, which the tip update also takes, so they have no such
-  window. Ledger accounts are `Stopped(Ledger)`, and a restore under private
-  mode does not find transparent-only accounts. Nothing clears a quarantine,
+  window. Ledger accounts are `Stopped(Ledger)`. Nothing clears a quarantine,
   and it covers only the account whose evidence it involves: every source id
   hashes the account's companion binding, so no other account, including one
   added later, shares a quarantined source. Turning Private queries off makes
@@ -780,6 +781,27 @@ trusted, since every commit comes from the configured origin.
   it, because the re-imported account has new sources. The
   library's `docs/transparent-pir-private-recovery.md`, at the pinned
   revision, lists the accepted limitations and outstanding release gates.
+- **Import account discovery.** A recovery-phrase import checks the first
+  transparent address of accounts 1 to 20 for history from the rounded
+  birthday. When the transparent policy withholds that lookup, at the start or
+  mid-run, `PrivateAccountDiscovery`
+  (`transparent_ledger/import_discovery.rs`) asks this service about every
+  candidate through the library's `discover_active_addresses`, keeping any
+  account the public probes already found. It downloads every filter from the birthday's shard to the
+  publication's end and confirms each filter match by private retrieval, so a
+  filter false positive never offers an empty account; it stores nothing and
+  opens no companion or wallet. The answer keeps the public batch rule (stop
+  after a batch of accounts with no history). Only a complete answer counts:
+  an outage, a lagging publication, a budget, the 300 s deadline or anything
+  else fails the import with a retry message, never a shorter list. The
+  service learns the birthday's shard and which shards matched any candidate,
+  and the recovery of the imported accounts follows at once and can be linked
+  to it. The publication is its own chain view for discovery, which grants no
+  authority: imported accounts recover against the wallet's chain. Off
+  mainnet a withheld discovery still fails as unavailable. The balance preview
+  in the account picker stays unavailable under private queries. A
+  qualification test serves a real publication from wallet-pir's shard server
+  in process and finds used accounts through it.
 - **Live test.** `a_fresh_mainnet_account_recovers_and_promotes_against_the_live_service`
   is ignored by default because it needs the network. It reads the live map,
   gives a fresh mainnet account a birthday at the start of the last sealed
@@ -1057,12 +1079,16 @@ there is no separate release gate.
 
 The eight patched library crates (now including `zakura-pir-enhance`) and the
 `zakura-pir-transparent` adapter share one wallet-libraries revision,
-`f7becfdd61a9e7da9f0d18e4d5a646bfb860b4df` on `claude/dithered-queries-with-forget-ledger`.
-It merges [PR #133](https://github.com/zakura-core/wallet-libraries/pull/133),
-which switches the Transparent, Enhance and Status clients to dithered 44-bit
-native queries, with [PR #134](https://github.com/zakura-core/wallet-libraries/pull/134)
-(forget transparent ledger facts under `Public`); repin to main once both land.
-Both sit on main after [PR #135](https://github.com/zakura-core/wallet-libraries/pull/135),
+`f42beabc14f2b770a7ef37d968852947fc8d4578` on `claude/tpir-import-account-discovery`
+([PR #139](https://github.com/zakura-core/wallet-libraries/pull/139), import-time
+account discovery), one commit on main after
+[PR #138](https://github.com/zakura-core/wallet-libraries/pull/138) (gated
+settlement); repin to main once PR #139 lands. Main also carries
+[PR #133](https://github.com/zakura-core/wallet-libraries/pull/133), which
+switches the Transparent, Enhance and Status clients to dithered 44-bit native
+queries, [PR #134](https://github.com/zakura-core/wallet-libraries/pull/134)
+(forget transparent ledger facts under `Public`),
+[PR #135](https://github.com/zakura-core/wallet-libraries/pull/135),
 [PR #129](https://github.com/zakura-core/wallet-libraries/pull/129) (declared re-cuts)
 and [PR #132](https://github.com/zakura-core/wallet-libraries/pull/132),
 which removes the unused `PrivateShadow` ledger mode on top of
