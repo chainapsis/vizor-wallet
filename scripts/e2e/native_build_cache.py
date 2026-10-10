@@ -507,6 +507,42 @@ class ProducedNativeCohort:
         self.captured.verify_unchanged()
 
 
+class NativeCheckoutBuildLease(FunderCacheLease):
+    """Serialize a checkout's shared native outputs, independently of cache keys."""
+    def __init__(self, source_root, *, platform, timeout, cancel_event):
+        logs = source_root/".regtest-logs"
+        logs.mkdir(mode=0o700, exist_ok=True)
+        super().__init__(logs/"native-build-locks",
+            {"schema":1, "source_root":str(source_root), "platform":platform},
+            ("checkout",), timeout=timeout, cancel_event=cancel_event)
+
+    def _check(self):
+        super()._check()
+        marker = self.root/(self.key+".retained")
+        if marker.exists() or marker.is_symlink():
+            raise NativeBuildCacheError("checkout has an unjoined retained native build; preserve its evidence")
+
+    def retain_unjoined(self):
+        # A denial marker cannot authorize cleanup. Keep it after releasing the
+        # OS lock so another invocation cannot race surviving output writers.
+        # This failure path must work even after cancellation/deadline expiry.
+        with contextlib.ExitStack() as stack:
+            root = tree.open_directory(stack, self.root, private=True)
+            if (tree.identity(os.fstat(root)) != self.root_id or self.fd is None
+                or tree.identity(os.fstat(self.fd)) != self.lock_id
+                or tree.identity((self.root/(self.key+".lock")).lstat()) != self.lock_id):
+                raise NativeBuildCacheError("original checkout build lock attachment changed")
+            try:
+                marker = os.open(self.key+".retained", os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,
+                                 0o400, dir_fd=root)
+            except FileExistsError:
+                return  # Any existing marker already denies reuse; never adopt it.
+            try:
+                os.write(marker,b"Original native build writers were not positively joined.\n")
+            finally:
+                os.close(marker)
+
+
 class NativeCohortCacheLease(FunderCacheLease):
     """Same original per-key lock; lookup/publication is for full signed bundles."""
     def __init__(self, root, inputs, *, timeout, cancel_event):

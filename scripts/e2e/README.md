@@ -1152,6 +1152,14 @@ driver siblings and configured PATH lookups. Collection never executes those
 configured tools. The signer and voting builders use the same collector and
 recheck its inputs before publication, including after the original owner seals.
 
+macOS producers hold a checkout-wide lock under
+`.regtest-logs/native-build-locks` from configuration through publication, even
+with different artifact keys/cache roots or with caching disabled. Different
+checkouts remain independent. Waiting uses the original deadline/cancellation;
+unproved writer shutdown leaves a retained denial marker and blocks later builds
+without deleting evidence or adopting a receipt. This coordinates these E2E
+producers, not unrelated developer builds.
+
 Only the original source-checking native builder with positively joined
 successful command groups can publish.
 Before lookup, `flutter build --config-only --no-pub` prepares the selected

@@ -3,6 +3,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import threading
@@ -167,6 +168,56 @@ class CacheTests(unittest.TestCase):
             folder.chmod(0o700)
             with self.assertRaisesRegex(CACHE.NativeBuildCacheError,"writable"):
                 lease.load()
+
+
+class CheckoutBuildLeaseTests(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory(prefix="native-checkout-lock-")
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name).resolve()
+        self.cancel = threading.Event()
+
+    def lease(self, source=None):
+        return CACHE.NativeCheckoutBuildLease(source or self.root,
+            platform="macos", timeout=2, cancel_event=self.cancel)
+
+    def contender(self, source, *, blocked, reason="deadline"):
+        code = (
+            "import sys,threading; from pathlib import Path; "
+            f"sys.path.insert(0,{str(Path(CACHE.__file__).parent)!r}); "
+            "from native_build_cache import NativeCheckoutBuildLease,FunderCacheError\n"
+            "try:\n"
+            f" with NativeCheckoutBuildLease(Path({str(source)!r}),platform='macos',"
+            "timeout=0.15,cancel_event=threading.Event()): pass\n"
+            f"except FunderCacheError as error:\n assert {reason!r} in str(error); raise SystemExit({0 if blocked else 1})\n"
+            f"raise SystemExit({1 if blocked else 0})\n"
+        )
+        result = subprocess.run([sys.executable,"-B","-c",code], timeout=3,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+
+    def test_same_checkout_blocks_distinct_cache_keys_and_releases_original_lock(self):
+        with CACHE.NativeCohortCacheLease(self.root/"cache-a", {"tex":None},
+                timeout=2,cancel_event=self.cancel), CACHE.NativeCohortCacheLease(
+                self.root/"cache-b", {"tex":"different"},timeout=2,cancel_event=self.cancel):
+            with self.lease() as lease:
+                inode = (lease.root/(lease.key+".lock")).stat().st_ino
+                self.contender(self.root,blocked=True)
+                lease._check()
+            self.contender(self.root,blocked=False)
+            self.assertEqual((lease.root/(lease.key+".lock")).stat().st_ino,inode)
+
+    def test_different_checkouts_can_build_concurrently(self):
+        other = self.root/"other-checkout"
+        other.mkdir()
+        with self.lease():
+            self.contender(other,blocked=False)
+
+    def test_unjoined_retention_denies_future_builds_after_lock_release(self):
+        with self.lease() as lease:
+            self.cancel.set()
+            lease.retain_unjoined()
+        self.contender(self.root,blocked=True,reason="unjoined retained")
 
 
 class InputTests(unittest.TestCase):

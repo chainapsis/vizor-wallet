@@ -46,6 +46,7 @@ def build_native_macos_cohort(case, *, source_root, flutter, timeout=1200.0, can
     environment = os.environ.copy()
     environment.pop("_", None)
     lease = None
+    checkout_lease = None
 
     def command(arguments, *, in_source=False):
         if cancel.is_set():
@@ -64,6 +65,9 @@ def build_native_macos_cohort(case, *, source_root, flutter, timeout=1200.0, can
         return result.lines
 
     try:
+        checkout_lease = cache.NativeCheckoutBuildLease(root, platform="macos",
+            timeout=max(0.001, deadline-time.monotonic()), cancel_event=cancel)
+        checkout_lease.__enter__()
         # Git excludes generated build trees while including current untracked
         # sources. This is checked-source continuity, not hermetic provenance.
         members = "".join(command(["/usr/bin/git", "-C", str(root), "ls-files",
@@ -111,6 +115,7 @@ def build_native_macos_cohort(case, *, source_root, flutter, timeout=1200.0, can
                     raise NativeMacosBuildError("native inputs changed during cache publication")
                 receipt = case.close()
                 captured.verify_unchanged()
+                checkout_lease._check()
                 return captured, {"app_build_count":0, "helper_build_count":0,
                     "cache_hit":True, "cache_key":lease.key, "team":captured.team,
                     "joined_build_processes":case.launched_process_count, "exit_codes":receipt.exit_codes,
@@ -150,6 +155,7 @@ def build_native_macos_cohort(case, *, source_root, flutter, timeout=1200.0, can
             raise NativeMacosBuildError("native cache inputs changed during original build")
         receipt = case.close()
         captured.verify_unchanged()
+        checkout_lease._check()
         if lease is not None:
             lease.publish(cache.ProducedNativeCohort(case, captured, inputs, cache._TOKEN))
         proof = {"app_build_count":1,"helper_build_count":1,"team":captured.team,
@@ -163,8 +169,14 @@ def build_native_macos_cohort(case, *, source_root, flutter, timeout=1200.0, can
         try:
             case.close()
         except BaseException as cleanup:
+            if checkout_lease is not None and checkout_lease.fd is not None:
+                checkout_lease.retain_unjoined()
             raise primary from cleanup
         raise
     finally:
-        if lease is not None:
-            lease.__exit__()
+        try:
+            if lease is not None:
+                lease.__exit__()
+        finally:
+            if checkout_lease is not None:
+                checkout_lease.__exit__()

@@ -3,6 +3,7 @@ from pathlib import Path
 import os
 import sys
 import tempfile
+import threading
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -81,6 +82,34 @@ class BuildTests(unittest.TestCase):
              patch.object(BUILD,"capture_mac_cleanup_helper",return_value=captured):
             return BUILD.build_native_macos_cohort(self.case,source_root=self.source,
                                                   flutter=self.source/"bin/flutter", **options)
+
+    def test_checkout_lock_covers_preparation_and_releases_after_failure(self):
+        self.mode = "changed-wallet-source"
+        original = self.command
+        def command(arguments, **options):
+            if "--config-only" in arguments:
+                with self.assertRaisesRegex(BUILD.cache.FunderCacheError,"deadline"):
+                    with BUILD.cache.NativeCheckoutBuildLease(self.source,platform="macos",
+                            timeout=0.05,cancel_event=threading.Event()):
+                        pass
+            return original(arguments, **options)
+        with patch.object(self,"command",side_effect=command):
+            with self.assertRaisesRegex(BUILD.NativeMacosBuildError,"lib/app.dart"):
+                self.build(cache_root=self.root/"cache")
+        with BUILD.cache.NativeCheckoutBuildLease(self.source,platform="macos",
+                timeout=0.1,cancel_event=threading.Event()):
+            pass
+
+    def test_unproven_join_retains_the_checkout_without_authorizing_next_build(self):
+        self.mode = "changed-wallet-source"
+        with patch.object(self.case,"close",side_effect=RuntimeError("unproven original join")):
+            with self.assertRaisesRegex(BUILD.NativeMacosBuildError,"lib/app.dart"):
+                self.build(cache_root=self.root/"cache")
+        with self.assertRaisesRegex(BUILD.cache.NativeBuildCacheError,"unjoined retained"):
+            with BUILD.cache.NativeCheckoutBuildLease(self.source,platform="macos",
+                    timeout=0.1,cancel_event=threading.Event()):
+                pass
+        self.case.close()
 
     def test_pods_are_prepared_without_app_compilation_before_cache_lookup(self):
         def inputs(*args, **kwargs):
