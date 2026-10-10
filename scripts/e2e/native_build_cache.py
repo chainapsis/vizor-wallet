@@ -335,17 +335,22 @@ def _native_apple_inputs(command, platform, cancel):
             for path in sorted(roots)}}
 
 
-def _native_rust_toolchains(root, environment, architecture, command):
+def _native_rust_toolchains(root, environment, tool, command):
     override = environment.get("VIZOR_RUST_TOOLCHAIN")
     if override:
         if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", override):
             raise NativeBuildCacheError("Cargokit override must be an exact Rust version")
         return (override,)
     if (root/"rust/cargokit.yaml").exists():
-        # Keep the existing conservative inventory of Cargokit's channels.
-        host = {"arm64":"aarch64-apple-darwin", "x86_64":"x86_64-apple-darwin"}[architecture]
-        installed = {line.split()[0] for line in command(["rustup","toolchain","list"], in_source=True) if line.strip()}
-        return tuple(name for name in ("stable","beta","nightly") if name+"-"+host in installed)
+        dart = tool.parent/"cache/dart-sdk/bin/dart"
+        helper = Path(__file__).resolve(strict=True).with_name("cargokit_toolchain.dart")
+        selected = json.loads("".join(command([str(dart),
+            "--packages="+str(root/".dart_tool/package_config.json"),
+            str(helper), str(root/"rust/cargokit.yaml")], in_source=True)))
+        if (not isinstance(selected, dict) or not isinstance(selected.get("toolchain"), str)
+            or selected["toolchain"] not in {"stable", "beta", "nightly"}):
+            raise NativeBuildCacheError("Cargokit must identify one configured native toolchain")
+        return (selected["toolchain"],)
     return ("stable",)  # Cargokit's actual default, not rustup's active toolchain.
 
 
@@ -355,18 +360,26 @@ def _native_rust_target(platform, architecture):
         {"arm64":"aarch64-apple-darwin", "x86_64":"x86_64-apple-darwin"}[architecture])
 
 
-def prepare_native_rust_targets(root, *, platform, architecture, environment, command):
+def prepare_native_rust_targets(root, *, platform, architecture, flutter, environment, command):
     """Perform Cargokit's missing-target preparation before read-only identity.
 
     Never reinstall/update an existing target or relax post-build continuity.
     Preparation commands belong to the original build owner and its deadline.
     """
     target = _native_rust_target(platform, architecture)
-    toolchains = _native_rust_toolchains(root, environment, architecture, command)
+    toolchains = _native_rust_toolchains(root, environment, flutter, command)
     available = {line.split()[0] for line in command(["rustup", "toolchain", "list"], in_source=True) if line.strip()}
     for name in toolchains:
         if not any(item == name or item.startswith(name+"-") for item in available):
             command(["rustup", "toolchain", "install", name], in_source=True)
+        if name == "nightly":
+            def components():
+                return {line.strip() for line in command(
+                    ["rustup", "component", "list", "--installed", "--toolchain", name], in_source=True) if line.strip()}
+            if "rust-src" not in components():
+                command(["rustup", "component", "add", "rust-src", "--toolchain", name], in_source=True)
+                if "rust-src" not in components():
+                    raise NativeBuildCacheError("Cargokit nightly preparation did not install rust-src")
         def installed():
             return {line.strip() for line in command(
                 ["rustup", "target", "list", "--installed", "--toolchain", name], in_source=True) if line.strip()}
@@ -418,7 +431,7 @@ def collect_native_cache_inputs(root, source, tool, *, platform, architecture,
         raise NativeBuildCacheError("rustup must resolve to one absolute native Rust driver")
     rustup = Path(rustup_paths[0]).resolve(strict=True)
     rustup_input = {"path":str(rustup), "sha256":_tool_input_record(rustup, executable=True)[1]}
-    toolchains = _native_rust_toolchains(root, environment, architecture, command)
+    toolchains = _native_rust_toolchains(root, environment, tool, command)
     rust = {}
     for name in toolchains:
         records = {}
@@ -457,6 +470,7 @@ def collect_native_cache_inputs(root, source, tool, *, platform, architecture,
         "flutter":flutter, "flutter_sdk":_flutter_sdk_inputs(tool, platform, cancel),
         "apple_toolchain":apple,
         "collector_sha256":_capture(Path(toolchain_inputs.__file__).resolve(strict=True))[1],
+        "toolchain_selector_sha256":_capture(Path(__file__).resolve(strict=True).with_name("cargokit_toolchain.dart"))[1],
         "configured_tools":toolchain_inputs.configured_tool_inputs(environment, configurations, root/"rust",
             tool_directories={Path(item["path"]).parent for item in apple["executables"].values()}),
         "xcode":list(command(["/usr/bin/xcodebuild", "-version"])),

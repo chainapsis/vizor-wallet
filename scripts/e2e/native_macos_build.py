@@ -95,7 +95,7 @@ def build_native_macos_cohort(case, *, source_root, flutter, timeout=1200.0, can
             if not (root/"macos/Pods").is_dir():
                 raise NativeMacosBuildError("prepared macOS Pod sandbox is missing")
             cache.prepare_native_rust_targets(root, platform="macos", architecture=platform.machine(),
-                environment=environment, command=command)
+                flutter=tool, environment=environment, command=command)
             changed = cache.native_source_changes(root, source, "macos")
             if changed:
                 raise NativeMacosBuildError("native preparation changed source/tool: " + ", ".join(changed[:8]))

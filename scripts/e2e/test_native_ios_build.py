@@ -35,14 +35,22 @@ class BuildTests(unittest.TestCase):
         self.change_test_support = False
         self.installed_targets = {"aarch64-apple-ios-sim"}
         self.installed_toolchains = {"stable"}
+        self.installed_components = set()
+        self.configured_toolchain = "stable"
 
     def command(self, arguments, **kwargs):
         self.commands.append(arguments)
         actual = arguments[4:] if arguments[0] == sys.executable else arguments
+        if len(actual) == 4 and Path(actual[2]).name == "cargokit_toolchain.dart":
+            return runtime.CommandResult(0,('{"toolchain":"'+self.configured_toolchain+'"}\n',))
         if actual[:3] == ["rustup", "toolchain", "list"]:
             return runtime.CommandResult(0,tuple(name+"\n" for name in sorted(self.installed_toolchains)))
         if actual[:3] == ["rustup", "toolchain", "install"]:
             self.installed_toolchains.add(actual[-1])
+        if actual[:3] == ["rustup", "component", "list"]:
+            return runtime.CommandResult(0,tuple(name+"\n" for name in sorted(self.installed_components)))
+        if actual[:3] == ["rustup", "component", "add"]:
+            self.installed_components.add(actual[3])
         if actual[:3] == ["rustup", "target", "list"]:
             if actual[-1] not in self.installed_toolchains:
                 return runtime.CommandResult(1,("selected toolchain is not installed\n",))
@@ -133,6 +141,49 @@ class BuildTests(unittest.TestCase):
         with patch.dict(os.environ,{"VIZOR_RUST_TOOLCHAIN":override}), patch.object(
                 BUILD.cache,"collect_native_cache_inputs",side_effect=inputs):
             with self.assertRaisesRegex(RuntimeError,"prepared cache lookup boundary"):
+                self.build(cache_root=self.root/"cache")
+
+    def test_missing_configured_beta_is_prepared_before_input_snapshot(self):
+        self._assert_configured_channel_preparation("beta")
+
+    def test_missing_configured_nightly_and_source_are_prepared_before_input_snapshot(self):
+        self._assert_configured_channel_preparation("nightly")
+
+    def test_prepared_nightly_is_not_reinstalled_or_updated(self):
+        self.configured_toolchain = "nightly"
+        (self.source/"rust").mkdir()
+        (self.source/"rust/cargokit.yaml").write_text("cargo: {debug: {toolchain: nightly}}")
+        self.installed_toolchains = {"nightly"}
+        self.installed_components = {"rust-src"}
+        def inputs(*args, **kwargs):
+            self.assertFalse(any("install" in args or "add" in args for args in self.commands))
+            raise RuntimeError("prepared nightly lookup boundary")
+        with patch.dict(os.environ,{"VIZOR_RUST_TOOLCHAIN":""}), patch.object(
+                BUILD.cache,"collect_native_cache_inputs",side_effect=inputs):
+            with self.assertRaisesRegex(RuntimeError,"prepared nightly lookup boundary"):
+                self.build(cache_root=self.root/"cache")
+
+    def _assert_configured_channel_preparation(self, channel):
+        self.configured_toolchain = channel
+        (self.source/"rust").mkdir()
+        (self.source/"rust/cargokit.yaml").write_text("cargo: {debug: {toolchain: "+channel+"}}")
+        self.installed_toolchains.clear()
+        self.installed_targets.clear()
+        def inputs(*args, **kwargs):
+            self.assertIn(channel, self.installed_toolchains)
+            self.assertIn("aarch64-apple-ios-sim", self.installed_targets)
+            operations = [args[4:] for args in self.commands if "rustup" in args]
+            install = operations.index(["rustup", "toolchain", "install", channel])
+            target_query = operations.index(["rustup", "target", "list", "--installed", "--toolchain", channel])
+            self.assertLess(install, target_query)
+            self.assertNotIn("stable", self.installed_toolchains)
+            if channel == "nightly":
+                self.assertIn("rust-src", self.installed_components)
+            self.assertFalse(any("xcodebuild" in args for args in self.commands))
+            raise RuntimeError("configured cache lookup boundary")
+        with patch.dict(os.environ,{"VIZOR_RUST_TOOLCHAIN":""}), patch.object(
+                BUILD.cache,"collect_native_cache_inputs",side_effect=inputs):
+            with self.assertRaisesRegex(RuntimeError,"configured cache lookup boundary"):
                 self.build(cache_root=self.root/"cache")
 
     def test_preparation_source_changes_are_rejected_before_cache_lookup(self):

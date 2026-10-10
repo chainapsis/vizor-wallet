@@ -624,6 +624,18 @@ class InputTests(unittest.TestCase):
                     CACHE._macos_provisioning_inputs(
                         lambda *_args, **_options:(json.dumps({"expires_at":expiry}),), self.cancel)
 
+    def test_configured_channel_identity_does_not_depend_on_installed_inventory(self):
+        (self.root/"rust").mkdir()
+        (self.root/"rust/cargokit.yaml").write_text("cargo: {debug: {toolchain: beta}}")
+        original = self.command
+        def command(args, **options):
+            if len(args) == 4 and Path(args[2]).name == "cargokit_toolchain.dart":
+                return ('{"toolchain":"beta"}\n',)
+            return original(args, **options)
+        with patch.object(self,"command",side_effect=command):
+            inputs = self.inputs(environment={})
+        self.assertEqual(set(inputs["rust_toolchains"]), {"beta"})
+
     def test_native_rust_resolution_rejects_missing_relative_and_multiple_paths(self):
         original = self.command
         for paths in ((), ("relative/rustc",), (str(self.rust_tools["rustc"]),)*2):
