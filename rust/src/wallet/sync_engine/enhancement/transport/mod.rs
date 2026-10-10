@@ -118,6 +118,14 @@ impl<'a, F> RoutedTransport<'a, F> {
         Self::with_route(should_exit, RoutePolicy::ForceDirect)
     }
     fn with_route(should_exit: &'a F, route_policy: RoutePolicy) -> Self {
+        // Both rustls providers are compiled in, so none is the default until
+        // one is installed. Lightwalletd channels install ring; a routed
+        // request can be the process's first TLS use (private import
+        // discovery sends lightwalletd nothing), so it installs it too.
+        static RUSTLS_INIT: std::sync::Once = std::sync::Once::new();
+        RUSTLS_INIT.call_once(|| {
+            let _ = rustls::crypto::ring::default_provider().install_default();
+        });
         let connector = HttpsConnectorBuilder::new()
             .with_webpki_roots()
             .https_only()
