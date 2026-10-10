@@ -652,6 +652,23 @@ class SyncState {
     );
   }
 
+  /// This state under a transparent policy Rust just applied, before any
+  /// fresh read: whether the wallet reads transparent funds privately follows
+  /// the policy at once, and a public policy stops no account, so a stop
+  /// reason read under a private one goes with it. Amounts are left to
+  /// [carryingTransparentAuthority].
+  SyncState underTransparentPolicy({required bool private}) {
+    final stop = private ? transparentStop : null;
+    if (transparentPrivate == private && transparentStop == stop) return this;
+    return copyWith(
+      transparentPrivate: private,
+      // The stop reason travels with its authority, which stays.
+      transparentAuthority: transparentAuthority,
+      transparentLastKnownBalance: transparentLastKnownBalance,
+      transparentStop: stop,
+    );
+  }
+
   /// This state's account-scoped data, carrying [current]'s wallet-wide
   /// sync fields.
   ///
@@ -896,23 +913,26 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   rust_sync.ApiAppliedTransparentPolicy? get appliedTransparentPolicy =>
       _appliedTransparentPolicy;
 
-  /// Adopts a policy Rust just applied, mode and generation. A new generation
-  /// demotes every carried transparent amount right away, in the visible
-  /// state and the account-switch cache: each was read under a policy that
-  /// no longer holds. It also restarts a foreground sync, so fresh reads
-  /// replace them: once the wallet mutation that applied it exits when one
-  /// is in progress, as for the private queries toggle, and now otherwise.
-  /// `null`, nothing applied, changes nothing.
+  /// Adopts a policy Rust just applied, mode and generation. Whether the
+  /// wallet reads transparent funds privately follows the mode at once, in
+  /// the visible state and the account-switch cache, so Settings never shows
+  /// the previous policy until a fresh read, which may wait for the network.
+  /// A new generation also demotes every carried transparent amount right
+  /// away: each was read under a policy that no longer holds. It also
+  /// restarts a foreground sync, so fresh reads replace them: once the
+  /// wallet mutation that applied it exits when one is in progress, as for
+  /// the private queries toggle, and now otherwise. `null`, nothing applied,
+  /// changes nothing.
   void adoptAppliedTransparentPolicy(
     rust_sync.ApiAppliedTransparentPolicy? applied,
   ) {
     if (applied == null) return;
     final previous = _appliedTransparentPolicy;
     _appliedTransparentPolicy = applied;
-    // Settings learns at once that lookups are no longer private.
-    if (applied.mode == rust_sync.ApiTransparentLedgerMode.public) {
-      ref.read(walletTransparentPrivateProvider.notifier).update(false);
-    }
+    final private =
+        applied.mode == rust_sync.ApiTransparentLedgerMode.privateRequired;
+    _adoptTransparentPrivacy(private);
+    ref.read(walletTransparentPrivateProvider.notifier).update(private);
     if (previous != null && previous.generation == applied.generation) return;
     _demoteCarriedTransparentAuthority();
     if (_requiresUnlock || !_isInForeground) return;
@@ -921,6 +941,18 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       return;
     }
     startSync();
+  }
+
+  void _adoptTransparentPrivacy(bool private) {
+    for (final entry in _lastKnownByAccount.entries.toList()) {
+      _lastKnownByAccount[entry.key] = entry.value.underTransparentPolicy(
+        private: private,
+      );
+    }
+    final current = state.value;
+    if (current == null) return;
+    final adopted = current.underTransparentPolicy(private: private);
+    if (!identical(adopted, current)) state = AsyncData(adopted);
   }
 
   void _demoteCarriedTransparentAuthority() {

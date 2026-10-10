@@ -383,6 +383,102 @@ void main() {
     );
   });
 
+  group('a successful toggle-off', () {
+    test('tells Settings at once, before any balance read', () async {
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(
+            _bootstrapWith(_publicSnapshot(private: true)),
+          ),
+          accountProvider.overrideWith(_Accounts.new),
+          enhancePirProvider.overrideWith(() => _EnhancePir(false)),
+          syncProvider.overrideWith(() => _LiveSync()),
+        ],
+      );
+      addTearDown(container.dispose);
+      addTearDown(pumpEventQueue);
+      container.listen(syncProvider, (_, _) {});
+      await container.read(syncProvider.future);
+      await pumpEventQueue();
+      expect(container.read(walletTransparentPrivateProvider), isTrue);
+      expect(container.read(transparentOptOutActionProvider), isTrue);
+
+      // The lowering applied; the wallet path never resolves, so no balance
+      // is read, as while offline or waiting for Tor.
+      container
+          .read(syncProvider.notifier)
+          .adoptAppliedTransparentPolicy(
+            _policy(rust_sync.ApiTransparentLedgerMode.public, 5),
+          );
+      await pumpEventQueue();
+
+      expect(
+        container.read(syncProvider).requireValue.transparentPrivate,
+        isFalse,
+      );
+      expect(container.read(walletTransparentPrivateProvider), isFalse);
+      expect(container.read(transparentOptOutActionProvider), isFalse);
+      expect(container.read(privateQueriesTurnOffDisclosesProvider), isFalse);
+    });
+
+    test("clears a stopped account's reason, here and in the cache", () async {
+      final stopped = SyncState(
+        accountUuid: _accountUuid,
+        hasAccountScopedData: true,
+        totalBalance: _currentShielded,
+        transparentAuthority: rust_sync.TransparentBalanceAuthority.lastKnown,
+        transparentLastKnownBalance: BigInt.from(7),
+        transparentStop: rust_sync.TransparentStopReason.quarantined,
+        transparentPrivate: true,
+      );
+      final sync = _CarrySync(stopped)..countStarts = true;
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+          accountProvider.overrideWith(_Accounts.new),
+          enhancePirProvider.overrideWith(() => _EnhancePir(false)),
+          syncProvider.overrideWith(() => sync),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.listen(syncProvider, (_, _) {});
+      await container.read(syncProvider.future);
+      void expectLowered(SyncState state) {
+        expect(state.transparentPrivate, isFalse);
+        expect(state.transparentStop, isNull);
+        expect(
+          state.transparentAuthority,
+          rust_sync.TransparentBalanceAuthority.lastKnown,
+        );
+        expect(state.transparentLastKnownBalance, BigInt.from(7));
+      }
+
+      sync.adoptAppliedTransparentPolicy(
+        _policy(rust_sync.ApiTransparentLedgerMode.public, 5),
+      );
+      expectLowered(container.read(syncProvider).requireValue);
+
+      // Raising again marks the wallet private at once, and lowering once
+      // more reaches an account cached in the meantime.
+      sync.replaceStateForTesting(stopped);
+      final accounts = container.read(accountProvider.notifier) as _Accounts;
+      accounts.activate(_otherAccountUuid);
+      sync.adoptAppliedTransparentPolicy(
+        _policy(rust_sync.ApiTransparentLedgerMode.public, 7),
+      );
+      accounts.activate(_accountUuid);
+      expectLowered(container.read(syncProvider).requireValue);
+
+      sync.adoptAppliedTransparentPolicy(
+        _policy(rust_sync.ApiTransparentLedgerMode.privateRequired, 8),
+      );
+      expect(
+        container.read(syncProvider).requireValue.transparentPrivate,
+        isTrue,
+      );
+    });
+  });
+
   test('a sync start carries a public current balance unchanged', () async {
     final started = await startFrom(_current(private: false));
 
