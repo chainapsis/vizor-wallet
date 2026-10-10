@@ -258,6 +258,21 @@ class InputTests(unittest.TestCase):
                     with self.assertRaisesRegex(CACHE.NativeBuildCacheError, "one absolute"):
                         self.inputs()
 
+    def test_native_rust_resolution_accepts_original_process_line_endings(self):
+        first = self.inputs()
+        original = self.command
+
+        for ending in ("\n", "\r\n"):
+            with self.subTest(ending=ending):
+                def command(args, **options):
+                    result = original(args, **options)
+                    if args[:2] == ["rustup", "which"]:
+                        return tuple(line+ending for line in result)
+                    return result
+
+                with patch.object(self, "command", side_effect=command):
+                    self.assertEqual(first, self.inputs())
+
     def test_flutter_compiler_and_selected_engine_bytes_invalidate_with_same_versions(self):
         for platform in ("ios", "macos"):
             engine = "ios" if platform == "ios" else "darwin-x64"

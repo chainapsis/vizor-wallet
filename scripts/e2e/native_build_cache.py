@@ -251,7 +251,8 @@ def collect_native_cache_inputs(root, source, tool, *, platform, architecture,
     for name in toolchains:
         records = {}
         for program, flag in (("rustc", "-vV"), ("cargo", "-V")):
-            paths = command(["rustup", "which", "--toolchain", name, program], in_source=True)
+            paths = tuple(line.rstrip("\r\n") for line in command(
+                ["rustup", "which", "--toolchain", name, program], in_source=True))
             if len(paths) != 1 or not Path(paths[0]).is_absolute():
                 raise NativeBuildCacheError("rustup must identify one absolute native Rust executable")
             executable = Path(paths[0]).resolve(strict=True)
