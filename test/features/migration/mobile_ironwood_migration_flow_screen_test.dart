@@ -7811,12 +7811,12 @@ void main() {
   });
 
   testWidgets(
-    'the backgrounding invitation discloses the direct route on Tor',
+    'the backgrounding invitation discloses that Tor pauses background migration',
     (tester) async {
-      // The background transport is pinned direct by design, so the moment
-      // this screen invites a Tor user to background the app is the moment
-      // their coverage expectation and the wire part ways. iOS only: Android
-      // has no background migration lane to disclose.
+      // The background task never uses Tor, so with Tor on it sends nothing.
+      // The moment this screen invites a Tor user to background the app is
+      // the moment they need to know the next step waits for them. iOS only:
+      // Android has no background migration lane to disclose.
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
       _useMobileViewport(tester);
       await tester.pumpWidget(
@@ -7866,8 +7866,8 @@ void main() {
           'Next migration step expected in\n'
           '~25 minutes.\n'
           'Notifications are on. You can leave Vizor and check back later.\n'
-          'While Vizor is closed, migration continues over a direct '
-          'connection.',
+          'With Tor on, migration waits while Vizor is closed and continues '
+          'when you open it.',
         ),
         findsOneWidget,
       );

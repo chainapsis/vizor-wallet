@@ -168,6 +168,9 @@ enum BackgroundMigrationTransportOutcome: Equatable {
   case accepted(nextHeight: UInt64?, observedHeight: UInt64, delay: TimeInterval?)
   case needsUserAction
   case temporarilyUnavailable
+  /// Tor is the saved route, so this background pass sent nothing and leaves
+  /// the work for the app to submit over Tor when it is next opened.
+  case deferredToForeground
   case cancelled
 }
 

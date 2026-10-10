@@ -690,7 +690,10 @@ final class BackgroundMigrationManager {
       let cancellation = BackgroundMigrationCancellation()
       stateLock.vizorWithLock { activeCancellation = cancellation }
       defer { stateLock.vizorWithLock { activeCancellation = nil } }
-      return BackgroundMigrationOutboxRunner.runOnce(cancellation: cancellation)
+      return BackgroundMigrationOutboxRunner.runOnce(
+        cancellation: cancellation,
+        dependencies: .background()
+      )
     }
 
     func resumeWithoutSchedulingForTesting() -> Bool {
@@ -782,7 +785,8 @@ final class BackgroundMigrationManager {
         // verified one so it does not retire the batch.
         let runResult = BackgroundMigrationOutboxRunner.runOnce(
           cancellation: cancellation,
-          requiresPreparationProofVerification: true
+          requiresPreparationProofVerification: true,
+          dependencies: .background()
         )
         self.clearActiveCancellation()
         let announced = runResult.proofReady.flatMap {
@@ -991,7 +995,7 @@ final class BackgroundMigrationManager {
       delay = 10 * 60
     case .cancelled:
       delay = shouldRetryCancelledWake ? 10 * 60 : nil
-    case .noWork, .needsUserAction:
+    case .noWork, .needsUserAction, .deferredToForeground:
       delay = nil
     }
     if retryProofNotification || retryBroadcastCompleteNotification {
@@ -1002,7 +1006,11 @@ final class BackgroundMigrationManager {
     } else if case .deferred(let preparationDelay) = preparationResult {
       delay = min(delay ?? preparationDelay, preparationDelay)
     }
-    if hasRunnableOutboxWork() {
+    // With Tor saved, every background pass defers without sending, so
+    // waking again for the outbox would only spend the wake. The app submits
+    // when it is next opened, and schedules this task again when it arms new
+    // background work.
+    if hasRunnableOutboxWork() && transport != .deferredToForeground {
       delay = min(delay ?? 60, 10 * 60)
     }
     let rescheduled: Bool

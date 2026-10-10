@@ -163,17 +163,74 @@ pub(crate) async fn wait_for_direct_connections_to_close(timeout: Duration) -> R
     .map_err(|_| "Timed out waiting for direct network connections to stop".to_string())
 }
 
+/// Marks the moment one direct request is dispatched, after which a switch to
+/// Tor no longer cancels it.
+///
+/// A direct connection is normally torn down the instant Tor is requested. For
+/// a transaction broadcast that is wrong once the transaction bytes are on
+/// their way: cancelling cannot unsend them, and only turns a known outcome
+/// into an uncertain one. A broadcast therefore connects under the ordinary
+/// cancellable lease and calls [`Self::commit`] immediately before sending.
+/// The commit succeeds only while the route is still the direct route the
+/// request started on, and it is decided under the same lock
+/// [`begin_tor_enable`] publishes Tor through, so the two are ordered: either
+/// the broadcast is refused before it sends anything, or it was dispatched
+/// first and runs to completion. A committed connection still counts as active
+/// direct I/O, so a Tor switch drains it rather than racing it.
+pub(crate) struct DirectRouteCommitment {
+    epoch: u64,
+    committed: AtomicBool,
+}
+
+impl DirectRouteCommitment {
+    /// Captures the direct route as it stands now. Create this before
+    /// resolving the route, so a switch in between makes [`Self::commit`] fail.
+    pub(crate) fn new() -> std::sync::Arc<Self> {
+        std::sync::Arc::new(Self {
+            epoch: DIRECT_ROUTE_EPOCH.load(Ordering::Acquire),
+            committed: AtomicBool::new(false),
+        })
+    }
+
+    pub(crate) fn commit(&self) -> Result<(), RouteBlocked> {
+        let _wakers = direct_io_wakers()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if is_tor_desired() || self.epoch != DIRECT_ROUTE_EPOCH.load(Ordering::Acquire) {
+            return Err(match status() {
+                NetworkPrivacyStatus::Bootstrapping => RouteBlocked::Bootstrapping,
+                NetworkPrivacyStatus::Failed => RouteBlocked::Failed,
+                _ => RouteBlocked::Unavailable,
+            });
+        }
+        self.committed.store(true, Ordering::Release);
+        Ok(())
+    }
+
+    pub(crate) fn is_committed(&self) -> bool {
+        self.committed.load(Ordering::Acquire)
+    }
+}
+
 pub(crate) struct DirectRouteLease {
     id: u64,
     epoch: u64,
+    commitment: Option<std::sync::Arc<DirectRouteCommitment>>,
 }
 
 impl DirectRouteLease {
     pub(crate) fn new() -> Self {
+        Self::with_commitment(None)
+    }
+
+    pub(crate) fn with_commitment(
+        commitment: Option<std::sync::Arc<DirectRouteCommitment>>,
+    ) -> Self {
         ACTIVE_DIRECT_IO.fetch_add(1, Ordering::AcqRel);
         Self {
             id: NEXT_DIRECT_IO_ID.fetch_add(1, Ordering::Relaxed),
             epoch: DIRECT_ROUTE_EPOCH.load(Ordering::Acquire),
+            commitment,
         }
     }
 
@@ -188,7 +245,13 @@ impl DirectRouteLease {
         let mut wakers = direct_io_wakers()
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if is_tor_desired() || self.epoch != DIRECT_ROUTE_EPOCH.load(Ordering::Acquire) {
+        let committed = self
+            .commitment
+            .as_ref()
+            .is_some_and(|commitment| commitment.is_committed());
+        if !committed
+            && (is_tor_desired() || self.epoch != DIRECT_ROUTE_EPOCH.load(Ordering::Acquire))
+        {
             return Poll::Ready(Err(io::Error::new(
                 io::ErrorKind::ConnectionAborted,
                 "direct connection cancelled by Tor activation",
@@ -611,7 +674,9 @@ fn route_decision(
 }
 
 /// The route as it stands right now, without waiting for a bootstrap in
-/// flight. Request paths should use [`tor_client_for_route`] instead.
+/// flight. Request paths should use [`tor_client_for_route`] instead, unless
+/// they hold something a bootstrap-long wait would block (the iOS migration
+/// outbox holds its execution gate, which account deletion waits on).
 pub(crate) fn try_tor_client_for_route(isolated: bool) -> Result<Option<TorClient>, RouteBlocked> {
     let client = client_slot()
         .read()

@@ -43,7 +43,7 @@ class MobileTorControl extends ConsumerWidget {
             state.status != NetworkPrivacyConnectionStatus.failed
         ? 'Use Tor to hide your IP address from servers. Other apps use their '
               'own network settings.'
-              '${defaultTargetPlatform == TargetPlatform.iOS ? ' Ironwood private migration connects directly while Vizor is closed.' : ''}'
+              '${defaultTargetPlatform == TargetPlatform.iOS ? ' With Tor on, Ironwood private migration waits while Vizor is closed.' : ''}'
         : presentation.description;
     final toggleAction = networkPrivacyToggleAction(state);
     final interactive = enabled && toggleAction.isInteractive;
@@ -211,14 +211,16 @@ _MobileTorPresentation _presentationFor(
       ),
     (NetworkPrivacyConnectionStatus.connected, _) => _MobileTorPresentation(
       statusLabel: 'Connected',
-      // iOS can continue Ironwood private migration through its native
-      // background task after Vizor closes. That task is pinned direct, so
-      // name the exception instead of weakening the foreground guarantee with
-      // "most". Android has no corresponding background migration lane.
+      // iOS runs Ironwood private migration in a native background task after
+      // Vizor closes. That task never uses Tor, so with Tor on it sends
+      // nothing and leaves the migration for the app; say so, because the
+      // migration otherwise looks stalled. Android has no corresponding
+      // background migration lane.
       description: platform == TargetPlatform.iOS
           ? 'Vizor’s network requests go through Tor. Ironwood private '
-                'migration uses a direct connection while Vizor is closed. '
-                'Links opened in other apps use those apps’ network settings.'
+                'migration waits while Vizor is closed and continues when you '
+                'open it. Links opened in other apps use those apps’ network '
+                'settings.'
           : 'Vizor’s network requests go through Tor. Links opened in other '
                 'apps use those apps’ network settings.',
       statusColor: (colors) => colors.text.brandCrimson,

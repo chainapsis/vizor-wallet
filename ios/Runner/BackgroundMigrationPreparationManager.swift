@@ -551,13 +551,16 @@ func migrationPreparationResumeTarget(
 /// With private recovery on, confirmations are observed by the foreground app.
 /// A background pass cannot advance the wallet's scanned state, so it can never
 /// accept a Status PIR anchor, and it must not fall back to public lookups.
+/// With Tor saved, the same: background work never uses Tor, and its lookups
+/// would otherwise go out directly.
 func migrationPreparationContinuedTaskDisposition(
   _ resumeTarget: BackgroundMigrationPreparationResumeTarget,
-  privateRecovery: Bool
+  privateRecovery: Bool,
+  torSelected: Bool = false
 ) -> BackgroundMigrationPreparationContinuedTaskDisposition {
   switch resumeTarget {
   case .continuedProcessing:
-    return privateRecovery ? .foregroundOnly : .trackConfirmations
+    return privateRecovery || torSelected ? .foregroundOnly : .trackConfirmations
   case .backgroundProcessing:
     return .foregroundOnly
   case .idle, .terminal:
@@ -1144,7 +1147,8 @@ final class BackgroundMigrationPreparationManager {
       // progress on it anyway.
       let canTrackInBackground = migrationPreparationContinuedTaskDisposition(
         self.preparationResumeTarget(),
-        privateRecovery: BackgroundMigrationPrivateRecovery.isEnabled()
+        privateRecovery: BackgroundMigrationPrivateRecovery.isEnabled(),
+        torSelected: BackgroundMigrationTorRoute.isSelected()
       ) == .trackConfirmations
       BGTaskScheduler.shared.getPendingTaskRequests { requests in
         let hasPendingRequest = requests.contains {
@@ -1278,9 +1282,11 @@ final class BackgroundMigrationPreparationManager {
     pruneForegroundContinuationScopes()
     let resumeTarget = preparationResumeTarget()
     let privateRecovery = BackgroundMigrationPrivateRecovery.isEnabled()
+    let torSelected = BackgroundMigrationTorRoute.isSelected()
     switch migrationPreparationContinuedTaskDisposition(
       resumeTarget,
-      privateRecovery: privateRecovery
+      privateRecovery: privateRecovery,
+      torSelected: torSelected
     ) {
     case .trackConfirmations:
       break
@@ -1289,8 +1295,9 @@ final class BackgroundMigrationPreparationManager {
         taskRequestWithIdentifier: Self.taskIdentifier
       )
       recordSchedulingState(
-        privateRecovery && resumeTarget == .continuedProcessing
-          ? "blocked_private_recovery" : "foreground_only"
+        resumeTarget != .continuedProcessing
+          ? "foreground_only"
+          : privateRecovery ? "blocked_private_recovery" : "blocked_tor_route"
       )
       cancelWatchdog()
       completion(false)
@@ -1571,7 +1578,8 @@ final class BackgroundMigrationPreparationManager {
     }
     let disposition = migrationPreparationContinuedTaskDisposition(
       preparationResumeTarget(),
-      privateRecovery: BackgroundMigrationPrivateRecovery.isEnabled()
+      privateRecovery: BackgroundMigrationPrivateRecovery.isEnabled(),
+      torSelected: BackgroundMigrationTorRoute.isSelected()
     )
     switch disposition {
     case .trackConfirmations:
@@ -1910,6 +1918,14 @@ final class BackgroundMigrationPreparationManager {
       print(
         "[BGPreparation] observing \(transactionIds.count) tx(s) account=\(manifest.accountUuid)"
       )
+      // Read again before each lookup: the task may have started before the
+      // user turned Tor on, and this process may not apply that route itself.
+      guard !BackgroundMigrationTorRoute.isSelected() else {
+        results.append(
+          MigrationPreparationScopeTrackingResult(scope: scope, disposition: .retry)
+        )
+        continue
+      }
       let tip: UInt64
       switch NativeLightwalletdClient.latestBlockHeight(
         endpoint: manifest.lightwalletdUrl,
@@ -2052,6 +2068,9 @@ final class BackgroundMigrationPreparationManager {
     }
     if privateStatus {
       return .failure(.coverageIncomplete)
+    }
+    if BackgroundMigrationTorRoute.isSelected() {
+      return .failure(.routeDeferredToForeground)
     }
     let first = NativeLightwalletdClient.transaction(
       endpoint: endpoint,

@@ -48,6 +48,11 @@ enum NativeLightwalletdError: Error, Equatable {
   case grpcStatus(String)
   case grpcStatusUnavailable
   case coverageIncomplete
+  /// The selected route refused the request before anything was sent.
+  case routeBlocked
+  /// Tor is the saved route and this is background work, which never uses
+  /// Tor; nothing was sent, and the foreground app owns the request.
+  case routeDeferredToForeground
   case malformedResponse
   case missingHeight
   case missingSendResponse
@@ -146,7 +151,7 @@ enum NativeLightwalletdClient {
     }
     var height: UInt64 = 0
     let code = endpoint.withCString {
-      zcash_lightwalletd_latest_block_height(
+      zcash_lightwalletd_routed_latest_block_height(
         $0,
         &height,
         cancellation.lightwalletdCancellationHandle
@@ -156,6 +161,9 @@ enum NativeLightwalletdClient {
       !cancellation.isCancelled
     else {
       return .failure(.cancelled)
+    }
+    if code == ZCASH_LIGHTWALLETD_RESULT_ROUTE_BLOCKED {
+      return .failure(.routeBlocked)
     }
     guard code == 0 else {
       return .failure(.transport("Rust lightwalletd latest block failed (code \(code))"))
@@ -303,7 +311,7 @@ enum NativeLightwalletdClient {
     let code = endpoint.withCString { endpointPointer in
       rawTransaction.withUnsafeBytes { transactionPointer in
         responseErrorMessage.withUnsafeMutableBufferPointer { messagePointer in
-          zcash_lightwalletd_send_transaction(
+          zcash_lightwalletd_routed_send_transaction(
             endpointPointer,
             transactionPointer.bindMemory(to: UInt8.self).baseAddress,
             UInt(rawTransaction.count),
@@ -314,6 +322,11 @@ enum NativeLightwalletdClient {
           )
         }
       }
+    }
+    // Checked before cancellation: a refusal is a definite non-submission,
+    // which the outbox records differently from an interrupted one.
+    if code == ZCASH_LIGHTWALLETD_RESULT_ROUTE_BLOCKED {
+      return .failure(.routeBlocked)
     }
     guard code != ZCASH_LIGHTWALLETD_RESULT_CANCELLED,
       !cancellation.isCancelled

@@ -155,23 +155,111 @@ pub(crate) async fn open_isolated_lwd_channel(
     open_lwd_channel_for_route(lightwalletd_url, true, || false).await
 }
 
-/// Opens a lightwalletd channel that is always direct, bypassing the
-/// process-wide route policy entirely.
+/// Opens a direct lightwalletd channel for the iOS background public status
+/// lookup, which never uses Tor.
 ///
-/// This is the transport for iOS background migration work, and it is pinned
-/// direct as a product decision: Tor covers the app's foreground traffic, and
-/// a background pass never brings Tor up or borrows the foreground's client —
-/// a launch where Dart never ran has no client, and a warm process may drop
-/// its client at any moment. Routing background work through the policy would
-/// therefore only convert it into failures whenever Tor is on. It uses a
-/// plain connector rather than the leased one, so a foreground toggle to Tor
-/// does not abort a background broadcast already in flight.
-///
-/// Nothing in the foreground may use this: every foreground path goes through
-/// [`open_lwd_channel`] or [`open_isolated_lwd_channel`], which respect the
-/// user's chosen route and fail closed while Tor is starting or broken.
+/// A background pass never brings Tor up or borrows the foreground's client,
+/// so the native caller only reaches this after it has read the saved route
+/// and found Tor off. This is the last check before the socket: it refuses
+/// while this process's route is Tor (a warm process whose user turned Tor on
+/// after that read), and its connection is cancelled like any other direct
+/// connection if Tor is turned on while it is open.
 pub(crate) async fn open_background_direct_lwd_channel(
     lightwalletd_url: &str,
+) -> Result<CompactTxStreamerClient<Channel>, SyncError> {
+    if crate::network_privacy::is_tor_desired() {
+        return Err(SyncError::net(
+            "network privacy blocked lightwalletd: Tor is the selected route".to_string(),
+        ));
+    }
+    open_direct_lwd_channel(lightwalletd_url, None).await
+}
+
+/// Why a native migration request could not be opened.
+#[derive(Debug)]
+pub(crate) enum NativeRouteOpenError {
+    /// The route policy refused before anything was sent: Tor is selected but
+    /// is starting, failed, or switched on while this request was opening.
+    RouteBlocked(String),
+    Network(SyncError),
+}
+
+impl std::fmt::Display for NativeRouteOpenError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::RouteBlocked(message) => {
+                write!(formatter, "network privacy blocked lightwalletd: {message}")
+            }
+            Self::Network(error) => write!(formatter, "{error}"),
+        }
+    }
+}
+
+/// A native migration channel and the route it was opened on.
+pub(crate) struct NativeMigrationChannel {
+    pub(crate) client: CompactTxStreamerClient<Channel>,
+    /// The direct route, so a broadcast must commit before it sends.
+    pub(crate) direct: bool,
+}
+
+/// Opens a channel for the iOS native migration outbox on the process route.
+///
+/// The same route policy as [`open_lwd_channel`], with two differences the
+/// native caller needs. It never waits for a bootstrap in flight: the outbox
+/// runs inside an execution gate that account deletion and wallet reset wait
+/// on, so a starting or failed Tor answers at once and the signed work stays
+/// queued for the next pass. And on the direct route it takes an optional
+/// [`DirectRouteCommitment`](crate::network_privacy::DirectRouteCommitment),
+/// which a broadcast commits right before sending so a later switch to Tor
+/// drains it instead of cancelling a transaction already on its way.
+///
+/// Pass `isolated` for broadcasts: on Tor they get a circuit of their own.
+pub(crate) async fn open_native_migration_lwd_channel(
+    lightwalletd_url: &str,
+    isolated: bool,
+    commitment: Option<std::sync::Arc<crate::network_privacy::DirectRouteCommitment>>,
+) -> Result<NativeMigrationChannel, NativeRouteOpenError> {
+    static RUSTLS_INIT: std::sync::Once = std::sync::Once::new();
+    RUSTLS_INIT.call_once(|| {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    });
+
+    let tor_client = crate::network_privacy::try_tor_client_for_route(isolated)
+        .map_err(|blocked| NativeRouteOpenError::RouteBlocked(blocked.to_string()))?;
+    if let Some(tor_client) = tor_client {
+        let endpoint = Endpoint::from_shared(lightwalletd_url.to_string())
+            .map_err(|e| NativeRouteOpenError::Network(SyncError::net(format!("invalid URL: {e}"))))?
+            .connect_timeout(LIGHTWALLETD_CONNECT_TIMEOUT);
+        let allow_onion_services = endpoint_allows_onion_services(&endpoint);
+        let client = tor_client
+            .connect_to_lightwalletd(endpoint.uri().clone(), allow_onion_services)
+            .await
+            .map_err(|e| {
+                NativeRouteOpenError::Network(SyncError::net(format!("Tor gRPC connect failed: {e}")))
+            })?;
+        return Ok(NativeMigrationChannel {
+            client,
+            direct: false,
+        });
+    }
+    match open_direct_lwd_channel(lightwalletd_url, commitment).await {
+        Ok(client) => Ok(NativeMigrationChannel {
+            client,
+            direct: true,
+        }),
+        // The direct lease aborts the connect when Tor is requested mid-way.
+        // Report that as the refusal it is, so the caller knows nothing went out.
+        Err(_) if crate::network_privacy::is_tor_desired() => Err(
+            NativeRouteOpenError::RouteBlocked("Tor was selected while connecting".to_string()),
+        ),
+        Err(error) => Err(NativeRouteOpenError::Network(error)),
+    }
+}
+
+/// Direct channel through the leased connector, so a switch to Tor cancels it.
+async fn open_direct_lwd_channel(
+    lightwalletd_url: &str,
+    commitment: Option<std::sync::Arc<crate::network_privacy::DirectRouteCommitment>>,
 ) -> Result<CompactTxStreamerClient<Channel>, SyncError> {
     static RUSTLS_INIT: std::sync::Once = std::sync::Once::new();
     RUSTLS_INIT.call_once(|| {
@@ -189,7 +277,7 @@ pub(crate) async fn open_background_direct_lwd_channel(
         endpoint
     };
     let channel = endpoint
-        .connect()
+        .connect_with_connector(DirectRouteConnector::with_commitment(commitment))
         .await
         .map_err(|e| SyncError::net(format!("gRPC connect failed: {e}")))?;
     Ok(CompactTxStreamerClient::new(channel))
@@ -235,10 +323,17 @@ async fn open_lwd_channel_for_route(
 #[derive(Clone)]
 pub(super) struct DirectRouteConnector {
     inner: HttpConnector,
+    commitment: Option<std::sync::Arc<crate::network_privacy::DirectRouteCommitment>>,
 }
 
 impl DirectRouteConnector {
     pub(super) fn new() -> Self {
+        Self::with_commitment(None)
+    }
+
+    fn with_commitment(
+        commitment: Option<std::sync::Arc<crate::network_privacy::DirectRouteCommitment>>,
+    ) -> Self {
         let mut inner = HttpConnector::new();
         inner.enforce_http(false);
         // Tonic applies the endpoint's `tcp_nodelay` (enabled by default) only
@@ -246,7 +341,7 @@ impl DirectRouteConnector {
         // Direct mode must keep the transport behaviour it had before the
         // route lease was interposed.
         inner.set_nodelay(true);
-        Self { inner }
+        Self { inner, commitment }
     }
 }
 
@@ -267,8 +362,24 @@ impl Service<Uri> for DirectRouteConnector {
     }
 
     fn call(&mut self, uri: Uri) -> Self::Future {
+        // A committed request rides the connection it committed on. A
+        // reconnect would be new direct traffic the commit never covered.
+        if self
+            .commitment
+            .as_ref()
+            .is_some_and(|commitment| commitment.is_committed())
+        {
+            return Box::pin(async {
+                Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::ConnectionAborted,
+                    "committed direct request cannot reconnect",
+                )) as Self::Error)
+            });
+        }
         let future = self.inner.call(uri);
-        let route = crate::network_privacy::DirectRouteLease::new();
+        let route = crate::network_privacy::DirectRouteLease::with_commitment(
+            self.commitment.clone(),
+        );
         Box::pin(async move {
             let mut future = Box::pin(future);
             let connected = std::future::poll_fn(|cx| {
@@ -987,23 +1098,44 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn background_transport_stays_direct_while_tor_is_desired() {
-        // The background lane is pinned direct as a product decision: Tor
-        // covers foreground traffic, and a background pass never brings Tor
-        // up or borrows the foreground's client. Routed through the policy,
-        // this call would be refused the moment Tor was desired; pinned, it
-        // reaches the socket and fails only because nothing is listening.
+    async fn background_transport_refuses_while_tor_is_the_route() {
+        // The background status lookup never uses Tor, so with Tor selected
+        // in this process it must not reach the socket at all.
         let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
+        let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind loopback listener");
+        let url = format!("http://{}", listener.local_addr().expect("listener address"));
         crate::network_privacy::begin_tor_enable();
+
+        let error = open_background_direct_lwd_channel(&url)
+            .await
+            .expect_err("Tor is the selected route");
+
+        assert!(
+            error.to_string().contains("network privacy blocked"),
+            "expected a policy refusal: {error}"
+        );
+        assert!(
+            tokio::time::timeout(Duration::from_millis(200), listener.accept())
+                .await
+                .is_err(),
+            "a direct connection reached lightwalletd while Tor was selected"
+        );
+    }
+
+    #[tokio::test]
+    async fn background_transport_connects_directly_when_tor_is_off() {
+        let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
+        crate::network_privacy::disable_tor();
 
         let error = open_background_direct_lwd_channel("http://127.0.0.1:1")
             .await
             .expect_err("nothing listens on port 1");
 
-        let message = error.to_string();
         assert!(
-            message.contains("gRPC connect failed"),
-            "expected a transport failure, got a policy refusal: {message}"
+            error.to_string().contains("gRPC connect failed"),
+            "expected a transport failure, got a policy refusal: {error}"
         );
     }
 

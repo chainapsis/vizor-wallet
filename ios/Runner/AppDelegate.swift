@@ -767,7 +767,9 @@ import UIKit
       ]
     case .needsUserAction:
       return ["outcome": "needsUserAction"]
-    case .temporarilyUnavailable:
+    // Only background wakes defer to the foreground; Dart sees it as a pass
+    // that could not run now.
+    case .temporarilyUnavailable, .deferredToForeground:
       return ["outcome": "temporarilyUnavailable"]
     case .cancelled:
       return ["outcome": "cancelled"]

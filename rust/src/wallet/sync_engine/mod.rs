@@ -71,7 +71,8 @@ use lwd::{
 pub(crate) use lwd::{
     get_compact_block_hash, get_latest_block, get_taddress_txids, next_stream_message,
     open_background_direct_lwd_channel, open_isolated_lwd_channel, open_lwd_channel,
-    open_lwd_channel_with_cancel, send_transaction, send_transaction_with_status,
+    open_lwd_channel_with_cancel, open_native_migration_lwd_channel, send_transaction,
+    send_transaction_with_status, NativeRouteOpenError,
 };
 pub(crate) use tip_cache::{
     get_latest_block_recorded, latest_block_for_transaction,
