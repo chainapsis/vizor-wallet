@@ -120,7 +120,93 @@ class SuiteTests(unittest.TestCase):
         self.assertEqual([case["scenario_id"] for case in final["results"]],[case.id for case in self.scenarios])
         self.assertEqual(summary["schedule"],final["schedule"])
         self.assertEqual(summary["resource_budget"],{
-            "artifact_producer_slots":1,"cargo_jobs":4,"case_slots":1})
+            "artifact_producer_slots":1,"cargo_jobs":4,"case_slots":1,"ios_preparation_slots":0})
+
+    def test_ios_preparation_slots_have_a_separate_budget(self):
+        self.args.workers, self.args.repeat = 4, 1
+        self.args.ios_runtime, self.args.ios_device_type = "model-runtime", "model-device"
+        self.scenarios = tuple(self.catalog.scenarios_by_id[name] for name in (
+            "flutter.ios.create-sync", "flutter.ios.import-sync", "flutter.ios.fallback-endpoint",
+            "flutter.ios.slow-height-fallback"))
+        slots = []
+        self.execute = lambda root, run_id, index, case, **kwargs: (
+            slots.append(kwargs["ios_preparation_slots"]) or {"scenario_id":case.id,"status":"passed"})
+        code, summary, _, _ = self.invoke()
+        self.assertEqual(code, 0)
+        self.assertEqual(summary["resource_budget"]["case_slots"], 4)
+        self.assertEqual(summary["resource_budget"]["ios_preparation_slots"], 2)
+        self.assertTrue(all(item is slots[0] for item in slots))
+        self.assertTrue(slots[0].acquire(blocking=False))
+        self.assertTrue(slots[0].acquire(blocking=False))
+        self.assertFalse(slots[0].acquire(blocking=False))
+        slots[0].release()
+        slots[0].release()
+
+    def test_cancelled_preparation_wait_never_allocates_a_worker(self):
+        cancel = threading.Event()
+        slots = Mock()
+        slots.acquire.side_effect = lambda **_: (cancel.set() or False)
+        scenario = self.catalog.scenarios_by_id["flutter.ios.import-sync"]
+        with patch.object(SUITE,"prepare_native_worker_lifecycle") as allocate:
+            result = SUITE.execute_case(self.root,"a"*10,0,scenario,helper=self.helper,
+                artifact=self.signer,source_root=self.root,dart=Path("/model/dart"),
+                args=self.args,cancel=cancel,ios_preparation_slots=slots)
+        self.assertEqual(result["status"],"cancelled")
+        allocate.assert_not_called()
+        slots.release.assert_not_called()
+
+    def test_cancellation_after_acquisition_returns_only_its_slot(self):
+        cancel = threading.Event()
+        slots = Mock()
+        slots.acquire.side_effect = lambda **_: (cancel.set() or True)
+        with self.assertRaises(SUITE.runtime.Cancelled):
+            SUITE._acquire_ios_preparation_slot(slots,cancel)
+        slots.release.assert_called_once_with()
+
+    def test_preparation_releases_before_backend_and_wallet_execution(self):
+        self.args.ios_runtime, self.args.ios_device_type = "model-runtime", "model-device"
+        slots = threading.BoundedSemaphore(1)
+        scenario = self.catalog.scenarios_by_id["flutter.ios.import-sync"]
+        session = SimpleNamespace(case=SimpleNamespace(workspace=SimpleNamespace(root=self.root)))
+        def prepared(**kwargs):
+            self.assertEqual(kwargs["timeout"],120)
+            self.assertFalse(slots.acquire(blocking=False))
+            return session
+        def backend(**kwargs):
+            self.assertTrue(slots.acquire(blocking=False))
+            slots.release()
+            raise RuntimeError("model stops before backend execution")
+        session.prepare_zakura_backend = backend
+        worker = SimpleNamespace(prepare_case=prepared,retain=Mock())
+        with patch.object(SUITE,"prepare_native_worker_lifecycle",return_value=worker):
+            result = SUITE.execute_case(self.root,"a"*10,0,scenario,helper=self.helper,
+                artifact=self.signer,source_root=self.root,dart=Path("/model/dart"),
+                args=self.args,cancel=threading.Event(),ios_preparation_slots=slots)
+        self.assertEqual(result["error"],"model stops before backend execution")
+        worker.retain.assert_called_once()
+
+    def test_failed_preparation_retains_before_freeing_slot_and_cancels_on_unproven_join(self):
+        self.args.ios_runtime, self.args.ios_device_type = "model-runtime", "model-device"
+        slots = threading.BoundedSemaphore(1)
+        cancel = threading.Event()
+        scenario = self.catalog.scenarios_by_id["flutter.ios.import-sync"]
+        def retain(**kwargs):
+            self.assertFalse(slots.acquire(blocking=False))
+            raise RuntimeError("preparation writer join unproven")
+        worker = SimpleNamespace(prepare_case=Mock(side_effect=RuntimeError("preparation failed")),retain=retain)
+        with patch.object(SUITE,"prepare_native_worker_lifecycle",return_value=worker) as allocate:
+            result = SUITE.execute_case(self.root,"a"*10,0,scenario,helper=self.helper,
+                artifact=self.signer,source_root=self.root,dart=Path("/model/dart"),
+                args=self.args,cancel=cancel,ios_preparation_slots=slots)
+            second = SUITE.execute_case(self.root,"a"*10,1,scenario,helper=self.helper,
+                artifact=self.signer,source_root=self.root,dart=Path("/model/dart"),
+                args=self.args,cancel=cancel,ios_preparation_slots=slots)
+        self.assertEqual(result["cleanup_errors"],["preparation writer join unproven"])
+        self.assertEqual(second["status"],"cancelled")
+        allocate.assert_called_once()
+        self.assertTrue(cancel.is_set())
+        self.assertTrue(slots.acquire(blocking=False))
+        slots.release()
 
     def test_invalid_timing_input_is_rejected_before_resources_or_builds(self):
         self.args.timing_reports = [self.root/"missing.json"]

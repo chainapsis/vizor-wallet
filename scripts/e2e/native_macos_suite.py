@@ -187,9 +187,21 @@ def _write_report(path, report):
         output.write("\n")
 
 
+def _acquire_ios_preparation_slot(slots, cancel):
+    """Queue before allocating a device; preparation's120s starts after admission."""
+    while True:
+        if cancel.is_set():
+            raise runtime.Cancelled()
+        if slots.acquire(timeout=0.1):
+            if cancel.is_set():
+                slots.release()
+                raise runtime.Cancelled()
+            return
+
+
 def execute_case(root, run_id, worker_id, scenario, *, helper, artifact, source_root,
                  dart, args, cancel, desktop_transparent=None, voting_artifact=None, ios_helper=None,
-                 ios_addresses=None):
+                 ios_addresses=None, ios_preparation_slots=None):
     """The worker thread creates, drives and finalizes its own mutable handles."""
     started = time.monotonic()
     result = {"scenario_id":scenario.id, "profile":scenario.profile,
@@ -197,12 +209,16 @@ def execute_case(root, run_id, worker_id, scenario, *, helper, artifact, source_
         "attempt":1, "status":"failed", "failure_kind":None, "returncode":1,
         "duration_seconds":0.0, "error":None, "cleanup_errors":[]}
     worker = session = None
+    preparation_held = False
     try:
         if cancel.is_set():
             raise runtime.Cancelled()
-        worker = prepare_native_worker_lifecycle(root, run_id=run_id, worker_id=worker_id)
         is_rust = scenario.id in RUST_CASES
         is_ios = scenario.id in IOS_SCENARIOS
+        if is_ios and ios_preparation_slots is not None:
+            _acquire_ios_preparation_slot(ios_preparation_slots, cancel)
+            preparation_held = True
+        worker = prepare_native_worker_lifecycle(root, run_id=run_id, worker_id=worker_id)
         activation = 500 if (scenario.id in VOTING_SCENARIOS or scenario.id in IOS_MIGRATION_SCENARIOS
             or is_rust and RUST_PROFILES[scenario.id] == "zakura-direct-activation500") else 1
         session = worker.prepare_case(platform="rust" if is_rust else "ios" if is_ios else "macos", scenario_id=scenario.id,
@@ -210,6 +226,11 @@ def execute_case(root, run_id, worker_id, scenario, *, helper, artifact, source_
             helper=None if is_rust else ios_helper if is_ios else helper,
             **({"runtime_identifier":args.ios_runtime, "device_type_identifier":args.ios_device_type} if is_ios else {}),
             timeout=120 if is_ios else 60, cancel_event=cancel)
+        if preparation_held:
+            # Only fresh boot/install/native absence checks share this budget.
+            # Already prepared cases can execute up to the global worker limit.
+            ios_preparation_slots.release()
+            preparation_held = False
         result["log"] = str(session.case.workspace.root)
         session.prepare_zakura_backend(tooling_root=args.zakura_cache,
             grpcurl=args.grpcurl.resolve(strict=True), proto_dir=args.proto_dir,
@@ -258,6 +279,11 @@ def execute_case(root, run_id, worker_id, scenario, *, helper, artifact, source_
             except BaseException as cleanup:
                 result["cleanup_errors"].append(str(cleanup))
                 cancel.set()
+    finally:
+        # Failed preparation retains/joins its original owner before freeing a
+        # slot. Unproven retention sets cancellation before another admission.
+        if preparation_held:
+            ios_preparation_slots.release()
     result["duration_seconds"] = round(time.monotonic()-started,3)
     return result
 
@@ -305,7 +331,11 @@ def run_native_suite(args, catalog, scenarios, selection, *, source_root):
         "workers":args.workers,"repeat":args.repeat,"repetition_reports":[],
         "builds":{},"error":None,"schedule":schedule.record,
         "resource_budget":{"artifact_producer_slots":1,"cargo_jobs":args.build_jobs,
-                           "case_slots":min(args.workers, args.repeat * len(scenarios))}}
+                           "case_slots":min(args.workers, args.repeat * len(scenarios)),
+                           "ios_preparation_slots":min(2, args.workers,
+                               args.repeat * sum(s.id in IOS_SCENARIOS for s in scenarios))}}
+    ios_preparation_slots = (threading.BoundedSemaphore(report["resource_budget"]["ios_preparation_slots"])
+        if report["resource_budget"]["ios_preparation_slots"] else None)
     try:
         print("Building selected native artifacts once; logs: "+str(evidence),file=sys.stderr,flush=True)
         targets = tuple(dict.fromkeys(s.target for s in scenarios if s.engine == "rust"))
@@ -369,7 +399,8 @@ def run_native_suite(args, catalog, scenarios, selection, *, source_root):
             submitted = {pool.submit(execute_case,*repetitions[repetition],index,scenario,
                 helper=helper,artifact=artifact,source_root=root,dart=dart,args=args,cancel=cancel,
                 desktop_transparent=payment_addresses.get("desktop_transparent"),
-                voting_artifact=voting_artifact, ios_helper=ios_helper, ios_addresses=ios_addresses):(repetition,index)
+                voting_artifact=voting_artifact, ios_helper=ios_helper, ios_addresses=ios_addresses,
+                ios_preparation_slots=ios_preparation_slots):(repetition,index)
                 for repetition,index,scenario in jobs}
             for future in as_completed(submitted):
                 repetition,index = submitted[future]

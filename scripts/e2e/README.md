@@ -172,6 +172,14 @@ python3 scripts/e2e/run-suite.py --suite rust-direct --plan \
 Shared artifact producers run one at a time before the case queue. `--build-jobs`
 controls the Cargo job budget; it is not a global Flutter/Xcode CPU limit.
 `--workers` bounds concurrent case owners across engines and fresh repetitions.
+Fresh iOS device preparation (boot, helper install and native absence checks)
+has a separate maximum of two simultaneous operations within that worker
+budget. Waiting happens before device allocation and does not consume the
+unchanged120-second preparation timeout. The slot is released before backend
+and wallet execution, so already prepared cases still use the global worker
+limit. Failed preparation retains/joins its original owner before releasing
+the slot; unproven retention cancels queued admissions. Reports include
+`ios_preparation_slots` (zero when no iOS scenarios are selected).
 The runner records these separate budgets and reports each completed case
 immediately, retaining selected catalog order in the final results. Independent
 wallet/backend/native state and existing assertions remain unchanged. Unproven
