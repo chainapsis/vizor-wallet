@@ -152,6 +152,7 @@ void main() {
       );
       await changePasscode(mobileE2ePasscode, '222222');
       await changePasscode('222222', mobileE2ePasscode);
+      markMobileE2eAssertionsCompleted();
     },
     timeout: const Timeout(Duration(minutes: 8)),
   );

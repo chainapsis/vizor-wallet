@@ -3,13 +3,14 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
+import 'package:zcash_wallet/src/core/config/e2e_runtime_case_manifest.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 
 import 'support/desktop_regtest_flow.dart';
 import 'support/payment_link_regtest_flow.dart';
 
 void main() {
-  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   setUpAll(initializeZcashWalletRuntime);
 
@@ -17,7 +18,13 @@ void main() {
     'recovers two Gift Card claims after a real process restart',
     (tester) async {
       addTearDown(() async {
-        await Clipboard.setData(const ClipboardData(text: ''));
+        if (installedE2eRuntimeCaseManifest != null &&
+            binding.reportData?['assertions_completed'] != true) {
+          return;
+        }
+        if (installedE2eRuntimeCaseManifest == null) {
+          await Clipboard.setData(const ClipboardData(text: ''));
+        }
         await cleanupDesktopRegtestWallet();
         await cleanupRegtestPaymentLinkClaimWallets();
         await deletePaymentLinkRestartManifest();
@@ -101,6 +108,7 @@ void main() {
         findsNothing,
       );
       e2eLog('both retained claims recovered and deleted after restart');
+      binding.reportData?['assertions_completed'] = true;
     },
     timeout: const Timeout(Duration(minutes: 10)),
   );

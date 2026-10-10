@@ -44,6 +44,7 @@ void main() {
       );
 
       await waitForShieldedBalance(tester, '1.25 $mobileE2eTicker');
+      markMobileE2eAssertionsCompleted();
     },
     timeout: const Timeout(Duration(minutes: 6)),
   );

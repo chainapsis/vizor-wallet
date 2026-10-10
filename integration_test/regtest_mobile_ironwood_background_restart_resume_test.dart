@@ -17,7 +17,7 @@ void main() {
   setUpAll(initializeZcashWalletRuntime);
 
   testWidgets(
-    'broadcasts the persisted proof after process restart without replacing it',
+    'paused native outbox transports persisted signed bytes after process restart',
     (tester) async {
       tolerateRenderOverflows();
       addTearDown(() async {
@@ -39,72 +39,101 @@ void main() {
       );
 
       expect(runId, isNotNull);
-      expect(persisted.pendingTxCount, 1);
-      expect(persisted.signedChildPcztCount, greaterThanOrEqualTo(1));
+      expect(persisted.pendingTxCount, greaterThanOrEqualTo(1));
+      expect(persisted.signedChildPcztCount, greaterThanOrEqualTo(0));
       expect(persisted.broadcastedTxCount + persisted.confirmedTxCount, 0);
-      expect(persisted.scheduledBroadcasts, hasLength(1));
-      final persistedTxid = persisted.scheduledBroadcasts.single.txidHex;
+      expect(
+        persisted.scheduledBroadcasts,
+        hasLength(persisted.pendingTxCount),
+      );
+      final persistedTxids = persisted.scheduledBroadcasts
+          .map((part) => part.txidHex)
+          .toSet();
 
-      final wake = await runNativeBackgroundMigrationWake();
+      pauseFlutterForNativeBackgroundMigration(tester);
+      final tick = await runNativeMigrationOutboxTick();
       final broadcasted = await mobileRegtestMigrationStatus(accountUuid);
-      expect(wake['outcome'], 'advanced');
+      expect(tick['outcome'], 'accepted');
+      final receipts = await nativeMigrationReceipts(accountUuid, runId!);
+      expect(receipts, hasLength(1));
+      await expectAcceptedNativeMigrationReceipt(
+        receipts.single,
+        persistedTxids,
+      );
+      final persistedTxid = receipts.single['txidHex']! as String;
+      expectNativeOutboxTickDidNotCreateProofs(persisted, broadcasted);
       expect(broadcasted.activeRunId, runId);
-      expect(broadcasted.pendingTxCount, 1);
+      expect(broadcasted.pendingTxCount, persisted.pendingTxCount);
       expect(broadcasted.signedChildPcztCount, persisted.signedChildPcztCount);
-      expect(broadcasted.broadcastedTxCount + broadcasted.confirmedTxCount, 1);
+      expect(broadcasted.broadcastedTxCount + broadcasted.confirmedTxCount, 0);
       expect(
         broadcasted.scheduledBroadcasts
             .where((entry) => entry.txidHex == persistedTxid)
             .single
             .status,
-        'broadcasted',
+        'scheduled',
       );
       await waitForNativeBackgroundMempoolTxid(persistedTxid);
 
-      await runNativeBackgroundMigrationWake();
-      final afterAnotherWake = await mobileRegtestMigrationStatus(accountUuid);
-      expect(afterAnotherWake.activeRunId, runId);
+      late ProviderContainer container;
+      // Bootstrap under an independently owned native admission hold: neither
+      // a foreground transport retry nor an OS task can take SendTx credit.
+      await withNativeMigrationTransportHeld(() async {
+        resumeFlutterAfterNativeBackgroundMigration(tester);
+        await tester.pumpWidget(await buildBootstrappedZcashWalletApp());
+        await enterPasscode(tester, mobileE2ePasscode);
+        await waitForHome(tester);
+        container = ProviderScope.containerOf(
+          tester.element(
+            find.byKey(const ValueKey('mobile_home_shielded_balance')),
+          ),
+        );
+        await _waitForIdleSync(
+          tester,
+          container,
+          (activeChain['zcashdHeight'] as num).toInt(),
+        );
+        pauseFlutterForNativeBackgroundMigration(tester);
+      });
+      final beforeRemainingTicks = await reconcileNativeMigrationReceipts(
+        tester,
+        container,
+        accountUuid,
+      );
+      expectNativeOutboxTickDidNotCreateProofs(persisted, beforeRemainingTicks);
       expect(
-        afterAnotherWake.broadcastedTxCount + afterAnotherWake.confirmedTxCount,
+        beforeRemainingTicks.broadcastedTxCount +
+            beforeRemainingTicks.confirmedTxCount,
         1,
       );
       expect(
-        afterAnotherWake.scheduledBroadcasts.any(
-          (entry) =>
-              entry.txidHex == persistedTxid && entry.status == 'broadcasted',
-        ),
-        isTrue,
+        beforeRemainingTicks.scheduledBroadcasts
+            .where((part) => part.txidHex == persistedTxid)
+            .single
+            .status,
+        'broadcasted',
       );
-      await waitForNativeBackgroundMempoolTxid(persistedTxid);
-
-      await tester.pumpWidget(await buildBootstrappedZcashWalletApp());
-      await enterPasscode(tester, mobileE2ePasscode);
-      await waitForHome(tester);
-      final container = ProviderScope.containerOf(
-        tester.element(
-          find.byKey(const ValueKey('mobile_home_shielded_balance')),
-        ),
-      );
-      await _waitForIdleSync(
-        tester,
-        container,
-        (activeChain['zcashdHeight'] as num).toInt(),
-      );
-
-      await pauseFlutterAndQuiesceMigrationForNativeWakes(tester, container);
-      final beforeRemainingWakes = await mobileRegtestMigrationStatus(
-        accountUuid,
-      );
-      final allSubmitted = await runNativeDueWakesUntilSubmitted(
+      final allSubmitted = await runNativeDueOutboxTicksUntilSubmitted(
+        tester: tester,
+        container: container,
         accountUuid: accountUuid,
-        initialStatus: beforeRemainingWakes,
-        submittedTarget: beforeRemainingWakes.totalCount,
+        initialStatus: beforeRemainingTicks,
+        submittedTarget: beforeRemainingTicks.totalCount,
       );
       expect(allSubmitted.activeRunId, runId);
       expect(
         allSubmitted.broadcastedTxCount + allSubmitted.confirmedTxCount,
         allSubmitted.totalCount,
       );
+      final duplicateTick = await runNativeMigrationOutboxTick();
+      expect(duplicateTick['outcome'], anyOf('noWork', 'waiting'));
+      final afterDuplicate = await mobileRegtestMigrationStatus(accountUuid);
+      expectNativeOutboxTickDidNotCreateProofs(allSubmitted, afterDuplicate);
+      expect(
+        afterDuplicate.broadcastedTxCount + afterDuplicate.confirmedTxCount,
+        allSubmitted.totalCount,
+      );
+      expect(await nativeMigrationReceipts(accountUuid, runId), isEmpty);
       resumeFlutterAfterNativeBackgroundMigration(tester);
 
       await postDriver('/mine', const {'blocks': 10});
@@ -125,6 +154,7 @@ void main() {
         accountUuid: accountUuid,
       );
       expect(balance.ironwood, expectedIronwood);
+      markMobileE2eAssertionsCompleted();
     },
     timeout: const Timeout(Duration(minutes: 20)),
   );

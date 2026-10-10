@@ -834,6 +834,56 @@ mod tests {
     const PREP_FEE: u64 = 80_000;
     const MIGRATION_FEE: u64 = 15_000;
 
+    // Fixed E2E datasets, independent of the UI/status response being tested.
+    // NU6.3 counts inputs plus outputs toward the 16-action preparation cap.
+    #[test]
+    fn isolated_ios_many_note_fixture_plans_preserve_layers_and_value() {
+        let twenty_notes = vec![50_001_000; 20];
+        let total = 500_000_000u64;
+        let mut batch_values: Vec<u64> = (1..=10).map(|weight| total * weight / 55).collect();
+        let remainder = total - batch_values.iter().sum::<u64>();
+        *batch_values.last_mut().unwrap() += remainder;
+        let five_hundred_notes: Vec<u64> = batch_values
+            .into_iter()
+            .flat_map(|amount| (0..50).map(move |note| amount / 50 + u64::from(note < amount % 50)))
+            .collect();
+        for (inputs, layers, batches, total_input) in [
+            (twenty_notes, vec![2, 1, 1], 9, 1_000_020_000),
+            (five_hundred_notes, vec![35, 5, 2, 1, 1], 7, total),
+        ] {
+            assert_eq!(inputs.iter().sum::<u64>(), total_input);
+            let plan = plan_padded_denominations(&inputs, PREP_FEE, MIGRATION_FEE, 1)
+                .unwrap()
+                .unwrap();
+            let observed_layers: Vec<usize> = (0..plan.layer_count)
+                .map(|layer| {
+                    plan.stages
+                        .iter()
+                        .filter(|stage| stage.layer_index == layer)
+                        .count()
+                })
+                .collect();
+            assert_eq!(observed_layers, layers);
+            assert_eq!(plan.denominations.migration_outputs.len(), batches);
+            assert_eq!(
+                plan.denominations.split_fee_zatoshi,
+                plan.stages.len() as u64 * PREP_FEE
+            );
+            assert_eq!(plan.denominations.total_input_zatoshi, total_input);
+            assert_eq!(
+                plan.denominations.total_migratable_zatoshi
+                    + plan.denominations.orchard_change.unwrap_or(0)
+                    + plan.denominations.split_fee_zatoshi
+                    + batches as u64 * MIGRATION_FEE,
+                total_input
+            );
+            for stage in &plan.stages {
+                assert_eq!(stage.fee_zatoshi, PREP_FEE);
+                assert!(stage.inputs.len() + stage.outputs.len() <= DENOMINATION_SPLIT_ACTIONS);
+            }
+        }
+    }
+
     struct ScriptedRng {
         rolls: VecDeque<u32>,
     }

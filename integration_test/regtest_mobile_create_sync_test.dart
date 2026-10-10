@@ -37,6 +37,7 @@ void main() {
         timeout: const Duration(minutes: 2),
       );
       logE2e('sync completed');
+      markMobileE2eAssertionsCompleted();
     },
     timeout: const Timeout(Duration(minutes: 5)),
   );

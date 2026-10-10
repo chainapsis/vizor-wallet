@@ -60,14 +60,17 @@ void main() {
 
       await tapWidget(
         tester,
-        const ValueKey('mobile_home_ironwood_migration_required_pill'),
+        const ValueKey('mobile_home_ironwood_migration_banner'),
         timeout: const Duration(minutes: 2),
       );
       await pumpUntil(
         tester,
         () => tester.any(
-          find.byKey(
-            const ValueKey('mobile_ironwood_migration_status_migrating'),
+          find.descendant(
+            of: find.byKey(
+              const ValueKey('mobile_ironwood_migration_back_scope'),
+            ),
+            matching: find.text('Ironwood Migration'),
           ),
         ),
         description: 'persisted mobile migration screen after restart',
@@ -134,7 +137,8 @@ void main() {
         accountUuid: accountUuid,
       );
       expect(balance.ironwood, expectedIronwood);
-      await waitForHome(tester);
+      await finishMobilePrivateMigrationForHome(tester);
+      markMobileE2eAssertionsCompleted();
     },
     timeout: const Timeout(Duration(minutes: 20)),
   );

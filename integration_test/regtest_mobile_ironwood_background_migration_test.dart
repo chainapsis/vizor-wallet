@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
+import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -17,7 +18,7 @@ void main() {
   setUpAll(initializeZcashWalletRuntime);
 
   testWidgets(
-    'native background wakes cap proving and submit due children while Flutter is paused',
+    'paused native outbox ticks send approved children while BGManager denies notifications',
     (tester) async {
       tolerateRenderOverflows();
       addTearDown(() async {
@@ -62,13 +63,17 @@ void main() {
       await startMobilePrivateMigration(tester);
 
       final accountUuid = await accountUuidAtOrder(0);
+      final initialPreparationDeadline = DateTime.now().add(
+        const Duration(minutes: 5),
+      );
       final started = await waitForMobileRegtestMigrationStatus(
         tester,
         accountUuid,
         (status) =>
             status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase &&
             status.pendingSplitStageCount > 0,
-        description: 'background migration denomination run',
+        description: 'native outbox denomination run',
+        timeout: initialPreparationDeadline.difference(DateTime.now()),
       );
       expect(started.activeRunId, isNotNull);
       expect(started.totalCount, greaterThanOrEqualTo(2));
@@ -79,9 +84,18 @@ void main() {
           started.broadcastedTxCount + started.confirmedTxCount;
       expect(started.totalCount - submittedBefore, greaterThanOrEqualTo(2));
 
+      final preparationReceipt = await waitForMobileInitialPreparationReceipt(
+        tester,
+        accountUuid,
+        started.activeRunId!,
+        deadline: initialPreparationDeadline,
+      );
       // Pause Flutter before the chain advances so no foreground coordinator
-      // work can be mistaken for native background progress.
-      await pauseFlutterAndQuiesceMigrationForNativeWakes(tester, container);
+      // work can be mistaken for native outbox transport progress.
+      await pauseFlutterAndQuiesceMigrationForNativeOutboxTicks(
+        tester,
+        container,
+      );
       final paused = await mobileRegtestMigrationStatus(accountUuid);
       expect(paused.pendingTxCount, started.pendingTxCount);
       expect(paused.signedChildPcztCount, started.signedChildPcztCount);
@@ -90,23 +104,92 @@ void main() {
         submittedBefore,
       );
       // Make the denomination stage trusted and every regtest schedule offset
-      // due while only the native background runner is allowed to advance.
-      await postDriver('/mine', const {'blocks': 50});
-      final firstProof = await _runNativeWakesUntilProofPersisted(
-        accountUuid: accountUuid,
-        initialStatus: paused,
+      // due while only the native outbox runner is allowed to advance.
+      await mineMobileInitialPreparationReceipt(
+        preparationReceipt,
+        blocks: 50,
+        deadline: initialPreparationDeadline,
+      );
+      final unpreparedTick = await runNativeMigrationOutboxTick();
+      expect(unpreparedTick['outcome'], anyOf('noWork', 'waiting'));
+      expectNativeOutboxTickDidNotCreateProofs(
+        paused,
+        await mobileRegtestMigrationStatus(accountUuid),
+      );
+      await waitForNativeBackgroundMempoolSize(0);
+
+      // Proofs require the actual foreground approval UI. Native ticks below
+      // receive only already materialized signed transaction bytes.
+      final firstProof = await prepareForegroundProofsForNativeOutboxTicks(
+        tester,
+        container,
+        accountUuid,
       );
       final firstProofTxids = firstProof.scheduledBroadcasts
           .map((entry) => entry.txidHex)
           .toSet();
-      expect(firstProofTxids, hasLength(1));
+      expect(firstProofTxids, hasLength(firstProof.pendingTxCount));
+      expect(firstProofTxids, isNotEmpty);
+      final nextDue = firstProof.scheduledBroadcasts
+          .map((entry) => entry.scheduledHeight)
+          .reduce((a, b) => a < b ? a : b);
+      final tip = (await getDriver('/status'))['zcashdHeight'] as num;
+      if (nextDue > tip.toInt()) {
+        await postDriver('/mine', {'blocks': nextDue - tip.toInt()});
+      }
+
+      // Prove denial with runnable signed bytes, not an empty outbox or a hold.
+      // Not Now intentionally permits foreground preparation only.
+      expect(tester.binding.lifecycleState, AppLifecycleState.paused);
+      expect(
+        (await getDriver('/status'))['zcashdHeight'] as num,
+        greaterThanOrEqualTo(nextDue),
+      );
+      final beforeManagerDenial = await mobileRegtestMigrationStatus(
+        accountUuid,
+      );
+      expect(beforeManagerDenial.pendingTxCount, greaterThan(0));
+      expect(
+        beforeManagerDenial.scheduledBroadcasts.any(
+          (entry) =>
+              entry.status == 'scheduled' && entry.scheduledHeight <= nextDue,
+        ),
+        isTrue,
+      );
+      expect(
+        await nativeMigrationReceipts(accountUuid, started.activeRunId!),
+        isEmpty,
+      );
+      await waitForNativeBackgroundMempoolSize(0);
+      await expectNativeBackgroundManagerDeniedWithoutNotifications();
+      final afterManagerDenial = await mobileRegtestMigrationStatus(
+        accountUuid,
+      );
+      expectNativeOutboxTickDidNotCreateProofs(
+        beforeManagerDenial,
+        afterManagerDenial,
+      );
+      expect(afterManagerDenial.phase, beforeManagerDenial.phase);
+      expect(
+        afterManagerDenial.broadcastedTxCount,
+        beforeManagerDenial.broadcastedTxCount,
+      );
+      expect(
+        afterManagerDenial.confirmedTxCount,
+        beforeManagerDenial.confirmedTxCount,
+      );
+      expect(
+        await nativeMigrationReceipts(accountUuid, started.activeRunId!),
+        isEmpty,
+      );
+      await waitForNativeBackgroundMempoolSize(0);
 
       await postDriver('/lightwalletd/stop', const {});
-      final failedWake = await runNativeBackgroundMigrationWake();
+      final failedTick = await runNativeMigrationOutboxTick();
       final whileOffline = await mobileRegtestMigrationStatus(accountUuid);
-      expect(failedWake['outcome'], anyOf('waiting', 'failed'));
+      expect(failedTick['outcome'], 'temporarilyUnavailable');
       expect(whileOffline.activeRunId, firstProof.activeRunId);
-      expect(whileOffline.phase, kIronwoodMigrationFailedRecoverablePhase);
+      expectNativeOutboxTickDidNotCreateProofs(firstProof, whileOffline);
       expect(whileOffline.pendingTxCount, firstProof.pendingTxCount);
       expect(
         whileOffline.signedChildPcztCount,
@@ -121,15 +204,29 @@ void main() {
         firstProofTxids,
       );
       await waitForNativeBackgroundMempoolSize(0);
+      expect(
+        await nativeMigrationReceipts(accountUuid, started.activeRunId!),
+        isEmpty,
+      );
 
       await postDriver(
         '/lightwalletd/start',
         const {},
         timeout: const Duration(minutes: 5),
       );
-      final recoveredWake = await runNativeBackgroundMigrationWake();
+      final recoveredTick = await runNativeMigrationOutboxTick();
       final afterRecovery = await mobileRegtestMigrationStatus(accountUuid);
-      expect(recoveredWake['outcome'], 'advanced');
+      expect(recoveredTick['outcome'], 'accepted');
+      final receipts = await nativeMigrationReceipts(
+        accountUuid,
+        started.activeRunId!,
+      );
+      expect(receipts, hasLength(1));
+      await expectAcceptedNativeMigrationReceipt(
+        receipts.single,
+        firstProofTxids,
+      );
+      expectNativeOutboxTickDidNotCreateProofs(firstProof, afterRecovery);
       expect(afterRecovery.pendingTxCount, firstProof.pendingTxCount);
       expect(
         afterRecovery.signedChildPcztCount,
@@ -137,19 +234,32 @@ void main() {
       );
       expect(
         afterRecovery.broadcastedTxCount + afterRecovery.confirmedTxCount,
-        submittedBefore + 1,
+        submittedBefore,
       );
       expect(
         afterRecovery.scheduledBroadcasts.map((entry) => entry.txidHex).toSet(),
         firstProofTxids,
       );
-      await waitForNativeBackgroundMempoolTxid(firstProofTxids.single);
+      await waitForNativeBackgroundMempoolTxid(
+        receipts.single['txidHex']! as String,
+      );
+      final reconciled = await reconcileNativeMigrationReceipts(
+        tester,
+        container,
+        accountUuid,
+      );
+      expectNativeOutboxTickDidNotCreateProofs(firstProof, reconciled);
+      expect(
+        reconciled.broadcastedTxCount + reconciled.confirmedTxCount,
+        submittedBefore + 1,
+      );
 
-      final afterSecond = await runNativeDueWakesUntilSubmitted(
+      final afterSecond = await runNativeDueOutboxTicksUntilSubmitted(
+        tester: tester,
+        container: container,
         accountUuid: accountUuid,
-        initialStatus: afterRecovery,
+        initialStatus: reconciled,
         submittedTarget: submittedBefore + 2,
-        minimumProofsCreated: 1,
       );
 
       expect(
@@ -158,43 +268,54 @@ void main() {
       );
       expect(afterSecond.activeRunId, started.activeRunId);
       expect(afterSecond.totalCount, started.totalCount);
+      final allSubmitted = await runNativeDueOutboxTicksUntilSubmitted(
+        tester: tester,
+        container: container,
+        accountUuid: accountUuid,
+        initialStatus: afterSecond,
+        submittedTarget: started.totalCount,
+      );
+      final duplicateTick = await runNativeMigrationOutboxTick();
+      expect(duplicateTick['outcome'], anyOf('noWork', 'waiting'));
+      final afterDuplicate = await mobileRegtestMigrationStatus(accountUuid);
+      expectNativeOutboxTickDidNotCreateProofs(allSubmitted, afterDuplicate);
+      expect(
+        afterDuplicate.broadcastedTxCount + afterDuplicate.confirmedTxCount,
+        started.totalCount,
+      );
+      expect(
+        await nativeMigrationReceipts(accountUuid, started.activeRunId!),
+        isEmpty,
+      );
+      resumeFlutterAfterNativeBackgroundMigration(tester);
+      await postDriver('/mine', const {'blocks': 10});
+      final completed = await waitForMobileRegtestMigrationStatus(
+        tester,
+        accountUuid,
+        (status) =>
+            status.phase == kIronwoodMigrationCompletePhase &&
+            status.confirmedTxCount == status.totalCount &&
+            status.activeRunId == null,
+        description:
+            'foreground confirmation reconciliation after native transport',
+      );
+      expect(completed.activeRunId, isNull);
+      final balance = await rust_sync.getBalance(
+        dbPath: await getWalletDbPath(),
+        network: mobileE2eNetwork,
+        accountUuid: accountUuid,
+      );
+      expect(
+        balance.ironwood,
+        started.targetValuesZatoshi.fold<BigInt>(
+          BigInt.zero,
+          (total, value) => total + value,
+        ),
+      );
+      markMobileE2eAssertionsCompleted();
     },
     timeout: const Timeout(Duration(minutes: 25)),
   );
-}
-
-Future<rust_sync.MigrationStatus> _runNativeWakesUntilProofPersisted({
-  required String accountUuid,
-  required rust_sync.MigrationStatus initialStatus,
-}) async {
-  var previous = initialStatus;
-  final maxWakes = initialStatus.totalCount * 2 + 4;
-  for (var wake = 0; wake < maxWakes; wake++) {
-    final result = await runNativeBackgroundMigrationWake();
-    final current = await mobileRegtestMigrationStatus(accountUuid);
-    final previousSubmitted =
-        previous.broadcastedTxCount + previous.confirmedTxCount;
-    final currentSubmitted =
-        current.broadcastedTxCount + current.confirmedTxCount;
-    final proofDelta = current.pendingTxCount - previous.pendingTxCount;
-    final signedChildDelta =
-        previous.signedChildPcztCount - current.signedChildPcztCount;
-
-    expect(proofDelta, inInclusiveRange(0, 1));
-    expect(currentSubmitted, previousSubmitted);
-    expect(signedChildDelta, proofDelta);
-    expect(current.activeRunId, initialStatus.activeRunId);
-    if (proofDelta == 1) {
-      expect(result['outcome'], anyOf('preparing', 'waiting'));
-      expect(current.pendingTxCount, initialStatus.pendingTxCount + 1);
-      return current;
-    }
-
-    previous = current;
-    await Future<void>.delayed(const Duration(milliseconds: 100));
-  }
-
-  fail('Native background wakes did not persist the first proof.');
 }
 
 Future<void> _waitForIdleSync(

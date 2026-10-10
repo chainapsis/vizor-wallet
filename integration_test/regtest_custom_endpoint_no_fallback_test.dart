@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
+import 'package:zcash_wallet/src/core/config/e2e_runtime_case_manifest.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
@@ -26,13 +27,14 @@ const _networkFailure =
 const _endpointFailure =
     'Cannot reach the configured Zcash endpoint. Check your endpoint settings.';
 const _genericFailure = 'Sync failed. Retry sync to continue.';
-const _unavailableCustomEndpoint = 'http://127.0.0.1:19067';
+String get _unavailableCustomEndpoint =>
+    installedE2eRuntimeCaseManifest?.primaryProxyUrl ?? 'http://127.0.0.1:19067';
 var _nextE2ePointer = 1000;
 
 int _takeE2ePointer() => _nextE2ePointer++;
 
 void main() {
-  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   setUpAll(() async {
     await initializeZcashWalletRuntime();
@@ -115,6 +117,7 @@ void main() {
         _unavailableCustomEndpoint,
       );
       _log('custom endpoint failed without fallback toast');
+      binding.reportData?['assertions_completed'] = true;
     },
     timeout: const Timeout(Duration(minutes: 3)),
   );

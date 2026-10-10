@@ -1,6 +1,7 @@
 import 'dart:async';
-import 'dart:io' show Platform;
+import 'dart:io' show Platform, pid;
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
@@ -17,6 +18,8 @@ import 'src/providers/account_provider.dart';
 import 'src/core/lifecycle/signing_shutdown_host.dart';
 import 'src/core/lifecycle/app_shutdown_signal.dart';
 import 'src/core/config/swap_feature_config.dart';
+import 'src/core/config/e2e_namespace.dart';
+import 'src/core/config/e2e_runtime_case_manifest.dart';
 import 'src/core/config/network_config.dart';
 import 'src/core/layout/app_layout.dart';
 import 'src/core/navigation/mobile_exit_back_guard.dart';
@@ -151,6 +154,7 @@ import 'src/providers/voting/voting_share_tracking_restorer_provider.dart';
 import 'src/providers/wallet_provider.dart';
 import 'src/providers/windows_update_provider.dart';
 import 'src/core/storage/secure_storage_diagnostics.dart';
+import 'src/core/storage/wallet_paths.dart';
 import 'src/core/widgets/linux_keyring_gate.dart';
 import 'src/core/storage/linux_keyring_coordinator.dart';
 import 'src/features/payment_links/services/gift_claim_setup_coordinator.dart';
@@ -197,8 +201,83 @@ void _startVotingObservabilityLogging() {
       );
 }
 
-Future<void> initializeZcashWalletRuntime() async {
+Map<String, Object>? _e2eRuntimeContext;
+
+/// macOS app-produced locations for the cohort driver, not proof of native cleanup.
+Map<String, Object>? get e2eRuntimeContext => _e2eRuntimeContext;
+
+Future<E2eRuntimeCaseManifest?> initializeE2eRuntimeConfiguration() async {
+  _e2eRuntimeContext = null;
   WidgetsFlutterBinding.ensureInitialized();
+  final e2eManifest = installE2eRuntimeCaseManifest(
+    isDebug: kDebugMode,
+    isIos: Platform.isIOS,
+    isMacos: Platform.isMacOS,
+    defaultNetworkName: kZcashDefaultNetworkName,
+  );
+  // Case identity on both platforms. Storage isolation below uses
+  // kVizorE2eNamespace instead, which is empty on iOS.
+  final e2eNamespace = e2eManifest?.namespace ?? '';
+  // Only debug builds can host an E2E case. Release builds never read the E2E
+  // environment, so these checks compile out of shipped apps.
+  if (kDebugMode) {
+    if (e2eManifest == null &&
+        (Platform.isIOS
+            ? readE2eNativeEnvironmentBytes(
+                    kVizorE2eCaseManifestEnvKey,
+                    kVizorE2eCaseManifestMaximumBytes,
+                  ) !=
+                  null
+            : Platform.environment.containsKey(kVizorE2eCaseManifestEnvKey))) {
+      throw StateError(
+        'An E2E case manifest requires a compiled cohort profile.',
+      );
+    }
+    validateE2eRuntimeNamespace(
+      expectedNamespace: e2eNamespace,
+      runtimeNamespace: readE2eRuntimeNamespace(isIos: Platform.isIOS),
+    );
+  }
+  // Only macOS cohort builds isolate storage. Each iOS case owns a fresh
+  // Simulator, so iOS keeps production storage identifiers.
+  final storageNamespace = kVizorE2eNamespace;
+  configureE2ePreferences(
+    namespace: storageNamespace,
+    defaultNetworkName: kZcashDefaultNetworkName,
+    isDebug: kDebugMode,
+  );
+  if (kVizorE2eMacosCohort && e2eManifest != null) {
+    final support = await getWalletSupportDirectory();
+    final service = secureStoreServiceForNetwork(kZcashDefaultNetworkName);
+    // Validates the manifest path; the original Driver writes this context.
+    resolveE2eContextPath(
+      configuredPath: e2eManifest.contextPath,
+      namespace: storageNamespace,
+      defaultNetworkName: kZcashDefaultNetworkName,
+      isDebug: kDebugMode,
+    );
+    final context = buildE2eRuntimeContext(
+      namespace: storageNamespace,
+      processId: pid,
+      supportDirectory: support.path,
+      secureStoreServices: e2eRuntimeSecureStoreServices(
+        walletService: service,
+      ),
+      preferencesPrefix: e2ePreferencesPrefix(
+        namespace: storageNamespace,
+        defaultNetworkName: kZcashDefaultNetworkName,
+        isDebug: kDebugMode,
+      ),
+    );
+    // The macOS sandbox cannot write the host's private case evidence tree.
+    // Its original Driver persists this observation after assertion completion.
+    _e2eRuntimeContext = Map<String, Object>.unmodifiable(context);
+  }
+  return e2eManifest;
+}
+
+Future<void> initializeZcashWalletRuntime() async {
+  final e2eManifest = await initializeE2eRuntimeConfiguration();
   await SecureStorageDiagnostics.instance.initialize();
   log('runtime: initializing RustLib');
   await RustLib.init();
@@ -208,10 +287,13 @@ Future<void> initializeZcashWalletRuntime() async {
   await rust_simple.configureFastTestnetMigration(
     enabled: kZcashFastTestnetMigration,
   );
+  final regtestActivationHeight =
+      e2eManifest?.regtestIronwoodActivationHeight ??
+      kZcashRegtestIronwoodActivationHeight;
   if (kZcashDefaultNetworkName == ZcashNetwork.regtest.name &&
-      kZcashRegtestIronwoodActivationHeight > 1) {
+      (e2eManifest != null || regtestActivationHeight > 1)) {
     await rust_simple.configureRegtestIronwoodActivationHeight(
-      height: kZcashRegtestIronwoodActivationHeight,
+      height: regtestActivationHeight,
     );
   }
 

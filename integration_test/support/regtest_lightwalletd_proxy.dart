@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:fixnum/fixnum.dart';
 import 'package:grpc/grpc.dart' as grpc;
+import 'package:zcash_wallet/src/core/config/e2e_runtime_case_manifest.dart';
 import 'package:zcash_wallet/src/generated/compact_formats.pb.dart' as compact;
 import 'package:zcash_wallet/src/generated/service.pb.dart' as service;
 import 'package:zcash_wallet/src/generated/service.pbgrpc.dart' as service_grpc;
@@ -12,13 +13,24 @@ enum _ProxyMode { healthy, slowHeight, down }
 class RegtestLightwalletdProxy
     extends service_grpc.CompactTxStreamerServiceBase {
   RegtestLightwalletdProxy({
-    this.listenPort = 19068,
-    this.targetPort = 9067,
+    int? listenPort,
+    int? targetPort,
     void Function(String message)? log,
-  }) : _log = log ?? ((_) {}),
+  }) : listenPort =
+           listenPort ??
+           installedE2eRuntimeCaseManifest?.primaryProxyPort ??
+           19068,
+       targetPort =
+           targetPort ??
+           installedE2eRuntimeCaseManifest?.lightwalletdPort ??
+           9067,
+       _log = log ?? ((_) {}),
        _channel = grpc.ClientChannel(
          '127.0.0.1',
-         port: targetPort,
+         port:
+             targetPort ??
+             installedE2eRuntimeCaseManifest?.lightwalletdPort ??
+             9067,
          options: const grpc.ChannelOptions(
            credentials: grpc.ChannelCredentials.insecure(),
          ),
@@ -281,6 +293,13 @@ class RegtestLightwalletdProxy
     service.BlockID request,
   ) async {
     _throwIfDown();
+    final local = localTreeState(request);
+    if (local != null) return local;
+    return _client.getTreeState(request);
+  }
+
+  /// A local response still goes through the proxy's availability check.
+  service.TreeState? localTreeState(service.BlockID request) {
     if (_serveEmptyGenesisTreeState &&
         request.height == Int64.ZERO &&
         request.hash.isEmpty) {
@@ -290,7 +309,7 @@ class RegtestLightwalletdProxy
         hash: List.filled(64, '0').join(),
       );
     }
-    return _client.getTreeState(request);
+    return null;
   }
 
   @override

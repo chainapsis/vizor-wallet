@@ -4,6 +4,8 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
+import 'package:zcash_wallet/src/core/config/e2e_runtime_case_manifest.dart';
+import 'package:zcash_wallet/src/core/config/e2e_runtime_endpoints.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
@@ -18,12 +20,15 @@ const _mnemonic =
     'roast miracle ethics found child scare curve congress renew salute pig '
     'better used';
 const _password = 'Vizor123!';
-const _primaryProxyUrl = 'http://127.0.0.1:19068';
+String get _primaryProxyUrl => resolveE2eRuntimePrimaryProxyUrl(
+  defaultPort: 19068,
+  manifest: installedE2eRuntimeCaseManifest,
+);
 const _fallbackToast =
     'Selected endpoint is unstable. Switched to fallback endpoint.';
 
 void main() {
-  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   setUpAll(() async {
     await initializeZcashWalletRuntime();
@@ -108,6 +113,7 @@ void main() {
         timeout: const Duration(minutes: 4),
       );
       _log('shielded balance synced through fallback');
+      binding.reportData?['assertions_completed'] = true;
     },
     timeout: const Timeout(Duration(minutes: 6)),
   );

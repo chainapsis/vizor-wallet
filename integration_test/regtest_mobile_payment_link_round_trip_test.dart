@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
+import 'package:zcash_wallet/src/core/config/e2e_runtime_case_manifest.dart';
 import 'package:zcash_wallet/src/core/formatting/zec_amount.dart';
 import 'package:zcash_wallet/src/core/navigation/vizor_deep_link.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
@@ -17,6 +18,7 @@ import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_c
 
 import 'support/mobile_regtest_flow.dart';
 import 'support/gift_card_amount_regtest.dart';
+import 'support/owned_regtest_control.dart';
 
 /// Mobile regtest E2E: the mobile twin of
 /// regtest_payment_link_round_trip_test.dart. One app holds both regtest
@@ -51,7 +53,9 @@ void main() {
     'creates, opens, and claims a Gift Card between two mobile accounts',
     (tester) async {
       addTearDown(() async {
-        await Clipboard.setData(const ClipboardData(text: ''));
+        if (installedE2eRuntimeCaseManifest == null) {
+          await Clipboard.setData(const ClipboardData(text: ''));
+        }
         await cleanupE2eWalletState();
         await cleanupMobileE2ePaymentLinkClaimWallets();
       });
@@ -122,17 +126,29 @@ void main() {
       final receiverStartingBalance = await _readAccountBalance(receiverUuid);
 
       var operations = _paymentLinkOperations(tester);
-      await Clipboard.setData(ClipboardData(text: link.toUri().toString()));
       await _openGiftCardsFromSettings(tester);
       await tapAppButton(
         tester,
         const ValueKey('payment_links_mobile_redeem_button'),
       );
-      await tapAppButton(
-        tester,
-        const ValueKey('payment_link_mobile_paste_button'),
-        timeout: const Duration(minutes: 1),
-      );
+      await withNativeClipboard(() async {
+        await Clipboard.setData(
+          ClipboardData(text: link.toShareUri().toString()),
+        );
+        await tapAppButton(
+          tester,
+          const ValueKey('payment_link_mobile_paste_button'),
+          timeout: const Duration(minutes: 1),
+        );
+        await pumpUntil(
+          tester,
+          () => !tester.any(
+            find.byKey(const ValueKey('payment_link_mobile_paste_button')),
+          ),
+          description: 'Gift paste to consume the copied link',
+        );
+        await Clipboard.setData(const ClipboardData(text: ''));
+      });
 
       // One confirmation in: the card is held behind the six-confirmation
       // gate, so the claim action must not be offered yet.
@@ -306,6 +322,7 @@ void main() {
         '$expectedBalanceText $mobileE2eTicker',
       );
       logE2e('mobile payment-link round trip completed');
+      markMobileE2eAssertionsCompleted();
     },
     timeout: const Timeout(Duration(minutes: 15)),
   );
@@ -377,24 +394,30 @@ Future<(VizorPaymentLink, BigInt)> _createGiftCard(
     const ValueKey('payment_link_mobile_review_continue_button'),
     timeout: const Duration(minutes: 1),
   );
-  await tapAppButton(
-    tester,
-    const ValueKey('payment_link_mobile_copy_button'),
-    timeout: const Duration(minutes: 3),
-  );
-  final data = await Clipboard.getData(Clipboard.kTextPlain);
-  final rawLink = data?.text?.trim() ?? '';
-  if (!rawLink.startsWith(
-    'https://${VizorDeepLink.host}${VizorDeepLink.paymentLinkPath}#v3=',
-  )) {
-    fail('The clipboard did not contain a Vizor payment link: "$rawLink"');
-  }
-  logE2e('copied the funded Gift Card link');
-  final link = VizorPaymentLink.parse(rawLink);
+  final link = await withNativeClipboard(() async {
+    await tapAppButton(
+      tester,
+      const ValueKey('payment_link_mobile_copy_button'),
+      timeout: const Duration(minutes: 3),
+    );
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    final rawLink = data?.text?.trim() ?? '';
+    final uri = Uri.parse(rawLink);
+    expect(uri.host, VizorDeepLink.host);
+    expect(uri.path, VizorDeepLink.paymentLinkPath);
+    expect(uri.fragment, startsWith('v3='));
+    final parsed = VizorPaymentLink.parse(rawLink);
+    expect(parsed.mnemonic.split(' '), hasLength(12));
+    await Clipboard.setData(const ClipboardData(text: ''));
+    return parsed;
+  });
+  // Compact share links intentionally omit the address and creation time.
+  // Bind those values to the actual persisted creator record, as desktop does.
   final recovery =
       (await _paymentLinkOperations(tester).loadCreatedLinkRecoveries())
           .singleWhere((record) => record.link.hasSameCanonicalPayload(link));
   expect(recovery.sourceAccountUuid, sourceAccountUuid);
+  logE2e('copied the funded Gift Card link');
   return (
     link.withResolvedMetadata(
       address: recovery.link.address,

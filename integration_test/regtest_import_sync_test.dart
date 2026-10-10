@@ -20,7 +20,7 @@ const _password = 'Vizor123!';
 final _currencyTicker = kZcashDefaultCurrencyTicker;
 
 void main() {
-  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   setUpAll(() async {
     await initializeZcashWalletRuntime();
@@ -121,6 +121,9 @@ void main() {
         timeout: const Duration(minutes: 1),
       );
       _log('transparent balance matched');
+      // setupAll failures can otherwise produce an empty successful Driver
+      // response. Only the completed financial assertions set this marker.
+      binding.reportData?['assertions_completed'] = true;
     },
     timeout: const Timeout(Duration(minutes: 5)),
   );

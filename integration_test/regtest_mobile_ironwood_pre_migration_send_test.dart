@@ -11,9 +11,7 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import 'support/mobile_regtest_flow.dart';
 
-const _recipientAddress = String.fromEnvironment(
-  'ZCASH_E2E_SEND_RECIPIENT_ADDRESS',
-);
+String get _recipientAddress => mobileE2eSendRecipient;
 final _fundedAmount = BigInt.from(1_095_000);
 final _sendAmount = BigInt.from(100_000);
 
@@ -87,10 +85,15 @@ void main() {
       );
       await pumpUntil(
         tester,
+        () => !tester.any(
+          find.byKey(const ValueKey('mobile_ironwood_announcement_sheet')),
+        ),
+        description: 'migration announcement dismissal before sending',
+      );
+      await pumpUntil(
+        tester,
         () => tester.any(
-          find.byKey(
-            const ValueKey('mobile_home_ironwood_migration_required_pill'),
-          ),
+          find.byKey(const ValueKey('mobile_home_ironwood_migration_banner')),
         ),
         description: 'mobile Ironwood migration CTA',
       );
@@ -122,6 +125,23 @@ void main() {
         toAddress: _recipientAddress,
         amountZatoshi: _sendAmount,
       );
+
+      // A long sync can leave its keep-awake prompt open after sync finishes.
+      // Take the normal UI choice before sending; do not bypass the modal.
+      final keepAwakePrompt = find.byKey(
+        const ValueKey('mobile_sync_keep_awake_prompt_sheet'),
+      );
+      if (tester.any(keepAwakePrompt)) {
+        await tapAppButton(
+          tester,
+          const ValueKey('mobile_sync_keep_awake_prompt_later'),
+        );
+        await pumpUntil(
+          tester,
+          () => !tester.any(keepAwakePrompt),
+          description: 'sync keep-awake prompt dismissal before sending',
+        );
+      }
 
       await sendViaWizard(
         tester,
@@ -163,14 +183,13 @@ void main() {
         timeout: const Duration(minutes: 3),
       );
       expect(
-        find.byKey(
-          const ValueKey('mobile_home_ironwood_migration_required_pill'),
-        ),
+        find.byKey(const ValueKey('mobile_home_ironwood_migration_banner')),
         findsNothing,
       );
       logE2e(
         'iOS pre-migration Orchard send confirmed; migration is not needed',
       );
+      markMobileE2eAssertionsCompleted();
     },
     timeout: const Timeout(Duration(minutes: 15)),
   );

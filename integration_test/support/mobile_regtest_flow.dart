@@ -8,11 +8,21 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/cupertino.dart' show CupertinoPage;
+import 'package:flutter/gestures.dart' show HitTestResult;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:zcash_wallet/src/core/layout/mobile/mobile_top_nav.dart';
+import 'package:zcash_wallet/src/features/migration/models/ironwood_migration_phases.dart';
+import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:integration_test/integration_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:zcash_wallet/src/core/config/e2e_runtime_case_manifest.dart';
 import 'package:zcash_wallet/src/core/config/network_config.dart';
+import 'package:zcash_wallet/src/core/formatting/zec_amount.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
@@ -20,6 +30,8 @@ import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
+
+import 'owned_regtest_control.dart';
 
 const mobileE2ePasscode = '111111';
 const mobileIronwoodE2eMnemonic =
@@ -33,11 +45,16 @@ const mobileE2eNetwork = String.fromEnvironment(
   'ZCASH_E2E_NETWORK',
   defaultValue: 'regtest',
 );
-const mobileE2eLightwalletdUrl = String.fromEnvironment(
+String get mobileE2eLightwalletdUrl =>
+    installedE2eRuntimeCaseManifest?.lightwalletdUrl ??
+    _mobileE2eLightwalletdUrl;
+const _mobileE2eLightwalletdUrl = String.fromEnvironment(
   'ZCASH_E2E_LIGHTWALLETD_URL',
   defaultValue: 'http://127.0.0.1:9067',
 );
-const mobileE2eZcashdRpcUrl = String.fromEnvironment(
+String get mobileE2eZcashdRpcUrl =>
+    installedE2eRuntimeCaseManifest?.zcashdRpcUrl ?? _mobileE2eZcashdRpcUrl;
+const _mobileE2eZcashdRpcUrl = String.fromEnvironment(
   'ZCASH_E2E_ZCASHD_RPC_URL',
   defaultValue: 'http://127.0.0.1:18232',
 );
@@ -47,6 +64,13 @@ const _accountsKey = 'zcash_accounts';
 
 void logE2e(String message) {
   debugPrint('[mobile-$mobileE2eNetwork-e2e] $message');
+}
+
+/// Called only after the selected original test's financial/UI assertions.
+void markMobileE2eAssertionsCompleted() {
+  IntegrationTestWidgetsFlutterBinding.ensureInitialized()
+          .reportData?['assertions_completed'] =
+      true;
 }
 
 /// Keeps cosmetic RenderFlex overflows (a few px on the 393pt frame
@@ -74,6 +98,7 @@ Future<void> pumpUntil(
   bool Function() condition, {
   required String description,
   Duration timeout = const Duration(seconds: 20),
+  String Function()? timeoutDiagnostics,
 }) async {
   final end = DateTime.now().add(timeout);
   Object? lastError;
@@ -93,7 +118,15 @@ Future<void> pumpUntil(
   }
 
   final error = lastError == null ? '' : ' Last error: $lastError';
-  fail('Timed out waiting for $description.$error');
+  var diagnostics = '';
+  if (timeoutDiagnostics != null) {
+    try {
+      diagnostics = ' Diagnostics: ${timeoutDiagnostics()}';
+    } catch (diagnosticError) {
+      diagnostics = ' Diagnostics unavailable: ${diagnosticError.runtimeType}';
+    }
+  }
+  fail('Timed out waiting for $description.$error$diagnostics');
 }
 
 Future<void> tapAppButton(
@@ -125,6 +158,29 @@ Future<void> tapAppButton(
         tester.widget<AppButton>(finder).onPressed != null,
     description: '$key button to be tappable',
     timeout: timeout,
+    timeoutDiagnostics: () {
+      final center = tester.getCenter(finder);
+      final hits = HitTestResult();
+      tester.binding.hitTestInView(hits, center, tester.view.viewId);
+      return jsonEncode({
+        'center': center.toString(),
+        'bounds': tester.getRect(finder).toString(),
+        'route_is_current': ModalRoute.of(tester.element(finder))?.isCurrent,
+        'modal_barriers': find.byType(ModalBarrier).evaluate().length,
+        'visible_prompt_keys': [
+          for (final value in [
+            'mobile_sync_keep_awake_prompt_sheet',
+            'mobile_ironwood_announcement_sheet',
+            'mobile_home_migration_attention_host',
+          ])
+            if (tester.any(find.byKey(ValueKey(value)))) value,
+        ],
+        'hit_path': [
+          for (final hit in hits.path.take(12))
+            hit.target.runtimeType.toString(),
+        ],
+      });
+    },
   );
   await tester.tap(hitTestable);
   await tester.pump(const Duration(milliseconds: 250));
@@ -302,6 +358,7 @@ Future<void> stopRustWorkForCleanup() async {
 
 Future<void> snapshotWalletDbToDriver() async {
   await stopRustWorkForCleanup();
+  if (await _preserveOwnedMobileRestartDatabase('prepare')) return;
   final supportDir = await getWalletSupportDirectory();
   final dbName = await getWalletDbName();
   final snapshot = <String, Object?>{};
@@ -326,6 +383,7 @@ Future<void> snapshotWalletDbToDriver() async {
 
 Future<void> restoreWalletDbFromDriver() async {
   await stopRustWorkForCleanup();
+  if (await _preserveOwnedMobileRestartDatabase('resume')) return;
   final response = await getDriver('/wallet-snapshot');
   final encodedFiles = response['files'];
   if (encodedFiles is! Map) {
@@ -349,6 +407,55 @@ Future<void> restoreWalletDbFromDriver() async {
   }
   logE2e('restored wallet DB snapshot after test-runner reinstall');
 }
+
+Future<bool> _preserveOwnedMobileRestartDatabase(String phase) async {
+  final manifest = installedE2eRuntimeCaseManifest;
+  if (manifest == null) return false;
+  final bytes = readE2eNativeEnvironmentBytes('VIZOR_E2E_IOS_PHASE', 16);
+  if (!const {
+        'flutter.ios.ironwood-migration-restart',
+        'flutter.ios.ironwood-background-restart',
+      }.contains(manifest.scenarioId) ||
+      bytes == null ||
+      ascii.decode(bytes) != phase) {
+    fail('The original mobile restart case/phase is invalid.');
+  }
+  if (rust_sync.isSyncRunning() || rust_sync.isMempoolObserverRunning()) {
+    fail('Rust writers must be quiescent before the owned app restart.');
+  }
+  final database = File(await getWalletDbPath());
+  if (!await database.exists() || await database.length() == 0) {
+    fail('The original mobile restart database is missing.');
+  }
+  // The SDK owner restarts without reinstalling. Keep the original DB/WAL/SHM,
+  // keychain and preferences; the resume test verifies the persisted run/txids.
+  logE2e('preserved original mobile database for restart $phase');
+  return true;
+}
+
+String get mobileE2eSendRecipient {
+  if (installedE2eRuntimeCaseManifest == null) {
+    return const String.fromEnvironment('ZCASH_E2E_SEND_RECIPIENT_ADDRESS');
+  }
+  final bytes = readE2eNativeEnvironmentBytes(
+    'VIZOR_E2E_IOS_SEND_RECIPIENT',
+    4096,
+  );
+  if (installedE2eRuntimeCaseManifest!.scenarioId !=
+          'flutter.ios.ironwood-pre-migration-send' ||
+      bytes == null) {
+    fail('The original mobile send recipient is missing.');
+  }
+  final address = ascii.decode(bytes);
+  if (!RegExp(r'^uregtest1[a-z0-9]+$').hasMatch(address)) {
+    fail('The original mobile send recipient is invalid.');
+  }
+  return address;
+}
+
+bool get mobileE2eFiveHundredNotes =>
+    installedE2eRuntimeCaseManifest?.scenarioId ==
+    'flutter.ios.ironwood-migration-500-notes';
 
 // ── Mobile flow primitives ───────────────────────────────────────────
 
@@ -409,9 +516,12 @@ Future<void> importPassphraseViaPaste(
 }) async {
   logE2e('importing wallet (first=$isFirstWallet)');
   await tapWidget(tester, const ValueKey('mobile_import_passphrase'));
-  await Clipboard.setData(ClipboardData(text: mnemonic));
-  await tapAppButton(tester, const ValueKey('mobile_import_paste'));
-  await tapAppButton(tester, const ValueKey('mobile_import_review_continue'));
+  await withNativeClipboard(() async {
+    await Clipboard.setData(ClipboardData(text: mnemonic));
+    await tapAppButton(tester, const ValueKey('mobile_import_paste'));
+    await tapAppButton(tester, const ValueKey('mobile_import_review_continue'));
+    await Clipboard.setData(const ClipboardData(text: ''));
+  });
   // Block height is a real text field on the system keyboard.
   await tapWidget(tester, const ValueKey('mobile_import_birthday_mode_height'));
   await tester.enterText(
@@ -457,6 +567,39 @@ Future<void> waitForHome(WidgetTester tester) async {
 Future<void> openMobilePrivateMigrationOptions(WidgetTester tester) =>
     openMobileMigrationOptions(tester);
 
+/// Leaves the real completed migration surface through its visible Done action.
+Future<void> finishMobilePrivateMigrationForHome(
+  WidgetTester tester, {
+  Duration timeout = const Duration(minutes: 1),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  final scope = find.byKey(
+    const ValueKey('mobile_ironwood_migration_back_scope'),
+  );
+  final title = find
+      .descendant(of: scope, matching: find.text('You’re all set!'))
+      .hitTestable();
+  await pumpUntil(
+    tester,
+    () => scope.evaluate().length == 1 && title.evaluate().length == 1,
+    description: 'completed migration result before Done',
+    timeout: timeout,
+  );
+  final lifecycle = tester.binding.lifecycleState;
+  if (lifecycle != null && lifecycle != AppLifecycleState.resumed) {
+    fail('Cannot finish a mobile migration while the app is backgrounded.');
+  }
+  await tapUntilVisible(
+    tester,
+    trigger: find
+        .descendant(of: scope, matching: find.text('Done'))
+        .hitTestable(),
+    outcome: find.byKey(const ValueKey('mobile_home_shielded_balance')),
+    description: 'completed migration result to return home',
+    timeout: deadline.difference(DateTime.now()),
+  );
+}
+
 Future<void> startMobilePrivateMigration(WidgetTester tester) async {
   await tapAppButton(
     tester,
@@ -468,8 +611,14 @@ Future<void> startMobilePrivateMigration(WidgetTester tester) async {
   final loading = find.byKey(
     const ValueKey('mobile_ironwood_migration_start_loading'),
   );
-  final preparing = find.byKey(
-    const ValueKey('mobile_ironwood_migration_status_preparing'),
+  final preparing = find.descendant(
+    of: find.byKey(const ValueKey('mobile_ironwood_migration_back_scope')),
+    matching: find.byWidgetPredicate(
+      (widget) =>
+          widget is MobileTopNav &&
+          widget.title == 'Preparing your migration' &&
+          widget.onBack != null,
+    ),
   );
   await pumpUntil(
     tester,
@@ -518,7 +667,7 @@ Future<void> openMobileMigrationOptions(WidgetTester tester) async {
     const ValueKey('mobile_ironwood_start_migration_button'),
   );
   final homeCta = find.byKey(
-    const ValueKey('mobile_home_ironwood_migration_required_pill'),
+    const ValueKey('mobile_home_ironwood_migration_banner'),
   );
   final intro = find.byKey(
     const ValueKey('mobile_ironwood_intro_continue_button'),
@@ -637,23 +786,25 @@ Future<void> switchAccountTo(WidgetTester tester, String accountUuid) async {
 /// Home → receive screen → copy → back. Returns the copied address.
 Future<String> copyShieldedAddress(WidgetTester tester) async {
   await tapWidget(tester, const ValueKey('mobile_home_receive'));
-  await tapWidget(
-    tester,
-    const ValueKey('mobile_receive_copy'),
-    timeout: const Duration(minutes: 1),
-  );
-  // The copy button only enables once the address loads; the tap above
-  // is plain, so wait for the toast as the copy signal.
-  await pumpUntil(
-    tester,
-    () => tester.any(find.text('Address copied')),
-    description: 'address copied toast',
-  );
-  final data = await Clipboard.getData('text/plain');
-  final address = data?.text?.trim() ?? '';
-  if (address.isEmpty) {
-    fail('Shielded address was not copied to the clipboard.');
-  }
+  final address = await withNativeClipboard(() async {
+    await tapWidget(
+      tester,
+      const ValueKey('mobile_receive_copy'),
+      timeout: const Duration(minutes: 1),
+    );
+    await pumpUntil(
+      tester,
+      () => tester.any(find.text('Address copied')),
+      description: 'address copied toast',
+    );
+    final data = await Clipboard.getData('text/plain');
+    final copied = data?.text?.trim() ?? '';
+    if (copied.isEmpty) {
+      fail('Shielded address was not copied to the clipboard.');
+    }
+    await Clipboard.setData(const ClipboardData(text: ''));
+    return copied;
+  });
   await tapBack(tester);
   await waitForHome(tester);
   return address;
@@ -676,7 +827,7 @@ Future<void> sendViaWizard(
   required String amountDigits,
 }) async {
   logE2e('sending $amountDigits via wizard');
-  await tapWidget(tester, const ValueKey('mobile_home_send'));
+  await tapAppButton(tester, const ValueKey('mobile_home_send'));
   await enterText(tester, const ValueKey('mobile_send_address_field'), address);
   await tapAppButton(
     tester,
@@ -891,6 +1042,535 @@ Future<rust_sync.MigrationStatus> waitForMobileRegtestMigrationStatus(
   fail('Timed out waiting for $description.$statusDetail$errorDetail');
 }
 
+/// Follows these software scenarios' proof-approval UI without granting a
+/// coordinator permit directly. The key is shared with Keystone and even its
+/// post-signature preparation action, so the label guard rejects signing
+/// actions; the scenario's imported software account is a caller precondition.
+Future<void> tapMobilePrivateMigrationProofBatch(
+  WidgetTester tester, {
+  Duration timeout = const Duration(seconds: 20),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  final approval = _MobileProofApprovalAttempt();
+  while (DateTime.now().isBefore(deadline)) {
+    if (await approval.tryTap(tester) == _MobileProofAction.approved) return;
+    await tester.pump(const Duration(milliseconds: 100));
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  }
+  fail(
+    'Timed out waiting for an enabled private migration Prepare batch action.',
+  );
+}
+
+enum _MobileProofAction { waiting, busy, approved }
+
+/// One UI observation, not a wait that hides partial durable proof progress.
+class _MobileProofApprovalAttempt {
+  var _dismissed = false;
+
+  Future<_MobileProofAction> tryTap(
+    WidgetTester tester, {
+    bool allowApproval = true,
+  }) async {
+    final lifecycle = tester.binding.lifecycleState;
+    if (lifecycle != null && lifecycle != AppLifecycleState.resumed) {
+      fail('A private migration proof batch requires the foreground UI.');
+    }
+    if (tester.any(find.text('Preparation is done'))) {
+      if (await _dismissKnownMigrationPreparationModal(
+        tester,
+        alreadyDismissed: _dismissed,
+      )) {
+        _dismissed = true;
+      }
+      return _MobileProofAction.busy;
+    }
+    final action = find.byKey(
+      const ValueKey('mobile_ironwood_keystone_batch_sign_button'),
+    );
+    if (action.evaluate().length != 1) return _MobileProofAction.waiting;
+    final texts = tester
+        .widgetList<Text>(
+          find.descendant(of: action, matching: find.byType(Text)),
+        )
+        .map((text) => text.data ?? '');
+    final preparing = texts.any(
+      (text) => RegExp(r'^Preparing batch #[1-9][0-9]*\.\.\.$').hasMatch(text),
+    );
+    if (preparing) return _MobileProofAction.busy;
+    final prepare = texts.any(
+      (text) => RegExp(r'^Prepare batch #[1-9][0-9]*$').hasMatch(text),
+    );
+    if (!prepare) return _MobileProofAction.waiting;
+    if (tester.widget<AppButton>(action).onPressed == null) {
+      return _MobileProofAction.busy;
+    }
+    await tester.ensureVisible(action);
+    if (!tester.any(action.hitTestable())) return _MobileProofAction.busy;
+    if (!allowApproval) return _MobileProofAction.waiting;
+    await tester.tap(action.hitTestable());
+    await tester.pump(const Duration(milliseconds: 250));
+    logE2e('approved a private migration proof batch through the UI');
+    return _MobileProofAction.approved;
+  }
+}
+
+Future<bool> _dismissKnownMigrationPreparationModal(
+  WidgetTester tester, {
+  required bool alreadyDismissed,
+}) async {
+  final title = find.text('Preparation is done');
+  final modal = find.ancestor(of: title, matching: find.byType(Column)).first;
+  final explanation = find.descendant(
+    of: modal,
+    matching: find.text(
+      'Preparation is complete. Check your migration status for '
+      'progress and any action needed.',
+    ),
+  );
+  if (!tester.any(explanation)) {
+    fail('Unrecognized private migration preparation modal.');
+  }
+  final done = find.descendant(
+    of: modal,
+    matching: find.widgetWithText(AppButton, 'Done'),
+  );
+  if (alreadyDismissed ||
+      !tester.any(done.hitTestable()) ||
+      tester.widget<AppButton>(done).onPressed == null) {
+    return false;
+  }
+  await tester.tap(done.hitTestable());
+  await tester.pump(const Duration(milliseconds: 250));
+  logE2e('dismissed the private migration preparation-complete modal');
+  return true;
+}
+
+/// Leaves the current migration status through its actual top-nav Back control.
+/// No proof approval, coordinator permit or direct route operation is performed.
+Future<void> leaveMobilePrivateMigrationStatusForHome(
+  WidgetTester tester, {
+  Duration timeout = const Duration(seconds: 45),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  final scope = find.byKey(
+    const ValueKey('mobile_ironwood_migration_back_scope'),
+  );
+  final navigation = find.descendant(
+    of: scope,
+    matching: find.byWidgetPredicate(
+      (widget) =>
+          widget is MobileTopNav &&
+          widget.onBack != null &&
+          (widget.title == 'Preparing your migration' ||
+              widget.title == 'Ironwood Migration'),
+    ),
+  );
+  final back = find.descendant(
+    of: navigation,
+    matching: find.bySemanticsLabel('Back'),
+  );
+  var dismissed = false;
+  var tapped = false;
+  while (DateTime.now().isBefore(deadline)) {
+    final lifecycle = tester.binding.lifecycleState;
+    if (lifecycle != null && lifecycle != AppLifecycleState.resumed) {
+      fail('Leaving a private migration status requires the foreground UI.');
+    }
+    if (tapped &&
+        tester.any(
+          find
+              .byKey(const ValueKey('mobile_home_shielded_balance'))
+              .hitTestable(),
+        )) {
+      logE2e('left private migration status through its top-nav Back');
+      return;
+    }
+    if (tester.any(find.text('Preparation is done'))) {
+      dismissed =
+          await _dismissKnownMigrationPreparationModal(
+            tester,
+            alreadyDismissed: dismissed,
+          ) ||
+          dismissed;
+    } else if (!tapped &&
+        navigation.evaluate().length == 1 &&
+        back.hitTestable().evaluate().length == 1) {
+      await tester.tap(back.hitTestable());
+      tapped = true;
+    }
+    await tester.pump(const Duration(milliseconds: 100));
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  }
+  fail('Timed out leaving private migration status through its top-nav Back.');
+}
+
+/// Independent receipt for the original isolated, single-stage fixtures.
+/// Public stage status has no txid: this proves broadcast completion and an
+/// exact node receipt separately, not a stage-to-transaction ID bijection.
+@visibleForTesting
+String? mobileInitialPreparationReceiptTxid(
+  rust_sync.MigrationStatus status,
+  Map<String, Object?> mempool,
+  String runId,
+) {
+  final stages = status.preparationTransactions;
+  if (status.activeRunId != runId ||
+      status.phase != kIronwoodMigrationWaitingDenomConfirmationsPhase ||
+      status.denominationSplitTotalCount != 1 ||
+      stages == null ||
+      stages.length != 1 ||
+      status.pendingTxCount != 0) {
+    throw StateError('Initial preparation differs from its isolated run');
+  }
+  final stage = stages.single;
+  if (stage.stageIndex != 0 ||
+      stage.round != 1 ||
+      stage.feeZatoshi != BigInt.from(80000) ||
+      stage.confirmationTarget != 3 ||
+      stage.minedHeight != null) {
+    throw StateError('Initial preparation stage identity or policy differs');
+  }
+  // The SDK commits Broadcasted only after send-transaction RPC success and
+  // local storage (send.rs: broadcast_raw_transaction_isolated then mark).
+  if (stage.state == rust_sync.MigrationPreparationTransactionState.scheduled) {
+    return null;
+  }
+  if (stage.state !=
+      rust_sync.MigrationPreparationTransactionState.broadcasted) {
+    throw StateError('Initial preparation is not an unmined broadcast');
+  }
+  final txids = mempool['txids'];
+  if (mempool['size'] == 0 && txids is List && txids.isEmpty) return null;
+  if (mempool['size'] is! int ||
+      mempool['size'] != 1 ||
+      txids is! List ||
+      txids.length != 1 ||
+      txids.single is! String ||
+      !RegExp(r'^[0-9a-f]{64}$').hasMatch(txids.single as String)) {
+    throw StateError('Initial preparation lacks an exact canonical receipt');
+  }
+  return txids.single as String;
+}
+
+Future<String> waitForMobileInitialPreparationReceipt(
+  WidgetTester tester,
+  String accountUuid,
+  String runId, {
+  required DateTime deadline,
+}) => waitForMobileInitialPreparationReceiptWithReaders(
+  tester,
+  () => mobileRegtestMigrationStatus(accountUuid),
+  () => getDriver('/mempool'),
+  () => mobileInitialPreparationCoordinatorBusy(tester, accountUuid),
+  runId,
+  deadline: deadline,
+);
+
+@visibleForTesting
+Future<String> waitForMobileInitialPreparationReceiptWithReaders(
+  WidgetTester tester,
+  Future<rust_sync.MigrationStatus> Function() readStatus,
+  Future<Map<String, Object?>> Function() readMempool,
+  bool? Function() coordinatorBusy,
+  String runId, {
+  required DateTime deadline,
+}) async {
+  while (DateTime.now().isBefore(deadline)) {
+    final status = await readStatus();
+    if (!DateTime.now().isBefore(deadline)) break;
+    // An async DB read can span Navigator's page replacement while the incoming
+    // status subtree still awaits its first frame. Render that frame before
+    // observing its strict current-page scope; never infer missing means idle.
+    await tester.pump();
+    if (!DateTime.now().isBefore(deadline)) break;
+    // Loading is not idle. The status route can temporarily replace its scope
+    // while the awaited DB status read invalidates the route CTA.
+    if (coordinatorBusy() == false) {
+      if (!DateTime.now().isBefore(deadline)) break;
+      final mempool = await readMempool();
+      if (!DateTime.now().isBefore(deadline)) break;
+      final txid = mobileInitialPreparationReceiptTxid(status, mempool, runId);
+      if (txid != null) {
+        logE2e('received the initial preparation transaction in the node');
+        return txid;
+      }
+    }
+    await tester.pump(const Duration(milliseconds: 100));
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+  }
+  fail('Timed out waiting for the initial preparation node receipt.');
+}
+
+/// Only the receipt observer waits for recognized preparation/route transitions.
+/// Unknown views and duplicate scopes on the actual current page still fail.
+/// A null result never authorizes reading a receipt or starting chain mining.
+@visibleForTesting
+bool? mobileInitialPreparationCoordinatorBusy(
+  WidgetTester tester,
+  String accountUuid,
+) {
+  final scope = find.byKey(
+    const ValueKey('mobile_ironwood_migration_back_scope'),
+  );
+  final scopes = scope.evaluate().toList();
+  final loading = find.byWidgetPredicate(
+    (widget) =>
+        widget.runtimeType.toString() == '_MobileMigrationLoadingScreen',
+  );
+  final loadingElements = loading.evaluate().toList();
+  final currentScopes = scopes
+      .where((element) => ModalRoute.of(element)?.isCurrent == true)
+      .toList();
+  final currentLoading = loadingElements
+      .where((element) => ModalRoute.of(element)?.isCurrent == true)
+      .toList();
+  if (currentScopes.isEmpty &&
+      currentLoading.isEmpty &&
+      scopes.length == 1 &&
+      loadingElements.isEmpty) {
+    final outgoing = ModalRoute.of(scopes.single);
+    if (outgoing != null &&
+        mobileInitialPreparationHasPendingStatusPage(
+          outgoing.settings is Page ? outgoing.settings as Page : null,
+          outgoing.navigator?.widget.pages ?? const [],
+          outgoing.isCurrent,
+        )) {
+      // The actual Navigator has already replaced the known start page with
+      // its status page, but the latter has not built a scope yet. This is
+      // positive structural transition evidence, never missing-scope-as-idle.
+      return null;
+    }
+  }
+  String diagnostic() {
+    final navigators = find.byType(Navigator).evaluate().toList();
+    final candidate =
+        loadingElements.firstOrNull ??
+        scopes.firstOrNull ??
+        navigators.firstOrNull;
+    final route = candidate == null
+        ? 'unavailable'
+        : GoRouter.maybeOf(
+                candidate,
+              )?.routeInformationProvider.value.uri.path ??
+              'unavailable';
+    final pages = [
+      for (final item in scopes)
+        '${ModalRoute.of(item)?.settings}:current=${ModalRoute.of(item)?.isCurrent}'
+            ':pending=${ModalRoute.of(item)?.navigator?.widget.pages}',
+    ];
+    return 'scopeCount=${scopes.length}, currentScopeCount=${currentScopes.length}, '
+        'loadingCount=${loadingElements.length}, currentLoadingCount=${currentLoading.length}, '
+        'pages=$pages, '
+        'observedRoute=$route';
+  }
+
+  if (currentScopes.length > 1) {
+    fail(
+      'Ambiguous mobile migration status scopes before initial receipt: '
+      '${diagnostic()}.',
+    );
+  }
+  final element = currentScopes.length == 1
+      ? currentScopes.single
+      : currentLoading.length == 1
+      ? currentLoading.single
+      : null;
+  if (element == null) {
+    fail(
+      'Missing recognized mobile migration status view before receipt: '
+      '${diagnostic()}.',
+    );
+  }
+  // The global router URI already names the destination while both Cupertino
+  // pages are mounted. Only the current page's registered state is authoritative.
+  final routePath = GoRouterState.of(element).matchedLocation;
+  if (routePath == '/migration/private/start' && currentScopes.length == 1) {
+    final preparing = find.descendant(
+      of: find.byElementPredicate((candidate) => identical(candidate, element)),
+      matching: find.byKey(
+        const ValueKey('mobile_ironwood_migration_start_loading'),
+      ),
+    );
+    if (preparing.evaluate().length == 1) return null;
+    fail(
+      'Current migration start view is not software preparation: ${diagnostic()}.',
+    );
+  }
+  if (routePath != '/migration/private/status') {
+    fail(
+      'Initial receipt observer left the private migration status route: '
+      '${diagnostic()}.',
+    );
+  }
+  if (currentScopes.isEmpty) return null;
+  final route = ModalRoute.of(element)!;
+  if (route.animation != null &&
+      route.animation!.status != AnimationStatus.completed) {
+    return null;
+  }
+  // Use the same actual coordinator as the unchanged generic strict guard,
+  // from this independently identified single current-page scope only.
+  final container = ProviderScope.containerOf(element);
+  return container
+      .read(ironwoodMigrationCoordinatorProvider)
+      .advancingAccounts
+      .contains(accountUuid);
+}
+
+/// Exact original flat-route page identities, taken from one actual Navigator.
+/// This predicate can authorize waiting only, never receipt or mining credit.
+@visibleForTesting
+bool mobileInitialPreparationHasPendingStatusPage(
+  Page<Object?>? outgoing,
+  List<Page<Object?>> pending,
+  bool outgoingIsCurrent,
+) =>
+    !outgoingIsCurrent &&
+    outgoing is CupertinoPage &&
+    outgoing.key == const ValueKey<String>('/migration/private/start') &&
+    pending.length == 1 &&
+    pending.single is CupertinoPage &&
+    pending.single.key == const ValueKey<String>('/migration/private/status');
+
+@visibleForTesting
+void validateMobileInitialPreparationInclusion(
+  Map<String, Object?> proof,
+  String txid,
+  List<Object?> hashes,
+  int blocks,
+) {
+  if (hashes.length != blocks ||
+      hashes.toSet().length != blocks ||
+      !hashes.every(
+        (hash) => hash is String && RegExp(r'^[0-9a-f]{64}$').hasMatch(hash),
+      ) ||
+      proof['txid'] != txid ||
+      proof['confirmations'] is! int ||
+      (proof['confirmations'] as int) < 10 ||
+      !hashes.contains(proof['blockhash'])) {
+    throw StateError('Initial preparation lacks exact mined inclusion');
+  }
+}
+
+/// Performs only the original chain advance and read-only node proof. In the
+/// background cases this runs after pause without pumping Flutter or invoking
+/// foreground migration work; native wake assertions remain independent.
+Future<void> mineMobileInitialPreparationReceipt(
+  String txid, {
+  required int blocks,
+  required DateTime deadline,
+}) => mineMobileInitialPreparationReceiptWithRpc(
+  txid,
+  blocks: blocks,
+  deadline: deadline,
+  generate: (count) => zcashdRpc<List<Object?>>('generate', [count]),
+  readProof: (id) =>
+      zcashdRpc<Map<String, Object?>>('getrawtransaction', [id, 1]),
+);
+
+/// Injects only the existing mining and read-only proof calls for regressions.
+@visibleForTesting
+Future<void> mineMobileInitialPreparationReceiptWithRpc(
+  String txid, {
+  required int blocks,
+  required DateTime deadline,
+  required Future<List<Object?>> Function(int) generate,
+  required Future<Map<String, Object?>> Function(String) readProof,
+}) async {
+  Duration remaining() {
+    final value = deadline.difference(DateTime.now());
+    if (value <= Duration.zero) {
+      fail('Initial preparation budget expired before its node operation.');
+    }
+    return value;
+  }
+
+  // Check before constructing either RPC future: an already exhausted shared
+  // budget must not initiate chain mutation or a late read-only node request.
+  final miningBudget = remaining();
+  final hashes = await generate(blocks).timeout(miningBudget);
+  final proofBudget = remaining();
+  final proof = await readProof(txid).timeout(proofBudget);
+  validateMobileInitialPreparationInclusion(proof, txid, hashes, blocks);
+}
+
+/// An explicit proof-producing workflow. The generic status observer above
+/// remains read-only; only callers intending to prepare a schedule use this.
+Future<rust_sync.MigrationStatus> prepareMobilePrivateMigrationSchedule(
+  WidgetTester tester,
+  String accountUuid,
+  bool Function(rust_sync.MigrationStatus status) condition, {
+  required String description,
+  Duration timeout = const Duration(minutes: 5),
+}) async {
+  return prepareMobilePrivateMigrationScheduleWithReader(
+    tester,
+    () => mobileRegtestMigrationStatus(accountUuid),
+    condition,
+    description: description,
+    timeout: timeout,
+  );
+}
+
+/// Injects only the read-only status reader for deterministic helper regressions.
+@visibleForTesting
+Future<rust_sync.MigrationStatus>
+prepareMobilePrivateMigrationScheduleWithReader(
+  WidgetTester tester,
+  Future<rust_sync.MigrationStatus> Function() readStatus,
+  bool Function(rust_sync.MigrationStatus status) condition, {
+  required String description,
+  Duration timeout = const Duration(minutes: 5),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  rust_sync.MigrationStatus? lastStatus;
+  Object? lastError;
+  final approval = _MobileProofApprovalAttempt();
+  while (DateTime.now().isBefore(deadline)) {
+    try {
+      final status = lastStatus = await readStatus();
+      lastError = null;
+      if (condition(status)) return status;
+      if ((status.phase == kIronwoodMigrationReadyToMigratePhase ||
+              (status.phase == kIronwoodMigrationBroadcastScheduledPhase &&
+                  status.signedChildPcztCount > 0)) &&
+          status.proofReady == true) {
+        await approval.tryTap(tester);
+      }
+    } catch (error) {
+      if (error is TestFailure) rethrow;
+      lastError = error;
+    }
+    await tester.pump(const Duration(milliseconds: 100));
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+  }
+  fail(
+    'Timed out waiting for $description after explicit proof approval. '
+    'Last phase: ${lastStatus?.phase}, run: ${lastStatus?.activeRunId}. '
+    'Last error: $lastError',
+  );
+}
+
+/// Reads the actual status-screen coordinator, without approving or advancing it.
+@visibleForTesting
+bool mobilePrivateMigrationCoordinatorBusy(
+  WidgetTester tester,
+  String accountUuid,
+) {
+  final scope = find.byKey(
+    const ValueKey('mobile_ironwood_migration_back_scope'),
+  );
+  if (scope.evaluate().length != 1) {
+    fail('Expected exactly one mobile migration status scope before mining.');
+  }
+  final container = ProviderScope.containerOf(tester.element(scope));
+  return container
+      .read(ironwoodMigrationCoordinatorProvider)
+      .advancingAccounts
+      .contains(accountUuid);
+}
+
 Future<rust_sync.MigrationStatus> advanceMobileRegtestMigrationSchedule(
   WidgetTester tester,
   String accountUuid, {
@@ -898,11 +1578,30 @@ Future<rust_sync.MigrationStatus> advanceMobileRegtestMigrationSchedule(
   Duration timeout = const Duration(minutes: 6),
 }) async {
   final deadline = DateTime.now().add(timeout);
+  final approval = _MobileProofApprovalAttempt();
   while (DateTime.now().isBefore(deadline)) {
     final status = await mobileRegtestMigrationStatus(accountUuid);
     final submitted = status.broadcastedTxCount + status.confirmedTxCount;
     final target = submittedTarget ?? status.totalCount;
     if (target > 0 && submitted >= target) return status;
+
+    final action = await approval.tryTap(
+      tester,
+      allowApproval:
+          (status.phase == kIronwoodMigrationReadyToMigratePhase ||
+              (status.phase == kIronwoodMigrationBroadcastScheduledPhase &&
+                  status.signedChildPcztCount > 0)) &&
+          status.proofReady == true,
+    );
+    if (action != _MobileProofAction.waiting ||
+        mobilePrivateMigrationCoordinatorBusy(tester, accountUuid)) {
+      // A single approved batch persists proofs individually. Do not mine
+      // its partially visible schedule while that foreground action is busy,
+      // even if the raw DB proof-readiness value already changed.
+      await tester.pump(const Duration(milliseconds: 100));
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      continue;
+    }
 
     final scheduled =
         status.scheduledBroadcasts
@@ -1019,6 +1718,10 @@ Future<void> waitForMempoolObserver() async {
 
 Future<void> mineRegtestBlocks(int blocks) async {
   logE2e('mining $blocks regtest blocks');
+  if (installedE2eRuntimeCaseManifest != null) {
+    await mineOwnedRegtestBlocks(blocks);
+    return;
+  }
 
   final before = await zcashdRpc<int>('getblockcount');
   await zcashdRpc<List<Object?>>('generate', [blocks]);
@@ -1041,6 +1744,9 @@ Future<void> mineRegtestBlocks(int blocks) async {
 }
 
 Future<T> zcashdRpc<T>(String method, [List<Object?> params = const []]) async {
+  if (installedE2eRuntimeCaseManifest != null) {
+    return await ownedRegtestRpc(method, params) as T;
+  }
   final client = HttpClient();
   try {
     final request = await client.postUrl(Uri.parse(mobileE2eZcashdRpcUrl));
@@ -1091,6 +1797,9 @@ Future<Map<String, Object?>> postDriver(
   Duration timeout = const Duration(minutes: 2),
   String? baseUrl,
 }) async {
+  if (installedE2eRuntimeCaseManifest != null && baseUrl == null) {
+    return postOwnedRegtestControl(path, payload);
+  }
   final client = HttpClient();
   try {
     final request = await client
@@ -1120,6 +1829,9 @@ Future<Map<String, Object?>> getDriver(
   Duration timeout = const Duration(minutes: 2),
   String? baseUrl,
 }) async {
+  if (installedE2eRuntimeCaseManifest != null && baseUrl == null) {
+    return getOwnedRegtestControl(path);
+  }
   final client = HttpClient();
   try {
     final request = await client
@@ -1138,9 +1850,26 @@ Future<Map<String, Object?>> getDriver(
   }
 }
 
+int _ownedUnminedSource = 2; // The fixture's confirmed funding owns coinbase 1.
+
 /// Sends an external unmined funding tx to [address]; returns the txid.
 Future<String> fundUnmined(String address, String amount) async {
   logE2e('requesting external unmined funding of $amount to $address');
+  if (installedE2eRuntimeCaseManifest != null) {
+    final value =
+        ZecAmount.tryParse(amount) ??
+        (throw StateError('Invalid owned unmined funding amount.'));
+    final proof = await postDriver('/fund-unmined', {
+      'address': address,
+      'amount_zatoshi': value.zatoshi.toInt(),
+      'source_height': _ownedUnminedSource++,
+    }, timeout: const Duration(minutes: 5));
+    final txid = proof['txid_hex'];
+    if (txid is! String || !RegExp(r'^[0-9a-f]{64}$').hasMatch(txid)) {
+      throw StateError('Owned unmined funding did not return its proved txid.');
+    }
+    return txid;
+  }
   final response = await postDriver('/fund-unmined', {
     'address': address,
     'amount': amount,

@@ -19,151 +19,162 @@ void main() {
 
   setUpAll(initializeZcashWalletRuntime);
 
-  testWidgets(
-    'migrates a mobile software wallet from Orchard to Ironwood',
-    (tester) async {
-      tolerateRenderOverflows();
-      addTearDown(cleanupE2eWalletState);
-      await cleanupE2eWalletState();
+  testWidgets('migrates a mobile software wallet from Orchard to Ironwood', (
+    tester,
+  ) async {
+    tolerateRenderOverflows();
+    addTearDown(cleanupE2eWalletState);
+    await cleanupE2eWalletState();
 
-      final initialChain = await getDriver('/status');
-      expect(initialChain['ironwoodActive'], isFalse);
+    final initialChain = await getDriver('/status');
+    expect(initialChain['ironwoodActive'], isFalse);
 
-      await tester.pumpWidget(await buildBootstrappedZcashWalletApp());
-      await importWalletViaPaste(
-        tester,
-        mnemonic: mobileIronwoodE2eMnemonic,
-        birthdayHeight: 1,
-        isFirstWallet: true,
-      );
-      await waitForShieldedBalance(tester, '0.01095 $mobileE2eTicker');
+    await tester.pumpWidget(await buildBootstrappedZcashWalletApp());
+    await importWalletViaPaste(
+      tester,
+      mnemonic: mobileIronwoodE2eMnemonic,
+      birthdayHeight: 1,
+      isFirstWallet: true,
+    );
+    await waitForShieldedBalance(tester, '0.01095 $mobileE2eTicker');
 
-      final container = ProviderScope.containerOf(
-        tester.element(
-          find.byKey(const ValueKey('mobile_home_shielded_balance')),
+    final container = ProviderScope.containerOf(
+      tester.element(
+        find.byKey(const ValueKey('mobile_home_shielded_balance')),
+      ),
+    );
+    await _waitForIdleSync(
+      tester,
+      container,
+      (initialChain['zcashdHeight'] as num).toInt(),
+    );
+
+    logE2e('activating Ironwood while the mobile app is running');
+    await postDriver('/activate', const {});
+    await _waitForIronwoodSync(tester, container);
+    await openMobilePrivateMigrationOptions(tester);
+
+    final approvedPlan = await container.read(
+      ironwoodMigrationPrivatePlanProvider.future,
+    );
+    expect(approvedPlan, isNotNull);
+    expect(approvedPlan!.denominationSplitStageCount, 1);
+    expect(approvedPlan.plannedBatchCount, 1);
+    expect(approvedPlan.totalMigratableZatoshi, BigInt.from(1000000));
+    expect(approvedPlan.estimatedTotalFeeZatoshi, BigInt.from(95000));
+
+    await startMobilePrivateMigration(tester);
+    await pumpUntil(
+      tester,
+      () => tester.any(
+        find.byKey(
+          const ValueKey('mobile_ironwood_view_preparation_schedule_button'),
         ),
-      );
-      await _waitForIdleSync(
-        tester,
-        container,
-        (initialChain['zcashdHeight'] as num).toInt(),
-      );
+      ),
+      description: 'mobile migration preparation status screen',
+      timeout: const Duration(minutes: 5),
+    );
 
-      logE2e('activating Ironwood while the mobile app is running');
-      await postDriver('/activate', const {});
-      await _waitForIronwoodSync(tester, container);
-      await openMobilePrivateMigrationOptions(tester);
+    final initialPreparationDeadline = DateTime.now().add(
+      const Duration(minutes: 5),
+    );
+    final accountUuid = await accountUuidAtOrder(0);
+    final started = await waitForMobileRegtestMigrationStatus(
+      tester,
+      accountUuid,
+      (status) =>
+          status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase &&
+          status.pendingSplitStageCount > 0,
+      description: 'mobile denomination migration run',
+      timeout: initialPreparationDeadline.difference(DateTime.now()),
+    );
+    expect(started.activeRunId, isNotNull);
 
-      final approvedPlan = await container.read(
-        ironwoodMigrationPrivatePlanProvider.future,
-      );
-      expect(approvedPlan, isNotNull);
-      expect(approvedPlan!.denominationSplitStageCount, 1);
-      expect(approvedPlan.plannedBatchCount, 1);
-      expect(approvedPlan.totalMigratableZatoshi, BigInt.from(1000000));
-      expect(approvedPlan.estimatedTotalFeeZatoshi, BigInt.from(95000));
+    final preparationReceipt = await waitForMobileInitialPreparationReceipt(
+      tester,
+      accountUuid,
+      started.activeRunId!,
+      deadline: initialPreparationDeadline,
+    );
+    await mineMobileInitialPreparationReceipt(
+      preparationReceipt,
+      blocks: 10,
+      deadline: initialPreparationDeadline,
+    );
+    final scheduled = await prepareMobilePrivateMigrationSchedule(
+      tester,
+      accountUuid,
+      (status) => status.scheduledBroadcasts.isNotEmpty,
+      description: 'mobile persisted migration schedule',
+      timeout: const Duration(minutes: 10),
+    );
+    expect(scheduled.totalCount, approvedPlan.plannedBatchCount);
+    expect(
+      scheduled.scheduledBroadcasts.map((entry) => entry.valueZatoshi),
+      approvedPlan.scheduledTransfers.map((entry) => entry.valueZatoshi),
+    );
 
-      await startMobilePrivateMigration(tester);
-      await pumpUntil(
-        tester,
-        () => tester.any(
-          find.byKey(
-            const ValueKey('mobile_ironwood_view_preparation_schedule_button'),
-          ),
-        ),
-        description: 'mobile migration preparation status screen',
-        timeout: const Duration(minutes: 5),
-      );
+    final firstSubmitted = await advanceMobileRegtestMigrationSchedule(
+      tester,
+      accountUuid,
+      submittedTarget: 1,
+    );
+    expect(
+      firstSubmitted.broadcastedTxCount + firstSubmitted.confirmedTxCount,
+      1,
+    );
 
-      final accountUuid = await accountUuidAtOrder(0);
-      final started = await waitForMobileRegtestMigrationStatus(
-        tester,
-        accountUuid,
-        (status) =>
-            status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase &&
-            status.pendingSplitStageCount > 0,
-        description: 'mobile denomination migration run',
-      );
-      expect(started.activeRunId, isNotNull);
+    final allSubmitted = await advanceMobileRegtestMigrationSchedule(
+      tester,
+      accountUuid,
+    );
+    expect(
+      allSubmitted.broadcastedTxCount + allSubmitted.confirmedTxCount,
+      allSubmitted.totalCount,
+    );
 
-      await postDriver('/mine', const {'blocks': 10});
-      final scheduled = await waitForMobileRegtestMigrationStatus(
-        tester,
-        accountUuid,
-        (status) => status.scheduledBroadcasts.isNotEmpty,
-        description: 'mobile persisted migration schedule',
-        timeout: const Duration(minutes: 10),
-      );
-      expect(scheduled.totalCount, approvedPlan.plannedBatchCount);
-      expect(
-        scheduled.scheduledBroadcasts.map((entry) => entry.valueZatoshi),
-        approvedPlan.scheduledTransfers.map((entry) => entry.valueZatoshi),
-      );
+    await postDriver('/mine', const {'blocks': 10});
+    final complete = await waitForMobileRegtestMigrationStatus(
+      tester,
+      accountUuid,
+      (status) =>
+          status.phase == kIronwoodMigrationCompletePhase &&
+          status.confirmedTxCount == status.totalCount &&
+          status.activeRunId == null,
+      description: 'completed mobile Ironwood migration',
+      timeout: const Duration(minutes: 5),
+    );
+    expect(complete.activeRunId, isNull);
 
-      final firstSubmitted = await advanceMobileRegtestMigrationSchedule(
-        tester,
-        accountUuid,
-        submittedTarget: 1,
-      );
-      expect(
-        firstSubmitted.broadcastedTxCount + firstSubmitted.confirmedTxCount,
-        1,
-      );
+    final balance = await rust_sync.getBalance(
+      dbPath: await getWalletDbPath(),
+      network: mobileE2eNetwork,
+      accountUuid: accountUuid,
+    );
+    final orchardResidual = balance.orchard + balance.uneconomicValue;
+    expect(balance.ironwood, approvedPlan.totalMigratableZatoshi);
+    expect(orchardResidual, approvedPlan.orchardChangeZatoshi ?? BigInt.zero);
+    expect(
+      _fundedAmount - balance.ironwood - orchardResidual,
+      approvedPlan.estimatedTotalFeeZatoshi,
+    );
 
-      final allSubmitted = await advanceMobileRegtestMigrationSchedule(
-        tester,
-        accountUuid,
-      );
-      expect(
-        allSubmitted.broadcastedTxCount + allSubmitted.confirmedTxCount,
-        allSubmitted.totalCount,
-      );
-
-      await postDriver('/mine', const {'blocks': 10});
-      final complete = await waitForMobileRegtestMigrationStatus(
-        tester,
-        accountUuid,
-        (status) =>
-            status.phase == kIronwoodMigrationCompletePhase &&
-            status.confirmedTxCount == status.totalCount &&
-            status.activeRunId == null,
-        description: 'completed mobile Ironwood migration',
-        timeout: const Duration(minutes: 5),
-      );
-      expect(complete.activeRunId, isNull);
-
-      final balance = await rust_sync.getBalance(
-        dbPath: await getWalletDbPath(),
-        network: mobileE2eNetwork,
-        accountUuid: accountUuid,
-      );
-      final orchardResidual = balance.orchard + balance.uneconomicValue;
-      expect(balance.ironwood, approvedPlan.totalMigratableZatoshi);
-      expect(orchardResidual, approvedPlan.orchardChangeZatoshi ?? BigInt.zero);
-      expect(
-        _fundedAmount - balance.ironwood - orchardResidual,
-        approvedPlan.estimatedTotalFeeZatoshi,
-      );
-
-      await tapUntilVisible(
-        tester,
-        trigger: find.text('Done').hitTestable(),
-        outcome: find.byKey(const ValueKey('mobile_home_shielded_balance')),
-        description: 'completed migration result to return home',
-        timeout: const Duration(minutes: 1),
-      );
-      await pumpUntil(
-        tester,
-        () => !tester.any(
-          find.byKey(
-            const ValueKey('mobile_home_ironwood_migration_required_pill'),
-          ),
-        ),
-        description: 'completed migration CTA to disappear',
-      );
-    },
-    timeout: const Timeout(Duration(minutes: 25)),
-  );
+    await tapUntilVisible(
+      tester,
+      trigger: find.text('Done').hitTestable(),
+      outcome: find.byKey(const ValueKey('mobile_home_shielded_balance')),
+      description: 'completed migration result to return home',
+      timeout: const Duration(minutes: 1),
+    );
+    await pumpUntil(
+      tester,
+      () => !tester.any(
+        find.byKey(const ValueKey('mobile_home_ironwood_migration_banner')),
+      ),
+      description: 'completed migration CTA to disappear',
+    );
+    markMobileE2eAssertionsCompleted();
+  }, timeout: const Timeout(Duration(minutes: 25)));
 }
 
 Future<void> _waitForIdleSync(

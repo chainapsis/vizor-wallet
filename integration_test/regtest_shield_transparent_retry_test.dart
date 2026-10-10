@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
+import 'package:zcash_wallet/src/core/config/e2e_runtime_case_manifest.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/formatting/zec_amount.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
@@ -15,12 +16,17 @@ import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 import 'support/desktop_activity_flow.dart';
 import 'support/desktop_onboarding_flow.dart';
+import 'support/owned_regtest_control.dart';
 import 'support/regtest_lightwalletd_proxy.dart';
 
 final _network = kZcashDefaultNetworkName;
-const _driverUrl = String.fromEnvironment('ZCASH_E2E_DRIVER_URL');
+String get _driverUrl =>
+    installedE2eRuntimeCaseManifest?.zcashdRpcUrl ??
+    String.fromEnvironment('ZCASH_E2E_DRIVER_URL');
 const _password = 'Vizor123!';
-const _primaryProxyUrl = 'http://127.0.0.1:19068';
+String get _primaryProxyUrl => installedE2eRuntimeCaseManifest == null
+    ? 'http://127.0.0.1:19068'
+    : 'http://127.0.0.1:${installedE2eRuntimeCaseManifest!.primaryProxyPort}';
 const _transparentFundingAmount = '0.75';
 final _transparentFundingZatoshi = BigInt.from(75_000_000);
 const _fallbackToast =
@@ -31,7 +37,7 @@ const _legacyBroadcastFailureMessage =
 final _currencyTicker = kZcashDefaultCurrencyTicker;
 
 void main() {
-  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   setUpAll(() async {
     await initializeZcashWalletRuntime();
@@ -165,6 +171,7 @@ void main() {
         status: 'Completed',
         timeout: const Duration(minutes: 2),
       );
+      binding.reportData?['assertions_completed'] = true;
     },
     timeout: const Timeout(Duration(minutes: 15)),
   );
@@ -265,6 +272,15 @@ Future<String> _transparentAddressForAccount(String accountUuid) async {
 }
 
 Future<String> _fundConfirmed(String address, String amount) async {
+  if (installedE2eRuntimeCaseManifest != null) {
+    if (amount != _transparentFundingAmount) {
+      throw StateError('Unexpected transparent fixture funding amount.');
+    }
+    return fundOwnedRegtestTransparent(
+      address, _transparentFundingZatoshi.toInt(),
+      sourceHeight: 1, confirmations: 10,
+    );
+  }
   _log('requesting confirmed transparent funding of $amount $_currencyTicker');
   final response = await _postDriver('/fund-confirmed', {
     'address': address,
@@ -683,9 +699,7 @@ Future<void> _stopRustWorkForCleanup() async {
   }
 
   if (rust_sync.isSyncRunning() || rust_sync.isMempoolObserverRunning()) {
-    _log(
-      'timed out waiting for Rust work to stop; continuing E2E storage cleanup',
-    );
+    throw StateError('Rust work did not stop; retain wallet state for the host.');
   }
 }
 
