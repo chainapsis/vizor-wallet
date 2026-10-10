@@ -15,10 +15,10 @@ from e2e_runtime import RunnerError
 
 
 SOURCE_REPOSITORY = "https://github.com/piatoss3612/zakura"
-SOURCE_COMMIT = "b22c91ac0770fa1953ced10fdbeed596276875ee"
+SOURCE_COMMIT = "5ecafcfdb43cf42f34c8046f09c6d874b567daa4"
 SOURCE_PATH = "scripts/regtest_fixture.py"
-SOURCE_SHA256 = "7034c9e205181c66684e49b5d6cacf390c1d68cc8b2eca763de13b3040013271"
-SOURCE_SIZE = 97048
+SOURCE_SHA256 = "a37f5913fbd3322a4d9afbc4a1bc27c86409835c7eb5295afe6af4ed440c8fc1"
+SOURCE_SIZE = 98120
 ZAKURA_IMAGE = "zakuracore/zakura@sha256:bf53c178e9549217fce7cfaa21efc85c478129ba6dc5307d55640514affeb0ac"
 LIGHTWALLETD_IMAGE = "ghcr.io/zcashlabs/thus-spoke-zakura-lightwalletd@sha256:ac78a456daee0bb98ceced333f5b8a2526b18b436ef90dc6033eef1686a92270"
 _GIT_TIMEOUT = 15

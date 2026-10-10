@@ -36,7 +36,7 @@ class E2eCatalogTest(unittest.TestCase):
             "status": status,
         }
 
-    def test_inventory_bindings_and_suites_preserve_pending_coverage(self):
+    def test_inventory_bindings_and_suites_preserve_complete_coverage(self):
         self.assertEqual(64, len(self.catalog.scenarios))
         self.assertEqual(
             {"rust": 23, "flutter-macos": 20, "flutter-ios": 21},
@@ -78,7 +78,28 @@ class E2eCatalogTest(unittest.TestCase):
                           "rust.multi-account.idempotent-sync", "rust.receive.direct-zakura",
                           "rust.import.direct-zakura", "rust.gift-card.tracking-multiple",
                           "rust.gift-card.empty-db-reuse", "rust.gift-card.competition",
-                          "rust.ironwood.migration", "rust.ironwood.gift-card-claim"})
+                          "rust.ironwood.migration", "rust.ironwood.gift-card-claim",
+                          "flutter.ios.create-sync",
+                          "flutter.ios.import-sync",
+                          "flutter.ios.account-management",
+                          "flutter.ios.multi-account-send",
+                          "flutter.ios.mempool-receive",
+                          "flutter.ios.fallback-endpoint",
+                          "flutter.ios.slow-height-fallback",
+                          "flutter.ios.ironwood-pre-migration-send",
+                          "flutter.ios.ironwood-migration",
+                          "flutter.ios.ironwood-migration-many-notes",
+                          "flutter.ios.ironwood-migration-multi-account",
+                          "flutter.ios.ironwood-migration-reorg",
+                          "flutter.ios.ironwood-migration-restart",
+                          "flutter.ios.ironwood-migration-network-recovery",
+                          "flutter.ios.ironwood-background-migration",
+                          "flutter.ios.ironwood-background-restart",
+                          "flutter.ios.payment-link-round-trip",
+                          "flutter.ios.payment-uri-send",
+                          "flutter.ios.gift-onboarding",
+                          "flutter.ios.ironwood-migration-account-reimport",
+                          "flutter.ios.ironwood-migration-500-notes"})
         self.assertTrue(all(item.pending_reason for item in self.catalog.profiles if not item.supported))
         self.assertTrue(all(item.pending_reason for item in self.catalog.scenarios if not item.supported))
         self.assertEqual(
@@ -97,13 +118,13 @@ class E2eCatalogTest(unittest.TestCase):
         self.assertTrue(preview.runnable)
         self.assertEqual((), preview.blockers)
         self.assertEqual(("flutter-direct-height1",), preview.required_profiles)
-        self.assertEqual(43, sum(item.supported for item in self.catalog.scenarios))
+        self.assertEqual(64, sum(item.supported for item in self.catalog.scenarios))
         self.assertEqual(0, sum(not item.supported and item.engine == "flutter-macos"
                                 for item in self.catalog.scenarios))
-        self.assertEqual(21, sum(not item.supported and item.engine == "flutter-ios"
+        self.assertEqual(0, sum(not item.supported and item.engine == "flutter-ios"
                                  for item in self.catalog.scenarios))
 
-    def test_mempool_and_gift_group_is_ready_while_ios_remains_pending(self):
+    def test_mempool_and_gift_group_is_ready_with_ios(self):
         ids = ("flutter.macos.mempool-receive-history", "flutter.macos.mempool-during-sync",
                "flutter.macos.mempool-expiry", "flutter.macos.payment-link-round-trip",
                "flutter.macos.payment-link-restart", "flutter.macos.payment-link-recovery")
@@ -116,7 +137,7 @@ class E2eCatalogTest(unittest.TestCase):
         self.assertEqual(set(),
                          {item.id for item in self.catalog.scenarios
                           if item.engine == "flutter-macos" and not item.supported})
-        self.assertTrue(all(not item.supported for item in self.catalog.scenarios
+        self.assertTrue(all(item.supported for item in self.catalog.scenarios
                             if item.engine == "flutter-ios"))
 
     def test_voting_is_ready_and_budget_covers_actual_phase_limits_and_services(self):
@@ -162,6 +183,18 @@ class E2eCatalogTest(unittest.TestCase):
                     self.catalog.scenarios_by_id[scenario_id].timeout_seconds,
                     phase_seconds + 300)
 
+    def test_ios_gift_onboarding_budget_covers_all_tests_and_driver_handoff(self):
+        source = (SCRIPT_DIR.parents[1] / "integration_test" /
+                  "regtest_mobile_gift_onboarding_test.dart").read_text()
+        minutes = re.findall(
+            r"timeout:\s*const Timeout\(Duration\(minutes:\s*(\d+)\)\)", source)
+        self.assertEqual(len(minutes), 3)
+        # All three sequential tests, app/VM startup and Driver/log joins use
+        # the same enclosing executor deadline; per-test limits stay intact.
+        self.assertGreaterEqual(
+            self.catalog.scenarios_by_id["flutter.ios.gift-onboarding"].timeout_seconds,
+            sum(int(value) * 60 for value in minutes) + 180)
+
     def test_exact_selection_deduplicates_in_catalog_order(self):
         selected = catalog_module.select_scenarios(
             self.catalog,
@@ -200,9 +233,14 @@ class E2eCatalogTest(unittest.TestCase):
             )
 
     def test_plan_is_catalog_ordered_pure_and_blocked(self):
-        first = self.catalog.scenarios_by_id["rust.send.basic"]
-        second = self.catalog.scenarios_by_id["flutter.ios.create-sync"]
-        preview = catalog_module.plan(self.catalog, (second, first, second))
+        raw = self.raw_catalog()
+        for scenario in raw["scenarios"]:
+            if scenario["id"] == "flutter.ios.create-sync":
+                scenario.update(supported=False, pending_reason="synthetic unwired case")
+        catalog = catalog_module.load_catalog(self.write_catalog(raw))
+        first = catalog.scenarios_by_id["rust.send.basic"]
+        second = catalog.scenarios_by_id["flutter.ios.create-sync"]
+        preview = catalog_module.plan(catalog, (second, first, second))
         self.assertEqual((first.id, second.id), tuple(item.id for item in preview.selected))
         self.assertFalse(preview.runnable)
         self.assertEqual(1, len(preview.blockers))

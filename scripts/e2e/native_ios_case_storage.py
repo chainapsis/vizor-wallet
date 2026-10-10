@@ -330,13 +330,24 @@ class OwnedIosCaseStorage:
             raise IosCaseStorageError("app context does not match the owned Simulator/app/support scope")
 
     def start_app(self, arguments: Sequence[str] = (), *, timeout: float = 30.0,
-                  cancel_event: threading.Event | None = None) -> IosAppLaunch:
+                  cancel_event: threading.Event | None = None,
+                  raw_lines: list[str] | None = None,
+                  max_output_bytes: int | None = None, phase: str | None = None,
+                  send_recipient: str | None = None) -> IosAppLaunch:
         deadline = simulator_api._deadline(timeout)
         cancellation = cancel_event if cancel_event is not None else threading.Event()
         if self._finished or self._active is not None or not self.case.accepting_launches:
             raise IosCaseStorageError("case app lifecycle is not open for launch")
         if isinstance(arguments, (str, bytes)) or any(not isinstance(item, str) for item in arguments):
             raise IosCaseStorageError("app arguments must be a sequence of strings")
+        name = json.loads(self.case.workspace.launch_environment()["VIZOR_E2E_CASE_MANIFEST"])["scenario_id"]
+        if phase is not None and (not isinstance(phase, str) or phase not in {"prepare", "resume"} or name not in {
+                "flutter.ios.ironwood-migration-restart", "flutter.ios.ironwood-background-restart"}):
+            raise IosCaseStorageError("iOS phase requires an original mobile restart case")
+        if send_recipient is not None and (name != "flutter.ios.ironwood-pre-migration-send"
+            or not isinstance(send_recipient, str) or not send_recipient.startswith("uregtest1")
+            or not send_recipient.isascii() or not send_recipient.isalnum() or len(send_recipient) > 4096):
+            raise IosCaseStorageError("iOS recipient requires the original pre-migration send fixture")
         try:
             self._verify_owned(deadline=deadline, cancel_event=cancellation)
             if not self._cohort_installed:
@@ -346,10 +357,15 @@ class OwnedIosCaseStorage:
                 self.helper.verify_unchanged()
             self._verify_owned(deadline=deadline, cancel_event=cancellation)
             environment = {**_ENV, **{f"SIMCTL_CHILD_{key}": value for key, value in self.case.workspace.launch_environment().items()}}
+            if phase is not None:
+                environment["SIMCTL_CHILD_VIZOR_E2E_IOS_PHASE"] = phase
+            if send_recipient is not None:
+                environment["SIMCTL_CHILD_VIZOR_E2E_IOS_SEND_RECIPIENT"] = send_recipient
             self._launch_attempted = True
             console = self.case.start_process(
                 ["/usr/bin/xcrun", "simctl", "launch", "--console", self.simulator.udid, _BUNDLE, *arguments],
                 env=environment,
+                raw_lines=raw_lines, max_output_bytes=max_output_bytes,
             )
             self._pending_console = console
             while True:

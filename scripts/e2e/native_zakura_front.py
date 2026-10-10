@@ -11,6 +11,7 @@ import json
 import math
 import os
 from pathlib import Path
+import signal
 import stat
 import threading
 import time
@@ -76,6 +77,9 @@ class OwnedNativeZakuraFront:
         self._snapshot, self._timeout = snapshot, timeout
         self._attempted = self._finished = False
         self._process = self._ready = None
+        self._lines = []
+        self._available = None
+        self._availability_sequence = 0
 
     @property
     def process(self):
@@ -116,6 +120,52 @@ class OwnedNativeZakuraFront:
         if not isinstance(value, dict):
             raise NativeZakuraFrontError("front RPC returned a non-object")
         return value
+
+    def set_available(self, available, *, timeout=10.0, cancel_event=None):
+        """Inject an outage in this original front, never stop a shared service."""
+        if type(available) is not bool:
+            raise NativeZakuraFrontError("front availability must be boolean")
+        runtime._positive_timeout(timeout)
+        cancel = cancel_event if cancel_event is not None else threading.Event()
+        deadline = time.monotonic() + timeout
+        self.assert_running()
+        if self._ready is None or self._available is None:
+            raise NativeZakuraFrontError("front readiness is unproven")
+        if cancel.is_set():
+            raise runtime.Cancelled()
+        if available != self._available:
+            floor = len(self._lines)
+            self._case._require_member(self._process)
+            runtime._signal_group(self._process,
+                signal.SIGUSR2 if available else signal.SIGUSR1, deadline=deadline)
+            while True:
+                self.assert_running()
+                if cancel.is_set():
+                    raise runtime.Cancelled()
+                if time.monotonic() >= deadline:
+                    raise NativeZakuraFrontError("front availability acknowledgement timed out", 124)
+                for line in self._lines[floor:]:
+                    floor += 1
+                    try:
+                        value = json.loads(line)
+                    except ValueError:
+                        continue  # Other bounded, original daemon diagnostics.
+                    if not isinstance(value, dict) or value.get("event") != "zakura-lwd-shim-availability":
+                        continue
+                    if (set(value) != {"event", "fixture_run_id", "pid", "available", "sequence"}
+                        or value["fixture_run_id"] != self._ready["fixture_run_id"]
+                        or type(value["pid"]) is not int or value["pid"] != self._process.process.pid
+                        or type(value["available"]) is not bool or value["available"] != available
+                        or type(value["sequence"]) is not int
+                        or value["sequence"] != self._availability_sequence + 1):
+                        raise NativeZakuraFrontError("front availability acknowledgement differs from its original owner")
+                    self._available = available
+                    self._availability_sequence = value["sequence"]
+                    return {"available": available, "sequence": self._availability_sequence,
+                        "fixture_run_id": self._ready["fixture_run_id"]}
+                cancel.wait(min(0.01, max(0, deadline - time.monotonic())))
+        return {"available": available, "sequence": self._availability_sequence,
+            "fixture_run_id": self._ready["fixture_run_id"]}
 
     def start(self, *, cancel_event=None):
         if self._attempted or self._finished:
@@ -159,7 +209,15 @@ class OwnedNativeZakuraFront:
                 "--listen-port", str(self._port), "--upstream-port", str(handoff["upstream_port"]),
                 "--genesis-proof", handoff["path"], "--genesis-proof-sha256", handoff["sha256"],
                 "--fixture-run-id", handoff["fixture_run_id"]],
-                env=os.environ.copy(), max_output_bytes=_OUTPUT_BYTES)
+                env=os.environ.copy(), max_output_bytes=_OUTPUT_BYTES, raw_lines=self._lines)
+            # Initial lightwalletd catch-up legitimately changes LightdInfo's
+            # height. Establish parity before capturing the stable comparison;
+            # the exact post-parity adaptation checks below remain unchanged.
+            parity = self._backend.wait_synced(deadline=deadline)
+            check()
+            height = parity.get("height")
+            if type(height) is not int or not 1 <= height <= 0xFFFFFFFF:
+                raise NativeZakuraFrontError("raw backend parity height is invalid")
             while True:
                 normalized = front("GetLightdInfo", {})
                 if normalized is not None:
@@ -172,12 +230,6 @@ class OwnedNativeZakuraFront:
             genesis = front("GetTreeState", {"height": "0"})
             if genesis is None or dict(genesis, height=str(genesis.get("height", "0"))) != state:
                 raise NativeZakuraFrontError("front genesis differs from original node-verified evidence")
-            check()
-            parity = self._backend.wait_synced(deadline=deadline)
-            check()
-            height = parity.get("height")
-            if type(height) is not int or not 1 <= height <= 0xFFFFFFFF:
-                raise NativeZakuraFrontError("raw backend parity height is invalid")
             payload = {"height": str(height)}
             raw_tree = raw("GetTreeState", payload)
             if front("GetTreeState", payload) != raw_tree or raw("GetTreeState", payload) != raw_tree:
@@ -196,6 +248,7 @@ class OwnedNativeZakuraFront:
                 "genesis_sha256": handoff["sha256"], "parity_height": height,
                 "lightd_info_only_chainName_changed": True, "nonzero_tree_and_latest_unchanged": True,
                 "wallet_or_catalog_pass": False}
+            self._available = True
             return copy.deepcopy(self._ready)
         except BaseException as primary:
             self._finished = True

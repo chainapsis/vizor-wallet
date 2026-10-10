@@ -39,6 +39,11 @@ class SuiteTests(unittest.TestCase):
         self.fail = False
 
     def git(self, command, **kwargs):
+        if "runtimes" in command:
+            return subprocess.CompletedProcess(command,0,json.dumps({"runtimes":[{
+                "identifier":"model-runtime", "isAvailable":True,
+                "supportedArchitectures":[SUITE.platform.machine()],
+                "supportedDeviceTypes":[{"identifier":"model-device"}]}]}), "")
         return subprocess.CompletedProcess(command,0,"a"*40+"\n" if "rev-parse" in command else "","")
 
     def execute(self, root, run_id, worker_id, scenario, **kwargs):
@@ -54,15 +59,21 @@ class SuiteTests(unittest.TestCase):
              patch.object(SUITE,"NativeCaseLifecycle",side_effect=lambda x:x), \
              patch.object(SUITE,"prepare_native_case_workspace",return_value=object()), \
              patch.object(SUITE,"build_native_macos_cohort",return_value=(self.helper,{"app_build_count":1})) as build, \
+             patch.object(SUITE,"build_native_ios_cohort",return_value=(self.helper,{"ios_app_build_count":1})) as ios_build, \
              patch.object(SUITE,"build_regtest_funder",return_value=self.signer) as signer, \
              patch.object(SUITE,"build_voting_artifacts",return_value=(self.voting,{"build_count":1})) as voting, \
              patch.object(SUITE,"derive_payment_addresses",return_value={"desktop_transparent":"tm-public-sdk-model",
                  "receiver_tex":"texregtest1publicsdkmodel"}), \
+             patch.object(SUITE,"derive_ios_migration_addresses", return_value={
+                 "note_addresses":tuple("uregtest1model"+str(index) for index in range(500)),
+                 "send_recipient":"uregtest1receivermodel"}) as ios_addresses, \
              patch.object(SUITE,"execute_case",side_effect=self.execute), \
              contextlib.redirect_stdout(output), contextlib.redirect_stderr(io.StringIO()):
             code = SUITE.run_native_suite(self.args,self.catalog,self.scenarios,
                 {"kind":"scenario","values":[self.scenarios[0].id]},source_root=self.root)
         self.voting_builder = voting
+        self.ios_builder = ios_build
+        self.ios_address_deriver = ios_addresses
         return code,json.loads(output.getvalue()),build,signer
 
     def test_two_concurrent_repetitions_share_only_one_build_and_signer(self):
@@ -80,6 +91,47 @@ class SuiteTests(unittest.TestCase):
             self.assertEqual(report["results"][0]["status"],"passed")
             with self.assertRaisesRegex(e2e_catalog.CatalogError,"zero scenarios"):
                 e2e_catalog.select_scenarios(self.catalog,failed_from=Path(item["report"]))
+
+    def test_ios_repetitions_build_one_cohort_and_do_not_build_macos(self):
+        self.scenarios = (self.catalog.scenarios_by_id["flutter.ios.import-sync"],)
+        self.args.ios_runtime, self.args.ios_device_type = "model-runtime", "model-device"
+        code, summary, mac_build, signer = self.invoke()
+        self.assertEqual(code, 0)
+        mac_build.assert_not_called()
+        self.ios_builder.assert_called_once()
+        signer.assert_called_once()
+        self.assertEqual(summary["builds"]["ios"]["ios_app_build_count"], 1)
+
+    def test_ios_unavailable_selection_is_rejected_before_run_writes(self):
+        self.args.ios_runtime, self.args.ios_device_type = "other-runtime", "model-device"
+        with patch.object(SUITE.sys,"platform","darwin"), \
+             patch.object(SUITE.subprocess,"run",side_effect=self.git):
+            with self.assertRaisesRegex(ValueError,"not available"):
+                SUITE.validate_options(self.args,(self.catalog.scenarios_by_id["flutter.ios.import-sync"],))
+        self.assertFalse((self.root/".regtest-logs").exists())
+
+    def test_ios_migration_group_derives_maximum_dataset_once_and_shares_one_build(self):
+        self.scenarios = tuple(self.catalog.scenarios_by_id[name] for name in (
+            "flutter.ios.ironwood-pre-migration-send", "flutter.ios.ironwood-migration-500-notes"))
+        self.args.ios_runtime, self.args.ios_device_type = "model-runtime", "model-device"
+        code, summary, mac_build, signer = self.invoke()
+        self.assertEqual(code, 0)
+        mac_build.assert_not_called()
+        signer.assert_called_once()
+        self.assertTrue(signer.call_args.kwargs["wallet_addresses"])
+        self.ios_builder.assert_called_once()
+        self.ios_address_deriver.assert_called_once()
+        self.assertEqual(self.ios_address_deriver.call_args.args[2], self.scenarios)
+        self.assertEqual(summary["builds"]["ios_note_address_count"], 500)
+
+    def test_mobile_migration_profile_mismatch_is_rejected_before_build_or_run_writes(self):
+        self.args.ios_runtime, self.args.ios_device_type = "model-runtime", "model-device"
+        migration = self.catalog.scenarios_by_id["flutter.ios.ironwood-migration"]
+        with patch.object(SUITE.sys,"platform","darwin"), \
+             patch.object(SUITE.subprocess,"run",side_effect=self.git):
+            with self.assertRaisesRegex(ValueError, "profile does not match"):
+                SUITE.validate_options(self.args, (replace(migration, profile="flutter-direct-height1"),))
+        self.assertFalse((self.root/".regtest-logs").exists())
 
     def test_a_failed_repetition_remains_rerunnable_and_makes_the_batch_fail(self):
         self.fail = True

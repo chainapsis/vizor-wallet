@@ -53,6 +53,69 @@ Future<int> mineOwnedRegtestBlocks(int blocks) async {
   return height;
 }
 
+/// The existing mobile RPC assertions use these three operations only. Route
+/// them through the original case controller, never an unrestricted node RPC.
+Future<Object?> ownedRegtestRpc(
+  String method,
+  List<Object?> params, {
+  Future<Map<String, Object?>> Function(String, Map<String, Object?>)? post,
+  Future<Map<String, Object?>> Function(String)? get,
+}) async {
+  post ??= postOwnedRegtestControl;
+  get ??= getOwnedRegtestControl;
+  switch (method) {
+    case 'getblockcount' when params.isEmpty:
+      final status = await get('/status');
+      final height = status['zcashdHeight'];
+      if (height is! int || height < 1) {
+        throw StateError('Owned status did not return a valid chain height.');
+      }
+      return height;
+    case 'generate'
+        when params.length == 1 &&
+            params.single is int &&
+            (params.single! as int) >= 1 &&
+            (params.single! as int) <= 1000:
+      final count = params.single! as int;
+      final result = await post('/mine', {'blocks': count});
+      final hashes = result['hashes'];
+      final tip = result['tip'];
+      if (hashes is! List<Object?> ||
+          hashes.length != count ||
+          hashes.any(
+            (hash) =>
+                hash is! String || !RegExp(r'^[a-f0-9]{64}$').hasMatch(hash),
+          ) ||
+          hashes.toSet().length != count ||
+          tip is! Map<String, Object?> ||
+          tip['hash'] != hashes.last ||
+          tip['height'] is! int ||
+          (tip['height']! as int) < count) {
+        throw StateError(
+          'Owned mining did not return its exact generated blocks and tip.',
+        );
+      }
+      return hashes;
+    case 'getrawtransaction'
+        when params.length == 2 &&
+            params[0] is String &&
+            RegExp(r'^[a-f0-9]{64}$').hasMatch(params[0]! as String) &&
+            params[1] is int &&
+            (params[1] == 0 || params[1] == 1):
+      final result = await post('/raw-transaction', {'txid': params[0]});
+      if (params[1] == 1) return result;
+      final hex = result['hex'];
+      if (hex is! String || !RegExp(r'^(?:[a-fA-F0-9]{2})+$').hasMatch(hex)) {
+        throw StateError('Owned raw transaction did not return signed bytes.');
+      }
+      return hex;
+    default:
+      throw ArgumentError(
+        'Unsupported owned RPC method or parameters: $method',
+      );
+  }
+}
+
 Future<String> fundOwnedRegtestTransparent(
   String address,
   int amountZatoshi, {

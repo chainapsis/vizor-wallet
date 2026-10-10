@@ -1,9 +1,9 @@
 import 'package:flutter/widgets.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/config/e2e_runtime_case_manifest.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
@@ -16,7 +16,7 @@ const _mnemonic =
     'roast miracle ethics found child scare curve congress renew salute pig '
     'better used';
 const _unifiedAddress = String.fromEnvironment('ZCASH_E2E_UNIFIED_ADDRESS');
-const _primaryProxyUrl = 'http://127.0.0.1:19068';
+String get _primaryProxyUrl => installedE2eRuntimeCaseManifest?.primaryProxyUrl ?? 'http://127.0.0.1:19068';
 const _fallbackToast =
     'Selected endpoint is unstable. Switched to fallback endpoint.';
 const _primaryToast = 'Selected endpoint recovered. Switched back.';
@@ -62,7 +62,6 @@ void main() {
         ),
       );
 
-      await Clipboard.setData(const ClipboardData(text: _mnemonic));
       await importWalletViaPaste(
         tester,
         mnemonic: _mnemonic,
@@ -115,6 +114,7 @@ void main() {
         timeout: const Duration(minutes: 2),
       );
       await waitForShieldedBalance(tester, '2.25 $mobileE2eTicker');
+      markMobileE2eAssertionsCompleted();
     },
     timeout: const Timeout(Duration(minutes: 12)),
   );
@@ -130,6 +130,12 @@ Future<void> _configureSlowPresetPrimary() async {
 }
 
 Future<void> _fundWallet(String amountZec) async {
+  final manifest = installedE2eRuntimeCaseManifest;
+  if (manifest != null) {
+    await fundUnmined('uregtest1nu0qx0nca0ncpshm5x47ldc90835m2fy3gjuh3empp5js9qanzjwxppsw7x07a2ec3z52ute7d7f0z68ez90qlagx5ankjm4eyd6l90p', amountZec);
+    await postDriver('/mine', {'blocks': 3});
+    return;
+  }
   if (_unifiedAddress.isEmpty) {
     fail('ZCASH_E2E_UNIFIED_ADDRESS define is required for this test.');
   }

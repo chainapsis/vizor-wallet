@@ -96,6 +96,7 @@ void main() {
         amount: '+0.25 $mobileE2eTicker',
       );
       await waitForShieldedBalance2(tester, '1.50 $mobileE2eTicker');
+      markMobileE2eAssertionsCompleted();
     },
     timeout: const Timeout(Duration(minutes: 10)),
   );

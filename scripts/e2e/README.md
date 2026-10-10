@@ -13,7 +13,7 @@ not add an execution backend or make pending catalog entries runnable.
 ## Pinned Zakura fixture source
 
 `zakura_fixture_source.py` reads the fixture's Git blob from one published,
-immutable [contributor-fork commit](https://github.com/piatoss3612/zakura/commit/b22c91ac0770fa1953ced10fdbeed596276875ee).
+immutable [contributor-fork commit](https://github.com/piatoss3612/zakura/commit/5ecafcfdb43cf42f34c8046f09c6d874b567daa4).
 This is proposed tooling, not an official Zakura release. The helper's exact
 commit, path, byte count, SHA-256 and node/lightwalletd image digests are pinned
 in the module. Updates require a reviewed pin change; there is no latest-tag
@@ -32,12 +32,19 @@ missing tree/blob objects is rejected without downloading them. To populate
 a complete local cache explicitly:
 
 ```bash
-git -C /path/to/zakura fetch https://github.com/piatoss3612/zakura.git b22c91ac0770fa1953ced10fdbeed596276875ee:refs/vizor-e2e/zakura-fixture/b22c91ac0770fa1953ced10fdbeed596276875ee
+git -C /path/to/zakura fetch https://github.com/piatoss3612/zakura.git 5ecafcfdb43cf42f34c8046f09c6d874b567daa4:refs/vizor-e2e/zakura-fixture/5ecafcfdb43cf42f34c8046f09c6d874b567daa4
 ```
 
 The commit-specific destination ref keeps the cached commit reachable during
 Git garbage collection, without changing HEAD or an existing branch/tag. The
 loader still uses the fixed commit ID, never the mutable ref as source authority.
+
+Each backend requests an explicit RFC1918 `/28` subnet derived from its fresh
+fixture UUID. This avoids exhausting Docker's larger default address pools when
+failed fixtures are retained. Only immutable builds are shared, never networks.
+Docker rejects overlapping subnets; a collision stays a startup failure, without
+pruning, adopting, or retrying another fixture's resources. The start proof records
+the requested subnet. Existing retained networks, containers, and volumes remain.
 
 This source-loading boundary starts no Docker resource, wallet or test, and
 does not enable catalog execution. Offline checks use disposable Git commits:
@@ -49,8 +56,9 @@ python3 -B -m unittest scripts/e2e/test_zakura_fixture_source.py
 ## Catalog previews
 
 `run-suite.py` provides a host-only inventory and selection preview. Of 64
-entries, all twenty-three Rust cases and twenty macOS cases
-are wired to the isolated executor; the twenty-one iOS cases stay pending.
+entries, all twenty-three Rust, twenty macOS and twenty-one iOS Simulator
+cases are wired to the isolated executor. Runnable is an execution capability,
+not a claim that every case passed together on the final implementation source.
 A preview exit code of 0 means the preview succeeded,
 not that any test ran or passed. Execution requires explicit `--run`.
 
@@ -93,6 +101,47 @@ Host-only checks for this slice:
 ```bash
 python3 -B -m unittest scripts/e2e/test_e2e_catalog.py scripts/e2e/test_e2e_report.py scripts/e2e/test_e2e_changes.py scripts/e2e/test_e2e_impact.py scripts/e2e/test_run_suite.py
 ```
+
+## Isolated iOS Simulator execution
+
+The iOS executor builds one signed Simulator cohort and cleanup helper before
+dispatch. Each case owns a fresh device, wallet/native storage, ports and pinned
+Zakura/lightwalletd backend; restarts retain only their original case's state.
+The original UIKit PID's VM event binds Driver discovery. Financial, receipt,
+inclusion, fee, reorg, restart, account recovery and outbox assertions remain.
+Outbox transport is not positive authorized OS-background scheduling coverage.
+
+Use the common macOS tooling requirements below plus an installed, available
+iOS Simulator runtime and a device type that it supports. Flutter dependencies
+must already be resolved with Dart3.12 or newer; the official Riverpod3.4.2
+prerequisite is separate from this executor. The runner installs nothing and
+never adopts an existing developer device. Preview the21-case suite first:
+
+```bash
+python3 -B scripts/e2e/run-suite.py --suite flutter-ios-full --plan
+python3 -B scripts/e2e/run-suite.py --suite flutter-ios-full --run \
+  --flutter /absolute/flutter-sdk/bin/flutter \
+  --zakura-cache /absolute/zakura-git-cache \
+  --grpcurl /absolute/bin/grpcurl \
+  --proto-dir /absolute/lightwalletd-protos \
+  --ios-runtime com.apple.CoreSimulator.SimRuntime.iOS-26-3 \
+  --ios-device-type com.apple.CoreSimulator.SimDeviceType.iPhone-16 \
+  --build-jobs 4 --workers 2
+```
+
+Replace the runtime/device examples with identifiers available on your host.
+Select a single case with `--scenario`, or rerun only failures using
+`--failed-from /absolute/prior/repetition-0/run.json` and the same tool arguments.
+The original failed report is not rewritten. iOS and macOS selections can share
+one invocation's worker budget; runtime/device arguments are required whenever
+iOS is selected. Evidence stays in `.regtest-logs/native-suite-<id>/`.
+
+Actual full21 run34c9e26ffa on clean6b083b58e finished19 PASS/2 FAIL.
+After synchronizing backend parity and pre-removal wallet scanning, failed-only
+run989c2e115c on clean e7aa6909f passed both original cases in485.319s including
+one app/helper build. Both passed native/backend cleanup; older failed evidence
+and devices remain retained. These revision-specific runs do not establish a
+same-final-source all-green21/64-case result or current-policy cache coverage.
 
 ## Isolated macOS import and endpoint execution
 
@@ -154,9 +203,9 @@ Evidence stays in `.regtest-logs/native-suite-<id>/`. Each repetition's
 and uncertain cleanup remains failure. Cancellation stops owned children and
 new assignment without terminating ordinary wallet processes.
 
-This is in-process build reuse, not a persistent verified build cache. The
-iOS execution, resource/performance comparison
-and final-source all-green catalog are still pending. No CI behavior changes.
+This is in-process build reuse; persistent verified caching is a separate
+implementation group. Resource/performance comparison and the final-source
+all-green catalog remain pending. No CI behavior changes.
 
 ## Isolated macOS send, shielding and payment requests
 

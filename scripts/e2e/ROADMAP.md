@@ -2,10 +2,23 @@
 
 This roadmap tracks a local E2E execution improvement and the migration to
 direct Zakura fixtures. Reviewed functional groups merge into the draft umbrella,
-not `main`. The composed executor now wires all twenty-three Rust and twenty
-macOS cases; twenty-one iOS Simulator cases remain pending. Keep the umbrella
-draft until its implementation, cache/performance and final-source validation
-gates are complete. Earlier prototype evidence is separate from this executor.
+not `main`. The composed executor now wires all twenty-three Rust, twenty
+macOS and twenty-one iOS Simulator cases. Wiring is not a passing final-source
+catalog. Keep the umbrella draft through implementation, cache/performance and
+final-source validation, and obtain explicit user confirmation before starting
+its final review. Earlier prototype evidence is separate from this executor.
+
+The iOS functional group [#937](https://github.com/chainapsis/vizor-wallet/pull/937)
+preserves original wallet assertions and independently owned Simulator state.
+Official SDK prerequisite [#945](https://github.com/chainapsis/vizor-wallet/pull/945)
+pins Flutter/core Riverpod3.4.2 and Dart3.12, without a Riverpod vendor; it affects
+production dependency builds. Actual full21 run34c9e26ffa on clean6b083b58e
+finished19 PASS/2 FAIL. Backend catch-up and wallet-snapshot synchronization
+repairs then passed both failures in run989c2e115c on clean e7aa6909f,
+485.319s including one shared app/helper build, with original native/backend
+cleanup. Earlier failures remain retained. Do not combine these revisions into
+an all-green final-source catalog; that gate and separate cache/resource
+evidence remain outstanding.
 
 ## Problem and intended workflow
 

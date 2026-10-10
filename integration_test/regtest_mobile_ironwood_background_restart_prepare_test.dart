@@ -6,7 +6,6 @@ import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
-import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import 'support/mobile_background_migration_flow.dart';
 import 'support/mobile_regtest_flow.dart';
@@ -17,7 +16,7 @@ void main() {
   setUpAll(initializeZcashWalletRuntime);
 
   testWidgets(
-    'persists one proof without broadcasting before process restart',
+    'persists foreground-approved signed proofs without broadcasting before process restart',
     (tester) async {
       tolerateRenderOverflows();
       await cleanupE2eWalletState();
@@ -52,6 +51,9 @@ void main() {
       await startMobilePrivateMigration(tester);
 
       final accountUuid = await accountUuidAtOrder(0);
+      final initialPreparationDeadline = DateTime.now().add(
+        const Duration(minutes: 5),
+      );
       final started = await waitForMobileRegtestMigrationStatus(
         tester,
         accountUuid,
@@ -59,12 +61,22 @@ void main() {
             status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase &&
             status.pendingSplitStageCount > 0,
         description: 'proof-restart denomination run',
+        timeout: initialPreparationDeadline.difference(DateTime.now()),
       );
       expect(started.activeRunId, isNotNull);
       expect(started.pendingTxCount, 0);
       expect(started.signedChildPcztCount, greaterThanOrEqualTo(2));
 
-      await pauseFlutterAndQuiesceMigrationForNativeWakes(tester, container);
+      final preparationReceipt = await waitForMobileInitialPreparationReceipt(
+        tester,
+        accountUuid,
+        started.activeRunId!,
+        deadline: initialPreparationDeadline,
+      );
+      await pauseFlutterAndQuiesceMigrationForNativeOutboxTicks(
+        tester,
+        container,
+      );
       final paused = await mobileRegtestMigrationStatus(accountUuid);
       expect(paused.pendingTxCount, started.pendingTxCount);
       expect(paused.signedChildPcztCount, started.signedChildPcztCount);
@@ -72,58 +84,50 @@ void main() {
         paused.broadcastedTxCount + paused.confirmedTxCount,
         started.broadcastedTxCount + started.confirmedTxCount,
       );
-      await postDriver('/mine', const {'blocks': 50});
-      final proofed = await _runUntilOneProofIsPersisted(
-        accountUuid: accountUuid,
-        initialStatus: paused,
+      await mineMobileInitialPreparationReceipt(
+        preparationReceipt,
+        blocks: 50,
+        deadline: initialPreparationDeadline,
+      );
+      final unpreparedTick = await runNativeMigrationOutboxTick();
+      expect(unpreparedTick['outcome'], anyOf('noWork', 'waiting'));
+      expectNativeOutboxTickDidNotCreateProofs(
+        paused,
+        await mobileRegtestMigrationStatus(accountUuid),
+      );
+      final proofed = await prepareForegroundProofsForNativeOutboxTicks(
+        tester,
+        container,
+        accountUuid,
       );
 
       expect(proofed.activeRunId, paused.activeRunId);
-      expect(proofed.pendingTxCount, 1);
-      expect(proofed.signedChildPcztCount, paused.signedChildPcztCount - 1);
-      expect(proofed.broadcastedTxCount + proofed.confirmedTxCount, 0);
-      expect(proofed.scheduledBroadcasts, hasLength(1));
-      final chain = await getDriver('/status');
+      expect(proofed.pendingTxCount, greaterThanOrEqualTo(1));
       expect(
-        proofed.scheduledBroadcasts.single.scheduledHeight,
-        lessThanOrEqualTo((chain['zcashdHeight'] as num).toInt()),
+        proofed.signedChildPcztCount,
+        paused.signedChildPcztCount - proofed.pendingTxCount,
+      );
+      expect(proofed.broadcastedTxCount + proofed.confirmedTxCount, 0);
+      expect(proofed.scheduledBroadcasts, hasLength(proofed.pendingTxCount));
+      final chain = await getDriver('/status');
+      final firstDue = proofed.scheduledBroadcasts
+          .map((part) => part.scheduledHeight)
+          .reduce((a, b) => a < b ? a : b);
+      final tip = (chain['zcashdHeight'] as num).toInt();
+      if (firstDue > tip) {
+        await postDriver('/mine', {'blocks': firstDue - tip});
+      }
+      expectNativeOutboxTickDidNotCreateProofs(
+        proofed,
+        await mobileRegtestMigrationStatus(accountUuid),
       );
       await waitForNativeBackgroundMempoolSize(0);
 
       await snapshotWalletDbToDriver();
+      markMobileE2eAssertionsCompleted();
     },
     timeout: const Timeout(Duration(minutes: 25)),
   );
-}
-
-Future<rust_sync.MigrationStatus> _runUntilOneProofIsPersisted({
-  required String accountUuid,
-  required rust_sync.MigrationStatus initialStatus,
-}) async {
-  var previous = initialStatus;
-  final maxWakes = initialStatus.totalCount * 2 + 4;
-  for (var wake = 0; wake < maxWakes; wake++) {
-    final result = await runNativeBackgroundMigrationWake();
-    final current = await mobileRegtestMigrationStatus(accountUuid);
-    final proofDelta = current.pendingTxCount - previous.pendingTxCount;
-    final signedChildDelta =
-        previous.signedChildPcztCount - current.signedChildPcztCount;
-    final submitted = current.broadcastedTxCount + current.confirmedTxCount;
-
-    expect(proofDelta, inInclusiveRange(0, 1));
-    expect(signedChildDelta, proofDelta);
-    expect(submitted, 0);
-    expect(current.activeRunId, initialStatus.activeRunId);
-    if (proofDelta == 1) {
-      expect(result['outcome'], anyOf('preparing', 'waiting'));
-      return current;
-    }
-
-    previous = current;
-    await Future<void>.delayed(const Duration(milliseconds: 100));
-  }
-
-  fail('Native background wakes did not persist a proof before restart.');
 }
 
 Future<void> _waitForIdleSync(

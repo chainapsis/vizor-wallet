@@ -1527,7 +1527,11 @@ void main() {
     );
     expect(find.byKey(const ValueKey('mobile_home_pay')), findsOneWidget);
 
-    await tester.tap(find.byKey(const ValueKey('mobile_home_send')));
+    final sendButton = find.byKey(const ValueKey('mobile_home_send'));
+    await tester.ensureVisible(sendButton);
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(sendButton.hitTestable(), findsOneWidget);
+    await tester.tap(sendButton.hitTestable());
     await tester.pumpAndSettle();
     expect(find.text('send route'), findsOneWidget);
   });

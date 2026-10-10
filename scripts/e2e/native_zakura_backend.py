@@ -230,8 +230,13 @@ def prepare_native_zakura_backend(case: NativeCaseLifecycle, *, tooling_root: Pa
             def _write_text(self, name, text):
                 owner._write_text(name, text)
 
+        fixture_run_id = uuid.uuid4()
+        # The fixture needs at most three containers. Avoid consuming Docker's
+        # much larger default subnets while retaining failed-case networks.
+        subnet_bytes = fixture_run_id.bytes
+        network_subnet = f"10.{subnet_bytes[0]}.{subnet_bytes[1]}.{subnet_bytes[2] & 0xf0}/28"
         owner._fixture = AnchoredFixture(root, grpcurl, proto_dir, timeout=timeout,
-            run_id=uuid.uuid4(), miner_address=miner_address,
+            run_id=fixture_run_id, miner_address=miner_address, network_subnet=network_subnet,
             profile="zakura-direct-height1" if activation == 1 else "zakura-direct-activation500")
         owner._write_text("source-identity.json", json.dumps(source.identity(), sort_keys=True) + "\n")
         return owner

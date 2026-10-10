@@ -1,0 +1,78 @@
+"""Original private files; model Xcode/Flutter transport and signed captures."""
+from pathlib import Path
+import os
+import sys
+import tempfile
+from types import SimpleNamespace
+import unittest
+from unittest.mock import patch
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import e2e_runtime as runtime
+import native_ios_build as BUILD
+from native_case_lifecycle import NativeCaseLifecycle
+from native_workspace import prepare_native_case_workspace
+
+
+class BuildTests(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory(prefix="ios-build-model-")
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name).resolve()
+        self.source = self.root/"source"
+        self.source.mkdir(mode=0o700)
+        for name in ("lib/app.dart", "ios/Runner.xcodeproj/project.pbxproj",
+                     ".dart_tool/package_config.json", "bin/flutter"):
+            path = self.source/name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("model source")
+            path.chmod(0o700)
+        self.case = NativeCaseLifecycle(prepare_native_case_workspace(self.root,
+            platform="ios", scenario_id="flutter.ios.native-build", run_id="abcdef0123",
+            worker_id=0, case_index=0, ports={"rpc":28232,"lwd":29067,"proxy":29068}, activation_height=1))
+        self.commands = []
+        self.change_source = False
+
+    def command(self, arguments, **kwargs):
+        self.commands.append(arguments)
+        if "ls-files" in arguments:
+            return runtime.CommandResult(0,("lib/app.dart\0ios/Runner.xcodeproj/project.pbxproj\0",))
+        if "--config-only" in arguments:
+            project = self.source/"ios/Runner.xcodeproj/project.pbxproj"
+            stamp = project.stat().st_mtime_ns + 1_000_000
+            os.utime(project, ns=(stamp,stamp))
+            if self.change_source:
+                (self.source/"lib/app.dart").write_text("changed")
+        return runtime.CommandResult(0,())
+
+    def build(self):
+        captured = SimpleNamespace(architecture="arm64",team="MODEL",verify_unchanged=lambda:None)
+        with patch.object(self.case,"run_command",side_effect=self.command), \
+             patch.object(BUILD.platform,"machine",return_value="arm64"), \
+             patch.object(BUILD,"_inspect_app",return_value=SimpleNamespace(application_identifier="MODELTEAM1.com.keplr.vizor")), \
+             patch.object(BUILD,"capture_ios_cleanup_helper",return_value=captured):
+            return BUILD.build_native_ios_cohort(self.case, source_root=self.source, flutter=self.source/"bin/flutter")
+
+    def test_one_mobile_regtest_cohort_and_original_helper_build(self):
+        _, proof = self.build()
+        self.assertEqual(proof["ios_app_build_count"], 1)
+        self.assertEqual(proof["ios_helper_build_count"], 1)
+        self.assertFalse(proof["wallet_or_catalog_pass"])
+        configure = next(args for args in self.commands if "--config-only" in args)
+        for flag in ("--simulator", "--debug", "--dart-define=VIZOR_FORM_FACTOR=mobile",
+                     "--dart-define=VIZOR_E2E_IOS_COHORT=true", "--dart-define=VIZOR_PAYMENT_LINK_REGTEST_ENABLED=true"):
+            self.assertEqual(configure.count(flag), 1)
+        app = next(args for args in self.commands if "Runner" in args)
+        self.assertIn("ENABLE_DEBUG_DYLIB=NO", app)
+        self.assertIn(str(self.case.workspace.root/"ios-build"), app)
+        helper = next(args for args in self.commands if "VizorIosCleanup" in args)
+        self.assertIn("DEVELOPMENT_TEAM=MODELTEAM1", helper)
+
+    def test_changed_wallet_input_does_not_publish_a_pair(self):
+        self.change_source = True
+        with self.assertRaisesRegex(BUILD.NativeIosBuildError,"lib/app.dart"):
+            self.build()
+
+
+if __name__ == "__main__":
+    unittest.main()

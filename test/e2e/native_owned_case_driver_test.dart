@@ -56,6 +56,109 @@ void main() {
   );
 
   test(
+    'iOS returns its native result without writing a host context',
+    () async {
+      manifest['scenario_id'] = 'flutter.ios.import-sync';
+      manifest['context_path'] = 'app-support';
+      data['case_manifest'] = Map<String, dynamic>.of(manifest);
+      expect(await persist(), {'case_manifest': manifest, 'pid': 123});
+      expect(await directory.list().toList(), isEmpty);
+    },
+  );
+
+  test('iOS console PID cannot substitute for its native app PID', () async {
+    manifest['scenario_id'] = 'flutter.ios.import-sync';
+    manifest['context_path'] = 'app-support';
+    data['case_manifest'] = Map<String, dynamic>.of(manifest);
+    data['pid'] = 456;
+    await expectLater(persist(), throwsStateError);
+    expect(await directory.list().toList(), isEmpty);
+  });
+
+  test('iOS setup without completed assertions remains refused', () async {
+    manifest['scenario_id'] = 'flutter.ios.import-sync';
+    manifest['context_path'] = 'app-support';
+    data['case_manifest'] = Map<String, dynamic>.of(manifest);
+    data['assertions_completed'] = false;
+    await expectLater(persist(), throwsStateError);
+  });
+
+  test('macOS cannot use the Simulator app-support sentinel', () async {
+    manifest['context_path'] = 'app-support';
+    data['case_manifest'] = Map<String, dynamic>.of(manifest);
+    await expectLater(persist(), throwsStateError);
+  });
+
+  for (final scenario in [
+    'flutter.ios.ironwood-migration-restart',
+    'flutter.ios.ironwood-background-restart',
+  ]) {
+    for (final phase in ['prepare', 'resume']) {
+      test(
+        '$scenario binds its original $phase result without a host write',
+        () async {
+          manifest['scenario_id'] = scenario;
+          manifest['context_path'] = 'app-support';
+          data['case_manifest'] = Map<String, dynamic>.of(manifest);
+          data['ios_phase'] = phase;
+          expect(
+            await persistNativeOwnedCaseResult(
+              expected: manifest,
+              expectedPid: 123,
+              expectedIosPhase: phase,
+              data: data,
+            ),
+            {'case_manifest': manifest, 'pid': 123, 'ios_phase': phase},
+          );
+          expect(await directory.list().toList(), isEmpty);
+        },
+      );
+    }
+  }
+
+  test(
+    'iOS restart refuses a wrong phase, neighbor case and phase collision',
+    () async {
+      manifest['scenario_id'] = 'flutter.ios.ironwood-migration-restart';
+      manifest['context_path'] = 'app-support';
+      data['case_manifest'] = Map<String, dynamic>.of(manifest);
+      data['ios_phase'] = 'resume';
+      await expectLater(
+        persistNativeOwnedCaseResult(
+          expected: manifest,
+          expectedPid: 123,
+          expectedIosPhase: 'prepare',
+          data: data,
+        ),
+        throwsStateError,
+      );
+      data['ios_phase'] = 'prepare';
+      await expectLater(
+        persistNativeOwnedCaseResult(
+          expected: manifest,
+          expectedPid: 123,
+          expectedIosPhase: 'prepare',
+          expectedVotingPhase: 'setup',
+          data: data,
+        ),
+        throwsStateError,
+      );
+      manifest['scenario_id'] = 'flutter.ios.import-sync';
+      data['case_manifest'] = Map<String, dynamic>.of(manifest);
+      await expectLater(
+        persistNativeOwnedCaseResult(
+          expected: manifest,
+          expectedPid: 123,
+          expectedIosPhase: 'prepare',
+          data: data,
+        ),
+        throwsStateError,
+      );
+      expect(await directory.list().toList(), isEmpty);
+    },
+  );
+
+  test(
     'setup-only successful Driver response is not assertion completion',
     () async {
       data['assertions_completed'] = false;

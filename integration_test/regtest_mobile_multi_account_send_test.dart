@@ -138,6 +138,7 @@ void main() {
         amount: '-0.25 $mobileE2eTicker',
       );
       logE2e('first account sent activity matched');
+      markMobileE2eAssertionsCompleted();
     },
     timeout: const Timeout(Duration(minutes: 10)),
   );

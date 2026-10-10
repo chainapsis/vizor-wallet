@@ -49,6 +49,9 @@ void main() {
       await openMobilePrivateMigrationOptions(tester);
       await startMobilePrivateMigration(tester);
 
+      final initialPreparationDeadline = DateTime.now().add(
+        const Duration(minutes: 5),
+      );
       final accountUuid = await accountUuidAtOrder(0);
       final started = await waitForMobileRegtestMigrationStatus(
         tester,
@@ -57,11 +60,22 @@ void main() {
             status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase &&
             status.pendingSplitStageCount > 0,
         description: 'restart fixture denomination run',
+        timeout: initialPreparationDeadline.difference(DateTime.now()),
       );
       expect(started.activeRunId, isNotNull);
 
-      await postDriver('/mine', const {'blocks': 10});
-      final scheduled = await waitForMobileRegtestMigrationStatus(
+      final preparationReceipt = await waitForMobileInitialPreparationReceipt(
+        tester,
+        accountUuid,
+        started.activeRunId!,
+        deadline: initialPreparationDeadline,
+      );
+      await mineMobileInitialPreparationReceipt(
+        preparationReceipt,
+        blocks: 10,
+        deadline: initialPreparationDeadline,
+      );
+      final scheduled = await prepareMobilePrivateMigrationSchedule(
         tester,
         accountUuid,
         (status) => status.scheduledBroadcasts.length >= 3,
@@ -103,6 +117,7 @@ void main() {
         '${started.activeRunId}',
       );
       await snapshotWalletDbToDriver();
+      markMobileE2eAssertionsCompleted();
     },
     timeout: const Timeout(Duration(minutes: 25)),
   );

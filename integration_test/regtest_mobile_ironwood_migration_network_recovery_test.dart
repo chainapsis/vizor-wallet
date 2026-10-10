@@ -19,132 +19,130 @@ void main() {
 
   setUpAll(initializeZcashWalletRuntime);
 
-  testWidgets(
-    'resumes the same mobile migration after lightwalletd returns',
-    (tester) async {
-      tolerateRenderOverflows();
-      addTearDown(() async {
-        try {
-          await postDriver('/lightwalletd/start', const {});
-        } catch (_) {
-          // The runner resets the stack after a failed recovery attempt.
-        }
-        await cleanupE2eWalletState();
-      });
+  testWidgets('resumes the same mobile migration after lightwalletd returns', (
+    tester,
+  ) async {
+    tolerateRenderOverflows();
+    addTearDown(() async {
+      try {
+        await postDriver('/lightwalletd/start', const {});
+      } catch (_) {
+        // The runner resets the stack after a failed recovery attempt.
+      }
       await cleanupE2eWalletState();
+    });
+    await cleanupE2eWalletState();
 
-      final initialChain = await getDriver('/status');
-      expect(initialChain['ironwoodActive'], isFalse);
+    final initialChain = await getDriver('/status');
+    expect(initialChain['ironwoodActive'], isFalse);
 
-      await tester.pumpWidget(await buildBootstrappedZcashWalletApp());
-      await importWalletViaPaste(
-        tester,
-        mnemonic: mobileIronwoodE2eMnemonic,
-        birthdayHeight: 1,
-        isFirstWallet: true,
-      );
-      await waitForShieldedBalance(tester, '0.011 $mobileE2eTicker');
+    await tester.pumpWidget(await buildBootstrappedZcashWalletApp());
+    await importWalletViaPaste(
+      tester,
+      mnemonic: mobileIronwoodE2eMnemonic,
+      birthdayHeight: 1,
+      isFirstWallet: true,
+    );
+    await waitForShieldedBalance(tester, '0.011 $mobileE2eTicker');
 
-      final container = ProviderScope.containerOf(
-        tester.element(
-          find.byKey(const ValueKey('mobile_home_shielded_balance')),
-        ),
-      );
-      await _waitForIdleSync(
-        tester,
-        container,
-        (initialChain['zcashdHeight'] as num).toInt(),
-      );
+    final container = ProviderScope.containerOf(
+      tester.element(
+        find.byKey(const ValueKey('mobile_home_shielded_balance')),
+      ),
+    );
+    await _waitForIdleSync(
+      tester,
+      container,
+      (initialChain['zcashdHeight'] as num).toInt(),
+    );
 
-      await postDriver('/activate', const {});
-      await _waitForIronwoodSync(tester, container);
-      await openMobilePrivateMigrationOptions(tester);
-      final approvedPlan = await container.read(
-        ironwoodMigrationPrivatePlanProvider.future,
-      );
-      expect(approvedPlan, isNotNull);
+    await postDriver('/activate', const {});
+    await _waitForIronwoodSync(tester, container);
+    await openMobilePrivateMigrationOptions(tester);
+    final approvedPlan = await container.read(
+      ironwoodMigrationPrivatePlanProvider.future,
+    );
+    expect(approvedPlan, isNotNull);
 
-      logE2e('stopping lightwalletd before the first migration broadcast');
-      await postDriver('/lightwalletd/stop', const {});
-      await startMobilePrivateMigration(tester);
+    logE2e('stopping lightwalletd before the first migration broadcast');
+    await postDriver('/lightwalletd/stop', const {});
+    await startMobilePrivateMigration(tester);
 
-      final accountUuid = await accountUuidAtOrder(0);
-      final interrupted = await waitForMobileRegtestMigrationStatus(
-        tester,
-        accountUuid,
-        (status) =>
-            status.activeRunId != null &&
-            status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase &&
-            status.pendingSplitStageCount > 0,
-        description: 'persisted migration while lightwalletd is unavailable',
-        timeout: const Duration(minutes: 5),
-      );
-      final runId = interrupted.activeRunId;
-      expect(runId, isNotNull);
-      await waitForMobileRegtestMempoolSize(tester, 0);
+    final accountUuid = await accountUuidAtOrder(0);
+    final interrupted = await waitForMobileRegtestMigrationStatus(
+      tester,
+      accountUuid,
+      (status) =>
+          status.activeRunId != null &&
+          status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase &&
+          status.pendingSplitStageCount > 0,
+      description: 'persisted migration while lightwalletd is unavailable',
+      timeout: const Duration(minutes: 5),
+    );
+    final runId = interrupted.activeRunId;
+    expect(runId, isNotNull);
+    await waitForMobileRegtestMempoolSize(tester, 0);
 
-      logE2e('starting lightwalletd and waiting for automatic migration retry');
-      await postDriver(
-        '/lightwalletd/start',
-        const {},
-        timeout: const Duration(minutes: 5),
-      );
-      await waitForMobileRegtestMempoolSize(
-        tester,
-        1,
-        timeout: const Duration(minutes: 5),
-      );
+    logE2e('starting lightwalletd and waiting for automatic migration retry');
+    await postDriver(
+      '/lightwalletd/start',
+      const {},
+      timeout: const Duration(minutes: 5),
+    );
+    await waitForMobileRegtestMempoolSize(
+      tester,
+      1,
+      timeout: const Duration(minutes: 5),
+    );
 
-      await postDriver('/mine', const {'blocks': 10});
-      final scheduled = await waitForMobileRegtestMigrationStatus(
-        tester,
-        accountUuid,
-        (status) =>
-            status.activeRunId == runId &&
-            status.scheduledBroadcasts.isNotEmpty,
-        description: 'migration schedule after network recovery',
-        timeout: const Duration(minutes: 10),
-      );
-      expect(scheduled.totalCount, approvedPlan!.plannedBatchCount);
+    await postDriver('/mine', const {'blocks': 10});
+    final scheduled = await prepareMobilePrivateMigrationSchedule(
+      tester,
+      accountUuid,
+      (status) =>
+          status.activeRunId == runId && status.scheduledBroadcasts.isNotEmpty,
+      description: 'migration schedule after network recovery',
+      timeout: const Duration(minutes: 10),
+    );
+    expect(scheduled.totalCount, approvedPlan!.plannedBatchCount);
 
-      final submitted = await advanceMobileRegtestMigrationSchedule(
-        tester,
-        accountUuid,
-      );
-      expect(submitted.activeRunId, runId);
-      expect(
-        submitted.broadcastedTxCount + submitted.confirmedTxCount,
-        submitted.totalCount,
-      );
+    final submitted = await advanceMobileRegtestMigrationSchedule(
+      tester,
+      accountUuid,
+    );
+    expect(submitted.activeRunId, runId);
+    expect(
+      submitted.broadcastedTxCount + submitted.confirmedTxCount,
+      submitted.totalCount,
+    );
 
-      await postDriver('/mine', const {'blocks': 10});
-      final complete = await waitForMobileRegtestMigrationStatus(
-        tester,
-        accountUuid,
-        (status) =>
-            status.phase == kIronwoodMigrationCompletePhase &&
-            status.confirmedTxCount == status.totalCount &&
-            status.activeRunId == null,
-        description: 'completed migration after network recovery',
-        timeout: const Duration(minutes: 5),
-      );
-      expect(complete.activeRunId, isNull);
+    await postDriver('/mine', const {'blocks': 10});
+    final complete = await waitForMobileRegtestMigrationStatus(
+      tester,
+      accountUuid,
+      (status) =>
+          status.phase == kIronwoodMigrationCompletePhase &&
+          status.confirmedTxCount == status.totalCount &&
+          status.activeRunId == null,
+      description: 'completed migration after network recovery',
+      timeout: const Duration(minutes: 5),
+    );
+    expect(complete.activeRunId, isNull);
 
-      final balance = await rust_sync.getBalance(
-        dbPath: await getWalletDbPath(),
-        network: mobileE2eNetwork,
-        accountUuid: accountUuid,
-      );
-      final orchardResidual = balance.orchard + balance.uneconomicValue;
-      expect(balance.ironwood, approvedPlan.totalMigratableZatoshi);
-      expect(orchardResidual, approvedPlan.orchardChangeZatoshi ?? BigInt.zero);
-      expect(
-        _fundedAmount - balance.ironwood - orchardResidual,
-        approvedPlan.estimatedTotalFeeZatoshi,
-      );
-    },
-    timeout: const Timeout(Duration(minutes: 25)),
-  );
+    final balance = await rust_sync.getBalance(
+      dbPath: await getWalletDbPath(),
+      network: mobileE2eNetwork,
+      accountUuid: accountUuid,
+    );
+    final orchardResidual = balance.orchard + balance.uneconomicValue;
+    expect(balance.ironwood, approvedPlan.totalMigratableZatoshi);
+    expect(orchardResidual, approvedPlan.orchardChangeZatoshi ?? BigInt.zero);
+    expect(
+      _fundedAmount - balance.ironwood - orchardResidual,
+      approvedPlan.estimatedTotalFeeZatoshi,
+    );
+    markMobileE2eAssertionsCompleted();
+  }, timeout: const Timeout(Duration(minutes: 25)));
 }
 
 Future<void> _waitForIdleSync(
