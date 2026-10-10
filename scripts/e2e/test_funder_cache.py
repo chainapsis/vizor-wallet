@@ -95,6 +95,19 @@ class FunderCacheTests(unittest.TestCase):
         self.assertNotEqual(first.identity()["cache_key"], second.identity()["cache_key"])
         self.assertNotIn('"second"', json.dumps(second.identity()["cache_inputs"]))
 
+    def test_target_rustflags_linker_bytes_invalidate_with_unchanged_environment(self):
+        linker = self.model.root/"target-linker"
+        linker.write_text("original target linker")
+        linker.chmod(0o700)
+        with patch.dict(os.environ, {"CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS":"-C linker="+str(linker)}):
+            first = self.build()
+            linker.write_text("patched target linker")
+            second = self.build()
+        self.assertEqual(first.identity()["cache_inputs"]["environment_sha256"],
+                         second.identity()["cache_inputs"]["environment_sha256"])
+        self.assertNotEqual(first.identity()["cache_key"], second.identity()["cache_key"])
+        self.assertEqual(self.model.compile_calls, 2)
+
     def test_cargo_executable_bytes_invalidate_even_when_version_is_unchanged(self):
         first = self.build()
         self.model.cargo.write_text("different Cargo executable, same reported version\n")

@@ -189,6 +189,18 @@ class VotingBuildTests(unittest.TestCase):
         self.assertEqual(len(set(keys)), 5)
         self.assertEqual(self.make_calls, 5)
 
+    def test_target_rustflags_linker_bytes_invalidate_with_unchanged_environment(self):
+        linker = self.model.root/"target-linker"
+        linker.write_text("original target linker")
+        linker.chmod(0o700)
+        with patch.dict(os.environ, {"CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS":"-C linker="+str(linker)}):
+            _, first = self.build()
+            linker.write_text("patched target linker")
+            _, second = self.build()
+        self.assertEqual(first["cache_inputs"]["environment_sha256"], second["cache_inputs"]["environment_sha256"])
+        self.assertNotEqual(first["cache_key"], second["cache_key"])
+        self.assertEqual(self.make_calls, 2)
+
     def test_go_configuration_contents_invalidate_without_logging_values(self):
         configuration = self.model.root / "go-env"
         configuration.write_text("first secret configuration\n")

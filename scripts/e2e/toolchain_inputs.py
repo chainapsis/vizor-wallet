@@ -90,7 +90,8 @@ def configured_tool_inputs(environment, configurations, cwd):
                 program(value, base)
             elif re.fullmatch(r"(?:(?:HOST|TARGET)_)?(?:CC|CXX|AR|LD|AS|RANLIB)(?:_[A-Za-z0-9_-]+)?", name):
                 program(value, base, arguments=True)
-            elif name in {"RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS", "CARGO_BUILD_RUSTFLAGS"}:
+            elif (name in {"RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS", "CARGO_BUILD_RUSTFLAGS"}
+                  or re.fullmatch(r"CARGO_TARGET_[A-Z0-9_]+_RUSTFLAGS", name)):
                 flags(value, base, encoded=name == "CARGO_ENCODED_RUSTFLAGS")
     env_tools(environment, cwd)
 

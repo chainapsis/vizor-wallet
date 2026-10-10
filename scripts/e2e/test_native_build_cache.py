@@ -288,13 +288,14 @@ class InputTests(unittest.TestCase):
         wrapper.write_text("original custom build tool")
         wrapper.chmod(0o700)
         variables = ("RUSTC_WRAPPER", "RUSTC_WORKSPACE_WRAPPER", "CC", "CC_aarch64_apple_ios",
-                     "CARGO_TARGET_AARCH64_APPLE_IOS_SIM_LINKER", "RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS")
+                     "CARGO_TARGET_AARCH64_APPLE_IOS_SIM_LINKER", "RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS",
+                     "CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS", "CARGO_TARGET_AARCH64_APPLE_IOS_SIM_RUSTFLAGS")
         for platform in ("ios", "macos"):
             for name in variables:
                 with self.subTest(platform=platform, variable=name):
                     wrapper.write_text("original "+platform+name)
                     value = ("-C\x1flinker="+str(wrapper) if name == "CARGO_ENCODED_RUSTFLAGS" else
-                             "-Clinker="+str(wrapper) if name == "RUSTFLAGS" else str(wrapper))
+                             "-C linker="+str(wrapper) if name.endswith("RUSTFLAGS") else str(wrapper))
                     environment = {name:value}
                     first = self.inputs(platform=platform, environment=environment)
                     wrapper.write_text("changed custom tool bytes")
