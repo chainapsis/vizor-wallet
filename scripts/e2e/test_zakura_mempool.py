@@ -66,7 +66,7 @@ class MempoolTests(unittest.TestCase):
         self.owner.loader.return_value = fixtures.modeled_source(MempoolModel)
         self.case = self.owner.case(1)
         self.backend = fixtures.BACKEND.prepare_native_zakura_backend(self.case,
-            tooling_root=Path("unused"), grpcurl=Path("unused"), proto_dir=Path("unused"),
+            grpcurl=Path("unused"), proto_dir=Path("unused"),
             miner_address=funding_models.MINER)
         self.owner.backends.append(self.backend)
         self.backend.start()

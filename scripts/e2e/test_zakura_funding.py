@@ -98,7 +98,7 @@ class ZakuraFundingTests(unittest.TestCase):
 
     def backend_for(self, case):
         owner = fixtures.BACKEND.prepare_native_zakura_backend(case,
-            tooling_root=Path("unused-source"),grpcurl=Path("unused-grpcurl"),
+            grpcurl=Path("unused-grpcurl"),
             proto_dir=Path("unused-protos"),miner_address=MINER)
         self.fixture.backends.append(owner)
         owner.start()

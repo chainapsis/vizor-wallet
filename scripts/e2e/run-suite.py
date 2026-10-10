@@ -48,7 +48,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     display.add_argument("--plan", action="store_true")
     display.add_argument("--run", action="store_true")
     parser.add_argument("--flutter", type=Path)
-    parser.add_argument("--zakura-cache", type=Path)
     parser.add_argument("--grpcurl", type=Path)
     parser.add_argument("--proto-dir", type=Path)
     parser.add_argument("--ios-runtime", help="available CoreSimulator runtime identifier (iOS only)")

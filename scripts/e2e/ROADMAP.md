@@ -347,7 +347,7 @@ iOS cases and the cache/resource/final-source gates remain pending.
 | Catalog and reports | Stable scenario IDs, suite/exact-ID/tag selection, conservative changed-file selection, failed-case reruns, side-effect-free plans, report schema | None for schema/planning; execution requires an implemented engine |
 | App runtime contract | Regtest-only namespace, endpoints, case manifest, and owned-storage context across Dart/Rust/iOS | Review independently from orchestration |
 | Worker lifecycle | Owned workspaces, ports, simulators, processes, and fail-closed cleanup | App runtime contract for native execution |
-| Direct Zakura backend | Offline funding, readiness and inclusion proofs, Rust test support, native adapter | Zakura fixture contribution; native adapter also needs runtime and lifecycle |
+| Direct Zakura backend | Offline funding, readiness and inclusion proofs, Rust test support, native adapter | Vendored Zakura fixture; native adapter also needs runtime and lifecycle |
 | Native build-once executor | One compatible app build per OS and shared helper build, with isolated case execution | Runtime contract, worker lifecycle, and native backend |
 | Basic scenario migrations | Import/sync and endpoint behavior | Catalog, backend, executor; SDK fix for affected account-history cases |
 | Payment scenario migrations | Send, payment links, Gift flows, and mempool behavior | Basic execution; case-specific app repair only for an observed regression |
@@ -363,10 +363,10 @@ execution support before its backend and lifecycle are available.
 
 Separate dependencies and optional work:
 
-- The Zakura regtest-fixture helper is a separate repository contribution and
-  must have a reproducible pin before wallet execution depends on it. The local
-  prototype uses Zakura 1.6.0 and an unreleased fixture helper, not a released CLI
-  fixture API. Its pinned lightwalletd image is still packaged by THS.
+- The Zakura regtest-fixture helper is vendored byte-for-byte from its
+  contributor-fork commit under `scripts/e2e/zakura_fixture/`, with a size and
+  SHA-256 pin. It targets Zakura 1.6.0 and is not a released CLI fixture API.
+  Its pinned lightwalletd image is still packaged by THS.
 - The SQLite sparse-checkpoint fix is a narrowly scoped rc7 vendor backport,
   with provenance and a removal condition. It gates affected account-history
   tests, not the entire execution framework.
@@ -416,8 +416,8 @@ speedup guarantee. Establish a frozen-source baseline before making that claim.
 
 - [ ] Split and review the required implementation slices above, with working
   intermediate branches and no unrelated product changes.
-- [ ] Pin the separate Zakura fixture dependency and record third-party patch
-  provenance and removal conditions.
+- [ ] Vendor the Zakura fixture helper with a byte pin and record third-party
+  patch provenance and removal conditions.
 - [ ] Run the complete Rust and native catalogs on the same final source;
   record failures, skips, unobserved cases, and cleanup outcomes without
   combining revisions into a passing result.

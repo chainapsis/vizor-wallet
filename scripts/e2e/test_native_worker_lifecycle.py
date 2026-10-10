@@ -76,7 +76,7 @@ class MacWorkerTests(unittest.TestCase):
         model = FRONT_FIXTURES.FrontTests()
         model.setUp()
         self.addCleanup(model.doCleanups)
-        session.prepare_zakura_backend(tooling_root=model.root, grpcurl=model.root / "unused-grpcurl",
+        session.prepare_zakura_backend(grpcurl=model.root / "unused-grpcurl",
             proto_dir=model.root, miner_address="explicit-regtest-miner-model")
         model.original_start = session.case.start_process
         def query(method, payload, deadline, cancel):
@@ -323,8 +323,7 @@ class MacWorkerTests(unittest.TestCase):
     def prepare_backend(self, session, fixture_class=BACKEND_FIXTURES.FixtureModel):
         with patch.object(WORKER.zakura, "load_zakura_fixture_source",
                           return_value=BACKEND_FIXTURES.modeled_source(fixture_class)):
-            return session.prepare_zakura_backend(tooling_root=Path("unused-source"),
-                grpcurl=Path("unused-grpcurl"), proto_dir=Path("unused-protos"),
+            return session.prepare_zakura_backend(grpcurl=Path("unused-grpcurl"), proto_dir=Path("unused-protos"),
                 miner_address="explicit-regtest-miner-model", timeout=3)
 
     def test_backend_registered_before_start_and_closed_before_native_state_deletion(self):
@@ -424,7 +423,7 @@ class MacWorkerTests(unittest.TestCase):
         worker = self.worker()
         session = self.case(worker)
         with self.assertRaises(WORKER.runtime.RunnerError):
-            session.prepare_zakura_backend(tooling_root=Path("unused-source"), grpcurl=Path("unused"),
+            session.prepare_zakura_backend(grpcurl=Path("unused"),
                 proto_dir=Path("unused"), miner_address="model", timeout=0)
         self.assertIsNone(session.backend)
         self.assertTrue(session.case.accepting_launches)
@@ -525,7 +524,7 @@ class IosWorkerTests(unittest.TestCase):
                 return super().close()
         with patch.object(WORKER.zakura, "load_zakura_fixture_source",
                           return_value=BACKEND_FIXTURES.modeled_source(OrderedFixture)):
-            session.prepare_zakura_backend(tooling_root=Path("unused-source"), grpcurl=Path("unused"),
+            session.prepare_zakura_backend(grpcurl=Path("unused"),
                 proto_dir=Path("unused"), miner_address="explicit-model-miner", timeout=15)
         session.close(timeout=15)
         self.assertTrue(session.backend.closed)
@@ -540,7 +539,7 @@ class IosWorkerTests(unittest.TestCase):
         session.storage.start_app(timeout=15)
         with patch.object(WORKER.zakura, "load_zakura_fixture_source",
                           return_value=BACKEND_FIXTURES.modeled_source()):
-            session.prepare_zakura_backend(tooling_root=Path("unused-source"), grpcurl=Path("unused"),
+            session.prepare_zakura_backend(grpcurl=Path("unused"),
                 proto_dir=Path("unused"), miner_address="explicit-model-miner", timeout=15)
         with patch.object(session.storage, "stop_app", side_effect=RuntimeError("native app stop unproven")):
             with self.assertRaisesRegex(RuntimeError, "native app stop unproven"):

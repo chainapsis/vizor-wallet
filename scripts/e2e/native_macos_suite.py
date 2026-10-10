@@ -153,7 +153,7 @@ def validate_options(args, scenarios):
             raise ValueError(field + " must be an integer from 1 to 16")
     if type(args.build_jobs) is not int or not 1 <= args.build_jobs <= 8:
         raise ValueError("build_jobs must be an integer from 1 to 8")
-    for field in ("flutter", "zakura_cache", "grpcurl", "proto_dir"):
+    for field in ("flutter", "grpcurl", "proto_dir"):
         value = getattr(args, field)
         if value is None or not value.is_absolute():
             raise ValueError("--" + field.replace("_", "-") + " requires an absolute path")
@@ -232,7 +232,7 @@ def execute_case(root, run_id, worker_id, scenario, *, helper, artifact, source_
             ios_preparation_slots.release()
             preparation_held = False
         result["log"] = str(session.case.workspace.root)
-        session.prepare_zakura_backend(tooling_root=args.zakura_cache,
+        session.prepare_zakura_backend(
             grpcurl=args.grpcurl.resolve(strict=True), proto_dir=args.proto_dir,
             miner_address=_MINER, timeout=120)
         if cancel.is_set():

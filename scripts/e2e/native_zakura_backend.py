@@ -199,7 +199,7 @@ class OwnedNativeZakuraBackend:
             self._release_directory()
 
 
-def prepare_native_zakura_backend(case: NativeCaseLifecycle, *, tooling_root: Path,
+def prepare_native_zakura_backend(case: NativeCaseLifecycle, *,
                                  grpcurl: Path, proto_dir: Path, miner_address: str,
                                  timeout: float = 60.0):
     """Construct only; caller registers this original handle before start()."""
@@ -212,7 +212,7 @@ def prepare_native_zakura_backend(case: NativeCaseLifecycle, *, tooling_root: Pa
     activation = manifest["regtest_ironwood_activation_height"]
     if activation not in {1, 500}:
         raise NativeZakuraError("direct backend requires the fixed height1 or activation500 profile")
-    source = load_zakura_fixture_source(tooling_root)
+    source = load_zakura_fixture_source()
     root = case.workspace.root / "zakura-backend"
     descriptor = None
     owner = None

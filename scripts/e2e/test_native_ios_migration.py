@@ -30,7 +30,7 @@ class MigrationFixtureTests(unittest.TestCase):
         with patch.object(WORKER.zakura, "load_zakura_fixture_source",
                           return_value=FIXTURES.BACKEND_FIXTURES.modeled_source(
                               FIXTURES.BACKEND_FIXTURES.FixtureModel)):
-            session.prepare_zakura_backend(tooling_root=Path("unused"), grpcurl=Path("unused"),
+            session.prepare_zakura_backend(grpcurl=Path("unused"),
                 proto_dir=Path("unused"), miner_address="explicit-regtest-miner-model", timeout=3)
         return session
 

@@ -47,7 +47,7 @@ class BatchFundingTests(unittest.TestCase):
         self.owner.loader.return_value = fixtures.modeled_source(BatchModel)
         self.case = self.owner.case(500)
         self.backend = fixtures.BACKEND.prepare_native_zakura_backend(self.case,
-            tooling_root=Path("unused"), grpcurl=Path("unused"), proto_dir=Path("unused"),
+            grpcurl=Path("unused"), proto_dir=Path("unused"),
             miner_address=models.MINER)
         self.owner.backends.append(self.backend)
         self.backend.start()

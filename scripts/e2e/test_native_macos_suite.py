@@ -29,7 +29,7 @@ class SuiteTests(unittest.TestCase):
             tool.chmod(0o700)
         self.args = SimpleNamespace(workers=2,repeat=2,build_jobs=4,order="short-first",timing_reports=[],
             flutter=self.root/"bin/flutter", grpcurl=self.root/"grpcurl",
-            zakura_cache=self.root,proto_dir=self.root)
+            proto_dir=self.root)
         self.catalog = e2e_catalog.load_catalog()
         self.scenarios = (self.catalog.scenarios_by_id["flutter.macos.import-sync"],)
         self.helper = object()

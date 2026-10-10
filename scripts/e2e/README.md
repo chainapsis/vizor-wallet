@@ -10,34 +10,21 @@ The [native runtime contract](RUNTIME_CONTRACT.md) defines per-case launch
 identity and storage isolation for the later worker/executor layers. It does
 not add an execution backend or make pending catalog entries runnable.
 
-## Pinned Zakura fixture source
+## Vendored Zakura fixture
 
-`zakura_fixture_source.py` reads the fixture's Git blob from one published,
-immutable [contributor-fork commit](https://github.com/piatoss3612/zakura/commit/5ecafcfdb43cf42f34c8046f09c6d874b567daa4).
-This is proposed tooling, not an official Zakura release. The helper's exact
-commit, path, byte count, SHA-256 and node/lightwalletd image digests are pinned
-in the module. Updates require a reviewed pin change; there is no latest-tag
-fallback or implicit download.
+`zakura_fixture/regtest_fixture.py` owns one Zakura node, lightwalletd, Docker
+network and volume per backend. It was first published in a
+[contributor-fork commit](https://github.com/piatoss3612/zakura/commit/5ecafcfdb43cf42f34c8046f09c6d874b567daa4)
+and is vendored here byte-for-byte, together with that fork's offline tests and
+manual Docker smoke tool. It is not an official Zakura release. The node and
+lightwalletd images stay pinned by digest inside the helper.
 
-Provide a local Zakura Git object cache containing that exact commit and blob. The
-loader does not execute the checkout's script, require a clean checkout, change
-HEAD or fetch anything. It disables Git replacement objects and executes the
-same captured bytes that passed SHA-256 verification, avoiding a second file
-read between verification and import. Each load has its own module identity.
-The returned code identity is not resource ownership, readiness or scenario PASS.
-Each read sets `GIT_ALLOW_PROTOCOL` to an empty allow-list, denying every Git
-transport even if the cache has a promisor remote or permissive protocol config.
-There is no dependency on the newer `--no-lazy-fetch` option. A partial cache
-missing tree/blob objects is rejected without downloading them. To populate
-a complete local cache explicitly:
-
-```bash
-git -C /path/to/zakura fetch https://github.com/piatoss3612/zakura.git 5ecafcfdb43cf42f34c8046f09c6d874b567daa4:refs/vizor-e2e/zakura-fixture/5ecafcfdb43cf42f34c8046f09c6d874b567daa4
-```
-
-The commit-specific destination ref keeps the cached commit reachable during
-Git garbage collection, without changing HEAD or an existing branch/tag. The
-loader still uses the fixed commit ID, never the mutable ref as source authority.
+`zakura_fixture_source.py` pins the helper's size, SHA-256 and image digests.
+It reads the file once and executes the same verified bytes in a fresh module
+per load, so one backend cannot replace another's module. Editing the helper
+requires a reviewed pin update; there is no Zakura checkout, Git object cache
+or network fetch. The loaded code identity is not resource ownership, readiness
+or scenario PASS.
 
 Each backend requests an explicit RFC1918 `/28` subnet derived from its fresh
 fixture UUID. This avoids exhausting Docker's larger default address pools when
@@ -47,10 +34,12 @@ pruning, adopting, or retrying another fixture's resources. The start proof reco
 the requested subnet. Existing retained networks, containers, and volumes remain.
 
 This source-loading boundary starts no Docker resource, wallet or test, and
-does not enable catalog execution. Offline checks use disposable Git commits:
+does not enable catalog execution. Offline checks, including the vendored
+helper's own tests (they mock Docker):
 
 ```bash
 python3 -B -m unittest scripts/e2e/test_zakura_fixture_source.py
+python3 -B -m unittest discover -s scripts/e2e/zakura_fixture/tests
 ```
 
 ## Catalog previews
@@ -126,7 +115,6 @@ never adopts an existing developer device. Preview the21-case suite first:
 python3 -B scripts/e2e/run-suite.py --suite flutter-ios-full --plan
 python3.11 -B scripts/e2e/run-suite.py --suite flutter-ios-full --run \
   --flutter /absolute/flutter-sdk/bin/flutter \
-  --zakura-cache /absolute/zakura-git-cache \
   --grpcurl /absolute/bin/grpcurl \
   --proto-dir /absolute/lightwalletd-protos \
   --ios-runtime com.apple.CoreSimulator.SimRuntime.iOS-26-3 \
@@ -206,7 +194,7 @@ authorizes cleanup; the original worker must prove terminal cleanup itself.
 Requirements: macOS, Python 3.11 or newer, Flutter dependencies already resolved,
 Xcode/Swift and an
 available development identity/profile that signs the native app, Docker,
-grpcurl/protos, the pinned Zakura Git object cache above, and Cargo dependencies
+grpcurl/protos, and Cargo dependencies
 already available for the offline signer build. Commit Rust changes first: the
 signer uses the exact committed Rust subtree rather than mixing source versions.
 Use explicit absolute tooling paths; no automatic installation or download.
@@ -215,7 +203,6 @@ Use explicit absolute tooling paths; no automatic installation or download.
 python3.11 -B scripts/e2e/run-suite.py \
   --scenario flutter.macos.import-sync --run \
   --flutter /absolute/flutter-sdk/bin/flutter \
-  --zakura-cache /absolute/zakura-git-cache \
   --grpcurl /absolute/bin/grpcurl \
   --proto-dir /absolute/lightwalletd-protos \
   --build-jobs 4 --workers 2 --repeat 2
@@ -465,7 +452,7 @@ git -C /path/to/voting-pir-cache.git fetch https://github.com/valargroup/vote-nu
 python3.11 -B scripts/e2e/run-suite.py \
   --scenario flutter.macos.voting --scenario flutter.macos.voting-slow-helper \
   --run --workers 2 \
-  --flutter /path/to/flutter/bin/flutter --zakura-cache /path/to/zakura \
+  --flutter /path/to/flutter/bin/flutter \
   --grpcurl /path/to/grpcurl --proto-dir /path/to/protos \
   --voting-sdk-cache /path/to/vote-sdk-cache.git \
   --voting-pir-cache /path/to/voting-pir-cache.git
@@ -992,10 +979,10 @@ real wallets, chains, protected biometric state or financial scenarios.
 
 ### Compose an owned raw Zakura backend
 
-`session.prepare_zakura_backend(tooling_root=..., grpcurl=..., proto_dir=...,
-miner_address=..., timeout=60)` constructs and registers an original backend
-handle before starting Docker. It loads only the pinned source above, maps the
-sealed manifest's activation height to `zakura-direct-height1` or
+`session.prepare_zakura_backend(grpcurl=..., proto_dir=..., miner_address=...,
+timeout=60)` constructs and registers an original backend handle before starting
+Docker. It loads only the vendored, pinned helper above, maps the sealed
+manifest's activation height to `zakura-direct-height1` or
 `zakura-direct-activation500`, and requires an explicit miner address. Constructor
 or startup failure retains the failed worker and preserves the original error.
 The returned value proves raw fixture readiness, not wallet readiness or PASS.

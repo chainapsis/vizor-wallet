@@ -71,8 +71,7 @@ def modeled_source(fixture_class=FixtureModel):
 
 
 def prepare(case, **updates):
-    return BACKEND.prepare_native_zakura_backend(case, tooling_root=Path("unused-source"),
-        grpcurl=Path("unused-grpcurl"), proto_dir=Path("unused-protos"),
+    return BACKEND.prepare_native_zakura_backend(case, grpcurl=Path("unused-grpcurl"), proto_dir=Path("unused-protos"),
         miner_address="explicit-regtest-miner-model", **updates)
 
 

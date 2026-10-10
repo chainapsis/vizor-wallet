@@ -81,7 +81,7 @@ class NativeWorkerCase:
             if tree.identity(os.fstat(mutable_fd)) != self._mutable_id:
                 raise NativeWorkerError("case mutable directory identity changed")
 
-    def prepare_zakura_backend(self, *, tooling_root, grpcurl, proto_dir, miner_address, timeout=60.0):
+    def prepare_zakura_backend(self, *, grpcurl, proto_dir, miner_address, timeout=60.0):
         """Register the pinned original fixture before any Docker start attempt."""
         ios_simulator._deadline(timeout)
         if self._finished or self._backend is not None or self.storage is None:
@@ -89,7 +89,7 @@ class NativeWorkerCase:
         self.verify_owned()
         try:
             self._backend = zakura.prepare_native_zakura_backend(self.case,
-                tooling_root=tooling_root, grpcurl=grpcurl, proto_dir=proto_dir,
+                grpcurl=grpcurl, proto_dir=proto_dir,
                 miner_address=miner_address, timeout=timeout)
             return self._backend.start()
         except BaseException as primary:
