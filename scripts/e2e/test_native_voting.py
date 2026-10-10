@@ -80,8 +80,9 @@ class VotingBuildTests(unittest.TestCase):
                 data = json.dumps({"GOROOT":str(self.go_root), "GOTOOLDIR":str(self.go_root/"pkg/tool"),
                                    **self.go_programs})
                 return original([sys.executable, "-c", f"print({data!r})"], **kwargs)
-            if actual[:2] == ["/usr/bin/which", "cc"]:
-                return original([sys.executable, "-c", f"print({str(self.model.apple_tools['cc'])!r})"], **kwargs)
+            if actual[:1] == ["/usr/bin/which"] and actual[1] in {"cc", "ar"}:
+                tool_name = "path_ar" if actual[1] == "ar" else "cc"
+                return original([sys.executable, "-c", f"print({str(self.model.apple_tools[tool_name])!r})"], **kwargs)
             if actual[:3] == ["/usr/bin/xcrun", "--sdk", "macosx"]:
                 path = self.model.apple_trees[-1] if "--show-sdk-path" in actual else self.model.apple_tools[actual[-1]]
                 return original([sys.executable, "-c", f"print({str(path)!r})"], **kwargs)
@@ -248,6 +249,16 @@ class VotingBuildTests(unittest.TestCase):
         (self.model.cargo_dependency/"lib.rs").write_text("patched Cargo dependency")
         _, second = self.build()
         for field in ("configuration_sha256", "environment_sha256", "archives_sha256"):
+            self.assertEqual(first["cache_inputs"][field], second["cache_inputs"][field])
+        self.assertNotEqual(first["cache_key"], second["cache_key"])
+        self.assertEqual(self.make_calls, 2)
+
+    @unittest.skipUnless(sys.platform == "darwin", "default Apple archiver inputs are macOS-only")
+    def test_default_archiver_bytes_invalidate_without_compiler_or_environment_changes(self):
+        _, first = self.build()
+        self.model.apple_tools["path_ar"].write_text("patched default archiver")
+        _, second = self.build()
+        for field in ("tools", "tool_versions", "environment_sha256"):
             self.assertEqual(first["cache_inputs"][field], second["cache_inputs"][field])
         self.assertNotEqual(first["cache_key"], second["cache_key"])
         self.assertEqual(self.make_calls, 2)

@@ -74,7 +74,7 @@ class FunderBuildTests(unittest.TestCase):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("modeled Rust compiler/runtime library")
         self.apple_tools = {name:self.root/"native-toolchain/usr/bin"/name
-                            for name in ("clang", "ld", "cc")}
+                            for name in ("clang", "ld", "cc", "ar", "path_ar")}
         for path in self.apple_tools.values():
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("modeled native tool")
@@ -115,8 +115,9 @@ class FunderBuildTests(unittest.TestCase):
                 return original([sys.executable, "-c", f"print({json.dumps(payload)!r})"], **options)
             if arguments == [str(self.compiler), "--print", "sysroot"]:
                 return original([sys.executable, "-c", f"print({str(self.rust_sysroot)!r})"], **options)
-            if arguments[:2] == ["/usr/bin/which", "cc"]:
-                return original([sys.executable, "-c", f"print({str(self.apple_tools['cc'])!r})"], **options)
+            if arguments[:1] == ["/usr/bin/which"] and arguments[1] in {"cc", "ar"}:
+                name = "path_ar" if arguments[1] == "ar" else "cc"
+                return original([sys.executable, "-c", f"print({str(self.apple_tools[name])!r})"], **options)
             if arguments[:3] == ["/usr/bin/xcrun", "--sdk", "macosx"]:
                 path = self.apple_trees[-1] if "--show-sdk-path" in arguments else self.apple_tools[arguments[-1]]
                 return original([sys.executable, "-c", f"print({str(path)!r})"], **options)
@@ -228,6 +229,15 @@ class FunderBuildTests(unittest.TestCase):
                 second = self.build(cache_root=cache).identity()
                 self.assertEqual(first["rustc"], second["rustc"])
                 self.assertNotEqual(first["cache_key"], second["cache_key"])
+
+    @unittest.skipUnless(sys.platform == "darwin", "default Apple archiver inputs are macOS-only")
+    def test_default_archiver_bytes_invalidate_with_same_compiler(self):
+        cache = self.root/"funder-cache"
+        first = self.build(cache_root=cache).identity()
+        self.apple_tools["path_ar"].write_text("patched default archiver")
+        second = self.build(cache_root=cache).identity()
+        self.assertEqual(first["rustc"], second["rustc"])
+        self.assertNotEqual(first["cache_key"], second["cache_key"])
 
     def test_cargo_dependency_mutation_while_sealing_rejects_without_launch(self):
         case = self.case()

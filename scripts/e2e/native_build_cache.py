@@ -280,11 +280,12 @@ def _native_apple_inputs(command, platform, cancel):
 
     sdk_name = "iphonesimulator" if platform == "ios" else "macosx"
     programs = {name:selected(["/usr/bin/xcrun", "--sdk", sdk_name, "--find", name])
-        for name in ("xcodebuild", "clang", "swiftc", "swift-frontend", "swift", "swift-build", "swift-package", "ld",
+        for name in ("xcodebuild", "clang", "swiftc", "swift-frontend", "swift", "swift-build", "swift-package", "ld", "ar",
                      "actool", "ibtool", "dsymutil", "strip")}
     programs.update({"system_"+name:Path(path).resolve(strict=True)
                      for name, path in _APPLE_SYSTEM_TOOLS.items()})
     programs.update({name:selected(["/usr/bin/which", name]) for name in ("pod", "ruby")})
+    programs["path_ar"] = selected(["/usr/bin/which", "ar"])
     launcher = _tool_input_record(programs["pod"], executable=True)
     shebang = shlex.split(programs["pod"].read_text().splitlines()[0].removeprefix("#!"))
     if len(shebang) == 2 and shebang == ["/usr/bin/env", "ruby"]:

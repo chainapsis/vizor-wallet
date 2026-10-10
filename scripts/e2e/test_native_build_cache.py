@@ -239,9 +239,9 @@ class InputTests(unittest.TestCase):
         self.apple = self.root/"Xcode.app/Contents/Developer"
         self.apple_tools = {name:self.apple/"usr/bin"/name for name in (
             "xcodebuild", "clang", "swiftc", "swift-frontend", "swift", "swift-build", "swift-package",
-            "ld", "actool", "ibtool", "dsymutil", "strip")}
-        self.host_tools = {name:self.root/"host/bin"/name for name in ("xcrun", "codesign", "security", "ruby", "pod", "rustup")}
-        for name, path in {**self.apple_tools, **self.host_tools}.items():
+            "ld", "ar", "actool", "ibtool", "dsymutil", "strip")}
+        self.host_tools = {name:self.root/"host/bin"/name for name in ("xcrun", "codesign", "security", "ruby", "pod", "rustup", "ar")}
+        for name, path in (*self.apple_tools.items(), *self.host_tools.items()):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("original "+name+" executable")
             path.chmod(0o700)
@@ -419,6 +419,17 @@ class InputTests(unittest.TestCase):
                 self.assertNotEqual(first, second)
                 self.assertEqual(first["rustup"]["path"], second["rustup"]["path"])
                 self.assertNotEqual(first["rustup"]["sha256"], second["rustup"]["sha256"])
+
+    def test_default_archiver_bytes_invalidate_without_ar_configuration(self):
+        for platform in ("ios", "macos"):
+            for path in (self.apple_tools["ar"], self.host_tools["ar"]):
+                with self.subTest(platform=platform, path=path):
+                    first = self.inputs(platform=platform, environment={})
+                    path.write_text("patched "+platform+" default archiver")
+                    second = self.inputs(platform=platform, environment={})
+                    self.assertEqual(first["rust_toolchains"], second["rust_toolchains"])
+                    self.assertEqual(first["environment_sha256"], second["environment_sha256"])
+                    self.assertNotEqual(first, second)
 
     def test_rust_sysroot_changes_invalidate_without_compiler_or_version_changes(self):
         for platform in ("ios", "macos"):

@@ -333,8 +333,9 @@ def apple_linker_inputs(command, cancel):
             raise ToolInputError("Apple linker input must resolve to one absolute path")
         return Path(lines[0]).resolve(strict=True)
     programs = {name:selected(["/usr/bin/xcrun", "--sdk", "macosx", "--find", name])
-                for name in ("clang", "ld")}
+                for name in ("clang", "ld", "ar")}
     programs["cc"] = selected(["/usr/bin/which", "cc"])
+    programs["path_ar"] = selected(["/usr/bin/which", "ar"])
     programs["xcrun"] = Path("/usr/bin/xcrun").resolve(strict=True)
     roots = {selected(["/usr/bin/xcrun", "--sdk", "macosx", "--show-sdk-path"])}
     roots.update(path.parent.parent/"lib" for path in programs.values() if path.name == "clang")
