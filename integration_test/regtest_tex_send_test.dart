@@ -10,6 +10,7 @@ import 'package:zcash_wallet/src/core/config/network_config.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_transaction_matching.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
@@ -17,6 +18,8 @@ import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 import 'support/desktop_activity_flow.dart';
 import 'support/desktop_onboarding_flow.dart';
 import 'support/owned_regtest_control.dart';
+import 'support/payment_link_regtest_flow.dart'
+    show waitForPaymentLinkMempoolTxids;
 
 const _network = String.fromEnvironment(
   'ZCASH_E2E_NETWORK',
@@ -117,7 +120,7 @@ void main() {
       );
 
       await _sendToAddress(tester, _texAddress, _sendAmount);
-      await _waitForHistoryEntry(
+      final sentTxid = await _waitForHistoryEntry(
         tester,
         accountUuid: senderAccountUuid,
         txKind: 'sent',
@@ -125,6 +128,7 @@ void main() {
         pending: true,
         expectedFee: expectedSenderFee,
       );
+      await _waitForMempoolTxid(tester, sentTxid);
       await _mineRegtestBlocks(10);
 
       await _openWallet(tester);
@@ -196,7 +200,7 @@ void main() {
       expect(expectedShielded, greaterThan(BigInt.zero));
       expect(expectedShielded, lessThanOrEqualTo(_returnZatoshi));
       await _tapWidget(tester, const ValueKey('home_shield_balance_button'));
-      await _waitForHistoryEntry(
+      final shieldingTxid = await _waitForHistoryEntry(
         tester,
         accountUuid: senderAccountUuid,
         txKind: 'shielded',
@@ -204,6 +208,9 @@ void main() {
         pending: true,
         timeout: const Duration(minutes: 4),
       );
+      // History is persisted before broadcast. A local pending row is not
+      // evidence that the node can include this transaction in the next block.
+      await _waitForMempoolTxid(tester, shieldingTxid);
       await _mineRegtestBlocks(10);
       await _waitForHistoryEntry(
         tester,
@@ -211,6 +218,7 @@ void main() {
         txKind: 'shielded',
         displayAmount: expectedShielded,
         pending: false,
+        txidHex: shieldingTxid,
         timeout: const Duration(minutes: 4),
       );
       _log('returned TEX funds detected and shielded');
@@ -581,12 +589,23 @@ Future<String> _accountUuidAtOrder(int order) async {
   return accounts[order].uuid;
 }
 
-Future<void> _waitForHistoryEntry(
+Future<void> _waitForMempoolTxid(WidgetTester tester, String txid) =>
+    waitForPaymentLinkMempoolTxids(
+      tester,
+      [txid],
+      readMempool: () async => installedE2eRuntimeCaseManifest == null
+          ? await _zcashdRpc<List<Object?>>('getrawmempool')
+          : (await getOwnedRegtestControl('/mempool'))['txids']!
+                as List<Object?>,
+    );
+
+Future<String> _waitForHistoryEntry(
   WidgetTester tester, {
   required String accountUuid,
   required String txKind,
   required BigInt displayAmount,
   required bool pending,
+  String? txidHex,
   BigInt? expectedFee,
   Duration timeout = const Duration(minutes: 2),
 }) async {
@@ -611,17 +630,17 @@ Future<void> _waitForHistoryEntry(
                 'expired=${tx.expiredUnmined}',
           )
           .join(', ');
-      if (history.any(
-        (tx) =>
-            tx.txKind == txKind &&
+      for (final tx in history) {
+        if (tx.txKind == txKind &&
+            (txidHex == null || paymentLinkTxidsMatch(tx.txidHex, txidHex)) &&
             tx.displayAmount == displayAmount &&
             (expectedFee == null || tx.fee == expectedFee) &&
             (tx.minedHeight == BigInt.zero) == pending &&
-            !tx.expiredUnmined,
-      )) {
-        final feeText = expectedFee == null ? '' : ' fee=$expectedFee';
-        _log('history matched $txKind tx amount=$displayAmount$feeText');
-        return;
+            !tx.expiredUnmined) {
+          final feeText = expectedFee == null ? '' : ' fee=$expectedFee';
+          _log('history matched $txKind tx amount=$displayAmount$feeText');
+          return tx.txidHex;
+        }
       }
     } catch (e) {
       lastError = e;

@@ -516,12 +516,15 @@ Future<void> waitForPaymentLinkMempoolTxids(
   WidgetTester tester,
   Iterable<String> txids, {
   Duration timeout = const Duration(minutes: 2),
+  Future<List<Object?>> Function()? readMempool,
 }) async {
   final expected = txids.map(paymentLinkClaimTxidToRpcOrder).toSet();
   Set<String> last = const {};
   final deadline = DateTime.now().add(timeout);
   while (DateTime.now().isBefore(deadline)) {
-    final raw = installedE2eRuntimeCaseManifest == null
+    final raw = readMempool != null
+        ? await readMempool()
+        : installedE2eRuntimeCaseManifest == null
         ? await paymentLinkZcashdRpc<List<Object?>>('getrawmempool')
         : (await getOwnedRegtestControl('/mempool'))['txids']! as List<Object?>;
     last = raw.map((txid) => normalizePaymentLinkTxid('$txid')).toSet();
