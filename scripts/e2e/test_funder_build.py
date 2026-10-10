@@ -104,6 +104,7 @@ class FunderBuildTests(unittest.TestCase):
     def build(self, case=None, **updates):
         case = case or self.case()
         original = case.run_command
+        original_which = BUILD.shutil.which
         def command(arguments, **options):
             if arguments[0] in {"cargo", str(self.cargo)} and arguments[1:2] == ["metadata"]:
                 self.assertIn("--offline", arguments)
@@ -189,8 +190,10 @@ class FunderBuildTests(unittest.TestCase):
                 f"raise SystemExit({self.compiler_exit})")
             return original([sys.executable, "-B", "-c", script], **options)
         with patch.object(case, "run_command", side_effect=command), patch.object(
-                BUILD.shutil, "which", side_effect=lambda name, **_: str(
-                    self.cargo_entry if name == "cargo" else self.compiler_entry)) as chosen:
+                BUILD.shutil, "which", side_effect=lambda name, **options:
+                    str(self.cargo_entry) if name == "cargo" else str(self.compiler_entry)
+                    if name in {"rustc", os.environ.get("RUSTC", "rustc")}
+                    else original_which(name, **options)) as chosen:
             artifact = BUILD.build_regtest_funder(case, source_root=self.source, source_commit=self.commit,
                                                 timeout=5, **updates)
             self.selected_compiler_request = chosen.call_args_list[0].args[0]

@@ -367,7 +367,9 @@ def build_regtest_funder(case: NativeCaseLifecycle, *, source_root: Path,
             if not unchanged:
                 raise FunderBuildError("Rust sysroot inputs changed during publication")
             if toolchain_inputs.configured_tool_inputs(
-                build_env, configuration_paths, Path.cwd()) != cache_inputs["configured_tools"]:
+                build_env, configuration_paths, Path.cwd(), tool_directories={
+                    Path(item["path"]).parent for item in (cache_inputs["apple_linker"] or {}).get(
+                        "executables",{}).values()}) != cache_inputs["configured_tools"]:
                 raise FunderBuildError("configured build tools changed during publication")
             unchanged = (dependency_inputs() == cache_inputs["cargo_dependencies"] if case.accepting_launches
                 else toolchain_inputs.cargo_dependencies_unchanged(cache_inputs["cargo_dependencies"], cancellation))
@@ -405,6 +407,7 @@ def build_regtest_funder(case: NativeCaseLifecycle, *, source_root: Path,
                 return toolchain_inputs.cargo_dependency_inputs(
                     lambda args:command(args, env=build_env), cargo_tool, root/"source/rust/Cargo.toml", cancellation,
                     flags=("--filter-platform", host), excluded_roots=(root/"source",), cargo_home=cargo_home)
+            apple = toolchain_inputs.apple_linker_inputs(lambda args:command(args, env=build_env), cancellation)
             cache_inputs = {"schema": 1, "rust_blobs": {name: list(value) for name, value in sorted(expected.items())},
                 "rustc": list(rustc), "rustc_sha256": _file_record(compiler)[1], "cargo": list(cargo),
                 "cargo_sha256": _file_record(cargo_tool)[1],
@@ -413,11 +416,11 @@ def build_regtest_funder(case: NativeCaseLifecycle, *, source_root: Path,
                 "collector_sha256": input_records[collector][1],
                 "cargo_dependencies":dependency_inputs(),
                 "configured_tools":toolchain_inputs.configured_tool_inputs(
-                    build_env, configuration_paths, Path.cwd()),
+                    build_env, configuration_paths, Path.cwd(), tool_directories={Path(item["path"]).parent
+                        for item in (apple or {}).get("executables",{}).values()}),
                 "rust_sysroot": toolchain_inputs.rust_toolchain_inputs(
                     lambda args:command(args, env=build_env), compiler, cancellation),
-                "apple_linker": toolchain_inputs.apple_linker_inputs(
-                    lambda args:command(args, env=build_env), cancellation),
+                "apple_linker": apple,
                 "configuration_sha256": configurations,
                 "environment_sha256": {name: hashlib.sha256(value.encode()).hexdigest()
                     for name, value in sorted(build_env.items()) if name not in {"CARGO_TARGET_DIR", "CARGO_BUILD_JOBS"}}}

@@ -1146,8 +1146,9 @@ generated-looking name. A root packageUri includes the complete package tree.
 Same-named directories beneath source trees remain inputs. Remote Podspec checksums and all
 locked versions remain inputs. Compiler environment values are hashed.
 Executables selected by Rust wrappers, target linkers, CC/CXX/AR and Rust
-linker flags are also hashed, including Cargo configuration, included files,
-relative paths and configured PATH lookups. Collection never executes those
+linker flags are also hashed, including forwarded `-fuse-ld`, `-B` and
+`--ld-path` selectors, Cargo configuration, included files, relative paths,
+driver siblings and configured PATH lookups. Collection never executes those
 configured tools. The signer and voting builders use the same collector and
 recheck its inputs before publication, including after the original owner seals.
 

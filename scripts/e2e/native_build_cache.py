@@ -412,6 +412,7 @@ def collect_native_cache_inputs(root, source, tool, *, platform, architecture,
     configurations.update(parent/".cargo"/name for parent in (root,*root.parents)
                           for name in ("config", "config.toml"))
     configurations.update(root/"rust/.cargo"/name for name in ("config", "config.toml"))
+    apple = _native_apple_inputs(command, platform, cancel)
     return {"schema":1, "platform":platform, "architecture":architecture, "tex_address":tex_address,
         "source_sha256":{str(path.relative_to(root)) if path.is_relative_to(root) else str(path):record[1]
             for path,record in source.items() if path != configuration},
@@ -420,9 +421,10 @@ def collect_native_cache_inputs(root, source, tool, *, platform, architecture,
             capture=_tool_input_record, ignore_generated=False)
             if (root/platform/"Pods").is_dir() else None,
         "flutter":flutter, "flutter_sdk":_flutter_sdk_inputs(tool, platform, cancel),
-        "apple_toolchain":_native_apple_inputs(command, platform, cancel),
+        "apple_toolchain":apple,
         "collector_sha256":_capture(Path(toolchain_inputs.__file__).resolve(strict=True))[1],
-        "configured_tools":toolchain_inputs.configured_tool_inputs(environment, configurations, root/"rust"),
+        "configured_tools":toolchain_inputs.configured_tool_inputs(environment, configurations, root/"rust",
+            tool_directories={Path(item["path"]).parent for item in apple["executables"].values()}),
         "xcode":list(command(["/usr/bin/xcodebuild", "-version"])),
         "sdk":list(command(["/usr/bin/xcrun", "--sdk", sdk, "--show-sdk-build-version"])),
         "rust_toolchains":rust,

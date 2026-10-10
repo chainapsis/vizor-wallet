@@ -262,17 +262,21 @@ def build_voting_artifacts(case, *, sdk_cache, pir_cache, cache_root, jobs=4, ti
                     ("circuits",sdk/"circuits/Cargo.toml",("--no-default-features","--features","zakura")),
                     ("round",sdk/"e2e-tests/Cargo.toml",()),
                     ("pir",pir/"Cargo.toml",("--features","pir-export/cli,nf-server/serve")))}
+        compiler = compiler_inputs()
+        def configured_inputs():
+            return {context:toolchain_inputs.configured_tool_inputs(environment, cargo_configuration_paths, cwd,
+                tool_directories={Path(item["path"]).parent for item in
+                    (compiler["apple_linker"] or {}).get("executables",{}).values()})
+                for context, cwd in (("outer", Path.cwd()), ("sdk", sdk))}
         cache_inputs = {"schema": 1, "sdk_revision": VOTE_SDK_REV, "pir_revision": PIR_REV,
             "archives_sha256": {path.name: record[1] for path, record in archives.items()},
             "tool_versions": versions,
             "tools": {context: {name: {"path": str(path), "sha256": tool_records[path][1]}
                        for name, path in items.items()} for context, items in tools.items()},
             "producer_sha256": tool_records[producer][1], "platform": sys.platform,
-            "collector_sha256":tool_records[collector][1], "compiler_inputs":compiler_inputs(),
+            "collector_sha256":tool_records[collector][1], "compiler_inputs":compiler,
             "cargo_dependencies":dependency_inputs(),
-            "configured_tools":{context:toolchain_inputs.configured_tool_inputs(
-                environment, cargo_configuration_paths, cwd)
-                for context, cwd in (("outer", Path.cwd()), ("sdk", sdk))},
+            "configured_tools":configured_inputs(),
             "configuration_sha256": configuration_hashes(),
             "environment_sha256": {name: hashlib.sha256(value.encode()).hexdigest()
                 for name, value in sorted(environment.items())
@@ -283,8 +287,7 @@ def build_voting_artifacts(case, *, sdk_cache, pir_cache, cache_root, jobs=4, ti
                          for inputs in cache_inputs["cargo_dependencies"].values()))
             if not unchanged:
                 raise VotingBuildError("Cargo dependency sources changed during publication")
-            if {context:toolchain_inputs.configured_tool_inputs(environment, cargo_configuration_paths, cwd)
-                for context, cwd in (("outer", Path.cwd()), ("sdk", sdk))} != cache_inputs["configured_tools"]:
+            if configured_inputs() != cache_inputs["configured_tools"]:
                 raise VotingBuildError("configured build tools changed during publication")
             original = cache_inputs["compiler_inputs"]
             unchanged = (compiler_inputs() == original if case.accepting_launches

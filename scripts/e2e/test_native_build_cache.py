@@ -327,11 +327,55 @@ class InputTests(unittest.TestCase):
         second = self.inputs()
         self.assertEqual(first["cargo_config_sha256"], second["cargo_config_sha256"])
         self.assertNotEqual(first, second)
+
         first = second
         extra.write_text(extra.read_text()+"\n# included configuration update\n")
         second = self.inputs()
         self.assertEqual(first["cargo_config_sha256"], second["cargo_config_sha256"])
         self.assertNotEqual(first, second)
+
+    def test_forwarded_linker_selectors_bind_program_bytes_without_setting_changes(self):
+        directory = self.root/"linker-tools"
+        directory.mkdir()
+        lld, ld = directory/"ld.lld", directory/"ld"
+        prefix = directory/"tool-ld"
+        sibling = self.apple_tools["clang"].parent/"ld64.lld"
+        selectors = (
+            ({"PATH":str(directory),"RUSTFLAGS":"-C link-arg=-fuse-ld=lld"}, lld),
+            ({"PATH":str(directory),"CARGO_ENCODED_RUSTFLAGS":"-C\x1flink-arg=-fuse-ld=lld"}, lld),
+            ({"CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS":"-C link-arg=-B"+str(directory)}, ld),
+            ({"RUSTFLAGS":'-C "link-args=-B '+str(directory)+' -fuse-ld=lld"'}, lld),
+            ({"RUSTFLAGS":"-C link-arg=--ld-path="+str(lld)}, lld),
+            ({"RUSTFLAGS":"-C link-arg=-B"+str(directory/"tool-")}, prefix),
+            ({"RUSTFLAGS":"-C link-arg=-fuse-ld=lld"}, sibling),
+        )
+        for path in (lld,ld,prefix,sibling):
+            path.write_text("original forwarded linker")
+            path.chmod(0o700)
+        for platform in ("ios", "macos"):
+            for environment,path in selectors:
+                with self.subTest(platform=platform, environment=environment):
+                    path.write_text("original selected linker")
+                    first = self.inputs(platform=platform,environment=environment)
+                    path.write_text("patched selected linker")
+                    second = self.inputs(platform=platform,environment=environment)
+                    for field in ("environment_sha256", "cargo_config_sha256", "rust_toolchains"):
+                        self.assertEqual(first[field],second[field])
+                    self.assertNotEqual(first,second)
+
+    def test_cargo_config_forwarded_relative_linker_prefix_bytes_invalidate(self):
+        directory = self.root/"rust/.cargo"
+        directory.mkdir(parents=True)
+        linker = self.root/"rust/tool-prefix/ld"
+        linker.parent.mkdir()
+        linker.write_text("original relative-prefix linker")
+        linker.chmod(0o700)
+        (directory/"config.toml").write_text('[build]\nrustflags = ["-C", "link-arg=-B./tool-prefix/"]\n')
+        first = self.inputs()
+        linker.write_text("patched relative-prefix linker")
+        second = self.inputs()
+        self.assertEqual(first["cargo_config_sha256"],second["cargo_config_sha256"])
+        self.assertNotEqual(first,second)
 
     def test_configured_cargo_path_resolves_bare_tool_without_changing_settings(self):
         directory = self.root/"rust/.cargo"

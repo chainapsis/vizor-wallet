@@ -21,15 +21,16 @@ class ToolInputError(runtime.RunnerError):
     """Installed compiler identity or source bounds are unproven."""
 
 
-def configured_tool_inputs(environment, configurations, cwd):
+def configured_tool_inputs(environment, configurations, cwd, *, tool_directories=()):
     """Bind referenced programs, not just configuration text; never execute them.
 
     Conservatively include all configured targets/precedence layers. A missing
     unselected target tool is recorded as missing; if selected, only the original
     successful producer could ever authorize publishing its artifact.
     """
-    tools, configs, seen, requests = {}, {}, set(), []
+    tools, configs, seen, requests, forwarded = {}, {}, set(), [], []
     searches = {(environment.get("PATH", os.defpath), cwd)}
+    searches.update((str(path), cwd) for path in tool_directories)
     def program(value, base, *, arguments=False):
         if len(requests) >= 4096:
             raise ToolInputError("configured build tools exceed their bound")
@@ -76,11 +77,17 @@ def configured_tool_inputs(environment, configurations, cwd):
         words = (value.split("\x1f") if encoded else shlex.split(value)) if isinstance(value, str) else value
         if not isinstance(words, list) or not all(isinstance(word, str) for word in words):
             raise ToolInputError("configured Rust flags must be strings")
+        linker_arguments = []
         for index, word in enumerate(words):
             setting = (words[index+1] if word == "-C" and index+1 < len(words) else
                        word[2:] if word.startswith("-C") else "")
             if setting.startswith("linker="):
                 program(setting.removeprefix("linker="), base)
+            elif setting.startswith("link-arg="):
+                linker_arguments.append(setting.removeprefix("link-arg="))
+            elif setting.startswith("link-args="):
+                linker_arguments.extend(shlex.split(setting.removeprefix("link-args=")))
+        forwarded.append((linker_arguments, base))
 
     def env_tools(values, base):
         direct = {"RUSTC", "RUSTC_WRAPPER", "RUSTC_WORKSPACE_WRAPPER", "RUSTDOC",
@@ -145,6 +152,35 @@ def configured_tool_inputs(environment, configurations, cwd):
         configuration(path)
     for value, base, arguments in requests:
         record_program(value, base, arguments)
+    # Driver siblings and every configured -B prefix are conservative lookup
+    # candidates. Do not execute a compiler/wrapper to interpret its arguments.
+    searches.update((str(Path(path).parent), cwd) for path,digest in tools.items() if digest is not None)
+    for words, base in forwarded:
+        prefixes, names = [], {"ld"}
+        for index, word in enumerate(words):
+            if word.startswith("-fuse-ld="):
+                selected = word.removeprefix("-fuse-ld=")
+                if "/" in selected:
+                    record_program(selected, base, False)
+                elif selected:
+                    names.update(("ld."+selected, "ld64."+selected))
+            elif word.startswith("--ld-path="):
+                record_program(word.removeprefix("--ld-path="), base, False)
+            elif word == "--ld-path" and index+1 < len(words):
+                record_program(words[index+1], base, False)
+            if word.startswith("-B"):
+                prefix = words[index+1] if word == "-B" and index+1 < len(words) else word[2:]
+                if prefix:
+                    path = Path(prefix)
+                    prefixes.append(str(path if path.is_absolute() else base/path))
+        if not prefixes and names == {"ld"}:
+            continue  # No forwarded selector; existing default-tool inventory suffices.
+        for prefix in prefixes:
+            for name in names:
+                record_program(str(Path(prefix)/name), base, False)
+                record_program(prefix+name, base, False)  # GCC permits filename prefixes too.
+        for name in names:
+            record_program(name, base, False)
     return {"executables_sha256":tools, "configuration_sha256":configs}
 
 

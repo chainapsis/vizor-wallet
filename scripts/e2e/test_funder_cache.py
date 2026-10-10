@@ -95,6 +95,19 @@ class FunderCacheTests(unittest.TestCase):
         self.assertNotEqual(first.identity()["cache_key"], second.identity()["cache_key"])
         self.assertNotIn('"second"', json.dumps(second.identity()["cache_inputs"]))
 
+    def test_forwarded_linker_prefix_bytes_invalidate_with_unchanged_environment(self):
+        linker = self.model.root/"forwarded-tools/ld"
+        linker.parent.mkdir()
+        linker.write_text("original forwarded linker")
+        linker.chmod(0o700)
+        with patch.dict(os.environ,{"RUSTFLAGS":"-C link-arg=-B"+str(linker.parent)}):
+            first = self.build().identity()
+            linker.write_text("patched forwarded linker")
+            second = self.build().identity()
+        self.assertEqual(first["cache_inputs"]["environment_sha256"],second["cache_inputs"]["environment_sha256"])
+        self.assertNotEqual(first["cache_key"],second["cache_key"])
+        self.assertEqual(self.model.compile_calls,2)
+
     def test_cargo_dependency_bytes_invalidate_without_lock_config_or_environment_changes(self):
         first = self.build()
         (self.model.cargo_dependency/"lib.rs").write_text("patched Cargo dependency")

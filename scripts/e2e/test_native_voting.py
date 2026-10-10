@@ -54,6 +54,7 @@ class VotingBuildTests(unittest.TestCase):
         if not self.case.accepting_launches:
             self.case = self.model.case()
         original = self.case.run_command
+        original_which = BUILD.shutil.which
 
         def command(arguments, **kwargs):
             if arguments[0] == "git":
@@ -120,7 +121,8 @@ class VotingBuildTests(unittest.TestCase):
 
         with patch.object(BUILD,"VOTE_SDK_REV",self.pin), patch.object(BUILD,"PIR_REV",self.pin), \
              patch.object(self.case,"run_command",side_effect=command), \
-             patch.object(BUILD.shutil,"which",side_effect=lambda name, **_: str(self.tools[name])):
+             patch.object(BUILD.shutil,"which",side_effect=lambda name, **options:
+                 str(self.tools[name]) if name in self.tools else original_which(name, **options)):
             return BUILD.build_voting_artifacts(self.case, sdk_cache=self.model.source,
                 pir_cache=self.model.source, cache_root=self.cache, timeout=15, **options)
 
@@ -211,6 +213,19 @@ class VotingBuildTests(unittest.TestCase):
             self.assertEqual(first["cache_inputs"][field], second["cache_inputs"][field])
         self.assertNotEqual(first["cache_key"], second["cache_key"])
         self.assertEqual(self.make_calls, 2)
+
+    def test_forwarded_linker_prefix_bytes_invalidate_with_unchanged_environment(self):
+        linker = self.model.root/"forwarded-tools/ld"
+        linker.parent.mkdir()
+        linker.write_text("original forwarded linker")
+        linker.chmod(0o700)
+        with patch.dict(os.environ,{"RUSTFLAGS":"-C link-arg=-B"+str(linker.parent)}):
+            _,first = self.build()
+            linker.write_text("patched forwarded linker")
+            _,second = self.build()
+        self.assertEqual(first["cache_inputs"]["environment_sha256"],second["cache_inputs"]["environment_sha256"])
+        self.assertNotEqual(first["cache_key"],second["cache_key"])
+        self.assertEqual(self.make_calls,2)
 
     def test_target_rustflags_linker_bytes_invalidate_with_unchanged_environment(self):
         linker = self.model.root/"target-linker"
