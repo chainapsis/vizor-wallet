@@ -65,7 +65,7 @@ def build_native_macos_cohort(case, *, source_root, flutter, timeout=1200.0, can
         return result.lines
 
     try:
-        checkout_lease = cache.NativeCheckoutBuildLease(root, platform="macos",
+        checkout_lease = cache.NativeCheckoutBuildLease(root,
             timeout=max(0.001, deadline-time.monotonic()), cancel_event=cancel)
         checkout_lease.__enter__()
         # Git excludes generated build trees while including current untracked

@@ -41,6 +41,7 @@ def build_native_ios_cohort(case, *, source_root, flutter, timeout=1800.0,
     environment = os.environ.copy()
     environment.pop("_", None)
     lease = None
+    checkout_lease = None
 
     def command(arguments, *, in_source=False):
         if cancel.is_set():
@@ -59,6 +60,9 @@ def build_native_ios_cohort(case, *, source_root, flutter, timeout=1800.0,
         return result.lines
 
     try:
+        checkout_lease = cache.NativeCheckoutBuildLease(root,
+            timeout=max(0.001, deadline-time.monotonic()), cancel_event=cancel)
+        checkout_lease.__enter__()
         members = "".join(command(["/usr/bin/git", "-C", str(root), "ls-files",
             "--cached", "--others", "--exclude-standard", "-z", "--", "lib",
             "integration_test", "test", "rust", "rust_builder", "ios", "assets",
@@ -104,6 +108,7 @@ def build_native_ios_cohort(case, *, source_root, flutter, timeout=1800.0,
                     raise NativeIosBuildError("iOS inputs changed during cache publication")
                 receipt = case.close()
                 captured.verify_unchanged()
+                checkout_lease._check()
                 return captured, {"ios_app_build_count":0, "ios_helper_build_count":0,
                     "cache_hit":True, "cache_key":lease.key,
                     "architecture":captured.architecture, "team":captured.team,
@@ -136,6 +141,7 @@ def build_native_ios_cohort(case, *, source_root, flutter, timeout=1800.0,
             raise NativeIosBuildError("iOS cache inputs changed during original build")
         receipt = case.close()
         captured.verify_unchanged()
+        checkout_lease._check()
         if lease is not None:
             lease.publish(cache.ProducedNativeCohort(case, captured, inputs, cache._TOKEN))
         return captured, {"ios_app_build_count":1, "ios_helper_build_count":1,
@@ -150,8 +156,14 @@ def build_native_ios_cohort(case, *, source_root, flutter, timeout=1800.0,
         try:
             case.close()
         except BaseException as cleanup:
+            if checkout_lease is not None and checkout_lease.fd is not None:
+                checkout_lease.retain_unjoined()
             raise primary from cleanup
         raise
     finally:
-        if lease is not None:
-            lease.__exit__()
+        try:
+            if lease is not None:
+                lease.__exit__()
+        finally:
+            if checkout_lease is not None:
+                checkout_lease.__exit__()

@@ -89,14 +89,14 @@ class BuildTests(unittest.TestCase):
         def command(arguments, **options):
             if "--config-only" in arguments:
                 with self.assertRaisesRegex(BUILD.cache.FunderCacheError,"deadline"):
-                    with BUILD.cache.NativeCheckoutBuildLease(self.source,platform="macos",
+                    with BUILD.cache.NativeCheckoutBuildLease(self.source,
                             timeout=0.05,cancel_event=threading.Event()):
                         pass
             return original(arguments, **options)
         with patch.object(self,"command",side_effect=command):
             with self.assertRaisesRegex(BUILD.NativeMacosBuildError,"lib/app.dart"):
                 self.build(cache_root=self.root/"cache")
-        with BUILD.cache.NativeCheckoutBuildLease(self.source,platform="macos",
+        with BUILD.cache.NativeCheckoutBuildLease(self.source,
                 timeout=0.1,cancel_event=threading.Event()):
             pass
 
@@ -106,7 +106,7 @@ class BuildTests(unittest.TestCase):
             with self.assertRaisesRegex(BUILD.NativeMacosBuildError,"lib/app.dart"):
                 self.build(cache_root=self.root/"cache")
         with self.assertRaisesRegex(BUILD.cache.NativeBuildCacheError,"unjoined retained"):
-            with BUILD.cache.NativeCheckoutBuildLease(self.source,platform="macos",
+            with BUILD.cache.NativeCheckoutBuildLease(self.source,
                     timeout=0.1,cancel_event=threading.Event()):
                 pass
         self.case.close()

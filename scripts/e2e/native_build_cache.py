@@ -509,11 +509,11 @@ class ProducedNativeCohort:
 
 class NativeCheckoutBuildLease(FunderCacheLease):
     """Serialize a checkout's shared native outputs, independently of cache keys."""
-    def __init__(self, source_root, *, platform, timeout, cancel_event):
+    def __init__(self, source_root, *, timeout, cancel_event):
         logs = source_root/".regtest-logs"
         logs.mkdir(mode=0o700, exist_ok=True)
         super().__init__(logs/"native-build-locks",
-            {"schema":1, "source_root":str(source_root), "platform":platform},
+            {"schema":1, "source_root":str(source_root), "kind":"native-build"},
             ("checkout",), timeout=timeout, cancel_event=cancel_event)
 
     def _check(self):

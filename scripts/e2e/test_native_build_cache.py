@@ -179,7 +179,7 @@ class CheckoutBuildLeaseTests(unittest.TestCase):
 
     def lease(self, source=None):
         return CACHE.NativeCheckoutBuildLease(source or self.root,
-            platform="macos", timeout=2, cancel_event=self.cancel)
+            timeout=2, cancel_event=self.cancel)
 
     def contender(self, source, *, blocked, reason="deadline"):
         code = (
@@ -187,7 +187,7 @@ class CheckoutBuildLeaseTests(unittest.TestCase):
             f"sys.path.insert(0,{str(Path(CACHE.__file__).parent)!r}); "
             "from native_build_cache import NativeCheckoutBuildLease,FunderCacheError\n"
             "try:\n"
-            f" with NativeCheckoutBuildLease(Path({str(source)!r}),platform='macos',"
+            f" with NativeCheckoutBuildLease(Path({str(source)!r}),"
             "timeout=0.15,cancel_event=threading.Event()): pass\n"
             f"except FunderCacheError as error:\n assert {reason!r} in str(error); raise SystemExit({0 if blocked else 1})\n"
             f"raise SystemExit({1 if blocked else 0})\n"
