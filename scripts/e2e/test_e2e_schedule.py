@@ -96,7 +96,7 @@ class ScheduleTests(unittest.TestCase):
                     schedule_scenarios(self.catalog, self.cases, timing_reports=[report])
 
     def test_invalid_or_zero_success_duration_is_rejected(self):
-        for duration in (True, -1, float("nan"), float("inf"), "1", 0):
+        for duration in (True, -1, float("nan"), float("inf"), "1", 0, 10**309, -(10**309)):
             with self.subTest(duration=duration):
                 report = self.history(durations=(duration, 2, 20))
                 with self.assertRaises(e2e_catalog.CatalogError):

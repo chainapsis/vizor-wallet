@@ -65,8 +65,11 @@ def schedule_scenarios(catalog, scenarios, *, order="short-first", timing_report
                 raise CatalogError("timing result does not match its current catalog case: " + str(path))
             seen.add(case.id)
             duration = result.get("duration_seconds")
-            if (isinstance(duration, bool) or not isinstance(duration, (int, float))
-                or not math.isfinite(duration) or duration < 0
+            try:
+                finite = isinstance(duration, (int, float)) and math.isfinite(duration)
+            except OverflowError:
+                finite = False
+            if (isinstance(duration, bool) or not finite or duration < 0
                 or result["status"] == "passed" and duration == 0):
                 raise CatalogError("invalid case duration in timing report: " + str(path))
             if result["status"] == "passed":
