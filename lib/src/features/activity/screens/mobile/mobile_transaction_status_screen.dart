@@ -19,7 +19,6 @@ import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_profile_picture.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/receipt_loading_skeleton.dart';
-import '../../../../core/widgets/review_list_row.dart' show kTxFeeHelpTooltip;
 import '../../../../core/widgets/mobile/mobile_address_verify_sheet.dart';
 import '../../../../core/widgets/mobile/mobile_review_row.dart';
 import '../../../../core/widgets/mobile/mobile_tx_fee_info_sheet.dart';
@@ -1580,13 +1579,13 @@ class _DetailCard extends StatelessWidget {
                           title: 'Card fee',
                           description: kPaymentLinkCardFeeHelpText,
                         )
-                      : showMobileTxFeeInfoSheet(
+                      : showsNetworkFee
+                      ? showMobileTxFeeInfoSheet(
                           context,
-                          title: showsNetworkFee ? 'Network fee' : 'Tx fee',
-                          description: showsNetworkFee
-                              ? kUnattributedNetworkFeeHelpText
-                              : kTxFeeHelpTooltip,
-                        ),
+                          title: 'Network fee',
+                          description: kUnattributedNetworkFeeHelpText,
+                        )
+                      : showMobileTxFeeInfoSheet(context),
                 ),
               ),
             ),
