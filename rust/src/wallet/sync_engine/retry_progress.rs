@@ -1,4 +1,4 @@
-use super::SyncProgressEvent;
+use super::{SyncProgressEvent, TAIL_REPAIR_MAX_START_PERCENTAGE};
 
 /// Each attempt measures only its remaining scan work. Keep the completed
 /// portion of this sync session when a transient failure starts another attempt.
@@ -9,10 +9,18 @@ pub(super) struct RetryProgress {
 }
 
 impl RetryProgress {
+    /// Carry completed scan work forward, leaving room for unfinished repairs.
     pub(super) fn start_attempt(&mut self) {
-        self.attempt_base = self.completed;
+        // A drained scan can still queue repairs and fail before completion.
+        // Reuse the tail-repair allowance instead of pinning the retry at 100%.
+        self.attempt_base = if self.completed < 1.0 {
+            self.completed
+        } else {
+            TAIL_REPAIR_MAX_START_PERCENTAGE
+        };
     }
 
+    /// Map attempt-local progress and its download target into this session.
     pub(super) fn report(&mut self, mut event: SyncProgressEvent) -> SyncProgressEvent {
         let remaining = 1.0 - self.attempt_base;
         event.percentage = self.attempt_base + remaining * event.percentage.clamp(0.0, 1.0);
@@ -75,6 +83,39 @@ mod tests {
         let mut fresh = RetryProgress::default();
         fresh.start_attempt();
         assert_eq!(fresh.report(scan(0.1, 0.2)).percentage, 0.1);
+    }
+
+    #[test]
+    fn retry_after_scan_drains_leaves_room_for_unfinished_repairs() {
+        let mut progress = RetryProgress::default();
+        progress.start_attempt();
+        let drained = progress.report(scan(1.0, 1.0));
+        assert_eq!(drained.percentage, 1.0);
+        assert!(!drained.is_complete);
+
+        // Repair scanning can fail after the original scan queue drained.
+        progress.report(scan(0.95, 0.96));
+        for _ in 0..3 {
+            progress.start_attempt();
+            let preparation =
+                progress.report(preparation_progress_event(3_500_000, "chain_prepare", 0, 0));
+            let repair = progress.report(scan(0.1, 0.2));
+            assert!(preparation.percentage < repair.percentage);
+            assert!(repair.percentage < repair.display_target_percentage);
+            assert!(repair.display_target_percentage < 1.0);
+            assert!(repair.is_syncing);
+            assert!(!repair.is_complete);
+        }
+
+        let done = progress.report(SyncProgressEvent {
+            is_complete: true,
+            is_syncing: false,
+            ..scan(1.0, 1.0)
+        });
+        assert_eq!(done.percentage, 1.0);
+        assert_eq!(done.display_target_percentage, 1.0);
+        assert!(done.is_complete);
+        assert!(!done.is_syncing);
     }
 
     #[test]
