@@ -210,6 +210,14 @@ class OwnedNativeZakuraFront:
                 "--genesis-proof", handoff["path"], "--genesis-proof-sha256", handoff["sha256"],
                 "--fixture-run-id", handoff["fixture_run_id"]],
                 env=os.environ.copy(), max_output_bytes=_OUTPUT_BYTES, raw_lines=self._lines)
+            # Initial lightwalletd catch-up legitimately changes LightdInfo's
+            # height. Establish parity before capturing the stable comparison;
+            # the exact post-parity adaptation checks below remain unchanged.
+            parity = self._backend.wait_synced(deadline=deadline)
+            check()
+            height = parity.get("height")
+            if type(height) is not int or not 1 <= height <= 0xFFFFFFFF:
+                raise NativeZakuraFrontError("raw backend parity height is invalid")
             while True:
                 normalized = front("GetLightdInfo", {})
                 if normalized is not None:
@@ -222,12 +230,6 @@ class OwnedNativeZakuraFront:
             genesis = front("GetTreeState", {"height": "0"})
             if genesis is None or dict(genesis, height=str(genesis.get("height", "0"))) != state:
                 raise NativeZakuraFrontError("front genesis differs from original node-verified evidence")
-            check()
-            parity = self._backend.wait_synced(deadline=deadline)
-            check()
-            height = parity.get("height")
-            if type(height) is not int or not 1 <= height <= 0xFFFFFFFF:
-                raise NativeZakuraFrontError("raw backend parity height is invalid")
             payload = {"height": str(height)}
             raw_tree = raw("GetTreeState", payload)
             if front("GetTreeState", payload) != raw_tree or raw("GetTreeState", payload) != raw_tree:

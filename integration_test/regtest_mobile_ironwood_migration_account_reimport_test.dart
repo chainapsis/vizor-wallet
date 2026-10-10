@@ -140,6 +140,15 @@ void main() {
         lessThan(scheduled.totalCount),
       );
 
+      // Migration tracking can confirm the child before wallet scanning has
+      // applied its value transfer. Snapshot only after scanning the mined tip;
+      // otherwise re-import is compared against the pre-migration pool values.
+      final chainBeforeRemoval = await getDriver('/status');
+      await _waitForIdleSync(
+        tester,
+        container,
+        (chainBeforeRemoval['zcashdHeight'] as num).toInt(),
+      );
       final dbPath = await getWalletDbPath();
       final balanceBeforeRemoval = await rust_sync.getBalance(
         dbPath: dbPath,

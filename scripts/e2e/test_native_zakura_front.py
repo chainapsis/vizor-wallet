@@ -278,6 +278,52 @@ class FrontTests(unittest.TestCase):
     def test_changed_lightd_info_is_not_readiness(self):
         self.assert_bad_ready("network")
 
+    def test_initial_backend_catchup_precedes_lightd_info_baseline(self):
+        fixture = self.backend._fixture
+        original_grpc, original_synced = fixture.grpc, fixture.wait_synced
+        synced = False
+
+        def grpc(method, payload=None, *, deadline=None):
+            value = original_grpc(method, payload, deadline=deadline)
+            if method == "GetLightdInfo":
+                value["blockHeight"] = "1" if synced else "0"
+            return value
+
+        def wait_synced(*, deadline=None):
+            nonlocal synced
+            result = original_synced(deadline=deadline)
+            synced = True
+            return result
+
+        owner = self.prepare()
+        first, second = self.patches()
+        with first, second, patch.object(fixture, "grpc", side_effect=grpc), patch.object(
+                fixture, "wait_synced", side_effect=wait_synced):
+            observed = owner.start()
+        self.assertEqual(observed["parity_height"], 1)
+        self.assertTrue(observed["lightd_info_only_chainName_changed"])
+
+    def test_backend_lightd_info_drift_after_parity_is_still_rejected(self):
+        fixture = self.backend._fixture
+        original = fixture.grpc
+        drifted = False
+
+        def grpc(method, payload=None, *, deadline=None):
+            nonlocal drifted
+            value = original(method, payload, deadline=deadline)
+            if method == "GetLatestBlock":
+                drifted = True
+            elif method == "GetLightdInfo" and drifted:
+                value["blockHeight"] = "2"
+            return value
+
+        owner = self.prepare()
+        first, second = self.patches()
+        with first, second, patch.object(fixture, "grpc", side_effect=grpc):
+            with self.assertRaisesRegex(FRONT.NativeZakuraFrontError, "raw backend changed"):
+                owner.start()
+        self.assertTrue(owner.process.cleanup_completed)
+
     def test_changed_latest_block_is_not_readiness(self):
         self.assert_bad_ready("latest")
 
