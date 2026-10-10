@@ -17,7 +17,7 @@ import threading
 import e2e_runtime as runtime
 from native_case_lifecycle import NativeCaseLifecycle
 import native_ios_case_storage as ios_storage
-import native_ios_cleanup as ios_native
+import native_ios_cohort as ios_cohort
 import native_ios_simulator as ios_simulator
 import native_mac_case_storage as mac_storage
 import native_mac_cleanup as mac_native
@@ -288,7 +288,7 @@ class NativeWorkerLifecycle:
             raise NativeWorkerError("worker is sealed or failed; no new case assignment")
         if platform not in {"ios", "macos", "rust"}:
             raise NativeWorkerError("worker supports Rust, macOS and iOS Simulator only")
-        expected = ios_native.CapturedIosCleanupHelper if platform == "ios" else mac_native.CapturedMacCleanupHelper
+        expected = ios_cohort.CapturedIosCohort if platform == "ios" else mac_native.CapturedMacCleanupHelper
         if platform == "rust" and any(value is not None for value in (helper, runtime_identifier, device_type_identifier)):
             raise NativeWorkerError("Rust cases do not use native helpers or Simulator selection")
         if platform != "rust" and not isinstance(helper, expected):

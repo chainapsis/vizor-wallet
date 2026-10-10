@@ -10,18 +10,17 @@ simulator allocation, cleanup implementation, or scenario migration is added.
 Compile exactly one profile with `ZCASH_DEFAULT_NETWORK=regtest`:
 
 - `VIZOR_E2E_MACOS_COHORT=true` for macOS debug builds.
-- `VIZOR_E2E_IOS_COHORT=true` for iOS debug Simulator builds. Physical devices
-  and release builds reject the native isolation profile.
+- `VIZOR_E2E_IOS_COHORT=true` for iOS debug Simulator builds. Non-debug builds
+  reject either profile. The app does not detect physical devices; the
+  executor installs the iOS cohort only on a fresh case-owned Simulator.
 
 iOS builds also require the existing `VIZOR_FORM_FACTOR=mobile` define.
 
-The iOS build derives the native `VizorE2eIosCohort` boolean in the processed
-app `Info.plist` from that same `VIZOR_E2E_IOS_COHORT` entry in `DART_DEFINES`.
-The stamp runs after Flutter embedding and before code signing; it is not a
-separate configuration knob. Native startup requires this build marker and
-rejects a cohort build with missing or partial launch identity before the
-fresh-install Keychain cleaner or any background registration can run.
-Ordinary builds stamp `false` and reject stray E2E launch configuration.
+The iOS profile is a Dart define only. No native build marker is stamped into
+the app's `Info.plist`, and native iOS startup keeps its production behavior,
+including the fresh-install Keychain cleaner and background registration.
+A debug build without a profile rejects stray E2E launch configuration;
+release builds never read it.
 
 Pass both `VIZOR_E2E_CASE_MANIFEST` and `VIZOR_E2E_NAMESPACE` in the process
 environment, not as per-case Dart defines. The manifest is ASCII JSON of at
@@ -54,10 +53,10 @@ Orchard funding. Scenario names do not infer activation or ports.
 The scenario ID matches `flutter.ios.<hyphenated-id>` or
 `flutter.macos.<hyphenated-id>` for the selected platform. This syntax check
 does not replace catalog selection or execution-support validation.
-For iOS, use `context_path: "app-support"`; Dart resolves it inside the case's
-support directory. macOS requires an absolute path ending in
-`/e2e/<namespace>/native-context.json`, with no `.` or `..` segments. Its parent
-must already exist and belong to the launching worker.
+For iOS, use `context_path: "app-support"`. It is a fixed iOS marker, not a
+path: the iOS app publishes no runtime context. macOS requires an absolute path
+ending in `/e2e/<namespace>/native-context.json`, with no `.` or `..` segments.
+Its parent must already exist and belong to the launching worker.
 
 The app validates identity before configuring preferences, opening wallet
 storage, or initializing Rust. Missing or invalid cohort configuration fails
@@ -68,33 +67,38 @@ endpoint presets, and activation defaults remain unchanged.
 
 ## Owned state and platform limits
 
-| State | Isolated identity |
+A macOS case isolates its app state inside the shared user account:
+
+| macOS state | Isolated identity |
 | --- | --- |
 | Wallet support directory | `<ApplicationSupport>/e2e/<namespace>` |
 | Wallet Keychain service | `<regtest wallet service>.e2e.<namespace>` |
-| macOS mnemonic service | `<isolated wallet service>.mnemonic` |
-| iOS recovery staging | `<isolated wallet service>.accessibility-migration-v1` |
-| iOS biometric, migration credentials, outbox key | Each base service plus `.e2e.<namespace>` |
+| Mnemonic service | `<isolated wallet service>.mnemonic` |
 | Flutter legacy preferences | `flutter.vizor_e2e_<namespace>.` prefix |
-| Async app-review preference | Explicit case-prefixed key |
-| iOS native preferences | `com.keplr.vizor.regtest.e2e.<namespace>` suite |
-| iOS notification identifiers | `vizor_e2e_<namespace>.` prefix |
 
 The support directory covers existing consumers, including wallet databases,
-Tor, Sapling parameters, and Gift state. Dart and Rust share macOS Keychain
-names; Dart and Swift share iOS credential names. The iOS fresh-install cleaner
-is skipped for isolated cases, and native migration allowlisting stays strict.
+Tor, Sapling parameters, and Gift state. Dart and Rust share these Keychain
+names.
 
-Isolated iOS processes do not register, submit, or cancel OS background tasks.
-Fixed task identifiers are not per-case scheduler resources. Positive OS
-background scheduling is outside this profile's coverage. A future worker must
-own a fresh disposable simulator for remaining simulator-global state.
+An iOS case owns one fresh Simulator instead. Inside it the app keeps its
+production support directory, Keychain services, preferences, notification
+identifiers and app-review state. The manifest namespace still names the case
+but does not prefix storage. The executor proves a successful case's cleanup by
+deleting that device and observing that its inventory entry and device
+directory are gone; a failed case keeps the shut-down device.
 
-`native-context.json` is written atomically before ordinary wallet initialization.
-It declares the PID, support directory, Keychain services, preference identities,
-and notification prefix. It is not proof of native storage I/O or cleanup.
-`storage_cleanup_completed` and `os_background_scheduling_enabled` are false;
-the file grants no cleanup or recovery permission.
+iOS processes keep their production background-task registration, inside the
+case's own Simulator. Positive OS background scheduling is outside this
+profile's coverage.
+
+On macOS the app keeps its runtime context in memory, and the original Driver
+writes it to `native-context.json` only after its assertions complete. It
+declares the PID, support directory, Keychain services and preference prefix.
+It is not proof of native storage I/O or cleanup: `storage_cleanup_completed`
+and `os_background_scheduling_enabled` are false, and the file grants no
+cleanup or recovery permission. iOS publishes no runtime context. For a
+`flutter.ios.*` case the Driver requires `runtime_context` to be null and
+`context_path` to be `app-support`.
 
 ## Focused checks
 
@@ -118,10 +122,9 @@ fvm flutter test --no-pub --dart-define=VIZOR_E2E_MACOS_COHORT=true --dart-defin
 
 This reads the real native environment with mocked preferences and path-provider
 storage. Other configuration lanes are explicitly skipped, not counted as passes.
-Swift policy tests can run on the host: compile `E2eRuntimeProfile.swift` with
-`E2eRuntimeProfileHostTests.swift` into an owned temporary executable. XCTest
-tests are wired into RunnerTests but require separate Xcode test execution.
+No default lane compiles the iOS profile, so the iOS cohort's unprefixed
+storage is exercised only by iOS executor runs.
 
 Concurrent app execution, real Keychain persistence, process restart, simulator
-teardown, native cleanup receipts, and fixture readiness remain worker/executor
+teardown, fresh-device deletion proof, and fixture readiness remain worker/executor
 validation gates. This slice makes no efficiency claim and changes no CI.

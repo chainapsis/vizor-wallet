@@ -89,9 +89,9 @@ linear speedup.
 
 - Each case owns its chain, wallet databases, listeners, app-storage namespace,
   and native resources. An iOS case owns a fresh disposable simulator.
-- Share immutable app/helper build artifacts, never mutable wallet or chain
-  state. Restart phases retain the same case's state and prove a real process
-  restart; they are not independent jobs.
+- Share immutable app (and macOS helper) build artifacts, never mutable wallet
+  or chain state. Restart phases retain the same case's state and prove a real
+  process restart; they are not independent jobs.
 - Bind manifests and cleanup to exact resource ownership. Stop new assignments
   when cleanup or process termination is unproven, and retain failure evidence.
   Never reset a user's wallet, app, or simulator to make a run pass.
@@ -103,8 +103,9 @@ linear speedup.
 - Use integer zatoshis and independently signed funding transactions. The direct
   path must not rely on a node wallet RPC, THS server, or faucet.
 - Report cleanup at its actual boundary. Declaring owned Keychain services and
-  preferences does not prove their deletion; include recovery staging secrets
-  and retain fresh-simulator ownership for simulator-global resources.
+  preferences does not prove their deletion. A successful iOS case proves
+  cleanup by deleting its fresh case-owned Simulator and observing inventory and
+  device-directory absence; macOS keeps its native helper observations.
 - Changed-file selection is conservative path-based selection, not a complete
   dependency graph. Unknown changes must widen coverage rather than skip it.
 
@@ -209,13 +210,22 @@ never followed. Shared build artifacts must remain outside the removable tree.
 The composed executor wires twenty macOS import/endpoint/send/payment/mempool/Gift/voting cases and all twenty-three
 catalog Rust cases to original per-case Zakura/native owners, including controlled
 activation-500 Orchard migration and Gift claim/reorg/OVK coverage.
-Compatible app/helper artifacts are built once when selected; selected Rust
+Compatible macOS app/helper artifacts are built once when selected; selected Rust
 targets and the signer share one offline Cargo producer. Rust-only selections
 build no app/helper. Fresh repetitions have independent schema-2 reports and
 may overlap under one bounded worker count, including mixed Rust/macOS selections.
 The twenty-one iOS catalog scenarios, persistent build-cache publication/invalidation,
 resource scheduling and final-source catalog/performance validation remain
 pending. A native observation or process receipt alone never authorizes deletion.
+
+D3-2 (2026-10-10) removed the iOS helper chain described above. Every iOS case
+already owns a fresh Simulator, so the app now keeps its production identifiers
+inside that device, and a successful case proves cleanup by deleting the device
+and observing inventory and device-directory absence. The helper app and its
+receipts, the in-container support marker, the app's runtime context file and
+the `Info.plist` build stamp are gone. Capture runs one signature verification;
+later continuity checks compare file identities only. Failed cases still retain
+their shut-down device. The iOS catalog has not yet been rerun on this change.
 
 The [multi-account group (#926)](https://github.com/chainapsis/vizor-wallet/pull/926)
 originally carried a minimum rc7 SQLite backport of upstream
@@ -348,10 +358,10 @@ iOS cases and the cache/resource/final-source gates remain pending.
 | Slice | Scope | Prerequisites |
 | --- | --- | --- |
 | Catalog and reports | Stable scenario IDs, suite/exact-ID/tag selection, conservative changed-file selection, failed-case reruns, side-effect-free plans, report schema | None for schema/planning; execution requires an implemented engine |
-| App runtime contract | Regtest-only namespace, endpoints, case manifest, and owned-storage context across Dart/Rust/iOS | Review independently from orchestration |
+| App runtime contract | Regtest-only namespace, endpoints, case manifest, and owned-storage context across Dart/Rust (macOS); iOS isolation by a fresh case-owned device | Review independently from orchestration |
 | Worker lifecycle | Owned workspaces, ports, simulators, processes, and fail-closed cleanup | App runtime contract for native execution |
 | Direct Zakura backend | Offline funding, readiness and inclusion proofs, Rust test support, native adapter | Vendored Zakura fixture; native adapter also needs runtime and lifecycle |
-| Native build-once executor | One compatible app build per OS and shared helper build, with isolated case execution | Runtime contract, worker lifecycle, and native backend |
+| Native build-once executor | One compatible app build per OS and a shared macOS helper build, with isolated case execution | Runtime contract, worker lifecycle, and native backend |
 | Basic scenario migrations | Import/sync and endpoint behavior | Catalog, backend, executor; SDK fix for affected account-history cases |
 | Payment scenario migrations | Send, payment links, Gift flows, and mempool behavior | Basic execution; case-specific app repair only for an observed regression |
 | Ironwood scenario migrations | Activation, account recovery, restart, and native outbox transport | Activation fixture, executor, separately reviewed case-specific app changes |

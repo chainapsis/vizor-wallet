@@ -21,7 +21,7 @@ class ExecutionFixture(unittest.TestCase):
         self.addCleanup(self.model.doCleanups)
         self.worker = self.model.worker
         self.session = self.worker.prepare_case(platform="ios", scenario_id=self.scenario_id,
-            case_index=0, activation_height=self.activation_height, helper=self.model.native.helper,
+            case_index=0, activation_height=self.activation_height, helper=self.model.native.cohort,
             runtime_identifier=FIXTURES.IOS_FIXTURES.RUNTIME_ID,
             device_type_identifier=FIXTURES.IOS_FIXTURES.DEVICE_ID, timeout=15)
         front, query = FIXTURES.MacWorkerTests.front_model(self.model, self.session)
@@ -66,18 +66,17 @@ class ExecutionFixture(unittest.TestCase):
         managed = self.original_start(command, **kwargs)
         # The endpoint is an SDK unified-log event, not app-console stdout.
         # Keep the modeled native app distinct from the original console job.
-        if "--mode" not in command:
-            pid = self.model.native.model.writers[self.session.storage.simulator.udid].process.pid
-            if self.mode == "log-console-pid":
-                pid = managed.process.pid
-            if self.mode == "flutter-logs":
-                self.log_lines.append(json.dumps({"eventMessage": "flutter: [E2E] ordinary diagnostic", "processID": pid}) + "\n")
-            message = "The Dart VM service is listening on http://127.0.0.1:12345/model/"
-            event = json.dumps({"eventMessage": message, "processID": pid}) + "\n"
-            if self.mode == "late-vm":
-                self.vm_event = event
-            else:
-                self.log_lines.append(event)
+        pid = self.model.native.model.writers[self.session.storage.simulator.udid].process.pid
+        if self.mode == "log-console-pid":
+            pid = managed.process.pid
+        if self.mode == "flutter-logs":
+            self.log_lines.append(json.dumps({"eventMessage": "flutter: [E2E] ordinary diagnostic", "processID": pid}) + "\n")
+        message = "The Dart VM service is listening on http://127.0.0.1:12345/model/"
+        event = json.dumps({"eventMessage": message, "processID": pid}) + "\n"
+        if self.mode == "late-vm":
+            self.vm_event = event
+        else:
+            self.log_lines.append(event)
         return managed
 
     def execute(self, timeout=15, **kwargs):

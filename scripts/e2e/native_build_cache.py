@@ -1,4 +1,4 @@
-"""Immutable signed cohort/helper pairs; never native storage or loose outputs."""
+"""Immutable signed macOS cohort/helper pairs and iOS cohorts; never native storage or loose outputs."""
 from __future__ import annotations
 
 import contextlib
@@ -497,12 +497,12 @@ class ProducedNativeCohort:
         self.verify()
 
     def verify(self):
-        from native_ios_cleanup import CapturedIosCleanupHelper
+        from native_ios_cohort import CapturedIosCohort
         from native_mac_cleanup import CapturedMacCleanupHelper
         if (not isinstance(self.case, NativeCaseLifecycle) or self.case.accepting_launches
             or self.case._receipt is None or not self.case._receipt.exit_codes
             or any(self.case._receipt.exit_codes)
-            or not isinstance(self.captured, (CapturedIosCleanupHelper, CapturedMacCleanupHelper))):
+            or not isinstance(self.captured, (CapturedIosCohort, CapturedMacCleanupHelper))):
             raise NativeBuildCacheError("native producer did not positively join successful original builds")
         self.case.workspace.verify_owned()
         self.captured.verify_unchanged()
@@ -546,8 +546,13 @@ class NativeCheckoutBuildLease(FunderCacheLease):
 
 class NativeCohortCacheLease(FunderCacheLease):
     """Same original per-key lock; lookup/publication is for full signed bundles."""
-    def __init__(self, root, inputs, *, timeout, cancel_event):
-        super().__init__(root, inputs, _ROLES, timeout=timeout, cancel_event=cancel_event)
+    def __init__(self, root, inputs, *, timeout, cancel_event, roles=_ROLES):
+        roles = tuple(roles)
+        if (not roles or roles[0] != "cohort" or len(set(roles)) != len(roles)
+            or not set(roles) <= set(_ROLES)):
+            raise NativeBuildCacheError("native cache roles must be the cohort and an optional helper")
+        self.roles = roles
+        super().__init__(root, inputs, roles, timeout=timeout, cancel_event=cancel_event)
 
     def load(self):
         self._check()
@@ -558,15 +563,15 @@ class NativeCohortCacheLease(FunderCacheLease):
             identity = tree.identity(os.fstat(fd))
             if ((self.entry_id is not None and self.entry_id != identity)
                 or stat.S_IMODE(os.fstat(fd).st_mode) != 0o500
-                or set(os.listdir(fd)) != {"manifest.json", "cohort.app", "helper.app"}):
+                or set(os.listdir(fd)) != {"manifest.json", *(role+".app" for role in self.roles)}):
                 raise NativeBuildCacheError("native cache attachment/inventory changed")
             self.entry_id = identity
         manifest = json.loads(_read(self.entry/"manifest.json", 16*1024*1024))
         if (not isinstance(manifest, dict) or set(manifest) != {"schema", "inputs", "bundles"}
             or type(manifest["schema"]) is not int or manifest["schema"] != 1
-            or manifest["inputs"] != self.inputs or set(manifest["bundles"]) != set(_ROLES)):
+            or manifest["inputs"] != self.inputs or set(manifest["bundles"]) != set(self.roles)):
             raise NativeBuildCacheError("native cache does not bind current build inputs")
-        paths = {role:self.entry/(role+".app") for role in _ROLES}
+        paths = {role:self.entry/(role+".app") for role in self.roles}
         for role,path in paths.items():
             self._check()
             if _bundle(path, immutable=True) != manifest["bundles"][role]:
@@ -584,11 +589,11 @@ class NativeCohortCacheLease(FunderCacheLease):
             raise NativeBuildCacheError("native cache paths are not the original validated entry")
         destination = case.workspace.root/"native-publication"
         destination.mkdir(mode=0o700)
-        for role in _ROLES:
+        for role in self.roles:
             _copy_bundle(paths[role], destination/(role+".app"))
         self.load()
         case.workspace.verify_owned()
-        return {role:destination/(role+".app") for role in _ROLES}
+        return {role:destination/(role+".app") for role in self.roles}
 
     def publish(self, producer):
         if not isinstance(producer, ProducedNativeCohort) or producer.inputs != self.inputs:
@@ -597,9 +602,13 @@ class NativeCohortCacheLease(FunderCacheLease):
         self._check()
         if self.entry.exists() or self.entry.is_symlink():
             raise NativeBuildCacheError("native cache publication already exists; never replace")
+        if hasattr(producer.captured, "_helper") != ("helper" in self.roles):
+            raise NativeBuildCacheError("native cache roles do not match the captured artifacts")
         staging = self.root/(".pending-"+uuid.uuid4().hex)
         staging.mkdir(mode=0o700)
-        paths = {"cohort":producer.captured._cohort.path, "helper":producer.captured._helper.path}
+        paths = {"cohort":producer.captured._cohort.path}
+        if "helper" in self.roles:
+            paths["helper"] = producer.captured._helper.path
         bundles = {role:_copy_bundle(path, staging/(role+".app"), seal=True) for role,path in paths.items()}
         producer.verify()
         fd = os.open(staging/"manifest.json", os.O_WRONLY|os.O_CREAT|os.O_EXCL, 0o400)

@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/config/e2e_namespace.dart';
@@ -7,37 +6,14 @@ import 'package:zcash_wallet/src/core/config/e2e_namespace.dart';
 const _namespace = 'vizor_a1b2c3d4e5_w2_17';
 
 void main() {
-  test(
-    'runtime ownership includes persistent iOS recovery staging secrets',
-    () {
-      const walletService =
-          'com.keplr.vizor.regtest.secure_store.e2e.$_namespace';
-      expect(
-        e2eRuntimeSecureStoreServices(
-          walletService: walletService,
-          namespace: _namespace,
-          isIos: true,
-          isMacos: false,
-        ),
-        <String>[
-          walletService,
-          '$walletService.accessibility-migration-v1',
-          'com.zcash.wallet.biometric-unlock.e2e.$_namespace',
-          'com.keplr.vizor.ironwood-migration-background.v1.e2e.$_namespace',
-          'com.keplr.vizor.ironwood-migration-outbox-key.v1.e2e.$_namespace',
-        ],
-      );
-      expect(
-        e2eRuntimeSecureStoreServices(
-          walletService: walletService,
-          namespace: _namespace,
-          isIos: false,
-          isMacos: true,
-        ),
-        <String>[walletService, '$walletService.mnemonic'],
-      );
-    },
-  );
+  test('runtime ownership lists the macOS wallet and mnemonic services', () {
+    const walletService =
+        'com.keplr.vizor.regtest.secure_store.e2e.$_namespace';
+    expect(
+      e2eRuntimeSecureStoreServices(walletService: walletService),
+      <String>[walletService, '$walletService.mnemonic'],
+    );
+  });
 
   group('namespace validation', () {
     test('preserves the empty production namespace byte for byte', () {
@@ -213,15 +189,6 @@ void main() {
       ),
       'flutter.',
     );
-    expect(
-      e2ePreferenceKey(
-        key: 'vizor_app_review_history_v1',
-        namespace: '',
-        defaultNetworkName: 'main',
-        isDebug: false,
-      ),
-      'vizor_app_review_history_v1',
-    );
   });
 
   test('canonical namespace isolates every Dart-owned storage surface', () {
@@ -252,15 +219,6 @@ void main() {
       ),
       'flutter.vizor_e2e_$_namespace.',
     );
-    expect(
-      e2ePreferenceKey(
-        key: 'vizor_app_review_history_v1',
-        namespace: _namespace,
-        defaultNetworkName: 'regtest',
-        isDebug: true,
-      ),
-      'flutter.vizor_e2e_$_namespace.vizor_app_review_history_v1',
-    );
   });
 
   group('resolveE2eContextPath', () {
@@ -268,71 +226,38 @@ void main() {
       expect(
         resolveE2eContextPath(
           configuredPath: '',
-          supportDirectory: '/support',
-          pathSeparator: '/',
           namespace: '',
           defaultNetworkName: 'main',
           isDebug: false,
-          isIos: false,
         ),
         '',
       );
       expect(
         () => resolveE2eContextPath(
           configuredPath: '/tmp/native-context.json',
-          supportDirectory: '/support',
-          pathSeparator: '/',
           namespace: '',
           defaultNetworkName: 'main',
           isDebug: false,
-          isIos: false,
         ),
         throwsStateError,
       );
     });
 
-    test('resolves iOS app-support and preserves validated macOS paths', () {
-      expect(
-        resolveE2eContextPath(
-          configuredPath: kVizorE2eAppSupportContextPath,
-          supportDirectory: '/app/support/e2e/$_namespace',
-          pathSeparator: '/',
-          namespace: _namespace,
-          defaultNetworkName: 'regtest',
-          isDebug: true,
-          isIos: true,
-        ),
-        '/app/support/e2e/$_namespace/native-context.json',
-      );
+    test('preserves validated macOS paths', () {
       const macosPath =
           '/private/tmp/vizor/e2e/$_namespace/native-context.json';
       expect(
         resolveE2eContextPath(
           configuredPath: macosPath,
-          supportDirectory: '/unused',
-          pathSeparator: '/',
           namespace: _namespace,
           defaultNetworkName: 'regtest',
           isDebug: true,
-          isIos: false,
         ),
         macosPath,
       );
     });
 
-    test('rejects unowned iOS and macOS paths', () {
-      expect(
-        () => resolveE2eContextPath(
-          configuredPath: '/tmp/native-context.json',
-          supportDirectory: '/support',
-          pathSeparator: '/',
-          namespace: _namespace,
-          defaultNetworkName: 'regtest',
-          isDebug: true,
-          isIos: true,
-        ),
-        throwsArgumentError,
-      );
+    test('rejects unowned macOS paths', () {
       for (final path in <String>[
         'relative/e2e/$_namespace/native-context.json',
         '/tmp/e2e/other/native-context.json',
@@ -341,12 +266,9 @@ void main() {
         expect(
           () => resolveE2eContextPath(
             configuredPath: path,
-            supportDirectory: '/unused',
-            pathSeparator: '/',
             namespace: _namespace,
             defaultNetworkName: 'regtest',
             isDebug: true,
-            isIos: false,
           ),
           throwsArgumentError,
           reason: path,
@@ -365,8 +287,6 @@ void main() {
           'com.keplr.vizor.regtest.secure_store.e2e.$_namespace',
         ],
         preferencesPrefix: 'flutter.vizor_e2e_$_namespace.',
-        nativePreferencesSuite: 'com.keplr.vizor.regtest.e2e.$_namespace',
-        notificationIdentifierPrefix: 'vizor_e2e_$_namespace',
       ),
       <String, Object>{
         'schema_version': 1,
@@ -377,39 +297,11 @@ void main() {
           'com.keplr.vizor.regtest.secure_store.e2e.$_namespace',
         ],
         'preferences_prefix': 'flutter.vizor_e2e_$_namespace.',
-        'native_preferences_suite': 'com.keplr.vizor.regtest.e2e.$_namespace',
-        'notification_identifier_prefix': 'vizor_e2e_$_namespace',
         'os_background_scheduling_enabled': false,
         'storage_cleanup_completed': false,
       },
     );
   });
-
-  test(
-    'writes the exact runtime context through an atomic replacement',
-    () async {
-      final directory = await Directory.systemTemp.createTemp(
-        'vizor-e2e-runtime-context-',
-      );
-      addTearDown(() => directory.delete(recursive: true));
-      final contextPath = '${directory.path}/native-context.json';
-      final context = buildE2eRuntimeContext(
-        namespace: _namespace,
-        processId: 1234,
-        supportDirectory: '/app/support/e2e/$_namespace',
-        secureStoreServices: const <String>[],
-        preferencesPrefix: 'flutter.vizor_e2e_$_namespace.',
-      );
-
-      await writeE2eRuntimeContext(contextPath: contextPath, context: context);
-
-      expect(jsonDecode(await File(contextPath).readAsString()), context);
-      expect(
-        directory.listSync().map((entity) => entity.path).toList(),
-        <String>[contextPath],
-      );
-    },
-  );
 
   test('preferences configuration is idempotent and process-immutable', () {
     expect(

@@ -459,19 +459,10 @@ class IosWorkerTests(unittest.TestCase):
                                   original(worker, run, lock_root=self.root / "test-ports"))
         lease_patch.start()
         self.addCleanup(lease_patch.stop)
-        launch = self.native.start_sdk_console
-        def register_launch(command, **options):
-            udid = command[4]
-            self.native.simulators[udid] = next(case.simulator for case in self.worker._cases
-                                              if case.simulator is not None and case.simulator.udid == udid)
-            return launch(command, **options)
-        sdk_patch = patch.object(WORKER.runtime, "start_logged_process", side_effect=register_launch)
-        sdk_patch.start()
-        self.addCleanup(sdk_patch.stop)
 
     def case(self):
         return self.worker.prepare_case(platform="ios", scenario_id="flutter.ios.worker-probe",
-            case_index=0, activation_height=500, helper=self.native.helper,
+            case_index=0, activation_height=500, helper=self.native.cohort,
             runtime_identifier=IOS_FIXTURES.RUNTIME_ID, device_type_identifier=IOS_FIXTURES.DEVICE_ID,
             timeout=15)
 
@@ -483,23 +474,24 @@ class IosWorkerTests(unittest.TestCase):
         self.assertNotEqual(first.pid, second.pid)
         session.close(timeout=15)
         self.assertNotIn(session.simulator.udid, self.native.model.devices)
+        self.assertFalse(self.native.model.device_root(session.simulator.udid).exists())
         self.worker.close()
         self.assertFalse(self.worker.workspace.exists())
         self.assertTrue(session.case.workspace.root.exists())
-        self.assertTrue((session.case.workspace.root / "ios-storage-relocation-0001.json").exists())
+        self.assertTrue((session.case.workspace.root / WORKER.ios_simulator._OWNER).exists())
 
     def test_failed_ios_case_shuts_down_only_its_uuid_and_retains_workspace(self):
         session = self.case()
         session.storage.start_app(timeout=15)
         session.retain(timeout=15)
         self.assertEqual(self.native.model.devices[session.simulator.udid]["state"], "Shutdown")
-        self.assertTrue(session.storage.path.exists())
+        self.assertTrue(self.native.model.device_root(session.simulator.udid).exists())
         self.assertTrue(self.worker.workspace.exists())
         self.assertFalse(any(call[0] == "delete" for call in self.native.model.calls))
 
-    def test_failed_ios_receipt_keeps_native_owner_device_and_worker_state(self):
-        self.native.bad_receipt = lambda value, mode: value.update(completed=False)
-        with self.assertRaises(WORKER.ios_native.IosCleanupError):
+    def test_failed_ios_preparation_keeps_native_owner_device_and_worker_state(self):
+        self.native.model.failures["install"] = 1
+        with self.assertRaises(WORKER.ios_simulator.NativeSimulatorError):
             self.case()
         session = self.worker._cases[0]
         self.assertIsNotNone(session.simulator._state.native_owner)
@@ -518,7 +510,7 @@ class IosWorkerTests(unittest.TestCase):
                 test.assertIsNotNone(test.native.model.writers[session.simulator.udid].process.poll())
                 test.assertIsNotNone(app.console.process.poll())
                 test.assertIsNotNone(session.case._receipt)
-                test.assertTrue(session.storage.path.exists())
+                test.assertTrue(test.native.model.device_root(session.simulator.udid).exists())
                 test.assertIn(session.simulator.udid, test.native.model.devices)
                 test.assertFalse(any(call[0] == "delete" for call in test.native.model.calls))
                 return super().close()
@@ -546,7 +538,7 @@ class IosWorkerTests(unittest.TestCase):
                 session.close(timeout=15)
         self.assertEqual(session.backend._fixture.close_calls, 0)
         self.assertEqual(session.backend._fixture.retain_calls, 1)
-        self.assertTrue(session.storage.path.exists())
+        self.assertTrue(self.native.model.device_root(session.simulator.udid).exists())
         self.assertIn(session.simulator.udid, self.native.model.devices)
         self.assertFalse(any(call[0] == "delete" for call in self.native.model.calls))
         self.assertFalse(session._completed)

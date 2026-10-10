@@ -202,11 +202,12 @@ Future<T> withNativeMigrationTransportHeld<T>(
         (released == false && installedE2eRuntimeCaseManifest == null)) {
       fail('Native controlled-tick lease release returned an invalid result.');
     }
-    // The production resume releases this exact admission lease first. Its
-    // false reply can then describe an intentionally disabled OS schedule in
-    // this isolated profile, not a failure to release the admission gate.
-    // Clear the manager's mutation state through its existing debug API; real
-    // subsequent outbox ticks must still prove transport admission and bytes.
+    // The production resume releases this exact admission lease first. In a
+    // cohort Simulator its false reply can then describe an OS schedule that
+    // the notification gate or BGTaskScheduler did not accept, not a failure
+    // to release the admission gate. Clear the manager's mutation state
+    // through its existing debug API; real subsequent outbox ticks must still
+    // prove transport admission and bytes.
     final ready = await _backgroundMigrationChannel.invokeMethod<bool>(
       'resumeWithoutSchedulingForTesting',
     );

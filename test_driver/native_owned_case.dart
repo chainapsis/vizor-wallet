@@ -41,6 +41,12 @@ Future<Map<String, Object>> persistNativeOwnedCaseResult({
 }) async {
   final actual = data?['case_manifest'];
   final context = data?['runtime_context'];
+  final scenarioId = expected is Map<String, dynamic>
+      ? expected['scenario_id']
+      : null;
+  // An iOS case owns one fresh Simulator and publishes no storage context.
+  final isIosCase =
+      scenarioId is String && scenarioId.startsWith('flutter.ios.');
   final phaseCount = [
     expectedPaymentLinkPhase,
     expectedVotingPhase,
@@ -80,27 +86,26 @@ Future<Map<String, Object>> persistNativeOwnedCaseResult({
             actual[entry.key] != entry.value ||
             actual[entry.key].runtimeType != entry.value.runtimeType,
       ) ||
-      context is! Map<String, dynamic> ||
-      context['schema_version'] != 1 ||
-      context['namespace'] != expected['namespace'] ||
-      context['pid'] is! int ||
-      context['pid'] != expectedPid ||
-      context['storage_cleanup_completed'] != false ||
-      context['os_background_scheduling_enabled'] != false) {
+      (isIosCase
+          ? context != null || expected['context_path'] != 'app-support'
+          : context is! Map<String, dynamic> ||
+                context['schema_version'] != 1 ||
+                context['namespace'] != expected['namespace'] ||
+                context['pid'] is! int ||
+                context['pid'] != expectedPid ||
+                context['storage_cleanup_completed'] != false ||
+                context['os_background_scheduling_enabled'] != false)) {
     throw StateError('The original app/case did not complete its assertions.');
   }
-  final path = expected['context_path'];
-  if (path == 'app-support' &&
-      expected['scenario_id'] is String &&
-      (expected['scenario_id'] as String).startsWith('flutter.ios.')) {
-    // iOS already published its context inside its owned Simulator container.
-    // Never interpret app-support as a host path or overwrite native evidence.
+  if (isIosCase) {
+    // Never interpret app-support as a host path or write host evidence.
     return <String, Object>{
       'case_manifest': actual,
       'pid': expectedPid,
       'ios_phase': ?expectedIosPhase,
     };
   }
+  final path = expected['context_path'];
   if (path is! String || !File(path).isAbsolute) {
     throw StateError('The original host context path must be absolute.');
   }

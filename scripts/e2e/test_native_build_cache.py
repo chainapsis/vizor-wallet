@@ -12,40 +12,51 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import native_build_cache as CACHE
-import native_ios_cleanup as NATIVE
+import native_ios_cohort as COHORT
+import native_mac_cleanup as MAC
 from native_case_lifecycle import NativeCaseLifecycle
 from native_workspace import prepare_native_case_workspace
 
 
+def model_bundle(app, executable):
+    app.mkdir(mode=0o700)
+    (app/executable).write_bytes(b"modeled signed Mach-O")
+    (app/executable).chmod(0o700)
+    (app/"Info.plist").write_text("modeled info")
+    return app
+
+
+def mac_pair(test, root):
+    """A modeled macOS cohort/helper capture; signing inspection is patched."""
+    root.mkdir(mode=0o700, exist_ok=True)
+    apps = {role: MAC._SignedApp(model_bundle(root/(role+".app"), executable), root/(role+".app")/executable,
+                                 "MODELTEAM1", "a"*64, "b"*64, frozenset(), (), ())
+            for role, executable in (("cohort","Runner"), ("helper","vizor-native-cleanup"))}
+    observation = patch.object(MAC, "_inspect_signed_app", side_effect=lambda path:
+        next(app for app in apps.values() if app.path == path))
+    observation.start()
+    test.addCleanup(observation.stop)
+    return apps, MAC.CapturedMacCleanupHelper(apps["helper"], apps["cohort"], MAC._CAPTURE_TOKEN)
+
+
 class CacheTests(unittest.TestCase):
+    """The macOS cohort/helper pair; iOS single-app entries are tested below."""
     def setUp(self):
         directory = tempfile.TemporaryDirectory(prefix="native-build-cache-")
         self.addCleanup(directory.cleanup)
         self.root = Path(directory.name).resolve()
-        self.inputs = {"schema":1, "platform":"ios", "model":"source/toolchain"}
+        self.inputs = {"schema":1, "platform":"macos", "model":"source/toolchain"}
         self.cancel = threading.Event()
         self.cases = []
         self.addCleanup(lambda:[case.close() for case in self.cases])
-        self.apps = {}
-        for role, executable in (("cohort","Runner"), ("helper","vizor-ios-cleanup")):
-            app = self.root/(role+".app")
-            app.mkdir(mode=0o700)
-            (app/executable).write_bytes(b"modeled signed Mach-O")
-            (app/executable).chmod(0o700)
-            (app/"Info.plist").write_text("modeled info")
-            framework = app/"Frameworks/Foo.framework/Versions/A"
+        self.apps, self.captured = mac_pair(self, self.root)
+        for app in self.apps.values():
+            framework = app.path/"Frameworks/Foo.framework/Versions/A"
             framework.mkdir(parents=True)
             (framework/"Foo").write_bytes(b"modeled framework bytes")
             (framework/"Foo").chmod(0o700)
             (framework.parent/"Current").symlink_to("A", target_is_directory=True)
             (framework.parent.parent/"Foo").symlink_to("Versions/Current/Foo")
-            self.apps[role] = NATIVE._SimulatorApp(app, app/executable,
-                "MODELTEAM1.com.keplr.vizor", "arm64", (), ())
-        self.captured = NATIVE.CapturedIosCleanupHelper(self.apps["helper"],self.apps["cohort"],NATIVE._CAPTURE_TOKEN)
-        observation = patch.object(NATIVE,"_inspect_app",side_effect=lambda path,helper:
-            self.apps["helper" if helper else "cohort"])
-        observation.start()
-        self.addCleanup(observation.stop)
 
     def case(self, *, close=True, code=0):
         case = NativeCaseLifecycle(prepare_native_case_workspace(self.root,platform="ios",
@@ -168,6 +179,98 @@ class CacheTests(unittest.TestCase):
             folder.chmod(0o700)
             with self.assertRaisesRegex(CACHE.NativeBuildCacheError,"writable"):
                 lease.load()
+
+
+class IosCohortCacheTests(unittest.TestCase):
+    """iOS entries hold only the signed Simulator cohort app."""
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory(prefix="native-ios-cache-")
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name).resolve()
+        self.inputs = {"schema":1, "platform":"ios", "model":"source/toolchain"}
+        self.cancel = threading.Event()
+        self.cases = []
+        self.addCleanup(lambda:[case.close() for case in self.cases])
+        app = model_bundle(self.root/"Runner.app", "Runner")
+        self.app = COHORT._SimulatorApp(app, app/"Runner", "arm64", (), ())
+        self.captured = COHORT.CapturedIosCohort(self.app, COHORT._CAPTURE_TOKEN)
+        observation = patch.object(COHORT, "_inspect_app", side_effect=lambda path: self.app)
+        observation.start()
+        self.addCleanup(observation.stop)
+
+    def case(self, *, close=True):
+        case = NativeCaseLifecycle(prepare_native_case_workspace(self.root,platform="ios",
+            scenario_id="flutter.ios.native-build",run_id="abcdef0123",worker_id=0,
+            case_index=len(self.cases),ports={"rpc":28232,"lwd":29067,"proxy":29068},activation_height=1))
+        self.cases.append(case)
+        case.run_command([sys.executable,"-B","-c","raise SystemExit(0)"],
+            env=os.environ.copy(),timeout=2,cancel_event=self.cancel)
+        if close:
+            case.close()
+        return case
+
+    def lease(self, roles=("cohort",), inputs=None):
+        return CACHE.NativeCohortCacheLease(self.root/"cache", inputs or self.inputs,
+            timeout=2,cancel_event=self.cancel,roles=roles)
+
+    def produced(self, captured=None, inputs=None):
+        return CACHE.ProducedNativeCohort(self.case(), captured or self.captured,
+                                          inputs or self.inputs, CACHE._TOKEN)
+
+    def test_single_app_publication_lookup_and_private_copy(self):
+        with self.lease() as lease:
+            self.assertIsNone(lease.load())
+            lease.publish(self.produced())
+            paths = lease.load()
+            self.assertEqual(set(paths), {"cohort"})
+            self.assertEqual(set(os.listdir(lease.entry)), {"manifest.json", "cohort.app"})
+            self.assertEqual(lease.entry.stat().st_mode & 0o777, 0o500)
+            manifest = json.loads((lease.entry/"manifest.json").read_text())
+            self.assertEqual(set(manifest["bundles"]), {"cohort"})
+            self.assertEqual(manifest["inputs"], self.inputs)
+            copies = lease.materialize(self.case(close=False), paths)
+            self.assertEqual(set(copies), {"cohort"})
+            self.assertEqual(set(os.listdir(copies["cohort"].parent)), {"cohort.app"})
+            self.assertEqual(CACHE._bundle(copies["cohort"]), CACHE._bundle(paths["cohort"], immutable=True))
+            self.assertNotEqual((copies["cohort"]/"Runner").stat().st_ino, (paths["cohort"]/"Runner").stat().st_ino)
+        with self.lease() as lease:
+            self.assertEqual(lease.load(), paths)
+
+    def test_single_app_and_pair_entries_never_satisfy_each_other(self):
+        with self.lease() as lease:
+            lease.publish(self.produced())
+        with self.lease(roles=("cohort", "helper")) as pair:
+            with self.assertRaisesRegex(CACHE.NativeBuildCacheError, "attachment/inventory"):
+                pair.load()
+        _, mac = mac_pair(self, self.root/"mac")
+        mac_inputs = {**self.inputs, "platform":"macos"}
+        with self.lease(roles=("cohort", "helper"), inputs=mac_inputs) as pair:
+            pair.publish(self.produced(mac, mac_inputs))
+            self.assertEqual(set(pair.load()), {"cohort", "helper"})
+        with self.lease(inputs=mac_inputs) as lease:
+            with self.assertRaisesRegex(CACHE.NativeBuildCacheError, "attachment/inventory"):
+                lease.load()
+
+    def test_publication_roles_must_match_the_captured_artifacts(self):
+        with self.lease(roles=("cohort", "helper")) as pair:
+            with self.assertRaisesRegex(CACHE.NativeBuildCacheError, "roles do not match"):
+                pair.publish(self.produced())
+            self.assertIsNone(pair.load())
+        _, mac = mac_pair(self, self.root/"mac")
+        with self.lease() as lease:
+            with self.assertRaisesRegex(CACHE.NativeBuildCacheError, "roles do not match"):
+                lease.publish(self.produced(mac))
+            self.assertIsNone(lease.load())
+        self.assertEqual([name for name in os.listdir(self.root/"cache") if name.startswith(".pending-")], [])
+        with self.assertRaisesRegex(CACHE.NativeBuildCacheError, "positively join"):
+            self.produced(object())
+
+    def test_invalid_roles_are_refused_before_cache_access(self):
+        for roles in ((), ("helper",), ("helper", "cohort"), ("cohort", "cohort"),
+                      ("cohort", "symbols"), "cohort"):
+            with self.subTest(roles=roles), self.assertRaisesRegex(CACHE.NativeBuildCacheError, "roles"):
+                self.lease(roles=roles)
+        self.assertFalse((self.root/"cache").exists())
 
 
 class CheckoutBuildLeaseTests(unittest.TestCase):

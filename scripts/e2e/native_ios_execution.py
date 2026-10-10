@@ -176,10 +176,9 @@ def execute_native_ios_case(session, *, dart, source_root, timeout=600.0, cancel
     if _phase and result["ios_phase"] != _phase:
         raise NativeIosExecutionError("iOS result does not match its original restart phase")
     check()
-    session.storage._verify_context(app.pid)
     if {path:_capture(path) for path in source} != source:
         raise NativeIosExecutionError("original iOS Driver source/tool changed")
-    session.storage.helper.verify_unchanged()
+    session.storage.cohort.verify_unchanged()
     session.case.stop_process(process, timeout=min(5.0, deadline-time.monotonic()))
     session.case.stop_process(log_reader, timeout=min(5.0, deadline-time.monotonic()))
     return {"scenario_id":manifest["scenario_id"], "namespace":manifest["namespace"],

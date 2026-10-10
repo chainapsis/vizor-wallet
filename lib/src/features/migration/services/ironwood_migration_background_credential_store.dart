@@ -5,11 +5,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/services.dart';
-import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-
-import '../../../core/config/e2e_namespace.dart';
-import '../../../core/config/network_config.dart';
 
 const kIronwoodMigrationBackgroundCredentialService =
     'com.keplr.vizor.ironwood-migration-background.v1';
@@ -438,19 +434,15 @@ class IronwoodMigrationBackgroundCredentialStore {
   }
 
   static FlutterSecureStorage _defaultStorage() {
-    final service = e2eSecureStoreService(
-      baseService: kIronwoodMigrationBackgroundCredentialService,
-      namespace: kVizorE2eNamespace,
-      defaultNetworkName: kZcashDefaultNetworkName,
-      isDebug: kDebugMode,
-    );
-    return FlutterSecureStorage(
+    return const FlutterSecureStorage(
       iOptions: IOSOptions(
-        accountName: service,
+        accountName: kIronwoodMigrationBackgroundCredentialService,
         accessibility: KeychainAccessibility.first_unlock_this_device,
         synchronizable: false,
       ),
-      aOptions: AndroidOptions(sharedPreferencesName: service),
+      aOptions: AndroidOptions(
+        sharedPreferencesName: kIronwoodMigrationBackgroundCredentialService,
+      ),
     );
   }
 

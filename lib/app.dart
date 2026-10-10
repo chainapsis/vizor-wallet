@@ -203,7 +203,7 @@ void _startVotingObservabilityLogging() {
 
 Map<String, Object>? _e2eRuntimeContext;
 
-/// App-produced locations for the cohort driver, not proof of native cleanup.
+/// macOS app-produced locations for the cohort driver, not proof of native cleanup.
 Map<String, Object>? get e2eRuntimeContext => _e2eRuntimeContext;
 
 Future<E2eRuntimeCaseManifest?> initializeE2eRuntimeConfiguration() async {
@@ -215,6 +215,8 @@ Future<E2eRuntimeCaseManifest?> initializeE2eRuntimeConfiguration() async {
     isMacos: Platform.isMacOS,
     defaultNetworkName: kZcashDefaultNetworkName,
   );
+  // Case identity on both platforms. Storage isolation below uses
+  // kVizorE2eNamespace instead, which is empty on iOS.
   final e2eNamespace = e2eManifest?.namespace ?? '';
   // Only debug builds can host an E2E case. Release builds never read the E2E
   // environment, so these checks compile out of shipped apps.
@@ -236,50 +238,39 @@ Future<E2eRuntimeCaseManifest?> initializeE2eRuntimeConfiguration() async {
       runtimeNamespace: readE2eRuntimeNamespace(isIos: Platform.isIOS),
     );
   }
+  // Only macOS cohort builds isolate storage. Each iOS case owns a fresh
+  // Simulator, so iOS keeps production storage identifiers.
+  final storageNamespace = kVizorE2eNamespace;
   configureE2ePreferences(
-    namespace: e2eNamespace,
+    namespace: storageNamespace,
     defaultNetworkName: kZcashDefaultNetworkName,
     isDebug: kDebugMode,
   );
-  if (e2eManifest != null) {
+  if (kVizorE2eMacosCohort && e2eManifest != null) {
     final support = await getWalletSupportDirectory();
     final service = secureStoreServiceForNetwork(kZcashDefaultNetworkName);
-    final contextPath = resolveE2eContextPath(
+    // Validates the manifest path; the original Driver writes this context.
+    resolveE2eContextPath(
       configuredPath: e2eManifest.contextPath,
-      supportDirectory: support.path,
-      pathSeparator: Platform.pathSeparator,
-      namespace: e2eNamespace,
+      namespace: storageNamespace,
       defaultNetworkName: kZcashDefaultNetworkName,
       isDebug: kDebugMode,
-      isIos: Platform.isIOS,
     );
     final context = buildE2eRuntimeContext(
-      namespace: e2eNamespace,
+      namespace: storageNamespace,
       processId: pid,
       supportDirectory: support.path,
       secureStoreServices: e2eRuntimeSecureStoreServices(
         walletService: service,
-        namespace: e2eNamespace,
-        isIos: Platform.isIOS,
-        isMacos: Platform.isMacOS,
       ),
       preferencesPrefix: e2ePreferencesPrefix(
-        namespace: e2eNamespace,
+        namespace: storageNamespace,
         defaultNetworkName: kZcashDefaultNetworkName,
         isDebug: kDebugMode,
       ),
-      nativePreferencesSuite: Platform.isIOS
-          ? 'com.keplr.vizor.regtest.e2e.$e2eNamespace'
-          : null,
-      notificationIdentifierPrefix: Platform.isIOS
-          ? 'vizor_e2e_$e2eNamespace.'
-          : null,
     );
     // The macOS sandbox cannot write the host's private case evidence tree.
     // Its original Driver persists this observation after assertion completion.
-    if (!Platform.isMacOS) {
-      await writeE2eRuntimeContext(contextPath: contextPath, context: context);
-    }
     _e2eRuntimeContext = Map<String, Object>.unmodifiable(context);
   }
   return e2eManifest;

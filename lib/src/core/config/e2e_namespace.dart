@@ -6,11 +6,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'e2e_runtime_case_manifest.dart';
 
 const kVizorE2eNamespaceEnvKey = 'VIZOR_E2E_NAMESPACE';
-const kVizorE2eAppSupportContextPath = 'app-support';
 const kVizorE2eContextFileName = 'native-context.json';
 
-String get kVizorE2eNamespace =>
-    installedE2eRuntimeCaseManifest?.namespace ?? '';
+/// Storage namespace of this process. Only macOS cohort builds isolate app
+/// storage per case. An iOS case owns one fresh Simulator and keeps production
+/// identifiers, even though its manifest still carries the case namespace.
+String get kVizorE2eNamespace => kVizorE2eMacosCohort
+    ? installedE2eRuntimeCaseManifest?.namespace ?? ''
+    : '';
 String get kVizorE2eContextPath =>
     installedE2eRuntimeCaseManifest?.contextPath ?? '';
 
@@ -88,21 +91,8 @@ String e2eSecureStoreService({
   return validated.isEmpty ? baseService : '$baseService.e2e.$validated';
 }
 
-List<String> e2eRuntimeSecureStoreServices({
-  required String walletService,
-  required String namespace,
-  required bool isIos,
-  required bool isMacos,
-}) => <String>[
-  walletService,
-  if (isMacos) '$walletService.mnemonic',
-  if (isIos) ...<String>[
-    '$walletService.accessibility-migration-v1',
-    'com.zcash.wallet.biometric-unlock.e2e.$namespace',
-    'com.keplr.vizor.ironwood-migration-background.v1.e2e.$namespace',
-    'com.keplr.vizor.ironwood-migration-outbox-key.v1.e2e.$namespace',
-  ],
-];
+List<String> e2eRuntimeSecureStoreServices({required String walletService}) =>
+    <String>[walletService, '$walletService.mnemonic'];
 
 String e2eSupportDirectoryPath({
   required String basePath,
@@ -134,22 +124,6 @@ String e2ePreferencesPrefix({
   return validated.isEmpty ? 'flutter.' : 'flutter.vizor_e2e_$validated.';
 }
 
-String e2ePreferenceKey({
-  required String key,
-  required String namespace,
-  required String defaultNetworkName,
-  required bool isDebug,
-}) {
-  final validated = validateE2eNamespace(
-    namespace: namespace,
-    defaultNetworkName: defaultNetworkName,
-    isDebug: isDebug,
-  );
-  return validated.isEmpty
-      ? key
-      : '${e2ePreferencesPrefix(namespace: validated, defaultNetworkName: defaultNetworkName, isDebug: isDebug)}$key';
-}
-
 void configureE2ePreferences({
   required String namespace,
   required String defaultNetworkName,
@@ -178,12 +152,9 @@ void configureE2ePreferences({
 
 String resolveE2eContextPath({
   required String configuredPath,
-  required String supportDirectory,
-  required String pathSeparator,
   required String namespace,
   required String defaultNetworkName,
   required bool isDebug,
-  required bool isIos,
 }) {
   final validated = validateE2eNamespace(
     namespace: namespace,
@@ -195,15 +166,6 @@ String resolveE2eContextPath({
       throw StateError('An E2E context requires a case namespace.');
     }
     return '';
-  }
-  if (isIos) {
-    if (configuredPath != kVizorE2eAppSupportContextPath ||
-        !Directory(supportDirectory).isAbsolute) {
-      throw ArgumentError(
-        'The iOS E2E context requires an absolute app-support directory.',
-      );
-    }
-    return '$supportDirectory$pathSeparator$kVizorE2eContextFileName';
   }
   if (!File(configuredPath).isAbsolute ||
       !configuredPath.endsWith('/e2e/$validated/$kVizorE2eContextFileName') ||
@@ -224,8 +186,6 @@ Map<String, Object> buildE2eRuntimeContext({
   required String supportDirectory,
   required List<String> secureStoreServices,
   required String preferencesPrefix,
-  String? nativePreferencesSuite,
-  String? notificationIdentifierPrefix,
 }) => <String, Object>{
   'schema_version': 1,
   'namespace': namespace,
@@ -233,27 +193,6 @@ Map<String, Object> buildE2eRuntimeContext({
   'support_directory': supportDirectory,
   'secure_store_services': secureStoreServices,
   'preferences_prefix': preferencesPrefix,
-  'native_preferences_suite': ?nativePreferencesSuite,
-  'notification_identifier_prefix': ?notificationIdentifierPrefix,
   'os_background_scheduling_enabled': false,
   'storage_cleanup_completed': false,
 };
-
-Future<void> writeE2eRuntimeContext({
-  required String contextPath,
-  required Map<String, Object> context,
-}) async {
-  final file = File(contextPath);
-  if (!file.isAbsolute || !await file.parent.exists()) {
-    throw StateError(
-      'The E2E context parent must be an existing absolute directory.',
-    );
-  }
-  final temporary = File('$contextPath.$pid.tmp');
-  try {
-    await temporary.writeAsString(jsonEncode(context), flush: true);
-    await temporary.rename(contextPath);
-  } finally {
-    if (await temporary.exists()) await temporary.delete();
-  }
-}

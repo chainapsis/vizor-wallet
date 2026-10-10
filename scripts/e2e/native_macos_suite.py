@@ -200,7 +200,7 @@ def _acquire_ios_preparation_slot(slots, cancel):
 
 
 def execute_case(root, run_id, worker_id, scenario, *, helper, artifact, source_root,
-                 dart, args, cancel, desktop_transparent=None, voting_artifact=None, ios_helper=None,
+                 dart, args, cancel, desktop_transparent=None, voting_artifact=None, ios_cohort=None,
                  ios_addresses=None, ios_preparation_slots=None):
     """The worker thread creates, drives and finalizes its own mutable handles."""
     started = time.monotonic()
@@ -235,11 +235,11 @@ def execute_case(root, run_id, worker_id, scenario, *, helper, artifact, source_
             or is_rust and RUST_PROFILES[scenario.id] == "zakura-direct-activation500") else 1
         session = worker.prepare_case(platform="rust" if is_rust else "ios" if is_ios else "macos", scenario_id=scenario.id,
             case_index=1, activation_height=activation,
-            helper=None if is_rust else ios_helper if is_ios else helper,
+            helper=None if is_rust else ios_cohort if is_ios else helper,
             **({"runtime_identifier":args.ios_runtime, "device_type_identifier":args.ios_device_type} if is_ios else {}),
             timeout=120 if is_ios else 60, cancel_event=cancel)
         if preparation_held:
-            # Only fresh boot/install/native absence checks share this budget.
+            # Only fresh device create/boot/cohort install share this budget.
             # Already prepared cases can execute up to the global worker limit.
             ios_preparation_slots.release()
             preparation_held = False
@@ -396,10 +396,10 @@ def run_native_suite(args, catalog, scenarios, selection, *, source_root):
                 source_root=root, flutter=args.flutter, cancel_event=cancel,
                 tex_address=payment_addresses.get("receiver_tex"), cache_root=cache_parent/"macos-cohort-v1")
             report["builds"].update(build_proof)
-        ios_helper = None
+        ios_cohort = None
         if any(s.engine == "flutter-ios" for s in scenarios):
-            ios_helper, ios_proof = build_native_ios_cohort(build_case(4,"flutter.ios.native-build","ios"),
-                source_root=root, flutter=args.flutter, cancel_event=cancel, cache_root=cache_parent/"ios-cohort-v1")
+            ios_cohort, ios_proof = build_native_ios_cohort(build_case(4,"flutter.ios.native-build","ios"),
+                source_root=root, flutter=args.flutter, cancel_event=cancel, cache_root=cache_parent/"ios-cohort-v2")
             report["builds"]["ios"] = ios_proof
         voting_artifact = None
         if any(s.id in VOTING_SCENARIOS for s in scenarios):
@@ -424,7 +424,7 @@ def run_native_suite(args, catalog, scenarios, selection, *, source_root):
             submitted = {pool.submit(execute_case,*repetitions[repetition],index,scenario,
                 helper=helper,artifact=artifact,source_root=root,dart=dart,args=args,cancel=cancel,
                 desktop_transparent=payment_addresses.get("desktop_transparent"),
-                voting_artifact=voting_artifact, ios_helper=ios_helper, ios_addresses=ios_addresses,
+                voting_artifact=voting_artifact, ios_cohort=ios_cohort, ios_addresses=ios_addresses,
                 ios_preparation_slots=ios_preparation_slots):(repetition,index)
                 for repetition,index,scenario in jobs}
             for future in as_completed(submitted):

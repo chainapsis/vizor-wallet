@@ -11,6 +11,13 @@ void main() {
   late Map<String, dynamic> context;
   late Map<String, dynamic> data;
 
+  void useIosManifest(String scenarioId) {
+    manifest['scenario_id'] = scenarioId;
+    manifest['context_path'] = 'app-support';
+    data['case_manifest'] = Map<String, dynamic>.of(manifest);
+    data['runtime_context'] = null;
+  }
+
   setUp(() async {
     directory = await Directory.systemTemp.createTemp('native-owned-result-');
     manifest = <String, dynamic>{
@@ -58,35 +65,50 @@ void main() {
   test(
     'iOS returns its native result without writing a host context',
     () async {
-      manifest['scenario_id'] = 'flutter.ios.import-sync';
-      manifest['context_path'] = 'app-support';
-      data['case_manifest'] = Map<String, dynamic>.of(manifest);
+      useIosManifest('flutter.ios.import-sync');
       expect(await persist(), {'case_manifest': manifest, 'pid': 123});
       expect(await directory.list().toList(), isEmpty);
     },
   );
 
   test('iOS console PID cannot substitute for its native app PID', () async {
-    manifest['scenario_id'] = 'flutter.ios.import-sync';
-    manifest['context_path'] = 'app-support';
-    data['case_manifest'] = Map<String, dynamic>.of(manifest);
+    useIosManifest('flutter.ios.import-sync');
     data['pid'] = 456;
     await expectLater(persist(), throwsStateError);
     expect(await directory.list().toList(), isEmpty);
   });
 
   test('iOS setup without completed assertions remains refused', () async {
-    manifest['scenario_id'] = 'flutter.ios.import-sync';
-    manifest['context_path'] = 'app-support';
-    data['case_manifest'] = Map<String, dynamic>.of(manifest);
+    useIosManifest('flutter.ios.import-sync');
     data['assertions_completed'] = false;
     await expectLater(persist(), throwsStateError);
+  });
+
+  test('iOS rejects an app-published runtime context', () async {
+    useIosManifest('flutter.ios.import-sync');
+    data['runtime_context'] = context;
+    await expectLater(persist(), throwsStateError);
+    expect(await directory.list().toList(), isEmpty);
+  });
+
+  test('iOS rejects a host context path', () async {
+    useIosManifest('flutter.ios.import-sync');
+    manifest['context_path'] = '${directory.path}/native-context.json';
+    data['case_manifest'] = Map<String, dynamic>.of(manifest);
+    await expectLater(persist(), throwsStateError);
+    expect(await directory.list().toList(), isEmpty);
   });
 
   test('macOS cannot use the Simulator app-support sentinel', () async {
     manifest['context_path'] = 'app-support';
     data['case_manifest'] = Map<String, dynamic>.of(manifest);
     await expectLater(persist(), throwsStateError);
+  });
+
+  test('macOS still requires its runtime context', () async {
+    data['runtime_context'] = null;
+    await expectLater(persist(), throwsStateError);
+    expect(await File(manifest['context_path']).exists(), isFalse);
   });
 
   for (final scenario in [
@@ -97,9 +119,7 @@ void main() {
       test(
         '$scenario binds its original $phase result without a host write',
         () async {
-          manifest['scenario_id'] = scenario;
-          manifest['context_path'] = 'app-support';
-          data['case_manifest'] = Map<String, dynamic>.of(manifest);
+          useIosManifest(scenario);
           data['ios_phase'] = phase;
           expect(
             await persistNativeOwnedCaseResult(
@@ -119,9 +139,7 @@ void main() {
   test(
     'iOS restart refuses a wrong phase, neighbor case and phase collision',
     () async {
-      manifest['scenario_id'] = 'flutter.ios.ironwood-migration-restart';
-      manifest['context_path'] = 'app-support';
-      data['case_manifest'] = Map<String, dynamic>.of(manifest);
+      useIosManifest('flutter.ios.ironwood-migration-restart');
       data['ios_phase'] = 'resume';
       await expectLater(
         persistNativeOwnedCaseResult(

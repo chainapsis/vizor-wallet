@@ -24,7 +24,7 @@ class MigrationFixtureTests(unittest.TestCase):
 
     def session(self, name, activation=500):
         session = self.model.worker.prepare_case(platform="ios", scenario_id=name,
-            case_index=0, activation_height=activation, helper=self.model.native.helper,
+            case_index=0, activation_height=activation, helper=self.model.native.cohort,
             runtime_identifier=FIXTURES.IOS_FIXTURES.RUNTIME_ID,
             device_type_identifier=FIXTURES.IOS_FIXTURES.DEVICE_ID, timeout=15)
         with patch.object(WORKER.zakura, "load_zakura_fixture_source",

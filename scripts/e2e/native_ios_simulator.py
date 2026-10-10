@@ -248,7 +248,8 @@ class OwnedIosSimulator:
         not an aggregate case-process budget. Each command reserves the shared
         five-second cleanup allowance; no new command starts with less remaining.
         OS spawn/system-call latency is not a hard wall-clock guarantee.
-        Any case launch retains the device until native cleanup is implemented.
+        Any case launch retains the device here; after a successful case its
+        claimed app owner (native_ios_case_storage) deletes it instead.
         """
         _deadline(timeout)  # Validate before process or simulator mutations.
         if self._ownership_token is not _OWNERSHIP_TOKEN:
@@ -312,8 +313,8 @@ def acquire_ios_simulator(
     """Create, never adopt; retain incomplete allocation evidence after failure.
 
     Runtime/type selection is explicit and checked against installed support.
-    No app is installed or launched. Any case launch prevents device deletion
-    until a future native-state cleanup implementation supplies real proof.
+    No app is installed or launched. After any case launch, only the claimed
+    app owner (native_ios_case_storage) may delete the device, after success.
     """
     if _HOST_PLATFORM != "darwin":
         raise NativeSimulatorError("iOS simulator allocation requires a macOS host")

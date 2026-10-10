@@ -15,12 +15,8 @@ import Security
 final class BiometricUnlockHandler {
   static let shared = BiometricUnlockHandler()
 
-  private static let baseService = "com.zcash.wallet.biometric-unlock"
+  private static let service = "com.zcash.wallet.biometric-unlock"
   private static let account = "wallet-passcode-escrow"
-
-  private static var service: String {
-    E2eRuntimeProfile.current.keychainService(baseService)
-  }
 
   private init() {}
 

@@ -5,8 +5,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../config/e2e_namespace.dart';
-import '../config/network_config.dart';
 import '../config/google_play_config.dart';
 import '../layout/app_form_factor.dart';
 
@@ -81,20 +79,13 @@ class PreferencesAppReviewStore implements AppReviewStore {
   static const key = 'vizor_app_review_history_v1';
   late final SharedPreferencesAsync _preferences = SharedPreferencesAsync();
 
-  String get _storageKey => e2ePreferenceKey(
-    key: key,
-    namespace: kVizorE2eNamespace,
-    defaultNetworkName: kZcashDefaultNetworkName,
-    isDebug: kDebugMode,
-  );
-
   @override
   Future<AppReviewHistory> load() async =>
-      AppReviewHistory.decode(await _preferences.getString(_storageKey));
+      AppReviewHistory.decode(await _preferences.getString(key));
 
   @override
   Future<void> save(AppReviewHistory history) =>
-      _preferences.setString(_storageKey, history.encode());
+      _preferences.setString(key, history.encode());
 }
 
 abstract interface class AppReviewNative {

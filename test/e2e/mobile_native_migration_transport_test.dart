@@ -85,7 +85,7 @@ void main() {
   );
 
   test(
-    'false production resume outside isolated profile cannot credit debug readiness',
+    'false production resume without a case manifest cannot credit debug readiness',
     () async {
       resumeResult = false;
       await expectLater(

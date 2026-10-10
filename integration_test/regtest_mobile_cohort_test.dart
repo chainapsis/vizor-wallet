@@ -7,7 +7,6 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
-import 'package:zcash_wallet/app.dart' show e2eRuntimeContext;
 import 'package:zcash_wallet/src/core/config/e2e_runtime_case_manifest.dart';
 import 'package:zcash_wallet/src/core/config/network_config.dart';
 import 'package:zcash_wallet/src/core/layout/app_form_factor.dart';
@@ -79,9 +78,6 @@ void main() {
     throw StateError('The original iOS restart phase is missing or invalid.');
   }
   if (phase != null) binding.reportData!['ios_phase'] = phase;
-  tearDownAll(() {
-    binding.reportData!['runtime_context'] = e2eRuntimeContext;
-  });
   switch (manifest.scenarioId) {
     case 'flutter.ios.create-sync':
       create.main();

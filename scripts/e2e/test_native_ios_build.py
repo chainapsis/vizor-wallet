@@ -74,11 +74,11 @@ class BuildTests(unittest.TestCase):
         return runtime.CommandResult(0,())
 
     def build(self, **options):
-        captured = SimpleNamespace(architecture="arm64",team="MODEL",verify_unchanged=lambda:None)
+        captured = SimpleNamespace(architecture="arm64",verify_unchanged=lambda:None)
         with patch.object(self.case,"run_command",side_effect=self.command), \
              patch.object(BUILD.platform,"machine",return_value="arm64"), \
-             patch.object(BUILD,"_inspect_app",return_value=SimpleNamespace(application_identifier="MODELTEAM1.com.keplr.vizor")), \
-             patch.object(BUILD,"capture_ios_cleanup_helper",return_value=captured):
+             patch.object(BUILD,"capture_ios_cohort",return_value=captured) as capture:
+            self.capture = capture
             return BUILD.build_native_ios_cohort(self.case, source_root=self.source, flutter=self.source/"bin/flutter", **options)
 
     def test_checkout_lock_covers_preparation_and_releases_after_failure(self):
@@ -222,20 +222,59 @@ class BuildTests(unittest.TestCase):
                 self.build(cache_root=self.root/"cache")
             inputs.assert_not_called()
 
-    def test_one_mobile_regtest_cohort_and_original_helper_build(self):
+    def test_one_mobile_regtest_cohort_build_without_a_helper(self):
         _, proof = self.build()
+        self.assertEqual(set(proof), {"ios_app_build_count", "cache_hit", "cache_key", "architecture",
+            "joined_build_processes", "exit_codes", "checked_source_files_sha256",
+            "persistent_cache_attestation", "wallet_or_catalog_pass"})
         self.assertEqual(proof["ios_app_build_count"], 1)
-        self.assertEqual(proof["ios_helper_build_count"], 1)
+        self.assertEqual(proof["architecture"], "arm64")
         self.assertFalse(proof["wallet_or_catalog_pass"])
         configure = next(args for args in self.commands if "--config-only" in args)
         for flag in ("--simulator", "--debug", "--dart-define=VIZOR_FORM_FACTOR=mobile",
                      "--dart-define=VIZOR_E2E_IOS_COHORT=true", "--dart-define=VIZOR_PAYMENT_LINK_REGTEST_ENABLED=true"):
             self.assertEqual(configure.count(flag), 1)
-        app = next(args for args in self.commands if "Runner" in args)
-        self.assertIn("ENABLE_DEBUG_DYLIB=NO", app)
-        self.assertIn(str(self.case.workspace.root/"ios-build"), app)
-        helper = next(args for args in self.commands if "VizorIosCleanup" in args)
-        self.assertIn("DEVELOPMENT_TEAM=MODELTEAM1", helper)
+        builds = [args for args in self.commands if "/usr/bin/xcodebuild" in args]
+        self.assertEqual(len(builds), 1)
+        self.assertIn("Runner", builds[0])
+        self.assertIn("ENABLE_DEBUG_DYLIB=NO", builds[0])
+        self.assertIn(str(self.case.workspace.root/"ios-build"), builds[0])
+        self.assertFalse(any(word in item for args in self.commands for item in args
+                             for word in ("native-cleanup", "DEVELOPMENT_TEAM")))
+        self.capture.assert_called_once_with(
+            self.case.workspace.root/"ios-build/Build/Products/Debug-iphonesimulator/Runner.app")
+
+    def test_source_inventory_has_no_harness_helper_or_plist_stamp_inputs(self):
+        self.build()
+        listing = next(args for args in self.commands if "ls-files" in args)
+        requested = listing[listing.index("--")+1:]
+        self.assertEqual(requested, ["lib", "integration_test", "test", "rust", "rust_builder", "ios",
+                                     "assets", "third_party", "pubspec.yaml", "pubspec.lock", ".fvmrc"])
+
+    def test_cache_hit_captures_only_the_cohort_copy(self):
+        leases = []
+        class Lease:
+            key = "c"*64
+            def __init__(self, root, inputs, **options):
+                self.root, self.options = root, options
+                leases.append(self)
+            def __enter__(self):
+                return self
+            def __exit__(self, *_):
+                pass
+            def load(self):
+                return {role: self.root/(role+".app") for role in self.options["roles"]}
+            def materialize(self, case, paths):
+                return {role: case.workspace.root/"native-publication"/(role+".app") for role in paths}
+        with patch.object(BUILD.cache, "collect_native_cache_inputs", return_value={"model":"inputs"}), \
+             patch.object(BUILD.cache, "NativeCohortCacheLease", Lease):
+            _, proof = self.build(cache_root=self.root/"cache")
+        self.assertEqual([lease.options["roles"] for lease in leases], [("cohort",)])
+        self.capture.assert_called_once_with(self.case.workspace.root/"native-publication/cohort.app")
+        self.assertEqual((proof["ios_app_build_count"], proof["cache_hit"], proof["cache_key"]), (0, True, "c"*64))
+        self.assertEqual(set(proof), {"ios_app_build_count", "cache_hit", "cache_key", "architecture",
+            "joined_build_processes", "exit_codes", "persistent_cache_attestation", "wallet_or_catalog_pass"})
+        self.assertFalse(any("/usr/bin/xcodebuild" in args for args in self.commands))
 
     def test_changed_wallet_input_does_not_publish_a_pair(self):
         self.change_source = True

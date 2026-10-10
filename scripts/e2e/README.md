@@ -98,12 +98,27 @@ python3.11 -B -m unittest scripts/e2e/test_e2e_catalog.py scripts/e2e/test_e2e_r
 
 ## Isolated iOS Simulator execution
 
-The iOS executor builds one signed Simulator cohort and cleanup helper before
-dispatch. Each case owns a fresh device, wallet/native storage, ports and pinned
+The iOS executor builds one signed Simulator cohort app before dispatch. Each
+case owns a fresh device, wallet/native storage, ports and pinned
 Zakura/lightwalletd backend; restarts retain only their original case's state.
 The original UIKit PID's VM event binds Driver discovery. Financial, receipt,
 inclusion, fee, reorg, restart, account recovery and outbox assertions remain.
 Outbox transport is not positive authorized OS-background scheduling coverage.
+
+The app keeps its production storage names inside the case's device, so the
+device is the isolation boundary. A passing case ends by deleting it: the owner
+proves the app stopped, shuts the device down, runs `simctl delete` on its exact
+UUID, then requires that UUID to be absent from the device inventory and
+`~/Library/Developer/CoreSimulator/Devices/<udid>` to be absent. For an iOS case,
+`native_cleanup_proved` in the case result means exactly this deletion proof.
+A failed case stops its writers and keeps the shut-down device, workspace and
+evidence; nothing deletes them later.
+
+The builder always passes `--dart-define=VIZOR_E2E_IOS_COHORT=true`, and the
+builder's own source is a cache-key input. Capture does not statically check
+that define in the built app. A wrongly built app is therefore not refused at
+capture: it fails at runtime when the cohort test rejects its case manifest,
+which can take until the case deadline.
 
 Use the common macOS tooling requirements below plus an installed, available
 iOS Simulator runtime and a device type that it supports. Flutter dependencies
@@ -160,7 +175,7 @@ python3 scripts/e2e/run-suite.py --suite rust-direct --plan \
 Shared artifact producers run one at a time before the case queue. `--build-jobs`
 controls the Cargo job budget; it is not a global Flutter/Xcode CPU limit.
 `--workers` bounds concurrent case owners across engines and fresh repetitions.
-Fresh iOS device preparation (boot, helper install and native absence checks)
+Fresh iOS device preparation (device creation, boot and the one cohort install)
 has a separate maximum of two simultaneous operations within that worker
 budget. Waiting happens before device allocation and does not consume the
 unchanged120-second preparation timeout. The slot is released before backend
@@ -641,6 +656,8 @@ Only a fresh **pre-app** case with no phase launches and proven teardown can be 
 success also requires positive absence in the device inventory. Any case launch
 (even a backend or Python phase) conservatively requires native cleanup that is
 not implemented here, so it retains the shut-down device and returns an error.
+A launched case's device is deleted only by its claimed app owner below, after
+a successful case.
 Process, ownership, or cleanup uncertainty also prevents deletion and remains
 a failure after a later retry. A helper command exception supplies no process
 handle/proof and conservatively blocks deletion; an ordinary nonzero command
@@ -780,101 +797,49 @@ The host models use real private fake-home files and owned children, not real
 wallets or Keychain secrets. Catalog execution, trusted build publication, iOS
 host composition and whole-worker teardown remain pending; `runnable` flags stay false.
 
-### iOS Simulator native storage observations
+### Capture the Simulator cohort
 
-The separate [Simulator helper](native-cleanup/README.md#ios-simulator-contract)
-verifies or deletes one canonical case's five exact Keychain services, prefixed
-application preferences, dedicated defaults suite and prefixed notifications.
-Before native I/O it requires the exact simulator UUID, strict helper marker,
-expected application identifier and bounded embedded Simulator access rights.
-It preflights all resources before deletion and proves absence afterward;
-native errors and partial observations remain failures. No secret values are
-returned, no authentication prompt or broad domain reset is requested.
-
-Use Xcode's Simulator entitlement processing with the actual cohort's team.
-Bare `swiftc` plus ad-hoc signing does not establish the required embedded
-rights. The helper is neither a wallet target nor an app-startup hook, and its
-receipt/owner nonce does not grant process, simulator or filesystem ownership.
-Installing it over the shared bundle ID is permitted only on a newly owned
-case device after wallet writers stop, never on an existing/user simulator.
-Host-owned post-app launch/receipt binding, simulator/workspace teardown,
-trusted build publication and executor integration remain pending. Catalog
-`runnable` flags stay false.
-
-```bash
-swift test --package-path scripts/e2e/native-cleanup
-```
-
-Model tests cover scope/access-right refusals, exact cleanup, sibling survival,
-positive absence and failed partial receipts. The optional SDK smoke seeds only
-synthetic generic Keychain items and preferences on an owned fresh simulator;
-it is not wallet execution, protected biometric validation, populated OS
-notification validation or a financial scenario result.
-
-### Capture Simulator cleanup artifacts
-
-`native_ios_cleanup.py` captures the actual separate helper and cohort bundles
-read-only. It requires canonical owned files/directories, strict helper/cohort
-boolean markers, thin 64-bit Simulator executables, valid ad-hoc signatures,
-matching embedded application identifiers/default Keychain rights and architecture.
-The helper must be `vizor-ios-cleanup`, not the synthetic smoke or wallet role,
-and cannot inherit widget/app/shared groups. Ordinary cohort widget groups are
-not confused with extra Keychain groups. Both absent signature entitlement data
-and an empty signature dictionary are valid only with required embedded rights;
-nonempty signed/embedded rights must agree. No Xcode default supplies the team.
+`native_ios_cohort.py` captures the actual built cohort app read-only. It
+requires canonical owned files and directories, the `com.keplr.vizor` bundle
+for `iPhoneSimulator`, the `Runner` executable and a thin 64-bit Simulator
+Mach-O, whose architecture it reports. It records the inode and digest of
+`Info.plist`, the executable and `_CodeSignature/CodeResources`.
 
 ```python
-helper = capture_ios_cleanup_helper(helper_app, cohort_app=cohort_app)
-helper.verify_unchanged()
+cohort = capture_ios_cohort(cohort_app)
+cohort.verify_unchanged()
 ```
 
-Original file identities/digests and directory identities are rechecked, with
-OS signature verification, before reuse. This is not trusted-source publication:
-the builder still must compile the correct isolated helper/cohort sources.
-Artifact probes have a 15-second per-command allowance, not one aggregate SLA.
-
-The internal schema-1 receipt parser rejects duplicate/extra fields, wrong
-namespace/UUID/nonce/team/mode, missing services, retained native state,
-unsynchronized preferences and incomplete notification absence. It exposes no
-successful-cleanup capability: callers cannot use external JSON/logs/PIDs as
-ownership. Host-owned app launch/stop, output provenance and post-app simulator
-teardown are not implemented in this module. Catalog flags remain false.
+Capture runs `codesign --verify --strict --deep` once, with a 15-second
+allowance, and requires the files to be identical before and after it.
+`verify_unchanged()` rechecks only the captured file and directory identities;
+later installs and launches never rerun codesign. Capture reads no team,
+entitlements or build marker, and it pairs the app with no helper. It is not
+trusted-source publication: the builder still must compile the correct sources.
 
 ```bash
-python3 -B -m unittest scripts/e2e/test_native_ios_cleanup.py
+python3 -B -m unittest scripts/e2e/test_native_ios_cohort.py
 ```
 
-These models use real private fake bundles but model signatures and output;
-they do not run an app or delete native state/devices. A captured file or valid
-historical receipt alone is not proof of a completed owned SDK launch.
+These models use real private fake bundles but model the signature check; they
+do not install or run an app.
 
-### Own the Simulator app and case support lifecycle
+### Own the Simulator app and device lifecycle
 
 `native_ios_case_storage.py` composes a newly acquired, unlaunched Simulator
-with captured helper/cohort artifacts. It claims native ownership before helper
-installation, closing the earlier pre-app deletion route. Preparation boots
-only the owned UUID, installs the helper, requires a completed read-only native
-absence observation, and exclusively allocates the namespace below the SDK's
-canonical app data container. Existing cases/devices are never adopted.
-
-Directory descriptors, original inode identities and a private owner marker
-anchor support ownership. CoreSimulator's group-writable `data` component is
-accepted only behind an already opened owned ancestor that denies group/other
-traversal; arbitrary writable parents and symlinks remain rejected. SDK directory
-permissions are not changed. Case support and its marker remain private.
-SDK app updates may rename the data container. Only immediately after our owned
-install, all original directory identities and marker inode/bytes must match
-under the new canonical SDK path and the old container must be absent. The move
-is recorded separately; original markers/context are not rewritten. Copies or
-path changes during ordinary observations never qualify for adoption.
+with the captured cohort. It claims native ownership before any install,
+closing the earlier pre-app deletion route. Preparation boots only the owned
+UUID and installs the cohort exactly once, inside the preparation budget.
+Existing cases/devices are never adopted, and the harness writes nothing inside
+the device.
 
 ```python
 simulator = acquire_ios_simulator(case, runtime_identifier=runtime_id,
                                  device_type_identifier=device_type_id)
-owner = prepare_ios_case_storage(simulator, helper, cancel_event=cancel_event)
+owner = prepare_ios_case_storage(simulator, cohort, cancel_event=cancel_event)
 try:
     launch = owner.start_app(cancel_event=cancel_event)
-    # Execute the selected scenario; restart phases use the same owned support.
+    # Execute the selected scenario; restart phases reuse the same device.
     owner.stop_app(launch)
     restarted = owner.start_app(cancel_event=cancel_event)
 except BaseException:
@@ -884,42 +849,38 @@ else:
     cleanup = owner.close(cancel_event=cancel_event)
 ```
 
-The owned `simctl --console` process is not the native app. Startup binds the
-SDK job's actual app PID to the exact namespace, support directory, service names
-and disabled-background context. Caller environment overrides are not inherited;
-only the case identity is forwarded using `SIMCTL_CHILD_`. Restart installs the
-cohort once, preserves support, and tolerates only the previous fully matching
-owned context while the next generation publishes atomically. Context PIDs are
-never global signalling targets. Stop uses the exact owned UUID and bundle ID,
-then proves native job absence independently of console group completion.
+The owned `simctl --console` process is not the native app. `start_app()`
+returns once the device's `launchctl` inventory shows one new UIKit job for the
+bundle and binds that job's PID; a PID from an earlier launch is refused. Dart
+startup failures surface later, in the VM-URL wait or the Driver result. Caller
+environment overrides are not inherited; only the case identity is forwarded
+using `SIMCTL_CHILD_`. Launches never reinstall the cohort. Stop uses the exact
+owned UUID and bundle ID, then proves native job absence independently of
+console group completion. PIDs are never global signalling targets.
 
-Successful close seals/stops case groups, verifies original support/context,
-runs the captured terminal helper internally, and validates its complete
-scope-bound receipt plus native app absence. The SDK console's exact
-`com.keplr.vizor: <positive-PID>` line is separated from the helper's single JSON
-line; extra diagnostics/receipts or missing launch framing fail closed. Cleanup
-never accepts caller-provided JSON, PIDs, context flags or success booleans as
-authority. Only then does it shut down/delete its UUID and positively observe
-both SDK inventory absence and filesystem data/device-directory absence.
+Successful close seals/stops case groups, proves app absence, shuts the device
+down and deletes its exact UUID. It then requires positive absence of that UUID
+in the SDK inventory and of `~/Library/Developer/CoreSimulator/Devices/<udid>`.
+Close launches no app, reads no app container and never accepts caller-provided
+JSON, PIDs or success booleans as authority. The host markers
+`simulator-allocation.json` and `simulator-owner.json` remain the device
+ownership evidence that every deletion rechecks.
 
 Preparation, launch or cleanup failures remain failed, stop/shut down only owned
-writers/device, and retain state/evidence. Cleanup can fail after partial native
-mutation; there is no same-owner retry or adoption. Case manifests/logs/markers
-are never removed, and app context cleanup flags are not rewritten. Operations
-are cooperative/single-owner, with separate process-group and SDK phase budgets,
-not one wall-clock SLA. The cleanup record is not a scenario PASS.
+writers/device, and retain state/evidence. A failed deletion is not retried and
+leaves whatever the SDK did not remove. Case manifests/logs/markers are never
+removed. Operations are cooperative/single-owner, with separate process-group
+and SDK phase budgets, not one wall-clock SLA. The cleanup record is not a
+scenario PASS.
 
 ```bash
-python3 -B -m unittest scripts/e2e/test_native_ios_case_storage.py scripts/e2e/test_native_ios_simulator.py scripts/e2e/test_native_ios_cleanup.py
+python3 -B -m unittest scripts/e2e/test_native_ios_case_storage.py scripts/e2e/test_native_ios_simulator.py scripts/e2e/test_native_ios_cohort.py
 ```
 
 Models use real private trees and separate app/console child groups, but model
-SDK transport, signatures and native observations. The optional
-`VizorIosLifecycleFixture` SDK app exercises the actual native profile and
-publishes synthetic metadata only; it is not a wallet or a financial scenario.
-Trusted build publication, real wallet/backend execution, full worker workspace
-removal and broader catalog execution remain pending. This primitive alone does
-not enable catalog cases; see the composed macOS executor above.
+SDK transport and signatures. They are not a wallet or a financial scenario.
+This primitive alone does not enable catalog cases; the composed iOS executor
+above runs them.
 
 ### Own worker mutable storage and retain case evidence
 
@@ -947,10 +908,10 @@ except BaseException:
 ```
 
 iOS cases require explicit installed runtime/device-type identifiers and an
-actual captured Simulator helper/cohort. Native preparation claims/boots a new
-exact-UUID simulator before returning the usable session. Session close runs
-the original native owner internally, verifies process completion and releases
-the original port handles. Neither close API accepts caller-provided cleanup
+actual captured Simulator cohort. Native preparation claims/boots a new
+exact-UUID simulator and installs the cohort before returning the usable
+session. Session close runs the original native owner internally, verifies
+process completion and releases the original port handles. Neither close API accepts caller-provided cleanup
 booleans, JSON, report receipts or PIDs. The result is cleanup, not scenario PASS.
 Port locks remain held when any owned writer/device stop is unproven.
 
@@ -1131,11 +1092,13 @@ python3.11 -B -m unittest scripts/e2e/test_funder_build.py scripts/e2e/test_fund
 ### Immutable native cohort/helper cache
 
 The suite enables `.regtest-logs/build-cache/macos-cohort-v1` and
-`ios-cohort-v1` by default. It preserves the existing cohort build flags and
-signing/capture checks, and caches both the app and its matching cleanup helper.
-The inputs bind checked wallet/test/native/Rust sources, helper and builder
-implementation, actual Dart package contents, semantic package configuration,
-locked Pod versions, Flutter/engine/Dart identity, Xcode/SDK, Cargokit compiler
+`ios-cohort-v2` by default. It preserves the existing cohort build flags and
+signing/capture checks. A macOS entry holds the app and its matching cleanup
+helper; an iOS entry holds only the app. Older `ios-cohort-v1` pair entries are
+never read, migrated or deleted.
+The inputs bind checked wallet/test/native/Rust sources, the macOS helper and
+builder implementation, actual Dart package contents, semantic package
+configuration, locked Pod versions, Flutter/engine/Dart identity, Xcode/SDK, Cargokit compiler
 identity, Cargo configuration, environment and platform/architecture/TEX fixture.
 The wallet's package-config generation timestamp and workspace-local Podspec
 checksums are not keys; the local package sources are checked instead. External
@@ -1173,7 +1136,8 @@ preparation and build still reject changed project/wallet/tool inputs.
 The Flutter SDK inventory includes material-font artifact bytes copied into
 these Material-enabled debug apps, not just compiler and engine artifacts.
 The same bounded per-key lock and
-exclusive rename protect a sealed, complete app/helper pair. All bundle files
+exclusive rename protect a sealed, complete macOS app/helper pair or iOS app.
+A lease reads only its own layout. All bundle files
 are hashed, including resources and Frameworks; relative internal Framework
 aliases are preserved, while absolute/escaping links are rejected. Joined SDK
 resources can have group-writable modes, such as Flutter's stock font. They are
@@ -1186,11 +1150,13 @@ Those independent SDK staging copies use owner-writable private directories
 and files (0700/0600), preserving executable bits and signed bytes. Simulator
 installation cannot populate a staged read-only app directory. Cache entries
 remain sealed; neither the originals nor sibling publications are unsealed.
-The normal actual signature, role, entitlement, team and architecture capture
-runs on those copies; inputs are checked again before joining the new owner.
-Reports retain real app/helper build counts, cache hit/key and joined process
-outcomes. `persistent_cache_attestation` describes this cooperative local
-publication, not portable hermetic provenance or a wallet/catalog PASS.
+The normal capture runs on those copies: signature, role, entitlement and team
+checks for macOS, and file identities, architecture and one signature
+verification for iOS. Inputs are checked again before joining the new owner.
+Reports retain real build counts (macOS app/helper, iOS app), cache hit/key and
+joined process outcomes. `persistent_cache_attestation` describes this
+cooperative local publication, not portable hermetic provenance or a
+wallet/catalog PASS.
 Wallets, storage, devices, Keychain and chain state remain case-local.
 
 Actual preactivation validation on clean `4429038fc` selected single iOS

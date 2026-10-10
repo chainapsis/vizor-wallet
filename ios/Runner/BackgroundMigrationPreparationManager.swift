@@ -12,15 +12,13 @@ import UserNotifications
 enum BackgroundMigrationPrivateRecovery {
   static let defaultsKey = "vizor.background_migration.private_recovery"
 
-  static func isEnabled(defaults: UserDefaults? = nil) -> Bool {
-    let defaults = defaults ?? E2eRuntimeProfile.current.defaults
-    return migrationPreparationPrivateRecoveryEnabled(
+  static func isEnabled(defaults: UserDefaults = .standard) -> Bool {
+    migrationPreparationPrivateRecoveryEnabled(
       storedValue: defaults.string(forKey: defaultsKey)
     )
   }
 
-  static func set(_ enabled: Bool, defaults: UserDefaults? = nil) {
-    let defaults = defaults ?? E2eRuntimeProfile.current.defaults
+  static func set(_ enabled: Bool, defaults: UserDefaults = .standard) {
     defaults.set(enabled ? "on" : "off", forKey: defaultsKey)
   }
 }
@@ -921,11 +919,8 @@ final class BackgroundMigrationPreparationManager {
   private static let schedulingTraceMaxBytes: UInt64 = 256 * 1024
   private let traceLock = NSLock()
 
-  private static var watchdogIdentifier: String {
-    E2eRuntimeProfile.current.notificationIdentifier(
-      "com.keplr.vizor.ironwood-preparation.watchdog"
-    )
-  }
+  private static let watchdogIdentifier =
+    "com.keplr.vizor.ironwood-preparation.watchdog"
   private static let watchdogDelay: TimeInterval = 15 * 60
   private static let confirmationQueryInterval: TimeInterval = 60
   private static let progressHeartbeatInterval: TimeInterval = 15
@@ -986,7 +981,7 @@ final class BackgroundMigrationPreparationManager {
   private var appActiveObservers: [NSObjectProtocol] = []
   private init() {
     foregroundContinuationScopes = Set(
-      E2eRuntimeProfile.current.defaults.stringArray(
+      UserDefaults.standard.stringArray(
         forKey: Self.foregroundContinuationScopesKey
       ) ?? []
     )
@@ -1087,7 +1082,7 @@ final class BackgroundMigrationPreparationManager {
           after: 60
         ) { scheduled in
           if scheduled {
-            cancelBackgroundTaskRequestIfAllowed(
+            BGTaskScheduler.shared.cancel(
               taskRequestWithIdentifier: Self.taskIdentifier
             )
             self.cancelWatchdog()
@@ -1098,7 +1093,7 @@ final class BackgroundMigrationPreparationManager {
         return
       }
       if !shouldContinue {
-        cancelBackgroundTaskRequestIfAllowed(
+        BGTaskScheduler.shared.cancel(
           taskRequestWithIdentifier: Self.taskIdentifier
         )
       }
@@ -1177,7 +1172,7 @@ final class BackgroundMigrationPreparationManager {
           // account with no running task, no queued request, and a recorded
           // continuation that only its own migration screen can clear.
           self.markForegroundContinuationsReadyForHandoff()
-          cancelBackgroundTaskRequestIfAllowed(
+          BGTaskScheduler.shared.cancel(
             taskRequestWithIdentifier: Self.taskIdentifier
           )
           self.recordSchedulingState("pending_handed_off_to_foreground")
@@ -1241,7 +1236,6 @@ final class BackgroundMigrationPreparationManager {
   }
 
   func registerBackgroundTask() {
-    guard !E2eRuntimeProfile.current.isIsolated else { return }
     BGTaskScheduler.shared.register(
       forTaskWithIdentifier: Self.taskIdentifier,
       using: nil
@@ -1255,10 +1249,6 @@ final class BackgroundMigrationPreparationManager {
   }
 
   func start(completion: @escaping (Bool) -> Void) {
-    guard !E2eRuntimeProfile.current.isIsolated else {
-      completion(false)
-      return
-    }
     let authorizationEpoch = captureNotificationAuthorizationEpoch()
     IronwoodMigrationNotificationGate.shared.status { [weak self] status in
       guard let self else {
@@ -1295,7 +1285,7 @@ final class BackgroundMigrationPreparationManager {
     case .trackConfirmations:
       break
     case .foregroundOnly:
-      cancelBackgroundTaskRequestIfAllowed(
+      BGTaskScheduler.shared.cancel(
         taskRequestWithIdentifier: Self.taskIdentifier
       )
       recordSchedulingState(
@@ -1306,7 +1296,7 @@ final class BackgroundMigrationPreparationManager {
       completion(false)
       return
     case .complete:
-      cancelBackgroundTaskRequestIfAllowed(
+      BGTaskScheduler.shared.cancel(
         taskRequestWithIdentifier: Self.taskIdentifier
       )
       recordSchedulingState("not_needed_before_submit")
@@ -1430,7 +1420,7 @@ final class BackgroundMigrationPreparationManager {
       return authorizationMonitor
     }
     monitor?.cancel()
-    cancelBackgroundTaskRequestIfAllowed(
+    BGTaskScheduler.shared.cancel(
       taskRequestWithIdentifier: Self.taskIdentifier
     )
     cancelWatchdog()
@@ -1475,7 +1465,7 @@ final class BackgroundMigrationPreparationManager {
       foregroundContinuationScopes.removeAll()
       persistForegroundContinuationScopesLocked()
     }
-    cancelBackgroundTaskRequestIfAllowed(
+    BGTaskScheduler.shared.cancel(
       taskRequestWithIdentifier: Self.taskIdentifier
     )
     recordSchedulingState("cancelled")
@@ -1484,7 +1474,7 @@ final class BackgroundMigrationPreparationManager {
   }
 
   func quiesce(completion: @escaping (Bool) -> Void) {
-    cancelBackgroundTaskRequestIfAllowed(
+    BGTaskScheduler.shared.cancel(
       taskRequestWithIdentifier: Self.taskIdentifier
     )
     stateLock.withPreparationLock {
@@ -1516,7 +1506,7 @@ final class BackgroundMigrationPreparationManager {
     }
     switch preparationResumeTarget() {
     case .idle, .terminal:
-      cancelBackgroundTaskRequestIfAllowed(
+      BGTaskScheduler.shared.cancel(
         taskRequestWithIdentifier: Self.taskIdentifier
       )
       recordSchedulingState("idle_after_mutation")
@@ -1524,7 +1514,7 @@ final class BackgroundMigrationPreparationManager {
     case .continuedProcessing:
       start { _ in }
     case .backgroundProcessing:
-      cancelBackgroundTaskRequestIfAllowed(
+      BGTaskScheduler.shared.cancel(
         taskRequestWithIdentifier: Self.taskIdentifier
       )
       markForegroundContinuationsReady()
@@ -1591,7 +1581,7 @@ final class BackgroundMigrationPreparationManager {
       finishForegroundOnlyTask(task)
       return
     case .complete:
-      cancelBackgroundTaskRequestIfAllowed(
+      BGTaskScheduler.shared.cancel(
         taskRequestWithIdentifier: Self.taskIdentifier
       )
       recordSchedulingState("not_needed_on_launch")
@@ -1610,7 +1600,7 @@ final class BackgroundMigrationPreparationManager {
         foregroundContinuationScopes
       }
     ) else {
-      cancelBackgroundTaskRequestIfAllowed(
+      BGTaskScheduler.shared.cancel(
         taskRequestWithIdentifier: Self.taskIdentifier
       )
       recordSchedulingState("no_trackable_run_on_launch")
@@ -1750,7 +1740,7 @@ final class BackgroundMigrationPreparationManager {
             ensureFallback: true
           )
         )
-      cancelBackgroundTaskRequestIfAllowed(
+      BGTaskScheduler.shared.cancel(
         taskRequestWithIdentifier: Self.taskIdentifier
       )
       if notificationSubmitted {
@@ -2322,7 +2312,7 @@ final class BackgroundMigrationPreparationManager {
     // confirmations left to observe and re-arms below. Cancelling the pending
     // request here would delete the very submission that re-arm depends on.
     if success && !runtime.expired {
-      cancelBackgroundTaskRequestIfAllowed(
+      BGTaskScheduler.shared.cancel(
         taskRequestWithIdentifier: Self.taskIdentifier
       )
     }
@@ -2535,7 +2525,7 @@ final class BackgroundMigrationPreparationManager {
   /// `os_log` is not reachable through `devicectl --console` here, so the
   /// submission outcome has to be readable from Dart to be visible at all.
   func schedulingDiagnostics() -> [String: Any] {
-    let defaults = E2eRuntimeProfile.current.defaults
+    let defaults = UserDefaults.standard
     var snapshot: [String: Any] = [
       "state": defaults.string(forKey: Self.schedulingStateKey) ?? "none",
       "updatedAt": defaults.double(forKey: Self.schedulingStateUpdatedAtKey),
@@ -2568,12 +2558,11 @@ final class BackgroundMigrationPreparationManager {
   /// the ordered history that actually answers "what did the task do".
   private func appendSchedulingTrace(_ state: String, error: Error?) {
     guard
-      let baseDirectory = FileManager.default.urls(
+      let directory = FileManager.default.urls(
         for: .applicationSupportDirectory,
         in: .userDomainMask
       ).first
     else { return }
-    let directory = E2eRuntimeProfile.current.supportDirectory(baseDirectory)
     let url = directory.appendingPathComponent(Self.schedulingTraceFileName)
     var line = "{\"at\":\(Date().timeIntervalSince1970),\"state\":\"\(state)\""
     if let error {
@@ -2601,7 +2590,7 @@ final class BackgroundMigrationPreparationManager {
 
   private func recordSchedulingState(_ state: String, error: Error? = nil) {
     appendSchedulingTrace(state, error: error)
-    let defaults = E2eRuntimeProfile.current.defaults
+    let defaults = UserDefaults.standard
     defaults.set(state, forKey: Self.schedulingStateKey)
     defaults.set(
       Date().timeIntervalSince1970,
@@ -2799,7 +2788,7 @@ final class BackgroundMigrationPreparationManager {
   }
 
   private func persistForegroundContinuationScopesLocked() {
-    E2eRuntimeProfile.current.defaults.set(
+    UserDefaults.standard.set(
       foregroundContinuationScopes.sorted(),
       forKey: Self.foregroundContinuationScopesKey
     )

@@ -1,6 +1,6 @@
-"""Build one actual Simulator cohort/helper before isolated wallet workers.
+"""Build one actual Simulator cohort app before isolated wallet workers.
 
-Original build-process completion publishes a signed pair. Cache hits still
+Original build-process completion publishes the signed app. Cache hits still
 capture fresh private copies; no wallet or Simulator state is shared.
 """
 from __future__ import annotations
@@ -16,7 +16,7 @@ import time
 
 import e2e_runtime as runtime
 from native_case_lifecycle import NativeCaseLifecycle
-from native_ios_cleanup import _inspect_app, capture_ios_cleanup_helper
+from native_ios_cohort import capture_ios_cohort
 from native_zakura_front import _capture
 import native_build_cache as cache
 
@@ -66,7 +66,6 @@ def build_native_ios_cohort(case, *, source_root, flutter, timeout=1800.0,
         members = "".join(command(["/usr/bin/git", "-C", str(root), "ls-files",
             "--cached", "--others", "--exclude-standard", "-z", "--", "lib",
             "integration_test", "test", "rust", "rust_builder", "ios", "assets",
-            "scripts/e2e/native-cleanup", "scripts/e2e/stamp-ios-runtime-profile.swift",
             "third_party", "pubspec.yaml", "pubspec.lock", ".fvmrc"]))
         paths = [root/name for name in members.rstrip("\n\0").split("\0")
                  if name and name != "ios/Podfile.lock"]
@@ -98,20 +97,20 @@ def build_native_ios_cohort(case, *, source_root, flutter, timeout=1800.0,
                 raise NativeIosBuildError("iOS preparation changed source/tool: " + ", ".join(changed[:8]))
             inputs = current_inputs()
             lease = cache.NativeCohortCacheLease(cache_root, inputs,
-                timeout=max(0.001, deadline-time.monotonic()), cancel_event=cancel)
+                timeout=max(0.001, deadline-time.monotonic()), cancel_event=cancel, roles=("cohort",))
             lease.__enter__()
             cached = lease.load()
             if cached is not None:
                 copies = lease.materialize(case, cached)
-                captured = capture_ios_cleanup_helper(copies["helper"], cohort_app=copies["cohort"])
+                captured = capture_ios_cohort(copies["cohort"])
                 if current_inputs() != inputs:
                     raise NativeIosBuildError("iOS inputs changed during cache publication")
                 receipt = case.close()
                 captured.verify_unchanged()
                 checkout_lease._check()
-                return captured, {"ios_app_build_count":0, "ios_helper_build_count":0,
+                return captured, {"ios_app_build_count":0,
                     "cache_hit":True, "cache_key":lease.key,
-                    "architecture":captured.architecture, "team":captured.team,
+                    "architecture":captured.architecture,
                     "joined_build_processes":case.launched_process_count, "exit_codes":receipt.exit_codes,
                     "persistent_cache_attestation":True, "wallet_or_catalog_pass":False}
         # Configure Flutter once, then build a thin, signed Simulator app into
@@ -124,16 +123,7 @@ def build_native_ios_cohort(case, *, source_root, flutter, timeout=1800.0,
             "-destination", "generic/platform=iOS Simulator", "-derivedDataPath", str(derived),
             "ARCHS="+architecture, "ONLY_ACTIVE_ARCH=YES", "ENABLE_DEBUG_DYLIB=NO", "build"], in_source=True)
         app = derived/"Build/Products/Debug-iphonesimulator/Runner.app"
-        cohort = _inspect_app(app, helper=False)
-        helper_derived = case.workspace.root/"ios-helper-build"
-        command(["/usr/bin/xcodebuild", "-project",
-            str(root/"scripts/e2e/native-cleanup/SimulatorHelper/NativeCleanup.xcodeproj"),
-            "-scheme", "VizorIosCleanup", "-configuration", "Debug", "-sdk", "iphonesimulator",
-            "-destination", "generic/platform=iOS Simulator", "-derivedDataPath", str(helper_derived),
-            "DEVELOPMENT_TEAM="+cohort.application_identifier[:10],
-            "ARCHS="+architecture, "build"])
-        helper_app = helper_derived/"Build/Products/Debug-iphonesimulator/VizorIosCleanup.app"
-        captured = capture_ios_cleanup_helper(helper_app, cohort_app=app)
+        captured = capture_ios_cohort(app)
         changed = cache.native_source_changes(root, source, "ios")
         if changed:
             raise NativeIosBuildError("iOS build source/tool changed: " + ", ".join(changed[:8]))
@@ -144,9 +134,9 @@ def build_native_ios_cohort(case, *, source_root, flutter, timeout=1800.0,
         checkout_lease._check()
         if lease is not None:
             lease.publish(cache.ProducedNativeCohort(case, captured, inputs, cache._TOKEN))
-        return captured, {"ios_app_build_count":1, "ios_helper_build_count":1,
+        return captured, {"ios_app_build_count":1,
             "cache_hit":False, "cache_key":lease.key if lease is not None else None,
-            "architecture":captured.architecture, "team":captured.team,
+            "architecture":captured.architecture,
             "joined_build_processes":case.launched_process_count, "exit_codes":receipt.exit_codes,
             "checked_source_files_sha256":hashlib.sha256(json.dumps({
                 str(path.relative_to(root)) if path.is_relative_to(root) else str(path):record[1]
