@@ -187,6 +187,14 @@ def _pod_lock(path):
     return hashlib.sha256("\n".join(normalized).encode()).hexdigest()
 
 
+def native_source_changes(root, source, platform):
+    observed = {path:_capture(path) for path in source}
+    project = root/platform/"Runner.xcodeproj/project.pbxproj"
+    return [str(path.relative_to(root)) if path.is_relative_to(root) else str(path)
+        for path in source if (observed[path][1] != source[path][1]
+            if path == project else observed[path] != source[path])]
+
+
 def _flutter_sdk_inputs(tool, platform, cancel):
     # Both original builders produce debug native cohorts. Bind the actual
     # compiler/runtime, patched platform SDK and selected debug engine, not
@@ -386,6 +394,9 @@ def collect_native_cache_inputs(root, source, tool, *, platform, architecture,
         "source_sha256":{str(path.relative_to(root)) if path.is_relative_to(root) else str(path):record[1]
             for path,record in source.items() if path != configuration},
         "package_config":packages, "pod_lock_sha256":_pod_lock(root/platform/"Podfile.lock"),
+        "pods_source_sha256":_package_digest(root/platform/"Pods", cancel,
+            capture=_tool_input_record, ignore_generated=False)
+            if (root/platform/"Pods").is_dir() else None,
         "flutter":flutter, "flutter_sdk":_flutter_sdk_inputs(tool, platform, cancel),
         "apple_toolchain":_native_apple_inputs(command, platform, cancel),
         "collector_sha256":_capture(Path(toolchain_inputs.__file__).resolve(strict=True))[1],

@@ -70,12 +70,26 @@ def build_native_ios_cohort(case, *, source_root, flutter, timeout=1800.0,
         if cache_root is not None:
             paths.extend([Path(__file__).resolve(strict=True), Path(cache.__file__).resolve(strict=True)])
         source = {path:_capture(path) for path in paths}
+        configure = [str(tool), "build", "ios", "--simulator", "--debug", "--no-pub", "--config-only",
+            "--target", "integration_test/regtest_mobile_cohort_test.dart",
+            "--dart-define=VIZOR_FORM_FACTOR=mobile",
+            "--dart-define=ZCASH_DEFAULT_NETWORK=regtest",
+            "--dart-define=ZCASH_REGTEST_IRONWOOD_ACTIVATION_HEIGHT=1",
+            "--dart-define=VIZOR_E2E_IOS_COHORT=true",
+            "--dart-define=VIZOR_PAYMENT_LINK_REGTEST_ENABLED=true",
+            "--dart-define=ZCASH_E2E_FIRST_UNLOCK_MNEMONIC_KEYCHAIN=true"]
         inputs = None
         def current_inputs():
             return cache.collect_native_cache_inputs(root, {path:_capture(path) for path in source}, tool,
                 platform="ios", architecture=architecture, command=command,
                 environment=environment, cancel=cancel)
         if cache_root is not None:
+            command(configure, in_source=True)
+            if not (root/"ios/Pods").is_dir():
+                raise NativeIosBuildError("prepared iOS Pod sandbox is missing")
+            changed = cache.native_source_changes(root, source, "ios")
+            if changed:
+                raise NativeIosBuildError("iOS preparation changed source/tool: " + ", ".join(changed[:8]))
             inputs = current_inputs()
             lease = cache.NativeCohortCacheLease(cache_root, inputs,
                 timeout=max(0.001, deadline-time.monotonic()), cancel_event=cancel)
@@ -95,14 +109,8 @@ def build_native_ios_cohort(case, *, source_root, flutter, timeout=1800.0,
                     "persistent_cache_attestation":True, "wallet_or_catalog_pass":False}
         # Configure Flutter once, then build a thin, signed Simulator app into
         # this original producer's private derived-data directory.
-        command([str(tool), "build", "ios", "--simulator", "--debug", "--no-pub", "--config-only",
-            "--target", "integration_test/regtest_mobile_cohort_test.dart",
-            "--dart-define=VIZOR_FORM_FACTOR=mobile",
-            "--dart-define=ZCASH_DEFAULT_NETWORK=regtest",
-            "--dart-define=ZCASH_REGTEST_IRONWOOD_ACTIVATION_HEIGHT=1",
-            "--dart-define=VIZOR_E2E_IOS_COHORT=true",
-            "--dart-define=VIZOR_PAYMENT_LINK_REGTEST_ENABLED=true",
-            "--dart-define=ZCASH_E2E_FIRST_UNLOCK_MNEMONIC_KEYCHAIN=true"], in_source=True)
+        if cache_root is None:
+            command(configure, in_source=True)
         derived = case.workspace.root/"ios-build"
         command(["/usr/bin/xcodebuild", "-workspace", str(root/"ios/Runner.xcworkspace"),
             "-scheme", "Runner", "-configuration", "Debug", "-sdk", "iphonesimulator",
@@ -119,11 +127,7 @@ def build_native_ios_cohort(case, *, source_root, flutter, timeout=1800.0,
             "ARCHS="+architecture, "build"])
         helper_app = helper_derived/"Build/Products/Debug-iphonesimulator/VizorIosCleanup.app"
         captured = capture_ios_cleanup_helper(helper_app, cohort_app=app)
-        observed = {path:_capture(path) for path in source}
-        project = root/"ios/Runner.xcodeproj/project.pbxproj"
-        changed = [str(path.relative_to(root)) if path.is_relative_to(root) else str(path)
-            for path in source if (observed[path][1] != source[path][1]
-                if path == project else observed[path] != source[path])]
+        changed = cache.native_source_changes(root, source, "ios")
         if changed:
             raise NativeIosBuildError("iOS build source/tool changed: " + ", ".join(changed[:8]))
         if inputs is not None and current_inputs() != inputs:

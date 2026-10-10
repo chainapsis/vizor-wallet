@@ -28,6 +28,7 @@ class BuildTests(unittest.TestCase):
             path.write_text("model source")
             path.chmod(0o700)
         self.project = self.source/"macos/Runner.xcodeproj/project.pbxproj"
+        self.commands = []
         self.case = NativeCaseLifecycle(prepare_native_case_workspace(self.root,platform="macos",
             scenario_id="flutter.macos.native-build",run_id="abcdef0123",
             worker_id=0,case_index=0,ports={"rpc":28232,"lwd":29067,"proxy":29068},activation_height=1))
@@ -35,6 +36,7 @@ class BuildTests(unittest.TestCase):
         self.native_arguments = None
 
     def command(self, arguments, **kwargs):
+        self.commands.append(arguments)
         if "ls-files" in arguments:
             return runtime.CommandResult(0,("lib/app.dart\0macos/Runner.xcodeproj/project.pbxproj\0",))
         if "--target" in arguments:
@@ -46,9 +48,12 @@ class BuildTests(unittest.TestCase):
                 self.project.write_text("changed project")
             elif self.mode == "changed-wallet-source":
                 (self.source/"lib/app.dart").write_text("changed wallet")
-            app = self.source/"build/macos/Build/Products/Debug/Vizor.app/Contents"
-            app.mkdir(parents=True)
-            (app/"embedded.provisionprofile").write_text("modeled profile")
+            if "--config-only" in arguments:
+                (self.source/"macos/Pods").mkdir(exist_ok=True)
+            else:
+                app = self.source/"build/macos/Build/Products/Debug/Vizor.app/Contents"
+                app.mkdir(parents=True)
+                (app/"embedded.provisionprofile").write_text("modeled profile")
         elif "--display" in arguments:
             return runtime.CommandResult(0,("Authority=modeled identity",))
         elif "swift" in arguments:
@@ -57,13 +62,30 @@ class BuildTests(unittest.TestCase):
             (target/"vizor-native-cleanup").write_text("modeled executable")
         return runtime.CommandResult(0,())
 
-    def build(self):
+    def build(self, **options):
         captured = SimpleNamespace(team="MODEL",verify_unchanged=lambda:None)
         with patch.object(self.case,"run_command",side_effect=self.command), \
              patch.object(BUILD,"_inspect_signed_app",return_value=SimpleNamespace(team="MODEL")), \
              patch.object(BUILD,"capture_mac_cleanup_helper",return_value=captured):
             return BUILD.build_native_macos_cohort(self.case,source_root=self.source,
-                                                  flutter=self.source/"bin/flutter")
+                                                  flutter=self.source/"bin/flutter", **options)
+
+    def test_pods_are_prepared_without_app_compilation_before_cache_lookup(self):
+        def inputs(*args, **kwargs):
+            self.assertTrue((self.source/"macos/Pods").is_dir())
+            self.assertIn("--config-only", self.commands[-1])
+            self.assertFalse(any("swift" in args for args in self.commands))
+            raise RuntimeError("cache lookup boundary")
+        with patch.object(BUILD.cache, "collect_native_cache_inputs", side_effect=inputs):
+            with self.assertRaisesRegex(RuntimeError, "cache lookup boundary"):
+                self.build(cache_root=self.root/"cache")
+
+    def test_preparation_source_changes_are_rejected_before_cache_lookup(self):
+        self.mode = "changed-wallet-source"
+        with patch.object(BUILD.cache, "collect_native_cache_inputs") as inputs:
+            with self.assertRaisesRegex(BUILD.NativeMacosBuildError, "lib/app.dart"):
+                self.build(cache_root=self.root/"cache")
+            inputs.assert_not_called()
 
     def test_sdk_project_metadata_rewrite_preserves_identical_input_bytes(self):
         _,proof = self.build()

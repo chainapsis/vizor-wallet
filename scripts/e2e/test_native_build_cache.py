@@ -368,6 +368,19 @@ class InputTests(unittest.TestCase):
                                      second["rust_toolchains"]["stable"]["rustc"])
                     self.assertNotEqual(first, second)
 
+    def test_installed_pod_sources_invalidate_without_lock_or_package_changes(self):
+        for platform in ("ios", "macos"):
+            with self.subTest(platform=platform):
+                path = self.root/platform/"Pods/LocalPod/Sources/native.m"
+                path.parent.mkdir(parents=True)
+                path.write_text("original installed Pod source")
+                first = self.inputs(platform=platform)
+                path.write_text("patched installed Pod source")
+                second = self.inputs(platform=platform)
+                self.assertEqual(first["pod_lock_sha256"], second["pod_lock_sha256"])
+                self.assertEqual(first["package_config"], second["package_config"])
+                self.assertNotEqual(first, second)
+
     def test_native_flutter_helper_sources_invalidate_without_snapshot_or_version_changes(self):
         names = ("bin/xcode_backend.sh", "bin/xcode_backend.dart", "bin/macos_assemble.sh",
                  "bin/podhelper.rb", "lib/src/build_system/build_system.dart")

@@ -38,6 +38,7 @@ class BuildTests(unittest.TestCase):
         if "ls-files" in arguments:
             return runtime.CommandResult(0,("lib/app.dart\0ios/Runner.xcodeproj/project.pbxproj\0",))
         if "--config-only" in arguments:
+            (self.source/"ios/Pods").mkdir(exist_ok=True)
             project = self.source/"ios/Runner.xcodeproj/project.pbxproj"
             stamp = project.stat().st_mtime_ns + 1_000_000
             os.utime(project, ns=(stamp,stamp))
@@ -45,13 +46,30 @@ class BuildTests(unittest.TestCase):
                 (self.source/"lib/app.dart").write_text("changed")
         return runtime.CommandResult(0,())
 
-    def build(self):
+    def build(self, **options):
         captured = SimpleNamespace(architecture="arm64",team="MODEL",verify_unchanged=lambda:None)
         with patch.object(self.case,"run_command",side_effect=self.command), \
              patch.object(BUILD.platform,"machine",return_value="arm64"), \
              patch.object(BUILD,"_inspect_app",return_value=SimpleNamespace(application_identifier="MODELTEAM1.com.keplr.vizor")), \
              patch.object(BUILD,"capture_ios_cleanup_helper",return_value=captured):
-            return BUILD.build_native_ios_cohort(self.case, source_root=self.source, flutter=self.source/"bin/flutter")
+            return BUILD.build_native_ios_cohort(self.case, source_root=self.source, flutter=self.source/"bin/flutter", **options)
+
+    def test_pods_are_prepared_without_app_compilation_before_cache_lookup(self):
+        def inputs(*args, **kwargs):
+            self.assertTrue((self.source/"ios/Pods").is_dir())
+            self.assertIn("--config-only", self.commands[-1])
+            self.assertFalse(any("xcodebuild" in args for args in self.commands))
+            raise RuntimeError("cache lookup boundary")
+        with patch.object(BUILD.cache, "collect_native_cache_inputs", side_effect=inputs):
+            with self.assertRaisesRegex(RuntimeError, "cache lookup boundary"):
+                self.build(cache_root=self.root/"cache")
+
+    def test_preparation_source_changes_are_rejected_before_cache_lookup(self):
+        self.change_source = True
+        with patch.object(BUILD.cache, "collect_native_cache_inputs") as inputs:
+            with self.assertRaisesRegex(BUILD.NativeIosBuildError, "lib/app.dart"):
+                self.build(cache_root=self.root/"cache")
+            inputs.assert_not_called()
 
     def test_one_mobile_regtest_cohort_and_original_helper_build(self):
         _, proof = self.build()

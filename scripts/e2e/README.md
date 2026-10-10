@@ -1145,6 +1145,11 @@ recheck its inputs before publication, including after the original owner seals.
 
 Only the original source-checking native builder with positively joined
 successful command groups can publish. The same bounded per-key lock and
+Before lookup, `flutter build --config-only --no-pub` prepares the selected
+platform's configuration/Pod sandbox without app compilation. Installed Pod
+contents bind the key alongside normalized lock metadata and package sources;
+preparation and build still reject changed project/wallet/tool inputs.
+The per-key lock and
 exclusive rename protect a sealed, complete app/helper pair. All bundle files
 are hashed, including resources and Frameworks; relative internal Framework
 aliases are preserved, while absolute/escaping links are rejected. Joined SDK
