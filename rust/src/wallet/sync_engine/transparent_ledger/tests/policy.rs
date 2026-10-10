@@ -616,6 +616,34 @@ async fn lowering_forgets_private_ledger_facts_and_their_companions() {
     assert_eq!(balance(&wallet, &wallet.uuid).transparent, VALUE);
 }
 
+/// Turning private queries off drops the wallet's holds and stall counts:
+/// each names facts or a companion the forget removed, so turning the setting
+/// back on retries the account at once, as the hint for a stopped account
+/// promises. Another wallet keeps its holds.
+#[tokio::test]
+async fn lowering_clears_the_wallets_holds() {
+    let (wallet, _, _) = recovered_wallet().await;
+    let other_path = format!("{}-other", wallet.path);
+    let held = HoldCause::Withdrawn(WithdrawnCause::Equivocation);
+    set_hold(&wallet.path, wallet.account, held, Instant::now());
+    set_hold(&other_path, wallet.account, held, Instant::now());
+    for _ in 1..STALL_RUNS_BEFORE_HOLD {
+        assert!(!record_stall(&wallet.path, wallet.account, Instant::now()));
+    }
+
+    let lowered = set_transparent_policy(&wallet.path, NETWORK, false)
+        .await
+        .unwrap();
+    assert_eq!(lowered.unwrap().mode, TransparentLedgerMode::Public);
+
+    assert_eq!(recovery_hold(&wallet.path, wallet.account), None);
+    assert_eq!(recovery_hold(&other_path, wallet.account), Some(held));
+    // The stall count restarted too: one more stalled run does not hold.
+    assert!(!record_stall(&wallet.path, wallet.account, Instant::now()));
+    assert_eq!(recovery_hold(&wallet.path, wallet.account), None);
+    clear_holds(&other_path);
+}
+
 /// Nothing is forgotten while a companion survives, because a companion that
 /// outlived the facts would make a later private run skip them. The policy
 /// is public all the same, and the next attempt, as at sync start, finishes.

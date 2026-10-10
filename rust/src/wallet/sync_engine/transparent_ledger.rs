@@ -295,6 +295,13 @@ fn clear_stalls(db_path: &str, account: AccountUuid) {
     }
 }
 
+/// Drops every hold and stall count of the wallet at `db_path`: forgetting its
+/// private ledger removes the evidence and companions they were held over, so
+/// the next private run starts each account afresh.
+pub(crate) fn clear_holds(db_path: &str) {
+    holds().retain(|(path, _), _| path != db_path);
+}
+
 /// The order a run visits `accounts` in: `first`, when it is one of them,
 /// then the rest from the wallet's cursor. The cursor advances one account
 /// per run, so a run its budget cuts short does not always leave out the same
