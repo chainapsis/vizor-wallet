@@ -332,9 +332,13 @@ python3.11 -B scripts/e2e/run-suite.py \
 Replace `--plan` with `--run` and provide the tooling paths above. The two
 orphaned/deleted scan-range regressions intentionally inject historical
 scan-queue state because regtest cannot naturally reproduce a mainnet partial
-scan. These scenarios use the narrowly scoped rc7 SQLite
-[backport](../../rust/vendor/README.md), which also affects production builds.
-No SDK package versions or database schemas change.
+scan. These scenarios run on the published `zakura-client-sqlite 0.1.0-rc7`.
+`rust.multi-account.preserve-history` is expected to fail on that release: stock
+rc7 rejects adding an account at the tip with `CorruptedData`, and the upstream
+fix ([wallet-libraries #87](https://github.com/zakura-core/wallet-libraries/pull/87))
+is not released yet. The case stays runnable, so full-suite selections keep
+working and the failure keeps reporting the shipped SDK bug until an SDK
+release with the fix is adopted.
 
 The same executor also runs `rust.receive.direct-zakura`,
 `rust.import.direct-zakura` and `rust.gift-card.tracking-multiple`,

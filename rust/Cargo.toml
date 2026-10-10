@@ -226,9 +226,3 @@ opt-level = 3
 
 [profile.dev.package."*"]
 opt-level = 3
-
-# Backport wallet-libraries #87 without upgrading the SDK dependency family.
-# All transitive consumers must use the same fixed SQLite package.
-# Provenance and removal condition: vendor/zakura-client-sqlite/PATCHES.json.
-[patch.crates-io]
-zakura-client-sqlite = { path = "vendor/zakura-client-sqlite" }

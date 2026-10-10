@@ -218,12 +218,15 @@ resource scheduling and final-source catalog/performance validation remain
 pending. A native observation or process receipt alone never authorizes deletion.
 
 The [multi-account group (#926)](https://github.com/chainapsis/vizor-wallet/pull/926)
-includes the minimum rc7 SQLite backport from upstream
+originally carried a minimum rc7 SQLite backport of upstream
 [wallet-libraries #87](https://github.com/zakura-core/wallet-libraries/pull/87).
-This changes the production SDK's sparse-checkpoint rewind fallback without
-upgrading SDK versions or changing schemas. Provenance and removal conditions
-are in [rust/vendor/README.md](../../rust/vendor/README.md).
-Actual two-worker batch `native-suite-6e3a47e71c` on committed source
+The backport was removed so the umbrella no longer overrides the production
+SDK. On stock rc7, actual two-worker batch `native-suite-3e7c729afd` recorded
+seven PASS / one FAIL: `rust.multi-account.preserve-history` failed in
+`add_account` with `CorruptedData`. That failure is expected until an SDK
+release contains the fix; the case stays runnable so it keeps reporting the
+shipped bug. With the backport, actual two-worker batch
+`native-suite-6e3a47e71c` on committed source
 `a947b43ac940a6a791ded75bd0be48d33a05b26b` recorded eight PASS / zero FAIL in
 145.437 seconds, including one 1m53s Cargo build of the signer and one test
 target. Original owners proved wallet/backend/port cleanup for all eight cases.
@@ -367,9 +370,10 @@ Separate dependencies and optional work:
   contributor-fork commit under `scripts/e2e/zakura_fixture/`, with a size and
   SHA-256 pin. It targets Zakura 1.6.0 and is not a released CLI fixture API.
   Its pinned lightwalletd image is still packaged by THS.
-- The SQLite sparse-checkpoint fix is a narrowly scoped rc7 vendor backport,
-  with provenance and a removal condition. It gates affected account-history
-  tests, not the entire execution framework.
+- The SQLite sparse-checkpoint fix (wallet-libraries #87) is not released. The
+  umbrella uses stock rc7 instead of overriding the production SDK, so the one
+  affected account-history case is an expected failure until a release with the
+  fix is adopted.
 - The Riverpod Gift activity fix is a separately reviewable dependency update
   with a regression test. It gates the affected Gift test, not unrelated cases.
 - Report-scoped recovery is a separate safety-sensitive PR after ownership and
@@ -416,8 +420,8 @@ speedup guarantee. Establish a frozen-source baseline before making that claim.
 
 - [ ] Split and review the required implementation slices above, with working
   intermediate branches and no unrelated product changes.
-- [ ] Vendor the Zakura fixture helper with a byte pin and record third-party
-  patch provenance and removal conditions.
+- [x] Vendor the Zakura fixture helper with a byte pin. The umbrella carries no
+  third-party source patch; the SQLite backport was removed.
 - [ ] Run the complete Rust and native catalogs on the same final source;
   record failures, skips, unobserved cases, and cleanup outcomes without
   combining revisions into a passing result.
