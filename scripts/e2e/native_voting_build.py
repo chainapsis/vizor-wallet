@@ -190,15 +190,20 @@ def build_voting_artifacts(case, *, sdk_cache, pir_cache, cache_root, jobs=4, ti
             inputs.update(_snapshot(archive, source))
             sources.append(source)
         sdk, pir = sources
-        tool_records, tools, versions = {}, {}, {}
+        tool_records, invoked_records, tools, invoked_tools, versions = {}, {}, {}, {}, {}
         for context, cwd in (("outer", None), ("sdk", sdk)):
-            tools[context], versions[context] = {}, {}
+            tools[context], invoked_tools[context], versions[context] = {}, {}, {}
             for name, flag in (("cargo", "-V"), ("rustc", "-vV"), ("go", "version"), ("make", "--version")):
                 selected = (environment.get("RUSTC") or name) if name == "rustc" else name
                 entry = shutil.which(selected, path=environment.get("PATH"))
                 if entry is None:
                     raise VotingBuildError("selected voting build tool is unavailable: " + name)
                 tool = Path(entry).resolve(strict=True)
+                # Make invokes Cargo through PATH. Keep its original driver
+                # as an input even when probing the selected toolchain binary.
+                invoked_tools[context][name] = tool
+                invoked_records[tool] = toolchain_inputs.file_record(
+                    tool, executable=True, error_type=VotingBuildError)
                 if sys.platform == "darwin" and tool == Path("/usr/bin/make"):
                     paths = [line.strip() for line in
                              command(["/usr/bin/xcrun", "--find", "make"], cwd=cwd)]
@@ -273,6 +278,8 @@ def build_voting_artifacts(case, *, sdk_cache, pir_cache, cache_root, jobs=4, ti
             "tool_versions": versions,
             "tools": {context: {name: {"path": str(path), "sha256": tool_records[path][1]}
                        for name, path in items.items()} for context, items in tools.items()},
+            "invoked_tools": {context: {name: {"path": str(path), "sha256": invoked_records[path][1]}
+                               for name, path in items.items()} for context, items in invoked_tools.items()},
             "producer_sha256": tool_records[producer][1], "platform": sys.platform,
             "collector_sha256":tool_records[collector][1], "compiler_inputs":compiler,
             "cargo_dependencies":dependency_inputs(),
@@ -300,6 +307,9 @@ def build_voting_artifacts(case, *, sdk_cache, pir_cache, cache_root, jobs=4, ti
                 raise VotingBuildError("voting compiler/linker/SDK inputs changed during publication")
             if configuration_hashes() != cache_inputs["configuration_sha256"]:
                 raise VotingBuildError("voting build configuration changed during publication")
+            for path, record in invoked_records.items():
+                if toolchain_inputs.file_record(path, executable=True, error_type=VotingBuildError) != record:
+                    raise VotingBuildError("voting build tool or producer changed during publication")
             for path, record in tool_records.items():
                 current = _capture(path) if path.stat().st_uid == 0 else _file_record(path)
                 if current != record:

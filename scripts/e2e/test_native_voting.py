@@ -37,6 +37,7 @@ class VotingBuildTests(unittest.TestCase):
         self.go_configuration = "off"
         self.go_programs = {name:"" for name in ("CC", "CXX", "FC", "PKG_CONFIG", "GOCACHEPROG")}
         self.tools = {"cargo": self.model.cargo, "rustc": self.model.compiler}
+        self.proxies = {}
         for name in ("go", "make"):
             tool = self.model.root / ("selected-" + name)
             tool.write_text("modeled " + name + " tool\n")
@@ -122,7 +123,7 @@ class VotingBuildTests(unittest.TestCase):
         with patch.object(BUILD,"VOTE_SDK_REV",self.pin), patch.object(BUILD,"PIR_REV",self.pin), \
              patch.object(self.case,"run_command",side_effect=command), \
              patch.object(BUILD.shutil,"which",side_effect=lambda name, **options:
-                 str(self.tools[name]) if name in self.tools else original_which(name, **options)):
+                 str(self.proxies.get(name, self.tools[name])) if name in self.tools else original_which(name, **options)):
             return BUILD.build_voting_artifacts(self.case, sdk_cache=self.model.source,
                 pir_cache=self.model.source, cache_root=self.cache, timeout=15, **options)
 
@@ -188,6 +189,43 @@ class VotingBuildTests(unittest.TestCase):
         for context in ("outer", "sdk"):
             self.assertEqual(proof["cache_inputs"]["tools"][context]["make"]["path"], str(self.sdk_make))
         self.assertEqual(self.make_calls, 1)
+
+    def rustup_proxies(self):
+        rustup = self.model.root/"rustup"
+        rustup.write_text("original rustup driver")
+        rustup.chmod(0o700)
+        for name in ("cargo", "rustc"):
+            self.proxies[name] = self.model.root/("proxy-"+name)
+            self.proxies[name].symlink_to(rustup)
+        return rustup
+
+    def test_rustup_proxy_bytes_invalidate_without_selected_compiler_changes(self):
+        rustup = self.rustup_proxies()
+        _, first = self.build()
+        _, warm = self.build()
+        self.assertTrue(warm["cache_hit"])
+        self.assertEqual(warm["build_count"], 0)
+        rustup.write_text("repaired rustup driver")
+        _, second = self.build()
+        for field in ("tools", "tool_versions", "environment_sha256"):
+            self.assertEqual(first["cache_inputs"][field], second["cache_inputs"][field])
+        self.assertNotEqual(first["cache_key"], second["cache_key"])
+        self.assertEqual(self.make_calls, 2)
+        for context in ("outer", "sdk"):
+            for name in ("cargo", "rustc"):
+                self.assertEqual(first["cache_inputs"]["invoked_tools"][context][name]["path"], str(rustup))
+
+    def test_rustup_proxy_mutation_while_sealing_rejects_without_launch(self):
+        rustup = self.rustup_proxies()
+        close = self.case.close
+        def seal():
+            receipt = close()
+            rustup.write_text("changed rustup driver after join")
+            return receipt
+        with patch.object(self.case,"close",side_effect=seal), self.assertRaisesRegex(
+                BUILD.VotingBuildError,"build tool or producer changed"):
+            self.build()
+        self.assertFalse(self.case.accepting_launches)
 
     def test_changed_pin_tool_bytes_version_and_environment_invalidate(self):
         keys = [self.build()[1]["cache_key"]]
