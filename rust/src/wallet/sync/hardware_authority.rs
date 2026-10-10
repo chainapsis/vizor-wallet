@@ -20,6 +20,9 @@
 //! Until private recovery covers a block the wallet has scanned, the refusal
 //! is [`DispatchRefusal::CatchingUp`]: [`await_authority`] waits for it, and
 //! callers keep the signed transaction for a retry rather than releasing it.
+//! A wallet database too busy to reserve is [`DispatchRefusal::Unavailable`],
+//! waited out and kept the same way: a long write, such as a private
+//! recovery settlement, says nothing about the transaction.
 
 use std::{
     fmt,
@@ -41,7 +44,7 @@ use zcash_primitives::transaction::Transaction;
 use zcash_protocol::consensus::BlockHeight;
 
 use crate::wallet::{
-    db::{open_wallet_raw_conn_with_timeout, READ_DB_BUSY_TIMEOUT},
+    db::{open_wallet_raw_conn_with_timeout, WaitingWriter, READ_DB_BUSY_TIMEOUT},
     network::WalletNetwork,
     sync_engine::{
         enhancement::{selects_private_recovery, transparent_ledger_mode_for},
@@ -66,18 +69,33 @@ pub(crate) enum DispatchRefusal {
     /// signed transaction is authorized once it does, so callers keep it for
     /// a retry.
     CatchingUp(String),
+    /// The wallet database could not be opened or reserved in time, as while
+    /// another connection holds its write lock. Nothing was decided about the
+    /// transaction, so callers keep it for a retry.
+    Unavailable(String),
     /// Anything else: a revoked or unreadable policy, quarantine, a hold,
     /// withdrawn, unknown, spent or immature inputs. Retrying the same
     /// transaction will not help.
     Refused(String),
 }
 
+impl DispatchRefusal {
+    /// Whether the same signed transaction may be authorized later, so a
+    /// caller keeps it rather than releasing its inputs.
+    pub(crate) fn is_retryable(&self) -> bool {
+        matches!(
+            self,
+            DispatchRefusal::CatchingUp(_) | DispatchRefusal::Unavailable(_)
+        )
+    }
+}
+
 impl fmt::Display for DispatchRefusal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DispatchRefusal::CatchingUp(message) | DispatchRefusal::Refused(message) => {
-                f.write_str(message)
-            }
+            DispatchRefusal::CatchingUp(message)
+            | DispatchRefusal::Unavailable(message)
+            | DispatchRefusal::Refused(message) => f.write_str(message),
         }
     }
 }
@@ -94,9 +112,9 @@ const SLOW_RESERVATION: Duration = Duration::from_millis(250);
 
 /// Waits up to [`CATCH_UP_WAIT`] for `tx`'s transparent inputs to be
 /// authorized, without holding a reservation, so a sync can write meanwhile.
-/// Returns at once when they are, or when the refusal is not
-/// [`DispatchRefusal::CatchingUp`]. [`dispatch`] still decides under its
-/// reservation.
+/// Returns at once when they are, or when the refusal is final; a retryable
+/// one ([`DispatchRefusal::is_retryable`]) is checked again until the wait
+/// ends. [`dispatch`] still decides under its reservation.
 pub(crate) async fn await_authority(
     db_path: &str,
     network: WalletNetwork,
@@ -123,12 +141,28 @@ pub(crate) async fn await_authority_within(
     loop {
         match authorize(db_path, network, tx, earlier, network_tip) {
             Ok(_reservation) => return Ok(()),
-            Err(DispatchRefusal::CatchingUp(message)) => {
-                if Instant::now() >= deadline {
-                    return Err(DispatchRefusal::CatchingUp(message));
-                }
-            }
-            Err(refused) => return Err(refused),
+            Err(refusal) if refusal.is_retryable() && Instant::now() < deadline => {}
+            Err(refusal) => return Err(refusal),
+        }
+        tokio::time::sleep(CATCH_UP_POLL).await;
+    }
+}
+
+/// [`authorize`], retried while the wallet is [`DispatchRefusal::Unavailable`]
+/// until [`CATCH_UP_WAIT`] ends. Any other outcome returns at once: a
+/// reservation, or a refusal its caller already waited out.
+async fn reserve(
+    db_path: &str,
+    network: WalletNetwork,
+    tx: &Transaction,
+    earlier: &[&Transaction],
+    network_tip: u64,
+) -> Result<(ReservedWallet, Instant), DispatchRefusal> {
+    let deadline = Instant::now() + CATCH_UP_WAIT;
+    loop {
+        match authorize(db_path, network, tx, earlier, network_tip) {
+            Err(DispatchRefusal::Unavailable(_)) if Instant::now() < deadline => {}
+            reserved => return reserved,
         }
         tokio::time::sleep(CATCH_UP_POLL).await;
     }
@@ -158,7 +192,7 @@ where
     if inputs.is_empty() {
         return Ok(send(Dispatched::unobserved()).await);
     }
-    let (db, reserved) = authorize(db_path, network, tx, earlier, network_tip)?;
+    let (db, reserved) = reserve(db_path, network, tx, earlier, network_tip).await?;
 
     let (dispatched, signal) = Dispatched::new();
     let mut send = std::pin::pin!(send(dispatched));
@@ -205,9 +239,20 @@ fn authorize(
     network_tip: u64,
 ) -> Result<(ReservedWallet, Instant), DispatchRefusal> {
     let refused = |message: String| DispatchRefusal::Refused(message);
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT).map_err(refused)?;
-    conn.execute_batch("BEGIN IMMEDIATE")
-        .map_err(|e| refused(format!("Reserve transparent broadcast authority: {e}")))?;
+    // A long background write steps aside between its transactions while
+    // this waits for the wallet's write lock.
+    let waiting = WaitingWriter::new();
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)
+        .map_err(DispatchRefusal::Unavailable)?;
+    conn.execute_batch("BEGIN IMMEDIATE").map_err(|e| {
+        let message = format!("Reserve transparent broadcast authority: {e}");
+        if is_busy(&e) {
+            DispatchRefusal::Unavailable(message)
+        } else {
+            refused(message)
+        }
+    })?;
+    drop(waiting);
     let reserved = Instant::now();
     let db = WalletDb::from_connection(conn, network, SystemClock, OsRng)
         .with_transparent_ledger_mode(transparent_ledger_mode_for(db_path, network));
@@ -235,15 +280,24 @@ fn authorize(
         Ok(()) => Ok((db, reserved)),
         Err(error) => {
             let message = format!("Transparent broadcast authority unavailable: {error}");
-            if mode == TransparentLedgerMode::PrivateRequired
-                && catching_up(&db, db_path, network, tx, earlier)
-            {
-                Err(DispatchRefusal::CatchingUp(message))
-            } else {
-                Err(refused(message))
+            if mode != TransparentLedgerMode::PrivateRequired {
+                return Err(refused(message));
+            }
+            match catching_up(&db, db_path, network, tx, earlier) {
+                Ok(true) => Err(DispatchRefusal::CatchingUp(message)),
+                Ok(false) => Err(refused(message)),
+                Err(unread) => Err(DispatchRefusal::Unavailable(format!("{message}; {unread}"))),
             }
         }
     }
+}
+
+/// Whether `error` is SQLite reporting another connection's lock.
+fn is_busy(error: &rusqlite::Error) -> bool {
+    matches!(
+        error.sqlite_error_code(),
+        Some(rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked)
+    )
 }
 
 /// Whether private authority is missing for `tx`'s inputs only because
@@ -251,25 +305,24 @@ fn authorize(
 /// recovers the wallet privately, and every account owning an input that no
 /// earlier batch transaction creates is active, unheld, and blocked by
 /// nothing but coverage or a scan behind the tip. Any doubt is `false`, so the
-/// refusal stays final.
+/// refusal stays final, except a reader that could not be opened, which is
+/// the error: nothing was learned about the transaction.
 fn catching_up(
     db: &ReservedWallet,
     db_path: &str,
     network: WalletNetwork,
     tx: &Transaction,
     earlier: &[&Transaction],
-) -> bool {
+) -> Result<bool, String> {
     if !selects_private_recovery(db_path, network) {
-        return false;
+        return Ok(false);
     }
     let Some(bundle) = tx.transparent_bundle() else {
-        return false;
+        return Ok(false);
     };
     // A separate reader: the classification only chooses between waiting and
     // failing, and the reservation's own check still decides.
-    let Ok(reader) = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT) else {
-        return false;
-    };
+    let reader = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     let mut owners = Vec::new();
     for input in &bundle.vin {
         let prevout = input.prevout();
@@ -282,10 +335,10 @@ fn catching_up(
         match input_owner(&reader, prevout) {
             Some(owner) if !owners.contains(&owner) => owners.push(owner),
             Some(_) => {}
-            None => return false,
+            None => return Ok(false),
         }
     }
-    !owners.is_empty()
+    Ok(!owners.is_empty()
         && owners.into_iter().all(|owner| {
             recovery_hold(db_path, owner).is_none()
                 && db
@@ -300,7 +353,7 @@ fn catching_up(
                                 )
                             })
                     })
-        })
+        }))
 }
 
 /// The account owning the wallet output `prevout`, if the wallet holds it.

@@ -361,13 +361,15 @@ applied. A raise that cannot apply checks first and never takes the fence.
 The setting transition pauses recovery and saves an explicit opt-out before
 lowering the durable policy. A failed preference save leaves the wallet's
 private policy untouched.
-If lowering fails, it changes no durable policy; the transition restores the
-runtime preference to private and attempts to restore the saved preference
-before resuming. A second storage failure leaves the wallet and native work
-private even if the saved opt-out remains. A crash between the
-preference save and lowering can leave a stricter wallet policy than the saved
-setting. Startup keeps that restriction until it retries the persisted
-opt-out, which lowers the policy only once that transition succeeds.
+If lowering fails, it changes no durable policy, and the saved setting stays
+off: it is never rolled back. The durable private policy still governs every
+transparent lookup, so none goes out publicly. Native work is told the
+setting is off, but the iOS status observation, like every other public
+lookup, reads the durable policy and withholds the request. The persisted
+opt-out retries the lowering at the next launch, and Settings offers to finish
+it now. A crash between the preference save and lowering leaves the same
+state: a stricter wallet policy than the saved setting, kept until the retried
+opt-out lowers it.
 
 Lowering also forgets what private recovery alone contributed
 (`forget_private_ledger`, over the library's `forget_transparent_ledger`).
@@ -380,7 +382,9 @@ project them again, and public discovery rebuilds the transparent view. Every
 succeeded, so a companion never outlives the facts it records as held. A forget
 that cannot finish (a companion still in use, an unwritable directory) leaves
 the policy public and is retried at every sync start while the wallet is
-public; a wallet without ledger facts is only read.
+public; a wallet without ledger facts is only read. A forget also drops the
+wallet's in-memory holds and stall counts, which name facts or companions it
+removed, so turning private queries back on retries every account at once.
 
 Turning private queries off, or finishing an opt-out, asks first whenever it
 would send transparent lookups to the server: the wallet still reads its
@@ -456,7 +460,15 @@ until an account is promoted.
   commit skips the account. `TransparentRecoveryNotEnabled` stops the run.
   Commits applied before a rejection stay durable, and replaying them changes
   nothing. Cancellation stops between passes and discards an answer that
-  raced it; applied commits and open pages stay durable for the next run.
+  raced it, and stops a settlement between its commits; applied commits and
+  open pages stay durable for the next run.
+- **Settlement and the write lock.** A settlement takes the wallet write lock
+  for one commit at a time, then for the acknowledgment, through the
+  library's gated settlement. Between commits it steps aside, for at most a
+  quarter second, while another writer waits for the lock, so a send or a
+  hardware broadcast reservation waits about one commit, not the batch. A settlement the run's budget or
+  cancellation stops between commits is not acknowledged, and the next pass
+  replays it.
 - **Continuations and waits.** `next` comes from the adapter's outcome:
   `Complete`, `More` (pass again at once), `RetryAfter` (10 s behind a lagging
   publication, 30 s after an overload) and `Stalled`. A further pass also
@@ -469,7 +481,8 @@ until an account is promoted.
 - **Holds.** A withdrawal, unreconciled retirements, legacy evidence the
   complete ledger cannot explain (`LegacyDiscrepancy`), or three stalled runs
   since the last complete one hold the account for an hour. Holds live in
-  memory, so a restart retries once. Held and quarantined accounts, and under
+  memory, so a restart retries once, and turning private queries off drops
+  them with the facts they were held over. Held and quarantined accounts, and under
   `PrivateRequired` Ledger accounts, are skipped without a source call. The
   balance read reports why as the account's stop reason.
 - **Raise and confirmation.** Private queries off captures `Public`, so `run`
@@ -750,15 +763,21 @@ trusted, since every commit comes from the configured origin.
   the next sync looks up every transparent address of every account over the
   sync's shared connection. The toggle asks before it does this.
 - **Limitations.** A hardware spend or shield waits up to 30 s for a pass to
-  cover a newly scanned block, then stays retryable with its signature; one
-  can still be refused while a publication lags past a run's 90 s wait. A
+  cover a newly scanned block, or for a busy wallet database to free its write
+  lock, then stays retryable with its signature; one can still be refused
+  while a publication lags past a run's 90 s wait. A
   hardware transaction stored after a block landed loses its PCZT recipient and
   memo details to the fallback store. Software proposals are built and stored
   under one write lock, which the tip update also takes, so they have no such
   window. Ledger accounts are `Stopped(Ledger)`, and a restore under private
-  mode does not find transparent-only accounts. Nothing clears a quarantine;
-  deleting and re-importing the account, or turning Private queries off, which
-  forgets the ledger's facts and looks transparent funds up publicly, recovers. The
+  mode does not find transparent-only accounts. Nothing clears a quarantine,
+  and it covers only the account whose evidence it involves: every source id
+  hashes the account's companion binding, so no other account, including one
+  added later, shares a quarantined source. Turning Private queries off makes
+  the account's transparent funds available again through public lookups, but
+  the quarantine survives the forget, so turning them back on reports
+  `Stopped(Quarantined)` again. Deleting and re-importing the account clears
+  it, because the re-imported account has new sources. The
   library's `docs/transparent-pir-private-recovery.md`, at the pinned
   revision, lists the accepted limitations and outstanding release gates.
 - **Live test.** `a_fresh_mainnet_account_recovers_and_promotes_against_the_live_service`

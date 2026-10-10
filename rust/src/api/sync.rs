@@ -3187,6 +3187,14 @@ pub fn enhance_transaction_publicly(
     })
 }
 
+/// Cancels every [`enhance_transaction_publicly`] in flight: one still
+/// connecting sends nothing, and none stores what it receives. The app calls
+/// it on lock and before deleting an account or the wallet.
+#[frb(sync)]
+pub fn cancel_public_transaction_loads() {
+    sync_engine::transparent_details::cancel_public_loads();
+}
+
 /// Debug builds only: one
 /// private txid display lookup of `txid_hex` (as [`TransactionInfo::txid_hex`])
 /// mined at `mined_height`, on mainnet, persisting nothing.

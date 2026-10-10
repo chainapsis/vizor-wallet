@@ -156,6 +156,9 @@ struct AccountRow {
     name: Option<String>,
     birthday_height: i64,
     has_ufvk: bool,
+    /// Which signer holds the keys (a Ledger account's marks it); `None`
+    /// when the base schema has no `key_source` column.
+    key_source: Option<String>,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
@@ -520,7 +523,8 @@ fn verify_upgraded(scenario: &str, db_path: &str, manifest_path: &str) {
 
     let actual = read_legacy_state(db_path, scenario);
     assert_eq!(
-        actual.accounts, expected.accounts,
+        accounts_as_base(&actual.accounts, &manifest.schema),
+        expected.accounts,
         "account rows changed during upgrade"
     );
     assert_eq!(
@@ -585,6 +589,25 @@ fn verify_upgraded(scenario: &str, db_path: &str, manifest_path: &str) {
         actual.migration_ids.len(),
         manifest.after_old.is_some(),
     );
+}
+
+/// The base schema may lack `key_source`; compare it only when it has one.
+fn accounts_as_base(accounts: &[AccountRow], base: &SchemaSnapshot) -> Vec<AccountRow> {
+    let has_key_source = base
+        .tables
+        .get("accounts")
+        .is_some_and(|columns| columns.contains("key_source"));
+    accounts
+        .iter()
+        .map(|account| AccountRow {
+            uuid_hex: account.uuid_hex.clone(),
+            account_kind: account.account_kind,
+            name: account.name.clone(),
+            birthday_height: account.birthday_height,
+            has_ufvk: account.has_ufvk,
+            key_source: account.key_source.clone().filter(|_| has_key_source),
+        })
+        .collect()
 }
 
 /// The base schema may lack the lock columns; compare lock state only when it
@@ -797,7 +820,10 @@ fn verify_old_reopen(scenario: &str, db_path: &str, manifest_path: &str) {
     assert_eq!(accounts.len(), expected.accounts.len());
 
     let actual = read_legacy_state(db_path, scenario);
-    assert_eq!(actual.accounts, expected.accounts);
+    assert_eq!(
+        accounts_as_base(&actual.accounts, &manifest.schema),
+        expected.accounts
+    );
     assert_eq!(actual.addresses, expected.addresses);
     assert_eq!(actual.transaction_count, expected.transaction_count);
     assert_eq!(actual.sapling_note_count, expected.sapling_note_count);
@@ -1080,11 +1106,17 @@ fn write_manifest(path: &str, manifest: &Manifest) {
 fn read_legacy_state(db_path: &str, scenario: &str) -> LegacyState {
     let conn = rusqlite::Connection::open(db_path).expect("open wallet DB");
 
+    let key_source = if column_exists(&conn, "accounts", "key_source") {
+        "key_source"
+    } else {
+        "NULL"
+    };
     let accounts = conn
-        .prepare(
-            "SELECT hex(uuid), account_kind, name, birthday_height, ufvk IS NOT NULL
-             FROM accounts ORDER BY id",
-        )
+        .prepare(&format!(
+            "SELECT hex(uuid), account_kind, name, birthday_height, ufvk IS NOT NULL,
+                    {key_source}
+             FROM accounts ORDER BY id"
+        ))
         .expect("prepare accounts")
         .query_map([], |row| {
             Ok(AccountRow {
@@ -1093,6 +1125,7 @@ fn read_legacy_state(db_path: &str, scenario: &str) -> LegacyState {
                 name: row.get(2)?,
                 birthday_height: row.get(3)?,
                 has_ufvk: row.get(4)?,
+                key_source: row.get(5)?,
             })
         })
         .expect("query accounts")

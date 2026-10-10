@@ -24,8 +24,10 @@ import '../../../core/widgets/receipt_loading_skeleton.dart';
 import '../../../core/widgets/review_list_row.dart';
 import '../../../core/widgets/review_wrap_card.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/app_security_provider.dart';
 import '../../../providers/enhance_pir_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
+import '../../../providers/public_details_loads_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/zcash_explorer_provider.dart';
@@ -413,12 +415,23 @@ class _ActivityTransactionStatusScreenState
         await lookup(tx);
       } else {
         final endpoint = ref.read(rpcEndpointProvider);
-        await rust_sync.enhanceTransactionPublicly(
-          dbPath: await getWalletDbPath(),
-          network: endpoint.networkName,
-          lightwalletdUrl: endpoint.lightwalletdUrl,
-          txidHex: tx.txidHex,
-        );
+        // A lock cancels the load and wallet deletion waits for it, so it
+        // never runs on, or stores into, a wallet the user has left.
+        if (ref.read(appSecurityProvider).requiresUnlock) {
+          throw StateError('The wallet is locked.');
+        }
+        final ran = await ref.read(publicDetailsLoadsProvider).run(() async {
+          // Never create a wallet database name for a load.
+          final dbPath = await getExistingWalletDbPath();
+          if (dbPath == null) throw StateError('The wallet is unavailable.');
+          await rust_sync.enhanceTransactionPublicly(
+            dbPath: dbPath,
+            network: endpoint.networkName,
+            lightwalletdUrl: endpoint.lightwalletdUrl,
+            txidHex: tx.txidHex,
+          );
+        });
+        if (!ran) throw StateError('The wallet is changing.');
       }
       loaded = true;
     } catch (e) {

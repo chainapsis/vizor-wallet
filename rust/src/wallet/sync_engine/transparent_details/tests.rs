@@ -771,6 +771,41 @@ async fn public_enhance_rejects_a_second_connection_policy_change() {
     );
 }
 
+/// A lock or a destructive wallet change cancels a public load waiting on
+/// lightwalletd: what it receives is not stored.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_cancelled_public_enhance_stores_nothing() {
+    let fixture = wallet();
+    let tx = utxo_receipt(&fixture, 0xad, TOP - 1);
+    let mut bytes = Vec::new();
+    tx.write(&mut bytes).unwrap();
+    let path = fixture.path.clone();
+    let lwd = CapturingLwd::start_serving(
+        vec![(*tx.txid().as_ref(), bytes, u64::from(TOP - 1))],
+        u64::from(TOP),
+        move |request| {
+            if request.ends_with("/GetTransaction") {
+                super::cancel_public_loads_at(&path);
+            }
+        },
+    )
+    .await;
+    let (path, url, txid) = (fixture.path.clone(), lwd.url.clone(), *tx.txid().as_ref());
+    let result =
+        tokio::task::spawn_blocking(move || super::enhance_publicly(&path, MAIN, &url, txid))
+            .await
+            .unwrap();
+    assert_eq!(lwd.count("/GetTransaction"), 1);
+    assert!(result.is_err(), "a cancelled load succeeded");
+    assert_eq!(
+        count(
+            &fixture.path,
+            "SELECT COUNT(*) FROM transactions WHERE raw IS NOT NULL"
+        ),
+        0
+    );
+}
+
 /// A file replacement invalidates the original consent even when the copied
 /// wallet retains the same account UUIDs and policy generation.
 #[tokio::test(flavor = "multi_thread")]

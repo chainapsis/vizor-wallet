@@ -1095,6 +1095,12 @@ Future<void> enhanceTransactionPublicly({
   txidHex: txidHex,
 );
 
+/// Cancels every [`enhance_transaction_publicly`] in flight: one still
+/// connecting sends nothing, and none stores what it receives. The app calls
+/// it on lock and before deleting an account or the wallet.
+void cancelPublicTransactionLoads() =>
+    RustLib.instance.api.crateApiSyncCancelPublicTransactionLoads();
+
 /// Debug builds only: one
 /// private txid display lookup of `txid_hex` (as [`TransactionInfo::txid_hex`])
 /// mined at `mined_height`, on mainnet, persisting nothing.

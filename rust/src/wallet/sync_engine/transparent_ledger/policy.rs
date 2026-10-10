@@ -122,6 +122,9 @@ pub(crate) fn forget_private_ledger(
         db.forget_transparent_ledger()
     })
     .map_err(|error| SyncError::db(format!("forget_transparent_ledger: {error}")))?;
+    // A hold names facts or a companion that no longer exist: a private run
+    // after this starts the account afresh.
+    super::clear_holds(db_path);
     if !forgotten.removed_nothing() {
         log::info!(
             "transparent policy: forgot private ledger facts ({} spends, {} outputs, {} transactions, {} events; {} outputs retained)",

@@ -290,8 +290,9 @@ impl RecoverySource for Observed<'_> {
         account: AccountUuid,
         db: &mut WalletDatabase,
         trust: Trust,
+        should_exit: &(dyn Fn() -> bool + Sync),
     ) -> impl Future<Output = Option<Result<Applied, ApplyFailure>>> + Send {
-        self.0.apply(account, db, trust)
+        self.0.apply(account, db, trust, should_exit)
     }
 }
 
@@ -320,6 +321,7 @@ impl RecoverySource for FixtureSource {
         account: AccountUuid,
         db: &mut WalletDatabase,
         trust: Trust,
+        _should_exit: &(dyn Fn() -> bool + Sync),
     ) -> impl Future<Output = Option<Result<Applied, ApplyFailure>>> + Send {
         let parked = self.state.lock().unwrap().unacknowledged.remove(&account);
         let Some(batch) = parked else {

@@ -52,16 +52,17 @@ use std::time::{Duration, Instant};
 
 use tokio::runtime::Handle;
 use zakura_pir_transparent::{
-    Applied, ApplyFailure, BatchState, Companion, CompanionDir, OpenError, RecoveryBatch,
-    RecoveryConfig, RecoveryError, TransparentPirHttp, Trust, WalletChain,
+    Applied, ApplyFailure, BatchState, Companion, CompanionDir, Interrupted, OpenError,
+    RecoveryBatch, RecoveryConfig, RecoveryError, TransparentPirHttp, Trust, WalletChain,
+    WriteGate,
 };
 use zcash_client_backend::data_api::{transparent_ledger::TransparentWatchSet, WalletRead};
 use zcash_client_sqlite::AccountUuid;
 
 use super::{RecoverySource, SourceBatch, SourceError, SourceRequest};
 use crate::wallet::db::{
-    open_wallet_db_readonly_with_timeout, with_wallet_db_write_lock, WalletDatabase,
-    READ_DB_BUSY_TIMEOUT,
+    open_wallet_db_readonly_with_timeout, with_wallet_db_write_lock, writers_waiting,
+    WalletDatabase, READ_DB_BUSY_TIMEOUT,
 };
 use crate::wallet::network::WalletNetwork;
 use crate::wallet::sync_engine::enhancement::RoutedExchange;
@@ -322,27 +323,62 @@ impl RecoverySource for TransparentPirSource {
     }
 
     /// Settles `account`'s last `Ready` batch through the adapter, under the
-    /// companion's parked lock and the wallet write lock, which cover only
-    /// local SQLite work. The write lock spans the whole batch, as the adapter
-    /// asks: other wallet writes wait until every commit and the
-    /// acknowledgment are done.
+    /// companion's parked lock, which covers only local SQLite work. Each
+    /// commit, and then the acknowledgment, takes the wallet write lock on its
+    /// own ([`SettlementGate`]), so another wallet write waits at most one
+    /// commit, and `should_exit` stops the batch between them.
     ///
     /// `None` when no unsettled `Ready` batch is parked for the account. The
-    /// batch is consumed either way: a refused batch is replayed by the
-    /// account's next pass.
+    /// batch is consumed either way: a refused or interrupted batch is
+    /// replayed by the account's next pass.
     async fn apply(
         &self,
         account: AccountUuid,
         db: &mut WalletDatabase,
         trust: Trust,
+        should_exit: &(dyn Fn() -> bool + Sync),
     ) -> Option<Result<Applied, ApplyFailure>> {
         let mut parked = self.parked.lock().await;
         let held = parked.get_mut(&account)?;
         let batch = held.batch.take()?;
         let companion = &mut held.companion;
-        Some(with_wallet_db_write_lock(
+        let mut gate = SettlementGate { should_exit };
+        Some(companion.apply_and_acknowledge_gated(batch, db, trust, &mut gate))
+    }
+}
+
+/// How long a settlement waits before checking again whether the writer it
+/// stepped aside for has taken the lock.
+const STEP_ASIDE_POLL: Duration = Duration::from_millis(2);
+
+/// The longest a settlement steps aside before one commit, so writers that
+/// keep arriving cannot stall recovery.
+const STEP_ASIDE_MAX: Duration = Duration::from_millis(250);
+
+/// Runs a settlement's wallet writes one at a time under the wallet write
+/// lock. Before each, it stops the batch when `should_exit` holds, and steps
+/// aside while another writer waits for the lock, for at most
+/// [`STEP_ASIDE_MAX`], so a foreground write or a hardware broadcast
+/// reservation gets in between two commits rather than after the batch.
+pub(super) struct SettlementGate<'a> {
+    pub(super) should_exit: &'a (dyn Fn() -> bool + Sync),
+}
+
+impl WriteGate for SettlementGate<'_> {
+    fn write<T>(&mut self, write: impl FnOnce() -> T) -> Result<T, Interrupted> {
+        let stepped_aside = Instant::now();
+        loop {
+            if (self.should_exit)() {
+                return Err(Interrupted);
+            }
+            if !writers_waiting() || stepped_aside.elapsed() >= STEP_ASIDE_MAX {
+                break;
+            }
+            std::thread::sleep(STEP_ASIDE_POLL);
+        }
+        Ok(with_wallet_db_write_lock(
             "sync_engine.transparent_ledger.apply",
-            || companion.apply_and_acknowledge(batch, db, trust),
+            write,
         ))
     }
 }
