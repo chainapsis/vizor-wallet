@@ -791,9 +791,13 @@ trusted, since every commit comes from the configured origin.
   publication's end and confirms each filter match by private retrieval, so a
   filter false positive never offers an empty account; it stores nothing and
   opens no companion or wallet. The answer keeps the public batch rule (stop
-  after a batch of accounts with no history). Only a complete answer counts:
-  an outage, a lagging publication, a budget, the 300 s deadline or anything
-  else fails the import with a retry message, never a shorter list. The
+  after a batch of accounts with no history). Only a complete answer counts. A
+  pass its query or byte budget stopped keeps what it confirmed, and another
+  pass asks about the rest, so one heavily used address cannot exhaust the
+  check; an outage, a lagging publication, the 300 s deadline or anything else
+  fails the import with a retry message, never a shorter list. Into an
+  existing wallet the message also names the Settings toggle; a first wallet
+  has no Settings yet. The
   service learns the birthday's shard and which shards matched any candidate,
   and the recovery of the imported accounts follows at once and can be linked
   to it. The publication is its own chain view for discovery, which grants no
