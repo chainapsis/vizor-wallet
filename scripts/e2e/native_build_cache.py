@@ -361,7 +361,11 @@ def prepare_native_rust_targets(root, *, platform, architecture, environment, co
     Preparation commands belong to the original build owner and its deadline.
     """
     target = _native_rust_target(platform, architecture)
-    for name in _native_rust_toolchains(root, environment, architecture, command):
+    toolchains = _native_rust_toolchains(root, environment, architecture, command)
+    available = {line.split()[0] for line in command(["rustup", "toolchain", "list"], in_source=True) if line.strip()}
+    for name in toolchains:
+        if not any(item == name or item.startswith(name+"-") for item in available):
+            command(["rustup", "toolchain", "install", name], in_source=True)
         def installed():
             return {line.strip() for line in command(
                 ["rustup", "target", "list", "--installed", "--toolchain", name], in_source=True) if line.strip()}

@@ -39,6 +39,8 @@ class BuildTests(unittest.TestCase):
     def command(self, arguments, **kwargs):
         self.commands.append(arguments)
         actual = arguments[4:] if arguments[0] == sys.executable else arguments
+        if actual[:3] == ["rustup", "toolchain", "list"]:
+            return runtime.CommandResult(0,("stable\n",))
         if actual[:3] == ["rustup", "target", "list"]:
             return runtime.CommandResult(0,tuple(name+"\n" for name in sorted(self.installed_targets)))
         if actual[:3] == ["rustup", "target", "add"]:
@@ -81,6 +83,7 @@ class BuildTests(unittest.TestCase):
             self.assertTrue((self.source/"macos/Pods").is_dir())
             self.assertTrue(any("--config-only" in args for args in self.commands))
             self.assertFalse(any("add" in args for args in self.commands))
+            self.assertFalse(any("install" in args for args in self.commands))
             self.assertFalse(any("swift" in args for args in self.commands))
             raise RuntimeError("cache lookup boundary")
         with patch.object(BUILD.cache, "collect_native_cache_inputs", side_effect=inputs):

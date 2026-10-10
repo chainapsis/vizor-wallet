@@ -33,11 +33,18 @@ class BuildTests(unittest.TestCase):
         self.commands = []
         self.change_source = False
         self.installed_targets = {"aarch64-apple-ios-sim"}
+        self.installed_toolchains = {"stable"}
 
     def command(self, arguments, **kwargs):
         self.commands.append(arguments)
         actual = arguments[4:] if arguments[0] == sys.executable else arguments
+        if actual[:3] == ["rustup", "toolchain", "list"]:
+            return runtime.CommandResult(0,tuple(name+"\n" for name in sorted(self.installed_toolchains)))
+        if actual[:3] == ["rustup", "toolchain", "install"]:
+            self.installed_toolchains.add(actual[-1])
         if actual[:3] == ["rustup", "target", "list"]:
+            if actual[-1] not in self.installed_toolchains:
+                return runtime.CommandResult(1,("selected toolchain is not installed\n",))
             return runtime.CommandResult(0,tuple(name+"\n" for name in sorted(self.installed_targets)))
         if actual[:3] == ["rustup", "target", "add"]:
             self.installed_targets.add(actual[-1])
@@ -65,6 +72,7 @@ class BuildTests(unittest.TestCase):
             self.assertTrue((self.source/"ios/Pods").is_dir())
             self.assertTrue(any("--config-only" in args for args in self.commands))
             self.assertFalse(any("add" in args for args in self.commands))
+            self.assertFalse(any("install" in args for args in self.commands))
             self.assertFalse(any("xcodebuild" in args for args in self.commands))
             raise RuntimeError("cache lookup boundary")
         with patch.object(BUILD.cache, "collect_native_cache_inputs", side_effect=inputs):
@@ -80,6 +88,30 @@ class BuildTests(unittest.TestCase):
             self.assertFalse(any("xcodebuild" in args for args in self.commands))
             raise RuntimeError("prepared cache lookup boundary")
         with patch.object(BUILD.cache,"collect_native_cache_inputs",side_effect=inputs):
+            with self.assertRaisesRegex(RuntimeError,"prepared cache lookup boundary"):
+                self.build(cache_root=self.root/"cache")
+
+    def test_missing_stable_toolchain_is_installed_before_target_query(self):
+        self._assert_missing_toolchain_preparation("")
+
+    def test_missing_exact_override_toolchain_is_installed_before_target_query(self):
+        self._assert_missing_toolchain_preparation("1.96.0")
+
+    def _assert_missing_toolchain_preparation(self, override):
+        self.installed_targets.clear()
+        self.installed_toolchains.clear()
+        name = override or "stable"
+        def inputs(*args, **kwargs):
+            self.assertIn(name,self.installed_toolchains)
+            self.assertIn("aarch64-apple-ios-sim",self.installed_targets)
+            operations = [args[4:] for args in self.commands if "rustup" in args]
+            install = operations.index(["rustup","toolchain","install",name])
+            target_query = operations.index(["rustup","target","list","--installed","--toolchain",name])
+            self.assertLess(install,target_query)
+            self.assertFalse(any("xcodebuild" in args for args in self.commands))
+            raise RuntimeError("prepared cache lookup boundary")
+        with patch.dict(os.environ,{"VIZOR_RUST_TOOLCHAIN":override}), patch.object(
+                BUILD.cache,"collect_native_cache_inputs",side_effect=inputs):
             with self.assertRaisesRegex(RuntimeError,"prepared cache lookup boundary"):
                 self.build(cache_root=self.root/"cache")
 
