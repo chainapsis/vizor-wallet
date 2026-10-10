@@ -13,11 +13,12 @@ impl RetryProgress {
     pub(super) fn start_attempt(&mut self) {
         // A drained scan can still queue repairs and fail before completion.
         // Reuse the tail-repair allowance instead of pinning the retry at 100%.
-        self.attempt_base = if self.completed < 1.0 {
+        self.completed = if self.completed < 1.0 {
             self.completed
         } else {
             TAIL_REPAIR_MAX_START_PERCENTAGE
         };
+        self.attempt_base = self.completed;
     }
 
     /// Map attempt-local progress and its download target into this session.
@@ -95,16 +96,19 @@ mod tests {
 
         // Repair scanning can fail after the original scan queue drained.
         progress.report(scan(0.95, 0.96));
+        let mut previous_repair_percentage = TAIL_REPAIR_MAX_START_PERCENTAGE;
         for _ in 0..3 {
             progress.start_attempt();
             let preparation =
                 progress.report(preparation_progress_event(3_500_000, "chain_prepare", 0, 0));
-            let repair = progress.report(scan(0.1, 0.2));
+            assert_eq!(preparation.percentage, previous_repair_percentage);
+            let repair = progress.report(scan(0.5, 0.8));
             assert!(preparation.percentage < repair.percentage);
             assert!(repair.percentage < repair.display_target_percentage);
             assert!(repair.display_target_percentage < 1.0);
             assert!(repair.is_syncing);
             assert!(!repair.is_complete);
+            previous_repair_percentage = repair.percentage;
         }
 
         let done = progress.report(SyncProgressEvent {
