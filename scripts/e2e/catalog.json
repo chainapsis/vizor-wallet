@@ -755,8 +755,8 @@
         "sync"
       ],
       "timeout_seconds": 1200,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "flutter.ios.import-sync",
@@ -772,8 +772,8 @@
         "sync"
       ],
       "timeout_seconds": 1200,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "flutter.ios.account-management",
@@ -788,8 +788,8 @@
         "account"
       ],
       "timeout_seconds": 1200,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "flutter.ios.multi-account-send",
@@ -805,8 +805,8 @@
         "send"
       ],
       "timeout_seconds": 1200,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "flutter.ios.mempool-receive",
@@ -822,8 +822,8 @@
         "mempool"
       ],
       "timeout_seconds": 1200,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "flutter.ios.fallback-endpoint",
@@ -839,8 +839,8 @@
         "fallback"
       ],
       "timeout_seconds": 1200,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "flutter.ios.slow-height-fallback",
@@ -856,8 +856,8 @@
         "fallback"
       ],
       "timeout_seconds": 1200,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "flutter.ios.ironwood-pre-migration-send",
@@ -873,8 +873,8 @@
         "send"
       ],
       "timeout_seconds": 2400,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "flutter.ios.ironwood-migration",
@@ -890,8 +890,8 @@
         "migration"
       ],
       "timeout_seconds": 2400,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "flutter.ios.ironwood-migration-many-notes",
@@ -908,8 +908,8 @@
         "many-notes"
       ],
       "timeout_seconds": 2400,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "flutter.ios.ironwood-migration-multi-account",
@@ -926,8 +926,8 @@
         "multi-account"
       ],
       "timeout_seconds": 2400,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "flutter.ios.ironwood-migration-reorg",
@@ -944,8 +944,8 @@
         "reorg"
       ],
       "timeout_seconds": 2400,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "flutter.ios.ironwood-migration-restart",
@@ -962,8 +962,8 @@
         "restart"
       ],
       "timeout_seconds": 3600,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "flutter.ios.ironwood-migration-network-recovery",
@@ -980,8 +980,8 @@
         "recovery"
       ],
       "timeout_seconds": 2400,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "flutter.ios.ironwood-background-migration",
@@ -999,8 +999,8 @@
         "native-outbox"
       ],
       "timeout_seconds": 2400,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "flutter.ios.ironwood-background-restart",
@@ -1018,8 +1018,8 @@
         "native-outbox"
       ],
       "timeout_seconds": 3600,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "flutter.ios.payment-link-round-trip",
@@ -1034,8 +1034,8 @@
         "gift-card"
       ],
       "timeout_seconds": 1200,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "flutter.ios.payment-uri-send",
@@ -1051,8 +1051,8 @@
         "send"
       ],
       "timeout_seconds": 1200,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "flutter.ios.gift-onboarding",
@@ -1069,8 +1069,8 @@
         "onboarding"
       ],
       "timeout_seconds": 2100,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "flutter.ios.ironwood-migration-account-reimport",
@@ -1088,8 +1088,8 @@
         "optional"
       ],
       "timeout_seconds": 2700,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     },
     {
       "id": "flutter.ios.ironwood-migration-500-notes",
@@ -1107,8 +1107,8 @@
         "optional"
       ],
       "timeout_seconds": 6000,
-      "supported": false,
-      "pending_reason": "execution backend and lifecycle are not implemented"
+      "supported": true,
+      "pending_reason": null
     }
   ],
   "suites": {

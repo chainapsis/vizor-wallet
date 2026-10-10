@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import builtins
 import contextlib
+from dataclasses import replace
 import importlib.util
 import io
 import json
@@ -59,7 +60,28 @@ class PreviewTests(unittest.TestCase):
             "rust.multi-account.isolated-balances", "rust.multi-account.idempotent-sync",
             "rust.receive.direct-zakura", "rust.import.direct-zakura", "rust.gift-card.tracking-multiple",
             "rust.gift-card.empty-db-reuse", "rust.gift-card.competition",
-            "rust.ironwood.migration", "rust.ironwood.gift-card-claim"}
+            "rust.ironwood.migration", "rust.ironwood.gift-card-claim",
+            "flutter.ios.create-sync",
+            "flutter.ios.import-sync",
+            "flutter.ios.account-management",
+            "flutter.ios.multi-account-send",
+            "flutter.ios.mempool-receive",
+            "flutter.ios.fallback-endpoint",
+            "flutter.ios.slow-height-fallback",
+            "flutter.ios.ironwood-pre-migration-send",
+            "flutter.ios.ironwood-migration",
+            "flutter.ios.ironwood-migration-many-notes",
+            "flutter.ios.ironwood-migration-multi-account",
+            "flutter.ios.ironwood-migration-reorg",
+            "flutter.ios.ironwood-migration-restart",
+            "flutter.ios.ironwood-migration-network-recovery",
+            "flutter.ios.ironwood-background-migration",
+            "flutter.ios.ironwood-background-restart",
+            "flutter.ios.payment-link-round-trip",
+            "flutter.ios.payment-uri-send",
+            "flutter.ios.gift-onboarding",
+            "flutter.ios.ironwood-migration-account-reimport",
+            "flutter.ios.ironwood-migration-500-notes"}
         for record in output["scenarios"]:
             wired = record["scenario_id"] in wired_ids
             self.assertEqual(record["supported"], wired)
@@ -113,21 +135,21 @@ class PreviewTests(unittest.TestCase):
             [scenarios[1].id, scenarios[2].id],
         )
 
-    def test_unknown_changed_path_widens_and_preserves_pending_ios_gaps(self) -> None:
+    def test_unknown_changed_path_widens_to_all_ready_cases(self) -> None:
         code, output, _ = self.invoke("--changed-file", "unknown/runtime.file", "--plan")
         self.assertEqual(code, 0)
         self.assertEqual(len(output["selected_scenarios"]), 64)
-        self.assertEqual(output["execution_mode"], "blocked")
-        self.assertFalse(output["runnable"])
+        self.assertEqual(output["execution_mode"], "ready")
+        self.assertTrue(output["runnable"])
         self.assertEqual(output["selection"]["impact"]["fallback_files"], ["unknown/runtime.file"])
-        self.assertEqual(len(output["selection"]["impact"]["coverage_gaps"]), 21)
+        self.assertEqual(output["selection"]["impact"]["coverage_gaps"], [])
 
     def test_shared_test_helper_selects_its_e2e_consumer(self) -> None:
         code, output, errors = self.invoke(
             "--changed-file", "test/support/legacy_payment_link.dart", "--plan"
         )
         self.assertEqual((code, errors), (0, ""))
-        self.assertEqual(output["execution_mode"], "blocked")
+        self.assertEqual(output["execution_mode"], "ready")
         self.assertIn(
             "flutter.macos.payment-link-round-trip",
             [item["scenario_id"] for item in output["selected_scenarios"]],
@@ -231,11 +253,37 @@ class PreviewTests(unittest.TestCase):
         self.assertEqual(output["pending_blockers"], [])
 
     def test_pending_run_is_refused_before_any_backend_import(self) -> None:
-        with patch.dict(sys.modules, {"native_macos_suite":None}):
-            code, output, error = self.invoke("--scenario", "flutter.ios.import-sync", "--run")
+        selected = self.catalog.scenarios_by_id["flutter.ios.import-sync"]
+        pending = replace(selected, supported=False, pending_reason="synthetic unwired case")
+        catalog = replace(self.catalog, scenarios=tuple(
+            pending if item.id == selected.id else item for item in self.catalog.scenarios))
+        with patch.object(CLI.e2e_catalog, "load_catalog", return_value=catalog), \
+             patch.dict(sys.modules, {"native_macos_suite":None}):
+            code, output, error = self.invoke("--scenario", selected.id, "--run")
         self.assertEqual(code, 2)
         self.assertIsNone(output)
         self.assertIn("selected execution is pending", error)
+
+    def test_ios_suite_is_ready_and_reaches_the_existing_executor(self) -> None:
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        arguments = ("--suite", "flutter-ios-full", "--ios-runtime", "modeled-runtime",
+                     "--ios-device-type", "modeled-device")
+        with patch.dict(sys.modules, {"native_macos_suite":None}):
+            code, preview, error = self.invoke(*arguments, "--plan")
+        self.assertEqual((code, error), (0, ""))
+        self.assertTrue(preview["runnable"])
+        self.assertEqual(len(preview["selected_scenarios"]), 21)
+        execute = Mock(return_value=0)
+        with patch.dict(sys.modules, {"native_macos_suite":SimpleNamespace(run_native_suite=execute)}):
+            code, output, error = self.invoke(*arguments, "--run")
+        self.assertEqual((code, output, error), (0, None, ""))
+        args, catalog, scenarios, selection = execute.call_args.args
+        self.assertEqual(len(scenarios), 21)
+        self.assertTrue(all(item.engine == "flutter-ios" for item in scenarios))
+        self.assertEqual(args.ios_runtime, "modeled-runtime")
+        self.assertEqual(args.ios_device_type, "modeled-device")
+        self.assertEqual(selection["values"], ["flutter-ios-full"])
 
     def test_explicit_run_passes_the_existing_selection_to_the_executor(self) -> None:
         from types import SimpleNamespace
