@@ -73,6 +73,7 @@ use crate::wallet::network::WalletNetwork;
 
 #[cfg(test)]
 pub(crate) mod fixture;
+pub(crate) mod import_discovery;
 pub(crate) mod pir;
 mod policy;
 #[cfg(test)]

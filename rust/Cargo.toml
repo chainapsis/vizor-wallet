@@ -229,6 +229,33 @@ features = ["sqlite", "testing"]
 [dev-dependencies.ipir-sp]
 version = "=0.1.0-rc.6"
 
+# A real transparent shard service in process for import discovery's
+# end-to-end test: the publisher's crates and wallet-pir's shard server at the
+# revision zakura-pir-transparent already depends on, driven through the
+# server's axum router.
+[dev-dependencies.transparent-shard]
+git = "https://github.com/valargroup/wallet-pir"
+rev = "06a972db469f302d8c561416d4674e937fdde0cb"
+
+[dev-dependencies.transparent-shard-server]
+git = "https://github.com/valargroup/wallet-pir"
+rev = "06a972db469f302d8c561416d4674e937fdde0cb"
+
+[dev-dependencies.transparent-filter]
+git = "https://github.com/valargroup/wallet-pir"
+rev = "06a972db469f302d8c561416d4674e937fdde0cb"
+
+[dev-dependencies.transparent-events]
+git = "https://github.com/valargroup/wallet-pir"
+rev = "06a972db469f302d8c561416d4674e937fdde0cb"
+
+[dev-dependencies.axum]
+version = "0.7"
+
+[dev-dependencies.tower]
+version = "0.5"
+features = ["util"]
+
 [dev-dependencies.vote-commitment-tree]
 version = "=0.6.3"
 default-features = false
