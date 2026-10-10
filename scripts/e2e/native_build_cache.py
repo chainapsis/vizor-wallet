@@ -124,13 +124,13 @@ def _copy_bundle(source, destination, *, seal=False):
     return before
 
 
-def _package_digest(root, cancel):
+def _package_digest(root, cancel, *, capture=_capture, ignore_generated=True):
     """Dependency source contents, not only lock versions or package-cache paths."""
     ignored = {".git", ".dart_tool", "build", "target", ".regtest-logs", "__pycache__"}
     digest, count, total = hashlib.sha256(), 0, 0
     for directory, children, files in os.walk(root, followlinks=False):
         children[:] = sorted(children)
-        if Path(directory) == root:
+        if ignore_generated and Path(directory) == root:
             children[:] = [name for name in children if name not in ignored]
         for name in sorted((*children, *files)):
             if cancel.is_set():
@@ -147,7 +147,7 @@ def _package_digest(root, cancel):
             elif stat.S_ISDIR(info.st_mode):
                 value = [relative, "directory"]
             else:
-                value = [relative, "file", _capture(path)[1], bool(info.st_mode & stat.S_IXUSR)]
+                value = [relative, "file", capture(path)[1], bool(info.st_mode & stat.S_IXUSR)]
                 total += info.st_size
             count += 1
             if count > 100_000 or total > 1024*1024*1024:
@@ -179,6 +179,36 @@ def _pod_lock(path):
         normalized.append("  "+match[1]+": checked-local-source"
             if section == "SPEC CHECKSUMS:" and match and match[1] in local else line)
     return hashlib.sha256("\n".join(normalized).encode()).hexdigest()
+
+
+def _flutter_sdk_inputs(tool, platform, cancel):
+    # Both original builders produce debug native cohorts. Bind the actual
+    # compiler/runtime, patched platform SDK and selected debug engine, not
+    # just the launch script or Flutter's unchanged version metadata.
+    if tool.name != "flutter" or tool.parent.name != "bin":
+        raise NativeBuildCacheError("Flutter must resolve to the selected SDK's bin/flutter")
+    sdk = tool.parent.parent
+    files = (
+        "bin/cache/flutter_tools.snapshot", "bin/cache/dart-sdk/bin/dart",
+        "bin/cache/dart-sdk/bin/dartvm", "bin/cache/dart-sdk/bin/dartaotruntime",
+        "bin/cache/dart-sdk/bin/snapshots/frontend_server_aot.dart.snapshot",
+        "bin/cache/dart-sdk/bin/snapshots/kernel-service.dart.snapshot",
+        "bin/cache/dart-sdk/bin/snapshots/dartdev_aot.dart.snapshot",
+    )
+    trees = ("bin/internal", "bin/cache/dart-sdk/lib",
+        "bin/cache/artifacts/engine/common/flutter_patched_sdk",
+        "bin/cache/artifacts/engine/"+("ios" if platform == "ios" else "darwin-x64"))
+    def artifact_record(path):
+        return _file_record(path, limit=_MAX_BINARY_BYTES)
+    for name in trees:
+        path = sdk/name
+        if path.resolve(strict=True) != path or not path.is_dir():
+            raise NativeBuildCacheError("native Flutter SDK artifact tree must be canonical")
+    return {"root":str(sdk), "files_sha256":{name:_file_record(sdk/name,
+                executable=Path(name).name in {"dart", "dartvm", "dartaotruntime"},
+                limit=_MAX_BINARY_BYTES)[1] for name in files},
+        "trees_sha256":{name:_package_digest(sdk/name, cancel,
+            capture=artifact_record, ignore_generated=False) for name in trees}}
 
 
 def collect_native_cache_inputs(root, source, tool, *, platform, architecture,
@@ -239,7 +269,8 @@ def collect_native_cache_inputs(root, source, tool, *, platform, architecture,
         "source_sha256":{str(path.relative_to(root)) if path.is_relative_to(root) else str(path):record[1]
             for path,record in source.items() if path != configuration},
         "package_config":packages, "pod_lock_sha256":_pod_lock(root/platform/"Podfile.lock"),
-        "flutter":flutter, "xcode":list(command(["/usr/bin/xcodebuild", "-version"])),
+        "flutter":flutter, "flutter_sdk":_flutter_sdk_inputs(tool, platform, cancel),
+        "xcode":list(command(["/usr/bin/xcodebuild", "-version"])),
         "sdk":list(command(["/usr/bin/xcrun", "--sdk", sdk, "--show-sdk-build-version"])),
         "rust_toolchains":rust,
         "cocoapods":list(command(["pod", "--version"], in_source=True)),

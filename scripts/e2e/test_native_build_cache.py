@@ -192,8 +192,32 @@ class InputTests(unittest.TestCase):
         for name, path in self.rust_tools.items():
             path.write_text("original "+name+" executable")
             path.chmod(0o700)
-        self.tool = self.root/"flutter"
+        self.sdk = self.root/"flutter-sdk"
+        self.tool = self.sdk/"bin/flutter"
+        self.tool.parent.mkdir(parents=True)
         self.tool.write_text("model Flutter executable")
+        self.sdk_files = (
+            "bin/cache/flutter_tools.snapshot", "bin/cache/dart-sdk/bin/dart",
+            "bin/cache/dart-sdk/bin/dartvm", "bin/cache/dart-sdk/bin/dartaotruntime",
+            "bin/cache/dart-sdk/bin/snapshots/frontend_server_aot.dart.snapshot",
+            "bin/cache/dart-sdk/bin/snapshots/kernel-service.dart.snapshot",
+            "bin/cache/dart-sdk/bin/snapshots/dartdev_aot.dart.snapshot",
+        )
+        for name in self.sdk_files:
+            path = self.sdk/name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("original compiler "+name)
+            if path.name in {"dart", "dartvm", "dartaotruntime"}:
+                path.chmod(0o700)
+        self.sdk_trees = (
+            "bin/internal", "bin/cache/dart-sdk/lib",
+            "bin/cache/artifacts/engine/common/flutter_patched_sdk",
+            "bin/cache/artifacts/engine/ios", "bin/cache/artifacts/engine/darwin-x64",
+        )
+        for name in self.sdk_trees:
+            path = self.sdk/name/"artifact"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("original SDK artifact "+name)
         self.cancel = threading.Event()
 
     def command(self, args, **_):
@@ -233,6 +257,45 @@ class InputTests(unittest.TestCase):
                 with patch.object(self, "command", side_effect=command):
                     with self.assertRaisesRegex(CACHE.NativeBuildCacheError, "one absolute"):
                         self.inputs()
+
+    def test_flutter_compiler_and_selected_engine_bytes_invalidate_with_same_versions(self):
+        for platform in ("ios", "macos"):
+            engine = "ios" if platform == "ios" else "darwin-x64"
+            artifacts = (*self.sdk_files,
+                "bin/internal/artifact", "bin/cache/dart-sdk/lib/artifact",
+                "bin/cache/artifacts/engine/common/flutter_patched_sdk/artifact",
+                "bin/cache/artifacts/engine/"+engine+"/artifact")
+            for name in artifacts:
+                with self.subTest(platform=platform, artifact=name):
+                    first = self.inputs(platform=platform)
+                    (self.sdk/name).write_text(platform+" patched "+name)
+                    second = self.inputs(platform=platform)
+                    self.assertEqual(first["flutter"], second["flutter"])
+                    self.assertNotEqual(first, second)
+
+    def test_unselected_platform_engine_does_not_invalidate(self):
+        for platform, other in (("ios", "darwin-x64"), ("macos", "ios")):
+            with self.subTest(platform=platform):
+                first = self.inputs(platform=platform)
+                (self.sdk/"bin/cache/artifacts/engine"/other/"artifact").write_text("other engine patched")
+                self.assertEqual(first, self.inputs(platform=platform))
+
+    def test_sdk_artifact_tree_does_not_ignore_generated_directory_names(self):
+        for name in ("build", "target", ".git", ".dart_tool", ".regtest-logs", "__pycache__"):
+            with self.subTest(directory=name):
+                first = self.inputs()
+                artifact = self.sdk/"bin/internal"/name/"artifact"
+                artifact.parent.mkdir()
+                artifact.write_text("SDK input even under a generated-looking name")
+                self.assertNotEqual(first, self.inputs())
+
+    def test_sdk_artifact_tree_rejects_an_alias(self):
+        artifact = self.sdk/"bin/internal"
+        original = self.sdk/"bin/original-internal"
+        artifact.rename(original)
+        artifact.symlink_to(original, target_is_directory=True)
+        with self.assertRaisesRegex(CACHE.NativeBuildCacheError, "must be canonical"):
+            self.inputs()
 
     def test_dependency_contents_platform_flags_and_tool_identity_invalidate(self):
         first = self.inputs()
