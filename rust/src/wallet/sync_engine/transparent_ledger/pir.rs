@@ -88,15 +88,15 @@ pub(crate) const PASS_DEADLINE: Duration = Duration::from_secs(90);
 /// Watched scripts one pass may cover.
 const MAX_SCRIPTS: usize = 10_000;
 /// Shard-map entries one pass may read.
-const MAX_SHARDS: usize = 1_024;
+pub(super) const MAX_SHARDS: usize = 1_024;
 /// Candidate events one pass may export.
 const MAX_EVENTS: usize = 500_000;
 /// Private queries one pass may send.
-const MAX_QUERIES: u64 = 256;
+pub(super) const MAX_QUERIES: u64 = 256;
 /// Private bytes, setup included, one pass may receive.
-const MAX_PRIVATE_BYTES: u64 = 96 << 20;
+pub(super) const MAX_PRIVATE_BYTES: u64 = 96 << 20;
 /// Bytes one successful response may carry.
-const MAX_RESPONSE_BYTES: usize = 8 << 20;
+pub(super) const MAX_RESPONSE_BYTES: usize = 8 << 20;
 
 /// How long a cancelled pass may take to return before it is abandoned.
 pub(crate) const CANCEL_GRACE: Duration = Duration::from_secs(2);
@@ -384,7 +384,7 @@ impl WriteGate for SettlementGate<'_> {
 }
 
 /// Sets a pass's cancellation flag when dropped.
-struct CancelOnDrop(Arc<AtomicBool>);
+pub(super) struct CancelOnDrop(pub(super) Arc<AtomicBool>);
 
 impl Drop for CancelOnDrop {
     fn drop(&mut self) {
@@ -664,7 +664,7 @@ pub(crate) mod test_transport {
                 .clone()
         }
 
-        pub(super) fn attach<'a, F: Fn() -> bool>(
+        pub(in crate::wallet::sync_engine::transparent_ledger) fn attach<'a, F: Fn() -> bool>(
             &self,
             exchange: RoutedExchange<'a, F>,
         ) -> RoutedExchange<'a, F> {
@@ -681,7 +681,7 @@ pub(crate) mod test_transport {
         SEAMS.get_or_init(Default::default)
     }
 
-    pub(super) fn get(db_path: &str) -> Option<Seam> {
+    pub(in crate::wallet::sync_engine::transparent_ledger) fn get(db_path: &str) -> Option<Seam> {
         seams()
             .lock()
             .unwrap_or_else(PoisonError::into_inner)

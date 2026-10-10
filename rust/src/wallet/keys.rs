@@ -395,6 +395,20 @@ pub fn software_account_first_external_transparent_address(
     seed: &SecretVec<u8>,
     account_index: u32,
 ) -> Result<String, String> {
+    let taddr = software_account_first_external_transparent_receiver(network, seed, account_index)?;
+    Ok(encode_transparent_address(
+        &network.b58_pubkey_address_prefix(),
+        &network.b58_script_address_prefix(),
+        &taddr,
+    ))
+}
+
+/// The transparent receiver at `m/44'/coin_type'/account'/0/0`, unencoded.
+pub(crate) fn software_account_first_external_transparent_receiver(
+    network: WalletNetwork,
+    seed: &SecretVec<u8>,
+    account_index: u32,
+) -> Result<transparent::address::TransparentAddress, String> {
     let ufvk = software_account_ufvk(network, seed, account_index)?;
     let transparent_key = ufvk
         .transparent()
@@ -402,15 +416,9 @@ pub fn software_account_first_external_transparent_address(
     let external_ivk = transparent_key
         .derive_external_ivk()
         .map_err(|e| format!("Failed to derive transparent external IVK: {e}"))?;
-    let taddr = external_ivk
+    external_ivk
         .derive_address(NonHardenedChildIndex::ZERO)
-        .map_err(|e| format!("Failed to derive transparent address index 0: {e}"))?;
-
-    Ok(encode_transparent_address(
-        &network.b58_pubkey_address_prefix(),
-        &network.b58_script_address_prefix(),
-        &taddr,
-    ))
+        .map_err(|e| format!("Failed to derive transparent address index 0: {e}"))
 }
 
 /// Return the standard transparent receivers for `account'` across the first

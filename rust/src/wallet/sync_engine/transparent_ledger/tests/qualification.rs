@@ -21,6 +21,7 @@ use zcash_client_backend::data_api::{
 use zcash_keys::encoding::AddressCodec;
 use zcash_primitives::transaction::Transaction;
 
+use super::super::import_discovery::PrivateAccountDiscovery;
 use super::super::pir::{test_transport, TransparentPirSource};
 use super::activation::checkpoint_trees;
 use super::pir::{
@@ -809,15 +810,34 @@ async fn an_activated_wallet_discloses_nothing_through_any_lane_including_the_pi
     }
 
     // Import into the existing wallet: account discovery and the balance
-    // preview, each on its own runtime as FRB runs them.
+    // preview, each on its own runtime as FRB runs them. Discovery asks the
+    // transparent PIR service, which publishes a map from below the birthday
+    // and its schema and refuses the rest, so it fails after its first filter.
     let mnemonic = keys::generate_mnemonic();
+    let candidates: Vec<Vec<u8>> = {
+        let seed = keys::mnemonic_to_seed(&mnemonic).unwrap();
+        (1..=20)
+            .map(|index| {
+                match keys::software_account_first_external_transparent_receiver(MAIN, &seed, index)
+                    .unwrap()
+                {
+                    transparent::address::TransparentAddress::PublicKeyHash(hash) => hash.to_vec(),
+                    transparent::address::TransparentAddress::ScriptHash(hash) => hash.to_vec(),
+                }
+            })
+            .collect()
+    };
+    let discovery_seam = test_transport::set(
+        &path,
+        service(Arc::new(Mutex::new(shard_map(BIRTHDAY - 20_000)))),
+    );
     let (url, wallet_path) = (lwd.url.clone(), path.clone());
     let (discovered, preview) = tokio::task::spawn_blocking(move || {
         use crate::api::wallet;
         let discovered = wallet::discover_software_wallet_import_accounts(
             mnemonic.clone(),
             String::new(),
-            None,
+            Some(u64::from(BIRTHDAY)),
             "main".into(),
             wallet_path.clone(),
             url.clone(),
@@ -838,9 +858,20 @@ async fn an_activated_wallet_discloses_nothing_through_any_lane_including_the_pi
     .unwrap();
     assert_eq!(
         discovered.err(),
-        Some(crate::api::wallet::SOFTWARE_ACCOUNT_DISCOVERY_UNAVAILABLE.to_string()),
-        "a withheld discovery is not an empty one"
+        Some(crate::api::wallet::SOFTWARE_ACCOUNT_DISCOVERY_PRIVATE_FAILED.to_string()),
+        "a failed private discovery is not an empty one"
     );
+    let requests = discovery_seam.seam.observer.requests();
+    assert_eq!(
+        requests
+            .iter()
+            .map(|request| request.path.as_str())
+            .collect::<Vec<_>>(),
+        [MAP, INIT, "/v1/filters/shards/0/filter"],
+        "only the service's routes, and no candidate in any of them"
+    );
+    assert_private(&requests, &candidates);
+    drop(discovery_seam);
     let preview = preview.expect_err("a withheld preview is not a balance");
     assert!(preview.contains("unavailable"), "{preview}");
 
@@ -1079,17 +1110,21 @@ async fn private_queries_discloses_nothing_before_it_raises_the_wallet() {
     for first_account in [false, true] {
         let gate = import_gate(MAIN, &path, first_account, selected).unwrap();
         assert!(!gate.is_allowed());
-        assert!(
+        // Discovery goes to the transparent PIR service, which this lane
+        // does not reach: it fails, never a shorter list, and sends nothing.
+        assert_eq!(
             discover_used_software_accounts(
                 MAIN,
                 &seed,
                 Some(u64::from(BIRTHDAY)),
                 &lwd.url,
-                &gate
+                &gate,
+                &PrivateAccountDiscovery::new(&path, MAIN),
             )
             .await
-            .is_err(),
-            "a withheld discovery is not an empty one"
+            .err(),
+            Some(crate::api::wallet::SOFTWARE_ACCOUNT_DISCOVERY_PRIVATE_FAILED.to_string()),
+            "a failed private discovery is not an empty one"
         );
         let addresses = keys::software_account_transparent_addresses(MAIN, &seed, 0, 2).unwrap();
         assert!(
@@ -1173,4 +1208,120 @@ async fn private_queries_discloses_nothing_before_it_raises_the_wallet() {
     assert_eq!(applied(&path, MAIN), before, "nothing raised the wallet");
     assert_eq!(queued(), queued_before, "queued work stays durable");
     assert_eq!(unchecked_history(), history_before);
+}
+
+/// Import discovery finds used accounts through a real transparent PIR
+/// service: wallet-pir's shard server, in process, publishes receives to the
+/// first addresses of accounts 1, 7 and 16 above the birthday. Discovery, for
+/// a first account under Private queries, downloads the filters, confirms the
+/// matches by private retrieval and offers accounts 1 and 7, the public batch
+/// rule stopping before 16; lightwalletd is never contacted, and no candidate
+/// reaches the service in any request.
+///
+/// Runs alone in a fresh process: discovery's routed request is then the
+/// process's first TLS use, as on an app launch that imports before any sync,
+/// so it must select a rustls provider itself.
+#[test]
+fn import_discovery_finds_used_accounts_through_the_transparent_pir_service() {
+    if crate::wallet::db::isolated_test(
+        module_path!(),
+        "import_discovery_finds_used_accounts_through_the_transparent_pir_service",
+    ) {
+        return;
+    }
+    use super::shard_service::{noise, receive, script, ShardService, ShardSpec};
+    use crate::api::wallet::{discover_used_software_accounts, import_gate};
+    const MAIN: WalletNetwork = WalletNetwork::Main;
+    let _route = crate::network_privacy::test_route_policy::lock_route_policy();
+    let seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
+    let candidates: Vec<_> = (1..=20)
+        .map(|index| {
+            keys::software_account_first_external_transparent_receiver(MAIN, &seed, index).unwrap()
+        })
+        .collect();
+    let first = |index: u32| candidates[index as usize - 1];
+    // The birthday rounds down to at most 3,410,001; the publication starts
+    // below it, and every receive lies above it.
+    let (start, birthday) = (3_400_000, 3_420_001);
+    let mut sealed = noise(start, 3_420_499, 1);
+    sealed.push((script(first(1)), receive(3_420_100, 1)));
+    sealed.push((script(first(7)), receive(3_420_200, 7)));
+    let mut tail = noise(3_420_500, 3_420_600, 2);
+    tail.push((script(first(16)), receive(3_420_550, 16)));
+    let service = ShardService::publish(&[
+        ShardSpec {
+            start,
+            end: 3_420_499,
+            sealed: true,
+            events: sealed,
+        },
+        ShardSpec {
+            start: 3_420_500,
+            end: 3_420_600,
+            sealed: false,
+            events: tail,
+        },
+    ]);
+    // A first account: the wallet does not exist yet.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("wallet.db").to_str().unwrap().to_owned();
+    let seam = test_transport::set(&path, service.observer());
+    let private_queries = EnhancementPolicy::for_preference(MAIN, true)
+        .with_transparent_mode(TransparentLedgerMode::PrivateRequired);
+    let gate = import_gate(MAIN, &path, true, private_queries).unwrap();
+    assert!(!gate.is_allowed());
+    // Any connection to this endpoint would be a disclosure.
+    let lightwalletd = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}", lightwalletd.local_addr().unwrap());
+
+    let discovered = tokio::runtime::Runtime::new()
+        .unwrap()
+        .block_on(discover_used_software_accounts(
+            MAIN,
+            &seed,
+            Some(birthday),
+            &url,
+            &gate,
+            &PrivateAccountDiscovery::new(&path, MAIN),
+        ))
+        .expect("a complete private discovery");
+
+    let address = |index| {
+        keys::software_account_first_external_transparent_address(MAIN, &seed, index).unwrap()
+    };
+    assert_eq!(
+        discovered
+            .iter()
+            .map(|account| (
+                account.zip32_account_index,
+                account.first_transparent_address.clone()
+            ))
+            .collect::<Vec<_>>(),
+        vec![(1, address(1)), (7, address(7))]
+    );
+    let requests = seam.seam.observer.requests();
+    assert!(
+        requests
+            .iter()
+            .any(|request| request.method == "POST" && !request.body.is_empty()),
+        "the filter matches were confirmed by private queries"
+    );
+    let secrets: Vec<Vec<u8>> = candidates
+        .iter()
+        .map(|address| match address {
+            transparent::address::TransparentAddress::PublicKeyHash(hash) => hash.to_vec(),
+            transparent::address::TransparentAddress::ScriptHash(hash) => hash.to_vec(),
+        })
+        .collect();
+    assert_private(&requests, &secrets);
+    lightwalletd.set_nonblocking(true).unwrap();
+    assert_eq!(
+        lightwalletd.accept().map(|_| ()).unwrap_err().kind(),
+        std::io::ErrorKind::WouldBlock,
+        "no request reaches lightwalletd"
+    );
+    assert!(
+        !std::path::Path::new(&path).exists(),
+        "no wallet was created"
+    );
 }

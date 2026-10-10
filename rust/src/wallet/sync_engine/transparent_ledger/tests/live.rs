@@ -270,3 +270,96 @@ async fn a_fresh_mainnet_account_recovers_and_promotes_against_the_live_service(
         was.len().max(is.len())
     );
 }
+
+/// Opt-in: an import's private account discovery for a fresh recovery phrase
+/// against the live service, with no wallet. It runs from the start of the
+/// last sealed shard, or from `VIZOR_DISCOVERY_LIVE_FLOOR` (419200 walks from
+/// Sapling activation), and prints how long it took, which calibrates the
+/// discovery deadline:
+///
+/// ```sh
+/// cargo test --manifest-path rust/Cargo.toml -- --ignored --nocapture a_fresh_phrase_discovers
+/// VIZOR_DISCOVERY_LIVE_FLOOR=419200 cargo test --manifest-path rust/Cargo.toml -- --ignored --nocapture a_fresh_phrase_discovers
+/// ```
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "requires network: https://transparent-pir.valargroup.dev"]
+async fn a_fresh_phrase_discovers_no_accounts_against_the_live_service() {
+    use super::super::import_discovery::PrivateAccountDiscovery;
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let _route = crate::network_privacy::test_route_policy::lock_route_policy();
+    let dir = tempfile::tempdir().unwrap();
+    if std::env::var(TOR).is_ok_and(|value| value == "1") {
+        crate::network_privacy::enable_tor(&dir.path().join("tor"))
+            .await
+            .expect("Tor bootstraps");
+    }
+    let before = published().await;
+    let floor = std::env::var("VIZOR_DISCOVERY_LIVE_FLOOR")
+        .ok()
+        .map(|floor| floor.parse::<u32>().expect("a height"))
+        .unwrap_or_else(|| {
+            before
+                .iter()
+                .filter(|shard| shard.sealed)
+                .max_by_key(|shard| shard.end)
+                .expect("a sealed shard")
+                .start
+        });
+    let target = before.iter().map(|shard| shard.end).max().unwrap();
+    // The wallet is never created; the path keys only the test transport.
+    let path = dir.path().join("wallet.db").to_str().unwrap().to_owned();
+    let seam = test_transport::set(&path, RequestObserver::recording());
+    let seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
+    let candidates: Vec<_> = (1..=20)
+        .map(|index| {
+            keys::software_account_first_external_transparent_receiver(MAIN, &seed, index).unwrap()
+        })
+        .collect();
+    let secrets: Vec<Vec<u8>> = candidates
+        .iter()
+        .map(|address| match address {
+            transparent::address::TransparentAddress::PublicKeyHash(hash) => hash.to_vec(),
+            transparent::address::TransparentAddress::ScriptHash(hash) => hash.to_vec(),
+        })
+        .collect();
+
+    let started = std::time::Instant::now();
+    let active = PrivateAccountDiscovery::new(&path, MAIN)
+        .active(u64::from(floor), candidates)
+        .await;
+    let requests = seam.seam.observer.requests();
+    eprintln!(
+        "discovery from {floor}: {active:?} in {:?}, {} requests",
+        started.elapsed(),
+        requests.len()
+    );
+
+    assert_eq!(active, Ok(BTreeSet::new()), "a fresh phrase has no history");
+    assert!(seam
+        .seam
+        .routes()
+        .iter()
+        .all(|route| *route == RoutePolicy::WalletPreference));
+    assert_private(&requests, &secrets);
+    // Filters only for shards overlapping the floor through the end, at most
+    // one each; the map may move during the run.
+    let after = published().await;
+    let filter = regex::Regex::new(r"^/v1/filters/shards/([0-9]+)/filter$").unwrap();
+    let filtered: Vec<u64> = requests
+        .iter()
+        .filter_map(|request| filter.captures(&request.path))
+        .map(|captures| captures[1].parse().unwrap())
+        .collect();
+    let (was, is) = (
+        overlapping(&before, floor, target),
+        overlapping(&after, floor, target),
+    );
+    assert!(!filtered.is_empty(), "the discovery read a filter");
+    assert!(filtered
+        .iter()
+        .all(|id| was.contains(id) || is.contains(id)));
+    assert!(
+        !std::path::Path::new(&path).exists(),
+        "no wallet was created"
+    );
+}
