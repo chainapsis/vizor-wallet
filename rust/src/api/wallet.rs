@@ -2072,8 +2072,16 @@ mod tests {
         );
     }
 
+    /// Runs alone: the transition's budget must measure only this case's
+    /// lookups and writers, not other tests holding the wallet write lock.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn slow_public_response_does_not_hold_discovery_transition() {
+        if crate::wallet::db::isolated_test(
+            module_path!(),
+            "slow_public_response_does_not_hold_discovery_transition",
+        ) {
+            return;
+        }
         use crate::wallet::sync_engine::test_lwd::{apply_fenced, CapturingLwd};
         use std::time::Duration;
         use zcash_client_backend::data_api::transparent_ledger::TransparentLedgerMode;

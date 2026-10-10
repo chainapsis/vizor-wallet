@@ -520,25 +520,7 @@ mod tests {
     /// beyond these deadlines. Run SQLite cases alone, keeping the competing
     /// lookups, transitions and production wait bounds inside each case.
     fn isolated_fence_test(test: &str) -> bool {
-        let module = module_path!().split_once("::").unwrap().1;
-        let name = format!("{module}::{test}");
-        const MARKER: &str = "VIZOR_TEST_PROCESS";
-        if std::env::var(MARKER).as_deref() == Ok(name.as_str()) {
-            return false;
-        }
-        let output = std::process::Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", name.as_str(), "--test-threads=1"])
-            .env(MARKER, &name)
-            .output()
-            .expect("start isolated wallet-fence test");
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        assert!(
-            output.status.success() && stdout.contains("1 passed; 0 failed; 0 ignored"),
-            "isolated {name} failed or selected no test:\n{}\n{}",
-            stdout,
-            String::from_utf8_lossy(&output.stderr),
-        );
-        true
+        crate::wallet::db::isolated_test(module_path!(), test)
     }
 
     fn wallet() -> (tempfile::TempDir, String, TransparentLookupGate) {

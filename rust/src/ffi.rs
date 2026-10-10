@@ -1126,8 +1126,16 @@ mod tests {
             assert_eq!(lwd.count("/GetTransaction"), 2);
         }
 
+        /// Runs alone: the transition's budget must measure only this case's
+        /// lookups and writers, not other tests holding the wallet write lock.
         #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
         async fn slow_public_response_does_not_hold_background_observation_transition() {
+            if crate::wallet::db::isolated_test(
+                module_path!(),
+                "slow_public_response_does_not_hold_background_observation_transition",
+            ) {
+                return;
+            }
             let lwd = CapturingLwd::start(Vec::new()).await;
             let (_dir, path) = wallet(WalletNetwork::Regtest);
             let release = lwd.hold_responses("/GetTransaction");
