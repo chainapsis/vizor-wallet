@@ -216,22 +216,26 @@ Future<E2eRuntimeCaseManifest?> initializeE2eRuntimeConfiguration() async {
     defaultNetworkName: kZcashDefaultNetworkName,
   );
   final e2eNamespace = e2eManifest?.namespace ?? '';
-  if (e2eManifest == null &&
-      (Platform.isIOS
-          ? readE2eNativeEnvironmentBytes(
-                  kVizorE2eCaseManifestEnvKey,
-                  kVizorE2eCaseManifestMaximumBytes,
-                ) !=
-                null
-          : Platform.environment.containsKey(kVizorE2eCaseManifestEnvKey))) {
-    throw StateError(
-      'An E2E case manifest requires a compiled cohort profile.',
+  // Only debug builds can host an E2E case. Release builds never read the E2E
+  // environment, so these checks compile out of shipped apps.
+  if (kDebugMode) {
+    if (e2eManifest == null &&
+        (Platform.isIOS
+            ? readE2eNativeEnvironmentBytes(
+                    kVizorE2eCaseManifestEnvKey,
+                    kVizorE2eCaseManifestMaximumBytes,
+                  ) !=
+                  null
+            : Platform.environment.containsKey(kVizorE2eCaseManifestEnvKey))) {
+      throw StateError(
+        'An E2E case manifest requires a compiled cohort profile.',
+      );
+    }
+    validateE2eRuntimeNamespace(
+      expectedNamespace: e2eNamespace,
+      runtimeNamespace: readE2eRuntimeNamespace(isIos: Platform.isIOS),
     );
   }
-  validateE2eRuntimeNamespace(
-    expectedNamespace: e2eNamespace,
-    runtimeNamespace: readE2eRuntimeNamespace(isIos: Platform.isIOS),
-  );
   configureE2ePreferences(
     namespace: e2eNamespace,
     defaultNetworkName: kZcashDefaultNetworkName,
