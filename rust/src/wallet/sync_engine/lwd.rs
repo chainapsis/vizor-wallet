@@ -228,14 +228,18 @@ pub(crate) async fn open_native_migration_lwd_channel(
         .map_err(|blocked| NativeRouteOpenError::RouteBlocked(blocked.to_string()))?;
     if let Some(tor_client) = tor_client {
         let endpoint = Endpoint::from_shared(lightwalletd_url.to_string())
-            .map_err(|e| NativeRouteOpenError::Network(SyncError::net(format!("invalid URL: {e}"))))?
+            .map_err(|e| {
+                NativeRouteOpenError::Network(SyncError::net(format!("invalid URL: {e}")))
+            })?
             .connect_timeout(LIGHTWALLETD_CONNECT_TIMEOUT);
         let allow_onion_services = endpoint_allows_onion_services(&endpoint);
         let client = tor_client
             .connect_to_lightwalletd(endpoint.uri().clone(), allow_onion_services)
             .await
             .map_err(|e| {
-                NativeRouteOpenError::Network(SyncError::net(format!("Tor gRPC connect failed: {e}")))
+                NativeRouteOpenError::Network(SyncError::net(format!(
+                    "Tor gRPC connect failed: {e}"
+                )))
             })?;
         return Ok(NativeMigrationChannel {
             client,
@@ -377,9 +381,8 @@ impl Service<Uri> for DirectRouteConnector {
             });
         }
         let future = self.inner.call(uri);
-        let route = crate::network_privacy::DirectRouteLease::with_commitment(
-            self.commitment.clone(),
-        );
+        let route =
+            crate::network_privacy::DirectRouteLease::with_commitment(self.commitment.clone());
         Box::pin(async move {
             let mut future = Box::pin(future);
             let connected = std::future::poll_fn(|cx| {
@@ -1105,7 +1108,10 @@ mod tests {
         let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
             .await
             .expect("bind loopback listener");
-        let url = format!("http://{}", listener.local_addr().expect("listener address"));
+        let url = format!(
+            "http://{}",
+            listener.local_addr().expect("listener address")
+        );
         crate::network_privacy::begin_tor_enable();
 
         let error = open_background_direct_lwd_channel(&url)

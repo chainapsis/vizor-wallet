@@ -159,7 +159,11 @@ impl RecordingLwd {
     }
 
     fn assert_untouched(&self, context: &str) {
-        assert_eq!(self.connections(), 0, "{context}: a connection reached lightwalletd");
+        assert_eq!(
+            self.connections(),
+            0,
+            "{context}: a connection reached lightwalletd"
+        );
         assert!(self.methods().is_empty(), "{context}: {:?}", self.methods());
     }
 }
@@ -226,7 +230,10 @@ fn starting_or_failed_tor_sends_nothing_and_reports_route_blocked() {
     let server = RecordingLwd::start();
 
     begin_tor_enable();
-    assert_eq!(latest_block_height(&server).0, LIGHTWALLETD_RESULT_ROUTE_BLOCKED);
+    assert_eq!(
+        latest_block_height(&server).0,
+        LIGHTWALLETD_RESULT_ROUTE_BLOCKED
+    );
     assert_eq!(
         send_transaction(&server, &[1, 2, 3]).0,
         LIGHTWALLETD_RESULT_ROUTE_BLOCKED
@@ -235,7 +242,10 @@ fn starting_or_failed_tor_sends_nothing_and_reports_route_blocked() {
     server.assert_untouched("Tor starting");
 
     fail_tor_enable();
-    assert_eq!(latest_block_height(&server).0, LIGHTWALLETD_RESULT_ROUTE_BLOCKED);
+    assert_eq!(
+        latest_block_height(&server).0,
+        LIGHTWALLETD_RESULT_ROUTE_BLOCKED
+    );
     assert_eq!(
         send_transaction(&server, &[1, 2, 3]).0,
         LIGHTWALLETD_RESULT_ROUTE_BLOCKED
@@ -305,9 +315,9 @@ async fn a_broadcast_already_dispatched_completes_across_a_switch_to_tor() {
     // The user turns Tor on while the response is outstanding. Cancelling now
     // could not unsend the transaction; it would only lose its outcome.
     begin_tor_enable();
-    let drain = tokio::spawn(crate::network_privacy::wait_for_direct_connections_to_close(
-        Duration::from_secs(10),
-    ));
+    let drain = tokio::spawn(
+        crate::network_privacy::wait_for_direct_connections_to_close(Duration::from_secs(10)),
+    );
     tokio::time::sleep(Duration::from_millis(100)).await;
     assert!(
         !drain.is_finished(),
@@ -355,7 +365,10 @@ async fn a_switch_to_tor_mid_tip_request_is_not_completed_directly() {
     begin_tor_enable();
     let result = crate::wallet::sync_engine::get_latest_block(&mut channel.client).await;
 
-    assert!(result.is_err(), "a direct tip request completed after Tor was selected");
+    assert!(
+        result.is_err(),
+        "a direct tip request completed after Tor was selected"
+    );
     assert!(server.methods().is_empty(), "{:?}", server.methods());
 }
 
@@ -373,7 +386,10 @@ fn ios_header_declares_only_routed_outbox_requests() {
         "zcash_lightwalletd_routed_send_transaction(",
     ] {
         assert!(header.contains(routed), "header lacks {routed}");
-        assert!(client.contains(routed), "Swift client does not call {routed}");
+        assert!(
+            client.contains(routed),
+            "Swift client does not call {routed}"
+        );
     }
     for direct in [
         "zcash_lightwalletd_latest_block_height(",
