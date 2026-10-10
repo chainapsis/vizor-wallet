@@ -240,7 +240,7 @@ class InputTests(unittest.TestCase):
         self.apple_tools = {name:self.apple/"usr/bin"/name for name in (
             "xcodebuild", "clang", "swiftc", "swift-frontend", "swift", "swift-build", "swift-package",
             "ld", "actool", "ibtool", "dsymutil", "strip")}
-        self.host_tools = {name:self.root/"host/bin"/name for name in ("xcrun", "codesign", "security", "ruby", "pod")}
+        self.host_tools = {name:self.root/"host/bin"/name for name in ("xcrun", "codesign", "security", "ruby", "pod", "rustup")}
         for name, path in {**self.apple_tools, **self.host_tools}.items():
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("original "+name+" executable")
@@ -407,6 +407,18 @@ class InputTests(unittest.TestCase):
                         self.assertEqual(first["rust_toolchains"]["stable"][tool],
                                          second["rust_toolchains"]["stable"][tool])
                     self.assertNotEqual(first, second)
+
+    def test_rustup_driver_bytes_invalidate_with_unchanged_compiler_and_selection(self):
+        for platform in ("ios", "macos"):
+            with self.subTest(platform=platform):
+                first = self.inputs(platform=platform)
+                self.host_tools["rustup"].write_text(platform+" repaired rustup driver")
+                second = self.inputs(platform=platform)
+                self.assertEqual(first["rust_toolchains"], second["rust_toolchains"])
+                self.assertEqual(first["environment_sha256"], second["environment_sha256"])
+                self.assertNotEqual(first, second)
+                self.assertEqual(first["rustup"]["path"], second["rustup"]["path"])
+                self.assertNotEqual(first["rustup"]["sha256"], second["rustup"]["sha256"])
 
     def test_rust_sysroot_changes_invalidate_without_compiler_or_version_changes(self):
         for platform in ("ios", "macos"):

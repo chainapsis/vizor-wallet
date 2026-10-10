@@ -411,6 +411,12 @@ def collect_native_cache_inputs(root, source, tool, *, platform, architecture,
     if (not isinstance(flutter, dict) or any(not isinstance(flutter.get(name), str) or not flutter[name]
         for name in ("frameworkRevision", "engineRevision", "dartSdkVersion"))):
         raise NativeBuildCacheError("Flutter machine identity is incomplete")
+    rustup_paths = tuple(line.rstrip("\r\n") for line in command(
+        ["/usr/bin/which", "rustup"], in_source=True))
+    if len(rustup_paths) != 1 or not Path(rustup_paths[0]).is_absolute():
+        raise NativeBuildCacheError("rustup must resolve to one absolute native Rust driver")
+    rustup = Path(rustup_paths[0]).resolve(strict=True)
+    rustup_input = {"path":str(rustup), "sha256":_tool_input_record(rustup, executable=True)[1]}
     toolchains = _native_rust_toolchains(root, environment, architecture, command)
     rust = {}
     for name in toolchains:
@@ -454,7 +460,7 @@ def collect_native_cache_inputs(root, source, tool, *, platform, architecture,
             tool_directories={Path(item["path"]).parent for item in apple["executables"].values()}),
         "xcode":list(command(["/usr/bin/xcodebuild", "-version"])),
         "sdk":list(command(["/usr/bin/xcrun", "--sdk", sdk, "--show-sdk-build-version"])),
-        "rust_toolchains":rust,
+        "rustup":rustup_input, "rust_toolchains":rust,
         "cocoapods":list(command(["pod", "--version"], in_source=True)),
         "ruby":list(command(["ruby", "--version"], in_source=True)),
         "signing_identities_sha256":hashlib.sha256("".join(command(
