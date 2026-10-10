@@ -282,7 +282,11 @@ fn settled(settlement: Option<Result<Applied, ApplyFailure>>) -> Settled {
 /// Settles `account`'s parked batch on the wallet at `path`, observed.
 async fn settle(source: &TransparentPirSource, path: &str, account: AccountUuid) -> Settled {
     let mut db = open_wallet_db_with_timeout(path, MAIN, SYNC_DB_BUSY_TIMEOUT).unwrap();
-    settled(source.apply(account, &mut db, Trust::Observed).await)
+    settled(
+        source
+            .apply(account, &mut db, Trust::Observed, &|| false)
+            .await,
+    )
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -864,7 +868,11 @@ async fn passes_and_acknowledgments_on_one_companion_are_serialized() {
     // A batch without retired revisions may also be settled as trusted.
     let mut db = open_wallet_db_with_timeout(&wallet.path, MAIN, SYNC_DB_BUSY_TIMEOUT).unwrap();
     assert_eq!(
-        settled(second.apply(account, &mut db, Trust::Trusted).await),
+        settled(
+            second
+                .apply(account, &mut db, Trust::Trusted, &|| false)
+                .await
+        ),
         Settled::Acknowledged(ApplyStats::default())
     );
 }
@@ -924,6 +932,60 @@ fn bump_policy_generation(path: &str) {
 /// revision of the shard retires the acknowledged one: only a trusted
 /// settlement reconciles it, and once that is acknowledged, no later batch
 /// lists it again.
+/// Cancellation stops a settlement between its wallet writes: what applied
+/// stays, nothing is acknowledged, and the next pass replays the batch and
+/// settles it.
+#[tokio::test(flavor = "multi_thread")]
+async fn cancellation_stops_a_settlement_between_wallet_writes() {
+    let wallet = main_wallet(1);
+    let account = wallet.accounts[0].1;
+    let path = wallet.path.clone();
+    let _mode = test_mode::set(&path, TransparentLedgerMode::PrivateRequired);
+    let mut db = open_wallet_db_with_timeout(&path, MAIN, SYNC_DB_BUSY_TIMEOUT).unwrap();
+    db.apply_transparent_policy(TransparentLedgerMode::PrivateRequired)
+        .unwrap();
+    let map = Arc::new(Mutex::new(empty_filter_map(BIRTHDAY - 100, 0)));
+    let _seam = test_transport::set(&path, empty_filter_service(map.clone()));
+    let source = TransparentPirSource::new(&path, MAIN);
+    let qualified = || count(&path, "SELECT COUNT(*) FROM tpir_qualified_revisions");
+
+    // Exit is requested once the first commit is durable.
+    let exit_after_first = || qualified() >= 1;
+    let watch = watched_by(&wallet, account);
+    assert_eq!(
+        source.recover(request(account, &watch, &|| false)).await,
+        Ok(COMPLETE)
+    );
+    assert_eq!(
+        settled(
+            source
+                .apply(account, &mut db, Trust::Trusted, &exit_after_first)
+                .await
+        ),
+        Settled::Refused {
+            applied: 1,
+            action: ApplyAction::Interrupted,
+        }
+    );
+    assert_eq!(qualified(), 1);
+
+    // The next pass replays the batch, and it is acknowledged.
+    let watch = watched_by(&wallet, account);
+    assert_eq!(
+        source.recover(request(account, &watch, &|| false)).await,
+        Ok(COMPLETE)
+    );
+    assert!(matches!(
+        settled(
+            source
+                .apply(account, &mut db, Trust::Trusted, &|| false)
+                .await
+        ),
+        Settled::Acknowledged(_)
+    ));
+    assert_eq!(qualified(), 1);
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_covering_pass_settles_trusted_and_is_acknowledged() {
     let wallet = main_wallet(1);
@@ -960,7 +1022,11 @@ async fn a_covering_pass_settles_trusted_and_is_acknowledged() {
     );
     bump_policy_generation(&path);
     assert_eq!(
-        refused(source.apply(account, &mut db, Trust::Trusted).await),
+        refused(
+            source
+                .apply(account, &mut db, Trust::Trusted, &|| false)
+                .await
+        ),
         (0, ApplyAction::Refresh)
     );
     assert_eq!((covered(&db), qualified()), (None, 0));
@@ -972,7 +1038,11 @@ async fn a_covering_pass_settles_trusted_and_is_acknowledged() {
         source.recover(request(account, &watch, &|| false)).await,
         Ok(COMPLETE)
     );
-    let stats = acknowledged(source.apply(account, &mut db, Trust::Trusted).await);
+    let stats = acknowledged(
+        source
+            .apply(account, &mut db, Trust::Trusted, &|| false)
+            .await,
+    );
     assert!(stats.applied > 0, "the pass committed coverage");
     assert_eq!(stats.qualified, stats.applied);
     assert_eq!(covered(&db), Some(BlockHeight::from_u32(TOP)));
@@ -984,7 +1054,11 @@ async fn a_covering_pass_settles_trusted_and_is_acknowledged() {
     assert_eq!(qualified(), 1);
     // The acknowledged batch is spent.
     assert_eq!(
-        settled(source.apply(account, &mut db, Trust::Trusted).await),
+        settled(
+            source
+                .apply(account, &mut db, Trust::Trusted, &|| false)
+                .await
+        ),
         Settled::Nothing
     );
 
@@ -999,7 +1073,14 @@ async fn a_covering_pass_settles_trusted_and_is_acknowledged() {
         source.recover(request(account, &watch, &|| false)).await,
         Ok(COMPLETE)
     );
-    assert!(!acknowledged(source.apply(account, &mut db, Trust::Trusted).await).window_grew);
+    assert!(
+        !acknowledged(
+            source
+                .apply(account, &mut db, Trust::Trusted, &|| false)
+                .await
+        )
+        .window_grew
+    );
     assert_eq!(
         (
             db.transparent_candidate_recovery(account).unwrap(),
@@ -1018,7 +1099,11 @@ async fn a_covering_pass_settles_trusted_and_is_acknowledged() {
         Ok(COMPLETE)
     );
     assert_eq!(
-        refused(source.apply(account, &mut db, Trust::Observed).await),
+        refused(
+            source
+                .apply(account, &mut db, Trust::Observed, &|| false)
+                .await
+        ),
         (0, ApplyAction::Reconcile)
     );
     let watch = watched_by(&wallet, account);
@@ -1026,7 +1111,11 @@ async fn a_covering_pass_settles_trusted_and_is_acknowledged() {
         source.recover(request(account, &watch, &|| false)).await,
         Ok(COMPLETE)
     );
-    let stats = acknowledged(source.apply(account, &mut db, Trust::Trusted).await);
+    let stats = acknowledged(
+        source
+            .apply(account, &mut db, Trust::Trusted, &|| false)
+            .await,
+    );
     assert_eq!(stats.qualified, stats.applied);
     assert_eq!(covered(&db), Some(BlockHeight::from_u32(TOP)));
     assert_eq!(qualified(), 2);
@@ -1037,7 +1126,11 @@ async fn a_covering_pass_settles_trusted_and_is_acknowledged() {
         source.recover(request(account, &watch, &|| false)).await,
         Ok(COMPLETE)
     );
-    acknowledged(source.apply(account, &mut db, Trust::Observed).await);
+    acknowledged(
+        source
+            .apply(account, &mut db, Trust::Observed, &|| false)
+            .await,
+    );
 
     // Covering needed only the publication and each revision's filter.
     let requests = seam.seam.observer.requests();

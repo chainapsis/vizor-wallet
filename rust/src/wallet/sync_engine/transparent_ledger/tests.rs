@@ -861,6 +861,7 @@ impl RecoverySource for Silent {
         _account: AccountUuid,
         _db: &mut WalletDatabase,
         _trust: Trust,
+        _should_exit: &(dyn Fn() -> bool + Sync),
     ) -> impl Future<Output = Option<Result<Applied, ApplyFailure>>> + Send {
         std::future::ready(None)
     }

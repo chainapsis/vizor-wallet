@@ -623,6 +623,149 @@ async fn hardware_authority_refusals_recovery_cannot_end_do_not_wait() {
     assert!(started.elapsed() < Duration::from_secs(10));
 }
 
+/// Locks the wallet at `path` from another connection, as another process or
+/// a writer outside the process lock would, until `held` has passed.
+fn lock_wallet_for(path: &str, held: Duration) -> std::thread::JoinHandle<()> {
+    let path = path.to_owned();
+    let (locked, on_locked) = std::sync::mpsc::channel();
+    let locker = std::thread::spawn(move || {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch("BEGIN IMMEDIATE").unwrap();
+        locked.send(()).unwrap();
+        std::thread::sleep(held);
+        conn.execute_batch("ROLLBACK").unwrap();
+    });
+    on_locked.recv().unwrap();
+    locker
+}
+
+/// A wallet locked past SQLite's busy timeout decides nothing about the
+/// transaction: the wait outlasts the lock and authorizes the same signature,
+/// and a lock that outlasts the wait is a retryable refusal, never a final
+/// one that would discard the signature.
+#[tokio::test(flavor = "multi_thread")]
+async fn hardware_authority_waits_out_a_busy_wallet() {
+    use crate::wallet::sync::hardware_authority::{await_authority_within, DispatchRefusal};
+
+    let mut wallet = wallet();
+    let _mode = activate(&mut wallet).await;
+    let source = funded_source(&wallet);
+    run_required(&mut wallet, &source).await;
+    let tx = hardware_tx(vec![receive(1, external(&wallet, 0), VALUE, 150).outpoint]);
+    let path = wallet.path.clone();
+
+    let locker = lock_wallet_for(&path, Duration::from_secs(3));
+    let refusal = await_authority_within(&path, NETWORK, &tx, &[], TIP.into(), Duration::ZERO)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(refusal, DispatchRefusal::Unavailable(_)),
+        "{refusal:?}"
+    );
+    assert!(refusal.is_retryable());
+    locker.join().unwrap();
+
+    let locker = lock_wallet_for(&path, Duration::from_secs(3));
+    assert_eq!(
+        await_authority_within(
+            &path,
+            NETWORK,
+            &tx,
+            &[],
+            TIP.into(),
+            Duration::from_secs(30)
+        )
+        .await,
+        Ok(())
+    );
+    locker.join().unwrap();
+
+    // The reservation for the send waits the lock out the same way.
+    let locker = lock_wallet_for(&path, Duration::from_secs(3));
+    let sent = std::sync::atomic::AtomicUsize::new(0);
+    crate::wallet::sync::hardware_authority::dispatch(
+        &path,
+        NETWORK,
+        &tx,
+        &[],
+        TIP.into(),
+        |_| async {
+            sent.fetch_add(1, Ordering::SeqCst);
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(sent.load(Ordering::SeqCst), 1);
+    locker.join().unwrap();
+}
+
+/// A private recovery settlement of many commits steps aside between them for
+/// a hardware broadcast waiting to reserve the wallet, so the broadcast is
+/// authorized within about one commit rather than timing out behind the
+/// batch.
+#[tokio::test(flavor = "multi_thread")]
+async fn hardware_authority_reserves_between_settlement_commits() {
+    use super::super::pir::SettlementGate;
+    use crate::wallet::sync::hardware_authority::await_authority_within;
+    use zakura_pir_transparent::WriteGate as _;
+
+    let mut wallet = wallet();
+    let _mode = activate(&mut wallet).await;
+    let source = funded_source(&wallet);
+    run_required(&mut wallet, &source).await;
+    let tx = hardware_tx(vec![receive(1, external(&wallet, 0), VALUE, 150).outpoint]);
+    let path = wallet.path.clone();
+
+    // Each commit holds the wallet's write lock for 400 ms; the gaps between
+    // them are far shorter than SQLite's busy back-off.
+    let stop = Arc::new(AtomicBool::new(false));
+    let started = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let settling = std::thread::spawn({
+        let (path, stop, started) = (path.clone(), stop.clone(), started.clone());
+        move || {
+            let conn = rusqlite::Connection::open(&path).unwrap();
+            conn.busy_timeout(Duration::from_secs(10)).unwrap();
+            let exit = || stop.load(Ordering::SeqCst);
+            let mut gate = SettlementGate { should_exit: &exit };
+            let mut commits = 0;
+            while gate
+                .write(|| {
+                    conn.execute_batch("BEGIN IMMEDIATE").unwrap();
+                    started.fetch_add(1, Ordering::SeqCst);
+                    std::thread::sleep(Duration::from_millis(400));
+                    conn.execute_batch("COMMIT").unwrap();
+                })
+                .is_ok()
+            {
+                commits += 1;
+            }
+            commits
+        }
+    });
+    // The broadcast arrives while a commit holds the lock.
+    while started.load(Ordering::SeqCst) == 0 {
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+
+    let started = std::time::Instant::now();
+    assert_eq!(
+        await_authority_within(
+            &path,
+            NETWORK,
+            &tx,
+            &[],
+            TIP.into(),
+            Duration::from_secs(30)
+        )
+        .await,
+        Ok(())
+    );
+    let took = started.elapsed();
+    stop.store(true, Ordering::SeqCst);
+    assert!(settling.join().unwrap() >= 1);
+    assert!(took < Duration::from_millis(1500), "{took:?}");
+}
+
 #[tokio::test]
 async fn hardware_authority_cancellation_releases_writer_reservation() {
     let mut wallet = wallet();

@@ -1,6 +1,6 @@
 use std::{
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicU64, AtomicUsize, Ordering},
         Mutex, MutexGuard, OnceLock, TryLockError,
     },
     time::{Duration, Instant},
@@ -42,6 +42,35 @@ impl Drop for WriteEpochGuard {
 /// Current wallet-DB write epoch. Even = idle; odd = a locked write is active.
 pub(crate) fn wallet_db_write_epoch() -> u64 {
     WALLET_DB_WRITE_EPOCH.load(Ordering::Acquire)
+}
+
+/// Writers waiting to take [`WALLET_DB_WRITE_LOCK`], or to reserve the
+/// wallet's SQLite write lock directly.
+static WALLET_DB_WRITERS_WAITING: AtomicUsize = AtomicUsize::new(0);
+
+/// Counts a writer as waiting for the wallet's write lock while it lives.
+/// Hold one only while acquiring, never while writing: a long background
+/// write ([`writers_waiting`]) steps aside between its transactions for as
+/// long as any writer is counted.
+pub(crate) struct WaitingWriter(());
+
+impl WaitingWriter {
+    pub(crate) fn new() -> Self {
+        WALLET_DB_WRITERS_WAITING.fetch_add(1, Ordering::AcqRel);
+        Self(())
+    }
+}
+
+impl Drop for WaitingWriter {
+    fn drop(&mut self) {
+        WALLET_DB_WRITERS_WAITING.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+/// Whether another writer is waiting for the wallet's write lock: a write
+/// made of many transactions lets it go first between them.
+pub(crate) fn writers_waiting() -> bool {
+    WALLET_DB_WRITERS_WAITING.load(Ordering::Acquire) > 0
 }
 
 pub(crate) fn open_wallet_db_with_timeout(
@@ -202,6 +231,7 @@ pub(crate) fn with_wallet_db_write_lock<T>(
     // correctness over precision.
     let lock = WALLET_DB_WRITE_LOCK.get_or_init(|| Mutex::new(()));
     let wait_start = Instant::now();
+    let waiting = WaitingWriter::new();
     let guard = match lock.lock() {
         Ok(guard) => guard,
         Err(poisoned) => {
@@ -209,6 +239,7 @@ pub(crate) fn with_wallet_db_write_lock<T>(
             poisoned.into_inner()
         }
     };
+    drop(waiting);
 
     let waited = wait_start.elapsed();
     if waited >= Duration::from_millis(50) {
@@ -229,7 +260,9 @@ pub(crate) fn with_wallet_db_write_lock_until<T>(
     write: impl FnOnce() -> T,
 ) -> Result<T, String> {
     let lock = WALLET_DB_WRITE_LOCK.get_or_init(|| Mutex::new(()));
+    let waiting = WaitingWriter::new();
     let guard = lock_until(lock, operation, deadline)?;
+    drop(waiting);
     Ok(run_wallet_db_write(operation, guard, write))
 }
 
@@ -268,6 +301,7 @@ pub(crate) async fn with_wallet_db_write_lock_unless<T>(
 ) -> Option<T> {
     let lock = WALLET_DB_WRITE_LOCK.get_or_init(|| Mutex::new(()));
     let wait_start = Instant::now();
+    let waiting = WaitingWriter::new();
     loop {
         if give_up() {
             log::info!("wallet DB write lock wait given up for {operation}");
@@ -292,6 +326,7 @@ pub(crate) async fn with_wallet_db_write_lock_unless<T>(
                     log::info!("wallet DB write lock wait given up for {operation}");
                     return None;
                 }
+                drop(waiting);
                 let waited = wait_start.elapsed();
                 if waited >= Duration::from_millis(50) {
                     log::info!(

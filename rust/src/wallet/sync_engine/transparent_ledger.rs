@@ -8,10 +8,11 @@
 //! each in its own library transaction, and the batch is acknowledged only
 //! once every one committed. A batch that was not acknowledged says what to
 //! do next ([`ApplyAction`]); budgets, holds and promotion are the
-//! coordinator's. The transparent PIR source holds the wallet write
-//! lock across the whole settlement, so a foreground wallet write waits for
-//! the batch. A `Pending` or `Withdrawn` batch applies nothing and is never
-//! acknowledged.
+//! coordinator's. The transparent PIR source takes the wallet write lock for
+//! one commit at a time and steps aside between commits for a waiting writer,
+//! so a foreground wallet write waits at most one commit, and cancellation
+//! stops a settlement between commits. A `Pending` or `Withdrawn` batch
+//! applies nothing and is never acknowledged.
 //!
 //! Under `PrivateRequired`, a trusted source's commits are qualified as they
 //! are applied ([`Trust::Trusted`]): the trusted-indexer decision, which is
@@ -162,16 +163,18 @@ pub(crate) trait RecoverySource {
     /// order with `trust`, each in its own wallet transaction under the
     /// wallet write lock, stopping at the first the wallet refuses, then
     /// acknowledges the batch once every one committed. The transparent PIR
-    /// source holds the lock across the whole batch and its acknowledgment,
-    /// so other wallet writes wait for the batch. Under
-    /// [`Trust::Observed`] a batch resolving retired revisions is refused
-    /// before anything applies. No network request is made. `None` when no
-    /// unsettled `Ready` batch is held for the account.
+    /// source takes the lock for one commit at a time, so other wallet writes
+    /// wait at most one commit, and stops between commits once `should_exit`
+    /// holds ([`ApplyAction::Interrupted`]). Under [`Trust::Observed`] a batch
+    /// resolving retired revisions is refused before anything applies. No
+    /// network request is made. `None` when no unsettled `Ready` batch is
+    /// held for the account.
     fn apply(
         &self,
         account: AccountUuid,
         db: &mut WalletDatabase,
         trust: Trust,
+        should_exit: &(dyn Fn() -> bool + Sync),
     ) -> impl Future<Output = Option<Result<Applied, ApplyFailure>>> + Send;
 }
 
@@ -334,10 +337,10 @@ enum AccountOutcome {
 /// policy is first raised behind the policy fence, but only while [`may_raise`] holds for the wallet at
 /// `db_path`: an unconfirmed preference or a concurrent toggle-off raises
 /// nothing. `first`, the active account, is visited first. `clock` measures
-/// the budgets and holds. Holds the wallet write lock for each batch's whole
-/// settlement, its commits and acknowledgment together, and for each
-/// promotion, never across a source call or a wait. A foreground wallet
-/// write, such as a send, waits for the batch being settled.
+/// the budgets and holds. Holds the wallet write lock for each commit of a
+/// settlement, its acknowledgment, and each promotion, never across a source
+/// call or a wait. A foreground wallet write, such as a send, waits for at
+/// most one commit.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn run<S: RecoverySource>(
     db: &mut WalletDatabase,
@@ -519,7 +522,7 @@ impl<S: RecoverySource> Run<'_, S> {
                     log::info!("transparent ledger: source batch pending ({next:?})");
                     false
                 }
-                BatchState::Ready => match self.apply(account).await {
+                BatchState::Ready => match self.apply(account, &pass_exit).await {
                     Some(Ok(applied)) => {
                         let target = watch.target.map_or(0, |target| u32::from(target.height));
                         let behind = progress.behind(u64::from(target));
@@ -580,6 +583,19 @@ impl<S: RecoverySource> Run<'_, S> {
                                 failure.error
                             )))
                         }
+                        // Stopped between commits: what applied stays, and
+                        // the next pass replays the rest. Neither a hold nor
+                        // a stall.
+                        ApplyAction::Interrupted => {
+                            if should_exit() {
+                                return Ok(AccountOutcome::Stop(RunOutcome::Exited));
+                            }
+                            log::info!(
+                                "transparent ledger: account budget spent while settling; \
+                                 the next run continues"
+                            );
+                            return Ok(AccountOutcome::Skipped);
+                        }
                     },
                 },
             };
@@ -608,15 +624,23 @@ impl<S: RecoverySource> Run<'_, S> {
     }
 
     /// Has the source settle `account`'s `Ready` batch, trusted exactly when
-    /// the run qualifies, and counts the commits that applied, the committed
-    /// prefix of a refused batch included.
-    async fn apply(&mut self, account: AccountUuid) -> Option<Result<Applied, ApplyFailure>> {
+    /// the run qualifies, until `should_exit` stops it between commits, and
+    /// counts the commits that applied, the committed prefix of a refused or
+    /// interrupted batch included.
+    async fn apply(
+        &mut self,
+        account: AccountUuid,
+        should_exit: &(dyn Fn() -> bool + Sync),
+    ) -> Option<Result<Applied, ApplyFailure>> {
         let trust = if self.qualify {
             Trust::Trusted
         } else {
             Trust::Observed
         };
-        let settled = self.source.apply(account, self.db, trust).await?;
+        let settled = self
+            .source
+            .apply(account, self.db, trust, should_exit)
+            .await?;
         let stats = match &settled {
             Ok(applied) => applied.stats,
             Err(failure) => failure.stats,

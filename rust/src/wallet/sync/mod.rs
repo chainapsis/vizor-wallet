@@ -70,6 +70,7 @@ pub use pczt::{
 pub(crate) use pczt::{
     expiry_height_from_io_finalized_pczt, extract_compact_sigs_from_pczt,
     store_and_broadcast_signed_pczts, txid_from_io_finalized_pczt, validate_signed_pczts,
+    HARDWARE_AUTHORITY_REFUSED_PREFIX,
 };
 pub(crate) use proposal_locks::recover_previous_process as recover_orphaned_send_locks;
 pub(crate) use send::estimate_send_max;

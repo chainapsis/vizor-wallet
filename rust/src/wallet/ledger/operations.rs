@@ -542,6 +542,9 @@ fn record_broadcast_failure(
 }
 
 fn is_terminal_broadcast_failure(message: &str) -> bool {
+    if message.starts_with(crate::wallet::sync::HARDWARE_AUTHORITY_REFUSED_PREFIX) {
+        return true;
+    }
     let normalized = message.to_ascii_lowercase();
     normalized.contains("expired before broadcast") || normalized.contains("broadcast rejected")
 }
@@ -1270,6 +1273,31 @@ mod tests {
         assert_eq!(listed[0].state, STATE_SIGNED_PENDING_BROADCAST);
         assert_eq!(listed[0].status.as_deref(), Some("retryable_error"));
         assert!(acknowledge(db_path, WalletNetwork::Main, "send-1").is_err());
+    }
+
+    /// A refusal transparent broadcast authority made for good, such as
+    /// quarantine or a hold, discards the operation and releases its inputs;
+    /// a busy wallet or recovery still catching up keeps it for a retry.
+    #[test]
+    fn a_final_authority_refusal_discards_the_signed_operation() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let db_path = file.path().to_str().unwrap();
+        checkpoint_test_operation(db_path, "send-1", "send");
+        let retryable =
+            "hardware_recovery_retryable: Reserve transparent broadcast authority: database is locked";
+        assert!(
+            !record_broadcast_failure(db_path, WalletNetwork::Main, "send-1", retryable).unwrap()
+        );
+        assert_eq!(list(db_path, WalletNetwork::Main, None).unwrap().len(), 1);
+
+        let refused = format!(
+            "{} Transparent broadcast authority unavailable: Transparent funds are unavailable",
+            crate::wallet::sync::HARDWARE_AUTHORITY_REFUSED_PREFIX
+        );
+        assert!(
+            record_broadcast_failure(db_path, WalletNetwork::Main, "send-1", &refused).unwrap()
+        );
+        assert!(list(db_path, WalletNetwork::Main, None).unwrap().is_empty());
     }
 
     #[test]
