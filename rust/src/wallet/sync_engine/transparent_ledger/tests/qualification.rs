@@ -856,9 +856,10 @@ async fn an_activated_wallet_discloses_nothing_through_any_lane_including_the_pi
     })
     .await
     .unwrap();
+    // Into an existing wallet, whose Settings can turn Private queries off.
     assert_eq!(
         discovered.err(),
-        Some(crate::api::wallet::SOFTWARE_ACCOUNT_DISCOVERY_PRIVATE_FAILED.to_string()),
+        Some(crate::api::wallet::SOFTWARE_ACCOUNT_DISCOVERY_PRIVATE_FAILED_IN_WALLET.to_string()),
         "a failed private discovery is not an empty one"
     );
     let requests = discovery_seam.seam.observer.requests();

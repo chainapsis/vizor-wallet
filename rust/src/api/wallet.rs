@@ -26,6 +26,14 @@ pub(crate) const SOFTWARE_ACCOUNT_DISCOVERY_UNAVAILABLE: &str =
 pub(crate) const SOFTWARE_ACCOUNT_DISCOVERY_PRIVATE_FAILED: &str =
     "Vizor couldn't privately check this recovery phrase for additional \
      accounts. Try again.";
+
+/// [`SOFTWARE_ACCOUNT_DISCOVERY_PRIVATE_FAILED`] for an import into an existing
+/// wallet, whose Settings can turn Private queries off; a first wallet has no
+/// Settings yet.
+pub(crate) const SOFTWARE_ACCOUNT_DISCOVERY_PRIVATE_FAILED_IN_WALLET: &str =
+    "Vizor couldn't privately check this recovery phrase for additional \
+     accounts. Try again, or turn off Private queries in Settings and import \
+     it again.";
 use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
 
 const SOFTWARE_ACCOUNT_DISCOVERY_MAX_INDEX: u32 = 20;
@@ -484,14 +492,16 @@ pub fn discover_software_wallet_import_accounts(
         )?;
 
         let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
-        let discovered_accounts = rt.block_on(discover_used_software_accounts(
-            network,
-            &seed,
-            birthday_height,
-            &lightwalletd_url,
-            &gate,
-            &PrivateAccountDiscovery::new(&db_path, network),
-        ))?;
+        let discovered_accounts = rt
+            .block_on(discover_used_software_accounts(
+                network,
+                &seed,
+                birthday_height,
+                &lightwalletd_url,
+                &gate,
+                &PrivateAccountDiscovery::new(&db_path, network),
+            ))
+            .map_err(|error| discovery_error(error, is_first_wallet_account))?;
 
         let accounts = discovered_accounts
             .into_iter()
@@ -842,6 +852,16 @@ fn import_discovered_software_wallet_accounts(
         accounts,
         did_import_primary_account,
     })
+}
+
+/// The message for a failed discovery: a failed private check into an existing
+/// wallet names the Settings escape a first wallet does not have.
+fn discovery_error(error: String, is_first_wallet_account: bool) -> String {
+    if !is_first_wallet_account && error == SOFTWARE_ACCOUNT_DISCOVERY_PRIVATE_FAILED {
+        SOFTWARE_ACCOUNT_DISCOVERY_PRIVATE_FAILED_IN_WALLET.to_owned()
+    } else {
+        error
+    }
 }
 
 /// Gates import-time lookups under `policy`, captured for the request. A first
@@ -2017,6 +2037,23 @@ mod tests {
         );
         assert!(!gate.is_allowed());
         gate
+    }
+
+    #[test]
+    fn a_failed_private_discovery_names_settings_only_inside_a_wallet() {
+        let failed = SOFTWARE_ACCOUNT_DISCOVERY_PRIVATE_FAILED.to_owned();
+        assert_eq!(discovery_error(failed.clone(), true), failed);
+        assert_eq!(
+            discovery_error(failed, false),
+            SOFTWARE_ACCOUNT_DISCOVERY_PRIVATE_FAILED_IN_WALLET
+        );
+        // Every other error is the caller's as it was.
+        for first in [true, false] {
+            assert_eq!(
+                discovery_error(SOFTWARE_ACCOUNT_DISCOVERY_UNAVAILABLE.to_owned(), first),
+                SOFTWARE_ACCOUNT_DISCOVERY_UNAVAILABLE
+            );
+        }
     }
 
     #[test]

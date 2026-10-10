@@ -791,9 +791,13 @@ trusted, since every commit comes from the configured origin.
   publication's end and confirms each filter match by private retrieval, so a
   filter false positive never offers an empty account; it stores nothing and
   opens no companion or wallet. The answer keeps the public batch rule (stop
-  after a batch of accounts with no history). Only a complete answer counts:
-  an outage, a lagging publication, a budget, the 300 s deadline or anything
-  else fails the import with a retry message, never a shorter list. The
+  after a batch of accounts with no history). Only a complete answer counts. A
+  pass its query or byte budget stopped keeps what it confirmed, and another
+  pass asks about the rest, so one heavily used address cannot exhaust the
+  check; an outage, a lagging publication, the 300 s deadline or anything else
+  fails the import with a retry message, never a shorter list. Into an
+  existing wallet the message also names the Settings toggle; a first wallet
+  has no Settings yet. The
   service learns the birthday's shard and which shards matched any candidate,
   and the recovery of the imported accounts follows at once and can be linked
   to it. The publication is its own chain view for discovery, which grants no
@@ -1079,11 +1083,11 @@ there is no separate release gate.
 
 The eight patched library crates (now including `zakura-pir-enhance`) and the
 `zakura-pir-transparent` adapter share one wallet-libraries revision,
-`f42beabc14f2b770a7ef37d968852947fc8d4578` on `claude/tpir-import-account-discovery`
+`1fc05ed7fc04ce867dd7da01b5a34bc3b50c7477` on main
 ([PR #139](https://github.com/zakura-core/wallet-libraries/pull/139), import-time
-account discovery), one commit on main after
-[PR #138](https://github.com/zakura-core/wallet-libraries/pull/138) (gated
-settlement); repin to main once PR #139 lands. Main also carries
+account discovery, after
+[PR #138](https://github.com/zakura-core/wallet-libraries/pull/138), gated
+settlement). Main also carries
 [PR #133](https://github.com/zakura-core/wallet-libraries/pull/133), which
 switches the Transparent, Enhance and Status clients to dithered 44-bit native
 queries, [PR #134](https://github.com/zakura-core/wallet-libraries/pull/134)
