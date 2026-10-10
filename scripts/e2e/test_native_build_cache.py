@@ -217,7 +217,7 @@ class InputTests(unittest.TestCase):
             if path.name in {"dart", "dartvm", "dartaotruntime"}:
                 path.chmod(0o700)
         self.sdk_trees = (
-            "bin/internal", "bin/cache/dart-sdk/lib",
+            "packages/flutter_tools", "bin/internal", "bin/cache/dart-sdk/lib",
             "bin/cache/artifacts/engine/common/flutter_patched_sdk",
             "bin/cache/artifacts/engine/ios", "bin/cache/artifacts/engine/darwin-x64",
         )
@@ -365,6 +365,25 @@ class InputTests(unittest.TestCase):
                                      second["rust_toolchains"]["stable"]["rustc_sha256"])
                     self.assertEqual(first["rust_toolchains"]["stable"]["rustc"],
                                      second["rust_toolchains"]["stable"]["rustc"])
+                    self.assertNotEqual(first, second)
+
+    def test_native_flutter_helper_sources_invalidate_without_snapshot_or_version_changes(self):
+        names = ("bin/xcode_backend.sh", "bin/xcode_backend.dart", "bin/macos_assemble.sh",
+                 "bin/podhelper.rb", "lib/src/build_system/build_system.dart")
+        for name in names:
+            path = self.sdk/"packages/flutter_tools"/name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("original native Flutter build source")
+        for platform in ("ios", "macos"):
+            for name in names:
+                with self.subTest(platform=platform, input=name):
+                    path = self.sdk/"packages/flutter_tools"/name
+                    first = self.inputs(platform=platform)
+                    path.write_text("patched "+platform+" native Flutter build source")
+                    second = self.inputs(platform=platform)
+                    self.assertEqual(first["flutter"], second["flutter"])
+                    self.assertEqual(first["flutter_sdk"]["files_sha256"],
+                                     second["flutter_sdk"]["files_sha256"])
                     self.assertNotEqual(first, second)
 
     def test_installed_provisioning_profile_bytes_invalidate_with_same_certificate(self):
