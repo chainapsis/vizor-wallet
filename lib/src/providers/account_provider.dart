@@ -37,6 +37,7 @@ import '../rust/api/voting.dart' as rust_voting;
 import '../rust/api/wallet.dart' as rust_wallet;
 import 'account_models.dart';
 import 'app_security_provider.dart';
+import 'public_details_loads_provider.dart';
 import 'network_privacy_provider.dart';
 import 'rpc_endpoint_failover_provider.dart';
 import 'rpc_endpoint_provider.dart';
@@ -1648,8 +1649,10 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     final giftTracking = ref.read(giftCardTrackingLifecycleProvider);
     final shareTracking = ref.read(votingShareTrackingRegistryProvider);
     final ledgerLifecycle = ref.read(ledgerOperationLifecycleProvider);
+    final publicLoads = ref.read(publicDetailsLoadsProvider);
     try {
       await ledgerLifecycle.quiesceAndDrain();
+      await publicLoads.quiesceAndDrain();
       _storage.invalidatePendingSecretOperations();
       // Gift Card claims first, and before the in-flight count below: that
       // count is a one-shot read, and a claim that enters `submitting` right
@@ -1668,6 +1671,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       await _removeAccountWithShareTrackingStopped(uuid);
     } finally {
       ledgerLifecycle.resume();
+      publicLoads.resume();
       claimLifecycle.resume();
       giftTracking.resume();
       shareTracking.resume(accountUuid: uuid);
@@ -1872,11 +1876,13 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     final giftTracking = ref.read(giftCardTrackingLifecycleProvider);
     final shareTracking = ref.read(votingShareTrackingRegistryProvider);
     final ledgerLifecycle = ref.read(ledgerOperationLifecycleProvider);
+    final publicLoads = ref.read(publicDetailsLoadsProvider);
     var restoreAfterFailure = false;
     var resumeClaimLifecycle = false;
     var resetCompleted = false;
     try {
       await ledgerLifecycle.quiesceAndDrain();
+      await publicLoads.quiesceAndDrain();
       _storage.invalidatePendingSecretOperations();
       await giftTracking.quiesceAndDrain();
       await claimLifecycle.quiesceAndDrain();
@@ -1894,6 +1900,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       rethrow;
     } finally {
       ledgerLifecycle.resume();
+      publicLoads.resume();
       if (resumeClaimLifecycle) claimLifecycle.resume();
       // Release only after all destructive work has finished. New onboarding
       // reuses this registry; stale registrations re-read the now-empty store.

@@ -697,6 +697,70 @@ impl PublicLoadIdentity {
     }
 }
 
+/// Public loads in flight, by id: the wallet each would store into and the
+/// flag that cancels it.
+static PUBLIC_LOADS: std::sync::LazyLock<
+    std::sync::Mutex<
+        std::collections::HashMap<u64, (String, std::sync::Arc<std::sync::atomic::AtomicBool>)>,
+    >,
+> = std::sync::LazyLock::new(Default::default);
+static NEXT_PUBLIC_LOAD: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// One [`enhance_publicly`] in flight, registered so a lock or a destructive
+/// wallet change can cancel it ([`cancel_public_loads`]).
+struct PublicLoad {
+    id: u64,
+    cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl PublicLoad {
+    fn start(db_path: &str) -> Self {
+        let id = NEXT_PUBLIC_LOAD.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let cancelled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        public_loads().insert(id, (db_path.to_owned(), cancelled.clone()));
+        Self { id, cancelled }
+    }
+
+    fn cancelled(&self) -> bool {
+        self.cancelled.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+impl Drop for PublicLoad {
+    fn drop(&mut self) {
+        public_loads().remove(&self.id);
+    }
+}
+
+fn public_loads() -> std::sync::MutexGuard<
+    'static,
+    std::collections::HashMap<u64, (String, std::sync::Arc<std::sync::atomic::AtomicBool>)>,
+> {
+    PUBLIC_LOADS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Cancels every public load in flight: one still connecting sends nothing,
+/// and none stores what it receives. For a lock or sign-out, and before an
+/// account or the wallet is deleted.
+pub(crate) fn cancel_public_loads() {
+    for (_, cancelled) in public_loads().values() {
+        cancelled.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+/// [`cancel_public_loads`] for the wallet at `db_path` only, so a test leaves
+/// other tests' loads alone.
+#[cfg(test)]
+pub(crate) fn cancel_public_loads_at(db_path: &str) {
+    for (path, cancelled) in public_loads().values() {
+        if path == db_path {
+            cancelled.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+}
+
 /// Fetches `txid` (protocol byte order) from lightwalletd and stores it,
 /// because the user asked to load this one transaction's full details
 /// publicly. The request reveals the txid to lightwalletd, over an isolated
@@ -710,6 +774,8 @@ impl PublicLoadIdentity {
 /// file replacement, account change or policy transition discards the result;
 /// validation and storage share one wallet transaction, including the final
 /// read that checks whether the wallet accepted the transaction.
+/// [`cancel_public_loads`] stops it before the request, or discards what it
+/// received.
 pub(crate) fn enhance_publicly(
     db_path: &str,
     network: WalletNetwork,
@@ -719,7 +785,9 @@ pub(crate) fn enhance_publicly(
     use crate::wallet::db::{
         open_existing_wallet_db_with_timeout, with_wallet_db_write_lock, WALLET_DB_BUSY_TIMEOUT,
     };
+    const CANCELLED: &str = "the lookup was cancelled; nothing was stored";
     let txid = TxId::from_bytes(txid);
+    let load = PublicLoad::start(db_path);
     let file = same_file::Handle::from_path(db_path)
         .map_err(|_| "the wallet is unavailable".to_owned())?;
     let same_file = || {
@@ -745,6 +813,9 @@ pub(crate) fn enhance_publicly(
             .await
             .map_err(|error| format!("lightwalletd unavailable ({error})"))?;
         let mut client = CompactTxStreamerClient::new(transport.clone());
+        if load.cancelled() {
+            return Err(CANCELLED.to_owned());
+        }
         TransparentLookupGate::user_requested(db_path)
             .with_transport(transport)
             .transaction(&mut client, txid)
@@ -765,6 +836,9 @@ pub(crate) fn enhance_publicly(
         .map_err(|error| format!("lightwalletd answered with an invalid transaction ({error})"))?;
     let stored =
         with_wallet_db_write_lock("sync_engine.transparent_details.enhance_publicly", || {
+            if load.cancelled() {
+                return Err(CANCELLED.to_owned());
+            }
             if !same_file() {
                 return Err("the wallet changed during the lookup; nothing was stored".to_owned());
             }

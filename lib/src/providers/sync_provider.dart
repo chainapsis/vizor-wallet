@@ -14,6 +14,7 @@ import '../core/lifecycle/app_shutdown_signal.dart';
 import '../core/storage/wallet_paths.dart';
 import '../rust/api/sync.dart' as rust_sync;
 import 'account_provider.dart';
+import 'public_details_loads_provider.dart';
 import 'pending_activity_evidence_provider.dart';
 import 'enhance_pir_provider.dart';
 import 'app_security_provider.dart';
@@ -2309,6 +2310,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   }
 
   Future<void> clearSensitiveStateForLock() async {
+    // A public details load the user started stores nothing after a lock.
+    ref.read(publicDetailsLoadsProvider).cancel();
     _resumeTipCheckPending = false;
     _queuedSyncStart = null;
     ref.read(pendingActivityEvidenceProvider.notifier).clear();
