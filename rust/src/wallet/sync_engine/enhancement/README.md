@@ -1079,11 +1079,11 @@ there is no separate release gate.
 
 The eight patched library crates (now including `zakura-pir-enhance`) and the
 `zakura-pir-transparent` adapter share one wallet-libraries revision,
-`f42beabc14f2b770a7ef37d968852947fc8d4578` on `claude/tpir-import-account-discovery`
+`1fc05ed7fc04ce867dd7da01b5a34bc3b50c7477` on main
 ([PR #139](https://github.com/zakura-core/wallet-libraries/pull/139), import-time
-account discovery), one commit on main after
-[PR #138](https://github.com/zakura-core/wallet-libraries/pull/138) (gated
-settlement); repin to main once PR #139 lands. Main also carries
+account discovery, after
+[PR #138](https://github.com/zakura-core/wallet-libraries/pull/138), gated
+settlement). Main also carries
 [PR #133](https://github.com/zakura-core/wallet-libraries/pull/133), which
 switches the Transparent, Enhance and Status clients to dithered 44-bit native
 queries, [PR #134](https://github.com/zakura-core/wallet-libraries/pull/134)
