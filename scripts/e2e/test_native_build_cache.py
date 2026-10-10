@@ -226,6 +226,25 @@ class InputTests(unittest.TestCase):
         self.addCleanup(home.stop)
         self.profile_payload = {"ExpirationDate":datetime(2099, 1, 1),
                                 "privateDeviceData":"must not appear in cache inputs"}
+        self.apple = self.root/"Xcode.app/Contents/Developer"
+        self.apple_tools = {name:self.apple/"usr/bin"/name for name in (
+            "xcodebuild", "clang", "swiftc", "swift-frontend", "ld", "actool", "ibtool", "dsymutil", "strip")}
+        self.host_tools = {name:self.root/"host/bin"/name for name in ("xcrun", "codesign", "security", "ruby", "pod")}
+        for name, path in {**self.apple_tools, **self.host_tools}.items():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("original "+name+" executable")
+            path.chmod(0o700)
+        self.host_tools["pod"].write_text("#!"+str(self.host_tools["ruby"])+"\noriginal pod launcher")
+        self.apple_trees = (self.apple/"usr/lib", self.apple.parent/"SharedFrameworks/XCBuild.framework",
+            self.root/"native-sdk-ios", self.root/"native-sdk-macos",
+            self.root/"ruby-libraries", self.root/"ruby-gems")
+        for path in self.apple_trees:
+            path.mkdir(parents=True)
+            (path/"artifact").write_text("original native compiler/library input")
+        system = patch.object(CACHE, "_APPLE_SYSTEM_TOOLS", {
+            name:self.host_tools[name] for name in ("xcrun", "codesign", "security")})
+        system.start()
+        self.addCleanup(system.stop)
         self.cancel = threading.Event()
 
     def command(self, args, **_):
@@ -238,6 +257,16 @@ class InputTests(unittest.TestCase):
         if args[:2] == [sys.executable, "-c"] and "'cms'" in args[2]:
             expiry = self.profile_payload["ExpirationDate"]
             return (json.dumps({"expires_at":expiry.replace(tzinfo=timezone.utc).isoformat()}),)
+        if args[0] == "/usr/bin/which":
+            return (str(self.host_tools[args[-1]])+"\n",)
+        if args[0] == "/usr/bin/xcrun" and "--find" in args:
+            return (str(self.apple_tools[args[-1]])+"\n",)
+        if args[0] == "/usr/bin/xcrun" and "--show-sdk-path" in args:
+            return (str(self.root/("native-sdk-ios" if "iphonesimulator" in args else "native-sdk-macos"))+"\n",)
+        if args[0] == str(self.host_tools["ruby"]) and "-e" in args:
+            return (json.dumps({"ruby":str(self.host_tools["ruby"]),
+                                "shared_library":str(self.host_tools["ruby"]),
+                                "roots":[str(path) for path in self.apple_trees[-2:]]}),)
         return ("modeled tool/SDK version",)
 
     def inputs(self, *, platform="ios", **options):
@@ -270,6 +299,70 @@ class InputTests(unittest.TestCase):
                 self.assertEqual(first["signing_identities_sha256"], second["signing_identities_sha256"])
                 self.assertNotEqual(first, second)
                 self.assertNotIn("must not appear", json.dumps(second))
+
+    def test_apple_compilers_sdk_and_ruby_pod_sources_invalidate_with_same_versions(self):
+        for platform in ("ios", "macos"):
+            sdk = self.apple_trees[2 if platform == "ios" else 3]
+            artifacts = (*self.apple_tools.values(), *self.host_tools.values(),
+                         *(path/"artifact" for path in (self.apple_trees[0], self.apple_trees[1],
+                                                        sdk, *self.apple_trees[-2:])))
+            for path in artifacts:
+                with self.subTest(platform=platform, artifact=path.name):
+                    first = self.inputs(platform=platform)
+                    if path == self.host_tools["pod"]:
+                        path.write_text(path.read_text()+"\npatched pod launcher")
+                    else:
+                        path.write_text("patched "+platform+" native input")
+                    second = self.inputs(platform=platform)
+                    for field in ("xcode", "sdk", "cocoapods", "ruby"):
+                        self.assertEqual(first[field], second[field])
+                    self.assertNotEqual(first, second)
+
+    def test_installed_tool_hardlinks_do_not_relax_output_artifact_ownership(self):
+        tool = self.host_tools["ruby"]
+        os.link(tool, tool.with_name("ruby-alias"))
+        self.assertEqual(CACHE._tool_input_record(tool)[1],
+                         CACHE.hashlib.sha256(tool.read_bytes()).hexdigest())
+        with self.assertRaises(CACHE.tree.OwnedTreeError):
+            CACHE._file_record(tool)
+
+    def test_tool_aliases_require_explicit_separately_hashed_inputs(self):
+        libraries, site = self.apple_trees[-2:]
+        library = self.host_tools["ruby"]
+        (libraries/"shared-library").symlink_to(os.path.relpath(library, libraries))
+        (libraries/"site-ruby").symlink_to(os.path.relpath(site, libraries))
+        with self.assertRaisesRegex(CACHE.NativeBuildCacheError, "link escapes"):
+            CACHE._package_digest(libraries, self.cancel)
+        with self.assertRaisesRegex(CACHE.NativeBuildCacheError, "link escapes"):
+            CACHE._package_digest(libraries, self.cancel, linked_files=frozenset({library}))
+        before = self.inputs()
+        library.write_text("patched Ruby shared library")
+        self.assertNotEqual(before, self.inputs())
+        before = self.inputs()
+        (site/"artifact").write_text("patched site Ruby source")
+        self.assertNotEqual(before, self.inputs())
+        (libraries/"unbound-source").symlink_to(os.path.relpath(self.tool, libraries))
+        with self.assertRaisesRegex(CACHE.NativeBuildCacheError, "link escapes"):
+            self.inputs()
+
+    def test_package_digest_retains_default_byte_bound(self):
+        with self.assertRaisesRegex(CACHE.NativeBuildCacheError, "exceeds its bound"):
+            CACHE._package_digest(self.apple_trees[-1], self.cancel, max_bytes=1)
+
+    def test_writable_tool_or_parent_and_alias_input_are_rejected(self):
+        tool = self.host_tools["ruby"]
+        tool.chmod(0o777)
+        with self.assertRaisesRegex(CACHE.NativeBuildCacheError, "protected bounded file"):
+            CACHE._tool_input_record(tool)
+        tool.chmod(0o700)
+        tool.parent.chmod(0o777)
+        with self.assertRaisesRegex(CACHE.NativeBuildCacheError, "parent is not protected"):
+            CACHE._tool_input_record(tool)
+        tool.parent.chmod(0o700)
+        alias = tool.with_name("ruby-alias")
+        alias.symlink_to(tool)
+        with self.assertRaisesRegex(CACHE.NativeBuildCacheError, "must be canonical"):
+            CACHE._tool_input_record(alias)
 
     def test_profile_expiration_invalidates_without_byte_or_certificate_changes(self):
         profile = self.home/"Library/Developer/Xcode/UserData/Provisioning Profiles/test.mobileprovision"

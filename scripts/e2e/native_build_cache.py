@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import shutil
 import stat
 import sys
@@ -23,6 +24,19 @@ from native_zakura_front import _capture
 
 _TOKEN = object()
 _ROLES = ("cohort", "helper")
+_APPLE_SYSTEM_TOOLS = {name:"/usr/bin/"+name for name in (
+    "xcrun", "codesign", "security", "xcodebuild")}
+_RUBY_INPUT_QUERY = (
+    "require 'rubygems'; require 'rbconfig'; require 'json'; "
+    "Gem.activate_bin_path('cocoapods','pod','>= 0.a'); require 'cocoapods'; "
+    "roots=[RbConfig::CONFIG.fetch('libdir')]+$LOAD_PATH.select { |p| Dir.exist?(p) }; "
+    "Gem.path.each { |p| %w[gems specifications extensions].each { |d| "
+    "path=File.join(p,d); roots << path if Dir.exist?(path) } }; "
+    "Gem.loaded_specs.each_value { |s| roots << s.full_gem_path unless s.default_gem?; "
+    "roots << s.extension_dir if Dir.exist?(s.extension_dir) }; "
+    "puts JSON.generate({ruby:RbConfig.ruby,roots:roots.uniq.sort,"
+    "shared_library:File.join(RbConfig::CONFIG.fetch('libdir'),RbConfig::CONFIG.fetch('LIBRUBY'))})"
+)
 _PROFILE_EXPIRY_QUERY = (
     "import datetime,json,plistlib,subprocess,sys\n"
     "result=subprocess.run(['/usr/bin/security','cms','-D','-i',sys.argv[1]],"
@@ -36,6 +50,37 @@ _PROFILE_EXPIRY_QUERY = (
 
 class NativeBuildCacheError(FunderCacheError):
     """An immutable native build's inputs, bytes or original owner are unproven."""
+
+
+def _tool_input_record(path, *, executable=False, limit=_MAX_BINARY_BYTES):
+    """Read installed root/user-owned SDK inputs, never relax output ownership."""
+    if not path.is_absolute() or path.resolve(strict=True) != path:
+        raise NativeBuildCacheError("native tool input must be canonical")
+    with contextlib.ExitStack() as stack:
+        parent = os.open(path.parent, os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+        stack.callback(os.close, parent)
+        parent_info = os.fstat(parent)
+        if parent_info.st_uid not in {0, os.getuid()} or parent_info.st_mode & 0o002:
+            raise NativeBuildCacheError("native tool input parent is not protected: "+str(path.parent))
+        descriptor = os.open(path.name, os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK, dir_fd=parent)
+        stack.callback(os.close, descriptor)
+        before = os.fstat(descriptor)
+        if (not stat.S_ISREG(before.st_mode) or before.st_uid not in {0, os.getuid()}
+            or before.st_mode & 0o002 or before.st_nlink < 1 or before.st_size > limit
+            or (executable and not before.st_mode & stat.S_IXUSR)):
+            raise NativeBuildCacheError("native tool input is not a protected bounded file: "+str(path))
+        digest, size = hashlib.sha256(), 0
+        with os.fdopen(os.dup(descriptor), "rb") as source:
+            for chunk in iter(lambda:source.read(1024*1024), b""):
+                size += len(chunk)
+                if size > limit:
+                    raise NativeBuildCacheError("native tool input grew beyond its bound")
+                digest.update(chunk)
+        if (tree.identity(os.fstat(descriptor)) != tree.identity(before)
+            or tree.identity(path.lstat()) != tree.identity(before)
+            or tree.identity(path.parent.lstat()) != tree.identity(parent_info)):
+            raise NativeBuildCacheError("native tool input changed during inspection")
+        return tree.identity(before), digest.hexdigest()
 
 
 def _original_bundle_file(path):
@@ -135,7 +180,8 @@ def _copy_bundle(source, destination, *, seal=False):
     return before
 
 
-def _package_digest(root, cancel, *, capture=_capture, ignore_generated=True):
+def _package_digest(root, cancel, *, capture=_capture, ignore_generated=True,
+                    max_bytes=1024*1024*1024, linked_files=frozenset(), linked_roots=frozenset()):
     """Dependency source contents, not only lock versions or package-cache paths."""
     ignored = {".git", ".dart_tool", "build", "target", ".regtest-logs", "__pycache__"}
     digest, count, total = hashlib.sha256(), 0, 0
@@ -152,8 +198,11 @@ def _package_digest(root, cancel, *, capture=_capture, ignore_generated=True):
             info = path.lstat()
             if stat.S_ISLNK(info.st_mode):
                 target = os.readlink(path)
-                if Path(target).is_absolute() or not path.resolve(strict=True).is_relative_to(root):
-                    raise NativeBuildCacheError("package source link escapes its package")
+                resolved = path.resolve(strict=True)
+                if Path(target).is_absolute() or (not resolved.is_relative_to(root)
+                    and resolved not in linked_files
+                    and not any(resolved.is_relative_to(other) for other in linked_roots)):
+                    raise NativeBuildCacheError("package source link escapes its package: "+str(path)+" -> "+target)
                 value = [relative, "link", target]
             elif stat.S_ISDIR(info.st_mode):
                 value = [relative, "directory"]
@@ -161,8 +210,8 @@ def _package_digest(root, cancel, *, capture=_capture, ignore_generated=True):
                 value = [relative, "file", capture(path)[1], bool(info.st_mode & stat.S_IXUSR)]
                 total += info.st_size
             count += 1
-            if count > 100_000 or total > 1024*1024*1024:
-                raise NativeBuildCacheError("package source exceeds its bound")
+            if count > 100_000 or total > max_bytes:
+                raise NativeBuildCacheError("package source exceeds its bound: "+str(root))
             digest.update(_json(value)+b"\n")
     return digest.hexdigest()
 
@@ -210,12 +259,12 @@ def _flutter_sdk_inputs(tool, platform, cancel):
         "bin/cache/artifacts/engine/common/flutter_patched_sdk",
         "bin/cache/artifacts/engine/"+("ios" if platform == "ios" else "darwin-x64"))
     def artifact_record(path):
-        return _file_record(path, limit=_MAX_BINARY_BYTES)
+        return _tool_input_record(path)
     for name in trees:
         path = sdk/name
         if path.resolve(strict=True) != path or not path.is_dir():
             raise NativeBuildCacheError("native Flutter SDK artifact tree must be canonical")
-    return {"root":str(sdk), "files_sha256":{name:_file_record(sdk/name,
+    return {"root":str(sdk), "files_sha256":{name:_tool_input_record(sdk/name,
                 executable=Path(name).name in {"dart", "dartvm", "dartaotruntime"},
                 limit=_MAX_BINARY_BYTES)[1] for name in files},
         "trees_sha256":{name:_package_digest(sdk/name, cancel,
@@ -245,7 +294,7 @@ def _macos_provisioning_inputs(command, cancel, *, now=None):
             if cancel.is_set():
                 from e2e_runtime import Cancelled
                 raise Cancelled()
-            record = _file_record(path, limit=8*1024*1024)
+            record = _tool_input_record(path, limit=8*1024*1024)
             # Only expiry reaches original command logs, never profile device
             # lists, certificate payloads or other developer-account metadata.
             payload = json.loads("".join(command([sys.executable, "-c",
@@ -256,7 +305,7 @@ def _macos_provisioning_inputs(command, cancel, *, now=None):
                     raise ValueError("profile expiry requires UTC offset")
             except (KeyError, TypeError, ValueError) as error:
                 raise NativeBuildCacheError("installed provisioning expiry is invalid") from error
-            if _file_record(path, limit=8*1024*1024) != record:
+            if _tool_input_record(path, limit=8*1024*1024) != record:
                 raise NativeBuildCacheError("installed provisioning profile changed during inspection")
             records[path.name] = {"sha256":record[1], "expires_at":expiry.isoformat(),
                                   "unexpired":now < expiry}
@@ -264,6 +313,69 @@ def _macos_provisioning_inputs(command, cancel, *, now=None):
             raise NativeBuildCacheError("installed provisioning inventory changed during inspection")
         result[str(directory)] = records
     return result
+
+
+def _native_apple_inputs(command, platform, cancel):
+    def selected(arguments):
+        lines = tuple(line.rstrip("\r\n") for line in command(arguments, in_source=True))
+        if len(lines) != 1 or not Path(lines[0]).is_absolute():
+            raise NativeBuildCacheError("native Apple tool must resolve to one absolute path")
+        return Path(lines[0]).resolve(strict=True)
+
+    sdk_name = "iphonesimulator" if platform == "ios" else "macosx"
+    programs = {name:selected(["/usr/bin/xcrun", "--sdk", sdk_name, "--find", name])
+        for name in ("xcodebuild", "clang", "swiftc", "swift-frontend", "ld",
+                     "actool", "ibtool", "dsymutil", "strip")}
+    programs.update({"system_"+name:Path(path).resolve(strict=True)
+                     for name, path in _APPLE_SYSTEM_TOOLS.items()})
+    programs.update({name:selected(["/usr/bin/which", name]) for name in ("pod", "ruby")})
+    launcher = _tool_input_record(programs["pod"], executable=True)
+    shebang = shlex.split(programs["pod"].read_text().splitlines()[0].removeprefix("#!"))
+    if len(shebang) == 2 and shebang == ["/usr/bin/env", "ruby"]:
+        interpreter = programs["ruby"]
+    elif len(shebang) == 1 and Path(shebang[0]).is_absolute():
+        interpreter = Path(shebang[0]).resolve(strict=True)
+    else:
+        raise NativeBuildCacheError("CocoaPods launcher must identify its Ruby interpreter")
+    ruby = json.loads("".join(command([str(interpreter), "-e", _RUBY_INPUT_QUERY], in_source=True)))
+    if (not isinstance(ruby, dict) or not isinstance(ruby.get("roots"), list)
+        or not ruby["roots"] or len(ruby["roots"]) > 2048
+        or not isinstance(ruby.get("ruby"), str) or not Path(ruby["ruby"]).is_absolute()):
+        raise NativeBuildCacheError("native Ruby library inventory is invalid")
+    programs["pod_ruby"] = Path(ruby["ruby"]).resolve(strict=True)
+    library = ruby.get("shared_library")
+    if not isinstance(library, str) or not Path(library).is_absolute():
+        raise NativeBuildCacheError("native Ruby shared library must be absolute")
+    library = Path(library).resolve(strict=True)
+    library_record = _tool_input_record(library)
+    if programs["pod_ruby"] != interpreter or _tool_input_record(programs["pod"], executable=True) != launcher:
+        raise NativeBuildCacheError("CocoaPods interpreter or launcher changed during inspection")
+    roots = {selected(["/usr/bin/xcrun", "--sdk", sdk_name, "--show-sdk-path"])}
+    developer = programs["xcodebuild"].parent.parent.parent
+    candidates = {programs[name].parent.parent/"lib" for name in ("clang", "swift-frontend")}
+    candidates.update((developer/"usr/lib", developer.parent/"SharedFrameworks/XCBuild.framework"))
+    roots.update(path.resolve(strict=True) for path in candidates if path.exists())
+    for name in ruby["roots"]:
+        if not isinstance(name, str) or not Path(name).is_absolute():
+            raise NativeBuildCacheError("native Ruby source root must be absolute")
+        roots.add(Path(name).resolve(strict=True))
+    # Hash each real directory once; ancestors already include descendants.
+    roots = {path for path in roots if not any(parent in roots for parent in path.parents)}
+    for path in roots:
+        if not path.is_dir():
+            raise NativeBuildCacheError("native SDK/library input is not a directory")
+    digests = {}
+    for path in set(programs.values()):
+        digests[path] = _tool_input_record(path, executable=True)[1]
+    def capture(path):
+        return _tool_input_record(path)
+    return {"executables":{name:{"path":str(path), "sha256":digests[path]}
+        for name, path in sorted(programs.items())},
+        "shared_libraries":{str(library):library_record[1]},
+        "source_trees_sha256":{str(path):_package_digest(path, cancel,
+            capture=capture, ignore_generated=False, max_bytes=4*1024*1024*1024,
+            linked_files=frozenset({library}), linked_roots=roots)
+            for path in sorted(roots)}}
 
 
 def collect_native_cache_inputs(root, source, tool, *, platform, architecture,
@@ -313,7 +425,7 @@ def collect_native_cache_inputs(root, source, tool, *, platform, architecture,
             executable = Path(paths[0]).resolve(strict=True)
             records[program] = list(command([str(executable), flag], in_source=True))
             records[program+"_binary"] = str(executable)
-            records[program+"_sha256"] = _file_record(executable, executable=True)[1]
+            records[program+"_sha256"] = _tool_input_record(executable, executable=True)[1]
         rust[name] = records
     if not rust:
         raise NativeBuildCacheError("native Rust toolchain inventory is empty")
@@ -326,6 +438,7 @@ def collect_native_cache_inputs(root, source, tool, *, platform, architecture,
             for path,record in source.items() if path != configuration},
         "package_config":packages, "pod_lock_sha256":_pod_lock(root/platform/"Podfile.lock"),
         "flutter":flutter, "flutter_sdk":_flutter_sdk_inputs(tool, platform, cancel),
+        "apple_toolchain":_native_apple_inputs(command, platform, cancel),
         "xcode":list(command(["/usr/bin/xcodebuild", "-version"])),
         "sdk":list(command(["/usr/bin/xcrun", "--sdk", sdk, "--show-sdk-build-version"])),
         "rust_toolchains":rust,
