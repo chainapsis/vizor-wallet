@@ -129,6 +129,25 @@ def go_toolchain_inputs(command, go, cancel):
                                    for path in sorted(roots)}}
 
 
+def rust_toolchain_inputs(command, rustc, cancel):
+    lines = tuple(line.rstrip("\r\n") for line in command([str(rustc), "--print", "sysroot"]))
+    if len(lines) != 1 or not Path(lines[0]).is_absolute():
+        raise ToolInputError("selected Rust sysroot must be absolute")
+    root = Path(lines[0]).resolve(strict=True)
+    libraries = root/"lib"
+    if not libraries.is_dir() or libraries.resolve(strict=True) != libraries:
+        raise ToolInputError("selected Rust sysroot libraries must be canonical")
+    # Conservatively bind every installed target, including host compiler
+    # runtime libraries; never reuse a key after a target-library repair.
+    return {"root":str(root), "source_trees_sha256":{
+        str(libraries):tree_digest(libraries, cancel, ignore_generated=False,
+                                  max_bytes=4*1024*1024*1024)}}
+
+
+def rust_inputs_unchanged(inputs, cancel):
+    return _trees_unchanged(inputs, cancel, 4*1024*1024*1024)
+
+
 def _trees_unchanged(inputs, cancel, max_bytes):
     return all(Path(path).is_dir() and Path(path).resolve(strict=True) == Path(path)
         and tree_digest(Path(path), cancel, ignore_generated=False, max_bytes=max_bytes) == digest

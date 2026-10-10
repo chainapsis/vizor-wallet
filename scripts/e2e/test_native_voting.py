@@ -59,6 +59,8 @@ class VotingBuildTests(unittest.TestCase):
             actual = arguments[4:] if arguments[0] == sys.executable else arguments
             name = Path(actual[0]).name.removeprefix("selected-")
             target = Path(kwargs["env"]["CARGO_TARGET_DIR"])
+            if name == "rustc" and actual[1:] == ["--print", "sysroot"]:
+                return original([sys.executable, "-c", f"print({str(self.model.rust_sysroot)!r})"], **kwargs)
             if name == "go" and actual[1:] == ["env", "-json", "GOROOT", "GOTOOLDIR"]:
                 data = json.dumps({"GOROOT":str(self.go_root), "GOTOOLDIR":str(self.go_root/"pkg/tool")})
                 return original([sys.executable, "-c", f"print({data!r})"], **kwargs)
@@ -219,6 +221,16 @@ class VotingBuildTests(unittest.TestCase):
                 BUILD.VotingBuildError, "compiler/linker/SDK inputs changed"):
             self.build()
         self.assertFalse(self.case.accepting_launches)
+
+    def test_rust_sysroot_changes_invalidate_without_compiler_or_version_changes(self):
+        for path in self.model.rust_libraries:
+            with self.subTest(input=path):
+                _, first = self.build()
+                path.write_text("patched Rust sysroot library")
+                _, second = self.build()
+                self.assertEqual(first["cache_inputs"]["tools"], second["cache_inputs"]["tools"])
+                self.assertEqual(first["cache_inputs"]["tool_versions"], second["cache_inputs"]["tool_versions"])
+                self.assertNotEqual(first["cache_key"], second["cache_key"])
 
     def test_corrupt_cache_fails_without_rebuild_or_overwrite(self):
         _, proof = self.build()

@@ -360,6 +360,12 @@ def build_regtest_funder(case: NativeCaseLifecycle, *, source_root: Path,
                     cache_inputs["apple_linker"], cancellation))
             if not unchanged:
                 raise FunderBuildError("Apple linker/SDK inputs changed during publication")
+            unchanged = (toolchain_inputs.rust_toolchain_inputs(
+                lambda args:command(args, env=build_env), compiler, cancellation) == cache_inputs["rust_sysroot"]
+                if case.accepting_launches else toolchain_inputs.rust_inputs_unchanged(
+                    cache_inputs["rust_sysroot"], cancellation))
+            if not unchanged:
+                raise FunderBuildError("Rust sysroot inputs changed during publication")
         if cache_root is not None:
             from funder_cache import FunderCacheLease
             cargo_entry = shutil.which("cargo", path=build_env.get("PATH"))
@@ -394,6 +400,8 @@ def build_regtest_funder(case: NativeCaseLifecycle, *, source_root: Path,
                 "host_target": host, "test_targets": sorted(test_targets), "wallet_addresses": wallet_addresses,
                 "producer_sha256": _file_record(Path(__file__).resolve(strict=True))[1],
                 "collector_sha256": input_records[collector][1],
+                "rust_sysroot": toolchain_inputs.rust_toolchain_inputs(
+                    lambda args:command(args, env=build_env), compiler, cancellation),
                 "apple_linker": toolchain_inputs.apple_linker_inputs(
                     lambda args:command(args, env=build_env), cancellation),
                 "configuration_sha256": configurations,

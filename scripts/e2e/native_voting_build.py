@@ -236,6 +236,9 @@ def build_voting_artifacts(case, *, sdk_cache, pir_cache, cache_root, jobs=4, ti
         tool_records[collector] = _file_record(collector)
         def compiler_inputs():
             return {"apple_linker":toolchain_inputs.apple_linker_inputs(command, cancel),
+                    "rust":{context:toolchain_inputs.rust_toolchain_inputs(
+                        lambda args:command(args, cwd=root if context == "outer" else sdk),
+                        items["rustc"], cancel) for context,items in tools.items()},
                     "go":{context:toolchain_inputs.go_toolchain_inputs(
                         lambda args:command(args, cwd=root if context == "outer" else sdk),
                         items["go"], cancel) for context,items in tools.items()}}
@@ -254,6 +257,8 @@ def build_voting_artifacts(case, *, sdk_cache, pir_cache, cache_root, jobs=4, ti
             original = cache_inputs["compiler_inputs"]
             unchanged = (compiler_inputs() == original if case.accepting_launches
                 else toolchain_inputs.apple_inputs_unchanged(original["apple_linker"], cancel)
+                and all(toolchain_inputs.rust_inputs_unchanged(value, cancel)
+                        for value in original["rust"].values())
                 and all(toolchain_inputs.go_inputs_unchanged(value, cancel)
                         for value in original["go"].values()))
             if not unchanged:

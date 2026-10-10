@@ -63,6 +63,12 @@ class FunderBuildTests(unittest.TestCase):
         self.hard_link_output = False
         self.test_candidate_mode = "original"
         self.address_candidate_mode = "original"
+        self.rust_sysroot = self.root/"rust-sysroot"
+        self.rust_libraries = (self.rust_sysroot/"lib/libLLVM.dylib",
+                               self.rust_sysroot/"lib/rustlib/host/lib/libstd.rlib")
+        for path in self.rust_libraries:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("modeled Rust compiler/runtime library")
         self.apple_tools = {name:self.root/"native-toolchain/usr/bin"/name
                             for name in ("clang", "ld", "cc")}
         for path in self.apple_tools.values():
@@ -95,6 +101,8 @@ class FunderBuildTests(unittest.TestCase):
         case = case or self.case()
         original = case.run_command
         def command(arguments, **options):
+            if arguments == [str(self.compiler), "--print", "sysroot"]:
+                return original([sys.executable, "-c", f"print({str(self.rust_sysroot)!r})"], **options)
             if arguments[:2] == ["/usr/bin/which", "cc"]:
                 return original([sys.executable, "-c", f"print({str(self.apple_tools['cc'])!r})"], **options)
             if arguments[:3] == ["/usr/bin/xcrun", "--sdk", "macosx"]:
@@ -219,6 +227,15 @@ class FunderBuildTests(unittest.TestCase):
                 BUILD.FunderBuildError, "Apple linker/SDK inputs changed"):
             self.build(case, cache_root=self.root/"funder-cache")
         self.assertFalse(case.accepting_launches)
+
+    def test_rust_sysroot_changes_invalidate_without_compiler_or_version_changes(self):
+        for path in self.rust_libraries:
+            with self.subTest(input=path):
+                first = self.build(cache_root=self.root/"funder-cache").identity()
+                path.write_text("patched Rust sysroot library")
+                second = self.build(cache_root=self.root/"funder-cache").identity()
+                self.assertEqual(first["rustc"], second["rustc"])
+                self.assertNotEqual(first["cache_key"], second["cache_key"])
 
     def add_test_sources(self, names=("regtest_receive_sync", "regtest_send")):
         for name in names:

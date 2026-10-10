@@ -372,6 +372,8 @@ def collect_native_cache_inputs(root, source, tool, *, platform, architecture,
             records[program] = list(command([str(executable), flag], in_source=True))
             records[program+"_binary"] = str(executable)
             records[program+"_sha256"] = _tool_input_record(executable, executable=True)[1]
+        records["sysroot"] = toolchain_inputs.rust_toolchain_inputs(
+            lambda args:command(args, in_source=True), Path(records["rustc_binary"]), cancel)
         rust[name] = records
     if not rust:
         raise NativeBuildCacheError("native Rust toolchain inventory is empty")

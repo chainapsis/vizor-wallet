@@ -189,6 +189,12 @@ class InputTests(unittest.TestCase):
         (self.root/"macos/Podfile.lock").write_text(self.lock.read_text())
         toolchain = self.root/"toolchain"
         toolchain.mkdir()
+        self.rust_sysroot = self.root/"rust-sysroot"
+        self.rust_libraries = (self.rust_sysroot/"lib/libLLVM.dylib",
+                               self.rust_sysroot/"lib/rustlib/host/lib/libstd.rlib")
+        for path in self.rust_libraries:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("original Rust compiler/runtime library")
         self.rust_tools = {name:toolchain/name for name in ("rustc", "cargo")}
         for name, path in self.rust_tools.items():
             path.write_text("original "+name+" executable")
@@ -254,6 +260,8 @@ class InputTests(unittest.TestCase):
             return ("stable-aarch64-apple-darwin (default)",)
         if len(args) == 5 and args[:3] == ["rustup", "which", "--toolchain"]:
             return (str(self.rust_tools[args[-1]]),)
+        if args == [str(self.rust_tools["rustc"]), "--print", "sysroot"]:
+            return (str(self.rust_sysroot)+"\n",)
         if args[:2] == [sys.executable, "-c"] and "'cms'" in args[2]:
             expiry = self.profile_payload["ExpirationDate"]
             return (json.dumps({"expires_at":expiry.replace(tzinfo=timezone.utc).isoformat()}),)
@@ -284,6 +292,19 @@ class InputTests(unittest.TestCase):
                     for tool in ("rustc", "cargo"):
                         self.assertEqual(first["rust_toolchains"]["stable"][tool],
                                          second["rust_toolchains"]["stable"][tool])
+                    self.assertNotEqual(first, second)
+
+    def test_rust_sysroot_changes_invalidate_without_compiler_or_version_changes(self):
+        for platform in ("ios", "macos"):
+            for path in self.rust_libraries:
+                with self.subTest(platform=platform, input=path):
+                    first = self.inputs(platform=platform)
+                    path.write_text("patched "+platform+" Rust sysroot library")
+                    second = self.inputs(platform=platform)
+                    self.assertEqual(first["rust_toolchains"]["stable"]["rustc_sha256"],
+                                     second["rust_toolchains"]["stable"]["rustc_sha256"])
+                    self.assertEqual(first["rust_toolchains"]["stable"]["rustc"],
+                                     second["rust_toolchains"]["stable"]["rustc"])
                     self.assertNotEqual(first, second)
 
     def test_installed_provisioning_profile_bytes_invalidate_with_same_certificate(self):
