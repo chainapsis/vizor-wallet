@@ -20,7 +20,8 @@ class VotingBuildTests(unittest.TestCase):
         self.model = FIXTURE.FunderBuildTests()
         self.model.setUp()
         self.addCleanup(self.model.doCleanups)
-        for name in ("scripts/init.sh", "e2e-tests/tests/create_round_for_zashi.rs"):
+        for name in ("scripts/init.sh", "e2e-tests/tests/create_round_for_zashi.rs", "e2e-tests/Cargo.toml",
+                     "circuits/Cargo.toml", "Cargo.toml"):
             path = self.model.source/name
             path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
             path.write_text("original model input\n")
@@ -34,6 +35,7 @@ class VotingBuildTests(unittest.TestCase):
         self.cache = self.model.root / "voting-cache"
         self.tool_identity = "modeled tool identity"
         self.go_configuration = "off"
+        self.go_programs = {name:"" for name in ("CC", "CXX", "FC", "PKG_CONFIG", "GOCACHEPROG")}
         self.tools = {"cargo": self.model.cargo, "rustc": self.model.compiler}
         for name in ("go", "make"):
             tool = self.model.root / ("selected-" + name)
@@ -59,10 +61,22 @@ class VotingBuildTests(unittest.TestCase):
             actual = arguments[4:] if arguments[0] == sys.executable else arguments
             name = Path(actual[0]).name.removeprefix("selected-")
             target = Path(kwargs["env"]["CARGO_TARGET_DIR"])
+            if name == "rustc" and actual[1:] == ["-vV"]:
+                data = self.tool_identity+"\nhost: aarch64-apple-darwin"
+                return original([sys.executable,"-c",f"print({data!r})"], **kwargs)
+            if name == "cargo" and actual[1:2] == ["metadata"]:
+                self.assertNotIn("--offline", actual)  # Original voting Cargo producers permit downloads.
+                self.assertIn("--locked", actual)
+                payload = {"version":1,"packages":[{"id":"dependency",
+                    "manifest_path":str(self.model.cargo_dependency/"Cargo.toml")}],
+                    "resolve":{"nodes":[{"id":"dependency"}]}}
+                return original([sys.executable, "-c", f"print({json.dumps(payload)!r})"], **kwargs)
             if name == "rustc" and actual[1:] == ["--print", "sysroot"]:
                 return original([sys.executable, "-c", f"print({str(self.model.rust_sysroot)!r})"], **kwargs)
-            if name == "go" and actual[1:] == ["env", "-json", "GOROOT", "GOTOOLDIR"]:
-                data = json.dumps({"GOROOT":str(self.go_root), "GOTOOLDIR":str(self.go_root/"pkg/tool")})
+            if name == "go" and actual[1:3] == ["env", "-json"]:
+                self.assertEqual(actual[3:], ["GOROOT", "GOTOOLDIR", *self.go_programs])
+                data = json.dumps({"GOROOT":str(self.go_root), "GOTOOLDIR":str(self.go_root/"pkg/tool"),
+                                   **self.go_programs})
                 return original([sys.executable, "-c", f"print({data!r})"], **kwargs)
             if actual[:2] == ["/usr/bin/which", "cc"]:
                 return original([sys.executable, "-c", f"print({str(self.model.apple_tools['cc'])!r})"], **kwargs)
@@ -189,6 +203,15 @@ class VotingBuildTests(unittest.TestCase):
         self.assertEqual(len(set(keys)), 5)
         self.assertEqual(self.make_calls, 5)
 
+    def test_cargo_dependency_bytes_invalidate_without_lock_config_or_environment_changes(self):
+        _, first = self.build()
+        (self.model.cargo_dependency/"lib.rs").write_text("patched Cargo dependency")
+        _, second = self.build()
+        for field in ("configuration_sha256", "environment_sha256", "archives_sha256"):
+            self.assertEqual(first["cache_inputs"][field], second["cache_inputs"][field])
+        self.assertNotEqual(first["cache_key"], second["cache_key"])
+        self.assertEqual(self.make_calls, 2)
+
     def test_target_rustflags_linker_bytes_invalidate_with_unchanged_environment(self):
         linker = self.model.root/"target-linker"
         linker.write_text("original target linker")
@@ -212,6 +235,42 @@ class VotingBuildTests(unittest.TestCase):
         self.assertNotIn("secret configuration", json.dumps(second["cache_inputs"]))
         self.assertEqual(self.make_calls, 2)
 
+    def test_goenv_program_bytes_invalidate_with_unchanged_configuration_and_environment(self):
+        configuration = self.model.root/"go-env"
+        self.go_configuration = configuration
+        for name in self.go_programs:
+            with self.subTest(setting=name):
+                program = self.model.root/('effective-'+name.lower())
+                program.write_text("original Go-configured compiler")
+                program.chmod(0o700)
+                self.go_programs[name] = str(program)+" --configured-argument"
+                configuration.write_text(name+"="+self.go_programs[name]+"\n")
+                _, first = self.build()
+                program.write_text("patched Go-configured compiler")
+                _, second = self.build()
+                for field in ("configuration_sha256", "environment_sha256", "tool_versions"):
+                    self.assertEqual(first["cache_inputs"][field], second["cache_inputs"][field])
+                self.assertNotEqual(first["cache_key"], second["cache_key"])
+                for context in ("outer", "sdk"):
+                    self.assertNotEqual(first["cache_inputs"]["compiler_inputs"]["go"][context],
+                                        second["cache_inputs"]["compiler_inputs"]["go"][context])
+                self.go_programs[name] = ""
+
+    def test_goenv_program_mutation_while_sealing_rejects_without_launch(self):
+        program = self.model.root/"effective-go-cc"
+        program.write_text("original compiler")
+        program.chmod(0o700)
+        self.go_programs["CC"] = str(program)
+        close = self.case.close
+        def seal():
+            receipt = close()
+            program.write_text("changed compiler after join")
+            return receipt
+        with patch.object(self.case,"close",side_effect=seal), self.assertRaisesRegex(
+                BUILD.VotingBuildError,"compiler/linker/SDK inputs changed"):
+            self.build()
+        self.assertFalse(self.case.accepting_launches)
+
     def test_go_compiler_and_sdk_bytes_invalidate_with_unchanged_driver_version(self):
         for name in ("src/artifact", "pkg/tool/artifact", "lib/artifact", "bin/go"):
             with self.subTest(input=name):
@@ -222,6 +281,17 @@ class VotingBuildTests(unittest.TestCase):
                                  second["cache_inputs"]["tool_versions"])
                 self.assertEqual(first["cache_inputs"]["tools"], second["cache_inputs"]["tools"])
                 self.assertNotEqual(first["cache_key"], second["cache_key"])
+
+    def test_cargo_dependency_mutation_while_sealing_rejects_without_launch(self):
+        close = self.case.close
+        def seal():
+            receipt = close()
+            (self.model.cargo_dependency/"lib.rs").write_text("changed dependency after join")
+            return receipt
+        with patch.object(self.case,"close",side_effect=seal), self.assertRaisesRegex(
+                BUILD.VotingBuildError,"Cargo dependency sources changed"):
+            self.build()
+        self.assertFalse(self.case.accepting_launches)
 
     def test_go_mutation_while_sealing_rejects_publication_without_launch(self):
         close = self.case.close

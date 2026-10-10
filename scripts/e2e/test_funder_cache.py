@@ -95,6 +95,15 @@ class FunderCacheTests(unittest.TestCase):
         self.assertNotEqual(first.identity()["cache_key"], second.identity()["cache_key"])
         self.assertNotIn('"second"', json.dumps(second.identity()["cache_inputs"]))
 
+    def test_cargo_dependency_bytes_invalidate_without_lock_config_or_environment_changes(self):
+        first = self.build()
+        (self.model.cargo_dependency/"lib.rs").write_text("patched Cargo dependency")
+        second = self.build()
+        for field in ("configuration_sha256", "environment_sha256", "rust_blobs"):
+            self.assertEqual(first.identity()["cache_inputs"][field], second.identity()["cache_inputs"][field])
+        self.assertNotEqual(first.identity()["cache_key"], second.identity()["cache_key"])
+        self.assertEqual(self.model.compile_calls, 2)
+
     def test_target_rustflags_linker_bytes_invalidate_with_unchanged_environment(self):
         linker = self.model.root/"target-linker"
         linker.write_text("original target linker")

@@ -177,6 +177,10 @@ class InputTests(unittest.TestCase):
         self.package = self.root/"dependency"
         self.package.mkdir(mode=0o700)
         (self.package/"source.dart").write_text("initial dependency")
+        self.cargo_dependency = self.root/"cargo-dependency"
+        self.cargo_dependency.mkdir()
+        (self.cargo_dependency/"Cargo.toml").write_text('[package]\nname="dependency"\nversion="1.0.0"\n')
+        (self.cargo_dependency/"lib.rs").write_text("original Cargo dependency")
         (self.root/".dart_tool").mkdir()
         self.configuration = self.root/".dart_tool/package_config.json"
         self.configuration.write_text(json.dumps({"configVersion":2,"packages":[{
@@ -254,6 +258,10 @@ class InputTests(unittest.TestCase):
         self.cancel = threading.Event()
 
     def command(self, args, **_):
+        if args[1:2] == ["metadata"]:
+            return (json.dumps({"version":1,"packages":[{"id":"dependency",
+                "manifest_path":str(self.cargo_dependency/"Cargo.toml")}],
+                "resolve":{"nodes":[{"id":"dependency"}]}}),)
         if "--machine" in args:
             return (json.dumps({"frameworkRevision":"flutter", "engineRevision":"engine", "dartSdkVersion":"3.13"}),)
         if args == ["rustup","toolchain","list"]:
@@ -367,6 +375,17 @@ class InputTests(unittest.TestCase):
                     self.assertEqual(first["rust_toolchains"]["stable"]["rustc"],
                                      second["rust_toolchains"]["stable"]["rustc"])
                     self.assertNotEqual(first, second)
+
+    def test_cargo_dependency_bytes_invalidate_with_unchanged_package_config_and_compiler(self):
+        for platform in ("ios", "macos"):
+            with self.subTest(platform=platform):
+                first = self.inputs(platform=platform)
+                (self.cargo_dependency/"lib.rs").write_text("patched "+platform+" Cargo dependency")
+                second = self.inputs(platform=platform)
+                self.assertEqual(first["package_config"], second["package_config"])
+                self.assertEqual(first["rust_toolchains"]["stable"]["rustc_sha256"],
+                                 second["rust_toolchains"]["stable"]["rustc_sha256"])
+                self.assertNotEqual(first, second)
 
     def test_installed_pod_sources_invalidate_without_lock_or_package_changes(self):
         for platform in ("ios", "macos"):

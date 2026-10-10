@@ -42,6 +42,10 @@ class FunderBuildTests(unittest.TestCase):
         self.artifacts = self.root / "artifacts"
         self.artifacts.mkdir(mode=0o700)
         self.cases = []
+        self.cargo_dependency = self.root/"cargo-dependency"
+        self.cargo_dependency.mkdir()
+        (self.cargo_dependency/"Cargo.toml").write_text('[package]\nname="dependency"\nversion="1.0.0"\n')
+        (self.cargo_dependency/"lib.rs").write_text("original Cargo dependency")
         self.addCleanup(self.close_cases)
         self.completed = True
         self.candidate_mode = "original"
@@ -101,6 +105,13 @@ class FunderBuildTests(unittest.TestCase):
         case = case or self.case()
         original = case.run_command
         def command(arguments, **options):
+            if arguments[0] in {"cargo", str(self.cargo)} and arguments[1:2] == ["metadata"]:
+                self.assertIn("--offline", arguments)
+                self.assertIn("--locked", arguments)
+                payload = {"version":1,"packages":[{"id":"dependency",
+                    "manifest_path":str(self.cargo_dependency/"Cargo.toml")}],
+                    "resolve":{"nodes":[{"id":"dependency"}]}}
+                return original([sys.executable, "-c", f"print({json.dumps(payload)!r})"], **options)
             if arguments == [str(self.compiler), "--print", "sysroot"]:
                 return original([sys.executable, "-c", f"print({str(self.rust_sysroot)!r})"], **options)
             if arguments[:2] == ["/usr/bin/which", "cc"]:
@@ -214,6 +225,18 @@ class FunderBuildTests(unittest.TestCase):
                 second = self.build(cache_root=cache).identity()
                 self.assertEqual(first["rustc"], second["rustc"])
                 self.assertNotEqual(first["cache_key"], second["cache_key"])
+
+    def test_cargo_dependency_mutation_while_sealing_rejects_without_launch(self):
+        case = self.case()
+        close = case.close
+        def seal():
+            receipt = close()
+            (self.cargo_dependency/"lib.rs").write_text("changed dependency after join")
+            return receipt
+        with patch.object(case,"close",side_effect=seal), self.assertRaisesRegex(
+                BUILD.FunderBuildError,"Cargo dependency sources changed"):
+            self.build(case,cache_root=self.root/"funder-cache")
+        self.assertFalse(case.accepting_launches)
 
     @unittest.skipUnless(sys.platform == "darwin", "Apple linker inputs are macOS-only")
     def test_linker_mutation_while_sealing_rejects_publication_without_launch(self):

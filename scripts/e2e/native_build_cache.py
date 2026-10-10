@@ -382,6 +382,13 @@ def collect_native_cache_inputs(root, source, tool, *, platform, architecture,
             records[program+"_sha256"] = _tool_input_record(executable, executable=True)[1]
         records["sysroot"] = toolchain_inputs.rust_toolchain_inputs(
             lambda args:command(args, in_source=True), Path(records["rustc_binary"]), cancel)
+        target = ({"arm64":"aarch64-apple-ios-sim", "x86_64":"x86_64-apple-ios"}[architecture]
+            if platform == "ios" else
+            {"arm64":"aarch64-apple-darwin", "x86_64":"x86_64-apple-darwin"}[architecture])
+        records["cargo_dependencies"] = toolchain_inputs.cargo_dependency_inputs(
+            lambda args:command(args, in_source=True), Path(records["cargo_binary"]), root/"rust/Cargo.toml", cancel,
+            flags=("--filter-platform", target), excluded_packages=(root/"rust",),
+            cargo_home=environment.get("CARGO_HOME"))
         rust[name] = records
     if not rust:
         raise NativeBuildCacheError("native Rust toolchain inventory is empty")

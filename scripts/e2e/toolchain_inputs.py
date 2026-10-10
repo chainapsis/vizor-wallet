@@ -88,7 +88,8 @@ def configured_tool_inputs(environment, configurations, cwd):
         for name, value in values.items():
             if name in direct or re.fullmatch(r"CARGO_TARGET_[A-Z0-9_]+_LINKER", name):
                 program(value, base)
-            elif re.fullmatch(r"(?:(?:HOST|TARGET)_)?(?:CC|CXX|AR|LD|AS|RANLIB)(?:_[A-Za-z0-9_-]+)?", name):
+            elif (re.fullmatch(r"(?:(?:HOST|TARGET)_)?(?:CC|CXX|FC|AR|LD|AS|RANLIB)(?:_[A-Za-z0-9_-]+)?", name)
+                  or name in {"PKG_CONFIG", "GOCACHEPROG"}):
                 program(value, base, arguments=True)
             elif (name in {"RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS", "CARGO_BUILD_RUSTFLAGS"}
                   or re.fullmatch(r"CARGO_TARGET_[A-Z0-9_]+_RUSTFLAGS", name)):
@@ -184,6 +185,7 @@ def file_record(path, *, executable=False, limit=512*1024*1024, error_type=ToolI
 
 def tree_digest(root, cancel, *, capture=file_record, ignore_generated=True,
                 max_bytes=1024*1024*1024, linked_files=frozenset(), linked_roots=frozenset(),
+                ignored_root_names=frozenset(),
                 error_type=ToolInputError):
     """Dependency source contents, not only lock versions or package-cache paths."""
     ignored = {".git", ".dart_tool", "build", "target", ".regtest-logs", "__pycache__"}
@@ -192,6 +194,8 @@ def tree_digest(root, cancel, *, capture=file_record, ignore_generated=True,
         children[:] = sorted(children)
         if ignore_generated and Path(directory) == root:
             children[:] = [name for name in children if name not in ignored]
+        if Path(directory) == root:
+            children[:] = [name for name in children if name not in ignored_root_names]
         for name in sorted((*children, *files)):
             if cancel.is_set():
                 from e2e_runtime import Cancelled
@@ -219,6 +223,70 @@ def tree_digest(root, cancel, *, capture=file_record, ignore_generated=True,
     return digest.hexdigest()
 
 
+def cargo_dependency_inputs(command, cargo, manifest, cancel, *, flags=(), excluded_roots=(),
+                            excluded_packages=(), cargo_home=None, offline=True):
+    """Resolve locked package sources, not just lock/config text.
+
+    Complete frozen Git snapshots are already bound by their original builder;
+    sources outside them need separate byte identity. Native checked workspace
+    sources exclude only their exact package, never nested source replacements.
+    """
+    try:
+        # Metadata resolves the whole workspace, including unbuilt dev packages.
+        # Online producers may prepare those locked inputs; offline producers
+        # must retain their existing no-download contract. Original process
+        # capture also includes Cargo diagnostics, separate from its JSON record.
+        records = []
+        for line in command([str(cargo), "metadata", "--locked", "--quiet",
+            *(('--offline',) if offline else ()),
+            "--format-version", "1", "--manifest-path", str(manifest), *flags]):
+            try:
+                value = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(value, dict) and "packages" in value:
+                records.append(value)
+        if len(records) != 1:
+            raise ValueError()
+        payload = records[0]
+        packages, nodes = payload["packages"], payload["resolve"]["nodes"]
+        if (payload.get("version") != 1 or not isinstance(packages, list)
+            or not isinstance(nodes, list) or not 1 <= len(packages) <= 4096
+            or not 1 <= len(nodes) <= 4096):
+            raise ValueError()
+        selected = {node["id"] for node in nodes}
+    except (ValueError, TypeError, KeyError) as error:
+        raise ToolInputError("Cargo dependency metadata is incomplete or invalid") from error
+    roots = set()
+    checkouts = (Path(cargo_home or Path.home()/".cargo")/"git/checkouts").resolve()
+    for package in packages:
+        if package["id"] not in selected:
+            continue
+        path = Path(package["manifest_path"])
+        if not path.is_absolute():
+            raise ToolInputError("Cargo dependency manifest path must be absolute")
+        root = path.resolve(strict=True).parent
+        if root in excluded_packages or any(root.is_relative_to(other) for other in excluded_roots):
+            continue
+        # A Git package can consume sibling source in its original checkout.
+        if root.is_relative_to(checkouts):
+            relative = root.relative_to(checkouts).parts
+            if len(relative) < 2:
+                raise ToolInputError("Cargo Git source must identify its checkout")
+            root = checkouts.joinpath(*relative[:2])
+        roots.add(root)
+    roots = {root for root in roots if not any(parent in roots for parent in root.parents)}
+    return {"source_trees_sha256":{str(root):tree_digest(root, cancel,
+        ignore_generated=False, ignored_root_names=frozenset({".git"})) for root in sorted(roots)}}
+
+
+def cargo_dependencies_unchanged(inputs, cancel):
+    return all(Path(path).is_dir() and Path(path).resolve(strict=True) == Path(path)
+        and tree_digest(Path(path), cancel, ignore_generated=False,
+            ignored_root_names=frozenset({".git"})) == digest
+        for path,digest in inputs["source_trees_sha256"].items())
+
+
 def apple_linker_inputs(command, cancel):
     if sys.platform != "darwin":
         return None
@@ -242,8 +310,9 @@ def apple_linker_inputs(command, cancel):
                                    for path in sorted(roots)}}
 
 
-def go_toolchain_inputs(command, go, cancel):
-    payload = json.loads("".join(command([str(go), "env", "-json", "GOROOT", "GOTOOLDIR"])))
+def go_toolchain_inputs(command, go, cancel, *, environment, cwd):
+    settings = ("CC", "CXX", "FC", "PKG_CONFIG", "GOCACHEPROG")
+    payload = json.loads("".join(command([str(go), "env", "-json", "GOROOT", "GOTOOLDIR", *settings])))
     if not isinstance(payload, dict) or any(not isinstance(payload.get(name), str)
         or not Path(payload[name]).is_absolute() for name in ("GOROOT", "GOTOOLDIR")):
         raise ToolInputError("selected Go SDK/tool directory must be absolute")
@@ -253,7 +322,13 @@ def go_toolchain_inputs(command, go, cancel):
     if any(not path.is_dir() for path in roots):
         raise ToolInputError("selected Go SDK/tool directory is missing")
     driver = root/"bin/go"
+    if any(not isinstance(payload.get(name), str) for name in settings):
+        raise ToolInputError("selected Go compiler programs must be strings")
+    programs = configured_tool_inputs({"PATH":environment.get("PATH", os.defpath),
+        **{name:payload[name] for name in settings}}, (), cwd)
     return {"root":str(root), "tool_directory":str(tools),
+            "configured_tools":programs,
+            "settings_sha256":{name:hashlib.sha256(payload[name].encode()).hexdigest() for name in settings},
             "selected_driver_sha256":file_record(driver, executable=True)[1],
             "source_trees_sha256":{str(path):tree_digest(path, cancel, ignore_generated=False)
                                    for path in sorted(roots)}}
@@ -293,5 +368,14 @@ def apple_inputs_unchanged(inputs, cancel):
 
 
 def go_inputs_unchanged(inputs, cancel):
-    return (file_record(Path(inputs["root"])/"bin/go", executable=True)[1]
+    def program_unchanged(path, digest):
+        if path.startswith("unresolved:"):
+            return True  # No executable was selected; active producers cannot use it successfully.
+        candidate = Path(path)
+        if digest is None:
+            return not candidate.exists() and not candidate.is_symlink()
+        return candidate.resolve(strict=True) == candidate and file_record(candidate, executable=True)[1] == digest
+    return (all(program_unchanged(path, digest) for path,digest in
+                inputs["configured_tools"]["executables_sha256"].items())
+            and file_record(Path(inputs["root"])/"bin/go", executable=True)[1]
             == inputs["selected_driver_sha256"] and _trees_unchanged(inputs, cancel, 1024*1024*1024))

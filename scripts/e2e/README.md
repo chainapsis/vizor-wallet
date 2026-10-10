@@ -1105,6 +1105,12 @@ joins its original owner and copies binaries into a fresh private publication;
 it never accepts a loose old executable or adopts an old case. Reports record
 `signer_cache_hit`, `signer_cache_key` and actual signer/Rust build counts.
 
+Locked Cargo metadata binds the actual external registry, Git and vendored
+dependency source trees, not only their versions or replacement directory paths.
+Git dependencies include their complete checkout so workspace sibling inputs
+are covered. The offline signer and native cache collectors do not download
+missing Cargo inputs; the original offline signer build remains offline.
+
 Only an original successfully joined producer may create an entry. A bounded,
 cancel-aware per-key lock serializes publication; staging is sealed and renamed
 without replacing an existing entry. Every hit verifies exact inventory and
@@ -1144,12 +1150,12 @@ configured tools. The signer and voting builders use the same collector and
 recheck its inputs before publication, including after the original owner seals.
 
 Only the original source-checking native builder with positively joined
-successful command groups can publish. The same bounded per-key lock and
+successful command groups can publish.
 Before lookup, `flutter build --config-only --no-pub` prepares the selected
 platform's configuration/Pod sandbox without app compilation. Installed Pod
 contents bind the key alongside normalized lock metadata and package sources;
 preparation and build still reject changed project/wallet/tool inputs.
-The per-key lock and
+The same bounded per-key lock and
 exclusive rename protect a sealed, complete app/helper pair. All bundle files
 are hashed, including resources and Frameworks; relative internal Framework
 aliases are preserved, while absolute/escaping links are rejected. Joined SDK
@@ -1211,6 +1217,14 @@ hashed build environment, platform and producer implementation. Build job count
 and case-private output paths are not compilation identities. The cache reuses
 the bounded per-key lock and exclusive, sealed executable publication; changed
 or writable cached bytes fail without rebuild or overwrite.
+
+Both Go contexts query effective CC/CXX/FC/PKG_CONFIG/GOCACHEPROG settings and
+bind the referenced executable bytes, including programs selected through
+GOENV rather than inherited environment variables. Setting values are hashed,
+not recorded. External Cargo dependency source trees also bind voting keys.
+Voting Cargo producers already permit dependency downloads; their locked
+metadata preparation may also fetch unbuilt workspace/dev dependencies before
+lookup. This does not compile them or change either pinned revision.
 
 A hit still reads and extracts the original pinned sources, prepares fresh SDK
 runtime scripts and joins its new producer owner. It copies verified binaries

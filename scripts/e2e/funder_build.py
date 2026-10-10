@@ -369,6 +369,10 @@ def build_regtest_funder(case: NativeCaseLifecycle, *, source_root: Path,
             if toolchain_inputs.configured_tool_inputs(
                 build_env, configuration_paths, Path.cwd()) != cache_inputs["configured_tools"]:
                 raise FunderBuildError("configured build tools changed during publication")
+            unchanged = (dependency_inputs() == cache_inputs["cargo_dependencies"] if case.accepting_launches
+                else toolchain_inputs.cargo_dependencies_unchanged(cache_inputs["cargo_dependencies"], cancellation))
+            if not unchanged:
+                raise FunderBuildError("Cargo dependency sources changed during publication")
         if cache_root is not None:
             from funder_cache import FunderCacheLease
             cargo_entry = shutil.which("cargo", path=build_env.get("PATH"))
@@ -397,12 +401,17 @@ def build_regtest_funder(case: NativeCaseLifecycle, *, source_root: Path,
             collector = Path(toolchain_inputs.__file__).resolve(strict=True)
             for path in (compiler, cargo_tool, Path(__file__).resolve(strict=True), collector):
                 input_records[path] = _file_record(path)
+            def dependency_inputs():
+                return toolchain_inputs.cargo_dependency_inputs(
+                    lambda args:command(args, env=build_env), cargo_tool, root/"source/rust/Cargo.toml", cancellation,
+                    flags=("--filter-platform", host), excluded_roots=(root/"source",), cargo_home=cargo_home)
             cache_inputs = {"schema": 1, "rust_blobs": {name: list(value) for name, value in sorted(expected.items())},
                 "rustc": list(rustc), "rustc_sha256": _file_record(compiler)[1], "cargo": list(cargo),
                 "cargo_sha256": _file_record(cargo_tool)[1],
                 "host_target": host, "test_targets": sorted(test_targets), "wallet_addresses": wallet_addresses,
                 "producer_sha256": _file_record(Path(__file__).resolve(strict=True))[1],
                 "collector_sha256": input_records[collector][1],
+                "cargo_dependencies":dependency_inputs(),
                 "configured_tools":toolchain_inputs.configured_tool_inputs(
                     build_env, configuration_paths, Path.cwd()),
                 "rust_sysroot": toolchain_inputs.rust_toolchain_inputs(

@@ -242,7 +242,26 @@ def build_voting_artifacts(case, *, sdk_cache, pir_cache, cache_root, jobs=4, ti
                         items["rustc"], cancel) for context,items in tools.items()},
                     "go":{context:toolchain_inputs.go_toolchain_inputs(
                         lambda args:command(args, cwd=root if context == "outer" else sdk),
-                        items["go"], cancel) for context,items in tools.items()}}
+                        items["go"], cancel, environment=environment,
+                        cwd=root if context == "outer" else sdk) for context,items in tools.items()}}
+        def dependency_inputs():
+            hosts = {}
+            for context, values in versions.items():
+                selected = [line.rstrip("\r\n").removeprefix("host: ") for line in values["rustc"]
+                            if line.startswith("host: ")]
+                if len(selected) != 1:
+                    raise VotingBuildError("Rust compiler must identify its dependency target")
+                hosts[context] = selected[0]
+            return {context:toolchain_inputs.cargo_dependency_inputs(
+                lambda args:command(args, cwd=sdk if context == "circuits" else None,
+                                    rust_context="sdk" if context == "circuits" else "outer"),
+                tools["sdk" if context == "circuits" else "outer"]["cargo"], manifest, cancel,
+                flags=(*flags,"--filter-platform",hosts["sdk" if context == "circuits" else "outer"]),
+                excluded_roots=(sdk,pir), cargo_home=environment.get("CARGO_HOME"), offline=False)
+                for context, manifest, flags in (
+                    ("circuits",sdk/"circuits/Cargo.toml",("--no-default-features","--features","zakura")),
+                    ("round",sdk/"e2e-tests/Cargo.toml",()),
+                    ("pir",pir/"Cargo.toml",("--features","pir-export/cli,nf-server/serve")))}
         cache_inputs = {"schema": 1, "sdk_revision": VOTE_SDK_REV, "pir_revision": PIR_REV,
             "archives_sha256": {path.name: record[1] for path, record in archives.items()},
             "tool_versions": versions,
@@ -250,6 +269,7 @@ def build_voting_artifacts(case, *, sdk_cache, pir_cache, cache_root, jobs=4, ti
                        for name, path in items.items()} for context, items in tools.items()},
             "producer_sha256": tool_records[producer][1], "platform": sys.platform,
             "collector_sha256":tool_records[collector][1], "compiler_inputs":compiler_inputs(),
+            "cargo_dependencies":dependency_inputs(),
             "configured_tools":{context:toolchain_inputs.configured_tool_inputs(
                 environment, cargo_configuration_paths, cwd)
                 for context, cwd in (("outer", Path.cwd()), ("sdk", sdk))},
@@ -258,6 +278,11 @@ def build_voting_artifacts(case, *, sdk_cache, pir_cache, cache_root, jobs=4, ti
                 for name, value in sorted(environment.items())
                 if name not in {"CARGO_TARGET_DIR", "CARGO_BUILD_JOBS", "CGO_LDFLAGS", "GOMAXPROCS"}}}
         def verify_inputs():
+            unchanged = (dependency_inputs() == cache_inputs["cargo_dependencies"] if case.accepting_launches
+                else all(toolchain_inputs.cargo_dependencies_unchanged(inputs, cancel)
+                         for inputs in cache_inputs["cargo_dependencies"].values()))
+            if not unchanged:
+                raise VotingBuildError("Cargo dependency sources changed during publication")
             if {context:toolchain_inputs.configured_tool_inputs(environment, cargo_configuration_paths, cwd)
                 for context, cwd in (("outer", Path.cwd()), ("sdk", sdk))} != cache_inputs["configured_tools"]:
                 raise VotingBuildError("configured build tools changed during publication")
