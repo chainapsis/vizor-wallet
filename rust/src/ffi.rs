@@ -3,7 +3,9 @@
 //! The platform-neutral state mapping lives in `crate::migration_preparation`;
 //! this module validates C inputs and converts native values. Confirmation
 //! polling stays read-only; sync and denomination advancement remain owned by
-//! the foreground FRB path.
+//! the foreground FRB path. The outbox's chain-tip and broadcast calls follow
+//! the process route policy and never fall back to a direct connection while
+//! Tor is selected.
 
 use std::ffi::CStr;
 use std::future::Future;
@@ -177,10 +179,79 @@ where
     }
 }
 
-/// Fetch the lightwalletd chain tip through tonic. Unlike URLSession, this
-/// supports both production HTTPS and plaintext HTTP/2 (h2c) regtest servers.
+/// Why a routed native migration request did not produce a response.
+#[derive(Debug)]
+enum RoutedRequestError {
+    /// Nothing was sent: the route policy refused the request.
+    RouteBlocked(String),
+    Failed(String),
+}
+
+impl From<crate::wallet::sync_engine::NativeRouteOpenError> for RoutedRequestError {
+    fn from(error: crate::wallet::sync_engine::NativeRouteOpenError) -> Self {
+        match error {
+            crate::wallet::sync_engine::NativeRouteOpenError::RouteBlocked(message) => {
+                Self::RouteBlocked(message)
+            }
+            crate::wallet::sync_engine::NativeRouteOpenError::Network(error) => {
+                Self::Failed(error.to_string())
+            }
+        }
+    }
+}
+
+/// The selected route refused the request before anything was sent. Distinct
+/// from a transport failure so a broadcast is known not to have happened.
+const LIGHTWALLETD_RESULT_ROUTE_BLOCKED: i32 = 6;
+
+async fn routed_latest_block_height(lightwalletd_url: &str) -> Result<u64, RoutedRequestError> {
+    let mut channel = crate::wallet::sync_engine::open_native_migration_lwd_channel(
+        lightwalletd_url,
+        false,
+        None,
+    )
+    .await?;
+    crate::wallet::sync_engine::get_latest_block(&mut channel.client)
+        .await
+        .map(|block| block.height)
+        .map_err(|error| RoutedRequestError::Failed(error.to_string()))
+}
+
+/// Broadcast on its own Tor circuit, or directly when Tor is off.
+///
+/// `before_dispatch` runs between connecting and sending; tests use it to
+/// switch the route at exactly that point.
+async fn routed_send_transaction(
+    lightwalletd_url: &str,
+    raw_transaction: &[u8],
+    before_dispatch: impl FnOnce(),
+) -> Result<zcash_client_backend::proto::service::SendResponse, RoutedRequestError> {
+    // Captured before the route is resolved, so any switch from here on makes
+    // the commit below fail rather than send.
+    let commitment = crate::network_privacy::DirectRouteCommitment::new();
+    let mut channel = crate::wallet::sync_engine::open_native_migration_lwd_channel(
+        lightwalletd_url,
+        true,
+        Some(commitment.clone()),
+    )
+    .await?;
+    before_dispatch();
+    if channel.direct {
+        commitment
+            .commit()
+            .map_err(|blocked| RoutedRequestError::RouteBlocked(blocked.to_string()))?;
+    }
+    crate::wallet::sync_engine::send_transaction_with_status(&mut channel.client, raw_transaction)
+        .await
+        .map_err(|error| RoutedRequestError::Failed(error.to_string()))
+}
+
+/// Fetch the lightwalletd chain tip on the process route: through Tor when it
+/// is selected and ready, directly when Tor is off, and not at all while Tor is
+/// starting or failed (`LIGHTWALLETD_RESULT_ROUTE_BLOCKED`). Supports both
+/// production HTTPS and plaintext HTTP/2 (h2c) regtest servers.
 #[no_mangle]
-pub extern "C" fn zcash_lightwalletd_latest_block_height(
+pub extern "C" fn zcash_lightwalletd_routed_latest_block_height(
     lightwalletd_url: *const c_char,
     output: *mut u64,
     cancellation: *const CLightwalletdCancellation,
@@ -202,20 +273,18 @@ pub extern "C" fn zcash_lightwalletd_latest_block_height(
         let cancellation = unsafe { cancellation.as_ref() };
         match runtime.block_on(await_lightwalletd_request_or_cancellation(
             cancellation,
-            async {
-                let mut client = crate::wallet::sync_engine::open_background_direct_lwd_channel(
-                    lightwalletd_url,
-                )
-                .await?;
-                crate::wallet::sync_engine::get_latest_block(&mut client).await
-            },
+            routed_latest_block_height(lightwalletd_url),
         )) {
             Err(()) => LIGHTWALLETD_RESULT_CANCELLED,
-            Ok(Ok(block)) => {
-                *output = block.height;
+            Ok(Ok(height)) => {
+                *output = height;
                 0
             }
-            Ok(Err(error)) => {
+            Ok(Err(RoutedRequestError::RouteBlocked(message))) => {
+                log::info!("ffi: lightwalletd latest block deferred: {message}");
+                LIGHTWALLETD_RESULT_ROUTE_BLOCKED
+            }
+            Ok(Err(RoutedRequestError::Failed(error))) => {
                 log::error!("ffi: get lightwalletd latest block: {error}");
                 1
             }
@@ -454,10 +523,12 @@ pub extern "C" fn zcash_status_pir_observe_transaction_v2(
     })
 }
 
-/// Submit one transaction through tonic. The error message is copied into the
-/// caller-owned buffer and safely truncated if necessary.
+/// Submit one transaction on the process route, on an isolated Tor circuit
+/// when Tor is selected. `LIGHTWALLETD_RESULT_ROUTE_BLOCKED` means the
+/// transaction was not sent. The error message is copied into the caller-owned
+/// buffer and safely truncated if necessary.
 #[no_mangle]
-pub extern "C" fn zcash_lightwalletd_send_transaction(
+pub extern "C" fn zcash_lightwalletd_routed_send_transaction(
     lightwalletd_url: *const c_char,
     raw_transaction: *const u8,
     raw_transaction_len: usize,
@@ -491,19 +562,7 @@ pub extern "C" fn zcash_lightwalletd_send_transaction(
         let cancellation = unsafe { cancellation.as_ref() };
         match runtime.block_on(await_lightwalletd_request_or_cancellation(
             cancellation,
-            async {
-                let mut client = crate::wallet::sync_engine::open_background_direct_lwd_channel(
-                    lightwalletd_url,
-                )
-                .await
-                .map_err(|error| error.to_string())?;
-                crate::wallet::sync_engine::send_transaction_with_status(
-                    &mut client,
-                    &raw_transaction,
-                )
-                .await
-                .map_err(|error| error.to_string())
-            },
+            routed_send_transaction(lightwalletd_url, &raw_transaction, || {}),
         )) {
             Err(()) => LIGHTWALLETD_RESULT_CANCELLED,
             Ok(Ok(response)) => {
@@ -522,7 +581,11 @@ pub extern "C" fn zcash_lightwalletd_send_transaction(
                 }
                 0
             }
-            Ok(Err(error)) => {
+            Ok(Err(RoutedRequestError::RouteBlocked(message))) => {
+                log::info!("ffi: lightwalletd transaction submission deferred: {message}");
+                LIGHTWALLETD_RESULT_ROUTE_BLOCKED
+            }
+            Ok(Err(RoutedRequestError::Failed(error))) => {
                 log::error!("ffi: send lightwalletd transaction: {error}");
                 1
             }
@@ -729,6 +792,9 @@ pub extern "C" fn zcash_inspect_migration_proof_readiness(
         }
     }
 }
+
+#[cfg(test)]
+mod route_tests;
 
 #[cfg(test)]
 mod tests {

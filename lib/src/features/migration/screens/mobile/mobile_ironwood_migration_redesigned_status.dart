@@ -1075,17 +1075,15 @@ class _MobileMigrationRedesignedStatusState
     required _MigrationProgressState state,
   }) {
     // Stated exactly where the screen invites the user to background the app,
-    // and only to the user it concerns: on iOS, background migration
-    // transport is pinned direct by design, while foreground migration
-    // traffic rides the route policy like everything else — so the claim is
-    // scoped to "while Vizor is closed", or it would read as though the
-    // migration bypasses Tor even while the user watches it. Android has no
-    // background migration lane, so there is nothing to disclose there.
+    // and only to the user it concerns: on iOS the background migration task
+    // never uses Tor, so with Tor on it sends nothing and the next step waits
+    // for the app, which sends it over Tor. Android has no background
+    // migration lane, so there is nothing to disclose there.
     final torDisclosure =
         defaultTargetPlatform == TargetPlatform.iOS &&
             ref.watch(networkPrivacyProvider).torEnabled
-        ? '\nWhile Vizor is closed, migration continues over a direct '
-              'connection.'
+        ? '\nWith Tor on, migration waits while Vizor is closed and '
+              'continues when you open it.'
         : '';
     final currentHeight = _currentHeight();
     final nextHeight = status.nextActionHeight;

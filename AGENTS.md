@@ -616,7 +616,7 @@ Swift BackgroundMigrationPreparationManager
 ```
 
 - iOS submits `BGContinuedProcessingTaskRequest` only while denomination
-  preparation is active. Its normal polling loop only queries the lightwalletd
+  preparation is active and Tor is not the saved route. Its normal polling loop only queries the lightwalletd
   tip and each materialized preparation tx. It never runs a wallet sync or
   advances migration state.
 - The iOS C-FFI inspection path opens SQLite with `SQLITE_OPEN_READ_ONLY` and
@@ -640,9 +640,9 @@ Swift BackgroundMigrationPreparationManager
   cancel token and desired mode. Foreground `cancelFullSync()` does not cancel
   that operation; the paths share `SYNC_RUNNING` while the sync engine is active
   so two wallet scans cannot run concurrently.
-- Already-signed migration outbox transport remains background-capable. It may
-  query the chain tip and broadcast exact signed bytes, but it never scans the
-  wallet.
+- Already-signed migration outbox transport remains background-capable while
+  Tor is not the saved route. It may query the chain tip and broadcast exact
+  signed bytes, but it never scans the wallet.
 - Account DB mutations quiesce and drain native migration work before changing
   the wallet DB.
 - The removed general iOS background-sync identifier
@@ -664,12 +664,24 @@ policy-aware openers and fails closed while Tor is starting or broken.
   network-capable entry points and extend the routing table and service tests
   in `rust/src/wallet/voting/README.md`. The Rust suite includes a supplemental
   constructor guard; it does not replace checking actual network behavior.
-- **iOS background migration transport is pinned direct**
-  (`open_background_direct_lwd_channel`), bypassing the route policy as a
-  product decision. A background pass never brings Tor up or borrows the
-  foreground's client, so routing that lane through the policy would only
-  convert it into failures on a Tor wallet. The mobile settings card
-  discloses this. Nothing in the foreground may use the pinned opener.
+- **iOS migration outbox follows the route.** The app's own pass
+  (`runOutboxOnceNow`, `BackgroundMigrationOutboxRunnerDependencies.foreground`)
+  and background wakes both reach lightwalletd only through
+  `zcash_lightwalletd_routed_*`: Tor when selected and ready (an isolated
+  circuit per broadcast), direct when Tor is off, and `ROUTE_BLOCKED` without
+  waiting while Tor is starting or failed. A route refusal leaves the item
+  armed without counting an attempt. A direct broadcast commits
+  (`DirectRouteCommitment`) just before sending, so a switch to Tor either
+  refuses it first or drains it, never cancels it mid-flight.
+- **iOS background migration never uses Tor.** A background pass never brings
+  Tor up or borrows the foreground's client, and a cold launch may not have
+  applied the route, so it reads the saved route
+  (`BackgroundMigrationTorRoute`, the `flutter.zcash_tor_enabled` user
+  default) before each request. With Tor saved, the outbox defers to the
+  foreground (`deferredToForeground`, no reschedule) and preparation tracking
+  stays foreground-only. The mobile settings card and migration status
+  disclose this. `open_background_direct_lwd_channel`, the public status
+  lookup's opener, refuses while this process's route is Tor.
 - **The saved route may be stricter than the enforced route, never laxer.**
   The saved preference is all a fresh launch has to go on, so a toggle
   persists in whichever order keeps this true at every intermediate point:
@@ -699,7 +711,8 @@ while an executed denomination preparation waits for confirmations.
   txids through C FFI, updates the system task `Progress`, and advances its
   progress heartbeat every 15 seconds.
 - `NativeLightwalletdClient.swift` uses only `GetLatestBlock` and
-  `GetTransaction`; it checks both txid byte orientations.
+  `GetTransaction`; it checks both txid byte orientations. With Tor saved it
+  sends neither; the foreground tracks the wave instead.
 - `NotFound`, mempool height `0`, and fork height `UInt64.max` contribute zero
   confirmations. A normal mined height contributes
   `tip - minedHeight + 1`, capped at 3.

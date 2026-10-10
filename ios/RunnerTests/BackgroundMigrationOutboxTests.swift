@@ -1341,6 +1341,179 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     )
   }
 
+  func testBackgroundWakeWithSavedTorDispatchesNothingAndLeavesWorkArmed() throws {
+    let harness = try makeStoreHarness()
+    defer { harness.cleanup() }
+    let batch = makeBatch(batchId: "batch-a", account: "account-a", heights: [100])
+    try stageAndArm(batch, in: harness.store)
+    let defaults = try makeTorRouteDefaults(storedTor: true)
+    let transport = RecordingOutboxTransport()
+
+    let outcome = BackgroundMigrationOutboxRunner.runOnce(
+      store: harness.store,
+      cancellation: BackgroundMigrationCancellation(),
+      now: now,
+      dependencies: .background(
+        torSelected: { BackgroundMigrationTorRoute.isSelected(defaults: defaults) },
+        transport: transport.dependencies
+      )
+    )
+
+    XCTAssertEqual(outcome.transport, .deferredToForeground)
+    XCTAssertEqual(transport.tipRequests, 0)
+    XCTAssertEqual(transport.sentPayloads, [])
+    let snapshot = try harness.store.read()
+    XCTAssertTrue(snapshot.receipts.isEmpty)
+    let item = try XCTUnwrap(snapshot.batches.first?.items.first)
+    XCTAssertEqual(item.status, .armed)
+    XCTAssertEqual(item.attemptCount, 0)
+    XCTAssertEqual(item.rawTransaction, batch.items[0].rawTransaction)
+  }
+
+  func testBackgroundWakeWithSavedTorOffStillSubmits() throws {
+    let harness = try makeStoreHarness()
+    defer { harness.cleanup() }
+    let batch = makeBatch(batchId: "batch-a", account: "account-a", heights: [100])
+    try stageAndArm(batch, in: harness.store)
+    let defaults = try makeTorRouteDefaults(storedTor: false)
+    let transport = RecordingOutboxTransport()
+
+    let outcome = BackgroundMigrationOutboxRunner.runOnce(
+      store: harness.store,
+      cancellation: BackgroundMigrationCancellation(),
+      now: now,
+      dependencies: .background(
+        torSelected: { BackgroundMigrationTorRoute.isSelected(defaults: defaults) },
+        transport: transport.dependencies
+      )
+    )
+
+    guard case .accepted = outcome.transport else {
+      return XCTFail("Expected a submission with Tor off, got \(outcome)")
+    }
+    XCTAssertEqual(transport.tipRequests, 1)
+    XCTAssertEqual(transport.sentPayloads, [batch.items[0].rawTransaction])
+    XCTAssertEqual(try harness.store.read().receipts.count, 1)
+  }
+
+  func testTorSavedBetweenTipAndBroadcastDefersTheBroadcast() throws {
+    let harness = try makeStoreHarness()
+    defer { harness.cleanup() }
+    let batch = makeBatch(batchId: "batch-a", account: "account-a", heights: [100])
+    try stageAndArm(batch, in: harness.store)
+    let defaults = try makeTorRouteDefaults(storedTor: false)
+    let transport = RecordingOutboxTransport()
+    // The user turns Tor on while the chain tip is being fetched.
+    transport.onTip = { defaults.set(true, forKey: BackgroundMigrationTorRoute.defaultsKey) }
+
+    let outcome = BackgroundMigrationOutboxRunner.runOnce(
+      store: harness.store,
+      cancellation: BackgroundMigrationCancellation(),
+      now: now,
+      dependencies: .background(
+        torSelected: { BackgroundMigrationTorRoute.isSelected(defaults: defaults) },
+        transport: transport.dependencies
+      )
+    )
+
+    XCTAssertEqual(outcome.transport, .deferredToForeground)
+    XCTAssertEqual(transport.tipRequests, 1)
+    XCTAssertEqual(transport.sentPayloads, [])
+    let item = try XCTUnwrap(try harness.store.read().batches.first?.items.first)
+    XCTAssertEqual(item.status, .armed)
+    XCTAssertEqual(item.attemptCount, 0, "a refused broadcast is not an attempt")
+    XCTAssertNil(item.nextAttemptAt)
+  }
+
+  func testRouteRefusedBroadcastStaysRetryableWithoutCountingAnAttempt() throws {
+    let harness = try makeStoreHarness()
+    defer { harness.cleanup() }
+    let batch = makeBatch(batchId: "batch-a", account: "account-a", heights: [100])
+    try stageAndArm(batch, in: harness.store)
+    let transport = RecordingOutboxTransport()
+    transport.sendResult = .failure(.routeBlocked)
+
+    let blocked = BackgroundMigrationOutboxRunner.runOnce(
+      store: harness.store,
+      cancellation: BackgroundMigrationCancellation(),
+      now: now,
+      dependencies: transport.dependencies
+    )
+
+    XCTAssertEqual(blocked.transport, .temporarilyUnavailable)
+    var item = try XCTUnwrap(try harness.store.read().batches.first?.items.first)
+    XCTAssertEqual(item.status, .armed)
+    XCTAssertEqual(item.attemptCount, 0)
+    XCTAssertNil(item.nextAttemptAt)
+
+    // Once Tor is ready the same signed bytes go out on the next pass.
+    transport.sendResult = .success(
+      NativeLightwalletdSendResponse(errorCode: 0, errorMessage: "")
+    )
+    let accepted = BackgroundMigrationOutboxRunner.runOnce(
+      store: harness.store,
+      cancellation: BackgroundMigrationCancellation(),
+      now: now,
+      dependencies: transport.dependencies
+    )
+
+    guard case .accepted = accepted.transport else {
+      return XCTFail("Expected the retried submission, got \(accepted)")
+    }
+    XCTAssertEqual(
+      transport.sentPayloads,
+      [batch.items[0].rawTransaction, batch.items[0].rawTransaction]
+    )
+    item = try XCTUnwrap(try harness.store.read().batches.first?.items.first)
+    XCTAssertEqual(item.status, .acceptedAwaitingReconciliation)
+  }
+
+  func testRouteRefusedTipLeavesTheOutboxUntouched() throws {
+    let harness = try makeStoreHarness()
+    defer { harness.cleanup() }
+    let batch = makeBatch(batchId: "batch-a", account: "account-a", heights: [100])
+    try stageAndArm(batch, in: harness.store)
+    let transport = RecordingOutboxTransport()
+    transport.tipResult = .failure(.routeBlocked)
+
+    let outcome = BackgroundMigrationOutboxChannel.runOnceNow(
+      store: harness.store,
+      dependencies: transport.dependencies
+    )
+
+    XCTAssertEqual(outcome.transport, .temporarilyUnavailable)
+    XCTAssertEqual(transport.sentPayloads, [])
+    let item = try XCTUnwrap(try harness.store.read().batches.first?.items.first)
+    XCTAssertEqual(item.status, .armed)
+    XCTAssertEqual(item.attemptCount, 0)
+  }
+
+  func testSavedTorRouteReadsTheFlutterPreference() throws {
+    let defaults = try makeTorRouteDefaults(storedTor: nil)
+    XCTAssertEqual(BackgroundMigrationTorRoute.defaultsKey, "flutter.zcash_tor_enabled")
+    XCTAssertFalse(BackgroundMigrationTorRoute.isSelected(defaults: defaults))
+    defaults.set(true, forKey: BackgroundMigrationTorRoute.defaultsKey)
+    XCTAssertTrue(BackgroundMigrationTorRoute.isSelected(defaults: defaults))
+    defaults.set(false, forKey: BackgroundMigrationTorRoute.defaultsKey)
+    XCTAssertFalse(BackgroundMigrationTorRoute.isSelected(defaults: defaults))
+    // Unreadable counts as Tor, as it does for Dart's startup.
+    defaults.set("unexpected", forKey: BackgroundMigrationTorRoute.defaultsKey)
+    XCTAssertTrue(BackgroundMigrationTorRoute.isSelected(defaults: defaults))
+  }
+
+  func testSavedTorKeepsPreparationTrackingInTheForeground() {
+    XCTAssertEqual(
+      migrationPreparationContinuedTaskDisposition(
+        .continuedProcessing, privateRecovery: false, torSelected: true),
+      .foregroundOnly
+    )
+    XCTAssertEqual(
+      migrationPreparationContinuedTaskDisposition(
+        .continuedProcessing, privateRecovery: false, torSelected: false),
+      .trackConfirmations
+    )
+  }
+
   func testRunnerKeepsExactTransactionAfterTransportFailure() throws {
     let harness = try makeStoreHarness()
     defer { harness.cleanup() }
@@ -1694,6 +1867,16 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     Dictionary(uniqueKeysWithValues: batch.items.map { ($0.itemId, $0.payloadDigestHex) })
   }
 
+  private func makeTorRouteDefaults(storedTor: Bool?) throws -> UserDefaults {
+    let suiteName = "vizor.tests.tor-route.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    addTeardownBlock { defaults.removePersistentDomain(forName: suiteName) }
+    if let storedTor {
+      defaults.set(storedTor, forKey: BackgroundMigrationTorRoute.defaultsKey)
+    }
+    return defaults
+  }
+
   private func makeStoreHarness() throws -> OutboxStoreHarness {
     let directory = FileManager.default.temporaryDirectory
       .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -1716,6 +1899,30 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
         at: now
       )
     }
+  }
+}
+
+/// A runner transport that records what would have reached lightwalletd.
+private final class RecordingOutboxTransport {
+  var tipRequests = 0
+  var sentPayloads: [Data] = []
+  var onTip: () -> Void = {}
+  var tipResult: Result<UInt64, NativeLightwalletdError> = .success(200)
+  var sendResult: Result<NativeLightwalletdSendResponse, NativeLightwalletdError> =
+    .success(NativeLightwalletdSendResponse(errorCode: 0, errorMessage: ""))
+
+  var dependencies: BackgroundMigrationOutboxRunnerDependencies {
+    BackgroundMigrationOutboxRunnerDependencies(
+      latestBlockHeight: { _, _ in
+        self.tipRequests += 1
+        self.onTip()
+        return self.tipResult
+      },
+      sendTransaction: { _, payload, _ in
+        self.sentPayloads.append(payload)
+        return self.sendResult
+      }
+    )
   }
 }
 

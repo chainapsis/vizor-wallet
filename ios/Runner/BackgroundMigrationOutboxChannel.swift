@@ -205,9 +205,11 @@ enum BackgroundMigrationOutboxChannel {
     try store.removeAll()
   }
 
+  /// The app's own pass, made while it is open: it follows the route the app
+  /// is enforcing rather than the background's saved-route deferral.
   static func runOnceNow(
     store: BackgroundMigrationOutboxStore = .shared,
-    dependencies: BackgroundMigrationOutboxRunnerDependencies = .live
+    dependencies: BackgroundMigrationOutboxRunnerDependencies = .foreground
   ) -> BackgroundMigrationOutboxRunResult {
     BackgroundMigrationOutboxRunner.runOnce(
       store: store,

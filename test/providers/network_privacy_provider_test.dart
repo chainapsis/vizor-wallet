@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -56,6 +57,17 @@ void main() {
 
       expect(dormancy, contains(false));
     });
+  });
+
+  test('iOS background migration reads the saved Tor route by this key', () {
+    // The native background outbox decides whether it may touch the network
+    // from this preference alone, before Dart has run. `shared_preferences`
+    // stores it on iOS under a `flutter.` prefix; renaming the key without
+    // the Swift side would let a cold background wake send directly.
+    final swift = File(
+      'ios/Runner/BackgroundMigrationOutboxRunner.swift',
+    ).readAsStringSync();
+    expect(swift, contains('"flutter.$kTorEnabledPreferenceKey"'));
   });
 
   test('preference read failure pauses native updates before launch', () async {

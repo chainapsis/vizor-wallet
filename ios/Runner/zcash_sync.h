@@ -19,12 +19,17 @@ typedef struct {
 } CLightwalletdTransactionObservation;
 
 #define ZCASH_LIGHTWALLETD_RESULT_CANCELLED 3
+/// The selected network route refused the request before anything was sent:
+/// Tor is selected but starting, failed, or was selected while connecting.
+#define ZCASH_LIGHTWALLETD_RESULT_ROUTE_BLOCKED 6
 
 void* zcash_lightwalletd_cancellation_create(void);
 void zcash_lightwalletd_cancellation_cancel(void* cancellation);
 void zcash_lightwalletd_cancellation_destroy(void* cancellation);
 
-int32_t zcash_lightwalletd_latest_block_height(
+/// Chain tip on the process route: Tor when selected and ready, direct when
+/// Tor is off, ROUTE_BLOCKED otherwise. Never falls back to direct.
+int32_t zcash_lightwalletd_routed_latest_block_height(
     const char* lightwalletd_url,
     uint64_t* output,
     void* cancellation
@@ -56,7 +61,9 @@ int32_t zcash_status_pir_observe_transaction_v2(
     const void* cancellation);
 
 
-int32_t zcash_lightwalletd_send_transaction(
+/// Broadcast on the process route, on an isolated Tor circuit when Tor is
+/// selected. ROUTE_BLOCKED means the transaction was not sent.
+int32_t zcash_lightwalletd_routed_send_transaction(
     const char* lightwalletd_url,
     const uint8_t* raw_transaction,
     uintptr_t raw_transaction_len,

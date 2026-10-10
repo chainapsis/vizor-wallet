@@ -13,7 +13,11 @@ struct BackgroundMigrationOutboxRunnerDependencies {
       BackgroundMigrationCancellation
     ) -> Result<NativeLightwalletdSendResponse, NativeLightwalletdError>
 
-  static let live = BackgroundMigrationOutboxRunnerDependencies(
+  /// The app's own outbox pass (`runOutboxOnceNow`). Both requests follow the
+  /// route this process is enforcing: Tor when it is selected and ready, an
+  /// isolated circuit for each broadcast, direct only when Tor is off, and a
+  /// refusal while Tor is starting or failed. Nothing falls back to direct.
+  static let foreground = BackgroundMigrationOutboxRunnerDependencies(
     latestBlockHeight: { endpoint, cancellation in
       NativeLightwalletdClient.latestBlockHeight(
         endpoint: endpoint,
@@ -28,6 +32,47 @@ struct BackgroundMigrationOutboxRunnerDependencies {
       )
     }
   )
+
+  /// A background wake. Background work never brings Tor up, and on a cold
+  /// launch this process may not have applied the user's route yet, so the
+  /// saved route decides: with Tor saved, each request is deferred to the
+  /// foreground before anything is dispatched. The saved route is read again
+  /// immediately before every request, so a toggle between the chain-tip
+  /// query and the broadcast is honoured. With Tor off the requests go through
+  /// the same route-respecting transport as the foreground, which still
+  /// refuses if this process has since switched to Tor.
+  static func background(
+    torSelected: @escaping () -> Bool = { BackgroundMigrationTorRoute.isSelected() },
+    transport: BackgroundMigrationOutboxRunnerDependencies = .foreground
+  ) -> BackgroundMigrationOutboxRunnerDependencies {
+    BackgroundMigrationOutboxRunnerDependencies(
+      latestBlockHeight: { endpoint, cancellation in
+        guard !torSelected() else { return .failure(.routeDeferredToForeground) }
+        return transport.latestBlockHeight(endpoint, cancellation)
+      },
+      sendTransaction: { endpoint, rawTransaction, cancellation in
+        guard !torSelected() else { return .failure(.routeDeferredToForeground) }
+        return transport.sendTransaction(endpoint, rawTransaction, cancellation)
+      }
+    )
+  }
+}
+
+/// The network route the user saved, as a cold background launch sees it.
+///
+/// Dart persists the "Use Tor" choice through `shared_preferences`
+/// (`kTorEnabledPreferenceKey` in `network_privacy_provider.dart`), which on
+/// iOS is `UserDefaults.standard` under a `flutter.` prefix. Dart writes it
+/// before switching to Tor and after switching away, so it is never laxer than
+/// the route the app enforces. Absent means the user never turned Tor on;
+/// anything unreadable counts as Tor, matching Dart's fail-closed startup.
+enum BackgroundMigrationTorRoute {
+  static let defaultsKey = "flutter.zcash_tor_enabled"
+
+  static func isSelected(defaults: UserDefaults = .standard) -> Bool {
+    guard let stored = defaults.object(forKey: defaultsKey) else { return false }
+    return (stored as? Bool) ?? true
+  }
 }
 
 enum BackgroundMigrationOutboxRunner {
@@ -37,7 +82,7 @@ enum BackgroundMigrationOutboxRunner {
     cancellation: BackgroundMigrationCancellation,
     now: Date = Date(),
     requiresPreparationProofVerification: Bool = false,
-    dependencies: BackgroundMigrationOutboxRunnerDependencies = .live
+    dependencies: BackgroundMigrationOutboxRunnerDependencies
   ) -> BackgroundMigrationOutboxRunResult {
     let gate = BackgroundMigrationOutboxExecutionGate.shared
     guard gate.tryBeginRun() else {
@@ -93,6 +138,12 @@ enum BackgroundMigrationOutboxRunner {
     case .failure(.cancelled):
       return BackgroundMigrationOutboxRunResult(
         transport: .cancelled,
+        proofReady: nil,
+        broadcastComplete: broadcastComplete
+      )
+    case .failure(.routeDeferredToForeground):
+      return BackgroundMigrationOutboxRunResult(
+        transport: .deferredToForeground,
         proofReady: nil,
         broadcastComplete: broadcastComplete
       )
@@ -235,6 +286,24 @@ enum BackgroundMigrationOutboxRunner {
       selection.item.rawTransaction,
       cancellation
     ) {
+    case .failure(let error)
+    where error == .routeBlocked || error == .routeDeferredToForeground:
+      // The route refused before the transaction left this device, so this
+      // is a definite non-attempt: the item stays armed for the next pass
+      // without counting a retry or waiting for expiry.
+      recordCancelledBeforeSubmission(
+        store: store,
+        itemId: selection.item.itemId,
+        error: error == .routeBlocked
+          ? "The selected network route is not available yet."
+          : "Waiting for Vizor to open to submit over Tor."
+      )
+      return BackgroundMigrationOutboxRunResult(
+        transport: error == .routeBlocked ? .temporarilyUnavailable : .deferredToForeground,
+        proofReady: proofReady,
+        broadcastComplete: broadcastComplete,
+        transportAccountUuid: selection.accountUuid
+      )
     case .failure(let error):
       recordUncertain(
         store: store,
